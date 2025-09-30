@@ -1,0 +1,37 @@
+package repository
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/models"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
+	)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect database: %w", err)
+	}
+
+	// 自动迁移
+	if err := db.AutoMigrate(
+		&models.DataSource{},
+		&models.Directory{},
+	); err != nil {
+		return nil, fmt.Errorf("failed to migrate database: %w", err)
+	}
+
+	log.Println("Database connected and migrated successfully")
+	return db, nil
+}

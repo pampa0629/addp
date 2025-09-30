@@ -1,0 +1,315 @@
+version: '3.8'
+
+services:
+  # ==================== 基础设施服务 ====================
+
+  # PostgreSQL - 用于 Manager, Meta, Transfer 模块
+  postgres:
+    image: postgres:15-alpine
+    container_name: addp-postgres
+    environment:
+      POSTGRES_USER: addp
+      POSTGRES_PASSWORD: addp_password
+      POSTGRES_DB: addp
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U addp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - addp-network
+
+  # Redis - 用于缓存和任务队列
+  redis:
+    image: redis:7-alpine
+    container_name: addp-redis
+    command: redis-server --requirepass addp_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - addp-network
+
+  # MinIO - 对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: addp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - addp-network
+
+  # ==================== 应用服务 ====================
+
+  # System 模块 - 用户认证、日志、资源管理
+  system-backend:
+    build:
+      context: ./system/backend
+      dockerfile: Dockerfile
+    container_name: addp-system-backend
+    environment:
+      - PORT=8080
+      - DATABASE_URL=/app/data/system.db
+      - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - ENV=production
+    volumes:
+      - ./system/data:/app/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - addp-network
+
+  system-frontend:
+    build:
+      context: ./system/frontend
+      dockerfile: Dockerfile
+    container_name: addp-system-frontend
+    ports:
+      - "8090:80"
+    depends_on:
+      - system-backend
+    networks:
+      - addp-network
+
+  # Gateway 模块 - API 网关（待实现）
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: addp-gateway
+    environment:
+      - PORT=8000
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - MANAGER_SERVICE_URL=http://manager-backend:8081
+      - META_SERVICE_URL=http://meta-backend:8082
+      - TRANSFER_SERVICE_URL=http://transfer-backend:8083
+    ports:
+      - "8000:8000"
+    depends_on:
+      - system-backend
+      - manager-backend
+      - meta-backend
+      - transfer-backend
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  # Manager 模块 - 数据源和文件管理（待实现）
+  manager-backend:
+    build:
+      context: ./manager/backend
+      dockerfile: Dockerfile
+    container_name: addp-manager-backend
+    environment:
+      - PORT=8081
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=addp
+      - DB_USER=addp
+      - DB_PASSWORD=addp_password
+      - DB_SCHEMA=manager
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=addp_redis
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=addp-data
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - META_SERVICE_URL=http://meta-backend:8082
+      - ENABLE_SERVICE_INTEGRATION=true
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      system-backend:
+        condition: service_started
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  manager-frontend:
+    build:
+      context: ./manager/frontend
+      dockerfile: Dockerfile
+    container_name: addp-manager-frontend
+    ports:
+      - "8091:80"
+    depends_on:
+      - manager-backend
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  # Meta 模块 - 元数据管理（待实现）
+  meta-backend:
+    build:
+      context: ./meta/backend
+      dockerfile: Dockerfile
+    container_name: addp-meta-backend
+    environment:
+      - PORT=8082
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=addp
+      - DB_USER=addp
+      - DB_PASSWORD=addp_password
+      - DB_SCHEMA=metadata
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=addp_redis
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - MANAGER_SERVICE_URL=http://manager-backend:8081
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      system-backend:
+        condition: service_started
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  meta-frontend:
+    build:
+      context: ./meta/frontend
+      dockerfile: Dockerfile
+    container_name: addp-meta-frontend
+    ports:
+      - "8092:80"
+    depends_on:
+      - meta-backend
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  # Transfer 模块 - 数据传输（待实现）
+  transfer-backend:
+    build:
+      context: ./transfer/backend
+      dockerfile: Dockerfile
+    container_name: addp-transfer-backend
+    environment:
+      - PORT=8083
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=addp
+      - DB_USER=addp
+      - DB_PASSWORD=addp_password
+      - DB_SCHEMA=transfer
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=addp_redis
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - MANAGER_SERVICE_URL=http://manager-backend:8081
+      - META_SERVICE_URL=http://meta-backend:8082
+      - WORKER_CONCURRENCY=10
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      system-backend:
+        condition: service_started
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  transfer-worker:
+    build:
+      context: ./transfer/backend
+      dockerfile: Dockerfile
+    container_name: addp-transfer-worker
+    command: ["./worker"]
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=addp_redis
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=addp
+      - DB_USER=addp
+      - DB_PASSWORD=addp_password
+      - DB_SCHEMA=transfer
+      - WORKER_CONCURRENCY=10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      transfer-backend:
+        condition: service_started
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+  transfer-frontend:
+    build:
+      context: ./transfer/frontend
+      dockerfile: Dockerfile
+    container_name: addp-transfer-frontend
+    ports:
+      - "8093:80"
+    depends_on:
+      - transfer-backend
+    networks:
+      - addp-network
+    profiles:
+      - full
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  addp-network:
+    driver: bridge

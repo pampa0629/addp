@@ -1,0 +1,63 @@
+# Dependencies
+**/node_modules/
+**/vendor/
+
+# Build outputs
+**/dist/
+**/build/
+**/bin/
+
+# Environment files
+**/.env
+**/.env.local
+**/.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/data/*.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Test coverage
+coverage/
+*.cover
+*.coverage
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Vue/Vite
+.vite/
+**/.vite/
+
+# Misc
+test-iframe.html
