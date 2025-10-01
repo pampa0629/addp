@@ -17,11 +17,29 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
+func (h *UserHandler) Create(c *gin.Context) {
+	var req models.UserCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	currentUserID := c.GetUint("user_id")
+	user, err := h.userService.Create(&req, currentUserID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, user)
+}
+
 func (h *UserHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	currentUserID := c.GetUint("user_id")
 
-	users, err := h.userService.List(page, pageSize)
+	users, err := h.userService.List(page, pageSize, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -37,9 +55,10 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.GetByID(uint(id))
+	currentUserID := c.GetUint("user_id")
+	user, err := h.userService.GetByID(uint(id), currentUserID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -59,7 +78,8 @@ func (h *UserHandler) Update(c *gin.Context) {
 		return
 	}
 
-	user, err := h.userService.Update(uint(id), &req)
+	currentUserID := c.GetUint("user_id")
+	user, err := h.userService.Update(uint(id), &req, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -75,7 +95,8 @@ func (h *UserHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.userService.Delete(uint(id)); err != nil {
+	currentUserID := c.GetUint("user_id")
+	if err := h.userService.Delete(uint(id), currentUserID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -85,7 +106,7 @@ func (h *UserHandler) Delete(c *gin.Context) {
 
 func (h *UserHandler) Me(c *gin.Context) {
 	userID := c.GetUint("user_id")
-	user, err := h.userService.GetByID(userID)
+	user, err := h.userService.GetByID(userID, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return

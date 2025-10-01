@@ -2,11 +2,12 @@ package middleware
 
 import (
 	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
+func LoggerMiddleware(logService *service.LogService, userRepo *repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
@@ -25,6 +26,12 @@ func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 				log.UserID = &uid
 				if username != nil {
 					log.Username = username.(string)
+				}
+
+				// 获取用户的租户ID
+				user, err := userRepo.GetByID(uid)
+				if err == nil && user.TenantID != nil {
+					log.TenantID = user.TenantID
 				}
 			}
 

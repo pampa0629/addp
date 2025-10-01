@@ -24,6 +24,11 @@ func main() {
 		log.Fatalf("数据库迁移失败: %v", err)
 	}
 
+	// 初始化超级管理员用户
+	if err := repository.InitSuperAdmin(db); err != nil {
+		log.Fatalf("超级管理员用户初始化失败: %v", err)
+	}
+
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)

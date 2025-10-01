@@ -43,7 +43,14 @@ func (h *ResourceHandler) List(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	resourceType := c.Query("resource_type")
 
-	resources, err := h.resourceService.List(page, pageSize, resourceType)
+	// 获取当前用户ID
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	resources, err := h.resourceService.List(page, pageSize, resourceType, userID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

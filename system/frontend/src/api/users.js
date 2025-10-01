@@ -1,6 +1,10 @@
 import client from './client'
 
 export const usersAPI = {
+  create: (data) => {
+    return client.post('/users', data)
+  },
+
   list: (page = 1, pageSize = 10) => {
     return client.get('/users', { params: { page, page_size: pageSize } })
   },
@@ -15,5 +19,9 @@ export const usersAPI = {
 
   delete: (id) => {
     return client.delete(`/users/${id}`)
+  },
+
+  me: () => {
+    return client.get('/users/me')
   }
 }

@@ -216,12 +216,22 @@ const handleMenuSelect = (index) => {
   currentModule.value = module
 
   if (moduleUrls[module]) {
-    // 构建完整的 URL
+    // 构建完整的 URL，并附加认证token作为URL参数
+    const token = authStore.token
+    let url = ''
     if (page) {
-      iframeUrl.value = `${moduleUrls[module]}/${page}`
+      url = `${moduleUrls[module]}/${page}`
     } else {
-      iframeUrl.value = moduleUrls[module]
+      url = moduleUrls[module]
     }
+
+    // 如果有token，添加到URL参数中
+    if (token) {
+      const separator = url.includes('?') ? '&' : '?'
+      url = `${url}${separator}token=${encodeURIComponent(token)}`
+    }
+
+    iframeUrl.value = url
     console.log('Portal: Setting iframe URL:', iframeUrl.value)
     console.log('Portal: currentModule:', currentModule.value)
   } else {

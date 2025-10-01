@@ -41,6 +41,12 @@ func (r *UserRepository) List(offset, limit int) ([]models.User, error) {
 	return users, err
 }
 
+func (r *UserRepository) ListByTenant(tenantID uint, offset, limit int) ([]models.User, error) {
+	var users []models.User
+	err := r.db.Where("tenant_id = ?", tenantID).Offset(offset).Limit(limit).Find(&users).Error
+	return users, err
+}
+
 func (r *UserRepository) Update(user *models.User) error {
 	return r.db.Save(user).Error
 }

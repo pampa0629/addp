@@ -1,10 +1,19 @@
 <template>
   <div class="page-container">
-    <el-card>
+    <!-- SuperAdmin 显示租户管理 -->
+    <Tenants v-if="currentUser?.user_type === 'super_admin'" />
+
+    <!-- 租户管理员和普通用户显示用户管理 -->
+    <el-card v-else>
       <template #header>
         <div class="card-header">
-          <span>用户管理</span>
-          <el-button type="primary" :icon="Plus" @click="openAddDialog">新增用户</el-button>
+          <span>{{ currentUser?.user_type === 'user' ? '我的信息' : '用户管理' }}</span>
+          <el-button
+            v-if="currentUser?.user_type === 'tenant_admin'"
+            type="primary"
+            :icon="Plus"
+            @click="openAddDialog"
+          >新增用户</el-button>
         </div>
       </template>
 
@@ -15,8 +24,8 @@
         <el-table-column prop="full_name" label="姓名" />
         <el-table-column label="用户类型" width="120">
           <template #default="{ row }">
-            <el-tag :type="row.is_superuser ? 'danger' : 'info'">
-              {{ row.is_superuser ? '管理员' : '普通用户' }}
+            <el-tag :type="getUserTypeTag(row.user_type)">
+              {{ getUserTypeText(row.user_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -34,14 +43,27 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
-            <el-button
-              v-if="!row.is_superuser"
-              size="small"
-              type="danger"
-              :icon="Delete"
-              @click="handleDelete(row)"
-            >删除</el-button>
+            <!-- 普通用户只能编辑自己，不能删除 -->
+            <template v-if="currentUser?.user_type === 'user'">
+              <el-button
+                v-if="row.id === currentUser?.id"
+                size="small"
+                type="primary"
+                :icon="Edit"
+                @click="openEditDialog(row)"
+              >编辑</el-button>
+            </template>
+            <!-- 租户管理员可以编辑和删除普通用户 -->
+            <template v-else-if="currentUser?.user_type === 'tenant_admin'">
+              <el-button size="small" type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
+              <el-button
+                v-if="row.user_type === 'user'"
+                size="small"
+                type="danger"
+                :icon="Delete"
+                @click="handleDelete(row)"
+              >删除</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -89,14 +111,15 @@
           <el-input v-model="userForm.full_name" placeholder="请输入姓名" />
         </el-form-item>
 
-        <el-form-item label="用户类型" prop="is_superuser">
-          <el-radio-group v-model="userForm.is_superuser">
-            <el-radio :value="false">普通用户</el-radio>
-            <el-radio :value="true">管理员</el-radio>
-          </el-radio-group>
+        <!-- 租户管理员创建用户时显示用户类型（固定为普通用户） -->
+        <el-form-item label="用户类型" prop="user_type" v-if="currentUser?.user_type === 'tenant_admin'">
+          <el-select v-model="userForm.user_type" placeholder="请选择用户类型" disabled>
+            <el-option label="普通用户" value="user" />
+          </el-select>
         </el-form-item>
 
-        <el-form-item label="状态" v-if="isEdit">
+        <!-- 只有租户管理员可以修改用户状态 -->
+        <el-form-item label="状态" v-if="isEdit && currentUser?.user_type === 'tenant_admin'">
           <el-switch v-model="userForm.is_active" active-text="激活" inactive-text="禁用" />
         </el-form-item>
       </el-form>
@@ -114,17 +137,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { usersAPI } from '../api/users'
 import { authAPI } from '../api/auth'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '../store/auth'
+import Tenants from './Tenants.vue'
 
+const authStore = useAuthStore()
 const users = ref([])
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
+const currentUser = computed(() => authStore.user)
 
 // 对话框相关
 const dialogVisible = ref(false)
@@ -139,8 +166,27 @@ const userForm = reactive({
   email: '',
   full_name: '',
   is_active: true,
-  is_superuser: false
+  user_type: 'user'
 })
+
+// 用户类型相关函数
+const getUserTypeText = (userType) => {
+  const typeMap = {
+    'super_admin': '超级管理员',
+    'tenant_admin': '租户管理员',
+    'user': '普通用户'
+  }
+  return typeMap[userType] || '未知'
+}
+
+const getUserTypeTag = (userType) => {
+  const tagMap = {
+    'super_admin': 'danger',
+    'tenant_admin': 'warning',
+    'user': 'info'
+  }
+  return tagMap[userType] || 'info'
+}
 
 const dialogTitle = computed(() => isEdit.value ? '编辑用户' : '新增用户')
 
@@ -186,15 +232,27 @@ const resetForm = () => {
   userForm.email = ''
   userForm.full_name = ''
   userForm.is_active = true
-  userForm.is_superuser = false
+  userForm.user_type = 'user'
   formRef.value?.resetFields()
 }
 
 const openAddDialog = () => {
-  resetForm()
   isEdit.value = false
   editingUserId.value = null
+  // Reset form data before opening dialog
+  userForm.username = ''
+  userForm.password = ''
+  userForm.email = ''
+  userForm.full_name = ''
+  userForm.is_active = true
+  userForm.user_type = 'user'
+
   dialogVisible.value = true
+
+  // Clear validation after dialog opens
+  nextTick(() => {
+    formRef.value?.clearValidate()
+  })
 }
 
 const openEditDialog = (row) => {
@@ -205,7 +263,7 @@ const openEditDialog = (row) => {
   userForm.email = row.email
   userForm.full_name = row.full_name
   userForm.is_active = row.is_active
-  userForm.is_superuser = row.is_superuser
+  userForm.user_type = row.user_type || 'user'
   dialogVisible.value = true
 }
 
@@ -222,7 +280,7 @@ const handleSubmit = async () => {
             email: userForm.email || null,
             full_name: userForm.full_name || null,
             is_active: userForm.is_active,
-            is_superuser: userForm.is_superuser
+            user_type: userForm.user_type
           }
           if (userForm.password) {
             data.password = userForm.password
@@ -231,12 +289,12 @@ const handleSubmit = async () => {
           ElMessage.success('更新用户成功')
         } else {
           // 新增用户
-          await authAPI.register({
+          await usersAPI.create({
             username: userForm.username,
             password: userForm.password,
             email: userForm.email,
             full_name: userForm.full_name,
-            is_superuser: userForm.is_superuser
+            user_type: userForm.user_type
           })
           ElMessage.success('新增用户成功')
         }
@@ -252,9 +310,9 @@ const handleSubmit = async () => {
 }
 
 const handleDelete = (row) => {
-  // 检查是否为超级管理员
-  if (row.is_superuser) {
-    ElMessage.error('超级管理员账号不能被删除')
+  // 检查是否为admin用户
+  if (row.username === 'admin') {
+    ElMessage.error('admin账号不能被删除')
     return
   }
 
@@ -279,7 +337,15 @@ const handleDelete = (row) => {
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 确保用户信息已加载
+  if (!authStore.user) {
+    try {
+      await authStore.fetchUser()
+    } catch (error) {
+      console.error('Failed to load user:', error)
+    }
+  }
   loadUsers()
 })
 </script>

@@ -1,25 +1,38 @@
 package service
 
 import (
+	"errors"
+
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 )
 
 type ResourceService struct {
-	repo *repository.ResourceRepository
+	repo     *repository.ResourceRepository
+	userRepo *repository.UserRepository
 }
 
-func NewResourceService(repo *repository.ResourceRepository) *ResourceService {
-	return &ResourceService{repo: repo}
+func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository) *ResourceService {
+	return &ResourceService{
+		repo:     repo,
+		userRepo: userRepo,
+	}
 }
 
 func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy uint) (*models.Resource, error) {
+	// 获取创建者信息以确定租户
+	user, err := s.userRepo.GetByID(createdBy)
+	if err != nil {
+		return nil, errors.New("用户不存在")
+	}
+
 	resource := &models.Resource{
 		Name:           req.Name,
 		ResourceType:   req.ResourceType,
 		ConnectionInfo: req.ConnectionInfo,
 		Description:    req.Description,
 		CreatedBy:      &createdBy,
+		TenantID:       user.TenantID, // 继承用户的租户ID
 		IsActive:       true,
 	}
 
@@ -34,9 +47,25 @@ func (s *ResourceService) GetByID(id uint) (*models.Resource, error) {
 	return s.repo.GetByID(id)
 }
 
-func (s *ResourceService) List(page, pageSize int, resourceType string) ([]models.Resource, error) {
+func (s *ResourceService) List(page, pageSize int, resourceType string, currentUserID uint) ([]models.Resource, error) {
 	offset := (page - 1) * pageSize
-	return s.repo.List(offset, pageSize, resourceType)
+
+	// 获取当前用户信息
+	currentUser, err := s.userRepo.GetByID(currentUserID)
+	if err != nil {
+		return nil, errors.New("当前用户不存在")
+	}
+
+	// SuperAdmin可以查看所有资源
+	if currentUser.UserType == models.UserTypeSuperAdmin {
+		return s.repo.List(offset, pageSize, resourceType)
+	}
+
+	// 租户管理员和普通用户只能查看本租户的资源
+	if currentUser.TenantID == nil {
+		return []models.Resource{}, nil
+	}
+	return s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, resourceType)
 }
 
 func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*models.Resource, error) {

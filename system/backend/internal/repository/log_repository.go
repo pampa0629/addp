@@ -29,6 +29,19 @@ func (r *LogRepository) List(offset, limit int, userID *uint) ([]models.AuditLog
 	return logs, err
 }
 
+// ListByTenant 查询指定租户的日志列表
+func (r *LogRepository) ListByTenant(tenantID uint, offset, limit int, userID *uint) ([]models.AuditLog, error) {
+	var logs []models.AuditLog
+	query := r.db.Where("tenant_id = ?", tenantID).Order("created_at DESC")
+
+	if userID != nil {
+		query = query.Where("user_id = ?", *userID)
+	}
+
+	err := query.Offset(offset).Limit(limit).Find(&logs).Error
+	return logs, err
+}
+
 func (r *LogRepository) GetByID(id uint) (*models.AuditLog, error) {
 	var log models.AuditLog
 	err := r.db.First(&log, id).Error

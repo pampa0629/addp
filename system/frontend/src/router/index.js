@@ -50,7 +50,7 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   console.log('System Router: beforeEach triggered')
   console.log('  to.path:', to.path)
   console.log('  from.path:', from.path)
@@ -63,10 +63,25 @@ router.beforeEach((to, from, next) => {
   const isInIframe = window.self !== window.top
   console.log('  isInIframe:', isInIframe)
 
-  // 如果在 iframe 中,跳过认证检查(开发模式)
-  // 生产环境应该通过 URL 参数或 postMessage 传递 token
-  if (isInIframe) {
-    console.log('System Router: In iframe, bypassing auth check')
+  // 检查URL参数中是否有token（从portal传递过来）
+  const urlToken = to.query.token
+  if (urlToken) {
+    // 如果URL中有token,始终使用URL中的token(可能是切换了用户)
+    console.log('System Router: Found token in URL params, saving to auth store')
+    authStore.setToken(urlToken)
+    // 获取用户信息
+    try {
+      await authStore.fetchUser()
+      console.log('System Router: User fetched successfully from token')
+    } catch (error) {
+      console.error('System Router: Failed to fetch user from token:', error)
+      authStore.logout()
+    }
+  }
+
+  // 如果在 iframe 中且已认证,跳过认证检查
+  if (isInIframe && authStore.isAuthenticated) {
+    console.log('System Router: In iframe with auth, allowing navigation')
     next()
     return
   }

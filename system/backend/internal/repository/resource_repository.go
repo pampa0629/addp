@@ -38,6 +38,19 @@ func (r *ResourceRepository) List(offset, limit int, resourceType string) ([]mod
 	return resources, err
 }
 
+// ListByTenant 查询指定租户的资源列表
+func (r *ResourceRepository) ListByTenant(tenantID uint, offset, limit int, resourceType string) ([]models.Resource, error) {
+	var resources []models.Resource
+	query := r.db.Where("tenant_id = ?", tenantID)
+
+	if resourceType != "" {
+		query = query.Where("resource_type = ?", resourceType)
+	}
+
+	err := query.Offset(offset).Limit(limit).Find(&resources).Error
+	return resources, err
+}
+
 func (r *ResourceRepository) Update(resource *models.Resource) error {
 	return r.db.Save(resource).Error
 }

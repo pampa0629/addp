@@ -29,7 +29,14 @@ func (h *LogHandler) List(c *gin.Context) {
 		}
 	}
 
-	logs, err := h.logService.List(page, pageSize, userID)
+	// 获取当前用户ID
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	logs, err := h.logService.List(page, pageSize, userID, currentUserID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

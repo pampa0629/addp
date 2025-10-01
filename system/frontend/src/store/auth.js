@@ -19,6 +19,11 @@ export const useAuthStore = defineStore('auth', {
       await this.fetchUser()
     },
 
+    setToken(token) {
+      this.token = token
+      localStorage.setItem('token', token)
+    },
+
     async fetchUser() {
       const response = await authAPI.getMe()
       this.user = response.data

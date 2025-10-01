@@ -27,6 +27,7 @@ type Resource struct {
 	ConnectionInfo ConnectionInfo `gorm:"type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"type:text" json:"description"`
 	CreatedBy      *uint          `json:"created_by"`
+	TenantID       *uint          `gorm:"index" json:"tenant_id"` // 租户ID,SuperAdmin创建的资源为null
 	IsActive       bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`

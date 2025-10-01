@@ -28,14 +28,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	userRepo := repository.NewUserRepository(db)
 	logRepo := repository.NewLogRepository(db)
 	resourceRepo := repository.NewResourceRepository(db)
+	tenantRepo := repository.NewTenantRepository(db)
 
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
-	logService := service.NewLogService(logRepo)
-	resourceService := service.NewResourceService(resourceRepo)
+	logService := service.NewLogService(logRepo, userRepo)
+	resourceService := service.NewResourceService(resourceRepo, userRepo)
+	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
 
 	// 日志中间件
-	router.Use(middleware.LoggerMiddleware(logService))
+	router.Use(middleware.LoggerMiddleware(logService, userRepo))
 
 	// 根路由
 	router.GET("/", func(c *gin.Context) {
@@ -64,11 +66,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			users := protected.Group("/users")
 			{
 				userHandler := NewUserHandler(userService)
+				users.POST("", userHandler.Create)
 				users.GET("", userHandler.List)
+				users.GET("/me", userHandler.Me)
 				users.GET("/:id", userHandler.GetByID)
 				users.PUT("/:id", userHandler.Update)
 				users.DELETE("/:id", userHandler.Delete)
-				users.GET("/me", userHandler.Me)
 			}
 
 			// 日志管理
@@ -90,6 +93,17 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				resources.DELETE("/:id", resourceHandler.Delete)
 				resources.POST("/:id/test", resourceHandler.TestConnection)        // 测试已有资源连接
 				resources.POST("/test-connection", resourceHandler.TestConnectionBeforeCreate) // 创建前测试连接
+			}
+
+			// 租户管理
+			tenants := protected.Group("/tenants")
+			{
+				tenantHandler := NewTenantHandler(tenantService)
+				tenants.POST("", tenantHandler.Create)
+				tenants.GET("", tenantHandler.List)
+				tenants.GET("/:id", tenantHandler.GetByID)
+				tenants.PUT("/:id", tenantHandler.Update)
+				tenants.DELETE("/:id", tenantHandler.Delete)
 			}
 		}
 	}
