@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ==================== 基础设施服务 ====================
 
@@ -26,7 +24,7 @@ services:
 
   # Redis - 用于缓存和任务队列
   redis:
-    image: redis:7-alpine
+    image: redis:6.2.19-alpine
     container_name: addp-redis
     command: redis-server --requirepass addp_redis
     ports:
@@ -116,8 +114,6 @@ services:
     depends_on:
       - system-backend
       - manager-backend
-      - meta-backend
-      - transfer-backend
     networks:
       - addp-network
     profiles:

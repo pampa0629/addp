@@ -58,17 +58,17 @@ build: ## 编译所有服务
 
 docker-build: ## 构建 Docker 镜像（仅 System 模块）
 	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"
-	@docker-compose build system-backend system-frontend
+	@docker compose build system-backend system-frontend
 	@echo "$(GREEN)构建完成！$(NC)"
 
 docker-build-all: ## 构建所有服务的 Docker 镜像
 	@echo "$(GREEN)构建所有服务的 Docker 镜像...$(NC)"
-	@docker-compose --profile full build
+	@docker compose --profile full build
 	@echo "$(GREEN)所有镜像构建完成！$(NC)"
 
 up: ## 启动 System 模块（基础服务）
 	@echo "$(GREEN)启动 System 模块...$(NC)"
-	@docker-compose up -d system-backend system-frontend
+	@docker compose up -d system-backend system-frontend
 	@echo "$(GREEN)System 模块已启动！$(NC)"
 	@echo "$(YELLOW)访问地址:$(NC)"
 	@echo "  - System Backend:  http://localhost:8080"
@@ -76,18 +76,18 @@ up: ## 启动 System 模块（基础服务）
 
 up-full: ## 启动所有服务（完整平台）
 	@echo "$(GREEN)启动完整平台（所有服务）...$(NC)"
-	@docker-compose --profile full up -d
+	@docker compose --profile full up -d
 	@echo "$(GREEN)所有服务已启动！$(NC)"
 	@$(MAKE) status
 
 up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO）
 	@echo "$(GREEN)启动基础设施服务...$(NC)"
-	@docker-compose up -d postgres redis minio
+	@docker compose up -d postgres redis minio
 	@echo "$(GREEN)基础设施服务已启动！$(NC)"
 
 down: ## 停止所有服务
 	@echo "$(YELLOW)停止所有服务...$(NC)"
-	@docker-compose --profile full down
+	@docker compose --profile full down
 	@echo "$(GREEN)所有服务已停止$(NC)"
 
 restart: down up ## 重启 System 模块
@@ -95,26 +95,26 @@ restart: down up ## 重启 System 模块
 restart-full: down up-full ## 重启所有服务
 
 logs: ## 查看所有服务日志
-	@docker-compose --profile full logs -f
+	@docker compose --profile full logs -f
 
 logs-system: ## 查看 System 模块日志
-	@docker-compose logs -f system-backend system-frontend
+	@docker compose logs -f system-backend system-frontend
 
 logs-manager: ## 查看 Manager 模块日志
-	@docker-compose logs -f manager-backend
+	@docker compose logs -f manager-backend
 
 logs-meta: ## 查看 Meta 模块日志
-	@docker-compose logs -f meta-backend
+	@docker compose logs -f meta-backend
 
 logs-transfer: ## 查看 Transfer 模块日志
-	@docker-compose logs -f transfer-backend transfer-worker
+	@docker compose logs -f transfer-backend transfer-worker
 
 logs-gateway: ## 查看 Gateway 模块日志
-	@docker-compose logs -f gateway
+	@docker compose logs -f gateway
 
 status: ## 显示所有服务状态
 	@echo "$(GREEN)服务状态:$(NC)"
-	@docker-compose --profile full ps
+	@docker compose --profile full ps
 	@echo ""
 	@echo "$(YELLOW)服务访问地址:$(NC)"
 	@echo "  - Gateway:          http://localhost:8000  (未实现)"
@@ -147,7 +147,7 @@ clean-all: clean ## 清理所有数据（包括 Docker volumes 和数据库）
 	@echo "$(RED)警告: 此操作将删除所有数据！$(NC)"
 	@read -p "确认删除所有数据？(yes/no): " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
-		docker-compose --profile full down -v; \
+		docker compose --profile full down -v; \
 		rm -rf system/data/*.db; \
 		echo "$(GREEN)所有数据已清理$(NC)"; \
 	else \
@@ -167,19 +167,19 @@ test-system: ## 运行 System 模块测试
 
 db-migrate: ## 运行数据库迁移（重新初始化数据库）
 	@echo "$(GREEN)运行数据库迁移...$(NC)"
-	@docker-compose exec -T postgres psql -U addp -d addp < scripts/init-db.sql
+	@docker compose exec -T postgres psql -U addp -d addp < scripts/init-db.sql
 	@echo "$(GREEN)数据库迁移完成$(NC)"
 
 db-shell: ## 连接到 PostgreSQL 数据库
-	@docker-compose exec postgres psql -U addp -d addp
+	@docker compose exec postgres psql -U addp -d addp
 
 redis-cli: ## 连接到 Redis
-	@docker-compose exec redis redis-cli -a addp_redis
+	@docker compose exec redis redis-cli -a addp_redis
 
 minio-setup: ## 初始化 MinIO bucket
 	@echo "$(GREEN)初始化 MinIO...$(NC)"
-	@docker-compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
-	@docker-compose exec minio mc mb local/addp-data --ignore-existing
+	@docker compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+	@docker compose exec minio mc mb local/addp-data --ignore-existing
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
 
 install-deps: ## 安装所有依赖
@@ -210,16 +210,16 @@ health: ## 检查所有服务健康状态
 	@curl -s http://localhost:8080/health || echo "$(RED)  ✗ 不可用$(NC)"
 	@echo ""
 	@echo "PostgreSQL:"
-	@docker-compose exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@docker compose exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "Redis:"
-	@docker-compose exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@docker compose exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "MinIO:"
 	@curl -s http://localhost:9000/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"
 	@mkdir -p backups
-	@docker-compose exec -T postgres pg_dump -U addp addp > backups/addp_$(shell date +%Y%m%d_%H%M%S).sql
+	@docker compose exec -T postgres pg_dump -U addp addp > backups/addp_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)数据库备份完成$(NC)"
 
 restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
@@ -228,7 +228,7 @@ restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
 		exit 1; \
 	fi
 	@echo "$(YELLOW)恢复数据库: $(FILE)$(NC)"
-	@docker-compose exec -T postgres psql -U addp -d addp < $(FILE)
+	@docker compose exec -T postgres psql -U addp -d addp < $(FILE)
 	@echo "$(GREEN)数据库恢复完成$(NC)"
 
 .PHONY: docs
