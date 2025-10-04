@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,9 +48,12 @@ func (h *SyncHandler) AutoSyncAll(c *gin.Context) {
 	syncService := service.NewSyncService(h.syncService.GetDB(), systemClient)
 
 	if err := syncService.AutoSyncAll(tenantID); err != nil {
+		log.Printf("AutoSyncAll error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Printf("AutoSyncAll started successfully for tenant %d", tenantID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Auto sync started for all data sources",

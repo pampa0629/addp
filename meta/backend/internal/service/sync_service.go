@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/addp/meta/internal/models"
@@ -31,27 +32,40 @@ func (s *SyncService) GetDB() *gorm.DB {
 
 // AutoSyncAll 自动同步所有数据源 (Level 1)
 func (s *SyncService) AutoSyncAll(tenantID uint) error {
+	log.Printf("AutoSyncAll called for tenant %d", tenantID)
+
 	// 获取所有数据库类型的资源
 	resources, err := s.systemClient.ListResources("")
 	if err != nil {
+		log.Printf("Failed to list resources from System: %v", err)
 		return fmt.Errorf("failed to list resources: %w", err)
 	}
+
+	log.Printf("Found %d resources from System", len(resources))
 
 	for _, resource := range resources {
 		// 过滤租户资源
 		if resource.TenantID != tenantID && tenantID != 0 {
+			log.Printf("Skipping resource %d (tenant %d != %d)", resource.ID, resource.TenantID, tenantID)
 			continue
 		}
 
-		// 只处理数据库类型
-		if resource.ResourceType != "PostgreSQL" && resource.ResourceType != "MySQL" {
+		// 只处理数据库类型 (不区分大小写)
+		resourceType := strings.ToLower(resource.ResourceType)
+		if resourceType != "postgresql" && resourceType != "mysql" {
+			log.Printf("Skipping resource %d (type %s not postgresql/mysql)", resource.ID, resource.ResourceType)
 			continue
 		}
 
-		// 异步同步
+		log.Printf("Starting async sync for resource %d (type: %s, tenant: %d)", resource.ID, resource.ResourceType, resource.TenantID)
+
+		// 异步同步 - 直接传递resource对象,不依赖systemClient
 		go func(r utils.Resource) {
-			if err := s.SyncResource(r.ID, r.TenantID); err != nil {
+			log.Printf("Goroutine started for resource %d", r.ID)
+			if err := s.syncResourceInternal(&r, r.TenantID); err != nil {
 				log.Printf("Failed to sync resource %d: %v", r.ID, err)
+			} else {
+				log.Printf("Successfully synced resource %d", r.ID)
 			}
 		}(resource)
 	}
@@ -59,13 +73,18 @@ func (s *SyncService) AutoSyncAll(tenantID uint) error {
 	return nil
 }
 
-// SyncResource 同步单个资源的数据库列表 (Level 1)
-func (s *SyncService) SyncResource(resourceID, tenantID uint) error {
+// syncResourceInternal 内部同步方法,接收已经获取的resource对象
+func (s *SyncService) syncResourceInternal(resource *utils.Resource, tenantID uint) error {
+	log.Printf("syncResourceInternal called for resource %d (%s)", resource.ID, resource.ResourceName)
+
 	// 创建或更新数据源记录
-	datasource, err := s.getOrCreateDatasource(resourceID, tenantID)
+	datasource, err := s.getOrCreateDatasource(resource.ID, tenantID)
 	if err != nil {
+		log.Printf("Failed to create/get datasource for resource %d: %v", resource.ID, err)
 		return err
 	}
+
+	log.Printf("Datasource created/found: id=%d, name=%s", datasource.ID, datasource.DatasourceName)
 
 	// 创建同步日志
 	syncLog := &models.MetadataSyncLog{
@@ -77,15 +96,11 @@ func (s *SyncService) SyncResource(resourceID, tenantID uint) error {
 		StartedAt:    ptrTime(time.Now()),
 	}
 	if err := s.db.Create(syncLog).Error; err != nil {
+		log.Printf("Failed to create sync log: %v", err)
 		return fmt.Errorf("failed to create sync log: %w", err)
 	}
 
-	// 获取资源连接信息
-	resource, err := s.systemClient.GetResource(resourceID)
-	if err != nil {
-		s.updateSyncLogFailed(syncLog, err.Error())
-		return fmt.Errorf("failed to get resource: %w", err)
-	}
+	log.Printf("Sync log created: id=%d", syncLog.ID)
 
 	// 构建连接字符串
 	connStr, err := utils.BuildConnectionString(resource)
@@ -153,8 +168,19 @@ func (s *SyncService) SyncResource(resourceID, tenantID uint) error {
 	syncLog.DatabasesScanned = len(databases)
 	s.db.Save(syncLog)
 
-	log.Printf("Successfully synced resource %d, found %d databases", resourceID, len(databases))
+	log.Printf("Successfully synced resource %d, found %d databases", resource.ID, len(databases))
 	return nil
+}
+
+// SyncResource 同步单个资源的数据库列表 (Level 1) - 用于API调用
+func (s *SyncService) SyncResource(resourceID, tenantID uint) error {
+	// 获取资源信息
+	resource, err := s.systemClient.GetResource(resourceID)
+	if err != nil {
+		return fmt.Errorf("failed to get resource: %w", err)
+	}
+
+	return s.syncResourceInternal(resource, tenantID)
 }
 
 // getOrCreateDatasource 获取或创建数据源记录
