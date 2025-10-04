@@ -43,6 +43,10 @@
             <el-icon><Connection /></el-icon>
             <span>数据源管理</span>
           </el-menu-item>
+          <el-menu-item index="/metadata">
+            <el-icon><Document /></el-icon>
+            <span>元数据管理</span>
+          </el-menu-item>
           <el-menu-item index="/directories">
             <el-icon><Folder /></el-icon>
             <span>目录管理</span>

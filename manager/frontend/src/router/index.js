@@ -26,6 +26,11 @@ const routes = [
         path: 'preview',
         name: 'Preview',
         component: () => import('../views/Preview.vue')
+      },
+      {
+        path: 'metadata',
+        name: 'Metadata',
+        component: () => import('../views/Metadata.vue')
       }
     ]
   }

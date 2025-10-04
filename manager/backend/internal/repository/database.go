@@ -12,8 +12,9 @@ import (
 )
 
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
+	// search_path 设置为 manager,system 让Manager可以访问两个schema
 	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s,system",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
 	)
 
@@ -24,10 +25,14 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect database: %w", err)
 	}
 
-	// 自动迁移
+	// 确保连接后search_path正确
+	db.Exec(fmt.Sprintf("SET search_path TO %s,system", cfg.DBSchema))
+
+	// 自动迁移 (不再包括DataSource,使用system.resources)
 	if err := db.AutoMigrate(
-		&models.DataSource{},
 		&models.Directory{},
+		&models.ManagedTable{},
+		&models.ManagedFile{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}

@@ -2,20 +2,24 @@ package service
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/pkg/utils"
 )
 
 type ResourceService struct {
-	repo     *repository.ResourceRepository
-	userRepo *repository.UserRepository
+	repo          *repository.ResourceRepository
+	userRepo      *repository.UserRepository
+	encryptionKey []byte
 }
 
-func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository) *ResourceService {
+func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository, encryptionKey []byte) *ResourceService {
 	return &ResourceService{
-		repo:     repo,
-		userRepo: userRepo,
+		repo:          repo,
+		userRepo:      userRepo,
+		encryptionKey: encryptionKey,
 	}
 }
 
@@ -26,10 +30,16 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, errors.New("用户不存在")
 	}
 
+	// 加密敏感字段
+	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("加密连接信息失败: %w", err)
+	}
+
 	resource := &models.Resource{
 		Name:           req.Name,
 		ResourceType:   req.ResourceType,
-		ConnectionInfo: req.ConnectionInfo,
+		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		CreatedBy:      &createdBy,
 		TenantID:       user.TenantID, // 继承用户的租户ID
@@ -44,7 +54,19 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 }
 
 func (s *ResourceService) GetByID(id uint) (*models.Resource, error) {
-	return s.repo.GetByID(id)
+	resource, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解密敏感字段
+	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+	resource.ConnectionInfo = decryptedConnInfo
+
+	return resource, nil
 }
 
 func (s *ResourceService) List(page, pageSize int, resourceType string, currentUserID uint) ([]models.Resource, error) {
@@ -56,16 +78,32 @@ func (s *ResourceService) List(page, pageSize int, resourceType string, currentU
 		return nil, errors.New("当前用户不存在")
 	}
 
+	var resources []models.Resource
+
 	// SuperAdmin可以查看所有资源
 	if currentUser.UserType == models.UserTypeSuperAdmin {
-		return s.repo.List(offset, pageSize, resourceType)
+		resources, err = s.repo.List(offset, pageSize, resourceType)
+	} else if currentUser.TenantID == nil {
+		// 租户管理员和普通用户只能查看本租户的资源
+		return []models.Resource{}, nil
+	} else {
+		resources, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, resourceType)
 	}
 
-	// 租户管理员和普通用户只能查看本租户的资源
-	if currentUser.TenantID == nil {
-		return []models.Resource{}, nil
+	if err != nil {
+		return nil, err
 	}
-	return s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, resourceType)
+
+	// 解密所有资源的敏感字段
+	for i := range resources {
+		decryptedConnInfo, err := s.decryptSensitiveFields(resources[i].ConnectionInfo)
+		if err != nil {
+			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", resources[i].ID, err)
+		}
+		resources[i].ConnectionInfo = decryptedConnInfo
+	}
+
+	return resources, nil
 }
 
 func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*models.Resource, error) {
@@ -78,7 +116,12 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*m
 		resource.Name = *req.Name
 	}
 	if req.ConnectionInfo != nil {
-		resource.ConnectionInfo = *req.ConnectionInfo
+		// 加密敏感字段
+		encryptedConnInfo, err := s.encryptSensitiveFields(*req.ConnectionInfo)
+		if err != nil {
+			return nil, fmt.Errorf("加密连接信息失败: %w", err)
+		}
+		resource.ConnectionInfo = encryptedConnInfo
 	}
 	if req.Description != nil {
 		resource.Description = *req.Description
@@ -91,9 +134,69 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*m
 		return nil, err
 	}
 
+	// 解密后返回
+	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+	resource.ConnectionInfo = decryptedConnInfo
+
 	return resource, nil
 }
 
 func (s *ResourceService) Delete(id uint) error {
 	return s.repo.Delete(id)
+}
+
+// encryptSensitiveFields 加密连接信息中的敏感字段
+func (s *ResourceService) encryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+	encrypted := make(models.ConnectionInfo)
+	for k, v := range connInfo {
+		encrypted[k] = v
+	}
+
+	// 定义需要加密的敏感字段
+	sensitiveFields := []string{"password", "access_key", "secret_key", "token", "api_key"}
+
+	for _, field := range sensitiveFields {
+		if val, exists := connInfo[field]; exists {
+			if strVal, ok := val.(string); ok && strVal != "" {
+				encryptedVal, err := utils.Encrypt(strVal, s.encryptionKey)
+				if err != nil {
+					return nil, fmt.Errorf("加密字段 %s 失败: %w", field, err)
+				}
+				encrypted[field] = encryptedVal
+			}
+		}
+	}
+
+	return encrypted, nil
+}
+
+// decryptSensitiveFields 解密连接信息中的敏感字段
+func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+	decrypted := make(models.ConnectionInfo)
+	for k, v := range connInfo {
+		decrypted[k] = v
+	}
+
+	// 定义需要解密的敏感字段
+	sensitiveFields := []string{"password", "access_key", "secret_key", "token", "api_key"}
+
+	for _, field := range sensitiveFields {
+		if val, exists := connInfo[field]; exists {
+			if strVal, ok := val.(string); ok && strVal != "" {
+				decryptedVal, err := utils.Decrypt(strVal, s.encryptionKey)
+				if err != nil {
+					// 如果解密失败，可能是未加密的旧数据，保持原值
+					// 在生产环境中应该记录日志
+					decrypted[field] = strVal
+					continue
+				}
+				decrypted[field] = decryptedVal
+			}
+		}
+	}
+
+	return decrypted, nil
 }

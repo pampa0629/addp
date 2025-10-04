@@ -1,133 +1,200 @@
 # Gateway 网关模块
 
-## 概述
+> 全域数据平台的统一 API 入口和路由服务
 
-Gateway 是全域数据平台的 API 网关服务，负责处理外部请求并路由到相应的内部服务。
+## 🎯 核心功能
 
-## 核心功能
+- **统一入口**: 为所有平台服务提供单一 API 入口点
+- **智能路由**: 根据请求路径自动路由到对应的内部服务
+- **认证传递**: 统一处理 JWT 认证并透传给后端服务
+- **CORS 支持**: 处理跨域请求，支持前端访问
+- **健康检查**: 监控后端服务状态
 
-- **请求路由**: 将外部 API 请求路由到对应的内部微服务
-- **API 聚合**: 支持聚合多个内部服务的响应
-- **认证传递**: 统一处理认证信息并传递给后端服务
-- **限流控制**: 实现 API 限流和熔断机制
-- **协议转换**: 支持 HTTP/REST 与 gRPC 之间的协议转换
+## 🚀 快速开始
 
-## 技术栈
+### 前置要求
 
-- **语言**: Go 1.21+
-- **框架**: (待定，可选 Gin/Fiber/Go-Gateway)
-- **通信**: HTTP/REST, gRPC (服务间)
+- Go 1.21+
+- 至少一个后端服务运行中（System、Manager、Meta 或 Transfer）
 
-## 项目结构
+### 运行网关
 
-```
-gateway/
-├── cmd/
-│   └── gateway/
-│       └── main.go          # 网关入口
-├── internal/
-│   ├── config/              # 配置管理
-│   ├── router/              # 路由配置
-│   ├── middleware/          # 中间件（认证、限流等）
-│   ├── proxy/               # 代理逻辑
-│   └── registry/            # 服务发现与注册
-├── pkg/
-│   └── client/              # 内部服务客户端
-├── config/
-│   └── routes.yaml          # 路由配置文件
-├── Dockerfile
-├── go.mod
-└── README.md
+```bash
+cd gateway
+go run cmd/gateway/main.go
 ```
 
-## 路由规则设计
+访问: http://localhost:8000
 
-```yaml
-# 示例路由配置
-routes:
-  - path: /api/auth/*
-    service: system
-    target: http://system:8080/api/auth
+### Docker 部署
 
-  - path: /api/data/*
-    service: manager
-    target: http://manager:8081/api/data
-
-  - path: /api/metadata/*
-    service: meta
-    target: http://meta:8082/api/metadata
-
-  - path: /api/transfer/*
-    service: transfer
-    target: http://transfer:8083/api/transfer
+```bash
+docker build -t addp-gateway .
+docker run -d -p 8000:8000 addp-gateway
 ```
 
-## 开发计划
+## 🔀 路由规则
 
-### 阶段 1: 基础路由
-- [ ] 实现基本的 HTTP 代理功能
-- [ ] 配置文件驱动的路由规则
-- [ ] 健康检查和服务发现
+Gateway 根据 URL 路径前缀自动路由请求：
 
-### 阶段 2: 认证与安全
-- [ ] JWT 认证传递
-- [ ] API 密钥管理
-- [ ] HTTPS/TLS 支持
+| 请求路径 | 目标服务 | 服务地址 | 用途 |
+|---------|---------|---------|-----|
+| `/api/auth/*` | System | http://localhost:8080 | 用户认证 |
+| `/api/users/*` | System | http://localhost:8080 | 用户管理 |
+| `/api/tenants/*` | System | http://localhost:8080 | 租户管理 |
+| `/api/resources/*` | System | http://localhost:8080 | 资源管理 |
+| `/api/logs/*` | System | http://localhost:8080 | 日志查询 |
+| `/api/datasources/*` | Manager | http://localhost:8081 | 数据源管理 |
+| `/api/directories/*` | Manager | http://localhost:8081 | 目录管理 |
+| `/api/preview/*` | Manager | http://localhost:8081 | 数据预览 |
+| `/api/metadata/*` | Meta | http://localhost:8082 | 元数据查询 |
+| `/api/lineage/*` | Meta | http://localhost:8082 | 数据血缘 |
+| `/api/transfer/*` | Transfer | http://localhost:8083 | 数据传输 |
 
-### 阶段 3: 高级特性
-- [ ] 请求限流和熔断
-- [ ] API 聚合
-- [ ] 请求/响应转换
-- [ ] 监控和日志
+### 健康检查
 
-## 配置说明
+- `GET /health` - 网关健康状态
 
-### 环境变量
+## ⚙️ 环境配置
 
 ```bash
 # 网关端口
 GATEWAY_PORT=8000
 
-# 服务地址
-SYSTEM_SERVICE_URL=http://system:8080
-MANAGER_SERVICE_URL=http://manager:8081
-META_SERVICE_URL=http://meta:8082
-TRANSFER_SERVICE_URL=http://transfer:8083
+# 后端服务地址
+SYSTEM_SERVICE_URL=http://localhost:8080
+MANAGER_SERVICE_URL=http://localhost:8081
+META_SERVICE_URL=http://localhost:8082
+TRANSFER_SERVICE_URL=http://localhost:8083
 
-# 限流配置
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_WINDOW=60s
+# CORS 配置
+CORS_ALLOWED_ORIGINS=http://localhost:5170,http://localhost:5173,http://localhost:5174
+CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
+CORS_ALLOWED_HEADERS=Content-Type,Authorization
+
+# 超时配置
+PROXY_TIMEOUT=30s
 ```
 
-## 运行方式
+## 🔐 认证流程
 
+Gateway 透明传递认证信息：
+
+1. 前端发送请求到 Gateway，携带 `Authorization: Bearer <token>` 头部
+2. Gateway 接收请求并提取所有头部信息
+3. Gateway 根据路径规则路由到对应服务
+4. Gateway 将原始请求（包括认证头）完整转发给后端服务
+5. 后端服务验证 JWT Token 并处理请求
+6. Gateway 将响应返回给前端
+
+**注意**: Gateway 本身不验证 Token，由各个后端服务负责验证。
+
+## 🌐 访问方式
+
+### 开发环境
+
+**通过 Gateway 访问** (推荐):
 ```bash
-# 开发模式
-go run cmd/gateway/main.go
-
-# 编译
-go build -o bin/gateway cmd/gateway/main.go
-
-# 运行
-./bin/gateway
+# 所有服务通过统一入口访问
+curl http://localhost:8000/api/auth/login
+curl http://localhost:8000/api/datasources
+curl http://localhost:8000/api/metadata/tables
 ```
 
-## Docker 部署
-
+**直接访问服务**:
 ```bash
-# 构建镜像
-docker build -t addp-gateway .
-
-# 运行容器
-docker run -d -p 8000:8000 \
-  -e SYSTEM_SERVICE_URL=http://system:8080 \
-  addp-gateway
+# 也可以直接访问各个服务
+curl http://localhost:8080/api/auth/login    # System
+curl http://localhost:8081/api/datasources   # Manager
+curl http://localhost:8082/api/metadata      # Meta
 ```
 
-## 待补充内容
+### 生产环境
 
-- 具体的 API 路由规则
-- 限流策略细节
-- 服务发现机制选型
-- 监控指标定义
-- 错误处理规范
+生产环境建议只暴露 Gateway 端口（8000），隐藏内部服务端口。
+
+## 🔧 功能特性
+
+### 请求透传
+
+Gateway 完整保留并转发：
+- ✅ HTTP 方法（GET、POST、PUT、DELETE 等）
+- ✅ 请求头部（Authorization、Content-Type 等）
+- ✅ 请求体（JSON、表单数据等）
+- ✅ 查询参数（?key=value）
+- ✅ 响应状态码
+- ✅ 响应头部
+- ✅ 响应体
+
+### CORS 处理
+
+自动处理跨域请求：
+- 预检请求（OPTIONS）自动响应
+- 设置正确的 CORS 头部
+- 支持多个前端域名
+
+### 错误处理
+
+- 503 Service Unavailable - 后端服务不可达
+- 502 Bad Gateway - 后端服务响应错误
+- 500 Internal Server Error - 网关内部错误
+
+## 🐛 常见问题
+
+### 1. Gateway 启动后无法访问？
+
+检查：
+- Gateway 是否成功启动（查看日志）
+- 端口 8000 是否被占用：`lsof -i :8000`
+- 防火墙是否开放端口
+
+### 2. 请求返回 503 错误？
+
+检查：
+- 目标后端服务是否启动
+- 服务地址配置是否正确（`SYSTEM_SERVICE_URL` 等）
+- 网络连接是否正常
+
+### 3. CORS 错误？
+
+确保：
+- 前端域名已添加到 `CORS_ALLOWED_ORIGINS`
+- 浏览器控制台显示的域名与配置匹配
+- Gateway 日志中 CORS 中间件已加载
+
+### 4. 认证失败？
+
+检查：
+- 请求是否携带 `Authorization` 头部
+- Token 是否正确且未过期
+- 后端服务（System）是否正常运行
+
+### 5. 如何添加新的路由规则？
+
+请参考技术文档 [ARCHITECTURE.md](./ARCHITECTURE.md) 中的"添加新路由"章节。
+
+## 📊 监控和日志
+
+Gateway 会记录：
+- 所有请求的路由信息
+- 代理错误和异常
+- 后端服务响应时间
+- CORS 预检请求
+
+查看日志：
+```bash
+# 开发模式下直接查看控制台输出
+
+# Docker 模式
+docker logs -f gateway
+```
+
+## 📚 更多文档
+
+- **快速开始**: [QUICK_START.md](./QUICK_START.md) - 5分钟上手指南
+- **技术架构**: [ARCHITECTURE.md](./ARCHITECTURE.md) - 详细的技术实现和开发指南
+- **项目总览**: [../CLAUDE.md](../CLAUDE.md) - 完整平台架构
+
+## 📄 License
+
+Copyright © 2025 ADDP Team

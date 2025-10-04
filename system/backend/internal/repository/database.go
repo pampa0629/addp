@@ -1,23 +1,47 @@
 package repository
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/pkg/utils"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 func InitDB(dbPath string) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	// 从环境变量读取 PostgreSQL 连接信息
+	host := getEnv("POSTGRES_HOST", "localhost")
+	port := getEnv("POSTGRES_PORT", "5432")
+	user := getEnv("POSTGRES_USER", "addp")
+	password := getEnv("POSTGRES_PASSWORD", "addp_password")
+	dbname := getEnv("POSTGRES_DB", "addp")
+
+	// 构建 PostgreSQL DSN
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=system",
+		host, port, user, password, dbname)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	// 设置默认 schema 为 system
+	db.Exec("SET search_path TO system")
+
 	return db, nil
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func AutoMigrate(db *gorm.DB) error {

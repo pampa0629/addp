@@ -56,6 +56,10 @@
               <el-icon><Connection /></el-icon>
               <span>数据源管理</span>
             </el-menu-item>
+            <el-menu-item index="/manager/metadata">
+              <el-icon><Document /></el-icon>
+              <span>元数据管理</span>
+            </el-menu-item>
             <el-menu-item index="/manager/directories">
               <el-icon><Folder /></el-icon>
               <span>目录管理</span>
@@ -66,13 +70,19 @@
             </el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="meta" disabled>
+          <el-sub-menu index="meta">
             <template #title>
               <el-icon><Box /></el-icon>
               <span>元数据</span>
             </template>
-            <el-menu-item index="/meta/datasets">数据集</el-menu-item>
-            <el-menu-item index="/meta/lineage">血缘关系</el-menu-item>
+            <el-menu-item index="/meta/datasources">
+              <el-icon><Connection /></el-icon>
+              <span>数据源</span>
+            </el-menu-item>
+            <el-menu-item index="/meta/search">
+              <el-icon><Search /></el-icon>
+              <span>元数据搜索</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="system">
@@ -124,12 +134,11 @@
           </el-row>
           <el-row :gutter="20" style="margin-top: 20px;">
             <el-col :span="12">
-              <el-card shadow="hover" class="module-card module-card-disabled">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#909399"><Box /></el-icon>
+                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
                   <h2>元数据管理</h2>
                   <p>元数据解析、数据血缘、数据目录</p>
-                  <el-tag size="small" type="info">开发中</el-tag>
                 </div>
               </el-card>
             </el-col>
@@ -219,7 +228,37 @@ const handleMenuSelect = (index) => {
     // 构建完整的 URL，并附加认证token作为URL参数
     const token = authStore.token
     let url = ''
-    if (page) {
+
+    // Manager 模块的路由映射
+    const managerPageMap = {
+      'datasources': '',  // datasources 对应根路径 /manager/
+      'metadata': 'metadata',
+      'directories': 'directories',
+      'preview': 'preview'
+    }
+
+    // Meta 模块的路由映射
+    const metaPageMap = {
+      'datasources': '',  // datasources 对应 /meta/ 根路径
+      'search': 'search'
+    }
+
+    if (module === 'manager') {
+      const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${module}/${actualPage}`
+      } else {
+        url = `${moduleUrls[module]}/${module}/`
+      }
+    } else if (module === 'meta') {
+      const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${module}/${actualPage}`
+      } else {
+        url = `${moduleUrls[module]}/${module}/`
+      }
+    } else if (page) {
+      // 其他模块保持原有逻辑
       url = `${moduleUrls[module]}/${page}`
     } else {
       url = moduleUrls[module]
@@ -244,6 +283,8 @@ const navigateToModule = (module) => {
     handleMenuSelect('/system/users')
   } else if (module === 'manager') {
     handleMenuSelect('/manager/datasources')
+  } else if (module === 'meta') {
+    handleMenuSelect('/meta/datasources')
   }
 }
 

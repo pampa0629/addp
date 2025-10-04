@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, dataSourceService *service.DataSourceService) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -32,14 +32,25 @@ func SetupRouter(cfg *config.Config, dataSourceService *service.DataSourceServic
 	// API 路由组
 	api := router.Group("/api")
 	{
-		// 数据源管理
-		datasources := api.Group("/datasources")
+		// 资源管理
+		resources := api.Group("/resources")
 		{
-			dsHandler := NewDataSourceHandler(dataSourceService)
-			datasources.POST("/sync", dsHandler.SyncFromSystem)
-			datasources.GET("", dsHandler.List)
-			datasources.GET("/:id", dsHandler.GetByID)
-			datasources.DELETE("/:id", dsHandler.Delete)
+			resourceHandler := NewResourceHandler(resourceService)
+			resources.GET("", resourceHandler.List)
+			resources.GET("/:id", resourceHandler.GetByID)
+
+			// 元数据扫描和管理
+			metadataHandler := NewMetadataHandler(metadataService)
+			resources.POST("/:id/scan", metadataHandler.ScanResource)
+			resources.GET("/:id/tables", metadataHandler.GetTables)
+		}
+
+		// 表管理
+		tables := api.Group("/tables")
+		{
+			metadataHandler := NewMetadataHandler(metadataService)
+			tables.POST("/:id/manage", metadataHandler.ManageTable)
+			tables.POST("/:id/unmanage", metadataHandler.UnmanageTable)
 		}
 	}
 

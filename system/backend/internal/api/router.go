@@ -33,7 +33,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
 	logService := service.NewLogService(logRepo, userRepo)
-	resourceService := service.NewResourceService(resourceRepo, userRepo)
+	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
 
 	// 日志中间件

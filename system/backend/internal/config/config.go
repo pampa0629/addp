@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/base64"
+	"log"
 	"os"
 	"path/filepath"
 )
@@ -10,6 +12,7 @@ type Config struct {
 	ServerAddr         string
 	DatabaseURL        string
 	JWTSecret          string
+	EncryptionKey      []byte
 	TokenExpireMinutes int
 	ProjectName        string
 }
@@ -23,11 +26,15 @@ func Load() *Config {
 	}
 	os.MkdirAll(filepath.Dir(dbPath), 0755)
 
+	// 加载加密密钥
+	encryptionKey := loadEncryptionKey()
+
 	return &Config{
 		Env:                getEnv("ENV", "development"),
 		ServerAddr:         getEnv("SERVER_ADDR", ":8080"),
 		DatabaseURL:        dbPath,
 		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		EncryptionKey:      encryptionKey,
 		TokenExpireMinutes: 30,
 		ProjectName:        getEnv("PROJECT_NAME", "全域数据平台"),
 	}
@@ -38,4 +45,27 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// loadEncryptionKey 加载加密密钥 (32字节 AES-256)
+func loadEncryptionKey() []byte {
+	keyStr := os.Getenv("ENCRYPTION_KEY")
+	if keyStr == "" {
+		// 开发环境使用默认密钥 (生产环境必须设置!)
+		log.Println("WARNING: ENCRYPTION_KEY not set, using default key (INSECURE for production!)")
+		// 使用固定的32字节密钥作为开发默认值
+		return []byte("dev-encryption-key-32-bytes!") // 正好32字节
+	}
+
+	// 从 Base64 解码密钥
+	key, err := base64.StdEncoding.DecodeString(keyStr)
+	if err != nil {
+		log.Fatalf("Failed to decode ENCRYPTION_KEY: %v", err)
+	}
+
+	if len(key) != 32 {
+		log.Fatalf("ENCRYPTION_KEY must be 32 bytes (256 bits), got %d bytes", len(key))
+	}
+
+	return key
 }
