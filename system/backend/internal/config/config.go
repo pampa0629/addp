@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"log"
 	"os"
-	"path/filepath"
 )
 
 type Config struct {

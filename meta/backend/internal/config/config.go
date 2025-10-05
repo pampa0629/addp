@@ -12,6 +12,7 @@ type Config struct {
 	// Meta 模块特有配置
 	ServerPort        string
 	DBSchema          string
+	InternalAPIKey    string // 服务间调用的 API Key
 	AutoSyncEnabled   bool
 	AutoSyncSchedule  string // Cron expression
 	AutoSyncLevel     string // database | table | field
@@ -25,6 +26,7 @@ func LoadConfig() *Config {
 	cfg := &Config{
 		ServerPort:        commonConfig.GetEnv("SERVER_PORT", "8082"),
 		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "metadata"),
+		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		AutoSyncEnabled:   commonConfig.GetEnvBool("AUTO_SYNC_ENABLED", true),
 		AutoSyncSchedule:  commonConfig.GetEnv("AUTO_SYNC_SCHEDULE", "0 0 * * *"), // Every day at midnight
 		AutoSyncLevel:     commonConfig.GetEnv("AUTO_SYNC_LEVEL", "database"),

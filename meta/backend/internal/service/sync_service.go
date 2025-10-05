@@ -78,14 +78,14 @@ func (s *SyncService) AutoSyncAll(tenantID uint) error {
 func (s *SyncService) syncResourceInternal(resource *commonModels.Resource, tenantID uint) error {
 	log.Printf("syncResourceInternal called for resource %d (%s)", resource.ID, resource.ResourceName)
 
-	// 创建或更新数据源记录
-	datasource, err := s.getOrCreateDatasource(resource.ID, tenantID)
+	// 创建或更新数据源记录（直接传递 resource，避免重复调用）
+	datasource, err := s.getOrCreateDatasource(resource, tenantID)
 	if err != nil {
 		log.Printf("Failed to create/get datasource for resource %d: %v", resource.ID, err)
 		return err
 	}
 
-	log.Printf("Datasource created/found: id=%d, name=%s", datasource.ID, datasource.DatasourceName)
+	log.Printf("Datasource created/found: id=%d", datasource.ID)
 
 	// 创建同步日志
 	syncLog := &models.MetadataSyncLog{
@@ -185,25 +185,17 @@ func (s *SyncService) SyncResource(resourceID, tenantID uint) error {
 }
 
 // getOrCreateDatasource 获取或创建数据源记录
-func (s *SyncService) getOrCreateDatasource(resourceID, tenantID uint) (*models.MetadataDatasource, error) {
-	// 获取资源信息
-	resource, err := s.systemClient.GetResource(resourceID)
-	if err != nil {
-		return nil, err
-	}
-
+func (s *SyncService) getOrCreateDatasource(resource *commonModels.Resource, tenantID uint) (*models.MetadataDatasource, error) {
 	// 查找已存在的数据源
 	var datasource models.MetadataDatasource
-	result := s.db.Where("resource_id = ? AND tenant_id = ?", resourceID, tenantID).First(&datasource)
+	result := s.db.Where("resource_id = ? AND tenant_id = ?", resource.ID, tenantID).First(&datasource)
 
 	if result.Error == gorm.ErrRecordNotFound {
-		// 创建新数据源
+		// 创建新数据源（不存储冗余信息，只存储 resource_id）
 		datasource = models.MetadataDatasource{
-			ResourceID:     resourceID,
-			TenantID:       tenantID,
-			DatasourceName: resource.ResourceName,
-			DatasourceType: resource.ResourceType,
-			SyncStatus:     "pending",
+			ResourceID: resource.ID,
+			TenantID:   tenantID,
+			SyncStatus: "pending",
 		}
 		if err := s.db.Create(&datasource).Error; err != nil {
 			return nil, fmt.Errorf("failed to create datasource: %w", err)

@@ -3,36 +3,85 @@ package service
 import (
 	"fmt"
 
+	"github.com/addp/common/client"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
 
 // MetadataService 元数据查询服务
 type MetadataService struct {
-	db *gorm.DB
+	db           *gorm.DB
+	systemClient *client.SystemClient
 }
 
-func NewMetadataService(db *gorm.DB) *MetadataService {
-	return &MetadataService{db: db}
+func NewMetadataService(db *gorm.DB, systemClient *client.SystemClient) *MetadataService {
+	return &MetadataService{
+		db:           db,
+		systemClient: systemClient,
+	}
 }
 
-// ListDatasources 获取数据源列表
-func (s *MetadataService) ListDatasources(tenantID uint) ([]models.MetadataDatasource, error) {
+// ListDatasources 获取数据源列表（包含资源信息）
+func (s *MetadataService) ListDatasources(tenantID uint) ([]models.DatasourceWithResource, error) {
 	var datasources []models.MetadataDatasource
 	query := s.db.Where("tenant_id = ?", tenantID).Order("created_at DESC")
 	if err := query.Find(&datasources).Error; err != nil {
 		return nil, err
 	}
-	return datasources, nil
+
+	// 构建带资源信息的响应
+	result := make([]models.DatasourceWithResource, 0, len(datasources))
+	for _, ds := range datasources {
+		dto := models.DatasourceWithResource{
+			ID:           ds.ID,
+			ResourceID:   ds.ResourceID,
+			TenantID:     ds.TenantID,
+			SyncStatus:   ds.SyncStatus,
+			LastSyncAt:   ds.LastSyncAt,
+			SyncLevel:    ds.SyncLevel,
+			ErrorMessage: ds.ErrorMessage,
+			CreatedAt:    ds.CreatedAt,
+			UpdatedAt:    ds.UpdatedAt,
+		}
+
+		// 从 System 获取资源信息
+		if resource, err := s.systemClient.GetResource(ds.ResourceID); err == nil {
+			dto.DatasourceName = resource.ResourceName
+			dto.DatasourceType = resource.ResourceType
+		}
+
+		result = append(result, dto)
+	}
+
+	return result, nil
 }
 
-// GetDatasource 获取数据源详情
-func (s *MetadataService) GetDatasource(id, tenantID uint) (*models.MetadataDatasource, error) {
+// GetDatasource 获取数据源详情（包含资源信息）
+func (s *MetadataService) GetDatasource(id, tenantID uint) (*models.DatasourceWithResource, error) {
 	var datasource models.MetadataDatasource
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&datasource).Error; err != nil {
 		return nil, err
 	}
-	return &datasource, nil
+
+	dto := &models.DatasourceWithResource{
+		ID:           datasource.ID,
+		ResourceID:   datasource.ResourceID,
+		TenantID:     datasource.TenantID,
+		SyncStatus:   datasource.SyncStatus,
+		LastSyncAt:   datasource.LastSyncAt,
+		SyncLevel:    datasource.SyncLevel,
+		ErrorMessage: datasource.ErrorMessage,
+		CreatedAt:    datasource.CreatedAt,
+		UpdatedAt:    datasource.UpdatedAt,
+	}
+
+	// 从 System 获取资源信息
+	if resource, err := s.systemClient.GetResource(datasource.ResourceID); err == nil {
+		dto.DatasourceName = resource.ResourceName
+		dto.DatasourceType = resource.ResourceType
+	}
+
+	return dto, nil
 }
 
 // ListDatabases 获取数据库列表

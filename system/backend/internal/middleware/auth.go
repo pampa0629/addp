@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// AuthMiddleware JWT 认证中间件（用于用户请求）
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -35,6 +36,30 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("username", claims.Username)
+		c.Next()
+	}
+}
+
+// InternalAPIMiddleware 内部 API 认证中间件（用于服务间调用）
+func InternalAPIMiddleware(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		apiKey := c.GetHeader("X-Internal-API-Key")
+		expectedKey := cfg.InternalAPIKey
+
+		// 如果配置了 Internal API Key，则必须验证
+		if expectedKey != "" && apiKey != expectedKey {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: invalid internal API key"})
+			c.Abort()
+			return
+		}
+
+		// 如果没有配置 Internal API Key，仅在开发环境允许通过
+		if expectedKey == "" && cfg.Env != "development" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: internal API key not configured"})
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }

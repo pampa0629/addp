@@ -148,6 +148,35 @@ func (s *ResourceService) Delete(id uint) error {
 	return s.repo.Delete(id)
 }
 
+// ListInternal 内部服务调用的资源列表查询（不做租户权限检查）
+func (s *ResourceService) ListInternal(resourceType string, tenantID uint) ([]models.Resource, error) {
+	var resources []models.Resource
+	var err error
+
+	if tenantID > 0 {
+		// 按租户过滤
+		resources, err = s.repo.ListByTenant(tenantID, 0, 9999, resourceType)
+	} else {
+		// 返回所有资源
+		resources, err = s.repo.List(0, 9999, resourceType)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 解密所有资源的敏感字段
+	for i := range resources {
+		decryptedConnInfo, err := s.decryptSensitiveFields(resources[i].ConnectionInfo)
+		if err != nil {
+			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", resources[i].ID, err)
+		}
+		resources[i].ConnectionInfo = decryptedConnInfo
+	}
+
+	return resources, nil
+}
+
 // encryptSensitiveFields 加密连接信息中的敏感字段
 func (s *ResourceService) encryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	encrypted := make(models.ConnectionInfo)

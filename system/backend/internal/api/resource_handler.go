@@ -171,3 +171,46 @@ func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
 		"message": "连接成功",
 	})
 }
+
+// ============ 内部 API（服务间调用）============
+
+// ListInternal 内部资源列表查询（无需用户认证，用于服务间调用）
+func (h *ResourceHandler) ListInternal(c *gin.Context) {
+	resourceType := c.Query("resource_type")
+	tenantID := c.Query("tenant_id") // 可选，按租户过滤
+
+	// 内部调用返回所有资源（或按 tenant_id 过滤）
+	var tenantIDUint uint
+	if tenantID != "" {
+		id, err := strconv.ParseUint(tenantID, 10, 32)
+		if err == nil {
+			tenantIDUint = uint(id)
+		}
+	}
+
+	// 调用服务层的内部列表方法（不做租户隔离检查）
+	resources, err := h.resourceService.ListInternal(resourceType, tenantIDUint)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resources)
+}
+
+// GetByIDInternal 内部资源详情查询（无需用户认证，用于服务间调用）
+func (h *ResourceHandler) GetByIDInternal(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
+		return
+	}
+
+	resource, err := h.resourceService.GetByID(uint(id))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "资源不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, resource)
+}

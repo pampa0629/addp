@@ -23,13 +23,20 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		AllowCredentials: true,
 	}))
 
-	// 创建 System 客户端
-	systemClient := client.NewSystemClient(cfg.SystemServiceURL, "")
+	// 创建 System 客户端（使用内部 API Key）
+	var systemClient *client.SystemClient
+	if cfg.EnableIntegration {
+		// 从环境变量获取 Internal API Key
+		systemClient = client.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	} else {
+		// 如果不启用集成，使用空客户端（仅用于本地开发）
+		systemClient = client.NewSystemClient(cfg.SystemServiceURL, "")
+	}
 
 	// 创建服务
 	syncService := service.NewSyncService(db, systemClient)
 	scanService := service.NewScanService(db, systemClient)
-	metadataService := service.NewMetadataService(db)
+	metadataService := service.NewMetadataService(db, systemClient)
 
 	// 创建处理器
 	syncHandler := NewSyncHandler(syncService, cfg.SystemServiceURL)

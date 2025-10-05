@@ -108,11 +108,17 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		}
 	}
 
-	// 内部 API（用于服务间调用，不对外暴露）
+	// 内部 API（用于服务间调用，使用 X-Internal-API-Key 认证）
 	internal := router.Group("/internal")
+	internal.Use(middleware.InternalAPIMiddleware(cfg))
 	{
 		configHandler := NewConfigHandler(cfg)
 		internal.GET("/config", configHandler.GetSharedConfig)
+
+		// 服务间调用的资源API
+		resourceHandler := NewResourceHandler(resourceService)
+		internal.GET("/resources", resourceHandler.ListInternal)
+		internal.GET("/resources/:id", resourceHandler.GetByIDInternal)
 	}
 
 	return router
