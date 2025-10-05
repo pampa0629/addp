@@ -6,13 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform structured as microservices. Each service has its own directory:
 
-- **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (SQLite backend)
+- **common/** - Shared library module: common client code, models, and utilities used across all services
+- **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL backend)
 - **gateway/** - API gateway: handles external requests and routes to internal services - **IMPLEMENTED** (reverse proxy)
 - **manager/** - Data management: data source connections, upload directory organization, data preview - **PARTIALLY IMPLEMENTED** (Go backend structure created)
 - **meta/** - Metadata service: data metadata parsing/storage/querying, lineage tracking, extensible data type support, metadata-based search - *Planned*
 - **transfer/** - Data transfer: data import/export/synchronization - *Planned*
 
-All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO).
+All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO). Common code is shared via the `common` module to avoid duplication.
 
 ## Quick Start
 
@@ -22,7 +23,7 @@ All services follow the same architectural pattern and use shared infrastructure
 # From system/ directory
 cd system
 
-# Backend development (SQLite, no infrastructure needed)
+# Backend development (需要 PostgreSQL)
 cd backend && go run cmd/server/main.go
 
 # Frontend development
@@ -150,10 +151,11 @@ transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Pla
 
 ### Database Architecture
 
-**System Module (SQLite)**:
+**System Module (PostgreSQL - system schema)**:
 - **users** - User accounts with bcrypt hashed passwords
+- **tenants** - Tenant information for multi-tenancy
 - **audit_logs** - Automatic logging of all non-GET operations (via `LoggerMiddleware`)
-- **resources** - Flexible resource configurations with JSON connection_info field
+- **resources** - Flexible resource configurations with JSON connection_info field (encrypted)
 
 **Shared Modules (PostgreSQL with schema isolation)**:
 - **manager schema** - data_sources, directories, permissions tables
@@ -258,6 +260,35 @@ ENABLE_SERVICE_INTEGRATION=true    # Enable config center
 ```
 
 **See Also**: `docs/CONFIG_CENTER.md` for detailed configuration center usage guide.
+
+## Common Module
+
+The `common` module provides shared code used across Manager, Meta, and Transfer modules to avoid code duplication.
+
+**Contents**:
+- `client/system.go` - SystemClient for communicating with System module
+- `models/resource.go` - Shared Resource model and BuildConnectionString utility
+
+**Usage in modules**:
+```go
+// In go.mod
+require (
+    github.com/addp/common v0.0.0
+)
+replace github.com/addp/common => ../../common
+
+// In code
+import (
+    "github.com/addp/common/client"
+    commonModels "github.com/addp/common/models"  // Use alias if needed
+)
+
+sysClient := client.NewSystemClient(systemURL, token)
+resource, err := sysClient.GetResource(resourceID)
+connStr, err := commonModels.BuildConnectionString(resource)
+```
+
+**See Also**: `docs/COMMON_MODULE.md` for detailed common module documentation.
 
 ## Development Workflows
 
@@ -386,8 +417,7 @@ docker-compose up -d    # Restart
 ```
 
 **Data Persistence**:
-- System data: `system/data/` (SQLite)
-- PostgreSQL: `postgres_data` volume
+- PostgreSQL: `postgres_data` volume (includes system schema for System module)
 - Redis: `redis_data` volume
 - MinIO: `minio_data` volume
 

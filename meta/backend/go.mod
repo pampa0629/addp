@@ -3,15 +3,17 @@ module github.com/addp/meta
 go 1.21
 
 require (
+	github.com/addp/common v0.0.0
 	github.com/gin-contrib/cors v1.5.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-sql-driver/mysql v1.7.1
-	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/lib/pq v1.10.9
 	github.com/robfig/cron/v3 v3.0.1
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.25.10
 )
+
+replace github.com/addp/common => ../../common
 
 require (
 	github.com/bytedance/sonic v1.10.1 // indirect

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/client"
 	"github.com/addp/meta/internal/middleware"
 	"github.com/addp/meta/internal/service"
-	"github.com/addp/meta/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,7 +44,7 @@ func (h *SyncHandler) AutoSyncAll(c *gin.Context) {
 	token := h.extractToken(c)
 
 	// 为每个请求创建带token的SystemClient
-	systemClient := utils.NewSystemClient(h.systemServiceURL, token)
+	systemClient := client.NewSystemClient(h.systemServiceURL, token)
 	syncService := service.NewSyncService(h.syncService.GetDB(), systemClient)
 
 	if err := syncService.AutoSyncAll(tenantID); err != nil {
@@ -74,7 +74,7 @@ func (h *SyncHandler) SyncResource(c *gin.Context) {
 	}
 
 	// 为每个请求创建带token的SystemClient
-	systemClient := utils.NewSystemClient(h.systemServiceURL, token)
+	systemClient := client.NewSystemClient(h.systemServiceURL, token)
 	syncService := service.NewSyncService(h.syncService.GetDB(), systemClient)
 
 	if err := syncService.SyncResource(uint(resourceID), tenantID); err != nil {

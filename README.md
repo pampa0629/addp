@@ -99,10 +99,11 @@ make logs
 
 核心系统能力，提供：
 - 用户认证和授权 (JWT)
+- 多租户管理
 - 用户管理 (CRUD)
 - 审计日志记录
-- 资源配置管理
-- SQLite 数据存储
+- 资源配置管理 (加密存储)
+- PostgreSQL 数据存储 (system schema)
 
 **文档**: [system/CLAUDE.md](system/CLAUDE.md)
 

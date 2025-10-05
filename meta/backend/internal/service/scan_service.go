@@ -5,19 +5,20 @@ import (
 	"log"
 	"time"
 
+	"github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanner"
-	"github.com/addp/meta/pkg/utils"
 	"gorm.io/gorm"
 )
 
 // ScanService Level 2 深度扫描服务
 type ScanService struct {
 	db           *gorm.DB
-	systemClient *utils.SystemClient
+	systemClient *client.SystemClient
 }
 
-func NewScanService(db *gorm.DB, systemClient *utils.SystemClient) *ScanService {
+func NewScanService(db *gorm.DB, systemClient *client.SystemClient) *ScanService {
 	return &ScanService{
 		db:           db,
 		systemClient: systemClient,
@@ -65,7 +66,7 @@ func (s *ScanService) DeepScanDatabase(databaseID, tenantID uint) error {
 	}
 
 	// 构建连接字符串
-	connStr, err := utils.BuildConnectionString(resource)
+	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		s.updateScanLogFailed(syncLog, err.Error())
 		return fmt.Errorf("failed to build connection string: %w", err)
@@ -216,7 +217,7 @@ func (s *ScanService) DeepScanTable(tableID, tenantID uint) error {
 	}
 
 	// 构建连接字符串
-	connStr, err := utils.BuildConnectionString(resource)
+	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}

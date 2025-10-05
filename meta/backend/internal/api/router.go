@@ -1,10 +1,10 @@
 package api
 
 import (
+	"github.com/addp/common/client"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/middleware"
 	"github.com/addp/meta/internal/service"
-	"github.com/addp/meta/pkg/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -24,7 +24,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	}))
 
 	// 创建 System 客户端
-	systemClient := utils.NewSystemClient(cfg.SystemServiceURL, "")
+	systemClient := client.NewSystemClient(cfg.SystemServiceURL, "")
 
 	// 创建服务
 	syncService := service.NewSyncService(db, systemClient)

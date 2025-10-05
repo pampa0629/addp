@@ -6,19 +6,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanner"
-	"github.com/addp/meta/pkg/utils"
 	"gorm.io/gorm"
 )
 
 // SyncService Level 1 轻量级同步服务
 type SyncService struct {
 	db           *gorm.DB
-	systemClient *utils.SystemClient
+	systemClient *client.SystemClient
 }
 
-func NewSyncService(db *gorm.DB, systemClient *utils.SystemClient) *SyncService {
+func NewSyncService(db *gorm.DB, systemClient *client.SystemClient) *SyncService {
 	return &SyncService{
 		db:           db,
 		systemClient: systemClient,
@@ -60,7 +61,7 @@ func (s *SyncService) AutoSyncAll(tenantID uint) error {
 		log.Printf("Starting async sync for resource %d (type: %s, tenant: %d)", resource.ID, resource.ResourceType, resource.TenantID)
 
 		// 异步同步 - 直接传递resource对象,不依赖systemClient
-		go func(r utils.Resource) {
+		go func(r commonModels.Resource) {
 			log.Printf("Goroutine started for resource %d", r.ID)
 			if err := s.syncResourceInternal(&r, r.TenantID); err != nil {
 				log.Printf("Failed to sync resource %d: %v", r.ID, err)
@@ -74,7 +75,7 @@ func (s *SyncService) AutoSyncAll(tenantID uint) error {
 }
 
 // syncResourceInternal 内部同步方法,接收已经获取的resource对象
-func (s *SyncService) syncResourceInternal(resource *utils.Resource, tenantID uint) error {
+func (s *SyncService) syncResourceInternal(resource *commonModels.Resource, tenantID uint) error {
 	log.Printf("syncResourceInternal called for resource %d (%s)", resource.ID, resource.ResourceName)
 
 	// 创建或更新数据源记录
@@ -103,7 +104,7 @@ func (s *SyncService) syncResourceInternal(resource *utils.Resource, tenantID ui
 	log.Printf("Sync log created: id=%d", syncLog.ID)
 
 	// 构建连接字符串
-	connStr, err := utils.BuildConnectionString(resource)
+	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		s.updateSyncLogFailed(syncLog, err.Error())
 		return fmt.Errorf("failed to build connection string: %w", err)

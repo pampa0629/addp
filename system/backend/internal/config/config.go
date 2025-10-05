@@ -28,27 +28,19 @@ type Config struct {
 }
 
 func Load() *Config {
-	dbPath := getEnv("DATABASE_URL", "./data/system.db")
-	// 确保数据库目录存在
-	if !filepath.IsAbs(dbPath) {
-		absPath, _ := filepath.Abs(dbPath)
-		dbPath = absPath
-	}
-	os.MkdirAll(filepath.Dir(dbPath), 0755)
-
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
 	return &Config{
 		Env:                getEnv("ENV", "development"),
 		ServerAddr:         getEnv("SERVER_ADDR", ":8080"),
-		DatabaseURL:        dbPath,
+		DatabaseURL:        "",  // PostgreSQL 不使用此字段
 		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		EncryptionKey:      encryptionKey,
 		TokenExpireMinutes: 30,
 		ProjectName:        getEnv("PROJECT_NAME", "全域数据平台"),
 
-		// PostgreSQL 配置（其他模块使用）
+		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
 		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
 		PostgresUser:     getEnv("POSTGRES_USER", "addp"),
