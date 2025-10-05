@@ -64,8 +64,8 @@ func loadEncryptionKey() []byte {
 	if keyStr == "" {
 		// 开发环境使用默认密钥 (生产环境必须设置!)
 		log.Println("WARNING: ENCRYPTION_KEY not set, using default key (INSECURE for production!)")
-		// 使用固定的32字节密钥作为开发默认值
-		return []byte("dev-encryption-key-32-bytes!") // 正好32字节
+		// 使用固定的32字节密钥作为开发默认值 (256 bits = 32 bytes)
+		return []byte("addp-dev-encryption-key-2025!!!!") // 正好32字节
 	}
 
 	// 从 Base64 解码密钥

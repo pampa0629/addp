@@ -230,17 +230,19 @@ const handleMenuSelect = (index) => {
     let url = ''
 
     // Manager 模块的路由映射
+    // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
     const managerPageMap = {
-      'datasources': '',  // datasources 对应根路径 /manager/
+      'datasources': '',  // datasources 对应根路径 /manager/ (DataSources.vue)
       'metadata': 'metadata',
       'directories': 'directories',
       'preview': 'preview'
     }
 
     // Meta 模块的路由映射
+    // Meta 路由使用 /meta/ 作为 base，路径结构：/meta/datasources, /meta/metadata
     const metaPageMap = {
-      'datasources': '',  // datasources 对应 /meta/ 根路径
-      'search': 'search'
+      'datasources': 'datasources',  // 对应 /meta/datasources
+      'search': 'metadata'  // Portal的"元数据搜索"对应 Meta的 /meta/metadata
     }
 
     if (module === 'manager') {
@@ -256,6 +258,13 @@ const handleMenuSelect = (index) => {
         url = `${moduleUrls[module]}/${module}/${actualPage}`
       } else {
         url = `${moduleUrls[module]}/${module}/`
+      }
+    } else if (module === 'system') {
+      // System 模块的路由: /users, /logs 等 (不需要 /system 前缀)
+      if (page) {
+        url = `${moduleUrls[module]}/${page}`
+      } else {
+        url = `${moduleUrls[module]}/`
       }
     } else if (page) {
       // 其他模块保持原有逻辑
