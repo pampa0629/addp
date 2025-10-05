@@ -1,6 +1,6 @@
 module github.com/addp/meta
 
-go 1.21
+go 1.23
 
 require (
 	github.com/addp/common v0.0.0

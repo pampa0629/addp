@@ -2,7 +2,6 @@ module github.com/addp/manager
 
 go 1.23
 
-toolchain go1.24.7
 
 require (
 	github.com/addp/common v0.0.0-00010101000000-000000000000

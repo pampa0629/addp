@@ -1,6 +1,6 @@
 module github.com/addp/transfer
 
-go 1.21
+go 1.23
 
 replace github.com/addp/common => ../../common
 
