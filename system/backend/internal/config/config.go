@@ -15,6 +15,16 @@ type Config struct {
 	EncryptionKey      []byte
 	TokenExpireMinutes int
 	ProjectName        string
+
+	// PostgreSQL 配置（用于其他模块）
+	PostgresHost     string
+	PostgresPort     string
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
+
+	// 内部 API Key（用于服务间调用）
+	InternalAPIKey string
 }
 
 func Load() *Config {
@@ -37,6 +47,16 @@ func Load() *Config {
 		EncryptionKey:      encryptionKey,
 		TokenExpireMinutes: 30,
 		ProjectName:        getEnv("PROJECT_NAME", "全域数据平台"),
+
+		// PostgreSQL 配置（其他模块使用）
+		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
+		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
+		PostgresUser:     getEnv("POSTGRES_USER", "addp"),
+		PostgresPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
+		PostgresDB:       getEnv("POSTGRES_DB", "addp"),
+
+		// 内部 API Key（可选，用于服务间调用安全）
+		InternalAPIKey: getEnv("INTERNAL_API_KEY", ""),
 	}
 }
 

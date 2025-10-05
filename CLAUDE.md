@@ -162,6 +162,103 @@ transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Pla
 
 GORM AutoMigrate handles schema updates automatically on startup. PostgreSQL schemas initialized via `scripts/init-db.sql`.
 
+### Configuration Center Pattern
+
+**System as the Single Source of Truth**:
+
+The platform implements a centralized configuration management pattern where **System module acts as the configuration center** for all other modules.
+
+**Architecture**:
+```
+┌────────────────────────────────────────────────────┐
+│   System Module (Configuration Center)            │
+│                                                    │
+│   ┌─────────────────────────────────────────┐    │
+│   │  /internal/config API                   │    │
+│   │  Returns: JWT_SECRET, DB connection,    │    │
+│   │          ENCRYPTION_KEY                 │    │
+│   └─────────────────────────────────────────┘    │
+│                                                    │
+│   ┌─────────────────────────────────────────┐    │
+│   │  /api/resources (Business DB Config)    │    │
+│   │  Manages all data source configs         │    │
+│   │  (encrypted storage)                     │    │
+│   └─────────────────────────────────────────┘    │
+└────────────────┬───────────────────────────────────┘
+                 │
+      ┌──────────┼──────────┐
+      ▼          ▼          ▼
+  ┌────────┐ ┌────────┐ ┌─────────┐
+  │ Manager│ │  Meta  │ │Transfer │
+  │        │ │        │ │         │
+  │ At     │ │ At     │ │ At      │
+  │ Startup│ │ Startup│ │ Startup │
+  │ ↓      │ │ ↓      │ │ ↓       │
+  │ Get    │ │ Get    │ │ Get     │
+  │ Config │ │ Config │ │ Config  │
+  └────────┘ └────────┘ └─────────┘
+```
+
+**What is Centralized**:
+1. **Authentication**: `JWT_SECRET` - ensures all services use the same JWT signing key
+2. **System Database**: PostgreSQL connection info - single source for system data
+3. **Business Databases**: Resources managed in System's `resources` table - all data source configs
+4. **Encryption Key**: `ENCRYPTION_KEY` - consistent encryption across services
+
+**Configuration Loading Flow**:
+```
+Module Startup
+   ↓
+Try to fetch config from System (/internal/config)
+   ↓
+   ├─ Success ✅
+   │  └─ Use System config (JWT_SECRET, DB connection)
+   │
+   └─ Failure ⚠️
+      └─ Fallback to local .env config
+```
+
+**Benefits**:
+- ✅ **Single Source of Truth**: Change database password once, restart services to apply
+- ✅ **Security**: Sensitive configs centrally managed and encrypted
+- ✅ **Flexibility**: Supports both integrated and standalone deployment modes
+- ✅ **Maintainability**: Reduced config duplication, easier to audit
+
+**SystemClient Usage**:
+
+All modules use `SystemClient` to fetch business database configurations from System:
+
+```go
+// Create client with JWT token
+client := utils.NewSystemClient(systemURL, jwtToken)
+
+// List all data sources
+resources, err := client.ListResources("postgresql")
+
+// Get specific data source
+resource, err := client.GetResource(resourceID)
+
+// Build connection string (password auto-decrypted)
+connStr, err := utils.BuildConnectionString(resource)
+```
+
+**Module .env Files**:
+
+Each module only needs to configure module-specific settings:
+
+```bash
+# Manager/Meta/Transfer .env
+PORT=8081                          # Module-specific port
+DB_SCHEMA=manager                  # Module-specific schema
+SYSTEM_SERVICE_URL=http://localhost:8080
+ENABLE_SERVICE_INTEGRATION=true    # Enable config center
+
+# Shared configs (JWT_SECRET, DB connection) fetched from System
+# Fallback configs commented out (used only when integration disabled)
+```
+
+**See Also**: `docs/CONFIG_CENTER.md` for detailed configuration center usage guide.
+
 ## Development Workflows
 
 ### Adding New API Endpoints

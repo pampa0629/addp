@@ -22,11 +22,21 @@ type Config struct {
 	DBPassword string
 	JWTSecret  string
 
-	// Manager 模块特有配置
+	// Transfer 模块特有配置
 	DBSchema          string
 	SystemServiceURL  string
 	EnableIntegration bool
 	EncryptionKey     []byte
+
+	// Transfer 特有配置
+	RedisHost       string
+	RedisPort       string
+	RedisPassword   string
+	WorkerCount     int
+	MaxRetries      int
+	RetryDelay      time.Duration
+	TaskQueueName   string
+	ConcurrentTasks int
 }
 
 // SharedConfig 从 System 获取的共享配置
@@ -46,10 +56,20 @@ func Load() *Config {
 	systemURL := getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
 
 	cfg := &Config{
-		Port:              getEnv("PORT", "8081"),
-		DBSchema:          getEnv("DB_SCHEMA", "manager"),
+		Port:              getEnv("PORT", "8083"),
+		DBSchema:          getEnv("DB_SCHEMA", "transfer"),
 		SystemServiceURL:  systemURL,
 		EnableIntegration: getEnv("ENABLE_SERVICE_INTEGRATION", "true") == "true",
+
+		// Transfer 特有配置
+		RedisHost:       getEnv("REDIS_HOST", "localhost"),
+		RedisPort:       getEnv("REDIS_PORT", "6379"),
+		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
+		WorkerCount:     getEnvInt("WORKER_COUNT", 5),
+		MaxRetries:      getEnvInt("MAX_RETRIES", 3),
+		RetryDelay:      getEnvDuration("RETRY_DELAY", "30s"),
+		TaskQueueName:   getEnv("TASK_QUEUE_NAME", "transfer:tasks"),
+		ConcurrentTasks: getEnvInt("CONCURRENT_TASKS", 10),
 	}
 
 	// 从 System 获取共享配置
@@ -146,6 +166,29 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func getEnvInt(key string, defaultValue int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	var intValue int
+	if _, err := fmt.Sscanf(value, "%d", &intValue); err != nil {
+		log.Printf("Invalid integer value for %s: %s, using default: %d", key, value, defaultValue)
+		return defaultValue
+	}
+	return intValue
+}
+
+func getEnvDuration(key string, defaultValue string) time.Duration {
+	value := getEnv(key, defaultValue)
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		log.Printf("Invalid duration value for %s: %s, using default: %s", key, value, defaultValue)
+		duration, _ = time.ParseDuration(defaultValue)
+	}
+	return duration
 }
 
 // loadEncryptionKey 加载加密密钥 (32字节 AES-256)

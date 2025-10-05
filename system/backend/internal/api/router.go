@@ -108,5 +108,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		}
 	}
 
+	// 内部 API（用于服务间调用，不对外暴露）
+	internal := router.Group("/internal")
+	{
+		configHandler := NewConfigHandler(cfg)
+		internal.GET("/config", configHandler.GetSharedConfig)
+	}
+
 	return router
 }
