@@ -68,5 +68,14 @@ export default {
   // 同步日志
   getSyncLogs(params) {
     return client.get('/api/meta/logs', { params })
+  },
+
+  // 元数据扫描
+  getSchemas(resourceId) {
+    return client.get(`/api/meta/scan/schemas/${resourceId}`)
+  },
+
+  scanMetadata(data) {
+    return client.post('/api/meta/scan', data)
   }
 }

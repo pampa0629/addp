@@ -9,7 +9,12 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/metadata'
+    redirect: '/scan'
+  },
+  {
+    path: '/scan',
+    name: 'MetadataScan',
+    component: () => import('../views/MetadataScan.vue')
   },
   {
     path: '/metadata',

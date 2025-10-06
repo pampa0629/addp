@@ -57,6 +57,8 @@ func SetupRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		api.POST("/sync/:resource_id", syncHandler.SyncResource)
 
 		// 扫描相关
+		api.GET("/scan/schemas/:resource_id", scanHandler.GetSchemas)
+		api.POST("/scan", scanHandler.ScanMetadata)
 		api.POST("/scan/database/:database_id", scanHandler.DeepScanDatabase)
 		api.POST("/scan/table/:table_id", scanHandler.DeepScanTable)
 

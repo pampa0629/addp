@@ -75,13 +75,17 @@
               <el-icon><Box /></el-icon>
               <span>元数据</span>
             </template>
+            <el-menu-item index="/meta/scan">
+              <el-icon><Search /></el-icon>
+              <span>元数据扫描</span>
+            </el-menu-item>
             <el-menu-item index="/meta/datasources">
               <el-icon><Connection /></el-icon>
-              <span>数据源</span>
+              <span>数据源列表</span>
             </el-menu-item>
             <el-menu-item index="/meta/search">
-              <el-icon><Search /></el-icon>
-              <span>元数据搜索</span>
+              <el-icon><Box /></el-icon>
+              <span>元数据浏览</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -239,10 +243,11 @@ const handleMenuSelect = (index) => {
     }
 
     // Meta 模块的路由映射
-    // Meta 路由使用 /meta/ 作为 base，路径结构：/meta/datasources, /meta/metadata
+    // Meta 路由使用 /meta/ 作为 base，路径结构：/meta/scan, /meta/datasources, /meta/metadata
     const metaPageMap = {
+      'scan': 'scan',  // 对应 /meta/scan (元数据扫描)
       'datasources': 'datasources',  // 对应 /meta/datasources
-      'search': 'metadata'  // Portal的"元数据搜索"对应 Meta的 /meta/metadata
+      'search': 'metadata'  // Portal的"元数据浏览"对应 Meta的 /meta/metadata
     }
 
     if (module === 'manager') {
