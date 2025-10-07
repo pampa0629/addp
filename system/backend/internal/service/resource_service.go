@@ -7,6 +7,12 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/pkg/utils"
+	"gorm.io/gorm"
+)
+
+var (
+	ErrResourceNotFound  = errors.New("资源不存在")
+	ErrResourceForbidden = errors.New("没有权限访问该资源")
 )
 
 type ResourceService struct {
@@ -30,6 +36,10 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, errors.New("用户不存在")
 	}
 
+	if err := s.ensureResourceManagementPermission(user); err != nil {
+		return nil, err
+	}
+
 	// 加密敏感字段
 	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
 	if err != nil {
@@ -50,32 +60,37 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, err
 	}
 
-	return resource, nil
+	return s.sanitizeResource(resource), nil
 }
 
-func (s *ResourceService) GetByID(id uint) (*models.Resource, error) {
-	resource, err := s.repo.GetByID(id)
+func (s *ResourceService) GetByID(id uint, currentUserID uint) (*models.Resource, error) {
+	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 解密敏感字段
-	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	resource, err := s.repo.GetByID(id)
 	if err != nil {
-		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
 	}
-	resource.ConnectionInfo = decryptedConnInfo
 
-	return resource, nil
+	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+		return nil, err
+	}
+
+	return s.sanitizeResource(resource), nil
 }
 
 func (s *ResourceService) List(page, pageSize int, resourceType string, currentUserID uint) ([]models.Resource, error) {
 	offset := (page - 1) * pageSize
 
 	// 获取当前用户信息
-	currentUser, err := s.userRepo.GetByID(currentUserID)
+	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
-		return nil, errors.New("当前用户不存在")
+		return nil, err
 	}
 
 	var resources []models.Resource
@@ -83,10 +98,10 @@ func (s *ResourceService) List(page, pageSize int, resourceType string, currentU
 	// SuperAdmin可以查看所有资源
 	if currentUser.UserType == models.UserTypeSuperAdmin {
 		resources, err = s.repo.List(offset, pageSize, resourceType)
-	} else if currentUser.TenantID == nil {
-		// 租户管理员和普通用户只能查看本租户的资源
-		return []models.Resource{}, nil
 	} else {
+		if currentUser.TenantID == nil {
+			return nil, errors.New("当前用户未关联租户，无法访问资源")
+		}
 		resources, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, resourceType)
 	}
 
@@ -94,21 +109,34 @@ func (s *ResourceService) List(page, pageSize int, resourceType string, currentU
 		return nil, err
 	}
 
-	// 解密所有资源的敏感字段
+	// 脱敏敏感字段
+	sanitized := make([]models.Resource, 0, len(resources))
 	for i := range resources {
-		decryptedConnInfo, err := s.decryptSensitiveFields(resources[i].ConnectionInfo)
-		if err != nil {
-			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", resources[i].ID, err)
-		}
-		resources[i].ConnectionInfo = decryptedConnInfo
+		sanitized = append(sanitized, *s.sanitizeResource(&resources[i]))
 	}
 
-	return resources, nil
+	return sanitized, nil
 }
 
-func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*models.Resource, error) {
+func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, currentUserID uint) (*models.Resource, error) {
+	currentUser, err := s.getCurrentUser(currentUserID)
+	if err != nil {
+		return nil, err
+	}
+
 	resource, err := s.repo.GetByID(id)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+
+	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
 		return nil, err
 	}
 
@@ -134,17 +162,31 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest) (*m
 		return nil, err
 	}
 
-	// 解密后返回
-	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
-	if err != nil {
-		return nil, fmt.Errorf("解密连接信息失败: %w", err)
-	}
-	resource.ConnectionInfo = decryptedConnInfo
-
-	return resource, nil
+	return s.sanitizeResource(resource), nil
 }
 
-func (s *ResourceService) Delete(id uint) error {
+func (s *ResourceService) Delete(id uint, currentUserID uint) error {
+	currentUser, err := s.getCurrentUser(currentUserID)
+	if err != nil {
+		return err
+	}
+
+	resource, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrResourceNotFound
+		}
+		return err
+	}
+
+	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+		return err
+	}
+
+	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+		return err
+	}
+
 	return s.repo.Delete(id)
 }
 
@@ -175,6 +217,59 @@ func (s *ResourceService) ListInternal(resourceType string, tenantID uint) ([]mo
 	}
 
 	return resources, nil
+}
+
+// GetByIDInternal 内部服务直接访问资源详情（返回解密信息）
+func (s *ResourceService) GetByIDInternal(id uint) (*models.Resource, error) {
+	resource, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+
+	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+
+	resourceCopy := *resource
+	resourceCopy.ConnectionInfo = decryptedConnInfo
+	return &resourceCopy, nil
+}
+
+// GetForConnection 返回带解密信息的资源，用于当前用户执行连接测试
+func (s *ResourceService) GetForConnection(id uint, currentUserID uint) (*models.Resource, error) {
+	currentUser, err := s.getCurrentUser(currentUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	resource, err := s.repo.GetByID(id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrResourceNotFound
+		}
+		return nil, err
+	}
+
+	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+		return nil, err
+	}
+
+	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
+		return nil, err
+	}
+
+	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+
+	resourceCopy := *resource
+	resourceCopy.ConnectionInfo = decryptedConnInfo
+	return &resourceCopy, nil
 }
 
 // encryptSensitiveFields 加密连接信息中的敏感字段
@@ -228,4 +323,70 @@ func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo)
 	}
 
 	return decrypted, nil
+}
+
+func (s *ResourceService) maskSensitiveFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
+	if connInfo == nil {
+		return nil
+	}
+
+	masked := make(models.ConnectionInfo)
+	for k, v := range connInfo {
+		if s.isSensitiveField(k) && v != nil {
+			masked[k] = "******"
+			continue
+		}
+		masked[k] = v
+	}
+	return masked
+}
+
+func (s *ResourceService) sanitizeResource(resource *models.Resource) *models.Resource {
+	if resource == nil {
+		return nil
+	}
+
+	copyResource := *resource
+	copyResource.ConnectionInfo = s.maskSensitiveFields(resource.ConnectionInfo)
+	return &copyResource
+}
+
+func (s *ResourceService) getCurrentUser(userID uint) (*models.User, error) {
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return nil, errors.New("当前用户不存在")
+	}
+	return user, nil
+}
+
+func (s *ResourceService) authorizeResourceAccess(resource *models.Resource, user *models.User) error {
+	if user.UserType == models.UserTypeSuperAdmin {
+		return nil
+	}
+
+	if user.TenantID == nil || resource.TenantID == nil {
+		return ErrResourceForbidden
+	}
+
+	if *user.TenantID != *resource.TenantID {
+		return ErrResourceForbidden
+	}
+
+	return nil
+}
+
+func (s *ResourceService) isSensitiveField(field string) bool {
+	switch field {
+	case "password", "access_key", "secret_key", "token", "api_key":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *ResourceService) ensureResourceManagementPermission(user *models.User) error {
+	if user.UserType == models.UserTypeSuperAdmin || user.UserType == models.UserTypeTenantAdmin {
+		return nil
+	}
+	return ErrResourceForbidden
 }

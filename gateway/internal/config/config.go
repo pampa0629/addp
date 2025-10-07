@@ -12,8 +12,13 @@ type Config struct {
 }
 
 func Load() *Config {
+	port := getEnv("PORT", ":8000")
+	if len(port) > 0 && port[0] != ':' {
+		port = ":" + port
+	}
+
 	return &Config{
-		Port:               getEnv("PORT", ":8000"),
+		Port:               port,
 		Env:                getEnv("ENV", "development"),
 		SystemServiceURL:   getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
 		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),

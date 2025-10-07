@@ -15,6 +15,20 @@ PostgreSQL 实例1 (ADDP系统库) - localhost:5432
      ├── metadata schema (数据集、字段、血缘)
      └── transfer schema (任务执行)
 
+数据库类型: PostgreSQL 15
+连接地址: localhost:5432
+数据库名: addp
+  用户名: addp
+  密码: addp_password
+
+
+  主机 (host): localhost
+  端口 (port): 5433  ← 独立端口
+  数据库名 (database): business
+  用户名 (username): business_user
+  密码 (password): business_password
+  Docker容器: postgres-business
+
 
 名称: 业务数据库
   主机地址: localhost

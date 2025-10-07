@@ -4,16 +4,18 @@ import (
 	"encoding/base64"
 	"log"
 	"os"
+	"strings"
 )
 
 type Config struct {
-	Env                string
-	ServerAddr         string
-	DatabaseURL        string
-	JWTSecret          string
-	EncryptionKey      []byte
-	TokenExpireMinutes int
-	ProjectName        string
+	Env                     string
+	ServerAddr              string
+	DatabaseURL             string
+	JWTSecret               string
+	EncryptionKey           []byte
+	TokenExpireMinutes      int
+	ProjectName             string
+	AllowPublicRegistration bool
 
 	// PostgreSQL 配置（用于其他模块）
 	PostgresHost     string
@@ -31,13 +33,14 @@ func Load() *Config {
 	encryptionKey := loadEncryptionKey()
 
 	return &Config{
-		Env:                getEnv("ENV", "development"),
-		ServerAddr:         getEnv("SERVER_ADDR", ":8080"),
-		DatabaseURL:        "",  // PostgreSQL 不使用此字段
-		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-		EncryptionKey:      encryptionKey,
-		TokenExpireMinutes: 30,
-		ProjectName:        getEnv("PROJECT_NAME", "全域数据平台"),
+		Env:                     getEnv("ENV", "development"),
+		ServerAddr:              getEnv("SERVER_ADDR", ":8080"),
+		DatabaseURL:             "", // PostgreSQL 不使用此字段
+		JWTSecret:               getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		EncryptionKey:           encryptionKey,
+		TokenExpireMinutes:      30,
+		ProjectName:             getEnv("PROJECT_NAME", "全域数据平台"),
+		AllowPublicRegistration: getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
 
 		// PostgreSQL 配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
@@ -54,6 +57,18 @@ func Load() *Config {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsBool(key string, defaultValue bool) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "1", "true", "t", "yes", "y":
+			return true
+		case "0", "false", "f", "no", "n":
+			return false
+		}
 	}
 	return defaultValue
 }

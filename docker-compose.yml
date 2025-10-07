@@ -70,8 +70,14 @@ services:
     container_name: addp-system-backend
     environment:
       - PORT=8080
-      - DATABASE_URL=/app/data/system.db
       - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
+      - ALLOW_PUBLIC_REGISTRATION=${ALLOW_PUBLIC_REGISTRATION:-false}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=addp
+      - POSTGRES_PASSWORD=addp_password
+      - POSTGRES_DB=addp
       - ENV=production
     volumes:
       - ./system/data:/app/data
@@ -104,6 +110,7 @@ services:
       dockerfile: Dockerfile
     container_name: addp-gateway
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
       - PORT=8000
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - MANAGER_SERVICE_URL=http://manager-backend:8081
@@ -122,10 +129,11 @@ services:
   # Manager 模块 - 数据源和文件管理（待实现）
   manager-backend:
     build:
-      context: ./manager/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: manager/backend/Dockerfile
     container_name: addp-manager-backend
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
       - PORT=8081
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -140,6 +148,7 @@ services:
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=addp-data
+      - RESOURCE_LOCALHOST_ALIAS=host.docker.internal
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - META_SERVICE_URL=http://meta-backend:8082
       - ENABLE_SERVICE_INTEGRATION=true
@@ -176,10 +185,11 @@ services:
   # Meta 模块 - 元数据管理（待实现）
   meta-backend:
     build:
-      context: ./meta/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: meta/backend/Dockerfile
     container_name: addp-meta-backend
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
       - PORT=8082
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -190,6 +200,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=addp_redis
+      - RESOURCE_LOCALHOST_ALIAS=host.docker.internal
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - MANAGER_SERVICE_URL=http://manager-backend:8081
     ports:
@@ -227,6 +238,7 @@ services:
       dockerfile: Dockerfile
     container_name: addp-transfer-backend
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
       - PORT=8083
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -240,6 +252,7 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - MANAGER_SERVICE_URL=http://manager-backend:8081
       - META_SERVICE_URL=http://meta-backend:8082
+      - RESOURCE_LOCALHOST_ALIAS=host.docker.internal
       - WORKER_CONCURRENCY=10
     ports:
       - "8083:8083"
@@ -262,6 +275,7 @@ services:
     container_name: addp-transfer-worker
     command: ["./worker"]
     environment:
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-change-me}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=addp_redis

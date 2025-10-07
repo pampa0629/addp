@@ -1,8 +1,11 @@
 package api
 
 import (
-	"github.com/addp/system/internal/config"
-	"github.com/gin-gonic/gin"
+    "encoding/base64"
+    "net/http"
+
+    "github.com/addp/system/internal/config"
+    "github.com/gin-gonic/gin"
 )
 
 type ConfigHandler struct {
@@ -16,24 +19,23 @@ func NewConfigHandler(cfg *config.Config) *ConfigHandler {
 // GetSharedConfig 返回跨服务共享的配置
 // 这是一个内部 API，仅供其他服务启动时调用
 func (h *ConfigHandler) GetSharedConfig(c *gin.Context) {
-	// 可选：添加内部服务认证（如 API Key）
-	apiKey := c.GetHeader("X-Internal-API-Key")
-	expectedKey := h.cfg.InternalAPIKey
+    encryptionKey := ""
+    if len(h.cfg.EncryptionKey) > 0 {
+        encryptionKey = base64.StdEncoding.EncodeToString(h.cfg.EncryptionKey)
+    }
 
-	if expectedKey != "" && apiKey != expectedKey {
-		c.JSON(401, gin.H{"error": "unauthorized: invalid internal API key"})
-		return
-	}
-
-	c.JSON(200, gin.H{
-		"jwt_secret": h.cfg.JWTSecret,
-		"database": gin.H{
-			"host":     h.cfg.PostgresHost,
-			"port":     h.cfg.PostgresPort,
-			"user":     h.cfg.PostgresUser,
-			"password": h.cfg.PostgresPassword,
-			"name":     h.cfg.PostgresDB,
-		},
-		"encryption_key": h.cfg.EncryptionKey,
-	})
+    c.JSON(http.StatusOK, gin.H{
+        "project": gin.H{
+            "name": h.cfg.ProjectName,
+        },
+        "jwt_secret": h.cfg.JWTSecret,
+        "encryption_key": encryptionKey,
+        "database": gin.H{
+            "host":     h.cfg.PostgresHost,
+            "port":     h.cfg.PostgresPort,
+            "user":     h.cfg.PostgresUser,
+            "password": h.cfg.PostgresPassword,
+            "name":     h.cfg.PostgresDB,
+        },
+    })
 }

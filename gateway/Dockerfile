@@ -1,5 +1,7 @@
 # 构建阶段
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
+
+ENV GOPROXY=https://goproxy.cn,direct
 
 WORKDIR /app
 

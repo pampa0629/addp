@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/addp/system/internal/models"
@@ -32,9 +34,32 @@ func (s *StorageEngineService) TestConnection(resource *models.Resource) error {
 
 // testPostgreSQLConnection 测试 PostgreSQL 连接
 func (s *StorageEngineService) testPostgreSQLConnection(connInfo models.ConnectionInfo) error {
+	normalizeHost := func(host string) string {
+		if host == "localhost" || host == "127.0.0.1" {
+			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+				return alias
+			}
+			return "127.0.0.1"
+		}
+		return host
+	}
+
 	// 构建连接字符串
 	host, _ := connInfo["host"].(string)
-	port, _ := connInfo["port"].(float64)
+	host = normalizeHost(host)
+
+	var portFloat float64
+	switch v := connInfo["port"].(type) {
+	case float64:
+		portFloat = v
+	case int:
+		portFloat = float64(v)
+	case string:
+		if parsed, err := strconv.Atoi(v); err == nil {
+			portFloat = float64(parsed)
+		}
+	}
+
 	database, _ := connInfo["database"].(string)
 	user, _ := connInfo["user"].(string)
 	password, _ := connInfo["password"].(string)
@@ -49,13 +74,13 @@ func (s *StorageEngineService) testPostgreSQLConnection(connInfo models.Connecti
 		return fmt.Errorf("missing required fields: host, user, database")
 	}
 
-	if port == 0 {
-		port = 5432
+	if portFloat == 0 {
+		portFloat = 5432
 	}
 
 	// 构建 DSN
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, int(port), user, password, database, sslMode)
+		host, int(portFloat), user, password, database, sslMode)
 
 	// 连接数据库
 	db, err := sql.Open("postgres", dsn)

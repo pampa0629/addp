@@ -24,70 +24,50 @@ func NewPostgresScanner(connStr string) (*PostgresScanner, error) {
 	return &PostgresScanner{db: db}, nil
 }
 
-func (s *PostgresScanner) ScanDatabases() ([]DatabaseInfo, error) {
+func (s *PostgresScanner) ListSchemas() ([]SchemaInfo, error) {
 	query := `
 		SELECT
-			datname,
-			pg_encoding_to_char(encoding) AS charset,
-			datcollate AS collation,
-			pg_database_size(datname) AS total_size
-		FROM pg_database
-		WHERE datistemplate = false
-		  AND datname NOT IN ('postgres', 'template0', 'template1')
-		ORDER BY datname
+			schema_name,
+			(SELECT COUNT(*) FROM information_schema.tables t WHERE t.table_schema = schema_name) AS table_count
+		FROM information_schema.schemata
+		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		ORDER BY schema_name
 	`
 
 	rows, err := s.db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query databases: %w", err)
+		return nil, fmt.Errorf("failed to query schemas: %w", err)
 	}
 	defer rows.Close()
 
-	var databases []DatabaseInfo
+	var schemas []SchemaInfo
 	for rows.Next() {
-		var db DatabaseInfo
-		err := rows.Scan(&db.Name, &db.Charset, &db.Collation, &db.TotalSizeBytes)
-		if err != nil {
-			continue
+		var schema SchemaInfo
+		if err := rows.Scan(&schema.Name, &schema.TableCount); err != nil {
+			return nil, err
 		}
-
-		// 获取表数量
-		tableCountQuery := `
-			SELECT COUNT(*)
-			FROM information_schema.tables
-			WHERE table_catalog = $1
-			  AND table_schema NOT IN ('pg_catalog', 'information_schema')
-		`
-		s.db.QueryRow(tableCountQuery, db.Name).Scan(&db.TableCount)
-
-		databases = append(databases, db)
+		schemas = append(schemas, schema)
 	}
 
-	return databases, nil
+	return schemas, rows.Err()
 }
 
-func (s *PostgresScanner) ScanTables(database string) ([]TableInfo, error) {
+func (s *PostgresScanner) ScanTables(schemaName string) ([]TableInfo, error) {
 	query := `
 		SELECT
-			t.table_schema,
 			t.table_name,
 			t.table_type,
-			COALESCE(pg_stat_user_tables.n_live_tup, 0) AS row_count,
-			COALESCE(pg_total_relation_size((t.table_schema||'.'||t.table_name)::regclass), 0) AS total_size,
-			COALESCE(pg_relation_size((t.table_schema||'.'||t.table_name)::regclass), 0) AS data_size,
-			COALESCE(pg_total_relation_size((t.table_schema||'.'||t.table_name)::regclass) -
-			         pg_relation_size((t.table_schema||'.'||t.table_name)::regclass), 0) AS index_size,
-			COALESCE(obj_description((t.table_schema||'.'||t.table_name)::regclass), '') AS table_comment
+			COALESCE(pg_catalog.obj_description(pgc.oid, 'pg_class'), '') AS table_comment,
+			COALESCE(pgc.reltuples::bigint, 0) AS row_count,
+			COALESCE(pg_total_relation_size(pgc.oid), 0) AS size_bytes
 		FROM information_schema.tables t
-		LEFT JOIN pg_stat_user_tables
-			ON pg_stat_user_tables.schemaname = t.table_schema
-			AND pg_stat_user_tables.relname = t.table_name
-		WHERE t.table_catalog = $1
-		  AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
-		ORDER BY t.table_schema, t.table_name
+		LEFT JOIN pg_catalog.pg_namespace pgn ON pgn.nspname = t.table_schema
+		LEFT JOIN pg_catalog.pg_class pgc ON pgc.relname = t.table_name AND pgc.relnamespace = pgn.oid
+		WHERE t.table_schema = $1
+		ORDER BY t.table_name
 	`
 
-	rows, err := s.db.Query(query, database)
+	rows, err := s.db.Query(query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
 	}
@@ -96,65 +76,51 @@ func (s *PostgresScanner) ScanTables(database string) ([]TableInfo, error) {
 	var tables []TableInfo
 	for rows.Next() {
 		var table TableInfo
-		var totalSize, dataSize, indexSize int64
-
-		err := rows.Scan(
-			&table.Schema,
-			&table.Name,
-			&table.Type,
-			&table.RowCount,
-			&totalSize,
-			&dataSize,
-			&indexSize,
-			&table.Comment,
-		)
-		if err != nil {
-			continue
+		if err := rows.Scan(&table.Name, &table.Type, &table.Comment, &table.RowCount, &table.SizeBytes); err != nil {
+			return nil, err
 		}
-
-		table.DataSize = dataSize
-		table.IndexSize = indexSize
 		tables = append(tables, table)
 	}
 
-	return tables, nil
+	return tables, rows.Err()
 }
 
-func (s *PostgresScanner) ScanFields(database, table string) ([]FieldInfo, error) {
-	// 分离 schema 和 table name
-	schemaName := "public"
-	tableName := table
-
+func (s *PostgresScanner) ScanFields(schemaName, tableName string) ([]FieldInfo, error) {
 	query := `
 		SELECT
 			c.column_name,
 			c.ordinal_position,
 			c.data_type,
-			c.udt_name AS column_type,
-			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END AS is_nullable,
-			COALESCE(c.column_default, '') AS column_default,
-			COALESCE(
-				(SELECT 'PRI' FROM information_schema.table_constraints tc
-				 JOIN information_schema.key_column_usage kcu
-				   ON tc.constraint_name = kcu.constraint_name
-				   AND tc.table_schema = kcu.table_schema
-				 WHERE tc.table_schema = c.table_schema
-				   AND tc.table_name = c.table_name
-				   AND kcu.column_name = c.column_name
-				   AND tc.constraint_type = 'PRIMARY KEY'
-				 LIMIT 1),
-				''
-			) AS column_key,
-			'' AS extra,
-			COALESCE(col_description((c.table_schema||'.'||c.table_name)::regclass, c.ordinal_position), '') AS field_comment
+			c.udt_name,
+			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END,
+			COALESCE(c.column_default, ''),
+			COALESCE(pg_catalog.col_description(pgc.oid, c.ordinal_position::int), ''),
+			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END,
+			CASE WHEN uq.column_name IS NOT NULL THEN true ELSE false END,
+			COALESCE(c.character_set_name, ''),
+			COALESCE(c.collation_name, ''),
+			COALESCE(c.numeric_precision, 0),
+			COALESCE(c.numeric_scale, 0)
 		FROM information_schema.columns c
-		WHERE c.table_catalog = $1
-		  AND c.table_schema = $2
-		  AND c.table_name = $3
+		LEFT JOIN pg_catalog.pg_namespace pgn ON pgn.nspname = c.table_schema
+		LEFT JOIN pg_catalog.pg_class pgc ON pgc.relname = c.table_name AND pgc.relnamespace = pgn.oid
+		LEFT JOIN (
+			SELECT ku.column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+			WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY'
+		) pk ON pk.column_name = c.column_name
+		LEFT JOIN (
+			SELECT ku.column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
+			WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'UNIQUE'
+		) uq ON uq.column_name = c.column_name
+		WHERE c.table_schema = $1 AND c.table_name = $2
 		ORDER BY c.ordinal_position
 	`
 
-	rows, err := s.db.Query(query, database, schemaName, tableName)
+	rows, err := s.db.Query(query, schemaName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query fields: %w", err)
 	}
@@ -163,30 +129,36 @@ func (s *PostgresScanner) ScanFields(database, table string) ([]FieldInfo, error
 	var fields []FieldInfo
 	for rows.Next() {
 		var field FieldInfo
-		err := rows.Scan(
+		var udtName sql.NullString
+		if err := rows.Scan(
 			&field.Name,
-			&field.Position,
+			&field.OrdinalPosition,
 			&field.DataType,
-			&field.ColumnType,
+			&udtName,
 			&field.IsNullable,
 			&field.DefaultValue,
-			&field.ColumnKey,
-			&field.Extra,
 			&field.Comment,
-		)
-		if err != nil {
-			continue
+			&field.IsPrimaryKey,
+			&field.IsUniqueKey,
+			&field.CharacterSet,
+			&field.Collation,
+			&field.NumericPrecision,
+			&field.NumericScale,
+		); err != nil {
+			return nil, err
 		}
-
+		// 使用 udt_name 作为 ColumnType
+		if udtName.Valid {
+			field.ColumnType = udtName.String
+		} else {
+			field.ColumnType = field.DataType
+		}
 		fields = append(fields, field)
 	}
 
-	return fields, nil
+	return fields, rows.Err()
 }
 
 func (s *PostgresScanner) Close() error {
-	if s.db != nil {
-		return s.db.Close()
-	}
-	return nil
+	return s.db.Close()
 }

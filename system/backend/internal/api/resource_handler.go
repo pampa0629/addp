@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -31,7 +32,7 @@ func (h *ResourceHandler) Create(c *gin.Context) {
 	userID := c.GetUint("user_id")
 	resource, err := h.resourceService.Create(&req, userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		h.respondWithResourceError(c, err)
 		return
 	}
 
@@ -66,9 +67,15 @@ func (h *ResourceHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.GetByID(uint(id))
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	resource, err := h.resourceService.GetByID(uint(id), userID.(uint))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "资源不存在"})
+		h.respondWithResourceError(c, err)
 		return
 	}
 
@@ -88,9 +95,15 @@ func (h *ResourceHandler) Update(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.Update(uint(id), &req)
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	resource, err := h.resourceService.Update(uint(id), &req, currentUserID.(uint))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		h.respondWithResourceError(c, err)
 		return
 	}
 
@@ -104,12 +117,29 @@ func (h *ResourceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.resourceService.Delete(uint(id)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	if err := h.resourceService.Delete(uint(id), currentUserID.(uint)); err != nil {
+		h.respondWithResourceError(c, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func (h *ResourceHandler) respondWithResourceError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrResourceNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrResourceForbidden):
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
 }
 
 // TestConnection 测试存储引擎连接
@@ -120,9 +150,15 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.GetByID(uint(id))
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "资源不存在"})
+		h.respondWithResourceError(c, err)
 		return
 	}
 
@@ -206,7 +242,7 @@ func (h *ResourceHandler) GetByIDInternal(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.GetByID(uint(id))
+	resource, err := h.resourceService.GetByIDInternal(uint(id))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "资源不存在"})
 		return

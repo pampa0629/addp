@@ -26,7 +26,7 @@
       </div>
     </el-header>
 
-    <el-container>
+    <el-container class="content-container">
       <el-aside width="240px" class="sidebar">
         <el-menu
           :default-active="activeMenu"
@@ -78,14 +78,6 @@
             <el-menu-item index="/meta/scan">
               <el-icon><Search /></el-icon>
               <span>元数据扫描</span>
-            </el-menu-item>
-            <el-menu-item index="/meta/datasources">
-              <el-icon><Connection /></el-icon>
-              <span>数据源列表</span>
-            </el-menu-item>
-            <el-menu-item index="/meta/search">
-              <el-icon><Box /></el-icon>
-              <span>元数据浏览</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -158,19 +150,22 @@
             </el-col>
           </el-row>
         </div>
-        <div v-else class="iframe-container">
-          <iframe
-            v-if="iframeUrl"
-            :src="iframeUrl"
-            :key="iframeUrl"
-            frameborder="0"
-            class="module-iframe"
-            @load="handleIframeLoad"
-          ></iframe>
-          <div v-else class="loading-container">
-            <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-            <p>等待选择模块...</p>
-            <p style="font-size: 12px; color: #909399;">currentModule: {{ currentModule }}</p>
+        <div v-else class="iframe-wrapper">
+          <MetaScanView v-if="currentModule === 'meta'" class="embedded-module" />
+          <div v-else class="iframe-container">
+            <iframe
+              v-if="iframeUrl"
+              :src="iframeUrl"
+              :key="iframeUrl"
+              frameborder="0"
+              @load="handleIframeLoad"
+              class="module-iframe"
+            ></iframe>
+            <div v-else class="loading-container">
+              <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+              <p>等待选择模块...</p>
+              <p style="font-size: 12px; color: #909399;">currentModule: {{ currentModule }}</p>
+            </div>
           </div>
         </div>
       </el-main>
@@ -183,6 +178,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import MetaScanView from './MetaScan.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -196,7 +192,7 @@ const iframeUrl = ref('')
 const moduleUrls = {
   system: 'http://localhost:5173',
   manager: 'http://localhost:5174',
-  meta: 'http://localhost:5175',
+  meta: null,
   transfer: 'http://localhost:5176'
 }
 
@@ -227,6 +223,12 @@ const handleMenuSelect = (index) => {
 
   console.log('Portal: Parsed - module:', module, 'page:', page)
   currentModule.value = module
+
+  if (module === 'meta') {
+    iframeUrl.value = ''
+    console.log('Portal: meta 模块由内嵌组件提供，不加载 iframe')
+    return
+  }
 
   if (moduleUrls[module]) {
     // 构建完整的 URL，并附加认证token作为URL参数
@@ -298,7 +300,7 @@ const navigateToModule = (module) => {
   } else if (module === 'manager') {
     handleMenuSelect('/manager/datasources')
   } else if (module === 'meta') {
-    handleMenuSelect('/meta/datasources')
+    handleMenuSelect('/meta/scan')
   }
 }
 
@@ -316,6 +318,8 @@ const handleLogout = () => {
 <style scoped>
 .portal-container {
   height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
@@ -360,10 +364,21 @@ const handleLogout = () => {
   border-right: 1px solid #e4e7ed;
 }
 
+.content-container {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
 .main-content {
   background: #f5f7fa;
   padding: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .home-view {
@@ -408,10 +423,26 @@ const handleLogout = () => {
   margin: 0;
 }
 
+.embedded-module {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+.iframe-wrapper {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+
 .iframe-container {
   width: 100%;
-  height: 100%;
-  position: relative;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 64px);
 }
 
 .module-iframe {

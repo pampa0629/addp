@@ -278,21 +278,15 @@ func (s *UserService) Register(req *models.UserCreateRequest) (*models.User, err
 		return nil, err
 	}
 
-	// 注册时默认创建普通用户
-	userType := models.UserTypeUser
-	if req.UserType != "" {
-		userType = req.UserType
-	}
-
 	user := &models.User{
 		Username:     req.Username,
 		Email:        req.Email,
 		PasswordHash: passwordHash,
 		FullName:     req.FullName,
 		IsActive:     true,
-		UserType:     userType,
+		UserType:     models.UserTypeUser,
 		TenantID:     nil, // 注册用户没有租户
-		IsSuperuser:  userType == models.UserTypeSuperAdmin,
+		IsSuperuser:  false,
 	}
 
 	if err := s.repo.Create(user); err != nil {

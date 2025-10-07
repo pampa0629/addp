@@ -7,7 +7,6 @@ import (
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
-	"github.com/robfig/cron/v3"
 )
 
 func main() {
@@ -22,24 +21,11 @@ func main() {
 
 	log.Println("Database initialized successfully")
 
-	// 设置定时任务
-	if cfg.AutoSyncEnabled {
-		c := cron.New()
-		_, err := c.AddFunc(cfg.AutoSyncSchedule, func() {
-			log.Println("Running auto sync task...")
-			// TODO: 实现定时自动同步逻辑
-			// syncService.AutoSyncAll(0) // 0表示所有租户
-		})
-		if err != nil {
-			log.Printf("Failed to add cron job: %v", err)
-		} else {
-			c.Start()
-			log.Printf("Auto sync scheduled: %s", cfg.AutoSyncSchedule)
-		}
-	}
+	// TODO: 实现定时任务调度（Phase 4）
+	// 可以使用 robfig/cron 库实现定时扫描
 
-	// 设置路由
-	router := api.SetupRouter(cfg, db)
+	// 设置路由（使用新的简化路由）
+	router := api.SetupRouterNew(cfg, db)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

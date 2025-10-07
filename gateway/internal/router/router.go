@@ -16,7 +16,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
-			"status": "ok",
+			"status":  "ok",
 			"service": "gateway",
 		})
 	})
@@ -57,6 +57,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/upload/*path", managerProxy.Handle)
 
 		// Meta 模块路由（元数据、血缘）
+		api.Any("/meta/*path", metaProxy.Handle)
 		api.Any("/metadata/*path", metaProxy.Handle)
 		api.Any("/datasets/*path", metaProxy.Handle)
 		api.Any("/lineage/*path", metaProxy.Handle)

@@ -1,54 +1,57 @@
 package models
 
-import "time"
-
-// DatasourceWithResource 数据源响应（包含关联的资源信息）
-type DatasourceWithResource struct {
-	ID           uint       `json:"id"`
-	ResourceID   uint       `json:"resource_id"`
-	TenantID     uint       `json:"tenant_id"`
-	SyncStatus   string     `json:"sync_status"`
-	LastSyncAt   *time.Time `json:"last_sync_at"`
-	SyncLevel    string     `json:"sync_level"`
-	ErrorMessage string     `json:"error_message,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-
-	// 从 system.resources 关联查询的字段
-	DatasourceName string `json:"datasource_name"` // resource.name
-	DatasourceType string `json:"datasource_type"` // resource.resource_type
+// ScanRequest 扫描请求
+type ScanRequest struct {
+	ResourceID  uint     `json:"resource_id" binding:"required"`  // 资源ID
+	SchemaNames []string `json:"schema_names"`                    // 要扫描的Schema列表（空则全部）
+	ScanDepth   string   `json:"scan_depth"`                      // basic/deep/full
+	ScanType    string   `json:"scan_type"`                       // manual/auto/scheduled
 }
 
-// SchemaInfo Schema信息
+// ScanResponse 扫描响应
+type ScanResponse struct {
+	Status         string `json:"status"`           // success/failed
+	Message        string `json:"message"`
+	SchemasScanned int    `json:"schemas_scanned"`
+	TablesScanned  int    `json:"tables_scanned"`
+	FieldsScanned  int    `json:"fields_scanned"`
+	DurationMs     int64  `json:"duration_ms"`
+	StartedAt      string `json:"started_at"`
+}
+
+// ResourceWithStats 资源及其扫描统计
+type ResourceWithStats struct {
+	ResourceID       uint   `json:"id"`                  // 前端期待 id
+	ResourceName     string `json:"name"`                // 前端期待 name
+	ResourceType     string `json:"resource_type"`
+	TotalSchemas     int    `json:"total_schemas"`
+	ScannedSchemas   int    `json:"scanned_schemas"`
+	UnscannedSchemas int    `json:"unscanned_schemas"`
+	LastScanAt       string `json:"last_scan_at,omitempty"`
+}
+
+// SchemaWithStatus Schema及其状态
+type SchemaWithStatus struct {
+	ID              uint   `json:"id"`
+	SchemaName      string `json:"schema_name"`
+	ScanStatus      string `json:"scan_status"`
+	LastScanAt      string `json:"last_scan_at,omitempty"`
+	TableCount      int    `json:"table_count"`
+	TotalSizeBytes  int64  `json:"total_size_bytes"`
+	AutoScanEnabled bool   `json:"auto_scan_enabled"`
+	AutoScanCron    string `json:"auto_scan_cron,omitempty"`
+	NextScanAt      string `json:"next_scan_at,omitempty"`
+}
+
+// ScheduleRequest 定时扫描配置请求
+type ScheduleRequest struct {
+	SchemaID        uint   `json:"schema_id" binding:"required"`
+	AutoScanEnabled bool   `json:"auto_scan_enabled"`
+	AutoScanCron    string `json:"auto_scan_cron"` // 如 "0 0 * * *"
+}
+
+// SchemaInfo Schema信息（用于获取Schema列表）
 type SchemaInfo struct {
 	Name   string   `json:"name"`
-	Tables []string `json:"tables"`
-}
-
-// ScanSchemaRequest 扫描Schema请求
-type ScanSchemaRequest struct {
-	Name          string   `json:"name"`
-	ScanMode      string   `json:"scan_mode"`       // all, select
-	SelectedTables []string `json:"tables,omitempty"` // 当scan_mode=select时使用
-}
-
-// ScanRequest 元数据扫描请求
-type ScanRequest struct {
-	ResourceID  uint                 `json:"resource_id" binding:"required"`
-	Depth       string               `json:"depth"`       // basic, deep, full
-	Trigger     string               `json:"trigger"`     // manual, scheduled, both
-	Cron        string               `json:"cron"`        // Cron表达式
-	Incremental bool                 `json:"incremental"` // 是否增量更新
-	Schemas     []ScanSchemaRequest  `json:"schemas" binding:"required"`
-}
-
-// ScanResult 扫描结果
-type ScanResult struct {
-	Status          string    `json:"status"`
-	Message         string    `json:"message"`
-	SchemasScanned  int       `json:"schemas_scanned"`
-	TablesScanned   int       `json:"tables_scanned"`
-	FieldsScanned   int       `json:"fields_scanned"`
-	DurationSeconds int       `json:"duration_seconds"`
-	StartedAt       string    `json:"started_at"`
+	Tables []string `json:"tables,omitempty"`
 }

@@ -6,6 +6,10 @@ export default defineConfig({
   server: {
     port: 5170,
     proxy: {
+      '/api/meta': {
+        target: 'http://localhost:8082',
+        changeOrigin: true
+      },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true

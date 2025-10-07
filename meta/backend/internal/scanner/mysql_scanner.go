@@ -24,12 +24,11 @@ func NewMySQLScanner(connStr string) (*MySQLScanner, error) {
 	return &MySQLScanner{db: db}, nil
 }
 
-func (s *MySQLScanner) ScanDatabases() ([]DatabaseInfo, error) {
+func (s *MySQLScanner) ListSchemas() ([]SchemaInfo, error) {
 	query := `
 		SELECT
 			SCHEMA_NAME AS name,
-			DEFAULT_CHARACTER_SET_NAME AS charset,
-			DEFAULT_COLLATION_NAME AS collation,
+			0 AS table_count,
 			0 AS total_size
 		FROM information_schema.SCHEMATA
 		WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
@@ -38,14 +37,14 @@ func (s *MySQLScanner) ScanDatabases() ([]DatabaseInfo, error) {
 
 	rows, err := s.db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query databases: %w", err)
+		return nil, fmt.Errorf("failed to query schemas: %w", err)
 	}
 	defer rows.Close()
 
-	var databases []DatabaseInfo
+	var schemas []SchemaInfo
 	for rows.Next() {
-		var db DatabaseInfo
-		err := rows.Scan(&db.Name, &db.Charset, &db.Collation, &db.TotalSizeBytes)
+		var schema SchemaInfo
+		err := rows.Scan(&schema.Name, &schema.TableCount, &schema.TotalSizeBytes)
 		if err != nil {
 			continue
 		}
@@ -56,7 +55,7 @@ func (s *MySQLScanner) ScanDatabases() ([]DatabaseInfo, error) {
 			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 		`
-		s.db.QueryRow(tableCountQuery, db.Name).Scan(&db.TableCount)
+		s.db.QueryRow(tableCountQuery, schema.Name).Scan(&schema.TableCount)
 
 		// 获取数据库大小
 		sizeQuery := `
@@ -64,31 +63,28 @@ func (s *MySQLScanner) ScanDatabases() ([]DatabaseInfo, error) {
 			FROM information_schema.TABLES
 			WHERE TABLE_SCHEMA = ?
 		`
-		s.db.QueryRow(sizeQuery, db.Name).Scan(&db.TotalSizeBytes)
+		s.db.QueryRow(sizeQuery, schema.Name).Scan(&schema.TotalSizeBytes)
 
-		databases = append(databases, db)
+		schemas = append(schemas, schema)
 	}
 
-	return databases, nil
+	return schemas, nil
 }
 
-func (s *MySQLScanner) ScanTables(database string) ([]TableInfo, error) {
+func (s *MySQLScanner) ScanTables(schemaName string) ([]TableInfo, error) {
 	query := `
 		SELECT
-			TABLE_SCHEMA AS schema_name,
 			TABLE_NAME AS table_name,
 			TABLE_TYPE AS table_type,
-			ENGINE AS engine,
+			IFNULL(TABLE_COMMENT, '') AS table_comment,
 			IFNULL(TABLE_ROWS, 0) AS row_count,
-			IFNULL(DATA_LENGTH, 0) AS data_size,
-			IFNULL(INDEX_LENGTH, 0) AS index_size,
-			IFNULL(TABLE_COMMENT, '') AS table_comment
+			IFNULL(DATA_LENGTH + INDEX_LENGTH, 0) AS size_bytes
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
 		ORDER BY TABLE_NAME
 	`
 
-	rows, err := s.db.Query(query, database)
+	rows, err := s.db.Query(query, schemaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tables: %w", err)
 	}
@@ -98,14 +94,11 @@ func (s *MySQLScanner) ScanTables(database string) ([]TableInfo, error) {
 	for rows.Next() {
 		var table TableInfo
 		err := rows.Scan(
-			&table.Schema,
 			&table.Name,
 			&table.Type,
-			&table.Engine,
-			&table.RowCount,
-			&table.DataSize,
-			&table.IndexSize,
 			&table.Comment,
+			&table.RowCount,
+			&table.SizeBytes,
 		)
 		if err != nil {
 			continue
@@ -117,25 +110,29 @@ func (s *MySQLScanner) ScanTables(database string) ([]TableInfo, error) {
 	return tables, nil
 }
 
-func (s *MySQLScanner) ScanFields(database, table string) ([]FieldInfo, error) {
+func (s *MySQLScanner) ScanFields(schemaName, tableName string) ([]FieldInfo, error) {
 	query := `
 		SELECT
 			COLUMN_NAME AS field_name,
 			ORDINAL_POSITION AS position,
 			DATA_TYPE AS data_type,
 			COLUMN_TYPE AS column_type,
-			CASE WHEN IS_NULLABLE = 'YES' THEN true ELSE false END AS is_nullable,
+			CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS is_nullable,
 			IFNULL(COLUMN_DEFAULT, '') AS column_default,
-			IFNULL(COLUMN_KEY, '') AS column_key,
-			IFNULL(EXTRA, '') AS extra,
-			IFNULL(COLUMN_COMMENT, '') AS field_comment
+			IFNULL(COLUMN_COMMENT, '') AS field_comment,
+			CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END AS is_primary_key,
+			CASE WHEN COLUMN_KEY = 'UNI' THEN 1 ELSE 0 END AS is_unique_key,
+			IFNULL(CHARACTER_SET_NAME, '') AS character_set,
+			IFNULL(COLLATION_NAME, '') AS collation,
+			IFNULL(NUMERIC_PRECISION, 0) AS numeric_precision,
+			IFNULL(NUMERIC_SCALE, 0) AS numeric_scale
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
 		  AND TABLE_NAME = ?
 		ORDER BY ORDINAL_POSITION
 	`
 
-	rows, err := s.db.Query(query, database, table)
+	rows, err := s.db.Query(query, schemaName, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query fields: %w", err)
 	}
@@ -144,20 +141,29 @@ func (s *MySQLScanner) ScanFields(database, table string) ([]FieldInfo, error) {
 	var fields []FieldInfo
 	for rows.Next() {
 		var field FieldInfo
+		var isNullable, isPrimaryKey, isUniqueKey int
 		err := rows.Scan(
 			&field.Name,
-			&field.Position,
+			&field.OrdinalPosition,
 			&field.DataType,
 			&field.ColumnType,
-			&field.IsNullable,
+			&isNullable,
 			&field.DefaultValue,
-			&field.ColumnKey,
-			&field.Extra,
 			&field.Comment,
+			&isPrimaryKey,
+			&isUniqueKey,
+			&field.CharacterSet,
+			&field.Collation,
+			&field.NumericPrecision,
+			&field.NumericScale,
 		)
 		if err != nil {
 			continue
 		}
+
+		field.IsNullable = isNullable == 1
+		field.IsPrimaryKey = isPrimaryKey == 1
+		field.IsUniqueKey = isUniqueKey == 1
 
 		fields = append(fields, field)
 	}

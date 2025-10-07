@@ -46,6 +46,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			"name_en": "All Domain Data Platform",
 		})
 	})
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	// API 路由组
 	api := router.Group("/api")
@@ -91,7 +94,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				resources.GET("/:id", resourceHandler.GetByID)
 				resources.PUT("/:id", resourceHandler.Update)
 				resources.DELETE("/:id", resourceHandler.Delete)
-				resources.POST("/:id/test", resourceHandler.TestConnection)        // 测试已有资源连接
+				resources.POST("/:id/test", resourceHandler.TestConnection)                    // 测试已有资源连接
 				resources.POST("/test-connection", resourceHandler.TestConnectionBeforeCreate) // 创建前测试连接
 			}
 

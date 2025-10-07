@@ -46,16 +46,14 @@ func InternalAPIMiddleware(cfg *config.Config) gin.HandlerFunc {
 		apiKey := c.GetHeader("X-Internal-API-Key")
 		expectedKey := cfg.InternalAPIKey
 
-		// 如果配置了 Internal API Key，则必须验证
-		if expectedKey != "" && apiKey != expectedKey {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: invalid internal API key"})
+		if expectedKey == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: internal API key not configured"})
 			c.Abort()
 			return
 		}
 
-		// 如果没有配置 Internal API Key，仅在开发环境允许通过
-		if expectedKey == "" && cfg.Env != "development" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: internal API key not configured"})
+		if apiKey != expectedKey {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: invalid internal API key"})
 			c.Abort()
 			return
 		}

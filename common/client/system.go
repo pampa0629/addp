@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/addp/common/models"
@@ -12,10 +13,10 @@ import (
 
 // SystemClient 系统服务客户端
 type SystemClient struct {
-	baseURL      string
-	httpClient   *http.Client
-	authToken    string // JWT Token (用于用户认证的 API)
-	internalKey  string // Internal API Key (用于服务间调用)
+	baseURL     string
+	httpClient  *http.Client
+	authToken   string // JWT Token (用于用户认证的 API)
+	internalKey string // Internal API Key (用于服务间调用)
 }
 
 // NewSystemClient 创建系统客户端（用户认证方式）
@@ -89,7 +90,7 @@ func (c *SystemClient) GetResource(resourceID uint) (*models.Resource, error) {
 }
 
 // ListResources 获取资源列表
-func (c *SystemClient) ListResources(resourceType string) ([]models.Resource, error) {
+func (c *SystemClient) ListResources(resourceType string, tenantID uint) ([]models.Resource, error) {
 	var url string
 	// 如果使用内部 API Key，调用内部 API
 	if c.internalKey != "" {
@@ -98,8 +99,17 @@ func (c *SystemClient) ListResources(resourceType string) ([]models.Resource, er
 		url = fmt.Sprintf("%s/api/resources", c.baseURL)
 	}
 
+	queryAdded := false
 	if resourceType != "" {
 		url += "?resource_type=" + resourceType
+		queryAdded = true
+	}
+	if tenantID > 0 {
+		prefix := "?"
+		if queryAdded || strings.Contains(url, "?") {
+			prefix = "&"
+		}
+		url += fmt.Sprintf("%stenant_id=%d", prefix, tenantID)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)

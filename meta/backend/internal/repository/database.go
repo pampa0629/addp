@@ -9,7 +9,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"gorm.io/gorm/schema"
 )
 
 var DB *gorm.DB
@@ -27,9 +26,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
-		NamingStrategy: schema.NamingStrategy{
-			TablePrefix: cfg.DBSchema + ".", // 使用 schema 前缀
-		},
+		// 不使用 TablePrefix，直接通过 search_path 访问正确的 schema
 	})
 
 	if err != nil {
@@ -45,24 +42,22 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 
-	// 自动迁移 - 临时禁用以绕过GORM PostgreSQL bug
-	// TODO: 修复后重新启用
+	// 自动迁移 - 跳过 AutoMigrate，表已存在
 	// if err := autoMigrate(db); err != nil {
 	// 	return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	// }
 
 	DB = db
-	log.Println("Database connected and migrated successfully")
+	log.Println("Database connected successfully (migration skipped)")
 	return db, nil
 }
 
 // autoMigrate 自动迁移所有表
 func autoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
-		&models.MetadataDatasource{},
-		&models.MetadataDatabase{},
+		&models.MetadataSchema{},
 		&models.MetadataTable{},
 		&models.MetadataField{},
-		&models.MetadataSyncLog{},
+		&models.ScanLog{},
 	)
 }

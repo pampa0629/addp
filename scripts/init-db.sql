@@ -1,6 +1,9 @@
 -- 全域数据平台数据库初始化脚本
 -- 为各个模块创建独立的 schema
 
+-- ==================== System 模块 ====================
+CREATE SCHEMA IF NOT EXISTS system;
+
 -- ==================== Manager 模块 ====================
 CREATE SCHEMA IF NOT EXISTS manager;
 

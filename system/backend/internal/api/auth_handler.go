@@ -48,6 +48,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
+	if !h.cfg.AllowPublicRegistration {
+		c.JSON(http.StatusForbidden, gin.H{"error": "注册功能已关闭"})
+		return
+	}
+
 	var req models.UserCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

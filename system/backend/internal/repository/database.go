@@ -31,6 +31,11 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// 确保 system schema 存在
+	if err := db.Exec("CREATE SCHEMA IF NOT EXISTS system").Error; err != nil {
+		return nil, err
+	}
+
 	// 设置默认 schema 为 system
 	db.Exec("SET search_path TO system")
 

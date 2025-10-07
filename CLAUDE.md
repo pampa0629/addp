@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform structured as microservices. Each service has its own directory:
 
-- **common/** - Shared library module: common client code, models, and utilities used across all services
-- **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL backend)
+- **common/** - Shared library module: common client code, models, config loader, and utilities used across all services
+- **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL system schema)
 - **gateway/** - API gateway: handles external requests and routes to internal services - **IMPLEMENTED** (reverse proxy)
 - **manager/** - Data management: data source connections, upload directory organization, data preview - **PARTIALLY IMPLEMENTED** (Go backend structure created)
-- **meta/** - Metadata service: data metadata parsing/storage/querying, lineage tracking, extensible data type support, metadata-based search - *Planned*
+- **meta/** - Metadata service: data metadata parsing/storage/querying, schema scanning with cron scheduling - **IMPLEMENTED** (PostgreSQL metadata schema)
 - **transfer/** - Data transfer: data import/export/synchronization - *Planned*
 
 All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO). Common code is shared via the `common` module to avoid duplication.
@@ -49,13 +49,13 @@ make logs           # View all logs
 ## Technology Stack
 
 ### Backend
-- **Language**: Go 1.21+
+- **Language**: Go 1.23+
 - **HTTP Framework**: Gin
 - **ORM**: GORM
-- **Databases**: SQLite (System module), PostgreSQL 15 (Manager/Meta/Transfer modules)
+- **Databases**: PostgreSQL 15 (all modules with schema isolation: system, manager, metadata, transfer)
 - **Cache/Queue**: Redis 7
 - **Object Storage**: MinIO (S3-compatible)
-- **Task Queue**: Asynq (Redis-based, for Transfer module)
+- **Task Queue**: Asynq (Redis-based, for Transfer module), Cron (for Meta module scheduling)
 
 ### Frontend
 - **Framework**: Vue 3 + Composition API
@@ -151,16 +151,30 @@ transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Pla
 
 ### Database Architecture
 
-**System Module (PostgreSQL - system schema)**:
+All modules use **PostgreSQL 15** with schema isolation for data separation.
+
+**System Module (system schema)**:
 - **users** - User accounts with bcrypt hashed passwords
 - **tenants** - Tenant information for multi-tenancy
 - **audit_logs** - Automatic logging of all non-GET operations (via `LoggerMiddleware`)
 - **resources** - Flexible resource configurations with JSON connection_info field (encrypted)
 
-**Shared Modules (PostgreSQL with schema isolation)**:
-- **manager schema** - data_sources, directories, permissions tables
-- **metadata schema** - datasets, fields, lineage tables
-- **transfer schema** - tasks, task_executions, data_mappings tables
+**Manager Module (manager schema)**:
+- **data_sources** - Data source connections and configurations
+- **directories** - File organization and hierarchy
+- **permissions** - Access control for data sources and directories
+
+**Meta Module (metadata schema)** - IMPLEMENTED:
+- **data_sources** - Synchronized from System module resources
+- **schemas** - Database schemas with scan status and scheduling
+- **tables** - Table metadata (name, row count, size)
+- **fields** - Field-level metadata (name, type, nullable, comments)
+- **lineage** - Data lineage tracking (planned)
+
+**Transfer Module (transfer schema)** - PLANNED:
+- **tasks** - Transfer task definitions
+- **task_executions** - Task execution history
+- **data_mappings** - Field mapping configurations
 
 GORM AutoMigrate handles schema updates automatically on startup. PostgreSQL schemas initialized via `scripts/init-db.sql`.
 
@@ -268,6 +282,7 @@ The `common` module provides shared code used across Manager, Meta, and Transfer
 **Contents**:
 - `client/system.go` - SystemClient for communicating with System module
 - `models/resource.go` - Shared Resource model and BuildConnectionString utility
+- `config/loader.go` - Centralized configuration loading from System module with fallback to local .env
 
 **Usage in modules**:
 ```go
@@ -463,18 +478,32 @@ docker-compose up -d    # Restart
 
 **Database**: PostgreSQL `manager` schema (tables: data_sources, directories, permissions)
 
-### Meta Service (PLANNED)
+### Meta Service (IMPLEMENTED)
 **Purpose**: Metadata management and data lineage
 
+**Implemented Features**:
+- Data source synchronization from System module
+- Metadata scanning for PostgreSQL, MySQL, and other JDBC-compatible databases
+- Schema-level scanning with status tracking (未扫描/扫描中/已扫描)
+- Table and field metadata extraction (names, types, sizes, comments)
+- Automatic and scheduled scanning with cron expressions (default: daily at midnight)
+- Multi-tenant metadata isolation
+
+**Scanning Workflow**:
+1. Sync data sources from System module `/api/resources`
+2. Select data source and schemas to scan
+3. Extract metadata: schemas → tables → fields
+4. Store in PostgreSQL `metadata` schema with tenant isolation
+5. Track scan status and last scan time
+6. Support manual triggers and scheduled auto-sync
+
 **Planned Features**:
-- Automatic metadata extraction from various data formats
-- Schema registry and data catalog
-- Field-level metadata and statistics
 - Data lineage tracking (source → transformation → target)
 - Tag-based search and discovery
-- Extensible parser plugins for new data types
+- Extended metadata statistics and profiling
+- Support for non-relational data sources (S3, HDFS, etc.)
 
-**Database**: PostgreSQL `metadata` schema (tables: datasets, fields, lineage)
+**Database**: PostgreSQL `metadata` schema (tables: data_sources, schemas, tables, fields, lineage)
 
 ### Transfer Service (PLANNED)
 **Purpose**: Data import/export and synchronization
