@@ -245,8 +245,13 @@ Try to fetch config from System (/internal/config)
 All modules use `SystemClient` to fetch business database configurations from System:
 
 ```go
+import (
+    commonClient "github.com/addp/common/client"
+    commonModels "github.com/addp/common/models"
+)
+
 // Create client with JWT token
-client := utils.NewSystemClient(systemURL, jwtToken)
+client := commonClient.NewSystemClient(systemURL, jwtToken)
 
 // List all data sources
 resources, err := client.ListResources("postgresql")
@@ -255,7 +260,7 @@ resources, err := client.ListResources("postgresql")
 resource, err := client.GetResource(resourceID)
 
 // Build connection string (password auto-decrypted)
-connStr, err := utils.BuildConnectionString(resource)
+connStr, err := commonModels.BuildConnectionString(resource)
 ```
 
 **Module .env Files**:

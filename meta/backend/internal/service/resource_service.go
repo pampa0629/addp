@@ -17,14 +17,18 @@ type ResourceService struct {
 	internalClient *commonClient.SystemClient
 }
 
-func NewResourceService(db *gorm.DB) *ResourceService {
-	// 获取System服务URL
-	systemURL := os.Getenv("SYSTEM_SERVICE_URL")
+func NewResourceService(db *gorm.DB, systemURL, internalKey string) *ResourceService {
+	// 默认从环境变量读取，便于本地降级
 	if systemURL == "" {
-		systemURL = "http://localhost:8080"
+		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
+		if systemURL == "" {
+			systemURL = "http://localhost:8080"
+		}
+	}
+	if internalKey == "" {
+		internalKey = os.Getenv("INTERNAL_API_KEY")
 	}
 
-	internalKey := os.Getenv("INTERNAL_API_KEY")
 	var internalClient *commonClient.SystemClient
 	if internalKey != "" {
 		internalClient = commonClient.NewSystemClientWithInternalKey(systemURL, internalKey)

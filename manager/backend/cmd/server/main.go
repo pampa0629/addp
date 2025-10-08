@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
@@ -23,9 +24,17 @@ func main() {
 	resourceRepo := repository.NewResourceRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 
+	log.Printf("Manager config: EnableIntegration=%v, InternalAPIKey set=%v", cfg.EnableIntegration, cfg.InternalAPIKey != "")
+
+	// 初始化 System 客户端（用于拉取解密的资源连接信息）
+	var systemClient *commonClient.SystemClient
+	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
+		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	}
+
 	// 初始化 services
 	resourceService := service.NewResourceService(resourceRepo)
-	metadataService := service.NewMetadataService(metadataRepo, resourceRepo)
+	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient)
 
 	// 设置路由
 	router := api.SetupRouter(cfg, resourceService, metadataService)

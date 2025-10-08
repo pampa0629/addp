@@ -24,8 +24,8 @@ func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	systemClient := client.NewSystemClient(cfg.SystemServiceURL, "")
 
 	// 创建服务
-	resourceService := service.NewResourceService(db)
-	scanService := service.NewScanServiceNew(db, systemClient)
+	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
+	scanService := service.NewScanServiceNew(db, systemClient, resourceService)
 
 	// 创建Handler
 	handler := NewHandler(resourceService, scanService)

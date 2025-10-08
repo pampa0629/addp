@@ -53,5 +53,9 @@ func LoadConfig() *Config {
 		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
 	}
 
+	if cfg.InternalAPIKey == "" {
+		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
+	}
+
 	return cfg
 }

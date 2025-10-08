@@ -28,15 +28,15 @@ init: ## 初始化项目（创建必要的目录和配置文件）
 
 dev-system: ## 开发模式运行 System 模块
 	@echo "$(GREEN)启动 System 模块开发环境...$(NC)"
-	@cd system && $(MAKE) dev
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd system/backend && go run cmd/server/main.go'
 
 dev-manager: ## 开发模式运行 Manager 模块
 	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"
-	@cd manager/backend && go run cmd/server/main.go
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd manager/backend && go run cmd/server/main.go'
 
 dev-meta: ## 开发模式运行 Meta 模块
 	@echo "$(GREEN)启动 Meta 模块开发环境...$(NC)"
-	@cd meta/backend && go run cmd/server/main.go
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd meta/backend && go run cmd/server/main.go'
 
 dev-transfer: ## 开发模式运行 Transfer 模块
 	@echo "$(GREEN)启动 Transfer 模块开发环境...$(NC)"

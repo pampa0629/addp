@@ -13,6 +13,15 @@ func NewResourceRepository(db *gorm.DB) *ResourceRepository {
 	return &ResourceRepository{db: db}
 }
 
+// ListAllActive 获取所有激活资源
+func (r *ResourceRepository) ListAllActive() ([]models.Resource, error) {
+	var resources []models.Resource
+	if err := r.db.Where("is_active = ?", true).Order("id").Find(&resources).Error; err != nil {
+		return nil, err
+	}
+	return resources, nil
+}
+
 // List 获取资源列表
 func (r *ResourceRepository) List(page, pageSize int, resourceType string) ([]models.Resource, int64, error) {
 	var resources []models.Resource

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
-	"github.com/addp/system/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -285,7 +285,7 @@ func (s *ResourceService) encryptSensitiveFields(connInfo models.ConnectionInfo)
 	for _, field := range sensitiveFields {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				encryptedVal, err := utils.Encrypt(strVal, s.encryptionKey)
+				encryptedVal, err := commonutils.Encrypt(strVal, s.encryptionKey)
 				if err != nil {
 					return nil, fmt.Errorf("加密字段 %s 失败: %w", field, err)
 				}
@@ -310,7 +310,7 @@ func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo)
 	for _, field := range sensitiveFields {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
-				decryptedVal, err := utils.Decrypt(strVal, s.encryptionKey)
+				decryptedVal, err := commonutils.Decrypt(strVal, s.encryptionKey)
 				if err != nil {
 					// 如果解密失败，可能是未加密的旧数据，保持原值
 					// 在生产环境中应该记录日志

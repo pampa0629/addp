@@ -27,11 +27,21 @@
     </el-header>
 
     <el-container class="content-container">
-      <el-aside width="240px" class="sidebar">
+      <el-aside :width="sidebarWidth" :class="['sidebar', { collapsed: isCollapsed }]">
+        <div class="collapse-toggle">
+          <el-button
+            circle
+            size="small"
+            :icon="isCollapsed ? Expand : Fold"
+            @click="toggleSidebar"
+            :title="isCollapsed ? '展开菜单' : '收起菜单'"
+          />
+        </div>
         <el-menu
           :default-active="activeMenu"
           @select="handleMenuSelect"
           class="el-menu-vertical"
+          :collapse="isCollapsed"
         >
           <el-menu-item index="/">
             <el-icon><HomeFilled /></el-icon>
@@ -52,21 +62,9 @@
               <el-icon><DataAnalysis /></el-icon>
               <span>数据管理</span>
             </template>
-            <el-menu-item index="/manager/datasources">
-              <el-icon><Connection /></el-icon>
-              <span>数据源管理</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/metadata">
-              <el-icon><Document /></el-icon>
-              <span>元数据管理</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/directories">
-              <el-icon><Folder /></el-icon>
-              <span>目录管理</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/preview">
-              <el-icon><View /></el-icon>
-              <span>数据预览</span>
+            <el-menu-item index="/manager/data-explorer">
+              <el-icon><Search /></el-icon>
+              <span>数据探查</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -179,6 +177,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 import MetaScanView from './MetaScan.vue'
+import { Fold, Expand } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -188,6 +187,7 @@ const user = computed(() => authStore.user)
 const activeMenu = ref('/')
 const currentModule = ref('home')
 const iframeUrl = ref('')
+const isCollapsed = ref(false)
 
 const moduleUrls = {
   system: 'http://localhost:5173',
@@ -237,12 +237,10 @@ const handleMenuSelect = (index) => {
 
     // Manager 模块的路由映射
     // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
-    const managerPageMap = {
-      'datasources': '',  // datasources 对应根路径 /manager/ (DataSources.vue)
-      'metadata': 'metadata',
-      'directories': 'directories',
-      'preview': 'preview'
-    }
+  const managerPageMap = {
+    'data-explorer': 'data-explorer',
+    '': 'data-explorer'
+  }
 
     // Meta 模块的路由映射
     // Meta 路由使用 /meta/ 作为 base，路径结构：/meta/scan, /meta/datasources, /meta/metadata
@@ -252,14 +250,10 @@ const handleMenuSelect = (index) => {
       'search': 'metadata'  // Portal的"元数据浏览"对应 Meta的 /meta/metadata
     }
 
-    if (module === 'manager') {
-      const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${module}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/${module}/`
-      }
-    } else if (module === 'meta') {
+  if (module === 'manager') {
+    const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
+    url = `${moduleUrls[module]}/${module}/${actualPage}`
+  } else if (module === 'meta') {
       const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
       if (actualPage) {
         url = `${moduleUrls[module]}/${module}/${actualPage}`
@@ -298,7 +292,7 @@ const navigateToModule = (module) => {
   if (module === 'system') {
     handleMenuSelect('/system/users')
   } else if (module === 'manager') {
-    handleMenuSelect('/manager/datasources')
+    handleMenuSelect('/manager/data-explorer')
   } else if (module === 'meta') {
     handleMenuSelect('/meta/scan')
   }
@@ -313,6 +307,12 @@ const handleLogout = () => {
   ElMessage.success('已退出登录')
   router.push('/login')
 }
+
+const toggleSidebar = () => {
+  isCollapsed.value = !isCollapsed.value
+}
+
+const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 </script>
 
 <style scoped>
@@ -362,6 +362,31 @@ const handleLogout = () => {
 .sidebar {
   background: #fff;
   border-right: 1px solid #e4e7ed;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s ease;
+}
+
+.sidebar.collapsed {
+  align-items: center;
+}
+
+.collapse-toggle {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 12px 6px;
+}
+
+.sidebar.collapsed .collapse-toggle {
+  justify-content: center;
+}
+
+.collapse-toggle :deep(.el-button) {
+  border: none;
+}
+
+.sidebar.collapsed :deep(.el-menu-vertical) {
+  border-right: none;
 }
 
 .content-container {

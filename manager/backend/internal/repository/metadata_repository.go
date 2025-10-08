@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
-	_ "github.com/lib/pq" // PostgreSQL driver
+	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
-	"github.com/addp/manager/pkg/utils"
+	pq "github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -106,13 +107,13 @@ func (r *MetadataRepository) ScanDatabaseTables(resourceID uint, connInfo models
 		fullName := fmt.Sprintf("%s.%s", schemaName, tableName)
 
 		table := models.ManagedTable{
-			ResourceID:   resourceID,
-			SchemaName:   schemaName,
-			TableName:    tableName,
-			FullName:     fullName,
-			IsManaged:    false,
-			TableType:    tableType,
-			LastScanned:  &now,
+			ResourceID:  resourceID,
+			SchemaName:  schemaName,
+			TableName:   tableName,
+			FullName:    fullName,
+			IsManaged:   false,
+			TableType:   tableType,
+			LastScanned: &now,
 		}
 
 		if tableSize.Valid {
@@ -358,6 +359,168 @@ func (r *MetadataRepository) UnmarkTableAsManaged(tableID uint) error {
 	}
 
 	return nil
+}
+
+// ListScannedSchemasAndTables 获取已扫描的 schema 和 table
+func (r *MetadataRepository) ListScannedSchemasAndTables() ([]models.MetadataSchemaLite, []models.MetadataTableLite, error) {
+	var schemas []models.MetadataSchemaLite
+	if err := r.db.Table("metadata.schemas").Where("scan_status = ?", "已扫描").Order("resource_id, schema_name").Find(&schemas).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
+	}
+
+	if len(schemas) == 0 {
+		return []models.MetadataSchemaLite{}, []models.MetadataTableLite{}, nil
+	}
+
+	schemaIDs := make([]uint, 0, len(schemas))
+	for _, schema := range schemas {
+		schemaIDs = append(schemaIDs, schema.ID)
+	}
+
+	var tables []models.MetadataTableLite
+	if err := r.db.Table("metadata.tables").
+		Where("schema_id IN ?", schemaIDs).
+		Where("last_scan_at IS NOT NULL").
+		Order("schema_id, table_name").
+		Select("id, schema_id, table_name, last_scan_at").
+		Find(&tables).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to query tables: %w", err)
+	}
+
+	return schemas, tables, nil
+}
+
+// QueryTablePreview 查询表数据预览
+func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	decryptedConnInfo, err := r.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+
+	host, _ := decryptedConnInfo["host"].(string)
+	if host == "localhost" || host == "127.0.0.1" {
+		if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+			host = alias
+		} else {
+			host = "127.0.0.1"
+		}
+	}
+
+	database, _ := decryptedConnInfo["database"].(string)
+	password, _ := decryptedConnInfo["password"].(string)
+
+	username, ok := decryptedConnInfo["username"].(string)
+	if !ok {
+		username, _ = decryptedConnInfo["user"].(string)
+	}
+
+	var port string
+	if portNum, ok := decryptedConnInfo["port"].(float64); ok {
+		port = fmt.Sprintf("%.0f", portNum)
+	} else {
+		port, _ = decryptedConnInfo["port"].(string)
+	}
+
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, username, password, database,
+	)
+
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	defer db.Close()
+
+	columnsQuery := `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`
+	colsRows, err := db.Query(columnsQuery, schemaName, tableName)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to query columns: %w", err)
+	}
+	var columns []string
+	for colsRows.Next() {
+		var col string
+		if err := colsRows.Scan(&col); err != nil {
+			colsRows.Close()
+			return nil, nil, 0, err
+		}
+		columns = append(columns, col)
+	}
+	colsRows.Close()
+
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName))
+	var totalCount int64
+	if err := db.QueryRow(countQuery).Scan(&totalCount); err != nil {
+		return columns, nil, 0, fmt.Errorf("failed to count rows: %w", err)
+	}
+	if totalCount > int64(maxRows) {
+		totalCount = int64(maxRows)
+	}
+
+	offset := (page - 1) * pageSize
+	if offset >= int(totalCount) {
+		return columns, []map[string]interface{}{}, int(totalCount), nil
+	}
+
+	limit := pageSize
+	if offset+limit > int(totalCount) {
+		limit = int(totalCount) - offset
+	}
+
+	dataQuery := fmt.Sprintf("SELECT * FROM %s.%s LIMIT %d OFFSET %d", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName), limit, offset)
+	dataRows, err := db.Query(dataQuery)
+	if err != nil {
+		return columns, nil, 0, fmt.Errorf("failed to query data: %w", err)
+	}
+	defer dataRows.Close()
+
+	queryColumns := columns
+	if len(queryColumns) == 0 {
+		queryColumns, err = dataRows.Columns()
+		if err != nil {
+			return columns, nil, 0, err
+		}
+	}
+
+	var rows []map[string]interface{}
+	for dataRows.Next() {
+		values := make([]interface{}, len(queryColumns))
+		valuePtrs := make([]interface{}, len(queryColumns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := dataRows.Scan(valuePtrs...); err != nil {
+			return columns, nil, 0, err
+		}
+
+		row := make(map[string]interface{})
+		for i, name := range queryColumns {
+			val := values[i]
+			if val == nil {
+				row[name] = nil
+				continue
+			}
+			switch v := val.(type) {
+			case []byte:
+				row[name] = string(v)
+			case time.Time:
+				row[name] = v.Format(time.RFC3339)
+			default:
+				row[name] = v
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	return columns, rows, int(totalCount), nil
 }
 
 // decryptSensitiveFields 解密连接信息中的敏感字段

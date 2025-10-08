@@ -183,7 +183,7 @@ ENCRYPTION_KEY=<your-base64-encoded-32-byte-key>
 # 服务集成开关
 ENABLE_SERVICE_INTEGRATION=true
 
-# 可选：内部 API 保护
+# 可选：内部 API 保护（仅需在 System 配置，其它模块将自动获取）
 INTERNAL_API_KEY=your-internal-api-key-for-service-to-service
 ```
 
@@ -213,6 +213,7 @@ ENABLE_SERVICE_INTEGRATION=true
 # - JWT_SECRET
 # - POSTGRES_HOST/PORT/USER/PASSWORD/DB
 # - ENCRYPTION_KEY
+# - INTERNAL_API_KEY
 ```
 
 **Meta 模块** (`meta/backend/.env`):
@@ -322,10 +323,13 @@ System 会自动加密 `password` 字段。
 
 ```go
 // Manager/Meta/Transfer 中使用 SystemClient
-import "github.com/addp/manager/pkg/utils"
+import (
+    commonClient "github.com/addp/common/client"
+    commonModels "github.com/addp/common/models"
+)
 
 // 创建客户端
-client := utils.NewSystemClient(systemURL, jwtToken)
+client := commonClient.NewSystemClient(systemURL, jwtToken)
 
 // 获取资源（password 自动解密）
 resource, err := client.GetResource(resourceID)
@@ -334,7 +338,7 @@ if err != nil {
 }
 
 // 构建连接字符串
-connStr, err := utils.BuildConnectionString(resource)
+connStr, err := commonModels.BuildConnectionString(resource)
 // 返回: "business_user:business_pass@tcp(business-db.example.com:3306)/business_db?parseTime=true"
 
 // 使用连接字符串
@@ -573,19 +577,20 @@ system api returned status 401: unauthorized: invalid internal API key
 ```
 
 **原因**：
-设置了 `INTERNAL_API_KEY` 但模块没有配置。
+System 已启用 `INTERNAL_API_KEY`，但其他模块未能通过配置中心获取（通常是 System 未返回该值，或模块禁用了集成模式）。
 
 **解决方案**：
 
-在所有模块的 `.env` 中添加相同的 API Key：
+1. 确认只在 **System** 的 `.env` 中设置 API Key：
 
-```bash
-# System .env
-INTERNAL_API_KEY=your-secret-api-key
+   ```bash
+   # System .env
+   INTERNAL_API_KEY=your-secret-api-key
+   ```
 
-# Manager/Meta/Transfer .env
-INTERNAL_API_KEY=your-secret-api-key
-```
+2. 确保其他模块开启 `ENABLE_SERVICE_INTEGRATION=true`，启动日志应看到 “Successfully loaded shared config” 并自动获取同一个 Key。
+
+3. 仅在集成模式被关闭（`ENABLE_SERVICE_INTEGRATION=false`）时，才需要手动在模块 `.env` 中设置 `INTERNAL_API_KEY` 作为回退方案。
 
 ---
 
@@ -610,6 +615,7 @@ openssl rand -base64 32
 # System .env
 INTERNAL_API_KEY=$(openssl rand -base64 32)
 ```
+> 其它模块通过配置中心自动获取该 Key，无需在本地重复设置。
 
 ✅ **限制 /internal/config 访问**：
 - 仅允许内部网络访问
@@ -770,7 +776,6 @@ PORT=8081
 DB_SCHEMA=manager
 SYSTEM_SERVICE_URL=http://localhost:8080
 ENABLE_SERVICE_INTEGRATION=true
-INTERNAL_API_KEY=<api-key>
 ```
 
 #### Meta 模块 `.env`
@@ -780,7 +785,6 @@ PORT=8082
 DB_SCHEMA=metadata
 SYSTEM_SERVICE_URL=http://localhost:8080
 ENABLE_SERVICE_INTEGRATION=true
-INTERNAL_API_KEY=<api-key>
 
 # Meta 特有
 AUTO_SYNC_ENABLED=true
@@ -797,7 +801,6 @@ PORT=8083
 DB_SCHEMA=transfer
 SYSTEM_SERVICE_URL=http://localhost:8080
 ENABLE_SERVICE_INTEGRATION=true
-INTERNAL_API_KEY=<api-key>
 
 # Transfer 特有
 REDIS_HOST=localhost
@@ -809,6 +812,8 @@ MAX_RETRIES=3
 RETRY_DELAY=30s
 TASK_QUEUE_NAME=transfer:tasks
 ```
+
+> 提示：只有在关闭配置中心集成（`ENABLE_SERVICE_INTEGRATION=false`）或用于离线调试时，才需要在各模块 `.env` 中手动设置 `INTERNAL_API_KEY`。
 
 ### B. API 参考
 

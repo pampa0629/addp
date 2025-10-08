@@ -14,23 +14,12 @@ const routes = [
     children: [
       {
         path: '',
-        name: 'DataSources',
-        component: () => import('../views/DataSources.vue')
+        redirect: 'data-explorer'
       },
       {
-        path: 'directories',
-        name: 'Directories',
-        component: () => import('../views/Directories.vue')
-      },
-      {
-        path: 'preview',
-        name: 'Preview',
-        component: () => import('../views/Preview.vue')
-      },
-      {
-        path: 'metadata',
-        name: 'Metadata',
-        component: () => import('../views/Metadata.vue')
+        path: 'data-explorer',
+        name: 'DataExplorer',
+        component: () => import('../views/DataExplorer.vue')
       }
     ]
   }

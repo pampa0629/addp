@@ -5,6 +5,7 @@ go 1.23
 toolchain go1.24.7
 
 require (
+	github.com/addp/common v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.9.1
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/lib/pq v1.10.9
@@ -13,6 +14,8 @@ require (
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.25.10
 )
+
+replace github.com/addp/common => ../../common
 
 require (
 	github.com/bytedance/sonic v1.9.1 // indirect

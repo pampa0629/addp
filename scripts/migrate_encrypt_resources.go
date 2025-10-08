@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log"
 
+	commonutils "github.com/addp/common/utils"
 	_ "github.com/lib/pq"
-	"github.com/addp/system/pkg/utils"
 )
 
 func main() {
@@ -55,7 +55,7 @@ func main() {
 				if strVal, ok := val.(string); ok && strVal != "" {
 					// 检查是否已加密 (简单判断: 加密后是 Base64,长度会显著增加)
 					if len(strVal) < 50 { // 未加密的密码一般较短
-						encryptedVal, err := utils.Encrypt(strVal, encryptionKey)
+						encryptedVal, err := commonutils.Encrypt(strVal, encryptionKey)
 						if err != nil {
 							log.Printf("资源 %d 加密字段 %s 失败: %v", id, field, err)
 							continue

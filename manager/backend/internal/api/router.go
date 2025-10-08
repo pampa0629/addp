@@ -21,6 +21,14 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 		c.Next()
 	})
 
+	// 健康检查
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":  "ok",
+			"service": "manager",
+		})
+	})
+
 	// 根路由
 	router.GET("/", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -32,6 +40,14 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 	// API 路由组
 	api := router.Group("/api")
 	{
+		// 数据探查
+		explorer := api.Group("/data-explorer")
+		{
+			handler := NewDataExplorerHandler(metadataService)
+			explorer.GET("/tree", handler.GetTree)
+			explorer.GET("/preview", handler.PreviewTable)
+		}
+
 		// 资源管理
 		resources := api.Group("/resources")
 		{

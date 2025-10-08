@@ -20,11 +20,15 @@ type ScanServiceNew struct {
 	resourceService *ResourceService
 }
 
-func NewScanServiceNew(db *gorm.DB, systemClient *client.SystemClient) *ScanServiceNew {
+func NewScanServiceNew(db *gorm.DB, systemClient *client.SystemClient, resourceService *ResourceService) *ScanServiceNew {
+	if resourceService == nil {
+		resourceService = NewResourceService(db, "", "")
+	}
+
 	return &ScanServiceNew{
 		db:              db,
 		systemClient:    systemClient,
-		resourceService: NewResourceService(db),
+		resourceService: resourceService,
 	}
 }
 
@@ -34,11 +38,11 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 	// 创建扫描日志
 	scanLog := &models.ScanLog{
-		TenantID:   tenantID,
-		ScanType:   "auto",
-		ScanDepth:  "deep",
-		Status:     "running",
-		StartedAt:  &startTime,
+		TenantID:  tenantID,
+		ScanType:  "auto",
+		ScanDepth: "deep",
+		Status:    "running",
+		StartedAt: &startTime,
 	}
 	if err := s.db.Create(scanLog).Error; err != nil {
 		return nil, fmt.Errorf("failed to create scan log: %w", err)

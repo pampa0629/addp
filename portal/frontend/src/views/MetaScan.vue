@@ -26,20 +26,42 @@
             height="600"
           >
             <el-table-column type="index" label="#" width="50" />
-            <el-table-column prop="name" label="名称" width="150" />
-            <el-table-column prop="resource_type" label="类型" width="110">
+            <el-table-column label="名称" min-width="220">
               <template #default="{ row }">
-                <el-tag>{{ row.resource_type }}</el-tag>
+                <div class="resource-name-cell">
+                  <span>{{ row.name }}</span>
+                  <el-tooltip effect="dark" placement="right">
+                    <template #content>
+                      <div class="tooltip-content">
+                        <div class="tooltip-row">
+                          <span class="label">类型:</span>
+                          <span>{{ row.resource_type }}</span>
+                        </div>
+                        <div class="tooltip-row">
+                          <span class="label">Schema 总数:</span>
+                          <span>{{ row.total_schemas || 0 }}</span>
+                        </div>
+                        <div class="tooltip-row">
+                          <span class="label">已扫描:</span>
+                          <span class="success">{{ row.scanned_schemas || 0 }}</span>
+                        </div>
+                        <div class="tooltip-row">
+                          <span class="label">未扫描:</span>
+                          <span class="warning">{{ row.unscanned_schemas || 0 }}</span>
+                        </div>
+                        <div v-if="row.last_scan_at" class="tooltip-row">
+                          <span class="label">上次扫描:</span>
+                          <span>{{ row.last_scan_at }}</span>
+                        </div>
+                      </div>
+                    </template>
+                    <el-icon class="info-icon">
+                      <InfoFilled />
+                    </el-icon>
+                  </el-tooltip>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="Schema统计" width="140">
-              <template #default="{ row }">
-                <div>总数: {{ row.total_schemas || 0 }}</div>
-                <div style="color: #67C23A">已扫: {{ row.scanned_schemas || 0 }}</div>
-                <div style="color: #E6A23C">未扫: {{ row.unscanned_schemas || 0 }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="last_scan_at" label="上次扫描" width="170" />
           </el-table>
         </div>
 
@@ -138,7 +160,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Refresh, Search, InfoFilled } from '@element-plus/icons-vue'
 import metaApi from '../api/meta'
 
 const resources = ref([])
@@ -351,7 +373,7 @@ onMounted(() => {
 }
 
 .left-panel {
-  flex: 0 0 450px;
+  flex: 0 0 260px;
   border-right: 1px solid #eee;
   padding-right: 20px;
 }
@@ -383,5 +405,48 @@ onMounted(() => {
   margin-top: 20px;
   text-align: center;
   color: #999;
+}
+
+.resource-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-icon {
+  cursor: pointer;
+  color: #909399;
+  font-size: 16px;
+}
+
+.info-icon:hover {
+  color: #409eff;
+}
+
+.tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #ffffff;
+}
+
+.tooltip-row .label {
+  color: rgba(255, 255, 255, 0.65);
+  margin-right: 8px;
+}
+
+.tooltip-row .success {
+  color: #67c23a;
+}
+
+.tooltip-row .warning {
+  color: #e6a23c;
 }
 </style>

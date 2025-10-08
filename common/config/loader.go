@@ -13,9 +13,10 @@ import (
 
 // SharedConfig 从 System 服务获取的共享配置
 type SharedConfig struct {
-	JWTSecret     string `json:"jwt_secret"`
-	EncryptionKey string `json:"encryption_key"`
-	Database      struct {
+	JWTSecret      string `json:"jwt_secret"`
+	EncryptionKey  string `json:"encryption_key"`
+	InternalAPIKey string `json:"internal_api_key"`
+	Database       struct {
 		Host     string `json:"host"`
 		Port     string `json:"port"`
 		User     string `json:"user"`
@@ -38,6 +39,7 @@ type BaseConfig struct {
 	SystemServiceURL  string
 	EnableIntegration bool
 	EncryptionKey     []byte
+	InternalAPIKey    string
 }
 
 // LoadSharedConfig 从 System 服务获取共享配置
@@ -78,6 +80,7 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 	target.DBUser = shared.Database.User
 	target.DBPassword = shared.Database.Password
 	target.DBName = shared.Database.Name
+	target.InternalAPIKey = shared.InternalAPIKey
 
 	// 解析加密密钥
 	if shared.EncryptionKey != "" {
@@ -104,6 +107,7 @@ func LoadLocalConfig(target *BaseConfig) {
 	target.DBPassword = GetEnv("DB_PASSWORD", "addp_password")
 	target.DBName = GetEnv("DB_NAME", "addp")
 	target.EncryptionKey = LoadEncryptionKey()
+	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
 
 	if target.JWTSecret == "" {
 		log.Println("⚠️  WARNING: JWT_SECRET is not set! Authentication will fail!")

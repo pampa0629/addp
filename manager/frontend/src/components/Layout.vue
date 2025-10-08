@@ -39,21 +39,9 @@
           router
           class="el-menu-vertical"
         >
-          <el-menu-item index="/">
-            <el-icon><Connection /></el-icon>
-            <span>数据源管理</span>
-          </el-menu-item>
-          <el-menu-item index="/metadata">
-            <el-icon><Document /></el-icon>
-            <span>元数据管理</span>
-          </el-menu-item>
-          <el-menu-item index="/directories">
-            <el-icon><Folder /></el-icon>
-            <span>目录管理</span>
-          </el-menu-item>
-          <el-menu-item index="/preview">
-            <el-icon><View /></el-icon>
-            <span>数据预览</span>
+          <el-menu-item index="/data-explorer">
+            <el-icon><Search /></el-icon>
+            <span>数据探查</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
