@@ -50,7 +50,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/logs/*path", systemProxy.Handle)
 		api.Any("/resources/*path", systemProxy.Handle)
 
-		// Manager 模块路由（数据源、目录、预览）
+		// Manager 模块路由（配置、数据源、目录、预览）
+		api.Any("/config/*path", managerProxy.Handle)
 		api.Any("/datasources/*path", managerProxy.Handle)
 		api.Any("/directories/*path", managerProxy.Handle)
 		api.Any("/preview/*path", managerProxy.Handle)

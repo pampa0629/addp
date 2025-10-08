@@ -174,17 +174,18 @@ func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName st
 	}
 
 	const maxRows = 50
-	columns, rows, total, err := s.metadataRepo.QueryTablePreview(resource, schemaName, tableName, page, pageSize, maxRows)
+	columns, rows, total, geometryColumns, err := s.metadataRepo.QueryTablePreview(resource, schemaName, tableName, page, pageSize, maxRows)
 	if err != nil {
 		return nil, err
 	}
 
 	return &models.TablePreview{
-		Columns:  columns,
-		Rows:     rows,
-		Total:    total,
-		Page:     page,
-		PageSize: pageSize,
+		Columns:         columns,
+		Rows:            rows,
+		Total:           total,
+		Page:            page,
+		PageSize:        pageSize,
+		GeometryColumns: geometryColumns,
 	}, nil
 }
 

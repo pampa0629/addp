@@ -23,6 +23,11 @@ type SharedConfig struct {
 		Password string `json:"password"`
 		Name     string `json:"name"`
 	} `json:"database"`
+	Map struct {
+		AMapKey            string `json:"amap_key"`
+		AMapSecurityJsCode string `json:"amap_security_js_code"`
+		TDTKey             string `json:"tdt_key"`
+	} `json:"map"`
 }
 
 // BaseConfig 所有模块共享的基础配置字段
@@ -40,6 +45,11 @@ type BaseConfig struct {
 	EnableIntegration bool
 	EncryptionKey     []byte
 	InternalAPIKey    string
+
+	// 地图服务配置
+	AMapKey            string
+	AMapSecurityJsCode string
+	TDTKey             string
 }
 
 // LoadSharedConfig 从 System 服务获取共享配置
@@ -81,6 +91,9 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 	target.DBPassword = shared.Database.Password
 	target.DBName = shared.Database.Name
 	target.InternalAPIKey = shared.InternalAPIKey
+	target.AMapKey = shared.Map.AMapKey
+	target.AMapSecurityJsCode = shared.Map.AMapSecurityJsCode
+	target.TDTKey = shared.Map.TDTKey
 
 	// 解析加密密钥
 	if shared.EncryptionKey != "" {
@@ -108,6 +121,9 @@ func LoadLocalConfig(target *BaseConfig) {
 	target.DBName = GetEnv("DB_NAME", "addp")
 	target.EncryptionKey = LoadEncryptionKey()
 	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
+	target.AMapKey = GetEnv("AMAP_KEY", "")
+	target.AMapSecurityJsCode = GetEnv("AMAP_SECURITY_KEY", "")
+	target.TDTKey = GetEnv("TDT_KEY", "")
 
 	if target.JWTSecret == "" {
 		log.Println("⚠️  WARNING: JWT_SECRET is not set! Authentication will fail!")

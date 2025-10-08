@@ -89,6 +89,37 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": schemas})
 }
 
+// ListObjectStorageNodes 分级列出对象存储节点
+func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Param("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	path := c.Query("path")
+
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
+		return
+	}
+	if len(token) > 7 && token[:7] == "Bearer " {
+		token = token[7:]
+	}
+
+	nodes, err := h.scanService.ListObjectStorageNodes(uint(resourceID), tenantID, path, token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": nodes})
+}
+
 // AutoScan 自动扫描所有未扫描的资源
 // POST /api/meta/scan/auto
 func (h *Handler) AutoScan(c *gin.Context) {
@@ -124,7 +155,7 @@ func (h *Handler) ScanResource(c *gin.Context) {
 		token = token[7:]
 	}
 
-	result, err := h.scanService.ScanResource(req.ResourceID, tenantID, req.SchemaNames, token)
+	result, err := h.scanService.ScanResource(req.ResourceID, tenantID, req.SchemaNames, req.ObjectPaths, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

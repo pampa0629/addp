@@ -159,9 +159,10 @@ type MetadataTableLite struct {
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
-	Columns  []string                 `json:"columns"`
-	Rows     []map[string]interface{} `json:"rows"`
-	Total    int                      `json:"total"`
-	Page     int                      `json:"page"`
-	PageSize int                      `json:"page_size"`
+	Columns         []string                 `json:"columns"`
+	Rows            []map[string]interface{} `json:"rows"`
+	Total           int                      `json:"total"`
+	Page            int                      `json:"page"`
+	PageSize        int                      `json:"page_size"`
+	GeometryColumns []string                 `json:"geometry_columns"`
 }

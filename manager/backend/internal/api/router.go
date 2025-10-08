@@ -40,6 +40,12 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 	// API 路由组
 	api := router.Group("/api")
 	{
+		configGroup := api.Group("/config")
+		{
+			configHandler := NewConfigHandler(cfg)
+			configGroup.GET("/map", configHandler.GetMapConfig)
+		}
+
 		// 数据探查
 		explorer := api.Group("/data-explorer")
 		{

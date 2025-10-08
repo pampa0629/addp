@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -55,9 +56,8 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 			if !res.IsActive {
 				continue
 			}
-			switch res.ResourceType {
-			case "postgresql", "PostgreSQL", "mysql", "MySQL":
-				// ensure tenant matching if provided
+			switch strings.ToLower(res.ResourceType) {
+			case "postgresql", "postgres", "mysql", "object_storage", "object-storage", "s3", "minio", "oss":
 				if tenantID > 0 && res.TenantID != tenantID {
 					continue
 				}
@@ -72,7 +72,8 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 
 	// 直接从 system.resources 表读取
 	err := s.db.Table("system.resources").
-		Where("tenant_id = ? AND resource_type IN (?, ?)", tenantID, "postgresql", "mysql").
+		Where("tenant_id = ? AND resource_type IN (?, ?, ?, ?, ?, ?, ?)", tenantID,
+			"postgresql", "mysql", "s3", "minio", "oss", "object_storage", "object-storage").
 		Where("is_active = ?", true).
 		Find(&resources).Error
 

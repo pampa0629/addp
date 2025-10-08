@@ -45,6 +45,7 @@ func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		// Schema相关
 		api.GET("/schemas/:resource_id", handler.GetSchemas)
 		api.GET("/schemas/:resource_id/available", handler.ListAvailableSchemas)
+		api.GET("/object-storage/:resource_id/nodes", handler.ListObjectStorageNodes)
 
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)

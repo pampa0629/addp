@@ -104,6 +104,12 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
 			user, password, host, port, dbname), nil
 
+	case "s3", "S3", "minio", "Minio", "oss", "OSS", "object_storage", "object-storage":
+		bytes, err := json.Marshal(connInfo)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal object storage connection info: %w", err)
+		}
+		return string(bytes), nil
 	default:
 		return "", fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
 	}

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/addp/common/client"
@@ -29,6 +32,15 @@ func NewScanServiceNew(db *gorm.DB, systemClient *client.SystemClient, resourceS
 		db:              db,
 		systemClient:    systemClient,
 		resourceService: resourceService,
+	}
+}
+
+func isObjectStorageType(resourceType string) bool {
+	switch strings.ToLower(resourceType) {
+	case "s3", "minio", "oss", "object_storage", "object-storage":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -97,7 +109,7 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 }
 
 // ScanResource 扫描指定资源
-func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames []string, token string) (*models.ScanResponse, error) {
+func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, objectPaths []string, token string) (*models.ScanResponse, error) {
 	startTime := time.Now()
 
 	// 获取资源
@@ -121,8 +133,16 @@ func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames []s
 		return nil, fmt.Errorf("failed to create scan log: %w", err)
 	}
 
-	// 执行扫描
-	schemas, tables, fields, err := s.scanResourceSchemas(resource, tenantID, schemaNames, scanLog.ID)
+	resourceType := strings.ToLower(resource.ResourceType)
+
+	schemas, tables, fields := 0, 0, 0
+
+	if isObjectStorageType(resourceType) {
+		schemas, tables, fields, err = s.scanObjectStorageResource(resource, tenantID, objectPaths, schemaNames)
+	} else {
+		schemas, tables, fields, err = s.scanResourceSchemas(resource, tenantID, schemaNames, scanLog.ID)
+	}
+
 	if err != nil {
 		s.updateScanLogFailed(scanLog, err.Error())
 		return nil, err
@@ -162,6 +182,32 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
+
+	if objectScanner, ok := scan.(scanner.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
+		buckets := objectScanner.AllowedBuckets()
+		if len(buckets) == 0 {
+			return 0, 0, 0, nil
+		}
+		sort.Strings(buckets)
+		totalSchemas := 0
+		totalNodes := 0
+		for _, bucket := range buckets {
+			var existingSchema models.MetadataSchema
+			err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
+				resource.ID, tenantID, bucket).First(&existingSchema).Error
+
+			if err == gorm.ErrRecordNotFound {
+				schemas, nodes, _, err := s.scanObjectStorageResource(resource, tenantID, []string{bucket}, nil)
+				if err != nil {
+					log.Printf("Failed to scan bucket %s: %v", bucket, err)
+					continue
+				}
+				totalSchemas += schemas
+				totalNodes += nodes
+			}
+		}
+		return totalSchemas, totalNodes, 0, nil
+	}
 
 	// 列出所有Schema
 	schemasInfo, err := scan.ListSchemas()
@@ -208,6 +254,11 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 	}
 	defer scan.Close()
 
+	if objectScanner, ok := scan.(scanner.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
+		schemas, tables, err := s.scanObjectStorageWithScanner(resource, tenantID, schemaNames, nil, objectScanner)
+		return schemas, tables, 0, err
+	}
+
 	// 如果未指定Schema，则扫描所有Schema
 	if len(schemaNames) == 0 {
 		schemasInfo, err := scan.ListSchemas()
@@ -238,6 +289,105 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 }
 
 // scanSingleSchema 扫描单个Schema（表+字段）
+func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
+	}
+	defer scan.Close()
+
+	objectScanner, ok := scan.(scanner.ObjectStorageScanner)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+	}
+
+	schemas, tables, err := s.scanObjectStorageWithScanner(resource, tenantID, objectPaths, fallback, objectScanner)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return schemas, tables, 0, nil
+}
+
+func (s *ScanServiceNew) scanObjectStorageWithScanner(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, objectScanner scanner.ObjectStorageScanner) (int, int, error) {
+	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
+	if len(paths) == 0 {
+		return 0, 0, nil
+	}
+
+	uniqueBuckets := map[string]struct{}{}
+	totalNodes := 0
+
+	for _, path := range paths {
+		metas, err := objectScanner.ScanPath(path)
+		if err != nil {
+			log.Printf("Failed to scan path %s: %v", path, err)
+			continue
+		}
+		if len(metas) == 0 {
+			continue
+		}
+		bucket := metas[0].Bucket
+		if bucket == "" {
+			continue
+		}
+		uniqueBuckets[bucket] = struct{}{}
+		count, err := s.persistObjectMetadataForPath(resource.ID, tenantID, bucket, path, metas)
+		if err != nil {
+			log.Printf("Failed to persist metadata for path %s: %v", path, err)
+			continue
+		}
+		totalNodes += count
+	}
+
+	return len(uniqueBuckets), totalNodes, nil
+}
+
+func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageScanner) []string {
+	pathSet := map[string]struct{}{}
+	for _, p := range paths {
+		clean := sanitizeObjectPath(p)
+		if clean != "" {
+			pathSet[clean] = struct{}{}
+		}
+	}
+
+	if len(pathSet) == 0 {
+		for _, p := range fallback {
+			clean := sanitizeObjectPath(p)
+			if clean != "" {
+				pathSet[clean] = struct{}{}
+			}
+		}
+	}
+
+	if len(pathSet) == 0 {
+		for _, bucket := range scanner.AllowedBuckets() {
+			clean := sanitizeObjectPath(bucket)
+			if clean != "" {
+				pathSet[clean] = struct{}{}
+			}
+		}
+	}
+
+	var result []string
+	for p := range pathSet {
+		result = append(result, p)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sanitizeObjectPath(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.Trim(path, "/")
+	return path
+}
+
 func (s *ScanServiceNew) scanSingleSchema(scan scanner.Scanner, resourceID, tenantID uint, schemaName string) (int, int, int, error) {
 	now := time.Now()
 
@@ -358,6 +508,144 @@ func (s *ScanServiceNew) scanSingleSchema(scan scanner.Scanner, resourceID, tena
 	return 1, totalTables, totalFields, nil
 }
 
+func (s *ScanServiceNew) persistObjectMetadataForPath(resourceID, tenantID uint, bucket, path string, metas []scanner.ObjectMetadata) (int, error) {
+	schema, err := s.ensureObjectSchema(resourceID, tenantID, bucket)
+	if err != nil {
+		return 0, err
+	}
+
+	relativePrefix := ""
+	trimmed := sanitizeObjectPath(path)
+	if trimmed != "" {
+		parts := strings.SplitN(trimmed, "/", 2)
+		if len(parts) > 1 {
+			relativePrefix = sanitizeObjectPath(parts[1])
+		}
+	}
+
+	if err := s.clearObjectMetadata(schema.ID, tenantID, relativePrefix); err != nil {
+		return 0, err
+	}
+
+	now := time.Now()
+	inserted := 0
+
+	for _, meta := range metas {
+		tableName := meta.RelativePath
+		if meta.NodeType == "bucket" && tableName == "" {
+			tableName = "__bucket__"
+		}
+		if tableName == "" {
+			continue
+		}
+
+		var metaTable models.MetadataTable
+		err := s.db.Where("schema_id = ? AND tenant_id = ? AND table_name = ?",
+			schema.ID, tenantID, tableName).First(&metaTable).Error
+
+		if err == gorm.ErrRecordNotFound {
+			metaTable = models.MetadataTable{
+				SchemaID: schema.ID,
+				TenantID: tenantID,
+				Name:     tableName,
+			}
+		} else if err != nil {
+			return inserted, err
+		}
+
+		metaTable.TableType = meta.NodeType
+		if meta.NodeType == "object" {
+			metaTable.TableComment = meta.FileType
+		} else {
+			metaTable.TableComment = ""
+		}
+		metaTable.RowCount = meta.ObjectCount
+		metaTable.SizeBytes = meta.SizeBytes
+		metaTable.LastScanAt = &now
+
+		if err == gorm.ErrRecordNotFound {
+			if err := s.db.Create(&metaTable).Error; err != nil {
+				return inserted, err
+			}
+		} else {
+			if err := s.db.Save(&metaTable).Error; err != nil {
+				return inserted, err
+			}
+		}
+
+		inserted++
+	}
+
+	if err := s.updateObjectSchemaStats(schema.ID, tenantID); err != nil {
+		return inserted, err
+	}
+
+	return inserted, nil
+}
+
+func (s *ScanServiceNew) ensureObjectSchema(resourceID, tenantID uint, bucket string) (*models.MetadataSchema, error) {
+	var schema models.MetadataSchema
+	err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
+		resourceID, tenantID, bucket).First(&schema).Error
+	if err == gorm.ErrRecordNotFound {
+		schema = models.MetadataSchema{
+			ResourceID: resourceID,
+			TenantID:   tenantID,
+			SchemaName: bucket,
+			ScanStatus: "扫描中",
+			ScanDepth:  "deep",
+		}
+		if err := s.db.Create(&schema).Error; err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+	return &schema, nil
+}
+
+func (s *ScanServiceNew) clearObjectMetadata(schemaID, tenantID uint, prefix string) error {
+	if prefix == "" {
+		return s.db.Where("schema_id = ? AND tenant_id = ?", schemaID, tenantID).
+			Delete(&models.MetadataTable{}).Error
+	}
+	clean := strings.TrimSuffix(prefix, "/")
+	like := clean + "%"
+	return s.db.Where("schema_id = ? AND tenant_id = ? AND (table_name = ? OR table_name LIKE ?)",
+		schemaID, tenantID, clean, like).Delete(&models.MetadataTable{}).Error
+}
+
+func (s *ScanServiceNew) updateObjectSchemaStats(schemaID, tenantID uint) error {
+	var schema models.MetadataSchema
+	if err := s.db.First(&schema, schemaID).Error; err != nil {
+		return err
+	}
+
+	var tableCount int64
+	if err := s.db.Model(&models.MetadataTable{}).
+		Where("schema_id = ? AND tenant_id = ?", schemaID, tenantID).
+		Count(&tableCount).Error; err != nil {
+		return err
+	}
+
+	var size sql.NullInt64
+	if err := s.db.Model(&models.MetadataTable{}).
+		Where("schema_id = ? AND tenant_id = ? AND table_type = ?", schemaID, tenantID, "object").
+		Select("COALESCE(SUM(size_bytes),0)").
+		Scan(&size).Error; err != nil {
+		return err
+	}
+
+	now := time.Now()
+	schema.TableCount = int(tableCount)
+	schema.TotalSize = size.Int64
+	schema.LastScanAt = &now
+	schema.ScanStatus = "已扫描"
+	schema.ErrorMessage = ""
+
+	return s.db.Save(&schema).Error
+}
+
 // GetSchemasByResource 获取资源的所有Schema
 func (s *ScanServiceNew) GetSchemasByResource(resourceID, tenantID uint) ([]*models.SchemaWithStatus, error) {
 	var schemas []models.MetadataSchema
@@ -419,6 +707,56 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 		result = append(result, &models.SchemaInfo{
 			Name: info.Name,
 		})
+	}
+
+	return result, nil
+}
+
+func (s *ScanServiceNew) ListObjectStorageNodes(resourceID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
+	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+	if err != nil {
+		return nil, err
+	}
+
+	if !isObjectStorageType(strings.ToLower(resource.ResourceType)) {
+		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+	}
+
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scanner: %w", err)
+	}
+	defer scan.Close()
+
+	objectScanner, ok := scan.(scanner.ObjectStorageScanner)
+	if !ok {
+		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+	}
+
+	nodes, err := objectScanner.ListNodes(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*models.ObjectNode
+	for _, node := range nodes {
+		item := &models.ObjectNode{
+			Name:        node.Name,
+			Path:        node.Path,
+			Type:        node.Type,
+			SizeBytes:   node.SizeBytes,
+			FileType:    node.FileType,
+			ObjectCount: node.ObjectCount,
+		}
+		if node.LastModified != nil {
+			item.LastModified = node.LastModified.Format("2006-01-02 15:04:05")
+		}
+		result = append(result, item)
 	}
 
 	return result, nil

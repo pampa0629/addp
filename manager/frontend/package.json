@@ -8,9 +8,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
+    "@antv/l7": "^2.18.22",
+    "@antv/l7-maps": "^2.18.22",
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.6.2",
     "element-plus": "^2.11.4",
+    "ol": "^9.2.4",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"

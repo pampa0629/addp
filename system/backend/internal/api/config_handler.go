@@ -31,6 +31,11 @@ func (h *ConfigHandler) GetSharedConfig(c *gin.Context) {
 		"jwt_secret":       h.cfg.JWTSecret,
 		"encryption_key":   encryptionKey,
 		"internal_api_key": h.cfg.InternalAPIKey,
+		"map": gin.H{
+			"amap_key":              h.cfg.AMapKey,
+			"amap_security_js_code": h.cfg.AMapSecurityKey,
+			"tdt_key":               h.cfg.TDTKey,
+		},
 		"database": gin.H{
 			"host":     h.cfg.PostgresHost,
 			"port":     h.cfg.PostgresPort,

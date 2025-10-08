@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/addp/common/utils"
@@ -391,7 +392,7 @@ func (r *MetadataRepository) ListScannedSchemasAndTables() ([]models.MetadataSch
 }
 
 // QueryTablePreview 查询表数据预览
-func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, error) {
+func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -401,7 +402,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 
 	decryptedConnInfo, err := r.decryptSensitiveFields(resource.ConnectionInfo)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("解密连接信息失败: %w", err)
+		return nil, nil, 0, nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
 
 	host, _ := decryptedConnInfo["host"].(string)
@@ -435,30 +436,42 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	defer db.Close()
 
-	columnsQuery := `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`
+	columnsQuery := `SELECT column_name, udt_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`
 	colsRows, err := db.Query(columnsQuery, schemaName, tableName)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to query columns: %w", err)
+		return nil, nil, 0, nil, fmt.Errorf("failed to query columns: %w", err)
 	}
+
+	type columnInfo struct {
+		name string
+		udt  string
+	}
+
+	var columnInfos []columnInfo
 	var columns []string
+	var geometryColumns []string
 	for colsRows.Next() {
-		var col string
-		if err := colsRows.Scan(&col); err != nil {
+		var col, udt string
+		if err := colsRows.Scan(&col, &udt); err != nil {
 			colsRows.Close()
-			return nil, nil, 0, err
+			return nil, nil, 0, nil, err
 		}
 		columns = append(columns, col)
+		columnInfos = append(columnInfos, columnInfo{name: col, udt: udt})
+		if udt == "geometry" || udt == "geography" {
+			geometryColumns = append(geometryColumns, col)
+		}
 	}
 	colsRows.Close()
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName))
 	var totalCount int64
 	if err := db.QueryRow(countQuery).Scan(&totalCount); err != nil {
-		return columns, nil, 0, fmt.Errorf("failed to count rows: %w", err)
+		return columns, nil, 0, nil, fmt.Errorf("failed to count rows: %w", err)
 	}
 	if totalCount > int64(maxRows) {
 		totalCount = int64(maxRows)
@@ -466,7 +479,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 
 	offset := (page - 1) * pageSize
 	if offset >= int(totalCount) {
-		return columns, []map[string]interface{}{}, int(totalCount), nil
+		return columns, []map[string]interface{}{}, int(totalCount), geometryColumns, nil
 	}
 
 	limit := pageSize
@@ -474,10 +487,20 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		limit = int(totalCount) - offset
 	}
 
-	dataQuery := fmt.Sprintf("SELECT * FROM %s.%s LIMIT %d OFFSET %d", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName), limit, offset)
+	selectColumns := make([]string, len(columnInfos))
+	for i, info := range columnInfos {
+		identifier := pq.QuoteIdentifier(info.name)
+		if info.udt == "geometry" || info.udt == "geography" {
+			selectColumns[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", identifier, identifier)
+		} else {
+			selectColumns[i] = identifier
+		}
+	}
+
+	dataQuery := fmt.Sprintf("SELECT %s FROM %s.%s LIMIT %d OFFSET %d", strings.Join(selectColumns, ", "), pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName), limit, offset)
 	dataRows, err := db.Query(dataQuery)
 	if err != nil {
-		return columns, nil, 0, fmt.Errorf("failed to query data: %w", err)
+		return columns, nil, 0, nil, fmt.Errorf("failed to query data: %w", err)
 	}
 	defer dataRows.Close()
 
@@ -485,7 +508,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 	if len(queryColumns) == 0 {
 		queryColumns, err = dataRows.Columns()
 		if err != nil {
-			return columns, nil, 0, err
+			return columns, nil, 0, nil, err
 		}
 	}
 
@@ -498,7 +521,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		}
 
 		if err := dataRows.Scan(valuePtrs...); err != nil {
-			return columns, nil, 0, err
+			return columns, nil, 0, nil, err
 		}
 
 		row := make(map[string]interface{})
@@ -520,7 +543,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		rows = append(rows, row)
 	}
 
-	return columns, rows, int(totalCount), nil
+	return columns, rows, int(totalCount), geometryColumns, nil
 }
 
 // decryptSensitiveFields 解密连接信息中的敏感字段
