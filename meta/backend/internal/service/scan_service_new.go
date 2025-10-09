@@ -1,10 +1,11 @@
 package service
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
+	pathpkg "path"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +43,333 @@ func isObjectStorageType(resourceType string) bool {
 	default:
 		return false
 	}
+}
+
+func sanitizeConnectionInfo(info commonModels.ConnectionInfo) models.JSONMap {
+	sanitized := models.JSONMap{}
+	if info == nil {
+		return sanitized
+	}
+	for key, value := range info {
+		lowerKey := strings.ToLower(key)
+		if strings.Contains(lowerKey, "password") ||
+			strings.Contains(lowerKey, "secret") ||
+			strings.Contains(lowerKey, "token") ||
+			strings.Contains(lowerKey, "key") {
+			continue
+		}
+		sanitized[key] = value
+	}
+	return sanitized
+}
+
+func composeNodePath(nodeID uint, parent *models.MetaNode) string {
+	current := fmt.Sprintf("%d", nodeID)
+	if parent == nil || parent.Path == "" {
+		if parent == nil {
+			return current
+		}
+		return fmt.Sprintf("%d/%s", parent.ID, current)
+	}
+	return fmt.Sprintf("%s/%s", parent.Path, current)
+}
+
+func composeNodeFullName(name string, parent *models.MetaNode, separator string) string {
+	if parent == nil || parent.FullName == "" {
+		return name
+	}
+	if separator == "" {
+		separator = "."
+	}
+	return fmt.Sprintf("%s%s%s", parent.FullName, separator, name)
+}
+
+type nodeAggregate struct {
+	node      *models.MetaNode
+	itemCount int
+	totalSize int64
+}
+
+func (s *ScanServiceNew) ensureMetaResourceRecord(resource *commonModels.Resource, tenantID uint) (*models.MetaResource, error) {
+	var metaRes models.MetaResource
+	err := s.db.Where("tenant_id = ? AND resource_id = ?", tenantID, resource.ID).First(&metaRes).Error
+	if err == gorm.ErrRecordNotFound {
+		metaRes = models.MetaResource{
+			TenantID:     tenantID,
+			ResourceID:   resource.ID,
+			ResourceType: resource.ResourceType,
+			Name:         resource.Name,
+			Engine:       strings.ToLower(resource.ResourceType),
+			Config:       sanitizeConnectionInfo(resource.ConnectionInfo),
+			Status:       "active",
+			Source:       "system",
+		}
+		if err := s.db.Create(&metaRes).Error; err != nil {
+			return nil, err
+		}
+		return &metaRes, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{}
+	if metaRes.Name != resource.Name {
+		updates["name"] = resource.Name
+		metaRes.Name = resource.Name
+	}
+	if metaRes.ResourceType != resource.ResourceType {
+		updates["resource_type"] = resource.ResourceType
+		metaRes.ResourceType = resource.ResourceType
+	}
+	engine := strings.ToLower(resource.ResourceType)
+	if metaRes.Engine != engine {
+		updates["engine"] = engine
+		metaRes.Engine = engine
+	}
+
+	sanitized := sanitizeConnectionInfo(resource.ConnectionInfo)
+	if len(sanitized) > 0 && !reflect.DeepEqual(metaRes.Config, sanitized) {
+		updates["config"] = sanitized
+		metaRes.Config = sanitized
+	}
+
+	if len(updates) > 0 {
+		updates["updated_at"] = time.Now()
+		if err := s.db.Model(&metaRes).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return &metaRes, nil
+}
+
+func (s *ScanServiceNew) upsertNode(metaRes *models.MetaResource, parent *models.MetaNode, nodeType, name, fullName string, attrs models.JSONMap) (*models.MetaNode, error) {
+	var parentID *uint
+	depth := 1
+	if parent != nil {
+		parentID = &parent.ID
+		depth = parent.Depth + 1
+	}
+
+	query := s.db.Where("res_id = ? AND tenant_id = ? AND node_type = ? AND name = ?", metaRes.ID, metaRes.TenantID, nodeType, name)
+	if parentID == nil {
+		query = query.Where("parent_node_id IS NULL")
+	} else {
+		query = query.Where("parent_node_id = ?", *parentID)
+	}
+
+	var node models.MetaNode
+	err := query.First(&node).Error
+	if err == gorm.ErrRecordNotFound {
+		node = models.MetaNode{
+			TenantID:     metaRes.TenantID,
+			ResID:        metaRes.ID,
+			ParentNodeID: parentID,
+			NodeType:     nodeType,
+			Name:         name,
+			Depth:        depth,
+			Status:       "active",
+			ScanStatus:   "未扫描",
+			Attributes:   models.JSONMap{},
+		}
+		if fullName != "" {
+			node.FullName = fullName
+		}
+		if attrs != nil {
+			node.Attributes = attrs
+		}
+		if err := s.db.Create(&node).Error; err != nil {
+			return nil, err
+		}
+
+		path := composeNodePath(node.ID, parent)
+		update := map[string]interface{}{"path": path}
+		node.Path = path
+		if node.FullName == "" {
+			node.FullName = composeNodeFullName(node.Name, parent, ".")
+			update["full_name"] = node.FullName
+		}
+		if err := s.db.Model(&node).Updates(update).Error; err != nil {
+			return nil, err
+		}
+		return &node, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{}
+	if node.Depth != depth {
+		updates["depth"] = depth
+		node.Depth = depth
+	}
+
+	path := composeNodePath(node.ID, parent)
+	if node.Path != path {
+		updates["path"] = path
+		node.Path = path
+	}
+
+	expectedFullName := fullName
+	if expectedFullName == "" {
+		expectedFullName = composeNodeFullName(name, parent, ".")
+	}
+	if node.FullName != expectedFullName {
+		updates["full_name"] = expectedFullName
+		node.FullName = expectedFullName
+	}
+
+	if attrs != nil && len(attrs) > 0 {
+		updates["attributes"] = attrs
+		node.Attributes = attrs
+	}
+
+	if len(updates) > 0 {
+		updates["updated_at"] = time.Now()
+		if err := s.db.Model(&node).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return &node, nil
+}
+
+func (s *ScanServiceNew) resetNodeState(node *models.MetaNode, status string) error {
+	now := time.Now()
+	update := map[string]interface{}{
+		"scan_status":   status,
+		"error_message": "",
+		"updated_at":    now,
+	}
+	if status == "扫描中" {
+		update["last_scan_at"] = now
+	}
+	return s.db.Model(node).Updates(update).Error
+}
+
+func (s *ScanServiceNew) finalizeNodeState(node *models.MetaNode, status string, itemCount int, totalSize int64, errMsg string) error {
+	update := map[string]interface{}{
+		"scan_status":      status,
+		"item_count":       itemCount,
+		"total_size_bytes": totalSize,
+		"error_message":    errMsg,
+		"updated_at":       time.Now(),
+	}
+	if status == "已扫描" {
+		update["last_scan_at"] = time.Now()
+	}
+	return s.db.Model(node).Updates(update).Error
+}
+
+func (s *ScanServiceNew) hardDeleteItemsByNode(nodeID uint) error {
+	return s.db.Unscoped().Where("node_id = ?", nodeID).Delete(&models.MetaItem{}).Error
+}
+
+func (s *ScanServiceNew) hardDeleteDescendantNodes(node *models.MetaNode) error {
+	if node.Path == "" {
+		return nil
+	}
+	prefix := fmt.Sprintf("%s/%%", node.Path)
+	return s.db.Unscoped().
+		Where("path LIKE ?", prefix).
+		Where("id <> ?", node.ID).
+		Delete(&models.MetaNode{}).Error
+}
+
+func (s *ScanServiceNew) upsertItem(
+	metaRes *models.MetaResource,
+	node *models.MetaNode,
+	itemType, name, fullName string,
+	attrs models.JSONMap,
+	rowCount, sizeBytes, objectSize *int64,
+	lastModified *time.Time,
+	schemaVersion int,
+) (*models.MetaItem, error) {
+	var item models.MetaItem
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
+		metaRes.TenantID, metaRes.ID, node.ID, itemType, name).First(&item).Error
+
+	if err == gorm.ErrRecordNotFound {
+		item = models.MetaItem{
+			TenantID:          metaRes.TenantID,
+			ResID:             metaRes.ID,
+			NodeID:            node.ID,
+			ItemType:          itemType,
+			Name:              name,
+			FullName:          fullName,
+			Status:            "active",
+			MetaSchemaVersion: schemaVersion,
+			Attributes:        models.JSONMap{},
+			RowCount:          rowCount,
+			SizeBytes:         sizeBytes,
+			ObjectSizeBytes:   objectSize,
+			LastModifiedAt:    lastModified,
+		}
+		if attrs != nil {
+			item.Attributes = attrs
+		}
+		if err := s.db.Create(&item).Error; err != nil {
+			return nil, err
+		}
+		return &item, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	updates := map[string]interface{}{
+		"full_name":           fullName,
+		"meta_schema_version": schemaVersion,
+		"attributes":          attrs,
+		"row_count":           rowCount,
+		"size_bytes":          sizeBytes,
+		"object_size_bytes":   objectSize,
+		"last_modified_at":    lastModified,
+		"updated_at":          time.Now(),
+	}
+
+	if err := s.db.Model(&item).Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	item.FullName = fullName
+	item.MetaSchemaVersion = schemaVersion
+	item.Attributes = attrs
+	item.RowCount = rowCount
+	item.SizeBytes = sizeBytes
+	item.ObjectSizeBytes = objectSize
+	item.LastModifiedAt = lastModified
+
+	return &item, nil
+}
+
+func buildFieldAttributes(fields []scanner.FieldInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, 0, len(fields))
+	for _, field := range fields {
+		result = append(result, map[string]interface{}{
+			"name":              field.Name,
+			"ordinal_position":  field.OrdinalPosition,
+			"data_type":         field.DataType,
+			"column_type":       field.ColumnType,
+			"is_nullable":       field.IsNullable,
+			"default_value":     field.DefaultValue,
+			"comment":           field.Comment,
+			"is_primary_key":    field.IsPrimaryKey,
+			"is_unique_key":     field.IsUniqueKey,
+			"character_set":     field.CharacterSet,
+			"collation":         field.Collation,
+			"numeric_precision": field.NumericPrecision,
+			"numeric_scale":     field.NumericScale,
+		})
+	}
+	return result
+}
+
+func ensureNodeAggregate(stats map[uint]*nodeAggregate, node *models.MetaNode) *nodeAggregate {
+	if agg, ok := stats[node.ID]; ok {
+		return agg
+	}
+	agg := &nodeAggregate{node: node}
+	stats[node.ID] = agg
+	return agg
 }
 
 // AutoScanUnscanned 自动扫描所有未扫描的资源
@@ -171,7 +499,11 @@ func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, ob
 
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID uint, scanLogID uint) (int, int, int, error) {
-	// 连接到资源数据库
+	metaRes, err := s.ensureMetaResourceRecord(resource, tenantID)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to ensure meta resource: %w", err)
+	}
+
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
@@ -189,27 +521,28 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 			return 0, 0, 0, nil
 		}
 		sort.Strings(buckets)
-		totalSchemas := 0
-		totalNodes := 0
+
+		totalBuckets := 0
+		totalObjects := 0
+
 		for _, bucket := range buckets {
-			var existingSchema models.MetadataSchema
-			err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
-				resource.ID, tenantID, bucket).First(&existingSchema).Error
+			var node models.MetaNode
+			err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
+				metaRes.TenantID, metaRes.ID, "bucket", bucket).First(&node).Error
 
 			if err == gorm.ErrRecordNotFound {
-				schemas, nodes, _, err := s.scanObjectStorageResource(resource, tenantID, []string{bucket}, nil)
+				schemas, objects, err := s.scanObjectStoragePaths(metaRes, objectScanner, []string{bucket})
 				if err != nil {
 					log.Printf("Failed to scan bucket %s: %v", bucket, err)
 					continue
 				}
-				totalSchemas += schemas
-				totalNodes += nodes
+				totalBuckets += schemas
+				totalObjects += objects
 			}
 		}
-		return totalSchemas, totalNodes, 0, nil
+		return totalBuckets, totalObjects, 0, nil
 	}
 
-	// 列出所有Schema
 	schemasInfo, err := scan.ListSchemas()
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to list schemas: %w", err)
@@ -219,15 +552,12 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 	totalTables := 0
 	totalFields := 0
 
-	// 检查每个Schema是否已扫描
 	for _, schemaInfo := range schemasInfo {
-		var existingSchema models.MetadataSchema
-		err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
-			resource.ID, tenantID, schemaInfo.Name).First(&existingSchema).Error
-
+		var node models.MetaNode
+		err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
+			metaRes.TenantID, metaRes.ID, "schema", schemaInfo.Name).First(&node).Error
 		if err == gorm.ErrRecordNotFound {
-			// 未扫描，执行扫描
-			schemas, tables, fields, err := s.scanSingleSchema(scan, resource.ID, tenantID, schemaInfo.Name)
+			schemas, tables, fields, err := s.scanDatabaseSchema(scan, metaRes, schemaInfo.Name)
 			if err != nil {
 				log.Printf("Failed to scan schema %s: %v", schemaInfo.Name, err)
 				continue
@@ -243,6 +573,11 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 // scanResourceSchemas 扫描资源的指定Schema列表
 func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint) (int, int, int, error) {
+	metaRes, err := s.ensureMetaResourceRecord(resource, tenantID)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to ensure meta resource: %w", err)
+	}
+
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
@@ -253,11 +588,6 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
-
-	if objectScanner, ok := scan.(scanner.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
-		schemas, tables, err := s.scanObjectStorageWithScanner(resource, tenantID, schemaNames, nil, objectScanner)
-		return schemas, tables, 0, err
-	}
 
 	// 如果未指定Schema，则扫描所有Schema
 	if len(schemaNames) == 0 {
@@ -275,7 +605,7 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 	totalFields := 0
 
 	for _, schemaName := range schemaNames {
-		schemas, tables, fields, err := s.scanSingleSchema(scan, resource.ID, tenantID, schemaName)
+		schemas, tables, fields, err := s.scanDatabaseSchema(scan, metaRes, schemaName)
 		if err != nil {
 			log.Printf("Failed to scan schema %s: %v", schemaName, err)
 			continue
@@ -290,6 +620,11 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 
 // scanSingleSchema 扫描单个Schema（表+字段）
 func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
+	metaRes, err := s.ensureMetaResourceRecord(resource, tenantID)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to ensure meta resource: %w", err)
+	}
+
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
@@ -306,21 +641,26 @@ func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resour
 		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
 	}
 
-	schemas, tables, err := s.scanObjectStorageWithScanner(resource, tenantID, objectPaths, fallback, objectScanner)
+	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
+	if len(paths) == 0 {
+		return 0, 0, 0, nil
+	}
+
+	buckets, objects, err := s.scanObjectStoragePaths(metaRes, objectScanner, paths)
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	return schemas, tables, 0, nil
+
+	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStorageWithScanner(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, objectScanner scanner.ObjectStorageScanner) (int, int, error) {
-	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
-	if len(paths) == 0 {
-		return 0, 0, nil
-	}
+func (s *ScanServiceNew) scanObjectStoragePaths(metaRes *models.MetaResource, objectScanner scanner.ObjectStorageScanner, paths []string) (int, int, error) {
+	bucketNodes := make(map[string]*models.MetaNode)
+	processedBuckets := make(map[string]bool)
+	nodeStats := make(map[uint]*nodeAggregate)
 
-	uniqueBuckets := map[string]struct{}{}
-	totalNodes := 0
+	totalBuckets := 0
+	totalObjects := 0
 
 	for _, path := range paths {
 		metas, err := objectScanner.ScanPath(path)
@@ -331,20 +671,139 @@ func (s *ScanServiceNew) scanObjectStorageWithScanner(resource *commonModels.Res
 		if len(metas) == 0 {
 			continue
 		}
+
 		bucket := metas[0].Bucket
 		if bucket == "" {
 			continue
 		}
-		uniqueBuckets[bucket] = struct{}{}
-		count, err := s.persistObjectMetadataForPath(resource.ID, tenantID, bucket, path, metas)
+
+		bucketNode, ok := bucketNodes[bucket]
+		if !ok {
+			attrs := models.JSONMap{"bucket": bucket}
+			bucketNode, err = s.upsertNode(metaRes, nil, "bucket", bucket, bucket, attrs)
+			if err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			bucketNodes[bucket] = bucketNode
+		}
+
+		if !processedBuckets[bucket] {
+			if err := s.resetNodeState(bucketNode, "扫描中"); err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			if err := s.hardDeleteItemsByNode(bucketNode.ID); err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			processedBuckets[bucket] = true
+			totalBuckets++
+		}
+
+		objects, err := s.persistObjectMetas(metaRes, bucketNode, metas, nodeStats)
 		if err != nil {
-			log.Printf("Failed to persist metadata for path %s: %v", path, err)
+			log.Printf("Failed to persist object metadata for bucket %s: %v", bucket, err)
 			continue
 		}
-		totalNodes += count
+		totalObjects += objects
 	}
 
-	return len(uniqueBuckets), totalNodes, nil
+	for _, agg := range nodeStats {
+		if err := s.finalizeNodeState(agg.node, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
+			return totalBuckets, totalObjects, err
+		}
+	}
+
+	for _, bucketNode := range bucketNodes {
+		if _, ok := nodeStats[bucketNode.ID]; !ok {
+			if err := s.finalizeNodeState(bucketNode, "已扫描", 0, 0, ""); err != nil {
+				return totalBuckets, totalObjects, err
+			}
+		}
+	}
+
+	return totalBuckets, totalObjects, nil
+}
+
+func (s *ScanServiceNew) persistObjectMetas(metaRes *models.MetaResource, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate) (int, error) {
+	objects := 0
+
+	for _, meta := range metas {
+		if meta.NodeType == "bucket" {
+			ensureNodeAggregate(stats, bucketNode)
+			continue
+		}
+
+		parentChain := []*models.MetaNode{bucketNode}
+		currentParent := bucketNode
+
+		trimmed := sanitizeObjectPath(meta.RelativePath)
+		if trimmed != "" {
+			segments := strings.Split(trimmed, "/")
+			for idx, segment := range segments {
+				isLast := idx == len(segments)-1
+				if meta.NodeType == "object" && isLast {
+					break
+				}
+				fullName := composeNodeFullName(segment, currentParent, "/")
+				attrs := models.JSONMap{
+					"bucket": meta.Bucket,
+					"path":   strings.Join(segments[:idx+1], "/"),
+				}
+				childNode, err := s.upsertNode(metaRes, currentParent, "prefix", segment, fullName, attrs)
+				if err != nil {
+					return objects, err
+				}
+				currentParent = childNode
+				parentChain = append(parentChain, childNode)
+				ensureNodeAggregate(stats, childNode)
+			}
+		} else {
+			ensureNodeAggregate(stats, bucketNode)
+		}
+
+		if meta.NodeType != "object" {
+			continue
+		}
+
+		objectName := pathpkg.Base(strings.Trim(meta.Path, "/"))
+		if objectName == "" {
+			objectName = trimmed
+		}
+		objectName = strings.Trim(objectName, "/")
+		if objectName == "" {
+			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
+		}
+
+		attrs := models.JSONMap{
+			"bucket":        meta.Bucket,
+			"path":          meta.Path,
+			"relative_path": trimmed,
+			"file_type":     meta.FileType,
+			"object_count":  meta.ObjectCount,
+		}
+		if meta.LastModified != nil {
+			attrs["last_modified_at"] = meta.LastModified
+		}
+
+		sizeVal := meta.SizeBytes
+		objectSizeVal := meta.SizeBytes
+		fullName := composeNodeFullName(objectName, currentParent, "/")
+		if _, err := s.upsertItem(metaRes, currentParent, "object", objectName, fullName, attrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1); err != nil {
+			return objects, err
+		}
+
+		objects++
+		for _, node := range parentChain {
+			agg := ensureNodeAggregate(stats, node)
+			agg.itemCount++
+			agg.totalSize += meta.SizeBytes
+		}
+	}
+
+	ensureNodeAggregate(stats, bucketNode)
+	return objects, nil
 }
 
 func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageScanner) []string {
@@ -388,290 +847,98 @@ func sanitizeObjectPath(path string) string {
 	return path
 }
 
-func (s *ScanServiceNew) scanSingleSchema(scan scanner.Scanner, resourceID, tenantID uint, schemaName string) (int, int, int, error) {
-	now := time.Now()
-
-	// 创建或更新Schema记录
-	var metaSchema models.MetadataSchema
-	err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
-		resourceID, tenantID, schemaName).First(&metaSchema).Error
-
-	if err == gorm.ErrRecordNotFound {
-		metaSchema = models.MetadataSchema{
-			ResourceID: resourceID,
-			TenantID:   tenantID,
-			SchemaName: schemaName,
-			ScanStatus: "扫描中",
-			ScanDepth:  "deep",
-		}
-		if err := s.db.Create(&metaSchema).Error; err != nil {
-			return 0, 0, 0, err
-		}
-	} else {
-		metaSchema.ScanStatus = "扫描中"
-		s.db.Save(&metaSchema)
+func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, metaRes *models.MetaResource, schemaName string) (int, int, int, error) {
+	schemaNode, err := s.upsertNode(metaRes, nil, "schema", schemaName, "", nil)
+	if err != nil {
+		return 0, 0, 0, err
 	}
 
-	// 扫描表
+	if err := s.resetNodeState(schemaNode, "扫描中"); err != nil {
+		return 0, 0, 0, err
+	}
+
+	if err := s.hardDeleteItemsByNode(schemaNode.ID); err != nil {
+		return 0, 0, 0, err
+	}
+
 	tables, err := scan.ScanTables(schemaName)
 	if err != nil {
-		metaSchema.ScanStatus = "未扫描"
-		metaSchema.ErrorMessage = err.Error()
-		s.db.Save(&metaSchema)
+		s.finalizeNodeState(schemaNode, "未扫描", 0, 0, err.Error())
 		return 0, 0, 0, err
 	}
 
 	totalTables := 0
 	totalFields := 0
-	totalSize := int64(0)
+	var totalSize int64
 
-	// 保存表和字段
 	for _, tableInfo := range tables {
-		// 创建或更新表记录
-		var metaTable models.MetadataTable
-		err := s.db.Where("schema_id = ? AND tenant_id = ? AND table_name = ?",
-			metaSchema.ID, tenantID, tableInfo.Name).First(&metaTable).Error
-
-		if err == gorm.ErrRecordNotFound {
-			metaTable = models.MetadataTable{
-				SchemaID:     metaSchema.ID,
-				TenantID:     tenantID,
-				Name:         tableInfo.Name,
-				TableType:    tableInfo.Type,
-				TableComment: tableInfo.Comment,
-				RowCount:     tableInfo.RowCount,
-				SizeBytes:    tableInfo.SizeBytes,
-				LastScanAt:   &now,
-			}
-			if err := s.db.Create(&metaTable).Error; err != nil {
-				log.Printf("Failed to create table %s: %v", tableInfo.Name, err)
-				continue
-			}
-		} else {
-			metaTable.Name = tableInfo.Name
-			metaTable.TableType = tableInfo.Type
-			metaTable.TableComment = tableInfo.Comment
-			metaTable.RowCount = tableInfo.RowCount
-			metaTable.SizeBytes = tableInfo.SizeBytes
-			metaTable.LastScanAt = &now
-			s.db.Save(&metaTable)
-
-			// 删除旧字段
-			s.db.Where("table_id = ?", metaTable.ID).Delete(&models.MetadataField{})
-		}
-
-		totalTables++
-		totalSize += tableInfo.SizeBytes
-
-		// 扫描字段
 		fields, err := scan.ScanFields(schemaName, tableInfo.Name)
 		if err != nil {
 			log.Printf("Failed to scan fields for table %s: %v", tableInfo.Name, err)
 			continue
 		}
 
-		// 保存字段
-		for _, fieldInfo := range fields {
-			metaField := &models.MetadataField{
-				TableID:          metaTable.ID,
-				TenantID:         tenantID,
-				FieldName:        fieldInfo.Name,
-				DataType:         fieldInfo.DataType,
-				ColumnType:       fieldInfo.ColumnType,
-				IsNullable:       fieldInfo.IsNullable,
-				DefaultValue:     fieldInfo.DefaultValue,
-				ColumnComment:    fieldInfo.Comment,
-				IsPrimaryKey:     fieldInfo.IsPrimaryKey,
-				IsUniqueKey:      fieldInfo.IsUniqueKey,
-				OrdinalPosition:  fieldInfo.OrdinalPosition,
-				CharacterSet:     fieldInfo.CharacterSet,
-				Collation:        fieldInfo.Collation,
-				NumericPrecision: fieldInfo.NumericPrecision,
-				NumericScale:     fieldInfo.NumericScale,
-			}
-			if err := s.db.Create(metaField).Error; err != nil {
-				log.Printf("Failed to create field %s: %v", fieldInfo.Name, err)
-				continue
-			}
-			totalFields++
+		rowCount := tableInfo.RowCount
+		sizeBytes := tableInfo.SizeBytes
+
+		attrs := models.JSONMap{
+			"schema":        schemaName,
+			"table_type":    tableInfo.Type,
+			"table_comment": tableInfo.Comment,
+			"fields":        buildFieldAttributes(fields),
 		}
+
+		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
+		if _, err := s.upsertItem(metaRes, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1); err != nil {
+			log.Printf("Failed to persist table %s: %v", tableInfo.Name, err)
+			continue
+		}
+
+		totalTables++
+		totalFields += len(fields)
+		totalSize += tableInfo.SizeBytes
 	}
 
-	// 更新Schema状态
-	metaSchema.ScanStatus = "已扫描"
-	metaSchema.LastScanAt = &now
-	metaSchema.TableCount = totalTables
-	metaSchema.TotalSize = totalSize
-	metaSchema.ErrorMessage = ""
-	s.db.Save(&metaSchema)
+	if err := s.finalizeNodeState(schemaNode, "已扫描", totalTables, totalSize, ""); err != nil {
+		return 0, totalTables, totalFields, err
+	}
 
 	return 1, totalTables, totalFields, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetadataForPath(resourceID, tenantID uint, bucket, path string, metas []scanner.ObjectMetadata) (int, error) {
-	schema, err := s.ensureObjectSchema(resourceID, tenantID, bucket)
-	if err != nil {
-		return 0, err
-	}
-
-	relativePrefix := ""
-	trimmed := sanitizeObjectPath(path)
-	if trimmed != "" {
-		parts := strings.SplitN(trimmed, "/", 2)
-		if len(parts) > 1 {
-			relativePrefix = sanitizeObjectPath(parts[1])
-		}
-	}
-
-	if err := s.clearObjectMetadata(schema.ID, tenantID, relativePrefix); err != nil {
-		return 0, err
-	}
-
-	now := time.Now()
-	inserted := 0
-
-	for _, meta := range metas {
-		tableName := meta.RelativePath
-		if meta.NodeType == "bucket" && tableName == "" {
-			tableName = "__bucket__"
-		}
-		if tableName == "" {
-			continue
-		}
-
-		var metaTable models.MetadataTable
-		err := s.db.Where("schema_id = ? AND tenant_id = ? AND table_name = ?",
-			schema.ID, tenantID, tableName).First(&metaTable).Error
-
-		if err == gorm.ErrRecordNotFound {
-			metaTable = models.MetadataTable{
-				SchemaID: schema.ID,
-				TenantID: tenantID,
-				Name:     tableName,
-			}
-		} else if err != nil {
-			return inserted, err
-		}
-
-		metaTable.TableType = meta.NodeType
-		if meta.NodeType == "object" {
-			metaTable.TableComment = meta.FileType
-		} else {
-			metaTable.TableComment = ""
-		}
-		metaTable.RowCount = meta.ObjectCount
-		metaTable.SizeBytes = meta.SizeBytes
-		metaTable.LastScanAt = &now
-
-		if err == gorm.ErrRecordNotFound {
-			if err := s.db.Create(&metaTable).Error; err != nil {
-				return inserted, err
-			}
-		} else {
-			if err := s.db.Save(&metaTable).Error; err != nil {
-				return inserted, err
-			}
-		}
-
-		inserted++
-	}
-
-	if err := s.updateObjectSchemaStats(schema.ID, tenantID); err != nil {
-		return inserted, err
-	}
-
-	return inserted, nil
-}
-
-func (s *ScanServiceNew) ensureObjectSchema(resourceID, tenantID uint, bucket string) (*models.MetadataSchema, error) {
-	var schema models.MetadataSchema
-	err := s.db.Where("resource_id = ? AND tenant_id = ? AND schema_name = ?",
-		resourceID, tenantID, bucket).First(&schema).Error
-	if err == gorm.ErrRecordNotFound {
-		schema = models.MetadataSchema{
-			ResourceID: resourceID,
-			TenantID:   tenantID,
-			SchemaName: bucket,
-			ScanStatus: "扫描中",
-			ScanDepth:  "deep",
-		}
-		if err := s.db.Create(&schema).Error; err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
-	return &schema, nil
-}
-
-func (s *ScanServiceNew) clearObjectMetadata(schemaID, tenantID uint, prefix string) error {
-	if prefix == "" {
-		return s.db.Where("schema_id = ? AND tenant_id = ?", schemaID, tenantID).
-			Delete(&models.MetadataTable{}).Error
-	}
-	clean := strings.TrimSuffix(prefix, "/")
-	like := clean + "%"
-	return s.db.Where("schema_id = ? AND tenant_id = ? AND (table_name = ? OR table_name LIKE ?)",
-		schemaID, tenantID, clean, like).Delete(&models.MetadataTable{}).Error
-}
-
-func (s *ScanServiceNew) updateObjectSchemaStats(schemaID, tenantID uint) error {
-	var schema models.MetadataSchema
-	if err := s.db.First(&schema, schemaID).Error; err != nil {
-		return err
-	}
-
-	var tableCount int64
-	if err := s.db.Model(&models.MetadataTable{}).
-		Where("schema_id = ? AND tenant_id = ?", schemaID, tenantID).
-		Count(&tableCount).Error; err != nil {
-		return err
-	}
-
-	var size sql.NullInt64
-	if err := s.db.Model(&models.MetadataTable{}).
-		Where("schema_id = ? AND tenant_id = ? AND table_type = ?", schemaID, tenantID, "object").
-		Select("COALESCE(SUM(size_bytes),0)").
-		Scan(&size).Error; err != nil {
-		return err
-	}
-
-	now := time.Now()
-	schema.TableCount = int(tableCount)
-	schema.TotalSize = size.Int64
-	schema.LastScanAt = &now
-	schema.ScanStatus = "已扫描"
-	schema.ErrorMessage = ""
-
-	return s.db.Save(&schema).Error
-}
-
 // GetSchemasByResource 获取资源的所有Schema
 func (s *ScanServiceNew) GetSchemasByResource(resourceID, tenantID uint) ([]*models.SchemaWithStatus, error) {
-	var schemas []models.MetadataSchema
-	err := s.db.Where("resource_id = ? AND tenant_id = ?", resourceID, tenantID).
-		Order("schema_name").Find(&schemas).Error
-
-	if err != nil {
+	var metaRes models.MetaResource
+	if err := s.db.Where("tenant_id = ? AND resource_id = ?", tenantID, resourceID).First(&metaRes).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return []*models.SchemaWithStatus{}, nil
+		}
 		return nil, err
 	}
 
-	var result []*models.SchemaWithStatus
-	for _, schema := range schemas {
+	var nodes []models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, metaRes.ID).
+		Order("name").
+		Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+
+	result := make([]*models.SchemaWithStatus, 0, len(nodes))
+	for _, node := range nodes {
 		item := &models.SchemaWithStatus{
-			ID:              schema.ID,
-			SchemaName:      schema.SchemaName,
-			ScanStatus:      schema.ScanStatus,
-			TableCount:      schema.TableCount,
-			TotalSizeBytes:  schema.TotalSize,
-			AutoScanEnabled: schema.AutoScanEnabled,
-			AutoScanCron:    schema.AutoScanCron,
+			ID:              node.ID,
+			SchemaName:      node.Name,
+			ScanStatus:      node.ScanStatus,
+			TableCount:      node.ItemCount,
+			TotalSizeBytes:  node.TotalSizeBytes,
+			AutoScanEnabled: node.AutoScanEnabled,
+			AutoScanCron:    node.AutoScanCron,
 		}
-		if schema.LastScanAt != nil {
-			item.LastScanAt = schema.LastScanAt.Format("2006-01-02 15:04:05")
+		if node.LastScanAt != nil {
+			item.LastScanAt = node.LastScanAt.Format("2006-01-02 15:04:05")
 		}
-		if schema.NextScanAt != nil {
-			item.NextScanAt = schema.NextScanAt.Format("2006-01-02 15:04:05")
+		if node.NextScanAt != nil {
+			item.NextScanAt = node.NextScanAt.Format("2006-01-02 15:04:05")
 		}
 		result = append(result, item)
 	}

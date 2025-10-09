@@ -1,4 +1,4 @@
-.PHONY: help init dev build up down logs clean test
+.PHONY: help init dev build up down logs clean test dev-all
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -45,6 +45,10 @@ dev-transfer: ## 开发模式运行 Transfer 模块
 dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
 	@cd gateway && go run cmd/gateway/main.go
+
+dev-all: ## 本地开发模式启动全部后端与前端服务
+	@echo "$(GREEN)启动完整开发环境（Go + Vite）...$(NC)"
+	@bash scripts/dev-run.sh
 
 build: ## 编译所有服务
 	@echo "$(GREEN)编译所有服务...$(NC)"

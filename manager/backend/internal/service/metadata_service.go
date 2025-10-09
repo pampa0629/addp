@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -113,44 +115,90 @@ func (s *MetadataService) GetResourceTree() ([]models.DataExplorerResource, erro
 		return nil, err
 	}
 
-	schemas, tables, err := s.metadataRepo.ListScannedSchemasAndTables()
+	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems()
 	if err != nil {
 		return nil, err
 	}
 
-	// map schemaID -> tables
-	tableMap := make(map[uint][]models.DataExplorerTable)
-	for _, table := range tables {
-		if table.LastScan == nil {
-			continue
-		}
-		tableMap[table.SchemaID] = append(tableMap[table.SchemaID], models.DataExplorerTable{
-			ID:       table.ID,
-			Name:     table.TableName,
-			FullName: table.TableName,
-		})
+	topNodesByResource := make(map[uint][]*models.MetaNodeLite)
+	for i := range topNodes {
+		node := &topNodes[i]
+		topNodesByResource[node.ResourceID] = append(topNodesByResource[node.ResourceID], node)
 	}
 
-	// map resourceID -> schemas
-	schemaMap := make(map[uint][]models.DataExplorerSchema)
-	for _, schema := range schemas {
-		tablesForSchema := tableMap[schema.ID]
-		if len(tablesForSchema) == 0 {
-			continue
+	childrenByParent := make(map[uint][]*models.MetaNodeLite)
+	for i := range childNodes {
+		node := &childNodes[i]
+		if node.ParentNodeID != nil {
+			parentID := *node.ParentNodeID
+			childrenByParent[parentID] = append(childrenByParent[parentID], node)
 		}
-		for i := range tablesForSchema {
-			tablesForSchema[i].FullName = fmt.Sprintf("%s.%s", schema.SchemaName, tablesForSchema[i].Name)
-		}
-		tableMap[schema.ID] = tablesForSchema
-		schemaMap[schema.ResourceID] = append(schemaMap[schema.ResourceID], models.DataExplorerSchema{
-			Name:   schema.SchemaName,
-			Tables: tablesForSchema,
-		})
+	}
+
+	itemsByNode := make(map[uint][]*models.MetaItemLite)
+	for i := range items {
+		item := &items[i]
+		itemsByNode[item.NodeID] = append(itemsByNode[item.NodeID], item)
 	}
 
 	var result []models.DataExplorerResource
 	for _, res := range resources {
-		schemasForResource := schemaMap[res.ID]
+		rootNodes := topNodesByResource[res.ID]
+		if len(rootNodes) == 0 {
+			continue
+		}
+
+		resourceType := strings.ToLower(res.ResourceType)
+		var schemasForResource []models.DataExplorerSchema
+
+		if isObjectStorageType(resourceType) {
+			for _, bucket := range rootNodes {
+				children := buildObjectStorageTree(bucket, childrenByParent, itemsByNode)
+				if len(children) == 0 {
+					continue
+				}
+				schemasForResource = append(schemasForResource, models.DataExplorerSchema{
+					Name:   bucket.Name,
+					Tables: children,
+				})
+			}
+		} else {
+			for _, schemaNode := range rootNodes {
+				if strings.ToLower(schemaNode.NodeType) != "schema" {
+					continue
+				}
+				itemList := itemsByNode[schemaNode.ID]
+				if len(itemList) == 0 {
+					continue
+				}
+
+				tables := make([]models.DataExplorerTable, 0, len(itemList))
+				for _, item := range itemList {
+					if strings.ToLower(item.ItemType) != "table" {
+						continue
+					}
+					fullName := item.FullName
+					if fullName == "" {
+						fullName = fmt.Sprintf("%s.%s", schemaNode.Name, item.Name)
+					}
+					tables = append(tables, models.DataExplorerTable{
+						ID:       item.ID,
+						Name:     item.Name,
+						FullName: fullName,
+						Type:     "table",
+					})
+				}
+				if len(tables) == 0 {
+					continue
+				}
+				sort.Slice(tables, func(i, j int) bool { return tables[i].Name < tables[j].Name })
+				schemasForResource = append(schemasForResource, models.DataExplorerSchema{
+					Name:   schemaNode.Name,
+					Tables: tables,
+				})
+			}
+		}
+
 		if len(schemasForResource) == 0 {
 			continue
 		}
@@ -163,7 +211,64 @@ func (s *MetadataService) GetResourceTree() ([]models.DataExplorerResource, erro
 		})
 	}
 
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+
 	return result, nil
+}
+
+func buildObjectStorageTree(node *models.MetaNodeLite, childNodes map[uint][]*models.MetaNodeLite, items map[uint][]*models.MetaItemLite) []models.DataExplorerTable {
+	children := childNodes[node.ID]
+
+	var entries []models.DataExplorerTable
+
+	for _, child := range children {
+		entry := models.DataExplorerTable{
+			ID:          child.ID,
+			Name:        child.Name,
+			FullName:    child.FullName,
+			Type:        "directory",
+			Depth:       child.Depth,
+			SizeBytes:   child.TotalSizeBytes,
+			ObjectCount: int64(child.ItemCount),
+		}
+		entry.Children = buildObjectStorageTree(child, childNodes, items)
+		entries = append(entries, entry)
+	}
+
+	for _, item := range items[node.ID] {
+		if strings.ToLower(item.ItemType) != "object" {
+			continue
+		}
+		size := int64(0)
+		if item.ObjectSizeBytes != nil {
+			size = *item.ObjectSizeBytes
+		} else if item.SizeBytes != nil {
+			size = *item.SizeBytes
+		}
+		fullName := item.FullName
+		if fullName == "" {
+			if v, ok := item.Attributes["relative_path"].(string); ok && v != "" {
+				fullName = v
+			}
+		}
+		entry := models.DataExplorerTable{
+			ID:        item.ID,
+			Name:      item.Name,
+			FullName:  fullName,
+			Type:      "object",
+			SizeBytes: size,
+		}
+		entries = append(entries, entry)
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].Type == entries[j].Type {
+			return entries[i].Name < entries[j].Name
+		}
+		return entries[i].Type == "directory"
+	})
+
+	return entries
 }
 
 // PreviewTable 获取表数据预览
@@ -173,6 +278,10 @@ func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName st
 		return nil, err
 	}
 
+	if isObjectStorageType(resource.ResourceType) {
+		return s.previewObjectStorage(resource, schemaName, tableName)
+	}
+
 	const maxRows = 50
 	columns, rows, total, geometryColumns, err := s.metadataRepo.QueryTablePreview(resource, schemaName, tableName, page, pageSize, maxRows)
 	if err != nil {
@@ -180,6 +289,7 @@ func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName st
 	}
 
 	return &models.TablePreview{
+		Mode:            "table",
 		Columns:         columns,
 		Rows:            rows,
 		Total:           total,

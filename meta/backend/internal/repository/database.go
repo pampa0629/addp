@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/addp/meta/internal/config"
-	"github.com/addp/meta/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -55,9 +54,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 // autoMigrate 自动迁移所有表
 func autoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
-		&models.MetadataSchema{},
-		&models.MetadataTable{},
-		&models.MetadataField{},
-		&models.ScanLog{},
+		// &models.MetaResource{},
+		// &models.MetaNode{},
+		// &models.MetaItem{},
+		// &models.ScanLog{},
 	)
 }

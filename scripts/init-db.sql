@@ -56,49 +56,153 @@ CREATE TABLE IF NOT EXISTS manager.directory_permissions (
 -- ==================== Meta 模块 ====================
 CREATE SCHEMA IF NOT EXISTS metadata;
 
-CREATE TABLE IF NOT EXISTS metadata.datasets (
-    id SERIAL PRIMARY KEY,
+DROP TABLE IF EXISTS metadata.fields CASCADE;
+DROP TABLE IF EXISTS metadata.lineage CASCADE;
+DROP TABLE IF EXISTS metadata.datasets CASCADE;
+
+CREATE TABLE IF NOT EXISTS metadata.meta_resource (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    resource_id BIGINT NOT NULL,
+    resource_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL, -- 'table', 'file', 'api'
-    source_id INTEGER,
+    engine VARCHAR(128),
+    config JSONB,
+    status VARCHAR(32) DEFAULT 'active',
+    source VARCHAR(64),
+    sync_version BIGINT DEFAULT 0,
+    last_synced_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE (tenant_id, resource_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_resource_status ON metadata.meta_resource(status);
+CREATE INDEX IF NOT EXISTS idx_meta_resource_type ON metadata.meta_resource(resource_type);
+
+CREATE TABLE IF NOT EXISTS metadata.meta_node (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    res_id BIGINT NOT NULL REFERENCES metadata.meta_resource(id) ON DELETE CASCADE,
+    parent_node_id BIGINT REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
+    node_type VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    depth INT NOT NULL DEFAULT 0,
     path TEXT,
-    description TEXT,
-    schema JSONB,
-    statistics JSONB,
-    tags TEXT[],
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    full_name TEXT,
+    status VARCHAR(32) DEFAULT 'active',
+    scan_status VARCHAR(32) DEFAULT '未扫描',
+    last_scan_at TIMESTAMP WITH TIME ZONE,
+    auto_scan_enabled BOOLEAN DEFAULT false,
+    auto_scan_cron VARCHAR(128),
+    next_scan_at TIMESTAMP WITH TIME ZONE,
+    item_count INT DEFAULT 0,
+    total_size_bytes BIGINT DEFAULT 0,
+    error_message TEXT,
+    attributes JSONB DEFAULT '{}'::JSONB,
+    sync_version BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE (res_id, name, parent_node_id),
+    CHECK (depth >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_datasets_name ON metadata.datasets(name);
-CREATE INDEX IF NOT EXISTS idx_datasets_type ON metadata.datasets(type);
-CREATE INDEX IF NOT EXISTS idx_datasets_tags ON metadata.datasets USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_meta_node_res ON metadata.meta_node(res_id);
+CREATE INDEX IF NOT EXISTS idx_meta_node_parent ON metadata.meta_node(parent_node_id);
+CREATE INDEX IF NOT EXISTS idx_meta_node_type ON metadata.meta_node(node_type);
 
-CREATE TABLE IF NOT EXISTS metadata.fields (
-    id SERIAL PRIMARY KEY,
-    dataset_id INTEGER REFERENCES metadata.datasets(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS metadata.meta_item (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    res_id BIGINT NOT NULL REFERENCES metadata.meta_resource(id) ON DELETE CASCADE,
+    node_id BIGINT NOT NULL REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
+    item_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL,
-    nullable BOOLEAN DEFAULT true,
+    full_name TEXT,
+    status VARCHAR(32) DEFAULT 'active',
+    meta_schema_version INTEGER DEFAULT 1,
+    row_count BIGINT,
+    size_bytes BIGINT,
+    object_size_bytes BIGINT,
+    last_modified_at TIMESTAMP WITH TIME ZONE,
+    attributes JSONB DEFAULT '{}'::JSONB,
+    sync_version BIGINT DEFAULT 0,
+    source VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE (node_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_item_node ON metadata.meta_item(node_id);
+CREATE INDEX IF NOT EXISTS idx_meta_item_type ON metadata.meta_item(item_type);
+
+CREATE TABLE IF NOT EXISTS metadata.meta_json_schema (
+    id BIGSERIAL PRIMARY KEY,
+    target VARCHAR(32) NOT NULL,
+    version INTEGER NOT NULL,
+    definition JSONB NOT NULL,
     description TEXT,
-    statistics JSONB,
-    position INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (target, version)
 );
 
-CREATE INDEX IF NOT EXISTS idx_fields_dataset ON metadata.fields(dataset_id);
-
-CREATE TABLE IF NOT EXISTS metadata.lineage (
-    id SERIAL PRIMARY KEY,
-    source_id INTEGER REFERENCES metadata.datasets(id) ON DELETE CASCADE,
-    target_id INTEGER REFERENCES metadata.datasets(id) ON DELETE CASCADE,
-    type VARCHAR(50) NOT NULL, -- 'transform', 'copy', 'aggregate', 'join'
-    transform JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS metadata.meta_change_log (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id BIGINT,
+    res_id BIGINT,
+    node_id BIGINT,
+    item_id BIGINT,
+    change_type VARCHAR(64) NOT NULL,
+    change_source VARCHAR(64),
+    payload JSONB,
+    sync_version BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (res_id) REFERENCES metadata.meta_resource(id) ON DELETE SET NULL,
+    FOREIGN KEY (node_id) REFERENCES metadata.meta_node(id) ON DELETE SET NULL,
+    FOREIGN KEY (item_id) REFERENCES metadata.meta_item(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_lineage_source ON metadata.lineage(source_id);
-CREATE INDEX IF NOT EXISTS idx_lineage_target ON metadata.lineage(target_id);
+CREATE TABLE IF NOT EXISTS metadata.meta_node_type_dict (
+    type_code VARCHAR(64) PRIMARY KEY,
+    category VARCHAR(64),
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS metadata.meta_node_child_rule (
+    parent_type VARCHAR(64) NOT NULL,
+    child_type VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (parent_type, child_type),
+    FOREIGN KEY (parent_type) REFERENCES metadata.meta_node_type_dict(type_code) ON DELETE CASCADE,
+    FOREIGN KEY (child_type) REFERENCES metadata.meta_node_type_dict(type_code) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS metadata.scan_logs (
+    id BIGSERIAL PRIMARY KEY,
+    resource_id BIGINT NOT NULL,
+    schema_id BIGINT,
+    tenant_id BIGINT NOT NULL,
+    scan_type VARCHAR(50) NOT NULL,
+    scan_depth VARCHAR(20),
+    target_schemas TEXT,
+    status VARCHAR(20) NOT NULL,
+    error_message TEXT,
+    schemas_scanned INT DEFAULT 0,
+    tables_scanned INT DEFAULT 0,
+    fields_scanned INT DEFAULT 0,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    duration_ms BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_logs_resource ON metadata.scan_logs(resource_id);
+CREATE INDEX IF NOT EXISTS idx_scan_logs_tenant ON metadata.scan_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON metadata.scan_logs(status);
 
 -- ==================== Transfer 模块 ====================
 CREATE SCHEMA IF NOT EXISTS transfer;
@@ -166,7 +270,13 @@ CREATE TRIGGER update_directories_updated_at BEFORE UPDATE ON manager.directorie
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Meta 模块触发器
-CREATE TRIGGER update_datasets_updated_at BEFORE UPDATE ON metadata.datasets
+CREATE TRIGGER update_meta_resource_updated_at BEFORE UPDATE ON metadata.meta_resource
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_meta_node_updated_at BEFORE UPDATE ON metadata.meta_node
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_meta_item_updated_at BEFORE UPDATE ON metadata.meta_item
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Transfer 模块触发器

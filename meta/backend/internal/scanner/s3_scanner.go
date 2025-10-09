@@ -32,6 +32,44 @@ type S3Scanner struct {
 	allowedBucket map[string]struct{}
 }
 
+var reservedObjectSegments = map[string]struct{}{
+	"__bucket__": {},
+	".minio.sys": {},
+}
+
+func isReservedObjectSegment(segment string) bool {
+	_, ok := reservedObjectSegments[segment]
+	return ok
+}
+
+func isReservedBucketName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	return isReservedObjectSegment(name)
+}
+
+func containsReservedObjectSegment(parts []string) bool {
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if isReservedObjectSegment(strings.TrimSpace(part)) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasReservedObjectSegment(path string) bool {
+	clean := strings.Trim(path, "/")
+	if clean == "" {
+		return false
+	}
+	return containsReservedObjectSegment(strings.Split(clean, "/"))
+}
+
 func NewS3Scanner(connStr string) (Scanner, error) {
 	var cfg s3Config
 	if err := json.Unmarshal([]byte(connStr), &cfg); err != nil {
@@ -70,13 +108,13 @@ func NewS3Scanner(connStr string) (Scanner, error) {
 	if len(cfg.Buckets) > 0 {
 		for _, b := range cfg.Buckets {
 			bucket := strings.TrimSpace(b)
-			if bucket != "" {
+			if bucket != "" && !isReservedBucketName(bucket) {
 				scanner.allowedBucket[bucket] = struct{}{}
 			}
 		}
 	}
-	if cfg.Bucket != "" {
-		scanner.allowedBucket[strings.TrimSpace(cfg.Bucket)] = struct{}{}
+	if trimmed := strings.TrimSpace(cfg.Bucket); trimmed != "" && !isReservedBucketName(trimmed) {
+		scanner.allowedBucket[trimmed] = struct{}{}
 	}
 
 	return scanner, nil
@@ -104,7 +142,9 @@ func (s *S3Scanner) ensureBuckets() {
 		return
 	}
 	for _, bucket := range buckets {
-		s.allowedBucket[bucket.Name] = struct{}{}
+		if !isReservedBucketName(bucket.Name) {
+			s.allowedBucket[bucket.Name] = struct{}{}
+		}
 	}
 }
 
@@ -174,6 +214,9 @@ func (s *S3Scanner) ListNodes(path string) ([]ObjectNode, error) {
 			continue
 		}
 		parts := strings.Split(relative, "/")
+		if containsReservedObjectSegment(parts) {
+			continue
+		}
 		name := parts[0]
 		fullPath := s.joinPath(bucket, cleanPrefix, name)
 		if len(parts) > 1 || strings.HasSuffix(object.Key, "/") {
@@ -205,6 +248,7 @@ func (s *S3Scanner) ListNodes(path string) ([]ObjectNode, error) {
 		nodes = append(nodes, *dir)
 	}
 	nodes = append(nodes, objectNodes...)
+	nodes = filterReservedNodes(nodes)
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
 	return nodes, nil
 }
@@ -227,6 +271,10 @@ func (s *S3Scanner) ScanPath(path string) ([]ObjectMetadata, error) {
 	bucket, prefix, err := s.splitPath(path)
 	if err != nil {
 		return nil, err
+	}
+
+	if hasReservedObjectSegment(prefix) {
+		return []ObjectMetadata{}, nil
 	}
 
 	if prefix == "" {
@@ -282,6 +330,17 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		if relative == "" {
 			continue
 		}
+		if hasReservedObjectSegment(relative) {
+			continue
+		}
+		parts := strings.Split(relative, "/")
+
+		if strings.HasSuffix(object.Key, "/") {
+			dirPath := strings.TrimSuffix(relative, "/")
+			s.ensureDirAggEntry(dirAgg, bucket, dirPath)
+			continue
+		}
+
 		totalSize += object.Size
 		totalCount++
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(relative)), ".")
@@ -298,20 +357,11 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		}
 		objects = append(objects, meta)
 
-		parts := strings.Split(relative, "/")
 		if len(parts) > 1 {
 			for i := 1; i < len(parts); i++ {
 				dirPath := strings.Join(parts[:i], "/")
-				agg, ok := dirAgg[dirPath]
-				if !ok {
-					dirAgg[dirPath] = &ObjectMetadata{
-						Bucket:       bucket,
-						Path:         bucket + "/" + strings.TrimSuffix(cleanPrefix, "/") + "/" + dirPath,
-						RelativePath: dirPath,
-						NodeType:     "prefix",
-					}
-					agg = dirAgg[dirPath]
-				}
+				s.ensureDirAggEntry(dirAgg, bucket, dirPath)
+				agg := dirAgg[dirPath]
 				agg.SizeBytes += object.Size
 				agg.ObjectCount++
 			}
@@ -347,10 +397,73 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		results = append(results, *dir)
 	}
 
+	results = filterReservedMetadata(results)
 	sort.Slice(objects, func(i, j int) bool { return objects[i].RelativePath < objects[j].RelativePath })
 	results = append(results, objects...)
 
 	return results, nil
+}
+
+func (s *S3Scanner) ensureDirAggEntry(dirAgg map[string]*ObjectMetadata, bucket, dirPath string) {
+	dirPath = strings.Trim(dirPath, "/")
+	if dirPath == "" {
+		return
+	}
+	if _, exists := dirAgg[dirPath]; exists {
+		return
+	}
+	if hasReservedObjectSegment(dirPath) {
+		return
+	}
+	dirAgg[dirPath] = &ObjectMetadata{
+		Bucket:       bucket,
+		RelativePath: dirPath,
+		NodeType:     "prefix",
+	}
+}
+
+func filterReservedNodes(nodes []ObjectNode) []ObjectNode {
+	var filtered []ObjectNode
+	for _, node := range nodes {
+		if node.Name == "" {
+			continue
+		}
+		if isReservedObjectSegment(node.Name) {
+			continue
+		}
+		if hasReservedObjectSegment(node.Path) {
+			continue
+		}
+		filtered = append(filtered, node)
+	}
+	return filtered
+}
+
+func filterReservedMetadata(metas []ObjectMetadata) []ObjectMetadata {
+	var filtered []ObjectMetadata
+	for _, meta := range metas {
+		if strings.EqualFold(meta.NodeType, "bucket") {
+			continue
+		}
+		if meta.RelativePath != "" && hasReservedObjectSegment(meta.RelativePath) {
+			continue
+		}
+		if hasReservedObjectSegment(meta.Path) {
+			continue
+		}
+		filtered = append(filtered, meta)
+	}
+	return filtered
+}
+
+// HasReservedObjectSegment 暴露给其他包，用于判断路径中是否包含保留段
+func HasReservedObjectSegment(path string) bool {
+	return hasReservedObjectSegment(path)
+}
+
+// IsReservedObjectName 判断名称是否为保留对象名
+func IsReservedObjectName(name string) bool {
+	return isReservedObjectSegment(name)
 }
 
 func (s *S3Scanner) splitPath(path string) (string, string, error) {

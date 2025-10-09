@@ -51,9 +51,44 @@ addp：All Domain Data Platform，全域数据平台
 
 # meta模块
 meta模块负责所有元数据的统一存储、血缘追踪和基于元数据的检索。
+
+## meta统一存储方式
+对于数据库和对象存储，其数据组织方式是不同的：
+- 数据库：实例 → database → schema → table（注册入口是 database）
+- 对象存储：实例 → bucket → prefix（多级）→ object（注册入口是实例或 bucket）
+
+为了统一管理与扩展，废弃旧版按类型拆分的 `meta_*` 表（如按 database、bucket、schema 划分的遗留表），统一使用以下三张核心表：
+
+- `meta_resource`  
+  - 描述注册入口，覆盖数据库实例中的某个 database 或对象存储的实例 / bucket。  
+  - 关键字段：`id`、`resource_type`、`name`、`engine`、`config`（连接信息）、`status`、`source`（采集来源）、`sync_version`、`created_at`、`updated_at`、`deleted_at`。  
+  - 统一维护软删字段 `deleted_at`，避免误删数据，并方便回滚。
+
+- `meta_node`  
+  - 表示资源下的层级节点，可递归指向自身，覆盖数据库的 schema、视图集合等，以及对象存储的 prefix。  
+  - 关键字段：`id`、`res_id`、`parent_node_id`、`node_type`、`depth`、`path`（纯 ID 链路）、`full_name`（便于展示与查询）、`status`、`attributes`（可选元信息，JSON）。  
+  - `node_type` 采用枚举字典表 `meta_node_type_dict` 保存；同时在 `meta_node_child_rule` 中定义各类型的合法子类型，防止出现非法层级。  
+  - `depth` 与 `path` 便于批量查询某一层级；`full_name` 降低多次 JOIN 成本。
+
+- `meta_item`  
+  - 表示最底层的数据项，数据库对应 table / view，对象存储对应 object，不再允许有子节点。  
+  - 关键字段：`id`、`res_id`、`node_id`、`item_type`、`attributes`（JSON 存储字段列表、文件大小、修改时间等）。  
+  - JSON 字段需要记录 `meta_schema_version`，并对高频属性（如 `row_count`、`object_size`、`last_modified_at`）单独建列以便索引与过滤。  
+  - 同样包含 `status`、`sync_version`、`deleted_at` 等基础字段。
+
+为支撑增量同步与追踪：
+- 所有 JSON 字段采用统一结构，并在 `meta_json_schema` 中记录版本与校验规则。
+- 引入 `meta_change_log`（资源、节点、项目共享）记录采集事件、变更来源、批次号，便于审计与回溯。
+- 建议每次同步写入 `last_synced_at` 与 `sync_version`，便于比对差异。
+
+说明：迁移到上述新结构之前，需清理旧版按资源类型拆分的表（批量删除或迁移后 drop），以免干扰新的层级模型和索引策略。
+
+
+
 meta模块前端页面包括以下内容：
 ## 元数据扫描
 当点击左侧的“元数据扫描”时，右侧窗口，列出所有存储引擎。
+
 ### 数据库
 选中一个数据库后，列出其所有schema，可以多选或者全选这些schema，然后再扫描这些schema中的所有表及其字段。
 扫描后的元数据，存储到系统数据库的meta schema中，供其他模块后续使用。
@@ -84,4 +119,3 @@ meta模块前端页面包括以下内容：
 支持打包后的shape文件上传
 可上传小文件（xxx MB以下）
 后台自动解压缩
-

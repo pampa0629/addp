@@ -55,6 +55,32 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, c)
 }
 
+type JSONMap map[string]interface{}
+
+func (m JSONMap) Value() (driver.Value, error) {
+	if m == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(m)
+}
+
+func (m *JSONMap) Scan(value interface{}) error {
+	if value == nil {
+		*m = JSONMap{}
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	var data map[string]interface{}
+	if err := json.Unmarshal(bytes, &data); err != nil {
+		return err
+	}
+	*m = JSONMap(data)
+	return nil
+}
+
 // ResourceListResponse API 响应
 type ResourceListResponse struct {
 	Data  []Resource `json:"data"`
@@ -137,32 +163,90 @@ type DataExplorerSchema struct {
 }
 
 type DataExplorerTable struct {
-	ID       uint   `json:"id"`
-	Name     string `json:"name"`
-	FullName string `json:"full_name"`
+	ID          uint                `json:"id,omitempty"`
+	Name        string              `json:"name"`
+	FullName    string              `json:"full_name,omitempty"`
+	Type        string              `json:"type,omitempty"` // table/object/directory
+	Parent      string              `json:"parent_path,omitempty"`
+	Depth       int                 `json:"depth,omitempty"`
+	SizeBytes   int64               `json:"size_bytes,omitempty"`   // 对象存储文件大小
+	ObjectCount int64               `json:"object_count,omitempty"` // 目录包含对象数量
+	ContentType string              `json:"content_type,omitempty"`
+	Children    []DataExplorerTable `json:"children,omitempty"` // 目录子节点
 }
 
-type MetadataSchemaLite struct {
-	ID         uint       `json:"id" gorm:"column:id"`
-	ResourceID uint       `json:"resource_id" gorm:"column:resource_id"`
-	SchemaName string     `json:"schema_name" gorm:"column:schema_name"`
-	LastScanAt *time.Time `json:"last_scan_at" gorm:"column:last_scan_at"`
-	TableCount int        `json:"table_count" gorm:"column:table_count"`
+type MetaNodeLite struct {
+	ID             uint       `json:"id" gorm:"column:id"`
+	ResourceID     uint       `json:"resource_id" gorm:"column:resource_id"`
+	ResID          uint       `json:"res_id" gorm:"column:res_id"`
+	ParentNodeID   *uint      `json:"parent_node_id" gorm:"column:parent_node_id"`
+	NodeType       string     `json:"node_type" gorm:"column:node_type"`
+	Name           string     `json:"name" gorm:"column:name"`
+	FullName       string     `json:"full_name" gorm:"column:full_name"`
+	Path           string     `json:"path" gorm:"column:path"`
+	Depth          int        `json:"depth" gorm:"column:depth"`
+	LastScanAt     *time.Time `json:"last_scan_at" gorm:"column:last_scan_at"`
+	ItemCount      int        `json:"item_count" gorm:"column:item_count"`
+	TotalSizeBytes int64      `json:"total_size_bytes" gorm:"column:total_size_bytes"`
+	Attributes     JSONMap    `json:"attributes" gorm:"column:attributes"`
 }
 
-type MetadataTableLite struct {
-	ID        uint       `json:"id" gorm:"column:id"`
-	SchemaID  uint       `json:"schema_id" gorm:"column:schema_id"`
-	TableName string     `json:"table_name" gorm:"column:table_name"`
-	LastScan  *time.Time `json:"last_scan_at" gorm:"column:last_scan_at"`
+type MetaItemLite struct {
+	ID              uint       `json:"id" gorm:"column:id"`
+	ResourceID      uint       `json:"resource_id" gorm:"column:resource_id"`
+	ResID           uint       `json:"res_id" gorm:"column:res_id"`
+	NodeID          uint       `json:"node_id" gorm:"column:node_id"`
+	ItemType        string     `json:"item_type" gorm:"column:item_type"`
+	Name            string     `json:"name" gorm:"column:name"`
+	FullName        string     `json:"full_name" gorm:"column:full_name"`
+	RowCount        *int64     `json:"row_count" gorm:"column:row_count"`
+	SizeBytes       *int64     `json:"size_bytes" gorm:"column:size_bytes"`
+	ObjectSizeBytes *int64     `json:"object_size_bytes" gorm:"column:object_size_bytes"`
+	LastModifiedAt  *time.Time `json:"last_modified_at" gorm:"column:last_modified_at"`
+	Attributes      JSONMap    `json:"attributes" gorm:"column:attributes"`
 }
 
 // TablePreview 表数据预览结果
 type TablePreview struct {
+	Mode            string                   `json:"mode"`
 	Columns         []string                 `json:"columns"`
 	Rows            []map[string]interface{} `json:"rows"`
 	Total           int                      `json:"total"`
 	Page            int                      `json:"page"`
 	PageSize        int                      `json:"page_size"`
 	GeometryColumns []string                 `json:"geometry_columns"`
+	Object          *ObjectPreview           `json:"object,omitempty"`
+}
+
+type ObjectPreview struct {
+	Bucket       string                `json:"bucket"`
+	Path         string                `json:"path"`
+	NodeType     string                `json:"node_type"`
+	SizeBytes    int64                 `json:"size_bytes"`
+	ObjectCount  int64                 `json:"object_count,omitempty"`
+	LastModified *time.Time            `json:"last_modified,omitempty"`
+	ContentType  string                `json:"content_type,omitempty"`
+	Metadata     map[string]string     `json:"metadata,omitempty"`
+	Children     []ObjectPreviewChild  `json:"children,omitempty"`
+	Content      *ObjectPreviewContent `json:"content,omitempty"`
+	Truncated    bool                  `json:"truncated,omitempty"`
+}
+
+type ObjectPreviewChild struct {
+	Name         string     `json:"name"`
+	Path         string     `json:"path"`
+	Type         string     `json:"type"`
+	SizeBytes    int64      `json:"size_bytes"`
+	LastModified *time.Time `json:"last_modified,omitempty"`
+	ContentType  string     `json:"content_type,omitempty"`
+}
+
+type ObjectPreviewContent struct {
+	Kind      string      `json:"kind"`
+	Text      string      `json:"text,omitempty"`
+	JSON      interface{} `json:"json,omitempty"`
+	GeoJSON   interface{} `json:"geojson,omitempty"`
+	ImageData string      `json:"image_data,omitempty"`
+	Encoding  string      `json:"encoding,omitempty"`
+	Truncated bool        `json:"truncated,omitempty"`
 }

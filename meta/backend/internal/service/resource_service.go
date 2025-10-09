@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -120,38 +121,108 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 		return nil, err
 	}
 
-	var result []*models.ResourceWithStats
+	if len(resources) == 0 {
+		return []*models.ResourceWithStats{}, nil
+	}
+
+	resourceIDs := make([]uint, 0, len(resources))
 	for _, res := range resources {
-		// 统计该资源下的 Schema 数量
-		var totalSchemas, scannedSchemas int64
+		resourceIDs = append(resourceIDs, res.ID)
+	}
 
-		s.db.Table("metadata.schemas").
-			Where("resource_id = ? AND tenant_id = ?", res.ID, tenantID).
-			Count(&totalSchemas)
+	var metaResources []models.MetaResource
+	if err := s.db.Where("tenant_id = ? AND resource_id IN ?", tenantID, resourceIDs).
+		Find(&metaResources).Error; err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to load meta resources: %w", err)
+	}
 
-		s.db.Table("metadata.schemas").
-			Where("resource_id = ? AND tenant_id = ? AND scan_status = ?", res.ID, tenantID, "已扫描").
-			Count(&scannedSchemas)
+	metaResByResourceID := make(map[uint]*models.MetaResource, len(metaResources))
+	metaResIDs := make([]uint, 0, len(metaResources))
+	for i := range metaResources {
+		mr := &metaResources[i]
+		metaResByResourceID[mr.ResourceID] = mr
+		metaResIDs = append(metaResIDs, mr.ID)
+	}
 
-		// 获取最后扫描时间
-		var lastScanAt string
-		var schema models.MetadataSchema
-		err := s.db.Table("metadata.schemas").
-			Where("resource_id = ? AND tenant_id = ? AND last_scan_at IS NOT NULL", res.ID, tenantID).
-			Order("last_scan_at DESC").
-			First(&schema).Error
+	totalCount := map[uint]int64{}
+	scannedCount := map[uint]int64{}
+	lastScanByRes := map[uint]*time.Time{}
 
-		if err == nil && schema.LastScanAt != nil {
-			lastScanAt = schema.LastScanAt.Format("2006-01-02 15:04:05")
+	if len(metaResIDs) > 0 {
+		type countRow struct {
+			ResID uint
+			Count int64
+		}
+
+		var totals []countRow
+		if err := s.db.Table("meta_node").
+			Where("tenant_id = ? AND res_id IN ?", tenantID, metaResIDs).
+			Where("parent_node_id IS NULL").
+			Select("res_id, COUNT(*) AS count").
+			Group("res_id").
+			Scan(&totals).Error; err != nil {
+			return nil, fmt.Errorf("failed to count meta nodes: %w", err)
+		}
+		for _, row := range totals {
+			totalCount[row.ResID] = row.Count
+		}
+
+		var scanned []countRow
+		if err := s.db.Table("meta_node").
+			Where("tenant_id = ? AND res_id IN ?", tenantID, metaResIDs).
+			Where("parent_node_id IS NULL AND scan_status = ?", "已扫描").
+			Select("res_id, COUNT(*) AS count").
+			Group("res_id").
+			Scan(&scanned).Error; err != nil {
+			return nil, fmt.Errorf("failed to count scanned nodes: %w", err)
+		}
+		for _, row := range scanned {
+			scannedCount[row.ResID] = row.Count
+		}
+
+		type lastScanRow struct {
+			ResID      uint
+			LastScanAt *time.Time `gorm:"column:last_scan_at"`
+		}
+		var lastScans []lastScanRow
+		if err := s.db.Table("meta_node").
+			Where("tenant_id = ? AND res_id IN ?", tenantID, metaResIDs).
+			Where("last_scan_at IS NOT NULL").
+			Select("res_id, MAX(last_scan_at) AS last_scan_at").
+			Group("res_id").
+			Scan(&lastScans).Error; err != nil {
+			return nil, fmt.Errorf("failed to query node last scan time: %w", err)
+		}
+		for _, row := range lastScans {
+			lastScanByRes[row.ResID] = row.LastScanAt
+		}
+	}
+
+	result := make([]*models.ResourceWithStats, 0, len(resources))
+	for _, res := range resources {
+		totalSchemas := 0
+		scannedSchemas := 0
+		lastScanAt := ""
+
+		if metaRes, ok := metaResByResourceID[res.ID]; ok {
+			if cnt, ok := totalCount[metaRes.ID]; ok {
+				totalSchemas = int(cnt)
+			}
+			if cnt, ok := scannedCount[metaRes.ID]; ok {
+				scannedSchemas = int(cnt)
+			}
+			if ts, ok := lastScanByRes[metaRes.ID]; ok && ts != nil {
+				lastScanAt = ts.Format("2006-01-02 15:04:05")
+			}
 		}
 
 		result = append(result, &models.ResourceWithStats{
 			ResourceID:       res.ID,
-			ResourceName:     res.Name, // 使用 Name 字段
+			ResourceName:     res.Name,
 			ResourceType:     res.ResourceType,
-			TotalSchemas:     int(totalSchemas),
-			ScannedSchemas:   int(scannedSchemas),
-			UnscannedSchemas: int(totalSchemas - scannedSchemas),
+			TotalSchemas:     totalSchemas,
+			ScannedSchemas:   scannedSchemas,
+			UnscannedSchemas: totalSchemas - scannedSchemas,
 			LastScanAt:       lastScanAt,
 		})
 	}

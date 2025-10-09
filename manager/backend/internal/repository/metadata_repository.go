@@ -3,6 +3,7 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -362,33 +363,94 @@ func (r *MetadataRepository) UnmarkTableAsManaged(tableID uint) error {
 	return nil
 }
 
-// ListScannedSchemasAndTables 获取已扫描的 schema 和 table
-func (r *MetadataRepository) ListScannedSchemasAndTables() ([]models.MetadataSchemaLite, []models.MetadataTableLite, error) {
-	var schemas []models.MetadataSchemaLite
-	if err := r.db.Table("metadata.schemas").Where("scan_status = ?", "已扫描").Order("resource_id, schema_name").Find(&schemas).Error; err != nil {
-		return nil, nil, fmt.Errorf("failed to query schemas: %w", err)
+// ListScannedNodesAndItems 获取已扫描的顶层节点、子节点和条目
+func (r *MetadataRepository) ListScannedNodesAndItems() ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
+	var topNodes []models.MetaNodeLite
+	if err := r.db.Table("meta_node AS n").
+		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+		Where("n.parent_node_id IS NULL AND n.scan_status = ?", "已扫描").
+		Order("r.resource_id, n.name").
+		Scan(&topNodes).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to query top-level nodes: %w", err)
 	}
 
-	if len(schemas) == 0 {
-		return []models.MetadataSchemaLite{}, []models.MetadataTableLite{}, nil
+	if len(topNodes) == 0 {
+		return []models.MetaNodeLite{}, []models.MetaNodeLite{}, []models.MetaItemLite{}, nil
 	}
 
-	schemaIDs := make([]uint, 0, len(schemas))
-	for _, schema := range schemas {
-		schemaIDs = append(schemaIDs, schema.ID)
+	metaResIDs := make([]uint, 0, len(topNodes))
+	for _, node := range topNodes {
+		metaResIDs = append(metaResIDs, node.ResID)
 	}
 
-	var tables []models.MetadataTableLite
-	if err := r.db.Table("metadata.tables").
-		Where("schema_id IN ?", schemaIDs).
-		Where("last_scan_at IS NOT NULL").
-		Order("schema_id, table_name").
-		Select("id, schema_id, table_name, last_scan_at").
-		Find(&tables).Error; err != nil {
-		return nil, nil, fmt.Errorf("failed to query tables: %w", err)
+	var childNodes []models.MetaNodeLite
+	if err := r.db.Table("meta_node AS n").
+		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+		Where("n.parent_node_id IS NOT NULL").
+		Where("n.res_id IN ?", metaResIDs).
+		Order("n.depth, n.name").
+		Scan(&childNodes).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to query descendant nodes: %w", err)
 	}
 
-	return schemas, tables, nil
+	var items []models.MetaItemLite
+	if err := r.db.Table("meta_item AS i").
+		Select("i.id, r.resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
+		Joins("JOIN meta_resource AS r ON r.id = i.res_id").
+		Where("i.res_id IN ?", metaResIDs).
+		Scan(&items).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to query meta items: %w", err)
+	}
+
+	return topNodes, childNodes, items, nil
+}
+
+// GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
+func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
+	var item models.MetaItemLite
+	err := r.db.Table("meta_item AS i").
+		Select("i.id, r.resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
+		Joins("JOIN meta_resource AS r ON r.id = i.res_id").
+		Where("r.resource_id = ?", resourceID).
+		Where("i.item_type = ?", "object").
+		Where("(i.attributes ->> 'bucket') = ?", bucketName).
+		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ?", objectPath, objectPath).
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, fmt.Errorf("failed to query object metadata: %w", err)
+	}
+	return &item, nil
+}
+
+// GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
+func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string) (*models.MetaNodeLite, error) {
+	var node models.MetaNodeLite
+	query := r.db.Table("meta_node AS n").
+		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+		Where("r.resource_id = ?", resourceID)
+
+	cleanPath := strings.Trim(relativePath, "/")
+	if cleanPath == "" {
+		query = query.Where("n.parent_node_id IS NULL").Where("n.name = ?", bucketName)
+	} else {
+		query = query.Where("n.node_type IN ('bucket','prefix')").
+			Where("(n.attributes ->> 'path') = ? OR n.full_name = ?", cleanPath, cleanPath)
+	}
+
+	if err := query.First(&node).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, fmt.Errorf("failed to query object metadata node: %w", err)
+	}
+
+	return &node, nil
 }
 
 // QueryTablePreview 查询表数据预览
@@ -571,4 +633,9 @@ func (r *MetadataRepository) decryptSensitiveFields(connInfo models.ConnectionIn
 	}
 
 	return decrypted, nil
+}
+
+// DecryptConnectionInfo 对外暴露的连接信息解密方法
+func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+	return r.decryptSensitiveFields(connInfo)
 }

@@ -23,7 +23,7 @@
             <template #default="{ data }">
               <span class="tree-node" :class="data.type">
                 <el-icon v-if="data.type === 'resource'"><Collection /></el-icon>
-                <el-icon v-else-if="data.type === 'schema'"><Folder /></el-icon>
+                <el-icon v-else-if="['schema', 'bucket', 'directory'].includes(data.type)"><Folder /></el-icon>
                 <el-icon v-else><Document /></el-icon>
                 <span class="label" :title="data.label">{{ data.label }}</span>
               </span>
@@ -38,7 +38,7 @@
         <el-card shadow="never" class="preview-panel">
           <template #header>
             <div class="panel-header">
-              <span v-if="selectedTableLabel">{{ selectedTableLabel }} - 数据预览</span>
+              <span v-if="selectedNodeLabel">{{ selectedNodeLabel }} - 数据预览</span>
               <span v-else>请选择一张表</span>
               <div v-if="hasGeometry" class="map-controls">
                 <div class="toggle-wrapper">
@@ -57,53 +57,169 @@
             </div>
           </template>
 
-          <div v-if="!selectedTable" class="empty-state">
+          <div v-if="!selectedNode" class="empty-state">
             <el-empty description="从左侧选择一张表查看数据" />
           </div>
 
           <div v-else class="preview-content">
-            <div
-              v-if="hasGeometry && showMap"
-              class="map-container"
-              ref="mapContainer"
-              :style="{ height: mapHeight + 'px' }"
-            ></div>
-            <div
-              v-if="hasGeometry && showMap"
-              class="map-table-splitter"
-              @mousedown="startMapResize"
-            ></div>
-            <div class="table-wrapper">
-              <el-table
-                ref="tableRef"
-                :data="preview.rows"
-                v-loading="loadingPreview"
-                height="100%"
-                highlight-current-row
-                :row-key="getRowKey"
-                :current-row-key="currentRowKey"
-                @row-click="handleRowClick"
-              >
-                <el-table-column
-                  v-for="col in preview.columns"
-                  :key="col"
-                  :prop="col"
-                  :label="col"
-                  show-overflow-tooltip
+            <template v-if="previewMode === 'table'">
+              <div
+                v-if="hasGeometry && showMap"
+                class="map-container"
+                ref="mapContainer"
+                :style="{ height: mapHeight + 'px' }"
+              ></div>
+              <div
+                v-if="hasGeometry && showMap"
+                class="map-table-splitter"
+                @mousedown="startMapResize"
+              ></div>
+              <div class="table-wrapper">
+                <el-table
+                  ref="tableRef"
+                  :data="preview.rows"
+                  v-loading="loadingPreview"
+                  height="100%"
+                  highlight-current-row
+                  :row-key="getRowKey"
+                  :current-row-key="currentRowKey"
+                  @row-click="handleRowClick"
+                >
+                  <el-table-column
+                    v-for="col in preview.columns"
+                    :key="col"
+                    :prop="col"
+                    :label="col"
+                    show-overflow-tooltip
+                  />
+                </el-table>
+              </div>
+              <div class="pagination" v-if="preview.total > 0">
+                <el-pagination
+                  background
+                  layout="prev, pager, next"
+                  :total="preview.total"
+                  :page-size="pageSize"
+                  :current-page="currentPage"
+                  @current-change="handlePageChange"
                 />
-              </el-table>
-            </div>
-            <div class="pagination" v-if="preview.total > 0">
-              <el-pagination
-                background
-                layout="prev, pager, next"
-                :total="preview.total"
-                :page-size="pageSize"
-                :current-page="currentPage"
-                @current-change="handlePageChange"
-              />
-              <div class="tip">最多展示前 50 行数据</div>
-            </div>
+                <div class="tip">最多展示前 50 行数据</div>
+              </div>
+            </template>
+            <template v-else>
+              <div v-if="objectPreview" class="object-preview">
+                <div class="object-meta">
+                  <div class="meta-row">
+                    <span class="meta-label">Bucket</span>
+                    <span class="meta-value">{{ objectPreview.bucket || '-' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">路径</span>
+                    <span class="meta-value">{{ objectPreview.path || '/' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">类型</span>
+                    <span class="meta-value">{{ getObjectNodeTypeLabel(objectPreview.node_type) }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">大小</span>
+                    <span class="meta-value">{{ formatBytes(objectPreview.size_bytes ?? objectPreview.sizeBytes) }}</span>
+                  </div>
+                  <div
+                    class="meta-row"
+                    v-if="(objectPreview.object_count ?? objectPreview.objectCount) !== undefined && (objectPreview.object_count ?? objectPreview.objectCount) !== null"
+                  >
+                    <span class="meta-label">对象数量</span>
+                    <span class="meta-value">{{ objectPreview.object_count ?? objectPreview.objectCount }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Content-Type</span>
+                    <span class="meta-value">{{ objectPreview.content_type || objectPreview.contentType || '-' }}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">更新时间</span>
+                    <span class="meta-value">{{ formatDateTime(objectPreview.last_modified || objectPreview.lastModified) }}</span>
+                  </div>
+                  <div
+                    v-if="objectMetadataEntries.length"
+                    class="meta-row meta-metadata"
+                  >
+                    <span class="meta-label">元数据</span>
+                    <div class="meta-value metadata-list">
+                      <div
+                        v-for="([key, value]) in objectMetadataEntries"
+                        :key="key"
+                        class="meta-kv"
+                      >
+                        <span class="meta-meta-key">{{ key }}</span>
+                        <span class="meta-meta-value">{{ value }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-if="isDirectoryPreview" class="object-children">
+                  <el-table
+                    :data="objectChildren"
+                    height="100%"
+                    @row-dblclick="openObjectChild"
+                  >
+                    <el-table-column prop="name" label="名称" show-overflow-tooltip />
+                    <el-table-column label="类型" width="120">
+                      <template #default="{ row }">
+                        {{ getObjectNodeTypeLabel(row.type) }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="大小" width="160">
+                      <template #default="{ row }">
+                        <span v-if="row.type !== 'prefix'">{{ formatBytes(row.size_bytes) }}</span>
+                        <span v-else>-</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="内容类型" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        {{ row.content_type || '-' }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="更新时间" width="200">
+                      <template #default="{ row }">
+                        {{ formatDateTime(row.last_modified) }}
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+
+                <div v-else class="object-content">
+                  <template v-if="objectContent">
+                    <template v-if="objectContent.kind === 'image'">
+                      <div v-if="objectImageSrc" class="image-preview">
+                        <img :src="objectImageSrc" :alt="selectedNodeLabel" />
+                      </div>
+                      <div v-else class="preview-placeholder">图片超出预览限制，无法展示</div>
+                    </template>
+                    <template v-else-if="objectContent.kind === 'json'">
+                      <pre class="text-preview">{{ safeStringify(objectContent.json || objectContent.text) }}</pre>
+                    </template>
+                    <template v-else-if="objectContent.kind === 'geojson'">
+                      <pre class="text-preview">{{ safeStringify(objectContent.geojson || objectContent.text) }}</pre>
+                    </template>
+                    <template v-else>
+                      <pre class="text-preview">{{ objectContent.text }}</pre>
+                    </template>
+                    <div
+                      class="truncate-tip"
+                      v-if="objectContent.truncated || objectPreview.truncated"
+                    >
+                      内容较大，仅展示部分
+                    </div>
+                  </template>
+                  <div v-else class="preview-placeholder">暂无可用内容</div>
+                </div>
+              </div>
+              <div v-else class="empty-state inner">
+                <el-empty description="暂无可展示内容" />
+              </div>
+            </template>
           </div>
         </el-card>
       </div>
@@ -137,6 +253,105 @@ const DEFAULT_AMAP_KEY = import.meta.env.VITE_AMAP_KEY || ''
 const DEFAULT_AMAP_SECURITY = import.meta.env.VITE_AMAP_SECURITY || ''
 const DEFAULT_TDT_KEY = import.meta.env.VITE_TDT_KEY || ''
 
+const OBJECT_STORAGE_TYPES = ['s3', 'minio', 'oss', 'object_storage', 'object-storage']
+
+const isObjectStorageResource = (type) => OBJECT_STORAGE_TYPES.includes(String(type || '').toLowerCase())
+
+const sanitizeNodeId = (value) =>
+  String(value ?? '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+
+const makeNodeId = (...parts) => {
+  const cleaned = parts
+    .filter((part) => part !== undefined && part !== null && String(part).length)
+    .map((part) => sanitizeNodeId(part))
+    .filter((part) => part.length)
+  if (cleaned.length === 0) {
+    return `node-${Math.random().toString(36).slice(2)}`
+  }
+  return cleaned.join('-')
+}
+
+const transformTableNode = (resource, schemaName, table) => {
+  const nodeType = (table.type || table.node_type || table.nodeType || 'table').toLowerCase()
+  const fullName = table.full_name || table.fullName || ''
+  const path = fullName || table.path || ''
+  const sizeBytes = table.size_bytes ?? table.sizeBytes ?? 0
+  const objectCount = table.object_count ?? table.objectCount ?? 0
+  const contentType = table.content_type ?? table.contentType ?? ''
+
+  const node = {
+    id: makeNodeId(nodeType, resource.id, schemaName, fullName || table.name || table.id || Math.random()),
+    type: nodeType,
+    nodeType,
+    label: table.name,
+    resourceId: resource.id,
+    resourceType: resource.resource_type || resource.resourceType,
+    schema: schemaName,
+    table: nodeType === 'table' ? table.name : path,
+    path,
+    fullName,
+    parentPath: table.parent_path || table.parentPath || '',
+    sizeBytes,
+    objectCount,
+    contentType,
+    children: []
+  }
+
+  if (Array.isArray(table.children) && table.children.length > 0) {
+    node.children = table.children.map((child) => transformTableNode(resource, schemaName, child))
+  }
+
+  if (nodeType === 'directory' || nodeType === 'bucket') {
+    node.table = path
+    node.path = path
+  }
+  if (nodeType === 'object') {
+    node.table = path
+    node.path = path
+  }
+
+  if (nodeType === 'table') {
+    node.type = 'table'
+  }
+
+  return node
+}
+
+const transformResource = (resource) => {
+  const resourceType = resource.resource_type || resource.resourceType
+  const isObjectStorage = isObjectStorageResource(resourceType)
+  const schemas = (resource.schemas || []).map((schema) => {
+    const nodeType = isObjectStorage ? 'bucket' : 'schema'
+    const schemaNode = {
+      id: makeNodeId(nodeType, resource.id, schema.name),
+      type: nodeType,
+      nodeType,
+      label: schema.name,
+      resourceId: resource.id,
+      resourceType,
+      schema: schema.name,
+      table: '',
+      path: '',
+      children: []
+    }
+    const tables = schema.tables || []
+    schemaNode.children = tables.map((table) => transformTableNode(resource, schema.name, table))
+    return schemaNode
+  })
+
+  return {
+    id: makeNodeId('resource', resource.id),
+    type: 'resource',
+    nodeType: 'resource',
+    label: resource.name,
+    resourceId: resource.id,
+    resourceType,
+    children: schemas
+  }
+}
+
 const treeData = ref([])
 const treeProps = {
   label: 'label',
@@ -144,10 +359,23 @@ const treeProps = {
 }
 const loadingTree = ref(false)
 
-const selectedTable = ref(null)
-const selectedTableLabel = computed(() => {
-  if (!selectedTable.value) return ''
-  return `${selectedTable.value.schema}.${selectedTable.value.table}`
+const previewMode = ref('table')
+const selectedNode = ref(null)
+const objectPreview = ref(null)
+const selectedNodeLabel = computed(() => {
+  if (!selectedNode.value) return ''
+  const node = selectedNode.value
+  if (['object', 'directory', 'bucket'].includes(node.nodeType || node.type)) {
+    const path = node.path || node.table || ''
+    if (path) {
+      return `${node.schema}/${path}`
+    }
+    return node.schema || node.label || ''
+  }
+  if (node.schema && node.table) {
+    return `${node.schema}.${node.table}`
+  }
+  return node.label || ''
 })
 
 const preview = reactive({
@@ -167,8 +395,45 @@ const mapConfig = ref({
   tdtKey: ''
 })
 
-const hasGeometry = computed(() => geometryColumns.value.length > 0)
+const hasGeometry = computed(() => previewMode.value === 'table' && geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
+const objectChildren = computed(() =>
+  (objectPreview.value?.children || []).map((child) => ({
+    ...child,
+    type: (child.type || '').toLowerCase(),
+    size_bytes: child.size_bytes ?? child.sizeBytes ?? 0,
+    content_type: child.content_type ?? child.contentType ?? '',
+    last_modified: child.last_modified ?? child.lastModified ?? null
+  }))
+)
+const isDirectoryPreview = computed(() => {
+  if (!objectPreview.value) return false
+  const type = (objectPreview.value.node_type || '').toLowerCase()
+  return type === 'directory' || type === 'prefix' || type === 'bucket'
+})
+const isFilePreview = computed(() => !!objectPreview.value && !isDirectoryPreview.value)
+const objectContent = computed(() => {
+  const content = objectPreview.value?.content
+  if (!content) return null
+  const kind = (content.kind || '').toLowerCase()
+  return {
+    kind,
+    text: content.text ?? '',
+    json: content.json ?? content.JSON ?? null,
+    geojson: content.geojson ?? content.GeoJSON ?? null,
+    image_data: content.image_data ?? content.imageData ?? null,
+    truncated: !!content.truncated
+  }
+})
+const objectMetadataEntries = computed(() => Object.entries(objectPreview.value?.metadata || {}))
+const objectImageSrc = computed(() => {
+  const content = objectContent.value
+  if (!content || content.kind !== 'image') return ''
+  const imageData = content.image_data
+  if (!imageData) return ''
+  const mime = objectPreview.value?.content_type || objectPreview.value?.contentType || 'image/png'
+  return `data:${mime};base64,${imageData}`
+})
 const mapHeight = ref(260)
 const minMapHeight = 140
 const maxMapHeight = 520
@@ -433,30 +698,17 @@ const loadTree = async () => {
   loadingTree.value = true
   try {
     const response = await dataExplorerAPI.getTree()
-    treeData.value = (response.data.data || []).map((res) => {
-      const schemas = (res.schemas || []).map((schema) => ({
-        id: `schema-${res.id}-${schema.name}`,
-        type: 'schema',
-        label: schema.name,
-        resourceId: res.id,
-        schema: schema.name,
-        children: (schema.tables || []).map((table) => ({
-          id: `table-${res.id}-${schema.name}-${table.name}`,
-          type: 'table',
-          label: table.name,
-          resourceId: res.id,
-          schema: schema.name,
-          table: table.name
-        }))
-      }))
-      return {
-        id: `resource-${res.id}`,
-        type: 'resource',
-        label: res.name,
-        resourceId: res.id,
-        children: schemas
-      }
-    })
+    const resources = response.data?.data || []
+    treeData.value = resources.map((res) => transformResource(res))
+    selectedNode.value = null
+    previewMode.value = 'table'
+    objectPreview.value = null
+    preview.columns = []
+    preview.rows = []
+    preview.total = 0
+    geometryColumns.value = []
+    destroyMap()
+    showMap.value = true
   } catch (error) {
     ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
   } finally {
@@ -465,28 +717,47 @@ const loadTree = async () => {
 }
 
 const loadPreview = async () => {
-  if (!selectedTable.value) return
+  if (!selectedNode.value) return
+  objectPreview.value = null
+  previewMode.value = 'table'
   loadingPreview.value = true
   try {
     const params = {
-      resource_id: selectedTable.value.resourceId,
-      schema: selectedTable.value.schema,
-      table: selectedTable.value.table,
+      resource_id: selectedNode.value.resourceId,
+      schema: selectedNode.value.schema,
+      table: selectedNode.value.path ?? selectedNode.value.table ?? '',
       page: currentPage.value,
       page_size: pageSize.value
     }
     const response = await dataExplorerAPI.getPreview(params)
-    preview.columns = response.data.columns || []
-    const baseKey = `${selectedTable.value.resourceId || 'res'}-${selectedTable.value.schema || 'schema'}-${selectedTable.value.table || 'table'}`
-    preview.rows = (response.data.rows || []).map((row, index) => ({
-      ...row,
-      __rowKey: `${baseKey}-${(currentPage.value - 1) * pageSize.value + index}`
-    }))
-    preview.total = response.data.total || 0
-    geometryColumns.value = response.data.geometry_columns || []
-    currentRowKey.value = ''
-    if (tableRef.value) {
-      tableRef.value.setCurrentRow(null)
+    const mode = response.data.mode || 'table'
+    previewMode.value = mode
+    if (mode === 'table') {
+      preview.columns = response.data.columns || []
+      const baseKey = `${selectedNode.value.resourceId || 'res'}-${selectedNode.value.schema || 'schema'}-${selectedNode.value.table || 'table'}`
+      preview.rows = (response.data.rows || []).map((row, index) => ({
+        ...row,
+        __rowKey: `${baseKey}-${(currentPage.value - 1) * pageSize.value + index}`
+      }))
+      preview.total = response.data.total || 0
+      geometryColumns.value = response.data.geometry_columns || []
+      currentRowKey.value = ''
+      objectPreview.value = null
+      if (tableRef.value) {
+        tableRef.value.setCurrentRow(null)
+      }
+      if (!hasGeometry.value) {
+        showMap.value = false
+      }
+    } else {
+      preview.columns = []
+      preview.rows = []
+      preview.total = 0
+      geometryColumns.value = []
+      currentRowKey.value = ''
+      objectPreview.value = response.data.object || null
+      showMap.value = false
+      destroyMap()
     }
   } catch (error) {
     ElMessage.error('加载数据预览失败: ' + (error.response?.data?.error || error.message))
@@ -495,9 +766,77 @@ const loadPreview = async () => {
   }
 }
 
+const formatBytes = (value) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
+  let bytes = Number(value)
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+  let index = 0
+  while (Math.abs(bytes) >= 1024 && index < units.length - 1) {
+    bytes /= 1024
+    index++
+  }
+  const formatted = Math.abs(bytes) >= 100 ? bytes.toFixed(0) : Math.abs(bytes) >= 10 ? bytes.toFixed(1) : bytes.toFixed(2)
+  return `${formatted} ${units[index]}`
+}
+
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString()
+}
+
+const getObjectNodeTypeLabel = (type) => {
+  const key = String(type || '').toLowerCase()
+  switch (key) {
+    case 'directory':
+    case 'prefix':
+      return '目录'
+    case 'bucket':
+      return 'Bucket'
+    case 'object':
+      return '对象'
+    default:
+      return type || '-'
+  }
+}
+
+const safeStringify = (value) => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch (error) {
+    return String(value)
+  }
+}
+
+const openObjectChild = (row) => {
+  if (!row || !selectedNode.value) return
+  const nodeType = row.type === 'prefix' ? 'directory' : (row.type || '').toLowerCase()
+  const schema = selectedNode.value.schema
+  const resourceId = selectedNode.value.resourceId
+  const resourceType = selectedNode.value.resourceType
+  if (!schema || !resourceId) return
+  const path = row.path || row.name || ''
+  selectedNode.value = {
+    id: makeNodeId(nodeType, resourceId, schema, path || Math.random()),
+    type: nodeType,
+    nodeType,
+    label: row.name,
+    resourceId,
+    resourceType,
+    schema,
+    table: path,
+    path
+  }
+  currentPage.value = 1
+  loadPreview()
+}
+
 const handleNodeClick = (nodeData) => {
-  if (nodeData.type !== 'table') return
-  selectedTable.value = nodeData
+  if (!nodeData || nodeData.type === 'resource') return
+  selectedNode.value = nodeData
   currentPage.value = 1
   loadPreview()
 }
@@ -1611,5 +1950,134 @@ body.is-resizing .map-table-splitter::after {
 .pagination .tip {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.object-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.object-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--el-fill-color-lighter);
+}
+
+.meta-row {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.meta-label {
+  width: 96px;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}
+
+.meta-value {
+  flex: 1;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+
+.meta-metadata .meta-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.metadata-list .meta-kv {
+  background: var(--el-fill-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.meta-meta-key {
+  font-weight: 500;
+  color: var(--el-text-color-regular);
+}
+
+.meta-meta-value {
+  color: var(--el-text-color-secondary);
+}
+
+.object-children {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--el-fill-color-lighter);
+  flex: 1;
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.object-children :deep(.el-table) {
+  height: 100%;
+}
+
+.object-content {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 220px;
+  background: var(--el-fill-color-lighter);
+  overflow: auto;
+  position: relative;
+}
+
+.text-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-primary);
+}
+
+.image-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  background: var(--el-fill-color);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 6px;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 4px;
+}
+
+.preview-placeholder {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 24px 12px;
+}
+
+.truncate-tip {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  margin-top: 8px;
+}
+
+.empty-state.inner {
+  padding: 16px 0;
 }
 </style>

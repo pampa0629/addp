@@ -165,11 +165,13 @@ All modules use **PostgreSQL 15** with schema isolation for data separation.
 - **permissions** - Access control for data sources and directories
 
 **Meta Module (metadata schema)** - IMPLEMENTED:
-- **data_sources** - Synchronized from System module resources
-- **schemas** - Database schemas with scan status and scheduling
-- **tables** - Table metadata (name, row count, size)
-- **fields** - Field-level metadata (name, type, nullable, comments)
-- **lineage** - Data lineage tracking (planned)
+- **meta_resource** - Registered data sources (databases, object storage) with sync tracking
+- **meta_node** - Hierarchical nodes (schemas, prefixes, collections) with recursive structure
+- **meta_item** - Leaf items (tables, objects, files) with JSON attributes
+- **meta_dictionary** - Node type and child rule definitions for validation
+- **meta_change_log** - Change tracking for audit and incremental sync (planned)
+
+Note: Meta module uses a **unified hierarchical model** (resource → node → item) to support both relational databases and object storage, replacing the old type-specific tables (schemas, tables, fields)
 
 **Transfer Module (transfer schema)** - PLANNED:
 - **tasks** - Transfer task definitions
@@ -326,6 +328,13 @@ connStr, err := commonModels.BuildConnectionString(resource)
 2. Add model to AutoMigrate list in `repository/database.go`
 3. Restart application (migration runs automatically)
 
+**Important for Meta module**:
+- When changing the unified metadata model (resource/node/item), update:
+  - Model structs in `internal/models/`
+  - Dictionary tables (`meta_dictionary`) for node type validation
+  - JSON schema version in attributes if structure changes
+  - Migration may require data transformation from old models
+
 ### Adding Frontend Pages
 
 **Important**: Add pages to the correct frontend based on functionality:
@@ -471,15 +480,25 @@ docker-compose up -d    # Restart
 **Architecture Files**: See `gateway/ARCHITECTURE.md` for detailed request flow and routing rules
 
 ### Manager Service (PARTIAL)
-**Purpose**: Data source management and file organization
+**Purpose**: Data source management, file organization, and data preview
+
+**Implemented Features**:
+- **Object storage preview** (MinIO, S3, OSS):
+  - Directory/prefix navigation with hierarchical listing
+  - Object content preview (text, JSON, GeoJSON, images)
+  - Metadata display (size, last modified, content type)
+  - Integration with Meta module for scanned metadata enrichment
+- Multi-format data preview infrastructure
+- Connection to System module for resource management
+- Connection info decryption for secure access
 
 **Planned Features**:
-- Connect to various data sources (MySQL, PostgreSQL, S3, HDFS)
+- Database data preview (table records with pagination)
+- Connect to various data sources (MySQL, PostgreSQL, HDFS)
 - Hierarchical directory structure for file organization
-- Multi-format data preview (CSV, JSON, Parquet, Excel)
+- Multi-format data preview (CSV, Parquet, Excel)
 - Permission-based access control (user/group level)
-- Integration with System module for authentication
-- Integration with Meta module for metadata extraction
+- File upload and management
 
 **Database**: PostgreSQL `manager` schema (tables: data_sources, directories, permissions)
 
@@ -488,27 +507,42 @@ docker-compose up -d    # Restart
 
 **Implemented Features**:
 - Data source synchronization from System module
-- Metadata scanning for PostgreSQL, MySQL, and other JDBC-compatible databases
+- **Unified hierarchical metadata model** for all data source types:
+  - Relational databases: resource (database) → node (schema) → item (table/view)
+  - Object storage: resource (bucket) → node (prefix) → item (object)
+- Metadata scanning for:
+  - PostgreSQL, MySQL, and other JDBC-compatible databases
+  - Object storage (MinIO, S3, OSS) via S3 API
 - Schema-level scanning with status tracking (未扫描/扫描中/已扫描)
 - Table and field metadata extraction (names, types, sizes, comments)
+- Object storage metadata extraction (prefix hierarchy, object types, sizes)
 - Automatic and scheduled scanning with cron expressions (default: daily at midnight)
 - Multi-tenant metadata isolation
+- **JSON-based flexible attributes** with schema versioning
 
 **Scanning Workflow**:
 1. Sync data sources from System module `/api/resources`
-2. Select data source and schemas to scan
-3. Extract metadata: schemas → tables → fields
+2. Select data source and schemas/prefixes to scan
+3. Extract metadata hierarchically:
+   - Database: meta_resource → meta_node (schemas) → meta_item (tables with field details in JSON)
+   - Object Storage: meta_resource → meta_node (prefixes) → meta_item (objects with file metadata)
 4. Store in PostgreSQL `metadata` schema with tenant isolation
-5. Track scan status and last scan time
+5. Track scan status, sync version, and last scan time
 6. Support manual triggers and scheduled auto-sync
+
+**Architectural Highlights**:
+- **Node type validation**: `meta_dictionary` tables enforce valid parent-child relationships
+- **Soft delete**: All entities use `deleted_at` for safe deletion and recovery
+- **Path tracking**: Nodes maintain `depth`, `path` (ID chain), and `full_name` for efficient querying
+- **Incremental sync**: `sync_version` and `last_synced_at` enable change detection
 
 **Planned Features**:
 - Data lineage tracking (source → transformation → target)
 - Tag-based search and discovery
 - Extended metadata statistics and profiling
-- Support for non-relational data sources (S3, HDFS, etc.)
+- `meta_change_log` for audit trail and rollback
 
-**Database**: PostgreSQL `metadata` schema (tables: data_sources, schemas, tables, fields, lineage)
+**Database**: PostgreSQL `metadata` schema (tables: meta_resource, meta_node, meta_item, meta_dictionary, meta_change_log)
 
 ### Transfer Service (PLANNED)
 **Purpose**: Data import/export and synchronization
