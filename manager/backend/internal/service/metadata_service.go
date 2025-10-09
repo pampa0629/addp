@@ -272,10 +272,16 @@ func buildObjectStorageTree(node *models.MetaNodeLite, childNodes map[uint][]*mo
 }
 
 // PreviewTable 获取表数据预览
+// 当 tableName 为空时，返回 schema/bucket 的统计信息和子节点列表
 func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName string, page, pageSize int) (*models.TablePreview, error) {
 	resource, err := s.getResource(resourceID)
 	if err != nil {
 		return nil, err
+	}
+
+	// 如果 tableName 为空，表示查看 schema/bucket 节点信息
+	if tableName == "" {
+		return s.previewSchemaOrBucket(resource, schemaName)
 	}
 
 	if isObjectStorageType(resource.ResourceType) {
@@ -335,4 +341,101 @@ func convertResource(src *commonModels.Resource) *models.Resource {
 		TenantID:       tenantIDPtr,
 		IsActive:       src.IsActive,
 	}
+}
+
+// previewSchemaOrBucket 预览 schema 或 bucket 节点信息
+// 显示节点统计信息（表/对象数量、总大小）和直接子节点列表
+func (s *MetadataService) previewSchemaOrBucket(resource *models.Resource, nodeName string) (*models.TablePreview, error) {
+	// 查询节点信息
+	node, err := s.metadataRepo.GetNodeByName(resource.ID, nodeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node info: %w", err)
+	}
+
+	// 根据资源类型确定节点类型
+	nodeType := "directory"
+	if isObjectStorageType(resource.ResourceType) {
+		nodeType = "bucket"
+	} else {
+		nodeType = "schema"
+	}
+
+	// 获取直接子节点（子目录/前缀）和子项（表/对象）
+	children := make([]map[string]interface{}, 0)
+
+	// 查询子节点
+	childNodes, err := s.metadataRepo.GetChildNodes(node.ID)
+	if err == nil {
+		for _, child := range childNodes {
+			children = append(children, map[string]interface{}{
+				"type":       "node",
+				"node_type":  child.NodeType,
+				"name":       child.Name,
+				"full_name":  child.FullName,
+				"item_count": child.ItemCount,
+				"size_bytes": child.TotalSizeBytes,
+			})
+		}
+	}
+
+	// 查询子项
+	items, err := s.metadataRepo.GetNodeItems(node.ID)
+	if err == nil {
+		for _, item := range items {
+			itemMap := map[string]interface{}{
+				"type":      "item",
+				"item_type": item.ItemType,
+				"name":      item.Name,
+				"full_name": item.FullName,
+			}
+			if item.RowCount != nil {
+				itemMap["row_count"] = *item.RowCount
+			}
+			if item.SizeBytes != nil {
+				itemMap["size_bytes"] = *item.SizeBytes
+			}
+			if item.ObjectSizeBytes != nil {
+				itemMap["object_size_bytes"] = *item.ObjectSizeBytes
+			}
+			children = append(children, itemMap)
+		}
+	}
+
+	return &models.TablePreview{
+		Mode:     "node",
+		Columns:  []string{},
+		Rows:     []map[string]interface{}{},
+		Total:    0,
+		Page:     1,
+		PageSize: 1,
+		Object: &models.ObjectPreview{
+			NodeType:    nodeType,
+			Path:        nodeName,
+			ContentType: "application/x-directory",
+			ObjectCount: int64(node.ItemCount),
+			SizeBytes:   node.TotalSizeBytes,
+			Children: func() []models.ObjectPreviewChild {
+				result := make([]models.ObjectPreviewChild, 0, len(children))
+				for _, child := range children {
+					c := models.ObjectPreviewChild{
+						Name: child["name"].(string),
+						Path: child["full_name"].(string),
+					}
+					if t, ok := child["node_type"].(string); ok {
+						c.Type = t
+					} else if t, ok := child["item_type"].(string); ok {
+						c.Type = t
+					}
+					if size, ok := child["size_bytes"].(int64); ok {
+						c.SizeBytes = size
+					} else if size, ok := child["object_size_bytes"].(int64); ok {
+						c.SizeBytes = size
+					}
+					result = append(result, c)
+				}
+				return result
+			}(),
+		},
+		GeometryColumns: []string{},
+	}, nil
 }

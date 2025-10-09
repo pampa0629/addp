@@ -50,6 +50,14 @@ func isObjectStorageType(resourceType string) bool {
 
 func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket, path string) (*models.TablePreview, error) {
 	objectPath := strings.Trim(path, "/")
+
+	// 如果 path 以 bucket 名称开头，去掉 bucket 前缀
+	// 前端可能传递 full_name（如 "addp/json/中国.geoJson"），需要转换为 bucket 内的相对路径
+	// 例如: "addp/json/中国.geoJson" → "json/中国.geoJson"
+	if strings.HasPrefix(objectPath, bucket+"/") {
+		objectPath = strings.TrimPrefix(objectPath, bucket+"/")
+	}
+
 	var item *models.MetaItemLite
 	var node *models.MetaNodeLite
 	var err error

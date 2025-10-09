@@ -366,9 +366,9 @@ func (r *MetadataRepository) UnmarkTableAsManaged(tableID uint) error {
 // ListScannedNodesAndItems 获取已扫描的顶层节点、子节点和条目
 func (r *MetadataRepository) ListScannedNodesAndItems() ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
 	var topNodes []models.MetaNodeLite
-	if err := r.db.Table("meta_node AS n").
+	if err := r.db.Table("metadata.meta_node AS n").
 		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+		Joins("JOIN metadata.meta_resource AS r ON r.id = n.res_id").
 		Where("n.parent_node_id IS NULL AND n.scan_status = ?", "已扫描").
 		Order("r.resource_id, n.name").
 		Scan(&topNodes).Error; err != nil {
@@ -385,9 +385,9 @@ func (r *MetadataRepository) ListScannedNodesAndItems() ([]models.MetaNodeLite, 
 	}
 
 	var childNodes []models.MetaNodeLite
-	if err := r.db.Table("meta_node AS n").
+	if err := r.db.Table("metadata.meta_node AS n").
 		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+		Joins("JOIN metadata.meta_resource AS r ON r.id = n.res_id").
 		Where("n.parent_node_id IS NOT NULL").
 		Where("n.res_id IN ?", metaResIDs).
 		Order("n.depth, n.name").
@@ -396,9 +396,9 @@ func (r *MetadataRepository) ListScannedNodesAndItems() ([]models.MetaNodeLite, 
 	}
 
 	var items []models.MetaItemLite
-	if err := r.db.Table("meta_item AS i").
+	if err := r.db.Table("metadata.meta_item AS i").
 		Select("i.id, r.resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
-		Joins("JOIN meta_resource AS r ON r.id = i.res_id").
+		Joins("JOIN metadata.meta_resource AS r ON r.id = i.res_id").
 		Where("i.res_id IN ?", metaResIDs).
 		Scan(&items).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to query meta items: %w", err)
@@ -410,9 +410,9 @@ func (r *MetadataRepository) ListScannedNodesAndItems() ([]models.MetaNodeLite, 
 // GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
 func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
 	var item models.MetaItemLite
-	err := r.db.Table("meta_item AS i").
-		Select("i.id, r.resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
-		Joins("JOIN meta_resource AS r ON r.id = i.res_id").
+	err := r.db.Table("metadata.meta_item AS i").
+	Select("i.id, r.resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
+	Joins("JOIN metadata.meta_resource AS r ON r.id = i.res_id").
 		Where("r.resource_id = ?", resourceID).
 		Where("i.item_type = ?", "object").
 		Where("(i.attributes ->> 'bucket') = ?", bucketName).
@@ -430,9 +430,9 @@ func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, 
 // GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
 func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string) (*models.MetaNodeLite, error) {
 	var node models.MetaNodeLite
-	query := r.db.Table("meta_node AS n").
-		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Joins("JOIN meta_resource AS r ON r.id = n.res_id").
+ query := r.db.Table("metadata.meta_node AS n").
+	Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+	Joins("JOIN metadata.meta_resource AS r ON r.id = n.res_id").
 		Where("r.resource_id = ?", resourceID)
 
 	cleanPath := strings.Trim(relativePath, "/")
@@ -460,6 +460,15 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 	}
 	if pageSize <= 0 {
 		pageSize = 10
+	}
+
+	// 处理 tableName 可能包含 schema 前缀的情况
+	// 例如: tableName = "products.categories", schemaName = "products"
+	// 需要提取出真正的表名 "categories"
+	if strings.Contains(tableName, ".") {
+		parts := strings.Split(tableName, ".")
+		// 取最后一部分作为实际表名
+		tableName = parts[len(parts)-1]
 	}
 
 	decryptedConnInfo, err := r.decryptSensitiveFields(resource.ConnectionInfo)
@@ -638,4 +647,46 @@ func (r *MetadataRepository) decryptSensitiveFields(connInfo models.ConnectionIn
 // DecryptConnectionInfo 对外暴露的连接信息解密方法
 func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	return r.decryptSensitiveFields(connInfo)
+}
+
+// GetNodeByName 根据资源ID和节点名称获取节点信息
+func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string) (*models.MetaNodeLite, error) {
+	var node models.MetaNodeLite
+	err := r.db.Table("metadata.meta_node AS n").
+		Select("n.id, r.resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+		Joins("JOIN metadata.meta_resource AS r ON r.id = n.res_id").
+		Where("r.resource_id = ? AND n.name = ? AND n.parent_node_id IS NULL", resourceID, nodeName).
+		First(&node).Error
+	if err != nil {
+		return nil, err
+	}
+	return &node, nil
+}
+
+// GetChildNodes 获取节点的直接子节点
+func (r *MetadataRepository) GetChildNodes(parentNodeID uint) ([]models.MetaNodeLite, error) {
+	var nodes []models.MetaNodeLite
+	err := r.db.Table("metadata.meta_node AS n").
+		Select("n.id, 0 as resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
+		Where("n.parent_node_id = ?", parentNodeID).
+		Order("n.name").
+		Find(&nodes).Error
+	if err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+// GetNodeItems 获取节点下的所有子项（表/对象）
+func (r *MetadataRepository) GetNodeItems(nodeID uint) ([]models.MetaItemLite, error) {
+	var items []models.MetaItemLite
+	err := r.db.Table("metadata.meta_item AS i").
+		Select("i.id, 0 as resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
+		Where("i.node_id = ?", nodeID).
+		Order("i.name").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }

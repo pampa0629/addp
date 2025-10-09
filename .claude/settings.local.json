@@ -61,7 +61,10 @@
       "Bash(PGPASSWORD=addp_password psql -h localhost -U addp -d addp -c \"SELECT id, resource_id, schema_name, scan_status, table_count, total_size FROM metadata.schemas WHERE resource_id = 4 ORDER BY schema_name;\")",
       "Bash(PGPASSWORD=addp_password psql -h localhost -U addp -d addp -c \"SELECT t.id, t.schema_id, t.table_name, s.schema_name FROM metadata.tables t LEFT JOIN metadata.schemas s ON t.schema_id = s.id WHERE s.resource_id = 4 ORDER BY s.schema_name, t.table_name;\")",
       "Bash(PGPASSWORD=addp_password psql:*)",
-      "Bash(__NEW_LINE__ curl -X POST http://localhost:8082/api/scan/resource )"
+      "Bash(__NEW_LINE__ curl -X POST http://localhost:8082/api/scan/resource )",
+      "Bash(export PGPASSWORD=addp_password)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []

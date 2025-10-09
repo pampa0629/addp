@@ -12,9 +12,9 @@ import (
 )
 
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	// search_path 设置为 manager,system 让Manager可以访问两个schema
+	// search_path 设置为 manager,metadata,system 让Manager可以访问三个schema
 	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s,system",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s,metadata,system",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
 	)
 
@@ -26,7 +26,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// 确保连接后search_path正确
-	db.Exec(fmt.Sprintf("SET search_path TO %s,system", cfg.DBSchema))
+	db.Exec(fmt.Sprintf("SET search_path TO %s,metadata,system", cfg.DBSchema))
 
 	// 自动迁移 (不再包括DataSource,使用system.resources)
 	if err := db.AutoMigrate(
