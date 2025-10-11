@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	maxTextPreviewBytes  = 256 * 1024     // 256KB
-	maxJSONPreviewBytes  = 512 * 1024     // 512KB
-	maxGeoJSONPreview    = 1024 * 1024    // 1MB
+	maxTextPreviewBytes  = 256 * 1024      // 256KB
+	maxJSONPreviewBytes  = 512 * 1024      // 512KB
+	maxGeoJSONPreview    = 1024 * 1024     // 1MB
 	maxImagePreviewBytes = 3 * 1024 * 1024 // 3MB
 	maxPDFPreviewBytes   = 10 * 1024 * 1024 // 10MB - PDF文件预览限制
+	maxDOCXPreviewBytes  = 50 * 1024 * 1024 // 50MB - DOCX文件预览限制（前端性能考虑）
+	maxPPTXPreviewBytes  = 50 * 1024 * 1024 // 50MB - PPTX文件预览限制（前端性能考虑）
 )
 
 var reservedObjectSegments = map[string]struct{}{
@@ -341,6 +343,16 @@ func listImmediateChildren(ctx context.Context, client *minio.Client, bucket, pa
 
 func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objectPath, contentType string, size int64) (*models.ObjectPreviewContent, bool, error) {
 	kind := detectContentKind(objectPath, contentType)
+
+	// 对于不支持的文件类型，立即返回，不读取文件内容
+	if kind == "unsupported" {
+		return &models.ObjectPreviewContent{
+			Kind:      "unsupported",
+			Text:      "不支持该文件类型的预览",
+			Truncated: false,
+		}, false, nil
+	}
+
 	reader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to get object: %w", err)
@@ -357,6 +369,10 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 		limit = maxJSONPreviewBytes
 	case "pdf":
 		limit = maxPDFPreviewBytes
+	case "docx":
+		limit = maxDOCXPreviewBytes
+	case "pptx":
+		limit = maxPPTXPreviewBytes
 	default:
 		limit = maxTextPreviewBytes
 	}
@@ -403,6 +419,36 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 		return &models.ObjectPreviewContent{
 			Kind:     "pdf",
 			Data:     encoded, // 使用 Data 字段存储 PDF base64
+			Encoding: "base64",
+		}, false, nil
+	case "docx":
+		// DOCX 文件返回 base64 编码数据
+		if truncated || len(data) == 0 {
+			return &models.ObjectPreviewContent{
+				Kind:      "docx",
+				Text:      "DOCX 文件超出预览大小限制（50MB），建议下载后使用本地应用查看",
+				Truncated: true,
+			}, true, nil
+		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return &models.ObjectPreviewContent{
+			Kind:     "docx",
+			Data:     encoded, // 使用 Data 字段存储 DOCX base64
+			Encoding: "base64",
+		}, false, nil
+	case "pptx":
+		// PPTX 文件返回 base64 编码数据
+		if truncated || len(data) == 0 {
+			return &models.ObjectPreviewContent{
+				Kind:      "pptx",
+				Text:      "PPTX 文件超出预览大小限制（50MB），建议下载后使用本地应用查看",
+				Truncated: true,
+			}, true, nil
+		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return &models.ObjectPreviewContent{
+			Kind:     "pptx",
+			Data:     encoded, // 使用 Data 字段存储 PPTX base64
 			Encoding: "base64",
 		}, false, nil
 	case "geojson":
@@ -463,6 +509,20 @@ func detectContentKind(objectPath, contentType string) string {
 		return "pdf"
 	}
 
+	// 检查 DOCX
+	if contentTypeLower == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+		strings.Contains(contentTypeLower, "wordprocessingml") ||
+		ext == ".docx" {
+		return "docx"
+	}
+
+	// 检查 PPTX
+	if contentTypeLower == "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+		strings.Contains(contentTypeLower, "presentationml") ||
+		ext == ".pptx" {
+		return "pptx"
+	}
+
 	// 检查图片
 	if strings.HasPrefix(contentType, "image/") {
 		switch strings.ToLower(contentType) {
@@ -486,7 +546,17 @@ func detectContentKind(objectPath, contentType string) string {
 		return "image"
 	case ".txt", ".log", ".csv":
 		return "text"
+	case ".bmp", ".gif", ".tiff", ".ico", ".webp", ".svg":
+		return "unsupported" // 不支持的图片格式
+	case ".doc", ".xls", ".xlsx", ".ppt", ".rtf", ".odt", ".ods", ".odp":
+		return "unsupported" // 不支持的 Office 格式
+	case ".zip", ".rar", ".7z", ".tar", ".gz":
+		return "unsupported" // 压缩文件
+	case ".exe", ".dll", ".so", ".dylib":
+		return "unsupported" // 可执行文件
 	}
+
+	// 其他未知格式，尝试作为文本读取
 	return "text"
 }
 
@@ -497,6 +567,10 @@ func inferContentType(objectPath, contentType string) string {
 	switch strings.ToLower(filepath.Ext(objectPath)) {
 	case ".pdf":
 		return "application/pdf"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".pptx":
+		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	case ".png":
 		return "image/png"
 	case ".jpg", ".jpeg":

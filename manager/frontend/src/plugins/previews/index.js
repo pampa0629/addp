@@ -90,6 +90,8 @@ import ImagePreview from '@/components/previews/ImagePreview.vue'
 import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
 import JsonPreview from '@/components/previews/JsonPreview.vue'
 import PdfPreview from '@/components/previews/PdfPreview.vue'
+import DocxPreview from '@/components/previews/DocxPreview.vue'
+import PptxPreview from '@/components/previews/PptxPreview.vue'
 import TextPreview from '@/components/previews/TextPreview.vue'
 
 // 表格预览 (优先级最高)
@@ -183,6 +185,64 @@ registerPreview({
     return false
   },
   priority: 65
+})
+
+// DOCX 预览
+registerPreview({
+  name: 'docx',
+  component: DocxPreview,
+  canHandle: (data) => {
+    // 检查文件扩展名
+    const path = (data.object?.path || '').toLowerCase()
+    if (path.endsWith('.docx')) {
+      return true
+    }
+
+    // 检查 Content-Type
+    const contentType = (data.object?.content_type || '').toLowerCase()
+    if (contentType.includes('wordprocessingml') ||
+        contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      return true
+    }
+
+    // 检查 content kind
+    const kind = (data.object?.content?.kind || '').toLowerCase()
+    if (kind === 'docx') {
+      return true
+    }
+
+    return false
+  },
+  priority: 64
+})
+
+// PPTX 预览
+registerPreview({
+  name: 'pptx',
+  component: PptxPreview,
+  canHandle: (data) => {
+    // 检查文件扩展名
+    const path = (data.object?.path || '').toLowerCase()
+    if (path.endsWith('.pptx')) {
+      return true
+    }
+
+    // 检查 Content-Type
+    const contentType = (data.object?.content_type || '').toLowerCase()
+    if (contentType.includes('presentationml') ||
+        contentType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+      return true
+    }
+
+    // 检查 content kind
+    const kind = (data.object?.content?.kind || '').toLowerCase()
+    if (kind === 'pptx') {
+      return true
+    }
+
+    return false
+  },
+  priority: 63
 })
 
 // 文本预览 (兜底,优先级最低)

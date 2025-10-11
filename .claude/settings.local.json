@@ -67,7 +67,18 @@
       "Bash(bash:*)",
       "Bash(npm run build:*)",
       "Bash(mkdir:*)",
-      "Read(///**)"
+      "Read(///**)",
+      "Bash(npm install:*)",
+      "Bash(for:*)",
+      "Bash(done)",
+      "Bash(do echo \"=== $f ===\")",
+      "Bash(brew install:*)",
+      "Read(//Applications/**)",
+      "Bash(ps:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwiZXhwIjoxNzYwMTgyMzcyLCJpYXQiOjE3NjAxODA1NzJ9.uWL-2UEtr8TVZ-IDDFoA7tJqMpaY4SGEX1ctZo4J9_c\")",
+      "Bash(nc:*)",
+      "Bash(PGPASSWORD=business_pass psql:*)",
+      "Bash(PGPASSWORD=business_password psql -h localhost -p 5433 -U business_user -d business -c \"SELECT current_database(), current_user;\")"
     ],
     "deny": [],
     "ask": []

@@ -377,15 +377,24 @@ const fallbackToIframe = () => {
   ElMessage.info('已切换到浏览器原生预览模式')
 }
 
-// 监听数据变化
+// 监听数据变化，自动重新加载
 watch(
   () => props.data,
-  () => {
-    if (pdfUrl.value) {
-      loadPDF()
+  (newData, oldData) => {
+    const newPath = newData?.object?.path
+    const oldPath = oldData?.object?.path
+
+    if (newPath && newPath !== oldPath) {
+      console.log(`🔄 PDF 文件切换: ${oldPath} → ${newPath}`)
+      // 重置状态
+      currentPage.value = 1
+      pageCache.clear()
+      if (pdfUrl.value) {
+        loadPDF()
+      }
     }
   },
-  { immediate: true }
+  { deep: true }
 )
 
 onMounted(() => {

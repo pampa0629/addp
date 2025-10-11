@@ -284,56 +284,127 @@ ENABLE_SERVICE_INTEGRATION=true    # Enable config center
 
 ## Common Module
 
-The `common` module provides shared code used across Manager, Meta, and Transfer modules to avoid code duplication.
+The `common` module provides shared code to avoid duplication across Manager, Meta, and Transfer modules.
 
 **Contents**:
-- `client/system.go` - SystemClient for communicating with System module
-- `models/resource.go` - Shared Resource model and BuildConnectionString utility
-- `config/loader.go` - Centralized configuration loading from System module with fallback to local .env
+- [client/system.go](common/client/system.go) - SystemClient for communicating with System module
+- [models/resource.go](common/models/resource.go) - Shared Resource model and BuildConnectionString utility
+- [config/loader.go](common/config/loader.go) - Centralized configuration loading with fallback
 
-**Usage in modules**:
+**Usage Pattern**:
 ```go
-// In go.mod
-require (
-    github.com/addp/common v0.0.0
-)
+// In module's go.mod
+require (github.com/addp/common v0.0.0)
 replace github.com/addp/common => ../../common
 
-// In code
+// Import with alias to avoid conflicts
 import (
-    "github.com/addp/common/client"
-    commonModels "github.com/addp/common/models"  // Use alias if needed
+    commonClient "github.com/addp/common/client"
+    commonModels "github.com/addp/common/models"
 )
 
-sysClient := client.NewSystemClient(systemURL, token)
-resource, err := sysClient.GetResource(resourceID)
+// Use SystemClient to fetch resources
+client := commonClient.NewSystemClient(systemURL, jwtToken)
+resources, err := client.ListResources("postgresql")
+resource, err := client.GetResource(resourceID)
+
+// Build connection string (auto-decrypts password)
 connStr, err := commonModels.BuildConnectionString(resource)
 ```
 
-**See Also**: `docs/COMMON_MODULE.md` for detailed common module documentation.
+**Key Design Principles**:
+- Minimal external dependencies (only Go stdlib)
+- All modules use identical SystemClient implementation
+- Resource model is canonical across all services
+- Breaking changes to common affect all modules - test thoroughly
+
+**See Also**: [docs/COMMON_MODULE.md](docs/COMMON_MODULE.md)
 
 ## Development Workflows
 
 ### Adding New API Endpoints
 
-1. Define request/response structs in `internal/models/`
-2. Add repository methods in `internal/repository/`
-3. Implement business logic in `internal/service/`
-4. Create HTTP handler in `internal/api/`
-5. Register route in `internal/api/router.go`
+Follow the layered architecture pattern used throughout the codebase:
+
+1. **Define data models** in `internal/models/`:
+   ```go
+   type CreateResourceRequest struct {
+       Name           string                 `json:"name" binding:"required"`
+       ResourceType   string                 `json:"resource_type" binding:"required"`
+       ConnectionInfo map[string]interface{} `json:"connection_info"`
+   }
+   ```
+
+2. **Add repository methods** in `internal/repository/`:
+   ```go
+   func (r *ResourceRepository) Create(resource *models.Resource) error {
+       return r.db.Create(resource).Error
+   }
+   ```
+
+3. **Implement business logic** in `internal/service/`:
+   ```go
+   func (s *ResourceService) CreateResource(req *CreateResourceRequest) (*Resource, error) {
+       // Validation, encryption, business rules
+       return s.repo.Create(resource)
+   }
+   ```
+
+4. **Create HTTP handler** in `internal/api/`:
+   ```go
+   func (h *ResourceHandler) Create(c *gin.Context) {
+       var req CreateResourceRequest
+       if err := c.ShouldBindJSON(&req); err != nil {
+           c.JSON(400, gin.H{"error": err.Error()})
+           return
+       }
+       resource, err := h.service.CreateResource(&req)
+       c.JSON(201, resource)
+   }
+   ```
+
+5. **Register route** in `internal/api/router.go`:
+   ```go
+   protected.POST("/resources", resourceHandler.Create)
+   ```
+
+**Example PR**: See system module resource management implementation
 
 ### Database Migrations
 
-1. Modify model struct in `internal/models/`
-2. Add model to AutoMigrate list in `repository/database.go`
-3. Restart application (migration runs automatically)
+GORM AutoMigrate handles schema changes automatically:
 
-**Important for Meta module**:
-- When changing the unified metadata model (resource/node/item), update:
-  - Model structs in `internal/models/`
-  - Dictionary tables (`meta_dictionary`) for node type validation
-  - JSON schema version in attributes if structure changes
-  - Migration may require data transformation from old models
+1. **Modify model struct** in `internal/models/`:
+   ```go
+   type Resource struct {
+       ID             uint      `gorm:"primaryKey"`
+       Name           string    `gorm:"not null"`
+       NewField       string    `gorm:"default:''" json:"new_field"` // Add new field
+   }
+   ```
+
+2. **Add to AutoMigrate** in `internal/repository/database.go`:
+   ```go
+   db.AutoMigrate(
+       &models.Resource{},
+       &models.User{},
+       // Add new models here
+   )
+   ```
+
+3. **Restart application** - migration runs on startup
+
+**For Complex Migrations**:
+- Create SQL script in `scripts/migrations/` for data transformations
+- Run manually via `make db-migrate` before deploying new version
+- Document breaking changes in PR description
+
+**Meta Module Specifics**:
+The unified metadata model (resource/node/item) requires coordinated updates:
+- Model structs in [meta/backend/internal/models/](meta/backend/internal/models/)
+- Dictionary validation in `meta_dictionary` table
+- JSON schema version in `attributes` field if structure changes
+- May require data migration script for existing metadata
 
 ### Adding Frontend Pages
 
@@ -396,6 +467,8 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 
 ## Testing
 
+### Running Tests
+
 ```bash
 # Test all modules (from project root)
 make test
@@ -403,13 +476,48 @@ make test
 # Test specific module
 cd system/backend && go test ./...
 cd manager/backend && go test ./...
+cd meta/backend && go test ./...
 
 # Test with coverage
 go test -cover ./...
 
 # Test specific package
 go test ./internal/service/...
+
+# Run tests with verbose output
+go test -v ./...
+
+# Run specific test function
+go test -v -run TestFunctionName ./internal/service/
 ```
+
+### Writing Tests
+
+Go tests should be table-driven and placed in `_test.go` files:
+
+```go
+// Example: internal/service/resource_service_test.go
+func TestResourceService_Create(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   *models.Resource
+        wantErr bool
+    }{
+        {"valid resource", &models.Resource{...}, false},
+        {"invalid type", &models.Resource{...}, true},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test implementation
+        })
+    }
+}
+```
+
+### Frontend Testing
+
+Frontend tests are not yet implemented. When adding Vue components, document manual test scenarios in PR descriptions.
 
 ## Docker Deployment
 
@@ -479,28 +587,37 @@ docker-compose up -d    # Restart
 
 **Architecture Files**: See `gateway/ARCHITECTURE.md` for detailed request flow and routing rules
 
-### Manager Service (PARTIAL)
+### Manager Service (IMPLEMENTED)
 **Purpose**: Data source management, file organization, and data preview
 
 **Implemented Features**:
 - **Object storage preview** (MinIO, S3, OSS):
   - Directory/prefix navigation with hierarchical listing
   - Object content preview (text, JSON, GeoJSON, images)
+  - PDF preview with streaming support
+  - Office document preview (DOCX, PPTX) via conversion
   - Metadata display (size, last modified, content type)
   - Integration with Meta module for scanned metadata enrichment
-- Multi-format data preview infrastructure
+- **Preview plugin system** ([manager/backend/internal/service/object_preview.go:1](manager/backend/internal/service/object_preview.go)):
+  - Extensible preview handlers (TextPreview, ImagePreview, PDFPreview, DocxPreview, PptxPreview)
+  - Content type detection and routing
+  - Binary and text content handling
 - Connection to System module for resource management
 - Connection info decryption for secure access
 
+**Key Files**:
+- Backend preview service: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
+- Frontend preview components: [manager/frontend/src/components/previews/](manager/frontend/src/components/previews/)
+- Preview plugin registry: [manager/frontend/src/plugins/previews/index.js](manager/frontend/src/plugins/previews/index.js)
+
 **Planned Features**:
 - Database data preview (table records with pagination)
-- Connect to various data sources (MySQL, PostgreSQL, HDFS)
-- Hierarchical directory structure for file organization
-- Multi-format data preview (CSV, Parquet, Excel)
+- Video/audio preview
+- Additional office formats (XLS, CSV)
 - Permission-based access control (user/group level)
 - File upload and management
 
-**Database**: PostgreSQL `manager` schema (tables: data_sources, directories, permissions)
+**Database**: PostgreSQL `manager` schema
 
 ### Meta Service (IMPLEMENTED)
 **Purpose**: Metadata management and data lineage
@@ -762,12 +879,29 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 
 ## Important File Locations
 
-- **Main config**: `.env` (root) - shared environment variables
-- **Database init**: `scripts/init-db.sql` - PostgreSQL schema setup
-- **Docker compose**: `docker-compose.yml` (root) - all service definitions
-- **Root Makefile**: `Makefile` (root) - orchestration commands
-- **System docs**: `system/CLAUDE.md` - detailed System module documentation
-- **Gateway docs**: `gateway/ARCHITECTURE.md` - gateway implementation details
+### Configuration
+- [`.env`](.env) - Root environment variables (shared config)
+- [`.env.example`](.env.example) - Template with all available options
+- [`docker-compose.yml`](docker-compose.yml) - Service definitions and networking
+
+### Documentation
+- [`CLAUDE.md`](CLAUDE.md) - This file (platform-wide architecture)
+- [`AGENTS.md`](AGENTS.md) - Repository conventions and guidelines
+- [`system/CLAUDE.md`](system/CLAUDE.md) - System module details
+- [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway routing logic
+- [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - Configuration center guide
+- [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common module usage
+
+### Build & Deploy
+- [`Makefile`](Makefile) - Project-wide orchestration commands
+- [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema initialization
+- [`scripts/dev-run.sh`](scripts/dev-run.sh) - Local development helper
+
+### Key Source Files
+- System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)
+- Manager preview: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
+- Meta scanning: [meta/backend/internal/service/scan_service.go](meta/backend/internal/service/scan_service.go)
+- Common client: [common/client/system.go](common/client/system.go)
 
 ## Troubleshooting
 

@@ -45,6 +45,7 @@ const loadingTree = ref(false)
 const loadingPreview = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
+let previewRequestId = 0
 
 /**
  * 加载资源树
@@ -72,6 +73,7 @@ const loadTree = async () => {
 const loadPreview = async () => {
   if (!selectedNode.value) return
 
+  const requestId = ++previewRequestId
   loadingPreview.value = true
   try {
     const params = {
@@ -83,6 +85,10 @@ const loadPreview = async () => {
     }
 
     const response = await dataExplorerAPI.getPreview(params)
+    if (requestId !== previewRequestId) {
+      return
+    }
+
     previewData.value = response.data
 
     // 为表格模式添加额外的元数据
@@ -92,10 +98,15 @@ const loadPreview = async () => {
       previewData.value.table = selectedNode.value.table
     }
   } catch (error) {
+    if (requestId !== previewRequestId) {
+      return
+    }
     ElMessage.error('加载数据预览失败: ' + (error.response?.data?.error || error.message))
     previewData.value = null
   } finally {
-    loadingPreview.value = false
+    if (requestId === previewRequestId) {
+      loadingPreview.value = false
+    }
   }
 }
 
