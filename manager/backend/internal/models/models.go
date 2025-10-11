@@ -247,6 +247,7 @@ type ObjectPreviewContent struct {
 	JSON      interface{} `json:"json,omitempty"`
 	GeoJSON   interface{} `json:"geojson,omitempty"`
 	ImageData string      `json:"image_data,omitempty"`
+	Data      string      `json:"data,omitempty"`      // Generic data field (used for PDF base64)
 	Encoding  string      `json:"encoding,omitempty"`
 	Truncated bool        `json:"truncated,omitempty"`
 }

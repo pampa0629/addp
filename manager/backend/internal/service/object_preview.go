@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	maxTextPreviewBytes  = 256 * 1024  // 256KB
-	maxJSONPreviewBytes  = 512 * 1024  // 512KB
-	maxGeoJSONPreview    = 1024 * 1024 // 1MB
-	maxImagePreviewBytes = 3 * 1024 * 1024
+	maxTextPreviewBytes  = 256 * 1024     // 256KB
+	maxJSONPreviewBytes  = 512 * 1024     // 512KB
+	maxGeoJSONPreview    = 1024 * 1024    // 1MB
+	maxImagePreviewBytes = 3 * 1024 * 1024 // 3MB
+	maxPDFPreviewBytes   = 10 * 1024 * 1024 // 10MB - PDF文件预览限制
 )
 
 var reservedObjectSegments = map[string]struct{}{
@@ -354,6 +355,8 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 		limit = maxGeoJSONPreview
 	case "json":
 		limit = maxJSONPreviewBytes
+	case "pdf":
+		limit = maxPDFPreviewBytes
 	default:
 		limit = maxTextPreviewBytes
 	}
@@ -387,9 +390,30 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 			ImageData: encoded,
 			Encoding:  "base64",
 		}, false, nil
+	case "pdf":
+		// PDF 文件返回 base64 编码数据
+		if truncated || len(data) == 0 {
+			return &models.ObjectPreviewContent{
+				Kind:      "pdf",
+				Text:      "PDF 文件超出预览大小限制（10MB）",
+				Truncated: true,
+			}, true, nil
+		}
+		encoded := base64.StdEncoding.EncodeToString(data)
+		return &models.ObjectPreviewContent{
+			Kind:     "pdf",
+			Data:     encoded, // 使用 Data 字段存储 PDF base64
+			Encoding: "base64",
+		}, false, nil
 	case "geojson":
+		// 去除UTF-8 BOM (Byte Order Mark) 如果存在
+		cleanData := data
+		if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+			cleanData = data[3:]
+		}
+
 		var parsed interface{}
-		if err := json.Unmarshal(data, &parsed); err != nil {
+		if err := json.Unmarshal(cleanData, &parsed); err != nil {
 			return &models.ObjectPreviewContent{
 				Kind:      "text",
 				Text:      string(data),
@@ -398,12 +422,18 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 		}
 		return &models.ObjectPreviewContent{
 			Kind:    "geojson",
-			Text:    string(data),
+			Text:    string(cleanData),
 			GeoJSON: parsed,
 		}, truncated, nil
 	case "json":
+		// 去除UTF-8 BOM (Byte Order Mark) 如果存在
+		cleanData := data
+		if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+			cleanData = data[3:]
+		}
+
 		var parsed interface{}
-		if err := json.Unmarshal(data, &parsed); err != nil {
+		if err := json.Unmarshal(cleanData, &parsed); err != nil {
 			return &models.ObjectPreviewContent{
 				Kind:      "text",
 				Text:      string(data),
@@ -412,7 +442,7 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 		}
 		return &models.ObjectPreviewContent{
 			Kind: "json",
-			Text: string(data),
+			Text: string(cleanData),
 			JSON: parsed,
 		}, truncated, nil
 	default:
@@ -425,20 +455,30 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 }
 
 func detectContentKind(objectPath, contentType string) string {
+	ext := strings.ToLower(filepath.Ext(objectPath))
+	contentTypeLower := strings.ToLower(contentType)
+
+	// 检查 PDF
+	if contentTypeLower == "application/pdf" || strings.Contains(contentTypeLower, "pdf") || ext == ".pdf" {
+		return "pdf"
+	}
+
+	// 检查图片
 	if strings.HasPrefix(contentType, "image/") {
 		switch strings.ToLower(contentType) {
 		case "image/png", "image/jpeg", "image/jpg":
 			return "image"
 		}
 	}
-	ext := strings.ToLower(filepath.Ext(objectPath))
-	if strings.Contains(contentType, "geo+json") || ext == ".geojson" {
+
+	// 检查 GeoJSON: 支持 "geojson", "geo+json", "application/geo+json" 等
+	if strings.Contains(contentTypeLower, "geojson") || strings.Contains(contentTypeLower, "geo+json") || ext == ".geojson" {
 		return "geojson"
 	}
-	if strings.Contains(contentType, "json") || ext == ".json" {
+	if strings.Contains(contentTypeLower, "json") || ext == ".json" {
 		return "json"
 	}
-	if strings.HasPrefix(contentType, "text/") {
+	if strings.HasPrefix(contentTypeLower, "text/") {
 		return "text"
 	}
 	switch ext {
@@ -455,6 +495,8 @@ func inferContentType(objectPath, contentType string) string {
 		return contentType
 	}
 	switch strings.ToLower(filepath.Ext(objectPath)) {
+	case ".pdf":
+		return "application/pdf"
 	case ".png":
 		return "image/png"
 	case ".jpg", ".jpeg":

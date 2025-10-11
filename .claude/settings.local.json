@@ -64,7 +64,10 @@
       "Bash(__NEW_LINE__ curl -X POST http://localhost:8082/api/scan/resource )",
       "Bash(export PGPASSWORD=addp_password)",
       "Bash(chmod:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(npm run build:*)",
+      "Bash(mkdir:*)",
+      "Read(///**)"
     ],
     "deny": [],
     "ask": []
