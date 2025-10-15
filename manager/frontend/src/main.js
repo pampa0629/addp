@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import * as Vue from 'vue'
 import { createPinia } from 'pinia'
 import router from './router'
 import ElementPlus from 'element-plus'
@@ -7,6 +7,18 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import { useAuthStore } from './store/auth'
+import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
+import TablePreview from '@/components/previews/TablePreview.vue'
+import ObjectStoragePreview from '@/components/previews/ObjectStoragePreview.vue'
+import ImagePreview from '@/components/previews/ImagePreview.vue'
+import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
+import JsonPreview from '@/components/previews/JsonPreview.vue'
+import PdfPreview from '@/components/previews/PdfPreview.vue'
+import DocxPreview from '@/components/previews/DocxPreview.vue'
+import PptxPreview from '@/components/previews/PptxPreview.vue'
+import TextPreview from '@/components/previews/TextPreview.vue'
+
+const { createApp, h, resolveComponent } = Vue
 
 const app = createApp(App)
 
@@ -30,4 +42,31 @@ if (tokenFromUrl) {
 
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
-app.mount('#app')
+
+const mountApp = () => {
+  app.mount('#app')
+}
+
+if (typeof window !== 'undefined') {
+  window.Vue = Object.assign({}, window.Vue, Vue)
+
+  window.DataExplorerPluginComponents = {
+    TablePreview,
+    ObjectStoragePreview,
+    ImagePreview,
+    GeoJsonPreview,
+    JsonPreview,
+    PdfPreview,
+    DocxPreview,
+    PptxPreview,
+    TextPreview
+  }
+}
+
+loadRuntimePlugins()
+  .catch((error) => {
+    console.warn('DataExplorer: 自定义插件加载失败', error)
+  })
+  .finally(() => {
+    mountApp()
+  })

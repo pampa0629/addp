@@ -110,8 +110,37 @@ func (s *StorageEngineService) testPostgreSQLConnection(connInfo models.Connecti
 
 // testMinIOConnection 测试 MinIO/S3 连接
 func (s *StorageEngineService) testMinIOConnection(connInfo models.ConnectionInfo) error {
+	// 规范化 endpoint 中的 localhost（Docker 环境需要转换）
+	normalizeEndpoint := func(endpoint string) string {
+		// 检查 endpoint 是否以 localhost 或 127.0.0.1 开头
+		if len(endpoint) > 0 {
+			// 提取主机名部分（可能包含端口）
+			hostPart := endpoint
+			portPart := ""
+			if idx := len(endpoint) - 1; idx >= 0 {
+				for i := len(endpoint) - 1; i >= 0; i-- {
+					if endpoint[i] == ':' {
+						hostPart = endpoint[:i]
+						portPart = endpoint[i:] // 包含冒号
+						break
+					}
+				}
+			}
+
+			// 如果是 localhost 或 127.0.0.1，使用环境变量指定的别名
+			if hostPart == "localhost" || hostPart == "127.0.0.1" {
+				if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+					return alias + portPart
+				}
+			}
+		}
+		return endpoint
+	}
+
 	// 获取连接参数
 	endpoint, _ := connInfo["endpoint"].(string)
+	endpoint = normalizeEndpoint(endpoint)
+
 	accessKey, _ := connInfo["access_key"].(string)
 	secretKey, _ := connInfo["secret_key"].(string)
 	useSSL := false

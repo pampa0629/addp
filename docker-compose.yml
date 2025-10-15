@@ -65,8 +65,8 @@ services:
   # System 模块 - 用户认证、日志、资源管理
   system-backend:
     build:
-      context: ./system/backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: system/backend/Dockerfile
     container_name: addp-system-backend
     environment:
       - PORT=8080
@@ -78,16 +78,21 @@ services:
       - POSTGRES_USER=addp
       - POSTGRES_PASSWORD=addp_password
       - POSTGRES_DB=addp
+      - RESOURCE_LOCALHOST_ALIAS=minio
       - ENV=production
     volumes:
       - ./system/data:/app/data
     ports:
       - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
     networks:
       - addp-network
 
@@ -119,8 +124,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - system-backend
-      - manager-backend
+      system-backend:
+        condition: service_healthy
+      manager-backend:
+        condition: service_healthy
     networks:
       - addp-network
     profiles:
@@ -162,7 +169,13 @@ services:
       minio:
         condition: service_healthy
       system-backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - addp-network
     profiles:
@@ -211,7 +224,13 @@ services:
       redis:
         condition: service_healthy
       system-backend:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - addp-network
     profiles:
@@ -262,7 +281,7 @@ services:
       redis:
         condition: service_healthy
       system-backend:
-        condition: service_started
+        condition: service_healthy
     networks:
       - addp-network
     profiles:

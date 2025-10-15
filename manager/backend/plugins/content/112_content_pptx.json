@@ -1,0 +1,14 @@
+{
+  "name": "builtin:content-pptx",
+  "type": "builtin",
+  "builtin": "pptx",
+  "priority": 74,
+  "match": {
+    "extensions": [".pptx"],
+    "content_types": [
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/vnd.openxmlformats-officedocument.presentationml.template"
+    ]
+  },
+  "max_bytes": 104857600
+}

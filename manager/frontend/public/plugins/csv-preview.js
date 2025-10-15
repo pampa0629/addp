@@ -1,9 +1,9 @@
 /**
- * CSV 文件预览插件示例
+ * CSV 文件预览插件
  *
  * 使用方法:
  * 1. 在 index.html 中添加:
- *    <script src="/plugins/example-csv-preview.js"></script>
+ *    <script src="/plugins/csv-preview.js"></script>
  *
  * 2. 重启开发服务器或刷新页面
  *
@@ -13,57 +13,18 @@
 // 确保全局插件数组存在
 window.DataExplorerPlugins = window.DataExplorerPlugins || []
 
-// 注册 CSV 预览插件
-window.DataExplorerPlugins.push({
-  name: 'csv-preview-example',
+const registerCsvPlugin = (pluginConfig) => {
+  if (typeof window.registerDataExplorerPlugin === 'function') {
+    window.registerDataExplorerPlugin(pluginConfig)
+  } else {
+    window.DataExplorerPlugins.push(pluginConfig)
+  }
+}
 
-  // Vue 组件定义
+registerCsvPlugin({
+  name: 'csv-preview',
   component: {
-    template: `
-      <div class="csv-preview">
-        <div v-if="error" class="error-message">
-          <el-alert type="error" :title="error" :closable="false" />
-        </div>
-
-        <div v-else>
-          <div class="csv-toolbar">
-            <span>共 {{ parsedData.length }} 行数据</span>
-            <el-button size="small" @click="downloadCSV">
-              <el-icon><Download /></el-icon>
-              下载
-            </el-button>
-          </div>
-
-          <el-table
-            :data="paginatedData"
-            height="400"
-            border
-            stripe
-          >
-            <el-table-column
-              v-for="col in columns"
-              :key="col"
-              :prop="col"
-              :label="col"
-              show-overflow-tooltip
-              min-width="120"
-            />
-          </el-table>
-
-          <el-pagination
-            v-if="parsedData.length > pageSize"
-            background
-            layout="prev, pager, next, total"
-            :total="parsedData.length"
-            :page-size="pageSize"
-            :current-page="currentPage"
-            @current-change="handlePageChange"
-            style="margin-top: 12px; justify-content: center;"
-          />
-        </div>
-      </div>
-    `,
-
+    name: 'CsvPreview',
     props: ['data'],
 
     data() {
@@ -168,6 +129,99 @@ window.DataExplorerPlugins.push({
         link.click()
         URL.revokeObjectURL(link.href)
       }
+    },
+
+    render() {
+      const runtime = window.Vue || {}
+      const h = runtime.h
+      const resolveComponent = runtime.resolveComponent
+
+      if (typeof h !== 'function' || typeof resolveComponent !== 'function') {
+        console.warn('DataExplorer: Vue 运行时 helper 未注入，CSV 预览无法渲染')
+        return null
+      }
+
+      const ElAlert = resolveComponent('ElAlert')
+      const ElButton = resolveComponent('ElButton')
+      const ElIcon = resolveComponent('ElIcon')
+      const DownloadIcon = resolveComponent('Download')
+      const ElTable = resolveComponent('ElTable')
+      const ElTableColumn = resolveComponent('ElTableColumn')
+      const ElPagination = resolveComponent('ElPagination')
+
+      if (this.error) {
+        return h('div', { class: 'csv-preview' }, [
+          h('div', { class: 'error-message' }, [
+            ElAlert ? h(ElAlert, { type: 'error', title: this.error, closable: false }) : h('div', this.error)
+          ])
+        ])
+      }
+
+      const toolbar = h('div', { class: 'csv-toolbar' }, [
+        h('span', null, `共 ${this.parsedData.length} 行数据`),
+        ElButton
+          ? h(
+              ElButton,
+              { size: 'small', onClick: this.downloadCSV },
+              {
+                default: () => [
+                  ElIcon && DownloadIcon
+                    ? h(ElIcon, null, { default: () => h(DownloadIcon) })
+                    : null,
+                  h('span', { style: 'margin-left: 4px;' }, '下载')
+                ].filter(Boolean)
+              }
+            )
+          : null
+      ])
+
+      const columns = (ElTableColumn ? this.columns : []).map((col) =>
+        h(ElTableColumn, {
+          key: col,
+          prop: col,
+          label: col,
+          'show-overflow-tooltip': true,
+          'min-width': 120
+        })
+      )
+
+      const table = ElTable
+        ? h(
+            ElTable,
+            {
+              data: this.paginatedData,
+              height: 400,
+              border: true,
+              stripe: true
+            },
+            {
+              default: () => columns
+            }
+          )
+        : h(
+            'pre',
+            { class: 'csv-raw' },
+            (this.data?.object?.content?.text || '').trim() || '(CSV 内容为空)'
+          )
+
+      const pagination =
+        ElPagination && this.parsedData.length > this.pageSize
+          ? h(ElPagination, {
+              background: true,
+              layout: 'prev, pager, next, total',
+              total: this.parsedData.length,
+              'page-size': this.pageSize,
+              'current-page': this.currentPage,
+              onCurrentChange: this.handlePageChange,
+              style: 'margin-top: 12px; justify-content: center;'
+            })
+          : null
+
+      return h(
+        'div',
+        { class: 'csv-preview' },
+        [toolbar, table, pagination].filter(Boolean)
+      )
     }
   },
 

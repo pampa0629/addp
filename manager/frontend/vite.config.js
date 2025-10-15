@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 5174,
+    strictPort: true, // 端口被占用时报错，不自动切换
     proxy: {
       '/api': {
         target: 'http://localhost:8081',

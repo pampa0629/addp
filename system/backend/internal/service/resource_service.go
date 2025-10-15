@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
@@ -144,8 +145,11 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 		resource.Name = *req.Name
 	}
 	if req.ConnectionInfo != nil {
+		// 合并连接信息：如果新值是脱敏占位符，保留原值
+		mergedConnInfo := s.mergeConnectionInfo(resource.ConnectionInfo, *req.ConnectionInfo)
+
 		// 加密敏感字段
-		encryptedConnInfo, err := s.encryptSensitiveFields(*req.ConnectionInfo)
+		encryptedConnInfo, err := s.encryptSensitiveFields(mergedConnInfo)
 		if err != nil {
 			return nil, fmt.Errorf("加密连接信息失败: %w", err)
 		}
@@ -270,6 +274,98 @@ func (s *ResourceService) GetForConnection(id uint, currentUserID uint) (*models
 	resourceCopy := *resource
 	resourceCopy.ConnectionInfo = decryptedConnInfo
 	return &resourceCopy, nil
+}
+
+// mergeConnectionInfo 合并连接信息，识别前端掩码占位并保留原始敏感值
+func (s *ResourceService) mergeConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
+	merged := make(models.ConnectionInfo)
+
+	// 先复制原始字段，并对敏感字段做解密，得到可操作的明文值
+	for k, v := range original {
+		if !s.isSensitiveField(k) {
+			merged[k] = v
+			continue
+		}
+
+		strVal, ok := v.(string)
+		if !ok || strVal == "" {
+			merged[k] = v
+			continue
+		}
+
+		if decrypted, err := commonutils.Decrypt(strVal, s.encryptionKey); err == nil {
+			merged[k] = decrypted
+		} else {
+			// 兼容旧数据（未加密或格式异常），保持原值
+			merged[k] = strVal
+		}
+	}
+
+	// 再合并更新字段，对于敏感字段，需要判断是否仍为掩码占位
+	for k, v := range updated {
+		if !s.isSensitiveField(k) {
+			merged[k] = v
+			continue
+		}
+
+		strVal, ok := v.(string)
+		if !ok {
+			merged[k] = v
+			continue
+		}
+
+		currentPlain, _ := merged[k].(string)
+		if currentPlain != "" && s.isMaskedPlaceholder(strVal, currentPlain) {
+			// 输入仍为掩码，占位符情况下保持原始明文
+			continue
+		}
+
+		merged[k] = strVal
+	}
+
+	return merged
+}
+
+// isMaskedPlaceholder 判断用户输入是否为掩码占位，而非真实敏感值
+func (s *ResourceService) isMaskedPlaceholder(value string, originalPlain string) bool {
+	if value == "" || originalPlain == "" {
+		return false
+	}
+
+	if value == "******" || value == "****" || isAllAsterisks(value) {
+		return true
+	}
+
+	if strings.Count(value, "*") >= 4 {
+		masked := maskWithAsterisks(originalPlain)
+		if masked == value && masked != originalPlain {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isAllAsterisks(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, ch := range value {
+		if ch != '*' {
+			return false
+		}
+	}
+	return true
+}
+
+func maskWithAsterisks(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	if len(plain) <= 4 {
+		return "****"
+	}
+	return plain[:4] + "****" + plain[len(plain)-4:]
 }
 
 // encryptSensitiveFields 加密连接信息中的敏感字段

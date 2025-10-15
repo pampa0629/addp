@@ -1,6 +1,7 @@
 package api
 
 import (
+	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,7 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 
 	// API 路由组
 	api := router.Group("/api")
+	api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	{
 		configGroup := api.Group("/config")
 		{
@@ -51,6 +53,8 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 		{
 			handler := NewDataExplorerHandler(metadataService)
 			explorer.GET("/tree", handler.GetTree)
+			explorer.GET("/resources", handler.ListResources)
+			explorer.GET("/resources/:id/tree", handler.GetResourceTree)
 			explorer.GET("/preview", handler.PreviewTable)
 		}
 

@@ -13,8 +13,13 @@
       <el-icon><WarningFilled /></el-icon>
       <div class="error-info">
         <p class="error-message">{{ error }}</p>
+        <div v-if="showLimitInfo" class="limit-info">
+          <p>文件类型：{{ displayContentType }}</p>
+          <p v-if="fileSize">文件大小：{{ formatFileSize(fileSize) }}</p>
+          <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
+        </div>
         <div class="error-actions">
-          <el-button type="primary" size="small" @click="downloadPptx">
+          <el-button type="primary" size="small" :disabled="!pptxData" @click="downloadPptx">
             <el-icon><Download /></el-icon>
             下载文件
           </el-button>
@@ -109,10 +114,11 @@
 
       <!-- 下载按钮 -->
       <div class="download-section">
-        <el-button type="primary" size="large" @click="downloadPptx">
+        <el-button type="primary" size="large" :disabled="!pptxData" @click="downloadPptx">
           <el-icon><Download /></el-icon>
           下载 PowerPoint 文件
         </el-button>
+        <p v-if="formattedLimit" class="limit-hint">预览限制：{{ formattedLimit }}</p>
       </div>
     </div>
   </div>
@@ -149,6 +155,28 @@ const pptxData = computed(() => {
   const content = props.data.object?.content
   if (!content) return null
   return content.data || content.Data || null
+})
+
+const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
+
+const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
+
+const formattedLimit = computed(() => {
+  if (!limitBytes.value) return ''
+  return formatFileSize(limitBytes.value)
+})
+
+const displayContentType = computed(() => {
+  return (
+    contentMetadata.value?.content_type ||
+    props.data.object?.content_type ||
+    props.data.object?.contentType ||
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  )
+})
+
+const showLimitInfo = computed(() => {
+  return Boolean(limitBytes.value || displayContentType.value || fileSize.value)
 })
 
 const isTruncated = computed(() => {
@@ -366,6 +394,17 @@ onMounted(() => {
   color: #606266;
 }
 
+.limit-info {
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+.limit-info p {
+  margin: 4px 0;
+}
+
 .error-actions {
   display: flex;
   gap: 10px;
@@ -489,7 +528,9 @@ onMounted(() => {
 /* 下载区域 */
 .download-section {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   padding: 20px 0;
 }
 
@@ -497,5 +538,10 @@ onMounted(() => {
   min-width: 240px;
   font-size: 16px;
   padding: 18px 32px;
+}
+
+.limit-hint {
+  font-size: 13px;
+  color: #909399;
 }
 </style>

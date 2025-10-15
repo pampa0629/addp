@@ -43,6 +43,7 @@ export function useOpenLayersMap(config) {
   const vectorLayer = ref(null)
   const popupOverlay = ref(null)
   const popupElement = ref(null)
+  const featureStore = new Map()
 
   let currentBaseType = ''
   let viewEventKeys = []
@@ -199,6 +200,7 @@ export function useOpenLayersMap(config) {
 
     hidePopup()
     vectorSource.value.clear()
+    featureStore.clear()
 
     if (!features || features.length === 0) {
       if (!options.preserveView) {
@@ -230,6 +232,23 @@ export function useOpenLayersMap(config) {
     olFeatures.forEach((feature, index) => {
       const originalFeature = features[index]
       feature.set('originalFeature', originalFeature)
+      const rowData = originalFeature?.properties || {}
+      feature.set('rowData', rowData)
+      const rowKey =
+        rowData.__rowKey ||
+        rowData.id ||
+        rowData.ID ||
+        rowData.uuid ||
+        rowData.code ||
+        rowData.name ||
+        originalFeature?.id
+      if (rowKey) {
+        featureStore.set(rowKey, {
+          feature,
+          row: rowData,
+          original: originalFeature
+        })
+      }
     })
 
     vectorSource.value.addFeatures(olFeatures)
@@ -278,6 +297,55 @@ export function useOpenLayersMap(config) {
     }
   }
 
+  const focusFeature = (rowKey, options = {}) => {
+    if (!mapInstance.value || !rowKey) return false
+    const record = featureStore.get(rowKey)
+    if (!record) return false
+    const { feature, row } = record
+    const geometry = feature.getGeometry()
+    if (!geometry) return false
+
+    const shouldFit = options.fit !== false
+    const padding = options.padding || [40, 40, 40, 40]
+    const maxZoom = options.maxZoom || 16
+
+    if (shouldFit) {
+      const extent = geometry.getExtent()
+      if (extent && isFinite(extent[0])) {
+        mapInstance.value.getView().fit(extent, {
+          padding,
+          maxZoom,
+          duration: 300
+        })
+      }
+    }
+
+    if (options.openPopup && options.popupContent) {
+      const content = typeof options.popupContent === 'function' ? options.popupContent(row) : options.popupContent
+      if (content) {
+        let coordinate = options.coordinate
+        if (!coordinate) {
+          const type = geometry.getType()
+          if (type === 'Point') {
+            coordinate = geometry.getCoordinates()
+          } else if (type === 'MultiPoint') {
+            coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
+          } else if (type.includes('Polygon') && geometry.getInteriorPoint) {
+            coordinate = geometry.getInteriorPoint().getCoordinates()
+          } else {
+            coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
+          }
+        }
+        showPopup(content, coordinate)
+      }
+    } else if (!options.keepPopup) {
+      hidePopup()
+    }
+
+    setTimeout(updateViewState, 0)
+    return true
+  }
+
   const showPopup = (content, coordinate) => {
     if (!popupOverlay.value || !popupElement.value) return
     popupElement.value.innerHTML = content
@@ -313,6 +381,7 @@ export function useOpenLayersMap(config) {
     currentBaseType = ''
     popupOverlay.value = null
     popupElement.value = null
+    featureStore.clear()
   }
 
   onBeforeUnmount(() => {
@@ -325,6 +394,7 @@ export function useOpenLayersMap(config) {
     vectorLayer,
     initMap,
     renderFeatures,
+    focusFeature,
     showPopup,
     hidePopup,
     updateViewState,

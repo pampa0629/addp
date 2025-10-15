@@ -13,10 +13,16 @@ func NewResourceRepository(db *gorm.DB) *ResourceRepository {
 	return &ResourceRepository{db: db}
 }
 
-// ListAllActive 获取所有激活资源
-func (r *ResourceRepository) ListAllActive() ([]models.Resource, error) {
+// ListAllActive 获取所有激活资源，可选按租户过滤
+func (r *ResourceRepository) ListAllActive(tenantID *uint) ([]models.Resource, error) {
 	var resources []models.Resource
-	if err := r.db.Where("is_active = ?", true).Order("id").Find(&resources).Error; err != nil {
+	query := r.db.Where("is_active = ?", true)
+
+	if tenantID != nil {
+		query = query.Where("tenant_id = ?", *tenantID)
+	}
+
+	if err := query.Order("id").Find(&resources).Error; err != nil {
 		return nil, err
 	}
 	return resources, nil

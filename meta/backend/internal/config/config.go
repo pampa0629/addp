@@ -1,9 +1,10 @@
 package config
 
 import (
-	"log"
+	"path/filepath"
 
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/logger"
 )
 
 type Config struct {
@@ -40,21 +41,26 @@ func LoadConfig() *Config {
 
 	// 从 System 获取共享配置
 	if cfg.EnableIntegration {
-		log.Println("🔄 Attempting to load shared config from System service...")
+		logger.L().Info("尝试从 System 服务拉取共享配置")
 		if err := commonConfig.LoadSharedConfig(systemURL, &cfg.BaseConfig); err != nil {
-			log.Printf("⚠️  Warning: Failed to load shared config from System: %v", err)
-			log.Printf("⚠️  Falling back to local environment variables...")
+			logger.L().Warn("从 System 拉取共享配置失败，回退至本地环境变量", "error", err)
 			commonConfig.LoadLocalConfig(&cfg.BaseConfig)
 		} else {
-			log.Println("✅ Successfully loaded shared config from System service")
+			logger.L().Info("成功加载 System 共享配置")
 		}
 	} else {
-		log.Println("ℹ️  Service integration disabled, using local config")
+		logger.L().Info("已禁用服务集成，使用本地配置")
 		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
 	}
 
 	if cfg.InternalAPIKey == "" {
 		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
+	}
+
+	if cfg.LogFile == "" {
+		cfg.LogFile = commonConfig.ResolveFromRoot("logs", "meta-backend.log")
+	} else if !filepath.IsAbs(cfg.LogFile) {
+		cfg.LogFile = commonConfig.ResolveFromRoot(cfg.LogFile)
 	}
 
 	return cfg

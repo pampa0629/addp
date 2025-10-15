@@ -1,74 +1,142 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`sqlite-preview.js`、`pdf-preview.js`、`docx-preview.js`、`pptx-preview.js`、`text-preview.js`、`csv-preview.js`)，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
-### 示例 1: CSV 文件预览
+### 运行时加载自定义/内置插件
 
-创建文件 `csv-preview-plugin.js`:
+1. 在构建产物所在的静态目录（默认 `/plugins/`）下创建 `manifest.json`，项目已默认提供以下示例（列出了所有内置插件脚本）：
+
+```json
+{
+  "scripts": [
+    "/plugins/table-preview.js",
+    "/plugins/object-storage-preview.js",
+    "/plugins/geojson-preview.js",
+    "/plugins/image-preview.js",
+    "/plugins/json-preview.js",
+    "/plugins/sqlite-preview.js",
+    "/plugins/pdf-preview.js",
+    "/plugins/docx-preview.js",
+    "/plugins/pptx-preview.js",
+    "/plugins/text-preview.js",
+    "/plugins/csv-preview.js"
+  ]
+}
+```
+
+2. 将插件脚本放置在 `public/plugins/` 或部署目录能够访问的位置。
+
+3. 启动应用后，系统会自动读取清单并注入脚本。脚本内部可调用:
 
 ```javascript
-// 定义插件数组
+window.registerDataExplorerPlugin({
+  name: 'csv',
+  component: { /* Vue 组件 */ },
+  canHandle: (data) => true,
+  priority: 50
+})
+```
+
+> 内置脚本均通过 `window.registerDataExplorerPlugin` 注册；仍可使用 `window.DataExplorerPlugins.push()` 进行兼容性注册，平台会在脚本加载完成后自动消费并注册。
+
+插件脚本可直接使用平台暴露的 Vue 组件：
+
+```javascript
+const { TablePreview, TextPreview } = window.DataExplorerPluginComponents
+```
+
+这些组件的完整用法可参照本目录下的各个内置脚本。
+
+> 如需覆盖内置实现（例如替换 PDF 预览逻辑），只需注册同名或更高优先级的插件脚本即可；在 `manifest.json` 中调整加载顺序，或通过 `VITE_DATA_EXPLORER_PLUGIN_MANIFEST` 指向自定义清单，实现免源码扩展。
+
+如果需要自定义清单路径，可在运行时设置 `window.__DATA_EXPLORER_PLUGIN_MANIFEST__`，或在构建阶段配置环境变量 `VITE_DATA_EXPLORER_PLUGIN_MANIFEST`。
+
+### 示例 1: CSV 文件预览
+
+项目已内置 `csv-preview.js`，源码可直接参考。自行创建时可使用以下模式：
+
+```javascript
 window.DataExplorerPlugins = window.DataExplorerPlugins || []
 
-// 注册 CSV 预览插件
-window.DataExplorerPlugins.push({
-  name: 'csv',
+const register = (plugin) => {
+  if (typeof window.registerDataExplorerPlugin === 'function') {
+    window.registerDataExplorerPlugin(plugin)
+  } else {
+    window.DataExplorerPlugins.push(plugin)
+  }
+}
+
+register({
+  name: 'csv-preview',
   component: {
-    template: `
-      <div class="csv-preview">
-        <el-table :data="parsedData" height="400">
-          <el-table-column
-            v-for="col in columns"
-            :key="col"
-            :prop="col"
-            :label="col"
-            show-overflow-tooltip
-          />
-        </el-table>
-      </div>
-    `,
+    name: 'CsvPreview',
     props: ['data'],
     data() {
       return {
-        parsedData: [],
-        columns: []
+        columns: [],
+        rows: []
       }
     },
     watch: {
       data: {
         immediate: true,
         handler(newData) {
-          this.parseCSV(newData?.object?.content?.text || '')
+          const text = newData?.object?.content?.text || ''
+          if (!text.trim()) {
+            this.columns = []
+            this.rows = []
+            return
+          }
+
+          const lines = text.trim().split('\n')
+          this.columns = lines[0].split(',').map(c => c.trim())
+          this.rows = lines.slice(1).map(line => {
+            const values = line.split(',')
+            const record = {}
+            this.columns.forEach((col, index) => {
+              record[col] = values[index]?.trim() || ''
+            })
+            return record
+          })
         }
       }
     },
-    methods: {
-      parseCSV(text) {
-        if (!text) return
-        const lines = text.trim().split('\n')
-        if (lines.length === 0) return
-
-        // 第一行作为表头
-        this.columns = lines[0].split(',').map(c => c.trim())
-
-        // 其余行作为数据
-        this.parsedData = lines.slice(1).map(line => {
-          const values = line.split(',')
-          const row = {}
-          this.columns.forEach((col, index) => {
-            row[col] = values[index]?.trim() || ''
-          })
-          return row
-        })
+    render() {
+      const { h, resolveComponent } = window.Vue || {}
+      if (typeof h !== 'function' || typeof resolveComponent !== 'function') {
+        return null
       }
+
+      const ElTable = resolveComponent('ElTable')
+      const ElTableColumn = resolveComponent('ElTableColumn')
+
+      return h('div', { class: 'csv-preview' }, [
+        ElTable
+          ? h(
+              ElTable,
+              { data: this.rows, height: 400, border: true, stripe: true },
+              {
+                default: () =>
+                  this.columns.map(col =>
+                    h(ElTableColumn, {
+                      key: col,
+                      prop: col,
+                      label: col,
+                      'show-overflow-tooltip': true
+                    })
+                  )
+              }
+            )
+          : h('pre', null, (this.data?.object?.content?.text || '').trim())
+      ])
     }
   },
   canHandle: (data) => {
-    const contentType = data.object?.content_type || ''
     const path = data.object?.path || ''
-    return contentType.includes('csv') || path.endsWith('.csv')
+    const type = data.object?.content_type || ''
+    return path.toLowerCase().endsWith('.csv') || type.includes('csv')
   },
   priority: 50
 })
@@ -77,81 +145,100 @@ window.DataExplorerPlugins.push({
 在 `index.html` 中引入:
 
 ```html
-<script src="/plugins/csv-preview-plugin.js"></script>
+<script src="/plugins/csv-preview.js"></script>
 ```
 
 ### 示例 2: Markdown 预览
 
-创建文件 `markdown-preview-plugin.js`:
-
 ```javascript
 window.DataExplorerPlugins = window.DataExplorerPlugins || []
 
+const ensureVueHelpers = () => {
+  const runtime = window.Vue || {}
+  if (typeof runtime.h !== 'function') {
+    console.warn('Vue runtime helpers 未注入，Markdown 预览将无法渲染')
+  }
+  return runtime
+}
+
 window.DataExplorerPlugins.push({
-  name: 'markdown',
+  name: 'markdown-preview',
   component: {
-    template: `
-      <div class="markdown-preview">
-        <div v-html="renderedHtml" class="markdown-body"></div>
-      </div>
-    `,
+    name: 'MarkdownPreview',
     props: ['data'],
     computed: {
-      renderedHtml() {
+      html() {
         const text = this.data?.object?.content?.text || ''
-        if (!window.marked) {
-          return '<pre>' + text + '</pre>'
+        if (window.marked) {
+          return window.marked.parse(text)
         }
-        return window.marked.parse(text)
+        return text.replace(/[&<>]/g, (char) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;'
+        }[char] || char)).replace(/\n/g, '<br />')
       }
+    },
+    render() {
+      const { h } = ensureVueHelpers()
+      if (typeof h !== 'function') return null
+      return h('div', { class: 'markdown-preview' }, [
+        h('div', { class: 'markdown-body', innerHTML: this.html })
+      ])
     }
   },
   canHandle: (data) => {
     const path = data.object?.path || ''
-    const contentType = data.object?.content_type || ''
-    return path.endsWith('.md') || contentType.includes('markdown')
+    const type = data.object?.content_type || ''
+    return path.toLowerCase().endsWith('.md') || type.includes('markdown')
   },
   priority: 55
 })
 ```
 
-需要在 `index.html` 中引入 marked.js:
+需要额外加载 `marked` 才能渲染 Markdown:
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="/plugins/markdown-preview-plugin.js"></script>
+<script src="/plugins/markdown-preview.js"></script>
 ```
 
 ### 示例 3: PDF 预览
-
-创建文件 `pdf-preview-plugin.js`:
 
 ```javascript
 window.DataExplorerPlugins = window.DataExplorerPlugins || []
 
 window.DataExplorerPlugins.push({
-  name: 'pdf',
+  name: 'pdf-preview',
   component: {
-    template: `
-      <div class="pdf-preview">
-        <iframe
-          :src="pdfUrl"
-          style="width: 100%; height: 600px; border: none;"
-        ></iframe>
-      </div>
-    `,
+    name: 'PdfPreviewSimple',
     props: ['data'],
     computed: {
       pdfUrl() {
-        // 假设后端返回了 PDF 的访问 URL
-        return this.data?.object?.download_url || ''
+        const object = this.data?.object || {}
+        return object.download_url || object.preview_url || object.url || ''
       }
+    },
+    render() {
+      const { h } = window.Vue || {}
+      if (typeof h !== 'function') return null
+      const url = this.pdfUrl
+      if (!url) {
+        return h('div', { class: 'pdf-preview-empty' }, '无法获取 PDF 地址')
+      }
+      return h('div', { class: 'pdf-preview' }, [
+        h('iframe', {
+          src: url,
+          style: 'width: 100%; height: 600px; border: none;',
+          title: 'PDF 预览'
+        })
+      ])
     }
   },
   canHandle: (data) => {
-    const contentType = data.object?.content_type || ''
     const path = data.object?.path || ''
-    return contentType.includes('pdf') || path.endsWith('.pdf')
+    const type = data.object?.content_type || ''
+    return path.toLowerCase().endsWith('.pdf') || type.includes('pdf')
   },
   priority: 60
 })
@@ -165,12 +252,14 @@ window.DataExplorerPlugins.push({
 ### component (必填)
 Vue 组件定义,可以使用以下格式:
 
-1. **内联组件** (如上述示例)
+1. **内联组件** (推荐配合 `render` 函数)
 ```javascript
 component: {
-  template: '...',
   props: ['data'],
-  // ... 其他 Vue 组件选项
+  render() {
+    const { h } = window.Vue
+    return h('div', null, JSON.stringify(this.data))
+  }
 }
 ```
 
@@ -291,10 +380,18 @@ console.log(plugin.canHandle(testData))  // 应返回 true/false
 manager/frontend/
 ├── public/
 │   └── plugins/
-│       ├── README.md              # 本文件
-│       ├── csv-preview-plugin.js
-│       ├── markdown-preview-plugin.js
-│       └── pdf-preview-plugin.js
+│       ├── README.md                # 本文件
+│       ├── table-preview.js         # 内置表格预览
+│       ├── object-storage-preview.js# 对象存储树/目录
+│       ├── geojson-preview.js       # GeoJSON 预览
+│       ├── image-preview.js         # 图片预览（含 BMP）
+│       ├── json-preview.js          # JSON 预览
+│       ├── sqlite-preview.js        # SQLite 数据库预览
+│       ├── pdf-preview.js           # PDF 预览
+│       ├── docx-preview.js          # DOCX 预览
+│       ├── pptx-preview.js          # PPTX 预览
+│       ├── text-preview.js          # 文本兜底
+│       └── csv-preview.js           # CSV 预览示例
 └── index.html
     # 添加 <script src="/plugins/xxx.js"></script>
 ```
@@ -309,15 +406,21 @@ A: 检查:
 4. 插件优先级是否足够高(内置插件优先级: 0-100)
 
 ### Q: 如何访问 Element Plus 组件?
-A: Element Plus 已全局注册,可以直接在 template 中使用:
+A: Element Plus 已全局注册,可通过 `window.Vue.resolveComponent` 使用:
 ```javascript
-component: {
-  template: `
-    <el-table :data="data">
-      <el-table-column prop="name" label="名称" />
-    </el-table>
-  `
-}
+const { h, resolveComponent } = window.Vue
+const ElTable = resolveComponent('ElTable')
+const ElTableColumn = resolveComponent('ElTableColumn')
+return h(
+  ElTable,
+  { data: rows, border: true },
+  {
+    default: () =>
+      columns.map(col =>
+        h(ElTableColumn, { key: col, prop: col, label: col })
+      )
+  }
+)
 ```
 
 ### Q: 如何使用外部 npm 包?
@@ -334,31 +437,42 @@ A: 通过 CDN 引入:
 ### 使用 Vue 3 Composition API
 
 ```javascript
+window.DataExplorerPlugins = window.DataExplorerPlugins || []
+
 window.DataExplorerPlugins.push({
   name: 'advanced',
   component: {
-    template: `
-      <div>
-        <p>{{ message }}</p>
-        <button @click="handleClick">点击</button>
-      </div>
-    `,
     props: ['data'],
-    setup(props) {
-      const { ref, computed } = window.Vue
+    setup() {
+      const { ref } = window.Vue
       const message = ref('Hello')
-
+      const count = ref(0)
       const handleClick = () => {
-        message.value = 'Clicked!'
+        count.value += 1
+        message.value = `Clicked ${count.value} times`
       }
-
       return {
         message,
-        handleClick
+        handleClick,
+        count
       }
+    },
+    render() {
+      const { h, resolveComponent } = window.Vue
+      const ElButton = resolveComponent?.('ElButton')
+      return h('div', { class: 'advanced-preview' }, [
+        h('p', null, this.message),
+        ElButton
+          ? h(
+              ElButton,
+              { type: 'primary', onClick: this.handleClick },
+              { default: () => `点击 ${this.count}` }
+            )
+          : h('button', { onClick: this.handleClick }, `点击 ${this.count}`)
+      ])
     }
   },
-  canHandle: (data) => true,
+  canHandle: () => true,
   priority: 10
 })
 ```

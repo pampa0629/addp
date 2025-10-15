@@ -20,6 +20,7 @@ addp：All Domain Data Platform，全域数据平台
 ## 多租户和用户管理
 用户类型分为：超级管理员、租户管理员和普通用户
 超级管理员可创建和管理租户，租户采用租户id进行隔离，以后根据实际需要决定是否采用更加严格的隔离措施
+所有租户相关的操作必须限定在本租户范围内，禁止跨租户访问或修改资源
 租户管理员可创建和管理普通用户
 普通用户无权创建其他用户
 尚未进行项目组或工作组的划分，看以后需求再定
@@ -57,12 +58,9 @@ meta模块负责所有元数据的统一存储、血缘追踪和基于元数据�
 - 数据库：实例 → database → schema → table（注册入口是 database）
 - 对象存储：实例 → bucket → prefix（多级）→ object（注册入口是实例或 bucket）
 
-为了统一管理与扩展，废弃旧版按类型拆分的 `meta_*` 表（如按 database、bucket、schema 划分的遗留表），统一使用以下三张核心表：
+为了统一管理与扩展，废弃旧版按类型拆分的 `meta_*` 表（如按 database、bucket、schema 划分的遗留表），统一使用以下核心能力：
 
-- `meta_resource`  
-  - 描述注册入口，覆盖数据库实例中的某个 database 或对象存储的实例 / bucket。  
-  - 关键字段：`id`、`resource_type`、`name`、`engine`、`config`（连接信息）、`status`、`source`（采集来源）、`sync_version`、`created_at`、`updated_at`、`deleted_at`。  
-  - 统一维护软删字段 `deleted_at`，避免误删数据，并方便回滚。
+- 资源注册信息全部托管在 `system.resources` 中，`meta` 模块只持有 `res_id` 外键引用并实时向 System 服务拉取解密后的连接信息。  
 
 - `meta_node`  
   - 表示资源下的层级节点，可递归指向自身，覆盖数据库的 schema、视图集合等，以及对象存储的 prefix。  
@@ -106,6 +104,19 @@ meta模块前端页面包括以下内容：
 列出存储引擎，按层级展开其中的schema和表（已经被meta扫描过的）
 在选中一张表后，右侧用表格的方式展示前五十行记录（每页十行，分五页）
 如果包括空间数据，则加载到地图上展示
+
+### 预览插件体系
+- 后端通过 `PreviewRegistry` 统一路由，所有数据预览能力均以插件形式注册，内置 PostgreSQL 表预览、对象存储对象预览、节点信息预览；
+- 通过环境变量 `PREVIEW_PLUGIN_DIR` 指向的目录加载 JSON 配置的命令型插件，第三方可实现独立二进制或脚本，无需改动核心源码；
+- 插件执行时收到完整的资源连接信息（已解密）、schema、表/路径及分页参数，并返回标准 `TablePreview` JSON；
+- 仓库默认在 `manager/backend/plugins/` 中提供内置插件配置，第三方可以在同一目录新增或调整配置，以保持与官方插件一致的加载方式。
+- 对象存储内容解析（PDF、DOCX、图片等）也通过插件完成，默认内容插件同样位于上述目录，第三方可通过新增配置或命令型插件替换内置逻辑。
+
+前端使用统一的预览注册中心：
+- 所有内置组件（表格、PDF、图片、对象存储等）均以插件形式注册，拆分存放于 `public/plugins/` 目录（例如 `table-preview.js`、`pdf-preview.js` 等）；
+- 运行期自动读取 `/plugins/manifest.json`（可配置 `VITE_DATA_EXPLORER_PLUGIN_MANIFEST` 或 `window.__DATA_EXPLORER_PLUGIN_MANIFEST__`）并按清单加载脚本，通过 `window.registerDataExplorerPlugin` 即可注入新类型；
+- 平台在 `window.DataExplorerPluginComponents` 暴露内置 Vue 组件，第三方脚本可以直接复用；
+- 未找到匹配插件时展示友好提示，便于用户决定是否安装额外插件。
 
 
 # 数据支持

@@ -25,6 +25,17 @@ const router = createRouter({
 
 // 路由守卫：检查登录状态
 router.beforeEach((to, from, next) => {
+  const queryToken = typeof to.query.token === 'string' ? to.query.token : null
+
+  if (queryToken) {
+    localStorage.setItem('token', queryToken)
+
+    // 去掉 URL 中的 token 参数，避免泄漏及重复处理
+    const { token: _removed, ...restQuery } = to.query
+    next({ path: to.path, query: restQuery, replace: true })
+    return
+  }
+
   const token = localStorage.getItem('token')
   const isPublic = to.meta.public
 

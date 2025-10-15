@@ -1,0 +1,15 @@
+{
+  "scripts": [
+    "/plugins/table-preview.js",
+    "/plugins/object-storage-preview.js",
+    "/plugins/geojson-preview.js",
+    "/plugins/image-preview.js",
+    "/plugins/json-preview.js",
+    "/plugins/sqlite-preview.js",
+    "/plugins/pdf-preview.js",
+    "/plugins/docx-preview.js",
+    "/plugins/pptx-preview.js",
+    "/plugins/text-preview.js",
+    "/plugins/csv-preview.js"
+  ]
+}

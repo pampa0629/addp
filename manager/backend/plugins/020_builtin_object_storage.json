@@ -1,0 +1,6 @@
+{
+  "name": "builtin:object-storage",
+  "type": "builtin",
+  "builtin": "object-storage",
+  "priority": 95
+}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"strings"
 
 	commonConfig "github.com/addp/common/config"
 )
@@ -10,16 +11,27 @@ type Config struct {
 	commonConfig.BaseConfig
 
 	// Manager 模块特有配置
-	Port     string
-	DBSchema string
+	Port            string
+	DBSchema        string
+	PreviewPluginDir string
 }
 
 func Load() *Config {
 	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
 
+	rawPluginDir := commonConfig.GetEnv("PREVIEW_PLUGIN_DIR", "")
+	builtinPluginDir := commonConfig.ResolveFromRoot("manager", "backend", "plugins")
+	var pluginDirs []string
+	if trimmed := strings.TrimSpace(rawPluginDir); trimmed != "" {
+		pluginDirs = append(pluginDirs, trimmed)
+	}
+	pluginDirs = append(pluginDirs, builtinPluginDir)
+	defaultPluginDir := strings.Join(pluginDirs, ",")
+
 	cfg := &Config{
-		Port:     commonConfig.GetEnv("PORT", "8081"),
-		DBSchema: commonConfig.GetEnv("DB_SCHEMA", "manager"),
+		Port:             commonConfig.GetEnv("PORT", "8081"),
+		DBSchema:         commonConfig.GetEnv("DB_SCHEMA", "manager"),
+		PreviewPluginDir: defaultPluginDir,
 	}
 
 	// 设置 BaseConfig 字段

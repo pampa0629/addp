@@ -1,0 +1,14 @@
+{
+  "name": "builtin:content-docx",
+  "type": "builtin",
+  "builtin": "docx",
+  "priority": 75,
+  "match": {
+    "extensions": [".docx"],
+    "content_types": [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+    ]
+  },
+  "max_bytes": 104857600
+}

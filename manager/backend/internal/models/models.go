@@ -157,6 +157,13 @@ type DataExplorerResource struct {
 	Schemas      []DataExplorerSchema `json:"schemas"`
 }
 
+type ExplorerResource struct {
+	ID           uint   `json:"id"`
+	Name         string `json:"name"`
+	ResourceType string `json:"resource_type"`
+	Description  string `json:"description,omitempty"`
+}
+
 type DataExplorerSchema struct {
 	Name   string              `json:"name"`
 	Tables []DataExplorerTable `json:"tables"`
@@ -242,12 +249,13 @@ type ObjectPreviewChild struct {
 }
 
 type ObjectPreviewContent struct {
-	Kind      string      `json:"kind"`
-	Text      string      `json:"text,omitempty"`
-	JSON      interface{} `json:"json,omitempty"`
-	GeoJSON   interface{} `json:"geojson,omitempty"`
-	ImageData string      `json:"image_data,omitempty"`
-	Data      string      `json:"data,omitempty"`      // Generic data field (used for PDF base64)
-	Encoding  string      `json:"encoding,omitempty"`
-	Truncated bool        `json:"truncated,omitempty"`
+	Kind      string                 `json:"kind"`
+	Text      string                 `json:"text,omitempty"`
+	JSON      interface{}            `json:"json,omitempty"`
+	GeoJSON   interface{}            `json:"geojson,omitempty"`
+	ImageData string                 `json:"image_data,omitempty"`
+	Data      string                 `json:"data,omitempty"` // Generic data field (used for PDF base64)
+	Encoding  string                 `json:"encoding,omitempty"`
+	Truncated bool                   `json:"truncated,omitempty"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }

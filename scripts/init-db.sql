@@ -60,31 +60,10 @@ DROP TABLE IF EXISTS metadata.fields CASCADE;
 DROP TABLE IF EXISTS metadata.lineage CASCADE;
 DROP TABLE IF EXISTS metadata.datasets CASCADE;
 
-CREATE TABLE IF NOT EXISTS metadata.meta_resource (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    resource_id BIGINT NOT NULL,
-    resource_type VARCHAR(64) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    engine VARCHAR(128),
-    config JSONB,
-    status VARCHAR(32) DEFAULT 'active',
-    source VARCHAR(64),
-    sync_version BIGINT DEFAULT 0,
-    last_synced_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE (tenant_id, resource_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_meta_resource_status ON metadata.meta_resource(status);
-CREATE INDEX IF NOT EXISTS idx_meta_resource_type ON metadata.meta_resource(resource_type);
-
 CREATE TABLE IF NOT EXISTS metadata.meta_node (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    res_id BIGINT NOT NULL REFERENCES metadata.meta_resource(id) ON DELETE CASCADE,
+    res_id BIGINT NOT NULL,
     parent_node_id BIGINT REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
     node_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -116,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_meta_node_type ON metadata.meta_node(node_type);
 CREATE TABLE IF NOT EXISTS metadata.meta_item (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    res_id BIGINT NOT NULL REFERENCES metadata.meta_resource(id) ON DELETE CASCADE,
+    res_id BIGINT NOT NULL,
     node_id BIGINT NOT NULL REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
     item_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -160,7 +139,6 @@ CREATE TABLE IF NOT EXISTS metadata.meta_change_log (
     payload JSONB,
     sync_version BIGINT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (res_id) REFERENCES metadata.meta_resource(id) ON DELETE SET NULL,
     FOREIGN KEY (node_id) REFERENCES metadata.meta_node(id) ON DELETE SET NULL,
     FOREIGN KEY (item_id) REFERENCES metadata.meta_item(id) ON DELETE SET NULL
 );
@@ -270,9 +248,6 @@ CREATE TRIGGER update_directories_updated_at BEFORE UPDATE ON manager.directorie
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Meta 模块触发器
-CREATE TRIGGER update_meta_resource_updated_at BEFORE UPDATE ON metadata.meta_resource
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER update_meta_node_updated_at BEFORE UPDATE ON metadata.meta_node
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

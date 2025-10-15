@@ -34,14 +34,53 @@ type Config struct {
 }
 
 func Load() *Config {
+	// 加载环境配置
+	env := getEnv("ENV", "development")
+
+	// 加载 JWT Secret（CRITICAL: 必须设置且符合安全标准）
+	jwtSecret := getEnv("JWT_SECRET", "your-secret-key-change-in-production")
+
+	// P0-1: 验证 JWT_SECRET 强度
+	if jwtSecret == "" {
+		log.Fatal("FATAL: JWT_SECRET must be set!\n" +
+			"Generate a secure random key with:\n" +
+			"  Method 1: openssl rand -base64 64\n" +
+			"  Method 2: python3 -c \"import secrets; print(secrets.token_urlsafe(64))\"")
+	}
+
+	// P0-1: 验证密钥长度（至少 32 字符 / 256 bits）
+	if len(jwtSecret) < 32 {
+		log.Fatalf("FATAL: JWT_SECRET must be at least 32 characters (256 bits), got %d characters", len(jwtSecret))
+	}
+
+	// P0-1: 生产环境禁止使用默认密钥
+	if env == "production" && strings.Contains(jwtSecret, "change-in-production") {
+		log.Fatal("FATAL: Default JWT_SECRET detected in production environment!\n" +
+			"This is a critical security risk. Generate a new secret immediately.")
+	}
+
+	// 警告：开发环境也应使用强密钥
+	if env == "development" && strings.Contains(jwtSecret, "change-in-production") {
+		log.Println("WARNING: Using default JWT_SECRET in development environment.")
+		log.Println("Consider generating a secure random key for better security.")
+	}
+
 	// 加载加密密钥
 	encryptionKey := loadEncryptionKey()
 
+	// 加载内部 API Key
+	internalAPIKey := getEnv("INTERNAL_API_KEY", "")
+	if internalAPIKey != "" {
+		log.Printf("✅ INTERNAL_API_KEY loaded (length: %d)", len(internalAPIKey))
+	} else {
+		log.Println("⚠️  WARNING: INTERNAL_API_KEY is not set! Internal API endpoints will not be accessible.")
+	}
+
 	return &Config{
-		Env:                     getEnv("ENV", "development"),
+		Env:                     env,
 		ServerAddr:              getEnv("SERVER_ADDR", ":8080"),
 		DatabaseURL:             "", // PostgreSQL 不使用此字段
-		JWTSecret:               getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		JWTSecret:               jwtSecret,
 		EncryptionKey:           encryptionKey,
 		TokenExpireMinutes:      30,
 		ProjectName:             getEnv("PROJECT_NAME", "全域数据平台"),
@@ -55,7 +94,7 @@ func Load() *Config {
 		PostgresDB:       getEnv("POSTGRES_DB", "addp"),
 
 		// 内部 API Key（可选，用于服务间调用安全）
-		InternalAPIKey: getEnv("INTERNAL_API_KEY", ""),
+		InternalAPIKey: internalAPIKey,
 
 		// 地图服务配置（默认使用提供的高德开放平台 Key）
 		AMapKey:         getEnv("AMAP_KEY", "7babce80a669a0fac7a8c4c951f7c952"),

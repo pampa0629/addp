@@ -1,11 +1,14 @@
 package service
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
@@ -15,13 +18,27 @@ type MetadataService struct {
 	metadataRepo *repository.MetadataRepository
 	resourceRepo *repository.ResourceRepository
 	systemClient *commonClient.SystemClient
+	previews     *PreviewRegistry
+	content      *ObjectContentRegistry
 }
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient) *MetadataService {
+var ErrResourceAccessDenied = errors.New("resource not accessible for current tenant")
+
+func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry) *MetadataService {
+	pr := previewRegistry
+	if pr == nil {
+		pr = NewPreviewRegistry()
+	}
+	cr := contentRegistry
+	if cr == nil {
+		cr = NewObjectContentRegistry()
+	}
 	return &MetadataService{
 		metadataRepo: metadataRepo,
 		resourceRepo: resourceRepo,
 		systemClient: systemClient,
+		previews:     pr,
+		content:      cr,
 	}
 }
 
@@ -108,22 +125,72 @@ func (s *MetadataService) UnmanageTable(tableID uint) error {
 	return s.metadataRepo.UnmarkTableAsManaged(tableID)
 }
 
-// GetResourceTree 获取资源- Schema-表树
-func (s *MetadataService) GetResourceTree() ([]models.DataExplorerResource, error) {
-	resources, err := s.resourceRepo.ListAllActive()
+// ListExplorerResources 返回可用于数据探查的存储引擎列表
+func (s *MetadataService) ListExplorerResources(tenantID *uint) ([]models.ExplorerResource, error) {
+	resources, err := s.listActiveResources(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems()
+	result := make([]models.ExplorerResource, 0, len(resources))
+	for _, res := range resources {
+		result = append(result, models.ExplorerResource{
+			ID:           res.ID,
+			Name:         res.Name,
+			ResourceType: res.ResourceType,
+			Description:  res.Description,
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result, nil
+}
+
+// GetResourceTree 获取单个资源的 Schema/目录树
+func (s *MetadataService) GetResourceTree(resourceID uint, tenantID *uint) (*models.DataExplorerResource, error) {
+	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	topNodesByResource := make(map[uint][]*models.MetaNodeLite)
-	for i := range topNodes {
-		node := &topNodes[i]
-		topNodesByResource[node.ResourceID] = append(topNodesByResource[node.ResourceID], node)
+	return s.buildResourceTree(resource)
+}
+
+// GetLegacyResourceTree 兼容旧接口的全量资源树
+func (s *MetadataService) GetLegacyResourceTree(tenantID *uint) ([]models.DataExplorerResource, error) {
+	resources, err := s.listActiveResources(tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]models.DataExplorerResource, 0, len(resources))
+	for i := range resources {
+		tree, err := s.buildResourceTree(&resources[i])
+		if err != nil {
+			return nil, err
+		}
+		if tree != nil {
+			result = append(result, *tree)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
+	return result, nil
+}
+
+func (s *MetadataService) buildResourceTree(resource *models.Resource) (*models.DataExplorerResource, error) {
+	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID)
+	if err != nil {
+		if errors.Is(err, repository.ErrMetadataSchemaMissing) {
+			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "resource_id", resource.ID)
+			return &models.DataExplorerResource{
+				ID:           resource.ID,
+				Name:         resource.Name,
+				ResourceType: resource.ResourceType,
+				Schemas:      []models.DataExplorerSchema{},
+			}, nil
+		}
+		return nil, err
 	}
 
 	childrenByParent := make(map[uint][]*models.MetaNodeLite)
@@ -141,79 +208,65 @@ func (s *MetadataService) GetResourceTree() ([]models.DataExplorerResource, erro
 		itemsByNode[item.NodeID] = append(itemsByNode[item.NodeID], item)
 	}
 
-	var result []models.DataExplorerResource
-	for _, res := range resources {
-		rootNodes := topNodesByResource[res.ID]
-		if len(rootNodes) == 0 {
-			continue
+	resourceType := strings.ToLower(resource.ResourceType)
+	var schemasForResource []models.DataExplorerSchema
+
+	if isObjectStorageType(resourceType) {
+		for i := range topNodes {
+			bucket := &topNodes[i]
+			children := buildObjectStorageTree(bucket, childrenByParent, itemsByNode)
+			if len(children) == 0 {
+				continue
+			}
+			schemasForResource = append(schemasForResource, models.DataExplorerSchema{
+				Name:   bucket.Name,
+				Tables: children,
+			})
 		}
+	} else {
+		for i := range topNodes {
+			schemaNode := &topNodes[i]
+			if strings.ToLower(schemaNode.NodeType) != "schema" {
+				continue
+			}
+			itemList := itemsByNode[schemaNode.ID]
+			if len(itemList) == 0 {
+				continue
+			}
 
-		resourceType := strings.ToLower(res.ResourceType)
-		var schemasForResource []models.DataExplorerSchema
-
-		if isObjectStorageType(resourceType) {
-			for _, bucket := range rootNodes {
-				children := buildObjectStorageTree(bucket, childrenByParent, itemsByNode)
-				if len(children) == 0 {
+			tables := make([]models.DataExplorerTable, 0, len(itemList))
+			for _, item := range itemList {
+				if strings.ToLower(item.ItemType) != "table" {
 					continue
 				}
-				schemasForResource = append(schemasForResource, models.DataExplorerSchema{
-					Name:   bucket.Name,
-					Tables: children,
+				fullName := item.FullName
+				if fullName == "" {
+					fullName = fmt.Sprintf("%s.%s", schemaNode.Name, item.Name)
+				}
+				tables = append(tables, models.DataExplorerTable{
+					ID:       item.ID,
+					Name:     item.Name,
+					FullName: fullName,
+					Type:     "table",
 				})
 			}
-		} else {
-			for _, schemaNode := range rootNodes {
-				if strings.ToLower(schemaNode.NodeType) != "schema" {
-					continue
-				}
-				itemList := itemsByNode[schemaNode.ID]
-				if len(itemList) == 0 {
-					continue
-				}
-
-				tables := make([]models.DataExplorerTable, 0, len(itemList))
-				for _, item := range itemList {
-					if strings.ToLower(item.ItemType) != "table" {
-						continue
-					}
-					fullName := item.FullName
-					if fullName == "" {
-						fullName = fmt.Sprintf("%s.%s", schemaNode.Name, item.Name)
-					}
-					tables = append(tables, models.DataExplorerTable{
-						ID:       item.ID,
-						Name:     item.Name,
-						FullName: fullName,
-						Type:     "table",
-					})
-				}
-				if len(tables) == 0 {
-					continue
-				}
-				sort.Slice(tables, func(i, j int) bool { return tables[i].Name < tables[j].Name })
-				schemasForResource = append(schemasForResource, models.DataExplorerSchema{
-					Name:   schemaNode.Name,
-					Tables: tables,
-				})
+			if len(tables) == 0 {
+				continue
 			}
+			sort.Slice(tables, func(i, j int) bool { return tables[i].Name < tables[j].Name })
+			schemasForResource = append(schemasForResource, models.DataExplorerSchema{
+				Name:   schemaNode.Name,
+				Tables: tables,
+			})
 		}
-
-		if len(schemasForResource) == 0 {
-			continue
-		}
-
-		result = append(result, models.DataExplorerResource{
-			ID:           res.ID,
-			Name:         res.Name,
-			ResourceType: res.ResourceType,
-			Schemas:      schemasForResource,
-		})
 	}
 
-	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-
-	return result, nil
+	return &models.DataExplorerResource{
+		ID:           resource.ID,
+		Name:         resource.Name,
+		ResourceType: resource.ResourceType,
+		Schemas:      schemasForResource,
+	}, nil
 }
 
 func buildObjectStorageTree(node *models.MetaNodeLite, childNodes map[uint][]*models.MetaNodeLite, items map[uint][]*models.MetaItemLite) []models.DataExplorerTable {
@@ -271,38 +324,92 @@ func buildObjectStorageTree(node *models.MetaNodeLite, childNodes map[uint][]*mo
 	return entries
 }
 
+func (s *MetadataService) listActiveResources(tenantID *uint) ([]models.Resource, error) {
+	var tenantFilter uint
+	if tenantID != nil {
+		tenantFilter = *tenantID
+	}
+
+	if s.systemClient != nil {
+		sysResources, err := s.systemClient.ListResources("", tenantFilter)
+		if err != nil {
+			logger.L().Warn("数据探查: System API 获取资源列表失败，回退数据库查询", "error", err)
+		} else {
+			resources := make([]models.Resource, 0, len(sysResources))
+			for i := range sysResources {
+				res := sysResources[i]
+				if !res.IsActive {
+					continue
+				}
+				converted := convertResource(&res)
+				if converted == nil {
+					continue
+				}
+				if !resourceAccessible(converted, tenantID) {
+					continue
+				}
+				resources = append(resources, *converted)
+			}
+			logger.L().Info("数据探查: System API 获取资源列表成功", "resource_total", len(resources))
+			return resources, nil
+		}
+	}
+
+	resources, err := s.resourceRepo.ListAllActive(tenantID)
+	if err != nil {
+		logger.L().Error("数据探查: 数据库获取资源列表失败", "error", err)
+		return nil, err
+	}
+	logger.L().Info("数据探查: 数据库获取资源列表成功", "resource_total", len(resources))
+	return resources, nil
+}
+
 // PreviewTable 获取表数据预览
 // 当 tableName 为空时，返回 schema/bucket 的统计信息和子节点列表
-func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName string, page, pageSize int) (*models.TablePreview, error) {
-	resource, err := s.getResource(resourceID)
+func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
+	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	// 如果 tableName 为空，表示查看 schema/bucket 节点信息
-	if tableName == "" {
-		return s.previewSchemaOrBucket(resource, schemaName)
+	if s.previews == nil {
+		return nil, fmt.Errorf("preview registry not initialized")
 	}
 
-	if isObjectStorageType(resource.ResourceType) {
-		return s.previewObjectStorage(resource, schemaName, tableName)
+	req := &PreviewRequest{
+		Resource: resource,
+		Schema:   schemaName,
+		Table:    tableName,
+		Page:     page,
+		PageSize: pageSize,
+		TenantID: tenantID,
 	}
 
-	const maxRows = 50
-	columns, rows, total, geometryColumns, err := s.metadataRepo.QueryTablePreview(resource, schemaName, tableName, page, pageSize, maxRows)
+	provider, err := s.previews.Resolve(req)
+	if err != nil {
+		return nil, fmt.Errorf("no preview plugin available: %w", err)
+	}
+
+	ctx := context.Background()
+	result, err := provider.Preview(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return &models.TablePreview{
-		Mode:            "table",
-		Columns:         columns,
-		Rows:            rows,
-		Total:           total,
-		Page:            page,
-		PageSize:        pageSize,
-		GeometryColumns: geometryColumns,
-	}, nil
+	return result, nil
+}
+
+func resourceAccessible(resource *models.Resource, tenantID *uint) bool {
+	if resource == nil || !resource.IsActive {
+		return false
+	}
+	if tenantID == nil {
+		return true
+	}
+	if resource.TenantID == nil {
+		return false
+	}
+	return *resource.TenantID == *tenantID
 }
 
 // getResource 优先通过 System 服务获取解密后的资源信息，失败时回退到本地数据库
@@ -313,6 +420,17 @@ func (s *MetadataService) getResource(resourceID uint) (*models.Resource, error)
 		}
 	}
 	return s.resourceRepo.GetByID(resourceID)
+}
+
+func (s *MetadataService) getResourceForTenant(resourceID uint, tenantID *uint) (*models.Resource, error) {
+	resource, err := s.getResource(resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if !resourceAccessible(resource, tenantID) {
+		return nil, ErrResourceAccessDenied
+	}
+	return resource, nil
 }
 
 func convertResource(src *commonModels.Resource) *models.Resource {
@@ -341,101 +459,4 @@ func convertResource(src *commonModels.Resource) *models.Resource {
 		TenantID:       tenantIDPtr,
 		IsActive:       src.IsActive,
 	}
-}
-
-// previewSchemaOrBucket 预览 schema 或 bucket 节点信息
-// 显示节点统计信息（表/对象数量、总大小）和直接子节点列表
-func (s *MetadataService) previewSchemaOrBucket(resource *models.Resource, nodeName string) (*models.TablePreview, error) {
-	// 查询节点信息
-	node, err := s.metadataRepo.GetNodeByName(resource.ID, nodeName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get node info: %w", err)
-	}
-
-	// 根据资源类型确定节点类型
-	nodeType := "directory"
-	if isObjectStorageType(resource.ResourceType) {
-		nodeType = "bucket"
-	} else {
-		nodeType = "schema"
-	}
-
-	// 获取直接子节点（子目录/前缀）和子项（表/对象）
-	children := make([]map[string]interface{}, 0)
-
-	// 查询子节点
-	childNodes, err := s.metadataRepo.GetChildNodes(node.ID)
-	if err == nil {
-		for _, child := range childNodes {
-			children = append(children, map[string]interface{}{
-				"type":       "node",
-				"node_type":  child.NodeType,
-				"name":       child.Name,
-				"full_name":  child.FullName,
-				"item_count": child.ItemCount,
-				"size_bytes": child.TotalSizeBytes,
-			})
-		}
-	}
-
-	// 查询子项
-	items, err := s.metadataRepo.GetNodeItems(node.ID)
-	if err == nil {
-		for _, item := range items {
-			itemMap := map[string]interface{}{
-				"type":      "item",
-				"item_type": item.ItemType,
-				"name":      item.Name,
-				"full_name": item.FullName,
-			}
-			if item.RowCount != nil {
-				itemMap["row_count"] = *item.RowCount
-			}
-			if item.SizeBytes != nil {
-				itemMap["size_bytes"] = *item.SizeBytes
-			}
-			if item.ObjectSizeBytes != nil {
-				itemMap["object_size_bytes"] = *item.ObjectSizeBytes
-			}
-			children = append(children, itemMap)
-		}
-	}
-
-	return &models.TablePreview{
-		Mode:     "node",
-		Columns:  []string{},
-		Rows:     []map[string]interface{}{},
-		Total:    0,
-		Page:     1,
-		PageSize: 1,
-		Object: &models.ObjectPreview{
-			NodeType:    nodeType,
-			Path:        nodeName,
-			ContentType: "application/x-directory",
-			ObjectCount: int64(node.ItemCount),
-			SizeBytes:   node.TotalSizeBytes,
-			Children: func() []models.ObjectPreviewChild {
-				result := make([]models.ObjectPreviewChild, 0, len(children))
-				for _, child := range children {
-					c := models.ObjectPreviewChild{
-						Name: child["name"].(string),
-						Path: child["full_name"].(string),
-					}
-					if t, ok := child["node_type"].(string); ok {
-						c.Type = t
-					} else if t, ok := child["item_type"].(string); ok {
-						c.Type = t
-					}
-					if size, ok := child["size_bytes"].(int64); ok {
-						c.SizeBytes = size
-					} else if size, ok := child["object_size_bytes"].(int64); ok {
-						c.SizeBytes = size
-					}
-					result = append(result, c)
-				}
-				return result
-			}(),
-		},
-		GeometryColumns: []string{},
-	}, nil
 }

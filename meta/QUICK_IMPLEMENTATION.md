@@ -546,7 +546,7 @@ func main() {
     // 初始化服务
     syncService := service.NewSyncService(db, cfg.SystemServiceURL)
     scanService := service.NewScanService(db, cfg.SystemServiceURL)
-    metadataService := service.NewMetadataService(db)
+    metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, service.NewPreviewRegistry(), service.NewObjectContentRegistry())
 
     // 设置路由
     router := api.SetupRouter(syncService, scanService, metadataService)

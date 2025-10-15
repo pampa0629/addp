@@ -8,6 +8,13 @@
 
 const previewRegistry = new Map()
 
+function normalizePriority(priority) {
+  if (typeof priority !== 'number' || Number.isNaN(priority)) {
+    return 0
+  }
+  return priority
+}
+
 /**
  * 注册预览插件
  * @param {Object} config - 插件配置
@@ -32,11 +39,14 @@ export function registerPreview(config) {
     return
   }
 
-  previewRegistry.set(config.name, {
+  const entry = {
+    name: config.name,
     component: config.component,
     canHandle: config.canHandle,
-    priority: config.priority || 0
-  })
+    priority: normalizePriority(config.priority)
+  }
+
+  previewRegistry.set(config.name, entry)
 
   console.log(`✅ 注册预览插件: ${config.name} (优先级: ${config.priority || 0})`)
 }
@@ -44,24 +54,30 @@ export function registerPreview(config) {
 /**
  * 根据数据自动选择合适的预览组件
  * @param {Object} data - 预览数据
- * @returns {Component|null} Vue 组件或 null
+ * @returns {Object|null} 插件信息或 null
  */
 export function getPreviewComponent(data) {
-  const handlers = Array.from(previewRegistry.values())
-    .filter(h => h.canHandle(data))
+  const handlers = Array.from(previewRegistry.entries())
+    .map(([name, value]) => ({ name, ...value }))
+    .filter(h => {
+      try {
+        return typeof h.canHandle === 'function' && h.canHandle(data)
+      } catch (error) {
+        console.error(`⚠️  预览插件 ${h.name} canHandle 抛出异常`, error)
+        return false
+      }
+    })
     .sort((a, b) => b.priority - a.priority)
 
   const selected = handlers[0]
 
   if (selected) {
-    const pluginName = Array.from(previewRegistry.entries())
-      .find(([, value]) => value === selected)?.[0]
-    console.log(`🔍 选择预览插件: ${pluginName}`)
+    console.log(`🔍  选择预览插件: ${selected.name} (优先级: ${selected.priority})`)
   } else {
     console.warn('⚠️  未找到匹配的预览插件', data)
   }
 
-  return selected?.component || null
+  return selected || null
 }
 
 /**
@@ -82,208 +98,43 @@ export function unregisterPreview(name) {
   return result
 }
 
-// ============= 注册内置预览插件 =============
-
-import TablePreview from '@/components/previews/TablePreview.vue'
-import ObjectStoragePreview from '@/components/previews/ObjectStoragePreview.vue'
-import ImagePreview from '@/components/previews/ImagePreview.vue'
-import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
-import JsonPreview from '@/components/previews/JsonPreview.vue'
-import PdfPreview from '@/components/previews/PdfPreview.vue'
-import DocxPreview from '@/components/previews/DocxPreview.vue'
-import PptxPreview from '@/components/previews/PptxPreview.vue'
-import TextPreview from '@/components/previews/TextPreview.vue'
-
-// 表格预览 (优先级最高)
-registerPreview({
-  name: 'table',
-  component: TablePreview,
-  canHandle: (data) => data.mode === 'table',
-  priority: 100
-})
-
-// 对象存储预览
-registerPreview({
-  name: 'object-storage',
-  component: ObjectStoragePreview,
-  canHandle: (data) => {
-    if (data.mode !== 'object') return false
-    const nodeType = (data.object?.node_type || '').toLowerCase()
-
-    // 如果是目录/前缀/bucket，则使用对象存储预览
-    if (['directory', 'prefix', 'bucket'].includes(nodeType)) {
-      return true
-    }
-
-    // 如果是object（文件），但没有content（内容预览），则显示对象信息
-    // 有content的文件应该由具体的预览插件处理（pdf, image, json等）
-    if (nodeType === 'object' && !data.object?.content) {
-      return true
-    }
-
-    return false
-  },
-  priority: 90
-})
-
-// GeoJSON 预览
-registerPreview({
-  name: 'geojson',
-  component: GeoJsonPreview,
-  canHandle: (data) => {
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    return kind === 'geojson'
-  },
-  priority: 80
-})
-
-// 图片预览
-registerPreview({
-  name: 'image',
-  component: ImagePreview,
-  canHandle: (data) => {
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    return kind === 'image'
-  },
-  priority: 70
-})
-
-// JSON 预览
-registerPreview({
-  name: 'json',
-  component: JsonPreview,
-  canHandle: (data) => {
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    return kind === 'json'
-  },
-  priority: 60
-})
-
-// PDF 预览
-registerPreview({
-  name: 'pdf',
-  component: PdfPreview,
-  canHandle: (data) => {
-    // 检查文件扩展名
-    const path = (data.object?.path || '').toLowerCase()
-    if (path.endsWith('.pdf')) {
-      return true
-    }
-
-    // 检查 Content-Type
-    const contentType = (data.object?.content_type || '').toLowerCase()
-    if (contentType.includes('pdf') || contentType === 'application/pdf') {
-      return true
-    }
-
-    // 检查 content kind
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    if (kind === 'pdf') {
-      return true
-    }
-
-    return false
-  },
-  priority: 65
-})
-
-// DOCX 预览
-registerPreview({
-  name: 'docx',
-  component: DocxPreview,
-  canHandle: (data) => {
-    // 检查文件扩展名
-    const path = (data.object?.path || '').toLowerCase()
-    if (path.endsWith('.docx')) {
-      return true
-    }
-
-    // 检查 Content-Type
-    const contentType = (data.object?.content_type || '').toLowerCase()
-    if (contentType.includes('wordprocessingml') ||
-        contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      return true
-    }
-
-    // 检查 content kind
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    if (kind === 'docx') {
-      return true
-    }
-
-    return false
-  },
-  priority: 64
-})
-
-// PPTX 预览
-registerPreview({
-  name: 'pptx',
-  component: PptxPreview,
-  canHandle: (data) => {
-    // 检查文件扩展名
-    const path = (data.object?.path || '').toLowerCase()
-    if (path.endsWith('.pptx')) {
-      return true
-    }
-
-    // 检查 Content-Type
-    const contentType = (data.object?.content_type || '').toLowerCase()
-    if (contentType.includes('presentationml') ||
-        contentType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
-      return true
-    }
-
-    // 检查 content kind
-    const kind = (data.object?.content?.kind || '').toLowerCase()
-    if (kind === 'pptx') {
-      return true
-    }
-
-    return false
-  },
-  priority: 63
-})
-
-// 文本预览 (兜底,优先级最低)
-registerPreview({
-  name: 'text',
-  component: TextPreview,
-  canHandle: () => true, // 兜底处理所有未匹配的类型
-  priority: 0
-})
-
-// ============= 用户自定义插件加载 =============
-
 /**
- * 从全局变量加载用户自定义插件
- * 用户可以在 public/plugins/custom-preview.js 中定义:
- *
- * window.DataExplorerPlugins = window.DataExplorerPlugins || []
- * window.DataExplorerPlugins.push({
- *   name: 'csv',
- *   component: {...},
- *   canHandle: (data) => {...},
- *   priority: 50
- * })
+ * 将 window.DataExplorerPlugins 队列中的插件注册到系统中
+ * @returns {string[]} 已注册插件名称
  */
 export function loadCustomPlugins() {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') return []
 
-  const customPlugins = window.DataExplorerPlugins || []
-  if (customPlugins.length === 0) {
-    console.log('ℹ️  未发现自定义预览插件')
-    return
+  const queue = window.DataExplorerPlugins
+  if (!Array.isArray(queue) || queue.length === 0) {
+    return []
   }
 
-  console.log(`📦 加载 ${customPlugins.length} 个自定义预览插件...`)
-  customPlugins.forEach((plugin) => {
+  const registered = []
+  while (queue.length) {
+    const plugin = queue.shift()
+    if (!plugin) continue
     registerPreview(plugin)
-  })
+    registered.push(plugin.name || 'anonymous')
+  }
+  return registered
 }
 
-// 自动加载自定义插件
-loadCustomPlugins()
+const initiallyLoaded = loadCustomPlugins()
+if (initiallyLoaded.length) {
+  console.log(`📦 自动加载 ${initiallyLoaded.length} 个自定义预览插件`)
+}
+
+if (typeof window !== 'undefined') {
+  window.registerDataExplorerPlugin = (plugin) => {
+    window.DataExplorerPlugins = window.DataExplorerPlugins || []
+    window.DataExplorerPlugins.push(plugin)
+    const registered = loadCustomPlugins()
+    if (registered.length) {
+      console.log(`📦 动态注册 ${registered.join(', ')}`)
+    }
+  }
+}
 
 export default {
   registerPreview,

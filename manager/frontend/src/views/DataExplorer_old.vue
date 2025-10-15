@@ -798,7 +798,7 @@ const loadTree = async () => {
     destroyMap()
     showMap.value = true
   } catch (error) {
-    ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error('加载资源树失败js-old: ' + (error.response?.data?.error || error.message))
   } finally {
     loadingTree.value = false
   }

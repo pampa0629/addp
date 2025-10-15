@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,24 +11,48 @@ import (
 	"time"
 
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
 )
 
 const (
-	maxTextPreviewBytes  = 256 * 1024      // 256KB
-	maxJSONPreviewBytes  = 512 * 1024      // 512KB
-	maxGeoJSONPreview    = 1024 * 1024     // 1MB
-	maxImagePreviewBytes = 3 * 1024 * 1024 // 3MB
-	maxPDFPreviewBytes   = 10 * 1024 * 1024 // 10MB - PDF文件预览限制
-	maxDOCXPreviewBytes  = 50 * 1024 * 1024 // 50MB - DOCX文件预览限制（前端性能考虑）
-	maxPPTXPreviewBytes  = 50 * 1024 * 1024 // 50MB - PPTX文件预览限制（前端性能考虑）
+	maxTextPreviewBytes   = 256 * 1024        // 256KB
+	maxJSONPreviewBytes   = 512 * 1024        // 512KB
+	maxGeoJSONPreview     = 1024 * 1024       // 1MB
+	maxImagePreviewBytes  = 10 * 1024 * 1024  // 10MB - 图片预览限制
+	maxPDFPreviewBytes    = 20 * 1024 * 1024  // 20MB - PDF 文件预览限制
+	maxDOCXPreviewBytes   = 100 * 1024 * 1024 // 100MB - DOCX 文件预览限制
+	maxPPTXPreviewBytes   = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
+	maxSQLitePreviewBytes = 30 * 1024 * 1024  // 30MB - SQLite 文件默认预览限制
 )
 
 var reservedObjectSegments = map[string]struct{}{
 	"__bucket__": {},
 	".minio.sys": {},
+}
+
+type objectStoragePreviewProvider struct {
+	metadataRepo *repository.MetadataRepository
+	content      *ObjectContentRegistry
+	priority     int
+}
+
+func newObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
+	return &objectStoragePreviewProvider{
+		metadataRepo: metadataRepo,
+		content:      content,
+		priority:     95,
+	}
+}
+
+func (p *objectStoragePreviewProvider) Name() string {
+	return "builtin:object-storage"
+}
+
+func (p *objectStoragePreviewProvider) Priority() int {
+	return p.priority
 }
 
 type objectStorageConfig struct {
@@ -51,8 +73,34 @@ func isObjectStorageType(resourceType string) bool {
 	}
 }
 
-func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket, path string) (*models.TablePreview, error) {
+func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
+	if req == nil || req.Resource == nil {
+		return false
+	}
+
+	if !isObjectStorageType(req.Resource.ResourceType) {
+		return false
+	}
+
+	// schema 代表 bucket
+	if req.Schema == "" {
+		return false
+	}
+
+	// 对象存储插件处理 node/object 场景
+	return true
+}
+
+func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
+	resource := req.Resource
+	bucket := req.Schema
+	path := req.Table
+
 	objectPath := strings.Trim(path, "/")
+	displayPath := objectPath
+	if displayPath == "" {
+		displayPath = bucket
+	}
 
 	// 如果 path 以 bucket 名称开头，去掉 bucket 前缀
 	// 前端可能传递 full_name（如 "addp/json/中国.geoJson"），需要转换为 bucket 内的相对路径
@@ -66,7 +114,7 @@ func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket
 	var err error
 
 	if objectPath != "" {
-		item, err = s.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath)
+		item, err = p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -76,7 +124,7 @@ func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket
 	}
 
 	if item == nil {
-		node, err = s.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath)
+		node, err = p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -85,7 +133,7 @@ func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket
 		}
 	}
 
-	decrypted, err := s.metadataRepo.DecryptConnectionInfo(resource.ConnectionInfo)
+	decrypted, err := p.metadataRepo.DecryptConnectionInfo(resource.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt connection info: %w", err)
 	}
@@ -112,17 +160,19 @@ func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket
 		}
 	}
 
+	mode := PreviewModeObject
 	preview := &models.TablePreview{
-		Mode:            "object",
+		Mode:            mode,
 		Page:            1,
 		PageSize:        1,
 		Columns:         []string{},
 		Rows:            []map[string]interface{}{},
-		Object:          &models.ObjectPreview{Bucket: bucket, Path: objectPath, NodeType: nodeType},
+		Object:          &models.ObjectPreview{Bucket: bucket, Path: displayPath, NodeType: nodeType},
 		GeometryColumns: []string{},
 	}
 
-	if nodeType == "bucket" || nodeType == "prefix" || nodeType == "directory" {
+	if nodeType == "bucket" || nodeType == "prefix" || nodeType == "directory" || objectPath == "" {
+		preview.Mode = PreviewModeNode
 		if node != nil {
 			preview.Object.SizeBytes = node.TotalSizeBytes
 			preview.Object.ObjectCount = int64(node.ItemCount)
@@ -179,21 +229,70 @@ func (s *MetadataService) previewObjectStorage(resource *models.Resource, bucket
 		preview.Object.Metadata = metadata
 	}
 
-	contentType := stat.ContentType
+	rawContentType := stat.ContentType
 	if preview.Object.ContentType != "" {
-		contentType = preview.Object.ContentType
+		rawContentType = preview.Object.ContentType
 	}
-	content, truncated, err := fetchObjectContent(ctx, client, bucket, objectPath, contentType, stat.Size)
-	if err != nil {
-		return nil, err
-	}
-	if content != nil {
-		preview.Object.Content = content
-		preview.Object.ContentType = inferContentType(objectPath, contentType)
-		if truncated {
-			preview.Object.Truncated = true
-			if preview.Object.Content != nil {
-				preview.Object.Content.Truncated = true
+	canonicalContentType := inferContentType(objectPath, rawContentType)
+	preview.Object.ContentType = canonicalContentType
+
+	if p.content != nil && objectPath != "" {
+		req := &ObjectContentRequest{
+			Path:        objectPath,
+			Extension:   defaultExtension(objectPath),
+			ContentType: canonicalContentType,
+			Size:        stat.Size,
+		}
+		handler := p.content.Resolve(req)
+		if handler != nil {
+			// 优先使用流式处理（对于 SQLite 等大文件）
+			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+				streamer := func() (io.ReadCloser, error) {
+					return client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+				}
+
+				content, truncated, err := streamHandler.HandleStream(ctx, req, streamer)
+				if err != nil {
+					return nil, err
+				}
+				if content != nil {
+					preview.Object.Content = content
+					if truncated || content.Truncated {
+						preview.Object.Truncated = true
+						preview.Object.Content.Truncated = true
+					}
+				}
+			} else {
+				// 回退到传统的字节数组处理（适用于小文件）
+				fetcher := func(limit int64) ([]byte, bool, error) {
+					limitBytes := limit
+					if limitBytes <= 0 {
+						limitBytes = maxTextPreviewBytes
+					}
+					reader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+					if err != nil {
+						return nil, false, fmt.Errorf("failed to get object: %w", err)
+					}
+					defer reader.Close()
+
+					data, truncated, err := readObjectWithLimit(reader, limitBytes)
+					if err != nil {
+						return nil, false, err
+					}
+					return data, truncated, nil
+				}
+
+				content, truncated, err := handler.Handle(ctx, req, fetcher)
+				if err != nil {
+					return nil, err
+				}
+				if content != nil {
+					preview.Object.Content = content
+					if truncated || content.Truncated {
+						preview.Object.Truncated = true
+						preview.Object.Content.Truncated = true
+					}
+				}
 			}
 		}
 	}
@@ -341,46 +440,10 @@ func listImmediateChildren(ctx context.Context, client *minio.Client, bucket, pa
 	return children, nil
 }
 
-func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objectPath, contentType string, size int64) (*models.ObjectPreviewContent, bool, error) {
-	kind := detectContentKind(objectPath, contentType)
-
-	// 对于不支持的文件类型，立即返回，不读取文件内容
-	if kind == "unsupported" {
-		return &models.ObjectPreviewContent{
-			Kind:      "unsupported",
-			Text:      "不支持该文件类型的预览",
-			Truncated: false,
-		}, false, nil
-	}
-
-	reader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to get object: %w", err)
-	}
-	defer reader.Close()
-
-	var limit int64
-	switch kind {
-	case "image":
-		limit = maxImagePreviewBytes
-	case "geojson":
-		limit = maxGeoJSONPreview
-	case "json":
-		limit = maxJSONPreviewBytes
-	case "pdf":
-		limit = maxPDFPreviewBytes
-	case "docx":
-		limit = maxDOCXPreviewBytes
-	case "pptx":
-		limit = maxPPTXPreviewBytes
-	default:
+func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {
+	if limit <= 0 {
 		limit = maxTextPreviewBytes
 	}
-
-	if size > 0 && size < limit {
-		limit = size
-	}
-
 	limited := io.LimitReader(reader, limit+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -390,174 +453,7 @@ func fetchObjectContent(ctx context.Context, client *minio.Client, bucket, objec
 	if truncated {
 		data = data[:limit]
 	}
-
-	switch kind {
-	case "image":
-		if truncated || len(data) == 0 {
-			return &models.ObjectPreviewContent{
-				Kind:      "image",
-				Text:      "图片超出预览大小限制，无法展示",
-				Truncated: true,
-			}, true, nil
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		return &models.ObjectPreviewContent{
-			Kind:      "image",
-			ImageData: encoded,
-			Encoding:  "base64",
-		}, false, nil
-	case "pdf":
-		// PDF 文件返回 base64 编码数据
-		if truncated || len(data) == 0 {
-			return &models.ObjectPreviewContent{
-				Kind:      "pdf",
-				Text:      "PDF 文件超出预览大小限制（10MB）",
-				Truncated: true,
-			}, true, nil
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		return &models.ObjectPreviewContent{
-			Kind:     "pdf",
-			Data:     encoded, // 使用 Data 字段存储 PDF base64
-			Encoding: "base64",
-		}, false, nil
-	case "docx":
-		// DOCX 文件返回 base64 编码数据
-		if truncated || len(data) == 0 {
-			return &models.ObjectPreviewContent{
-				Kind:      "docx",
-				Text:      "DOCX 文件超出预览大小限制（50MB），建议下载后使用本地应用查看",
-				Truncated: true,
-			}, true, nil
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		return &models.ObjectPreviewContent{
-			Kind:     "docx",
-			Data:     encoded, // 使用 Data 字段存储 DOCX base64
-			Encoding: "base64",
-		}, false, nil
-	case "pptx":
-		// PPTX 文件返回 base64 编码数据
-		if truncated || len(data) == 0 {
-			return &models.ObjectPreviewContent{
-				Kind:      "pptx",
-				Text:      "PPTX 文件超出预览大小限制（50MB），建议下载后使用本地应用查看",
-				Truncated: true,
-			}, true, nil
-		}
-		encoded := base64.StdEncoding.EncodeToString(data)
-		return &models.ObjectPreviewContent{
-			Kind:     "pptx",
-			Data:     encoded, // 使用 Data 字段存储 PPTX base64
-			Encoding: "base64",
-		}, false, nil
-	case "geojson":
-		// 去除UTF-8 BOM (Byte Order Mark) 如果存在
-		cleanData := data
-		if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-			cleanData = data[3:]
-		}
-
-		var parsed interface{}
-		if err := json.Unmarshal(cleanData, &parsed); err != nil {
-			return &models.ObjectPreviewContent{
-				Kind:      "text",
-				Text:      string(data),
-				Truncated: truncated,
-			}, truncated, nil
-		}
-		return &models.ObjectPreviewContent{
-			Kind:    "geojson",
-			Text:    string(cleanData),
-			GeoJSON: parsed,
-		}, truncated, nil
-	case "json":
-		// 去除UTF-8 BOM (Byte Order Mark) 如果存在
-		cleanData := data
-		if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
-			cleanData = data[3:]
-		}
-
-		var parsed interface{}
-		if err := json.Unmarshal(cleanData, &parsed); err != nil {
-			return &models.ObjectPreviewContent{
-				Kind:      "text",
-				Text:      string(data),
-				Truncated: truncated,
-			}, truncated, nil
-		}
-		return &models.ObjectPreviewContent{
-			Kind: "json",
-			Text: string(cleanData),
-			JSON: parsed,
-		}, truncated, nil
-	default:
-		return &models.ObjectPreviewContent{
-			Kind:      "text",
-			Text:      string(data),
-			Truncated: truncated,
-		}, truncated, nil
-	}
-}
-
-func detectContentKind(objectPath, contentType string) string {
-	ext := strings.ToLower(filepath.Ext(objectPath))
-	contentTypeLower := strings.ToLower(contentType)
-
-	// 检查 PDF
-	if contentTypeLower == "application/pdf" || strings.Contains(contentTypeLower, "pdf") || ext == ".pdf" {
-		return "pdf"
-	}
-
-	// 检查 DOCX
-	if contentTypeLower == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-		strings.Contains(contentTypeLower, "wordprocessingml") ||
-		ext == ".docx" {
-		return "docx"
-	}
-
-	// 检查 PPTX
-	if contentTypeLower == "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
-		strings.Contains(contentTypeLower, "presentationml") ||
-		ext == ".pptx" {
-		return "pptx"
-	}
-
-	// 检查图片
-	if strings.HasPrefix(contentType, "image/") {
-		switch strings.ToLower(contentType) {
-		case "image/png", "image/jpeg", "image/jpg":
-			return "image"
-		}
-	}
-
-	// 检查 GeoJSON: 支持 "geojson", "geo+json", "application/geo+json" 等
-	if strings.Contains(contentTypeLower, "geojson") || strings.Contains(contentTypeLower, "geo+json") || ext == ".geojson" {
-		return "geojson"
-	}
-	if strings.Contains(contentTypeLower, "json") || ext == ".json" {
-		return "json"
-	}
-	if strings.HasPrefix(contentTypeLower, "text/") {
-		return "text"
-	}
-	switch ext {
-	case ".png", ".jpg", ".jpeg":
-		return "image"
-	case ".txt", ".log", ".csv":
-		return "text"
-	case ".bmp", ".gif", ".tiff", ".ico", ".webp", ".svg":
-		return "unsupported" // 不支持的图片格式
-	case ".doc", ".xls", ".xlsx", ".ppt", ".rtf", ".odt", ".ods", ".odp":
-		return "unsupported" // 不支持的 Office 格式
-	case ".zip", ".rar", ".7z", ".tar", ".gz":
-		return "unsupported" // 压缩文件
-	case ".exe", ".dll", ".so", ".dylib":
-		return "unsupported" // 可执行文件
-	}
-
-	// 其他未知格式，尝试作为文本读取
-	return "text"
+	return data, truncated, nil
 }
 
 func inferContentType(objectPath, contentType string) string {

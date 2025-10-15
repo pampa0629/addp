@@ -28,7 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['feature-click'])
 
 const mapContainer = ref(null)
-const { initMap, renderFeatures, destroy } = useOpenLayersMap(props.config)
+const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useOpenLayersMap(props.config)
 
 let isInitialized = false
 
@@ -85,6 +85,26 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroy()
+})
+
+const focusFeatureByKey = (rowKey, options = {}) => {
+  if (!isInitialized) return false
+  return focusFeature(rowKey, options)
+}
+
+const showPopupContent = ({ content, coordinate }) => {
+  if (!isInitialized || !content) return
+  showPopup(content, coordinate)
+}
+
+const hidePopupContent = () => {
+  hidePopup()
+}
+
+defineExpose({
+  focusFeature: focusFeatureByKey,
+  showPopup: showPopupContent,
+  hidePopup: hidePopupContent
 })
 </script>
 

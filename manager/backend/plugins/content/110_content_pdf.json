@@ -1,0 +1,11 @@
+{
+  "name": "builtin:content-pdf",
+  "type": "builtin",
+  "builtin": "pdf",
+  "priority": 80,
+  "match": {
+    "extensions": [".pdf"],
+    "content_types": ["application/pdf"]
+  },
+  "max_bytes": 20971520
+}

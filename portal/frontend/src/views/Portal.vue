@@ -149,8 +149,7 @@
           </el-row>
         </div>
         <div v-else class="iframe-wrapper">
-          <MetaScanView v-if="currentModule === 'meta'" class="embedded-module" />
-          <div v-else class="iframe-container">
+          <div class="iframe-container">
             <iframe
               v-if="iframeUrl"
               :src="iframeUrl"
@@ -176,7 +175,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import MetaScanView from './MetaScan.vue'
 import { Fold, Expand } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -192,7 +190,7 @@ const isCollapsed = ref(false)
 const moduleUrls = {
   system: 'http://localhost:5173',
   manager: 'http://localhost:5174',
-  meta: null,
+  meta: 'http://localhost:5175',
   transfer: 'http://localhost:5176'
 }
 
@@ -224,12 +222,6 @@ const handleMenuSelect = (index) => {
   console.log('Portal: Parsed - module:', module, 'page:', page)
   currentModule.value = module
 
-  if (module === 'meta') {
-    iframeUrl.value = ''
-    console.log('Portal: meta 模块由内嵌组件提供，不加载 iframe')
-    return
-  }
-
   if (moduleUrls[module]) {
     // 构建完整的 URL，并附加认证token作为URL参数
     const token = authStore.token
@@ -237,23 +229,22 @@ const handleMenuSelect = (index) => {
 
     // Manager 模块的路由映射
     // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
-  const managerPageMap = {
-    'data-explorer': 'data-explorer',
-    '': 'data-explorer'
-  }
-
-    // Meta 模块的路由映射
-    // Meta 路由使用 /meta/ 作为 base，路径结构：/meta/scan, /meta/datasources, /meta/metadata
-    const metaPageMap = {
-      'scan': 'scan',  // 对应 /meta/scan (元数据扫描)
-      'datasources': 'datasources',  // 对应 /meta/datasources
-      'search': 'metadata'  // Portal的"元数据浏览"对应 Meta的 /meta/metadata
+    const managerPageMap = {
+      'data-explorer': 'data-explorer',
+      '': 'data-explorer'
     }
 
-  if (module === 'manager') {
-    const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
-    url = `${moduleUrls[module]}/${module}/${actualPage}`
-  } else if (module === 'meta') {
+    // Meta 模块的路由映射
+    // Meta 路由使用 /meta/ 作为 base，当前默认指向 /meta/scan
+    const metaPageMap = {
+      'scan': 'scan',  // 对应 /meta/scan (元数据扫描)
+      '': 'scan'
+    }
+
+    if (module === 'manager') {
+      const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
+      url = `${moduleUrls[module]}/${module}/${actualPage}`
+    } else if (module === 'meta') {
       const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
       if (actualPage) {
         url = `${moduleUrls[module]}/${module}/${actualPage}`
@@ -448,20 +439,11 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   margin: 0;
 }
 
-.embedded-module {
-  flex: 1;
-  overflow: auto;
-  padding: 20px;
-  box-sizing: border-box;
-  min-height: 0;
-}
-
 .iframe-wrapper {
   flex: 1;
   display: flex;
   min-height: 0;
 }
-
 
 .iframe-container {
   width: 100%;

@@ -1,0 +1,8 @@
+{
+  "name": "builtin:content-text",
+  "type": "builtin",
+  "builtin": "text",
+  "priority": 0,
+  "match": {},
+  "max_bytes": 262144
+}

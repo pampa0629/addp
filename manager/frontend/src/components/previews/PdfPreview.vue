@@ -1,99 +1,158 @@
 <template>
   <div class="pdf-preview">
-    <!-- PDF 工具栏 -->
-    <div class="pdf-toolbar">
-      <div class="toolbar-left">
-        <el-button-group size="small">
-          <el-button :disabled="currentPage <= 1" @click="prevPage">
-            <el-icon><ArrowLeft /></el-icon>
-            上一页
-          </el-button>
-          <el-button :disabled="currentPage >= totalPages" @click="nextPage">
-            下一页
-            <el-icon><ArrowRight /></el-icon>
-          </el-button>
-        </el-button-group>
-
-        <span class="page-info">
-          <el-input-number
-            v-model="currentPage"
-            :min="1"
-            :max="totalPages"
-            size="small"
-            controls-position="right"
-            @change="handlePageChange"
-            style="width: 100px;"
-          />
-          / {{ totalPages }}
-        </span>
-      </div>
-
-      <div class="toolbar-right">
-        <el-button-group size="small">
-          <el-button @click="zoomOut" :disabled="scale <= 0.5">
-            <el-icon><ZoomOut /></el-icon>
-          </el-button>
-          <el-button @click="resetZoom">
-            {{ Math.round(scale * 100) }}%
-          </el-button>
-          <el-button @click="zoomIn" :disabled="scale >= 3">
-            <el-icon><ZoomIn /></el-icon>
-          </el-button>
-        </el-button-group>
-
-        <el-button size="small" @click="downloadPDF">
-          <el-icon><Download /></el-icon>
-          下载
-        </el-button>
-      </div>
+    <div v-if="isTruncated" class="truncated-container">
+      <el-alert
+        title="PDF 文件过大，无法在线预览"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          <p class="truncated-message">{{ truncatedText }}</p>
+          <ul class="meta-list">
+            <li v-if="fileName">文件名称：{{ fileName }}</li>
+            <li v-if="contentTypeLabel">文件类型：{{ contentTypeLabel }}</li>
+            <li v-if="formattedSize">文件大小：{{ formattedSize }}</li>
+            <li v-if="formattedLimit">预览限制：{{ formattedLimit }}</li>
+          </ul>
+        </template>
+      </el-alert>
     </div>
 
-    <!-- PDF 渲染区域 -->
-    <div class="pdf-container" ref="containerRef" v-loading="loading">
-      <div v-if="error" class="error-message">
-        <el-alert type="error" :title="error" :closable="false">
-          <template #default>
-            <p>{{ errorDetail }}</p>
-            <el-button size="small" @click="fallbackToIframe">
-              尝试使用浏览器原生预览
+    <div v-else class="pdf-preview-body">
+      <!-- PDF 工具栏 -->
+      <div class="pdf-toolbar">
+        <div class="toolbar-left">
+          <el-button-group size="small">
+            <el-button :disabled="!hasDocument || currentPage <= 1" @click="prevPage">
+              <el-icon><ArrowLeft /></el-icon>
+              上一页
             </el-button>
-          </template>
-        </el-alert>
+            <el-button :disabled="!hasDocument || currentPage >= totalPages" @click="nextPage">
+              下一页
+              <el-icon><ArrowRight /></el-icon>
+            </el-button>
+          </el-button-group>
+
+          <span class="page-info">
+            <el-input-number
+              v-model="currentPage"
+              :min="1"
+              :max="displayTotalPages"
+              :disabled="!hasDocument"
+              size="small"
+              controls-position="right"
+              @change="handlePageChange"
+              style="width: 100px;"
+            />
+            / {{ hasDocument ? totalPages : '--' }}
+          </span>
+        </div>
+
+        <div class="toolbar-right">
+          <el-button-group size="small">
+            <el-button @click="zoomOut" :disabled="!hasDocument || scale <= 0.5">
+              <el-icon><ZoomOut /></el-icon>
+            </el-button>
+            <el-button @click="resetZoom" :disabled="!hasDocument">
+              {{ Math.round(scale * 100) }}%
+            </el-button>
+            <el-button @click="zoomIn" :disabled="!hasDocument || scale >= 3">
+              <el-icon><ZoomIn /></el-icon>
+            </el-button>
+          </el-button-group>
+
+          <el-button size="small" @click="downloadPDF" :disabled="!pdfUrl">
+            <el-icon><Download /></el-icon>
+            下载
+          </el-button>
+        </div>
       </div>
 
-      <!-- PDF.js 渲染 -->
-      <canvas
-        v-show="!error && !useFallback"
-        ref="canvasRef"
-        class="pdf-canvas"
-      ></canvas>
+      <!-- PDF 渲染区域 -->
+      <div class="pdf-container" ref="containerRef" v-loading="loading">
+        <div v-if="error" class="error-message">
+          <el-alert type="error" :title="error" :closable="false">
+            <template #default>
+              <p>{{ errorDetail }}</p>
+              <el-button size="small" @click="fallbackToIframe">
+                尝试使用浏览器原生预览
+              </el-button>
+            </template>
+          </el-alert>
+        </div>
 
-      <!-- 降级方案: iframe -->
-      <iframe
-        v-if="useFallback && pdfUrl"
-        :src="pdfUrl"
-        class="pdf-iframe"
-        frameborder="0"
-      ></iframe>
+        <!-- PDF.js 渲染 -->
+        <canvas
+          v-show="!error && !useFallback"
+          ref="canvasRef"
+          class="pdf-canvas"
+        ></canvas>
 
-      <!-- 无数据提示 -->
-      <div v-if="!loading && !pdfUrl && !error" class="empty-state">
-        <el-empty description="无法获取 PDF 文件" />
+        <!-- 降级方案: iframe -->
+        <iframe
+          v-if="useFallback && pdfUrl"
+          :src="pdfUrl"
+          class="pdf-iframe"
+          frameborder="0"
+        ></iframe>
+
+        <!-- 无数据提示 -->
+        <div v-if="!loading && !pdfUrl && !error" class="empty-state">
+          <el-empty description="无法获取 PDF 文件" />
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Download } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { formatBytes } from '@/utils/formatters'
 
 const props = defineProps({
   data: {
     type: Object,
     required: true
   }
+})
+
+const objectData = computed(() => props.data?.object || {})
+const content = computed(() => objectData.value?.content || {})
+const contentMetadata = computed(() => content.value?.metadata || {})
+
+const isTruncated = computed(() => Boolean(content.value?.truncated || objectData.value?.truncated))
+
+const truncatedText = computed(
+  () => content.value?.text || 'PDF 文件超出预览限制，建议下载查看。'
+)
+
+const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
+
+const sizeBytes = computed(() => {
+  const objectSize = objectData.value?.size_bytes ?? objectData.value?.sizeBytes
+  return objectSize ?? contentMetadata.value?.size_bytes ?? null
+})
+
+const formattedLimit = computed(() => {
+  if (!limitBytes.value) return ''
+  return formatBytes(limitBytes.value)
+})
+
+const formattedSize = computed(() => {
+  if (!sizeBytes.value) return ''
+  return formatBytes(sizeBytes.value)
+})
+
+const contentTypeLabel = computed(() => {
+  return (
+    contentMetadata.value?.content_type ||
+    objectData.value?.content_type ||
+    objectData.value?.contentType ||
+    'application/pdf'
+  )
 })
 
 // 状态
@@ -104,6 +163,8 @@ const useFallback = ref(false)
 const currentPage = ref(1)
 const totalPages = ref(0)
 const scale = ref(1.0)
+const hasDocument = computed(() => totalPages.value > 0)
+const displayTotalPages = computed(() => (totalPages.value > 0 ? totalPages.value : 1))
 
 // DOM 引用
 const containerRef = ref(null)
@@ -112,43 +173,14 @@ const canvasRef = ref(null)
 // PDF 实例
 let pdfDocument = null
 let pdfLib = null
+let activeLoadingTask = null
+let activeObjectUrl = null
+let currentLoadToken = 0
 
 // ✅ 页面缓存: 避免重复渲染相同页面
 const pageCache = new Map()
 
-// PDF URL
-const pdfUrl = computed(() => {
-  // 优先使用 download_url
-  if (props.data?.object?.download_url) {
-    return props.data.object.download_url
-  }
-
-  // 如果有 base64 数据,转换为 blob URL
-  const base64Data = props.data?.object?.content?.pdf_data || props.data?.object?.content?.data
-  if (base64Data) {
-    try {
-      const binaryString = atob(base64Data)
-      const bytes = new Uint8Array(binaryString.length)
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i)
-      }
-      const blob = new Blob([bytes], { type: 'application/pdf' })
-      return URL.createObjectURL(blob)
-    } catch (err) {
-      console.error('转换 PDF base64 失败', err)
-      return null
-    }
-  }
-
-  // 尝试构造 URL (如果后端提供了 path)
-  const path = props.data?.object?.path
-  const resourceId = props.data?.resourceId || props.data?.object?.resource_id
-  if (path && resourceId) {
-    return `/api/preview/download?resource_id=${resourceId}&path=${encodeURIComponent(path)}`
-  }
-
-  return null
-})
+const pdfUrl = ref(null)
 
 const fileName = computed(() => {
   return props.data?.object?.path?.split('/').pop() || 'document.pdf'
@@ -184,25 +216,110 @@ const loadPDFJS = async () => {
   }
 }
 
+const resetState = () => {
+  loading.value = false
+  error.value = ''
+  errorDetail.value = ''
+  useFallback.value = false
+  currentPage.value = 1
+  totalPages.value = 0
+  scale.value = 1.0
+  pageCache.clear()
+}
+
+const revokeObjectUrl = () => {
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl)
+    activeObjectUrl = null
+  }
+}
+
+const cancelLoadingTask = () => {
+  if (activeLoadingTask) {
+    try {
+      activeLoadingTask.destroy()?.catch?.(() => {})
+    } catch (err) {
+      console.warn('取消 PDF 加载任务失败', err)
+    }
+    activeLoadingTask = null
+  }
+}
+
+const destroyPdfDocument = async () => {
+  if (pdfDocument) {
+    try {
+      await pdfDocument.destroy?.()
+    } catch (err) {
+      console.warn('销毁 PDF 文档失败', err)
+    }
+  }
+  pdfDocument = null
+}
+
+const buildPdfUrl = () => {
+  const object = props.data?.object || {}
+  const content = object.content || {}
+
+  if (object.download_url) {
+    return object.download_url
+  }
+
+  const base64Data = content.pdf_data || content.data
+  if (base64Data) {
+    try {
+      const binaryString = atob(base64Data)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      revokeObjectUrl()
+      activeObjectUrl = URL.createObjectURL(blob)
+      return activeObjectUrl
+    } catch (err) {
+      console.error('转换 PDF base64 失败', err)
+      errorDetail.value = 'PDF 数据解析失败'
+      return null
+    }
+  }
+
+  const path = object.path
+  const resourceId = props.data?.resourceId || object.resource_id
+  if (path && resourceId) {
+    return `/api/preview/download?resource_id=${resourceId}&path=${encodeURIComponent(path)}`
+  }
+
+  return null
+}
+
 /**
  * 加载 PDF 文档
  */
-const loadPDF = async () => {
+const loadPDF = async (token) => {
   if (!pdfUrl.value) {
-    error.value = '无法获取 PDF 文件'
+    error.value = '暂不支持该 PDF 的在线预览，请下载查看'
+    errorDetail.value = '未提供可用的预览地址'
     return
   }
+
+  if (token !== currentLoadToken) return
 
   loading.value = true
   error.value = ''
   errorDetail.value = ''
 
+  let loadingTask = null
+
   try {
     // 加载 PDF.js
     const lib = await loadPDFJS()
 
+    if (token !== currentLoadToken) {
+      return
+    }
+
     // ✅ 优化: 使用流式加载配置
-    const loadingTask = lib.getDocument({
+    loadingTask = lib.getDocument({
       url: pdfUrl.value,
 
       // 关键优化: 启用范围请求 (HTTP Range Requests)
@@ -217,6 +334,8 @@ const loadPDF = async () => {
       withCredentials: true
     })
 
+    activeLoadingTask = loadingTask
+
     // ✅ 监听加载进度 (可用于显示进度条)
     loadingTask.onProgress = (progressData) => {
       if (progressData.total > 0) {
@@ -228,32 +347,43 @@ const loadPDF = async () => {
 
     pdfDocument = await loadingTask.promise
 
+    if (token !== currentLoadToken) {
+      await loadingTask.destroy()
+      return
+    }
+
     totalPages.value = pdfDocument.numPages
     currentPage.value = 1
 
     // 渲染第一页
-    await renderPage(1)
+    await renderPage(1, token)
 
     console.log(`✅ PDF 加载成功: ${totalPages.value} 页 (流式加载模式)`)
   } catch (err) {
     console.error('加载 PDF 失败', err)
     error.value = 'PDF 加载失败'
     errorDetail.value = err.message || '未知错误'
+    pdfDocument = null
 
     // 如果是跨域问题或其他加载问题,自动切换到 fallback
     if (err.name === 'MissingPDFException' || err.message.includes('CORS')) {
       fallbackToIframe()
     }
   } finally {
-    loading.value = false
+    if (activeLoadingTask === loadingTask) {
+      activeLoadingTask = null
+    }
+    if (token === currentLoadToken) {
+      loading.value = false
+    }
   }
 }
 
 /**
  * 渲染指定页面
  */
-const renderPage = async (pageNum) => {
-  if (!pdfDocument || !canvasRef.value) return
+const renderPage = async (pageNum, token = currentLoadToken) => {
+  if (!pdfDocument || !canvasRef.value || token !== currentLoadToken) return
 
   try {
     // ✅ 缓存键: 页码 + 缩放比例
@@ -277,6 +407,11 @@ const renderPage = async (pageNum) => {
 
     // 获取页面
     const page = await pdfDocument.getPage(pageNum)
+
+    if (token !== currentLoadToken) {
+      return
+    }
+
     const viewport = page.getViewport({ scale: scale.value })
 
     const canvas = canvasRef.value
@@ -315,22 +450,29 @@ const renderPage = async (pageNum) => {
  * 页面导航
  */
 const prevPage = () => {
+  if (!hasDocument.value) return
+  const token = currentLoadToken
   if (currentPage.value > 1) {
     currentPage.value--
-    renderPage(currentPage.value)
+    renderPage(currentPage.value, token)
   }
 }
 
 const nextPage = () => {
+  if (!hasDocument.value) return
+  const token = currentLoadToken
   if (currentPage.value < totalPages.value) {
     currentPage.value++
-    renderPage(currentPage.value)
+    renderPage(currentPage.value, token)
   }
 }
 
 const handlePageChange = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    renderPage(page)
+  if (!hasDocument.value) return
+  const token = currentLoadToken
+  if (page >= 1 && page <= totalPages.value && page !== currentPage.value) {
+    currentPage.value = page
+    renderPage(page, token)
   }
 }
 
@@ -338,18 +480,24 @@ const handlePageChange = (page) => {
  * 缩放控制
  */
 const zoomIn = () => {
+  const token = currentLoadToken
+  if (!hasDocument.value) return
   scale.value = Math.min(3, scale.value + 0.25)
-  renderPage(currentPage.value)
+  renderPage(currentPage.value, token)
 }
 
 const zoomOut = () => {
+  const token = currentLoadToken
+  if (!hasDocument.value) return
   scale.value = Math.max(0.5, scale.value - 0.25)
-  renderPage(currentPage.value)
+  renderPage(currentPage.value, token)
 }
 
 const resetZoom = () => {
+  const token = currentLoadToken
+  if (!hasDocument.value) return
   scale.value = 1.0
-  renderPage(currentPage.value)
+  renderPage(currentPage.value, token)
 }
 
 /**
@@ -371,36 +519,77 @@ const downloadPDF = () => {
  * 降级到 iframe 方案
  */
 const fallbackToIframe = () => {
+  if (!pdfUrl.value) {
+    ElMessage.warning('当前 PDF 无法切换到浏览器预览')
+    return
+  }
   useFallback.value = true
   error.value = ''
   errorDetail.value = ''
   ElMessage.info('已切换到浏览器原生预览模式')
 }
 
+const initLoad = () => {
+  currentLoadToken++
+
+  if (!props.data || !props.data.object) {
+    resetState()
+    revokeObjectUrl()
+    pdfUrl.value = null
+    return
+  }
+
+  resetState()
+  revokeObjectUrl()
+  cancelLoadingTask()
+  destroyPdfDocument()
+  if (isTruncated.value) {
+    pdfUrl.value = null
+    return
+  }
+
+  const token = currentLoadToken
+  const url = buildPdfUrl()
+  pdfUrl.value = url
+
+  if (!url) {
+    const kind = (props.data?.object?.content?.kind || '').toLowerCase()
+    if (kind && kind !== 'pdf') {
+      error.value = '暂不支持该文件类型的在线预览，请下载查看'
+      errorDetail.value = `文件类型: ${kind}`
+    } else {
+      error.value = '暂不支持该 PDF 的在线预览，请下载查看'
+    }
+    return
+  }
+
+  loadPDF(token)
+}
+
 // 监听数据变化，自动重新加载
 watch(
-  () => props.data,
-  (newData, oldData) => {
-    const newPath = newData?.object?.path
-    const oldPath = oldData?.object?.path
-
-    if (newPath && newPath !== oldPath) {
-      console.log(`🔄 PDF 文件切换: ${oldPath} → ${newPath}`)
-      // 重置状态
-      currentPage.value = 1
-      pageCache.clear()
-      if (pdfUrl.value) {
-        loadPDF()
-      }
-    }
+  () => [
+    props.data?.object?.path,
+    props.data?.object?.download_url,
+    props.data?.object?.content?.data,
+    props.data?.object?.content?.pdf_data,
+    props.data?.object?.content?.kind,
+    props.data?.object?.content?.truncated,
+    props.data?.object?.truncated
+  ],
+  () => {
+    console.log('🔄 PDF 预览数据变更，重新加载')
+    initLoad()
   },
-  { deep: true }
+  { immediate: true }
 )
 
-onMounted(() => {
-  if (pdfUrl.value) {
-    loadPDF()
-  }
+onBeforeUnmount(() => {
+  currentLoadToken++
+  cancelLoadingTask()
+  destroyPdfDocument()
+  revokeObjectUrl()
+  pageCache.clear()
 })
 </script>
 
@@ -410,6 +599,13 @@ onMounted(() => {
   flex-direction: column;
   height: 100%;
   gap: 12px;
+}
+
+.pdf-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
 }
 
 .pdf-toolbar {
@@ -475,5 +671,29 @@ onMounted(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
+}
+
+.truncated-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.truncated-message {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.meta-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 </style>

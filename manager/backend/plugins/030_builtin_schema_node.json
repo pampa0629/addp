@@ -1,0 +1,6 @@
+{
+  "name": "builtin:schema-node",
+  "type": "builtin",
+  "builtin": "schema-node",
+  "priority": 90
+}

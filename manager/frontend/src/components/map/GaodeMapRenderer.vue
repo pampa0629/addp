@@ -24,7 +24,7 @@ const props = defineProps({
 const emit = defineEmits(['feature-click'])
 
 const mapContainer = ref(null)
-const { initMap, renderFeatures, destroy } = useGaodeMap(props.config)
+const { initMap, renderFeatures, focusFeature, showPopup, hidePopup, destroy } = useGaodeMap(props.config)
 
 let isInitialized = false
 
@@ -69,6 +69,28 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroy()
+})
+
+const focusFeatureByKey = (rowKey, options = {}) => {
+  if (!isInitialized) return false
+  return focusFeature(rowKey, options)
+}
+
+const showPopupContent = ({ content, coordinate, position }) => {
+  if (!isInitialized) return
+  const targetPosition = position || coordinate
+  if (!content) return
+  showPopup(content, targetPosition)
+}
+
+const hidePopupContent = () => {
+  hidePopup()
+}
+
+defineExpose({
+  focusFeature: focusFeatureByKey,
+  showPopup: showPopupContent,
+  hidePopup: hidePopupContent
 })
 </script>
 

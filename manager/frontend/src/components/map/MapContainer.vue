@@ -7,6 +7,7 @@
       :config="mapConfig"
       :base-type="baseMapType"
       :preserve-view="preserveView"
+      ref="rendererRef"
       @feature-click="handleFeatureClick"
     />
     <div v-else class="map-placeholder">
@@ -16,7 +17,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import GaodeMapRenderer from './GaodeMapRenderer.vue'
 import OpenLayersRenderer from './OpenLayersRenderer.vue'
@@ -42,6 +43,8 @@ const props = defineProps({
 
 const emit = defineEmits(['feature-click'])
 
+const rendererRef = ref(null)
+
 const { mapConfig, GAODE_BASE_MAP_VALUE } = useMapConfig()
 
 const mapRenderer = computed(() => {
@@ -57,6 +60,26 @@ const mapRenderer = computed(() => {
 const handleFeatureClick = (event) => {
   emit('feature-click', event)
 }
+
+const focusFeature = (rowKey, options = {}) => {
+  if (!rendererRef.value || typeof rendererRef.value.focusFeature !== 'function') {
+    return false
+  }
+  return rendererRef.value.focusFeature(rowKey, options)
+}
+
+const showPopup = (payload) => {
+  if (!payload || !payload.content) return
+  if (!rendererRef.value || typeof rendererRef.value.showPopup !== 'function') return
+  rendererRef.value.showPopup(payload)
+}
+
+const hidePopup = () => {
+  if (!rendererRef.value || typeof rendererRef.value.hidePopup !== 'function') return
+  rendererRef.value.hidePopup()
+}
+
+defineExpose({ focusFeature, showPopup, hidePopup })
 </script>
 
 <style scoped>

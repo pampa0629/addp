@@ -16,6 +16,10 @@ const props = defineProps({
 })
 
 const textContent = computed(() => {
+  const kind = (props.data?.object?.content?.kind || '').toLowerCase()
+  if (kind === 'unsupported') {
+    return '暂不支持该文件类型的在线预览，请下载后查看。'
+  }
   return props.data?.object?.content?.text || '暂无可用内容'
 })
 

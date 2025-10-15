@@ -16,8 +16,11 @@
           <p v-else>
             该文档较大（{{formatFileSize(fileSize)}}），在线预览可能需要较长时间，建议下载后查看。
           </p>
+          <p v-if="formattedLimit" class="limit-hint">
+            当前预览限制：{{ formattedLimit }}
+          </p>
           <div class="warning-actions">
-            <el-button type="primary" size="small" @click="downloadDocx">
+            <el-button type="primary" size="small" :disabled="!docxData" @click="downloadDocx">
               <el-icon><Download /></el-icon>
               立即下载
             </el-button>
@@ -47,8 +50,13 @@
       <el-icon><WarningFilled /></el-icon>
       <div class="error-info">
         <p class="error-message">{{ error }}</p>
+        <div v-if="showLimitInfo" class="limit-info">
+          <p>文件类型：{{ displayContentType }}</p>
+          <p v-if="fileSize">文件大小：{{ formatFileSize(fileSize) }}</p>
+          <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
+        </div>
         <div class="error-actions">
-          <el-button type="primary" size="small" @click="downloadDocx">
+          <el-button type="primary" size="small" :disabled="!docxData" @click="downloadDocx">
             <el-icon><Download /></el-icon>
             下载文档
           </el-button>
@@ -72,7 +80,7 @@
           </el-tag>
         </div>
         <div class="toolbar-right">
-          <el-button size="small" @click="downloadDocx">
+          <el-button size="small" :disabled="!docxData" @click="downloadDocx">
             <el-icon><Download /></el-icon>
             下载
           </el-button>
@@ -101,6 +109,7 @@ const loading = ref(false)
 const error = ref('')
 const htmlContent = ref('')
 const showLargeFileWarning = ref(false)
+let currentLoadToken = 0
 
 const fileName = computed(() => {
   const path = props.data.object?.path || ''
@@ -115,6 +124,28 @@ const docxData = computed(() => {
   const content = props.data.object?.content
   if (!content) return null
   return content.data || content.Data || null
+})
+
+const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
+
+const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
+
+const formattedLimit = computed(() => {
+  if (!limitBytes.value) return ''
+  return formatFileSize(limitBytes.value)
+})
+
+const displayContentType = computed(() => {
+  return (
+    contentMetadata.value?.content_type ||
+    props.data.object?.content_type ||
+    props.data.object?.contentType ||
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  )
+})
+
+const showLimitInfo = computed(() => {
+  return Boolean(limitBytes.value || displayContentType.value || fileSize.value)
 })
 
 const isTruncated = computed(() => {
@@ -160,6 +191,7 @@ const retryLoad = () => {
 
 // 加载 DOCX 文档
 const loadDocx = async () => {
+  const token = ++currentLoadToken
   try {
     loading.value = true
     error.value = ''
@@ -209,18 +241,36 @@ const loadDocx = async () => {
       }
     )
 
-    htmlContent.value = result.value
+    if (token !== currentLoadToken) {
+      return
+    }
 
-    if (result.messages.length > 0) {
-      console.warn('⚠️  DOCX 转换警告:', result.messages)
+    htmlContent.value = result.value || ''
+
+    const messages = Array.isArray(result.messages) ? result.messages : []
+    const errorMessages = messages.filter((msg) => msg.type === 'error')
+
+    if (messages.length > 0) {
+      console.warn('⚠️  DOCX 转换警告:', messages)
+    }
+
+    if (errorMessages.length > 0 && !result.value) {
+      const firstError = errorMessages[0]?.message || '文档解析失败'
+      throw new Error(firstError)
     }
 
     console.log('✅ DOCX 加载成功')
   } catch (err) {
+    if (token !== currentLoadToken) {
+      return
+    }
     console.error('❌ DOCX 加载失败:', err)
     error.value = `加载失败: ${err.message}`
+    htmlContent.value = ''
   } finally {
-    loading.value = false
+    if (token === currentLoadToken) {
+      loading.value = false
+    }
   }
 }
 
@@ -260,10 +310,12 @@ const downloadDocx = () => {
 
 // 初始化加载
 const initLoad = () => {
+  currentLoadToken++
   // 重置状态
   error.value = ''
   htmlContent.value = ''
   showLargeFileWarning.value = false
+  loading.value = false
 
   // 检查是否需要显示大文件警告
   if (!checkLargeFile()) {
@@ -316,6 +368,12 @@ onMounted(() => {
   margin-top: 16px;
   display: flex;
   gap: 12px;
+}
+
+.limit-hint {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #909399;
 }
 
 .loading-container {
@@ -386,6 +444,17 @@ onMounted(() => {
   font-size: 16px;
   color: #606266;
   margin-bottom: 16px;
+}
+
+.limit-info {
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: #909399;
+  line-height: 1.6;
+}
+
+.limit-info p {
+  margin: 4px 0;
 }
 
 .error-actions {

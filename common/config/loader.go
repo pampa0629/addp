@@ -5,11 +5,99 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"sync"
 	"time"
+
+	"github.com/addp/common/logger"
+	"github.com/joho/godotenv"
 )
+
+var (
+	projectRoot   string
+	projectRootMu sync.RWMutex
+)
+
+// LoadEnv 加载项目根目录的 .env 文件
+// levelsUp 参数指定需要向上回退多少级目录才能到达项目根目录
+// 例如：system/backend/cmd/server 需要 levelsUp=4
+//
+//	manager/backend/cmd/server 需要 levelsUp=4
+//	gateway/cmd/gateway 需要 levelsUp=3
+func LoadEnv(levelsUp int) {
+	ensureProjectRoot(levelsUp)
+
+	envPaths := collectEnvPaths(levelsUp)
+	tried := make([]string, 0, len(envPaths))
+
+	for _, path := range envPaths {
+		if err := godotenv.Load(path); err == nil {
+			logger.L().Info("已加载 .env 配置", "path", path)
+			return
+		}
+		tried = append(tried, path)
+	}
+
+	if len(tried) > 0 {
+		logger.L().Warn("环境变量文件未找到，使用系统环境变量", "paths_tried", tried)
+	} else {
+		logger.L().Warn("环境变量文件未找到，使用系统环境变量")
+	}
+}
+
+func ensureProjectRoot(levelsUp int) {
+	if envRoot := os.Getenv("PROJECT_ROOT"); envRoot != "" {
+		setProjectRoot(envRoot)
+		return
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+
+	if levelsUp < 0 {
+		levelsUp = 0
+	}
+
+	parts := make([]string, 0, levelsUp+1)
+	parts = append(parts, cwd)
+	for i := 0; i < levelsUp; i++ {
+		parts = append(parts, "..")
+	}
+
+	setProjectRoot(filepath.Join(parts...))
+}
+
+func collectEnvPaths(levelsUp int) []string {
+	paths := make([]string, 0, 4)
+
+	if root := ProjectRoot(); root != "" {
+		paths = append(paths, filepath.Join(root, ".env"))
+	}
+
+	// 策略1: 尝试使用相对路径 (从 cmd/server 目录向上)
+	pathParts := make([]string, levelsUp)
+	for i := 0; i < levelsUp; i++ {
+		pathParts[i] = ".."
+	}
+	pathParts = append(pathParts, ".env")
+	envPath := filepath.Join(pathParts...)
+	paths = append(paths, envPath)
+
+	// 策略2: 如果失败，尝试从当前工作目录查找 (for go run from module/backend/)
+	if cwd, err := os.Getwd(); err == nil {
+		cwdEnvPath := filepath.Join(cwd, "../..", ".env") // backend -> module -> root
+		paths = append(paths, cwdEnvPath)
+	}
+
+	// 策略3: 当前目录
+	paths = append(paths, ".env")
+
+	return dedupePaths(paths)
+}
 
 // SharedConfig 从 System 服务获取的共享配置
 type SharedConfig struct {
@@ -50,6 +138,12 @@ type BaseConfig struct {
 	AMapKey            string
 	AMapSecurityJsCode string
 	TDTKey             string
+
+	// 日志配置
+	LogLevel     string
+	LogFormat    string
+	LogAddSource bool
+	LogFile      string
 }
 
 // LoadSharedConfig 从 System 服务获取共享配置
@@ -108,6 +202,11 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 		target.EncryptionKey = LoadEncryptionKey()
 	}
 
+	target.LogLevel = GetEnv("LOG_LEVEL", defaultString(target.LogLevel, "info"))
+	target.LogFormat = GetEnv("LOG_FORMAT", defaultString(target.LogFormat, "json"))
+	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", target.LogAddSource)
+	target.LogFile = GetEnv("LOG_FILE", target.LogFile)
+
 	return nil
 }
 
@@ -125,9 +224,81 @@ func LoadLocalConfig(target *BaseConfig) {
 	target.AMapSecurityJsCode = GetEnv("AMAP_SECURITY_KEY", "")
 	target.TDTKey = GetEnv("TDT_KEY", "")
 
+	target.LogLevel = GetEnv("LOG_LEVEL", "info")
+	target.LogFormat = GetEnv("LOG_FORMAT", "json")
+	target.LogAddSource = GetEnvBool("LOG_ADD_SOURCE", false)
+	target.LogFile = GetEnv("LOG_FILE", "")
+
 	if target.JWTSecret == "" {
-		log.Println("⚠️  WARNING: JWT_SECRET is not set! Authentication will fail!")
+		logger.L().Warn("JWT_SECRET 未设置，认证将失败")
 	}
+}
+
+func setProjectRoot(candidate string) {
+	if candidate == "" {
+		return
+	}
+
+	abs, err := filepath.Abs(candidate)
+	if err != nil {
+		return
+	}
+
+	projectRootMu.Lock()
+	if projectRoot == "" {
+		projectRoot = abs
+	}
+	projectRootMu.Unlock()
+
+	_ = os.Setenv("PROJECT_ROOT", abs)
+}
+
+// ProjectRoot 返回项目根目录的绝对路径（如果已知）
+func ProjectRoot() string {
+	projectRootMu.RLock()
+	root := projectRoot
+	projectRootMu.RUnlock()
+
+	if root != "" {
+		return root
+	}
+
+	if envRoot := os.Getenv("PROJECT_ROOT"); envRoot != "" {
+		if abs, err := filepath.Abs(envRoot); err == nil {
+			return abs
+		}
+	}
+
+	return ""
+}
+
+// ResolveFromRoot 基于仓库根目录构建路径（根目录未知时退化为 Join）
+func ResolveFromRoot(parts ...string) string {
+	root := ProjectRoot()
+	if root == "" {
+		return filepath.Join(parts...)
+	}
+	all := append([]string{root}, parts...)
+	return filepath.Join(all...)
+}
+
+func dedupePaths(paths []string) []string {
+	seen := make(map[string]struct{}, len(paths))
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		clean := filepath.Clean(path)
+		if clean == "" {
+			continue
+		}
+
+		if _, exists := seen[clean]; exists {
+			continue
+		}
+
+		seen[clean] = struct{}{}
+		result = append(result, clean)
+	}
+	return result
 }
 
 // LoadEncryptionKey 加载加密密钥 (32字节 AES-256)
@@ -135,7 +306,7 @@ func LoadEncryptionKey() []byte {
 	keyStr := os.Getenv("ENCRYPTION_KEY")
 	if keyStr == "" {
 		// 开发环境使用默认密钥 (生产环境必须设置!)
-		log.Println("WARNING: ENCRYPTION_KEY not set, using default key (INSECURE for production!)")
+		logger.L().Warn("ENCRYPTION_KEY 未设置，使用开发默认值（生产环境请务必设置）")
 		// 使用固定的32字节密钥作为开发默认值
 		return []byte("dev-encryption-key-32-bytes!") // 正好32字节
 	}
@@ -143,11 +314,13 @@ func LoadEncryptionKey() []byte {
 	// 从 Base64 解码密钥
 	key, err := base64.StdEncoding.DecodeString(keyStr)
 	if err != nil {
-		log.Fatalf("Failed to decode ENCRYPTION_KEY: %v", err)
+		logger.L().Error("ENCRYPTION_KEY Base64 解码失败", "error", err)
+		os.Exit(1)
 	}
 
 	if len(key) != 32 {
-		log.Fatalf("ENCRYPTION_KEY must be 32 bytes (256 bits), got %d bytes", len(key))
+		logger.L().Error("ENCRYPTION_KEY 长度非法，必须为32字节", "length", len(key))
+		os.Exit(1)
 	}
 
 	return key
@@ -162,6 +335,13 @@ func GetEnv(key, defaultValue string) string {
 	return value
 }
 
+func defaultString(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
 // GetEnvInt 获取整数类型的环境变量
 func GetEnvInt(key string, defaultValue int) int {
 	value := os.Getenv(key)
@@ -170,7 +350,7 @@ func GetEnvInt(key string, defaultValue int) int {
 	}
 	var intValue int
 	if _, err := fmt.Sscanf(value, "%d", &intValue); err != nil {
-		log.Printf("Invalid integer value for %s: %s, using default: %d", key, value, defaultValue)
+		logger.L().Warn("整数环境变量解析失败，使用默认值", "key", key, "value", value, "default", defaultValue)
 		return defaultValue
 	}
 	return intValue
@@ -181,7 +361,7 @@ func GetEnvDuration(key string, defaultValue string) time.Duration {
 	value := GetEnv(key, defaultValue)
 	duration, err := time.ParseDuration(value)
 	if err != nil {
-		log.Printf("Invalid duration value for %s: %s, using default: %s", key, value, defaultValue)
+		logger.L().Warn("时长环境变量解析失败，使用默认值", "key", key, "value", value, "default", defaultValue)
 		duration, _ = time.ParseDuration(defaultValue)
 	}
 	return duration

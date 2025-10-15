@@ -1,0 +1,11 @@
+{
+  "name": "builtin:content-geojson",
+  "type": "builtin",
+  "builtin": "geojson",
+  "priority": 65,
+  "match": {
+    "extensions": [".geojson"],
+    "content_types": ["application/geo+json", "application/json", "geojson", "geo+json"]
+  },
+  "max_bytes": 1048576
+}

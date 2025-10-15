@@ -18,6 +18,7 @@
       </div>
 
       <MapContainer
+        ref="mapRef"
         :features="geoFeatures"
         :base-map-type="baseMapType"
         :height="mapHeight + 'px'"
@@ -87,6 +88,7 @@ const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
 const { size: mapHeight, startResize: startMapResize } = useResizable(260, 140, 520, 'vertical')
 
 const tableRef = ref(null)
+const mapRef = ref(null)
 const showMap = ref(true)
 const baseMapType = ref('')
 const currentRowKey = ref('')
@@ -100,6 +102,42 @@ const geometryColumns = computed(() => props.data?.geometry_columns || [])
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
+
+const escapeHtml = (value) => {
+  if (value === null || value === undefined) return ''
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+const formatCellValue = (value) => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value)
+    } catch (_error) {
+      return '[object]'
+    }
+  }
+  return String(value)
+}
+
+const buildPopupContent = (row) => {
+  if (!row) {
+    return '<div class="map-popup-content">暂无数据</div>'
+  }
+  const rowsHtml = (displayColumns.value || [])
+    .map((col) => {
+      const label = escapeHtml(col)
+      const value = escapeHtml(formatCellValue(row[col]))
+      return `<div class="map-popup-row"><span class="map-popup-label">${label}</span><span class="map-popup-value">${value}</span></div>`
+    })
+    .join('')
+  return `<div class="map-popup-content">${rowsHtml || '<div class="map-popup-row">暂无可展示字段</div>'}</div>`
+}
 
 // 过滤掉几何列后的显示列
 const displayColumns = computed(() => {
@@ -141,6 +179,30 @@ const geoFeatures = computed(() => {
     .filter(Boolean)
 })
 
+const focusRowOnMap = (row, options = {}) => {
+  const rowKey = row?.__rowKey
+  if (!rowKey || !mapRef.value || typeof mapRef.value.focusFeature !== 'function') return
+  mapRef.value.focusFeature(rowKey, {
+    fit: options.fit !== undefined ? options.fit : true,
+    openPopup: !!options.openPopup,
+    popupContent: options.popupContent,
+    coordinate: options.coordinate,
+    position: options.position,
+    keepPopup: options.keepPopup,
+    padding: options.padding
+  })
+}
+
+const showPopupForRow = (row, payload = {}) => {
+  if (!mapRef.value || typeof mapRef.value.showPopup !== 'function') return
+  const content = `<div class="map-popup">${buildPopupContent(row)}</div>`
+  mapRef.value.showPopup({
+    content,
+    coordinate: payload.coordinate,
+    position: payload.position
+  })
+}
+
 const getRowKey = (row) => {
   return row?.__rowKey || row?.id || row?.ID || row?._id || row?.uuid || String(Math.random())
 }
@@ -150,13 +212,22 @@ const handleRowClick = (row) => {
   if (tableRef.value) {
     tableRef.value.setCurrentRow(row)
   }
+  if (hasGeometry.value && showMap.value) {
+    if (mapRef.value && typeof mapRef.value.hidePopup === 'function') {
+      mapRef.value.hidePopup()
+    }
+    focusRowOnMap(row, { openPopup: false })
+  }
 }
 
-const handleFeatureClick = ({ feature }) => {
+const handleFeatureClick = ({ feature, coordinate, position }) => {
   const rowData = feature?.properties
   if (rowData && tableRef.value) {
     currentRowKey.value = rowData.__rowKey || ''
     tableRef.value.setCurrentRow(rowData)
+  }
+  if (rowData && hasGeometry.value) {
+    showPopupForRow(rowData, { coordinate, position })
   }
 }
 
@@ -174,6 +245,25 @@ watch(
     }
   },
   { immediate: true }
+)
+
+watch(
+  showMap,
+  (value) => {
+    if (!value && mapRef.value && typeof mapRef.value.hidePopup === 'function') {
+      mapRef.value.hidePopup()
+    }
+  }
+)
+
+watch(
+  () => geoFeatures.value,
+  () => {
+    if (mapRef.value && typeof mapRef.value.hidePopup === 'function') {
+      mapRef.value.hidePopup()
+    }
+  },
+  { deep: true }
 )
 
 onMounted(() => {

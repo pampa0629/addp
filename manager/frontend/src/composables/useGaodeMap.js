@@ -4,6 +4,46 @@ import AMapLoader from '@amap/amap-jsapi-loader'
 
 const DEFAULT_CENTER = [104.0668, 30.5728]
 
+const getGeometryBounds = (geometry) => {
+  if (!geometry?.coordinates) return null
+  let minLng = Infinity
+  let minLat = Infinity
+  let maxLng = -Infinity
+  let maxLat = -Infinity
+
+  const traverse = (coords) => {
+    if (!coords) return
+    if (typeof coords[0] === 'number') {
+      const [lng, lat] = coords
+      if (!isFinite(lng) || !isFinite(lat)) return
+      minLng = Math.min(minLng, lng)
+      maxLng = Math.max(maxLng, lng)
+      minLat = Math.min(minLat, lat)
+      maxLat = Math.max(maxLat, lat)
+      return
+    }
+    coords.forEach(traverse)
+  }
+
+  traverse(geometry.coordinates)
+
+  if (!isFinite(minLng) || !isFinite(minLat) || !isFinite(maxLng) || !isFinite(maxLat)) {
+    return null
+  }
+  return {
+    minLng,
+    minLat,
+    maxLng,
+    maxLat
+  }
+}
+
+const getGeometryCenter = (geometry) => {
+  const bounds = getGeometryBounds(geometry)
+  if (!bounds) return null
+  return [(bounds.minLng + bounds.maxLng) / 2, (bounds.minLat + bounds.maxLat) / 2]
+}
+
 /**
  * 高德地图管理 Composable
  * @param {Object} config - 地图配置 { amapKey, amapSecurityJsCode }
@@ -13,6 +53,8 @@ export function useGaodeMap(config) {
   const amapLib = ref(null)
   const overlays = ref([])
   const infoWindow = ref(null)
+  const featureOverlayMap = new Map()
+  const featureDataMap = new Map()
 
   let eventsBound = false
   let viewState = { center: DEFAULT_CENTER, zoom: 4 }
@@ -155,11 +197,28 @@ export function useGaodeMap(config) {
     })
   }
 
+  const registerFeatureOverlay = (feature, overlay) => {
+    if (!feature || !overlay) return
+    const rowKey =
+      feature?.properties?.__rowKey ||
+      feature?.properties?.id ||
+      feature?.properties?.ID ||
+      feature?.id
+    if (!rowKey) return
+    if (!featureOverlayMap.has(rowKey)) {
+      featureOverlayMap.set(rowKey, [])
+    }
+    featureOverlayMap.get(rowKey).push(overlay)
+    featureDataMap.set(rowKey, feature)
+  }
+
   const renderFeatures = (features, options = {}) => {
     if (!mapInstance.value || !amapLib.value) return
 
     // 清除现有覆盖物
     clearOverlays()
+    featureOverlayMap.clear()
+    featureDataMap.clear()
 
     const newOverlays = []
 
@@ -172,6 +231,7 @@ export function useGaodeMap(config) {
           const marker = createMarker(geometry.coordinates[0], geometry.coordinates[1])
           if (marker) {
             newOverlays.push(marker)
+            registerFeatureOverlay(feature, marker)
             if (options.onFeatureClick) {
               marker.on('click', () => options.onFeatureClick(feature, marker.getPosition()))
             }
@@ -183,6 +243,7 @@ export function useGaodeMap(config) {
             const marker = createMarker(coord[0], coord[1])
             if (marker) {
               newOverlays.push(marker)
+              registerFeatureOverlay(feature, marker)
               if (options.onFeatureClick) {
                 marker.on('click', () => options.onFeatureClick(feature, marker.getPosition()))
               }
@@ -195,6 +256,7 @@ export function useGaodeMap(config) {
           const polyline = createPolyline(path)
           if (polyline) {
             newOverlays.push(polyline)
+            registerFeatureOverlay(feature, polyline)
             if (options.onFeatureClick) {
               polyline.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
             }
@@ -207,6 +269,7 @@ export function useGaodeMap(config) {
             const polyline = createPolyline(path)
             if (polyline) {
               newOverlays.push(polyline)
+              registerFeatureOverlay(feature, polyline)
               if (options.onFeatureClick) {
                 polyline.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
               }
@@ -219,6 +282,7 @@ export function useGaodeMap(config) {
           const polygon = createPolygon(rings)
           if (polygon) {
             newOverlays.push(polygon)
+            registerFeatureOverlay(feature, polygon)
             if (options.onFeatureClick) {
               polygon.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
             }
@@ -231,6 +295,7 @@ export function useGaodeMap(config) {
             const polygon = createPolygon(rings)
             if (polygon) {
               newOverlays.push(polygon)
+              registerFeatureOverlay(feature, polygon)
               if (options.onFeatureClick) {
                 polygon.on('click', (e) => options.onFeatureClick(feature, e.lnglat))
               }
@@ -262,6 +327,45 @@ export function useGaodeMap(config) {
     }
   }
 
+  const focusFeature = (rowKey, options = {}) => {
+    if (!mapInstance.value || !rowKey) return false
+    const feature = featureDataMap.get(rowKey)
+    if (!feature) return false
+
+    const overlaysForFeature = featureOverlayMap.get(rowKey) || []
+    const geometry = feature.geometry
+    const shouldFit = options.fit !== false
+    const padding = options.padding || [40, 40, 40, 40]
+    const minZoom = options.minZoom || 8
+
+    if (shouldFit && overlaysForFeature.length > 0 && mapInstance.value.setFitView) {
+      mapInstance.value.setFitView(overlaysForFeature, false, padding)
+      setTimeout(updateViewState, 0)
+    } else {
+      const center = options.center || getGeometryCenter(geometry)
+      if (center && mapInstance.value.setZoomAndCenter) {
+        const targetZoom = Math.max(mapInstance.value.getZoom?.() || minZoom, minZoom)
+        mapInstance.value.setZoomAndCenter(targetZoom, center)
+        setTimeout(updateViewState, 0)
+      }
+    }
+
+    if (options.openPopup && options.popupContent) {
+      const content =
+        typeof options.popupContent === 'function'
+          ? options.popupContent(feature.properties || {})
+          : options.popupContent
+      if (content) {
+        const popupPosition = options.position || options.coordinate || getGeometryCenter(geometry)
+        showPopup(content, popupPosition)
+      }
+    } else if (!options.keepPopup) {
+      hidePopup()
+    }
+
+    return true
+  }
+
   const clearOverlays = () => {
     if (overlays.value.length > 0) {
       overlays.value.forEach((overlay) => {
@@ -276,6 +380,8 @@ export function useGaodeMap(config) {
     if (infoWindow.value) {
       infoWindow.value.close()
     }
+    featureOverlayMap.clear()
+    featureDataMap.clear()
   }
 
   const showPopup = (content, position) => {
@@ -328,6 +434,7 @@ export function useGaodeMap(config) {
     amapLib,
     initMap,
     renderFeatures,
+    focusFeature,
     clearOverlays,
     showPopup,
     hidePopup,

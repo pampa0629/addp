@@ -1,0 +1,211 @@
+#!/bin/bash
+set -e
+
+echo "🚀 启动 ADDP 开发环境"
+echo ""
+
+# 颜色定义
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+PORTAL_FE_PORT=${PORTAL_FE_PORT:-5170}
+SYSTEM_FE_PORT=${SYSTEM_FE_PORT:-5173}
+MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
+META_FE_PORT=${META_FE_PORT:-5175}
+
+# 1. 启动基础设施
+echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
+docker-compose up -d postgres redis minio
+sleep 5
+
+# 等待基础设施就绪
+echo "等待 PostgreSQL 就绪..."
+until docker exec addp-postgres pg_isready -U addp > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+done
+echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
+
+echo "等待 Redis 就绪..."
+until docker exec addp-redis redis-cli ping > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+done
+echo -e "${GREEN}✓ Redis 就绪${NC}"
+
+echo "等待 MinIO 就绪..."
+until curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+done
+echo -e "${GREEN}✓ MinIO 就绪${NC}"
+echo ""
+
+# 2. 启动 System Backend
+echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"
+(cd system/backend && go run cmd/server/main.go) > logs/system-backend.log 2>&1 &
+SYSTEM_PID=$!
+
+# 等待 System Backend 就绪
+echo "等待 System Backend 就绪..."
+MAX_WAIT=60
+WAIT_COUNT=0
+until curl -f http://localhost:8080/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ System Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/system-backend.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
+echo ""
+
+# 3. 启动 Manager Backend
+echo -e "${YELLOW}Step 3/5: 启动 Manager Backend${NC}"
+(cd manager/backend && go run cmd/server/main.go) > logs/manager-backend.log 2>&1 &
+MANAGER_PID=$!
+
+# 等待 Manager Backend 就绪
+echo "等待 Manager Backend 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8081/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Manager Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/manager-backend.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
+echo ""
+
+# 4. 启动 Meta Backend
+echo -e "${YELLOW}Step 4/5: 启动 Meta Backend${NC}"
+(cd meta/backend && go run cmd/server/main.go) > logs/meta-backend.log 2>&1 &
+META_PID=$!
+
+# 等待 Meta Backend 就绪
+echo "等待 Meta Backend 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8082/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Meta Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/meta-backend.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Meta Backend 就绪 (PID: $META_PID)${NC}"
+echo ""
+
+# 5. 启动 Gateway
+echo -e "${YELLOW}Step 5/5: 启动 Gateway${NC}"
+(cd gateway && go run cmd/gateway/main.go) > logs/gateway.log 2>&1 &
+GATEWAY_PID=$!
+
+# 等待 Gateway 就绪
+echo "等待 Gateway 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8000/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Gateway 启动超时${NC}"
+    echo "查看日志: tail -f logs/gateway.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Gateway 就绪 (PID: $GATEWAY_PID)${NC}"
+echo ""
+
+# 6. 启动前端服务
+echo -e "${YELLOW}Step 6/6: 启动前端服务${NC}"
+
+# 创建 PID 目录
+mkdir -p .dev-pids
+
+# Portal Frontend
+echo "启动 Portal Frontend..."
+cd portal/frontend
+npm run dev -- --host 0.0.0.0 --port "${PORTAL_FE_PORT}" > ../../logs/portal-frontend.log 2>&1 &
+PORTAL_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Portal Frontend 启动中 (PID: $PORTAL_PID, Port: ${PORTAL_FE_PORT})${NC}"
+
+# System Frontend
+echo "启动 System Frontend..."
+cd system/frontend
+npm run dev -- --host 0.0.0.0 --port "${SYSTEM_FE_PORT}" > ../../logs/system-frontend.log 2>&1 &
+SYSTEM_FE_PID=$!
+cd ../..
+echo -e "${GREEN}✓ System Frontend 启动中 (PID: $SYSTEM_FE_PID, Port: ${SYSTEM_FE_PORT})${NC}"
+
+# Manager Frontend
+echo "启动 Manager Frontend..."
+cd manager/frontend
+npm run dev -- --host 0.0.0.0 --port "${MANAGER_FE_PORT}" > ../../logs/manager-frontend.log 2>&1 &
+MANAGER_FE_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Manager Frontend 启动中 (PID: $MANAGER_FE_PID, Port: ${MANAGER_FE_PORT})${NC}"
+
+# Meta Frontend
+echo "启动 Meta Frontend..."
+cd meta/frontend
+npm run dev -- --host 0.0.0.0 --port "${META_FE_PORT}" > ../../logs/meta-frontend.log 2>&1 &
+META_FE_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Meta Frontend 启动中 (PID: $META_FE_PID, Port: ${META_FE_PORT})${NC}"
+
+# 保存前端 PIDs
+echo $PORTAL_PID > .dev-pids/portal-frontend.pid
+echo $SYSTEM_FE_PID > .dev-pids/system-frontend.pid
+echo $MANAGER_FE_PID > .dev-pids/manager-frontend.pid
+echo $META_FE_PID > .dev-pids/meta-frontend.pid
+
+echo ""
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}✓ 所有后端服务启动完成！${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo "服务地址:"
+echo "  Portal FE:    http://localhost:${PORTAL_FE_PORT}"
+echo "  Gateway:  http://localhost:8000"
+echo "  System:   http://localhost:8080"
+echo "  Manager:  http://localhost:8081"
+echo "  Meta:     http://localhost:8082"
+echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
+echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
+echo "  Meta FE:      http://localhost:${META_FE_PORT}"
+echo ""
+echo "进程 PID:"
+echo "  System:   $SYSTEM_PID"
+echo "  Manager:  $MANAGER_PID"
+echo "  Meta:     $META_PID"
+echo "  Gateway:  $GATEWAY_PID"
+echo ""
+echo "日志文件:"
+echo "  System:   logs/system-backend.log"
+echo "  Manager:  logs/manager-backend.log"
+echo "  Meta:     logs/meta-backend.log"
+echo "  Gateway:  logs/gateway.log"
+echo "  Meta FE:  logs/meta-frontend.log"
+echo ""
+echo "停止所有服务: make dev-stop 或 ./scripts/dev-stop.sh"
+echo ""
+
+# 保存 PIDs 到文件以便停止时使用
+mkdir -p .dev-pids
+echo $SYSTEM_PID > .dev-pids/system.pid
+echo $MANAGER_PID > .dev-pids/manager.pid
+echo $META_PID > .dev-pids/meta.pid
+echo $GATEWAY_PID > .dev-pids/gateway.pid

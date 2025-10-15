@@ -22,7 +22,7 @@
         <template #description>
           <p>不支持 {{ fileExtension || '该类型' }} 文件的在线预览</p>
           <p style="font-size: 12px; color: #909399; margin-top: 8px;">
-            支持的格式：PDF、DOCX、PPTX、图片、JSON、GeoJSON、文本
+            支持的格式：PDF、DOCX、PPTX、图片、JSON、GeoJSON、CSV、SQLite、文本
           </p>
         </template>
       </el-empty>
@@ -30,73 +30,9 @@
 
     <!-- 渲染预览组件 -->
     <div v-else class="preview-content">
-      <!-- 使用 v-if 替代 component :is 以避免卸载时的 null 引用问题 -->
-      <PdfPreview
-        v-if="previewType === 'pdf'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <DocxPreview
-        v-else-if="previewType === 'docx'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <PptxPreview
-        v-else-if="previewType === 'pptx'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <ImagePreview
-        v-else-if="previewType === 'image'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <GeoJsonPreview
-        v-else-if="previewType === 'geojson'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <JsonPreview
-        v-else-if="previewType === 'json'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <TablePreview
-        v-else-if="previewType === 'table'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <ObjectStoragePreview
-        v-else-if="previewType === 'object-storage'"
-        :key="componentKey"
-        :data="previewData"
-        :loading="loading"
-        @page-change="handlePageChange"
-        @navigate="handleNavigate"
-      />
-      <TextPreview
-        v-else
+      <component
+        v-if="previewComponent"
+        :is="previewComponent"
         :key="componentKey"
         :data="previewData"
         :loading="loading"
@@ -110,15 +46,6 @@
 <script setup>
 import { computed, watch } from 'vue'
 import { getPreviewComponent } from '@/plugins/previews'
-import PdfPreview from '@/components/previews/PdfPreview.vue'
-import DocxPreview from '@/components/previews/DocxPreview.vue'
-import PptxPreview from '@/components/previews/PptxPreview.vue'
-import ImagePreview from '@/components/previews/ImagePreview.vue'
-import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
-import JsonPreview from '@/components/previews/JsonPreview.vue'
-import TablePreview from '@/components/previews/TablePreview.vue'
-import ObjectStoragePreview from '@/components/previews/ObjectStoragePreview.vue'
-import TextPreview from '@/components/previews/TextPreview.vue'
 
 const props = defineProps({
   selectedNode: {
@@ -137,79 +64,25 @@ const props = defineProps({
 
 const emit = defineEmits(['page-change', 'navigate'])
 
-// 获取预览组件
-const previewComponent = computed(() => {
+// 获取预览插件信息
+const activePlugin = computed(() => {
   if (!props.previewData) {
     return null
   }
 
   try {
-    const component = getPreviewComponent(props.previewData)
-    if (component) {
-      console.log('✅ 找到预览组件')
-    } else {
-      console.log('⚠️ 未找到匹配的预览组件')
-    }
-    return component
+    return getPreviewComponent(props.previewData)
   } catch (error) {
-    console.error('❌ 获取预览组件失败:', error)
+    console.error('❌ 获取预览插件失败:', error)
     return null
   }
 })
+
+const previewComponent = computed(() => activePlugin.value?.component ?? null)
+const previewPluginName = computed(() => activePlugin.value?.name ?? '')
 
 // 检查是否有可用的预览组件
-const hasPreviewComponent = computed(() => {
-  return previewComponent.value !== null && previewComponent.value !== undefined
-})
-
-// 获取预览类型名称（用于 v-if 渲染）
-const previewType = computed(() => {
-  if (!props.previewData) {
-    return null
-  }
-
-  // 使用插件系统判断类型
-  const component = getPreviewComponent(props.previewData)
-  if (!component) {
-    return 'text' // 默认使用 text 预览
-  }
-
-  // 根据 data 特征判断类型
-  const mode = props.previewData.mode
-  if (mode === 'table') {
-    return 'table'
-  }
-
-  if (mode === 'object') {
-    const nodeType = (props.previewData.object?.node_type || '').toLowerCase()
-    if (['directory', 'prefix', 'bucket'].includes(nodeType)) {
-      return 'object-storage'
-    }
-
-    const kind = (props.previewData.object?.content?.kind || '').toLowerCase()
-    if (kind) {
-      // 根据 kind 返回对应类型
-      const kindMap = {
-        'pdf': 'pdf',
-        'docx': 'docx',
-        'pptx': 'pptx',
-        'image': 'image',
-        'geojson': 'geojson',
-        'json': 'json',
-        'text': 'text',
-        'unsupported': 'text'
-      }
-      return kindMap[kind] || 'text'
-    }
-
-    // 如果是 object 但没有 content，显示对象信息
-    if (nodeType === 'object' && !props.previewData.object?.content) {
-      return 'object-storage'
-    }
-  }
-
-  return 'text' // 兜底
-})
+const hasPreviewComponent = computed(() => Boolean(previewComponent.value))
 
 // 获取文件扩展名（用于错误提示）
 const fileExtension = computed(() => {
@@ -229,8 +102,9 @@ const componentKey = computed(() => {
   const nodePath = props.selectedNode.path || props.selectedNode.table || ''
   const contentType = props.previewData?.object?.content_type || ''
   const contentKind = props.previewData?.object?.content?.kind || ''
+  const pluginName = previewPluginName.value || (props.previewData?.mode || 'unknown')
 
-  return `preview-${nodeId}-${nodePath}-${contentType}-${contentKind}`
+  return `preview-${pluginName}-${nodeId}-${nodePath}-${contentType}-${contentKind}`
 })
 
 // 监听数据变化，输出调试信息
@@ -242,7 +116,7 @@ watch(
         mode: newData.mode,
         contentKind: newData.object?.content?.kind,
         contentType: newData.object?.content_type,
-        previewType: previewType.value,
+        plugin: previewPluginName.value,
         hasComponent: hasPreviewComponent.value
       })
     }

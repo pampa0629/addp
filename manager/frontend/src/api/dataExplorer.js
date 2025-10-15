@@ -1,7 +1,13 @@
 import client from './client'
 
 export const dataExplorerAPI = {
-  getTree() {
+  getResources() {
+    return client.get('/data-explorer/resources')
+  },
+  getTree(resourceId) {
+    return client.get(`/data-explorer/resources/${resourceId}/tree`)
+  },
+  getLegacyTree() {
     return client.get('/data-explorer/tree')
   },
   getPreview(params) {

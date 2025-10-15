@@ -46,6 +46,66 @@ make logs           # View all logs
 
 **For detailed System module documentation, see `system/CLAUDE.md`.**
 
+### Development Mode Startup (Recommended)
+
+**Important**: Services must start in the correct order to ensure dependencies are met. Use the automated startup script to avoid race conditions.
+
+```bash
+# From project root
+
+# 1. Start all services in correct order (Recommended)
+make dev-start
+# Or directly:
+./scripts/dev-start.sh
+
+# 2. Check service health
+make dev-health
+
+# 3. Stop all services
+make dev-stop
+# Or directly:
+./scripts/dev-stop.sh
+```
+
+**Startup Order**:
+```
+Infrastructure (PostgreSQL, Redis, MinIO)
+  ↓
+System Backend (auth, config center)
+  ↓
+Manager Backend + Meta Backend (parallel)
+  ↓
+Gateway (API router)
+  ↓
+Frontend services (optional)
+```
+
+**Key Features**:
+- ✅ Automatic health check waiting - ensures each service is ready before starting the next
+- ✅ Progress indicators - color-coded output shows startup status
+- ✅ PID tracking - stores process IDs for graceful shutdown
+- ✅ Timeout handling - fails fast if service doesn't start within 60 seconds
+- ✅ Log files - redirects output to `logs/` directory for easy debugging
+
+**Startup Script Details**:
+- Location: `scripts/dev-start.sh`
+- Waits for `/health` endpoint to return 200 before proceeding
+- Creates `.dev-pids/` directory to track process IDs
+- Logs stored in `logs/` directory (e.g., `logs/system-backend.log`)
+- Optional frontend startup (prompts user)
+
+**Service URLs** (after successful startup):
+- Portal: http://localhost:5170
+- Gateway: http://localhost:8000
+- System Backend: http://localhost:8080
+- Manager Backend: http://localhost:8081
+- Meta Backend: http://localhost:8082
+
+**Troubleshooting**:
+- If startup fails, check logs in `logs/` directory
+- Run `make dev-health` to verify which services are running
+- See [docs/STARTUP_ORDER.md](docs/STARTUP_ORDER.md) for detailed dependency documentation
+
 ## Technology Stack
 
 ### Backend
@@ -165,8 +225,7 @@ All modules use **PostgreSQL 15** with schema isolation for data separation.
 - **permissions** - Access control for data sources and directories
 
 **Meta Module (metadata schema)** - IMPLEMENTED:
-- **meta_resource** - Registered data sources (databases, object storage) with sync tracking
-- **meta_node** - Hierarchical nodes (schemas, prefixes, collections) with recursive structure
+- **meta_node** - Hierarchical nodes (schemas, prefixes, collections) with recursive structure, referencing `system.resources` by `res_id`
 - **meta_item** - Leaf items (tables, objects, files) with JSON attributes
 - **meta_dictionary** - Node type and child rule definitions for validation
 - **meta_change_log** - Change tracking for audit and incremental sync (planned)
@@ -641,8 +700,8 @@ docker-compose up -d    # Restart
 1. Sync data sources from System module `/api/resources`
 2. Select data source and schemas/prefixes to scan
 3. Extract metadata hierarchically:
-   - Database: meta_resource → meta_node (schemas) → meta_item (tables with field details in JSON)
-   - Object Storage: meta_resource → meta_node (prefixes) → meta_item (objects with file metadata)
+   - Database: system.resources (database) → meta_node (schemas) → meta_item (tables with field details in JSON)
+   - Object Storage: system.resources (bucket scope) → meta_node (prefixes) → meta_item (objects with file metadata)
 4. Store in PostgreSQL `metadata` schema with tenant isolation
 5. Track scan status, sync version, and last scan time
 6. Support manual triggers and scheduled auto-sync
@@ -659,7 +718,7 @@ docker-compose up -d    # Restart
 - Extended metadata statistics and profiling
 - `meta_change_log` for audit trail and rollback
 
-**Database**: PostgreSQL `metadata` schema (tables: meta_resource, meta_node, meta_item, meta_dictionary, meta_change_log)
+**Database**: PostgreSQL `metadata` schema (tables: meta_node, meta_item, meta_dictionary, meta_change_log)
 
 ### Transfer Service (PLANNED)
 **Purpose**: Data import/export and synchronization
@@ -686,6 +745,55 @@ docker-compose up -d    # Restart
 **Auth Propagation**: JWT tokens passed through in `Authorization` headers
 
 **Error Handling**: Services return standard HTTP status codes; calling services handle retries
+
+## Code Quality Principles
+
+### DRY (Don't Repeat Yourself)
+
+**Core Principle**: Avoid code duplication across modules. Extract common functionality to the `common/` module.
+
+**Why it matters**:
+- ✅ Single point of maintenance - fix bugs once, benefit all modules
+- ✅ Consistency - all modules use identical implementations
+- ✅ Reduces error risk - no need to remember to update multiple locations
+- ✅ Easier refactoring - change logic in one place
+
+**Examples of shared code in `common/`**:
+- **`common/config/LoadEnv(levelsUp int)`** - Load .env file from project root
+  ```go
+  // In each module's main.go
+  commonConfig.LoadEnv(4)  // system/backend/cmd/server (4 levels up)
+  commonConfig.LoadEnv(3)  // gateway/cmd/gateway (3 levels up)
+  ```
+- **`common/client/SystemClient`** - Communicate with System module
+- **`common/models/Resource`** - Shared resource model
+- **`common/config/LoadSharedConfig()`** - Fetch config from System
+
+**When to extract to common/**:
+1. Code appears in 2+ modules with minimal variation
+2. Logic is module-agnostic (not specific to one service's business domain)
+3. Function can be parameterized to handle differences (e.g., path depth)
+
+**When NOT to extract**:
+- Module-specific business logic
+- Code that's likely to diverge between modules
+- Single-use functions with no reuse potential
+
+**Implementation pattern**:
+```go
+// Step 1: Add to common/config/loader.go or create new file
+func SharedFunction(param int) {
+    // Implementation
+}
+
+// Step 2: Import in each module
+import commonConfig "github.com/addp/common/config"
+
+// Step 3: Use it
+commonConfig.SharedFunction(value)
+```
+
+**Example PR**: See .env loading refactor - extracted `godotenv` logic from 4 duplicated main.go files to `common/config/LoadEnv()`
 
 ## Development Guidelines for New Services
 
@@ -834,6 +942,9 @@ make init                # Create config files and directories
 make install-deps        # Install Go and npm dependencies
 
 # Development
+make dev-start           # Start all services in correct order (RECOMMENDED)
+make dev-stop            # Stop all development services
+make dev-health          # Check health of all services
 make dev-system          # Run System in development mode
 make dev-manager         # Run Manager backend
 make dev-gateway         # Run Gateway service
@@ -895,7 +1006,9 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 ### Build & Deploy
 - [`Makefile`](Makefile) - Project-wide orchestration commands
 - [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema initialization
-- [`scripts/dev-run.sh`](scripts/dev-run.sh) - Local development helper
+- [`scripts/dev-start.sh`](scripts/dev-start.sh) - Development startup script (按顺序启动所有服务)
+- [`scripts/dev-stop.sh`](scripts/dev-stop.sh) - Development stop script (停止所有服务)
+- [`scripts/dev-run.sh`](scripts/dev-run.sh) - Local development helper (legacy)
 
 ### Key Source Files
 - System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)

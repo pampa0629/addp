@@ -46,9 +46,24 @@ dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
 	@cd gateway && go run cmd/gateway/main.go
 
+dev-start: ## 开发模式启动所有服务（按正确顺序）
+	@echo "$(GREEN)启动完整开发环境...$(NC)"
+	@bash scripts/dev-start.sh
+
+dev-stop: ## 停止所有开发模式服务
+	@echo "$(YELLOW)停止开发环境...$(NC)"
+	@bash scripts/dev-stop.sh
+
 dev-all: ## 本地开发模式启动全部后端与前端服务
 	@echo "$(GREEN)启动完整开发环境（Go + Vite）...$(NC)"
 	@bash scripts/dev-run.sh
+
+dev-health: ## 检查开发模式服务健康状态
+	@echo "$(GREEN)检查服务健康状态...$(NC)"
+	@curl -sf http://localhost:8080/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
+	@curl -sf http://localhost:8081/health > /dev/null && echo "  $(GREEN)✓ Manager healthy$(NC)" || echo "  $(RED)✗ Manager unhealthy$(NC)"
+	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
+	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
 build: ## 编译所有服务
 	@echo "$(GREEN)编译所有服务...$(NC)"
