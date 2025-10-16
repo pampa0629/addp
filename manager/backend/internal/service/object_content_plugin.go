@@ -135,6 +135,15 @@ func (m objectContentMatcher) matches(req *ObjectContentRequest) bool {
 	ctLower := strings.ToLower(strings.TrimSpace(req.ContentType))
 	ctMatched := len(m.contentTypes) == 0 || ctLower == ""
 	if !ctMatched {
+		if isGenericContentType(ctLower) {
+			ctLower = ""
+			ctMatched = true
+		}
+	}
+	if ctMatched && ctLower == "" {
+		return extMatched
+	}
+	if !ctMatched {
 		for _, ct := range m.contentTypes {
 			target := strings.ToLower(strings.TrimSpace(ct))
 			if target == "" {

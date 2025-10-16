@@ -457,9 +457,11 @@ func readObjectWithLimit(reader io.Reader, limit int64) ([]byte, bool, error) {
 }
 
 func inferContentType(objectPath, contentType string) string {
-	if contentType != "" {
+	ctLower := strings.ToLower(strings.TrimSpace(contentType))
+	if ctLower != "" && !isGenericContentType(ctLower) {
 		return contentType
 	}
+
 	switch strings.ToLower(filepath.Ext(objectPath)) {
 	case ".pdf":
 		return "application/pdf"
@@ -477,9 +479,26 @@ func inferContentType(objectPath, contentType string) string {
 		return "application/geo+json"
 	case ".txt", ".log":
 		return "text/plain"
-	default:
-		return "application/octet-stream"
 	}
+
+	if contentType != "" {
+		return contentType
+	}
+	return "application/octet-stream"
+}
+
+func isGenericContentType(contentType string) bool {
+	switch contentType {
+	case "", "application/octet-stream", "binary/octet-stream", "application/download", "application/force-download":
+		return true
+	}
+	if strings.HasPrefix(contentType, "application/x-msdownload") {
+		return true
+	}
+	if !strings.Contains(contentType, "/") {
+		return true
+	}
+	return false
 }
 
 func normalizeEndpoint(endpoint string) string {

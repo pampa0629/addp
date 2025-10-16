@@ -20,83 +20,58 @@ var (
 	projectRootMu sync.RWMutex
 )
 
-// LoadEnv 加载项目根目录的 .env 文件
-// levelsUp 参数指定需要向上回退多少级目录才能到达项目根目录
-// 例如：system/backend/cmd/server 需要 levelsUp=4
-//
-//	manager/backend/cmd/server 需要 levelsUp=4
-//	gateway/cmd/gateway 需要 levelsUp=3
-func LoadEnv(levelsUp int) {
-	ensureProjectRoot(levelsUp)
-
-	envPaths := collectEnvPaths(levelsUp)
-	tried := make([]string, 0, len(envPaths))
-
-	for _, path := range envPaths {
-		if err := godotenv.Load(path); err == nil {
-			logger.L().Info("已加载 .env 配置", "path", path)
-			return
-		}
-		tried = append(tried, path)
+// LoadEnv 在项目根目录加载统一的 .env 文件，并在成功后设置 PROJECT_ROOT。
+func LoadEnv() {
+	root := discoverProjectRoot()
+	if root != "" {
+		setProjectRoot(root)
 	}
 
-	if len(tried) > 0 {
-		logger.L().Warn("环境变量文件未找到，使用系统环境变量", "paths_tried", tried)
+	envPath := ".env"
+	if root := ProjectRoot(); root != "" {
+		envPath = filepath.Join(root, ".env")
+	}
+
+	if err := godotenv.Load(envPath); err != nil {
+		logger.L().Warn("环境变量文件加载失败，使用系统环境变量", "path", envPath, "error", err)
 	} else {
-		logger.L().Warn("环境变量文件未找到，使用系统环境变量")
+		logger.L().Info("已加载 .env 配置", "path", envPath)
+	}
+
+	if envRoot := os.Getenv("PROJECT_ROOT"); envRoot != "" {
+		setProjectRoot(envRoot)
+	} else if root := ProjectRoot(); root != "" {
+		_ = os.Setenv("PROJECT_ROOT", root)
 	}
 }
 
-func ensureProjectRoot(levelsUp int) {
+func discoverProjectRoot() string {
 	if envRoot := os.Getenv("PROJECT_ROOT"); envRoot != "" {
-		setProjectRoot(envRoot)
-		return
+		if abs, err := filepath.Abs(envRoot); err == nil {
+			return abs
+		}
 	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return
+		return ""
 	}
 
-	if levelsUp < 0 {
-		levelsUp = 0
+	dir := cwd
+	for {
+		candidate := filepath.Join(dir, ".env")
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return dir
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 
-	parts := make([]string, 0, levelsUp+1)
-	parts = append(parts, cwd)
-	for i := 0; i < levelsUp; i++ {
-		parts = append(parts, "..")
-	}
-
-	setProjectRoot(filepath.Join(parts...))
-}
-
-func collectEnvPaths(levelsUp int) []string {
-	paths := make([]string, 0, 4)
-
-	if root := ProjectRoot(); root != "" {
-		paths = append(paths, filepath.Join(root, ".env"))
-	}
-
-	// 策略1: 尝试使用相对路径 (从 cmd/server 目录向上)
-	pathParts := make([]string, levelsUp)
-	for i := 0; i < levelsUp; i++ {
-		pathParts[i] = ".."
-	}
-	pathParts = append(pathParts, ".env")
-	envPath := filepath.Join(pathParts...)
-	paths = append(paths, envPath)
-
-	// 策略2: 如果失败，尝试从当前工作目录查找 (for go run from module/backend/)
-	if cwd, err := os.Getwd(); err == nil {
-		cwdEnvPath := filepath.Join(cwd, "../..", ".env") // backend -> module -> root
-		paths = append(paths, cwdEnvPath)
-	}
-
-	// 策略3: 当前目录
-	paths = append(paths, ".env")
-
-	return dedupePaths(paths)
+	return ""
 }
 
 // SharedConfig 从 System 服务获取的共享配置
@@ -280,25 +255,6 @@ func ResolveFromRoot(parts ...string) string {
 	}
 	all := append([]string{root}, parts...)
 	return filepath.Join(all...)
-}
-
-func dedupePaths(paths []string) []string {
-	seen := make(map[string]struct{}, len(paths))
-	result := make([]string, 0, len(paths))
-	for _, path := range paths {
-		clean := filepath.Clean(path)
-		if clean == "" {
-			continue
-		}
-
-		if _, exists := seen[clean]; exists {
-			continue
-		}
-
-		seen[clean] = struct{}{}
-		result = append(result, clean)
-	}
-	return result
 }
 
 // LoadEncryptionKey 加载加密密钥 (32字节 AES-256)

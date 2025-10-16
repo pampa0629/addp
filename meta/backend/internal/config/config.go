@@ -1,8 +1,6 @@
 package config
 
 import (
-	"path/filepath"
-
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 )
@@ -55,12 +53,6 @@ func LoadConfig() *Config {
 
 	if cfg.InternalAPIKey == "" {
 		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
-	}
-
-	if cfg.LogFile == "" {
-		cfg.LogFile = commonConfig.ResolveFromRoot("logs", "meta-backend.log")
-	} else if !filepath.IsAbs(cfg.LogFile) {
-		cfg.LogFile = commonConfig.ResolveFromRoot(cfg.LogFile)
 	}
 
 	return cfg

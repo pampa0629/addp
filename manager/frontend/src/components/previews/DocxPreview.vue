@@ -20,7 +20,7 @@
             当前预览限制：{{ formattedLimit }}
           </p>
           <div class="warning-actions">
-            <el-button type="primary" size="small" :disabled="!docxData" @click="downloadDocx">
+            <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocx">
               <el-icon><Download /></el-icon>
               立即下载
             </el-button>
@@ -56,7 +56,7 @@
           <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
         </div>
         <div class="error-actions">
-          <el-button type="primary" size="small" :disabled="!docxData" @click="downloadDocx">
+          <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocx">
             <el-icon><Download /></el-icon>
             下载文档
           </el-button>
@@ -80,7 +80,7 @@
           </el-tag>
         </div>
         <div class="toolbar-right">
-          <el-button size="small" :disabled="!docxData" @click="downloadDocx">
+          <el-button size="small" :disabled="!canDownload" @click="downloadDocx">
             <el-icon><Download /></el-icon>
             下载
           </el-button>
@@ -95,8 +95,9 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Loading, WarningFilled, Document, Download, RefreshRight } from '@element-plus/icons-vue'
-import mammoth from 'mammoth'
+import mammoth from 'mammoth/mammoth.browser'
 
 const props = defineProps({
   data: {
@@ -109,6 +110,7 @@ const loading = ref(false)
 const error = ref('')
 const htmlContent = ref('')
 const showLargeFileWarning = ref(false)
+const cachedDocxBytes = ref(null)
 let currentLoadToken = 0
 
 const fileName = computed(() => {
@@ -125,6 +127,51 @@ const docxData = computed(() => {
   if (!content) return null
   return content.data || content.Data || null
 })
+
+const resourceId = computed(() => {
+  const root = props.data || {}
+  const object = root.object || {}
+  return (
+    root.resourceId ||
+    root.resource_id ||
+    object.resource_id ||
+    object.resourceId ||
+    null
+  )
+})
+
+const downloadUrl = computed(() => {
+  const root = props.data || {}
+  const object = root.object || {}
+  const content = object.content || {}
+
+  if (root.download_url) return root.download_url
+  if (root.downloadUrl) return root.downloadUrl
+  if (content.download_url) return content.download_url
+  if (content.downloadUrl) return content.downloadUrl
+  if (object.download_url) return object.download_url
+  if (object.downloadUrl) return object.downloadUrl
+  if (root.preview_url) return root.preview_url
+  if (root.previewUrl) return root.previewUrl
+  if (content.preview_url) return content.preview_url
+  if (content.previewUrl) return content.previewUrl
+  if (object.preview_url) return object.preview_url
+  if (object.previewUrl) return object.previewUrl
+  if (content.url) return content.url
+  if (object.url) return object.url
+  if (content.signed_url) return content.signed_url
+  if (content.signedUrl) return content.signedUrl
+  if (object.signed_url) return object.signed_url
+  if (object.signedUrl) return object.signedUrl
+
+  if (object.path && resourceId.value) {
+    return `/api/preview/download?resource_id=${resourceId.value}&path=${encodeURIComponent(object.path)}`
+  }
+
+  return ''
+})
+
+const canDownload = computed(() => Boolean(docxData.value || downloadUrl.value))
 
 const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
 
@@ -177,15 +224,83 @@ const checkLargeFile = () => {
   return false
 }
 
+const sanitizeBase64 = (value) => {
+  if (!value) return ''
+  if (typeof value !== 'string') {
+    return String(value)
+  }
+  return value.replace(/\s+/g, '')
+}
+
+const decodeBase64ToBytes = (base64) => {
+  const clean = sanitizeBase64(base64)
+  if (!clean) {
+    throw new Error('DOCX 数据为空')
+  }
+
+  try {
+    const binaryString = atob(clean)
+    const bytes = new Uint8Array(binaryString.length)
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+    return bytes
+  } catch (err) {
+    console.error('DOCX base64 解码失败', err)
+    throw new Error('DOCX 数据解码失败')
+  }
+}
+
+const fetchDocxBytesFromUrl = async (url) => {
+  try {
+    const response = await fetch(url, { credentials: 'include' })
+    if (!response.ok) {
+      throw new Error(`请求失败（${response.status}）`)
+    }
+    const buffer = await response.arrayBuffer()
+    return new Uint8Array(buffer)
+  } catch (err) {
+    console.error('DOCX 下载失败', err)
+    throw new Error(err.message || 'DOCX 下载失败')
+  }
+}
+
+const getDocxBytes = async () => {
+  if (cachedDocxBytes.value) {
+    return cachedDocxBytes.value
+  }
+
+  if (docxData.value) {
+    const bytes = decodeBase64ToBytes(docxData.value)
+    cachedDocxBytes.value = bytes
+    return bytes
+  }
+
+  if (downloadUrl.value) {
+    const bytes = await fetchDocxBytesFromUrl(downloadUrl.value)
+    cachedDocxBytes.value = bytes
+    return bytes
+  }
+
+  throw new Error('未提供可用的 DOCX 数据源')
+}
+
+const toArrayBuffer = (bytes) => {
+  if (!bytes) return null
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+}
+
 // 强制预览大文件
 const forcePreview = () => {
   showLargeFileWarning.value = false
+  cachedDocxBytes.value = null
   loadDocx()
 }
 
 // 重试加载
 const retryLoad = () => {
   error.value = ''
+  cachedDocxBytes.value = null
   loadDocx()
 }
 
@@ -201,25 +316,36 @@ const loadDocx = async () => {
       throw new Error(truncatedMessage.value)
     }
 
-    if (!docxData.value) {
+    if (!docxData.value && !downloadUrl.value) {
       throw new Error('未找到 DOCX 文档数据')
     }
 
     console.log(`📄 开始加载 DOCX: ${fileName.value} (${formatFileSize(fileSize.value)})`)
 
-    // 将 base64 转换为 ArrayBuffer
-    const base64Data = docxData.value
-    const binaryString = atob(base64Data)
-    const bytes = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
+    if (!docxData.value && downloadUrl.value) {
+      console.log('🌐 通过下载链接加载 DOCX 预览', downloadUrl.value)
+    }
+
+    const bytes = await getDocxBytes()
+
+    if (token !== currentLoadToken) {
+      return
+    }
+
+    if (!bytes || !bytes.byteLength) {
+      throw new Error('DOCX 数据为空')
+    }
+
+    const arrayBuffer = toArrayBuffer(bytes)
+    if (!arrayBuffer) {
+      throw new Error('DOCX 数据解析失败')
     }
 
     console.log('🔄 转换中...')
 
     // 使用 mammoth.js 转换 DOCX 为 HTML
     const result = await mammoth.convertToHtml(
-      { arrayBuffer: bytes.buffer },
+      { arrayBuffer },
       {
         styleMap: [
           "p[style-name='Heading 1'] => h1:fresh",
@@ -275,36 +401,40 @@ const loadDocx = async () => {
 }
 
 // 下载 DOCX 文件
-const downloadDocx = () => {
+const downloadDocx = async () => {
   try {
-    if (!docxData.value) {
+    if (!docxData.value && !downloadUrl.value) {
       throw new Error('未找到文档数据')
     }
 
-    const base64Data = docxData.value
-    const binaryString = atob(base64Data)
-    const bytes = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
+    const bytes = await getDocxBytes()
+    if (!bytes || !bytes.byteLength) {
+      throw new Error('DOCX 数据为空')
     }
 
-    const blob = new Blob([bytes], {
+    const buffer = toArrayBuffer(bytes)
+    if (!buffer) {
+      throw new Error('DOCX 数据解析失败')
+    }
+
+    const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     })
 
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName.value
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName.value
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
     URL.revokeObjectURL(url)
 
     console.log('✅ DOCX 下载完成')
   } catch (err) {
     console.error('❌ DOCX 下载失败:', err)
     error.value = `下载失败: ${err.message}`
+    ElMessage.error(`DOCX 下载失败: ${err.message}`)
   }
 }
 
@@ -316,6 +446,7 @@ const initLoad = () => {
   htmlContent.value = ''
   showLargeFileWarning.value = false
   loading.value = false
+  cachedDocxBytes.value = null
 
   // 检查是否需要显示大文件警告
   if (!checkLargeFile()) {
@@ -324,16 +455,44 @@ const initLoad = () => {
 }
 
 // 监听 props.data 变化，自动重新加载
-watch(() => props.data, (newData, oldData) => {
-  // 检查文件路径是否变化
-  const newPath = newData?.object?.path
-  const oldPath = oldData?.object?.path
+watch(
+  () => props.data,
+  (newData, oldData) => {
+    if (!newData) return
 
-  if (newPath && newPath !== oldPath) {
-    console.log(`🔄 DOCX 文件切换: ${oldPath} → ${newPath}`)
-    initLoad()
-  }
-}, { deep: true })
+    const newPath = newData?.object?.path
+    const oldPath = oldData?.object?.path
+
+    if (newPath && newPath !== oldPath) {
+      console.log(`🔄 DOCX 文件切换: ${oldPath} → ${newPath}`)
+      initLoad()
+      return
+    }
+
+    const newContent = newData?.object?.content || {}
+    const oldContent = oldData?.object?.content || {}
+
+    const contentChanged =
+      newContent.data !== oldContent.data ||
+      newContent.Data !== oldContent.Data ||
+      newContent.download_url !== oldContent.download_url ||
+      newContent.downloadUrl !== oldContent.downloadUrl ||
+      newData?.object?.download_url !== oldData?.object?.download_url ||
+      newData?.object?.downloadUrl !== oldData?.object?.downloadUrl ||
+      newData?.download_url !== oldData?.download_url ||
+      newData?.downloadUrl !== oldData?.downloadUrl ||
+      newContent.preview_url !== oldContent.preview_url ||
+      newContent.previewUrl !== oldContent.previewUrl ||
+      newContent.text !== oldContent.text ||
+      newContent.truncated !== oldContent.truncated
+
+    if (contentChanged) {
+      console.log('🔄 DOCX 内容更新，重新加载预览')
+      initLoad()
+    }
+  },
+  { deep: true }
+)
 
 onMounted(() => {
   initLoad()

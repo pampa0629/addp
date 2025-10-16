@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${ROOT_DIR}"
+
+export PROJECT_ROOT="${ROOT_DIR}"
+mkdir -p logs
+
 echo "🚀 启动 ADDP 开发环境"
 echo ""
 
@@ -45,7 +53,7 @@ echo ""
 
 # 2. 启动 System Backend
 echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"
-(cd system/backend && go run cmd/server/main.go) > logs/system-backend.log 2>&1 &
+(cd system/backend && go run cmd/server/main.go) 2> logs/system-backend-stderr.log &
 SYSTEM_PID=$!
 
 # 等待 System Backend 就绪
@@ -67,7 +75,7 @@ echo ""
 
 # 3. 启动 Manager Backend
 echo -e "${YELLOW}Step 3/5: 启动 Manager Backend${NC}"
-(cd manager/backend && go run cmd/server/main.go) > logs/manager-backend.log 2>&1 &
+(cd manager/backend && go run cmd/server/main.go) 2> logs/manager-backend-stderr.log &
 MANAGER_PID=$!
 
 # 等待 Manager Backend 就绪
@@ -88,7 +96,7 @@ echo ""
 
 # 4. 启动 Meta Backend
 echo -e "${YELLOW}Step 4/5: 启动 Meta Backend${NC}"
-(cd meta/backend && go run cmd/server/main.go) > logs/meta-backend.log 2>&1 &
+(cd meta/backend && go run cmd/server/main.go) 2> logs/meta-backend-stderr.log &
 META_PID=$!
 
 # 等待 Meta Backend 就绪
@@ -109,7 +117,7 @@ echo ""
 
 # 5. 启动 Gateway
 echo -e "${YELLOW}Step 5/5: 启动 Gateway${NC}"
-(cd gateway && go run cmd/gateway/main.go) > logs/gateway.log 2>&1 &
+(cd gateway && go run cmd/gateway/main.go) 2> logs/gateway-stderr.log &
 GATEWAY_PID=$!
 
 # 等待 Gateway 就绪

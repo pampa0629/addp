@@ -22,7 +22,22 @@
       "Bash(./bin/manager:*)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(CGO_ENABLED=1 go run:*)"
+      "Bash(CGO_ENABLED=1 go run:*)",
+      "Bash(ps:*)",
+      "Bash(env)",
+      "Read(//Users/pampa/**)",
+      "Bash(kill:*)",
+      "Bash(./scripts/dev-restart.sh:*)",
+      "Bash(export SERVER_PORT=8082)",
+      "Bash(timeout 3 go run cmd/server/main.go)",
+      "Bash(/dev/null)",
+      "Bash(find:*)",
+      "Bash(awk:*)",
+      "Bash(SERVER_PORT=19999 go run:*)",
+      "Bash(tee:*)",
+      "Bash(pgrep:*)",
+      "Bash(xargs ps:*)",
+      "Bash(while read pid)"
     ],
     "deny": [],
     "ask": []

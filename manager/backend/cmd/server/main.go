@@ -15,24 +15,17 @@ import (
 )
 
 func main() {
-	// 加载 .env 文件
-	// Note: levelsUp depends on where we run from:
-	// - If running from cmd/server: levelsUp=4
-	// - If running from backend: levelsUp=2
-	// - If running from root: levelsUp=0
-	// We detect current directory and calculate appropriately
-	cwd, _ := os.Getwd()
-	levelsUp := 4 // default for cmd/server
-	if filepath.Base(cwd) == "backend" {
-		levelsUp = 2 // manager/backend → addp
-	} else if filepath.Base(filepath.Dir(cwd)) == "manager" {
-		levelsUp = 4 // manager/backend/cmd/server → addp
-	}
-	commonConfig.LoadEnv(levelsUp)
-	initLogger()
+	// 加载根目录统一的环境变量
+	commonConfig.LoadEnv()
 
 	// 加载配置
 	cfg := config.Load()
+	commonConfig.InitLogger("manager-backend.log", &commonConfig.LoggerOptions{
+		Level:     cfg.LogLevel,
+		Format:    cfg.LogFormat,
+		AddSource: &cfg.LogAddSource,
+		File:      cfg.LogFile,
+	})
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -82,28 +75,6 @@ func main() {
 		logger.L().Error("Manager 服务启动失败", "error", err)
 		os.Exit(1)
 	}
-}
-
-func initLogger() {
-	logLevel := commonConfig.GetEnv("LOG_LEVEL", "info")
-	logFormat := commonConfig.GetEnv("LOG_FORMAT", "json")
-	addSource := commonConfig.GetEnvBool("LOG_ADD_SOURCE", false)
-
-	logFile := commonConfig.GetEnv("LOG_FILE", "")
-	if logFile == "" {
-		logFile = commonConfig.ResolveFromRoot("logs", "manager-backend.log")
-	} else if !filepath.IsAbs(logFile) {
-		logFile = commonConfig.ResolveFromRoot(logFile)
-	}
-	_ = os.Setenv("LOG_FILE", logFile)
-
-	logger.Init(logger.Options{
-		Level:          logLevel,
-		Format:         logFormat,
-		AddSource:      addSource,
-		FilePath:       logFile,
-		RedirectStdLog: true,
-	})
 }
 
 func buildContentDirSpec(dirs []string) string {
