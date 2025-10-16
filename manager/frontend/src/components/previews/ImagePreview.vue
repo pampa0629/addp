@@ -5,12 +5,7 @@
     </div>
     <div v-else class="placeholder">
       <p class="message">{{ contentMessage }}</p>
-      <div v-if="showDownloadButton" class="actions">
-        <el-button type="primary" size="small" @click="downloadImage">
-          <el-icon><Download /></el-icon>
-          下载文件
-        </el-button>
-      </div>
+      <p class="download-hint">如需下载原始文件，请使用右上角的下载按钮</p>
       <div v-if="showMetadata" class="meta-info">
         <div class="meta-row" v-if="displayContentType">
           <span class="meta-label">文件类型</span>
@@ -31,8 +26,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Download } from '@element-plus/icons-vue'
 import { formatBytes } from '@/utils/formatters'
 
 const props = defineProps({
@@ -73,44 +66,6 @@ const imageSrc = computed(() => {
 
 const contentMessage = computed(() => content.value?.text || '图片超出预览限制，无法在线展示')
 
-const resourceId = computed(() => {
-  return (
-    props.data?.resourceId ||
-    props.data?.resource_id ||
-    objectData.value?.resource_id ||
-    objectData.value?.resourceId ||
-    null
-  )
-})
-
-const downloadUrl = computed(() => {
-  const object = objectData.value || {}
-  const contentValue = content.value || {}
-
-  if (contentValue.download_url) return contentValue.download_url
-  if (contentValue.downloadUrl) return contentValue.downloadUrl
-  if (object.download_url) return object.download_url
-  if (object.downloadUrl) return object.downloadUrl
-  if (object.preview_url) return object.preview_url
-  if (object.previewUrl) return object.previewUrl
-  if (object.url) return object.url
-  if (contentValue.preview_url) return contentValue.preview_url
-  if (contentValue.previewUrl) return contentValue.previewUrl
-  if (contentValue.url) return contentValue.url
-  if (object.signed_url) return object.signed_url
-  if (object.signedUrl) return object.signedUrl
-  if (contentValue.signed_url) return contentValue.signed_url
-  if (contentValue.signedUrl) return contentValue.signedUrl
-
-  if (object.path && resourceId.value) {
-    return `/api/preview/download?resource_id=${resourceId.value}&path=${encodeURIComponent(object.path)}`
-  }
-
-  return ''
-})
-
-const showDownloadButton = computed(() => !imageSrc.value && Boolean(downloadUrl.value))
-
 const formattedSize = computed(() => {
   if (!sizeBytes.value) return ''
   return formatBytes(sizeBytes.value)
@@ -126,36 +81,6 @@ const displayContentType = computed(() => contentType.value || '')
 const showMetadata = computed(
   () => Boolean(formattedSize.value || formattedLimit.value || displayContentType.value)
 )
-
-const downloadImage = () => {
-  try {
-    if (imageSrc.value) {
-      const link = document.createElement('a')
-      link.href = imageSrc.value
-      link.download = fileName.value
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      return
-    }
-
-    if (downloadUrl.value) {
-      const link = document.createElement('a')
-      link.href = downloadUrl.value
-      link.download = fileName.value
-      link.rel = 'noopener'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      return
-    }
-
-    ElMessage.warning('暂无可用的下载链接')
-  } catch (err) {
-    console.error('图片下载失败:', err)
-    ElMessage.error('图片下载失败')
-  }
-}
 </script>
 
 <style scoped>
@@ -196,8 +121,10 @@ const downloadImage = () => {
   margin: 0 0 12px;
 }
 
-.actions {
+.download-hint {
   margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .meta-info {

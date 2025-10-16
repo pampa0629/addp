@@ -1,0 +1,14 @@
+{
+  "name": "builtin:content-markdown",
+  "type": "builtin",
+  "builtin": "markdown",
+  "priority": 55,
+  "match": {
+    "extensions": [".md", ".markdown"],
+    "content_types": [
+      "text/markdown",
+      "text/x-markdown"
+    ]
+  },
+  "max_bytes": 262144
+}

@@ -3,6 +3,35 @@
     <template #header>
       <div class="panel-header">
         <span>{{ title }}</span>
+        <div v-if="showDownloadControl" class="panel-actions">
+          <el-tooltip
+            v-if="downloadDisabled && downloadTip"
+            :content="downloadTip"
+            placement="bottom"
+          >
+            <span>
+              <el-button
+                size="small"
+                type="primary"
+                :loading="downloading"
+                :disabled="true"
+              >
+                <el-icon><Download /></el-icon>
+                下载
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-button
+            v-else
+            size="small"
+            type="primary"
+            :loading="downloading"
+            @click="handleDownload"
+          >
+            <el-icon><Download /></el-icon>
+            下载
+          </el-button>
+        </div>
       </div>
     </template>
 
@@ -22,7 +51,7 @@
         <template #description>
           <p>不支持 {{ fileExtension || '该类型' }} 文件的在线预览</p>
           <p style="font-size: 12px; color: #909399; margin-top: 8px;">
-            支持的格式：PDF、DOCX、PPTX、图片、JSON、GeoJSON、CSV、SQLite、文本
+            支持的格式：PDF、DOCX、WPS、PPTX、图片、JSON、GeoJSON、CSV、SQLite、文本
           </p>
         </template>
       </el-empty>
@@ -44,7 +73,8 @@
 </template>
 
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getPreviewComponent } from '@/plugins/previews'
 
 const props = defineProps({
@@ -63,6 +93,231 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['page-change', 'navigate'])
+
+const sanitizeBase64 = (value) => {
+  if (typeof value !== 'string') return ''
+  return value.replace(/\s+/g, '')
+}
+
+const pickUrl = (target) => {
+  if (!target || typeof target !== 'object') return ''
+  const keys = [
+    'download_url',
+    'downloadUrl',
+    'preview_url',
+    'previewUrl',
+    'url',
+    'signed_url',
+    'signedUrl'
+  ]
+  for (const key of keys) {
+    const val = target[key]
+    if (typeof val === 'string' && val.trim()) {
+      return val
+    }
+  }
+  return ''
+}
+
+const guessExtensionFromMime = (mime) => {
+  if (!mime || typeof mime !== 'string') return ''
+  const normalized = mime.toLowerCase()
+  const map = {
+    'application/pdf': 'pdf',
+    'application/json': 'json',
+    'application/geo+json': 'geojson',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+    'application/vnd.ms-works': 'wps',
+    'application/wps-office.doc': 'wps',
+    'application/x-wps': 'wps',
+    'application/kswps': 'wps',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+    'application/vnd.ms-excel': 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.sqlite3': 'sqlite',
+    'text/csv': 'csv',
+    'text/plain': 'txt',
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp'
+  }
+  return map[normalized] || ''
+}
+
+const guessExtensionFromKind = (kind) => {
+  const normalized = (kind || '').toLowerCase()
+  switch (normalized) {
+    case 'pdf':
+      return 'pdf'
+    case 'docx':
+      return 'docx'
+    case 'wps':
+      return 'wps'
+    case 'pptx':
+      return 'pptx'
+    case 'json':
+      return 'json'
+    case 'geojson':
+      return 'geojson'
+    case 'csv':
+      return 'csv'
+    case 'text':
+      return 'txt'
+    case 'sqlite':
+      return 'sqlite'
+    case 'parquet':
+      return 'parquet'
+    case 'image':
+      return ''
+    default:
+      return ''
+  }
+}
+
+const ensureExtension = (name, extension) => {
+  if (!name) return `download${extension}`
+  if (!extension) return name
+  const normalizedExt = extension.startsWith('.') ? extension.toLowerCase() : `.${extension.toLowerCase()}`
+  if (name.toLowerCase().endsWith(normalizedExt)) {
+    return name
+  }
+  return `${name}${normalizedExt}`
+}
+
+const extractExtension = (name) => {
+  if (!name) return ''
+  const match = String(name).match(/\.([^.]+)$/)
+  return match ? match[1].toLowerCase() : ''
+}
+
+const guessMimeFromKind = (kind, fallbackMime = '') => {
+  const normalized = (kind || '').toLowerCase()
+  switch (normalized) {
+    case 'pdf':
+      return 'application/pdf'
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    case 'wps':
+      return 'application/vnd.ms-works'
+    case 'pptx':
+      return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    case 'json':
+      return 'application/json'
+    case 'geojson':
+      return 'application/geo+json'
+    case 'csv':
+      return 'text/csv'
+    case 'text':
+      return 'text/plain'
+    case 'sqlite':
+      return 'application/vnd.sqlite3'
+    case 'image':
+      return 'image/png'
+    default:
+      return fallbackMime || 'application/octet-stream'
+  }
+}
+
+const deriveBaseFileName = (data, node) => {
+  const objectPath = data?.object?.path || ''
+  if (objectPath) {
+    const parts = objectPath.split('/').filter(Boolean)
+    const last = parts.pop()
+    if (last) return last
+  }
+
+  if (node?.path) {
+    const parts = String(node.path).split('/').filter(Boolean)
+    const last = parts.pop()
+    if (last) return last
+  }
+
+  if (node?.table && node?.schema) {
+    return `${node.schema}.${node.table}`
+  }
+
+  return node?.label || 'download'
+}
+
+const toBlobFromBase64 = (base64, mime) => {
+  const clean = sanitizeBase64(base64)
+  if (!clean) {
+    throw new Error('缺少可用的 base64 数据')
+  }
+  const binary = atob(clean)
+  const length = binary.length
+  const bytes = new Uint8Array(length)
+  for (let i = 0; i < length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return new Blob([bytes], { type: mime || 'application/octet-stream' })
+}
+
+const downloadBlob = (blob, fileName) => {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || 'download'
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const triggerUrlDownload = (url, fileName) => {
+  const link = document.createElement('a')
+  link.href = url
+  if (fileName) {
+    link.download = fileName
+  }
+  link.rel = 'noopener'
+  link.target = '_blank'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const stringifyJson = (value) => {
+  if (typeof value === 'string') {
+    return value
+  }
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch (error) {
+    console.warn('JSON 序列化失败', error)
+    return String(value)
+  }
+}
+
+const buildCsv = (columns, rows) => {
+  if (!Array.isArray(columns) || columns.length === 0) {
+    return ''
+  }
+
+  const escapeCell = (value) => {
+    if (value === null || value === undefined) return ''
+    let str = ''
+    if (typeof value === 'object') {
+      str = stringifyJson(value)
+    } else {
+      str = String(value)
+    }
+    if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+      return `"${str.replace(/"/g, '""')}"`
+    }
+    return str
+  }
+
+  const lines = []
+  lines.push(columns.map(escapeCell).join(','))
+  rows.forEach((row) => {
+    const values = columns.map((col) => escapeCell(row?.[col]))
+    lines.push(values.join(','))
+  })
+  return `\uFEFF${lines.join('\r\n')}`
+}
 
 // 获取预览插件信息
 const activePlugin = computed(() => {
@@ -107,6 +362,233 @@ const componentKey = computed(() => {
   return `preview-${pluginName}-${nodeId}-${nodePath}-${contentType}-${contentKind}`
 })
 
+const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
+const objectData = computed(() => props.previewData?.object || {})
+
+const resourceId = computed(() => {
+  return (
+    props.previewData?.resourceId ||
+    props.previewData?.resource_id ||
+    props.selectedNode?.resourceId ||
+    props.selectedNode?.resource_id ||
+    null
+  )
+})
+
+const fallbackDownloadUrl = computed(() => {
+  const path = objectData.value?.path || props.selectedNode?.path || props.selectedNode?.table || ''
+  if (!path || !resourceId.value) {
+    return ''
+  }
+  return `/api/preview/download?resource_id=${resourceId.value}&path=${encodeURIComponent(path)}`
+})
+
+const downloadInfo = computed(() => {
+  if (!props.previewData || !props.selectedNode) {
+    return { available: false, reason: '' }
+  }
+
+  if (previewMode.value === 'node') {
+    return { available: false, reason: '目录节点不支持下载' }
+  }
+
+  const baseName = deriveBaseFileName(props.previewData, props.selectedNode)
+
+  if (previewMode.value === 'table') {
+    const columns = Array.isArray(props.previewData.columns) ? props.previewData.columns : []
+    const rows = Array.isArray(props.previewData.rows) ? props.previewData.rows : []
+    if (!columns.length) {
+      return { available: false, reason: '暂无可导出的表格数据' }
+    }
+    return {
+      available: true,
+      kind: 'csv',
+      fileName: ensureExtension(baseName, '.csv'),
+      columns,
+      rows,
+      note: '当前仅导出预览中的行数据'
+    }
+  }
+
+  const nodeType = (objectData.value?.node_type || objectData.value?.nodeType || '').toLowerCase()
+  if (['directory', 'bucket', 'prefix'].includes(nodeType)) {
+    return { available: false, reason: '目录节点不支持下载' }
+  }
+
+  const content = objectData.value?.content || {}
+  const metadata = content.metadata || {}
+  const contentType =
+    metadata.content_type ||
+    metadata.contentType ||
+    objectData.value?.content_type ||
+    objectData.value?.contentType ||
+    props.previewData?.content_type ||
+    ''
+
+  const urlCandidates = []
+  const collectUrl = (target) => {
+    const url = pickUrl(target)
+    if (url) {
+      urlCandidates.push(url)
+    }
+  }
+
+  collectUrl(props.previewData)
+  collectUrl(props.previewData?.download)
+  collectUrl(objectData.value)
+  collectUrl(objectData.value?.download)
+  collectUrl(content)
+  collectUrl(content?.download)
+  collectUrl(metadata)
+
+  if (fallbackDownloadUrl.value) {
+    urlCandidates.push(fallbackDownloadUrl.value)
+  }
+
+  if (urlCandidates.length > 0) {
+    const ext = extractExtension(baseName)
+    const inferredExt = ext || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
+    const filename = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+    return {
+      available: true,
+      kind: 'url',
+      fileName: filename,
+      url: urlCandidates[0]
+    }
+  }
+
+  const base64Data =
+    sanitizeBase64(
+      content.data ||
+        content.Data ||
+        content.pdf_data ||
+        content.pdfData ||
+        content.image_data ||
+        content.imageData ||
+        ''
+    )
+
+  if (base64Data) {
+    const inferredExt = extractExtension(baseName) || guessExtensionFromMime(contentType) || guessExtensionFromKind(content.kind)
+    const fileName = inferredExt ? ensureExtension(baseName, `.${inferredExt}`) : baseName
+    const mime = contentType || guessMimeFromKind(content.kind, 'application/octet-stream')
+    return {
+      available: true,
+      kind: 'base64',
+      fileName,
+      base64: base64Data,
+      mime
+    }
+  }
+
+  if (content.text) {
+    const kind = (content.kind || '').toLowerCase()
+    let mime = 'text/plain;charset=utf-8'
+    let extension = '.txt'
+    if (kind === 'json') {
+      mime = 'application/json;charset=utf-8'
+      extension = '.json'
+    } else if (kind === 'geojson') {
+      mime = 'application/geo+json;charset=utf-8'
+      extension = '.geojson'
+    } else if (kind === 'csv') {
+      mime = 'text/csv;charset=utf-8'
+      extension = '.csv'
+    }
+    return {
+      available: true,
+      kind: 'text',
+      fileName: ensureExtension(baseName, extension),
+      text: content.text,
+      mime
+    }
+  }
+
+  if (content.json || content.JSON || content.geojson || content.GeoJSON) {
+    const jsonValue = content.json || content.JSON || content.geojson || content.GeoJSON
+    const kind = (content.kind || '').toLowerCase()
+    let mime = 'application/json;charset=utf-8'
+    let extension = '.json'
+    if (kind === 'geojson' || content.geojson || content.GeoJSON) {
+      mime = 'application/geo+json;charset=utf-8'
+      extension = '.geojson'
+    }
+    return {
+      available: true,
+      kind: 'json',
+      fileName: ensureExtension(baseName, extension),
+      json: jsonValue,
+      mime
+    }
+  }
+
+  return { available: false, reason: '未找到可下载的数据源' }
+})
+
+const downloading = ref(false)
+
+const showDownloadControl = computed(() => {
+  if (!props.previewData || !props.selectedNode) return false
+  return previewMode.value !== 'node'
+})
+
+const downloadDisabled = computed(() => !downloadInfo.value.available)
+const downloadTip = computed(() => downloadInfo.value.reason || '')
+
+const handleDownload = async () => {
+  if (!downloadInfo.value.available) {
+    ElMessage.warning(downloadInfo.value.reason || '当前预览不支持下载')
+    return
+  }
+
+  downloading.value = true
+  try {
+    const info = downloadInfo.value
+    switch (info.kind) {
+      case 'url':
+        triggerUrlDownload(info.url, info.fileName)
+        break
+      case 'base64': {
+        const blob = toBlobFromBase64(info.base64, info.mime)
+        downloadBlob(blob, info.fileName)
+        break
+      }
+      case 'text': {
+        const blob = new Blob([info.text], { type: info.mime || 'text/plain;charset=utf-8' })
+        downloadBlob(blob, info.fileName)
+        break
+      }
+      case 'json': {
+        const jsonText = stringifyJson(info.json)
+        const blob = new Blob([jsonText], { type: info.mime || 'application/json;charset=utf-8' })
+        downloadBlob(blob, info.fileName)
+        break
+      }
+      case 'csv': {
+        const csv = buildCsv(info.columns, info.rows)
+        if (!csv) {
+          throw new Error('暂无可导出的表格数据')
+        }
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+        downloadBlob(blob, info.fileName)
+        break
+      }
+      default:
+        throw new Error('未知的下载类型')
+    }
+    if (info.note) {
+      ElMessage.success(info.note)
+    } else {
+      ElMessage.success('下载任务已开始')
+    }
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error(`下载失败: ${error.message || error}`)
+  } finally {
+    downloading.value = false
+  }
+}
+
 // 监听数据变化，输出调试信息
 watch(
   () => props.previewData,
@@ -122,6 +604,13 @@ watch(
     }
   },
   { immediate: true, deep: true }
+)
+
+watch(
+  () => props.previewData,
+  () => {
+    downloading.value = false
+  }
 )
 
 const title = computed(() => {
@@ -175,6 +664,13 @@ const handleNavigate = (path) => {
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
+  gap: 12px;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .empty-state {

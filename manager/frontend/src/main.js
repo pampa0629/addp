@@ -12,11 +12,13 @@ import TablePreview from '@/components/previews/TablePreview.vue'
 import ObjectStoragePreview from '@/components/previews/ObjectStoragePreview.vue'
 import ImagePreview from '@/components/previews/ImagePreview.vue'
 import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
+import ShapefilePreview from '@/components/previews/ShapefilePreview.vue'
 import JsonPreview from '@/components/previews/JsonPreview.vue'
 import PdfPreview from '@/components/previews/PdfPreview.vue'
 import DocxPreview from '@/components/previews/DocxPreview.vue'
 import PptxPreview from '@/components/previews/PptxPreview.vue'
 import TextPreview from '@/components/previews/TextPreview.vue'
+import MarkdownPreview from '@/components/previews/MarkdownPreview.vue'
 
 const { createApp, h, resolveComponent } = Vue
 
@@ -55,11 +57,13 @@ if (typeof window !== 'undefined') {
     ObjectStoragePreview,
     ImagePreview,
     GeoJsonPreview,
+    ShapefilePreview,
     JsonPreview,
     PdfPreview,
     DocxPreview,
     PptxPreview,
-    TextPreview
+    TextPreview,
+    MarkdownPreview
   }
 }
 

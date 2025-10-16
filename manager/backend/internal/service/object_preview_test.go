@@ -34,6 +34,12 @@ func TestInferContentType(t *testing.T) {
 			expect:      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 		},
 		{
+			name:        "wps_extension_generic_type",
+			objectPath:  "bucket/docs/示例文档.wps",
+			contentType: "application/octet-stream",
+			expect:      "application/vnd.ms-works",
+		},
+		{
 			name:        "unknown_extension_keeps_generic_type",
 			objectPath:  "bucket/blob/data.bin",
 			contentType: "application/octet-stream",
@@ -71,5 +77,20 @@ func TestObjectContentMatcherGenericContentType(t *testing.T) {
 	}
 	if !matcher.matches(req) {
 		t.Fatalf("expected matcher to accept generic DOCX content type")
+	}
+}
+
+func TestObjectContentMatcherWPS(t *testing.T) {
+	t.Parallel()
+	matcher := newObjectContentMatcher(
+		[]string{".wps"},
+		[]string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"},
+	)
+	req := &ObjectContentRequest{
+		Extension:   ".wps",
+		ContentType: "application/wps-office.doc",
+	}
+	if !matcher.matches(req) {
+		t.Fatalf("expected matcher to accept WPS content type")
 	}
 }

@@ -1,6 +1,6 @@
 # 自定义预览插件开发指南
 
-本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`sqlite-preview.js`、`pdf-preview.js`、`docx-preview.js`、`pptx-preview.js`、`text-preview.js`、`csv-preview.js`)，方便第三方直接阅读与扩展。
+本目录用于存放用户自定义的预览插件。官方内置的预览实现同样拆分为多个脚本 (`table-preview.js`、`object-storage-preview.js`、`geojson-preview.js`、`image-preview.js`、`json-preview.js`、`sqlite-preview.js`、`pdf-preview.js`、`docx-preview.js`、`wps-preview.js`、`pptx-preview.js`、`text-preview.js`、`csv-preview.js`)，方便第三方直接阅读与扩展。
 
 ## 快速开始
 
@@ -389,6 +389,7 @@ manager/frontend/
 │       ├── sqlite-preview.js        # SQLite 数据库预览
 │       ├── pdf-preview.js           # PDF 预览
 │       ├── docx-preview.js          # DOCX 预览
+│       ├── wps-preview.js           # WPS 预览
 │       ├── pptx-preview.js          # PPTX 预览
 │       ├── text-preview.js          # 文本兜底
 │       └── csv-preview.js           # CSV 预览示例

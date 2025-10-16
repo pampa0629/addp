@@ -3,12 +3,15 @@
     "/plugins/table-preview.js",
     "/plugins/object-storage-preview.js",
     "/plugins/geojson-preview.js",
+    "/plugins/shapefile-preview.js",
     "/plugins/image-preview.js",
     "/plugins/json-preview.js",
     "/plugins/sqlite-preview.js",
     "/plugins/pdf-preview.js",
     "/plugins/docx-preview.js",
+    "/plugins/wps-preview.js",
     "/plugins/pptx-preview.js",
+    "/plugins/markdown-preview.js",
     "/plugins/text-preview.js",
     "/plugins/csv-preview.js"
   ]

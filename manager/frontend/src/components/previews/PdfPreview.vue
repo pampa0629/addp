@@ -62,10 +62,7 @@
             </el-button>
           </el-button-group>
 
-          <el-button size="small" @click="downloadPDF" :disabled="!pdfUrl">
-            <el-icon><Download /></el-icon>
-            下载
-          </el-button>
+          <span class="download-hint">如需保存文件，请使用右上角的下载按钮</span>
         </div>
       </div>
 
@@ -108,7 +105,7 @@
 
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut, Download } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatBytes } from '@/utils/formatters'
 
@@ -501,21 +498,6 @@ const resetZoom = () => {
 }
 
 /**
- * 下载 PDF
- */
-const downloadPDF = () => {
-  if (!pdfUrl.value) {
-    ElMessage.warning('无法下载 PDF')
-    return
-  }
-
-  const link = document.createElement('a')
-  link.href = pdfUrl.value
-  link.download = fileName.value
-  link.click()
-}
-
-/**
  * 降级到 iframe 方案
  */
 const fallbackToIframe = () => {
@@ -623,6 +605,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.download-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .page-info {

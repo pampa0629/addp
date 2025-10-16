@@ -20,14 +20,14 @@
             当前预览限制：{{ formattedLimit }}
           </p>
           <div class="warning-actions">
-            <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocx">
+            <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocument">
               <el-icon><Download /></el-icon>
               立即下载
             </el-button>
-            <!-- 只有 30-50MB 的文件才提供"仍要预览"选项 -->
             <el-button v-if="fileSize <= 50 * 1024 * 1024" size="small" @click="forcePreview">
               仍要预览
             </el-button>
+            <span class="download-hint">如需获取原始文件，请使用右上角的下载按钮</span>
           </div>
         </template>
       </el-alert>
@@ -37,7 +37,7 @@
     <div v-if="loading" class="loading-container">
       <el-icon class="is-loading"><Loading /></el-icon>
       <div class="loading-info">
-        <span>正在加载 DOCX 文档...</span>
+        <span>正在加载 {{ docLabel }} 文档...</span>
         <div v-if="fileSize > 50 * 1024 * 1024" class="loading-hint">
           <p>文件较大（{{ formatFileSize(fileSize) }}），请耐心等待</p>
           <p class="loading-tips">提示：下载后使用本地应用查看会更快捷</p>
@@ -56,10 +56,11 @@
           <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
         </div>
         <div class="error-actions">
-          <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocx">
+          <el-button type="primary" size="small" :disabled="!canDownload" @click="downloadDocument">
             <el-icon><Download /></el-icon>
             下载文档
           </el-button>
+          <span class="download-hint">右上角下载按钮可保存原始文档</span>
           <el-button size="small" @click="retryLoad">
             <el-icon><RefreshRight /></el-icon>
             重试
@@ -80,11 +81,23 @@
           </el-tag>
         </div>
         <div class="toolbar-right">
-          <el-button size="small" :disabled="!canDownload" @click="downloadDocx">
+          <el-button size="small" :disabled="!canDownload" @click="downloadDocument">
             <el-icon><Download /></el-icon>
             下载
           </el-button>
         </div>
+      </div>
+
+      <div v-if="infoMessage" class="docx-info">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+        >
+          <template #default>
+            <p>{{ infoMessage }}</p>
+          </template>
+        </el-alert>
       </div>
 
       <!-- 文档内容 -->
@@ -98,6 +111,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, WarningFilled, Document, Download, RefreshRight } from '@element-plus/icons-vue'
 import mammoth from 'mammoth/mammoth.browser'
+import JSZip from 'jszip'
 
 const props = defineProps({
   data: {
@@ -109,20 +123,98 @@ const props = defineProps({
 const loading = ref(false)
 const error = ref('')
 const htmlContent = ref('')
+const infoMessage = ref('')
 const showLargeFileWarning = ref(false)
-const cachedDocxBytes = ref(null)
+const cachedDocumentBytes = ref(null)
 let currentLoadToken = 0
 
+const objectPath = computed(() => props.data.object?.path || '')
+
+const fileExtension = computed(() => {
+  const object = props.data.object || {}
+  const explicit = (object.extension || object.Extension || '').toString().trim().toLowerCase()
+  if (explicit) {
+    return explicit.startsWith('.') ? explicit : `.${explicit}`
+  }
+  const path = (object.path || object.name || '').toString().toLowerCase()
+  const dotIndex = path.lastIndexOf('.')
+  if (dotIndex >= 0) {
+    return path.slice(dotIndex)
+  }
+  return ''
+})
+
+const documentKind = computed(() => {
+  const ext = fileExtension.value
+  if (ext === '.wps') {
+    return 'wps'
+  }
+  if (ext === '.docx') {
+    return 'docx'
+  }
+
+  const object = props.data.object || {}
+  const content = object.content || {}
+  const metadata = content.metadata || {}
+  const candidates = [
+    content.kind,
+    content.Kind,
+    metadata.kind,
+    metadata.Kind,
+    object.kind,
+    object.Kind
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate) {
+      const lower = candidate.toLowerCase()
+      if (lower === 'wps' || lower === 'docx') {
+        return lower
+      }
+    }
+  }
+
+  const contentTypeCandidates = [
+    content.content_type,
+    content.contentType,
+    object.content_type,
+    object.contentType,
+    metadata.content_type,
+    metadata.contentType
+  ]
+
+  for (const candidate of contentTypeCandidates) {
+    if (typeof candidate === 'string' && candidate) {
+      const lower = candidate.toLowerCase()
+      if (lower.includes('ms-works') || lower.includes('wps')) {
+        return 'wps'
+      }
+      if (lower.includes('wordprocessingml') || lower.includes('officedocument.wordprocessingml.document')) {
+        return 'docx'
+      }
+    }
+  }
+
+  return 'docx'
+})
+
+const isWpsDocument = computed(() => documentKind.value === 'wps')
+
+const docLabel = computed(() => (isWpsDocument.value ? 'WPS' : 'DOCX'))
+
 const fileName = computed(() => {
-  const path = props.data.object?.path || ''
-  return path.split('/').pop() || 'document.docx'
+  const path = objectPath.value
+  if (!path) {
+    return isWpsDocument.value ? 'document.wps' : 'document.docx'
+  }
+  return path.split('/').pop() || (isWpsDocument.value ? 'document.wps' : 'document.docx')
 })
 
 const fileSize = computed(() => {
   return props.data.object?.size_bytes || 0
 })
 
-const docxData = computed(() => {
+const documentData = computed(() => {
   const content = props.data.object?.content
   if (!content) return null
   return content.data || content.Data || null
@@ -171,9 +263,11 @@ const downloadUrl = computed(() => {
   return ''
 })
 
-const canDownload = computed(() => Boolean(docxData.value || downloadUrl.value))
-
 const contentMetadata = computed(() => props.data.object?.content?.metadata || {})
+
+const canDownload = computed(() =>
+  Boolean(documentData.value || downloadUrl.value)
+)
 
 const limitBytes = computed(() => contentMetadata.value?.limit_bytes ?? null)
 
@@ -182,13 +276,28 @@ const formattedLimit = computed(() => {
   return formatFileSize(limitBytes.value)
 })
 
-const displayContentType = computed(() => {
+const rawContentType = computed(() => {
+  const object = props.data.object || {}
+  const content = object.content || {}
+  const metadata = content.metadata || {}
   return (
-    contentMetadata.value?.content_type ||
-    props.data.object?.content_type ||
-    props.data.object?.contentType ||
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    content.content_type ||
+    content.contentType ||
+    object.content_type ||
+    object.contentType ||
+    metadata.content_type ||
+    metadata.contentType ||
+    ''
   )
+})
+
+const displayContentType = computed(() => {
+  if (rawContentType.value) {
+    return rawContentType.value
+  }
+  return isWpsDocument.value
+    ? 'application/vnd.ms-works'
+    : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 })
 
 const showLimitInfo = computed(() => {
@@ -235,7 +344,7 @@ const sanitizeBase64 = (value) => {
 const decodeBase64ToBytes = (base64) => {
   const clean = sanitizeBase64(base64)
   if (!clean) {
-    throw new Error('DOCX 数据为空')
+    throw new Error(`${docLabel.value} 数据为空`)
   }
 
   try {
@@ -246,12 +355,12 @@ const decodeBase64ToBytes = (base64) => {
     }
     return bytes
   } catch (err) {
-    console.error('DOCX base64 解码失败', err)
-    throw new Error('DOCX 数据解码失败')
+    console.error(`${docLabel.value} base64 解码失败`, err)
+    throw new Error(`${docLabel.value} 数据解码失败`)
   }
 }
 
-const fetchDocxBytesFromUrl = async (url) => {
+const fetchDocumentBytesFromUrl = async (url) => {
   try {
     const response = await fetch(url, { credentials: 'include' })
     if (!response.ok) {
@@ -260,29 +369,29 @@ const fetchDocxBytesFromUrl = async (url) => {
     const buffer = await response.arrayBuffer()
     return new Uint8Array(buffer)
   } catch (err) {
-    console.error('DOCX 下载失败', err)
-    throw new Error(err.message || 'DOCX 下载失败')
+    console.error(`${docLabel.value} 下载失败`, err)
+    throw new Error(err.message || `${docLabel.value} 下载失败`)
   }
 }
 
-const getDocxBytes = async () => {
-  if (cachedDocxBytes.value) {
-    return cachedDocxBytes.value
+const getDocumentBytes = async () => {
+  if (cachedDocumentBytes.value) {
+    return cachedDocumentBytes.value
   }
 
-  if (docxData.value) {
-    const bytes = decodeBase64ToBytes(docxData.value)
-    cachedDocxBytes.value = bytes
+  if (documentData.value) {
+    const bytes = decodeBase64ToBytes(documentData.value)
+    cachedDocumentBytes.value = bytes
     return bytes
   }
 
   if (downloadUrl.value) {
-    const bytes = await fetchDocxBytesFromUrl(downloadUrl.value)
-    cachedDocxBytes.value = bytes
+    const bytes = await fetchDocumentBytesFromUrl(downloadUrl.value)
+    cachedDocumentBytes.value = bytes
     return bytes
   }
 
-  throw new Error('未提供可用的 DOCX 数据源')
+  throw new Error(`未提供可用的 ${docLabel.value} 数据源`)
 }
 
 const toArrayBuffer = (bytes) => {
@@ -290,151 +399,425 @@ const toArrayBuffer = (bytes) => {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 }
 
+const convertDocxArrayBufferToHtml = async (arrayBuffer) => {
+  return mammoth.convertToHtml(
+    { arrayBuffer },
+    {
+      styleMap: [
+        "p[style-name='Heading 1'] => h1:fresh",
+        "p[style-name='Heading 2'] => h2:fresh",
+        "p[style-name='Heading 3'] => h3:fresh",
+        "p[style-name='Title'] => h1.title:fresh",
+        "p[style-name='Subtitle'] => h2.subtitle:fresh",
+        "p[style-name='Quote'] => blockquote:fresh",
+        "r[style-name='Strong'] => strong",
+        "r[style-name='Emphasis'] => em"
+      ],
+      convertImage: mammoth.images.imgElement((image) => {
+        return image.read('base64').then((imageBuffer) => {
+          return {
+            src: `data:${image.contentType};base64,${imageBuffer}`
+          }
+        })
+      })
+    }
+  )
+}
+
+const countMatches = (source, pattern) => {
+  if (!source) return 0
+  const matches = source.match(pattern)
+  return matches ? matches.length : 0
+}
+
+const normalizeWhitespace = (value) => {
+  if (!value) return ''
+  return value
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n')
+}
+
+const extractParagraphsFromXml = (xml) => {
+  try {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(xml, 'application/xml')
+    const parserErrors = doc.getElementsByTagName('parsererror')
+    if (parserErrors && parserErrors.length > 0) {
+      return []
+    }
+
+    const selectors = [
+      'w\\:p',
+      'wx\\:p',
+      'wps\\:p',
+      'text\\:p',
+      'p',
+      'para',
+      'paragraph',
+      'office\\:text'
+    ]
+    const paragraphs = []
+    const seen = new Set()
+
+    for (const selector of selectors) {
+      let nodes = []
+      try {
+        nodes = Array.from(doc.querySelectorAll(selector))
+      } catch (err) {
+        continue
+      }
+      nodes.forEach((node) => {
+        const text = normalizeWhitespace(node.textContent || '')
+        if (!text) return
+        if (!seen.has(text)) {
+          seen.add(text)
+          paragraphs.push(text)
+        }
+      })
+    }
+
+    if (!paragraphs.length) {
+      const fallback = normalizeWhitespace(doc.documentElement?.textContent || '')
+      if (fallback) {
+        paragraphs.push(fallback)
+      }
+    }
+
+    return paragraphs
+  } catch (err) {
+    return []
+  }
+}
+
+const stripXmlTags = (xml) => {
+  if (!xml) return ''
+  return normalizeWhitespace(
+    xml
+      .replace(/<!\[CDATA\[(.*?)]]>/gis, '$1')
+      .replace(/<[^>]+>/g, '\n')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+  )
+}
+
+const escapeHtml = (value) => {
+  if (!value) return ''
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }
+  return value.replace(/[&<>"']/g, (char) => map[char] || char)
+}
+
+const isZipArchive = (bytes) => {
+  if (!bytes || bytes.length < 4) return false
+  return bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05) && (bytes[3] === 0x04 || bytes[3] === 0x06)
+}
+
+const decodeWithEncoding = (bytes, encoding) => {
+  try {
+    const decoder = new TextDecoder(encoding, { fatal: false })
+    return decoder.decode(bytes)
+  } catch (err) {
+    return ''
+  }
+}
+
+const pickBestDecodedText = (bytes) => {
+  const encodings = ['utf-8', 'gb18030', 'gbk', 'utf-16le', 'utf-16be']
+  let bestText = ''
+  let bestScore = -1
+
+  encodings.forEach((encoding) => {
+    const text = decodeWithEncoding(bytes, encoding)
+    if (!text) {
+      return
+    }
+    const normalized = text.replace(/\s+/g, ' ').trim()
+    if (!normalized) {
+      return
+    }
+    const replacementMatches = text.match(/\uFFFD/g)
+    const replacementCount = replacementMatches ? replacementMatches.length : 0
+    const score = normalized.length - replacementCount * 5
+    if (score > bestScore) {
+      bestScore = score
+      bestText = text
+    }
+  })
+
+  return bestText
+}
+
+const convertLegacyWpsToHtml = (bytes) => {
+  const text = pickBestDecodedText(bytes)
+  if (text) {
+    const safe = escapeHtml(text).replace(/\r?\n/g, '<br />')
+    return {
+      html: `<pre class="wps-plain-text">${safe}</pre>`,
+      infoMessage: '检测到旧版 WPS 文档，已使用纯文本模式展示，排版可能存在偏差。'
+    }
+  }
+  throw new Error('该 WPS 文件为旧格式或加密格式，暂不支持在线预览，请下载后查看。')
+}
+
+const convertWpsZipToHtml = async (bytes) => {
+  const zip = await JSZip.loadAsync(bytes)
+  const xmlEntries = []
+
+  zip.forEach((relativePath, entry) => {
+    if (entry.dir) return
+    if (relativePath.toLowerCase().endsWith('.xml')) {
+      xmlEntries.push({ path: relativePath, entry })
+    }
+  })
+
+  if (!xmlEntries.length) {
+    throw new Error('未找到可解析的 XML 主体')
+  }
+
+  const contents = []
+  for (const item of xmlEntries) {
+    const content = await item.entry.async('string')
+    const score =
+      countMatches(content, /<w:t[\s>]/gi) * 4 +
+      countMatches(content, /<text:p[\s>]/gi) * 3 +
+      countMatches(content, /<w:p[\s>]/gi) * 2 +
+      countMatches(content, /<p[\s>]/gi) +
+      stripXmlTags(content).length / 800
+    contents.push({
+      path: item.path,
+      content,
+      score
+    })
+  }
+
+  contents.sort((a, b) => b.score - a.score)
+  const primary = contents[0]
+
+  if (!primary || primary.score <= 0) {
+    throw new Error('未检测到正文内容')
+  }
+
+  const paragraphs = extractParagraphsFromXml(primary.content)
+  const distinct = paragraphs.length
+    ? paragraphs
+    : [stripXmlTags(primary.content)].filter((text) => text.length > 0)
+
+  if (!distinct.length) {
+    throw new Error('无法解析 WPS 主体内容')
+  }
+
+  const html = distinct
+    .map((text) => {
+      const safe = escapeHtml(text).replace(/\n+/g, '<br />')
+      return `<p>${safe}</p>`
+    })
+    .join('')
+
+  return {
+    html,
+    infoMessage: '已使用 WPS 兼容解析，排版可能与原文略有差异。'
+  }
+}
+
+const convertWpsBytesToHtml = async (bytes) => {
+  if (!isZipArchive(bytes)) {
+    return convertLegacyWpsToHtml(bytes)
+  }
+
+  try {
+    return await convertWpsZipToHtml(bytes)
+  } catch (err) {
+    console.warn('WPS ZIP 解析失败，尝试旧版兼容模式。', err)
+    return convertLegacyWpsToHtml(bytes)
+  }
+}
+
+const convertDocumentBytesToHtml = async (bytes, arrayBuffer) => {
+  if (!isWpsDocument.value) {
+    const result = await convertDocxArrayBufferToHtml(arrayBuffer)
+    return {
+      html: result.value || '',
+      messages: result.messages || [],
+      usedFallback: false,
+      fallbackMessage: ''
+    }
+  }
+
+  try {
+    const docxResult = await convertDocxArrayBufferToHtml(arrayBuffer)
+    if (docxResult.value && docxResult.value.trim().length > 0) {
+      return {
+        html: docxResult.value || '',
+        messages: docxResult.messages || [],
+        usedFallback: false,
+        fallbackMessage: ''
+      }
+    }
+    console.warn('WPS 文档使用 DOCX 解析结果为空，自动尝试兼容模式。')
+  } catch (err) {
+    console.warn('WPS 文档使用 DOCX 解析失败，尝试兼容模式。', err)
+  }
+
+  const { html, infoMessage: fallbackMessage } = await convertWpsBytesToHtml(bytes)
+  return {
+    html,
+    messages: [],
+    usedFallback: true,
+    fallbackMessage: fallbackMessage || '已使用 WPS 兼容解析，排版可能与原文略有差异。'
+  }
+}
+
+const downloadDocument = async () => {
+  if (!canDownload.value) {
+    ElMessage.warning(`${docLabel.value} 暂无法下载`)
+    return
+  }
+
+  try {
+    const bytes = await getDocumentBytes()
+    const arrayBuffer = toArrayBuffer(bytes)
+    if (!arrayBuffer) {
+      throw new Error(`${docLabel.value} 数据解析失败`)
+    }
+
+    const mimeType =
+      displayContentType.value ||
+      (isWpsDocument.value
+        ? 'application/vnd.ms-works'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+    const blob = new Blob([arrayBuffer], { type: mimeType })
+    const url = URL.createObjectURL(blob)
+
+    const fallbackExt = isWpsDocument.value ? '.wps' : '.docx'
+    const currentExt = fileExtension.value || fallbackExt
+    const normalizedExt = currentExt.startsWith('.') ? currentExt : `.${currentExt}`
+    let downloadName = fileName.value || `document${normalizedExt}`
+    if (!downloadName.toLowerCase().endsWith(normalizedExt.toLowerCase())) {
+      downloadName = `${downloadName}${normalizedExt}`
+    }
+
+    const link = document.createElement('a')
+    link.href = url
+    link.download = downloadName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    console.log(`✅ ${docLabel.value} 下载完成`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`❌ ${docLabel.value} 下载失败:`, err)
+    error.value = `下载失败: ${message}`
+    ElMessage.error(`${docLabel.value} 下载失败: ${message}`)
+  }
+}
+
 // 强制预览大文件
 const forcePreview = () => {
   showLargeFileWarning.value = false
-  cachedDocxBytes.value = null
-  loadDocx()
+  cachedDocumentBytes.value = null
+  loadDocument()
 }
 
 // 重试加载
 const retryLoad = () => {
   error.value = ''
-  cachedDocxBytes.value = null
-  loadDocx()
+  cachedDocumentBytes.value = null
+  loadDocument()
 }
 
-// 加载 DOCX 文档
-const loadDocx = async () => {
+// 加载文档
+const loadDocument = async () => {
   const token = ++currentLoadToken
   try {
     loading.value = true
     error.value = ''
+    infoMessage.value = ''
 
     // 检查文件是否被截断
     if (isTruncated.value) {
       throw new Error(truncatedMessage.value)
     }
 
-    if (!docxData.value && !downloadUrl.value) {
-      throw new Error('未找到 DOCX 文档数据')
+    if (!documentData.value && !downloadUrl.value) {
+      throw new Error(`未找到 ${docLabel.value} 文档数据`)
     }
 
-    console.log(`📄 开始加载 DOCX: ${fileName.value} (${formatFileSize(fileSize.value)})`)
+    console.log(`📄 开始加载 ${docLabel.value}: ${fileName.value} (${formatFileSize(fileSize.value)})`)
 
-    if (!docxData.value && downloadUrl.value) {
-      console.log('🌐 通过下载链接加载 DOCX 预览', downloadUrl.value)
+    if (!documentData.value && downloadUrl.value) {
+      console.log(`🌐 通过下载链接加载 ${docLabel.value} 预览`, downloadUrl.value)
     }
 
-    const bytes = await getDocxBytes()
+    const bytes = await getDocumentBytes()
 
     if (token !== currentLoadToken) {
       return
     }
 
     if (!bytes || !bytes.byteLength) {
-      throw new Error('DOCX 数据为空')
+      throw new Error(`${docLabel.value} 数据为空`)
     }
 
     const arrayBuffer = toArrayBuffer(bytes)
     if (!arrayBuffer) {
-      throw new Error('DOCX 数据解析失败')
+      throw new Error(`${docLabel.value} 数据解析失败`)
     }
 
     console.log('🔄 转换中...')
 
-    // 使用 mammoth.js 转换 DOCX 为 HTML
-    const result = await mammoth.convertToHtml(
-      { arrayBuffer },
-      {
-        styleMap: [
-          "p[style-name='Heading 1'] => h1:fresh",
-          "p[style-name='Heading 2'] => h2:fresh",
-          "p[style-name='Heading 3'] => h3:fresh",
-          "p[style-name='Title'] => h1.title:fresh",
-          "p[style-name='Subtitle'] => h2.subtitle:fresh",
-          "p[style-name='Quote'] => blockquote:fresh",
-          "r[style-name='Strong'] => strong",
-          "r[style-name='Emphasis'] => em"
-        ],
-        convertImage: mammoth.images.imgElement((image) => {
-          return image.read("base64").then((imageBuffer) => {
-            return {
-              src: `data:${image.contentType};base64,${imageBuffer}`
-            }
-          })
-        })
-      }
-    )
+    const { html, messages, usedFallback, fallbackMessage } = await convertDocumentBytesToHtml(bytes, arrayBuffer)
 
     if (token !== currentLoadToken) {
       return
     }
 
-    htmlContent.value = result.value || ''
+    htmlContent.value = html || ''
 
-    const messages = Array.isArray(result.messages) ? result.messages : []
-    const errorMessages = messages.filter((msg) => msg.type === 'error')
+    const normalizedMessages = Array.isArray(messages) ? messages : []
+    const errorMessages = normalizedMessages.filter((msg) => msg.type === 'error')
 
-    if (messages.length > 0) {
-      console.warn('⚠️  DOCX 转换警告:', messages)
+    if (normalizedMessages.length > 0) {
+      console.warn(`⚠️  ${docLabel.value} 转换警告:`, normalizedMessages)
     }
 
-    if (errorMessages.length > 0 && !result.value) {
+    if (errorMessages.length > 0 && !html) {
       const firstError = errorMessages[0]?.message || '文档解析失败'
       throw new Error(firstError)
     }
 
-    console.log('✅ DOCX 加载成功')
+    if (usedFallback) {
+      infoMessage.value = fallbackMessage || '已使用 WPS 兼容解析，排版可能与原文略有差异。'
+    }
+
+    console.log(`✅ ${docLabel.value} 加载成功`)
   } catch (err) {
     if (token !== currentLoadToken) {
       return
     }
-    console.error('❌ DOCX 加载失败:', err)
+    console.error(`❌ ${docLabel.value} 加载失败:`, err)
     error.value = `加载失败: ${err.message}`
     htmlContent.value = ''
+    infoMessage.value = ''
   } finally {
     if (token === currentLoadToken) {
       loading.value = false
     }
-  }
-}
-
-// 下载 DOCX 文件
-const downloadDocx = async () => {
-  try {
-    if (!docxData.value && !downloadUrl.value) {
-      throw new Error('未找到文档数据')
-    }
-
-    const bytes = await getDocxBytes()
-    if (!bytes || !bytes.byteLength) {
-      throw new Error('DOCX 数据为空')
-    }
-
-    const buffer = toArrayBuffer(bytes)
-    if (!buffer) {
-      throw new Error('DOCX 数据解析失败')
-    }
-
-    const blob = new Blob([buffer], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    })
-
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName.value
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-
-    console.log('✅ DOCX 下载完成')
-  } catch (err) {
-    console.error('❌ DOCX 下载失败:', err)
-    error.value = `下载失败: ${err.message}`
-    ElMessage.error(`DOCX 下载失败: ${err.message}`)
   }
 }
 
@@ -444,13 +827,14 @@ const initLoad = () => {
   // 重置状态
   error.value = ''
   htmlContent.value = ''
+  infoMessage.value = ''
   showLargeFileWarning.value = false
   loading.value = false
-  cachedDocxBytes.value = null
+  cachedDocumentBytes.value = null
 
   // 检查是否需要显示大文件警告
   if (!checkLargeFile()) {
-    loadDocx()
+    loadDocument()
   }
 }
 
@@ -464,7 +848,7 @@ watch(
     const oldPath = oldData?.object?.path
 
     if (newPath && newPath !== oldPath) {
-      console.log(`🔄 DOCX 文件切换: ${oldPath} → ${newPath}`)
+      console.log(`🔄 ${docLabel.value} 文件切换: ${oldPath} → ${newPath}`)
       initLoad()
       return
     }
@@ -487,7 +871,7 @@ watch(
       newContent.truncated !== oldContent.truncated
 
     if (contentChanged) {
-      console.log('🔄 DOCX 内容更新，重新加载预览')
+      console.log(`🔄 ${docLabel.value} 内容更新，重新加载预览`)
       initLoad()
     }
   },
@@ -526,7 +910,9 @@ onMounted(() => {
 .warning-actions {
   margin-top: 16px;
   display: flex;
+  align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .limit-hint {
@@ -618,8 +1004,15 @@ onMounted(() => {
 
 .error-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: center;
+}
+
+.download-hint {
+  font-size: 12px;
+  color: #909399;
 }
 
 .docx-container {
@@ -639,10 +1032,28 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+.docx-info {
+  padding: 0 16px;
+  margin: 0 16px 8px;
+}
+
+.docx-info p {
+  margin: 0;
+  line-height: 1.6;
+  font-size: 13px;
+  color: #606266;
+}
+
 .toolbar-left {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .toolbar-left .el-icon {
@@ -660,11 +1071,6 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.toolbar-right {
-  display: flex;
-  gap: 8px;
-}
-
 .docx-content {
   flex: 1;
   overflow-y: auto;
@@ -675,7 +1081,19 @@ onMounted(() => {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
-/* DOCX 内容样式 - 保持原有样式 */
+.wps-plain-text {
+  font-family: 'Courier New', Courier, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #303133;
+  background: #f8f9fb;
+  padding: 16px;
+  border-radius: 4px;
+}
+
+/* 文档内容样式 - 保持原有样式 */
 .docx-content :deep(h1) {
   font-size: 28px;
   font-weight: 600;

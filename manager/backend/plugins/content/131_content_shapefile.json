@@ -1,0 +1,13 @@
+{
+  "name": "builtin:content-shapefile",
+  "type": "builtin",
+  "builtin": "shapefile",
+  "priority": 66,
+  "match": {
+    "extensions": [".shp"],
+    "content_types": ["application/x-esri-shapefile", "application/octet-stream"]
+  },
+  "metadata": {
+    "max_features": 200
+  }
+}

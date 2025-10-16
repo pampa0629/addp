@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -24,6 +26,7 @@ const (
 	maxImagePreviewBytes  = 10 * 1024 * 1024  // 10MB - 图片预览限制
 	maxPDFPreviewBytes    = 20 * 1024 * 1024  // 20MB - PDF 文件预览限制
 	maxDOCXPreviewBytes   = 100 * 1024 * 1024 // 100MB - DOCX 文件预览限制
+	maxWPSPreviewBytes    = 100 * 1024 * 1024 // 100MB - WPS 文件预览限制
 	maxPPTXPreviewBytes   = 100 * 1024 * 1024 // 100MB - PPTX 文件预览限制
 	maxSQLitePreviewBytes = 30 * 1024 * 1024  // 30MB - SQLite 文件默认预览限制
 )
@@ -238,6 +241,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	if p.content != nil && objectPath != "" {
 		req := &ObjectContentRequest{
+			Bucket:      bucket,
 			Path:        objectPath,
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
@@ -245,8 +249,27 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 		handler := p.content.Resolve(req)
 		if handler != nil {
-			// 优先使用流式处理（对于 SQLite 等大文件）
-			if streamHandler, ok := handler.(StreamableContentHandler); ok {
+			// 优先支持复合流式处理（如 Shapefile 等多文件场景）
+			if compositeHandler, ok := handler.(CompositeStreamableContentHandler); ok {
+				streamer := func() (io.ReadCloser, error) {
+					return client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+				}
+				siblingProvider := func(path string) (io.ReadCloser, error) {
+					return getObjectStream(ctx, client, bucket, path)
+				}
+
+				content, truncated, err := compositeHandler.HandleCompositeStream(ctx, req, streamer, siblingProvider)
+				if err != nil {
+					return nil, err
+				}
+				if content != nil {
+					preview.Object.Content = content
+					if truncated || content.Truncated {
+						preview.Object.Truncated = true
+						preview.Object.Content.Truncated = true
+					}
+				}
+			} else if streamHandler, ok := handler.(StreamableContentHandler); ok {
 				streamer := func() (io.ReadCloser, error) {
 					return client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
 				}
@@ -376,6 +399,40 @@ func newMinioClient(cfg *objectStorageConfig) (*minio.Client, error) {
 	return minio.New(cfg.Endpoint, opts)
 }
 
+func getObjectStream(ctx context.Context, client *minio.Client, bucket, key string) (io.ReadCloser, error) {
+	cleanKey := strings.TrimLeft(key, "/")
+	if cleanKey == "" {
+		return nil, fs.ErrNotExist
+	}
+
+	if _, err := client.StatObject(ctx, bucket, cleanKey, minio.StatObjectOptions{}); err != nil {
+		if isObjectNotFoundErr(err) {
+			return nil, fs.ErrNotExist
+		}
+		return nil, err
+	}
+
+	reader, err := client.GetObject(ctx, bucket, cleanKey, minio.GetObjectOptions{})
+	if err != nil {
+		if isObjectNotFoundErr(err) {
+			return nil, fs.ErrNotExist
+		}
+		return nil, err
+	}
+	return reader, nil
+}
+
+func isObjectNotFoundErr(err error) bool {
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	resp := minio.ToErrorResponse(err)
+	if resp.Code == "NoSuchKey" || resp.Code == "NoSuchBucket" {
+		return true
+	}
+	return resp.StatusCode == http.StatusNotFound
+}
+
 func listImmediateChildren(ctx context.Context, client *minio.Client, bucket, path string) ([]models.ObjectPreviewChild, error) {
 	cleanPrefix := strings.Trim(path, "/")
 	listPrefix := cleanPrefix
@@ -467,6 +524,8 @@ func inferContentType(objectPath, contentType string) string {
 		return "application/pdf"
 	case ".docx":
 		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".wps":
+		return "application/vnd.ms-works"
 	case ".pptx":
 		return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	case ".png":
@@ -477,6 +536,8 @@ func inferContentType(objectPath, contentType string) string {
 		return "application/json"
 	case ".geojson":
 		return "application/geo+json"
+	case ".shp":
+		return "application/x-esri-shapefile"
 	case ".txt", ".log":
 		return "text/plain"
 	}

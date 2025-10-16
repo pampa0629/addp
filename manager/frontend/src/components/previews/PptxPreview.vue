@@ -19,10 +19,7 @@
           <p v-if="formattedLimit">预览限制：{{ formattedLimit }}</p>
         </div>
         <div class="error-actions">
-          <el-button type="primary" size="small" :disabled="!pptxData" @click="downloadPptx">
-            <el-icon><Download /></el-icon>
-            下载文件
-          </el-button>
+          <span class="download-hint">右上角下载按钮可获取原始文件</span>
         </div>
       </div>
     </div>
@@ -62,7 +59,7 @@
               <li>在线预览可能导致内容丢失或显示错误</li>
             </ul>
             <p><strong>如何查看？</strong></p>
-            <p>请点击下方"下载文件"按钮，使用以下软件打开：</p>
+            <p>请使用右上角的下载按钮获取文件，并使用以下软件打开：</p>
             <ul>
               <li>Microsoft PowerPoint（推荐）</li>
               <li>WPS 演示</li>
@@ -112,12 +109,9 @@
         </div>
       </div>
 
-      <!-- 下载按钮 -->
+      <!-- 下载引导 -->
       <div class="download-section">
-        <el-button type="primary" size="large" :disabled="!pptxData" @click="downloadPptx">
-          <el-icon><Download /></el-icon>
-          下载 PowerPoint 文件
-        </el-button>
+        <span class="download-hint">如需下载 PowerPoint，请点击右上角的下载按钮</span>
         <p v-if="formattedLimit" class="limit-hint">预览限制：{{ formattedLimit }}</p>
       </div>
     </div>
@@ -126,7 +120,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { Loading, WarningFilled, Download, Document } from '@element-plus/icons-vue'
+import { Loading, WarningFilled, Document } from '@element-plus/icons-vue'
 import JSZip from 'jszip'
 
 const props = defineProps({
@@ -276,41 +270,6 @@ const parsePptxMetadata = async () => {
     error.value = `解析失败: ${err.message}`
   } finally {
     loading.value = false
-  }
-}
-
-// 下载 PPTX 文件
-const downloadPptx = () => {
-  try {
-    if (!pptxData.value) {
-      error.value = '未找到文档数据，无法下载'
-      return
-    }
-
-    const base64Data = pptxData.value
-    const binaryString = atob(base64Data)
-    const bytes = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i)
-    }
-
-    const blob = new Blob([bytes], {
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    })
-
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = fileName.value
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-
-    console.log('✅ PPTX 下载完成')
-  } catch (err) {
-    console.error('❌ PPTX 下载失败:', err)
-    error.value = `下载失败: ${err.message}`
   }
 }
 
@@ -534,10 +493,9 @@ onMounted(() => {
   padding: 20px 0;
 }
 
-.download-section .el-button {
-  min-width: 240px;
-  font-size: 16px;
-  padding: 18px 32px;
+.download-hint {
+  font-size: 13px;
+  color: #909399;
 }
 
 .limit-hint {

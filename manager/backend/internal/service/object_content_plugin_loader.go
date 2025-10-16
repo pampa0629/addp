@@ -78,6 +78,19 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		}
 		return handler, nil
 	},
+	"wps": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &binaryBase64Handler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(74),
+				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".wps"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.ms-works", "application/wps-office.doc", "application/x-wps", "application/kswps"})),
+			},
+			maxBytes:    cfg.maxBytesOr(maxWPSPreviewBytes),
+			contentKind: "wps",
+			emptyTip:    "WPS 文件内容为空或无法读取",
+		}
+		return handler, nil
+	},
 	"pptx": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &binaryBase64Handler{
 			baseContentHandler: baseContentHandler{
@@ -126,6 +139,18 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		}
 		return handler, nil
 	},
+	"shapefile": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &shapefileContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(66),
+				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".shp"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/x-esri-shapefile"})),
+			},
+			maxFeatures: defaultShapefilePreviewFeatures,
+		}
+		handler.maxFeatures = metadataInt(cfg.Metadata, "max_features", handler.maxFeatures)
+		return handler, nil
+	},
 	"sqlite": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &sqliteContentHandler{
 			baseContentHandler: baseContentHandler{
@@ -149,6 +174,19 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 				matcher:  newObjectContentMatcher(normalizeExtensions(cfg.Match.Extensions), normalizeContentTypes(cfg.Match.ContentTypes)),
 			},
 			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
+			kind:     "text",
+		}
+		return handler, nil
+	},
+	"markdown": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &textContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(55),
+				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".md", ".markdown"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"text/markdown", "text/x-markdown", "text/plain"})),
+			},
+			maxBytes: cfg.maxBytesOr(maxTextPreviewBytes),
+			kind:     "markdown",
 		}
 		return handler, nil
 	},

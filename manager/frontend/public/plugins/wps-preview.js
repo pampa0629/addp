@@ -1,0 +1,56 @@
+(function () {
+  const COMPONENT_KEY = 'DocxPreview'
+
+  const components = window.DataExplorerPluginComponents || {}
+  const component = components[COMPONENT_KEY]
+
+  if (!component) {
+    console.warn(`DataExplorer: 内置预览组件 ${COMPONENT_KEY} 未注入，跳过 wps 注册`)
+    return
+  }
+
+  const queue = (window.DataExplorerPlugins = window.DataExplorerPlugins || [])
+  const register =
+    typeof window.registerDataExplorerPlugin === 'function'
+      ? window.registerDataExplorerPlugin
+      : (plugin) => queue.push(plugin)
+
+  const matchesContentType = (type) => {
+    if (!type) return false
+    const lower = type.toLowerCase()
+    return lower.includes('ms-works') || lower.includes('wps')
+  }
+
+  register({
+    name: 'wps',
+    component,
+    canHandle: (data = {}) => {
+      const object = data.object || {}
+      const path = (object.path || '').toLowerCase()
+      if (path.endsWith('.wps')) {
+        return true
+      }
+      const extension = (object.extension || object.Extension || '').toString().toLowerCase()
+      if (extension === '.wps' || extension === 'wps') {
+        return true
+      }
+      const kind =
+        (object.content?.kind || object.content?.Kind || object.kind || object.Kind || '').toString().toLowerCase()
+      if (kind === 'wps') {
+        return true
+      }
+      const contentTypeCandidates = [
+        object.content_type,
+        object.contentType,
+        object.content?.content_type,
+        object.content?.contentType,
+        object.content?.metadata?.content_type,
+        object.content?.metadata?.contentType
+      ]
+      return contentTypeCandidates.some(matchesContentType)
+    },
+    priority: 63
+  })
+
+  console.log('📦 WPS 预览插件已注册')
+})()

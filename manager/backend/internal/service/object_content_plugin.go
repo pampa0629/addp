@@ -19,6 +19,7 @@ import (
 
 // ObjectContentRequest 描述对象内容的上下文信息。
 type ObjectContentRequest struct {
+	Bucket      string
 	Path        string
 	Extension   string
 	ContentType string
@@ -43,6 +44,15 @@ type ObjectContentHandler interface {
 type StreamableContentHandler interface {
 	ObjectContentHandler
 	HandleStream(ctx context.Context, req *ObjectContentRequest, streamer ObjectStreamProvider) (*models.ObjectPreviewContent, bool, error)
+}
+
+// ObjectSiblingStreamProvider 用于获取同前缀下其他对象的流式读取器（针对多文件场景，如 Shapefile）
+type ObjectSiblingStreamProvider func(path string) (io.ReadCloser, error)
+
+// CompositeStreamableContentHandler 扩展接口，支持一次处理同一资源下的多个对象文件
+type CompositeStreamableContentHandler interface {
+	ObjectContentHandler
+	HandleCompositeStream(ctx context.Context, req *ObjectContentRequest, baseStreamer ObjectStreamProvider, siblingProvider ObjectSiblingStreamProvider) (*models.ObjectPreviewContent, bool, error)
 }
 
 // ObjectContentRegistry 负责根据优先级注册和解析对象内容插件。
@@ -310,6 +320,7 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 type textContentHandler struct {
 	baseContentHandler
 	maxBytes int64
+	kind     string
 }
 
 func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentRequest, fetcher ObjectContentProvider) (*models.ObjectPreviewContent, bool, error) {
@@ -317,8 +328,12 @@ func (h *textContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 	if err != nil {
 		return nil, false, err
 	}
+	kind := h.kind
+	if kind == "" {
+		kind = "text"
+	}
 	return &models.ObjectPreviewContent{
-		Kind:      "text",
+		Kind:      kind,
 		Text:      string(data),
 		Truncated: truncated,
 	}, truncated, nil
@@ -671,6 +686,8 @@ func contentKindLabel(kind string) string {
 		return "PDF 文件"
 	case "docx":
 		return "DOCX 文件"
+	case "wps":
+		return "WPS 文档"
 	case "pptx":
 		return "PPTX 文件"
 	case "image":

@@ -68,7 +68,7 @@ Manager 模块的前后端均引入了统一的插件注册机制，用于扩展
 对象存储文件的预览同样通过插件扩展。系统会在 `manager/backend/plugins/` 目录中加载 `*_content_*.json` 配置，内置了以下处理器：
 
 - `builtin:content-pdf`：读取 PDF 并返回 base64 数据；
-- `builtin:content-docx`、`builtin:content-pptx`：处理 Office 文档；
+- `builtin:content-docx`、`builtin:content-wps`、`builtin:content-pptx`：处理 Office 文档；
 - `builtin:content-image`：内联常见图片；
 - `builtin:content-geojson`、`builtin:content-json`：解析 JSON/GeoJSON；
 - `builtin:content-sqlite`：解析 SQLite 数据库，提取表结构与示例数据；

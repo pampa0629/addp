@@ -1,0 +1,16 @@
+{
+  "name": "builtin:content-wps",
+  "type": "builtin",
+  "builtin": "wps",
+  "priority": 74,
+  "match": {
+    "extensions": [".wps"],
+    "content_types": [
+      "application/vnd.ms-works",
+      "application/wps-office.doc",
+      "application/x-wps",
+      "application/kswps"
+    ]
+  },
+  "max_bytes": 104857600
+}
