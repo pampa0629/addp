@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
 	pathpkg "path"
 	"sort"
 	"strings"
@@ -13,6 +16,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanner"
+	_ "github.com/addp/meta/internal/scanner/extractors" // 自动注册提取器
 	"gorm.io/gorm"
 )
 
@@ -212,11 +216,36 @@ func (s *ScanServiceNew) upsertItem(
 	lastModified *time.Time,
 	schemaVersion int,
 ) (*models.MetaItem, error) {
+	// 生成数据指纹
+	var fingerprint string
+	if attrs != nil {
+		// 对象存储：使用 bucket/path
+		if bucket, ok := attrs["bucket"].(string); ok {
+			path := ""
+			if p, ok := attrs["path"].(string); ok {
+				path = p
+			} else if rp, ok := attrs["relative_path"].(string); ok {
+				path = rp
+			}
+			fingerprint = models.GenerateObjectFingerprint(resourceID, bucket, path)
+		} else if schema, ok := attrs["schema_name"].(string); ok {
+			// 关系数据库：使用 schema.table
+			fingerprint = models.GenerateTableFingerprint(resourceID, schema, name)
+		} else {
+			// 其他类型：使用 fullName
+			fingerprint = models.GenerateItemFingerprint(resourceID, fullName)
+		}
+	} else {
+		// 无attributes，使用fullName作为标识
+		fingerprint = models.GenerateItemFingerprint(resourceID, fullName)
+	}
+
 	var item models.MetaItem
-	err := s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-		tenantID, resourceID, node.ID, itemType, name).First(&item).Error
+	// 使用fingerprint查找记录（唯一索引）
+	err := s.db.Where("fingerprint = ?", fingerprint).First(&item).Error
 
 	if err == gorm.ErrRecordNotFound {
+		// 创建新记录
 		item = models.MetaItem{
 			TenantID:          tenantID,
 			ResID:             resourceID,
@@ -224,6 +253,7 @@ func (s *ScanServiceNew) upsertItem(
 			ItemType:          itemType,
 			Name:              name,
 			FullName:          fullName,
+			Fingerprint:       fingerprint,  // 设置指纹
 			Status:            "active",
 			MetaSchemaVersion: schemaVersion,
 			Attributes:        models.JSONMap{},
@@ -243,7 +273,9 @@ func (s *ScanServiceNew) upsertItem(
 		return nil, err
 	}
 
+	// 更新已有记录
 	updates := map[string]interface{}{
+		"node_id":             node.ID,  // 允许node_id变化（数据移动）
 		"full_name":           fullName,
 		"meta_schema_version": schemaVersion,
 		"attributes":          attrs,
@@ -258,6 +290,8 @@ func (s *ScanServiceNew) upsertItem(
 		return nil, err
 	}
 
+	// 更新内存中的对象
+	item.NodeID = node.ID
 	item.FullName = fullName
 	item.MetaSchemaVersion = schemaVersion
 	item.Attributes = attrs
@@ -669,60 +703,79 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	nodeStats := make(map[uint]*nodeAggregate)
+	clearedPaths := make(map[string]map[string]bool)
+
+	// 如果scanner支持SetResourceID，设置resourceID用于元数据提取
+	if s3Scanner, ok := objectScanner.(interface{ SetResourceID(uint) }); ok {
+		s3Scanner.SetResourceID(resourceID)
+	}
 
 	totalBuckets := 0
 	totalObjects := 0
 
-	for _, path := range paths {
-		metas, err := objectScanner.ScanPath(path)
+	for _, rawPath := range paths {
+		bucketName, relativePath := splitObjectPath(rawPath)
+		if bucketName == "" {
+			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
+			continue
+		}
+
+		metas, err := objectScanner.ScanPath(rawPath)
 		if err != nil {
 			s.log.Warn("对象存储路径扫描失败",
 				"resource_id", resourceID,
 				"tenant_id", tenantID,
-				"path", path,
+				"path", rawPath,
 				"error", err,
 			)
 			continue
 		}
-		if len(metas) == 0 {
-			continue
-		}
 
-		bucket := metas[0].Bucket
-		if bucket == "" {
-			continue
-		}
-
-		bucketNode, ok := bucketNodes[bucket]
+		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
-			attrs := models.JSONMap{"bucket": bucket}
-			bucketNode, err = s.upsertNode(tenantID, resourceID, nil, "bucket", bucket, bucket, attrs)
+			attrs := models.JSONMap{"bucket": bucketName}
+			bucketNode, err = s.upsertNode(tenantID, resourceID, nil, "bucket", bucketName, bucketName, attrs)
 			if err != nil {
 				return totalBuckets, totalObjects, err
 			}
-			bucketNodes[bucket] = bucketNode
-		}
-
-		if !processedBuckets[bucket] {
-			if err := s.resetNodeState(bucketNode, "扫描中"); err != nil {
-				return totalBuckets, totalObjects, err
-			}
-			if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
-				return totalBuckets, totalObjects, err
-			}
-			if err := s.hardDeleteItemsByNode(bucketNode.ID); err != nil {
-				return totalBuckets, totalObjects, err
-			}
-			processedBuckets[bucket] = true
+			bucketNodes[bucketName] = bucketNode
 			totalBuckets++
 		}
 
-		objects, err := s.persistObjectMetas(tenantID, resourceID, bucketNode, metas, nodeStats)
+		if _, ok := clearedPaths[bucketName]; !ok {
+			clearedPaths[bucketName] = make(map[string]bool)
+		}
+
+		if !clearedPaths[bucketName][relativePath] {
+			if err := s.clearObjectMetadataUnderPath(tenantID, resourceID, bucketNode, bucketName, relativePath); err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			clearedPaths[bucketName][relativePath] = true
+		}
+
+		fullBucket := relativePath == ""
+		if fullBucket {
+			if !processedBuckets[bucketName] {
+				if err := s.resetNodeState(bucketNode, "扫描中"); err != nil {
+					return totalBuckets, totalObjects, err
+				}
+			}
+			processedBuckets[bucketName] = true
+		}
+
+		if len(metas) == 0 {
+			if fullBucket {
+				ensureNodeAggregate(nodeStats, bucketNode)
+			}
+			continue
+		}
+
+		objects, err := s.persistObjectMetas(tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket)
 		if err != nil {
 			s.log.Error("对象存储元数据持久化失败",
 				"resource_id", resourceID,
 				"tenant_id", tenantID,
-				"bucket", bucket,
+				"bucket", bucketName,
 				"error", err,
 			)
 			continue
@@ -736,23 +789,17 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 		}
 	}
 
-	for _, bucketNode := range bucketNodes {
-		if _, ok := nodeStats[bucketNode.ID]; !ok {
-			if err := s.finalizeNodeState(bucketNode, "已扫描", 0, 0, ""); err != nil {
-				return totalBuckets, totalObjects, err
-			}
-		}
-	}
-
 	return totalBuckets, totalObjects, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate) (int, error) {
+func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool) (int, error) {
 	objects := 0
 
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
-			ensureNodeAggregate(stats, bucketNode)
+			if includeBucketAggregate {
+				ensureNodeAggregate(stats, bucketNode)
+			}
 			continue
 		}
 
@@ -780,7 +827,7 @@ func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNod
 				parentChain = append(parentChain, childNode)
 				ensureNodeAggregate(stats, childNode)
 			}
-		} else {
+		} else if includeBucketAggregate {
 			ensureNodeAggregate(stats, bucketNode)
 		}
 
@@ -797,6 +844,7 @@ func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNod
 			objectName = fmt.Sprintf("object_%d", meta.SizeBytes)
 		}
 
+		// 构建基础属性
 		attrs := models.JSONMap{
 			"bucket":        meta.Bucket,
 			"path":          meta.Path,
@@ -808,23 +856,207 @@ func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNod
 			attrs["last_modified_at"] = meta.LastModified
 		}
 
+		// 尝试使用插件提取深度元数据
+		enhancedAttrs := s.extractEnhancedMetadata(resourceID, meta, attrs)
+
 		sizeVal := meta.SizeBytes
 		objectSizeVal := meta.SizeBytes
 		fullName := composeNodeFullName(objectName, currentParent, "/")
-		if _, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, attrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1); err != nil {
+		if _, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1); err != nil {
 			return objects, err
 		}
 
 		objects++
-		for _, node := range parentChain {
+		for idx, node := range parentChain {
+			if !includeBucketAggregate && idx == 0 {
+				continue
+			}
 			agg := ensureNodeAggregate(stats, node)
 			agg.itemCount++
 			agg.totalSize += meta.SizeBytes
 		}
 	}
 
-	ensureNodeAggregate(stats, bucketNode)
+	if includeBucketAggregate {
+		ensureNodeAggregate(stats, bucketNode)
+	}
 	return objects, nil
+}
+
+// extractEnhancedMetadata 使用插件提取增强的元数据
+func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
+	// 如果S3Scanner已经提取了元数据，直接使用
+	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
+		// 将提取的CustomAttrs合并到baseAttrs中
+		for key, value := range meta.ExtractedMetadata.CustomAttrs {
+			baseAttrs[key] = value
+		}
+
+		// 添加基本信息
+		baseAttrs["metadata_extracted"] = true
+		baseAttrs["file_type_friendly"] = meta.ExtractedMetadata.BasicInfo.FileType
+		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
+			baseAttrs["content_type"] = meta.ExtractedMetadata.BasicInfo.ContentType
+		}
+
+		return baseAttrs
+	}
+
+	// 如果没有提取元数据，检查是否有可用的提取器
+	contentType := mime.TypeByExtension(pathpkg.Ext(meta.Path))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// 获取适配的元数据提取器
+	extractor := scanner.GetExtractor(contentType)
+	if extractor == nil {
+		// 没有合适的提取器，返回基础属性
+		return baseAttrs
+	}
+
+	// 标记有提取器可用（但本次扫描未提取）
+	baseAttrs["extractor_available"] = true
+	baseAttrs["content_type"] = contentType
+
+	return baseAttrs
+}
+
+// GetObjectMetadata 获取指定对象的元数据
+// 用于Manager模块预览时查询已扫描的元数据
+func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey string) (*models.MetaItem, error) {
+	// 解析对象路径
+	bucket, relativePath := splitObjectPath(objectKey)
+	if bucket == "" {
+		return nil, fmt.Errorf("invalid object key: %s", objectKey)
+	}
+
+	// 查找bucket节点
+	var bucketNode models.MetaNode
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
+		tenantID, resourceID, "bucket", bucket).First(&bucketNode).Error
+	if err != nil {
+		return nil, fmt.Errorf("bucket not found: %w", err)
+	}
+
+	// 查找对象item
+	objectName := pathpkg.Base(relativePath)
+	if objectName == "" {
+		objectName = relativePath
+	}
+
+	var item models.MetaItem
+
+	// 如果有相对路径，需要先找到对应的prefix节点
+	if relativePath != "" && relativePath != objectName {
+		// 构建prefix路径
+		prefixPath := pathpkg.Dir(relativePath)
+		segments := strings.Split(prefixPath, "/")
+
+		currentParent := &bucketNode
+		for _, segment := range segments {
+			if segment == "" || segment == "." {
+				continue
+			}
+
+			var prefixNode models.MetaNode
+			err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id = ? AND node_type = ? AND name = ?",
+				tenantID, resourceID, currentParent.ID, "prefix", segment).First(&prefixNode).Error
+			if err != nil {
+				return nil, fmt.Errorf("prefix not found: %s", segment)
+			}
+			currentParent = &prefixNode
+		}
+
+		// 在最终的prefix节点下查找对象
+		err = s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
+			tenantID, resourceID, currentParent.ID, "object", objectName).First(&item).Error
+	} else {
+		// 直接在bucket下查找对象
+		err = s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
+			tenantID, resourceID, bucketNode.ID, "object", objectName).First(&item).Error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("object metadata not found: %w", err)
+	}
+
+	return &item, nil
+}
+
+// ExtractObjectMetadataOnDemand 按需提取对象的深度元数据
+// 当Manager预览时发现元数据未提取，可以调用此方法触发实时提取
+func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint, objectKey string, token string, objectReader io.Reader) (*scanner.Metadata, error) {
+	// 检测内容类型
+	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// 获取元数据提取器
+	extractor := scanner.GetExtractor(contentType)
+	if extractor == nil {
+		return nil, fmt.Errorf("no extractor available for content type: %s", contentType)
+	}
+
+	// 获取对象的基本信息
+	item, err := s.GetObjectMetadata(tenantID, resourceID, objectKey)
+	if err != nil {
+		// 如果元数据不存在，使用默认值
+		s.log.Warn("对象元数据不存在，使用默认值", "object_key", objectKey, "error", err)
+	}
+
+	// 构建提取输入
+	input := scanner.ExtractInput{
+		ResourceID:  resourceID,
+		ObjectKey:   objectKey,
+		ContentType: contentType,
+		Reader:      objectReader,
+	}
+
+	if item != nil {
+		if item.ObjectSizeBytes != nil {
+			input.Size = *item.ObjectSizeBytes
+		}
+		if item.LastModifiedAt != nil {
+			input.LastModified = *item.LastModifiedAt
+		}
+		if etag, ok := item.Attributes["etag"].(string); ok {
+			input.ETag = etag
+		}
+	}
+
+	// 调用提取器
+	ctx := context.Background()
+	metadata, err := extractor.Extract(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract metadata: %w", err)
+	}
+
+	// 如果元数据item存在，更新attributes
+	if item != nil {
+		enhancedAttrs := item.Attributes
+		if enhancedAttrs == nil {
+			enhancedAttrs = make(models.JSONMap)
+		}
+
+		// 合并提取的元数据到attributes
+		enhancedAttrs["extracted_metadata"] = map[string]interface{}{
+			"basic_info":   metadata.BasicInfo,
+			"custom_attrs": metadata.CustomAttrs,
+		}
+
+		if metadata.SchemaInfo != nil {
+			enhancedAttrs["schema_info"] = metadata.SchemaInfo
+		}
+
+		// 更新数据库
+		if err := s.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
+			s.log.Warn("更新元数据失败", "item_id", item.ID, "error", err)
+		}
+	}
+
+	return metadata, nil
 }
 
 func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageScanner) []string {
@@ -866,6 +1098,67 @@ func sanitizeObjectPath(path string) string {
 	path = strings.TrimSpace(path)
 	path = strings.Trim(path, "/")
 	return path
+}
+
+func splitObjectPath(path string) (string, string) {
+	clean := sanitizeObjectPath(path)
+	if clean == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(clean, "/", 2)
+	bucket := parts[0]
+	if bucket == "" {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return bucket, ""
+	}
+	return bucket, parts[1]
+}
+
+func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {
+	clean := sanitizeObjectPath(relativePath)
+	if clean == "" {
+		if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
+			return err
+		}
+		return s.hardDeleteItemsByNode(bucketNode.ID)
+	}
+
+	var targetNodes []models.MetaNode
+	if err := s.db.
+		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("node_type = ?", "prefix").
+		Where("(attributes ->> 'bucket') = ?", bucketName).
+		Where("(attributes ->> 'path') = ? OR (attributes ->> 'path') LIKE ?", clean, clean+"/%").
+		Find(&targetNodes).Error; err != nil {
+		return fmt.Errorf("failed to query prefix nodes for cleanup: %w", err)
+	}
+
+	if len(targetNodes) > 0 {
+		ids := make([]uint, 0, len(targetNodes))
+		for _, node := range targetNodes {
+			ids = append(ids, node.ID)
+		}
+
+		if err := s.db.Unscoped().Where("node_id IN ?", ids).Delete(&models.MetaItem{}).Error; err != nil {
+			return fmt.Errorf("failed to delete object items for prefix: %w", err)
+		}
+
+		if err := s.db.Unscoped().Where("id IN ?", ids).Delete(&models.MetaNode{}).Error; err != nil {
+			return fmt.Errorf("failed to delete prefix nodes: %w", err)
+		}
+	}
+
+	if err := s.db.Unscoped().
+		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("(attributes ->> 'bucket') = ?", bucketName).
+		Where("(attributes ->> 'relative_path') = ? OR (attributes ->> 'relative_path') LIKE ?", clean, clean+"/%").
+		Delete(&models.MetaItem{}).Error; err != nil {
+		return fmt.Errorf("failed to delete object items by relative path: %w", err)
+	}
+
+	return nil
 }
 
 func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, tenantID, resourceID uint, schemaName string) (int, int, int, error) {

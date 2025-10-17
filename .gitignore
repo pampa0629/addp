@@ -61,3 +61,4 @@ temp/
 
 # Misc
 test-iframe.html
+*.pid

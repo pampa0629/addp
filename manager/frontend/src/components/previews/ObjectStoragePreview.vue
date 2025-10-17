@@ -46,6 +46,12 @@
           </div>
         </div>
       </div>
+      <div v-if="hasExtractedMetadata" class="meta-row meta-extracted">
+        <span class="meta-label">提取元数据</span>
+        <div class="meta-value extracted-wrapper">
+          <ExtractedMetadata :metadata="extractedMetadata" />
+        </div>
+      </div>
     </div>
 
     <!-- 可拖拽分隔器 -->
@@ -103,6 +109,7 @@ import ImagePreview from './ImagePreview.vue'
 import JsonPreview from './JsonPreview.vue'
 import GeoJsonPreview from './GeoJsonPreview.vue'
 import TextPreview from './TextPreview.vue'
+import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -114,6 +121,18 @@ const props = defineProps({
 const emit = defineEmits(['navigate'])
 
 const { size: metaHeight, startResize } = useResizable(140, 80, 300, 'vertical')
+
+const parseMaybeJSON = (value) => {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch (error) {
+      console.warn('对象存储预览: JSON 解析失败', error)
+      return null
+    }
+  }
+  return value
+}
 
 const objectData = computed(() => props.data?.object || {})
 
@@ -138,6 +157,63 @@ const children = computed(() => {
 
 const metadataEntries = computed(() => {
   return Object.entries(objectData.value.metadata || {})
+})
+
+const extractedMetadata = computed(() => {
+  // Debug: 打印原始数据
+  console.log('[DEBUG] objectData.value:', objectData.value)
+  console.log('[DEBUG] objectData.value.attributes:', objectData.value?.attributes)
+  console.log('[DEBUG] objectData.value.extracted_metadata:', objectData.value?.extracted_metadata)
+
+  // 1. 优先使用 extracted_metadata 字段（如果存在）
+  const direct = parseMaybeJSON(objectData.value?.extracted_metadata)
+  if (direct && typeof direct === 'object') {
+    console.log('[DEBUG] Found direct extracted_metadata:', direct)
+    return direct
+  }
+
+  // 2. 从 attributes 中提取所有 *_metadata 字段（如 video_metadata, audio_metadata 等）
+  const attrs = parseMaybeJSON(objectData.value?.attributes) || objectData.value?.attributes
+  console.log('[DEBUG] Parsed attributes:', attrs)
+
+  if (!attrs || typeof attrs !== 'object') {
+    console.log('[DEBUG] No valid attributes found')
+    return null
+  }
+
+  // 检查是否有 extracted_metadata 字段
+  const nested = parseMaybeJSON(attrs.extracted_metadata)
+  if (nested && typeof nested === 'object') {
+    console.log('[DEBUG] Found nested extracted_metadata:', nested)
+    return nested
+  }
+
+  // 3. 自动识别所有以 _metadata 结尾的字段，构造为 custom_attrs 格式
+  const customAttrs = {}
+  let hasMetadata = false
+
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key.endsWith('_metadata')) {
+      console.log(`[DEBUG] Found metadata field: ${key}`, value)
+      const parsed = parseMaybeJSON(value)
+      if (parsed && typeof parsed === 'object') {
+        // 如果元数据有 data 字段（Meta的标准格式），提取data
+        customAttrs[key] = parsed.data || parsed
+        hasMetadata = true
+        console.log(`[DEBUG] Added to customAttrs:`, customAttrs[key])
+      }
+    }
+  }
+
+  // 如果找到了元数据字段，返回 custom_attrs 包装格式（供 ExtractedMetadata 组件使用）
+  const result = hasMetadata ? { custom_attrs: customAttrs } : null
+  console.log('[DEBUG] Final extractedMetadata result:', result)
+  return result
+})
+
+const hasExtractedMetadata = computed(() => {
+  if (!extractedMetadata.value) return false
+  return Object.keys(extractedMetadata.value || {}).length > 0
 })
 
 const contentPreview = computed(() => {
@@ -191,6 +267,24 @@ const handleRowDblclick = (row) => {
 
 .meta-row.meta-metadata {
   grid-column: 1 / -1;
+}
+
+.meta-row.meta-extracted {
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.meta-row.meta-extracted .meta-label {
+  width: auto;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.extracted-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .meta-label {

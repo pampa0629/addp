@@ -5,6 +5,7 @@
     "/plugins/geojson-preview.js",
     "/plugins/shapefile-preview.js",
     "/plugins/image-preview.js",
+    "/plugins/video-preview.js",
     "/plugins/json-preview.js",
     "/plugins/sqlite-preview.js",
     "/plugins/pdf-preview.js",

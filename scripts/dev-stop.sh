@@ -132,9 +132,9 @@ done
 echo "✓ 前端服务已停止"
 
 # 停止 Docker 基础设施
-echo -e "${YELLOW}停止基础设施...${NC}"
-docker-compose stop postgres redis minio
-echo "✓ 基础设施已停止"
+# echo -e "${YELLOW}停止基础设施...${NC}"
+# docker-compose stop postgres redis minio
+# echo "✓ 基础设施已停止"
 
 echo ""
 echo -e "${GREEN}✓ 所有服务已停止${NC}"

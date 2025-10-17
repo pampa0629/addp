@@ -226,17 +226,21 @@ type TablePreview struct {
 }
 
 type ObjectPreview struct {
-	Bucket       string                `json:"bucket"`
-	Path         string                `json:"path"`
-	NodeType     string                `json:"node_type"`
-	SizeBytes    int64                 `json:"size_bytes"`
-	ObjectCount  int64                 `json:"object_count,omitempty"`
-	LastModified *time.Time            `json:"last_modified,omitempty"`
-	ContentType  string                `json:"content_type,omitempty"`
-	Metadata     map[string]string     `json:"metadata,omitempty"`
-	Children     []ObjectPreviewChild  `json:"children,omitempty"`
-	Content      *ObjectPreviewContent `json:"content,omitempty"`
-	Truncated    bool                  `json:"truncated,omitempty"`
+	Bucket            string                 `json:"bucket"`
+	Path              string                 `json:"path"`
+	NodeType          string                 `json:"node_type"`
+	SizeBytes         int64                  `json:"size_bytes"`
+	ObjectCount       int64                  `json:"object_count,omitempty"`
+	LastModified      *time.Time             `json:"last_modified,omitempty"`
+	ContentType       string                 `json:"content_type,omitempty"`
+	Metadata          map[string]string      `json:"metadata,omitempty"`
+	Attributes        JSONMap                `json:"attributes,omitempty"`
+	ResourceID        uint                   `json:"resource_id,omitempty"`
+	ObjectKey         string                 `json:"object_key,omitempty"`
+	Children          []ObjectPreviewChild   `json:"children,omitempty"`
+	Content           *ObjectPreviewContent  `json:"content,omitempty"`
+	Truncated         bool                   `json:"truncated,omitempty"`
+	ExtractedMetadata map[string]interface{} `json:"extracted_metadata,omitempty"` // 从Meta模块提取的深度元数据
 }
 
 type ObjectPreviewChild struct {

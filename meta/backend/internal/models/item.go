@@ -15,6 +15,7 @@ type MetaItem struct {
 	ItemType          string         `gorm:"size:64;not null;index:idx_meta_item_type" json:"item_type"`
 	Name              string         `gorm:"size:255;not null" json:"name"`
 	FullName          string         `gorm:"type:text" json:"full_name,omitempty"`
+	Fingerprint       string         `gorm:"size:64;not null;uniqueIndex:idx_meta_item_fingerprint" json:"fingerprint" comment:"数据指纹：基于res_id+路径的SHA256哈希，用于去重和数据血缘追踪"`
 	Status            string         `gorm:"size:20;default:'active'" json:"status"`
 	MetaSchemaVersion int            `gorm:"default:1" json:"meta_schema_version"`
 	RowCount          *int64         `json:"row_count,omitempty"`

@@ -19,6 +19,7 @@ import DocxPreview from '@/components/previews/DocxPreview.vue'
 import PptxPreview from '@/components/previews/PptxPreview.vue'
 import TextPreview from '@/components/previews/TextPreview.vue'
 import MarkdownPreview from '@/components/previews/MarkdownPreview.vue'
+import VideoPreview from '@/components/previews/VideoPreview.vue'
 
 const { createApp, h, resolveComponent } = Vue
 
@@ -63,7 +64,8 @@ if (typeof window !== 'undefined') {
     DocxPreview,
     PptxPreview,
     TextPreview,
-    MarkdownPreview
+    MarkdownPreview,
+    VideoPreview
   }
 }
 

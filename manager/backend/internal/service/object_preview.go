@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,6 +36,22 @@ const (
 var reservedObjectSegments = map[string]struct{}{
 	"__bucket__": {},
 	".minio.sys": {},
+}
+
+func mergeJSONMaps(maps ...models.JSONMap) models.JSONMap {
+	var merged models.JSONMap
+	for _, src := range maps {
+		if len(src) == 0 {
+			continue
+		}
+		if merged == nil {
+			merged = make(models.JSONMap, len(src))
+		}
+		for k, v := range src {
+			merged[k] = v
+		}
+	}
+	return merged
 }
 
 type objectStoragePreviewProvider struct {
@@ -114,25 +132,24 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	var item *models.MetaItemLite
 	var node *models.MetaNodeLite
-	var err error
 
 	if objectPath != "" {
-		item, err = p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath); err == nil {
+			item = fetchedItem
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			item = nil
-		}
-	}
 
-	if item == nil {
-		node, err = p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath); err == nil {
+			node = fetchedNode
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			node = nil
+	} else {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath); err == nil {
+			node = fetchedNode
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
 		}
 	}
 
@@ -165,13 +182,30 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 
 	mode := PreviewModeObject
 	preview := &models.TablePreview{
-		Mode:            mode,
-		Page:            1,
-		PageSize:        1,
-		Columns:         []string{},
-		Rows:            []map[string]interface{}{},
-		Object:          &models.ObjectPreview{Bucket: bucket, Path: displayPath, NodeType: nodeType},
+		Mode:     mode,
+		Page:     1,
+		PageSize: 1,
+		Columns:  []string{},
+		Rows:     []map[string]interface{}{},
+		Object: &models.ObjectPreview{
+			Bucket:     bucket,
+			Path:       displayPath,
+			NodeType:   nodeType,
+			ResourceID: resource.ID,
+		},
 		GeometryColumns: []string{},
+	}
+
+	attributeSources := make([]models.JSONMap, 0, 2)
+	if node != nil && len(node.Attributes) > 0 {
+		attributeSources = append(attributeSources, node.Attributes)
+	}
+	if item != nil && len(item.Attributes) > 0 {
+		attributeSources = append(attributeSources, item.Attributes)
+	}
+	combinedAttributes := mergeJSONMaps(attributeSources...)
+	if len(combinedAttributes) > 0 {
+		preview.Object.Attributes = combinedAttributes
 	}
 
 	if nodeType == "bucket" || nodeType == "prefix" || nodeType == "directory" || objectPath == "" {
@@ -193,6 +227,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	if objectPath == "" {
 		return nil, fmt.Errorf("object path is empty")
 	}
+	preview.Object.ObjectKey = fmt.Sprintf("%s/%s", bucket, objectPath)
 
 	stat, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
 	if err != nil {
@@ -230,6 +265,14 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 	if len(metadata) > 0 {
 		preview.Object.Metadata = metadata
+	}
+
+	if item != nil && len(item.Attributes) > 0 {
+		preview.Object.Attributes = item.Attributes
+		// Debug: 打印attributes内容以排查问题
+		if jsonBytes, err := json.MarshalIndent(item.Attributes, "", "  "); err == nil {
+			fmt.Printf("DEBUG: item.Attributes JSON =\n%s\n", string(jsonBytes))
+		}
 	}
 
 	rawContentType := stat.ContentType
@@ -320,7 +363,84 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		}
 	}
 
+	// Manager不做任何元数据解析，只负责原样传递Meta存储的attributes
+	// 前端会根据attributes中的内容自动识别和显示元数据
+
+	// 针对对象尝试触发提取
+	if item != nil && objectPath != "" {
+		extractorAvailable, _ := combinedAttributes["extractor_available"].(bool)
+		hasExtracted := preview.Object.ExtractedMetadata != nil
+
+		if extractorAvailable && !hasExtracted {
+			extracted := p.tryExtractMetadataFromMeta(ctx, resource.ID, bucket, objectPath, client)
+			if extracted != nil {
+				preview.Object.ExtractedMetadata = extracted
+				if preview.Object.Attributes == nil {
+					preview.Object.Attributes = make(models.JSONMap)
+				}
+				preview.Object.Attributes["extracted_metadata"] = extracted
+			}
+		}
+	}
+
 	return preview, nil
+}
+
+// tryExtractMetadataFromMeta 尝试从Meta模块提取元数据
+func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
+	ctx context.Context,
+	resourceID uint,
+	bucket, objectPath string,
+	client *minio.Client,
+) map[string]interface{} {
+	// 获取Meta服务URL和token（从环境变量或配置）
+	metaURL := getEnvOrDefault("META_SERVICE_URL", "http://localhost:8082")
+	token := getTokenFromContext(ctx) // 从context获取JWT token
+
+	if token == "" {
+		// 没有token，无法调用Meta API
+		return nil
+	}
+
+	// 创建Meta客户端
+	metaClient := NewMetaClient(metaURL, token)
+
+	// 下载对象内容（用于提取元数据）
+	objectKey := bucket + "/" + objectPath
+	objReader, err := client.GetObject(ctx, bucket, objectPath, minio.GetObjectOptions{})
+	if err != nil {
+		return nil
+	}
+	defer objReader.Close()
+
+	// 调用Meta提取
+	extracted, err := metaClient.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
+		ResourceID: resourceID,
+		ObjectKey:  objectKey,
+		ObjectData: objReader,
+	})
+	if err != nil {
+		// 提取失败，记录但不影响预览
+		return nil
+	}
+
+	return extracted
+}
+
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+func getTokenFromContext(ctx context.Context) string {
+	// 尝试从context获取token
+	// 这需要在handler中将token放入context
+	if token, ok := ctx.Value("jwt_token").(string); ok {
+		return token
+	}
+	return ""
 }
 
 func buildObjectStorageConfig(info models.ConnectionInfo) (*objectStorageConfig, error) {

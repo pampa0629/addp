@@ -1,30 +1,50 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"github.com/minio/minio-go/v7"
 )
 
 type MetadataService struct {
-	metadataRepo *repository.MetadataRepository
-	resourceRepo *repository.ResourceRepository
-	systemClient *commonClient.SystemClient
-	previews     *PreviewRegistry
-	content      *ObjectContentRegistry
+	metadataRepo   *repository.MetadataRepository
+	resourceRepo   *repository.ResourceRepository
+	systemClient   *commonClient.SystemClient
+	previews       *PreviewRegistry
+	content        *ObjectContentRegistry
+	metaServiceURL string
+	httpClient     *http.Client
 }
 
 var ErrResourceAccessDenied = errors.New("resource not accessible for current tenant")
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry) *MetadataService {
+type ExplorerNodeRefreshRequest struct {
+	NodeType     string `json:"node_type"`
+	Schema       string `json:"schema"`
+	Path         string `json:"path"`
+	FullPath     string `json:"full_path"`
+	FullName     string `json:"full_name"`
+	Table        string `json:"table"`
+	ResourceType string `json:"resource_type"`
+}
+
+func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
 	pr := previewRegistry
 	if pr == nil {
 		pr = NewPreviewRegistry()
@@ -33,12 +53,17 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRep
 	if cr == nil {
 		cr = NewObjectContentRegistry()
 	}
+	client := &http.Client{
+		Timeout: 120 * time.Second,
+	}
 	return &MetadataService{
-		metadataRepo: metadataRepo,
-		resourceRepo: resourceRepo,
-		systemClient: systemClient,
-		previews:     pr,
-		content:      cr,
+		metadataRepo:   metadataRepo,
+		resourceRepo:   resourceRepo,
+		systemClient:   systemClient,
+		previews:       pr,
+		content:        cr,
+		metaServiceURL: strings.TrimRight(metaServiceURL, "/"),
+		httpClient:     client,
 	}
 }
 
@@ -95,6 +120,125 @@ func (s *MetadataService) ScanResource(resourceID uint) (*models.MetadataScanRes
 	}
 
 	return &result, nil
+}
+
+// RefreshExplorerNode 触发 Meta 服务对指定节点进行重新扫描
+func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID uint, tenantID *uint, req *ExplorerNodeRefreshRequest, authHeader string) error {
+	if req == nil {
+		return errors.New("refresh request payload is required")
+	}
+	if s.metaServiceURL == "" {
+		return fmt.Errorf("meta service url not configured")
+	}
+	if strings.TrimSpace(authHeader) == "" {
+		return fmt.Errorf("missing authorization header")
+	}
+
+	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	if err != nil {
+		return err
+	}
+
+	nodeType := strings.ToLower(strings.TrimSpace(req.NodeType))
+	if nodeType == "" {
+		nodeType = "resource"
+	}
+
+	resourceType := strings.ToLower(resource.ResourceType)
+	payload := map[string]interface{}{
+		"resource_id": resourceID,
+		"scan_depth":  "deep",
+		"scan_type":   "manual",
+	}
+
+	var (
+		schemaNames []string
+		objectPaths []string
+	)
+
+	if isObjectStorageType(resourceType) {
+		bucketPath := normalizeObjectPathCandidate(req.Schema)
+		switch nodeType {
+		case "resource":
+			if bucketPath != "" {
+				objectPaths = append(objectPaths, bucketPath)
+			} else {
+				return fmt.Errorf("missing bucket for object storage resource refresh")
+			}
+		case "bucket":
+			if bucketPath == "" {
+				return fmt.Errorf("missing bucket path for node type %s", nodeType)
+			}
+			objectPaths = append(objectPaths, bucketPath)
+		default:
+			targetPath := req.normalizedObjectPath()
+			if targetPath == "" {
+				return fmt.Errorf("missing object path for node type %s", nodeType)
+			}
+			objectPaths = append(objectPaths, targetPath)
+		}
+	} else {
+		schema := strings.TrimSpace(req.Schema)
+		if nodeType != "resource" {
+			if schema == "" {
+				return fmt.Errorf("missing schema for node type %s", nodeType)
+			}
+			schemaNames = append(schemaNames, schema)
+		}
+	}
+
+	if len(schemaNames) > 0 {
+		payload["schema_names"] = schemaNames
+	}
+	if len(objectPaths) > 0 {
+		payload["object_paths"] = objectPaths
+	}
+
+	logger.L().Info("数据探查: 触发节点刷新",
+		"resource_id", resourceID,
+		"resource_type", resource.ResourceType,
+		"node_type", nodeType,
+		"schema", req.Schema,
+		"path", req.Path,
+		"full_path", req.FullPath,
+		"target_schemas", schemaNames,
+		"target_paths", objectPaths,
+	)
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to encode scan payload: %w", err)
+	}
+
+	endpoint := s.metaServiceURL + "/api/meta/scan/resource"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build meta scan request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", authHeader)
+
+	resp, err := s.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to call meta scan service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<10))
+		text := strings.TrimSpace(string(msg))
+		if text == "" {
+			text = resp.Status
+		}
+		return fmt.Errorf("meta scan service returned status %d: %s", resp.StatusCode, text)
+	}
+
+	logger.L().Info("数据探查: 节点刷新完成",
+		"resource_id", resourceID,
+		"node_type", nodeType,
+	)
+
+	return nil
 }
 
 // GetTables 获取资源的表列表
@@ -324,6 +468,57 @@ func buildObjectStorageTree(node *models.MetaNodeLite, childNodes map[uint][]*mo
 	return entries
 }
 
+func (r *ExplorerNodeRefreshRequest) normalizedObjectPath() string {
+	if r == nil {
+		return ""
+	}
+
+	candidates := make([]string, 0, 6)
+	for _, raw := range []string{r.FullPath, r.FullName} {
+		if cleaned := normalizeObjectPathCandidate(raw); cleaned != "" {
+			candidates = append(candidates, cleaned)
+		}
+	}
+
+	bucket := normalizeObjectPathCandidate(r.Schema)
+	for _, raw := range []string{r.Path, r.Table} {
+		cleaned := normalizeObjectPathCandidate(raw)
+		if cleaned == "" {
+			continue
+		}
+		if bucket != "" {
+			if strings.HasPrefix(cleaned, bucket+"/") || cleaned == bucket {
+				candidates = append(candidates, cleaned)
+			} else {
+				candidates = append(candidates, bucket+"/"+cleaned)
+			}
+		} else {
+			candidates = append(candidates, cleaned)
+		}
+	}
+
+	if bucket != "" {
+		candidates = append(candidates, bucket)
+	}
+
+	for _, candidate := range candidates {
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func normalizeObjectPathCandidate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.ReplaceAll(trimmed, "\\", "/")
+	trimmed = strings.Trim(trimmed, "/")
+	return trimmed
+}
+
 func (s *MetadataService) listActiveResources(tenantID *uint) ([]models.Resource, error) {
 	var tenantFilter uint
 	if tenantID != nil {
@@ -367,6 +562,10 @@ func (s *MetadataService) listActiveResources(tenantID *uint) ([]models.Resource
 // PreviewTable 获取表数据预览
 // 当 tableName 为空时，返回 schema/bucket 的统计信息和子节点列表
 func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
+	return s.PreviewTableWithContext(context.Background(), resourceID, schemaName, tableName, page, pageSize, tenantID)
+}
+
+func (s *MetadataService) PreviewTableWithContext(ctx context.Context, resourceID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
 	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
 		return nil, err
@@ -390,7 +589,6 @@ func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName st
 		return nil, fmt.Errorf("no preview plugin available: %w", err)
 	}
 
-	ctx := context.Background()
 	result, err := provider.Preview(ctx, req)
 	if err != nil {
 		return nil, err
@@ -459,4 +657,135 @@ func convertResource(src *commonModels.Resource) *models.Resource {
 		TenantID:       tenantIDPtr,
 		IsActive:       src.IsActive,
 	}
+}
+
+// StreamVideo 视频流式传输
+// 支持HTTP Range请求，用于视频播放器的seek功能
+func (s *MetadataService) StreamVideo(
+	ctx context.Context,
+	resourceID uint,
+	objectKey string,
+	rangeHeader string,
+	tenantID *uint,
+) (io.ReadCloser, int64, string, string, error) {
+	// 获取resource信息
+	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	if err != nil {
+		return nil, 0, "", "", ErrResourceAccessDenied
+	}
+
+	// 检查是否为对象存储类型
+	resourceType := strings.ToLower(resource.ResourceType)
+	if resourceType != "minio" && resourceType != "s3" && resourceType != "oss" {
+		return nil, 0, "", "", fmt.Errorf("resource type %s does not support video streaming", resource.ResourceType)
+	}
+
+	// 创建MinIO client
+	cfg, err := buildObjectStorageConfig(resource.ConnectionInfo)
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to build storage config: %w", err)
+	}
+	client, err := newMinioClient(cfg)
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to create minio client: %w", err)
+	}
+
+	// 解析objectKey（格式：bucket/path/to/file.mp4）
+	parts := strings.SplitN(objectKey, "/", 2)
+	if len(parts) != 2 {
+		return nil, 0, "", "", fmt.Errorf("invalid object key format: %s", objectKey)
+	}
+	bucket := parts[0]
+	objectPath := parts[1]
+
+	// 获取对象信息
+	objInfo, err := client.StatObject(ctx, bucket, objectPath, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to stat object: %w", err)
+	}
+
+	// 推断Content-Type
+	contentType := objInfo.ContentType
+	if contentType == "" {
+		// 根据扩展名推断
+		ext := strings.ToLower(filepath.Ext(objectPath))
+		switch ext {
+		case ".mp4":
+			contentType = "video/mp4"
+		case ".avi":
+			contentType = "video/x-msvideo"
+		case ".mkv":
+			contentType = "video/x-matroska"
+		case ".mov":
+			contentType = "video/quicktime"
+		case ".webm":
+			contentType = "video/webm"
+		case ".flv":
+			contentType = "video/x-flv"
+		case ".wmv":
+			contentType = "video/x-ms-wmv"
+		default:
+			contentType = "application/octet-stream"
+		}
+	}
+
+	// 处理Range请求
+	opts := minio.GetObjectOptions{}
+	var contentLength int64
+	var contentRange string
+
+	if rangeHeader != "" {
+		// 解析Range header (格式: "bytes=start-end")
+		rangeHeader = strings.TrimPrefix(rangeHeader, "bytes=")
+		rangeParts := strings.Split(rangeHeader, "-")
+
+		if len(rangeParts) == 2 {
+			start, err := strconv.ParseInt(rangeParts[0], 10, 64)
+			if err != nil {
+				start = 0
+			}
+
+			var end int64
+			if rangeParts[1] != "" {
+				end, err = strconv.ParseInt(rangeParts[1], 10, 64)
+				if err != nil {
+					end = objInfo.Size - 1
+				}
+			} else {
+				end = objInfo.Size - 1
+			}
+
+			// 确保范围有效
+			if start < 0 {
+				start = 0
+			}
+			if end >= objInfo.Size {
+				end = objInfo.Size - 1
+			}
+			if start > end {
+				return nil, 0, "", "", fmt.Errorf("invalid range: start > end")
+			}
+
+			// 设置Range
+			err = opts.SetRange(start, end)
+			if err != nil {
+				return nil, 0, "", "", fmt.Errorf("failed to set range: %w", err)
+			}
+
+			contentLength = end - start + 1
+			contentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, objInfo.Size)
+		}
+	} else {
+		// 没有Range，返回完整内容
+		contentLength = objInfo.Size
+		contentRange = ""
+	}
+
+	// 获取对象流
+	reader, err := client.GetObject(ctx, bucket, objectPath, opts)
+	if err != nil {
+		return nil, 0, "", "", fmt.Errorf("failed to get object: %w", err)
+	}
+
+	return reader, contentLength, contentRange, contentType, nil
 }

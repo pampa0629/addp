@@ -111,6 +111,9 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 			Children:    children,
 		},
 	}
+	if req != nil && req.Resource != nil {
+		preview.Object.ResourceID = req.Resource.ID
+	}
 
 	return preview, nil
 }

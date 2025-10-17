@@ -11,13 +11,15 @@ type Config struct {
 	commonConfig.BaseConfig
 
 	// Manager 模块特有配置
-	Port            string
-	DBSchema        string
+	Port             string
+	DBSchema         string
 	PreviewPluginDir string
+	MetaServiceURL   string
 }
 
 func Load() *Config {
 	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
+	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
 
 	rawPluginDir := commonConfig.GetEnv("PREVIEW_PLUGIN_DIR", "")
 	builtinPluginDir := commonConfig.ResolveFromRoot("manager", "backend", "plugins")
@@ -32,6 +34,7 @@ func Load() *Config {
 		Port:             commonConfig.GetEnv("PORT", "8081"),
 		DBSchema:         commonConfig.GetEnv("DB_SCHEMA", "manager"),
 		PreviewPluginDir: defaultPluginDir,
+		MetaServiceURL:   metaURL,
 	}
 
 	// 设置 BaseConfig 字段

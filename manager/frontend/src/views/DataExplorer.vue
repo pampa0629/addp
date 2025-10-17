@@ -7,8 +7,14 @@
         :tree-data="treeData"
         :loading="loadingTree"
         :loading-resources="loadingResources"
+        :refreshing-node-ids="refreshingNodeIds"
+        :expanded-keys="expandedNodeIds"
+        :current-node-key="selectedNode?.id || ''"
         @refresh="loadTree"
         @node-click="handleNodeClick"
+        @refresh-node="handleNodeRefresh"
+        @node-expand="handleNodeExpandEvent"
+        @node-collapse="handleNodeCollapseEvent"
       />
 
       <!-- 可拖拽分隔器 -->
@@ -27,7 +33,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import ResourceTree from '@/components/explorer/ResourceTree.vue'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
@@ -50,6 +56,8 @@ const loadingTree = ref(false)
 const loadingPreview = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
+const refreshingNodeIds = ref([])
+const expandedNodeIds = ref([])
 let previewRequestId = 0
 
 const normalizeResourceList = (list = []) =>
@@ -69,6 +77,221 @@ const resetSelection = () => {
   previewData.value = null
   currentPage.value = 1
 }
+
+const snapshotNode = (node) => {
+  if (!node) return null
+  return {
+    id: node.id,
+    type: node.type,
+    resourceId: node.resourceId,
+    schema: node.schema || '',
+    path: node.path || '',
+    table: node.table || ''
+  }
+}
+
+const extractParentPath = (path = '') => {
+  if (!path) return ''
+  const segments = path.split('/').filter(Boolean)
+  if (segments.length <= 1) return ''
+  segments.pop()
+  return segments.join('/')
+}
+
+const nodesMatch = (candidate, snapshot) => {
+  if (!candidate || !snapshot) return false
+  if (snapshot.id && candidate.id === snapshot.id) {
+    return true
+  }
+  const normalize = (value) => (value ?? '').toString()
+  return (
+    Number(candidate.resourceId) === Number(snapshot.resourceId) &&
+    normalize(candidate.type) === normalize(snapshot.type) &&
+    normalize(candidate.schema) === normalize(snapshot.schema) &&
+    normalize(candidate.path) === normalize(snapshot.path) &&
+    normalize(candidate.table) === normalize(snapshot.table)
+  )
+}
+
+const findNodeInTree = (nodes, snapshot) => {
+  if (!Array.isArray(nodes) || !snapshot) return null
+  for (const node of nodes) {
+    if (nodesMatch(node, snapshot)) {
+      return node
+    }
+    if (Array.isArray(node.children) && node.children.length) {
+      const found = findNodeInTree(node.children, snapshot)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+const restoreSelectionFromSnapshot = (snapshot) => {
+  if (!snapshot) return false
+  const found = findNodeInTree(treeData.value, snapshot)
+  if (found) {
+    selectedNode.value = found
+    ensureNodeExpanded(found.id)
+    ensureNodePathExpanded(found.id)
+    return true
+  }
+  return false
+}
+
+const normalizePreviewPayload = (data, node) => {
+  if (!data || !node) return data
+  const normalized = { ...data }
+  const resourceId = node.resourceId ?? node.resource_id ?? null
+
+  if (resourceId != null) {
+    if (normalized.resourceId == null) normalized.resourceId = resourceId
+    if (normalized.resource_id == null) normalized.resource_id = resourceId
+  }
+
+  if (!normalized.schema && node.schema) {
+    normalized.schema = node.schema
+  }
+  if (!normalized.table) {
+    normalized.table = node.table ?? node.path ?? ''
+  }
+
+  if (normalized.object && typeof normalized.object === 'object') {
+    const object = { ...normalized.object }
+    if (resourceId != null) {
+      if (object.resource_id == null) object.resource_id = resourceId
+      if (object.resourceId == null) object.resourceId = resourceId
+    }
+    if (!object.bucket && node.schema) {
+      object.bucket = node.schema
+    }
+    const rawPath = object.path ?? node.path ?? node.table ?? ''
+    if (!object.path && rawPath) {
+      object.path = rawPath
+    }
+    if (!object.object_key) {
+      const bucket = object.bucket ?? node.schema ?? ''
+      const cleaned = String(rawPath || '').replace(/^\/+/, '')
+      if (bucket && cleaned) {
+        object.object_key = `${bucket}/${cleaned}`
+      }
+    }
+    normalized.object = object
+  }
+
+  return normalized
+}
+
+const addRefreshingNode = (id) => {
+  if (!id) return
+  if (!refreshingNodeIds.value.includes(id)) {
+    refreshingNodeIds.value = [...refreshingNodeIds.value, id]
+  }
+}
+
+const removeRefreshingNode = (id) => {
+  if (!id) {
+    refreshingNodeIds.value = []
+    return
+  }
+  refreshingNodeIds.value = refreshingNodeIds.value.filter((item) => item !== id)
+}
+
+const collectAllNodeIds = (nodes, set) => {
+  if (!Array.isArray(nodes)) return
+  for (const node of nodes) {
+    if (!node || !node.id) continue
+    set.add(node.id)
+    if (Array.isArray(node.children) && node.children.length) {
+      collectAllNodeIds(node.children, set)
+    }
+  }
+}
+
+const syncExpandedKeysWithTree = () => {
+  const available = new Set()
+  collectAllNodeIds(treeData.value, available)
+  let nextKeys = expandedNodeIds.value.filter((id) => available.has(id))
+  if (!nextKeys.length && treeData.value.length) {
+    nextKeys = treeData.value.map((node) => node.id).filter(Boolean)
+  }
+  const normalized = [...new Set(nextKeys)]
+  const current = expandedNodeIds.value
+  const unchanged =
+    normalized.length === current.length && normalized.every((id, index) => id === current[index])
+  if (!unchanged) {
+    expandedNodeIds.value = normalized
+  }
+}
+
+const findNodePathById = (nodes, targetId) => {
+  if (!Array.isArray(nodes)) return null
+  for (const node of nodes) {
+    if (!node || !node.id) continue
+    if (node.id === targetId) {
+      return [node.id]
+    }
+    if (Array.isArray(node.children) && node.children.length) {
+      const childPath = findNodePathById(node.children, targetId)
+      if (childPath) {
+        return [node.id, ...childPath]
+      }
+    }
+  }
+  return null
+}
+
+const ensureNodePathExpanded = (nodeId) => {
+  if (!nodeId) return
+  const path = findNodePathById(treeData.value, nodeId)
+  if (!path || path.length <= 1) return
+  const ancestors = path.slice(0, -1)
+  const nextSet = new Set(expandedNodeIds.value)
+  ancestors.forEach((id) => nextSet.add(id))
+  expandedNodeIds.value = Array.from(nextSet)
+}
+
+const ensureNodeExpanded = (nodeId) => {
+  if (!nodeId) return
+  const nextSet = new Set(expandedNodeIds.value)
+  const sizeBefore = nextSet.size
+  nextSet.add(nodeId)
+  if (nextSet.size !== sizeBefore) {
+    expandedNodeIds.value = Array.from(nextSet)
+  }
+}
+
+const handleNodeExpandEvent = (node) => {
+  if (!node?.id) return
+  const nextSet = new Set(expandedNodeIds.value)
+  const sizeBefore = nextSet.size
+  nextSet.add(node.id)
+  if (nextSet.size !== sizeBefore) {
+    expandedNodeIds.value = Array.from(nextSet)
+  }
+}
+
+const handleNodeCollapseEvent = (node) => {
+  if (!node?.id) return
+  const nextSet = expandedNodeIds.value.filter((id) => id !== node.id)
+  if (nextSet.length !== expandedNodeIds.value.length) {
+    expandedNodeIds.value = nextSet
+  }
+}
+
+watch(
+  treeData,
+  () => {
+    nextTick(() => {
+      syncExpandedKeysWithTree()
+      if (selectedNode.value?.id) {
+        ensureNodeExpanded(selectedNode.value.id)
+        ensureNodePathExpanded(selectedNode.value.id)
+      }
+    })
+  },
+  { deep: true }
+)
 
 /**
  * 加载存储引擎列表
@@ -145,6 +368,7 @@ const loadModernTrees = async (resourceIds) => {
     })
 
     treeData.value = treeNodes
+    syncExpandedKeysWithTree()
 
     if (failed.length && treeNodes.length) {
       const names = failed.map((id) => resolveResourceName(id)).join(', ')
@@ -158,6 +382,7 @@ const loadModernTrees = async (resourceIds) => {
     console.error('[DataExplorer] 加载资源树失败', error)
     ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
     treeData.value = []
+    expandedNodeIds.value = []
     resetSelection()
   } finally {
     loadingTree.value = false
@@ -179,6 +404,7 @@ const loadLegacyTree = async (
     resources.value = legacyResources
 
     treeData.value = legacyResources.map((item) => transformResource(item))
+    syncExpandedKeysWithTree()
     resetSelection()
   } catch (error) {
     console.error('[DataExplorer] 使用旧版资源树失败', error)
@@ -186,6 +412,7 @@ const loadLegacyTree = async (
       ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
     }
     treeData.value = []
+    expandedNodeIds.value = []
   } finally {
     loadingTree.value = false
     if (finalizeResourceLoading) {
@@ -227,14 +454,7 @@ const loadPreview = async () => {
       return
     }
 
-    previewData.value = response.data
-
-    // 为表格模式添加额外的元数据
-    if (response.data.mode === 'table') {
-      previewData.value.resourceId = selectedNode.value.resourceId
-      previewData.value.schema = selectedNode.value.schema
-      previewData.value.table = selectedNode.value.table
-    }
+    previewData.value = normalizePreviewPayload(response.data, selectedNode.value)
   } catch (error) {
     if (requestId !== previewRequestId) {
       return
@@ -253,6 +473,8 @@ const loadPreview = async () => {
  */
 const handleNodeClick = (node) => {
   selectedNode.value = node
+  ensureNodeExpanded(node?.id)
+  ensureNodePathExpanded(node?.id)
   currentPage.value = 1
   loadPreview()
 }
@@ -294,7 +516,68 @@ const handleNavigate = (child) => {
   }
 
   currentPage.value = 1
+  ensureNodeExpanded(selectedNode.value.id)
+  ensureNodePathExpanded(selectedNode.value.id)
   loadPreview()
+}
+
+const handleNodeRefresh = async (node) => {
+  if (!node || !node.resourceId) return
+
+  if (refreshingNodeIds.value.includes(node.id)) return
+
+  ensureNodeExpanded(node.id)
+  ensureNodePathExpanded(node.id)
+  const shouldRestoreSelection = selectedNode.value?.id === node.id
+  const selectionSnapshot = shouldRestoreSelection ? snapshotNode(selectedNode.value) : null
+  const previousPage = shouldRestoreSelection ? currentPage.value : 1
+
+  addRefreshingNode(node.id)
+  try {
+    const nodeType = (node.type || '').toLowerCase()
+    let refreshPath = node.path || ''
+    let refreshFullPath = node.fullName || node.full_name || ''
+    let refreshTable = node.table || ''
+
+    if (nodeType === 'object') {
+      const parentPath = node.parentPath || extractParentPath(node.path || '')
+      refreshPath = parentPath
+      refreshFullPath = parentPath
+      refreshTable = parentPath
+    }
+
+    const payload = {
+      node_type: node.type,
+      schema: node.schema,
+      path: refreshPath,
+      table: refreshTable,
+      full_path: refreshFullPath,
+      full_name: refreshFullPath,
+      resource_type: node.resourceType
+    }
+
+    await dataExplorerAPI.refreshNode(node.resourceId, payload)
+    ElMessage.success('刷新完成')
+
+    await loadTree()
+
+    if (shouldRestoreSelection && selectionSnapshot) {
+      const restored = restoreSelectionFromSnapshot(selectionSnapshot)
+      if (restored) {
+        currentPage.value = previousPage
+        await loadPreview()
+      }
+    }
+  } catch (error) {
+    console.error('[DataExplorer] 节点刷新失败', error)
+    ElMessage.error('刷新失败: ' + (error.response?.data?.error || error.message))
+    if (shouldRestoreSelection && selectionSnapshot) {
+      restoreSelectionFromSnapshot(selectionSnapshot)
+      currentPage.value = previousPage
+    }
+  } finally {
+    removeRefreshingNode(node.id)
+  }
 }
 
 onMounted(() => {

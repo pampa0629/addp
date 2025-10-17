@@ -25,6 +25,11 @@
     <pre class="json-content" :class="{ collapsed: showMap }">{{ formattedJson }}</pre>
 
     <div v-if="truncated" class="truncate-tip">内容较大，仅展示部分</div>
+
+    <!-- 元数据展示区域 -->
+    <div v-if="hasExtractedMetadata" class="metadata-section">
+      <ExtractedMetadata :metadata="extractedMetadata" />
+    </div>
   </div>
 </template>
 
@@ -33,6 +38,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import MapContainer from '@/components/map/MapContainer.vue'
 import { safeStringify } from '@/utils/formatters'
+import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -46,13 +52,19 @@ const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
 const showMap = ref(true)
 const baseMapType = ref('')
 
+const objectData = computed(() => props.data?.object || {})
+
 const geojsonData = computed(() => {
-  return props.data?.object?.content?.geojson || props.data?.object?.content?.GeoJSON || null
+  return objectData.value?.content?.geojson || objectData.value?.content?.GeoJSON || null
 })
 
 const truncated = computed(() => {
-  return props.data?.object?.content?.truncated || props.data?.object?.truncated || false
+  return objectData.value?.content?.truncated || objectData.value?.truncated || false
 })
+
+// 提取元数据
+const extractedMetadata = computed(() => objectData.value?.extracted_metadata || null)
+const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 const geoFeatures = computed(() => {
   if (!geojsonData.value) return []
@@ -151,5 +163,13 @@ onMounted(() => {
   font-size: 12px;
   color: var(--el-color-primary);
   text-align: center;
+}
+
+/* 元数据展示区域 */
+.metadata-section {
+  padding: 16px;
+  background: var(--el-bg-color-page);
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
 }
 </style>

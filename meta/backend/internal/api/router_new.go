@@ -54,6 +54,10 @@ func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
 		api.POST("/scan/resource", handler.ScanResource)
+
+		// 元数据相关
+		api.GET("/metadata/object", handler.GetObjectMetadata)
+		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
 	}
 
 	return router

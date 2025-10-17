@@ -99,6 +99,11 @@
           <el-empty description="无法获取 PDF 文件" />
         </div>
       </div>
+
+      <!-- PDF 元数据展示区域 -->
+      <div v-if="hasExtractedMetadata" class="metadata-section">
+        <ExtractedMetadata :metadata="extractedMetadata" />
+      </div>
     </div>
   </div>
 </template>
@@ -108,6 +113,7 @@ import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { ArrowLeft, ArrowRight, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatBytes } from '@/utils/formatters'
+import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -151,6 +157,10 @@ const contentTypeLabel = computed(() => {
     'application/pdf'
   )
 })
+
+// 提取元数据
+const extractedMetadata = computed(() => objectData.value?.extracted_metadata || null)
+const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
 
 // 状态
 const loading = ref(false)
@@ -682,5 +692,14 @@ onBeforeUnmount(() => {
   gap: 6px;
   font-size: 13px;
   color: var(--el-text-color-regular);
+}
+
+/* PDF 元数据展示区域 */
+.metadata-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--el-bg-color-page);
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
 }
 </style>

@@ -9,6 +9,9 @@ import (
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
+
+	// Import plugins package to auto-register third-party extractors
+	_ "github.com/addp/meta/internal/scanner/plugins"
 )
 
 func main() {

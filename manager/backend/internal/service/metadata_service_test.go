@@ -64,7 +64,7 @@ func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
 
 func TestListExplorerResourcesTenantFiltering(t *testing.T) {
 	resourceRepo := setupTestResourceRepo(t)
-	service := NewMetadataService(nil, resourceRepo, nil, nil, nil)
+	service := NewMetadataService(nil, resourceRepo, nil, nil, nil, "")
 
 	// 无租户上下文（超级管理员）应看到所有激活资源（含租户为空）
 	resourcesAll, err := service.ListExplorerResources(nil)
@@ -111,7 +111,7 @@ func TestListExplorerResourcesTenantFiltering(t *testing.T) {
 
 func TestGetResourceTreeDeniedForOtherTenant(t *testing.T) {
 	resourceRepo := setupTestResourceRepo(t)
-	service := NewMetadataService(nil, resourceRepo, nil, nil, nil)
+	service := NewMetadataService(nil, resourceRepo, nil, nil, nil, "")
 
 	tenantOne := uint(1)
 	_, err := service.GetResourceTree(2, &tenantOne)

@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/addp/common/logger"
 	auth "github.com/addp/common/middleware/auth"
@@ -89,6 +92,47 @@ func (h *DataExplorerHandler) GetResourceTree(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": tree})
 }
 
+// RefreshNode 触发 Meta 服务刷新指定节点
+func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
+	resourceIDStr := c.Param("id")
+	if resourceIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource id"})
+		return
+	}
+
+	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	var req service.ExplorerNodeRefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+		return
+	}
+
+	tenantID := tenantIDFromContext(c)
+	authHeader := c.GetHeader("Authorization")
+
+	if err := h.metadataService.RefreshExplorerNode(c.Request.Context(), uint(resourceIDUint), tenantID, &req, authHeader); err != nil {
+		if errors.Is(err, service.ErrResourceAccessDenied) {
+			logger.L().Warn("数据探查: 节点刷新被拒绝", "resource_id", resourceIDUint, "tenant_id", tenantIDValue(tenantID))
+			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			return
+		}
+		if strings.HasPrefix(err.Error(), "missing") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		logger.L().Error("数据探查: 节点刷新失败", "error", err, "resource_id", resourceIDUint)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "refresh requested"})
+}
+
 // PreviewTable 返回表数据预览
 // 支持三种情况:
 // 1. table 有值: 预览具体的表或对象
@@ -115,7 +159,17 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 
 	tenantID := tenantIDFromContext(c)
 
-	preview, err := h.metadataService.PreviewTable(uint(resourceIDUint), schemaName, tableName, page, pageSize, tenantID)
+	// 将JWT token放入context，供Meta客户端使用
+	ctx := c.Request.Context()
+	if token := c.GetHeader("Authorization"); token != "" {
+		// 移除 "Bearer " 前缀
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		}
+		ctx = context.WithValue(ctx, "jwt_token", token)
+	}
+
+	preview, err := h.metadataService.PreviewTableWithContext(ctx, uint(resourceIDUint), schemaName, tableName, page, pageSize, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
 			logger.L().Warn("数据探查: 预览被拒绝", "resource_id", resourceIDUint, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))
@@ -126,7 +180,25 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 		return
 	}
 
+	// Debug: 如果是对象预览，打印attributes信息
+	if preview != nil && preview.Object != nil {
+		logger.L().Info("数据探查: 预览对象",
+			"resource_id", resourceIDUint,
+			"schema", schemaName,
+			"table", tableName,
+			"has_attributes", len(preview.Object.Attributes) > 0,
+			"attributes_keys", getMapKeys(preview.Object.Attributes))
+	}
+
 	c.JSON(http.StatusOK, preview)
+}
+
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func tenantIDFromContext(c *gin.Context) *uint {
@@ -158,4 +230,67 @@ func tenantIDValue(id *uint) interface{} {
 		return nil
 	}
 	return *id
+}
+
+// VideoStream 视频流式传输API
+// 支持Range请求，用于视频播放器的流式加载
+func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
+	resourceIDStr := c.Query("resource_id")
+	objectKey := c.Query("object_key")
+
+	if resourceIDStr == "" || objectKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id or object_key"})
+		return
+	}
+
+	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	tenantID := tenantIDFromContext(c)
+
+	// 获取视频内容（支持Range请求）
+	rangeHeader := c.GetHeader("Range")
+
+	// 调用service获取视频流
+	videoReader, contentLength, contentRange, contentType, err := h.metadataService.StreamVideo(
+		c.Request.Context(),
+		uint(resourceIDUint),
+		objectKey,
+		rangeHeader,
+		tenantID,
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrResourceAccessDenied) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			return
+		}
+		logger.L().Error("视频流传输失败", "error", err, "resource_id", resourceIDUint, "object_key", objectKey)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer videoReader.Close()
+
+	// 设置响应头
+	c.Header("Content-Type", contentType)
+	c.Header("Accept-Ranges", "bytes")
+
+	if contentRange != "" {
+		// Partial Content (206)
+		c.Header("Content-Range", contentRange)
+		c.Header("Content-Length", strconv.FormatInt(contentLength, 10))
+		c.Status(http.StatusPartialContent)
+	} else {
+		// Full Content (200)
+		c.Header("Content-Length", strconv.FormatInt(contentLength, 10))
+		c.Status(http.StatusOK)
+	}
+
+	// 流式传输视频内容
+	_, err = io.Copy(c.Writer, videoReader)
+	if err != nil {
+		logger.L().Warn("视频流传输中断", "error", err, "object_key", objectKey)
+	}
 }

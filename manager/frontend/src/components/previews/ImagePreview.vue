@@ -1,23 +1,57 @@
 <template>
-  <div class="image-preview">
-    <div v-if="imageSrc" class="image-wrapper">
-      <img :src="imageSrc" :alt="fileName" />
+  <div class="image-preview-container">
+    <div class="image-preview">
+      <div v-if="imageSrc" class="image-wrapper">
+        <img :src="imageSrc" :alt="fileName" @load="onImageLoad" />
+      </div>
+      <div v-else class="placeholder">
+        <p class="message">{{ contentMessage }}</p>
+        <p class="download-hint">如需下载原始文件，请使用右上角的下载按钮</p>
+        <div v-if="showMetadata" class="meta-info">
+          <div class="meta-row" v-if="displayContentType">
+            <span class="meta-label">文件类型</span>
+            <span class="meta-value">{{ displayContentType }}</span>
+          </div>
+          <div class="meta-row" v-if="formattedSize">
+            <span class="meta-label">文件大小</span>
+            <span class="meta-value">{{ formattedSize }}</span>
+          </div>
+          <div class="meta-row" v-if="formattedLimit">
+            <span class="meta-label">预览限制</span>
+            <span class="meta-value">{{ formattedLimit }}</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div v-else class="placeholder">
-      <p class="message">{{ contentMessage }}</p>
-      <p class="download-hint">如需下载原始文件，请使用右上角的下载按钮</p>
-      <div v-if="showMetadata" class="meta-info">
-        <div class="meta-row" v-if="displayContentType">
-          <span class="meta-label">文件类型</span>
-          <span class="meta-value">{{ displayContentType }}</span>
+
+    <!-- 元数据展示区域 -->
+    <div v-if="hasExtractedMetadata" class="metadata-section">
+      <ExtractedMetadata :metadata="extractedMetadata" />
+    </div>
+
+    <!-- 如果有图像元数据但不在extracted_metadata中，则显示简化版本 -->
+    <div v-else-if="hasImageMetadata" class="quick-metadata">
+      <h4><i class="el-icon-picture"></i> 图像信息</h4>
+      <div class="quick-meta-grid">
+        <div v-if="imageMetadata.resolution" class="quick-meta-item">
+          <span class="label">分辨率</span>
+          <span class="value">{{ imageMetadata.resolution }}</span>
         </div>
-        <div class="meta-row" v-if="formattedSize">
-          <span class="meta-label">文件大小</span>
-          <span class="meta-value">{{ formattedSize }}</span>
+        <div v-if="imageMetadata.format" class="quick-meta-item">
+          <span class="label">格式</span>
+          <span class="value">{{ imageMetadata.format.toUpperCase() }}</span>
         </div>
-        <div class="meta-row" v-if="formattedLimit">
-          <span class="meta-label">预览限制</span>
-          <span class="meta-value">{{ formattedLimit }}</span>
+        <div v-if="imageMetadata.megapixels" class="quick-meta-item">
+          <span class="label">像素数</span>
+          <span class="value">{{ imageMetadata.megapixels.toFixed(1) }} MP</span>
+        </div>
+        <div v-if="imageMetadata.aspect_ratio" class="quick-meta-item">
+          <span class="label">宽高比</span>
+          <span class="value">{{ imageMetadata.aspect_ratio }}</span>
+        </div>
+        <div v-if="imageMetadata.color_space" class="quick-meta-item">
+          <span class="label">色彩空间</span>
+          <span class="value">{{ imageMetadata.color_space }}</span>
         </div>
       </div>
     </div>
@@ -25,8 +59,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatBytes } from '@/utils/formatters'
+import ExtractedMetadata from './ExtractedMetadata.vue'
 
 const props = defineProps({
   data: {
@@ -35,11 +70,32 @@ const props = defineProps({
   }
 })
 
+const imageLoadedDimensions = ref({ width: 0, height: 0 })
+
 const objectData = computed(() => props.data?.object || {})
 const content = computed(() => objectData.value?.content || {})
 const metadata = computed(() => content.value?.metadata || {})
 
 const imageData = computed(() => content.value?.image_data || content.value?.imageData || null)
+
+// 提取元数据
+const extractedMetadata = computed(() => objectData.value?.extracted_metadata || null)
+const hasExtractedMetadata = computed(() => Boolean(extractedMetadata.value))
+
+// 从 extracted_metadata 或 attributes 中获取图像元数据
+const imageMetadata = computed(() => {
+  // 优先从 extracted_metadata 获取
+  if (extractedMetadata.value?.custom_attrs?.image_metadata) {
+    return extractedMetadata.value.custom_attrs.image_metadata
+  }
+  // 其次从 attributes 获取
+  if (objectData.value?.attributes?.image_metadata) {
+    return objectData.value.attributes.image_metadata
+  }
+  return null
+})
+
+const hasImageMetadata = computed(() => Boolean(imageMetadata.value))
 
 const sizeBytes = computed(() => {
   const objectSize = objectData.value?.size_bytes ?? objectData.value?.sizeBytes
@@ -81,9 +137,23 @@ const displayContentType = computed(() => contentType.value || '')
 const showMetadata = computed(
   () => Boolean(formattedSize.value || formattedLimit.value || displayContentType.value)
 )
+
+const onImageLoad = (event) => {
+  const img = event.target
+  imageLoadedDimensions.value = {
+    width: img.naturalWidth,
+    height: img.naturalHeight
+  }
+}
 </script>
 
 <style scoped>
+.image-preview-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .image-preview {
   display: flex;
   align-items: center;
@@ -104,9 +174,15 @@ const showMetadata = computed(
 
 .image-wrapper img {
   max-width: 100%;
-  max-height: 360px;
+  max-height: 500px;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  cursor: zoom-in;
+  transition: transform 0.3s ease;
+}
+
+.image-wrapper img:hover {
+  transform: scale(1.02);
 }
 
 .placeholder {
@@ -147,5 +223,56 @@ const showMetadata = computed(
 
 .meta-value {
   color: var(--el-text-color-primary);
+}
+
+/* 元数据展示区域 */
+.metadata-section {
+  background: var(--el-bg-color);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+/* 快速元数据展示 */
+.quick-metadata {
+  background: var(--el-bg-color);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid #e6a23c;
+}
+
+.quick-metadata h4 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e6a23c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.quick-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quick-meta-item .label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+}
+
+.quick-meta-item .value {
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 </style>

@@ -10,6 +10,9 @@ export const dataExplorerAPI = {
   getLegacyTree() {
     return client.get('/data-explorer/tree')
   },
+  refreshNode(resourceId, payload) {
+    return client.post(`/data-explorer/resources/${resourceId}/refresh`, payload)
+  },
   getPreview(params) {
     return client.get('/data-explorer/preview', { params })
   }

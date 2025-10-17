@@ -63,7 +63,7 @@ func main() {
 
 	// 初始化 services
 	resourceService := service.NewResourceService(resourceRepo)
-	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, previewRegistry, contentRegistry)
+	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
 
 	// 设置路由
 	router := api.SetupRouter(cfg, resourceService, metadataService)

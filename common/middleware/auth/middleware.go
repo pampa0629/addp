@@ -36,8 +36,14 @@ func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
+		if strings.TrimSpace(authHeader) == "" {
+			if tokenParam := strings.TrimSpace(c.Query("token")); tokenParam != "" {
+				authHeader = "Bearer " + tokenParam
+				c.Request.Header.Set("Authorization", authHeader)
+			}
+		}
+		if strings.TrimSpace(authHeader) == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
 			c.Abort()
 			return
 		}

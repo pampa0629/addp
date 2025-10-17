@@ -477,6 +477,7 @@ func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, 
 		Where("i.item_type = ?", "object").
 		Where("(i.attributes ->> 'bucket') = ?", bucketName).
 		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ?", objectPath, objectPath).
+		Order("i.updated_at DESC").  // 优先返回最新更新的记录（通常有更完整的元数据）
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

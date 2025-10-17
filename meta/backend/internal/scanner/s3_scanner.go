@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -30,6 +31,7 @@ type S3Scanner struct {
 	client        *minio.Client
 	cfg           s3Config
 	allowedBucket map[string]struct{}
+	resourceID    uint // 资源ID，用于元数据提取
 }
 
 var reservedObjectSegments = map[string]struct{}{
@@ -121,6 +123,11 @@ func NewS3Scanner(connStr string) (Scanner, error) {
 }
 
 func (s *S3Scanner) Close() error { return nil }
+
+// SetResourceID 设置资源ID（用于元数据提取）
+func (s *S3Scanner) SetResourceID(resID uint) {
+	s.resourceID = resID
+}
 
 func (s *S3Scanner) AllowedBuckets() []string {
 	s.ensureBuckets()
@@ -287,16 +294,25 @@ func (s *S3Scanner) ScanPath(path string) ([]ObjectMetadata, error) {
 	stat, err := s.client.StatObject(ctx, bucket, p, minio.StatObjectOptions{})
 	if err == nil {
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(p)), ".")
+
+		// 尝试提取详细元数据
+		var extractedMetadata *Metadata
+		if s.resourceID > 0 {
+			contentType := inferContentTypeFromExt(ext)
+			extractedMetadata = s.extractObjectMetadata(s.resourceID, bucket, p, contentType, stat.Size, stat.LastModified)
+		}
+
 		return []ObjectMetadata{
 			{
-				Bucket:       bucket,
-				Path:         bucket + "/" + p,
-				RelativePath: p,
-				NodeType:     "object",
-				FileType:     ext,
-				SizeBytes:    stat.Size,
-				ObjectCount:  1,
-				LastModified: &stat.LastModified,
+				Bucket:            bucket,
+				Path:              bucket + "/" + p,
+				RelativePath:      p,
+				NodeType:          "object",
+				FileType:          ext,
+				SizeBytes:         stat.Size,
+				ObjectCount:       1,
+				LastModified:      &stat.LastModified,
+				ExtractedMetadata: extractedMetadata,
 			},
 		}, nil
 	}
@@ -345,15 +361,25 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		totalCount++
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(relative)), ".")
 		lastModified := object.LastModified
+
+		// 尝试提取详细元数据（视频、图片、文档等）
+		var extractedMetadata *Metadata
+		if s.resourceID > 0 {
+			// 推断Content-Type
+			contentType := inferContentTypeFromExt(ext)
+			extractedMetadata = s.extractObjectMetadata(s.resourceID, bucket, object.Key, contentType, object.Size, lastModified)
+		}
+
 		meta := ObjectMetadata{
-			Bucket:       bucket,
-			Path:         bucket + "/" + object.Key,
-			RelativePath: relative,
-			NodeType:     "object",
-			FileType:     ext,
-			SizeBytes:    object.Size,
-			ObjectCount:  1,
-			LastModified: &lastModified,
+			Bucket:            bucket,
+			Path:              bucket + "/" + object.Key,
+			RelativePath:      relative,
+			NodeType:          "object",
+			FileType:          ext,
+			SizeBytes:         object.Size,
+			ObjectCount:       1,
+			LastModified:      &lastModified,
+			ExtractedMetadata: extractedMetadata, // 添加提取的元数据
 		}
 		objects = append(objects, meta)
 
@@ -488,4 +514,112 @@ func (s *S3Scanner) joinPath(bucket, prefix, name string) string {
 		return bucket + "/" + name
 	}
 	return bucket + "/" + prefix + "/" + name
+}
+
+// extractObjectMetadata 提取对象的详细元数据（视频、图片、文档等）
+// resID: 资源ID (system.resources)
+// bucket: bucket名称
+// objectKey: 对象键
+// contentType: MIME类型
+// size: 文件大小
+// lastModified: 最后修改时间
+func (s *S3Scanner) extractObjectMetadata(resID uint, bucket, objectKey, contentType string, size int64, lastModified time.Time) *Metadata {
+	// 根据Content-Type获取合适的提取器
+	extractor := GetExtractor(contentType)
+	if extractor == nil {
+		// 没有找到匹配的提取器，尝试根据文件扩展名推断
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(objectKey)), ".")
+		contentType = inferContentTypeFromExt(ext)
+		extractor = GetExtractor(contentType)
+	}
+
+	if extractor == nil {
+		// 仍然没有找到提取器，返回nil（不提取详细元数据）
+		return nil
+	}
+
+	// 获取对象内容（使用Range请求只读取前64KB用于元数据提取）
+	ctx := context.Background()
+	opts := minio.GetObjectOptions{}
+	// 只读取前64KB，足够用于大多数元数据提取（视频头、图片EXIF等）
+	opts.SetRange(0, 65535)
+
+	obj, err := s.client.GetObject(ctx, bucket, objectKey, opts)
+	if err != nil {
+		// 无法读取对象，返回nil
+		return nil
+	}
+	defer obj.Close()
+
+	// 构建ExtractInput
+	extractInput := ExtractInput{
+		ResourceID:   resID,
+		ObjectKey:    objectKey,
+		ContentType:  contentType,
+		Size:         size,
+		Reader:       obj,
+		LastModified: lastModified,
+	}
+
+	// 调用提取器
+	metadata, err := extractor.Extract(ctx, extractInput)
+	if err != nil {
+		// 提取失败，返回nil（不影响基本信息的存储）
+		return nil
+	}
+
+	return metadata
+}
+
+// inferContentTypeFromExt 根据文件扩展名推断Content-Type
+func inferContentTypeFromExt(ext string) string {
+	// 常见的MIME类型映射
+	mimeTypes := map[string]string{
+		// 视频
+		"mp4":  "video/mp4",
+		"avi":  "video/x-msvideo",
+		"mkv":  "video/x-matroska",
+		"mov":  "video/quicktime",
+		"wmv":  "video/x-ms-wmv",
+		"flv":  "video/x-flv",
+		"webm": "video/webm",
+		"m4v":  "video/x-m4v",
+
+		// 图片
+		"jpg":  "image/jpeg",
+		"jpeg": "image/jpeg",
+		"png":  "image/png",
+		"gif":  "image/gif",
+		"bmp":  "image/bmp",
+		"webp": "image/webp",
+		"tiff": "image/tiff",
+		"svg":  "image/svg+xml",
+
+		// 文档
+		"pdf":  "application/pdf",
+		"doc":  "application/msword",
+		"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"xls":  "application/vnd.ms-excel",
+		"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"ppt":  "application/vnd.ms-powerpoint",
+		"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+
+		// 地理空间
+		"geojson": "application/geo+json",
+		"kml":     "application/vnd.google-earth.kml+xml",
+		"kmz":     "application/vnd.google-earth.kmz",
+		"shp":     "application/x-shapefile",
+
+		// 其他
+		"json": "application/json",
+		"xml":  "application/xml",
+		"csv":  "text/csv",
+		"txt":  "text/plain",
+	}
+
+	if mimeType, ok := mimeTypes[ext]; ok {
+		return mimeType
+	}
+
+	return "application/octet-stream"
 }

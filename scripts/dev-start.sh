@@ -24,32 +24,32 @@ MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
 META_FE_PORT=${META_FE_PORT:-5175}
 
 # 1. 启动基础设施
-echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
-docker-compose up -d postgres redis minio
-sleep 5
+# echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
+# docker-compose up -d postgres redis minio
+# sleep 5
 
-# 等待基础设施就绪
-echo "等待 PostgreSQL 就绪..."
-until docker exec addp-postgres pg_isready -U addp > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-done
-echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
+# # 等待基础设施就绪
+# echo "等待 PostgreSQL 就绪..."
+# until docker exec addp-postgres pg_isready -U addp > /dev/null 2>&1; do
+#   echo -n "."
+#   sleep 1
+# done
+# echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
 
-echo "等待 Redis 就绪..."
-until docker exec addp-redis redis-cli ping > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-done
-echo -e "${GREEN}✓ Redis 就绪${NC}"
+# echo "等待 Redis 就绪..."
+# until docker exec addp-redis redis-cli ping > /dev/null 2>&1; do
+#   echo -n "."
+#   sleep 1
+# done
+# echo -e "${GREEN}✓ Redis 就绪${NC}"
 
-echo "等待 MinIO 就绪..."
-until curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-done
-echo -e "${GREEN}✓ MinIO 就绪${NC}"
-echo ""
+# echo "等待 MinIO 就绪..."
+# until curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; do
+#   echo -n "."
+#   sleep 1
+# done
+# echo -e "${GREEN}✓ MinIO 就绪${NC}"
+# echo ""
 
 # 2. 启动 System Backend
 echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"

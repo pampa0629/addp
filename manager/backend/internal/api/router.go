@@ -55,7 +55,9 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			explorer.GET("/tree", handler.GetTree)
 			explorer.GET("/resources", handler.ListResources)
 			explorer.GET("/resources/:id/tree", handler.GetResourceTree)
+			explorer.POST("/resources/:id/refresh", handler.RefreshNode)
 			explorer.GET("/preview", handler.PreviewTable)
+			explorer.GET("/video-stream", handler.VideoStream)
 		}
 
 		// 资源管理

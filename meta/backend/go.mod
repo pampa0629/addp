@@ -4,16 +4,37 @@ go 1.23
 
 require (
 	github.com/addp/common v0.0.0
+	github.com/addp/meta-extractor-sdk v1.0.0
+	github.com/addp/plugins/csv-extractor v0.0.0
+	github.com/addp/plugins/geojson-extractor v0.0.0
+	github.com/addp/plugins/image-extractor v0.0.0
+	github.com/addp/plugins/office-extractor v0.0.0
+	github.com/addp/plugins/pdf-extractor v0.0.0
+	github.com/addp/plugins/shapefile-extractor v0.0.0
+	github.com/addp/plugins/sqlite-extractor v0.0.0
+	github.com/addp/plugins/video-extractor v0.0.0
 	github.com/gin-contrib/cors v1.5.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/minio/minio-go/v7 v7.0.64
 	gorm.io/driver/postgres v1.5.4
 	gorm.io/gorm v1.30.0
 )
 
-replace github.com/addp/common => ../../common
+replace (
+	github.com/addp/common => ../../common
+	github.com/addp/meta-extractor-sdk => ../sdk
+	github.com/addp/plugins/csv-extractor => ../../plugins/csv-extractor
+	github.com/addp/plugins/geojson-extractor => ../../plugins/geojson-extractor
+	github.com/addp/plugins/image-extractor => ../../plugins/image-extractor
+	github.com/addp/plugins/office-extractor => ../../plugins/office-extractor
+	github.com/addp/plugins/pdf-extractor => ../../plugins/pdf-extractor
+	github.com/addp/plugins/shapefile-extractor => ../../plugins/shapefile-extractor
+	github.com/addp/plugins/sqlite-extractor => ../../plugins/sqlite-extractor
+	github.com/addp/plugins/video-extractor => ../../plugins/video-extractor
+)
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

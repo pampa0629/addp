@@ -22,6 +22,34 @@ func NewHandler(resourceService *service.ResourceService, scanService *service.S
 	}
 }
 
+// GetObjectMetadata 获取对象的元数据
+// GET /api/meta/metadata/object
+// Query params: resource_id, object_key
+func (h *Handler) GetObjectMetadata(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	objectKey := c.Query("object_key")
+	if objectKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
+		return
+	}
+
+	item, err := h.scanService.GetObjectMetadata(tenantID, uint(resourceID), objectKey)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": item})
+}
+
 // GetResources 获取资源列表及统计
 // GET /api/meta/resources
 func (h *Handler) GetResources(c *gin.Context) {
@@ -162,4 +190,51 @@ func (h *Handler) ScanResource(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// ExtractObjectMetadata 按需提取对象的深度元数据
+// POST /api/meta/metadata/extract
+// Query params: resource_id, object_key
+// Body: 对象的二进制内容
+func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	objectKey := c.Query("object_key")
+	if objectKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing object_key"})
+		return
+	}
+
+	// 获取Authorization token（用于访问System API）
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
+		return
+	}
+	if len(token) > 7 && token[:7] == "Bearer " {
+		token = token[7:]
+	}
+
+	// 从请求体读取对象内容
+	objectReader := c.Request.Body
+	defer c.Request.Body.Close()
+
+	// 调用扫描服务提取元数据
+	metadata, err := h.scanService.ExtractObjectMetadataOnDemand(tenantID, uint(resourceID), objectKey, token, objectReader)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data": metadata,
+		"message": "元数据提取成功",
+	})
 }

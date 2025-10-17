@@ -68,6 +68,8 @@ type ObjectMetadata struct {
  SizeBytes     int64
  ObjectCount   int64
  LastModified  *time.Time
+ // ExtractedMetadata 提取的详细元数据（视频、图片、文档等类型特定的元数据）
+ ExtractedMetadata *Metadata
 }
 
 // ObjectStorageScanner 对象存储扫描器接口
