@@ -77,6 +77,10 @@
               <el-icon><Search /></el-icon>
               <span>元数据扫描</span>
             </el-menu-item>
+            <el-menu-item index="/meta/tasks">
+              <el-icon><Monitor /></el-icon>
+              <span>任务监控</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="system">
@@ -238,6 +242,7 @@ const handleMenuSelect = (index) => {
     // Meta 路由使用 /meta/ 作为 base，当前默认指向 /meta/scan
     const metaPageMap = {
       'scan': 'scan',  // 对应 /meta/scan (元数据扫描)
+      'tasks': 'tasks',
       '': 'scan'
     }
 

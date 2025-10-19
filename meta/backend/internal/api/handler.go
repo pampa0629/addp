@@ -1,24 +1,30 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/addp/meta/internal/middleware"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type Handler struct {
 	resourceService *service.ResourceService
 	scanService     *service.ScanServiceNew
+	taskService     *service.ScanTaskService
 }
 
-func NewHandler(resourceService *service.ResourceService, scanService *service.ScanServiceNew) *Handler {
+func NewHandler(resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService) *Handler {
 	return &Handler{
 		resourceService: resourceService,
 		scanService:     scanService,
+		taskService:     taskService,
 	}
 }
 
@@ -162,6 +168,309 @@ func (h *Handler) AutoScan(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// CreateManualScanRun 创建异步扫描运行
+func (h *Handler) CreateManualScanRun(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	var req models.ScanRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	token, ok := extractBearerToken(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
+		return
+	}
+
+	run, err := h.taskService.CreateManualRun(c.Request.Context(), tenantID, userID, token, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": run})
+}
+
+// GetScanRun 获取运行进度
+func (h *Handler) GetScanRun(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	runIDStr := c.Param("run_id")
+	runID, err := strconv.ParseUint(runIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+		return
+	}
+
+	run, err := h.taskService.GetRun(uint(runID))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if run.TenantID != tenantID {
+		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": run})
+}
+
+// ListScanRuns 列出运行任务
+func (h *Handler) ListScanRuns(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	var (
+		taskID     *uint
+		resourceID *uint
+		err        error
+	)
+
+	if taskIDStr := c.Query("task_id"); taskIDStr != "" {
+		val, parseErr := strconv.ParseUint(taskIDStr, 10, 32)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
+			return
+		}
+		taskID = new(uint)
+		*taskID = uint(val)
+	}
+
+	if resourceIDStr := c.Query("resource_id"); resourceIDStr != "" {
+		val, parseErr := strconv.ParseUint(resourceIDStr, 10, 32)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+			return
+		}
+		resourceID = new(uint)
+		*resourceID = uint(val)
+	}
+
+	status := c.Query("status")
+	storageType := c.Query("storage_type")
+	triggerType := c.Query("trigger_type")
+
+	pageSize := 20
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err = strconv.Atoi(pageSizeStr); err != nil || pageSize <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page_size"})
+			return
+		}
+	}
+
+	limit := pageSize
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err = strconv.Atoi(limitStr); err != nil || limit <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
+			return
+		}
+	}
+
+	page := 1
+	if pageStr := c.Query("page"); pageStr != "" {
+		if page, err = strconv.Atoi(pageStr); err != nil || page <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page"})
+			return
+		}
+	}
+
+	offset := (page - 1) * limit
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if offset, err = strconv.Atoi(offsetStr); err != nil || offset < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset"})
+			return
+		}
+	}
+
+	var startedAfter *time.Time
+	if from := strings.TrimSpace(c.Query("started_after")); from != "" {
+		if parsed, parseErr := time.ParseInLocation("2006-01-02 15:04:05", from, time.Local); parseErr == nil {
+			startedAfter = &parsed
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid started_after"})
+			return
+		}
+	}
+
+	var startedBefore *time.Time
+	if to := strings.TrimSpace(c.Query("started_before")); to != "" {
+		if parsed, parseErr := time.ParseInLocation("2006-01-02 15:04:05", to, time.Local); parseErr == nil {
+			startedBefore = &parsed
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid started_before"})
+			return
+		}
+	}
+
+	options := &service.ListRunsOptions{
+		TaskID:        taskID,
+		ResourceID:    resourceID,
+		Status:        strings.TrimSpace(status),
+		TriggerType:   strings.TrimSpace(triggerType),
+		StorageType:   strings.TrimSpace(storageType),
+		StartedAfter:  startedAfter,
+		StartedBefore: startedBefore,
+		Limit:         limit,
+		Offset:        offset,
+	}
+
+	runs, total, err := h.taskService.ListRuns(tenantID, options)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":  runs,
+		"total": total,
+	})
+}
+
+// CreateScanTask 创建扫描任务
+func (h *Handler) CreateScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	var req models.ScanTaskUpsertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := h.taskService.CreateTask(c.Request.Context(), tenantID, userID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": task})
+}
+
+// UpdateScanTask 更新任务
+func (h *Handler) UpdateScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	taskIDStr := c.Param("task_id")
+	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
+		return
+	}
+
+	var req models.ScanTaskUpsertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	task, err := h.taskService.UpdateTask(c.Request.Context(), tenantID, uint(taskID), userID, &req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": task})
+}
+
+// DeleteScanTask 删除任务
+func (h *Handler) DeleteScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	taskIDStr := c.Param("task_id")
+	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
+		return
+	}
+
+	if err := h.taskService.DeleteTask(c.Request.Context(), tenantID, uint(taskID)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "task deleted"})
+}
+
+// TriggerScanTask 手动触发任务
+func (h *Handler) TriggerScanTask(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+	userID := middleware.GetUserID(c)
+
+	taskIDStr := c.Param("task_id")
+	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
+		return
+	}
+
+	run, err := h.taskService.TriggerTaskNow(c.Request.Context(), tenantID, uint(taskID), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": run})
+}
+
+// ListScanTasks 列出台账
+func (h *Handler) ListScanTasks(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
+		return
+	}
+
+	tenantID := middleware.GetTenantID(c)
+
+	tasks, err := h.taskService.ListTasks(tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": tasks})
+}
+
 // ScanResource 扫描指定资源
 // POST /api/meta/scan/resource
 func (h *Handler) ScanResource(c *gin.Context) {
@@ -234,7 +543,18 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data": metadata,
+		"data":    metadata,
 		"message": "元数据提取成功",
 	})
+}
+
+func extractBearerToken(c *gin.Context) (string, bool) {
+	token := c.GetHeader("Authorization")
+	if token == "" {
+		return "", false
+	}
+	if len(token) > 7 && strings.HasPrefix(token, "Bearer ") {
+		token = token[7:]
+	}
+	return token, token != ""
 }

@@ -107,5 +107,46 @@ export default {
       resource_id: resourceId,
       schema_names: schemaNames
     })
+  },
+
+  getScanRuns(resourceId, params = {}) {
+    return client.get('/api/meta/scan/runs', { params }).then(res => {
+      const data = res?.data ?? res
+      const items = Array.isArray(data) ? data : data.items || []
+      const total = data.total || items.length || 0
+      if (!resourceId) {
+        return { items, total }
+      }
+      const filtered = items.filter(run => run.resource_id === resourceId)
+      return { items: filtered, total: data.total || filtered.length || 0 }
+    })
+  },
+
+  getScanTasks(resourceId) {
+    return client.get('/api/meta/scan/tasks').then(res => {
+      const tasks = res?.data ?? []
+      if (!resourceId) {
+        return tasks
+      }
+      return tasks.filter(task => task.resource_id === resourceId)
+    })
+  },
+
+  createScanTask(resourceId, payload) {
+    return client
+      .post('/api/meta/scan/tasks', {
+        ...payload,
+        resource_id: resourceId
+      })
+      .then(res => res?.data ?? res)
+  },
+
+  updateScanTask(resourceId, taskId, payload) {
+    return client
+      .put(`/api/meta/scan/tasks/${taskId}`, {
+        ...payload,
+        resource_id: resourceId
+      })
+      .then(res => res?.data ?? res)
   }
 }

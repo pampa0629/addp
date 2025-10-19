@@ -263,3 +263,74 @@ type ObjectPreviewContent struct {
 	Truncated bool                   `json:"truncated,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
+
+// MetaScanTask 描述 Meta 服务中的扫描任务
+type MetaScanTask struct {
+	ID             uint       `json:"id"`
+	TenantID       uint       `json:"tenant_id"`
+	ResourceID     uint       `json:"resource_id"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description,omitempty"`
+	ScheduleType   string     `json:"schedule_type"`
+	CronExpression string     `json:"cron_expression,omitempty"`
+	Enabled        bool       `json:"enabled"`
+	Parameters     JSONMap    `json:"parameters,omitempty"`
+	ScheduleConfig JSONMap    `json:"schedule_config,omitempty"`
+	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt      *time.Time `json:"next_run_at,omitempty"`
+	CreatedBy      uint       `json:"created_by,omitempty"`
+	UpdatedBy      uint       `json:"updated_by,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// MetaScanTaskRequest 创建或更新扫描任务时的表单
+type MetaScanTaskRequest struct {
+	Name           string   `json:"name" binding:"required"`
+	Description    string   `json:"description"`
+	ResourceID     uint     `json:"resource_id"`
+	SchemaNames    []string `json:"schema_names"`
+	ObjectPaths    []string `json:"object_paths"`
+	ScanDepth      string   `json:"scan_depth"`
+	ScheduleType   string   `json:"schedule_type" binding:"required"`
+	ScheduleTime   string   `json:"schedule_time"`
+	ScheduleValue  []int    `json:"schedule_value"`
+	CronExpression string   `json:"cron_expression"`
+	Enabled        bool     `json:"enabled"`
+}
+
+// MetaScanTaskRun 表示一次具体的扫描运行
+type MetaScanTaskRun struct {
+	ID              uint       `json:"id"`
+	TaskID          *uint      `json:"task_id,omitempty"`
+	TenantID        uint       `json:"tenant_id"`
+	ResourceID      uint       `json:"resource_id"`
+	Name            string     `json:"name"`
+	StorageType     string     `json:"storage_type"`
+	TaskName        string     `json:"task_name"`
+	TaskPlanName    string     `json:"task_plan_name,omitempty"`
+	ResourceName    string     `json:"resource_name,omitempty"`
+	ResourceType    string     `json:"resource_type,omitempty"`
+	TriggerType     string     `json:"trigger_type"`
+	Status          string     `json:"status"`
+	ErrorMessage    string     `json:"error_message,omitempty"`
+	Parameters      JSONMap    `json:"parameters,omitempty"`
+	ResultSummary   JSONMap    `json:"result_summary,omitempty"`
+	ProgressTotal   int        `json:"progress_total"`
+	ProgressCurrent int        `json:"progress_current"`
+	ProgressMessage string     `json:"progress_message,omitempty"`
+	ProgressPercent float64    `json:"progress_percent"`
+	StartedAt       *time.Time `json:"started_at,omitempty"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	TriggerUserID   *uint      `json:"trigger_user_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// MetaManualScanRequest 发起即时扫描的请求体
+type MetaManualScanRequest struct {
+	SchemaNames []string `json:"schema_names"`
+	ObjectPaths []string `json:"object_paths"`
+	ScanDepth   string   `json:"scan_depth"`
+	ScanType    string   `json:"scan_type"`
+}

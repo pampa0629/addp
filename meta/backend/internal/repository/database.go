@@ -9,6 +9,7 @@ import (
 
 	"github.com/addp/common/logger"
 	"github.com/addp/meta/internal/config"
+	"github.com/addp/meta/internal/models"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
@@ -33,7 +34,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		IgnoreRecordNotFoundError: true,
 	})
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:        dsn,
+		DriverName: "pgx/v5",
+	}), &gorm.Config{
 		Logger: dbLogger,
 		// 不使用 TablePrefix，直接通过 search_path 访问正确的 schema
 	})
@@ -51,13 +55,13 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 
-	// 自动迁移 - 跳过 AutoMigrate，表已存在
-	// if err := autoMigrate(db); err != nil {
-	// 	return nil, fmt.Errorf("failed to auto migrate: %w", err)
-	// }
+	// 自动迁移新增的任务表
+	if err := autoMigrate(db); err != nil {
+		return nil, fmt.Errorf("failed to auto migrate: %w", err)
+	}
 
 	DB = db
-	logger.L().Info("数据库连接成功（跳过自动迁移）", "host", cfg.DBHost, "schema", cfg.DBSchema)
+	logger.L().Info("数据库连接成功", "host", cfg.DBHost, "schema", cfg.DBSchema)
 	return db, nil
 }
 
@@ -142,8 +146,7 @@ func (l *gormSlogLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 // autoMigrate 自动迁移所有表
 func autoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
-	// &models.MetaNode{},
-	// &models.MetaItem{},
-	// &models.ScanLog{},
+		&models.ScanTask{},
+		&models.ScanTaskRun{},
 	)
 }

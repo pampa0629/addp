@@ -1,0 +1,20 @@
+{
+  "name": "builtin:content-excel",
+  "type": "builtin",
+  "builtin": "excel",
+  "priority": 62,
+  "match": {
+    "extensions": [".xlsx", ".xlsm", ".xls"],
+    "content_types": [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+      "application/vnd.ms-excel.sheet.macroEnabled.12"
+    ]
+  },
+  "max_bytes": 15728640,
+  "metadata": {
+    "sheet_limit": 10,
+    "row_limit": 50,
+    "column_limit": 50
+  }
+}

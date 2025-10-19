@@ -139,6 +139,23 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 		}
 		return handler, nil
 	},
+	"excel": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
+		handler := &excelContentHandler{
+			baseContentHandler: baseContentHandler{
+				name:     cfg.Name,
+				priority: cfg.priorityOr(62),
+				matcher:  newObjectContentMatcher(normalizeExtensionsOrDefault(cfg.Match.Extensions, []string{".xlsx", ".xlsm", ".xls"}), normalizeContentTypesOrDefault(cfg.Match.ContentTypes, []string{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel", "application/vnd.ms-excel.sheet.macroEnabled.12"})),
+			},
+			maxBytes:    cfg.maxBytesOr(maxExcelPreviewBytes),
+			sheetLimit:  defaultExcelSheetLimit,
+			rowLimit:    defaultExcelRowLimit,
+			columnLimit: defaultExcelColumnLimit,
+		}
+		handler.sheetLimit = metadataInt(cfg.Metadata, "sheet_limit", handler.sheetLimit)
+		handler.rowLimit = metadataInt(cfg.Metadata, "row_limit", handler.rowLimit)
+		handler.columnLimit = metadataInt(cfg.Metadata, "column_limit", handler.columnLimit)
+		return handler, nil
+	},
 	"shapefile": func(cfg ObjectContentPluginConfig) (ObjectContentHandler, error) {
 		handler := &shapefileContentHandler{
 			baseContentHandler: baseContentHandler{

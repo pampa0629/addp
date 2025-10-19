@@ -11,7 +11,7 @@
         <el-icon :size="24" style="margin-right: 10px">
           <Platform />
         </el-icon>
-        <h1>全域数据平台 - System</h1>
+        <h1>系统管理模块</h1>
       </div>
       <div class="header-right">
         <el-dropdown>

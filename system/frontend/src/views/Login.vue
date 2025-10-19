@@ -3,7 +3,7 @@
     <el-card class="login-box">
       <template #header>
         <div class="card-header">
-          <h2>全域数据平台</h2>
+          <h2>系统管理登录</h2>
           <p class="subtitle">All Domain Data Platform</p>
         </div>
       </template>

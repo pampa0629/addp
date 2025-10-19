@@ -12,6 +12,7 @@
     "/plugins/docx-preview.js",
     "/plugins/wps-preview.js",
     "/plugins/pptx-preview.js",
+    "/plugins/excel-preview.js",
     "/plugins/markdown-preview.js",
     "/plugins/text-preview.js",
     "/plugins/csv-preview.js"

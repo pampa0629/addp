@@ -70,6 +70,14 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			// 元数据扫描和管理
 			metadataHandler := NewMetadataHandler(metadataService)
 			resources.POST("/:id/scan", metadataHandler.ScanResource)
+			resources.GET("/:id/scan-tasks", metadataHandler.ListScanTasks)
+			resources.POST("/:id/scan-tasks", metadataHandler.CreateScanTask)
+			resources.PUT("/:id/scan-tasks/:task_id", metadataHandler.UpdateScanTask)
+			resources.DELETE("/:id/scan-tasks/:task_id", metadataHandler.DeleteScanTask)
+			resources.POST("/:id/scan-tasks/:task_id/trigger", metadataHandler.TriggerScanTask)
+			resources.GET("/:id/scan-runs", metadataHandler.ListScanRuns)
+			resources.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
+			resources.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
 			resources.GET("/:id/tables", metadataHandler.GetTables)
 		}
 

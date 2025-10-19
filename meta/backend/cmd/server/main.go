@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/service"
 
 	// Import plugins package to auto-register third-party extractors
 	_ "github.com/addp/meta/internal/scanner/plugins"
@@ -45,11 +47,21 @@ func main() {
 
 	logger.L().Info("数据库连接初始化完成")
 
-	// TODO: 实现定时任务调度（Phase 4）
-	// 可以使用 robfig/cron 库实现定时扫描
+	// 初始化服务
+	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
+	if err := resourceService.PreloadResources(); err != nil {
+		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
+	}
+	scanService := service.NewScanServiceNew(db, resourceService)
+	taskService := service.NewScanTaskService(db, scanService, resourceService)
+	if err := taskService.Start(context.Background()); err != nil {
+		logger.L().Error("扫描任务服务启动失败", "error", err)
+		os.Exit(1)
+	}
+	defer taskService.Stop(context.Background())
 
 	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, db)
+	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

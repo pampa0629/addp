@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -65,6 +66,64 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRep
 		metaServiceURL: strings.TrimRight(metaServiceURL, "/"),
 		httpClient:     client,
 	}
+}
+
+func (s *MetadataService) callMeta(ctx context.Context, method, path string, query url.Values, payload interface{}, authHeader string) ([]byte, error) {
+	if strings.TrimSpace(s.metaServiceURL) == "" {
+		return nil, fmt.Errorf("meta service url not configured")
+	}
+	if strings.TrimSpace(authHeader) == "" {
+		return nil, fmt.Errorf("missing authorization header")
+	}
+
+	endpoint := s.metaServiceURL + path
+	if len(query) > 0 {
+		endpoint = endpoint + "?" + query.Encode()
+	}
+
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode request payload: %w", err)
+		}
+		body = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build meta service request: %w", err)
+	}
+
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", authHeader)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call meta service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read meta service response: %w", err)
+	}
+
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		text := strings.TrimSpace(string(respBody))
+		if text == "" {
+			text = resp.Status
+		}
+		return nil, fmt.Errorf("meta service returned status %d: %s", resp.StatusCode, text)
+	}
+
+	return respBody, nil
 }
 
 // ScanResource 扫描资源的元数据（轻量级）
@@ -239,6 +298,223 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 	)
 
 	return nil
+}
+
+func (s *MetadataService) ListScanTasks(ctx context.Context, resourceID uint, authHeader string) ([]models.MetaScanTask, error) {
+	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/tasks", nil, nil, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data []models.MetaScanTask `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse scan tasks: %w", err)
+		}
+	}
+
+	tasks := make([]models.MetaScanTask, 0, len(resp.Data))
+	for _, task := range resp.Data {
+		if task.ResourceID == resourceID {
+			tasks = append(tasks, task)
+		}
+	}
+
+	return tasks, nil
+}
+
+func (s *MetadataService) CreateScanTask(ctx context.Context, resourceID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
+	if req == nil {
+		return nil, errors.New("scan task request cannot be nil")
+	}
+	payload := *req
+	payload.ResourceID = resourceID
+
+	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/tasks", nil, payload, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data models.MetaScanTask `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse scan task response: %w", err)
+		}
+	}
+
+	return &resp.Data, nil
+}
+
+func (s *MetadataService) UpdateScanTask(ctx context.Context, resourceID, taskID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
+	if req == nil {
+		return nil, errors.New("scan task request cannot be nil")
+	}
+	payload := *req
+	payload.ResourceID = resourceID
+
+	path := fmt.Sprintf("/api/meta/scan/tasks/%d", taskID)
+	body, err := s.callMeta(ctx, http.MethodPut, path, nil, payload, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data models.MetaScanTask `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse scan task response: %w", err)
+		}
+	}
+
+	return &resp.Data, nil
+}
+
+func (s *MetadataService) DeleteScanTask(ctx context.Context, taskID uint, authHeader string) error {
+	path := fmt.Sprintf("/api/meta/scan/tasks/%d", taskID)
+	_, err := s.callMeta(ctx, http.MethodDelete, path, nil, nil, authHeader)
+	return err
+}
+
+func (s *MetadataService) TriggerScanTask(ctx context.Context, taskID uint, authHeader string) (*models.MetaScanTaskRun, error) {
+	path := fmt.Sprintf("/api/meta/scan/tasks/%d/trigger", taskID)
+	body, err := s.callMeta(ctx, http.MethodPost, path, nil, nil, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data models.MetaScanTaskRun `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse task trigger response: %w", err)
+		}
+	}
+
+	return &resp.Data, nil
+}
+
+func (s *MetadataService) ListScanRuns(ctx context.Context, resourceID uint, taskID *uint, status, storageType string, limit, offset int, authHeader string) ([]models.MetaScanTaskRun, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+	if offset > 0 {
+		query.Set("offset", strconv.Itoa(offset))
+	}
+	if taskID != nil && *taskID > 0 {
+		query.Set("task_id", strconv.Itoa(int(*taskID)))
+	}
+	if trimmed := strings.TrimSpace(status); trimmed != "" {
+		query.Set("status", trimmed)
+	}
+	if trimmedStorage := strings.TrimSpace(storageType); trimmedStorage != "" {
+		query.Set("storage_type", trimmedStorage)
+	}
+
+	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/runs", query, nil, authHeader)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var resp struct {
+		Data  []models.MetaScanTaskRun `json:"data"`
+		Total int64                    `json:"total"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, 0, fmt.Errorf("failed to parse scan runs: %w", err)
+		}
+	}
+
+	runs := make([]models.MetaScanTaskRun, 0, len(resp.Data))
+	for _, run := range resp.Data {
+		if run.ResourceID == resourceID {
+			runs = append(runs, run)
+		}
+	}
+
+	return runs, int64(len(runs)), nil
+}
+
+func (s *MetadataService) GetScanRun(ctx context.Context, resourceID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
+	path := fmt.Sprintf("/api/meta/scan/runs/%d", runID)
+	body, err := s.callMeta(ctx, http.MethodGet, path, nil, nil, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data models.MetaScanTaskRun `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse scan run: %w", err)
+		}
+	}
+
+	if resp.Data.ID == 0 {
+		return nil, fmt.Errorf("scan run not found")
+	}
+	if resp.Data.ResourceID != resourceID {
+		return nil, fmt.Errorf("scan run not found for resource")
+	}
+
+	return &resp.Data, nil
+}
+
+func (s *MetadataService) CreateManualScanRun(ctx context.Context, resourceID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
+	payload := map[string]interface{}{
+		"resource_id": resourceID,
+	}
+
+	if req != nil {
+		if len(req.SchemaNames) > 0 {
+			payload["schema_names"] = req.SchemaNames
+		}
+		if len(req.ObjectPaths) > 0 {
+			payload["object_paths"] = req.ObjectPaths
+		}
+		if depth := strings.TrimSpace(req.ScanDepth); depth != "" {
+			payload["scan_depth"] = depth
+		}
+		if scanType := strings.TrimSpace(req.ScanType); scanType != "" {
+			payload["scan_type"] = scanType
+		}
+	}
+
+	if _, ok := payload["scan_depth"]; !ok {
+		payload["scan_depth"] = "deep"
+	}
+	if _, ok := payload["scan_type"]; !ok {
+		payload["scan_type"] = "manual"
+	}
+
+	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/run/manual", nil, payload, authHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data models.MetaScanTaskRun `json:"data"`
+	}
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("failed to parse manual run response: %w", err)
+		}
+	}
+
+	return &resp.Data, nil
 }
 
 // GetTables 获取资源的表列表

@@ -27,6 +27,13 @@ type ScanServiceNew struct {
 	log             *slog.Logger
 }
 
+// ScanProgressReporter 用于在长时间扫描任务中更新进度
+type ScanProgressReporter interface {
+	SetTotal(total int)
+	Advance(label string, completed, total int, meta map[string]interface{})
+	Message(message string)
+}
+
 func NewScanServiceNew(db *gorm.DB, resourceService *ResourceService) *ScanServiceNew {
 	if resourceService == nil {
 		resourceService = NewResourceService(db, "", "")
@@ -253,7 +260,7 @@ func (s *ScanServiceNew) upsertItem(
 			ItemType:          itemType,
 			Name:              name,
 			FullName:          fullName,
-			Fingerprint:       fingerprint,  // 设置指纹
+			Fingerprint:       fingerprint, // 设置指纹
 			Status:            "active",
 			MetaSchemaVersion: schemaVersion,
 			Attributes:        models.JSONMap{},
@@ -275,7 +282,7 @@ func (s *ScanServiceNew) upsertItem(
 
 	// 更新已有记录
 	updates := map[string]interface{}{
-		"node_id":             node.ID,  // 允许node_id变化（数据移动）
+		"node_id":             node.ID, // 允许node_id变化（数据移动）
 		"full_name":           fullName,
 		"meta_schema_version": schemaVersion,
 		"attributes":          attrs,
@@ -406,12 +413,32 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 // ScanResource 扫描指定资源
 func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, objectPaths []string, token string) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, nil)
+}
+
+// ScanResourceWithProgress 扫描指定资源，并通过 reporter 汇报进度
+func (s *ScanServiceNew) ScanResourceWithProgress(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, reporter)
+}
+
+func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
 	startTime := time.Now()
 
 	// 获取资源
+	if reporter != nil {
+		reporter.Message("正在加载资源连接信息")
+	}
 	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
 	if err != nil {
 		return nil, err
+	}
+
+	var directRun *models.ScanTaskRun
+	if reporter == nil {
+		directRun, err = s.createImmediateRunRecord(resource, tenantID, schemaNames, objectPaths, startTime)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 创建扫描日志
@@ -446,13 +473,19 @@ func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, ob
 	schemas, tables, fields := 0, 0, 0
 
 	if isObjectStorageType(resourceType) {
-		schemas, tables, fields, err = s.scanObjectStorageResource(resource, tenantID, objectPaths, schemaNames)
+		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, reporter)
 	} else {
-		schemas, tables, fields, err = s.scanResourceSchemas(resource, tenantID, schemaNames, scanLog.ID)
+		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLog.ID, reporter)
 	}
 
 	if err != nil {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
+		}
 		s.updateScanLogFailed(scanLog, err.Error())
+		if directRun != nil {
+			s.failImmediateRun(directRun, err)
+		}
 		return nil, err
 	}
 
@@ -475,6 +508,21 @@ func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, ob
 	)
 	s.log.Info("资源扫描完成", finishFields...)
 
+	if reporter != nil {
+		reporter.Message("扫描完成")
+	}
+
+	if directRun != nil {
+		resultSummary := models.JSONMap{
+			"schemas_scanned": schemas,
+			"tables_scanned":  tables,
+			"fields_scanned":  fields,
+			"duration_ms":     scanLog.DurationMs,
+			"started_at":      scanLog.StartedAt,
+		}
+		s.completeImmediateRun(directRun, resultSummary, completedAt)
+	}
+
 	return &models.ScanResponse{
 		Status:         "success",
 		Message:        "Scan completed successfully",
@@ -484,6 +532,78 @@ func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, ob
 		DurationMs:     scanLog.DurationMs,
 		StartedAt:      startTime.Format("2006-01-02 15:04:05"),
 	}, nil
+}
+
+func (s *ScanServiceNew) createImmediateRunRecord(resource *commonModels.Resource, tenantID uint, schemaNames, objectPaths []string, startTime time.Time) (*models.ScanTaskRun, error) {
+	if resource == nil {
+		return nil, fmt.Errorf("resource is required to create immediate run")
+	}
+
+	params := models.JSONMap{}
+	if len(schemaNames) > 0 {
+		params["schema_names"] = schemaNames
+	}
+	if len(objectPaths) > 0 {
+		params["object_paths"] = objectPaths
+	}
+	if len(params) == 0 {
+		params = nil
+	}
+
+	run := &models.ScanTaskRun{
+		TenantID:        tenantID,
+		ResourceID:      resource.ID,
+		StorageType:     normalizeStorageType(resource.ResourceType),
+		TriggerType:     triggerTypeManual,
+		Status:          runStatusRunning,
+		Parameters:      params,
+		ProgressMessage: "任务开始执行",
+		StartedAt:       &startTime,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	if err := s.db.Create(run).Error; err != nil {
+		return nil, fmt.Errorf("failed to create immediate run record: %w", err)
+	}
+
+	setRunName(s.db, run, run.StorageType, triggerTypeManual, s.log)
+	return run, nil
+}
+
+func (s *ScanServiceNew) failImmediateRun(run *models.ScanTaskRun, scanErr error) {
+	if run == nil {
+		return
+	}
+	update := map[string]interface{}{
+		"status":           runStatusFailed,
+		"error_message":    scanErr.Error(),
+		"progress_message": fmt.Sprintf("执行失败: %v", scanErr),
+		"completed_at":     time.Now(),
+		"updated_at":       time.Now(),
+	}
+	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
+		s.log.Error("更新即时运行失败状态出错", "run_id", run.ID, "error", err)
+	}
+}
+
+func (s *ScanServiceNew) completeImmediateRun(run *models.ScanTaskRun, summary models.JSONMap, completedAt time.Time) {
+	if run == nil {
+		return
+	}
+
+	update := map[string]interface{}{
+		"status":           runStatusSuccess,
+		"result_summary":   summary,
+		"progress_message": "执行完成",
+		"progress_percent": 100.0,
+		"completed_at":     completedAt,
+		"updated_at":       time.Now(),
+	}
+
+	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
+		s.log.Error("更新即时运行成功状态出错", "run_id", run.ID, "error", err)
+	}
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema
@@ -526,7 +646,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				tenantID, resourceID, "bucket", bucket).First(&node).Error
 
 			if err == gorm.ErrRecordNotFound {
-				schemas, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, []string{bucket})
+				schemas, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, []string{bucket}, nil)
 				if err != nil {
 					s.log.Warn("对象存储桶扫描失败",
 						"resource_id", resourceID,
@@ -604,6 +724,10 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 // scanResourceSchemas 扫描资源的指定Schema列表
 func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint) (int, int, int, error) {
+	return s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLogID, nil)
+}
+
+func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -628,6 +752,9 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 
 	// 如果未指定Schema，则扫描所有Schema
 	if len(schemaNames) == 0 {
+		if reporter != nil {
+			reporter.Message("未指定 Schema，正在获取完整列表")
+		}
 		schemasInfo, err := scan.ListSchemas()
 		if err != nil {
 			return 0, 0, 0, err
@@ -640,8 +767,17 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 	totalSchemas := 0
 	totalTables := 0
 	totalFields := 0
+	total := len(schemaNames)
+	if reporter != nil {
+		reporter.SetTotal(total)
+	}
+	completed := 0
 
 	for _, schemaName := range schemaNames {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
+		}
+
 		schemas, tables, fields, err := s.scanDatabaseSchema(scan, tenantID, resourceID, schemaName)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
@@ -650,11 +786,22 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 				"schema", schemaName,
 				"error", err,
 			)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("Schema %s 扫描失败: %v", schemaName, err))
+			}
 			continue
 		}
 		totalSchemas += schemas
 		totalTables += tables
 		totalFields += fields
+
+		completed++
+		if reporter != nil {
+			reporter.Advance(schemaName, completed, total, map[string]interface{}{
+				"tables": tables,
+				"fields": fields,
+			})
+		}
 	}
 
 	s.log.Info("指定 Schema 扫描完成", cloneLogFields(startFields,
@@ -668,6 +815,10 @@ func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, te
 
 // scanSingleSchema 扫描单个Schema（表+字段）
 func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
+	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, nil)
+}
+
+func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	connStr, err := commonModels.BuildConnectionString(resource)
@@ -688,10 +839,18 @@ func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resour
 
 	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
 	if len(paths) == 0 {
+		if reporter != nil {
+			reporter.Message("未检测到可扫描的对象路径")
+			reporter.SetTotal(0)
+		}
 		return 0, 0, 0, nil
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, paths)
+	if reporter != nil {
+		reporter.SetTotal(len(paths))
+	}
+
+	buckets, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, paths, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -699,7 +858,7 @@ func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resour
 	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string) (int, int, error) {
+func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, reporter ScanProgressReporter) (int, int, error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	nodeStats := make(map[uint]*nodeAggregate)
@@ -712,11 +871,23 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 
 	totalBuckets := 0
 	totalObjects := 0
+	total := len(paths)
+	completed := 0
 
 	for _, rawPath := range paths {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
+		}
 		bucketName, relativePath := splitObjectPath(rawPath)
 		if bucketName == "" {
 			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 缺少 bucket 信息，已跳过", rawPath))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
 			continue
 		}
 
@@ -728,6 +899,13 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 				"path", rawPath,
 				"error", err,
 			)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 扫描失败: %v", rawPath, err))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
 			continue
 		}
 
@@ -767,6 +945,13 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 			if fullBucket {
 				ensureNodeAggregate(nodeStats, bucketNode)
 			}
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 未发现新对象", rawPath))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
 			continue
 		}
 
@@ -781,6 +966,10 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 			continue
 		}
 		totalObjects += objects
+		completed++
+		if reporter != nil {
+			reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objects})
+		}
 	}
 
 	for _, agg := range nodeStats {

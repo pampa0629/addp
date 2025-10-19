@@ -56,7 +56,8 @@ const customAttrTitleMap = {
   text_metadata: { title: '文本信息', icon: 'el-icon-tickets', className: 'section-text' },
   table_metadata: { title: '表格信息', icon: 'el-icon-s-grid', className: 'section-table' },
   csv_metadata: { title: 'CSV 信息', icon: 'el-icon-s-grid', className: 'section-table' },
-  sqlite_metadata: { title: 'SQLite 信息', icon: 'el-icon-coin', className: 'section-database' }
+  sqlite_metadata: { title: 'SQLite 信息', icon: 'el-icon-coin', className: 'section-database' },
+  excel_metadata: { title: 'Excel 信息', icon: 'el-icon-s-grid', className: 'section-table' }
 }
 
 // 字段名称本地化映射
@@ -110,6 +111,11 @@ const fieldLabelMap = {
   columns: '列名',
   has_header: '包含表头',
   delimiter: '分隔符',
+  sheet_count: '工作表数量',
+  sheets: '工作表',
+  default_sheet: '默认工作表',
+  column_types: '列类型',
+  rows_truncated: '示例截断',
 
   // SQLite相关
   table_count: '表数量',

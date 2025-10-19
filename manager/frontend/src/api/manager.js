@@ -64,6 +64,39 @@ export const managerAPI = {
     return client.post(`/datasources/${dataSourceId}/scan`)
   },
 
+  // 扫描任务管理
+  getScanTasks(dataSourceId) {
+    return client.get(`/datasources/${dataSourceId}/scan-tasks`)
+  },
+
+  createScanTask(dataSourceId, payload) {
+    return client.post(`/datasources/${dataSourceId}/scan-tasks`, payload)
+  },
+
+  updateScanTask(dataSourceId, taskId, payload) {
+    return client.put(`/datasources/${dataSourceId}/scan-tasks/${taskId}`, payload)
+  },
+
+  deleteScanTask(dataSourceId, taskId) {
+    return client.delete(`/datasources/${dataSourceId}/scan-tasks/${taskId}`)
+  },
+
+  triggerScanTask(dataSourceId, taskId) {
+    return client.post(`/datasources/${dataSourceId}/scan-tasks/${taskId}/trigger`)
+  },
+
+  createManualScanRun(dataSourceId, payload) {
+    return client.post(`/datasources/${dataSourceId}/scan-runs/manual`, payload)
+  },
+
+  getScanRuns(dataSourceId, params = {}) {
+    return client.get(`/datasources/${dataSourceId}/scan-runs`, { params })
+  },
+
+  getScanRun(dataSourceId, runId) {
+    return client.get(`/datasources/${dataSourceId}/scan-runs/${runId}`)
+  },
+
   // 获取数据源的表列表
   getTables(dataSourceId, isManaged = null) {
     const params = {}

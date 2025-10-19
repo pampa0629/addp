@@ -9,10 +9,9 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
-func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
+func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -24,15 +23,12 @@ func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	corsConfig.AllowAllOrigins = true
 	router.Use(cors.New(corsConfig))
 
-	// 创建服务
-	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey)
-	if err := resourceService.PreloadResources(); err != nil {
-		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
+	if resourceService == nil || scanService == nil {
+		panic("resourceService and scanService must be provided to SetupRouterNew")
 	}
-	scanService := service.NewScanServiceNew(db, resourceService)
 
 	// 创建Handler
-	handler := NewHandler(resourceService, scanService)
+	handler := NewHandler(resourceService, scanService, taskService)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -54,6 +50,14 @@ func SetupRouterNew(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
 		api.POST("/scan/resource", handler.ScanResource)
+		api.POST("/scan/run/manual", handler.CreateManualScanRun)
+		api.GET("/scan/runs", handler.ListScanRuns)
+		api.GET("/scan/runs/:run_id", handler.GetScanRun)
+		api.GET("/scan/tasks", handler.ListScanTasks)
+		api.POST("/scan/tasks", handler.CreateScanTask)
+		api.PUT("/scan/tasks/:task_id", handler.UpdateScanTask)
+		api.DELETE("/scan/tasks/:task_id", handler.DeleteScanTask)
+		api.POST("/scan/tasks/:task_id/trigger", handler.TriggerScanTask)
 
 		// 元数据相关
 		api.GET("/metadata/object", handler.GetObjectMetadata)

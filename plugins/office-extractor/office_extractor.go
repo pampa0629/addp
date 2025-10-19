@@ -9,30 +9,33 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	sdk "github.com/addp/meta-extractor-sdk"
+	"github.com/xuri/excelize/v2"
 )
 
 // OfficeMetadata Office文档的类型化元数据
 type OfficeMetadata struct {
-	DocumentType  string    `json:"document_type"`  // docx, pptx, xlsx
-	Title         string    `json:"title"`
-	Author        string    `json:"author"`
-	Subject       string    `json:"subject"`
-	Keywords      []string  `json:"keywords"`
-	Description   string    `json:"description"`
-	Creator       string    `json:"creator"`
-	LastModifiedBy string   `json:"last_modified_by"`
-	CreatedDate   time.Time `json:"created_date"`
-	ModifiedDate  time.Time `json:"modified_date"`
-	Revision      string    `json:"revision"`
-	PageCount     int       `json:"page_count"`      // DOCX
-	SlideCount    int       `json:"slide_count"`     // PPTX
-	SheetCount    int       `json:"sheet_count"`     // XLSX
-	WordCount     int       `json:"word_count"`      // DOCX
-	CharacterCount int      `json:"character_count"` // DOCX
+	DocumentType   string    `json:"document_type"` // docx, pptx, xlsx
+	Title          string    `json:"title"`
+	Author         string    `json:"author"`
+	Subject        string    `json:"subject"`
+	Keywords       []string  `json:"keywords"`
+	Description    string    `json:"description"`
+	Creator        string    `json:"creator"`
+	LastModifiedBy string    `json:"last_modified_by"`
+	CreatedDate    time.Time `json:"created_date"`
+	ModifiedDate   time.Time `json:"modified_date"`
+	Revision       string    `json:"revision"`
+	PageCount      int       `json:"page_count"`      // DOCX
+	SlideCount     int       `json:"slide_count"`     // PPTX
+	SheetCount     int       `json:"sheet_count"`     // XLSX
+	WordCount      int       `json:"word_count"`      // DOCX
+	CharacterCount int       `json:"character_count"` // DOCX
 }
 
 // TypeName 实现 TypedMetadata 接口
@@ -69,22 +72,22 @@ func (m *OfficeMetadata) Schema() map[string]interface{} {
 // ToMap 实现 TypedMetadata 接口
 func (m *OfficeMetadata) ToMap() map[string]interface{} {
 	return map[string]interface{}{
-		"document_type":     m.DocumentType,
-		"title":             m.Title,
-		"author":            m.Author,
-		"subject":           m.Subject,
-		"keywords":          m.Keywords,
-		"description":       m.Description,
-		"creator":           m.Creator,
-		"last_modified_by":  m.LastModifiedBy,
-		"created_date":      m.CreatedDate,
-		"modified_date":     m.ModifiedDate,
-		"revision":          m.Revision,
-		"page_count":        m.PageCount,
-		"slide_count":       m.SlideCount,
-		"sheet_count":       m.SheetCount,
-		"word_count":        m.WordCount,
-		"character_count":   m.CharacterCount,
+		"document_type":    m.DocumentType,
+		"title":            m.Title,
+		"author":           m.Author,
+		"subject":          m.Subject,
+		"keywords":         m.Keywords,
+		"description":      m.Description,
+		"creator":          m.Creator,
+		"last_modified_by": m.LastModifiedBy,
+		"created_date":     m.CreatedDate,
+		"modified_date":    m.ModifiedDate,
+		"revision":         m.Revision,
+		"page_count":       m.PageCount,
+		"slide_count":      m.SlideCount,
+		"sheet_count":      m.SheetCount,
+		"word_count":       m.WordCount,
+		"character_count":  m.CharacterCount,
 	}
 }
 
@@ -143,20 +146,167 @@ func (m *OfficeMetadata) FromMap(data map[string]interface{}) error {
 // init 函数：注册自定义元数据类型
 func init() {
 	sdk.RegisterMetadataType(&OfficeMetadata{})
+	sdk.RegisterMetadataType(&ExcelMetadata{})
 }
 
 // OfficeExtractor Office文档的元数据提取器
 type OfficeExtractor struct{}
 
+// ExcelMetadata Excel文件的类型化元数据
+type ExcelMetadata struct {
+	SheetCount   int              `json:"sheet_count"`
+	DefaultSheet string           `json:"default_sheet"`
+	Sheets       []ExcelSheetInfo `json:"sheets"`
+}
+
+const (
+	excelSampleRowLimit     = 20
+	excelTypeSampleRowLimit = 100
+	excelReadRowLimit       = 200
+)
+
+// ExcelSheetInfo 单个工作表的元数据信息
+type ExcelSheetInfo struct {
+	Name          string                   `json:"name"`
+	Index         int                      `json:"index"`
+	RowCount      int                      `json:"row_count"`
+	ColumnCount   int                      `json:"column_count"`
+	HasHeader     bool                     `json:"has_header"`
+	Headers       []string                 `json:"headers"`
+	ColumnTypes   []string                 `json:"column_types"`
+	SampleRows    []map[string]interface{} `json:"sample_rows,omitempty"`
+	RowsTruncated bool                     `json:"rows_truncated"`
+}
+
+// TypeName 实现 TypedMetadata 接口
+func (m *ExcelMetadata) TypeName() string {
+	return "excel.metadata"
+}
+
+// Schema 实现 TypedMetadata 接口
+func (m *ExcelMetadata) Schema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"sheet_count":   map[string]string{"type": "integer", "description": "Number of sheets"},
+			"default_sheet": map[string]string{"type": "string", "description": "Default active sheet"},
+			"sheets": map[string]interface{}{
+				"type":  "array",
+				"items": excelSheetSchema(),
+			},
+		},
+		"required": []string{"sheet_count", "sheets"},
+	}
+}
+
+// ToMap 实现 TypedMetadata 接口
+func (m *ExcelMetadata) ToMap() map[string]interface{} {
+	sheets := make([]map[string]interface{}, 0, len(m.Sheets))
+	for _, sheet := range m.Sheets {
+		sheets = append(sheets, sheet.ToMap())
+	}
+	return map[string]interface{}{
+		"sheet_count":   m.SheetCount,
+		"default_sheet": m.DefaultSheet,
+		"sheets":        sheets,
+	}
+}
+
+// FromMap 实现 TypedMetadata 接口
+func (m *ExcelMetadata) FromMap(data map[string]interface{}) error {
+	if v, ok := data["sheet_count"].(float64); ok {
+		m.SheetCount = int(v)
+	}
+	if v, ok := data["default_sheet"].(string); ok {
+		m.DefaultSheet = v
+	}
+	if rawSheets, ok := data["sheets"].([]interface{}); ok {
+		m.Sheets = make([]ExcelSheetInfo, 0, len(rawSheets))
+		for _, raw := range rawSheets {
+			if sheetMap, ok := raw.(map[string]interface{}); ok {
+				var sheet ExcelSheetInfo
+				sheet.FromMap(sheetMap)
+				m.Sheets = append(m.Sheets, sheet)
+			}
+		}
+	}
+	return nil
+}
+
+// ToMap 序列化 ExcelSheetInfo
+func (s *ExcelSheetInfo) ToMap() map[string]interface{} {
+	rows := make([]map[string]interface{}, 0, len(s.SampleRows))
+	for _, row := range s.SampleRows {
+		rows = append(rows, row)
+	}
+	return map[string]interface{}{
+		"name":           s.Name,
+		"index":          s.Index,
+		"row_count":      s.RowCount,
+		"column_count":   s.ColumnCount,
+		"has_header":     s.HasHeader,
+		"headers":        s.Headers,
+		"column_types":   s.ColumnTypes,
+		"sample_rows":    rows,
+		"rows_truncated": s.RowsTruncated,
+	}
+}
+
+// FromMap 反序列化 ExcelSheetInfo
+func (s *ExcelSheetInfo) FromMap(data map[string]interface{}) {
+	if v, ok := data["name"].(string); ok {
+		s.Name = v
+	}
+	if v, ok := data["index"].(float64); ok {
+		s.Index = int(v)
+	}
+	if v, ok := data["row_count"].(float64); ok {
+		s.RowCount = int(v)
+	}
+	if v, ok := data["column_count"].(float64); ok {
+		s.ColumnCount = int(v)
+	}
+	if v, ok := data["has_header"].(bool); ok {
+		s.HasHeader = v
+	}
+	if rawHeaders, ok := data["headers"].([]interface{}); ok {
+		s.Headers = make([]string, 0, len(rawHeaders))
+		for _, header := range rawHeaders {
+			if val, ok := header.(string); ok {
+				s.Headers = append(s.Headers, val)
+			}
+		}
+	}
+	if rawTypes, ok := data["column_types"].([]interface{}); ok {
+		s.ColumnTypes = make([]string, 0, len(rawTypes))
+		for _, typ := range rawTypes {
+			if val, ok := typ.(string); ok {
+				s.ColumnTypes = append(s.ColumnTypes, val)
+			}
+		}
+	}
+	if rawRows, ok := data["sample_rows"].([]interface{}); ok {
+		s.SampleRows = make([]map[string]interface{}, 0, len(rawRows))
+		for _, raw := range rawRows {
+			if rowMap, ok := raw.(map[string]interface{}); ok {
+				s.SampleRows = append(s.SampleRows, rowMap)
+			}
+		}
+	}
+	if v, ok := data["rows_truncated"].(bool); ok {
+		s.RowsTruncated = v
+	}
+}
+
 // SupportedTypes 返回支持的MIME类型
 func (e *OfficeExtractor) SupportedTypes() []string {
 	return []string{
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",     // .docx
-		"application/vnd.openxmlformats-officedocument.presentationml.presentation",   // .pptx
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",           // .xlsx
-		"application/vnd.ms-word.document.macroEnabled.12",                            // .docm
-		"application/vnd.ms-powerpoint.presentation.macroEnabled.12",                  // .pptm
-		"application/vnd.ms-excel.sheet.macroEnabled.12",                              // .xlsm
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",   // .docx
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",         // .xlsx
+		"application/vnd.ms-word.document.macroEnabled.12",                          // .docm
+		"application/vnd.ms-powerpoint.presentation.macroEnabled.12",                // .pptm
+		"application/vnd.ms-excel.sheet.macroEnabled.12",                            // .xlsm
 	}
 }
 
@@ -222,6 +372,24 @@ func (e *OfficeExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (
 	metadata.CustomAttrs["author"] = officeMeta.Author
 	metadata.CustomAttrs["file_size"] = input.Size
 	metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
+
+	// 8. 若为Excel，提取工作表结构与示例数据
+	if docType == "xlsx" {
+		excelMeta, schemaInfo, previewData, err := e.extractExcelDetails(content)
+		if err != nil {
+			metadata.CustomAttrs["excel_error"] = err.Error()
+		} else {
+			metadata.AddTypedMetadata("excel_metadata", excelMeta)
+			if schemaInfo != nil {
+				metadata.SchemaInfo = schemaInfo
+			}
+			if previewData != nil {
+				metadata.PreviewData = previewData
+			}
+			metadata.CustomAttrs["sheet_count"] = excelMeta.SheetCount
+			metadata.CustomAttrs["default_sheet"] = excelMeta.DefaultSheet
+		}
+	}
 
 	return metadata, nil
 }
@@ -418,6 +586,582 @@ func (e *OfficeExtractor) countExcelSheets(zipReader *zip.Reader) (int, error) {
 	}
 
 	return 0, fmt.Errorf("workbook.xml not found")
+}
+
+// excelSheetSchema 返回Excel工作表的schema定义
+func excelSheetSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"name": map[string]string{"type": "string", "description": "Sheet name"},
+			"index": map[string]string{
+				"type":        "integer",
+				"description": "Sheet index (zero-based)",
+			},
+			"row_count": map[string]string{
+				"type":        "integer",
+				"description": "Approximate number of data rows (excluding header)",
+			},
+			"column_count": map[string]string{
+				"type":        "integer",
+				"description": "Number of columns",
+			},
+			"has_header": map[string]string{
+				"type":        "boolean",
+				"description": "Whether the first row is treated as header",
+			},
+			"headers": map[string]interface{}{
+				"type": "array",
+				"items": map[string]string{
+					"type": "string",
+				},
+			},
+			"column_types": map[string]interface{}{
+				"type": "array",
+				"items": map[string]string{
+					"type": "string",
+				},
+			},
+			"sample_rows": map[string]interface{}{
+				"type": "array",
+				"items": map[string]interface{}{
+					"type":                 "object",
+					"additionalProperties": map[string]string{"type": "string"},
+				},
+			},
+			"rows_truncated": map[string]string{
+				"type":        "boolean",
+				"description": "Whether sample rows are truncated",
+			},
+		},
+	}
+}
+
+// extractExcelDetails 解析Excel工作簿，提取工作表结构和样例数据
+func (e *OfficeExtractor) extractExcelDetails(content []byte) (*ExcelMetadata, *sdk.SchemaMetadata, map[string]interface{}, error) {
+	file, err := excelize.OpenReader(bytes.NewReader(content))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("打开Excel失败: %w", err)
+	}
+	defer file.Close()
+
+	sheetNames := file.GetSheetList()
+	if len(sheetNames) == 0 {
+		emptyMeta := &ExcelMetadata{
+			SheetCount:   0,
+			DefaultSheet: "",
+			Sheets:       []ExcelSheetInfo{},
+		}
+		preview := map[string]interface{}{
+			"kind":         "excel",
+			"sheet_count":  0,
+			"active_sheet": "",
+			"sheets":       []map[string]interface{}{},
+		}
+		return emptyMeta, nil, preview, nil
+	}
+
+	defaultIdx := file.GetActiveSheetIndex()
+	if defaultIdx < 0 || defaultIdx >= len(sheetNames) {
+		defaultIdx = 0
+	}
+	defaultSheet := sheetNames[defaultIdx]
+
+	meta := &ExcelMetadata{
+		SheetCount:   len(sheetNames),
+		DefaultSheet: defaultSheet,
+		Sheets:       make([]ExcelSheetInfo, 0, len(sheetNames)),
+	}
+
+	previewSheets := make([]map[string]interface{}, 0, len(sheetNames))
+	var schemaInfo *sdk.SchemaMetadata
+
+	for idx, sheetName := range sheetNames {
+		sheetInfo, sheetPreview, sheetSchema := extractExcelSheet(file, sheetName, idx, sheetName == defaultSheet)
+		meta.Sheets = append(meta.Sheets, sheetInfo)
+		previewSheets = append(previewSheets, sheetPreview)
+
+		// 选取默认工作表的schema信息
+		if sheetSchema != nil && schemaInfo == nil {
+			schemaInfo = sheetSchema
+		}
+	}
+
+	if schemaInfo == nil && len(meta.Sheets) > 0 {
+		// 回退到第一个工作表
+		schemaInfo = schemaFromSheet(meta.Sheets[0])
+	}
+
+	preview := map[string]interface{}{
+		"kind":          "excel",
+		"sheet_count":   len(sheetNames),
+		"active_sheet":  defaultSheet,
+		"sheets":        previewSheets,
+		"default_sheet": defaultSheet,
+	}
+
+	return meta, schemaInfo, preview, nil
+}
+
+// extractExcelSheet 解析单个工作表
+func extractExcelSheet(file *excelize.File, sheetName string, index int, isDefault bool) (ExcelSheetInfo, map[string]interface{}, *sdk.SchemaMetadata) {
+	info := ExcelSheetInfo{
+		Name:        sheetName,
+		Index:       index,
+		ColumnTypes: []string{},
+		SampleRows:  []map[string]interface{}{},
+	}
+
+	dimCols, dimRows := sheetDimensions(file, sheetName)
+
+	rowsIter, err := file.Rows(sheetName)
+	if err != nil {
+		info.ColumnCount = dimCols
+		info.RowCount = maxInt(0, dimRows)
+		return finalizeExcelSheet(info, []string{}, [][]string{}, dimCols, dimRows, false), excelPreviewFromSheet(info), schemaFromSheet(info)
+	}
+	defer rowsIter.Close()
+
+	headerCandidate := []string{}
+	rawRows := make([][]string, 0, excelReadRowLimit)
+	maxColumns := dimCols
+	rowIndex := 0
+	readLimit := excelReadRowLimit
+
+	for rowsIter.Next() {
+		rowIndex++
+		if readLimit > 0 && rowIndex > readLimit {
+			break
+		}
+
+		raw, err := rowsIter.Columns()
+		if err != nil {
+			continue
+		}
+
+		row := trimStringSlice(raw)
+		if len(row) > maxColumns {
+			maxColumns = len(row)
+		}
+
+		if rowIndex == 1 {
+			headerCandidate = row
+			continue
+		}
+
+		rawRows = append(rawRows, row)
+	}
+
+	// 没有数据行时，仍需考虑只有表头的情况
+	hasHeader := looksLikeHeaderRow(headerCandidate)
+	info.HasHeader = hasHeader
+
+	if !hasHeader && len(headerCandidate) > 0 {
+		// 无表头，则表头行作为第一条数据
+		rawRows = append([][]string{headerCandidate}, rawRows...)
+	}
+
+	if maxColumns == 0 && len(headerCandidate) > 0 {
+		maxColumns = len(headerCandidate)
+	}
+
+	headers := buildHeaders(headerCandidate, maxColumns, hasHeader)
+	normalizedRows := normalizeRows(rawRows, maxColumns)
+	info.Headers = headers
+	info.ColumnCount = maxColumns
+
+	estimatedRows := estimateRowCount(dimRows, len(normalizedRows), hasHeader)
+	info.RowCount = estimatedRows
+
+	columnTypes := inferExcelColumnTypes(normalizedRows, maxColumns, excelTypeSampleRowLimit)
+	info.ColumnTypes = columnTypes
+
+	sampleRows := buildSampleRows(headers, normalizedRows, excelSampleRowLimit)
+	info.SampleRows = sampleRows
+	if estimatedRows > len(sampleRows) {
+		info.RowsTruncated = true
+	}
+
+	finalInfo := finalizeExcelSheet(info, headerCandidate, normalizedRows, maxColumns, dimRows, hasHeader)
+	preview := excelPreviewFromSheet(finalInfo)
+	var schema *sdk.SchemaMetadata
+	if isDefault || len(headers) > 0 {
+		schema = schemaFromSheet(finalInfo)
+	}
+
+	return finalInfo, preview, schema
+}
+
+// finalizeExcelSheet 对工作表元数据做收尾处理
+func finalizeExcelSheet(info ExcelSheetInfo, header []string, rows [][]string, columnCount, dimensionRows int, hasHeader bool) ExcelSheetInfo {
+	if info.ColumnCount == 0 {
+		info.ColumnCount = columnCount
+	}
+	if info.RowCount == 0 {
+		estimated := estimateRowCount(dimensionRows, len(rows), hasHeader)
+		info.RowCount = estimated
+	}
+	if len(info.Headers) == 0 {
+		info.Headers = buildHeaders(header, info.ColumnCount, hasHeader)
+	}
+	if len(info.ColumnTypes) == 0 && info.ColumnCount > 0 {
+		info.ColumnTypes = inferExcelColumnTypes(rows, info.ColumnCount, excelTypeSampleRowLimit)
+	}
+	return info
+}
+
+// schemaFromSheet 将ExcelSheetInfo转换为SchemaMetadata
+func schemaFromSheet(sheet ExcelSheetInfo) *sdk.SchemaMetadata {
+	if sheet.ColumnCount == 0 || len(sheet.Headers) == 0 {
+		return nil
+	}
+	columns := make([]sdk.ColumnInfo, 0, sheet.ColumnCount)
+	for idx, header := range sheet.Headers {
+		colType := "string"
+		if idx < len(sheet.ColumnTypes) && sheet.ColumnTypes[idx] != "" {
+			colType = sheet.ColumnTypes[idx]
+		}
+		columns = append(columns, sdk.ColumnInfo{
+			Name:     header,
+			Type:     colType,
+			Nullable: true,
+		})
+	}
+
+	sampleData := sheet.SampleRows
+	if len(sampleData) > excelSampleRowLimit {
+		sampleData = sampleData[:excelSampleRowLimit]
+	}
+
+	return &sdk.SchemaMetadata{
+		Columns:    columns,
+		RowCount:   int64(sheet.RowCount),
+		SampleData: sampleData,
+		Extra: map[string]interface{}{
+			"sheet_name": sheet.Name,
+			"has_header": sheet.HasHeader,
+		},
+	}
+}
+
+// excelPreviewFromSheet 构建预览结构
+func excelPreviewFromSheet(sheet ExcelSheetInfo) map[string]interface{} {
+	rows := make([]map[string]interface{}, 0, len(sheet.SampleRows))
+	for _, row := range sheet.SampleRows {
+		rows = append(rows, row)
+	}
+
+	return map[string]interface{}{
+		"name":           sheet.Name,
+		"index":          sheet.Index,
+		"row_count":      sheet.RowCount,
+		"column_count":   sheet.ColumnCount,
+		"has_header":     sheet.HasHeader,
+		"headers":        sheet.Headers,
+		"column_types":   sheet.ColumnTypes,
+		"rows":           rows,
+		"rows_truncated": sheet.RowsTruncated,
+	}
+}
+
+// sheetDimensions 解析工作表的维度信息
+func sheetDimensions(file *excelize.File, sheetName string) (columns int, rows int) {
+	dimension, err := file.GetSheetDimension(sheetName)
+	if err != nil || dimension == "" {
+		return 0, 0
+	}
+
+	parts := strings.Split(dimension, ":")
+	if len(parts) == 1 {
+		col, row, err := excelize.CellNameToCoordinates(parts[0])
+		if err != nil {
+			return 0, 0
+		}
+		return col, row
+	}
+
+	startCol, startRow, err := excelize.CellNameToCoordinates(parts[0])
+	if err != nil {
+		return 0, 0
+	}
+	endCol, endRow, err := excelize.CellNameToCoordinates(parts[1])
+	if err != nil {
+		return 0, 0
+	}
+
+	if endCol < startCol || endRow < startRow {
+		return 0, 0
+	}
+
+	return endCol - startCol + 1, endRow - startRow + 1
+}
+
+// buildHeaders 构造表头
+func buildHeaders(candidate []string, columnCount int, hasHeader bool) []string {
+	if columnCount <= 0 {
+		return []string{}
+	}
+	headers := make([]string, columnCount)
+	used := make(map[string]int)
+	for i := 0; i < columnCount; i++ {
+		var name string
+		if hasHeader && i < len(candidate) {
+			name = strings.TrimSpace(candidate[i])
+		}
+		if name == "" {
+			name = fmt.Sprintf("Column%d", i+1)
+		}
+		lower := strings.ToLower(name)
+		if count, exists := used[lower]; exists {
+			count++
+			used[lower] = count
+			name = fmt.Sprintf("%s_%d", name, count)
+		} else {
+			used[lower] = 1
+		}
+		headers[i] = name
+	}
+	return headers
+}
+
+// normalizeRows 将数据行补齐到统一长度
+func normalizeRows(rows [][]string, columnCount int) [][]string {
+	if columnCount <= 0 {
+		return rows
+	}
+	normalized := make([][]string, len(rows))
+	for i, row := range rows {
+		normalized[i] = padRow(row, columnCount)
+	}
+	return normalized
+}
+
+// padRow 补齐单行数据
+func padRow(row []string, columnCount int) []string {
+	padded := make([]string, columnCount)
+	for i := 0; i < columnCount; i++ {
+		if i < len(row) {
+			padded[i] = strings.TrimSpace(row[i])
+		} else {
+			padded[i] = ""
+		}
+	}
+	return padded
+}
+
+// buildSampleRows 构造示例数据
+func buildSampleRows(headers []string, rows [][]string, limit int) []map[string]interface{} {
+	if len(headers) == 0 || len(rows) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	max := len(rows)
+	if limit > 0 && limit < max {
+		max = limit
+	}
+
+	result := make([]map[string]interface{}, 0, max)
+	for i := 0; i < max; i++ {
+		row := rows[i]
+		entry := make(map[string]interface{}, len(headers))
+		for j, header := range headers {
+			if j < len(row) {
+				entry[header] = row[j]
+			} else {
+				entry[header] = ""
+			}
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+// inferExcelColumnTypes 推断列类型
+func inferExcelColumnTypes(rows [][]string, columnCount int, sampleLimit int) []string {
+	if columnCount <= 0 {
+		return []string{}
+	}
+
+	samples := make([][]string, columnCount)
+	for _, row := range rows {
+		for col := 0; col < columnCount; col++ {
+			if col < len(row) {
+				if sampleLimit <= 0 || len(samples[col]) < sampleLimit {
+					samples[col] = append(samples[col], row[col])
+				}
+			}
+		}
+	}
+
+	columnTypes := make([]string, columnCount)
+	for i := 0; i < columnCount; i++ {
+		columnTypes[i] = inferColumnType(samples[i])
+	}
+	return columnTypes
+}
+
+// inferColumnType 根据示例值推断列类型
+func inferColumnType(values []string) string {
+	if len(values) == 0 {
+		return "string"
+	}
+
+	var intCount, floatCount, boolCount, dateCount, nullCount int
+
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		if value == "" || strings.EqualFold(value, "null") || strings.EqualFold(value, "na") {
+			nullCount++
+			continue
+		}
+		if isBool(value) {
+			boolCount++
+			continue
+		}
+		if isInteger(value) {
+			intCount++
+			continue
+		}
+		if isFloat(value) {
+			floatCount++
+			continue
+		}
+		if isDate(value) {
+			dateCount++
+			continue
+		}
+	}
+
+	nonNull := len(values) - nullCount
+	if nonNull <= 0 {
+		return "string"
+	}
+
+	if boolCount == nonNull {
+		return "boolean"
+	}
+	if dateCount >= nonNull/2 && dateCount > 0 {
+		return "date"
+	}
+	if floatCount+intCount == nonNull {
+		if floatCount > 0 {
+			return "number"
+		}
+		return "integer"
+	}
+
+	return "string"
+}
+
+// looksLikeHeaderRow 简单判断首行是否为表头
+func looksLikeHeaderRow(row []string) bool {
+	if len(row) == 0 {
+		return false
+	}
+	hasNonNumeric := false
+	for _, cell := range row {
+		value := strings.TrimSpace(cell)
+		if value == "" {
+			return false
+		}
+		if !isNumeric(value) {
+			hasNonNumeric = true
+		}
+	}
+	return hasNonNumeric
+}
+
+// estimateRowCount 估算数据行数（排除表头）
+func estimateRowCount(dimensionRows int, loadedRows int, hasHeader bool) int {
+	if dimensionRows <= 0 {
+		if hasHeader && loadedRows > 0 {
+			return maxInt(0, loadedRows-1)
+		}
+		return loadedRows
+	}
+	if hasHeader {
+		if dimensionRows > 0 {
+			dimensionRows--
+		}
+	}
+	if dimensionRows < loadedRows {
+		return loadedRows
+	}
+	return dimensionRows
+}
+
+// trimStringSlice 去除元素两端空格
+func trimStringSlice(values []string) []string {
+	result := make([]string, len(values))
+	for i, v := range values {
+		result[i] = strings.TrimSpace(v)
+	}
+	return result
+}
+
+func isNumeric(value string) bool {
+	if value == "" {
+		return false
+	}
+	return isInteger(value) || isFloat(value)
+}
+
+func isInteger(value string) bool {
+	_, err := strconv.ParseInt(value, 10, 64)
+	return err == nil
+}
+
+var floatPattern = regexp.MustCompile(`^[+-]?(\d+\.\d+|\.\d+|\d+\.)$`)
+
+func isFloat(value string) bool {
+	if floatPattern.MatchString(value) {
+		return true
+	}
+	_, err := strconv.ParseFloat(value, 64)
+	return err == nil
+}
+
+func isBool(value string) bool {
+	switch strings.ToLower(value) {
+	case "true", "false", "yes", "no", "y", "n", "1", "0":
+		return true
+	default:
+		return false
+	}
+}
+
+var dateLayouts = []string{
+	time.RFC3339,
+	"2006-01-02",
+	"2006/01/02",
+	"2006-1-2",
+	"02-01-2006",
+	"02/01/2006",
+	"2006-01-02 15:04:05",
+	"2006/01/02 15:04:05",
+	"01/02/2006",
+	"1/2/2006",
+	"02-Jan-2006",
+	"02-Jan-06",
+}
+
+func isDate(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, layout := range dateLayouts {
+		if _, err := time.Parse(layout, value); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // GetExtractor 返回提取器实例（供ADDP加载使用）
