@@ -9,6 +9,15 @@ cd "${ROOT_DIR}"
 export PROJECT_ROOT="${ROOT_DIR}"
 mkdir -p logs
 
+if [ -f "${ROOT_DIR}/.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${ROOT_DIR}/.env"
+  set +a
+fi
+
+export ELASTICSEARCH_URL="${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}"
+
 echo "🚀 启动 ADDP 开发环境"
 echo ""
 
@@ -22,6 +31,7 @@ PORTAL_FE_PORT=${PORTAL_FE_PORT:-5170}
 SYSTEM_FE_PORT=${SYSTEM_FE_PORT:-5173}
 MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
 META_FE_PORT=${META_FE_PORT:-5175}
+TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 
 # 1. 启动基础设施
 # echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
@@ -95,7 +105,7 @@ echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
 echo ""
 
 # 4. 启动 Meta Backend
-echo -e "${YELLOW}Step 4/5: 启动 Meta Backend${NC}"
+echo -e "${YELLOW}Step 4/6: 启动 Meta Backend${NC}"
 (cd meta/backend && go run cmd/server/main.go) 2> logs/meta-backend-stderr.log &
 META_PID=$!
 
@@ -115,8 +125,29 @@ done
 echo -e "${GREEN}✓ Meta Backend 就绪 (PID: $META_PID)${NC}"
 echo ""
 
-# 5. 启动 Gateway
-echo -e "${YELLOW}Step 5/5: 启动 Gateway${NC}"
+# 5. 启动 Transfer Backend
+echo -e "${YELLOW}Step 5/6: 启动 Transfer Backend${NC}"
+(cd transfer/backend && go run cmd/server/main.go) 2> logs/transfer-backend-stderr.log &
+TRANSFER_PID=$!
+
+# 等待 Transfer Backend 就绪
+echo "等待 Transfer Backend 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8083/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/transfer-backend-stderr.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
+echo ""
+
+# 6. 启动 Gateway
+echo -e "${YELLOW}Step 6/6: 启动 Gateway${NC}"
 (cd gateway && go run cmd/gateway/main.go) 2> logs/gateway-stderr.log &
 GATEWAY_PID=$!
 
@@ -174,11 +205,20 @@ META_FE_PID=$!
 cd ../..
 echo -e "${GREEN}✓ Meta Frontend 启动中 (PID: $META_FE_PID, Port: ${META_FE_PORT})${NC}"
 
+# Transfer Frontend
+echo "启动 Transfer Frontend..."
+cd transfer/frontend
+npm run dev -- --host 0.0.0.0 --port "${TRANSFER_FE_PORT}" > ../../logs/transfer-frontend.log 2>&1 &
+TRANSFER_FE_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Transfer Frontend 启动中 (PID: $TRANSFER_FE_PID, Port: ${TRANSFER_FE_PORT})${NC}"
+
 # 保存前端 PIDs
 echo $PORTAL_PID > .dev-pids/portal-frontend.pid
 echo $SYSTEM_FE_PID > .dev-pids/system-frontend.pid
 echo $MANAGER_FE_PID > .dev-pids/manager-frontend.pid
 echo $META_FE_PID > .dev-pids/meta-frontend.pid
+echo $TRANSFER_FE_PID > .dev-pids/transfer-frontend.pid
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -191,22 +231,27 @@ echo "  Gateway:  http://localhost:8000"
 echo "  System:   http://localhost:8080"
 echo "  Manager:  http://localhost:8081"
 echo "  Meta:     http://localhost:8082"
+echo "  Transfer: http://localhost:8083"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
+echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo ""
 echo "进程 PID:"
 echo "  System:   $SYSTEM_PID"
 echo "  Manager:  $MANAGER_PID"
 echo "  Meta:     $META_PID"
+echo "  Transfer: $TRANSFER_PID"
 echo "  Gateway:  $GATEWAY_PID"
 echo ""
 echo "日志文件:"
 echo "  System:   logs/system-backend.log"
 echo "  Manager:  logs/manager-backend.log"
 echo "  Meta:     logs/meta-backend.log"
+echo "  Transfer: logs/transfer-backend.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
+echo "  Transfer FE:  logs/transfer-frontend.log"
 echo ""
 echo "停止所有服务: make dev-stop 或 ./scripts/dev-stop.sh"
 echo ""
@@ -216,4 +261,5 @@ mkdir -p .dev-pids
 echo $SYSTEM_PID > .dev-pids/system.pid
 echo $MANAGER_PID > .dev-pids/manager.pid
 echo $META_PID > .dev-pids/meta.pid
+echo $TRANSFER_PID > .dev-pids/transfer.pid
 echo $GATEWAY_PID > .dev-pids/gateway.pid

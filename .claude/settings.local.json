@@ -57,7 +57,9 @@
       "Bash(brew list:*)",
       "Bash(brew install:*)",
       "Bash(ffprobe:*)",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwiZXhwIjoxNzYwNTAxMDY2LCJpYXQiOjE3NjA0OTkyNjZ9.ii9u_6s91E123OLAgptUUXyXctl-V7CYVOdKNSof34k\" curl -s -H \"Authorization: Bearer $TOKEN\" \"http://localhost:8081/api/data-explorer/preview?resource_id=9&schema=addp&table=开会.jpg\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwiZXhwIjoxNzYwNTAxMDY2LCJpYXQiOjE3NjA0OTkyNjZ9.ii9u_6s91E123OLAgptUUXyXctl-V7CYVOdKNSof34k\" curl -s -H \"Authorization: Bearer $TOKEN\" \"http://localhost:8081/api/data-explorer/preview?resource_id=9&schema=addp&table=开会.jpg\")",
+      "Bash(chmod:*)",
+      "Bash(npm install)"
     ],
     "deny": [],
     "ask": []

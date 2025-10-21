@@ -40,6 +40,16 @@ type Directory struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// SearchHistory 记录用户的全文检索历史，按用户隔离
+type SearchHistory struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	UserID    uint      `json:"user_id" gorm:"uniqueIndex:idx_search_history_user_query,priority:1;not null"`
+	TenantID  *uint     `json:"tenant_id" gorm:"index"`
+	Query     string    `json:"query" gorm:"size:512;not null;uniqueIndex:idx_search_history_user_query,priority:2"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // ConnectionInfo 存储连接信息
 type ConnectionInfo map[string]interface{}
 

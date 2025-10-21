@@ -28,15 +28,15 @@ init: ## 初始化项目（创建必要的目录和配置文件）
 
 dev-system: ## 开发模式运行 System 模块
 	@echo "$(GREEN)启动 System 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd system/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd system/backend && go run cmd/server/main.go'
 
 dev-manager: ## 开发模式运行 Manager 模块
 	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd manager/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd manager/backend && go run cmd/server/main.go'
 
 dev-meta: ## 开发模式运行 Meta 模块
 	@echo "$(GREEN)启动 Meta 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; cd meta/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd meta/backend && go run cmd/server/main.go'
 
 dev-transfer: ## 开发模式运行 Transfer 模块
 	@echo "$(GREEN)启动 Transfer 模块开发环境...$(NC)"
@@ -99,9 +99,9 @@ up-full: ## 启动所有服务（完整平台）
 	@echo "$(GREEN)所有服务已启动！$(NC)"
 	@$(MAKE) status
 
-up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO）
+up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO, Elasticsearch）
 	@echo "$(GREEN)启动基础设施服务...$(NC)"
-	@docker compose up -d postgres redis minio
+	@docker compose up -d postgres redis minio elasticsearch
 	@echo "$(GREEN)基础设施服务已启动！$(NC)"
 
 down: ## 停止所有服务
@@ -151,6 +151,7 @@ status: ## 显示所有服务状态
 	@echo "  - Redis:            localhost:6379"
 	@echo "  - MinIO Console:    http://localhost:9001"
 	@echo "  - MinIO API:        http://localhost:9000"
+	@echo "  - Elasticsearch:    http://localhost:9200"
 
 ps: status ## 显示服务状态（别名）
 

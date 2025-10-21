@@ -267,6 +267,13 @@ make build
 ./bin/gateway       # Gateway 模块
 ```
 
+### 向量检索配置
+
+- 配置 `.env` 中的 `VECTOR_DB_*` 变量，指向启用了 `pgvector` 扩展的 PostgreSQL 库，默认会自动创建 `vector_store.document_embeddings` 表。
+- 设置在线推理服务地址与密钥：`EMBEDDING_SERVICE_BASE_URL`、`EMBEDDING_SERVICE_API_KEY` 以及各模态模型。默认配置指向阿里云灵积（DashScope）多模态向量接口，可在灵积控制台创建 DashScope API Key 并填入 `EMBEDDING_SERVICE_API_KEY`。
+- Meta 模块在元数据扫描时调用推理服务生成文档向量并写入 PgVector；Manager 模块会对查询语句做向量化并在搜索结果中附加 `vector_hits` 列表。
+- 若未配置推理服务或 PgVector 连接，向量化相关能力会自动跳过，不影响原有全文检索。
+
 ## 📡 API 文档
 
 ### System 模块 API
@@ -338,6 +345,8 @@ MINIO_ROOT_PASSWORD=your-minio-password
 | Redis | 6379 | 缓存/队列 |
 | MinIO API | 9000 | 对象存储 |
 | MinIO Console | 9001 | MinIO 管理界面 |
+| Elasticsearch REST | 9200 | 全文检索 API |
+| Elasticsearch Transport | 9300 | 节点通信 |
 
 ## 🗄️ 数据库
 

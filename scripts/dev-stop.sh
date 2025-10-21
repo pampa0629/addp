@@ -56,6 +56,21 @@ if [ -d ".dev-pids" ]; then
     fi
   fi
 
+  if [ -f ".dev-pids/transfer.pid" ]; then
+    TRANSFER_PID=$(cat .dev-pids/transfer.pid)
+    if ps -p $TRANSFER_PID > /dev/null 2>&1; then
+      kill $TRANSFER_PID
+      # 等待进程真正退出
+      for i in {1..10}; do
+        if ! ps -p $TRANSFER_PID > /dev/null 2>&1; then
+          break
+        fi
+        sleep 0.5
+      done
+      echo "✓ Transfer Backend 已停止 (PID: $TRANSFER_PID)"
+    fi
+  fi
+
   if [ -f ".dev-pids/gateway.pid" ]; then
     GATEWAY_PID=$(cat .dev-pids/gateway.pid)
     if ps -p $GATEWAY_PID > /dev/null 2>&1; then
@@ -83,6 +98,7 @@ MODULES=(
   "system/backend|go run cmd/server/main.go"
   "manager/backend|go run cmd/server/main.go"
   "meta/backend|go run cmd/server/main.go"
+  "transfer/backend|go run cmd/server/main.go"
   "gateway|go run cmd/gateway/main.go"
 )
 

@@ -22,6 +22,12 @@ const routes = [
         name: 'DataExplorer',
         component: () => import('../views/DataExplorer.vue'),
         meta: { requiresAuth: true, title: '数据管理-addp' }
+      },
+      {
+        path: 'fulltext-search',
+        name: 'FullTextSearch',
+        component: () => import('../views/FullTextSearch.vue'),
+        meta: { requiresAuth: true, title: '全文检索-addp' }
       }
     ]
   }

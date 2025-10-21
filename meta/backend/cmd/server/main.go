@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/embedding"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
+	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/internal/service"
 
 	// Import plugins package to auto-register third-party extractors
@@ -52,7 +56,50 @@ func main() {
 	if err := resourceService.PreloadResources(); err != nil {
 		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
 	}
+	searchIndexer, err := search.NewIndexer(cfg)
+	if err != nil {
+		logger.L().Error("Elasticsearch 索引器初始化失败", "error", err)
+		os.Exit(1)
+	}
 	scanService := service.NewScanServiceNew(db, resourceService)
+	scanService.SetIndexer(searchIndexer)
+
+	var pgVectorStore *vectorstore.PgVectorStore
+	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {
+		store, err := vectorstore.NewPgVectorStore(context.Background(), cfg.VectorDB)
+		if err != nil {
+			logger.L().Warn("向量存储初始化失败，将禁用文档向量化", "error", err)
+		} else {
+			models := map[embedding.Modality]string{
+				embedding.ModalityText:     cfg.EmbeddingService.TextModel,
+				embedding.ModalityDocument: cfg.EmbeddingService.TextModel,
+				embedding.ModalityImage:    cfg.EmbeddingService.ImageModel,
+				embedding.ModalityAudio:    cfg.EmbeddingService.AudioModel,
+				embedding.ModalityVideo:    cfg.EmbeddingService.VideoModel,
+			}
+			client, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
+				BaseURL: cfg.EmbeddingService.BaseURL,
+				APIKey:  cfg.EmbeddingService.APIKey,
+				Timeout: cfg.EmbeddingService.Timeout,
+				Models:  models,
+			})
+			if err != nil {
+				logger.L().Warn("向量化服务客户端初始化失败，将禁用文档向量化", "error", err)
+				store.Close()
+			} else {
+				scanService.EnableDocumentVectorization(store, client, cfg.EmbeddingService.Timeout)
+				pgVectorStore = store
+				logger.L().Info("文档向量化已启用", "vector_schema", cfg.VectorDB.Schema, "vector_table", cfg.VectorDB.Table)
+			}
+		}
+	} else {
+		logger.L().Info("未配置向量化服务，文档向量化保持禁用状态")
+	}
+
+	if pgVectorStore != nil {
+		defer pgVectorStore.Close()
+	}
+
 	taskService := service.NewScanTaskService(db, scanService, resourceService)
 	if err := taskService.Start(context.Background()); err != nil {
 		logger.L().Error("扫描任务服务启动失败", "error", err)

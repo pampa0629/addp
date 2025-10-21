@@ -48,7 +48,7 @@
             <span>门户首页</span>
           </el-menu-item>
 
-          <el-sub-menu index="transfer" disabled>
+          <el-sub-menu index="transfer">
             <template #title>
               <el-icon><Upload /></el-icon>
               <span>数据传输</span>
@@ -65,6 +65,10 @@
             <el-menu-item index="/manager/data-explorer">
               <el-icon><Search /></el-icon>
               <span>数据探查</span>
+            </el-menu-item>
+            <el-menu-item index="/manager/fulltext-search">
+              <el-icon><Document /></el-icon>
+              <span>全文检索</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -141,12 +145,11 @@
               </el-card>
             </el-col>
             <el-col :span="12">
-              <el-card shadow="hover" class="module-card module-card-disabled">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('transfer')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#909399"><Upload /></el-icon>
+                  <el-icon :size="48" color="#F56C6C"><Upload /></el-icon>
                   <h2>数据传输</h2>
                   <p>数据导入、数据导出、任务调度</p>
-                  <el-tag size="small" type="info">开发中</el-tag>
                 </div>
               </el-card>
             </el-col>
@@ -235,6 +238,7 @@ const handleMenuSelect = (index) => {
     // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
     const managerPageMap = {
       'data-explorer': 'data-explorer',
+      'fulltext-search': 'fulltext-search',
       '': 'data-explorer'
     }
 
@@ -246,11 +250,25 @@ const handleMenuSelect = (index) => {
       '': 'scan'
     }
 
+    // Transfer 模块的路由映射
+    const transferPageMap = {
+      'tasks': 'tasks',
+      'executions': 'executions',
+      '': 'tasks'
+    }
+
     if (module === 'manager') {
       const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
       url = `${moduleUrls[module]}/${module}/${actualPage}`
     } else if (module === 'meta') {
       const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${module}/${actualPage}`
+      } else {
+        url = `${moduleUrls[module]}/${module}/`
+      }
+    } else if (module === 'transfer') {
+      const actualPage = transferPageMap[page] !== undefined ? transferPageMap[page] : page
       if (actualPage) {
         url = `${moduleUrls[module]}/${module}/${actualPage}`
       } else {
@@ -291,6 +309,8 @@ const navigateToModule = (module) => {
     handleMenuSelect('/manager/data-explorer')
   } else if (module === 'meta') {
     handleMenuSelect('/meta/scan')
+  } else if (module === 'transfer') {
+    handleMenuSelect('/transfer/tasks')
   }
 }
 

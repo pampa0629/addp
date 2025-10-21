@@ -8,26 +8,38 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	sdk "github.com/addp/meta-extractor-sdk"
 )
 
+const (
+	pdfPlainTextLimit        = 20000
+	pdfPlainTextPreviewLimit = 400
+)
+
+var (
+	pdfInlineTextPattern = regexp.MustCompile(`\((?:[^\\()]|\\.)*\)\s*Tj`)
+	pdfArrayTextPattern  = regexp.MustCompile(`\[(?:[^\\\[\]]|\\.)*?\]\s*TJ`)
+	pdfStringPattern     = regexp.MustCompile(`\((?:[^\\()]|\\.)*\)`)
+)
+
 // PDFMetadata PDF文件的类型化元数据
 type PDFMetadata struct {
-	Version     string    `json:"version"`
-	PageCount   int       `json:"page_count"`
-	Title       string    `json:"title"`
-	Author      string    `json:"author"`
-	Subject     string    `json:"subject"`
-	Keywords    []string  `json:"keywords"`
-	Creator     string    `json:"creator"`
-	Producer    string    `json:"producer"`
-	CreatedDate time.Time `json:"created_date"`
+	Version      string    `json:"version"`
+	PageCount    int       `json:"page_count"`
+	Title        string    `json:"title"`
+	Author       string    `json:"author"`
+	Subject      string    `json:"subject"`
+	Keywords     []string  `json:"keywords"`
+	Creator      string    `json:"creator"`
+	Producer     string    `json:"producer"`
+	CreatedDate  time.Time `json:"created_date"`
 	ModifiedDate time.Time `json:"modified_date"`
-	IsEncrypted bool      `json:"is_encrypted"`
-	HasForms    bool      `json:"has_forms"`
+	IsEncrypted  bool      `json:"is_encrypted"`
+	HasForms     bool      `json:"has_forms"`
 }
 
 // TypeName 实现 TypedMetadata 接口
@@ -167,6 +179,13 @@ func (e *PDFExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (*sd
 	metadata.CustomAttrs["file_size"] = input.Size
 	metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 	metadata.CustomAttrs["file_extension"] = filepath.Ext(input.ObjectKey)
+	metadata.CustomAttrs["document_type"] = "pdf"
+
+	if plainText := extractPDFPlainText(content); strings.TrimSpace(plainText) != "" {
+		trimmed := truncateRunes(strings.TrimSpace(plainText), pdfPlainTextLimit)
+		metadata.CustomAttrs["plain_text"] = trimmed
+		metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, pdfPlainTextPreviewLimit)
+	}
 
 	return metadata, nil
 }
@@ -269,13 +288,7 @@ func extractPDFField(infoDict, fieldName string) string {
 
 // unescapePDFString 解码PDF字符串转义
 func unescapePDFString(s string) string {
-	s = strings.ReplaceAll(s, `\n`, "\n")
-	s = strings.ReplaceAll(s, `\r`, "\r")
-	s = strings.ReplaceAll(s, `\t`, "\t")
-	s = strings.ReplaceAll(s, `\\`, `\`)
-	s = strings.ReplaceAll(s, `\(`, `(`)
-	s = strings.ReplaceAll(s, `\)`, `)`)
-	return s
+	return decodePDFStringContent(s)
 }
 
 // decodeHexString 解码十六进制字符串
@@ -330,6 +343,107 @@ func parseKeywords(keywords string) []string {
 	}
 
 	return result
+}
+
+func extractPDFPlainText(content []byte) string {
+	text := string(content)
+	lines := make([]string, 0)
+
+	inlineMatches := pdfInlineTextPattern.FindAllString(text, -1)
+	for _, match := range inlineMatches {
+		strMatch := pdfStringPattern.FindString(match)
+		if strMatch == "" {
+			continue
+		}
+		decoded := decodePDFStringContent(strMatch[1 : len(strMatch)-1])
+		if trimmed := strings.TrimSpace(decoded); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+
+	arrayMatches := pdfArrayTextPattern.FindAllString(text, -1)
+	for _, match := range arrayMatches {
+		fragments := pdfStringPattern.FindAllString(match, -1)
+		if len(fragments) == 0 {
+			continue
+		}
+		var builder strings.Builder
+		for _, frag := range fragments {
+			builder.WriteString(decodePDFStringContent(frag[1 : len(frag)-1]))
+		}
+		if trimmed := strings.TrimSpace(builder.String()); trimmed != "" {
+			lines = append(lines, trimmed)
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func decodePDFStringContent(s string) string {
+	var builder strings.Builder
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch != '\\' {
+			builder.WriteByte(ch)
+			continue
+		}
+		i++
+		if i >= len(s) {
+			break
+		}
+		next := s[i]
+		switch next {
+		case 'n':
+			builder.WriteByte('\n')
+		case 'r':
+			builder.WriteByte('\r')
+		case 't':
+			builder.WriteByte('\t')
+		case 'b':
+			builder.WriteByte('\b')
+		case 'f':
+			builder.WriteByte('\f')
+		case '\\', '(', ')':
+			builder.WriteByte(next)
+		case '\n':
+			// 行连接，忽略
+		case '\r':
+			// 可能是 CR 或 CRLF
+			if i+1 < len(s) && s[i+1] == '\n' {
+				i++
+			}
+		case '0', '1', '2', '3', '4', '5', '6', '7':
+			octDigits := []byte{next}
+			for j := 0; j < 2 && i+1 < len(s); j++ {
+				c := s[i+1]
+				if c < '0' || c > '7' {
+					break
+				}
+				i++
+				octDigits = append(octDigits, c)
+			}
+			val, err := strconv.ParseInt(string(octDigits), 8, 32)
+			if err == nil {
+				builder.WriteByte(byte(val))
+			} else {
+				builder.WriteByte(next)
+			}
+		default:
+			builder.WriteByte(next)
+		}
+	}
+	return builder.String()
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 // GetExtractor 返回提取器实例（供ADDP加载使用）

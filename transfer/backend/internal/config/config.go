@@ -13,6 +13,7 @@ type Config struct {
 	// Transfer 模块特有配置
 	Port            string
 	DBSchema        string
+	InternalAPIKey  string        // 服务间调用的 API Key
 	RedisHost       string
 	RedisPort       string
 	RedisPassword   string
@@ -29,6 +30,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:            commonConfig.GetEnv("PORT", "8083"),
 		DBSchema:        commonConfig.GetEnv("DB_SCHEMA", "transfer"),
+		InternalAPIKey:  commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		RedisHost:       commonConfig.GetEnv("REDIS_HOST", "localhost"),
 		RedisPort:       commonConfig.GetEnv("REDIS_PORT", "6379"),
 		RedisPassword:   commonConfig.GetEnv("REDIS_PASSWORD", ""),
@@ -56,6 +58,11 @@ func Load() *Config {
 	} else {
 		log.Println("ℹ️  Service integration disabled, using local config")
 		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
+	}
+
+	// 如果本地未配置 InternalAPIKey，尝试从 BaseConfig 获取
+	if cfg.InternalAPIKey == "" {
+		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
 	}
 
 	return cfg

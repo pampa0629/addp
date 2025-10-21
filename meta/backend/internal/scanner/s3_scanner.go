@@ -14,6 +14,11 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+const (
+	metadataPartialReadSize int64 = 65535
+	maxFullDocumentSize     int64 = 16 * 1024 * 1024
+)
+
 type s3Config struct {
 	Endpoint  string   `json:"endpoint"`
 	AccessKey string   `json:"access_key"`
@@ -538,11 +543,14 @@ func (s *S3Scanner) extractObjectMetadata(resID uint, bucket, objectKey, content
 		return nil
 	}
 
-	// 获取对象内容（使用Range请求只读取前64KB用于元数据提取）
+	// 获取对象内容（文档类型尝试读取完整内容以便提取）
 	ctx := context.Background()
 	opts := minio.GetObjectOptions{}
-	// 只读取前64KB，足够用于大多数元数据提取（视频头、图片EXIF等）
-	opts.SetRange(0, 65535)
+	ext := strings.ToLower(filepath.Ext(objectKey))
+	needFull := shouldDownloadFullContent(contentType, ext, size)
+	if !needFull {
+		opts.SetRange(0, metadataPartialReadSize-1)
+	}
 
 	obj, err := s.client.GetObject(ctx, bucket, objectKey, opts)
 	if err != nil {
@@ -563,12 +571,35 @@ func (s *S3Scanner) extractObjectMetadata(resID uint, bucket, objectKey, content
 
 	// 调用提取器
 	metadata, err := extractor.Extract(ctx, extractInput)
-	if err != nil {
-		// 提取失败，返回nil（不影响基本信息的存储）
-		return nil
+	if err == nil {
+		return metadata
 	}
 
-	return metadata
+	// 如果部分读取失败且文件不大，尝试读取完整内容再次提取
+	if !needFull && size > 0 && size <= maxFullDocumentSize {
+		_ = obj.Close()
+		fullObj, fullErr := s.client.GetObject(ctx, bucket, objectKey, minio.GetObjectOptions{})
+		if fullErr != nil {
+			return nil
+		}
+		defer fullObj.Close()
+
+		fullInput := ExtractInput{
+			ResourceID:   resID,
+			ObjectKey:    objectKey,
+			ContentType:  contentType,
+			Size:         size,
+			Reader:       fullObj,
+			LastModified: lastModified,
+		}
+
+		if meta, fullExtractErr := extractor.Extract(ctx, fullInput); fullExtractErr == nil {
+			return meta
+		}
+	}
+
+	// 提取失败，返回nil（不影响基本信息的存储）
+	return nil
 }
 
 // inferContentTypeFromExt 根据文件扩展名推断Content-Type
@@ -622,4 +653,31 @@ func inferContentTypeFromExt(ext string) string {
 	}
 
 	return "application/octet-stream"
+}
+
+func shouldDownloadFullContent(contentType, ext string, size int64) bool {
+	if size <= 0 || size > maxFullDocumentSize {
+		return false
+	}
+
+	lowerType := strings.ToLower(contentType)
+	switch lowerType {
+	case "text/plain", "text/markdown", "text/html", "text/csv":
+		return true
+	case "application/pdf",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.ms-powerpoint",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/vnd.ms-excel",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return true
+	}
+
+	switch strings.ToLower(ext) {
+	case ".txt", ".md", ".csv", ".doc", ".docx", ".pdf", ".ppt", ".pptx", ".xls", ".xlsx", ".json", ".xml":
+		return true
+	}
+
+	return false
 }

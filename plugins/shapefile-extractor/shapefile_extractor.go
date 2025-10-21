@@ -111,6 +111,12 @@ func (e *ShapefileExtractor) extractDetailedMetadata(input sdk.ExtractInput, met
 
 	metadata.CustomAttrs["note"] = "Full metadata extraction requires access to all shapefile components"
 
+	if summary := buildShapefilePlainText(input.ObjectKey, geoMeta, metadata.CustomAttrs["associated_files_required"]); summary != "" {
+		trimmed := truncateRunes(summary, 20000)
+		metadata.CustomAttrs["plain_text"] = trimmed
+		metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, 400)
+	}
+
 	return nil
 }
 
@@ -180,4 +186,56 @@ func ExtractFromMultipleFiles(ctx context.Context, shpReader io.Reader, dbfReade
 	// ... (coordinate reference system)
 
 	return metadata, nil
+}
+
+func buildShapefilePlainText(objectKey string, geoMeta *sdk.GeoSpatialMetadata, associated interface{}) string {
+	var builder strings.Builder
+	base := filepath.Base(objectKey)
+	builder.WriteString(fmt.Sprintf("Shapefile: %s\n", base))
+	if geoMeta != nil {
+		builder.WriteString(fmt.Sprintf("Geometry: %s\n", geoMeta.GeometryType))
+		if len(geoMeta.BoundingBox) >= 4 {
+			builder.WriteString(fmt.Sprintf("BoundingBox: [%f, %f, %f, %f]\n", geoMeta.BoundingBox[0], geoMeta.BoundingBox[1], geoMeta.BoundingBox[2], geoMeta.BoundingBox[3]))
+		}
+		if len(geoMeta.Attributes) > 0 {
+			builder.WriteString("Attributes:\n")
+			limit := 12
+			if len(geoMeta.Attributes) < limit {
+				limit = len(geoMeta.Attributes)
+			}
+			for i := 0; i < limit; i++ {
+				builder.WriteString(fmt.Sprintf("  %s\n", geoMeta.Attributes[i]))
+			}
+		}
+	}
+
+	switch v := associated.(type) {
+	case []string:
+		if len(v) > 0 {
+			builder.WriteString("Associated files:\n")
+			for _, name := range v {
+				builder.WriteString(fmt.Sprintf("  %s\n", name))
+			}
+		}
+	case []interface{}:
+		if len(v) > 0 {
+			builder.WriteString("Associated files:\n")
+			for _, item := range v {
+				builder.WriteString(fmt.Sprintf("  %v\n", item))
+			}
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }

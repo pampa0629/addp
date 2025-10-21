@@ -43,6 +43,10 @@
             <el-icon><Search /></el-icon>
             <span>数据探查</span>
           </el-menu-item>
+          <el-menu-item index="/fulltext-search">
+            <el-icon><Document /></el-icon>
+            <span>全文检索</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 

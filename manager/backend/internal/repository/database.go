@@ -31,6 +31,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// 自动迁移 (不再包括DataSource,使用system.resources)
 	if err := db.AutoMigrate(
 		&models.Directory{},
+		&models.SearchHistory{},
 		&models.ManagedTable{},
 		&models.ManagedFile{},
 	); err != nil {

@@ -10,12 +10,18 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	sdk "github.com/addp/meta-extractor-sdk"
 	"github.com/xuri/excelize/v2"
+)
+
+const (
+	documentPlainTextLimit        = 20000
+	documentPlainTextPreviewLimit = 400
 )
 
 // OfficeMetadata Office文档的类型化元数据
@@ -373,6 +379,28 @@ func (e *OfficeExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (
 	metadata.CustomAttrs["file_size"] = input.Size
 	metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 
+	if docType == "docx" {
+		if plainText, err := extractDocxPlainText(content); err == nil {
+			plainText = strings.TrimSpace(plainText)
+			if plainText != "" {
+				trimmed := truncateRunes(plainText, documentPlainTextLimit)
+				metadata.CustomAttrs["plain_text"] = trimmed
+				metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, documentPlainTextPreviewLimit)
+			}
+		}
+	}
+
+	if docType == "pptx" {
+		if plainText, err := extractPptxPlainText(zipReader); err == nil {
+			plainText = strings.TrimSpace(plainText)
+			if plainText != "" {
+				trimmed := truncateRunes(plainText, documentPlainTextLimit)
+				metadata.CustomAttrs["plain_text"] = trimmed
+				metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, documentPlainTextPreviewLimit)
+			}
+		}
+	}
+
 	// 8. 若为Excel，提取工作表结构与示例数据
 	if docType == "xlsx" {
 		excelMeta, schemaInfo, previewData, err := e.extractExcelDetails(content)
@@ -384,6 +412,11 @@ func (e *OfficeExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (
 				metadata.SchemaInfo = schemaInfo
 			}
 			if previewData != nil {
+				if text := excelPreviewToPlainText(previewData); strings.TrimSpace(text) != "" {
+					trimmed := truncateRunes(strings.TrimSpace(text), documentPlainTextLimit)
+					metadata.CustomAttrs["plain_text"] = trimmed
+					metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, documentPlainTextPreviewLimit)
+				}
 				metadata.PreviewData = previewData
 			}
 			metadata.CustomAttrs["sheet_count"] = excelMeta.SheetCount
@@ -392,6 +425,182 @@ func (e *OfficeExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (
 	}
 
 	return metadata, nil
+}
+
+func extractDocxPlainText(content []byte) (string, error) {
+	reader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return "", err
+	}
+
+	for _, file := range reader.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+
+		rc, err := file.Open()
+		if err != nil {
+			return "", err
+		}
+		defer rc.Close()
+
+		text, err := parseDocxDocumentXML(rc)
+		if err != nil {
+			return "", err
+		}
+		return text, nil
+	}
+
+	return "", fmt.Errorf("word/document.xml not found")
+}
+
+func parseDocxDocumentXML(r io.Reader) (string, error) {
+	decoder := xml.NewDecoder(r)
+	var builder strings.Builder
+	var inText bool
+
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		switch t := token.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "t":
+				inText = true
+			case "tab":
+				builder.WriteRune('\t')
+			case "br":
+				builder.WriteRune('\n')
+			}
+		case xml.EndElement:
+			switch t.Name.Local {
+			case "t":
+				inText = false
+			case "p":
+				builder.WriteRune('\n')
+			}
+		case xml.CharData:
+			if inText {
+				builder.WriteString(strings.ReplaceAll(string(t), "\r", ""))
+			}
+		}
+	}
+
+	return builder.String(), nil
+}
+
+func extractPptxPlainText(zipReader *zip.Reader) (string, error) {
+	slideFiles := make([]*zip.File, 0)
+	noteFiles := make([]*zip.File, 0)
+	for _, file := range zipReader.File {
+		name := file.Name
+		if strings.HasPrefix(name, "ppt/slides/slide") && strings.HasSuffix(name, ".xml") {
+			slideFiles = append(slideFiles, file)
+		} else if strings.HasPrefix(name, "ppt/notesSlides/notesSlide") && strings.HasSuffix(name, ".xml") {
+			noteFiles = append(noteFiles, file)
+		}
+	}
+
+	sort.Slice(slideFiles, func(i, j int) bool { return slideFiles[i].Name < slideFiles[j].Name })
+	sort.Slice(noteFiles, func(i, j int) bool { return noteFiles[i].Name < noteFiles[j].Name })
+
+	var builder strings.Builder
+	appendText := func(text string) {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n\n")
+		}
+		builder.WriteString(text)
+	}
+
+	for _, file := range slideFiles {
+		rc, err := file.Open()
+		if err != nil {
+			continue
+		}
+		text, err := parsePptSlideText(rc)
+		_ = rc.Close()
+		if err == nil {
+			appendText(text)
+		}
+	}
+
+	for _, file := range noteFiles {
+		rc, err := file.Open()
+		if err != nil {
+			continue
+		}
+		text, err := parsePptSlideText(rc)
+		_ = rc.Close()
+		if err == nil {
+			appendText(text)
+		}
+	}
+
+	if builder.Len() == 0 {
+		return "", fmt.Errorf("no slide text found")
+	}
+
+	return builder.String(), nil
+}
+
+func parsePptSlideText(r io.Reader) (string, error) {
+	decoder := xml.NewDecoder(r)
+	var builder strings.Builder
+	var inText bool
+
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		switch t := token.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "t":
+				inText = true
+			case "br":
+				builder.WriteRune('\n')
+			}
+		case xml.EndElement:
+			switch t.Name.Local {
+			case "t":
+				inText = false
+			case "p":
+				builder.WriteRune('\n')
+			}
+		case xml.CharData:
+			if inText {
+				builder.WriteString(strings.ReplaceAll(string(t), "\r", ""))
+			}
+		}
+	}
+
+	return builder.String(), nil
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 // formatFileSize 格式化文件大小为人类可读格式
@@ -703,6 +912,67 @@ func (e *OfficeExtractor) extractExcelDetails(content []byte) (*ExcelMetadata, *
 	return meta, schemaInfo, preview, nil
 }
 
+func excelPreviewToPlainText(preview map[string]interface{}) string {
+	if preview == nil {
+		return ""
+	}
+
+	sheetsValue, ok := preview["sheets"]
+	if !ok {
+		return ""
+	}
+
+	sheets := coerceSliceOfMap(sheetsValue)
+	if len(sheets) == 0 {
+		return ""
+	}
+
+	const maxSheets = 5
+	const maxRows = 50
+
+	var builder strings.Builder
+
+	for idx, sheet := range sheets {
+		if idx >= maxSheets {
+			break
+		}
+		headers := toStringSlice(sheet["headers"])
+		rows := coerceSliceOfMap(sheet["rows"])
+		name := toString(sheet["name"])
+		if name == "" {
+			name = fmt.Sprintf("Sheet%d", idx+1)
+		}
+
+		builder.WriteString("Sheet: ")
+		builder.WriteString(name)
+		builder.WriteString("\n")
+
+		if len(headers) == 0 && len(rows) > 0 {
+			headers = mapKeys(rows[0])
+		}
+
+		for rowIdx, row := range rows {
+			if rowIdx >= maxRows {
+				break
+			}
+			values := make([]string, 0, len(headers))
+			if len(headers) == 0 {
+				headers = mapKeys(row)
+			}
+			for _, header := range headers {
+				val := toString(row[header])
+				values = append(values, val)
+			}
+			builder.WriteString(strings.Join(values, "\t"))
+			builder.WriteByte('\n')
+		}
+
+		builder.WriteByte('\n')
+	}
+
+	return builder.String()
+}
+
 // extractExcelSheet 解析单个工作表
 func extractExcelSheet(file *excelize.File, sheetName string, index int, isDefault bool) (ExcelSheetInfo, map[string]interface{}, *sdk.SchemaMetadata) {
 	info := ExcelSheetInfo{
@@ -862,6 +1132,76 @@ func excelPreviewFromSheet(sheet ExcelSheetInfo) map[string]interface{} {
 		"rows":           rows,
 		"rows_truncated": sheet.RowsTruncated,
 	}
+}
+
+func coerceSliceOfMap(value interface{}) []map[string]interface{} {
+	switch v := value.(type) {
+	case []map[string]interface{}:
+		return v
+	case []interface{}:
+		result := make([]map[string]interface{}, 0, len(v))
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				result = append(result, m)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func toStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			result = append(result, toString(item))
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func toString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case []byte:
+		return string(v)
+	case float64:
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%f", v), "0"), ".")
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case uint:
+		return fmt.Sprintf("%d", v)
+	case bool:
+		if v {
+			return "true"
+		}
+		return "false"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func mapKeys(m map[string]interface{}) []string {
+	if m == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // sheetDimensions 解析工作表的维度信息

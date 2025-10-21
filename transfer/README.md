@@ -22,6 +22,33 @@ Transfer 是全域数据平台的数据传输服务，负责数据的导入、�
 - **数据库**: PostgreSQL (任务元数据)
 - **前端**: Vue 3 + Element Plus
 
+## 配置说明
+
+Transfer 模块采用**配置中心模式**，从 System 模块获取共享配置。
+
+### 配置来源
+
+1. **共享配置**（从 System 模块获取）:
+   - `JWT_SECRET` - JWT 签名密钥
+   - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` - PostgreSQL 连接
+   - `ENCRYPTION_KEY` - 数据加密密钥
+   - `INTERNAL_API_KEY` - 服务间调用认证
+
+2. **模块特有配置**（通过环境变量或项目根目录 `.env` 设置）:
+   - `PORT` - Transfer 服务端口（默认 8083）
+   - `DB_SCHEMA` - PostgreSQL schema（默认 transfer）
+   - `SYSTEM_SERVICE_URL` - System 服务地址
+   - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` - Redis 配置
+   - `WORKER_COUNT` - Worker 数量
+   - `TASK_QUEUE_NAME` - 任务队列名称
+   - `CONCURRENT_TASKS` - 并发任务数
+   - `MAX_RETRIES` - 最大重试次数
+   - `RETRY_DELAY` - 重试延迟
+
+**详细配置文档**: 参见 [backend/CONFIG.md](backend/CONFIG.md)
+
+**重要**: Transfer 模块不使用本地 `.env` 文件，所有配置在项目根目录 `.env` 中统一管理。
+
 ## 项目结构
 
 ```

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sdk "github.com/addp/meta-extractor-sdk"
 	_ "github.com/mattn/go-sqlite3"
@@ -192,6 +193,12 @@ func (e *SQLiteExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (
 	metadata.CustomAttrs["total_rows"] = sqliteMeta.TotalRows
 	metadata.CustomAttrs["file_size"] = input.Size
 	metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
+
+	if summary := buildSQLitePlainText(sqliteMeta); summary != "" {
+		trimmed := truncateRunes(summary, 20000)
+		metadata.CustomAttrs["plain_text"] = trimmed
+		metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, 400)
+	}
 
 	return metadata, nil
 }
@@ -378,4 +385,54 @@ func (e *SQLiteExtractor) getTableIndexes(db *sql.DB, tableName string) ([]strin
 // GetExtractor 返回提取器实例（供ADDP加载使用）
 func GetExtractor() sdk.MetadataExtractor {
 	return &SQLiteExtractor{}
+}
+
+func buildSQLitePlainText(meta *SQLiteMetadata) string {
+	if meta == nil {
+		return ""
+	}
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("SQLite Version: %s\n", meta.Version))
+	builder.WriteString(fmt.Sprintf("Tables: %d\n", meta.TableCount))
+	builder.WriteString(fmt.Sprintf("Total Rows: %d\n", meta.TotalRows))
+
+	limit := 5
+	if len(meta.Tables) < limit {
+		limit = len(meta.Tables)
+	}
+	for i := 0; i < limit; i++ {
+		table := meta.Tables[i]
+		builder.WriteString(fmt.Sprintf("Table %s (rows: %d)\n", table.Name, table.RowCount))
+		colLimit := 10
+		if len(table.Columns) < colLimit {
+			colLimit = len(table.Columns)
+		}
+		for j := 0; j < colLimit; j++ {
+			col := table.Columns[j]
+			notNull := ""
+			if col.NotNull {
+				notNull = " NOT NULL"
+			}
+			builder.WriteString(fmt.Sprintf("  - %s %s%s\n", col.Name, col.Type, notNull))
+		}
+		if len(table.PrimaryKey) > 0 {
+			builder.WriteString(fmt.Sprintf("  PK: %s\n", strings.Join(table.PrimaryKey, ", ")))
+		}
+		if len(table.Indexes) > 0 {
+			builder.WriteString(fmt.Sprintf("  Indexes: %s\n", strings.Join(table.Indexes, ", ")))
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }

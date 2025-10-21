@@ -1,9 +1,14 @@
 package config
 
 import (
+	"strings"
+
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 )
+
+type VectorDBConfig = commonConfig.VectorDBConfig
+type EmbeddingServiceConfig = commonConfig.EmbeddingServiceConfig
 
 type Config struct {
 	commonConfig.BaseConfig
@@ -17,6 +22,29 @@ type Config struct {
 	AutoSyncLevel     string // database | table | field
 	DeepScanTimeout   string
 	DeepScanBatchSize int
+
+	// Elasticsearch 配置
+	ElasticsearchURL              string
+	ElasticsearchUsername         string
+	ElasticsearchPassword         string
+	ElasticsearchAPIKey           string
+	ElasticsearchAssetIndex       string
+	ElasticsearchDocumentIndex    string
+	ElasticsearchDisableTLSVerify bool
+
+	// 向量数据库配置（PgVector）
+	VectorDB VectorDBConfig
+
+	// 在线向量化服务配置
+	EmbeddingService EmbeddingServiceConfig
+}
+
+func resolveElasticsearchURL() string {
+	url := commonConfig.GetEnv("ELASTICSEARCH_URL", "")
+	if url == "" {
+		url = commonConfig.GetEnv("ELASTICSEARCH_URL_LOCAL", "")
+	}
+	return url
 }
 
 func LoadConfig() *Config {
@@ -53,6 +81,53 @@ func LoadConfig() *Config {
 
 	if cfg.InternalAPIKey == "" {
 		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
+	}
+
+	cfg.ElasticsearchURL = resolveElasticsearchURL()
+	cfg.ElasticsearchUsername = commonConfig.GetEnv("ELASTICSEARCH_USERNAME", "")
+	cfg.ElasticsearchPassword = commonConfig.GetEnv("ELASTICSEARCH_PASSWORD", "")
+	cfg.ElasticsearchAPIKey = commonConfig.GetEnv("ELASTICSEARCH_API_KEY", "")
+	cfg.ElasticsearchAssetIndex = commonConfig.GetEnv("ELASTICSEARCH_INDEX", "metadata-assets")
+	cfg.ElasticsearchDocumentIndex = commonConfig.GetEnv("META_DOCUMENT_INDEX", commonConfig.GetEnv("ASSET_DOCUMENT_INDEX", "asset-documents"))
+	cfg.ElasticsearchDisableTLSVerify = commonConfig.GetEnvBool("ELASTICSEARCH_SKIP_VERIFY", false)
+
+	defaultHost := cfg.DBHost
+	if defaultHost == "" {
+		defaultHost = "localhost"
+	}
+	defaultPort := cfg.DBPort
+	if defaultPort == "" {
+		defaultPort = "5432"
+	}
+	defaultUser := cfg.DBUser
+	if defaultUser == "" {
+		defaultUser = "addp"
+	}
+	defaultPassword := cfg.DBPassword
+	if defaultPassword == "" {
+		defaultPassword = "addp_password"
+	}
+
+	cfg.VectorDB = VectorDBConfig{
+		Host:      commonConfig.GetEnv("VECTOR_DB_HOST", defaultHost),
+		Port:      commonConfig.GetEnv("VECTOR_DB_PORT", defaultPort),
+		Name:      commonConfig.GetEnv("VECTOR_DB_NAME", "addp_vectors"),
+		User:      commonConfig.GetEnv("VECTOR_DB_USER", defaultUser),
+		Password:  commonConfig.GetEnv("VECTOR_DB_PASSWORD", defaultPassword),
+		Schema:    commonConfig.GetEnv("VECTOR_DB_SCHEMA", "vector_store"),
+		Table:     commonConfig.GetEnv("VECTOR_DB_TABLE", "document_embeddings"),
+		Dimension: commonConfig.GetEnvInt("VECTOR_DB_DIMENSION", 1024),
+		SSLMode:   commonConfig.GetEnv("VECTOR_DB_SSL_MODE", "disable"),
+	}
+
+	cfg.EmbeddingService = EmbeddingServiceConfig{
+		BaseURL:    strings.TrimSpace(commonConfig.GetEnv("EMBEDDING_SERVICE_BASE_URL", "")),
+		APIKey:     commonConfig.GetEnv("EMBEDDING_SERVICE_API_KEY", ""),
+		TextModel:  commonConfig.GetEnv("EMBEDDING_MODEL_TEXT", "bge-large-zh"),
+		ImageModel: commonConfig.GetEnv("EMBEDDING_MODEL_IMAGE", "clip-ViT-B-32"),
+		AudioModel: commonConfig.GetEnv("EMBEDDING_MODEL_AUDIO", "whisper-small"),
+		VideoModel: commonConfig.GetEnv("EMBEDDING_MODEL_VIDEO", "internvideo2-6b"),
+		Timeout:    commonConfig.GetEnvDuration("EMBEDDING_SERVICE_TIMEOUT", "15s"),
 	}
 
 	return cfg

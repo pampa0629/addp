@@ -1,20 +1,20 @@
 <template>
   <div class="metadata-scan">
     <el-card>
-      <template #header>
-        <div class="header">
-          <span>元数据扫描</span>
-          <el-button type="primary" @click="handleAutoScan" :loading="autoScanning">
-            <el-icon><Search /></el-icon> 一键扫描未扫描资源
-          </el-button>
-        </div>
-      </template>
-
       <div class="scan-container" ref="containerRef">
         <!-- 左侧：存储引擎列表 -->
         <div class="left-panel" :style="{ width: leftPanelWidth + 'px' }">
           <div class="panel-header">
             <h3>存储引擎列表</h3>
+            <el-button
+              type="primary"
+              @click="handleAutoScan"
+              :loading="autoScanning"
+              class="auto-scan-button"
+            >
+              <el-icon><Search /></el-icon>
+              一键扫描未扫描资源
+            </el-button>
           </div>
           <el-table
             ref="resourceTableRef"
@@ -95,38 +95,41 @@
             <el-empty description="请从左侧选择一个存储引擎" />
           </div>
 
-          <el-table
-            v-else
-            :data="schemas"
-            v-loading="loadingSchemas"
-            height="600"
-            @selection-change="handleSchemaSelectionChange"
-          >
-            <el-table-column type="selection" width="55" />
-            <el-table-column prop="name" label="Schema名称" width="200" />
-            <el-table-column label="扫描状态" width="120">
-              <template #default="{ row }">
-                <el-tag
-                  :type="row.scan_status === '已扫描' ? 'success' : row.scan_status === '扫描中' ? 'warning' : 'info'"
-                >
-                  {{ row.scan_status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="table_count" label="表数量" width="100" />
-            <el-table-column prop="last_scan_at" label="上次扫描" width="150" />
-            <el-table-column label="操作" width="150">
-              <template #default="{ row }">
-                <el-button
-                  size="small"
-                  @click.stop="handleScanSchema(row)"
-                  :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
-                >
-                  {{ row.scan_status === '已扫描' ? '重新扫描' : '扫描' }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <div v-else class="schema-table-wrapper">
+            <el-table
+              class="schema-table"
+              :data="schemas"
+              v-loading="loadingSchemas"
+              height="600"
+              @selection-change="handleSchemaSelectionChange"
+              style="min-width: 720px"
+            >
+              <el-table-column type="selection" width="55" />
+              <el-table-column prop="name" label="Schema名称" width="200" />
+              <el-table-column label="扫描状态" width="120">
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.scan_status === '已扫描' ? 'success' : row.scan_status === '扫描中' ? 'warning' : 'info'"
+                  >
+                    {{ row.scan_status }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="table_count" label="表数量" width="100" />
+              <el-table-column prop="last_scan_at" label="上次扫描" width="150" />
+              <el-table-column label="操作" width="150">
+                <template #default="{ row }">
+                  <el-button
+                    size="small"
+                    @click.stop="handleScanSchema(row)"
+                    :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
+                  >
+                    {{ row.scan_status === '已扫描' ? '重新扫描' : '扫描' }}
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
       </div>
     </el-card>
@@ -266,9 +269,9 @@ const scheduleForm = reactive({
   enabled: true
 })
 
-const leftPanelWidth = ref(420)
+const leftPanelWidth = ref(560)
 const isResizing = ref(false)
-const minLeftPanelWidth = 320
+const minLeftPanelWidth = 440
 const minRightPanelWidth = 240
 let resizeStartX = 0
 let resizeStartWidth = leftPanelWidth.value
@@ -784,21 +787,16 @@ onBeforeUnmount(() => {
   padding: 20px;
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .scan-container {
   display: flex;
   gap: 16px;
 }
 
 .left-panel {
-  flex: 0 0 420px;
+  flex: 0 0 auto;
   padding-right: 12px;
   border-right: 1px solid #f2f3f5;
+  box-sizing: border-box;
 }
 
 .plan-summary {
@@ -849,12 +847,18 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 15px;
 }
 
 .panel-header h3 {
   margin: 0;
   font-size: 16px;
+}
+
+.auto-scan-button {
+  white-space: nowrap;
 }
 
 .schema-actions {
@@ -877,5 +881,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   height: 600px;
+}
+
+.schema-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
 }
 </style>

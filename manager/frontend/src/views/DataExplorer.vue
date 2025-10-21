@@ -34,6 +34,7 @@
 
 <script setup>
 import { ref, onMounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import ResourceTree from '@/components/explorer/ResourceTree.vue'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
@@ -44,6 +45,8 @@ import { transformResource, makeNodeId } from '@/utils/treeTransform'
 
 // 树形面板宽度
 const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
+
+const route = useRoute()
 
 // 数据状态
 const resources = ref([])
@@ -59,6 +62,38 @@ const pageSize = ref(10)
 const refreshingNodeIds = ref([])
 const expandedNodeIds = ref([])
 let previewRequestId = 0
+const pendingRouteSelection = ref(null)
+
+const buildSnapshotFromQuery = (query = {}) => {
+  const resourceKey = query.resourceId ?? query.resource_id
+  const schema = query.schema ?? query.bucket ?? ''
+  const objectPath = query.objectPath ?? query.path ?? query.table ?? ''
+  if (!resourceKey) return null
+  const numericId = Number(resourceKey)
+  if (Number.isNaN(numericId) || numericId <= 0) return null
+
+  const nodeType = query.nodeType || (objectPath ? 'object' : '')
+
+  return {
+    resourceId: numericId,
+    schema,
+    path: objectPath,
+    table: objectPath,
+    type: nodeType
+  }
+}
+
+const attemptRouteSelection = async () => {
+  if (!pendingRouteSelection.value) return
+  await nextTick()
+  const snapshot = pendingRouteSelection.value
+  const restored = restoreSelectionFromSnapshot(snapshot)
+  if (restored) {
+    pendingRouteSelection.value = null
+    currentPage.value = 1
+    await loadPreview()
+  }
+}
 
 const normalizeResourceList = (list = []) =>
   list.map((item) => ({
@@ -282,15 +317,30 @@ const handleNodeCollapseEvent = (node) => {
 watch(
   treeData,
   () => {
-    nextTick(() => {
+    nextTick(async () => {
       syncExpandedKeysWithTree()
       if (selectedNode.value?.id) {
         ensureNodeExpanded(selectedNode.value.id)
         ensureNodePathExpanded(selectedNode.value.id)
       }
+      await attemptRouteSelection()
     })
   },
   { deep: true }
+)
+
+watch(
+  () => route.fullPath,
+  () => {
+    const snapshot = buildSnapshotFromQuery(route.query || {})
+    if (snapshot) {
+      pendingRouteSelection.value = snapshot
+      attemptRouteSelection()
+    } else {
+      pendingRouteSelection.value = null
+    }
+  },
+  { immediate: true }
 )
 
 /**
@@ -339,6 +389,7 @@ const loadModernTrees = async (resourceIds) => {
   if (!targetIds.length) {
     treeData.value = []
     resetSelection()
+    await attemptRouteSelection()
     return
   }
 
@@ -406,6 +457,7 @@ const loadLegacyTree = async (
     treeData.value = legacyResources.map((item) => transformResource(item))
     syncExpandedKeysWithTree()
     resetSelection()
+    await attemptRouteSelection()
   } catch (error) {
     console.error('[DataExplorer] 使用旧版资源树失败', error)
     if (!silent) {

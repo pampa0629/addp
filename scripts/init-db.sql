@@ -185,28 +185,41 @@ CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON metadata.scan_logs(status);
 -- ==================== Transfer 模块 ====================
 CREATE SCHEMA IF NOT EXISTS transfer;
 
+-- 任务表
 CREATE TABLE IF NOT EXISTS transfer.tasks (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    description TEXT,
     type VARCHAR(50) NOT NULL, -- 'import', 'export', 'sync'
-    source_id INTEGER,
-    target_id INTEGER,
+    mode VARCHAR(20) DEFAULT 'batch', -- 'batch', 'stream', 'micro-batch'
+    source_id INTEGER, -- 关联 system.resources
+    target_id INTEGER, -- 关联 system.resources
     config JSONB NOT NULL,
-    schedule VARCHAR(100), -- Cron expression
+    schedule VARCHAR(100), -- Cron 表达式
+    batch_size INTEGER DEFAULT 1000,
+    max_parallelism INTEGER DEFAULT 1,
+    retry_policy JSONB,
     status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'running', 'success', 'failed', 'paused'
     progress NUMERIC(5,2) DEFAULT 0,
+    last_execution_id INTEGER,
     created_by INTEGER,
+    tenant_id INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON transfer.tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_type ON transfer.tasks(type);
+CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON transfer.tasks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON transfer.tasks(source_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_target ON transfer.tasks(target_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_last_execution ON transfer.tasks(last_execution_id);
 
+-- 任务执行记录表
 CREATE TABLE IF NOT EXISTS transfer.task_executions (
     id SERIAL PRIMARY KEY,
-    task_id INTEGER REFERENCES transfer.tasks(id) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL,
+    task_id INTEGER NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
+    status VARCHAR(20) NOT NULL, -- 'pending', 'running', 'success', 'failed', 'cancelled'
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP,
     records_read BIGINT DEFAULT 0,
@@ -214,22 +227,46 @@ CREATE TABLE IF NOT EXISTS transfer.task_executions (
     bytes_read BIGINT DEFAULT 0,
     bytes_written BIGINT DEFAULT 0,
     error_msg TEXT,
-    logs TEXT
+    logs TEXT,
+    checkpoint_offset BIGINT DEFAULT 0,
+    checkpoint_state JSONB,
+    trigger_type VARCHAR(50), -- 'manual', 'schedule', 'api'
+    trigger_by INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_task ON transfer.task_executions(task_id);
 CREATE INDEX IF NOT EXISTS idx_executions_status ON transfer.task_executions(status);
 CREATE INDEX IF NOT EXISTS idx_executions_start_time ON transfer.task_executions(start_time);
 
+-- 字段映射表
 CREATE TABLE IF NOT EXISTS transfer.data_mappings (
     id SERIAL PRIMARY KEY,
-    task_id INTEGER REFERENCES transfer.tasks(id) ON DELETE CASCADE,
+    task_id INTEGER NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
     source_field VARCHAR(255) NOT NULL,
     target_field VARCHAR(255) NOT NULL,
     transform VARCHAR(500),
     default_value TEXT,
+    field_type VARCHAR(50),
+    format VARCHAR(100),
+    nullable BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_mappings_task ON transfer.data_mappings(task_id);
+
+-- Checkpoint 表（用于断点续传）
+CREATE TABLE IF NOT EXISTS transfer.checkpoints (
+    id SERIAL PRIMARY KEY,
+    task_id INTEGER NOT NULL,
+    execution_id INTEGER NOT NULL,
+    offset BIGINT NOT NULL,
+    partition_id VARCHAR(255),
+    state JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_checkpoint_task_exec ON transfer.checkpoints(task_id, execution_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_partition ON transfer.checkpoints(partition_id);
 
 -- ==================== 创建更新时间戳触发器 ====================
 CREATE OR REPLACE FUNCTION update_updated_at_column()

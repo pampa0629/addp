@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"strings"
 
 	sdk "github.com/addp/meta-extractor-sdk"
 )
@@ -76,6 +77,12 @@ func (e *GeoJSONExtractor) Extract(ctx context.Context, input sdk.ExtractInput) 
 	metadata.CustomAttrs["file_size"] = input.Size
 	metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 
+	if plain := buildGeoJSONPlainText(geoJSON, geoType); plain != "" {
+		trimmed := truncateRunes(plain, 20000)
+		metadata.CustomAttrs["plain_text"] = trimmed
+		metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, 400)
+	}
+
 	return metadata, nil
 }
 
@@ -97,7 +104,7 @@ func formatFileSize(size int64) string {
 func (e *GeoJSONExtractor) extractGeoSpatialInfo(geoJSON map[string]interface{}, geoType string) *sdk.GeoSpatialMetadata {
 	meta := &sdk.GeoSpatialMetadata{
 		CoordinateSystem: "EPSG:4326", // GeoJSON默认使用WGS84
-		Dimensions:       2,             // 默认2D
+		Dimensions:       2,           // 默认2D
 		SpatialIndex:     false,
 		Attributes:       []string{},
 	}
@@ -278,6 +285,77 @@ func calculateBoundingBox(coords interface{}) []float64 {
 	}
 
 	return []float64{minX, minY, maxX, maxY}
+}
+
+func buildGeoJSONPlainText(geoJSON map[string]interface{}, geoType string) string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Type: %s\n", geoType))
+
+	if bbox, ok := geoJSON["bbox"]; ok {
+		builder.WriteString(fmt.Sprintf("BoundingBox: %v\n", bbox))
+	}
+
+	switch geoType {
+	case "FeatureCollection":
+		features, _ := geoJSON["features"].([]interface{})
+		builder.WriteString(fmt.Sprintf("Features: %d\n", len(features)))
+		limit := 5
+		if len(features) < limit {
+			limit = len(features)
+		}
+		for i := 0; i < limit; i++ {
+			feature, ok := features[i].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			builder.WriteString(fmt.Sprintf("Feature %d:\n", i+1))
+			if geometry, ok := feature["geometry"].(map[string]interface{}); ok {
+				if t, ok := geometry["type"].(string); ok {
+					builder.WriteString(fmt.Sprintf("  Geometry: %s\n", t))
+				}
+			}
+			if properties, ok := feature["properties"].(map[string]interface{}); ok {
+				builder.WriteString("  Properties:\n")
+				count := 0
+				for key, value := range properties {
+					builder.WriteString(fmt.Sprintf("    %s=%v\n", key, value))
+					count++
+					if count >= 8 {
+						break
+					}
+				}
+			}
+		}
+	case "Feature":
+		if properties, ok := geoJSON["properties"].(map[string]interface{}); ok {
+			builder.WriteString("Properties:\n")
+			count := 0
+			for key, value := range properties {
+				builder.WriteString(fmt.Sprintf("  %s=%v\n", key, value))
+				count++
+				if count >= 12 {
+					break
+				}
+			}
+		}
+	default:
+		if coordinates, ok := geoJSON["coordinates"]; ok {
+			builder.WriteString(fmt.Sprintf("Coordinates: %v\n", coordinates))
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 // GetExtractor 返回提取器实例（供ADDP加载使用）

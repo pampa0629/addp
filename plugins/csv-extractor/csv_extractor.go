@@ -12,6 +12,12 @@ import (
 	sdk "github.com/addp/meta-extractor-sdk"
 )
 
+const (
+	csvPlainTextRowLimit  = 50
+	csvPlainTextRuneLimit = 20000
+	csvPreviewRuneLimit   = 400
+)
+
 // CSVMetadata CSV文件的类型化元数据
 type CSVMetadata struct {
 	RowCount    int64    `json:"row_count"`
@@ -138,10 +144,16 @@ func (e *CSVExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (*sd
 		RowCount:    1,
 	}
 
+	samples := make([][]string, 0, csvPlainTextRowLimit)
+	if !csvMeta.HasHeader {
+		copied := append([]string(nil), firstRow...)
+		samples = append(samples, copied)
+	}
+
 	// 读取剩余行来统计行数（最多读取1000行来提高性能）
 	maxRows := 1000
 	for i := 0; i < maxRows; i++ {
-		_, err := reader.Read()
+		record, err := reader.Read()
 		if err == io.EOF {
 			break
 		}
@@ -149,6 +161,10 @@ func (e *CSVExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (*sd
 			break
 		}
 		csvMeta.RowCount++
+		if len(samples) < csvPlainTextRowLimit {
+			copied := append([]string(nil), record...)
+			samples = append(samples, copied)
+		}
 	}
 
 	// 3. 添加类型化元数据
@@ -168,6 +184,14 @@ func (e *CSVExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (*sd
 			Columns:  columns,
 			RowCount: csvMeta.RowCount - 1, // 减去表头行
 		}
+	}
+
+	plainText := buildCSVPlainText(firstRow, samples, csvMeta.HasHeader, csvMeta.Delimiter)
+	plainText = strings.TrimSpace(plainText)
+	if plainText != "" {
+		trimmed := truncateRunes(plainText, csvPlainTextRuneLimit)
+		metadata.CustomAttrs["plain_text"] = trimmed
+		metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, csvPreviewRuneLimit)
 	}
 
 	// 5. 添加文件大小信息
@@ -210,6 +234,41 @@ func looksLikeHeader(row []string) bool {
 	}
 
 	return hasNonNumeric
+}
+
+func buildCSVPlainText(header []string, rows [][]string, hasHeader bool, delimiter string) string {
+	if delimiter == "" {
+		delimiter = ","
+	}
+
+	var builder strings.Builder
+	if hasHeader && len(header) > 0 {
+		builder.WriteString(strings.Join(header, delimiter))
+		builder.WriteByte('\n')
+	}
+
+	rowLimit := csvPlainTextRowLimit
+	if len(rows) < rowLimit {
+		rowLimit = len(rows)
+	}
+
+	for i := 0; i < rowLimit; i++ {
+		builder.WriteString(strings.Join(rows[i], delimiter))
+		builder.WriteByte('\n')
+	}
+
+	return builder.String()
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }
 
 // isNumeric 检查字符串是否为数字

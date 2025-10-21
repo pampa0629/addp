@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -87,6 +87,15 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			metadataHandler := NewMetadataHandler(metadataService)
 			tables.POST("/:id/manage", metadataHandler.ManageTable)
 			tables.POST("/:id/unmanage", metadataHandler.UnmanageTable)
+		}
+
+		searchGroup := api.Group("/search")
+		{
+			handler := NewSearchHandler(searchService, historyService)
+			searchGroup.GET("/fulltext", handler.FullTextSearch)
+			searchGroup.GET("/history", handler.ListHistory)
+			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)
+			searchGroup.DELETE("/history", handler.ClearHistory)
 		}
 	}
 

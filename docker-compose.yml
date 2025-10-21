@@ -60,6 +60,31 @@ services:
     networks:
       - addp-network
 
+  # Elasticsearch - 全文检索
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.2
+    container_name: addp-elasticsearch
+    environment:
+      - node.name=addp-elasticsearch
+      - cluster.name=addp-es
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - addp-network
+
   # ==================== 应用服务 ====================
 
   # System 模块 - 用户认证、日志、资源管理
@@ -80,6 +105,7 @@ services:
       - POSTGRES_DB=addp
       - RESOURCE_LOCALHOST_ALIAS=minio
       - ENV=production
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
     volumes:
       - ./system/data:/app/data
     ports:
@@ -159,6 +185,8 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - META_SERVICE_URL=http://meta-backend:8082
       - ENABLE_SERVICE_INTEGRATION=true
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      - ELASTICSEARCH_INDEX=${MANAGER_ELASTICSEARCH_INDEX:-manager-resources}
     ports:
       - "8081:8081"
     depends_on:
@@ -169,6 +197,8 @@ services:
       minio:
         condition: service_healthy
       system-backend:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
@@ -216,6 +246,8 @@ services:
       - RESOURCE_LOCALHOST_ALIAS=host.docker.internal
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - MANAGER_SERVICE_URL=http://manager-backend:8081
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      - ELASTICSEARCH_INDEX=${ELASTICSEARCH_INDEX:-metadata}
     ports:
       - "8082:8082"
     depends_on:
@@ -224,6 +256,8 @@ services:
       redis:
         condition: service_healthy
       system-backend:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health"]
@@ -337,6 +371,9 @@ volumes:
   redis_data:
     driver: local
   minio_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
     driver: local
 
 networks:

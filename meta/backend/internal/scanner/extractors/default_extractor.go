@@ -1,14 +1,23 @@
 package extractors
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/meta/internal/scanner"
+)
+
+const (
+	defaultPlainTextLimit     = 20000
+	defaultPlainPreviewLimit  = 400
+	defaultPlainTextSampleCap = 512 * 1024
 )
 
 // DefaultExtractor 默认的元数据提取器（兜底）
@@ -26,11 +35,24 @@ func (e *DefaultExtractor) Priority() int {
 }
 
 func (e *DefaultExtractor) Extract(ctx context.Context, input scanner.ExtractInput) (*scanner.Metadata, error) {
-	// 1. 计算文件校验和（可选，对于大文件可能耗时）
-	checksum := ""
-	if input.Size < 100*1024*1024 { // 只对小于100MB的文件计算MD5
-		if input.Reader != nil {
-			checksum = calculateMD5(input.Reader)
+	// 1. 读取内容/计算校验和
+	var checksum string
+	var sample []byte
+	if input.Reader != nil {
+		switch {
+		case input.Size > 0 && input.Size <= 100*1024*1024:
+			data, err := io.ReadAll(input.Reader)
+			if err == nil {
+				hash := md5.Sum(data)
+				checksum = hex.EncodeToString(hash[:])
+				sample = data
+			}
+		default:
+			limited := io.LimitReader(input.Reader, defaultPlainTextSampleCap)
+			data, err := io.ReadAll(limited)
+			if err == nil {
+				sample = data
+			}
 		}
 	}
 
@@ -68,16 +90,17 @@ func (e *DefaultExtractor) Extract(ctx context.Context, input scanner.ExtractInp
 	// 6. 文件大小分类
 	metadata.CustomAttrs["size_category"] = categorizeSizeBySize(input.Size)
 
-	return metadata, nil
-}
-
-// calculateMD5 计算MD5校验和
-func calculateMD5(reader io.Reader) string {
-	hash := md5.New()
-	if _, err := io.Copy(hash, reader); err != nil {
-		return ""
+	if len(sample) > 0 && isTextLike(input.ContentType, ext, fileType) {
+		text := decodeTextSample(sample, fileType)
+		text = strings.TrimSpace(text)
+		if text != "" && !isLikelyBinary([]byte(text)) {
+			trimmed := truncateRunes(text, defaultPlainTextLimit)
+			metadata.CustomAttrs["plain_text"] = trimmed
+			metadata.CustomAttrs["plain_text_preview"] = truncateRunes(trimmed, defaultPlainPreviewLimit)
+		}
 	}
-	return hex.EncodeToString(hash.Sum(nil))
+
+	return metadata, nil
 }
 
 // inferFileType 根据文件名和MIME类型推断文件类型
@@ -161,17 +184,17 @@ func categorizeByExtension(ext string) string {
 	ext = strings.ToLower(ext)
 
 	categoryMap := map[string][]string{
-		"document": {".doc", ".docx", ".pdf", ".txt", ".md", ".rtf", ".odt"},
-		"spreadsheet": {".xls", ".xlsx", ".csv", ".tsv", ".ods"},
+		"document":     {".doc", ".docx", ".pdf", ".txt", ".md", ".rtf", ".odt"},
+		"spreadsheet":  {".xls", ".xlsx", ".csv", ".tsv", ".ods"},
 		"presentation": {".ppt", ".pptx", ".odp"},
-		"image": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".ico"},
-		"video": {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm"},
-		"audio": {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"},
-		"archive": {".zip", ".tar", ".gz", ".7z", ".rar", ".bz2", ".xz"},
-		"code": {".py", ".js", ".go", ".java", ".c", ".cpp", ".h", ".sh", ".rb", ".php"},
-		"data": {".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf"},
-		"database": {".db", ".sqlite", ".sql", ".mdb"},
-		"geospatial": {".shp", ".geojson", ".kml", ".kmz", ".gpx", ".gml"},
+		"image":        {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".ico"},
+		"video":        {".mp4", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".webm"},
+		"audio":        {".mp3", ".wav", ".flac", ".aac", ".ogg", ".m4a", ".wma"},
+		"archive":      {".zip", ".tar", ".gz", ".7z", ".rar", ".bz2", ".xz"},
+		"code":         {".py", ".js", ".go", ".java", ".c", ".cpp", ".h", ".sh", ".rb", ".php"},
+		"data":         {".json", ".xml", ".yaml", ".yml", ".toml", ".ini", ".conf"},
+		"database":     {".db", ".sqlite", ".sql", ".mdb"},
+		"geospatial":   {".shp", ".geojson", ".kml", ".kmz", ".gpx", ".gml"},
 	}
 
 	for category, extensions := range categoryMap {
@@ -207,4 +230,60 @@ func categorizeSizeBySize(size int64) string {
 	default:
 		return "huge" // > 1GB
 	}
+}
+
+func isTextLike(contentType, ext, fileType string) bool {
+	if strings.HasPrefix(strings.ToLower(contentType), "text/") {
+		return true
+	}
+	ext = strings.ToLower(ext)
+	switch ext {
+	case ".txt", ".md", ".markdown", ".json", ".yaml", ".yml", ".xml", ".csv", ".tsv", ".log", ".ini", ".conf", ".sql", ".sh", ".py", ".js", ".go", ".java", ".c", ".cpp", ".rb", ".php", ".toml":
+		return true
+	}
+	upperType := strings.ToLower(fileType)
+	if upperType == "json" || upperType == "xml" || strings.Contains(upperType, "text") || strings.Contains(upperType, "markdown") || strings.Contains(upperType, "yaml") || strings.Contains(upperType, "log") || strings.Contains(upperType, "script") {
+		return true
+	}
+	return false
+}
+
+func decodeTextSample(sample []byte, fileType string) string {
+	sample = bytes.TrimPrefix(sample, []byte{0xEF, 0xBB, 0xBF}) // UTF-8 BOM
+
+	if strings.EqualFold(fileType, "JSON") {
+		var obj interface{}
+		if err := json.Unmarshal(sample, &obj); err == nil {
+			formatted, err := json.MarshalIndent(obj, "", "  ")
+			if err == nil {
+				return string(formatted)
+			}
+		}
+	}
+
+	return string(sample)
+}
+
+func isLikelyBinary(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	if bytes.IndexByte(data, 0x00) != -1 {
+		return true
+	}
+	if !utf8.Valid(data) {
+		return true
+	}
+	return false
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
 }

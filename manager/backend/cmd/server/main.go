@@ -36,6 +36,7 @@ func main() {
 
 	// 初始化 repositories
 	resourceRepo := repository.NewResourceRepository(db)
+	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 
 	logger.L().Info("Manager 配置加载完成",
@@ -63,10 +64,17 @@ func main() {
 
 	// 初始化 services
 	resourceService := service.NewResourceService(resourceRepo)
+	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
+	searchService, err := service.NewFullTextSearchService(cfg)
+	if err != nil {
+		logger.L().Error("初始化全文检索服务失败", "error", err)
+		os.Exit(1)
+	}
+	defer searchService.Close()
 
 	// 设置路由
-	router := api.SetupRouter(cfg, resourceService, metadataService)
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService)
 
 	// 启动服务
 	addr := ":" + cfg.Port

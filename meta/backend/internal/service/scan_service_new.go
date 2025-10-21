@@ -9,23 +9,44 @@ import (
 	"mime"
 	pathpkg "path"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/addp/common/embedding"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/scanner"
 	_ "github.com/addp/meta/internal/scanner/extractors" // 自动注册提取器
+	"github.com/addp/meta/internal/search"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
 )
 
 // ScanServiceNew 新的统一扫描服务
 type ScanServiceNew struct {
-	db              *gorm.DB
-	resourceService *ResourceService
-	log             *slog.Logger
+	db                 *gorm.DB
+	resourceService    *ResourceService
+	log                *slog.Logger
+	indexer            *search.Indexer
+	vectorStore        *vectorstore.PgVectorStore
+	multiModalEmbedder embedding.MultiModalEmbedder
+	embeddingTimeout   time.Duration
+	objectClients      map[uint]*minio.Client
+	objectClientMu     sync.Mutex
 }
+
+const (
+	documentPreviewRuneLimit   = 400
+	documentContentRuneLimit   = 20000
+	documentEmbeddingRuneLimit = 3500
+	maxImageEmbeddingBytes     = 3 * 1024 * 1024
+	maxVideoEmbeddingBytes     = 10 * 1024 * 1024
+)
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
 type ScanProgressReporter interface {
@@ -40,10 +61,32 @@ func NewScanServiceNew(db *gorm.DB, resourceService *ResourceService) *ScanServi
 	}
 
 	return &ScanServiceNew{
-		db:              db,
-		resourceService: resourceService,
-		log:             logger.With("component", "scan_service"),
+		db:               db,
+		resourceService:  resourceService,
+		log:              logger.With("component", "scan_service"),
+		embeddingTimeout: 20 * time.Second,
+		objectClients:    make(map[uint]*minio.Client),
 	}
+}
+
+// SetIndexer 注入搜索索引器
+func (s *ScanServiceNew) SetIndexer(indexer *search.Indexer) {
+	s.indexer = indexer
+}
+
+// EnableDocumentVectorization 为文档扫描启用向量化
+func (s *ScanServiceNew) EnableDocumentVectorization(store *vectorstore.PgVectorStore, embedder embedding.MultiModalEmbedder, timeout time.Duration) {
+	s.vectorStore = store
+	s.multiModalEmbedder = embedder
+	if timeout > 0 {
+		s.embeddingTimeout = timeout
+	}
+}
+
+// DisableDocumentVectorization 关闭文档向量化能力
+func (s *ScanServiceNew) DisableDocumentVectorization() {
+	s.vectorStore = nil
+	s.multiModalEmbedder = nil
 }
 
 func isObjectStorageType(resourceType string) bool {
@@ -646,7 +689,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				tenantID, resourceID, "bucket", bucket).First(&node).Error
 
 			if err == gorm.ErrRecordNotFound {
-				schemas, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, []string{bucket}, nil)
+				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, []string{bucket}, nil)
 				if err != nil {
 					s.log.Warn("对象存储桶扫描失败",
 						"resource_id", resourceID,
@@ -690,7 +733,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 		err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
 			tenantID, resourceID, "schema", schemaInfo.Name).First(&node).Error
 		if err == gorm.ErrRecordNotFound {
-			schemas, tables, fields, err := s.scanDatabaseSchema(scan, tenantID, resourceID, schemaInfo.Name)
+			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaInfo.Name)
 			if err != nil {
 				s.log.Warn("Schema 扫描失败",
 					"resource_id", resourceID,
@@ -778,7 +821,7 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
 		}
 
-		schemas, tables, fields, err := s.scanDatabaseSchema(scan, tenantID, resourceID, schemaName)
+		schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaName)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
 				"resource_id", resourceID,
@@ -850,7 +893,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(tenantID, resourceID, objectScanner, paths, reporter)
+	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -858,7 +901,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, reporter ScanProgressReporter) (int, int, error) {
+func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, reporter ScanProgressReporter) (int, int, error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	nodeStats := make(map[uint]*nodeAggregate)
@@ -955,7 +998,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 			continue
 		}
 
-		objects, err := s.persistObjectMetas(tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket)
+		objects, err := s.persistObjectMetas(resource, tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket)
 		if err != nil {
 			s.log.Error("对象存储元数据持久化失败",
 				"resource_id", resourceID,
@@ -981,7 +1024,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(tenantID, resourceID uint, objec
 	return totalBuckets, totalObjects, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool) (int, error) {
+func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool) (int, error) {
 	objects := 0
 
 	for _, meta := range metas {
@@ -1051,9 +1094,12 @@ func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNod
 		sizeVal := meta.SizeBytes
 		objectSizeVal := meta.SizeBytes
 		fullName := composeNodeFullName(objectName, currentParent, "/")
-		if _, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1); err != nil {
+		item, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1)
+		if err != nil {
 			return objects, err
 		}
+
+		s.indexObjectAsset(resource, tenantID, resourceID, meta, trimmed, fullName, item)
 
 		objects++
 		for idx, node := range parentChain {
@@ -1072,12 +1118,807 @@ func (s *ScanServiceNew) persistObjectMetas(tenantID, resourceID uint, bucketNod
 	return objects, nil
 }
 
+func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenantID uint, schemaName string, tableInfo scanner.TableInfo, fields []scanner.FieldInfo, item *models.MetaItem) {
+	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
+		return
+	}
+
+	metadata := search.NormalizeMap(copyJSONMap(item.Attributes))
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	delete(metadata, "fields")
+
+	fieldRecords := make([]search.FieldRecord, 0, len(fields))
+	for _, field := range fields {
+		fieldRecords = append(fieldRecords, search.FieldRecord{
+			Name:            field.Name,
+			DataType:        field.DataType,
+			ColumnType:      field.ColumnType,
+			Comment:         field.Comment,
+			OrdinalPosition: field.OrdinalPosition,
+			IsNullable:      field.IsNullable,
+			IsPrimaryKey:    field.IsPrimaryKey,
+			IsUniqueKey:     field.IsUniqueKey,
+		})
+	}
+
+	record := &search.AssetRecord{
+		AssetID:      item.Fingerprint,
+		TenantID:     tenantID,
+		ResourceID:   resource.ID,
+		ResourceName: resource.Name,
+		ResourceType: resource.ResourceType,
+		AssetType:    "table",
+		Name:         item.Name,
+		FullName:     item.FullName,
+		Schema:       schemaName,
+		TableType:    tableInfo.Type,
+		Description:  tableInfo.Comment,
+		RowCount:     item.RowCount,
+		SizeBytes:    item.SizeBytes,
+		Metadata:     metadata,
+		Fields:       fieldRecords,
+		LastModified: item.LastModifiedAt,
+	}
+
+	if err := s.indexer.IndexAsset(context.Background(), record); err != nil {
+		s.log.Warn("索引表元数据失败", "fingerprint", item.Fingerprint, "schema", schemaName, "error", err)
+	}
+}
+
+func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenantID, resourceID uint, meta scanner.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
+	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
+		return
+	}
+
+	attributes := copyJSONMap(item.Attributes)
+	metadata := search.NormalizeMap(attributes)
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	tags := extractStringSlice(metadata["tags"])
+	if len(tags) > 0 {
+		delete(metadata, "tags")
+	}
+
+	plainText := ""
+	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
+		if v, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok {
+			plainText = v
+		}
+	}
+	if v, ok := metadata["plain_text"].(string); ok && plainText == "" {
+		plainText = v
+	}
+	delete(metadata, "plain_text")
+
+	record := &search.AssetRecord{
+		AssetID:         item.Fingerprint,
+		TenantID:        tenantID,
+		ResourceID:      resourceID,
+		ResourceName:    resource.Name,
+		ResourceType:    resource.ResourceType,
+		AssetType:       "object",
+		Name:            item.Name,
+		FullName:        fullName,
+		Bucket:          meta.Bucket,
+		Path:            meta.Path,
+		RelativePath:    relativePath,
+		Metadata:        metadata,
+		SizeBytes:       item.SizeBytes,
+		ObjectSizeBytes: item.ObjectSizeBytes,
+		LastModified:    meta.LastModified,
+	}
+
+	if len(tags) > 0 {
+		record.Tags = tags
+	}
+	if desc := getStringFromMap(metadata, "file_type_friendly"); desc != "" {
+		record.Description = desc
+	}
+
+	if err := s.indexer.IndexAsset(context.Background(), record); err != nil {
+		s.log.Warn("索引对象元数据失败", "fingerprint", item.Fingerprint, "bucket", meta.Bucket, "path", meta.Path, "error", err)
+	}
+
+	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
+	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
+	docMetadata := cloneInterfaceMap(metadata)
+
+	docRecord := &search.DocumentRecord{
+		DocumentID:     item.Fingerprint,
+		AssetID:        item.Fingerprint,
+		TenantID:       tenantID,
+		ResourceID:     resourceID,
+		ResourceName:   resource.Name,
+		ResourceType:   resource.ResourceType,
+		Bucket:         meta.Bucket,
+		RelativePath:   relativePath,
+		FileName:       item.Name,
+		FilePath:       meta.Path,
+		Content:        truncatedContent,
+		ContentPreview: contentPreview,
+		FileSize:       meta.SizeBytes,
+		Metadata:       docMetadata,
+	}
+
+	if meta.ExtractedMetadata != nil {
+		if basic := meta.ExtractedMetadata.BasicInfo; basic.FileName != "" {
+			docRecord.FileName = basic.FileName
+		}
+		if basic := meta.ExtractedMetadata.BasicInfo; basic.ContentType != "" {
+			docRecord.ContentType = basic.ContentType
+		}
+		if basic := meta.ExtractedMetadata.BasicInfo; !basic.LastModified.IsZero() {
+			lm := basic.LastModified
+			docRecord.LastModified = &lm
+		} else if meta.LastModified != nil {
+			docRecord.LastModified = meta.LastModified
+		}
+	}
+	if docRecord.LastModified == nil && meta.LastModified != nil {
+		docRecord.LastModified = meta.LastModified
+	}
+
+	if value := getStringFromMap(metadata, "document_type"); value != "" {
+		docRecord.DocumentType = value
+	}
+	if value := getStringFromMap(metadata, "title"); value != "" {
+		docRecord.Title = value
+	}
+	if value := getStringFromMap(metadata, "author"); value != "" {
+		docRecord.Author = value
+	}
+	if keywords := extractStringSlice(metadata["keywords"]); len(keywords) > 0 {
+		docRecord.Keywords = keywords
+	}
+	if wc := intFromInterface(metadata["word_count"]); wc > 0 {
+		docRecord.WordCount = wc
+	}
+	if pc := intFromInterface(metadata["page_count"]); pc > 0 {
+		docRecord.PageCount = pc
+	}
+	if created := extractTimePtr(metadata["created_date"]); created != nil {
+		docRecord.CreatedDate = created
+	}
+	if modified := extractTimePtr(metadata["modified_date"]); modified != nil {
+		docRecord.ModifiedDate = modified
+	}
+
+	if err := s.indexer.IndexDocument(context.Background(), docRecord); err != nil {
+		s.log.Warn("索引文档内容失败", "fingerprint", item.Fingerprint, "error", err)
+	}
+
+	s.upsertDocumentEmbedding(docRecord, truncatedContent)
+}
+
+func (s *ScanServiceNew) upsertDocumentEmbedding(docRecord *search.DocumentRecord, content string) {
+	if s.vectorStore == nil || s.multiModalEmbedder == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.resolveEmbeddingTimeout())
+	defer cancel()
+
+	modality := detectDocumentModality(docRecord)
+
+	var (
+		embeddingResult *embedding.Embedding
+		usage           *embedding.Usage
+		err             error
+	)
+
+	switch modality {
+	case embedding.ModalityImage:
+		embeddingResult, usage, err = s.generateImageEmbedding(ctx, docRecord)
+	case embedding.ModalityVideo:
+		embeddingResult, usage, err = s.generateVideoEmbedding(ctx, docRecord)
+	default:
+		embeddingResult, usage, err = s.generateDocumentEmbedding(ctx, docRecord, content)
+	}
+
+	if err != nil {
+		s.log.Warn("文档向量化失败", "document_id", docRecord.DocumentID, "modality", string(modality), "error", err)
+		return
+	}
+	if embeddingResult == nil {
+		return
+	}
+
+	vectorMeta := s.buildVectorMetadata(docRecord, modality, embeddingResult, usage)
+	record := vectorstore.Record{
+		ObjectID:  docRecord.DocumentID,
+		AssetID:   docRecord.AssetID,
+		Modality:  modality,
+		Model:     embeddingResult.Model,
+		Vector:    embeddingResult.Vector,
+		Metadata:  vectorMeta,
+		Dimension: embeddingResult.Dimension,
+	}
+
+	if docRecord.TenantID != 0 {
+		tenantID := docRecord.TenantID
+		record.TenantID = &tenantID
+	}
+	if docRecord.ResourceID != 0 {
+		resourceID := docRecord.ResourceID
+		record.ResourceID = &resourceID
+	}
+
+	dbCtx, cancelDB := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelDB()
+
+	if _, err := s.vectorStore.Upsert(dbCtx, record); err != nil {
+		s.log.Warn("向量存储写入失败", "document_id", docRecord.DocumentID, "error", err)
+	}
+}
+
+func (s *ScanServiceNew) resolveEmbeddingTimeout() time.Duration {
+	if s.embeddingTimeout <= 0 {
+		return 20 * time.Second
+	}
+	return s.embeddingTimeout
+}
+
+func detectDocumentModality(docRecord *search.DocumentRecord) embedding.Modality {
+	contentType := strings.ToLower(strings.TrimSpace(docRecord.ContentType))
+	if contentType == "" {
+		if metaType := strings.ToLower(strings.TrimSpace(getStringFromMap(docRecord.Metadata, "content_type"))); metaType != "" {
+			contentType = metaType
+		}
+	}
+	if contentType == "" {
+		if metaType := strings.ToLower(strings.TrimSpace(getStringFromMap(docRecord.Metadata, "mime_type"))); metaType != "" {
+			contentType = metaType
+		}
+	}
+	if contentType == "" {
+		if ext := strings.ToLower(strings.TrimSpace(pathpkg.Ext(docRecord.FileName))); ext != "" {
+			if inferred := strings.ToLower(strings.TrimSpace(mime.TypeByExtension(ext))); inferred != "" {
+				contentType = inferred
+			}
+		}
+	}
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return embedding.ModalityImage
+	case strings.HasPrefix(contentType, "video/"):
+		return embedding.ModalityVideo
+	case strings.HasPrefix(contentType, "audio/"):
+		return embedding.ModalityAudio
+	default:
+		return embedding.ModalityDocument
+	}
+}
+
+func (s *ScanServiceNew) generateDocumentEmbedding(ctx context.Context, docRecord *search.DocumentRecord, content string) (*embedding.Embedding, *embedding.Usage, error) {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		text = strings.TrimSpace(docRecord.ContentPreview)
+	}
+	if text == "" {
+		return nil, nil, nil
+	}
+
+	trimmedContent := truncateRunes(text, documentEmbeddingRuneLimit)
+	embeddingText := strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(docRecord.Title),
+		strings.TrimSpace(trimmedContent),
+	}, "\n\n"))
+	if embeddingText == "" {
+		return nil, nil, nil
+	}
+
+	language := ""
+	if docRecord.Metadata != nil {
+		language = getStringFromMap(docRecord.Metadata, "language")
+	}
+
+	metaForEmbedding := map[string]string{
+		"file_name": docRecord.FileName,
+		"bucket":    docRecord.Bucket,
+	}
+	if docRecord.RelativePath != "" {
+		metaForEmbedding["relative_path"] = docRecord.RelativePath
+	}
+
+	result, err := s.multiModalEmbedder.EmbedDocument(ctx, []embedding.DocumentInput{
+		{
+			ID:       docRecord.DocumentID,
+			Content:  embeddingText,
+			Title:    docRecord.Title,
+			Language: language,
+			Metadata: metaForEmbedding,
+		},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if result == nil || len(result.Embeddings) == 0 {
+		return nil, nil, fmt.Errorf("embedding service returned empty result")
+	}
+
+	embeddingResult := result.Embeddings[0]
+	return &embeddingResult, result.Usage, nil
+}
+
+func (s *ScanServiceNew) generateImageEmbedding(ctx context.Context, docRecord *search.DocumentRecord) (*embedding.Embedding, *embedding.Usage, error) {
+	if strings.TrimSpace(docRecord.Bucket) == "" {
+		return nil, nil, nil
+	}
+
+	objectPath := docRecord.RelativePath
+	if objectPath == "" {
+		objectPath = docRecord.FilePath
+	}
+
+	data, contentType, err := s.fetchObjectContent(ctx, docRecord.ResourceID, docRecord.TenantID, docRecord.Bucket, objectPath, maxImageEmbeddingBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(data) == 0 {
+		return nil, nil, nil
+	}
+
+	mimeType := normalizeMimeType(contentType, docRecord.ContentType, docRecord.FileName, "image/png")
+
+	meta := map[string]string{
+		"file_name":     docRecord.FileName,
+		"bucket":        docRecord.Bucket,
+		"relative_path": docRecord.RelativePath,
+	}
+
+	result, err := s.multiModalEmbedder.EmbedImage(ctx, []embedding.ImageInput{{
+		ID:       docRecord.DocumentID,
+		Data:     data,
+		MIMEType: mimeType,
+		Metadata: meta,
+	}})
+	if err != nil {
+		return nil, nil, err
+	}
+	if result == nil || len(result.Embeddings) == 0 {
+		return nil, nil, fmt.Errorf("embedding service returned empty result")
+	}
+
+	embeddingResult := result.Embeddings[0]
+	return &embeddingResult, result.Usage, nil
+}
+
+func (s *ScanServiceNew) generateVideoEmbedding(ctx context.Context, docRecord *search.DocumentRecord) (*embedding.Embedding, *embedding.Usage, error) {
+	if strings.TrimSpace(docRecord.Bucket) == "" {
+		return nil, nil, nil
+	}
+
+	objectPath := docRecord.RelativePath
+	if objectPath == "" {
+		objectPath = docRecord.FilePath
+	}
+
+	data, contentType, err := s.fetchObjectContent(ctx, docRecord.ResourceID, docRecord.TenantID, docRecord.Bucket, objectPath, maxVideoEmbeddingBytes)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(data) == 0 {
+		return nil, nil, nil
+	}
+
+	mimeType := normalizeMimeType(contentType, docRecord.ContentType, docRecord.FileName, "video/mp4")
+
+	meta := map[string]string{
+		"file_name":     docRecord.FileName,
+		"bucket":        docRecord.Bucket,
+		"relative_path": docRecord.RelativePath,
+	}
+
+	result, err := s.multiModalEmbedder.EmbedVideo(ctx, []embedding.VideoInput{{
+		ID:       docRecord.DocumentID,
+		Data:     data,
+		MIMEType: mimeType,
+		Metadata: meta,
+	}})
+	if err != nil {
+		return nil, nil, err
+	}
+	if result == nil || len(result.Embeddings) == 0 {
+		return nil, nil, fmt.Errorf("embedding service returned empty result")
+	}
+
+	embeddingResult := result.Embeddings[0]
+	return &embeddingResult, result.Usage, nil
+}
+
+func (s *ScanServiceNew) buildVectorMetadata(docRecord *search.DocumentRecord, modality embedding.Modality, embed *embedding.Embedding, usage *embedding.Usage) map[string]any {
+	meta := map[string]any{
+		"file_name":     docRecord.FileName,
+		"bucket":        docRecord.Bucket,
+		"relative_path": docRecord.RelativePath,
+		"resource_id":   docRecord.ResourceID,
+		"resource_name": docRecord.ResourceName,
+		"resource_type": docRecord.ResourceType,
+		"document_type": docRecord.DocumentType,
+		"content_type":  docRecord.ContentType,
+		"modality":      string(modality),
+	}
+	if docRecord.Title != "" {
+		meta["title"] = docRecord.Title
+	}
+	if docRecord.ContentPreview != "" {
+		meta["content_preview"] = docRecord.ContentPreview
+	}
+	if docRecord.Metadata != nil && len(docRecord.Metadata) > 0 {
+		meta["source_metadata"] = docRecord.Metadata
+	}
+	if embed != nil && len(embed.Metadata) > 0 {
+		meta["embedding_metadata"] = embed.Metadata
+	}
+	if usage != nil {
+		meta["vector_usage"] = map[string]any{
+			"prompt_tokens": usage.PromptTokens,
+			"total_tokens":  usage.TotalTokens,
+			"latency_ms":    usage.Latency.Milliseconds(),
+		}
+	}
+	return meta
+}
+
+func (s *ScanServiceNew) fetchObjectContent(ctx context.Context, resourceID, tenantID uint, bucket, objectPath string, maxSize int64) ([]byte, string, error) {
+	client, err := s.getObjectClient(resourceID, tenantID)
+	if err != nil {
+		return nil, "", err
+	}
+
+	path := strings.TrimPrefix(strings.TrimSpace(objectPath), "/")
+	if path == "" {
+		return nil, "", fmt.Errorf("object path is empty")
+	}
+
+	stat, err := client.StatObject(ctx, bucket, path, minio.StatObjectOptions{})
+	if err != nil {
+		return nil, "", fmt.Errorf("stat object failed: %w", err)
+	}
+	if maxSize > 0 && stat.Size > maxSize {
+		return nil, "", fmt.Errorf("object size %d exceeds limit %d", stat.Size, maxSize)
+	}
+
+	reader, err := client.GetObject(ctx, bucket, path, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, "", fmt.Errorf("get object failed: %w", err)
+	}
+	defer reader.Close()
+
+	limit := stat.Size
+	if maxSize > 0 && limit > maxSize {
+		limit = maxSize
+	}
+
+	data, err := io.ReadAll(io.LimitReader(reader, limit))
+	if err != nil {
+		return nil, "", fmt.Errorf("read object failed: %w", err)
+	}
+
+	return data, stat.ContentType, nil
+}
+
+func (s *ScanServiceNew) getObjectClient(resourceID, tenantID uint) (*minio.Client, error) {
+	s.objectClientMu.Lock()
+	client, ok := s.objectClients[resourceID]
+	s.objectClientMu.Unlock()
+	if ok && client != nil {
+		return client, nil
+	}
+
+	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, "")
+	if err != nil {
+		return nil, fmt.Errorf("load resource connection info failed: %w", err)
+	}
+
+	cfg, err := parseObjectStorageConfig(resource.ConnectionInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	opts := &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+		Secure: cfg.UseSSL,
+	}
+	if cfg.Region != "" {
+		opts.Region = cfg.Region
+	}
+	if cfg.PathStyle {
+		opts.BucketLookup = minio.BucketLookupPath
+	}
+
+	client, err = minio.New(cfg.Endpoint, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create minio client: %w", err)
+	}
+
+	s.objectClientMu.Lock()
+	s.objectClients[resourceID] = client
+	s.objectClientMu.Unlock()
+
+	return client, nil
+}
+
+type objectStorageConfig struct {
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Region    string
+	UseSSL    bool
+	PathStyle bool
+}
+
+func parseObjectStorageConfig(info commonModels.ConnectionInfo) (*objectStorageConfig, error) {
+	cfg := &objectStorageConfig{}
+
+	cfg.Endpoint = getStringFromConn(info, "endpoint")
+	cfg.AccessKey = getStringFromConn(info, "access_key")
+	cfg.SecretKey = getStringFromConn(info, "secret_key")
+	cfg.Region = getStringFromConn(info, "region")
+	cfg.UseSSL = getBoolFromConn(info, "use_ssl")
+	cfg.PathStyle = getBoolFromConn(info, "path_style")
+
+	if cfg.Endpoint == "" {
+		return nil, fmt.Errorf("object storage endpoint is empty")
+	}
+	if cfg.AccessKey == "" || cfg.SecretKey == "" {
+		return nil, fmt.Errorf("object storage credentials missing")
+	}
+
+	return cfg, nil
+}
+
+func getStringFromConn(info commonModels.ConnectionInfo, key string) string {
+	if raw, ok := info[key]; ok {
+		switch v := raw.(type) {
+		case string:
+			return v
+		case fmt.Stringer:
+			return v.String()
+		case float64:
+			return fmt.Sprintf("%.0f", v)
+		case int64:
+			return fmt.Sprintf("%d", v)
+		case int:
+			return fmt.Sprintf("%d", v)
+		case bool:
+			if v {
+				return "true"
+			}
+			return "false"
+		}
+	}
+	return ""
+}
+
+func getBoolFromConn(info commonModels.ConnectionInfo, key string) bool {
+	if raw, ok := info[key]; ok {
+		switch v := raw.(type) {
+		case bool:
+			return v
+		case string:
+			lower := strings.ToLower(strings.TrimSpace(v))
+			return lower == "true" || lower == "1" || lower == "yes"
+		case float64:
+			return v != 0
+		case int:
+			return v != 0
+		case int64:
+			return v != 0
+		}
+	}
+	return false
+}
+
+func normalizeMimeType(primary, secondary, fileName, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return strings.TrimSpace(primary)
+	}
+	if strings.TrimSpace(secondary) != "" {
+		return strings.TrimSpace(secondary)
+	}
+	if ext := strings.ToLower(strings.TrimSpace(pathpkg.Ext(fileName))); ext != "" {
+		if mimeType := mime.TypeByExtension(ext); mimeType != "" {
+			return mimeType
+		}
+	}
+	return fallback
+}
+
+func (s *ScanServiceNew) deleteTablesFromIndex(tenantID, resourceID uint, schemaName string) {
+	if s.indexer == nil || !s.indexer.Enabled() || schemaName == "" {
+		return
+	}
+	if err := s.indexer.DeleteTables(context.Background(), tenantID, resourceID, schemaName); err != nil {
+		s.log.Warn("删除表索引失败", "schema", schemaName, "resource_id", resourceID, "error", err)
+	}
+}
+
+func (s *ScanServiceNew) deleteObjectsFromIndex(tenantID, resourceID uint, bucketName, relativePath string) {
+	if s.indexer == nil || !s.indexer.Enabled() || bucketName == "" {
+		return
+	}
+	if err := s.indexer.DeleteObjects(context.Background(), tenantID, resourceID, bucketName, relativePath); err != nil {
+		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", relativePath, "error", err)
+	}
+}
+
+func copyJSONMap(m models.JSONMap) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		result[k] = v
+	}
+	return result
+}
+
+func cloneInterfaceMap(m map[string]interface{}) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		switch vv := v.(type) {
+		case map[string]interface{}:
+			result[k] = cloneInterfaceMap(vv)
+		case []interface{}:
+			arr := make([]interface{}, 0, len(vv))
+			for _, item := range vv {
+				switch nested := item.(type) {
+				case map[string]interface{}:
+					arr = append(arr, cloneInterfaceMap(nested))
+				default:
+					arr = append(arr, nested)
+				}
+			}
+			result[k] = arr
+		default:
+			result[k] = vv
+		}
+	}
+	return result
+}
+
+func extractStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, raw := range v {
+			if s, ok := raw.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	default:
+		return nil
+	}
+}
+
+func getStringFromMap(metadata map[string]interface{}, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	if val, ok := metadata[key]; ok {
+		switch v := val.(type) {
+		case string:
+			return v
+		case fmt.Stringer:
+			return v.String()
+		case []byte:
+			return string(v)
+		default:
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
+}
+
+func truncateRunes(text string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit])
+}
+
+func previewText(text string, limit int) string {
+	return truncateRunes(text, limit)
+}
+
+func intFromInterface(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case json.Number:
+		if i64, err := v.Int64(); err == nil {
+			return int(i64)
+		}
+	case string:
+		if v == "" {
+			return 0
+		}
+		if i64, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return int(i64)
+		}
+	}
+	return 0
+}
+
+func extractTimePtr(value interface{}) *time.Time {
+	switch v := value.(type) {
+	case time.Time:
+		if v.IsZero() {
+			return nil
+		}
+		vv := v
+		return &vv
+	case *time.Time:
+		if v == nil || v.IsZero() {
+			return nil
+		}
+		vv := v.UTC()
+		return &vv
+	case string:
+		if v == "" {
+			return nil
+		}
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}
+
 // extractEnhancedMetadata 使用插件提取增强的元数据
 func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
 	// 如果S3Scanner已经提取了元数据，直接使用
 	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
-		// 将提取的CustomAttrs合并到baseAttrs中
+		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
+			baseAttrs["plain_text_preview"] = previewText(text, documentPreviewRuneLimit)
+		}
+		// 将提取的CustomAttrs合并到baseAttrs中，跳过大字段
 		for key, value := range meta.ExtractedMetadata.CustomAttrs {
+			if key == "plain_text" {
+				continue
+			}
 			baseAttrs[key] = value
 		}
 
@@ -1307,6 +2148,7 @@ func splitObjectPath(path string) (string, string) {
 
 func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {
 	clean := sanitizeObjectPath(relativePath)
+	s.deleteObjectsFromIndex(tenantID, resourceID, bucketName, clean)
 	if clean == "" {
 		if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
 			return err
@@ -1350,7 +2192,7 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 	return nil
 }
 
-func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, tenantID, resourceID uint, schemaName string) (int, int, int, error) {
+func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan scanner.Scanner, tenantID, resourceID uint, schemaName string) (int, int, int, error) {
 	schemaNode, err := s.upsertNode(tenantID, resourceID, nil, "schema", schemaName, "", nil)
 	if err != nil {
 		return 0, 0, 0, err
@@ -1363,6 +2205,8 @@ func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, tenantID, reso
 	if err := s.hardDeleteItemsByNode(schemaNode.ID); err != nil {
 		return 0, 0, 0, err
 	}
+
+	s.deleteTablesFromIndex(tenantID, resourceID, schemaName)
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
@@ -1404,7 +2248,8 @@ func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, tenantID, reso
 		}
 
 		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
-		if _, err := s.upsertItem(tenantID, resourceID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1); err != nil {
+		item, err := s.upsertItem(tenantID, resourceID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
+		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"resource_id", resourceID,
 				"tenant_id", tenantID,
@@ -1414,6 +2259,8 @@ func (s *ScanServiceNew) scanDatabaseSchema(scan scanner.Scanner, tenantID, reso
 			)
 			continue
 		}
+
+		s.indexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
 
 		totalTables++
 		totalFields += len(fields)
