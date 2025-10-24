@@ -266,6 +266,20 @@ func (s *ScanServiceNew) upsertItem(
 	lastModified *time.Time,
 	schemaVersion int,
 ) (*models.MetaItem, error) {
+	return s.upsertItemSelective(tenantID, resourceID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, objectSize, lastModified, schemaVersion)
+}
+
+// upsertItemSelective 选择性更新item
+// 当attrs为nil时，不更新attributes字段（用于shallow扫描保留deep扫描的元数据）
+func (s *ScanServiceNew) upsertItemSelective(
+	tenantID, resourceID uint,
+	node *models.MetaNode,
+	itemType, name, fullName string,
+	attrs models.JSONMap,
+	rowCount, sizeBytes, objectSize *int64,
+	lastModified *time.Time,
+	schemaVersion int,
+) (*models.MetaItem, error) {
 	// 生成数据指纹
 	var fingerprint string
 	if attrs != nil {
@@ -287,7 +301,16 @@ func (s *ScanServiceNew) upsertItem(
 		}
 	} else {
 		// 无attributes，使用fullName作为标识
-		fingerprint = models.GenerateItemFingerprint(resourceID, fullName)
+		// 注意：当attrs为nil时（shallow扫描保留已有数据），需要先查找已有记录获取指纹
+		var existingItem models.MetaItem
+		err := s.db.Where("res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
+			resourceID, node.ID, itemType, name).First(&existingItem).Error
+		if err == nil {
+			fingerprint = existingItem.Fingerprint
+		} else {
+			// 如果找不到已有记录且attrs为nil，无法生成fingerprint，报错
+			return nil, fmt.Errorf("cannot generate fingerprint without attributes for new item")
+		}
 	}
 
 	var item models.MetaItem
@@ -328,12 +351,16 @@ func (s *ScanServiceNew) upsertItem(
 		"node_id":             node.ID, // 允许node_id变化（数据移动）
 		"full_name":           fullName,
 		"meta_schema_version": schemaVersion,
-		"attributes":          attrs,
 		"row_count":           rowCount,
 		"size_bytes":          sizeBytes,
 		"object_size_bytes":   objectSize,
 		"last_modified_at":    lastModified,
 		"updated_at":          time.Now(),
+	}
+
+	// 只有当attrs不为nil时才更新attributes（shallow扫描时保留已有的deep元数据）
+	if attrs != nil {
+		updates["attributes"] = attrs
 	}
 
 	if err := s.db.Model(&item).Updates(updates).Error; err != nil {
@@ -344,7 +371,9 @@ func (s *ScanServiceNew) upsertItem(
 	item.NodeID = node.ID
 	item.FullName = fullName
 	item.MetaSchemaVersion = schemaVersion
-	item.Attributes = attrs
+	if attrs != nil {
+		item.Attributes = attrs
+	}
 	item.RowCount = rowCount
 	item.SizeBytes = sizeBytes
 	item.ObjectSizeBytes = objectSize
@@ -456,15 +485,20 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 // ScanResource 扫描指定资源
 func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, objectPaths []string, token string) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, nil)
+	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, "deep", nil)
 }
 
 // ScanResourceWithProgress 扫描指定资源，并通过 reporter 汇报进度
 func (s *ScanServiceNew) ScanResourceWithProgress(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, reporter)
+	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, "deep", reporter)
 }
 
-func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+// ScanResourceWithDepth 扫描指定资源，支持指定扫描深度
+func (s *ScanServiceNew) ScanResourceWithDepth(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, scanDepth, reporter)
+}
+
+func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
 	startTime := time.Now()
 
 	// 获取资源
@@ -484,13 +518,22 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 		}
 	}
 
+	// 标准化 scanDepth 参数
+	if scanDepth == "" {
+		scanDepth = "deep"
+	}
+	scanDepth = strings.ToLower(scanDepth)
+	if scanDepth != "shallow" && scanDepth != "deep" {
+		scanDepth = "deep" // 默认深度扫描
+	}
+
 	// 创建扫描日志
 	schemasJSON, _ := json.Marshal(schemaNames)
 	scanLog := &models.ScanLog{
 		ResourceID:    resourceID,
 		TenantID:      tenantID,
 		ScanType:      "manual",
-		ScanDepth:     "deep",
+		ScanDepth:     scanDepth,
 		TargetSchemas: string(schemasJSON),
 		Status:        "running",
 		StartedAt:     &startTime,
@@ -502,6 +545,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	startFields := append(connectionLogFields(resource),
 		"scan_log_id", scanLog.ID,
 		"mode", "manual",
+		"scan_depth", scanDepth,
 	)
 	if len(schemaNames) > 0 {
 		startFields = append(startFields, "target_schemas", schemaNames)
@@ -516,7 +560,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	schemas, tables, fields := 0, 0, 0
 
 	if isObjectStorageType(resourceType) {
-		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, reporter)
+		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, scanDepth, reporter)
 	} else {
 		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLog.ID, reporter)
 	}
@@ -689,7 +733,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				tenantID, resourceID, "bucket", bucket).First(&node).Error
 
 			if err == gorm.ErrRecordNotFound {
-				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, []string{bucket}, nil)
+				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, []string{bucket}, "deep", nil)
 				if err != nil {
 					s.log.Warn("对象存储桶扫描失败",
 						"resource_id", resourceID,
@@ -858,11 +902,16 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 
 // scanSingleSchema 扫描单个Schema（表+字段）
 func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
-	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, nil)
+	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
 }
 
-func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
+
+	// 标准化 scanDepth
+	if scanDepth == "" {
+		scanDepth = "deep"
+	}
 
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
@@ -893,7 +942,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, reporter)
+	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -901,11 +950,13 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, reporter ScanProgressReporter) (int, int, error) {
+func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	nodeStats := make(map[uint]*nodeAggregate)
-	clearedPaths := make(map[string]map[string]bool)
+
+	// 记录本次扫描到的所有fingerprints，用于后续清理未扫描到的item
+	scannedFingerprints := make(map[string]bool)
 
 	// 如果scanner支持SetResourceID，设置resourceID用于元数据提取
 	if s3Scanner, ok := objectScanner.(interface{ SetResourceID(uint) }); ok {
@@ -963,17 +1014,6 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 			totalBuckets++
 		}
 
-		if _, ok := clearedPaths[bucketName]; !ok {
-			clearedPaths[bucketName] = make(map[string]bool)
-		}
-
-		if !clearedPaths[bucketName][relativePath] {
-			if err := s.clearObjectMetadataUnderPath(tenantID, resourceID, bucketNode, bucketName, relativePath); err != nil {
-				return totalBuckets, totalObjects, err
-			}
-			clearedPaths[bucketName][relativePath] = true
-		}
-
 		fullBucket := relativePath == ""
 		if fullBucket {
 			if !processedBuckets[bucketName] {
@@ -998,7 +1038,17 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 			continue
 		}
 
-		objects, err := s.persistObjectMetas(resource, tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket)
+		// 传递扫描路径前缀，用于正确计算fullName
+		scanPathPrefix := relativePath
+		s.log.Info("传递scanPathPrefix到persistObjectMetas",
+			"rawPath", rawPath,
+			"bucketName", bucketName,
+			"relativePath", relativePath,
+			"scanPathPrefix", scanPathPrefix,
+			"fullBucket", fullBucket,
+			"metasCount", len(metas),
+			"scanDepth", scanDepth)
+		objects, err := s.persistObjectMetas(resource, tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints)
 		if err != nil {
 			s.log.Error("对象存储元数据持久化失败",
 				"resource_id", resourceID,
@@ -1015,6 +1065,10 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 		}
 	}
 
+	// 清理未在本次扫描中出现的旧item（仅当扫描了完整路径时）
+	// 注意：这里暂时不清理，因为shallow扫描不应删除deep扫描的结果
+	// 未来可以根据scan_depth决定是否清理
+
 	for _, agg := range nodeStats {
 		if err := s.finalizeNodeState(agg.node, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
 			return totalBuckets, totalObjects, err
@@ -1024,8 +1078,43 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 	return totalBuckets, totalObjects, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool) (int, error) {
+func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
 	objects := 0
+
+	// 重要：在循环外部只处理一次scanPathPrefix，建立基础父节点
+	// 例如：扫描 "addp/shapefile" 时，scanPathPrefix = "shapefile"
+	// 需要先创建/查找 "shapefile" 节点作为所有对象的基础父节点
+	basePrefixNode := bucketNode
+	if scanPathPrefix != "" {
+		s.log.Info("处理scanPathPrefix建立基础父节点",
+			"scanPathPrefix", scanPathPrefix,
+			"bucket", bucketNode.Name)
+		prefixSegments := strings.Split(sanitizeObjectPath(scanPathPrefix), "/")
+		currentParent := bucketNode
+		for idx, segment := range prefixSegments {
+			fullName := composeNodeFullName(segment, currentParent, "/")
+			pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
+			attrs := models.JSONMap{
+				"bucket": bucketNode.Name,
+				"path":   pathSoFar,
+			}
+			childNode, err := s.upsertNode(tenantID, resourceID, currentParent, "prefix", segment, fullName, attrs)
+			if err != nil {
+				return objects, err
+			}
+			s.log.Info("创建/找到前缀节点",
+				"segment", segment,
+				"node_id", childNode.ID,
+				"node_name", childNode.Name,
+				"fullName", fullName)
+			currentParent = childNode
+			ensureNodeAggregate(stats, childNode)
+		}
+		basePrefixNode = currentParent
+		s.log.Info("scanPathPrefix处理完成",
+			"basePrefixNode_id", basePrefixNode.ID,
+			"basePrefixNode_name", basePrefixNode.Name)
+	}
 
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
@@ -1035,21 +1124,74 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 			continue
 		}
 
+		// 使用基础前缀节点作为起点
 		parentChain := []*models.MetaNode{bucketNode}
-		currentParent := bucketNode
+		if basePrefixNode != bucketNode {
+			parentChain = append(parentChain, basePrefixNode)
+		}
+		currentParent := basePrefixNode
 
+		// 然后处理相对路径（相对于scanPathPrefix）
 		trimmed := sanitizeObjectPath(meta.RelativePath)
-		if trimmed != "" {
-			segments := strings.Split(trimmed, "/")
-			for idx, segment := range segments {
-				isLast := idx == len(segments)-1
+
+		// 调试日志：记录每个meta对象的处理
+		s.log.Info("处理meta对象",
+			"meta.NodeType", meta.NodeType,
+			"meta.Path", meta.Path,
+			"meta.RelativePath", meta.RelativePath,
+			"trimmed", trimmed,
+			"scanPathPrefix", scanPathPrefix,
+			"basePrefixNode", basePrefixNode.Name)
+
+		// 重要：处理scanPathPrefix相关的路径，避免重复创建节点
+		// Scanner在扫描子目录时会返回包含scanPathPrefix的路径
+		var segmentsToProcess []string
+		skipReason := ""
+		if scanPathPrefix != "" && trimmed == scanPathPrefix {
+			// 情况1：trimmed刚好等于scanPathPrefix（Scanner返回的prefix汇总对象）
+			// 跳过segment处理，basePrefixNode已经创建了这个节点
+			skipReason = "trimmed==scanPathPrefix"
+			if meta.NodeType == "prefix" {
+				ensureNodeAggregate(stats, basePrefixNode)
+			}
+			// 不处理segments
+		} else if scanPathPrefix != "" && strings.HasPrefix(trimmed, scanPathPrefix+"/") {
+			// 情况2：trimmed以"scanPathPrefix/"开头（Scanner的dirAgg中间目录）
+			// 去掉scanPathPrefix前缀，只处理剩余部分
+			skipReason = "trimmed以scanPathPrefix/开头，去掉前缀"
+			remaining := strings.TrimPrefix(trimmed, scanPathPrefix+"/")
+			if remaining != "" {
+				segmentsToProcess = strings.Split(remaining, "/")
+			}
+		} else if trimmed != "" {
+			// 情况3：正常路径，不包含scanPathPrefix前缀
+			segmentsToProcess = strings.Split(trimmed, "/")
+		} else if includeBucketAggregate {
+			// 情况4：空路径，统计bucket
+			skipReason = "空路径"
+			ensureNodeAggregate(stats, bucketNode)
+		}
+
+		if skipReason != "" {
+			s.log.Info("跳过或特殊处理",
+				"reason", skipReason,
+				"segmentsToProcess", segmentsToProcess)
+		} else if len(segmentsToProcess) > 0 {
+			s.log.Info("准备处理segments",
+				"segmentsToProcess", segmentsToProcess)
+		}
+
+		// 处理segments（如果有）
+		if len(segmentsToProcess) > 0 {
+			for idx, segment := range segmentsToProcess {
+				isLast := idx == len(segmentsToProcess)-1
 				if meta.NodeType == "object" && isLast {
 					break
 				}
 				fullName := composeNodeFullName(segment, currentParent, "/")
 				attrs := models.JSONMap{
 					"bucket": meta.Bucket,
-					"path":   strings.Join(segments[:idx+1], "/"),
+					"path":   strings.Join(segmentsToProcess[:idx+1], "/"),
 				}
 				childNode, err := s.upsertNode(tenantID, resourceID, currentParent, "prefix", segment, fullName, attrs)
 				if err != nil {
@@ -1059,8 +1201,6 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 				parentChain = append(parentChain, childNode)
 				ensureNodeAggregate(stats, childNode)
 			}
-		} else if includeBucketAggregate {
-			ensureNodeAggregate(stats, bucketNode)
 		}
 
 		if meta.NodeType != "object" {
@@ -1088,18 +1228,78 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 			attrs["last_modified_at"] = meta.LastModified
 		}
 
-		// 尝试使用插件提取深度元数据
-		enhancedAttrs := s.extractEnhancedMetadata(resourceID, meta, attrs)
+		// 生成fingerprint并记录 - 必须使用完整路径（包含scanPathPrefix）以确保文件唯一性
+		// 否则同一个文件在不同扫描路径下会产生不同的fingerprint
+		fullPath := trimmed
+		if scanPathPrefix != "" && trimmed != "" {
+			fullPath = scanPathPrefix + "/" + trimmed
+		} else if scanPathPrefix != "" {
+			fullPath = scanPathPrefix
+		}
+		fingerprint := models.GenerateObjectFingerprint(resourceID, meta.Bucket, fullPath)
+		if scannedFingerprints != nil {
+			scannedFingerprints[fingerprint] = true
+		}
+
+		// 检查记录是否已存在
+		var existingItem models.MetaItem
+		itemExists := s.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error == nil
+
+		// 根据扫描深度决定是否提取深度元数据
+		var enhancedAttrs models.JSONMap
+		if scanDepth == "deep" {
+			// 深度扫描：提取详细元数据（用于文件预览/搜索）
+			// 传递fullPath用于正确的fingerprint生成
+			enhancedAttrs = s.extractEnhancedMetadataWithCache(resourceID, meta, attrs, fullPath)
+		} else if itemExists {
+			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
+			// 但仍需要更新node_id（文件可能移动到了不同的目录）
+			enhancedAttrs = existingItem.Attributes // 使用已有的attributes
+		} else {
+			// 浅层扫描 + 新记录：使用基础属性
+			enhancedAttrs = attrs
+		}
 
 		sizeVal := meta.SizeBytes
 		objectSizeVal := meta.SizeBytes
-		fullName := composeNodeFullName(objectName, currentParent, "/")
+
+		// 重要：fullName必须基于扫描路径前缀正确计算
+		// Scanner返回的RelativePath是相对于扫描路径的，不是相对于bucket的
+		// 例如：扫描 addp/shapefile 时，文件 shapefile/示例数据.shp 的 RelativePath 是 "示例数据.shp"
+		// 我们需要加上 scanPathPrefix 来得到完整路径
+		fullName := meta.Bucket
+		if scanPathPrefix != "" && trimmed != "" {
+			// 扫描子目录：bucket/scanPathPrefix/relativePath
+			fullName = meta.Bucket + "/" + scanPathPrefix + "/" + trimmed
+		} else if scanPathPrefix != "" {
+			// 扫描子目录但文件在根目录（不应该发生）
+			fullName = meta.Bucket + "/" + scanPathPrefix
+		} else if trimmed != "" {
+			// 扫描整个bucket：bucket/relativePath
+			fullName = meta.Bucket + "/" + trimmed
+		}
+		// 否则 fullName = bucket（bucket级别的对象）
+
+		// Debug logging (using INFO to ensure it shows)
+		s.log.Info("计算fullName和父节点",
+			"meta.Bucket", meta.Bucket,
+			"meta.RelativePath", meta.RelativePath,
+			"trimmed", trimmed,
+			"scanPathPrefix", scanPathPrefix,
+			"calculated_fullName", fullName,
+			"currentParent_id", currentParent.ID,
+			"currentParent_name", currentParent.Name,
+			"objectName", objectName)
+
 		item, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1)
 		if err != nil {
 			return objects, err
 		}
 
-		s.indexObjectAsset(resource, tenantID, resourceID, meta, trimmed, fullName, item)
+		// 只在deep扫描时索引（shallow扫描的数据不完整）
+		if scanDepth == "deep" {
+			s.indexObjectAsset(resource, tenantID, resourceID, meta, trimmed, fullName, item)
+		}
 
 		objects++
 		for idx, node := range parentChain {
@@ -1952,6 +2152,47 @@ func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.O
 	return baseAttrs
 }
 
+// extractEnhancedMetadataWithCache 带缓存检查的元数据提取
+// 如果文件未修改（基于last_modified时间），跳过重新提取
+// fullPath: 文件在bucket中的完整路径（用于fingerprint生成）
+func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta scanner.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
+	// 生成fingerprint以查找已有记录 - 使用传入的fullPath确保一致性
+	bucket, _ := baseAttrs["bucket"].(string)
+	fingerprint := models.GenerateObjectFingerprint(resourceID, bucket, fullPath)
+
+	// 查找已有的meta_item记录
+	var existingItem models.MetaItem
+	err := s.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error
+
+	// 如果找到已有记录，检查last_modified是否变化
+	if err == nil && existingItem.LastModifiedAt != nil && meta.LastModified != nil {
+		// 比较时间（精确到秒）
+		existingTime := existingItem.LastModifiedAt.Truncate(time.Second)
+		newTime := meta.LastModified.Truncate(time.Second)
+
+		if existingTime.Equal(newTime) {
+			// 文件未变化，复用已有的metadata
+			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
+				// 检查是否已经提取过元数据
+				if extracted, ok := existingItem.Attributes["metadata_extracted"].(bool); ok && extracted {
+					s.log.Debug("复用缓存的元数据",
+						"fingerprint", fingerprint,
+						"fullPath", fullPath,
+						"last_modified", existingTime)
+					// 将已有的attributes合并到baseAttrs
+					for key, value := range existingItem.Attributes {
+						baseAttrs[key] = value
+					}
+					return baseAttrs
+				}
+			}
+		}
+	}
+
+	// 文件是新的或已更新，执行完整的元数据提取
+	return s.extractEnhancedMetadata(resourceID, meta, baseAttrs)
+}
+
 // GetObjectMetadata 获取指定对象的元数据
 // 用于Manager模块预览时查询已扫描的元数据
 func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey string) (*models.MetaItem, error) {
@@ -2408,4 +2649,94 @@ func (s *ScanServiceNew) updateScanLogFailed(scanLog *models.ScanLog, errorMsg s
 		scanLog.DurationMs = now.Sub(*scanLog.StartedAt).Milliseconds()
 	}
 	s.db.Save(scanLog)
+}
+
+// GetTablesByResource 获取资源下所有的表（用于Transfer模块）
+// 返回所有已扫描的表的元数据项
+func (s *ScanServiceNew) GetTablesByResource(resourceID, tenantID uint) ([]models.MetaItem, error) {
+	// 查询该资源下的所有 meta_item（表）
+	var items []models.MetaItem
+
+	// 先获取该资源下的所有节点ID（schemas/prefixes）
+	var nodeIDs []uint
+	err := s.db.Model(&models.MetaNode{}).
+		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Pluck("id", &nodeIDs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nodeIDs) == 0 {
+		return []models.MetaItem{}, nil
+	}
+
+	// 查询这些节点下的所有 items（表）
+	// 注意：meta_item 表中的字段名是 node_id，不是 parent_node_id
+	// 使用 Select 明确选择字段，确保 FullName 被加载
+	err = s.db.Select("*").
+		Where("tenant_id = ? AND node_id IN (?) AND deleted_at IS NULL", tenantID, nodeIDs).
+		Order("name").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+// GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
+func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenantID uint) ([]string, error) {
+	// 1. 先获取该资源下的所有节点ID（schema nodes）
+	var nodeIDs []uint
+	err := s.db.Model(&models.MetaNode{}).
+		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Pluck("id", &nodeIDs).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(nodeIDs) == 0 {
+		return []string{}, nil
+	}
+
+	// 2. 查询指定表名的 meta_item
+	// 支持两种格式：带 schema 的全名（如 "products.items"）和不带 schema 的表名（如 "items"）
+	var item models.MetaItem
+	err = s.db.Where("tenant_id = ? AND node_id IN (?) AND (name = ? OR full_name = ?) AND deleted_at IS NULL",
+		tenantID, nodeIDs, tableName, tableName).
+		First(&item).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return []string{}, fmt.Errorf("table '%s' not found in metadata", tableName)
+		}
+		return nil, err
+	}
+
+	// 3. 从 Attributes 中提取字段列表
+	// 字段信息存储在 attributes.fields 中，格式为 []map[string]interface{}
+	fieldsData, ok := item.Attributes["fields"]
+	if !ok {
+		return []string{}, nil
+	}
+
+	fieldsList, ok := fieldsData.([]interface{})
+	if !ok {
+		return []string{}, fmt.Errorf("invalid fields format in metadata")
+	}
+
+	// 4. 提取字段名
+	fieldNames := make([]string, 0, len(fieldsList))
+	for _, fieldData := range fieldsList {
+		fieldMap, ok := fieldData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		fieldName, ok := fieldMap["name"].(string)
+		if !ok {
+			continue
+		}
+		fieldNames = append(fieldNames, fieldName)
+	}
+
+	return fieldNames, nil
 }

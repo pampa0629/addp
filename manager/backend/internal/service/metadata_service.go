@@ -204,9 +204,17 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 	}
 
 	resourceType := strings.ToLower(resource.ResourceType)
+
+	// 点击目录时使用shallow扫描（只列文件名，不做元数据提取）
+	// 点击文件时使用deep扫描（提取详细元数据）
+	scanDepth := "shallow"
+	if req.NodeType == "object" {
+		scanDepth = "deep"
+	}
+
 	payload := map[string]interface{}{
 		"resource_id": resourceID,
-		"scan_depth":  "deep",
+		"scan_depth":  scanDepth,
 		"scan_type":   "manual",
 	}
 

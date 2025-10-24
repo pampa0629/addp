@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
+	"log/slog"
 	"os/signal"
 	"syscall"
 	"time"
@@ -22,8 +22,8 @@ import (
 )
 
 func main() {
-	// 加载 .env 文件（从项目根目录，上3级）
-	commonConfig.LoadEnv(3)
+	// 加载 .env 文件（从项目根目录，上4级：transfer/backend/cmd/worker → 根目录）
+	commonConfig.LoadEnv()
 
 	// 加载配置
 	cfg := config.Load()
@@ -34,34 +34,29 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	// 初始化 Repository 层
-	taskRepo := repository.NewTaskRepository(db)
-	executionRepo := repository.NewExecutionRepository(db)
-	mappingRepo := repository.NewMappingRepository(db)
-	checkpointRepo := repository.NewCheckpointRepository(db)
-
 	// 初始化 Pipeline 组件
 	registry := pipeline.NewConnectorRegistry()
 
 	// 注册所有连接器
-	if err := connector.RegisterAllConnectors(registry); err != nil {
-		log.Fatalf("连接器注册失败: %v", err)
-	}
+	connector.RegisterAllConnectors(registry)
 	log.Printf("✅ 已注册连接器 - Readers: %v, Writers: %v",
 		registry.ListReaders(), registry.ListWriters())
 
-	stateManager := pipeline.NewStateManager(checkpointRepo)
-	metricsCollector := pipeline.NewMetricsCollector()
-	engine := pipeline.NewExecutionEngine(registry, stateManager, metricsCollector)
+	// 创建 logger 和 engine config
+	logger := slog.Default()
+	engineConfig := pipeline.DefaultEngineConfig()
 
-	// 初始化 Service 层
-	taskService := service.NewTaskService(db, engine)
-	executionService := service.NewExecutionService(executionRepo, taskRepo, checkpointRepo)
+	stateManager := pipeline.NewStateManager(db)
+	engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
 
 	// 创建任务队列
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 	defer taskQueue.Close()
+
+	// 初始化 Service 层（传入 taskQueue）
+	taskService := service.NewTaskService(db, engine, cfg, taskQueue)
+	executionService := service.NewExecutionService(db)
 
 	// 创建任务处理器
 	taskHandler := worker.NewTaskHandler(taskService, executionService)
@@ -90,7 +85,9 @@ func main() {
 	mux := asynq.NewServeMux()
 	taskHandler.RegisterHandlers(mux)
 
-	// 创建定时调度器
+	// 创建定时调度器（需要先创建 repository）
+	taskRepo := repository.NewTaskRepository(db)
+	executionRepo := repository.NewExecutionRepository(db)
 	scheduler := worker.NewScheduler(taskRepo, executionRepo, taskQueue)
 	if err := scheduler.Start(context.Background()); err != nil {
 		log.Fatalf("定时调度器启动失败: %v", err)
@@ -99,7 +96,7 @@ func main() {
 
 	// 启动 Worker
 	log.Printf("🚀 Transfer Worker 启动中...")
-	log.Printf("📊 数据库: %s@%s:%d/%s (schema: %s)",
+	log.Printf("📊 数据库: %s@%s:%s/%s (schema: %s)",
 		cfg.DBUser, cfg.DBHost, cfg.DBPort, cfg.DBName, cfg.DBSchema)
 	log.Printf("📮 Redis: %s", redisAddr)
 	log.Printf("🔧 并发数: %d", cfg.ConcurrentTasks)
@@ -132,7 +129,7 @@ func main() {
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// 构建 DSN
 	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable search_path=%s",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
 		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
 	)
 

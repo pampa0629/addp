@@ -26,11 +26,12 @@ type S3Writer struct {
 	uploadOnClose bool
 }
 
-// NewS3Writer 创建 S3 写入器
-func NewS3Writer() *S3Writer {
-	return &S3Writer{
+// NewS3Writer 创建 S3 写入器（工厂函数）
+func NewS3Writer(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
+	writer := &S3Writer{
 		uploadOnClose: true,
 	}
+	return writer, nil
 }
 
 // Open 打开 S3 连接
@@ -44,6 +45,12 @@ func (w *S3Writer) Open(ctx context.Context, config pipeline.ConnectorConfig) er
 	w.fileName = getStringConfig(config, "file_name", "output.json")
 	w.fileType = getStringConfig(config, "file_type", "json")
 	region := getStringConfig(config, "region", "us-east-1")
+	useSSL := getBoolConfig(config, "use_ssl", false) // 默认不使用 SSL（适用于本地 MinIO）
+
+	// Debug logging
+	fmt.Printf("[S3Writer] Config received: %+v\n", config.Config)
+	fmt.Printf("[S3Writer] Parsed: bucket=%s, prefix=%s, fileName=%s, fileType=%s\n",
+		w.bucket, w.prefix, w.fileName, w.fileType)
 
 	if w.bucket == "" {
 		return fmt.Errorf("bucket is required")
@@ -55,6 +62,7 @@ func (w *S3Writer) Open(ctx context.Context, config pipeline.ConnectorConfig) er
 		Region:           aws.String(region),
 		Credentials:      credentials.NewStaticCredentials(accessKey, secretKey, ""),
 		S3ForcePathStyle: aws.Bool(true), // MinIO 需要
+		DisableSSL:       aws.Bool(!useSSL), // 根据配置决定是否使用 SSL
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create AWS session: %w", err)
@@ -146,6 +154,13 @@ func (w *S3Writer) uploadToS3(ctx context.Context) error {
 	// 构建 S3 Key
 	key := filepath.Join(w.prefix, w.fileName)
 
+	fmt.Printf("[S3Writer.uploadToS3] Uploading to S3:\n")
+	fmt.Printf("  Bucket: %s\n", w.bucket)
+	fmt.Printf("  Prefix: %s\n", w.prefix)
+	fmt.Printf("  FileName: %s\n", w.fileName)
+	fmt.Printf("  Final Key: %s\n", key)
+	fmt.Printf("  Data size: %d bytes\n", len(data))
+
 	// 上传到 S3
 	_, err = w.client.PutObjectWithContext(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(w.bucket),
@@ -154,8 +169,10 @@ func (w *S3Writer) uploadToS3(ctx context.Context) error {
 	})
 
 	if err != nil {
+		fmt.Printf("[S3Writer.uploadToS3] Upload FAILED: %v\n", err)
 		return fmt.Errorf("failed to upload to S3: %w", err)
 	}
 
+	fmt.Printf("[S3Writer.uploadToS3] Upload SUCCESS!\n")
 	return nil
 }

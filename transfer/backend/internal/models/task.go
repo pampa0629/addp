@@ -24,6 +24,7 @@ const (
 	TaskStatusSuccess TaskStatus = "success" // 成功
 	TaskStatusFailed  TaskStatus = "failed"  // 失败
 	TaskStatusPaused  TaskStatus = "paused"  // 暂停
+	TaskStatusStopped TaskStatus = "stopped" // 已停止
 )
 
 // TaskMode 任务模式

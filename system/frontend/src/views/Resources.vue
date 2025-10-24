@@ -57,92 +57,11 @@
       width="600px"
       @close="resetForm"
     >
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
-        <el-form-item label="存储引擎类型" prop="resource_type">
-          <el-select
-            v-model="form.resource_type"
-            placeholder="请选择存储引擎类型"
-            @change="handleTypeChange"
-            :disabled="isEdit"
-          >
-            <el-option label="PostgreSQL" value="postgresql" />
-            <el-option label="MinIO" value="minio" />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入资源名称" />
-        </el-form-item>
-
-        <el-form-item label="描述" prop="description">
-          <el-input
-            v-model="form.description"
-            type="textarea"
-            :rows="2"
-            placeholder="请输入资源描述"
-          />
-        </el-form-item>
-
-        <!-- PostgreSQL 配置 -->
-        <template v-if="form.resource_type === 'postgresql'">
-          <el-form-item label="主机地址" prop="connection_info.host">
-            <el-input v-model="form.connection_info.host" placeholder="localhost" />
-          </el-form-item>
-          <el-form-item label="端口" prop="connection_info.port">
-            <el-input-number v-model="form.connection_info.port" :min="1" :max="65535" />
-          </el-form-item>
-          <el-form-item label="数据库名" prop="connection_info.database">
-            <el-input v-model="form.connection_info.database" placeholder="数据库名称" />
-          </el-form-item>
-          <el-form-item label="用户名" prop="connection_info.user">
-            <el-input v-model="form.connection_info.user" placeholder="数据库用户名" />
-          </el-form-item>
-          <el-form-item label="密码" prop="connection_info.password">
-            <el-input
-              v-model="form.connection_info.password"
-              type="password"
-              placeholder="数据库密码"
-              show-password
-            />
-          </el-form-item>
-          <el-form-item label="SSL 模式">
-            <el-select v-model="form.connection_info.sslmode">
-              <el-option label="禁用 (disable)" value="disable" />
-              <el-option label="要求 (require)" value="require" />
-              <el-option label="验证CA (verify-ca)" value="verify-ca" />
-              <el-option label="完全验证 (verify-full)" value="verify-full" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <!-- MinIO 配置 -->
-        <template v-if="form.resource_type === 'minio'">
-          <el-form-item label="端点地址" prop="connection_info.endpoint">
-            <el-input v-model="form.connection_info.endpoint" placeholder="localhost:9000" />
-          </el-form-item>
-          <el-form-item label="Access Key" prop="connection_info.access_key">
-            <el-input v-model="form.connection_info.access_key" placeholder="Access Key" />
-          </el-form-item>
-          <el-form-item label="Secret Key" prop="connection_info.secret_key">
-            <el-input
-              v-model="form.connection_info.secret_key"
-              type="password"
-              placeholder="Secret Key"
-              show-password
-            />
-          </el-form-item>
-          <el-form-item label="Bucket">
-            <el-input v-model="form.connection_info.bucket" placeholder="存储桶名称（可选）" />
-          </el-form-item>
-          <el-form-item label="使用 SSL">
-            <el-switch v-model="form.connection_info.use_ssl" />
-          </el-form-item>
-        </template>
-
-        <el-form-item label="激活状态">
-          <el-switch v-model="form.is_active" />
-        </el-form-item>
-      </el-form>
+      <StorageEngineForm
+        ref="storageFormRef"
+        v-model="form"
+        :is-edit="isEdit"
+      />
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -157,6 +76,7 @@ import { ref, onMounted, computed } from 'vue'
 import { resourcesAPI } from '../api/resources'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { StorageEngineForm } from '@common-ui'
 
 const resources = ref([])
 const loading = ref(false)
@@ -165,7 +85,7 @@ const pageSize = ref(10)
 const total = ref(0)
 
 const dialogVisible = ref(false)
-const formRef = ref(null)
+const storageFormRef = ref(null)
 const testing = ref(false)
 const submitting = ref(false)
 const isEdit = ref(false)
@@ -178,19 +98,6 @@ const form = ref({
   is_active: true,
   connection_info: {}
 })
-
-const rules = {
-  resource_type: [{ required: true, message: '请选择存储引擎类型', trigger: 'change' }],
-  name: [{ required: true, message: '请输入资源名称', trigger: 'blur' }],
-  'connection_info.host': [{ required: true, message: '请输入主机地址', trigger: 'blur' }],
-  'connection_info.port': [{ required: true, message: '请输入端口', trigger: 'blur' }],
-  'connection_info.database': [{ required: true, message: '请输入数据库名', trigger: 'blur' }],
-  'connection_info.user': [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  'connection_info.password': [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  'connection_info.endpoint': [{ required: true, message: '请输入端点地址', trigger: 'blur' }],
-  'connection_info.access_key': [{ required: true, message: '请输入Access Key', trigger: 'blur' }],
-  'connection_info.secret_key': [{ required: true, message: '请输入Secret Key', trigger: 'blur' }]
-}
 
 const dialogTitle = computed(() => isEdit.value ? '编辑存储引擎' : '新增存储引擎')
 
@@ -253,30 +160,8 @@ const editResource = (row) => {
   dialogVisible.value = true
 }
 
-const handleTypeChange = (type) => {
-  // 初始化连接信息
-  if (type === 'postgresql') {
-    form.value.connection_info = {
-      host: 'localhost',
-      port: 5432,
-      database: '',
-      user: '',
-      password: '',
-      sslmode: 'disable'
-    }
-  } else if (type === 'minio') {
-    form.value.connection_info = {
-      endpoint: 'localhost:9000',
-      access_key: '',
-      secret_key: '',
-      bucket: '',
-      use_ssl: false
-    }
-  }
-}
-
 const testBeforeCreate = async () => {
-  const valid = await formRef.value.validate().catch(() => false)
+  const valid = await storageFormRef.value?.validate()
   if (!valid) {
     ElMessage.warning('请完整填写连接信息')
     return
@@ -322,7 +207,7 @@ const testConnection = async (row) => {
 }
 
 const submitForm = async () => {
-  const valid = await formRef.value.validate().catch(() => false)
+  const valid = await storageFormRef.value?.validate()
   if (!valid) return
 
   submitting.value = true
@@ -367,7 +252,7 @@ const resetForm = () => {
     is_active: true,
     connection_info: {}
   }
-  formRef.value?.clearValidate()
+  storageFormRef.value?.reset()
 }
 
 onMounted(() => {

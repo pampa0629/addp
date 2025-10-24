@@ -74,8 +74,11 @@ func (w *JDBCWriter) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 		return err
 	}
 
+	// 标准化 driver 名称（postgresql -> postgres）
+	driverName := w.normalizeDriverName(writerConfig.Driver)
+
 	// 打开数据库连接
-	db, err := sql.Open(writerConfig.Driver, connStr)
+	db, err := sql.Open(driverName, connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -218,10 +221,20 @@ func (w *JDBCWriter) buildInsertSQL() string {
 	}
 }
 
+// normalizeDriverName 标准化 driver 名称为 sql.Open 识别的名称
+func (w *JDBCWriter) normalizeDriverName(driver string) string {
+	switch driver {
+	case "postgresql":
+		return "postgres"
+	default:
+		return driver
+	}
+}
+
 // buildConnectionString 构建连接字符串
 func (w *JDBCWriter) buildConnectionString(config JDBCWriterConfig) (string, error) {
 	switch config.Driver {
-	case "postgres":
+	case "postgres", "postgresql":
 		sslMode := config.SSLMode
 		if sslMode == "" {
 			sslMode = "disable"

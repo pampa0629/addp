@@ -122,6 +122,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		resourceHandler := NewResourceHandler(resourceService)
 		internal.GET("/resources", resourceHandler.ListInternal)
 		internal.GET("/resources/:id", resourceHandler.GetByIDInternal)
+		internal.POST("/resources", resourceHandler.CreateInternal)
 	}
 
 	return router

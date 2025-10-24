@@ -106,7 +106,7 @@ type Field struct {
 	// Name 字段名
 	Name string
 
-	// Type 字段类型（string, int, float, bool, datetime, json 等）
+	// Type 字段类型（string, int, float, bool, datetime, json, geometry 等）
 	Type string
 
 	// Nullable 是否可为空
@@ -120,6 +120,18 @@ type Field struct {
 
 	// Format 格式说明（如日期格式 "2006-01-02 15:04:05"）
 	Format string
+
+	// SpatialType 空间数据类型（geometry, geography, point, linestring, polygon, multipoint 等）
+	SpatialType string
+
+	// SRID 空间参考系统 ID（如 4326 for WGS84, 3857 for Web Mercator）
+	SRID int
+
+	// Dimension 空间维度（2D, 3D, 4D）
+	Dimension string
+
+	// ExtendedAttributes 扩展属性（用于存储自定义元数据）
+	ExtendedAttributes map[string]interface{}
 }
 
 // ConnectorConfig 连接器配置

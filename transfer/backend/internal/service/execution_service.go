@@ -67,6 +67,18 @@ func (s *ExecutionService) ListExecutions(ctx context.Context, taskID, tenantID 
 	return s.execRepo.ListByTaskID(taskID, page, pageSize)
 }
 
+// ListAllExecutions 列出租户的所有执行记录（跨任务）
+func (s *ExecutionService) ListAllExecutions(ctx context.Context, tenantID uint, filters map[string]interface{}, page, pageSize int) ([]models.TaskExecution, int64, error) {
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = 20
+	}
+
+	return s.execRepo.ListAllExecutions(tenantID, filters, page, pageSize)
+}
+
 // GetLatestExecution 获取任务的最新执行记录
 func (s *ExecutionService) GetLatestExecution(ctx context.Context, taskID, tenantID uint) (*models.TaskExecution, error) {
 	// 检查任务权限

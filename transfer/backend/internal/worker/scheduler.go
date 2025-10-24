@@ -8,7 +8,6 @@ import (
 
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
-	"github.com/hibiken/asynq"
 	"github.com/robfig/cron/v3"
 )
 

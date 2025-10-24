@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
@@ -90,6 +90,7 @@ const task = ref({})
 const executions = ref([])
 
 const loadTask = async () => {
+  if (!route.params.id) return
   loading.value = true
   try {
     task.value = await taskAPI.get(route.params.id)
@@ -140,9 +141,18 @@ const formatDate = (date) => {
   return date ? new Date(date).toLocaleString('zh-CN') : '-'
 }
 
+let refreshTimer = null
+
 onMounted(() => {
   loadTask()
-  setInterval(loadTask, 5000)
+  refreshTimer = setInterval(loadTask, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 

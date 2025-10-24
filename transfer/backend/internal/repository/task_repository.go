@@ -242,6 +242,39 @@ func (r *ExecutionRepository) GetRunningExecutions() ([]models.TaskExecution, er
 	return executions, err
 }
 
+// ListAllExecutions 列出租户的所有执行记录（跨任务）
+func (r *ExecutionRepository) ListAllExecutions(tenantID uint, filters map[string]interface{}, page, pageSize int) ([]models.TaskExecution, int64, error) {
+	var executions []models.TaskExecution
+	var total int64
+
+	query := r.db.Model(&models.TaskExecution{}).
+		Joins("JOIN transfer.tasks ON transfer.task_executions.task_id = transfer.tasks.id").
+		Where("transfer.tasks.tenant_id = ?", tenantID)
+
+	// 应用过滤条件
+	if status, ok := filters["status"].(string); ok && status != "" {
+		query = query.Where("transfer.task_executions.status = ?", status)
+	}
+	if taskID, ok := filters["task_id"].(uint); ok && taskID > 0 {
+		query = query.Where("transfer.task_executions.task_id = ?", taskID)
+	}
+
+	// 计算总数
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询，选择 task_executions 的所有字段
+	offset := (page - 1) * pageSize
+	err := query.Select("transfer.task_executions.*").
+		Offset(offset).
+		Limit(pageSize).
+		Order("transfer.task_executions.start_time DESC").
+		Find(&executions).Error
+
+	return executions, total, err
+}
+
 // MappingRepository 字段映射数据访问层
 type MappingRepository struct {
 	db *gorm.DB

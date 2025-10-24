@@ -62,6 +62,8 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		// 元数据相关
 		api.GET("/metadata/object", handler.GetObjectMetadata)
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
+		api.GET("/metadata/tables", handler.GetTables)
+		api.GET("/metadata/fields", handler.GetTableFields)
 	}
 
 	return router

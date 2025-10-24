@@ -309,7 +309,13 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 		}
 	}
 
-	resp, err := s.scanService.ScanResourceWithProgress(run.ResourceID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, reporter)
+	// 使用params中的scan_depth，如果未设置则默认为deep
+	scanDepth := params.ScanDepth
+	if scanDepth == "" {
+		scanDepth = "deep"
+	}
+
+	resp, err := s.scanService.ScanResourceWithDepth(run.ResourceID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
 	completeTime := time.Now()
 
 	if err != nil {

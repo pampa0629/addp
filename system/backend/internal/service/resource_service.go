@@ -64,6 +64,39 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 	return s.sanitizeResource(resource), nil
 }
 
+// CreateInternal 供内部服务调用创建资源
+func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tenantID uint, createdBy *uint) (*models.Resource, error) {
+	if req == nil {
+		return nil, errors.New("无效的请求数据")
+	}
+
+	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("加密连接信息失败: %w", err)
+	}
+
+	var tenantPtr *uint
+	if tenantID > 0 {
+		tenantPtr = &tenantID
+	}
+
+	resource := &models.Resource{
+		Name:           req.Name,
+		ResourceType:   req.ResourceType,
+		ConnectionInfo: encryptedConnInfo,
+		Description:    req.Description,
+		TenantID:       tenantPtr,
+		IsActive:       true,
+		CreatedBy:      createdBy,
+	}
+
+	if err := s.repo.Create(resource); err != nil {
+		return nil, err
+	}
+
+	return s.sanitizeResource(resource), nil
+}
+
 func (s *ResourceService) GetByID(id uint, currentUserID uint) (*models.Resource, error) {
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {

@@ -4,129 +4,33 @@ import (
 	"github.com/addp/transfer/pkg/pipeline"
 )
 
-// RegisterAllConnectors 注册所有内置连接器
-func RegisterAllConnectors(registry *pipeline.ConnectorRegistry) error {
-	// 注册 JDBC Reader
-	if err := registry.RegisterReader("jdbc", NewJDBCReader); err != nil {
-		return err
-	}
+// RegisterAllConnectors 注册所有连接器到全局注册表
+func RegisterAllConnectors(registry *pipeline.ConnectorRegistry) {
+	// 注册 JDBC Reader/Writer (PostgreSQL, MySQL, etc.)
+	registry.RegisterReader("jdbc", NewJDBCReader)        // 通用 JDBC 类型
+	registry.RegisterReader("postgresql", NewJDBCReader)
+	registry.RegisterReader("mysql", NewJDBCReader)
+	registry.RegisterWriter("jdbc", NewJDBCWriter)        // 通用 JDBC 类型
+	registry.RegisterWriter("postgresql", NewJDBCWriter)
+	registry.RegisterWriter("mysql", NewJDBCWriter)
 
-	if err := registry.RegisterReader("mysql", NewJDBCReader); err != nil {
-		return err
-	}
+	// 注册 Shapefile Reader/Writer
+	registry.RegisterReader("shapefile", NewShapefileReader)
+	registry.RegisterWriter("shapefile", NewShapefileWriter)
 
-	if err := registry.RegisterReader("postgresql", NewJDBCReader); err != nil {
-		return err
-	}
+	// 注册 GeoPackage Reader/Writer
+	registry.RegisterReader("geopackage", NewGeoPackageReader)
+	registry.RegisterWriter("geopackage", NewGeoPackageWriter)
 
-	if err := registry.RegisterReader("postgres", NewJDBCReader); err != nil {
-		return err
-	}
+	// 注册 GeoJSON Reader/Writer
+	registry.RegisterReader("geojson", NewGeoJSONReader)
+	registry.RegisterWriter("geojson", NewGeoJSONWriter)
 
-	// 注册 JDBC Writer
-	if err := registry.RegisterWriter("jdbc", NewJDBCWriter); err != nil {
-		return err
-	}
+	// 注册 S3/MinIO Writer
+	registry.RegisterWriter("s3", NewS3Writer)
+	registry.RegisterWriter("minio", NewS3Writer)
 
-	if err := registry.RegisterWriter("mysql", NewJDBCWriter); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("postgresql", NewJDBCWriter); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("postgres", NewJDBCWriter); err != nil {
-		return err
-	}
-
-	// 注册 File Reader
-	if err := registry.RegisterReader("file", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewFileReader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterReader("csv", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewFileReader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterReader("json", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewFileReader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterReader("jsonl", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewFileReader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	// 注册 File Writer
-	if err := registry.RegisterWriter("file", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewFileWriter()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("csv", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewFileWriter()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("json", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewFileWriter()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("jsonl", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewFileWriter()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	// 注册 S3 Reader
-	if err := registry.RegisterReader("s3", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewS3Reader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterReader("minio", func(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
-		reader := NewS3Reader()
-		return reader, nil
-	}); err != nil {
-		return err
-	}
-
-	// 注册 S3 Writer
-	if err := registry.RegisterWriter("s3", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewS3Writer()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	if err := registry.RegisterWriter("minio", func(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
-		writer := NewS3Writer()
-		return writer, nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	// TODO: 注册 File Reader/Writer (not implemented yet)
+	// registry.RegisterReader("file", NewFileReader)
+	// registry.RegisterWriter("file", NewFileWriter)
 }

@@ -46,8 +46,13 @@ type ExecuteTaskPayload struct {
 	TenantID    uint `json:"tenant_id"`
 }
 
-// EnqueueExecuteTask 将任务加入队列
-func (q *TaskQueue) EnqueueExecuteTask(ctx context.Context, taskID, executionID, tenantID uint, opts ...asynq.Option) error {
+// EnqueueExecuteTask 将任务加入队列（实现 TaskQueue 接口）
+func (q *TaskQueue) EnqueueExecuteTask(ctx context.Context, taskID, executionID, tenantID uint) error {
+	return q.EnqueueExecuteTaskWithOptions(ctx, taskID, executionID, tenantID)
+}
+
+// EnqueueExecuteTaskWithOptions 将任务加入队列（支持 Asynq 选项）
+func (q *TaskQueue) EnqueueExecuteTaskWithOptions(ctx context.Context, taskID, executionID, tenantID uint, opts ...asynq.Option) error {
 	payload, err := json.Marshal(ExecuteTaskPayload{
 		TaskID:      taskID,
 		ExecutionID: executionID,
@@ -70,7 +75,7 @@ func (q *TaskQueue) EnqueueExecuteTask(ctx context.Context, taskID, executionID,
 
 // EnqueueScheduledTask 调度延迟执行的任务
 func (q *TaskQueue) EnqueueScheduledTask(ctx context.Context, taskID, executionID, tenantID uint, executeAt time.Time) error {
-	return q.EnqueueExecuteTask(ctx, taskID, executionID, tenantID,
+	return q.EnqueueExecuteTaskWithOptions(ctx, taskID, executionID, tenantID,
 		asynq.ProcessAt(executeAt),
 	)
 }
@@ -114,7 +119,8 @@ type QueueStats struct {
 
 // CancelTask 取消队列中的任务
 func (q *TaskQueue) CancelTask(taskID string) error {
-	err := q.inspector.DeleteTask(asynq.DefaultQueueName, taskID)
+	// asynq 使用 "default" 作为默认队列名称
+	err := q.inspector.DeleteTask("default", taskID)
 	if err != nil {
 		return fmt.Errorf("failed to cancel task: %w", err)
 	}

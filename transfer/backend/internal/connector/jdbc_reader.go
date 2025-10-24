@@ -80,8 +80,11 @@ func (r *JDBCReader) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 		return err
 	}
 
+	// 标准化 driver 名称（postgresql -> postgres）
+	driverName := r.normalizeDriverName(jdbcConfig.Driver)
+
 	// 打开数据库连接
-	db, err := sql.Open(jdbcConfig.Driver, connStr)
+	db, err := sql.Open(driverName, connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
@@ -196,10 +199,20 @@ func (r *JDBCReader) Mode() pipeline.ReaderMode {
 	return r.mode
 }
 
+// normalizeDriverName 标准化 driver 名称为 sql.Open 识别的名称
+func (r *JDBCReader) normalizeDriverName(driver string) string {
+	switch driver {
+	case "postgresql":
+		return "postgres"
+	default:
+		return driver
+	}
+}
+
 // buildConnectionString 构建连接字符串
 func (r *JDBCReader) buildConnectionString(config JDBCConfig) (string, error) {
 	switch config.Driver {
-	case "postgres":
+	case "postgres", "postgresql":
 		sslMode := config.SSLMode
 		if sslMode == "" {
 			sslMode = "disable"
@@ -341,6 +354,22 @@ func (r *JDBCReader) mapDatabaseType(dbType string) string {
 		return "datetime"
 	case "JSON", "JSONB":
 		return "json"
+	// PostGIS 空间类型
+	case "GEOMETRY", "GEOGRAPHY":
+		return "geometry"
+	case "POINT":
+		return "geometry"
+	case "LINESTRING":
+		return "geometry"
+	case "POLYGON":
+		return "geometry"
+	case "MULTIPOINT", "MULTILINESTRING", "MULTIPOLYGON":
+		return "geometry"
+	case "GEOMETRYCOLLECTION":
+		return "geometry"
+	// MySQL Spatial 类型
+	case "GEOM", "GEOMCOLLECTION":
+		return "geometry"
 	default:
 		return "string"
 	}

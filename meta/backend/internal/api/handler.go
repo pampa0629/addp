@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -557,4 +558,84 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 		token = token[7:]
 	}
 	return token, token != ""
+}
+
+// GetTables 获取资源的表列表（用于Transfer模块字段选择）
+// GET /api/metadata/tables?resource_id=1
+func (h *Handler) GetTables(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	if resourceIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id"})
+		return
+	}
+
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	// 获取该资源下的所有表
+	tables, err := h.scanService.GetTablesByResource(uint(resourceID), tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 调试：打印前3个表的信息到标准输出
+	fmt.Printf("[GetTables] Found %d tables\n", len(tables))
+	for i, table := range tables {
+		if i < 3 {
+			fmt.Printf("[GetTables] Table %d: Name=%s, FullName='%s'\n", i, table.Name, table.FullName)
+		}
+	}
+
+	// 返回表名列表（优先使用 FullName，如果为空则使用 Name）
+	tableNames := make([]string, len(tables))
+	for i, table := range tables {
+		// FullName 包含 schema 前缀（如 sales.orders），适用于 PostgreSQL
+		// 如果 FullName 为空，则回退到 Name（用于向后兼容）
+		if table.FullName != "" {
+			tableNames[i] = table.FullName
+		} else {
+			tableNames[i] = table.Name
+		}
+	}
+
+	c.JSON(http.StatusOK, tableNames)
+}
+
+// GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
+// GET /api/metadata/fields?resource_id=1&table_name=users
+func (h *Handler) GetTableFields(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	tableName := c.Query("table_name")
+
+	if resourceIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id"})
+		return
+	}
+	if tableName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing table_name"})
+		return
+	}
+
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	// 获取表字段信息
+	fields, err := h.scanService.GetTableFields(uint(resourceID), tableName, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, fields)
 }

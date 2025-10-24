@@ -208,6 +208,34 @@ func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	})
 }
 
+type internalResourceCreateRequest struct {
+	models.ResourceCreateRequest
+	TenantID  *uint `json:"tenant_id"`
+	CreatedBy *uint `json:"created_by"`
+}
+
+// CreateInternal 内部服务创建资源
+func (h *ResourceHandler) CreateInternal(c *gin.Context) {
+	var req internalResourceCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var tenantID uint
+	if req.TenantID != nil {
+		tenantID = *req.TenantID
+	}
+
+	resource, err := h.resourceService.CreateInternal(&req.ResourceCreateRequest, tenantID, req.CreatedBy)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, resource)
+}
+
 // ============ 内部 API（服务间调用）============
 
 // ListInternal 内部资源列表查询（无需用户认证，用于服务间调用）

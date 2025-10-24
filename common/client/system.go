@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -137,4 +138,45 @@ func (c *SystemClient) ListResources(resourceType string, tenantID uint) ([]mode
 	}
 
 	return resources, nil
+}
+
+// CreateResource 创建资源（支持内部或用户接口）
+func (c *SystemClient) CreateResource(payload map[string]interface{}) (*models.Resource, error) {
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	var url string
+	if c.internalKey != "" {
+		url = fmt.Sprintf("%s/internal/resources", c.baseURL)
+	} else {
+		url = fmt.Sprintf("%s/api/resources", c.baseURL)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resource models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resource); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &resource, nil
 }

@@ -374,7 +374,6 @@ volumes:
     driver: local
   elasticsearch_data:
     driver: local
-    driver: local
 
 networks:
   addp-network:

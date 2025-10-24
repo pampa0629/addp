@@ -71,6 +71,21 @@ if [ -d ".dev-pids" ]; then
     fi
   fi
 
+  if [ -f ".dev-pids/transfer-worker.pid" ]; then
+    TRANSFER_WORKER_PID=$(cat .dev-pids/transfer-worker.pid)
+    if ps -p $TRANSFER_WORKER_PID > /dev/null 2>&1; then
+      kill $TRANSFER_WORKER_PID
+      # 等待进程真正退出
+      for i in {1..10}; do
+        if ! ps -p $TRANSFER_WORKER_PID > /dev/null 2>&1; then
+          break
+        fi
+        sleep 0.5
+      done
+      echo "✓ Transfer Worker 已停止 (PID: $TRANSFER_WORKER_PID)"
+    fi
+  fi
+
   if [ -f ".dev-pids/gateway.pid" ]; then
     GATEWAY_PID=$(cat .dev-pids/gateway.pid)
     if ps -p $GATEWAY_PID > /dev/null 2>&1; then
@@ -99,6 +114,7 @@ MODULES=(
   "manager/backend|go run cmd/server/main.go"
   "meta/backend|go run cmd/server/main.go"
   "transfer/backend|go run cmd/server/main.go"
+  "transfer/backend|go run cmd/worker/main.go"
   "gateway|go run cmd/gateway/main.go"
 )
 

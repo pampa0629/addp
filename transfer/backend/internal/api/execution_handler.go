@@ -49,7 +49,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
-	// 如果指定了 task_id，调用 GetTaskExecutions
+	// 如果指定了 task_id，调用单任务执行记录查询
 	if taskIDStr := c.Query("task_id"); taskIDStr != "" {
 		if taskID, err := strconv.ParseUint(taskIDStr, 10, 32); err == nil {
 			executions, total, err := h.executionService.ListExecutions(c.Request.Context(), uint(taskID), tenantID, page, pageSize)
@@ -69,8 +69,25 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 		}
 	}
 
-	// TODO: 实现全局执行列表（所有任务的执行记录）
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "Global execution listing not yet implemented. Please specify task_id parameter."})
+	// 全局执行列表（所有任务的执行记录）
+	filters := make(map[string]interface{})
+	if status := c.Query("status"); status != "" {
+		filters["status"] = status
+	}
+
+	executions, total, err := h.executionService.ListAllExecutions(c.Request.Context(), tenantID, filters, page, pageSize)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"data":       executions,
+		"total":      total,
+		"page":       page,
+		"page_size":  pageSize,
+		"total_page": (total + int64(pageSize) - 1) / int64(pageSize),
+	})
 }
 
 // GetTaskExecutions 获取指定任务的执行记录

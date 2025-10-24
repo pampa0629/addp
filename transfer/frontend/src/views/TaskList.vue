@@ -171,6 +171,12 @@ const loadTasks = async () => {
       page_size: pagination.value.page_size,
       ...searchForm.value
     }
+    Object.keys(params).forEach((key) => {
+      const value = params[key]
+      if (value === '' || value === null || value === undefined) {
+        delete params[key]
+      }
+    })
     const res = await taskAPI.list(params)
     tasks.value = res.data || []
     pagination.value.total = res.total || 0

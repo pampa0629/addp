@@ -6,6 +6,12 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     port: 5176,
+    fs: {
+      allow: [
+        resolve(__dirname, '..'),
+        resolve(__dirname, '../../common')
+      ]
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8083',
@@ -15,7 +21,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
+      '@': resolve(__dirname, 'src'),
+      '@common-ui': resolve(__dirname, '../../common/frontend')
     }
   },
   base: '/transfer/'

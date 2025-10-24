@@ -17,6 +17,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// TaskQueue 任务队列接口（避免循环依赖）
+type TaskQueue interface {
+	EnqueueExecuteTask(ctx context.Context, taskID, executionID, tenantID uint) error
+	Close() error
+}
+
 // TaskService 任务服务
 type TaskService struct {
 	taskRepo      *repository.TaskRepository
@@ -25,6 +31,7 @@ type TaskService struct {
 	engine        *pipeline.ExecutionEngine
 	cfg           *config.Config
 	systemClient  *commonClient.SystemClient
+	taskQueue     TaskQueue
 	logger        *slog.Logger
 }
 
@@ -33,6 +40,7 @@ func NewTaskService(
 	db *gorm.DB,
 	engine *pipeline.ExecutionEngine,
 	cfg *config.Config,
+	taskQueue TaskQueue,
 ) *TaskService {
 	// 创建 SystemClient（使用内部 API Key 进行服务间调用）
 	var systemClient *commonClient.SystemClient
@@ -58,6 +66,7 @@ func NewTaskService(
 		execRepo:     repository.NewExecutionRepository(db),
 		mappingRepo:  repository.NewMappingRepository(db),
 		engine:       engine,
+		taskQueue:    taskQueue,
 		cfg:          cfg,
 		systemClient: systemClient,
 		logger:       logger.With("component", "task_service"),
@@ -258,8 +267,19 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 		s.logger.Warn("failed to update task status", "error", err)
 	}
 
-	// TODO: 将任务提交到队列（Asynq）
-	// 这里先返回执行记录，实际执行由 Worker 处理
+	// 将任务提交到队列（Asynq）
+	if s.taskQueue != nil {
+		if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
+			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
+			// 更新任务状态为 failed
+			s.taskRepo.UpdateStatus(id, models.TaskStatusFailed)
+			s.execRepo.UpdateStatus(execution.ID, models.ExecutionStatusFailed)
+			return nil, fmt.Errorf("failed to enqueue task: %w", err)
+		}
+		s.logger.Info("task enqueued to worker", "task_id", id, "execution_id", execution.ID)
+	} else {
+		s.logger.Warn("task queue not available, task will not be executed", "task_id", id)
+	}
 
 	s.logger.Info("task started", "task_id", id, "execution_id", execution.ID)
 	return execution, nil
@@ -573,16 +593,33 @@ func (s *TaskService) resolveConnectorConfig(
 
 			// 合并 task.config 中的额外配置（如 query, table 等）
 			if taskConnectorConfig, ok := taskConfig[configKey].(map[string]interface{}); ok {
+				s.logger.Info("merging task config", "configKey", configKey, "resource_type", resource.ResourceType)
 				for k, v := range taskConnectorConfig {
 					// 不覆盖资源配置中的连接信息
 					if k != "host" && k != "port" && k != "user" && k != "password" &&
 						k != "database" && k != "driver" && k != "endpoint" &&
 						k != "access_key" && k != "secret_key" && k != "bucket" {
-						connectorConfig[k] = v
+
+						// 特殊处理：将 path/scope 映射到 file_name/prefix（用于 S3 Writer）
+						if k == "path" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+							s.logger.Info("mapping path to file_name", "value", v)
+							connectorConfig["file_name"] = v
+						} else if k == "scope" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+							s.logger.Debug("ignoring scope for S3/MinIO target", "value", v)
+							// scope对于对象存储不是目录，忽略
+						} else if k == "format" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+							// 将 format 映射到 file_type（S3Writer 期望的字段名）
+							s.logger.Info("mapping format to file_type", "value", v)
+							connectorConfig["file_type"] = v
+						} else {
+							s.logger.Debug("adding config", "key", k, "value", v)
+							connectorConfig[k] = v
+						}
 					}
 				}
 			}
 
+			s.logger.Info("final connector config", "config", connectorConfig)
 			return connectorConfig, nil
 		}
 	}
@@ -613,14 +650,18 @@ func (s *TaskService) resourceToConnectorConfig(resource *commonModels.Resource)
 		if port, ok := connInfo["port"].(float64); ok {
 			connectorConfig["port"] = int(port)
 		}
+		// 注意：JDBCConfig 使用 "username" 而不是 "user"
 		if user, ok := connInfo["user"].(string); ok {
-			connectorConfig["user"] = user
+			connectorConfig["username"] = user
 		}
 		if password, ok := connInfo["password"].(string); ok {
 			connectorConfig["password"] = password
 		}
 		if database, ok := connInfo["database"].(string); ok {
 			connectorConfig["database"] = database
+		}
+		if sslmode, ok := connInfo["sslmode"].(string); ok {
+			connectorConfig["ssl_mode"] = sslmode
 		}
 
 	case "s3", "minio":
@@ -640,6 +681,12 @@ func (s *TaskService) resourceToConnectorConfig(resource *commonModels.Resource)
 		}
 		if region, ok := connInfo["region"].(string); ok {
 			connectorConfig["region"] = region
+		}
+		// 处理 use_ssl 字段（默认为 false，适用于本地 MinIO）
+		if useSSL, ok := connInfo["use_ssl"].(bool); ok {
+			connectorConfig["use_ssl"] = useSSL
+		} else {
+			connectorConfig["use_ssl"] = false
 		}
 
 	default:

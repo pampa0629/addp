@@ -35,13 +35,19 @@ const routes = [
   {
     path: '/tasks/create',
     name: 'TaskCreate',
-    component: () => import('@/views/TaskForm.vue'),
+    component: () => import('@/views/TaskWizard.vue'),
     meta: { requiresAuth: true, title: '创建任务-数据传输' }
+  },
+  {
+    path: '/tasks/create-simple',
+    name: 'TaskCreateSimple',
+    component: () => import('@/views/TaskForm.vue'),
+    meta: { requiresAuth: true, title: '快速创建-数据传输' }
   },
   {
     path: '/tasks/:id/edit',
     name: 'TaskEdit',
-    component: () => import('@/views/TaskForm.vue'),
+    component: () => import('@/views/TaskWizard.vue'),
     meta: { requiresAuth: true, title: '编辑任务-数据传输' }
   },
   {
