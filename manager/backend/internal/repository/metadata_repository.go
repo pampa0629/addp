@@ -471,12 +471,19 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint) ([]models
 // GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
 func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
 	var item models.MetaItemLite
+
+	// 构建完整路径（bucket/path）用于匹配 attributes->>'path'
+	fullPath := bucketName
+	if objectPath != "" {
+		fullPath = bucketName + "/" + strings.TrimLeft(objectPath, "/")
+	}
+
 	err := r.db.Table("meta_item AS i").
 		Select("i.id, i.res_id AS resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
 		Where("i.res_id = ?", resourceID).
 		Where("i.item_type = ?", "object").
 		Where("(i.attributes ->> 'bucket') = ?", bucketName).
-		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ?", objectPath, objectPath).
+		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ? OR i.full_name = ?", fullPath, objectPath, fullPath).
 		Order("i.updated_at DESC").  // 优先返回最新更新的记录（通常有更完整的元数据）
 		First(&item).Error
 	if err != nil {

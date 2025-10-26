@@ -1,13 +1,16 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -17,16 +20,18 @@ var (
 )
 
 type ResourceService struct {
-	repo          *repository.ResourceRepository
-	userRepo      *repository.UserRepository
-	encryptionKey []byte
+	repo           *repository.ResourceRepository
+	userRepo       *repository.UserRepository
+	encryptionKey  []byte
+	eventPublisher *events.ResourceEventPublisher
 }
 
-func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository, encryptionKey []byte) *ResourceService {
+func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *ResourceService {
 	return &ResourceService{
-		repo:          repo,
-		userRepo:      userRepo,
-		encryptionKey: encryptionKey,
+		repo:           repo,
+		userRepo:       userRepo,
+		encryptionKey:  encryptionKey,
+		eventPublisher: events.NewResourceEventPublisher(redisClient, nil),
 	}
 }
 
@@ -61,6 +66,11 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, err
 	}
 
+	// 发布资源创建事件
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionCreate)
+	}
+
 	return s.sanitizeResource(resource), nil
 }
 
@@ -92,6 +102,11 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 
 	if err := s.repo.Create(resource); err != nil {
 		return nil, err
+	}
+
+	// 发布资源创建事件
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionCreate)
 	}
 
 	return s.sanitizeResource(resource), nil
@@ -199,6 +214,11 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 		return nil, err
 	}
 
+	// 发布资源更新事件
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionUpdate)
+	}
+
 	return s.sanitizeResource(resource), nil
 }
 
@@ -224,7 +244,16 @@ func (s *ResourceService) Delete(id uint, currentUserID uint) error {
 		return err
 	}
 
-	return s.repo.Delete(id)
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+
+	// 发布资源删除事件
+	if s.eventPublisher != nil {
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), id, events.ActionDelete)
+	}
+
+	return nil
 }
 
 // ListInternal 内部服务调用的资源列表查询（不做租户权限检查）

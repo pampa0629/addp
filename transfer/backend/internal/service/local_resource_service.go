@@ -7,11 +7,13 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"errors"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/events"
 	commonLogger "github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonUtils "github.com/addp/common/utils"
@@ -20,6 +22,7 @@ import (
 	"github.com/addp/transfer/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	_ "github.com/lib/pq" // PostgreSQL driver for connection tests
@@ -30,27 +33,59 @@ var (
 	ErrResourceAccessDenied      = errors.New("resource not accessible")
 )
 
+// resourceCacheEntry 缓存条目，包含资源和过期时间
+type resourceCacheEntry struct {
+	resource  *commonModels.Resource
+	expiresAt time.Time
+}
+
 // LocalResourceService 提供 Transfer 模块的本地存储引擎管理能力
 type LocalResourceService struct {
-	repo         *repository.LocalResourceRepository
-	systemClient *commonClient.SystemClient
-	logger       *slog.Logger
-	cfg          *config.Config
+	repo            *repository.LocalResourceRepository
+	systemClient    *commonClient.SystemClient
+	logger          *slog.Logger
+	cfg             *config.Config
+	cacheMu         sync.RWMutex
+	resourceCache   map[uint]*resourceCacheEntry
+	cacheTTL        time.Duration // 缓存生存时间，默认 2 分钟（Transfer 使用较短TTL）
+	eventSubscriber *events.ResourceEventSubscriber
 }
 
 // NewLocalResourceService 创建 Service
-func NewLocalResourceService(db *gorm.DB, cfg *config.Config) *LocalResourceService {
+func NewLocalResourceService(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *LocalResourceService {
 	var systemClient *commonClient.SystemClient
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	}
 
-	return &LocalResourceService{
-		repo:         repository.NewLocalResourceRepository(db),
-		systemClient: systemClient,
-		logger:       commonLogger.With("component", "local_resource_service"),
-		cfg:          cfg,
+	service := &LocalResourceService{
+		repo:          repository.NewLocalResourceRepository(db),
+		systemClient:  systemClient,
+		logger:        commonLogger.With("component", "local_resource_service"),
+		cfg:           cfg,
+		resourceCache: make(map[uint]*resourceCacheEntry),
+		cacheTTL:      2 * time.Minute, // Transfer 使用 2 分钟 TTL
 	}
+
+	// 初始化 Redis 事件订阅器
+	if redisClient != nil {
+		service.eventSubscriber = events.NewResourceEventSubscriber(
+			redisClient,
+			service.handleResourceChangeEvent,
+			service.logger,
+		)
+		// 启动订阅（在后台 goroutine 中）
+		go func() {
+			if err := service.eventSubscriber.Start(); err != nil {
+				service.logger.Error("资源事件订阅器启动失败", "error", err)
+			}
+		}()
+		service.logger.Info("资源事件订阅器已启动")
+	} else {
+		service.logger.Warn("Redis 未配置，资源变更事件同步功能将被禁用")
+	}
+
+	return service
 }
 
 // List 返回指定租户下的本地存储引擎列表
@@ -91,13 +126,31 @@ func (s *LocalResourceService) ListSystemResources(resourceType string, tenantID
 	return filtered, nil
 }
 
-// GetSystemResource 获取 System 模块的资源详情（包含解密信息）
+// GetSystemResource 获取 System 模块的资源详情（包含解密信息，带缓存）
 func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*commonModels.Resource, error) {
 	if s.systemClient == nil {
 		s.logger.Warn("system client unavailable when fetching system resource", "resource_id", resourceID)
 		return nil, ErrSystemIntegrationDisabled
 	}
 
+	// 检查缓存
+	s.cacheMu.RLock()
+	entry, ok := s.resourceCache[resourceID]
+	s.cacheMu.RUnlock()
+
+	// 如果缓存命中且未过期，返回缓存数据
+	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
+		if tenantID == 0 || entry.resource.TenantID == tenantID {
+			resourceCopy := *entry.resource
+			s.logger.Debug("资源连接信息命中缓存",
+				"resource_id", resourceID,
+				"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
+			)
+			return &resourceCopy, nil
+		}
+	}
+
+	// 缓存未命中或已过期，从 System API 获取
 	resource, err := s.systemClient.GetResource(resourceID)
 	if err != nil {
 		return nil, err
@@ -106,6 +159,13 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 	if resource.TenantID != 0 && resource.TenantID != tenantID {
 		return nil, ErrResourceAccessDenied
 	}
+
+	// 更新缓存
+	s.cacheResource(resource)
+	s.logger.Info("通过内部 API 获取资源连接信息成功",
+		"resource_id", resourceID,
+		"resource_type", resource.ResourceType,
+	)
 
 	return resource, nil
 }
@@ -354,4 +414,71 @@ func (s *LocalResourceService) decryptConnectionInfo(connInfo models.JSONMap) er
 	}
 
 	return nil
+}
+
+// cacheResource 缓存资源
+func (s *LocalResourceService) cacheResource(resource *commonModels.Resource) {
+	if resource == nil {
+		return
+	}
+	resourceCopy := *resource
+	s.cacheMu.Lock()
+	s.resourceCache[resourceCopy.ID] = &resourceCacheEntry{
+		resource:  &resourceCopy,
+		expiresAt: time.Now().Add(s.cacheTTL),
+	}
+	s.cacheMu.Unlock()
+}
+
+// ClearCache 清除所有资源缓存
+func (s *LocalResourceService) ClearCache() {
+	s.cacheMu.Lock()
+	s.resourceCache = make(map[uint]*resourceCacheEntry)
+	s.cacheMu.Unlock()
+	s.logger.Info("资源缓存已清除")
+}
+
+// ClearResourceCache 清除指定资源的缓存
+func (s *LocalResourceService) ClearResourceCache(resourceID uint) {
+	s.cacheMu.Lock()
+	delete(s.resourceCache, resourceID)
+	s.cacheMu.Unlock()
+	s.logger.Info("资源缓存已清除", "resource_id", resourceID)
+}
+
+// handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
+func (s *LocalResourceService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
+	s.logger.Info("收到资源变更事件",
+		"resource_id", event.ResourceID,
+		"action", event.Action,
+		"timestamp", event.Timestamp)
+
+	switch event.Action {
+	case events.ActionCreate:
+		// 资源创建：不需要特殊处理，等待下次访问时自动加载
+		s.logger.Debug("资源已创建，等待首次访问时加载", "resource_id", event.ResourceID)
+
+	case events.ActionUpdate:
+		// 资源更新：清除缓存，强制下次访问时重新获取
+		s.ClearResourceCache(event.ResourceID)
+		s.logger.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+
+	case events.ActionDelete:
+		// 资源删除：清除缓存
+		s.ClearResourceCache(event.ResourceID)
+		s.logger.Info("资源已删除，缓存已清除", "resource_id", event.ResourceID)
+
+	default:
+		s.logger.Warn("未知的资源变更动作", "action", event.Action, "resource_id", event.ResourceID)
+	}
+
+	return nil
+}
+
+// Stop 停止资源服务（清理资源）
+func (s *LocalResourceService) Stop() {
+	if s.eventSubscriber != nil {
+		s.eventSubscriber.Stop()
+		s.logger.Info("资源事件订阅器已停止")
+	}
 }

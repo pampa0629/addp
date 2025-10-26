@@ -9,23 +9,33 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-// ResourceService 资源服务 - 直接读取 system.resources
-type ResourceService struct {
-	db             *gorm.DB
-	systemURL      string
-	internalClient *commonClient.SystemClient
-	cacheMu        sync.RWMutex
-	resourceCache  map[uint]*commonModels.Resource
-	log            *slog.Logger
+// resourceCacheEntry 缓存条目，包含资源和过期时间
+type resourceCacheEntry struct {
+	resource  *commonModels.Resource
+	expiresAt time.Time
 }
 
-func NewResourceService(db *gorm.DB, systemURL, internalKey string) *ResourceService {
+// ResourceService 资源服务 - 直接读取 system.resources
+type ResourceService struct {
+	db              *gorm.DB
+	systemURL       string
+	internalClient  *commonClient.SystemClient
+	cacheMu         sync.RWMutex
+	resourceCache   map[uint]*resourceCacheEntry // 改为存储带过期时间的条目
+	cacheTTL        time.Duration                // 缓存生存时间，默认 5 分钟
+	log             *slog.Logger
+	eventSubscriber *events.ResourceEventSubscriber // Redis 事件订阅器
+}
+
+func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *ResourceService {
 	// 默认从环境变量读取，便于本地降级
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
@@ -40,12 +50,31 @@ func NewResourceService(db *gorm.DB, systemURL, internalKey string) *ResourceSer
 	service := &ResourceService{
 		db:            db,
 		systemURL:     systemURL,
-		resourceCache: make(map[uint]*commonModels.Resource),
+		resourceCache: make(map[uint]*resourceCacheEntry),
+		cacheTTL:      5 * time.Minute, // 默认 5 分钟 TTL
 		log:           logger.With("component", "resource_service"),
 	}
 
 	if internalKey != "" {
 		service.internalClient = commonClient.NewSystemClientWithInternalKey(systemURL, internalKey)
+	}
+
+	// 初始化 Redis 事件订阅器
+	if redisClient != nil {
+		service.eventSubscriber = events.NewResourceEventSubscriber(
+			redisClient,
+			service.handleResourceChangeEvent,
+			service.log,
+		)
+		// 启动订阅（在后台 goroutine 中）
+		go func() {
+			if err := service.eventSubscriber.Start(); err != nil {
+				service.log.Error("资源事件订阅器启动失败", "error", err)
+			}
+		}()
+		service.log.Info("资源事件订阅器已启动")
+	} else {
+		service.log.Warn("Redis 未配置，资源变更事件同步功能将被禁用")
 	}
 
 	return service
@@ -74,21 +103,25 @@ func (s *ResourceService) PreloadResources() error {
 		return fmt.Errorf("failed to preload resources from System: %w", err)
 	}
 
-	cache := make(map[uint]*commonModels.Resource, len(resources))
+	cache := make(map[uint]*resourceCacheEntry, len(resources))
+	expiresAt := time.Now().Add(s.cacheTTL)
 	for i := range resources {
 		res := resources[i]
 		if !res.IsActive {
 			continue
 		}
 		resourceCopy := res
-		cache[resourceCopy.ID] = &resourceCopy
+		cache[resourceCopy.ID] = &resourceCacheEntry{
+			resource:  &resourceCopy,
+			expiresAt: expiresAt,
+		}
 	}
 
 	s.cacheMu.Lock()
 	s.resourceCache = cache
 	s.cacheMu.Unlock()
 
-	s.log.Info("资源缓存预加载完成", "active_resources", len(cache), "system_url", s.systemURL)
+	s.log.Info("资源缓存预加载完成", "active_resources", len(cache), "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
 	return nil
 }
 
@@ -128,8 +161,27 @@ func (s *ResourceService) cacheResource(resource *commonModels.Resource) {
 	}
 	resourceCopy := *resource
 	s.cacheMu.Lock()
-	s.resourceCache[resourceCopy.ID] = &resourceCopy
+	s.resourceCache[resourceCopy.ID] = &resourceCacheEntry{
+		resource:  &resourceCopy,
+		expiresAt: time.Now().Add(s.cacheTTL),
+	}
 	s.cacheMu.Unlock()
+}
+
+// ClearCache 清除所有资源缓存
+func (s *ResourceService) ClearCache() {
+	s.cacheMu.Lock()
+	s.resourceCache = make(map[uint]*resourceCacheEntry)
+	s.cacheMu.Unlock()
+	s.log.Info("资源缓存已清除")
+}
+
+// ClearResourceCache 清除指定资源的缓存
+func (s *ResourceService) ClearResourceCache(resourceID uint) {
+	s.cacheMu.Lock()
+	delete(s.resourceCache, resourceID)
+	s.cacheMu.Unlock()
+	s.log.Info("资源缓存已清除", "resource_id", resourceID)
 }
 
 func (s *ResourceService) snapshotCache() map[uint]*commonModels.Resource {
@@ -140,12 +192,17 @@ func (s *ResourceService) snapshotCache() map[uint]*commonModels.Resource {
 		return nil
 	}
 
+	now := time.Now()
 	result := make(map[uint]*commonModels.Resource, len(s.resourceCache))
-	for id, res := range s.resourceCache {
-		if res == nil {
+	for id, entry := range s.resourceCache {
+		if entry == nil || entry.resource == nil {
 			continue
 		}
-		resourceCopy := *res
+		// 跳过已过期的缓存项
+		if now.After(entry.expiresAt) {
+			continue
+		}
+		resourceCopy := *entry.resource
 		result[id] = &resourceCopy
 	}
 	return result
@@ -218,18 +275,26 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token string) (*commonModels.Resource, error) {
 	s.ensureInternalClient()
 
+	// 检查缓存
 	s.cacheMu.RLock()
-	cached, ok := s.resourceCache[resourceID]
+	entry, ok := s.resourceCache[resourceID]
 	s.cacheMu.RUnlock()
-	if ok && cached != nil && (tenantID == 0 || cached.TenantID == tenantID) {
-		resourceCopy := *cached
-		fields := append(connectionLogFields(&resourceCopy),
-			"requested_tenant_id", tenantID,
-			"source", "cache",
-		)
-		s.log.Info("资源连接信息命中缓存", fields...)
-		return &resourceCopy, nil
+
+	// 如果缓存命中且未过期，返回缓存数据
+	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
+		if tenantID == 0 || entry.resource.TenantID == tenantID {
+			resourceCopy := *entry.resource
+			fields := append(connectionLogFields(&resourceCopy),
+				"requested_tenant_id", tenantID,
+				"source", "cache",
+				"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
+			)
+			s.log.Info("资源连接信息命中缓存", fields...)
+			return &resourceCopy, nil
+		}
 	}
+
+	// 缓存未命中或已过期，从 System API 获取
 
 	if s.internalClient != nil {
 		resource, err := s.internalClient.GetResource(resourceID)
@@ -379,4 +444,42 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 	}
 
 	return result, nil
+}
+
+// handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
+func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
+	s.log.Info("收到资源变更事件",
+		"resource_id", event.ResourceID,
+		"action", event.Action,
+		"timestamp", event.Timestamp)
+
+	switch event.Action {
+	case events.ActionCreate:
+		// 资源创建：不需要特殊处理，等待下次访问时自动加载
+		s.log.Debug("资源已创建，等待首次访问时加载", "resource_id", event.ResourceID)
+
+	case events.ActionUpdate:
+		// 资源更新：清除缓存，强制下次访问时重新获取
+		s.ClearResourceCache(event.ResourceID)
+		s.log.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+
+	case events.ActionDelete:
+		// 资源删除：清除缓存
+		s.ClearResourceCache(event.ResourceID)
+		s.log.Info("资源已删除，缓存已清除", "resource_id", event.ResourceID)
+		// TODO: 可以考虑删除相关的元数据（meta_node, meta_item）
+
+	default:
+		s.log.Warn("未知的资源变更动作", "action", event.Action, "resource_id", event.ResourceID)
+	}
+
+	return nil
+}
+
+// Stop 停止资源服务（清理资源）
+func (s *ResourceService) Stop() {
+	if s.eventSubscriber != nil {
+		s.eventSubscriber.Stop()
+		s.log.Info("资源事件订阅器已停止")
+	}
 }

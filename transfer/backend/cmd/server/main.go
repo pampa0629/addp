@@ -11,6 +11,7 @@ import (
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	"github.com/addp/transfer/internal/worker"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -38,16 +39,24 @@ func main() {
 
 	log.Printf("✅ Task queue connected to Redis: %s", redisAddr)
 
+	// 初始化 Redis 客户端（用于资源变更事件同步）
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.RedisPassword,
+		DB:       0, // Transfer 使用 DB 0（与任务队列可以共享）
+	})
+	log.Printf("✅ Redis 客户端已初始化用于资源事件同步: %s", redisAddr)
+
 	// 初始化 Pipeline 组件（简化版 - 暂时不启动）
 	// registry := pipeline.NewConnectorRegistry()
 	// if err := connector.RegisterAllConnectors(registry); err != nil {
 	// 	log.Fatalf("Failed to register connectors: %v", err)
 	// }
 
-	// 初始化 Service 层（传入 taskQueue）
+	// 初始化 Service 层（传入 taskQueue 和 redisClient）
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue) // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db)
-	localResourceService := service.NewLocalResourceService(db, cfg)
+	localResourceService := service.NewLocalResourceService(db, cfg, redisClient)
 	objectStorageService := service.NewObjectStorageService(localResourceService)
 
 	// 设置路由

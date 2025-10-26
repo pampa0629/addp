@@ -64,6 +64,10 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
 		api.GET("/metadata/tables", handler.GetTables)
 		api.GET("/metadata/fields", handler.GetTableFields)
+
+		// 缓存管理
+		api.DELETE("/cache/resources/:resource_id", handler.ClearResourceCache)
+		api.POST("/cache/refresh", handler.RefreshResourceCache)
 	}
 
 	return router

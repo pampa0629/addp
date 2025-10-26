@@ -1,16 +1,32 @@
 package api
 
 import (
+	"log"
+
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router := gin.Default()
+
+	// 初始化 Redis 客户端（可选，用于事件通知）
+	var redisClient *redis.Client
+	if cfg.RedisAddr != "" {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     cfg.RedisAddr,
+			Password: cfg.RedisPassword,
+			DB:       cfg.RedisDB,
+		})
+		log.Printf("✅ Redis 客户端已初始化: %s", cfg.RedisAddr)
+	} else {
+		log.Println("⚠️  Redis 未配置，资源变更事件通知功能将被禁用")
+	}
 
 	// CORS
 	router.Use(func(c *gin.Context) {
@@ -33,7 +49,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
 	logService := service.NewLogService(logRepo, userRepo)
-	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey)
+	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
 
 	// 日志中间件

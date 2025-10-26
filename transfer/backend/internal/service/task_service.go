@@ -553,11 +553,22 @@ func (s *TaskService) buildExecutionTask(
 			spatialFormat := normalizeSpatialFormat(targetConfig)
 			spatialConfig := map[string]interface{}{
 				"geometry_fields": stringSliceToInterface(geometryFields),
-				"source_format":   "wkb",
 			}
+
+			// 从 targetConfig 中读取 source_format，默认为 wkb
+			if sourceFormat, ok := targetConfig["source_format"].(string); ok && sourceFormat != "" {
+				spatialConfig["source_format"] = sourceFormat
+				s.logger.Info("using custom source_format from targetConfig", "source_format", sourceFormat)
+			} else {
+				spatialConfig["source_format"] = "wkb"
+				s.logger.Info("using default source_format", "source_format", "wkb")
+			}
+
 			if spatialFormat != "" {
 				spatialConfig["target_format"] = spatialFormat
 			}
+
+			s.logger.Info("building spatial transform", "config", spatialConfig)
 
 			transform, err := pipeline.NewTransformByName("spatial", spatialConfig)
 			if err != nil {
@@ -565,6 +576,7 @@ func (s *TaskService) buildExecutionTask(
 			} else {
 				s.logger.Info("auto append spatial transform for object storage target",
 					"geometry_fields", geometryFields,
+					"source_format", spatialConfig["source_format"],
 					"target_format", spatialFormat)
 				transforms = append(transforms, transform)
 			}

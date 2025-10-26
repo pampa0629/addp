@@ -129,6 +129,51 @@ Frontend services (optional)
 - **Containerization**: Docker + Docker Compose
 - **Reverse Proxy**: Nginx (production), Gateway service (API routing)
 - **Database Schema Isolation**: PostgreSQL schemas (manager, metadata, transfer)
+- **Data Separation**: System infrastructure (ADDP metadata) + Business infrastructure (user data) independently deployed
+
+### Infrastructure Architecture
+
+ADDP 采用**系统与业务数据分离**的架构设计：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ADDP System Infrastructure (docker-compose.yml)           │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │ postgres     │  │ redis        │  │ minio-system │     │
+│  │ (系统元数据) │  │ (缓存/队列)  │  │ (系统文件)   │     │
+│  │ Port: 5432   │  │ Port: 6379   │  │ Port: 9000-1 │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  Business Infrastructure (business/docker-compose.yml)      │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐                        │
+│  │ postgres     │  │ minio        │                        │
+│  │ (业务数据库) │  │ (业务文件)   │                        │
+│  │ Port: 5433   │  │ Port: 9002-3 │                        │
+│  └──────────────┘  └──────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**系统基础设施**（主 docker-compose.yml）:
+- `postgres`: 存储 ADDP 系统元数据（用户、资源配置、元数据索引、任务定义等）
+- `redis`: 缓存和任务队列
+- `minio`: 存储系统文件（用户头像、系统配置等）
+- `elasticsearch`: 全文检索
+
+**业务基础设施**（business/docker-compose.yml，独立部署）:
+- `postgres`: 存储用户通过 ADDP 管理的实际业务数据（用户上传的 PostgreSQL 数据等）
+- `minio`: 存储用户上传的业务文件（Shapefile、GeoJSON、图片、视频等）
+
+**分离优势**:
+- ✅ 数据隔离: 系统数据与业务数据物理分离
+- ✅ 独立扩展: 业务数据量增长时可单独扩展
+- ✅ 安全性: 业务数据库可配置更严格的访问控制
+- ✅ 可替换性: 业务基础设施可替换为云服务（RDS、OSS）
+
+详见 [business/README.md](business/README.md)
 
 ## Key Architectural Patterns
 
@@ -488,7 +533,7 @@ Root `.env` file (copy from `.env.example`):
 # Security (MUST change for production)
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 
-# PostgreSQL (for Manager, Meta, Transfer)
+# PostgreSQL - ADDP System Database
 POSTGRES_PASSWORD=addp_password
 POSTGRES_USER=addp
 POSTGRES_DB=addp
@@ -496,14 +541,22 @@ POSTGRES_DB=addp
 # Redis
 REDIS_PASSWORD=addp_redis
 
-# MinIO
-MINIO_ROOT_PASSWORD=minioadmin
+# MinIO - System Files
+MINIO_SYSTEM_ROOT_USER=minioadmin
+MINIO_SYSTEM_ROOT_PASSWORD=minioadmin
+
+# MinIO - Business Data (deployed in business/docker-compose.yml)
+BUSINESS_MINIO_ENDPOINT=host.docker.internal:9002
+BUSINESS_MINIO_ACCESS_KEY=minioadmin
+BUSINESS_MINIO_SECRET_KEY=minioadmin
 
 # Service Integration
 ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 ```
 
 ### Port Assignments
+
+**ADDP System Services**:
 
 | Service | Dev Port | Docker Port | Description |
 |---------|----------|-------------|-------------|
@@ -517,12 +570,28 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 | Meta Frontend | 5175 | 8092 | Standalone access |
 | Transfer Backend | 8083 | 8083 | Import/export tasks |
 | Transfer Frontend | 5176 | 8093 | Standalone access |
-| PostgreSQL | 5432 | 5432 | Shared database |
+| PostgreSQL (System) | 5432 | 5432 | ADDP system metadata |
 | Redis | 6379 | 6379 | Cache & queue |
-| MinIO API | 9000 | 9000 | Object storage |
-| MinIO Console | 9001 | 9001 | MinIO web UI |
+| MinIO System API | 9000 | 9000 | System file storage |
+| MinIO System Console | 9001 | 9001 | System MinIO web UI |
+| Elasticsearch | 9200 | 9200 | Full-text search |
+
+**Business Infrastructure Services** (deployed via `business/docker-compose.yml`):
+
+| Service | Docker Port | Description |
+|---------|-------------|-------------|
+| PostgreSQL (Business) | 5433 | User business data storage |
+| MinIO Business API | 9002 | User file storage |
+| MinIO Business Console | 9003 | Business MinIO web UI |
 
 **Recommended Access**: Use Portal at **http://localhost:5170** for unified experience
+
+**Business Infrastructure Setup**:
+```bash
+cd business
+cp .env.example .env
+docker-compose up -d
+```
 
 ## Testing
 
@@ -580,6 +649,22 @@ Frontend tests are not yet implemented. When adding Vue components, document man
 
 ## Docker Deployment
 
+### Business Infrastructure (Deploy First)
+
+业务基础设施需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
+
+```bash
+# 1. Deploy business infrastructure first
+cd business
+cp .env.example .env
+# Edit .env to configure passwords
+docker-compose up -d
+
+# 2. Verify business services are running
+docker-compose ps
+docker-compose logs -f
+```
+
 ### System Module Only (Default)
 
 ```bash
@@ -592,7 +677,7 @@ make down           # Stop services
 ### Full Platform
 
 ```bash
-# From project root
+# From project root (ensure business infrastructure is running first)
 make up-full        # Start all services with --profile full
 make status         # Check all service status
 make logs           # View all logs
@@ -613,9 +698,16 @@ docker-compose up -d    # Restart
 ```
 
 **Data Persistence**:
-- PostgreSQL: `postgres_data` volume (includes system schema for System module)
-- Redis: `redis_data` volume
-- MinIO: `minio_data` volume
+
+**ADDP System** (docker-compose.yml):
+- PostgreSQL: `postgres_data` volume (ADDP system metadata)
+- Redis: `redis_data` volume (cache and queues)
+- MinIO System: `minio_system_data` volume (system files)
+- Elasticsearch: `elasticsearch_data` volume (search indexes)
+
+**Business Infrastructure** (business/docker-compose.yml):
+- PostgreSQL: `business_postgres_data` volume (user business data)
+- MinIO Business: `business_minio_data` volume (user files)
 
 ## API Endpoints Summary
 

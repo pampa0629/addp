@@ -12,6 +12,7 @@ import (
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -43,6 +44,23 @@ func main() {
 		"enable_integration", cfg.EnableIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
 	)
+
+	// 初始化 Redis 客户端（可选，用于资源变更事件同步）
+	var redisClient *redis.Client
+	if cfg.RedisAddr != "" {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     cfg.RedisAddr,
+			Password: cfg.RedisPassword,
+			DB:       cfg.RedisDB,
+		})
+		logger.L().Info("Redis 客户端已初始化", "addr", cfg.RedisAddr)
+	} else {
+		logger.L().Warn("Redis 未配置，资源变更事件同步功能将被禁用")
+	}
+
+	// 初始化资源缓存服务（带 Redis 事件订阅）
+	resourceCacheService := service.NewResourceCacheService(cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	_ = resourceCacheService // TODO: 集成到 metadataService 中使用
 
 	// 初始化 System 客户端（用于拉取解密的资源连接信息）
 	var systemClient *commonClient.SystemClient

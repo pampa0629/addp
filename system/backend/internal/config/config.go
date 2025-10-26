@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -31,6 +32,11 @@ type Config struct {
 	AMapKey         string
 	AMapSecurityKey string
 	TDTKey          string
+
+	// Redis 配置（用于事件通知）
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func Load() *Config {
@@ -100,6 +106,11 @@ func Load() *Config {
 		AMapKey:         getEnv("AMAP_KEY", "7babce80a669a0fac7a8c4c951f7c952"),
 		AMapSecurityKey: getEnv("AMAP_SECURITY_KEY", "5784bbf4bbcffc8815cb44db32439b7d"),
 		TDTKey:          getEnv("TDT_KEY", "fa4585302823605b16464e5838dafdcd"),
+
+		// Redis 配置
+		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 	}
 }
 
@@ -117,6 +128,16 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 			return true
 		case "0", "false", "f", "no", "n":
 			return false
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		var intVal int
+		if _, err := fmt.Sscanf(value, "%d", &intVal); err == nil {
+			return intVal
 		}
 	}
 	return defaultValue

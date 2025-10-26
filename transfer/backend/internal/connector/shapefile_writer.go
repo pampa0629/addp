@@ -20,6 +20,10 @@ import (
 
 // ShapefileWriter Shapefile 数据写入器
 // 写入 .shp/.shx/.dbf 文件组合
+//
+// 注意: go-shp v0.1.1 库存在 Bug,在 SetFields() 中创建 DBF 文件时
+// 会生成 "filenamedbf" 而不是 "filename.dbf" (缺少点号)
+// 本实现通过 fixDbfFilename() 方法自动修复此问题
 type ShapefileWriter struct {
 	filePath      string
 	geometryField string
@@ -217,10 +221,38 @@ func (w *ShapefileWriter) initializeWriter(batch *pipeline.DataBatch) error {
 	}
 
 	// 设置 DBF 字段
-	shape.SetFields(w.fields)
+	if err := shape.SetFields(w.fields); err != nil {
+		return fmt.Errorf("failed to set DBF fields: %w", err)
+	}
+
+	// WORKAROUND: go-shp v0.1.1 has a bug where it creates "filenamedbf" instead of "filename.dbf"
+	// We need to rename the file if it was created incorrectly
+	w.fixDbfFilename()
 
 	w.shape = shape
 	return nil
+}
+
+// fixDbfFilename fixes the DBF filename bug in go-shp library
+// go-shp v0.1.1 creates "filenamedbf" instead of "filename.dbf" in SetFields()
+func (w *ShapefileWriter) fixDbfFilename() {
+	basePath := w.filePath
+	if strings.HasSuffix(strings.ToLower(basePath), ".shp") {
+		basePath = basePath[:len(basePath)-4]
+	}
+
+	wrongDbfPath := basePath + "dbf"    // Bug: missing dot
+	correctDbfPath := basePath + ".dbf" // Correct filename
+
+	// Check if the wrong file exists
+	if _, err := os.Stat(wrongDbfPath); err == nil {
+		// Wrong file exists, rename it to correct name
+		if err := os.Rename(wrongDbfPath, correctDbfPath); err != nil {
+			fmt.Printf("[ShapefileWriter] Warning: failed to rename DBF file: %v\n", err)
+		} else {
+			fmt.Printf("[ShapefileWriter] Fixed DBF filename: %s -> %s\n", wrongDbfPath, correctDbfPath)
+		}
+	}
 }
 
 // flushBuffer 刷新缓冲区到 Shapefile

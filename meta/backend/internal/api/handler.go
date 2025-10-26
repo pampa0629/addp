@@ -650,3 +650,44 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 
 	c.JSON(http.StatusOK, names)
 }
+
+// ClearResourceCache 清除资源缓存
+// DELETE /api/meta/cache/resources/:resource_id
+func (h *Handler) ClearResourceCache(c *gin.Context) {
+	resourceIDStr := c.Param("resource_id")
+	if resourceIDStr == "all" {
+		// 清除所有缓存
+		h.resourceService.ClearCache()
+		c.JSON(http.StatusOK, gin.H{
+			"message": "已清除所有资源缓存",
+		})
+		return
+	}
+
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	h.resourceService.ClearResourceCache(uint(resourceID))
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("已清除资源 %d 的缓存", resourceID),
+	})
+}
+
+// RefreshResourceCache 刷新资源缓存（先清除再重新加载）
+// POST /api/meta/cache/refresh
+func (h *Handler) RefreshResourceCache(c *gin.Context) {
+	h.resourceService.ClearCache()
+	if err := h.resourceService.PreloadResources(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("刷新缓存失败: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "资源缓存已刷新",
+	})
+}

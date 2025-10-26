@@ -37,6 +37,11 @@ type Config struct {
 
 	// 在线向量化服务配置
 	EmbeddingService EmbeddingServiceConfig
+
+	// Redis 配置（用于资源变更事件同步）
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func resolveElasticsearchURL() string {
@@ -90,6 +95,11 @@ func LoadConfig() *Config {
 	cfg.ElasticsearchAssetIndex = commonConfig.GetEnv("ELASTICSEARCH_INDEX", "metadata-assets")
 	cfg.ElasticsearchDocumentIndex = commonConfig.GetEnv("META_DOCUMENT_INDEX", commonConfig.GetEnv("ASSET_DOCUMENT_INDEX", "asset-documents"))
 	cfg.ElasticsearchDisableTLSVerify = commonConfig.GetEnvBool("ELASTICSEARCH_SKIP_VERIFY", false)
+
+	// Redis 配置
+	cfg.RedisAddr = commonConfig.GetEnv("REDIS_ADDR", "localhost:6379")
+	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
+	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
 	defaultHost := cfg.DBHost
 	if defaultHost == "" {

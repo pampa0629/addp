@@ -57,7 +57,7 @@ type ScanProgressReporter interface {
 
 func NewScanServiceNew(db *gorm.DB, resourceService *ResourceService) *ScanServiceNew {
 	if resourceService == nil {
-		resourceService = NewResourceService(db, "", "")
+		resourceService = NewResourceService(db, "", "", nil) // nil Redis client for fallback
 	}
 
 	return &ScanServiceNew{
@@ -951,6 +951,12 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 }
 
 func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
+	s.log.Info("🔍 进入scanObjectStoragePaths函数",
+		"resource_id", resourceID,
+		"tenant_id", tenantID,
+		"paths_count", len(paths),
+		"scanDepth", scanDepth)
+
 	bucketNodes := make(map[string]*models.MetaNode)
 	processedBuckets := make(map[string]bool)
 	nodeStats := make(map[uint]*nodeAggregate)
@@ -1127,6 +1133,53 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 	for _, agg := range nodeStats {
 		if err := s.finalizeNodeState(agg.node, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
 			return totalBuckets, totalObjects, err
+		}
+	}
+
+	// 确保所有已处理的bucket节点状态被更新为"已扫描"
+	// 即使扫描的是子目录而非整个bucket，bucket节点也应该标记为已扫描
+	s.log.Info("检查processedBuckets以更新bucket状态",
+		"processedBuckets_count", len(processedBuckets),
+		"bucketNodes_count", len(bucketNodes),
+		"nodeStats_count", len(nodeStats))
+
+	for bucketName := range processedBuckets {
+		bucketNode := bucketNodes[bucketName]
+		if bucketNode != nil {
+			// 如果bucket节点不在nodeStats中（扫描子目录时），单独更新其状态
+			if _, exists := nodeStats[bucketNode.ID]; !exists {
+				s.log.Info("bucket节点不在nodeStats中，需要单独更新",
+					"bucket", bucketName,
+					"bucket_node_id", bucketNode.ID)
+
+				// 计算该bucket的统计信息
+				var itemCount int64
+				var totalSize int64
+				s.db.Model(&models.MetaItem{}).
+					Where("tenant_id = ? AND res_id = ? AND attributes->>'bucket' = ?",
+						tenantID, resourceID, bucketName).
+					Count(&itemCount)
+				s.db.Model(&models.MetaItem{}).
+					Where("tenant_id = ? AND res_id = ? AND attributes->>'bucket' = ?",
+						tenantID, resourceID, bucketName).
+					Select("COALESCE(SUM(size_bytes), 0)").
+					Scan(&totalSize)
+
+				s.log.Info("更新bucket节点状态为已扫描",
+					"bucket", bucketName,
+					"item_count", itemCount,
+					"total_size", totalSize)
+
+				if err := s.finalizeNodeState(bucketNode, "已扫描", int(itemCount), totalSize, ""); err != nil {
+					s.log.Warn("更新bucket节点状态失败", "bucket", bucketName, "error", err)
+				} else {
+					s.log.Info("成功更新bucket节点状态", "bucket", bucketName)
+				}
+			} else {
+				s.log.Info("bucket节点已在nodeStats中，无需单独更新",
+					"bucket", bucketName,
+					"bucket_node_id", bucketNode.ID)
+			}
 		}
 	}
 

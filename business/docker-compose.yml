@@ -1,0 +1,70 @@
+# Business Infrastructure Services
+# 业务数据存储服务 - 独立部署，服务于所有业务数据
+#
+# 包含服务:
+# - postgres: 业务数据库（用于存储实际业务数据，如用户上传的数据源）
+# - minio: 业务对象存储（用于存储用户上传的文件、shapefile等业务数据）
+#
+# 使用方法:
+#   docker-compose up -d              # 启动业务基础设施
+#   docker-compose down               # 停止服务
+#   docker-compose logs -f postgres   # 查看数据库日志
+#   docker-compose logs -f minio      # 查看MinIO日志
+
+services:
+  # PostgreSQL - 业务数据库
+  # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
+  postgres:
+    image: postgres:15-alpine
+    container_name: business-postgres
+    environment:
+      POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
+      POSTGRES_PASSWORD: ${BUSINESS_POSTGRES_PASSWORD:-business_password}
+      POSTGRES_DB: ${BUSINESS_POSTGRES_DB:-business}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "${BUSINESS_POSTGRES_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BUSINESS_POSTGRES_USER:-business}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+  # MinIO - 业务对象存储
+  # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
+  minio:
+    image: minio/minio:latest
+    container_name: business-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${BUSINESS_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${BUSINESS_MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${BUSINESS_MINIO_API_PORT:-9002}:9000"     # API端口
+      - "${BUSINESS_MINIO_CONSOLE_PORT:-9003}:9001" # 控制台端口
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - business-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  business-network:
+    driver: bridge
+    name: business-network

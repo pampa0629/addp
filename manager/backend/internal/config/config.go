@@ -37,6 +37,11 @@ type Config struct {
 
 	// 向量检索阈值配置
 	VectorSearchMaxDistance float64
+
+	// Redis 配置（用于资源变更事件同步）
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
 }
 
 func resolveElasticsearchURL() string {
@@ -143,6 +148,11 @@ func Load() *Config {
 		VideoModel: commonConfig.GetEnv("EMBEDDING_MODEL_VIDEO", "internvideo2-6b"),
 		Timeout:    commonConfig.GetEnvDuration("EMBEDDING_SERVICE_TIMEOUT", "15s"),
 	}
+
+	// Redis 配置
+	cfg.RedisAddr = commonConfig.GetEnv("REDIS_ADDR", "localhost:6379")
+	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
+	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
 	return cfg
 }
