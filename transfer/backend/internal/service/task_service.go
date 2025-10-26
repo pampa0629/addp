@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -25,14 +26,14 @@ type TaskQueue interface {
 
 // TaskService 任务服务
 type TaskService struct {
-	taskRepo      *repository.TaskRepository
-	execRepo      *repository.ExecutionRepository
-	mappingRepo   *repository.MappingRepository
-	engine        *pipeline.ExecutionEngine
-	cfg           *config.Config
-	systemClient  *commonClient.SystemClient
-	taskQueue     TaskQueue
-	logger        *slog.Logger
+	taskRepo     *repository.TaskRepository
+	execRepo     *repository.ExecutionRepository
+	mappingRepo  *repository.MappingRepository
+	engine       *pipeline.ExecutionEngine
+	cfg          *config.Config
+	systemClient *commonClient.SystemClient
+	taskQueue    TaskQueue
+	logger       *slog.Logger
 }
 
 // NewTaskService 创建任务服务
@@ -148,8 +149,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 		return nil, err
 	}
 
-	// 只有 pending 或 failed 状态的任务才能更新
-	if task.Status != models.TaskStatusPending && task.Status != models.TaskStatusFailed {
+	// 运行中的任务需要先停止才能更新
+	if task.Status == models.TaskStatusRunning {
 		return nil, fmt.Errorf("cannot update task in %s status", task.Status)
 	}
 
@@ -249,11 +250,13 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 
 	s.logger.Info("starting task", "task_id", id)
 
+	now := time.Now()
+
 	// 创建执行记录
 	execution := &models.TaskExecution{
 		TaskID:      id,
 		Status:      models.ExecutionStatusPending,
-		StartTime:   time.Now(), // 设置开始时间
+		StartTime:   now, // 设置开始时间
 		TriggerType: "manual",
 		TriggerBy:   &userID,
 	}
@@ -262,18 +265,41 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 		return nil, fmt.Errorf("failed to create execution: %w", err)
 	}
 
-	// 更新任务状态为 running
-	if err := s.taskRepo.UpdateStatus(id, models.TaskStatusRunning); err != nil {
-		s.logger.Warn("failed to update task status", "error", err)
+	task.Status = models.TaskStatusRunning
+	task.LastExecutionID = &execution.ID
+	task.LastExecutionStatus = models.ExecutionStatusRunning
+	task.LastExecutionStartedAt = &now
+	task.LastExecutionFinishedAt = nil
+
+	if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
+		"status":                     models.TaskStatusRunning,
+		"progress":                   0,
+		"last_execution_id":          execution.ID,
+		"last_execution_status":      models.ExecutionStatusRunning,
+		"last_execution_started_at":  now,
+		"last_execution_finished_at": nil,
+	}); err != nil {
+		s.logger.Warn("failed to update task state", "error", err, "task_id", id)
 	}
 
 	// 将任务提交到队列（Asynq）
 	if s.taskQueue != nil {
 		if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
 			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
-			// 更新任务状态为 failed
-			s.taskRepo.UpdateStatus(id, models.TaskStatusFailed)
-			s.execRepo.UpdateStatus(execution.ID, models.ExecutionStatusFailed)
+			finalStatus := models.TaskStatusPending
+			if task.Schedule != "" {
+				finalStatus = models.TaskStatusScheduled
+			}
+			finishedAt := time.Now()
+			s.execRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error())
+			if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
+				"status":                     finalStatus,
+				"last_execution_status":      models.ExecutionStatusFailed,
+				"last_execution_finished_at": finishedAt,
+				"progress":                   0,
+			}); err != nil {
+				s.logger.Warn("failed to rollback task state after enqueue failure", "error", err, "task_id", id)
+			}
 			return nil, fmt.Errorf("failed to enqueue task: %w", err)
 		}
 		s.logger.Info("task enqueued to worker", "task_id", id, "execution_id", execution.ID)
@@ -296,10 +322,22 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 		return fmt.Errorf("task is not running")
 	}
 
-	// TODO: 取消正在运行的任务（通过 context cancel）
+	now := time.Now()
 
-	// 更新任务状态
-	if err := s.taskRepo.UpdateStatus(id, models.TaskStatusPaused); err != nil {
+	if task.LastExecutionID != nil {
+		if err := s.execRepo.FinishExecution(*task.LastExecutionID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
+			s.logger.Warn("failed to finish execution when stopping task", "error", err, "task_id", id)
+		}
+	}
+
+	updates := map[string]interface{}{
+		"status":                     models.TaskStatusStopped,
+		"last_execution_status":      models.ExecutionStatusFailed,
+		"last_execution_finished_at": now,
+		"progress":                   0,
+	}
+
+	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
 		return fmt.Errorf("failed to stop task: %w", err)
 	}
 
@@ -309,7 +347,35 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 
 // PauseTask 暂停任务
 func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
-	return s.StopTask(ctx, id, tenantID)
+	task, err := s.GetTask(ctx, id, tenantID)
+	if err != nil {
+		return err
+	}
+
+	if task.Schedule == "" {
+		return fmt.Errorf("manual tasks cannot be paused")
+	}
+
+	updates := map[string]interface{}{
+		"status":   models.TaskStatusPaused,
+		"progress": 0,
+	}
+
+	if task.Status == models.TaskStatusRunning && task.LastExecutionID != nil {
+		now := time.Now()
+		if err := s.execRepo.FinishExecution(*task.LastExecutionID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
+			s.logger.Warn("failed to finish execution when pausing task", "error", err, "task_id", id)
+		}
+		updates["last_execution_status"] = models.ExecutionStatusFailed
+		updates["last_execution_finished_at"] = now
+	}
+
+	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
+		return fmt.Errorf("failed to pause task: %w", err)
+	}
+
+	s.logger.Info("task paused", "task_id", id)
+	return nil
 }
 
 // ResumeTask 恢复任务
@@ -319,12 +385,20 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 		return err
 	}
 
-	if task.Status != models.TaskStatusPaused {
-		return fmt.Errorf("task is not paused")
+	if task.Schedule == "" {
+		return fmt.Errorf("manual tasks do not support resume")
 	}
 
-	// 更新任务状态为 pending，等待调度
-	if err := s.taskRepo.UpdateStatus(id, models.TaskStatusPending); err != nil {
+	if task.Status != models.TaskStatusPaused && task.Status != models.TaskStatusPending {
+		return fmt.Errorf("task cannot be resumed from current status")
+	}
+
+	updates := map[string]interface{}{
+		"status":   models.TaskStatusScheduled,
+		"progress": 0,
+	}
+
+	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
 		return fmt.Errorf("failed to resume task: %w", err)
 	}
 
@@ -357,7 +431,7 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 	// 构建执行任务
 	execTask, err := s.buildExecutionTask(task, execution, mappings)
 	if err != nil {
-		s.updateExecutionError(executionID, err)
+		s.updateExecutionError(task, executionID, err)
 		return err
 	}
 
@@ -369,8 +443,7 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 	// 执行任务
 	if err := s.engine.Execute(ctx, execTask); err != nil {
 		s.logger.Error("task execution failed", "error", err, "task_id", taskID)
-		s.updateExecutionError(executionID, err)
-		s.taskRepo.UpdateStatus(taskID, models.TaskStatusFailed)
+		s.updateExecutionError(task, executionID, err)
 		return err
 	}
 
@@ -388,9 +461,21 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
 
-	// 更新任务状态
-	s.taskRepo.UpdateStatus(taskID, models.TaskStatusSuccess)
-	s.taskRepo.UpdateProgress(taskID, 100.0)
+	finishedAt := time.Now()
+	finalStatus := models.TaskStatusCompleted
+	if task.Schedule != "" {
+		finalStatus = models.TaskStatusScheduled
+	}
+
+	if err := s.taskRepo.UpdateFields(taskID, map[string]interface{}{
+		"status":                     finalStatus,
+		"progress":                   100.0,
+		"last_execution_id":          executionID,
+		"last_execution_status":      models.ExecutionStatusSuccess,
+		"last_execution_finished_at": finishedAt,
+	}); err != nil {
+		s.logger.Warn("failed to update task after successful execution", "error", err, "task_id", taskID)
+	}
 
 	s.logger.Info("task executed successfully", "task_id", taskID, "records", metrics.RecordsWritten)
 	return nil
@@ -417,6 +502,11 @@ func (s *TaskService) buildExecutionTask(
 		return nil, fmt.Errorf("failed to resolve target config: %w", err)
 	}
 
+	geometryFields := extractGeometryFields(targetConfig)
+	if len(geometryFields) == 0 {
+		geometryFields = extractGeometryFields(sourceConfig)
+	}
+
 	// 构建转换器
 	transforms := make([]pipeline.Transform, 0)
 
@@ -432,6 +522,7 @@ func (s *TaskService) buildExecutionTask(
 				DefaultValue: m.DefaultValue,
 			}
 		}
+		ensureGeometryMappings(&fieldMappings, geometryFields)
 		transforms = append(transforms, pipeline.NewFieldMappingTransform(fieldMappings))
 	}
 
@@ -455,6 +546,30 @@ func (s *TaskService) buildExecutionTask(
 	// 确定连接器类型
 	sourceType := s.inferConnectorType(sourceConfig)
 	targetType := s.inferConnectorType(targetConfig)
+
+	// 自动注入空间转换，适配对象存储的空间格式要求
+	if targetType == "s3" && !hasSpatialTransform(transforms) {
+		if len(geometryFields) > 0 {
+			spatialFormat := normalizeSpatialFormat(targetConfig)
+			spatialConfig := map[string]interface{}{
+				"geometry_fields": stringSliceToInterface(geometryFields),
+				"source_format":   "wkb",
+			}
+			if spatialFormat != "" {
+				spatialConfig["target_format"] = spatialFormat
+			}
+
+			transform, err := pipeline.NewTransformByName("spatial", spatialConfig)
+			if err != nil {
+				s.logger.Warn("failed to build spatial transform", "error", err, "geometry_fields", geometryFields, "target_format", spatialFormat)
+			} else {
+				s.logger.Info("auto append spatial transform for object storage target",
+					"geometry_fields", geometryFields,
+					"target_format", spatialFormat)
+				transforms = append(transforms, transform)
+			}
+		}
+	}
 
 	// 构建执行任务
 	return &pipeline.ExecutionTask{
@@ -508,6 +623,16 @@ func (s *TaskService) buildTransform(config map[string]interface{}) (pipeline.Tr
 		return pipeline.NewSelectFieldsTransform(fields), nil
 
 	default:
+		if pipeline.HasTransformRegistered(transformType) {
+			normalized := make(map[string]interface{})
+			for k, v := range config {
+				if k == "type" {
+					continue
+				}
+				normalized[k] = v
+			}
+			return pipeline.NewTransformByName(transformType, normalized)
+		}
 		return nil, fmt.Errorf("unknown transform type: %s", transformType)
 	}
 }
@@ -548,9 +673,180 @@ func (s *TaskService) mapTaskMode(mode models.TaskMode) pipeline.ReaderMode {
 	}
 }
 
+func hasSpatialTransform(transforms []pipeline.Transform) bool {
+	for _, t := range transforms {
+		if strings.EqualFold(t.Name(), "SpatialTransform") {
+			return true
+		}
+	}
+	return false
+}
+
+func extractGeometryFields(config map[string]interface{}) []string {
+	if config == nil {
+		return nil
+	}
+
+	if fields, ok := config["geometry_fields"]; ok {
+		return interfaceToStringSlice(fields)
+	}
+
+	if field, ok := config["geometry_field"].(string); ok {
+		field = strings.TrimSpace(field)
+		if field != "" {
+			return []string{field}
+		}
+	}
+
+	return nil
+}
+
+func normalizeSpatialFormat(config map[string]interface{}) string {
+	if config == nil {
+		return ""
+	}
+
+	if value, ok := config["spatial_format"].(string); ok && value != "" {
+		return strings.ToLower(value)
+	}
+
+	if value, ok := config["file_type"].(string); ok && value != "" {
+		return mapFileTypeToSpatialFormat(strings.ToLower(value))
+	}
+
+	if value, ok := config["format"].(string); ok && value != "" {
+		return mapFileTypeToSpatialFormat(strings.ToLower(value))
+	}
+
+	return ""
+}
+
+func mapFileTypeToSpatialFormat(fileType string) string {
+	switch fileType {
+	case "geojson":
+		return "geojson"
+	case "csv-wkt":
+		return "wkt"
+	case "shapefile":
+		return "wkb"
+	case "ewkb", "ewkt", "hexwkb", "wkb", "wkt":
+		return fileType
+	default:
+		return ""
+	}
+}
+
+func interfaceToStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return filterEmptyStrings(v)
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			switch val := item.(type) {
+			case string:
+				if trimmed := strings.TrimSpace(val); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			case fmt.Stringer:
+				if trimmed := strings.TrimSpace(val.String()); trimmed != "" {
+					result = append(result, trimmed)
+				}
+			default:
+				str := strings.TrimSpace(fmt.Sprintf("%v", val))
+				if str != "" {
+					result = append(result, str)
+				}
+			}
+		}
+		return result
+	case string:
+		if trimmed := strings.TrimSpace(v); trimmed != "" {
+			return []string{trimmed}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func stringSliceToInterface(values []string) []interface{} {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]interface{}, 0, len(values))
+	for _, val := range values {
+		if trimmed := strings.TrimSpace(val); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func filterEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, val := range values {
+		if trimmed := strings.TrimSpace(val); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+func ensureGeometryMappings(fieldMappings *[]pipeline.FieldMapping, geometryFields []string) {
+	if fieldMappings == nil || len(*fieldMappings) == 0 || len(geometryFields) == 0 {
+		return
+	}
+
+	existing := make(map[string]struct{}, len(*fieldMappings))
+	for _, m := range *fieldMappings {
+		existing[strings.ToLower(m.Target)] = struct{}{}
+	}
+
+	for _, field := range geometryFields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		lower := strings.ToLower(field)
+		if _, ok := existing[lower]; ok {
+			continue
+		}
+		*fieldMappings = append(*fieldMappings, pipeline.FieldMapping{
+			Source: field,
+			Target: field,
+		})
+		existing[lower] = struct{}{}
+	}
+}
+
 // updateExecutionError 更新执行错误
-func (s *TaskService) updateExecutionError(executionID uint, err error) {
-	s.execRepo.FinishExecution(executionID, models.ExecutionStatusFailed, err.Error())
+func (s *TaskService) updateExecutionError(task *models.Task, executionID uint, execErr error) {
+	if execErr == nil {
+		return
+	}
+
+	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
+		s.logger.Warn("failed to mark execution as failed", "error", err, "execution_id", executionID)
+	}
+
+	finishedAt := time.Now()
+	finalStatus := models.TaskStatusStopped
+	if task.Schedule != "" {
+		finalStatus = models.TaskStatusScheduled
+	}
+
+	updates := map[string]interface{}{
+		"status":                     finalStatus,
+		"last_execution_id":          executionID,
+		"last_execution_status":      models.ExecutionStatusFailed,
+		"last_execution_finished_at": finishedAt,
+		"progress":                   0,
+	}
+
+	if err := s.taskRepo.UpdateFields(task.ID, updates); err != nil {
+		s.logger.Warn("failed to update task after execution error", "error", err, "task_id", task.ID)
+	}
 }
 
 // GetResourceConfig 从 System 模块获取资源配置

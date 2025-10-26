@@ -13,19 +13,19 @@ import (
 
 // Scheduler 定时调度器
 type Scheduler struct {
-	cron         *cron.Cron
-	taskRepo     *repository.TaskRepository
-	taskQueue    *TaskQueue
+	cron          *cron.Cron
+	taskRepo      *repository.TaskRepository
+	taskQueue     *TaskQueue
 	executionRepo *repository.ExecutionRepository
 }
 
 // NewScheduler 创建定时调度器
 func NewScheduler(taskRepo *repository.TaskRepository, executionRepo *repository.ExecutionRepository, taskQueue *TaskQueue) *Scheduler {
 	return &Scheduler{
-		cron:         cron.New(cron.WithSeconds()), // 支持秒级调度
-		taskRepo:     taskRepo,
+		cron:          cron.New(cron.WithSeconds()), // 支持秒级调度
+		taskRepo:      taskRepo,
 		executionRepo: executionRepo,
-		taskQueue:    taskQueue,
+		taskQueue:     taskQueue,
 	}
 }
 
@@ -74,7 +74,7 @@ func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, erro
 	// 过滤出有效的定时任务
 	var scheduledTasks []models.Task
 	for _, task := range tasks {
-		if task.Schedule != "" && task.Status != models.TaskStatusStopped {
+		if task.Schedule != "" && (task.Status == models.TaskStatusScheduled || task.Status == models.TaskStatusRunning) {
 			scheduledTasks = append(scheduledTasks, task)
 		}
 	}
@@ -101,11 +101,13 @@ func (s *Scheduler) registerTask(ctx context.Context, task models.Task) error {
 func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) {
 	log.Printf("⏰ 触发定时任务 - TaskID: %d, Name: %s", task.ID, task.Name)
 
+	now := time.Now()
+
 	// 创建执行记录
 	execution := &models.TaskExecution{
 		TaskID:      task.ID,
 		Status:      models.ExecutionStatusPending,
-		StartTime:   time.Now(),
+		StartTime:   now,
 		TriggerType: "schedule",
 	}
 
@@ -114,13 +116,33 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 		return
 	}
 
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":                     models.TaskStatusRunning,
+		"progress":                   0,
+		"last_execution_id":          execution.ID,
+		"last_execution_status":      models.ExecutionStatusRunning,
+		"last_execution_started_at":  now,
+		"last_execution_finished_at": nil,
+	}); err != nil {
+		log.Printf("❌ 更新任务状态失败 - TaskID: %d, Error: %v", task.ID, err)
+	}
+
 	// 将任务加入队列
 	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, execution.ID, task.TenantID); err != nil {
 		log.Printf("❌ 任务入队失败 - TaskID: %d, Error: %v", task.ID, err)
 		// 更新执行状态为失败
-		execution.Status = models.ExecutionStatusFailed
-		execution.ErrorMsg = err.Error()
-		s.executionRepo.Update(execution)
+		finishedAt := time.Now()
+		if err := s.executionRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error()); err != nil {
+			log.Printf("❌ 更新执行状态失败 - ExecutionID: %d, Error: %v", execution.ID, err)
+		}
+		if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+			"status":                     models.TaskStatusScheduled,
+			"last_execution_status":      models.ExecutionStatusFailed,
+			"last_execution_finished_at": finishedAt,
+			"progress":                   0,
+		}); err != nil {
+			log.Printf("❌ 回滚任务状态失败 - TaskID: %d, Error: %v", task.ID, err)
+		}
 		return
 	}
 

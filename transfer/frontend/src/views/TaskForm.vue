@@ -21,14 +21,6 @@
             placeholder="请输入任务描述" />
         </el-form-item>
 
-        <el-form-item label="任务类型" prop="type">
-          <el-select v-model="form.type" placeholder="请选择">
-            <el-option label="数据导入" value="import" />
-            <el-option label="数据导出" value="export" />
-            <el-option label="数据同步" value="sync" />
-          </el-select>
-        </el-form-item>
-
         <el-form-item label="执行模式" prop="mode">
           <el-select v-model="form.mode" placeholder="请选择">
             <el-option label="批处理" value="batch" />
@@ -112,7 +104,6 @@ const form = ref({
 
 const rules = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择任务类型', trigger: 'change' }],
   mode: [{ required: true, message: '请选择执行模式', trigger: 'change' }]
 }
 

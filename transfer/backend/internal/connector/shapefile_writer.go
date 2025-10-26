@@ -2,14 +2,19 @@ package connector
 
 import (
 	"context"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/jonas-p/go-shp"
 	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
+	"github.com/twpayne/go-geom/encoding/wkbcommon"
 	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
@@ -28,10 +33,10 @@ type ShapefileWriter struct {
 
 // ShapefileWriterConfig Shapefile Writer 配置
 type ShapefileWriterConfig struct {
-	FilePath      string `json:"file_path"`       // .shp 文件路径
-	GeometryField string `json:"geometry_field"`  // 几何字段名 (默认 "geom")
-	ShapeType     string `json:"shape_type"`      // POINT, POLYLINE, POLYGON (可选，自动推断)
-	Encoding      string `json:"encoding"`        // DBF 编码 (默认 UTF-8)
+	FilePath      string `json:"file_path"`      // .shp 文件路径
+	GeometryField string `json:"geometry_field"` // 几何字段名 (默认 "geom")
+	ShapeType     string `json:"shape_type"`     // POINT, POLYLINE, POLYGON (可选，自动推断)
+	Encoding      string `json:"encoding"`       // DBF 编码 (默认 UTF-8)
 }
 
 // NewShapefileWriter 创建 Shapefile Writer
@@ -142,10 +147,23 @@ func (w *ShapefileWriter) initializeWriter(batch *pipeline.DataBatch) error {
 	// 从第一行数据推断 schema
 	firstRow := batch.Rows[0]
 
+	// 如果 geometry 字段大小写不一致，尝试匹配实际 key
+	if matchedKey, ok := findGeometryKey(firstRow, w.geometryField); ok {
+		w.geometryField = matchedKey
+	} else {
+		if detected, ok := detectGeometryField(firstRow); ok {
+			fmt.Printf("[ShapefileWriter] geometry field '%s' not found, fallback to '%s'\n", w.geometryField, detected)
+			w.geometryField = detected
+		} else {
+			fmt.Printf("[ShapefileWriter] geometry field '%s' not found; available fields: %v\n", w.geometryField, mapKeys(firstRow))
+			return fmt.Errorf("geometry field '%s' not found", w.geometryField)
+		}
+	}
+
 	// 构建 DBF 字段定义
 	w.fields = make([]shp.Field, 0)
 	for key, value := range firstRow {
-		if key == w.geometryField {
+		if strings.EqualFold(key, w.geometryField) {
 			continue // 跳过几何字段
 		}
 
@@ -179,8 +197,9 @@ func (w *ShapefileWriter) initializeWriter(batch *pipeline.DataBatch) error {
 
 	// 推断 ShapeType（如果未指定）
 	if w.shapeType == shp.NULL {
-		geomValue, exists := firstRow[w.geometryField]
+		geomValue, exists := findGeometryValue(firstRow, w.geometryField)
 		if !exists {
+			fmt.Printf("[ShapefileWriter] geometry field '%s' missing in first row; available fields: %v\n", w.geometryField, mapKeys(firstRow))
 			return fmt.Errorf("geometry field '%s' not found", w.geometryField)
 		}
 
@@ -212,7 +231,7 @@ func (w *ShapefileWriter) flushBuffer() error {
 
 	for _, row := range w.buffer {
 		// 提取几何数据
-		geomValue, exists := row[w.geometryField]
+		geomValue, exists := findGeometryValue(row, w.geometryField)
 		if !exists {
 			continue // 跳过缺失几何的行
 		}
@@ -266,6 +285,77 @@ func stringToFieldName(name string) [11]byte {
 	var fieldName [11]byte
 	copy(fieldName[:], name)
 	return fieldName
+}
+
+// findGeometryKey 在行数据中寻找匹配的几何字段（忽略大小写）
+func findGeometryKey(row map[string]interface{}, desired string) (string, bool) {
+	if _, ok := row[desired]; ok {
+		return desired, true
+	}
+
+	lowerDesired := strings.ToLower(desired)
+	for key := range row {
+		if strings.ToLower(key) == lowerDesired {
+			return key, true
+		}
+	}
+
+	return "", false
+}
+
+// findGeometryValue 返回几何字段值（忽略大小写）
+func findGeometryValue(row map[string]interface{}, field string) (interface{}, bool) {
+	if value, ok := row[field]; ok {
+		return value, true
+	}
+
+	lowerField := strings.ToLower(field)
+	for key, value := range row {
+		if strings.ToLower(key) == lowerField {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+// detectGeometryField 尝试自动识别几何字段
+func detectGeometryField(row map[string]interface{}) (string, bool) {
+	for key, value := range row {
+		switch v := value.(type) {
+		case []byte:
+			if len(v) > 0 {
+				return key, true
+			}
+		case string:
+			trimmed := strings.TrimSpace(strings.ToUpper(v))
+			if strings.HasPrefix(trimmed, "POINT") ||
+				strings.HasPrefix(trimmed, "LINESTRING") ||
+				strings.HasPrefix(trimmed, "POLYGON") ||
+				strings.HasPrefix(trimmed, "MULTIPOLYGON") ||
+				strings.HasPrefix(trimmed, "MULTILINESTRING") ||
+				strings.HasPrefix(trimmed, "MULTIPOINT") {
+				return key, true
+			}
+		case map[string]interface{}:
+			// GeoJSON 格式
+			if geomType, ok := v["type"].(string); ok {
+				switch strings.ToUpper(geomType) {
+				case "POINT", "LINESTRING", "POLYGON", "MULTIPOLYGON", "MULTILINESTRING", "MULTIPOINT", "GEOMETRYCOLLECTION":
+					return key, true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// mapKeys 返回 map 的键列表（用于调试日志）
+func mapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 // inferShapeType 从几何数据推断 ShapeType
@@ -322,14 +412,25 @@ func toShapefileGeometry(geomValue interface{}, targetType shp.ShapeType) (shp.S
 
 	switch v := geomValue.(type) {
 	case []byte:
-		// WKB
 		var err error
-		geometry, err = wkb.Unmarshal(v)
+		geometry, err = parseBinaryGeometry(v)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse WKB: %w", err)
+			return nil, fmt.Errorf("failed to parse WKB/EWKB: %w", err)
 		}
 	case string:
-		// WKT
+		data := v
+		if len(data) > 2 && (strings.HasPrefix(data, "0x") || strings.HasPrefix(data, "0X")) {
+			data = data[2:]
+		}
+
+		if decoded, err := hex.DecodeString(data); err == nil && len(decoded) > 0 {
+			geometry, err = parseBinaryGeometry(decoded)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse hex WKB/EWKB: %w", err)
+			}
+			break
+		}
+
 		var err error
 		geometry, err = wkt.Unmarshal(v)
 		if err != nil {
@@ -348,36 +449,16 @@ func toShapefileGeometry(geomValue interface{}, targetType shp.ShapeType) (shp.S
 		}, nil
 
 	case *geom.LineString:
-		numPoints := g.NumCoords()
-		points := make([]shp.Point, numPoints)
-		for i := 0; i < numPoints; i++ {
-			coord := g.Coord(i)
-			points[i] = shp.Point{X: coord.X(), Y: coord.Y()}
-		}
-		return &shp.PolyLine{
-			Box:       calculateBox(points),
-			NumParts:  1,
-			NumPoints: int32(numPoints),
-			Parts:     []int32{0},
-			Points:    points,
-		}, nil
+		return lineStringToShapefile(g)
+
+	case *geom.MultiLineString:
+		return multiLineStringToShapefile(g)
 
 	case *geom.Polygon:
-		// 只取外环
-		ring := g.LinearRing(0)
-		numPoints := ring.NumCoords()
-		points := make([]shp.Point, numPoints)
-		for i := 0; i < numPoints; i++ {
-			coord := ring.Coord(i)
-			points[i] = shp.Point{X: coord.X(), Y: coord.Y()}
-		}
-		return &shp.Polygon{
-			Box:       calculateBox(points),
-			NumParts:  1,
-			NumPoints: int32(numPoints),
-			Parts:     []int32{0},
-			Points:    points,
-		}, nil
+		return polygonToShapefile(g)
+
+	case *geom.MultiPolygon:
+		return multiPolygonToShapefile(g)
 
 	case *geom.MultiPoint:
 		numPoints := g.NumPoints()
@@ -395,6 +476,32 @@ func toShapefileGeometry(geomValue interface{}, targetType shp.ShapeType) (shp.S
 	default:
 		return nil, fmt.Errorf("unsupported geometry type: %T", geometry)
 	}
+}
+
+func parseBinaryGeometry(data []byte) (geom.T, error) {
+	geometry, err := wkb.Unmarshal(data)
+	if err == nil {
+		return geometry, nil
+	}
+
+	if shouldFallbackToEWKB(err) {
+		return ewkb.Unmarshal(data)
+	}
+	return nil, err
+}
+
+func shouldFallbackToEWKB(err error) bool {
+	var unknownType wkbcommon.ErrUnknownType
+	if errors.As(err, &unknownType) {
+		return true
+	}
+
+	var unsupportedType wkbcommon.ErrUnsupportedType
+	if errors.As(err, &unsupportedType) {
+		return true
+	}
+
+	return false
 }
 
 // calculateBox 计算边界框
@@ -427,4 +534,164 @@ func calculateBox(points []shp.Point) shp.Box {
 		MaxX: maxX,
 		MaxY: maxY,
 	}
+}
+
+func lineStringToShapefile(line *geom.LineString) (*shp.PolyLine, error) {
+	if line.NumCoords() < 2 {
+		return nil, fmt.Errorf("linestring requires at least two points")
+	}
+
+	points := coordsToShpPoints(line.Coords())
+	return &shp.PolyLine{
+		Box:       calculateBox(points),
+		NumParts:  1,
+		NumPoints: int32(len(points)),
+		Parts:     []int32{0},
+		Points:    points,
+	}, nil
+}
+
+func multiLineStringToShapefile(multiline *geom.MultiLineString) (*shp.PolyLine, error) {
+	if multiline.NumLineStrings() == 0 {
+		return nil, fmt.Errorf("multilinestring has no parts")
+	}
+
+	var allPoints []shp.Point
+	parts := make([]int32, multiline.NumLineStrings())
+	offset := 0
+
+	for i := 0; i < multiline.NumLineStrings(); i++ {
+		line := multiline.LineString(i)
+		if line.NumCoords() < 2 {
+			return nil, fmt.Errorf("linestring requires at least two points")
+		}
+		partPoints := coordsToShpPoints(line.Coords())
+		parts[i] = int32(offset)
+		allPoints = append(allPoints, partPoints...)
+		offset += len(partPoints)
+	}
+
+	return &shp.PolyLine{
+		Box:       calculateBox(allPoints),
+		NumParts:  int32(len(parts)),
+		NumPoints: int32(len(allPoints)),
+		Parts:     parts,
+		Points:    allPoints,
+	}, nil
+}
+
+func polygonToShapefile(polygon *geom.Polygon) (*shp.Polygon, error) {
+	if polygon.NumLinearRings() == 0 {
+		return nil, fmt.Errorf("polygon has no rings")
+	}
+
+	return buildShapefilePolygon([]*geom.Polygon{polygon})
+}
+
+func multiPolygonToShapefile(multi *geom.MultiPolygon) (*shp.Polygon, error) {
+	if multi.NumPolygons() == 0 {
+		return nil, fmt.Errorf("multipolygon has no polygons")
+	}
+
+	polygons := make([]*geom.Polygon, multi.NumPolygons())
+	for i := 0; i < multi.NumPolygons(); i++ {
+		polygons[i] = multi.Polygon(i)
+	}
+	return buildShapefilePolygon(polygons)
+}
+
+func buildShapefilePolygon(polygons []*geom.Polygon) (*shp.Polygon, error) {
+	var allPoints []shp.Point
+	var parts []int32
+	offset := 0
+
+	for _, polygon := range polygons {
+		if polygon.NumLinearRings() == 0 {
+			continue
+		}
+
+		for ringIdx := 0; ringIdx < polygon.NumLinearRings(); ringIdx++ {
+			ring := polygon.LinearRing(ringIdx)
+			coords := ring.Coords()
+			closed := closeCoordsIfNeeded(coords)
+
+			if ringIdx == 0 {
+				closed = ensureClockwise(closed)
+			} else {
+				closed = ensureCounterClockwise(closed)
+			}
+
+			partPoints := coordsToShpPoints(closed)
+			parts = append(parts, int32(offset))
+			allPoints = append(allPoints, partPoints...)
+			offset += len(partPoints)
+		}
+	}
+
+	if len(allPoints) == 0 {
+		return nil, fmt.Errorf("polygon contains no points")
+	}
+
+	return &shp.Polygon{
+		Box:       calculateBox(allPoints),
+		NumParts:  int32(len(parts)),
+		NumPoints: int32(len(allPoints)),
+		Parts:     parts,
+		Points:    allPoints,
+	}, nil
+}
+
+func coordsToShpPoints(coords []geom.Coord) []shp.Point {
+	points := make([]shp.Point, len(coords))
+	for i, c := range coords {
+		points[i] = shp.Point{X: c.X(), Y: c.Y()}
+	}
+	return points
+}
+
+func closeCoordsIfNeeded(coords []geom.Coord) []geom.Coord {
+	if len(coords) == 0 {
+		return coords
+	}
+	first := coords[0]
+	last := coords[len(coords)-1]
+	if almostEqual(first.X(), last.X()) && almostEqual(first.Y(), last.Y()) {
+		return coords
+	}
+	return append(coords, geom.Coord{first.X(), first.Y()})
+}
+
+func ensureClockwise(coords []geom.Coord) []geom.Coord {
+	if ringArea(coords) <= 0 {
+		return coords
+	}
+	reversed := make([]geom.Coord, len(coords))
+	for i := range coords {
+		reversed[i] = coords[len(coords)-1-i]
+	}
+	return reversed
+}
+
+func ensureCounterClockwise(coords []geom.Coord) []geom.Coord {
+	if ringArea(coords) >= 0 {
+		return coords
+	}
+	reversed := make([]geom.Coord, len(coords))
+	for i := range coords {
+		reversed[i] = coords[len(coords)-1-i]
+	}
+	return reversed
+}
+
+func ringArea(coords []geom.Coord) float64 {
+	if len(coords) < 3 {
+		return 0
+	}
+	sum := 0.0
+	for i := 0; i < len(coords)-1; i++ {
+		x1, y1 := coords[i].X(), coords[i].Y()
+		x2, y2 := coords[i+1].X(), coords[i+1].Y()
+		sum += (x1 * y2) - (x2 * y1)
+	}
+	return sum / 2
 }

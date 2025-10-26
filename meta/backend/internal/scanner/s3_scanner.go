@@ -36,7 +36,8 @@ type S3Scanner struct {
 	client        *minio.Client
 	cfg           s3Config
 	allowedBucket map[string]struct{}
-	resourceID    uint // 资源ID，用于元数据提取
+	resourceID    uint   // 资源ID，用于元数据提取
+	scanDepth     string // 扫描深度：deep（深度）或 shallow（浅度）
 }
 
 var reservedObjectSegments = map[string]struct{}{
@@ -132,6 +133,11 @@ func (s *S3Scanner) Close() error { return nil }
 // SetResourceID 设置资源ID（用于元数据提取）
 func (s *S3Scanner) SetResourceID(resID uint) {
 	s.resourceID = resID
+}
+
+// SetScanDepth 设置扫描深度
+func (s *S3Scanner) SetScanDepth(depth string) {
+	s.scanDepth = depth
 }
 
 func (s *S3Scanner) AllowedBuckets() []string {
@@ -337,9 +343,12 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 	objects := []ObjectMetadata{}
 	dirAgg := map[string]*ObjectMetadata{}
 
+	// 判断是否为深度扫描
+	isDeepScan := strings.EqualFold(s.scanDepth, "deep")
+
 	objectCh := s.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
 		Prefix:    cleanPrefix,
-		Recursive: true,
+		Recursive: isDeepScan, // 浅度扫描时不递归
 	})
 
 	for object := range objectCh {
@@ -356,6 +365,12 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		}
 		parts := strings.Split(relative, "/")
 
+		// 浅度扫描：只保留当前层级的直接子项（一级子目录和一级文件）
+		if !isDeepScan && len(parts) > 1 {
+			// 跳过多层级的对象，只处理第一层的目录（prefix）
+			continue
+		}
+
 		if strings.HasSuffix(object.Key, "/") {
 			dirPath := strings.TrimSuffix(relative, "/")
 			s.ensureDirAggEntry(dirAgg, bucket, dirPath)
@@ -368,8 +383,9 @@ func (s *S3Scanner) scanBucket(bucket, prefix string) ([]ObjectMetadata, error) 
 		lastModified := object.LastModified
 
 		// 尝试提取详细元数据（视频、图片、文档等）
+		// 浅度扫描时，resourceID 已经在外层被设置为 0，这里会自动跳过
 		var extractedMetadata *Metadata
-		if s.resourceID > 0 {
+		if s.resourceID > 0 && isDeepScan {
 			// 推断Content-Type
 			contentType := inferContentTypeFromExt(ext)
 			extractedMetadata = s.extractObjectMetadata(s.resourceID, bucket, object.Key, contentType, object.Size, lastModified)

@@ -17,7 +17,7 @@
                 :disabled="true"
               >
                 <el-icon><Download /></el-icon>
-                下载
+                下载本页
               </el-button>
             </span>
           </el-tooltip>
@@ -29,7 +29,7 @@
             @click="handleDownload"
           >
             <el-icon><Download /></el-icon>
-            下载
+            下载本页
           </el-button>
         </div>
       </div>

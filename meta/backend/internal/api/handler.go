@@ -614,6 +614,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 
 	resourceIDStr := c.Query("resource_id")
 	tableName := c.Query("table_name")
+	includeDetails := c.Query("include_details")
 
 	if resourceIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id"})
@@ -631,11 +632,21 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 	}
 
 	// 获取表字段信息
-	fields, err := h.scanService.GetTableFields(uint(resourceID), tableName, tenantID)
+	if includeDetails == "true" || includeDetails == "1" {
+		fields, err := h.scanService.GetTableFieldDetails(uint(resourceID), tableName, tenantID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, fields)
+		return
+	}
+
+	names, err := h.scanService.GetTableFields(uint(resourceID), tableName, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, fields)
+	c.JSON(http.StatusOK, names)
 }

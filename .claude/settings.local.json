@@ -98,7 +98,9 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJleHAiOjE3NjEyNzQwNjQsImlhdCI6MTc2MTI3MjI2NH0.ofR-lTZl6lL_N9jqe_0POoidft6P9LGn6c7ZRw5iRh0\")",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJleHAiOjE3NjEyNzQwNjQsImlhdCI6MTc2MTI3MjI2NH0.ofR-lTZl6lL_N9jqe_0POoidft6P9LGn6c7ZRw5iRh0\" PGPASSWORD=addp_password psql -h localhost -U addp -d addp -c \"DELETE FROM metadata.meta_item WHERE res_id = 9;\")",
       "Bash(/dev/null curl -s -X POST \"http://localhost:8081/api/data-explorer/resources/9/refresh\" -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"\"\"\"node_type\"\"\"\": \"\"\"\"prefix\"\"\"\", \"\"\"\"schema\"\"\"\": \"\"\"\"addp\"\"\"\", \"\"\"\"path\"\"\"\": \"\"\"\"shapefile\"\"\"\", \"\"\"\"full_path\"\"\"\": \"\"\"\"addp/shapefile\"\"\"\"}')",
-      "Bash(/dev/null sleep 6 grep \"处理meta对象\" /tmp/meta-debug.log)"
+      "Bash(/dev/null sleep 6 grep \"处理meta对象\" /tmp/meta-debug.log)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwiZXhwIjoxNzYxMjc0MDY0LCJpYXQiOjE3NjEyNzIyNjR9.ofR-lTZl6lL_N9jqe_0POoidft6P9LGn6c7ZRw5iRh0\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTMwODUzNywiaWF0IjoxNzYxMzA2NzM3fQ.sUcW7UhThMK2W6ec7t_45r4FrZSSC_A4dzVCSAFuPu8\")"
     ],
     "deny": [],
     "ask": []

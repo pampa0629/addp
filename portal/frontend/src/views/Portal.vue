@@ -53,8 +53,18 @@
               <el-icon><Upload /></el-icon>
               <span>数据传输</span>
             </template>
-            <el-menu-item index="/transfer/tasks">传输任务</el-menu-item>
-            <el-menu-item index="/transfer/executions">执行记录</el-menu-item>
+            <el-menu-item index="/transfer/tasks">
+              <el-icon><List /></el-icon>
+              <span>传输任务</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/executions">
+              <el-icon><Timer /></el-icon>
+              <span>执行记录</span>
+            </el-menu-item>
+            <el-menu-item index="/transfer/local-resources">
+              <el-icon><Connection /></el-icon>
+              <span>本地存储引擎</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="manager">
@@ -254,6 +264,7 @@ const handleMenuSelect = (index) => {
     const transferPageMap = {
       'tasks': 'tasks',
       'executions': 'executions',
+      'local-resources': 'local-resources',
       '': 'tasks'
     }
 

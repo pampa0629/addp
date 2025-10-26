@@ -48,9 +48,10 @@ func main() {
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue) // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db)
 	localResourceService := service.NewLocalResourceService(db, cfg)
+	objectStorageService := service.NewObjectStorageService(localResourceService)
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localResourceService, cfg.JWTSecret)
+	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.JWTSecret)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.Port)

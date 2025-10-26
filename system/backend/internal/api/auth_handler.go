@@ -35,7 +35,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := utils.GenerateToken(user.ID, user.Username, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
+	var tenantID uint
+	if user.TenantID != nil {
+		tenantID = *user.TenantID
+	}
+	token, err := utils.GenerateToken(user.ID, user.Username, tenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
 		return

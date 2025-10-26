@@ -562,7 +562,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	if isObjectStorageType(resourceType) {
 		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, scanDepth, reporter)
 	} else {
-		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLog.ID, reporter)
+		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLog.ID, scanDepth, reporter)
 	}
 
 	if err != nil {
@@ -777,7 +777,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 		err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
 			tenantID, resourceID, "schema", schemaInfo.Name).First(&node).Error
 		if err == gorm.ErrRecordNotFound {
-			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaInfo.Name)
+			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaInfo.Name, "deep")
 			if err != nil {
 				s.log.Warn("Schema 扫描失败",
 					"resource_id", resourceID,
@@ -810,11 +810,11 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 }
 
 // scanResourceSchemas 扫描资源的指定Schema列表
-func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint) (int, int, int, error) {
-	return s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLogID, nil)
+func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string) (int, int, int, error) {
+	return s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLogID, scanDepth, nil)
 }
 
-func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -865,7 +865,7 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
 		}
 
-		schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaName)
+		schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaName, scanDepth)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
 				"resource_id", resourceID,
@@ -958,9 +958,21 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 	// 记录本次扫描到的所有fingerprints，用于后续清理未扫描到的item
 	scannedFingerprints := make(map[string]bool)
 
-	// 如果scanner支持SetResourceID，设置resourceID用于元数据提取
-	if s3Scanner, ok := objectScanner.(interface{ SetResourceID(uint) }); ok {
-		s3Scanner.SetResourceID(resourceID)
+	// 如果scanner支持SetResourceID和SetScanDepth，设置扫描参数
+	if s3Scanner, ok := objectScanner.(interface {
+		SetResourceID(uint)
+		SetScanDepth(string)
+	}); ok {
+		// 设置扫描深度
+		s3Scanner.SetScanDepth(scanDepth)
+
+		// 深度扫描时才启用详细元数据提取
+		if strings.EqualFold(scanDepth, "deep") {
+			s3Scanner.SetResourceID(resourceID)
+		} else {
+			// 使用0关闭提取，避免浅度扫描额外读取对象内容
+			s3Scanner.SetResourceID(0)
+		}
 	}
 
 	totalBuckets := 0
@@ -1001,6 +1013,10 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
 			}
 			continue
+		}
+
+		if !strings.EqualFold(scanDepth, "deep") {
+			metas = filterObjectMetasForDepth(metas, relativePath)
 		}
 
 		bucketNode, ok := bucketNodes[bucketName]
@@ -1065,9 +1081,48 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 		}
 	}
 
-	// 清理未在本次扫描中出现的旧item（仅当扫描了完整路径时）
-	// 注意：这里暂时不清理，因为shallow扫描不应删除deep扫描的结果
-	// 未来可以根据scan_depth决定是否清理
+	// 清理未在本次扫描中出现的旧item
+	// 深度扫描时才执行清理，浅度扫描不应删除未扫描到的对象
+	if strings.EqualFold(scanDepth, "deep") && len(scannedFingerprints) > 0 {
+		// 查询本次扫描路径下的所有对象
+		for bucketName := range processedBuckets {
+			var existingItems []models.MetaItem
+			bucketNode := bucketNodes[bucketName]
+			if bucketNode == nil {
+				continue
+			}
+
+			// 查询该 bucket 下的所有对象
+			if err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ?",
+				tenantID, resourceID, "object").
+				Where("attributes->>'bucket' = ?", bucketName).
+				Find(&existingItems).Error; err != nil {
+				s.log.Warn("查询已存在对象元数据失败",
+					"bucket", bucketName,
+					"error", err,
+				)
+				continue
+			}
+
+			// 软删除未在本次扫描中出现的对象
+			for _, item := range existingItems {
+				if !scannedFingerprints[item.Fingerprint] {
+					s.log.Info("对象已不存在，标记删除",
+						"bucket", bucketName,
+						"fingerprint", item.Fingerprint,
+						"name", item.Name,
+					)
+					if err := s.db.Delete(&item).Error; err != nil {
+						s.log.Warn("软删除对象元数据失败",
+							"bucket", bucketName,
+							"fingerprint", item.Fingerprint,
+							"error", err,
+						)
+					}
+				}
+			}
+		}
+	}
 
 	for _, agg := range nodeStats {
 		if err := s.finalizeNodeState(agg.node, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
@@ -1245,9 +1300,35 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 		var existingItem models.MetaItem
 		itemExists := s.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error == nil
 
+		// 增量更新逻辑：对比 LastModifiedAt 和 SizeBytes
+		needsUpdate := !itemExists || // 新对象
+			(existingItem.LastModifiedAt != nil && meta.LastModified != nil && !existingItem.LastModifiedAt.Equal(*meta.LastModified)) || // 修改时间变化
+			(existingItem.SizeBytes != nil && *existingItem.SizeBytes != meta.SizeBytes) || // 大小变化
+			(existingItem.LastModifiedAt == nil && meta.LastModified != nil) || // 之前未记录修改时间
+			(existingItem.SizeBytes == nil && meta.SizeBytes != 0) // 之前未记录大小
+
+		// 浅度扫描时，如果对象未变化，跳过更新（保留已有的深度元数据）
+		if !strings.EqualFold(scanDepth, "deep") && itemExists && !needsUpdate {
+			s.log.Debug("对象未变化，跳过更新",
+				"bucket", meta.Bucket,
+				"path", meta.Path,
+			)
+			// 仍然需要统计
+			objects++
+			for idx, node := range parentChain {
+				if !includeBucketAggregate && idx == 0 {
+					continue
+				}
+				agg := ensureNodeAggregate(stats, node)
+				agg.itemCount++
+				agg.totalSize += meta.SizeBytes
+			}
+			continue
+		}
+
 		// 根据扫描深度决定是否提取深度元数据
 		var enhancedAttrs models.JSONMap
-		if scanDepth == "deep" {
+		if strings.EqualFold(scanDepth, "deep") {
 			// 深度扫描：提取详细元数据（用于文件预览/搜索）
 			// 传递fullPath用于正确的fingerprint生成
 			enhancedAttrs = s.extractEnhancedMetadataWithCache(resourceID, meta, attrs, fullPath)
@@ -2365,6 +2446,47 @@ func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageS
 	return result
 }
 
+func filterObjectMetasForDepth(metas []scanner.ObjectMetadata, basePath string) []scanner.ObjectMetadata {
+	base := sanitizeObjectPath(basePath)
+	if len(metas) == 0 {
+		return metas
+	}
+
+	filtered := make([]scanner.ObjectMetadata, 0, len(metas))
+	for _, meta := range metas {
+		if meta.NodeType == "bucket" {
+			filtered = append(filtered, meta)
+			continue
+		}
+
+		relative := sanitizeObjectPath(meta.RelativePath)
+		trimmed := relative
+		if base != "" {
+			switch {
+			case trimmed == base:
+				trimmed = ""
+			case strings.HasPrefix(trimmed, base+"/"):
+				trimmed = strings.TrimPrefix(trimmed, base+"/")
+			}
+		}
+
+		switch strings.ToLower(meta.NodeType) {
+		case "prefix":
+			if trimmed == "" || !strings.Contains(trimmed, "/") {
+				filtered = append(filtered, meta)
+			}
+		case "object":
+			if trimmed != "" && strings.Contains(trimmed, "/") {
+				continue
+			}
+			filtered = append(filtered, meta)
+		default:
+			filtered = append(filtered, meta)
+		}
+	}
+	return filtered
+}
+
 func sanitizeObjectPath(path string) string {
 	path = strings.TrimSpace(path)
 	path = strings.Trim(path, "/")
@@ -2433,7 +2555,7 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 	return nil
 }
 
-func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan scanner.Scanner, tenantID, resourceID uint, schemaName string) (int, int, int, error) {
+func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan scanner.Scanner, tenantID, resourceID uint, schemaName string, scanDepth string) (int, int, int, error) {
 	schemaNode, err := s.upsertNode(tenantID, resourceID, nil, "schema", schemaName, "", nil)
 	if err != nil {
 		return 0, 0, 0, err
@@ -2443,16 +2565,32 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 		return 0, 0, 0, err
 	}
 
-	if err := s.hardDeleteItemsByNode(schemaNode.ID); err != nil {
-		return 0, 0, 0, err
+	// 判断是否为深度扫描
+	isDeepScan := strings.EqualFold(scanDepth, "deep")
+
+	// 增量更新逻辑：查询已存在的表items，建立 tableName -> item 映射
+	var existingItems []models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ?",
+		tenantID, resourceID, schemaNode.ID, "table").Find(&existingItems).Error; err != nil {
+		s.log.Warn("查询已存在表元数据失败",
+			"resource_id", resourceID,
+			"tenant_id", tenantID,
+			"schema", schemaName,
+			"error", err,
+		)
 	}
 
-	s.deleteTablesFromIndex(tenantID, resourceID, schemaName)
+	existingTableMap := make(map[string]*models.MetaItem)
+	for i := range existingItems {
+		existingTableMap[existingItems[i].Name] = &existingItems[i]
+	}
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
 		"resource_id", resourceID,
 		"schema", schemaName,
+		"scan_depth", scanDepth,
+		"existing_tables", len(existingTableMap),
 	)
 
 	tables, err := scan.ScanTables(schemaName)
@@ -2464,29 +2602,72 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 	totalTables := 0
 	totalFields := 0
 	var totalSize int64
+	scannedTables := make(map[string]bool) // 记录本次扫描到的表
 
 	for _, tableInfo := range tables {
-		fields, err := scan.ScanFields(schemaName, tableInfo.Name)
-		if err != nil {
-			s.log.Warn("字段扫描失败",
-				"resource_id", resourceID,
-				"tenant_id", tenantID,
+		var fields []scanner.FieldInfo
+		var attrs models.JSONMap
+
+		scannedTables[tableInfo.Name] = true
+
+		// 检查是否需要更新：对比 RowCount 和 SizeBytes
+		existingItem := existingTableMap[tableInfo.Name]
+		needsUpdate := existingItem == nil || // 新表
+			(existingItem.RowCount != nil && *existingItem.RowCount != tableInfo.RowCount) || // 行数变化
+			(existingItem.SizeBytes != nil && *existingItem.SizeBytes != tableInfo.SizeBytes) || // 大小变化
+			(existingItem.RowCount == nil && tableInfo.RowCount != 0) || // 之前未记录行数
+			(existingItem.SizeBytes == nil && tableInfo.SizeBytes != 0) // 之前未记录大小
+
+		// 浅度扫描时，如果表未变化，跳过更新（保留已有的深度元数据）
+		if !isDeepScan && existingItem != nil && !needsUpdate {
+			s.log.Debug("表未变化，跳过更新",
 				"schema", schemaName,
 				"table", tableInfo.Name,
-				"error", err,
 			)
+			totalTables++
+			totalSize += tableInfo.SizeBytes
 			continue
+		}
+
+		// 浅度扫描：跳过字段扫描
+		if isDeepScan {
+			fields, err = scan.ScanFields(schemaName, tableInfo.Name)
+			if err != nil {
+				s.log.Warn("字段扫描失败",
+					"resource_id", resourceID,
+					"tenant_id", tenantID,
+					"schema", schemaName,
+					"table", tableInfo.Name,
+					"error", err,
+				)
+				continue
+			}
+
+			attrs = models.JSONMap{
+				"schema":        schemaName,
+				"table_type":    tableInfo.Type,
+				"table_comment": tableInfo.Comment,
+				"fields":        buildFieldAttributes(fields),
+			}
+		} else {
+			// 浅度扫描：不包含字段信息（保留已有的字段信息）
+			if existingItem != nil && existingItem.Attributes != nil {
+				// 保留已有的 fields，只更新基本信息
+				attrs = existingItem.Attributes
+				attrs["schema"] = schemaName
+				attrs["table_type"] = tableInfo.Type
+				attrs["table_comment"] = tableInfo.Comment
+			} else {
+				attrs = models.JSONMap{
+					"schema":        schemaName,
+					"table_type":    tableInfo.Type,
+					"table_comment": tableInfo.Comment,
+				}
+			}
 		}
 
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
-
-		attrs := models.JSONMap{
-			"schema":        schemaName,
-			"table_type":    tableInfo.Type,
-			"table_comment": tableInfo.Comment,
-			"fields":        buildFieldAttributes(fields),
-		}
 
 		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
 		item, err := s.upsertItem(tenantID, resourceID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
@@ -2501,11 +2682,33 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			continue
 		}
 
-		s.indexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
+		// 深度扫描才索引表资产
+		if isDeepScan {
+			s.indexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
+		}
 
 		totalTables++
 		totalFields += len(fields)
 		totalSize += tableInfo.SizeBytes
+	}
+
+	// 软删除那些不再存在的表
+	for tableName, item := range existingTableMap {
+		if !scannedTables[tableName] {
+			s.log.Info("表已不存在，标记删除",
+				"schema", schemaName,
+				"table", tableName,
+			)
+			if err := s.db.Delete(item).Error; err != nil {
+				s.log.Warn("软删除表元数据失败",
+					"schema", schemaName,
+					"table", tableName,
+					"error", err,
+				)
+			}
+			// 从索引中删除
+			s.deleteTablesFromIndex(tenantID, resourceID, schemaName)
+		}
 	}
 
 	s.log.Info("Schema 扫描完成",
@@ -2684,8 +2887,36 @@ func (s *ScanServiceNew) GetTablesByResource(resourceID, tenantID uint) ([]model
 	return items, nil
 }
 
-// GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
+// TableFieldInfo 表字段详细信息
+type TableFieldInfo struct {
+	Name         string `json:"name"`
+	DataType     string `json:"data_type,omitempty"`
+	ColumnType   string `json:"column_type,omitempty"`
+	DefaultValue string `json:"default_value,omitempty"`
+	Comment      string `json:"comment,omitempty"`
+	IsNullable   bool   `json:"is_nullable,omitempty"`
+	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
+	IsUniqueKey  bool   `json:"is_unique_key,omitempty"`
+}
+
+// GetTableFields 获取表的字段名列表（用于Transfer模块字段映射）
 func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenantID uint) ([]string, error) {
+	fieldInfos, err := s.GetTableFieldDetails(resourceID, tableName, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	names := make([]string, 0, len(fieldInfos))
+	for _, field := range fieldInfos {
+		if field.Name != "" {
+			names = append(names, field.Name)
+		}
+	}
+	return names, nil
+}
+
+// GetTableFieldDetails 获取表字段详细信息（支持空间字段识别）
+func (s *ScanServiceNew) GetTableFieldDetails(resourceID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
 	// 1. 先获取该资源下的所有节点ID（schema nodes）
 	var nodeIDs []uint
 	err := s.db.Model(&models.MetaNode{}).
@@ -2696,7 +2927,7 @@ func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenan
 	}
 
 	if len(nodeIDs) == 0 {
-		return []string{}, nil
+		return []TableFieldInfo{}, nil
 	}
 
 	// 2. 查询指定表名的 meta_item
@@ -2707,7 +2938,7 @@ func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenan
 		First(&item).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return []string{}, fmt.Errorf("table '%s' not found in metadata", tableName)
+			return []TableFieldInfo{}, fmt.Errorf("table '%s' not found in metadata", tableName)
 		}
 		return nil, err
 	}
@@ -2716,27 +2947,68 @@ func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenan
 	// 字段信息存储在 attributes.fields 中，格式为 []map[string]interface{}
 	fieldsData, ok := item.Attributes["fields"]
 	if !ok {
-		return []string{}, nil
+		return []TableFieldInfo{}, nil
 	}
 
 	fieldsList, ok := fieldsData.([]interface{})
 	if !ok {
-		return []string{}, fmt.Errorf("invalid fields format in metadata")
+		return []TableFieldInfo{}, fmt.Errorf("invalid fields format in metadata")
 	}
 
-	// 4. 提取字段名
-	fieldNames := make([]string, 0, len(fieldsList))
+	// 4. 构造字段详细信息
+	fieldInfos := make([]TableFieldInfo, 0, len(fieldsList))
 	for _, fieldData := range fieldsList {
 		fieldMap, ok := fieldData.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		fieldName, ok := fieldMap["name"].(string)
-		if !ok {
-			continue
+
+		info := TableFieldInfo{
+			Name:         toString(fieldMap["name"]),
+			DataType:     toString(fieldMap["data_type"]),
+			ColumnType:   toString(fieldMap["column_type"]),
+			DefaultValue: toString(fieldMap["default_value"]),
+			Comment:      toString(fieldMap["comment"]),
+			IsNullable:   toBool(fieldMap["is_nullable"]),
+			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
+			IsUniqueKey:  toBool(fieldMap["is_unique_key"]),
 		}
-		fieldNames = append(fieldNames, fieldName)
+
+		fieldInfos = append(fieldInfos, info)
 	}
 
-	return fieldNames, nil
+	return fieldInfos, nil
+}
+
+func toString(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	case fmt.Stringer:
+		return v.String()
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func toBool(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		lower := strings.ToLower(v)
+		return lower == "true" || lower == "1" || lower == "yes"
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	default:
+		return false
+	}
 }

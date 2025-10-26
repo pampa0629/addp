@@ -1,24 +1,29 @@
 <template>
   <div class="dashboard">
     <el-row :gutter="20">
-      <el-col :span="6">
+      <el-col :span="4">
         <el-card>
           <el-statistic title="总任务数" :value="stats.total_tasks || 0" />
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="5">
         <el-card>
-          <el-statistic title="运行中" :value="stats.running_tasks || 0" />
+          <el-statistic title="未执行" :value="stats.not_executed_tasks || 0" />
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="5">
         <el-card>
-          <el-statistic title="成功" :value="stats.success_tasks || 0" />
+          <el-statistic title="执行中" :value="stats.last_running_tasks || 0" />
         </el-card>
       </el-col>
-      <el-col :span="6">
+      <el-col :span="5">
         <el-card>
-          <el-statistic title="失败" :value="stats.failed_tasks || 0" />
+          <el-statistic title="成功" :value="stats.last_success_tasks || 0" />
+        </el-card>
+      </el-col>
+      <el-col :span="5">
+        <el-card>
+          <el-statistic title="失败" :value="stats.last_failed_tasks || 0" />
         </el-card>
       </el-col>
     </el-row>

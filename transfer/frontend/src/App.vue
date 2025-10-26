@@ -1,8 +1,17 @@
 <template>
-  <router-view />
+  <StandaloneLayout v-if="isStandalone" />
+  <router-view v-else />
 </template>
 
 <script setup>
+import { ref } from 'vue'
+import StandaloneLayout from '@/components/StandaloneLayout.vue'
+
+const isStandalone = ref(false)
+
+if (typeof window !== 'undefined') {
+  isStandalone.value = window.self === window.top
+}
 </script>
 
 <style>

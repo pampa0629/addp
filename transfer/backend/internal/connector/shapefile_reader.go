@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/jonas-p/go-shp"
+	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/wkb"
 )
 
 // ShapefileReader Shapefile 数据读取器
@@ -24,8 +26,8 @@ type ShapefileReader struct {
 
 // ShapefileConfig Shapefile 配置
 type ShapefileConfig struct {
-	FilePath     string `json:"file_path"`      // .shp 文件路径
-	Encoding     string `json:"encoding"`       // DBF 编码 (默认 UTF-8)
+	FilePath      string `json:"file_path"`      // .shp 文件路径
+	Encoding      string `json:"encoding"`       // DBF 编码 (默认 UTF-8)
 	GeometryField string `json:"geometry_field"` // 几何字段名 (默认 "geom")
 }
 
@@ -93,9 +95,9 @@ func (r *ShapefileReader) Read(ctx context.Context) (*pipeline.DataBatch, error)
 
 	// 读取批次数据
 	fields := r.shape.Fields()
-	rowNum := 0
 
 	for r.shape.Next() && count < r.batchSize {
+		recordIndex := int(r.offset)
 		_, shape := r.shape.Shape()
 
 		// 读取属性字段
@@ -104,20 +106,10 @@ func (r *ShapefileReader) Read(ctx context.Context) (*pipeline.DataBatch, error)
 		// 从 DBF 读取属性
 		for i, field := range fields {
 			// Convert field name from [11]byte to string
-			fieldName := string(field.Name[:])
-			// Trim null bytes
-			fieldName = string([]byte(fieldName)[:len(fieldName)])
-			if idx := len(fieldName); idx > 0 {
-				for j := 0; j < len(fieldName); j++ {
-					if fieldName[j] == 0 {
-						fieldName = fieldName[:j]
-						break
-					}
-				}
-			}
+			fieldName := trimDBFFieldName(field.Name)
 
 			// Read attribute value
-			attrValue := r.shape.ReadAttribute(rowNum, i)
+			attrValue := r.shape.ReadAttribute(recordIndex, i)
 			row[fieldName] = attrValue
 		}
 
@@ -131,7 +123,6 @@ func (r *ShapefileReader) Read(ctx context.Context) (*pipeline.DataBatch, error)
 		batchRows = append(batchRows, row)
 		count++
 		r.offset++
-		rowNum++
 	}
 
 	// 检查是否读完
@@ -259,175 +250,201 @@ func mapShapeType(shapeType shp.ShapeType) string {
 
 // shapeToWKB 将 Shapefile 几何转为 WKB
 func shapeToWKB(shape shp.Shape) ([]byte, error) {
-	// TODO: 实现完整的 Shapefile → WKB 转换
-	// 当前简化实现，返回空 WKB
-	// 完整实现需要根据不同的 Shape 类型构建 WKB
+	geometry, err := shapeToGeom(shape)
+	if err != nil {
+		return nil, err
+	}
+	return wkb.Marshal(geometry, wkb.NDR)
+}
 
+func shapeToGeom(shape shp.Shape) (geom.T, error) {
 	switch s := shape.(type) {
 	case *shp.Point:
-		return pointToWKB(s), nil
-	case *shp.PolyLine:
-		return polylineToWKB(s), nil
-	case *shp.Polygon:
-		return polygonToWKB(s), nil
+		return geom.NewPointFlat(geom.XY, []float64{s.X, s.Y}), nil
+	case *shp.PointZ:
+		return geom.NewPointFlat(geom.XY, []float64{s.X, s.Y}), nil
+	case *shp.PointM:
+		return geom.NewPointFlat(geom.XY, []float64{s.X, s.Y}), nil
 	case *shp.MultiPoint:
-		return multipointToWKB(s), nil
+		return multipointShapeToGeom(s.Points), nil
+	case *shp.MultiPointZ:
+		return multipointShapeToGeom(s.Points), nil
+	case *shp.MultiPointM:
+		return multipointShapeToGeom(s.Points), nil
+	case *shp.PolyLine:
+		return polylineShapeToGeom(s.Parts, s.Points)
+	case *shp.PolyLineZ:
+		return polylineShapeToGeom(s.Parts, s.Points)
+	case *shp.PolyLineM:
+		return polylineShapeToGeom(s.Parts, s.Points)
+	case *shp.Polygon:
+		return polygonShapeToGeom(s.Parts, s.Points)
+	case *shp.PolygonZ:
+		return polygonShapeToGeom(s.Parts, s.Points)
+	case *shp.PolygonM:
+		return polygonShapeToGeom(s.Parts, s.Points)
 	default:
 		return nil, fmt.Errorf("unsupported shape type: %T", shape)
 	}
 }
 
-// pointToWKB 转换 Point 为 WKB
-func pointToWKB(p *shp.Point) []byte {
-	// WKB Point 格式:
-	// - 1 byte: byte order (01 = little endian)
-	// - 4 bytes: type (01 00 00 00 = Point)
-	// - 8 bytes: X (double)
-	// - 8 bytes: Y (double)
+func polylineShapeToGeom(parts []int32, points []shp.Point) (geom.T, error) {
+	lineParts := splitParts(parts, points)
+	if len(lineParts) == 0 {
+		return nil, fmt.Errorf("polyline has no points")
+	}
 
-	wkb := make([]byte, 21)
-	wkb[0] = 0x01 // Little endian
+	if len(lineParts) == 1 {
+		line := geom.NewLineString(geom.XY)
+		line.MustSetCoords(pointsToCoords(lineParts[0]))
+		return line, nil
+	}
 
-	// Type: Point (1)
-	wkb[1] = 0x01
-	wkb[2] = 0x00
-	wkb[3] = 0x00
-	wkb[4] = 0x00
-
-	// X coordinate
-	writeFloat64LE(wkb[5:13], p.X)
-
-	// Y coordinate
-	writeFloat64LE(wkb[13:21], p.Y)
-
-	return wkb
+	multi := geom.NewMultiLineString(geom.XY)
+	coords := make([][]geom.Coord, len(lineParts))
+	for i, pts := range lineParts {
+		coords[i] = pointsToCoords(pts)
+	}
+	multi.MustSetCoords(coords)
+	return multi, nil
 }
 
-// polylineToWKB 转换 PolyLine 为 WKB LineString
-func polylineToWKB(pl *shp.PolyLine) []byte {
-	if pl.NumParts == 0 || pl.NumPoints == 0 {
+func polygonShapeToGeom(parts []int32, points []shp.Point) (geom.T, error) {
+	rings := splitParts(parts, points)
+	if len(rings) == 0 {
+		return nil, fmt.Errorf("polygon has no rings")
+	}
+
+	var polygons [][][]geom.Coord
+	var current [][]geom.Coord
+
+	for _, pts := range rings {
+		closed := ensureRingClosed(pts)
+		coords := pointsToCoords(closed)
+		area := signedArea(coords)
+
+		if area < 0 || len(current) == 0 {
+			// 新的外环（Shapefile 规范：外环顺时针，面积为负）
+			if len(current) > 0 {
+				polygons = append(polygons, current)
+			}
+			current = [][]geom.Coord{coordsToCCW(coords)}
+		} else {
+			// 内环（逆时针）
+			if current == nil {
+				current = [][]geom.Coord{coordsToCCW(coords)}
+			} else {
+				current = append(current, coordsToCW(coords))
+			}
+		}
+	}
+
+	if len(current) > 0 {
+		polygons = append(polygons, current)
+	}
+
+	if len(polygons) == 1 {
+		polygon := geom.NewPolygon(geom.XY)
+		polygon.MustSetCoords(polygons[0])
+		return polygon, nil
+	}
+
+	multi := geom.NewMultiPolygon(geom.XY)
+	multi.MustSetCoords(polygons)
+	return multi, nil
+}
+
+func multipointShapeToGeom(points []shp.Point) geom.T {
+	if len(points) == 1 {
+		return geom.NewPointFlat(geom.XY, []float64{points[0].X, points[0].Y})
+	}
+
+	multi := geom.NewMultiPoint(geom.XY)
+	coords := make([]geom.Coord, len(points))
+	for i, p := range points {
+		coords[i] = geom.Coord{p.X, p.Y}
+	}
+	multi.MustSetCoords(coords)
+	return multi
+}
+
+func splitParts(parts []int32, points []shp.Point) [][]shp.Point {
+	if len(points) == 0 {
 		return nil
 	}
-
-	// 简化：只取第一部分
-	numPoints := int32(pl.NumPoints)
-
-	// WKB LineString: 1 + 4 + 4 + (8*2*numPoints)
-	wkbSize := 1 + 4 + 4 + (16 * numPoints)
-	wkb := make([]byte, wkbSize)
-
-	wkb[0] = 0x01 // Little endian
-
-	// Type: LineString (2)
-	wkb[1] = 0x02
-	wkb[2] = 0x00
-	wkb[3] = 0x00
-	wkb[4] = 0x00
-
-	// NumPoints
-	writeUint32LE(wkb[5:9], uint32(numPoints))
-
-	// Points
-	offset := 9
-	for i := 0; i < int(numPoints); i++ {
-		writeFloat64LE(wkb[offset:offset+8], pl.Points[i].X)
-		writeFloat64LE(wkb[offset+8:offset+16], pl.Points[i].Y)
-		offset += 16
+	result := make([][]shp.Point, 0, len(parts))
+	for i, start := range parts {
+		var end int
+		if i == len(parts)-1 {
+			end = len(points)
+		} else {
+			end = int(parts[i+1])
+		}
+		part := points[int(start):end]
+		if len(part) > 0 {
+			result = append(result, part)
+		}
 	}
-
-	return wkb
+	return result
 }
 
-// polygonToWKB 转换 Polygon 为 WKB
-func polygonToWKB(pg *shp.Polygon) []byte {
-	if pg.NumParts == 0 || pg.NumPoints == 0 {
-		return nil
+func pointsToCoords(points []shp.Point) []geom.Coord {
+	coords := make([]geom.Coord, len(points))
+	for i, p := range points {
+		coords[i] = geom.Coord{p.X, p.Y}
 	}
-
-	// 简化实现：只取第一个环
-	numPoints := int32(pg.NumPoints)
-
-	// WKB Polygon: 1 + 4 + 4 + 4 + (8*2*numPoints)
-	wkbSize := 1 + 4 + 4 + 4 + (16 * numPoints)
-	wkb := make([]byte, wkbSize)
-
-	wkb[0] = 0x01 // Little endian
-
-	// Type: Polygon (3)
-	wkb[1] = 0x03
-	wkb[2] = 0x00
-	wkb[3] = 0x00
-	wkb[4] = 0x00
-
-	// NumRings (1)
-	writeUint32LE(wkb[5:9], 1)
-
-	// NumPoints in ring
-	writeUint32LE(wkb[9:13], uint32(numPoints))
-
-	// Points
-	offset := 13
-	for i := 0; i < int(numPoints); i++ {
-		writeFloat64LE(wkb[offset:offset+8], pg.Points[i].X)
-		writeFloat64LE(wkb[offset+8:offset+16], pg.Points[i].Y)
-		offset += 16
-	}
-
-	return wkb
+	return coords
 }
 
-// multipointToWKB 转换 MultiPoint 为 WKB
-func multipointToWKB(mp *shp.MultiPoint) []byte {
-	numPoints := int32(mp.NumPoints)
-
-	// WKB MultiPoint: 1 + 4 + 4 + (numPoints * 21)
-	wkbSize := 1 + 4 + 4 + (int(numPoints) * 21)
-	wkb := make([]byte, wkbSize)
-
-	wkb[0] = 0x01 // Little endian
-
-	// Type: MultiPoint (4)
-	wkb[1] = 0x04
-	wkb[2] = 0x00
-	wkb[3] = 0x00
-	wkb[4] = 0x00
-
-	// NumPoints
-	writeUint32LE(wkb[5:9], uint32(numPoints))
-
-	// Points (each as WKB Point)
-	offset := 9
-	for i := 0; i < int(numPoints); i++ {
-		// Byte order
-		wkb[offset] = 0x01
-		// Type: Point
-		writeUint32LE(wkb[offset+1:offset+5], 1)
-		// X, Y
-		writeFloat64LE(wkb[offset+5:offset+13], mp.Points[i].X)
-		writeFloat64LE(wkb[offset+13:offset+21], mp.Points[i].Y)
-		offset += 21
+func ensureRingClosed(points []shp.Point) []shp.Point {
+	if len(points) == 0 {
+		return points
 	}
-
-	return wkb
+	first := points[0]
+	last := points[len(points)-1]
+	if almostEqual(first.X, last.X) && almostEqual(first.Y, last.Y) {
+		return points
+	}
+	return append(points, first)
 }
 
-// 辅助函数：写入 little-endian float64
-func writeFloat64LE(buf []byte, val float64) {
-	bits := *(*uint64)(unsafe.Pointer(&val))
-	buf[0] = byte(bits)
-	buf[1] = byte(bits >> 8)
-	buf[2] = byte(bits >> 16)
-	buf[3] = byte(bits >> 24)
-	buf[4] = byte(bits >> 32)
-	buf[5] = byte(bits >> 40)
-	buf[6] = byte(bits >> 48)
-	buf[7] = byte(bits >> 56)
+func coordsToCW(coords []geom.Coord) []geom.Coord {
+	if signedArea(coords) < 0 {
+		return coords
+	}
+	reversed := make([]geom.Coord, len(coords))
+	for i := range coords {
+		reversed[i] = coords[len(coords)-1-i]
+	}
+	return reversed
 }
 
-// 辅助函数：写入 little-endian uint32
-func writeUint32LE(buf []byte, val uint32) {
-	buf[0] = byte(val)
-	buf[1] = byte(val >> 8)
-	buf[2] = byte(val >> 16)
-	buf[3] = byte(val >> 24)
+func coordsToCCW(coords []geom.Coord) []geom.Coord {
+	if signedArea(coords) > 0 {
+		return coords
+	}
+	reversed := make([]geom.Coord, len(coords))
+	for i := range coords {
+		reversed[i] = coords[len(coords)-1-i]
+	}
+	return reversed
+}
+
+func signedArea(coords []geom.Coord) float64 {
+	if len(coords) < 3 {
+		return 0
+	}
+	area := 0.0
+	for i := 0; i < len(coords)-1; i++ {
+		x1, y1 := coords[i][0], coords[i][1]
+		x2, y2 := coords[i+1][0], coords[i+1][1]
+		area += (x1 * y2) - (x2 * y1)
+	}
+	return area / 2
+}
+
+func trimDBFFieldName(name [11]byte) string {
+	raw := string(name[:])
+	raw = strings.TrimRight(raw, "\x00")
+	return strings.TrimSpace(raw)
 }

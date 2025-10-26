@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/models"
@@ -148,12 +149,28 @@ func (s *ExecutionService) CancelExecution(ctx context.Context, id, tenantID uin
 	// TODO: 实现任务取消逻辑（通过 context cancel）
 
 	// 更新执行状态
-	if err := s.execRepo.FinishExecution(id, models.ExecutionStatusCancelled, "cancelled by user"); err != nil {
+	if err := s.execRepo.FinishExecution(id, models.ExecutionStatusFailed, "cancelled by user"); err != nil {
 		return fmt.Errorf("failed to cancel execution: %w", err)
 	}
 
-	// 更新任务状态
-	s.taskRepo.UpdateStatus(execution.TaskID, models.TaskStatusPaused)
+	task, err := s.taskRepo.GetByID(execution.TaskID)
+	if err != nil {
+		return fmt.Errorf("failed to load task: %w", err)
+	}
+
+	finalStatus := models.TaskStatusStopped
+	if task.Schedule != "" {
+		finalStatus = models.TaskStatusScheduled
+	}
+
+	if err := s.taskRepo.UpdateFields(execution.TaskID, map[string]interface{}{
+		"status":                     finalStatus,
+		"last_execution_id":          id,
+		"last_execution_status":      models.ExecutionStatusFailed,
+		"last_execution_finished_at": time.Now(),
+	}); err != nil {
+		return fmt.Errorf("failed to update task after cancellation: %w", err)
+	}
 
 	s.logger.Info("execution cancelled", "execution_id", id)
 	return nil

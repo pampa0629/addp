@@ -73,6 +73,12 @@ const routes = [
     name: 'Dashboard',
     component: () => import('@/views/Dashboard.vue'),
     meta: { requiresAuth: true, title: '监控面板-数据传输' }
+  },
+  {
+    path: '/local-resources',
+    name: 'LocalResources',
+    component: () => import('@/views/LocalResources.vue'),
+    meta: { requiresAuth: true, title: '本地存储引擎-数据传输' }
   }
 ]
 

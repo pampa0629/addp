@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/wkb"
 	"github.com/twpayne/go-geom/encoding/wkt"
 )
@@ -62,6 +63,89 @@ func TestSpatialTransform_WKBToWKT(t *testing.T) {
 
 	if wktStr != "POINT (1 2)" {
 		t.Errorf("Expected 'POINT (1 2)', got '%s'", wktStr)
+	}
+}
+
+func TestSpatialTransform_EWKBToWKT(t *testing.T) {
+	point := geom.NewPoint(geom.XY).MustSetCoords(geom.Coord{5, 6})
+	point.SetSRID(4490)
+
+	ewkbData, err := ewkb.Marshal(point, ewkb.NDR)
+	if err != nil {
+		t.Fatalf("Failed to marshal EWKB: %v", err)
+	}
+
+	config := map[string]interface{}{
+		"geometry_fields": []interface{}{"geom"},
+		"source_format":   "ewkb",
+		"target_format":   "wkt",
+	}
+
+	transformIface, err := NewSpatialTransform(config)
+	if err != nil {
+		t.Fatalf("Failed to create SpatialTransform: %v", err)
+	}
+
+	transform := transformIface.(*SpatialTransform)
+
+	batch := &DataBatch{
+		Rows: []map[string]interface{}{
+			{"geom": ewkbData},
+		},
+	}
+
+	result, err := transform.Apply(context.Background(), batch)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	wktStr, ok := result.Rows[0]["geom"].(string)
+	if !ok {
+		t.Fatalf("Expected WKT string, got %T", result.Rows[0]["geom"])
+	}
+
+	if wktStr != "POINT (5 6)" {
+		t.Errorf("Expected 'POINT (5 6)', got '%s'", wktStr)
+	}
+
+	if transform.config.SourceSRID != 4490 {
+		t.Errorf("Expected SourceSRID to be 4490, got %d", transform.config.SourceSRID)
+	}
+}
+
+func TestSpatialTransform_DefaultsToWGS84(t *testing.T) {
+	point := geom.NewPoint(geom.XY).MustSetCoords(geom.Coord{10, 20})
+	wkbData, err := wkb.Marshal(point, wkb.NDR)
+	if err != nil {
+		t.Fatalf("Failed to marshal WKB: %v", err)
+	}
+
+	config := map[string]interface{}{
+		"geometry_fields": []interface{}{"geom"},
+		"source_format":   "wkb",
+		"target_format":   "wkt",
+	}
+
+	transformIface, err := NewSpatialTransform(config)
+	if err != nil {
+		t.Fatalf("Failed to create SpatialTransform: %v", err)
+	}
+
+	transform := transformIface.(*SpatialTransform)
+
+	batch := &DataBatch{
+		Rows: []map[string]interface{}{
+			{"geom": wkbData},
+		},
+	}
+
+	_, err = transform.Apply(context.Background(), batch)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	if transform.config.SourceSRID != 4326 {
+		t.Errorf("Expected SourceSRID to default to 4326, got %d", transform.config.SourceSRID)
 	}
 }
 
@@ -229,9 +313,9 @@ func TestSpatialTransform_NullHandling(t *testing.T) {
 
 	batch := &DataBatch{
 		Rows: []map[string]interface{}{
-			{"id": 1, "geom": nil},                    // NULL 值
-			{"id": 2, "name": "test"},                 // 缺少 geom 字段
-			{"id": 3, "geom": "POINT (5 6)"},          // 正常值
+			{"id": 1, "geom": nil},           // NULL 值
+			{"id": 2, "name": "test"},        // 缺少 geom 字段
+			{"id": 3, "geom": "POINT (5 6)"}, // 正常值
 		},
 	}
 

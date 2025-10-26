@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/twpayne/go-geom"
+	"github.com/twpayne/go-geom/encoding/ewkb"
 	"github.com/twpayne/go-geom/encoding/geojson"
 	"github.com/twpayne/go-geom/encoding/wkb"
+	"github.com/twpayne/go-geom/encoding/wkbcommon"
 	"github.com/twpayne/go-geom/encoding/wkt"
 )
 
@@ -16,23 +19,23 @@ import (
 type SpatialFormat string
 
 const (
-	FormatWKB     SpatialFormat = "wkb"      // Well-Known Binary
-	FormatWKT     SpatialFormat = "wkt"      // Well-Known Text
-	FormatEWKB    SpatialFormat = "ewkb"     // Extended WKB (PostGIS)
-	FormatEWKT    SpatialFormat = "ewkt"     // Extended WKT
-	FormatGeoJSON SpatialFormat = "geojson"  // GeoJSON
-	FormatHexWKB  SpatialFormat = "hexwkb"   // Hex-encoded WKB
+	FormatWKB     SpatialFormat = "wkb"     // Well-Known Binary
+	FormatWKT     SpatialFormat = "wkt"     // Well-Known Text
+	FormatEWKB    SpatialFormat = "ewkb"    // Extended WKB (PostGIS)
+	FormatEWKT    SpatialFormat = "ewkt"    // Extended WKT
+	FormatGeoJSON SpatialFormat = "geojson" // GeoJSON
+	FormatHexWKB  SpatialFormat = "hexwkb"  // Hex-encoded WKB
 )
 
 // SpatialTransformConfig 空间转换配置
 type SpatialTransformConfig struct {
-	GeometryFields    []string      `json:"geometry_fields"`     // 空间字段名列表
-	SourceFormat      SpatialFormat `json:"source_format"`       // 源格式
-	TargetFormat      SpatialFormat `json:"target_format"`       // 目标格式
-	SourceSRID        int           `json:"source_srid"`         // 源坐标系 (如 4326)
-	TargetSRID        int           `json:"target_srid"`         // 目标坐标系 (如 3857)
-	SimplifyTolerance float64       `json:"simplify_tolerance"`  // 简化容差
-	ValidateGeometry  bool          `json:"validate_geometry"`   // 是否验证几何有效性
+	GeometryFields    []string      `json:"geometry_fields"`    // 空间字段名列表
+	SourceFormat      SpatialFormat `json:"source_format"`      // 源格式
+	TargetFormat      SpatialFormat `json:"target_format"`      // 目标格式
+	SourceSRID        int           `json:"source_srid"`        // 源坐标系 (如 4326)
+	TargetSRID        int           `json:"target_srid"`        // 目标坐标系 (如 3857)
+	SimplifyTolerance float64       `json:"simplify_tolerance"` // 简化容差
+	ValidateGeometry  bool          `json:"validate_geometry"`  // 是否验证几何有效性
 }
 
 // SpatialTransform 空间数据转换器
@@ -144,26 +147,27 @@ func (t *SpatialTransform) Apply(ctx context.Context, batch *DataBatch) (*DataBa
 
 // parseGeometry 解析几何对象
 func (t *SpatialTransform) parseGeometry(value interface{}) (geom.T, error) {
+	var geometry geom.T
+	var err error
+
 	switch t.config.SourceFormat {
 	case FormatWKB, FormatEWKB:
-		// 处理 []byte 或 string
-		var data []byte
-		switch v := value.(type) {
-		case []byte:
-			data = v
-		case string:
-			// 可能是 hex encoded
-			decoded, err := hex.DecodeString(v)
-			if err != nil {
-				// 不是 hex，可能是原始 bytes
-				data = []byte(v)
-			} else {
-				data = decoded
-			}
-		default:
-			return nil, fmt.Errorf("WKB must be []byte or string, got %T", value)
+		data, err := extractBinaryGeometry(value)
+		if err != nil {
+			return nil, err
 		}
-		return wkb.Unmarshal(data)
+
+		if t.config.SourceFormat == FormatEWKB {
+			geometry, err = ewkb.Unmarshal(data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse EWKB: %w", err)
+			}
+		} else {
+			geometry, err = unmarshalWKBOrEWKB(data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse WKB: %w", err)
+			}
+		}
 
 	case FormatHexWKB:
 		// Hex-encoded WKB
@@ -175,14 +179,20 @@ func (t *SpatialTransform) parseGeometry(value interface{}) (geom.T, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid hex WKB: %w", err)
 		}
-		return wkb.Unmarshal(data)
+		geometry, err = unmarshalWKBOrEWKB(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse HexWKB: %w", err)
+		}
 
 	case FormatWKT, FormatEWKT:
 		str, ok := value.(string)
 		if !ok {
 			return nil, fmt.Errorf("WKT must be string, got %T", value)
 		}
-		return wkt.Unmarshal(str)
+		geometry, err = wkt.Unmarshal(str)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse WKT: %w", err)
+		}
 
 	case FormatGeoJSON:
 		// GeoJSON 可以是 string 或 map
@@ -202,22 +212,21 @@ func (t *SpatialTransform) parseGeometry(value interface{}) (geom.T, error) {
 
 		// 尝试作为 Feature 解析
 		var feature geojson.Feature
-		if err := json.Unmarshal(jsonBytes, &feature); err == nil {
-			if feature.Geometry != nil {
-				return feature.Geometry, nil
-			}
+		if err := json.Unmarshal(jsonBytes, &feature); err == nil && feature.Geometry != nil {
+			geometry = feature.Geometry
+			break
 		}
 
 		// 尝试作为 Geometry 直接解析
-		var geometry geom.T
 		if err := geojson.Unmarshal(jsonBytes, &geometry); err != nil {
 			return nil, fmt.Errorf("invalid GeoJSON: %w", err)
 		}
-		return geometry, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported source format: %s", t.config.SourceFormat)
 	}
+
+	return t.normalizeGeometrySRID(geometry), nil
 }
 
 // serializeGeometry 序列化几何对象
@@ -313,14 +322,86 @@ func (t *SpatialTransform) Name() string {
 	return "SpatialTransform"
 }
 
+func extractBinaryGeometry(value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case []byte:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("empty binary geometry payload")
+		}
+		return v, nil
+	case string:
+		if decoded, err := hex.DecodeString(v); err == nil {
+			return decoded, nil
+		}
+		if len(v) == 0 {
+			return nil, fmt.Errorf("empty geometry string")
+		}
+		return []byte(v), nil
+	default:
+		return nil, fmt.Errorf("geometry must be []byte or string, got %T", value)
+	}
+}
+
+func unmarshalWKBOrEWKB(data []byte) (geom.T, error) {
+	geometry, err := wkb.Unmarshal(data)
+	if err == nil {
+		return geometry, nil
+	}
+
+	if shouldFallbackToEWKB(err) {
+		return ewkb.Unmarshal(data)
+	}
+	return nil, err
+}
+
+func shouldFallbackToEWKB(err error) bool {
+	var unknownType wkbcommon.ErrUnknownType
+	if errors.As(err, &unknownType) {
+		return true
+	}
+
+	var unsupportedType wkbcommon.ErrUnsupportedType
+	if errors.As(err, &unsupportedType) {
+		return true
+	}
+
+	return false
+}
+
+func (t *SpatialTransform) normalizeGeometrySRID(geometry geom.T) geom.T {
+	if geometry == nil {
+		return nil
+	}
+
+	currentSRID := geometry.SRID()
+	if currentSRID != 0 {
+		if t.config.SourceSRID == 0 {
+			t.config.SourceSRID = currentSRID
+		}
+		return geometry
+	}
+
+	targetSRID := t.config.SourceSRID
+	if targetSRID == 0 {
+		targetSRID = 4326
+		t.config.SourceSRID = targetSRID
+	}
+
+	if updated, err := geom.SetSRID(geometry, targetSRID); err == nil {
+		return updated
+	}
+
+	return geometry
+}
+
 // 注册空间转换器到全局注册表
 func init() {
 	RegisterTransform("spatial", NewSpatialTransform, TransformCapability{
-		Name:        "spatial",
-		Description: "Transform spatial/geometry data between different formats (WKB, WKT, GeoJSON) and coordinate systems (SRID transformation)",
+		Name:           "spatial",
+		Description:    "Transform spatial/geometry data between different formats (WKB, WKT, GeoJSON) and coordinate systems (SRID transformation)",
 		SupportedTypes: []string{"geometry", "geography", "blob", "binary", "bytea"},
 		ConfigSchema: map[string]interface{}{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"geometry_fields"},
 			"properties": map[string]interface{}{
 				"geometry_fields": map[string]interface{}{

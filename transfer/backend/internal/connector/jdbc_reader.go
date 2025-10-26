@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/addp/transfer/pkg/pipeline"
@@ -15,32 +16,33 @@ import (
 // JDBCReader JDBC 数据读取器
 // 支持 PostgreSQL, MySQL 等关系型数据库
 type JDBCReader struct {
-	db          *sql.DB
-	query       string
-	batchSize   int
-	offset      int64
-	rows        *sql.Rows
-	columns     []string
-	schema      *pipeline.Schema
-	mode        pipeline.ReaderMode
-	lastReadAt  time.Time
+	db           *sql.DB
+	query        string
+	batchSize    int
+	offset       int64
+	rows         *sql.Rows
+	columns      []string
+	schema       *pipeline.Schema
+	mode         pipeline.ReaderMode
+	lastReadAt   time.Time
 	pollInterval time.Duration
 }
 
 // JDBCConfig JDBC 连接配置
 type JDBCConfig struct {
-	Driver       string `json:"driver"`        // postgres, mysql
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	Database     string `json:"database"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	Query        string `json:"query"`         // SQL 查询语句
-	Table        string `json:"table"`         // 表名（与 Query 二选一）
-	WhereClause  string `json:"where_clause"`  // WHERE 条件
-	OrderBy      string `json:"order_by"`      // 排序字段（用于分页）
-	SSLMode      string `json:"ssl_mode"`      // SSL 模式
-	PollInterval int    `json:"poll_interval"` // 流式模式轮询间隔（秒）
+	Driver           string `json:"driver"` // postgres, mysql
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	Database         string `json:"database"`
+	Username         string `json:"username"`
+	Password         string `json:"password"`
+	Query            string `json:"query"`         // SQL 查询语句
+	Table            string `json:"table"`         // 表名（与 Query 二选一）
+	WhereClause      string `json:"where_clause"`  // WHERE 条件
+	OrderBy          string `json:"order_by"`      // 排序字段（用于分页）
+	SSLMode          string `json:"ssl_mode"`      // SSL 模式
+	PollInterval     int    `json:"poll_interval"` // 流式模式轮询间隔（秒）
+	ConnectionString string `json:"connection_string"`
 }
 
 // NewJDBCReader 创建 JDBC Reader
@@ -48,6 +50,14 @@ func NewJDBCReader(config pipeline.ConnectorConfig) (pipeline.Reader, error) {
 	var jdbcConfig JDBCConfig
 	if err := mapToStruct(config.Config, &jdbcConfig); err != nil {
 		return nil, fmt.Errorf("invalid jdbc config: %w", err)
+	}
+
+	if jdbcConfig.Driver == "" {
+		if config.Type != "" {
+			jdbcConfig.Driver = config.Type
+		} else {
+			jdbcConfig.Driver = "postgresql"
+		}
 	}
 
 	batchSize := config.BatchSize
@@ -72,6 +82,14 @@ func (r *JDBCReader) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 	var jdbcConfig JDBCConfig
 	if err := mapToStruct(config.Config, &jdbcConfig); err != nil {
 		return err
+	}
+
+	if jdbcConfig.Driver == "" {
+		if config.Type != "" {
+			jdbcConfig.Driver = config.Type
+		} else {
+			jdbcConfig.Driver = "postgresql"
+		}
 	}
 
 	// 构建连接字符串
@@ -202,6 +220,8 @@ func (r *JDBCReader) Mode() pipeline.ReaderMode {
 // normalizeDriverName 标准化 driver 名称为 sql.Open 识别的名称
 func (r *JDBCReader) normalizeDriverName(driver string) string {
 	switch driver {
+	case "":
+		return "postgres"
 	case "postgresql":
 		return "postgres"
 	default:
@@ -211,6 +231,10 @@ func (r *JDBCReader) normalizeDriverName(driver string) string {
 
 // buildConnectionString 构建连接字符串
 func (r *JDBCReader) buildConnectionString(config JDBCConfig) (string, error) {
+	if config.ConnectionString != "" {
+		return config.ConnectionString, nil
+	}
+
 	switch config.Driver {
 	case "postgres", "postgresql":
 		sslMode := config.SSLMode
@@ -226,6 +250,16 @@ func (r *JDBCReader) buildConnectionString(config JDBCConfig) (string, error) {
 
 	default:
 		return "", fmt.Errorf("unsupported driver: %s", config.Driver)
+	}
+}
+
+func shouldPreserveBinary(dbType string) bool {
+	switch dbType {
+	case "BYTEA", "BLOB", "VARBINARY", "GEOMETRY", "GEOGRAPHY", "POINT", "POLYGON",
+		"LINESTRING", "MULTIPOINT", "MULTIPOLYGON", "MULTILINESTRING", "GEOM", "GEOMCOLLECTION":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -270,14 +304,22 @@ func (r *JDBCReader) scanRow(rows *sql.Rows) (map[string]interface{}, error) {
 	for i, col := range r.columns {
 		val := values[i]
 
-		// 处理 []byte 类型
-		if b, ok := val.([]byte); ok {
-			val = string(b)
-		}
-
-		// 处理 NULL
 		if val == nil {
 			row[col] = nil
+			continue
+		}
+
+		dbType := strings.ToUpper(columnTypes[i].DatabaseTypeName())
+
+		// 处理 []byte 类型
+		if b, ok := val.([]byte); ok {
+			if shouldPreserveBinary(dbType) {
+				copied := make([]byte, len(b))
+				copy(copied, b)
+				row[col] = copied
+				continue
+			}
+			row[col] = string(b)
 			continue
 		}
 

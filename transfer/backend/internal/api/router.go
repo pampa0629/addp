@@ -11,6 +11,7 @@ func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
 	localResourceService *service.LocalResourceService,
+	objectStorageService *service.ObjectStorageService,
 	jwtSecret string,
 ) *gin.Engine {
 	router := gin.Default()
@@ -47,6 +48,7 @@ func SetupRouter(
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService)
 	localResourceHandler := NewLocalResourceHandler(localResourceService)
+	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	transformHandler := NewTransformHandler()
 
 	// 任务管理路由
@@ -87,6 +89,12 @@ func SetupRouter(
 		localResources.POST("/:id/sync", localResourceHandler.Sync)
 	}
 
+	// 对象存储辅助接口
+	objectStorage := protected.Group("/object-storage")
+	{
+		objectStorage.POST("/browse", objectStorageHandler.BrowseDirectories)
+	}
+
 	// 执行记录路由
 	executions := protected.Group("/executions")
 	{
@@ -102,11 +110,11 @@ func SetupRouter(
 	// 转换器路由（数据转换插件管理）
 	transforms := protected.Group("/transforms")
 	{
-		transforms.GET("", transformHandler.ListTransforms)                   // 列出所有可用转换器
-		transforms.GET("/stats", transformHandler.GetTransformStats)          // 获取转换器统计
-		transforms.GET("/:name", transformHandler.GetTransformCapability)     // 获取转换器能力描述
+		transforms.GET("", transformHandler.ListTransforms)                          // 列出所有可用转换器
+		transforms.GET("/stats", transformHandler.GetTransformStats)                 // 获取转换器统计
+		transforms.GET("/:name", transformHandler.GetTransformCapability)            // 获取转换器能力描述
 		transforms.POST("/:name/validate", transformHandler.ValidateTransformConfig) // 验证转换器配置
-		transforms.POST("/:name/test", transformHandler.TestTransform)        // 测试转换器
+		transforms.POST("/:name/test", transformHandler.TestTransform)               // 测试转换器
 	}
 
 	return router

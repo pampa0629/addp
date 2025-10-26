@@ -45,6 +45,13 @@ func (r *TaskRepository) UpdateStatus(id uint, status models.TaskStatus) error {
 		Update("status", status).Error
 }
 
+// UpdateFields 批量更新任务字段
+func (r *TaskRepository) UpdateFields(id uint, fields map[string]interface{}) error {
+	return r.db.Model(&models.Task{}).
+		Where("id = ?", id).
+		Updates(fields).Error
+}
+
 // UpdateProgress 更新任务进度
 func (r *TaskRepository) UpdateProgress(id uint, progress float64) error {
 	return r.db.Model(&models.Task{}).
@@ -119,12 +126,29 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 		Count(&stats.RunningTasks)
 
 	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusSuccess).
+		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusCompleted).
 		Count(&stats.SuccessTasks)
 
 	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusFailed).
+		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusStopped).
 		Count(&stats.FailedTasks)
+
+	// 最后执行状态统计
+	r.db.Model(&models.Task{}).
+		Where("tenant_id = ? AND (last_execution_status = '' OR last_execution_status IS NULL)", tenantID).
+		Count(&stats.NotExecutedTasks)
+
+	r.db.Model(&models.Task{}).
+		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusRunning).
+		Count(&stats.LastRunningTasks)
+
+	r.db.Model(&models.Task{}).
+		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusSuccess).
+		Count(&stats.LastSuccessTasks)
+
+	r.db.Model(&models.Task{}).
+		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusFailed).
+		Count(&stats.LastFailedTasks)
 
 	// 总执行次数
 	r.db.Model(&models.TaskExecution{}).

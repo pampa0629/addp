@@ -1,6 +1,6 @@
 <template>
   <div class="task-wizard">
-    <el-card>
+    <el-card v-loading="loadingTask">
       <template #header>
         <div class="card-header">
           <el-button @click="handleBack">
@@ -13,10 +13,8 @@
 
       <el-steps :active="currentStep" finish-status="success" align-center>
         <el-step title="基本信息" />
-        <el-step title="选择源" />
-        <el-step title="配置源" />
-        <el-step title="选择目标" />
-        <el-step title="配置目标" />
+        <el-step title="源设置" />
+        <el-step title="目标设置" />
         <el-step title="字段映射" />
         <el-step title="完成" />
       </el-steps>
@@ -32,19 +30,6 @@
             <el-form-item label="任务描述">
               <el-input v-model="taskForm.description" type="textarea" :rows="3"
                 placeholder="描述任务的用途和注意事项" />
-            </el-form-item>
-
-            <el-form-item label="任务类型" prop="type" :rules="[{ required: true, message: '请选择任务类型' }]">
-              <el-radio-group v-model="taskForm.type">
-                <el-radio-button label="import">数据导入</el-radio-button>
-                <el-radio-button label="export">数据导出</el-radio-button>
-                <el-radio-button label="sync">数据同步</el-radio-button>
-              </el-radio-group>
-              <div class="hint">
-                <p>• 导入：从外部系统导入数据到平台</p>
-                <p>• 导出：将平台数据导出到外部系统</p>
-                <p>• 同步：双向或单向数据同步</p>
-              </div>
             </el-form-item>
 
             <el-form-item label="执行模式">
@@ -71,15 +56,35 @@
             </el-form-item>
 
             <el-form-item label="定时调度">
-              <div style="display: flex; gap: 10px;">
-                <el-input v-model="taskForm.schedule" placeholder="Cron 表达式" style="flex: 1" />
-                <el-button @click="showCronBuilder = true">生成</el-button>
-              </div>
-              <div class="hint">
-                留空则不启用定时，只能手动触发。
-                示例：<el-link type="primary" @click="taskForm.schedule = '0 0 * * *'">每天零点</el-link>、
-                <el-link type="primary" @click="taskForm.schedule = '0 * * * *'">每小时</el-link>、
-                <el-link type="primary" @click="taskForm.schedule = '*/15 * * * *'">每15分钟</el-link>
+              <div class="schedule-settings">
+                <div class="schedule-presets">
+                  <span class="schedule-presets__label">快捷选择：</span>
+                  <el-button
+                    v-for="preset in presetOptions"
+                    :key="preset.key"
+                    size="small"
+                    @click="applyPresetSchedule(preset.key)"
+                  >
+                    {{ preset.label }}
+                  </el-button>
+                </div>
+                <div class="schedule-actions">
+                  <el-button type="primary" size="small" @click="openScheduleDialog">自定义时间</el-button>
+                  <el-button
+                    v-if="taskForm.schedule"
+                    size="small"
+                    text
+                    @click="clearSchedule"
+                  >
+                    清除调度
+                  </el-button>
+                </div>
+                <div class="schedule-result">
+                  {{ scheduleDescription || '尚未设置，将按需手动执行' }}
+                </div>
+                <div class="hint">
+                  设置后系统会按照上方的文字说明自动运行；清除后仅支持手动触发。
+                </div>
               </div>
             </el-form-item>
           </el-form>
@@ -87,7 +92,9 @@
 
         <!-- 步骤 2: 选择源数据源 -->
         <div v-show="currentStep === 1" class="step-panel">
-          <el-form label-width="120px">
+          <div class="step-section">
+            <h3 class="step-section__title">选择源数据源</h3>
+            <el-form label-width="120px">
             <el-form-item label="数据源类型">
               <el-radio-group v-model="sourceConnectorType" @change="handleSourceTypeChange">
                 <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
@@ -182,138 +189,141 @@
                 </p>
               </div>
             </el-alert>
-          </el-form>
+            </el-form>
+          </div>
+
+          <div class="step-section">
+            <h3 class="step-section__title">配置读取参数</h3>
+            <el-alert
+              v-if="selectedSourceLocalResource"
+              type="warning"
+              :closable="false"
+              style="margin-bottom: 12px"
+            >
+              本地存储引擎不会自动同步元数据，请根据实际情况手动配置查询。
+            </el-alert>
+            <el-alert type="info" :closable="false" style="margin-bottom: 20px">
+              根据源类型配置读取参数
+            </el-alert>
+
+            <!-- PostgreSQL/MySQL 源配置 -->
+            <div v-if="['postgresql', 'mysql'].includes(sourceConnectorType)">
+              <el-form label-width="120px">
+                <el-form-item label="查询方式">
+                  <el-radio-group v-model="sourceConfig.queryType">
+                    <el-radio-button label="table">选择表</el-radio-button>
+                    <el-radio-button label="sql">自定义 SQL</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.queryType === 'table'" label="表名">
+                  <el-select
+                    v-model="sourceConfig.table"
+                    placeholder="选择表"
+                    filterable
+                    style="width: 100%"
+                    :loading="loadingSourceTables"
+                    @focus="handleLoadSourceTables"
+                  >
+                    <el-option
+                      v-for="table in availableSourceTables"
+                      :key="table"
+                      :label="table"
+                      :value="table"
+                    />
+                  </el-select>
+                  <div class="hint">
+                    从元数据模块自动获取可用表列表。
+                    <el-button type="primary" link size="small" @click="handleLoadSourceTables">
+                      刷新列表
+                    </el-button>
+                  </div>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
+                  <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
+                    placeholder="SELECT * FROM users WHERE status = 'active'" />
+                  <div class="hint">支持使用 ? 作为参数占位符</div>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.queryType === 'sql' && sourceConfig.query?.includes('?')"
+                  label="查询参数">
+                  <el-input v-model="sourceConfig.parameters" placeholder='["value1", "value2"]（JSON 数组）' />
+                </el-form-item>
+
+                <el-form-item label="增量字段">
+                  <el-input v-model="sourceConfig.incremental_field"
+                    placeholder="用于增量同步的字段，如：updated_at" />
+                  <div class="hint">留空则全量读取，填写字段名则只读取变更数据</div>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.incremental_field" label="增量类型">
+                  <el-select v-model="sourceConfig.incremental_type">
+                    <el-option label="时间戳" value="timestamp" />
+                    <el-option label="整数 ID" value="integer" />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <!-- CSV/JSON 文件源配置 -->
+            <div v-if="['csv', 'json'].includes(sourceConnectorType)">
+              <el-form label-width="120px">
+                <el-form-item label="文件路径">
+                  <el-input v-model="sourceConfig.path"
+                    placeholder="文件路径，如：imports/users.csv" />
+                </el-form-item>
+
+                <el-form-item v-if="sourceConnectorType === 'csv'" label="CSV 选项">
+                  <el-checkbox v-model="sourceConfig.has_header">包含表头</el-checkbox>
+                  <el-input v-model="sourceConfig.delimiter" placeholder="分隔符"
+                    style="width: 100px; margin-left: 10px" />
+                  <div class="hint">分隔符默认为逗号 (,)</div>
+                </el-form-item>
+
+                <el-form-item label="编码">
+                  <el-select v-model="sourceConfig.encoding">
+                    <el-option label="UTF-8" value="utf-8" />
+                    <el-option label="GBK" value="gbk" />
+                    <el-option label="GB2312" value="gb2312" />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <!-- S3/MinIO 源配置 -->
+            <div v-if="sourceConnectorType === 's3'">
+              <el-form label-width="120px">
+                <el-form-item label="对象前缀">
+                  <el-input v-model="sourceConfig.prefix"
+                    placeholder="对象前缀/目录，如：data/exports/" />
+                  <div class="hint">留空则读取整个存储桶</div>
+                </el-form-item>
+
+                <el-form-item label="递归读取">
+                  <el-switch v-model="sourceConfig.recursive" />
+                  <div class="hint">是否递归读取子目录</div>
+                </el-form-item>
+
+                <el-form-item label="包含模式">
+                  <el-input v-model="sourceConfig.include_patterns"
+                    placeholder='["*.json", "*.csv"]（JSON 数组）' />
+                </el-form-item>
+
+                <el-form-item label="排除模式">
+                  <el-input v-model="sourceConfig.exclude_patterns"
+                    placeholder='["*.tmp", "*.log"]（JSON 数组）' />
+                </el-form-item>
+              </el-form>
+            </div>
+          </div>
         </div>
 
-        <!-- 步骤 3: 配置源 -->
+        <!-- 步骤 3: 目标设置 -->
         <div v-show="currentStep === 2" class="step-panel">
-          <el-alert
-            v-if="selectedSourceLocalResource"
-            type="warning"
-            :closable="false"
-            style="margin-bottom: 12px"
-          >
-            本地存储引擎不会自动同步元数据，请根据实际情况手动配置查询。
-          </el-alert>
-          <el-alert type="info" :closable="false" style="margin-bottom: 20px">
-            根据源类型配置读取参数
-          </el-alert>
-
-          <!-- PostgreSQL/MySQL 源配置 -->
-          <div v-if="['postgresql', 'mysql'].includes(sourceConnectorType)">
+          <div class="step-section">
+            <h3 class="step-section__title">选择目标数据源</h3>
             <el-form label-width="120px">
-              <el-form-item label="查询方式">
-                <el-radio-group v-model="sourceConfig.queryType">
-                  <el-radio-button label="table">选择表</el-radio-button>
-                  <el-radio-button label="sql">自定义 SQL</el-radio-button>
-                </el-radio-group>
-              </el-form-item>
-
-              <el-form-item v-if="sourceConfig.queryType === 'table'" label="表名">
-                <el-select
-                  v-model="sourceConfig.table"
-                  placeholder="选择表"
-                  filterable
-                  style="width: 100%"
-                  :loading="loadingSourceTables"
-                  @focus="handleLoadSourceTables"
-                >
-                  <el-option
-                    v-for="table in availableSourceTables"
-                    :key="table"
-                    :label="table"
-                    :value="table"
-                  />
-                </el-select>
-                <div class="hint">
-                  从元数据模块自动获取可用表列表。
-                  <el-button type="primary" link size="small" @click="handleLoadSourceTables">
-                    刷新列表
-                  </el-button>
-                </div>
-              </el-form-item>
-
-              <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
-                <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
-                  placeholder="SELECT * FROM users WHERE status = 'active'" />
-                <div class="hint">支持使用 ? 作为参数占位符</div>
-              </el-form-item>
-
-              <el-form-item v-if="sourceConfig.queryType === 'sql' && sourceConfig.query?.includes('?')"
-                label="查询参数">
-                <el-input v-model="sourceConfig.parameters" placeholder='["value1", "value2"]（JSON 数组）' />
-              </el-form-item>
-
-              <el-form-item label="增量字段">
-                <el-input v-model="sourceConfig.incremental_field"
-                  placeholder="用于增量同步的字段，如：updated_at" />
-                <div class="hint">留空则全量读取，填写字段名则只读取变更数据</div>
-              </el-form-item>
-
-              <el-form-item v-if="sourceConfig.incremental_field" label="增量类型">
-                <el-select v-model="sourceConfig.incremental_type">
-                  <el-option label="时间戳" value="timestamp" />
-                  <el-option label="整数 ID" value="integer" />
-                </el-select>
-              </el-form-item>
-            </el-form>
-          </div>
-
-          <!-- CSV/JSON 文件源配置 -->
-          <div v-if="['csv', 'json'].includes(sourceConnectorType)">
-            <el-form label-width="120px">
-              <el-form-item label="文件路径">
-                <el-input v-model="sourceConfig.path"
-                  placeholder="文件路径，如：imports/users.csv" />
-              </el-form-item>
-
-              <el-form-item v-if="sourceConnectorType === 'csv'" label="CSV 选项">
-                <el-checkbox v-model="sourceConfig.has_header">包含表头</el-checkbox>
-                <el-input v-model="sourceConfig.delimiter" placeholder="分隔符"
-                  style="width: 100px; margin-left: 10px" />
-                <div class="hint">分隔符默认为逗号 (,)</div>
-              </el-form-item>
-
-              <el-form-item label="编码">
-                <el-select v-model="sourceConfig.encoding">
-                  <el-option label="UTF-8" value="utf-8" />
-                  <el-option label="GBK" value="gbk" />
-                  <el-option label="GB2312" value="gb2312" />
-                </el-select>
-              </el-form-item>
-            </el-form>
-          </div>
-
-          <!-- S3/MinIO 源配置 -->
-          <div v-if="sourceConnectorType === 's3'">
-            <el-form label-width="120px">
-              <el-form-item label="对象前缀">
-                <el-input v-model="sourceConfig.prefix"
-                  placeholder="对象前缀/目录，如：data/exports/" />
-                <div class="hint">留空则读取整个存储桶</div>
-              </el-form-item>
-
-              <el-form-item label="递归读取">
-                <el-switch v-model="sourceConfig.recursive" />
-                <div class="hint">是否递归读取子目录</div>
-              </el-form-item>
-
-              <el-form-item label="包含模式">
-                <el-input v-model="sourceConfig.include_patterns"
-                  placeholder='["*.json", "*.csv"]（JSON 数组）' />
-              </el-form-item>
-
-              <el-form-item label="排除模式">
-                <el-input v-model="sourceConfig.exclude_patterns"
-                  placeholder='["*.tmp", "*.log"]（JSON 数组）' />
-              </el-form-item>
-            </el-form>
-          </div>
-        </div>
-
-        <!-- 步骤 4: 选择目标数据源 -->
-        <div v-show="currentStep === 3" class="step-panel">
-          <el-form label-width="120px">
             <el-form-item label="目标类型">
               <el-radio-group v-model="targetConnectorType" @change="handleTargetTypeChange">
                 <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
@@ -412,120 +422,195 @@
                 </p>
               </div>
             </el-alert>
-          </el-form>
-        </div>
+            </el-form>
+          </div>
 
-        <!-- 步骤 5: 配置目标 -->
-        <div v-show="currentStep === 4" class="step-panel">
-          <el-alert type="info" :closable="false" style="margin-bottom: 20px">
-            根据目标类型配置写入参数
-          </el-alert>
+          <div class="step-section">
+            <h3 class="step-section__title">配置写入参数</h3>
+            <el-alert type="info" :closable="false" style="margin-bottom: 20px">
+              根据目标类型配置写入参数
+            </el-alert>
 
-          <!-- PostgreSQL/MySQL 目标配置 -->
-          <div v-if="['postgresql', 'mysql'].includes(targetConnectorType)">
-            <el-form label-width="140px">
-              <el-form-item label="目标表名">
-                <el-select
-                  v-model="targetConfig.table"
-                  placeholder="选择表"
-                  filterable
-                  allow-create
-                  style="width: 100%"
-                  :loading="loadingTargetTables"
-                  @focus="handleLoadTargetTables"
+            <!-- PostgreSQL/MySQL 目标配置 -->
+            <div v-if="['postgresql', 'mysql'].includes(targetConnectorType)">
+              <el-form label-width="140px">
+                <el-form-item label="目标表名">
+                  <el-select
+                    v-model="targetConfig.table"
+                    placeholder="选择表"
+                    filterable
+                    allow-create
+                    style="width: 100%"
+                    :loading="loadingTargetTables"
+                    @focus="handleLoadTargetTables"
+                  >
+                    <el-option
+                      v-for="table in availableTargetTables"
+                      :key="table"
+                      :label="table"
+                      :value="table"
+                    />
+                  </el-select>
+                  <div class="hint">
+                    从元数据模块自动获取可用表列表，也可手动输入新表名。
+                    <el-button type="primary" link size="small" @click="handleLoadTargetTables">
+                      刷新列表
+                    </el-button>
+                  </div>
+                </el-form-item>
+
+                <el-form-item label="写入模式">
+                  <el-radio-group v-model="targetConfig.mode">
+                    <el-radio-button label="insert">插入（INSERT）</el-radio-button>
+                    <el-radio-button label="upsert">更新插入（UPSERT）</el-radio-button>
+                    <el-radio-button label="replace">替换（REPLACE）</el-radio-button>
+                  </el-radio-group>
+                  <div class="hint">
+                    <p>• 插入：遇到冲突则报错</p>
+                    <p>• 更新插入：遇到冲突则更新</p>
+                    <p>• 替换：先删除再插入</p>
+                  </div>
+                </el-form-item>
+
+                <el-form-item v-if="targetConfig.mode !== 'insert'" label="冲突键">
+                  <el-input v-model="targetConfig.conflict_keys"
+                    placeholder='["id"]（JSON 数组，用于判断冲突的字段）' />
+                </el-form-item>
+
+                <el-form-item label="冲突策略">
+                  <el-select v-model="targetConfig.conflict_strategy">
+                    <el-option label="跳过" value="skip" />
+                    <el-option label="更新" value="update" />
+                    <el-option label="报错" value="error" />
+                  </el-select>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <!-- S3/MinIO 目标配置 -->
+            <div v-if="targetConnectorType === 's3'">
+              <el-form label-width="140px">
+                <el-form-item label="输出格式">
+                  <el-radio-group v-model="selectedTargetFormat">
+                    <el-radio-button label="csv">CSV</el-radio-button>
+                    <el-radio-button label="csv-wkt" :disabled="!hasSpatialSource">CSV（WKT）</el-radio-button>
+                    <el-radio-button label="json">JSON</el-radio-button>
+                    <el-radio-button label="jsonl">JSONL</el-radio-button>
+                    <el-radio-button label="parquet">Parquet</el-radio-button>
+                    <el-radio-button label="geojson" :disabled="!hasSpatialSource">GeoJSON</el-radio-button>
+                    <el-radio-button label="shapefile" :disabled="!hasSpatialSource">Shapefile</el-radio-button>
+                  </el-radio-group>
+                  <div class="hint">
+                    CSV/JSON 适用于常规表格；CSV（WKT）、GeoJSON 与 Shapefile 可导出空间数据。若当前源表没有空间字段，空间格式会自动禁用。
+                  </div>
+                </el-form-item>
+
+                <el-alert
+                  v-if="selectedTargetFormat === 'geojson'"
+                  type="info"
+                  :closable="false"
+                  style="margin-bottom: 12px"
                 >
-                  <el-option
-                    v-for="table in availableTargetTables"
-                    :key="table"
-                    :label="table"
-                    :value="table"
-                  />
-                </el-select>
-                <div class="hint">
-                  从元数据模块自动获取可用表列表，也可手动输入新表名。
-                  <el-button type="primary" link size="small" @click="handleLoadTargetTables">
-                    刷新列表
-                  </el-button>
-                </div>
-              </el-form-item>
+                  导出为 GeoJSON FeatureCollection，适合 WebGIS 或空间分析。
+                </el-alert>
 
-              <el-form-item label="写入模式">
-                <el-radio-group v-model="targetConfig.mode">
-                  <el-radio-button label="insert">插入（INSERT）</el-radio-button>
-                  <el-radio-button label="upsert">更新插入（UPSERT）</el-radio-button>
-                  <el-radio-button label="replace">替换（REPLACE）</el-radio-button>
-                </el-radio-group>
-                <div class="hint">
-                  <p>• 插入：遇到冲突则报错</p>
-                  <p>• 更新插入：遇到冲突则更新</p>
-                  <p>• 替换：先删除再插入</p>
-                </div>
-              </el-form-item>
+                <el-alert
+                  v-if="selectedTargetFormat === 'shapefile'"
+                  type="info"
+                  :closable="false"
+                  style="margin-bottom: 12px"
+                >
+                  将生成 .shp/.shx/.dbf，并自动打包成 ZIP。
+                </el-alert>
 
-              <el-form-item v-if="targetConfig.mode !== 'insert'" label="冲突键">
-                <el-input v-model="targetConfig.conflict_keys"
-                  placeholder='["id"]（JSON 数组，用于判断冲突的字段）' />
-              </el-form-item>
+                <el-form-item v-if="needsGeometrySelection" label="空间字段">
+                  <template v-if="selectedTargetFormat === 'csv-wkt'">
+                    <el-select
+                      v-model="selectedGeometryFieldsMulti"
+                      multiple
+                      filterable
+                      placeholder="请选择导出的空间字段"
+                      style="width: 100%"
+                    >
+                      <el-option
+                        v-for="field in spatialSourceFields"
+                        :key="field"
+                        :label="field"
+                        :value="field"
+                      />
+                    </el-select>
+                    <div class="hint">
+                      将所选空间字段分别转换为 WKT 字符串写入 CSV。
+                    </div>
+                  </template>
+                  <template v-else>
+                    <el-select
+                      v-model="selectedGeometryField"
+                      filterable
+                      placeholder="请选择主空间字段"
+                      style="width: 100%"
+                    >
+                      <el-option
+                        v-for="field in spatialSourceFields"
+                        :key="field"
+                        :label="field"
+                        :value="field"
+                      />
+                    </el-select>
+                    <div class="hint">
+                      GeoJSON 和 Shapefile 需指定一个主空间字段作为几何。
+                    </div>
+                  </template>
+                </el-form-item>
 
-              <el-form-item label="冲突策略">
-                <el-select v-model="targetConfig.conflict_strategy">
-                  <el-option label="跳过" value="skip" />
-                  <el-option label="更新" value="update" />
-                  <el-option label="报错" value="error" />
-                </el-select>
-              </el-form-item>
-            </el-form>
-          </div>
+                <el-form-item label="输出路径">
+                  <el-input
+                    v-model="targetConfig.path"
+                    :placeholder="pathPlaceholder"
+                  >
+                    <template #append>
+                      <el-button
+                        type="primary"
+                        plain
+                        @click="openObjectStoragePicker"
+                        :disabled="!canOpenObjectStoragePicker"
+                      >
+                        选择目录
+                      </el-button>
+                    </template>
+                  </el-input>
+                  <div class="hint">
+                    文件将存储在对象存储的指定目录。{{ objectStorageDirectoryHint }}
+                  </div>
+                </el-form-item>
 
-          <!-- S3/MinIO 目标配置 -->
-          <div v-if="targetConnectorType === 's3'">
-            <el-form label-width="140px">
-              <el-form-item label="输出格式">
-                <el-radio-group v-model="targetConfig.format">
-                  <el-radio-button label="csv">CSV</el-radio-button>
-                  <el-radio-button label="json">JSON</el-radio-button>
-                  <el-radio-button label="jsonl">JSONL</el-radio-button>
-                  <el-radio-button label="parquet">Parquet</el-radio-button>
-                </el-radio-group>
-                <div class="hint">
-                  选择文件的输出格式。CSV 适合表格数据，JSON 适合嵌套结构，Parquet 适合大数据分析。
-                </div>
-              </el-form-item>
+                <el-form-item v-if="showCSVOptions" label="CSV 选项">
+                  <el-checkbox v-model="targetConfig.headers">包含表头</el-checkbox>
+                  <el-input v-model="targetConfig.delimiter" placeholder="分隔符"
+                    style="width: 100px; margin-left: 10px" />
+                  <div class="hint">分隔符默认为逗号 (,)，也可使用制表符 (\t) 或其他字符</div>
+                </el-form-item>
 
-              <el-form-item label="输出路径">
-                <el-input v-model="targetConfig.path"
-                  :placeholder="`输入文件路径，如：exports/users.${targetConfig.format || 'csv'}`" />
-                <div class="hint">
-                  文件将存储在对象存储的指定路径。建议使用有意义的目录结构，如：exports/数据库名/表名.格式
-                </div>
-              </el-form-item>
+                <el-form-item label="压缩方式">
+                  <el-select v-model="targetConfig.compression">
+                    <el-option label="不压缩" value="none" />
+                    <el-option label="Gzip" value="gzip" />
+                    <el-option label="Zip" value="zip" />
+                  </el-select>
+                  <div class="hint">压缩可以减少存储空间，但会增加处理时间</div>
+                </el-form-item>
 
-              <el-form-item v-if="targetConfig.format === 'csv'" label="CSV 选项">
-                <el-checkbox v-model="targetConfig.headers">包含表头</el-checkbox>
-                <el-input v-model="targetConfig.delimiter" placeholder="分隔符"
-                  style="width: 100px; margin-left: 10px" />
-                <div class="hint">分隔符默认为逗号 (,)，也可使用制表符 (\t) 或其他字符</div>
-              </el-form-item>
-
-              <el-form-item label="压缩方式">
-                <el-select v-model="targetConfig.compression">
-                  <el-option label="不压缩" value="none" />
-                  <el-option label="Gzip" value="gzip" />
-                  <el-option label="Zip" value="zip" />
-                </el-select>
-                <div class="hint">压缩可以减少存储空间，但会增加处理时间</div>
-              </el-form-item>
-
-              <el-form-item label="覆盖已有文件">
-                <el-switch v-model="targetConfig.overwrite" />
-                <div class="hint">如果文件已存在，是否覆盖</div>
-              </el-form-item>
-            </el-form>
+                <el-form-item label="覆盖已有文件">
+                  <el-switch v-model="targetConfig.overwrite" />
+                  <div class="hint">如果文件已存在，是否覆盖</div>
+                </el-form-item>
+              </el-form>
+            </div>
           </div>
         </div>
 
-        <!-- 步骤 6: 字段映射 -->
-        <div v-show="currentStep === 5" class="step-panel">
+        <!-- 步骤 4: 字段映射 -->
+        <div v-show="currentStep === 3" class="step-panel">
           <FieldMappingEditor
             :source-fields="sourceFields"
             :target-fields="targetFields"
@@ -535,19 +620,16 @@
           />
         </div>
 
-        <!-- 步骤 7: 确认 -->
-        <div v-show="currentStep === 6" class="step-panel">
+        <!-- 步骤 5: 确认 -->
+        <div v-show="currentStep === 4" class="step-panel">
           <el-result icon="success" title="任务配置完成" sub-title="请检查以下配置信息">
             <template #extra>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="任务名称">{{ taskForm.name }}</el-descriptions-item>
-                <el-descriptions-item label="任务类型">
-                  {{ { import: '数据导入', export: '数据导出', sync: '数据同步' }[taskForm.type] }}
-                </el-descriptions-item>
                 <el-descriptions-item label="执行模式">{{ taskForm.mode }}</el-descriptions-item>
                 <el-descriptions-item label="批量大小">{{ taskForm.batch_size }}</el-descriptions-item>
                 <el-descriptions-item label="定时调度" :span="2">
-                  {{ taskForm.schedule || '无（手动触发）' }}
+                  {{ scheduleDescription || '无（手动触发）' }}
                 </el-descriptions-item>
                 <el-descriptions-item label="源数据源">
                   {{ sourceResourceDisplayName }}
@@ -570,8 +652,8 @@
 
       <div class="step-actions">
         <el-button v-if="currentStep > 0" @click="prevStep">上一步</el-button>
-        <el-button v-if="currentStep < 6" type="primary" @click="nextStep">下一步</el-button>
-        <el-button v-if="currentStep === 6" type="success" @click="handleSubmit" :loading="submitting">
+        <el-button v-if="currentStep < 4" type="primary" @click="nextStep">下一步</el-button>
+        <el-button v-if="currentStep === 4" type="success" @click="handleSubmit" :loading="submitting">
           {{ isEdit ? '更新任务' : '创建任务' }}
         </el-button>
       </div>
@@ -596,8 +678,71 @@
       </template>
     </el-dialog>
 
-    <!-- Cron 表达式生成器对话框 -->
-    <CronBuilderDialog v-model="showCronBuilder" @select="taskForm.schedule = $event" />
+    <el-dialog
+      v-model="scheduleDialogVisible"
+      title="设置定时调度"
+      width="520px"
+    >
+      <el-form :model="customScheduleForm" label-width="100px">
+        <el-form-item label="执行频率">
+          <el-radio-group v-model="customScheduleForm.mode">
+            <el-radio label="daily">每天</el-radio>
+            <el-radio label="weekly">每周</el-radio>
+            <el-radio label="monthly">每月</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="customScheduleForm.mode === 'weekly'" label="执行日">
+          <el-checkbox-group v-model="customScheduleForm.weekDays">
+            <el-checkbox
+              v-for="day in weeklyOptions"
+              :key="day.value"
+              :label="day.value"
+            >
+              {{ day.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item v-if="customScheduleForm.mode === 'monthly'" label="日期">
+          <el-input-number
+            v-model="customScheduleForm.dayOfMonth"
+            :min="1"
+            :max="31"
+            controls-position="right"
+          />
+          <span class="schedule-dialog__tip">如遇当月无该日期，将在最后一天执行</span>
+        </el-form-item>
+
+        <el-form-item label="执行时间">
+          <el-time-picker
+            v-model="customScheduleForm.time"
+            placeholder="选择时间"
+            format="HH:mm"
+            value-format="HH:mm"
+          />
+        </el-form-item>
+
+        <el-form-item label="说明">
+          <div class="schedule-dialog__preview">
+            {{ customSchedulePreview }}
+          </div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="scheduleDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleConfirmCustomSchedule">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <ObjectStoragePathPicker
+      v-model:visible="objectStoragePickerVisible"
+      :scope="objectStoragePickerScope"
+      :resource-id="objectStoragePickerResourceId"
+      :initial-prefix="objectStoragePickerInitialPrefix"
+      @selected="handleObjectStorageDirectorySelected"
+    />
   </div>
 </template>
 
@@ -610,9 +755,18 @@ import { taskAPI } from '@/api/tasks'
 import { localResourcesAPI } from '@/api/localResources'
 import { systemResourcesAPI } from '@/api/systemResources'
 import FieldMappingEditor from '@/components/FieldMappingEditor.vue'
-import CronBuilderDialog from '@/components/CronBuilderDialog.vue'
+import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
 import { StorageEngineForm } from '@common-ui'
 import axios from 'axios'
+import {
+  presetOptions,
+  presetOptionMapByKey,
+  weeklyOptions,
+  buildScheduleFromForm,
+  generateScheduleDescription,
+  decodeScheduleToForm,
+  describeCron
+} from '@/utils/schedule'
 
 const router = useRouter()
 const route = useRoute()
@@ -621,7 +775,17 @@ const isEdit = computed(() => !!route.params.id)
 const currentStep = ref(0)
 const submitting = ref(false)
 const startImmediately = ref(false)
-const showCronBuilder = ref(false)
+const loadingTask = ref(false)
+
+const scheduleDialogVisible = ref(false)
+const scheduleDescription = ref('')
+
+const customScheduleForm = ref({
+  mode: 'daily',
+  time: '09:00',
+  weekDays: ['1'],
+  dayOfMonth: 1
+})
 
 const basicFormRef = ref(null)
 const taskForm = ref({
@@ -668,11 +832,87 @@ const editingLocalResourceId = ref(null)
 const sourceFields = ref([])
 const targetFields = ref([])
 const fieldMappings = ref([])
+const sourceFieldDetails = ref([])
+const targetFieldDetails = ref([])
+const sourceFieldsLoaded = ref(false)
+const loadingSourceFields = ref(false)
+const targetFieldsLoaded = ref(false)
+const loadingTargetFields = ref(false)
+const selectedTargetFormat = ref('csv')
+const selectedGeometryField = ref('')
+const selectedGeometryFieldsMulti = ref([])
+
+const spatialTypeKeywords = ['geometry', 'geography', 'point', 'linestring', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geom', 'geog', 'shape', 'multipolygonz', 'multipolygonm']
+
+const isSpatialField = (field) => {
+  if (!field) return false
+  const name = (typeof field === 'string' ? field : field.name || '').toLowerCase()
+  const dataType = (field.data_type || field.DataType || '').toLowerCase()
+  const columnType = (field.column_type || field.ColumnType || '').toLowerCase()
+  const combined = `${name} ${dataType} ${columnType}`
+  return spatialTypeKeywords.some(keyword => combined.includes(keyword))
+}
+
+const spatialSourceFields = computed(() => {
+  if (!Array.isArray(sourceFieldDetails.value)) {
+    return []
+  }
+  return sourceFieldDetails.value
+    .filter(isSpatialField)
+    .map(field => field.name)
+    .filter(Boolean)
+})
+
+const hasSpatialSource = computed(() => spatialSourceFields.value.length > 0)
+
+const effectiveGeometryFields = computed(() => {
+  if (!hasSpatialSource.value) {
+    return []
+  }
+  if (selectedTargetFormat.value === 'csv-wkt') {
+    return (selectedGeometryFieldsMulti.value || []).filter(Boolean)
+  }
+  return selectedGeometryField.value ? [selectedGeometryField.value] : []
+})
+
+const formatExtensionMap = {
+  csv: 'csv',
+  'csv-wkt': 'csv',
+  json: 'json',
+  jsonl: 'jsonl',
+  parquet: 'parquet',
+  geojson: 'geojson',
+  shapefile: 'zip'
+}
+
+const pathPlaceholder = computed(() => {
+  const extension = formatExtensionMap[selectedTargetFormat.value] || 'csv'
+  return `输入文件路径，如：exports/data.${extension}`
+})
+
+const objectStorageDirectoryHint = computed(() => {
+  if (!targetConfig.value.path) {
+    return '建议使用“目录/文件名”的格式，例如：exports/users.csv'
+  }
+  const directory = extractDirectoryFromPath(targetConfig.value.path)
+  return directory ? `当前目录：/${directory}` : '当前目录：/'
+})
+
+const showCSVOptions = computed(() => ['csv', 'csv-wkt'].includes(selectedTargetFormat.value))
+
+const needsGeometrySelection = computed(() =>
+  hasSpatialSource.value && ['geojson', 'shapefile', 'csv-wkt'].includes(selectedTargetFormat.value)
+)
 
 const availableSourceTables = ref([])
 const availableTargetTables = ref([])
 const loadingSourceTables = ref(false)
 const loadingTargetTables = ref(false)
+
+const objectStoragePickerVisible = ref(false)
+const objectStoragePickerScope = ref('system')
+const objectStoragePickerResourceId = ref(null)
+const objectStoragePickerInitialPrefix = ref('')
 
 const matchesConnectorType = (resourceType, connectorType) => {
   const resource = (resourceType || '').toLowerCase()
@@ -722,6 +962,54 @@ const buildOptions = (systemList, localList) => {
   return options
 }
 
+const applyPresetSchedule = (key) => {
+  const option = presetOptionMapByKey[key]
+  if (!option) {
+    return
+  }
+  taskForm.value.schedule = option.cron
+}
+
+const clearSchedule = () => {
+  taskForm.value.schedule = ''
+}
+
+const openScheduleDialog = () => {
+  const parsed = decodeScheduleToForm(taskForm.value.schedule)
+  if (parsed) {
+    customScheduleForm.value = {
+      mode: parsed.mode,
+      time: parsed.time,
+      weekDays: parsed.weekDays,
+      dayOfMonth: parsed.dayOfMonth
+    }
+  } else {
+    customScheduleForm.value = {
+      mode: customScheduleForm.value.mode || 'daily',
+      time: customScheduleForm.value.time || '09:00',
+      weekDays: customScheduleForm.value.weekDays?.length ? customScheduleForm.value.weekDays : ['1'],
+      dayOfMonth: customScheduleForm.value.dayOfMonth || 1
+    }
+  }
+  scheduleDialogVisible.value = true
+}
+
+const handleConfirmCustomSchedule = () => {
+  const result = buildScheduleFromForm(customScheduleForm.value)
+  if (!result) {
+    if (customScheduleForm.value.mode === 'weekly') {
+      ElMessage.warning('请至少选择一个执行日')
+    } else {
+      ElMessage.warning('请选择有效的执行时间')
+    }
+    return
+  }
+  taskForm.value.schedule = result.cron
+  scheduleDialogVisible.value = false
+}
+
+const customSchedulePreview = computed(() => generateScheduleDescription(customScheduleForm.value))
+
 const sourceOptions = computed(() =>
   buildOptions(filteredSourceSystemResources.value, filteredSourceLocalResources.value)
 )
@@ -745,6 +1033,38 @@ const selectedTargetResource = computed(() =>
 )
 const selectedTargetLocalResource = computed(() =>
   selectedTargetOption.value?.origin === 'local' ? selectedTargetOption.value.resource : null
+)
+
+const currentTargetResourceType = computed(() => {
+  const option = selectedTargetOption.value
+  if (option?.resource?.resource_type) {
+    return (option.resource.resource_type || '').toLowerCase()
+  }
+  return ''
+})
+
+const canOpenObjectStoragePicker = computed(() => {
+  if (targetConnectorType.value !== 's3') {
+    return false
+  }
+  const option = selectedTargetOption.value
+  if (!option?.resource?.id) {
+    return false
+  }
+  const resourceType = currentTargetResourceType.value || (targetConnectorType.value || '').toLowerCase()
+  return ['s3', 'minio', 'oss'].includes(resourceType)
+})
+
+watch(
+  () => taskForm.value.schedule,
+  (cron) => {
+    if (!cron) {
+      scheduleDescription.value = ''
+      return
+    }
+    scheduleDescription.value = describeCron(cron)
+  },
+  { immediate: true }
 )
 
 const sourceResourceDisplayName = computed(() => {
@@ -839,6 +1159,381 @@ const removeConnectionFields = (config) => {
   })
 }
 
+const sanitizeConfigForDisplay = (config) => {
+  const sanitized = { ...(config || {}) }
+  removeConnectionFields(sanitized)
+  if ('scope' in sanitized) {
+    delete sanitized.scope
+  }
+  return sanitized
+}
+
+const stringifyIfNeeded = (value) => {
+  if (Array.isArray(value) || (value && typeof value === 'object')) {
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return ''
+    }
+  }
+  return value ?? ''
+}
+
+const normalizeId = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null
+  }
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
+const normalizeConnectorType = (resourceType, config = {}) => {
+  const type = (resourceType || '').toLowerCase()
+  if (['postgresql', 'mysql', 's3', 'csv', 'json'].includes(type)) {
+    return type
+  }
+  if (['minio', 'oss'].includes(type)) {
+    return 's3'
+  }
+
+  const driver = (config.driver || '').toLowerCase()
+  if (['postgresql', 'mysql'].includes(driver)) {
+    return driver
+  }
+
+  const inferred = (config.type || '').toLowerCase()
+  if (['postgresql', 'mysql'].includes(inferred)) {
+    return inferred
+  }
+  if (['s3', 'minio', 'oss'].includes(inferred)) {
+    return 's3'
+  }
+
+  return 'postgresql'
+}
+
+const prepareSourceConfigForDisplay = (rawConfig, connectorType) => {
+  const sanitized = sanitizeConfigForDisplay(rawConfig)
+  if (sanitized.parameters !== undefined && typeof sanitized.parameters !== 'string') {
+    sanitized.parameters = stringifyIfNeeded(sanitized.parameters)
+  }
+  if (sanitized.include_patterns !== undefined && typeof sanitized.include_patterns !== 'string') {
+    sanitized.include_patterns = stringifyIfNeeded(sanitized.include_patterns)
+  }
+  if (sanitized.exclude_patterns !== undefined && typeof sanitized.exclude_patterns !== 'string') {
+    sanitized.exclude_patterns = stringifyIfNeeded(sanitized.exclude_patterns)
+  }
+  if (['postgresql', 'mysql'].includes(connectorType)) {
+    sanitized.queryType = sanitized.queryType || (sanitized.query ? 'sql' : 'table')
+  }
+  return sanitized
+}
+
+const prepareTargetConfigForDisplay = (rawConfig, connectorType) => {
+  const sanitized = sanitizeConfigForDisplay(rawConfig)
+  if (!('path' in sanitized) && typeof sanitized.file_name === 'string') {
+    sanitized.path = sanitized.file_name
+  }
+  if ('file_name' in sanitized) {
+    delete sanitized.file_name
+  }
+  if (sanitized.conflict_keys !== undefined && typeof sanitized.conflict_keys !== 'string') {
+    sanitized.conflict_keys = stringifyIfNeeded(sanitized.conflict_keys)
+  }
+  if (connectorType === 's3') {
+    sanitized.format = sanitized.format || 'csv'
+    sanitized.headers = sanitized.headers ?? true
+    sanitized.delimiter = sanitized.delimiter || ','
+    sanitized.compression = sanitized.compression || 'none'
+    sanitized.overwrite = sanitized.overwrite ?? false
+    sanitized.path = sanitized.path || ''
+  }
+  return sanitized
+}
+
+const normalizeDirectoryPath = (dir) => {
+  if (!dir) return ''
+  let value = String(dir).trim()
+  value = value.replace(/^\/+/, '')
+  if (value && !value.endsWith('/')) {
+    value += '/'
+  }
+  return value
+}
+
+const extractDirectoryFromPath = (path) => {
+  if (!path) return ''
+  const index = path.lastIndexOf('/')
+  if (index === -1) {
+    return ''
+  }
+  return normalizeDirectoryPath(path.slice(0, index + 1))
+}
+
+const extractFileNameFromPath = (path) => {
+  if (!path) return ''
+  const index = path.lastIndexOf('/')
+  return index === -1 ? path : path.slice(index + 1)
+}
+
+const toArray = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(item => (item == null ? '' : String(item))).filter(Boolean)
+  }
+  if (value === undefined || value === null || value === '') {
+    return []
+  }
+  return [String(value)]
+}
+
+const deriveSelectedFormat = (config = {}) => {
+  const format = (config.format || '').toLowerCase()
+  const spatialFormat = (config.spatial_format || '').toLowerCase()
+  if (format === 'geojson') return 'geojson'
+  if (format === 'shapefile') return 'shapefile'
+  if (format === 'csv' && spatialFormat === 'wkt') return 'csv-wkt'
+  if (format) return format
+  return 'csv'
+}
+
+let syncingFormat = false
+const syncSelectedFormatFromConfig = () => {
+  syncingFormat = true
+  selectedTargetFormat.value = deriveSelectedFormat(targetConfig.value || {})
+  updatePathExtensionForFormat()
+  nextTick(() => {
+    syncingFormat = false
+  })
+}
+
+const syncGeometrySelectionFromConfig = () => {
+  const fields = toArray(targetConfig.value.geometry_fields ?? targetConfig.value.geometry_field)
+  if (fields.length > 0) {
+    selectedGeometryField.value = fields[0]
+    selectedGeometryFieldsMulti.value = [...fields]
+  } else {
+    selectedGeometryField.value = ''
+    selectedGeometryFieldsMulti.value = []
+  }
+}
+
+const ensureGeometrySelectionDefaults = (fields) => {
+  if (fields.length === 0) {
+    selectedGeometryField.value = ''
+    selectedGeometryFieldsMulti.value = []
+    return
+  }
+
+  if (!selectedGeometryField.value) {
+    selectedGeometryField.value = fields[0]
+  }
+  if (selectedGeometryFieldsMulti.value.length === 0) {
+    selectedGeometryFieldsMulti.value = [fields[0]]
+  }
+}
+
+const syncGeometryFieldsToConfig = () => {
+  if (targetConnectorType.value !== 's3') {
+    if (targetConfig.value) {
+      delete targetConfig.value.geometry_field
+      delete targetConfig.value.geometry_fields
+      delete targetConfig.value.spatial_format
+    }
+    return
+  }
+
+  if (!targetConfig.value || typeof targetConfig.value !== 'object') {
+    targetConfig.value = {}
+  }
+
+  const format = selectedTargetFormat.value
+
+  if (format === 'csv-wkt') {
+    const fields = (selectedGeometryFieldsMulti.value || []).filter(Boolean)
+    if (fields.length > 0) {
+      targetConfig.value.geometry_fields = fields
+    } else {
+      delete targetConfig.value.geometry_fields
+    }
+    delete targetConfig.value.geometry_field
+    targetConfig.value.spatial_format = 'wkt'
+  } else if (['geojson', 'shapefile'].includes(format)) {
+    const field = (selectedGeometryField.value || '').trim()
+    if (field) {
+      targetConfig.value.geometry_field = field
+      targetConfig.value.geometry_fields = [field]
+    } else {
+      delete targetConfig.value.geometry_field
+      delete targetConfig.value.geometry_fields
+    }
+    if (format === 'geojson') {
+      targetConfig.value.spatial_format = 'geojson'
+    } else if (format === 'shapefile') {
+      targetConfig.value.spatial_format = targetConfig.value.spatial_format || 'wkb'
+    }
+  } else {
+    delete targetConfig.value.geometry_field
+    delete targetConfig.value.geometry_fields
+    if (format !== 'csv') {
+      delete targetConfig.value.spatial_format
+    } else if (!targetConfig.value.spatial_format || targetConfig.value.spatial_format === 'wkt') {
+      delete targetConfig.value.spatial_format
+    }
+  }
+}
+
+const updatePathExtensionForFormat = () => {
+  if (!targetConfig.value || typeof targetConfig.value !== 'object') {
+    return
+  }
+  const extension = formatExtensionMap[selectedTargetFormat.value] || 'csv'
+  const currentPath = targetConfig.value.path || ''
+  if (!currentPath) {
+    targetConfig.value.path = `exports/output.${extension}`
+    return
+  }
+
+  const dir = extractDirectoryFromPath(currentPath)
+  const rawName = extractFileNameFromPath(currentPath) || `output.${extension}`
+  const nameWithoutExt = rawName.replace(/\.[^.]+$/, '')
+  targetConfig.value.path = dir ? `${dir}${nameWithoutExt}.${extension}` : `${nameWithoutExt}.${extension}`
+}
+
+const applySelectedFormat = (formatValue) => {
+  if (targetConnectorType.value !== 's3') {
+    return
+  }
+
+  if (!targetConfig.value || typeof targetConfig.value !== 'object') {
+    targetConfig.value = {}
+  }
+
+  switch (formatValue) {
+    case 'csv':
+      targetConfig.value.format = 'csv'
+      targetConfig.value.spatial_format = ''
+      targetConfig.value.headers = targetConfig.value.headers ?? true
+      targetConfig.value.delimiter = targetConfig.value.delimiter || ','
+      targetConfig.value.compression = targetConfig.value.compression || 'none'
+      break
+    case 'csv-wkt':
+      targetConfig.value.format = 'csv'
+      targetConfig.value.spatial_format = 'wkt'
+      targetConfig.value.headers = targetConfig.value.headers ?? true
+      targetConfig.value.delimiter = targetConfig.value.delimiter || ','
+      targetConfig.value.compression = targetConfig.value.compression || 'none'
+      ensureGeometrySelectionDefaults(spatialSourceFields.value)
+      break
+    case 'geojson':
+      targetConfig.value.format = 'geojson'
+      targetConfig.value.spatial_format = 'geojson'
+      delete targetConfig.value.headers
+      delete targetConfig.value.delimiter
+      delete targetConfig.value.compression
+      ensureGeometrySelectionDefaults(spatialSourceFields.value)
+      break
+    case 'shapefile':
+      targetConfig.value.format = 'shapefile'
+      targetConfig.value.spatial_format = 'wkb'
+      delete targetConfig.value.headers
+      delete targetConfig.value.delimiter
+      targetConfig.value.compression = 'none'
+      ensureGeometrySelectionDefaults(spatialSourceFields.value)
+      break
+    case 'json':
+    case 'jsonl':
+    case 'parquet':
+      targetConfig.value.format = formatValue
+      targetConfig.value.spatial_format = ''
+      delete targetConfig.value.delimiter
+      targetConfig.value.compression = targetConfig.value.compression || 'none'
+      break
+    default:
+      targetConfig.value.format = formatValue
+      targetConfig.value.spatial_format = ''
+  }
+
+  if (!targetConfig.value.path) {
+    const extension = formatExtensionMap[formatValue] || 'csv'
+    targetConfig.value.path = `exports/data.${extension}`
+  }
+
+  syncGeometryFieldsToConfig()
+}
+
+watch(spatialSourceFields, (fields) => {
+  if (fields.length === 0) {
+    selectedGeometryField.value = ''
+    selectedGeometryFieldsMulti.value = []
+    return
+  }
+  ensureGeometrySelectionDefaults(fields)
+  syncGeometryFieldsToConfig()
+})
+
+watch(selectedTargetFormat, (newVal, oldVal) => {
+  if (syncingFormat) {
+    return
+  }
+  applySelectedFormat(newVal)
+  if (newVal !== oldVal) {
+    updatePathExtensionForFormat()
+  }
+
+  if (newVal === 'csv-wkt') {
+    if (selectedGeometryFieldsMulti.value.length === 0 && selectedGeometryField.value) {
+      selectedGeometryFieldsMulti.value = [selectedGeometryField.value]
+    }
+  } else {
+    if (selectedGeometryField.value === '' && selectedGeometryFieldsMulti.value.length > 0) {
+      selectedGeometryField.value = selectedGeometryFieldsMulti.value[0]
+    }
+  }
+
+  syncGeometryFieldsToConfig()
+})
+
+watch(selectedGeometryField, () => {
+  if (['geojson', 'shapefile'].includes(selectedTargetFormat.value)) {
+    syncGeometryFieldsToConfig()
+  }
+})
+
+watch(selectedGeometryFieldsMulti, () => {
+  if (selectedTargetFormat.value === 'csv-wkt') {
+    syncGeometryFieldsToConfig()
+  }
+}, { deep: true })
+
+watch(hasSpatialSource, (available) => {
+  if (!available && ['csv-wkt', 'geojson', 'shapefile'].includes(selectedTargetFormat.value)) {
+    selectedTargetFormat.value = 'csv'
+  } else if (available && ['csv-wkt', 'geojson', 'shapefile'].includes(selectedTargetFormat.value)) {
+    ensureGeometrySelectionDefaults(spatialSourceFields.value)
+    syncGeometryFieldsToConfig()
+  }
+})
+
+watch(
+  [currentStep, () => sourceConfig.value.table, () => targetConnectorType.value, () => sourceIsSystem.value],
+  async ([step, table, targetType, isSystem]) => {
+    if (
+      step >= 2 &&
+      targetType === 's3' &&
+      isSystem &&
+      table &&
+      !sourceFieldsLoaded.value &&
+      !loadingSourceFields.value
+    ) {
+      try {
+        await handleFetchFields('source')
+      } catch (error) {
+        console.error('自动加载源字段失败:', error)
+      }
+    }
+  }
+)
+
 watch(selectedSourceOption, (option) => {
   availableSourceTables.value = []
   if (option?.origin === 'system') {
@@ -847,6 +1542,13 @@ watch(selectedSourceOption, (option) => {
   } else {
     taskForm.value.source_id = null
   }
+  sourceFieldDetails.value = []
+  sourceFields.value = []
+  fieldMappings.value = []
+  selectedGeometryField.value = ''
+  selectedGeometryFieldsMulti.value = []
+  sourceFieldsLoaded.value = false
+  syncGeometryFieldsToConfig()
 })
 
 watch(selectedTargetOption, (option) => {
@@ -869,9 +1571,20 @@ watch(selectedTargetOption, (option) => {
       overwrite: targetConfig.value.overwrite ?? false
     }
   }
+
+  syncSelectedFormatFromConfig()
+  syncGeometrySelectionFromConfig()
+  syncGeometryFieldsToConfig()
+  targetFieldDetails.value = []
+  targetFields.value = []
+  fieldMappings.value = []
+  targetFieldsLoaded.value = false
 })
 
 watch(sourceConnectorType, (newType) => {
+  if (loadingTask.value) {
+    return
+  }
   if (selectedSourceOption.value && !matchesConnectorType(selectedSourceOption.value.resource.resource_type, newType)) {
     selectedSourceValue.value = null
   }
@@ -879,9 +1592,17 @@ watch(sourceConnectorType, (newType) => {
   availableSourceTables.value = []
   sourceFields.value = []
   fieldMappings.value = []
+  sourceFieldDetails.value = []
+  selectedGeometryField.value = ''
+  selectedGeometryFieldsMulti.value = []
+  sourceFieldsLoaded.value = false
+  syncGeometryFieldsToConfig()
 })
 
 watch(targetConnectorType, (newType) => {
+  if (loadingTask.value) {
+    return
+  }
   if (selectedTargetOption.value && !matchesConnectorType(selectedTargetOption.value.resource.resource_type, newType)) {
     selectedTargetValue.value = null
   }
@@ -889,6 +1610,10 @@ watch(targetConnectorType, (newType) => {
   availableTargetTables.value = []
   targetFields.value = []
   fieldMappings.value = []
+  targetFieldDetails.value = []
+  selectedGeometryField.value = ''
+  selectedGeometryFieldsMulti.value = []
+  targetFieldsLoaded.value = false
 
   if (newType === 's3') {
     targetConfig.value = {
@@ -898,7 +1623,14 @@ watch(targetConnectorType, (newType) => {
       compression: 'none',
       overwrite: false
     }
+    selectedTargetFormat.value = 'csv'
+  } else {
+    selectedTargetFormat.value = 'csv'
   }
+
+  syncSelectedFormatFromConfig()
+  syncGeometrySelectionFromConfig()
+  syncGeometryFieldsToConfig()
 })
 
 const handleSourceTypeChange = () => {
@@ -919,6 +1651,11 @@ const handleTargetTypeChange = () => {
   taskForm.value.target_id = null
   selectedTargetValue.value = null
   targetConfig.value = {}
+  targetFieldDetails.value = []
+  targetFields.value = []
+  selectedGeometryField.value = ''
+  selectedGeometryFieldsMulti.value = []
+  selectedTargetFormat.value = 'csv'
 
   if (targetConnectorType.value === 's3') {
     targetConfig.value = {
@@ -929,6 +1666,39 @@ const handleTargetTypeChange = () => {
       overwrite: false
     }
   }
+
+  syncSelectedFormatFromConfig()
+  syncGeometrySelectionFromConfig()
+  syncGeometryFieldsToConfig()
+}
+
+const openObjectStoragePicker = () => {
+  if (!canOpenObjectStoragePicker.value) {
+    ElMessage.warning('请先选择对象存储资源')
+    return
+  }
+
+  const option = selectedTargetOption.value
+  const resourceId = option?.resource?.id
+  if (!resourceId) {
+    ElMessage.warning('资源信息不完整，请重新选择')
+    return
+  }
+
+  objectStoragePickerScope.value = option.origin === 'system' ? 'system' : 'local'
+  objectStoragePickerResourceId.value = Number(resourceId)
+  const directory = extractDirectoryFromPath(targetConfig.value.path)
+  objectStoragePickerInitialPrefix.value = directory
+  objectStoragePickerVisible.value = true
+}
+
+const handleObjectStorageDirectorySelected = (directory) => {
+  const normalizedDir = normalizeDirectoryPath(directory)
+  const currentFileName = extractFileNameFromPath(targetConfig.value.path)
+  const fallbackFileName = `output.${targetConfig.value.format || 'csv'}`
+  const fileName = currentFileName || fallbackFileName
+  targetConfig.value.path = normalizedDir ? `${normalizedDir}${fileName}` : fileName
+  objectStoragePickerInitialPrefix.value = normalizedDir
 }
 
 const openLocalResourceDialog = (scope, resource = null) => {
@@ -1053,6 +1823,149 @@ const handleSyncLocalResource = async (scope) => {
   }
 }
 
+const loadTaskForEdit = async () => {
+  if (!route.params.id) {
+    return
+  }
+
+  loadingTask.value = true
+  try {
+    const [taskData, mappingsData = []] = await Promise.all([
+      taskAPI.get(route.params.id),
+      taskAPI.getMappings(route.params.id).catch(() => [])
+    ])
+
+    taskForm.value = {
+      ...taskForm.value,
+      name: taskData.name || '',
+      description: taskData.description || '',
+      type: taskData.type || 'sync',
+      mode: taskData.mode || 'batch',
+      batch_size: taskData.batch_size || 1000,
+      max_parallelism: taskData.max_parallelism || 1,
+      schedule: taskData.schedule || '',
+      source_id: taskData.source_id ?? null,
+      target_id: taskData.target_id ?? null
+    }
+
+    const taskConfig = taskData.config || {}
+    const rawSourceConfig = { ...(taskConfig.source || {}) }
+    const rawTargetConfig = { ...(taskConfig.target || {}) }
+
+    const sourceScope = (rawSourceConfig.scope || '').toLowerCase()
+    const sourceSystemId = normalizeId(taskData.source_id ?? rawSourceConfig.system_resource_id)
+    const sourceLocalId = normalizeId(rawSourceConfig.local_resource_id)
+
+    if (sourceScope === 'system' || sourceSystemId) {
+      const systemResource = systemResources.value.find(res => res.id === sourceSystemId) || null
+      if (sourceSystemId && !systemResource) {
+        ElMessage.warning('未找到源数据源，请重新选择')
+      }
+      const resolvedType = normalizeConnectorType(systemResource?.resource_type, rawSourceConfig)
+      sourceConnectorType.value = resolvedType
+      sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
+      selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
+      taskForm.value.source_id = sourceSystemId || null
+    } else if (sourceScope === 'local' || sourceLocalId) {
+      const localResource = localResources.value.find(res => res.id === sourceLocalId) || null
+      if (sourceLocalId && !localResource) {
+        ElMessage.warning('未找到本地源存储引擎，请重新选择')
+      }
+      const resolvedType = normalizeConnectorType(localResource?.resource_type, rawSourceConfig)
+      sourceConnectorType.value = resolvedType
+      sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
+      selectedSourceValue.value = sourceLocalId ? `local:${sourceLocalId}` : null
+      taskForm.value.source_id = null
+    } else {
+      const resolvedType = normalizeConnectorType(rawSourceConfig.resource_type, rawSourceConfig)
+      sourceConnectorType.value = resolvedType
+      sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
+      selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
+      taskForm.value.source_id = sourceSystemId || null
+    }
+
+    const targetScope = (rawTargetConfig.scope || '').toLowerCase()
+    const targetSystemId = normalizeId(taskData.target_id ?? rawTargetConfig.system_resource_id)
+    const targetLocalId = normalizeId(rawTargetConfig.local_resource_id)
+
+    if (targetScope === 'system' || targetSystemId) {
+      const systemResource = systemResources.value.find(res => res.id === targetSystemId) || null
+      if (targetSystemId && !systemResource) {
+        ElMessage.warning('未找到目标数据源，请重新选择')
+      }
+      const resolvedTypeRaw = normalizeConnectorType(systemResource?.resource_type, rawTargetConfig)
+      const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
+      targetConnectorType.value = resolvedType
+      targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
+      selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
+      taskForm.value.target_id = targetSystemId || null
+    } else if (targetScope === 'local' || targetLocalId) {
+      const localResource = localResources.value.find(res => res.id === targetLocalId) || null
+      if (targetLocalId && !localResource) {
+        ElMessage.warning('未找到本地目标存储引擎，请重新选择')
+      }
+      const resolvedTypeRaw = normalizeConnectorType(localResource?.resource_type, rawTargetConfig)
+      const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
+      targetConnectorType.value = resolvedType
+      targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
+      selectedTargetValue.value = targetLocalId ? `local:${targetLocalId}` : null
+      taskForm.value.target_id = null
+    } else {
+      const resolvedTypeRaw = normalizeConnectorType(rawTargetConfig.resource_type, rawTargetConfig)
+      const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
+      targetConnectorType.value = resolvedType
+      targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
+      selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
+      taskForm.value.target_id = targetSystemId || null
+    }
+
+    syncSelectedFormatFromConfig()
+    syncGeometrySelectionFromConfig()
+    syncGeometryFieldsToConfig()
+
+    if (Array.isArray(rawSourceConfig.fields) && rawSourceConfig.fields.length > 0) {
+      sourceFields.value = rawSourceConfig.fields
+    }
+    if (Array.isArray(rawTargetConfig.fields) && rawTargetConfig.fields.length > 0) {
+      targetFields.value = rawTargetConfig.fields
+    }
+
+    if (Array.isArray(mappingsData) && mappingsData.length > 0) {
+      fieldMappings.value = mappingsData.map(item => ({
+        id: item.id,
+        source_field: item.source_field,
+        target_field: item.target_field,
+        transform: item.transform || '',
+        default_value: item.default_value || '',
+        field_type: item.field_type || 'string',
+        format: item.format || '',
+        nullable: item.nullable !== false
+      }))
+
+      if (sourceFields.value.length === 0) {
+        const uniqueSourceFields = [...new Set(mappingsData.map(item => item.source_field).filter(Boolean))]
+        if (uniqueSourceFields.length > 0) {
+          sourceFields.value = uniqueSourceFields
+        }
+      }
+
+      if (targetFields.value.length === 0) {
+        const uniqueTargetFields = [...new Set(mappingsData.map(item => item.target_field).filter(Boolean))]
+        if (uniqueTargetFields.length > 0) {
+          targetFields.value = uniqueTargetFields
+        }
+      }
+    } else {
+      fieldMappings.value = []
+    }
+  } catch (error) {
+    console.error('加载任务详情失败:', error)
+    ElMessage.error(error.response?.data?.error || '加载任务详情失败')
+  } finally {
+    loadingTask.value = false
+  }
+}
+
 const handleLoadSourceTables = async () => {
   if (!sourceIsSystem.value) {
     ElMessage.info('本地存储引擎暂不支持从元数据模块加载表，请手动配置')
@@ -1155,23 +2068,78 @@ const handleFetchFields = async (type) => {
     return
   }
 
+  if (isSource) {
+    loadingSourceFields.value = true
+  } else {
+    loadingTargetFields.value = true
+  }
+
   try {
     const token = localStorage.getItem('token')
     const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
       params: {
         resource_id: resourceId,
-        table_name: tableName
+        table_name: tableName,
+        include_details: true
       },
       headers: { Authorization: `Bearer ${token}` }
     })
 
     if (response.data && Array.isArray(response.data)) {
       if (isSource) {
-        sourceFields.value = response.data
-        ElMessage.success(`已加载 ${response.data.length} 个源字段`)
+        if (response.data.length > 0 && typeof response.data[0] === 'object') {
+          sourceFieldDetails.value = response.data.map(field => ({
+            name: field.name || '',
+            data_type: field.data_type || '',
+            column_type: field.column_type || '',
+            default_value: field.default_value || '',
+            comment: field.comment || '',
+            is_nullable: field.is_nullable,
+            is_primary_key: field.is_primary_key,
+            is_unique_key: field.is_unique_key
+          }))
+          sourceFields.value = sourceFieldDetails.value.map(field => field.name).filter(Boolean)
+        } else {
+          sourceFieldDetails.value = (response.data || []).map(name => ({
+            name: String(name || ''),
+            data_type: '',
+            column_type: '',
+            default_value: '',
+            comment: '',
+            is_nullable: true,
+            is_primary_key: false,
+            is_unique_key: false
+          }))
+          sourceFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
+        }
+
+        if (hasSpatialSource.value && needsGeometrySelection.value) {
+          ensureGeometrySelectionDefaults(spatialSourceFields.value)
+          syncGeometryFieldsToConfig()
+        } else {
+          syncGeometryFieldsToConfig()
+        }
+
+        ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
+        sourceFieldsLoaded.value = true
       } else {
-        targetFields.value = response.data
-        ElMessage.success(`已加载 ${response.data.length} 个目标字段`)
+        if (response.data.length > 0 && typeof response.data[0] === 'object') {
+          targetFieldDetails.value = response.data.map(field => ({
+            name: field.name || '',
+            data_type: field.data_type || '',
+            column_type: field.column_type || ''
+          }))
+          targetFields.value = targetFieldDetails.value.map(field => field.name).filter(Boolean)
+        } else {
+          targetFieldDetails.value = (response.data || []).map(name => ({
+            name: String(name || ''),
+            data_type: '',
+            column_type: ''
+          }))
+          targetFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
+        }
+        ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
+        targetFieldsLoaded.value = true
       }
     } else {
       ElMessage.warning('未获取到字段信息')
@@ -1179,6 +2147,12 @@ const handleFetchFields = async (type) => {
   } catch (error) {
     console.error('获取字段列表失败:', error)
     ElMessage.error('获取字段列表失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    if (isSource) {
+      loadingSourceFields.value = false
+    } else {
+      loadingTargetFields.value = false
+    }
   }
 }
 
@@ -1201,16 +2175,16 @@ const nextStep = async () => {
       ElMessage.warning('请选择源数据源')
       return
     }
-  } else if (currentStep.value === 3) {
+  } else if (currentStep.value === 2) {
     if (!selectedTargetOption.value) {
       ElMessage.warning('请选择目标数据源')
       return
     }
   }
 
-  if (currentStep.value < 6) {
+  if (currentStep.value < 4) {
     currentStep.value++
-    if (currentStep.value === 5) {
+    if (currentStep.value === 3) {
       await autoFetchAndMapFields()
     }
   }
@@ -1235,6 +2209,10 @@ const autoFetchAndMapFields = async () => {
     // 对于对象存储目标（本地或系统），使用源字段作为目标字段
     else if (targetConnectorType.value === 's3' || (!targetIsSystem.value && selectedTargetLocalResource.value && ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value.resource_type || '').toLowerCase()))) {
       targetFields.value = [...sourceFields.value]
+      if (hasSpatialSource.value && needsGeometrySelection.value) {
+        ensureGeometrySelectionDefaults(spatialSourceFields.value)
+      }
+      syncGeometryFieldsToConfig()
     }
 
     // 等待所有字段加载完成
@@ -1363,6 +2341,8 @@ const buildConnectorConfigFromResource = (resource) => {
 const handleSubmit = async () => {
   submitting.value = true
   try {
+    syncGeometryFieldsToConfig()
+
     const config = {
       source: { ...sourceConfig.value },
       target: { ...targetConfig.value }
@@ -1462,7 +2442,10 @@ const handleSubmit = async () => {
       }
     }
 
-    router.push(`/tasks/${taskId}`)
+    router.push({
+      name: 'TaskDetail',
+      params: { id: taskId }
+    })
   } catch (error) {
     console.error('提交失败:', error)
     ElMessage.error(error.response?.data?.error || '提交失败')
@@ -1475,10 +2458,11 @@ const handleBack = () => {
   router.back()
 }
 
-onMounted(() => {
-  loadSystemResources()
-  loadLocalResources()
-  // TODO: 如果是编辑模式，加载任务数据
+onMounted(async () => {
+  await Promise.all([loadSystemResources(), loadLocalResources()])
+  if (isEdit.value) {
+    await loadTaskForEdit()
+  }
 })
 </script>
 
@@ -1500,9 +2484,60 @@ onMounted(() => {
   min-height: 400px;
 }
 
+.schedule-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schedule-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-presets__label {
+  color: #606266;
+  font-size: 13px;
+}
+
+.schedule-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-result {
+  font-size: 13px;
+  color: #303133;
+}
+
+.schedule-dialog__tip {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.schedule-dialog__preview {
+  font-size: 14px;
+  color: #303133;
+}
+
 .step-panel {
   max-width: 800px;
   margin: 0 auto;
+}
+
+.step-section {
+  margin-bottom: 32px;
+}
+
+.step-section__title {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  color: #303133;
 }
 
 .step-actions {
