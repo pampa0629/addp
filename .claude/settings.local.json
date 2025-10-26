@@ -100,7 +100,11 @@
       "Bash(/dev/null curl -s -X POST \"http://localhost:8081/api/data-explorer/resources/9/refresh\" -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"\"\"\"node_type\"\"\"\": \"\"\"\"prefix\"\"\"\", \"\"\"\"schema\"\"\"\": \"\"\"\"addp\"\"\"\", \"\"\"\"path\"\"\"\": \"\"\"\"shapefile\"\"\"\", \"\"\"\"full_path\"\"\"\": \"\"\"\"addp/shapefile\"\"\"\"}')",
       "Bash(/dev/null sleep 6 grep \"处理meta对象\" /tmp/meta-debug.log)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwiZXhwIjoxNzYxMjc0MDY0LCJpYXQiOjE3NjEyNzIyNjR9.ofR-lTZl6lL_N9jqe_0POoidft6P9LGn6c7ZRw5iRh0\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTMwODUzNywiaWF0IjoxNzYxMzA2NzM3fQ.sUcW7UhThMK2W6ec7t_45r4FrZSSC_A4dzVCSAFuPu8\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTMwODUzNywiaWF0IjoxNzYxMzA2NzM3fQ.sUcW7UhThMK2W6ec7t_45r4FrZSSC_A4dzVCSAFuPu8\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJleHAiOjE3NjEzMDg1MzcsImlhdCI6MTc2MTMwNjczN30.sUcW7UhThMK2W6ec7t_45r4FrZSSC_A4dzVCSAFuPu8\" curl -s http://localhost:8083/api/tasks/18 -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTQ1NDMyOCwiaWF0IjoxNzYxNDUyNTI4fQ.Ad0y2qBtCsHIIbgwvN7jZPhlIHsKFthiN9Z6V8kIgms\" curl -s \"http://localhost:8083/api/tasks/18\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTQ1NDMyOCwiaWF0IjoxNzYxNDUyNTI4fQ.Ad0y2qBtCsHIIbgwvN7jZPhlIHsKFthiN9Z6V8kIgms\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjEsImV4cCI6MTc2MTQ1NDgzNywiaWF0IjoxNzYxNDUzMDM3fQ.Xpl-QcpqQdzCIOv-UgnY9_k-ypHBoXrcnhPETpZNGn0\" curl -s \"http://localhost:8083/api/tasks/18\" -H \"Authorization: Bearer $TOKEN\")"
     ],
     "deny": [],
     "ask": []

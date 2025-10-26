@@ -776,6 +776,7 @@ const currentStep = ref(0)
 const submitting = ref(false)
 const startImmediately = ref(false)
 const loadingTask = ref(false)
+const isInitializingFromTask = ref(false)  // 防止 watch 在加载任务时重置配置
 
 const scheduleDialogVisible = ref(false)
 const scheduleDescription = ref('')
@@ -1231,6 +1232,7 @@ const prepareSourceConfigForDisplay = (rawConfig, connectorType) => {
 
 const prepareTargetConfigForDisplay = (rawConfig, connectorType) => {
   const sanitized = sanitizeConfigForDisplay(rawConfig)
+
   if (!('path' in sanitized) && typeof sanitized.file_name === 'string') {
     sanitized.path = sanitized.file_name
   }
@@ -1248,6 +1250,7 @@ const prepareTargetConfigForDisplay = (rawConfig, connectorType) => {
     sanitized.overwrite = sanitized.overwrite ?? false
     sanitized.path = sanitized.path || ''
   }
+
   return sanitized
 }
 
@@ -1386,8 +1389,10 @@ const updatePathExtensionForFormat = () => {
   if (!targetConfig.value || typeof targetConfig.value !== 'object') {
     return
   }
+
   const extension = formatExtensionMap[selectedTargetFormat.value] || 'csv'
   const currentPath = targetConfig.value.path || ''
+
   if (!currentPath) {
     targetConfig.value.path = `exports/output.${extension}`
     return
@@ -1599,10 +1604,11 @@ watch(sourceConnectorType, (newType) => {
   syncGeometryFieldsToConfig()
 })
 
-watch(targetConnectorType, (newType) => {
-  if (loadingTask.value) {
+watch(targetConnectorType, (newType, oldType) => {
+  if (loadingTask.value || isInitializingFromTask.value) {
     return
   }
+
   if (selectedTargetOption.value && !matchesConnectorType(selectedTargetOption.value.resource.resource_type, newType)) {
     selectedTargetValue.value = null
   }
@@ -1829,6 +1835,8 @@ const loadTaskForEdit = async () => {
   }
 
   loadingTask.value = true
+  isInitializingFromTask.value = true
+
   try {
     const [taskData, mappingsData = []] = await Promise.all([
       taskAPI.get(route.params.id),
@@ -1963,6 +1971,9 @@ const loadTaskForEdit = async () => {
     ElMessage.error(error.response?.data?.error || '加载任务详情失败')
   } finally {
     loadingTask.value = false
+    // 使用 nextTick 确保所有响应式更新完成后再解除初始化标志
+    await nextTick()
+    isInitializingFromTask.value = false
   }
 }
 
