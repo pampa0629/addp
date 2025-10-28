@@ -40,7 +40,7 @@ curl -O https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf
 
 ```bash
 # 使用 MinIO 客户端
-mc alias set myminio http://localhost:9000 minioadmin minioadmin
+mc alias set myminio http://localhost:9002 minioadmin minioadmin
 mc cp dummy.pdf myminio/test-bucket/documents/
 
 # 或通过 MinIO Web UI

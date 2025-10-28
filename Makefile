@@ -149,8 +149,8 @@ status: ## 显示所有服务状态
 	@echo "$(YELLOW)基础设施服务:$(NC)"
 	@echo "  - PostgreSQL:       localhost:5432"
 	@echo "  - Redis:            localhost:6379"
-	@echo "  - MinIO Console:    http://localhost:9001"
-	@echo "  - MinIO API:        http://localhost:9000"
+	@echo "  - MinIO Console:    http://localhost:9003"
+	@echo "  - MinIO API:        http://localhost:9002"
 	@echo "  - Elasticsearch:    http://localhost:9200"
 
 ps: status ## 显示服务状态（别名）
@@ -198,7 +198,7 @@ redis-cli: ## 连接到 Redis
 
 minio-setup: ## 初始化 MinIO bucket
 	@echo "$(GREEN)初始化 MinIO...$(NC)"
-	@docker compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+	@docker compose exec minio mc alias set local http://localhost:9002 minioadmin minioadmin
 	@docker compose exec minio mc mb local/addp-data --ignore-existing
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
 
@@ -234,7 +234,7 @@ health: ## 检查所有服务健康状态
 	@echo "Redis:"
 	@docker compose exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "MinIO:"
-	@curl -s http://localhost:9000/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@curl -s http://localhost:9002/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"

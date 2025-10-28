@@ -113,6 +113,8 @@ const form = ref({
   connection_info: {}
 })
 
+const SENSITIVE_PLACEHOLDER = '********'
+
 const dialogTitle = computed(() => isEdit.value ? '编辑本地存储引擎' : '新增本地存储引擎')
 
 const resourceTypeMap = {
@@ -196,7 +198,7 @@ const testBeforeCreate = async () => {
       }
     } else {
       // 新增模式，使用表单数据测试
-      const response = await localResourcesAPI.testConnection(form.value)
+      const response = await localResourcesAPI.testConnection(buildRequestPayload(form.value))
       if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
@@ -229,11 +231,12 @@ const submitForm = async () => {
 
   submitting.value = true
   try {
+    const payload = buildRequestPayload(form.value)
     if (isEdit.value) {
-      await localResourcesAPI.update(editId.value, form.value)
+      await localResourcesAPI.update(editId.value, payload)
       ElMessage.success('更新成功')
     } else {
-      await localResourcesAPI.create(form.value)
+      await localResourcesAPI.create(payload)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -289,6 +292,37 @@ const resetForm = () => {
     connection_info: {}
   }
   storageFormRef.value?.reset()
+}
+
+const buildRequestPayload = (data) => {
+  const connectionInfo = sanitizeConnectionInfoForSubmit(data.connection_info)
+  return {
+    resource_type: data.resource_type,
+    name: data.name,
+    description: data.description,
+    is_active: data.is_active,
+    connection_info: connectionInfo
+  }
+}
+
+const sanitizeConnectionInfoForSubmit = (connectionInfo) => {
+  const result = {}
+  const source = connectionInfo || {}
+
+  Object.entries(source).forEach(([key, value]) => {
+    if (key === '_has_password' || key === '_has_secret_key') {
+      return
+    }
+
+    if ((key === 'password' || key === 'secret_key') &&
+      (value === SENSITIVE_PLACEHOLDER || value === '' || value === null)) {
+      return
+    }
+
+    result[key] = value
+  })
+
+  return result
 }
 
 onMounted(() => {

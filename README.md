@@ -45,7 +45,7 @@ ADDP 采用微服务架构，每个模块独立开发、部署和扩展：
         ▼                ▼                ▼
   ┌──────────┐    ┌──────────┐    ┌──────────┐
   │PostgreSQL│    │  Redis   │    │  MinIO   │
-  │   5432   │    │   6379   │    │  9000    │
+  │   5432   │    │   6379   │    │  9002    │
   └──────────┘    └──────────┘    └──────────┘
 ```
 
@@ -343,8 +343,8 @@ MINIO_ROOT_PASSWORD=your-minio-password
 | Transfer Frontend | 8093 | Transfer UI |
 | PostgreSQL | 5432 | 数据库 |
 | Redis | 6379 | 缓存/队列 |
-| MinIO API | 9000 | 对象存储 |
-| MinIO Console | 9001 | MinIO 管理界面 |
+| MinIO API | 9002 | 对象存储 |
+| MinIO Console | 9003 | MinIO 管理界面 |
 | Elasticsearch REST | 9200 | 全文检索 API |
 | Elasticsearch Transport | 9300 | 节点通信 |
 

@@ -163,7 +163,7 @@ curl -X POST http://localhost:8080/api/resources \
     "name": "导出文件存储",
     "resource_type": "minio",
     "connection_info": {
-      "endpoint": "localhost:9000",
+      "endpoint": "localhost:9002",
       "access_key": "minioadmin",
       "secret_key": "minioadmin",
       "bucket": "exports",
@@ -272,7 +272,7 @@ curl -X POST http://localhost:8080/api/resources \
     "name": "导入文件存储",
     "resource_type": "minio",
     "connection_info": {
-      "endpoint": "localhost:9000",
+      "endpoint": "localhost:9002",
       "access_key": "minioadmin",
       "secret_key": "minioadmin",
       "bucket": "imports",
@@ -693,7 +693,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 psql -h localhost -p 5432 -U user -d database
 
 # 测试 MinIO 连接
-mc alias set myminio http://localhost:9000 minioadmin minioadmin
+mc alias set myminio http://localhost:9002 minioadmin minioadmin
 mc ls myminio/bucket
 ```
 

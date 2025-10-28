@@ -86,6 +86,133 @@ transfer/
 └── README.md
 ```
 
+## 插件式连接器开发
+
+当合作方可以访问 Transfer 源码时，可以在同一仓库内通过可插拔方式扩展新的 Reader/Writer，而无需修改核心注册逻辑：
+
+1. 在 `transfer/backend/plugins/<your-plugin>` 下创建插件包（该目录位于 `backend` 内，可合法引用 `internal` 包）。
+2. 实现自定义的 `pipeline.Reader` / `pipeline.Writer`，并在 `init()` 中调用 `connector.MustRegisterConnector` 或 `MustRegisterReader/MustRegisterWriter` 完成自注册。
+3. 在最终二进制的入口处以匿名导入方式包含插件包，确保编译时触发 `init()`。
+
+```go
+// 示例：在 worker/main.go 中挂载插件
+import (
+    _ "github.com/addp/transfer/plugins/example" // 触发 init，自注册连接器
+)
+```
+
+简化版插件骨架：
+
+```go
+package example
+
+import (
+    "context"
+    "io"
+
+    "github.com/addp/transfer/internal/connector"
+    "github.com/addp/transfer/pkg/pipeline"
+)
+
+func init() {
+    connector.MustRegisterConnector("example", newExampleReader, newExampleWriter)
+}
+
+func newExampleReader(cfg pipeline.ConnectorConfig) (pipeline.Reader, error) {
+    return &exampleReader{}, nil
+}
+
+type exampleReader struct{}
+
+func (r *exampleReader) Open(ctx context.Context, cfg pipeline.ConnectorConfig) error { return nil }
+func (r *exampleReader) Read(ctx context.Context) (*pipeline.DataBatch, error)        { return nil, io.EOF }
+func (r *exampleReader) Schema() (*pipeline.Schema, error)                            { return nil, nil }
+func (r *exampleReader) SeekTo(offset int64) error                                    { return nil }
+func (r *exampleReader) Close() error                                                { return nil }
+func (r *exampleReader) Mode() pipeline.ReaderMode                                   { return pipeline.ModeBatch }
+
+func newExampleWriter(cfg pipeline.ConnectorConfig) (pipeline.Writer, error) {
+    return &exampleWriter{}, nil
+}
+
+type exampleWriter struct{}
+
+func (w *exampleWriter) Open(ctx context.Context, cfg pipeline.ConnectorConfig) error { return nil }
+func (w *exampleWriter) Write(ctx context.Context, batch *pipeline.DataBatch) error   { return nil }
+func (w *exampleWriter) Flush(ctx context.Context) error                              { return nil }
+func (w *exampleWriter) Close() error                                                 { return nil }
+```
+
+> `MustRegisterConnector` 会在重复注册时 panic，便于早期发现冲突；实际项目中请返回真实的 Reader/Writer 实现。
+
+## 插件式转换器开发
+
+所有内置转换器（过滤、字段选择、重命名、空间转换等）都通过 `transfer/backend/internal/transform` 包以插件方式自注册。新增转换器时，可按照以下步骤扩展：
+
+1. 在 `transfer/backend/plugins/<your-transform>` 内创建插件包，并实现 `pipeline.Transform` 接口。
+2. 在该包中调用 `transform.MustRegisterTransform(name, factory, capability)` 完成注册，`factory` 负责解析配置并返回转换实例，`capability` 描述可视化所需元数据。
+3. 在业务入口（例如 worker/server `main.go`）以匿名导入方式引用插件包，从而触发 `init()` 完成注册。
+
+```go
+import (
+    _ "github.com/addp/transfer/plugins/exampletransform" // 注册自定义转换器
+)
+```
+
+转换器工厂示例：
+
+```go
+package exampletransform
+
+import (
+    "fmt"
+
+    "github.com/addp/transfer/internal/transform"
+    "github.com/addp/transfer/pkg/pipeline"
+)
+
+func init() {
+    transform.MustRegisterTransform("example_transform", newExampleFactory, pipeline.TransformCapability{
+        Name:        "example_transform",
+        Description: "示例转换器，演示如何解析配置并处理批数据",
+        ConfigSchema: map[string]interface{}{
+            "type": "object",
+            "properties": map[string]interface{}{
+                "threshold": map[string]string{
+                    "type":        "number",
+                    "description": "示例阈值",
+                },
+            },
+        },
+        Version: "1.0.0",
+        Author:  "Your Team",
+    })
+}
+
+func newExampleFactory(cfg map[string]interface{}) (pipeline.Transform, error) {
+    threshold, ok := cfg["threshold"].(float64)
+    if !ok {
+        return nil, fmt.Errorf("missing threshold")
+    }
+    return &exampleTransform{threshold: threshold}, nil
+}
+
+type exampleTransform struct {
+    threshold float64
+}
+
+func (t *exampleTransform) Apply(ctx context.Context, batch *pipeline.DataBatch) (*pipeline.DataBatch, error) {
+    // 在此处理数据
+    return batch, nil
+}
+
+func (t *exampleTransform) Name() string {
+    return "ExampleTransform"
+}
+```
+
+> 注册时发生错误会直接 panic，以确保转换器冲突在启动阶段暴露；必要时可通过单元测试提前验收配置解析逻辑。
+
 ## 数据模型设计
 
 ### 传输任务 (TransferTask)

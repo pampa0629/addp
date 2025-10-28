@@ -27,12 +27,12 @@ docker-compose.yml
 主 docker-compose.yml (ADDP System)
 ├── postgres (5432)           → 仅系统元数据
 ├── redis (6379)              → 缓存和队列
-├── minio-system (9000-9001)  → 仅系统文件
+├── minio-system (9002-9003)  → 仅系统文件
 └── elasticsearch (9200)      → 全文检索
 
 business/docker-compose.yml (Business Infrastructure)
 ├── postgres (5433)           → 仅业务数据
-└── minio (9002-9003)         → 仅业务文件
+└── minio (9000-9001)         → 仅业务文件
 ```
 
 **优势**：
@@ -52,7 +52,7 @@ business/docker-compose.yml (Business Infrastructure)
 - `metadata` schema: 元数据索引、节点树、字典定义
 - `transfer` schema: 传输任务定义、执行历史、映射规则
 
-**MinIO System (系统文件存储 - 端口 9000-9001)**:
+**MinIO System (系统文件存储 - 端口 9002-9003)**:
 - 用户头像
 - 系统配置文件
 - 日志归档文件
@@ -66,7 +66,7 @@ business/docker-compose.yml (Business Infrastructure)
 - 例如：Shapefile 转换后的关系数据
 - 动态创建的业务 schema 和表
 
-**MinIO Business (业务文件存储 - 端口 9002-9003)**:
+**MinIO Business (业务文件存储 - 端口 9000-9001)**:
 - 用户上传的文件
 - Shapefile 文件及其组成部分（.shp, .dbf, .shx, .prj）
 - GeoJSON、KML、GML 等空间数据文件
@@ -115,7 +115,7 @@ MINIO_SYSTEM_ROOT_USER=minioadmin
 MINIO_SYSTEM_ROOT_PASSWORD=minioadmin
 
 # 业务MinIO（在 business/docker-compose.yml 中部署）
-BUSINESS_MINIO_ENDPOINT=host.docker.internal:9002
+BUSINESS_MINIO_ENDPOINT=host.docker.internal:9000
 BUSINESS_MINIO_ACCESS_KEY=minioadmin
 BUSINESS_MINIO_SECRET_KEY=minioadmin
 ```
@@ -135,7 +135,7 @@ depends_on:
 **之后**:
 ```yaml
 environment:
-  - MINIO_ENDPOINT=${BUSINESS_MINIO_ENDPOINT:-host.docker.internal:9002}
+  - MINIO_ENDPOINT=${BUSINESS_MINIO_ENDPOINT:-host.docker.internal:9000}
   - MINIO_ACCESS_KEY=${BUSINESS_MINIO_ACCESS_KEY:-minioadmin}
   - MINIO_SECRET_KEY=${BUSINESS_MINIO_SECRET_KEY:-minioadmin}
 depends_on:
@@ -186,14 +186,14 @@ make up-full
 
 ADDP 服务访问业务基础设施使用 `host.docker.internal`:
 ```bash
-BUSINESS_MINIO_ENDPOINT=host.docker.internal:9002
+BUSINESS_MINIO_ENDPOINT=host.docker.internal:9000
 ```
 
 ### 本地开发环境
 
 本地运行的 ADDP 服务访问业务基础设施使用 `localhost`:
 ```bash
-BUSINESS_MINIO_ENDPOINT=localhost:9002
+BUSINESS_MINIO_ENDPOINT=localhost:9000
 ```
 
 ## 数据迁移
@@ -253,7 +253,7 @@ docker-compose ps
 docker exec business-postgres pg_isready -U business
 
 # 测试 MinIO API
-curl http://localhost:9002/minio/health/live
+curl http://localhost:9000/minio/health/live
 ```
 
 ### 日志查看
@@ -398,8 +398,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA business_data TO ad
 
 **解决**:
 1. 检查业务基础设施是否运行：`cd business && docker-compose ps`
-2. 检查端口是否正确：确认 `BUSINESS_MINIO_ENDPOINT` 指向 `9002` 而非 `9000`
-3. 检查网络连接：`curl http://localhost:9002/minio/health/live`
+2. 检查端口是否正确：确认 `BUSINESS_MINIO_ENDPOINT` 指向 `9000` 而非 `9002`
+3. 检查网络连接：`curl http://localhost:9000/minio/health/live`
 
 ### Q2: 业务 PostgreSQL 端口冲突
 

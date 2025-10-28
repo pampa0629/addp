@@ -608,9 +608,20 @@ func (s *TaskService) buildTransform(config map[string]interface{}) (pipeline.Tr
 		return nil, fmt.Errorf("transform type not specified")
 	}
 
+	normalized := make(map[string]interface{})
+	for k, v := range config {
+		if k == "type" {
+			continue
+		}
+		normalized[k] = v
+	}
+
+	if pipeline.HasTransformRegistered(transformType) {
+		return pipeline.NewTransformByName(transformType, normalized)
+	}
+
 	switch transformType {
 	case "filter":
-		// 构建过滤转换
 		conditionsData, _ := json.Marshal(config["conditions"])
 		var conditions []pipeline.FilterCondition
 		if err := json.Unmarshal(conditionsData, &conditions); err != nil {
@@ -633,20 +644,9 @@ func (s *TaskService) buildTransform(config map[string]interface{}) (pipeline.Tr
 			return nil, err
 		}
 		return pipeline.NewSelectFieldsTransform(fields), nil
-
-	default:
-		if pipeline.HasTransformRegistered(transformType) {
-			normalized := make(map[string]interface{})
-			for k, v := range config {
-				if k == "type" {
-					continue
-				}
-				normalized[k] = v
-			}
-			return pipeline.NewTransformByName(transformType, normalized)
-		}
-		return nil, fmt.Errorf("unknown transform type: %s", transformType)
 	}
+
+	return nil, fmt.Errorf("unknown transform type: %s", transformType)
 }
 
 // inferConnectorType 推断连接器类型

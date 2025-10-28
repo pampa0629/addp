@@ -11,25 +11,33 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
+// 已弃用：内置插件现在通过 init() 自动注册
+// 保留此 map 仅用于向后兼容外部插件加载器
 var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *ObjectContentRegistry) (PreviewProvider, error){
 	"postgresql-table": func(repo *repository.MetadataRepository, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return newPostgresPreviewProvider(repo), nil
+		return NewPostgresPreviewProvider(repo), nil
+	},
+	"shapefile": func(_ *repository.MetadataRepository, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewShapefilePreviewProvider(), nil
+	},
+	"csv": func(_ *repository.MetadataRepository, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewCSVPreviewProvider(), nil
 	},
 	"object-storage": func(repo *repository.MetadataRepository, content *ObjectContentRegistry) (PreviewProvider, error) {
-		return newObjectStoragePreviewProvider(repo, content), nil
+		return NewObjectStoragePreviewProvider(repo, content), nil
 	},
 	"schema-node": func(repo *repository.MetadataRepository, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return newSchemaPreviewProvider(repo), nil
+		return NewSchemaPreviewProvider(repo), nil
 	},
 }
 
-// 为兼容性保留旧的工厂接口
+// 已弃用：为兼容性保留旧的工厂接口
 var builtinProviderFactories = map[string]builtinProviderFactory{
 	"postgresql-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return newPostgresPreviewProvider(repo), nil
+		return NewPostgresPreviewProvider(repo), nil
 	},
 	"schema-node": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return newSchemaPreviewProvider(repo), nil
+		return NewSchemaPreviewProvider(repo), nil
 	},
 }
 

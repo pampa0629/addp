@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/common/logger"
 	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/manager/internal/service"
@@ -33,7 +34,7 @@ func (h *DataExplorerHandler) ListResources(c *gin.Context) {
 	resources, err := h.metadataService.ListExplorerResources(tenantID)
 	if err != nil {
 		logger.L().Error("数据探查: 获取存储引擎列表失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -50,7 +51,7 @@ func (h *DataExplorerHandler) GetTree(c *gin.Context) {
 	tree, err := h.metadataService.GetLegacyResourceTree(tenantID)
 	if err != nil {
 		logger.L().Error("数据探查: 旧接口获取资源树失败", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -60,73 +61,58 @@ func (h *DataExplorerHandler) GetTree(c *gin.Context) {
 
 // GetResourceTree 返回指定资源的 schema/表树
 func (h *DataExplorerHandler) GetResourceTree(c *gin.Context) {
-	resourceIDStr := c.Param("id")
-	if resourceIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource id"})
+	resourceID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
-	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
-		return
-	}
-
-	logger.L().Info("数据探查: 开始刷新资源树", "resource_id", resourceIDUint)
+	logger.L().Info("数据探查: 开始刷新资源树", "resource_id", resourceID)
 
 	tenantID := tenantIDFromContext(c)
 
-	tree, err := h.metadataService.GetResourceTree(uint(resourceIDUint), tenantID)
+	tree, err := h.metadataService.GetResourceTree(resourceID, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 获取资源树被拒绝", "resource_id", resourceIDUint, "tenant_id", tenantIDValue(tenantID))
-			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			logger.L().Warn("数据探查: 获取资源树被拒绝", "resource_id", resourceID, "tenant_id", tenantIDValue(tenantID))
+			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		logger.L().Error("数据探查: 获取资源树失败bk", "error", err, "resource_id", resourceIDUint)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logger.L().Error("数据探查: 获取资源树失败bk", "error", err, "resource_id", resourceID)
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	logger.L().Info("数据探查: 刷新资源树成功", "resource_id", resourceIDUint)
+	logger.L().Info("数据探查: 刷新资源树成功", "resource_id", resourceID)
 	c.JSON(http.StatusOK, gin.H{"data": tree})
 }
 
 // RefreshNode 触发 Meta 服务刷新指定节点
 func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
-	resourceIDStr := c.Param("id")
-	if resourceIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource id"})
-		return
-	}
-
-	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+	resourceID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	var req service.ExplorerNodeRefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request payload"})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
 	tenantID := tenantIDFromContext(c)
 	authHeader := c.GetHeader("Authorization")
 
-	if err := h.metadataService.RefreshExplorerNode(c.Request.Context(), uint(resourceIDUint), tenantID, &req, authHeader); err != nil {
+	if err := h.metadataService.RefreshExplorerNode(c.Request.Context(), resourceID, tenantID, &req, authHeader); err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 节点刷新被拒绝", "resource_id", resourceIDUint, "tenant_id", tenantIDValue(tenantID))
-			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			logger.L().Warn("数据探查: 节点刷新被拒绝", "resource_id", resourceID, "tenant_id", tenantIDValue(tenantID))
+			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
 		if strings.HasPrefix(err.Error(), "missing") {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			commonAPI.BadRequestError(c, err.Error())
 			return
 		}
-		logger.L().Error("数据探查: 节点刷新失败", "error", err, "resource_id", resourceIDUint)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logger.L().Error("数据探查: 节点刷新失败", "error", err, "resource_id", resourceID)
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -144,18 +130,18 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 
 	// resource_id 和 schema 是必需的，table 可以为空（用于查看 schema/bucket 信息）
 	if resourceIDStr == "" || schemaName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing required parameters"})
+		commonAPI.BadRequestError(c, "missing required parameters")
 		return
 	}
 
-	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceID64, err := strconv.ParseUint(resourceIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		commonAPI.BadRequestError(c, "Invalid resource_id")
 		return
 	}
+	resourceID := uint(resourceID64)
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	page, pageSize := commonAPI.GetPaginationParams(c)
 
 	tenantID := tenantIDFromContext(c)
 
@@ -169,21 +155,21 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 		ctx = context.WithValue(ctx, "jwt_token", token)
 	}
 
-	preview, err := h.metadataService.PreviewTableWithContext(ctx, uint(resourceIDUint), schemaName, tableName, page, pageSize, tenantID)
+	preview, err := h.metadataService.PreviewTableWithContext(ctx, resourceID, schemaName, tableName, page, pageSize, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 预览被拒绝", "resource_id", resourceIDUint, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))
-			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			logger.L().Warn("数据探查: 预览被拒绝", "resource_id", resourceID, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))
+			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
 	// Debug: 如果是对象预览，打印attributes信息
 	if preview != nil && preview.Object != nil {
 		logger.L().Info("数据探查: 预览对象",
-			"resource_id", resourceIDUint,
+			"resource_id", resourceID,
 			"schema", schemaName,
 			"table", tableName,
 			"has_attributes", len(preview.Object.Attributes) > 0,
@@ -235,19 +221,24 @@ func tenantIDValue(id *uint) interface{} {
 // VideoStream 视频流式传输API
 // 支持Range请求，用于视频播放器的流式加载
 func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
-	resourceIDStr := c.Query("resource_id")
 	objectKey := c.Query("object_key")
-
-	if resourceIDStr == "" || objectKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id or object_key"})
+	if objectKey == "" {
+		commonAPI.BadRequestError(c, "missing object_key")
 		return
 	}
 
-	resourceIDUint, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("resource_id")
+	if resourceIDStr == "" {
+		commonAPI.BadRequestError(c, "missing resource_id")
+		return
+	}
+
+	resourceID64, err := strconv.ParseUint(resourceIDStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		commonAPI.BadRequestError(c, "Invalid resource_id")
 		return
 	}
+	resourceID := uint(resourceID64)
 
 	tenantID := tenantIDFromContext(c)
 
@@ -257,18 +248,18 @@ func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
 	// 调用service获取视频流
 	videoReader, contentLength, contentRange, contentType, err := h.metadataService.StreamVideo(
 		c.Request.Context(),
-		uint(resourceIDUint),
+		resourceID,
 		objectKey,
 		rangeHeader,
 		tenantID,
 	)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
+			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		logger.L().Error("视频流传输失败", "error", err, "resource_id", resourceIDUint, "object_key", objectKey)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		logger.L().Error("视频流传输失败", "error", err, "resource_id", resourceID, "object_key", objectKey)
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 	defer videoReader.Close()

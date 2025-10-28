@@ -48,9 +48,8 @@ PostgreSQL 实例1 (ADDP系统库) - localhost:5432
   选择类型: MinIO
     - 填写连接信息:
     名称: 对象存储
-  端点地址: localhost:9000
+  端点地址: localhost:9002
   Access Key: minioadmin
   Secret Key: minioadmin
   使用SSL: 关闭
-
 

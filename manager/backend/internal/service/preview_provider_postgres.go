@@ -13,7 +13,7 @@ type postgresPreviewProvider struct {
 	priority     int
 }
 
-func newPostgresPreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
+func NewPostgresPreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
 	return &postgresPreviewProvider{
 		metadataRepo: metadataRepo,
 		priority:     100,

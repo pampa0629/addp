@@ -14,7 +14,7 @@ type schemaPreviewProvider struct {
 	priority     int
 }
 
-func newSchemaPreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
+func NewSchemaPreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
 	return &schemaPreviewProvider{
 		metadataRepo: metadataRepo,
 		priority:     90,

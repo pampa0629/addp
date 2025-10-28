@@ -72,11 +72,13 @@ func main() {
 	}
 	searchIndexer, err := search.NewIndexer(cfg)
 	if err != nil {
-		logger.L().Error("Elasticsearch 索引器初始化失败", "error", err)
-		os.Exit(1)
+		logger.L().Warn("Elasticsearch 索引器初始化失败，搜索功能将被禁用", "error", err)
+		searchIndexer = nil // 继续运行，但不使用搜索索引
 	}
 	scanService := service.NewScanServiceNew(db, resourceService)
-	scanService.SetIndexer(searchIndexer)
+	if searchIndexer != nil {
+		scanService.SetIndexer(searchIndexer)
+	}
 
 	var pgVectorStore *vectorstore.PgVectorStore
 	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {

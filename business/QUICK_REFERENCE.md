@@ -12,8 +12,8 @@ cd business
 | 服务 | URL | 默认凭据 |
 |------|-----|---------|
 | PostgreSQL | `localhost:5433` | business / business_password |
-| MinIO Console | http://localhost:9003 | minioadmin / minioadmin |
-| MinIO API | http://localhost:9002 | - |
+| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
+| MinIO API | http://localhost:9000 | - |
 
 ## 🔧 常用命令
 
@@ -64,12 +64,12 @@ postgresql://business:business_password@host.docker.internal:5433/business
 ### MinIO
 ```bash
 # From host
-Endpoint: localhost:9002
+Endpoint: localhost:9000
 Access Key: minioadmin
 Secret Key: minioadmin
 
 # From Docker (ADDP services)
-Endpoint: host.docker.internal:9002
+Endpoint: host.docker.internal:9000
 Access Key: minioadmin
 Secret Key: minioadmin
 ```
@@ -117,7 +117,7 @@ chmod +x mc
 
 #### 配置 alias
 ```bash
-mc alias set business-minio http://localhost:9002 minioadmin minioadmin
+mc alias set business-minio http://localhost:9000 minioadmin minioadmin
 ```
 
 #### 常用操作
@@ -165,8 +165,8 @@ docker compose logs minio
 
 # 检查端口占用
 lsof -i :5433
-lsof -i :9002
-lsof -i :9003
+lsof -i :9000
+lsof -i :9001
 ```
 
 ### 无法连接数据库
@@ -184,7 +184,7 @@ docker compose logs postgres | tail -50
 ### MinIO 无法访问
 ```bash
 # 测试健康检查
-curl http://localhost:9002/minio/health/live
+curl http://localhost:9000/minio/health/live
 
 # 查看日志
 docker compose logs minio | tail -50

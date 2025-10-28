@@ -9,15 +9,16 @@ import (
 	"syscall"
 	"time"
 
+	commonConfig "github.com/addp/common/config"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/connector"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
+	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/addp/transfer/pkg/pipeline"
-	commonConfig "github.com/addp/common/config"
 	"github.com/hibiken/asynq"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -38,7 +39,9 @@ func main() {
 	registry := pipeline.NewConnectorRegistry()
 
 	// 注册所有连接器
-	connector.RegisterAllConnectors(registry)
+	if err := connector.RegisterAllConnectors(registry); err != nil {
+		log.Fatalf("注册连接器失败: %v", err)
+	}
 	log.Printf("✅ 已注册连接器 - Readers: %v, Writers: %v",
 		registry.ListReaders(), registry.ListWriters())
 
@@ -127,18 +130,22 @@ func main() {
 
 // connectDatabase 连接数据库
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	// 构建 DSN
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
-	)
+	// Use common repository InitDatabase (worker doesn't need auto-migration)
+	dbConfig := commonRepo.DatabaseConfig{
+		Host:     cfg.DBHost,
+		Port:     cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		DBName:   cfg.DBName,
+		Schema:   cfg.DBSchema,
+		SSLMode:  "disable",
+	}
 
-	// 连接数据库
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	// Initialize database without auto-migration (tables already created by server)
+	db, err := commonRepo.InitDatabase(dbConfig)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
-	log.Println("✅ 数据库连接成功")
 	return db, nil
 }

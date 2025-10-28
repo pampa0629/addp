@@ -2,8 +2,8 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -25,8 +25,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // POST /api/tasks
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	var req models.CreateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
@@ -36,7 +35,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 
 	task, err := h.taskService.CreateTask(c.Request.Context(), &req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -46,17 +45,16 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // GetTask 获取任务详情
 // GET /api/tasks/:id
 func (h *TaskHandler) GetTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	task, err := h.taskService.GetTask(c.Request.Context(), uint(id), tenantID)
+	task, err := h.taskService.GetTask(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		commonAPI.NotFoundError(c, "Task not found")
 		return
 	}
 
@@ -86,40 +84,32 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 
 	tasks, total, err := h.taskService.ListTasks(c.Request.Context(), tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":       tasks,
-		"total":      total,
-		"page":       req.Page,
-		"page_size":  req.PageSize,
-		"total_page": (total + int64(req.PageSize) - 1) / int64(req.PageSize),
-	})
+	commonAPI.SendPaginatedResponse(c, tasks, total, req.Page, req.PageSize)
 }
 
 // UpdateTask 更新任务
 // PUT /api/tasks/:id
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	var req models.UpdateTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
 	// 修正参数顺序：id, tenantID, req
-	task, err := h.taskService.UpdateTask(c.Request.Context(), uint(id), tenantID, &req)
+	task, err := h.taskService.UpdateTask(c.Request.Context(), id, tenantID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -129,16 +119,15 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 // DeleteTask 删除任务
 // DELETE /api/tasks/:id
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.taskService.DeleteTask(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.DeleteTask(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -148,18 +137,17 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // StartTask 启动任务
 // POST /api/tasks/:id/start
 func (h *TaskHandler) StartTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	execution, err := h.taskService.StartTask(c.Request.Context(), uint(id), tenantID, userID)
+	execution, err := h.taskService.StartTask(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -169,16 +157,15 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // StopTask 停止任务
 // POST /api/tasks/:id/stop
 func (h *TaskHandler) StopTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.taskService.StopTask(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.StopTask(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -188,16 +175,15 @@ func (h *TaskHandler) StopTask(c *gin.Context) {
 // PauseTask 暂停任务
 // POST /api/tasks/:id/pause
 func (h *TaskHandler) PauseTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.taskService.PauseTask(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.PauseTask(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -207,16 +193,15 @@ func (h *TaskHandler) PauseTask(c *gin.Context) {
 // ResumeTask 恢复任务
 // POST /api/tasks/:id/resume
 func (h *TaskHandler) ResumeTask(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.taskService.ResumeTask(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.ResumeTask(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -230,7 +215,7 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 
 	stats, err := h.taskService.GetStatistics(c.Request.Context(), tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -240,24 +225,22 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 // CreateDataMapping 创建字段映射
 // POST /api/tasks/:id/mappings
 func (h *TaskHandler) CreateDataMapping(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	taskID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	var req models.CreateDataMappingRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	mapping, err := h.taskService.CreateMapping(c.Request.Context(), uint(taskID), &req, tenantID, userID)
+	mapping, err := h.taskService.CreateMapping(c.Request.Context(), taskID, &req, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -267,17 +250,16 @@ func (h *TaskHandler) CreateDataMapping(c *gin.Context) {
 // GetTaskMappings 获取任务的字段映射列表
 // GET /api/tasks/:id/mappings
 func (h *TaskHandler) GetTaskMappings(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	taskID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	mappings, err := h.taskService.GetTaskMappings(c.Request.Context(), uint(taskID), tenantID)
+	mappings, err := h.taskService.GetTaskMappings(c.Request.Context(), taskID, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -287,16 +269,15 @@ func (h *TaskHandler) GetTaskMappings(c *gin.Context) {
 // DeleteDataMapping 删除字段映射
 // DELETE /api/mappings/:id
 func (h *TaskHandler) DeleteDataMapping(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid mapping ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.taskService.DeleteMapping(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.taskService.DeleteMapping(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 

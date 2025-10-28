@@ -21,7 +21,7 @@ Status: ✅ Healthy
 Container ID: 28c54cb01cc4
 Name: business-minio
 Image: minio/minio:latest
-Ports: 9002 -> 9000 (API), 9003 -> 9001 (Console)
+Ports: 9000 -> 9000 (API), 9001 -> 9001 (Console)
 Project: business
 Status: ✅ Healthy
 ```
@@ -38,7 +38,7 @@ Status: ✅ Healthy
 Container ID: 8eeb214f7e29
 Name: addp-minio-system
 Image: minio/minio:latest
-Ports: 9000 -> 9000 (API), 9001 -> 9001 (Console)
+Ports: 9002 -> 9000 (API), 9003 -> 9001 (Console)
 Project: addp
 Status: ✅ Healthy
 ```
@@ -51,10 +51,10 @@ Status: ✅ Healthy
 |------|------|------|
 | ADDP PostgreSQL | 5432 | ✅ |
 | Business PostgreSQL | 5433 | ✅ |
-| ADDP MinIO API | 9000 | ✅ |
-| ADDP MinIO Console | 9001 | ✅ |
-| Business MinIO API | 9002 | ✅ |
-| Business MinIO Console | 9003 | ✅ |
+| ADDP MinIO API | 9002 | ✅ |
+| ADDP MinIO Console | 9003 | ✅ |
+| Business MinIO API | 9000 | ✅ |
+| Business MinIO Console | 9001 | ✅ |
 
 ### ✅ 数据库验证
 
@@ -83,11 +83,11 @@ Status: ✅ Healthy
 
 ```bash
 # Business MinIO
-$ curl http://localhost:9002/minio/health/live
+$ curl http://localhost:9000/minio/health/live
 ✅ OK
 
 # ADDP System MinIO
-$ curl http://localhost:9000/minio/health/live
+$ curl http://localhost:9002/minio/health/live
 ✅ OK
 ```
 
@@ -113,8 +113,8 @@ $ curl http://localhost:9000/minio/health/live
 | POSTGRES_PORT | BUSINESS_POSTGRES_PORT | 5433 |
 | MINIO_ROOT_USER | BUSINESS_MINIO_ROOT_USER | minioadmin |
 | MINIO_ROOT_PASSWORD | BUSINESS_MINIO_ROOT_PASSWORD | minioadmin |
-| MINIO_API_PORT | BUSINESS_MINIO_API_PORT | 9002 |
-| MINIO_CONSOLE_PORT | BUSINESS_MINIO_CONSOLE_PORT | 9003 |
+| MINIO_API_PORT | BUSINESS_MINIO_API_PORT | 9000 |
+| MINIO_CONSOLE_PORT | BUSINESS_MINIO_CONSOLE_PORT | 9001 |
 
 ## 测试命令
 
@@ -144,10 +144,10 @@ docker exec addp-postgres psql -U addp -d addp -c "SELECT version();"
 ### 测试 MinIO 连接
 ```bash
 # Business MinIO Console
-open http://localhost:9003
+open http://localhost:9001
 
 # ADDP MinIO Console
-open http://localhost:9001
+open http://localhost:9003
 ```
 
 ## 启动顺序
@@ -213,7 +213,7 @@ make dev-start
 
 - [x] business-postgres 在端口 5433
 - [x] addp-postgres 在端口 5432
-- [x] business-minio 在端口 9002-9003
+- [x] business-minio 在端口 9000-9001
 - [x] addp-minio-system 在端口 9000-9001
 - [x] 所有容器 ID 不同
 - [x] 容器分属不同的 compose project
@@ -229,7 +229,7 @@ make dev-start
 Manager 模块已配置为使用业务 MinIO：
 ```yaml
 environment:
-  - MINIO_ENDPOINT=${BUSINESS_MINIO_ENDPOINT:-host.docker.internal:9002}
+  - MINIO_ENDPOINT=${BUSINESS_MINIO_ENDPOINT:-host.docker.internal:9000}
   - MINIO_ACCESS_KEY=${BUSINESS_MINIO_ACCESS_KEY:-minioadmin}
   - MINIO_SECRET_KEY=${BUSINESS_MINIO_SECRET_KEY:-minioadmin}
 ```

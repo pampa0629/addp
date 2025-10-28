@@ -1,9 +1,9 @@
 package models
 
 import (
-	"database/sql/driver"
-	"encoding/json"
 	"time"
+
+	commonModels "github.com/addp/common/models"
 )
 
 // TaskType 任务类型
@@ -36,22 +36,9 @@ const (
 	TaskModeMicroBatch TaskMode = "micro-batch" // 微批次模式
 )
 
-// JSONMap 自定义 JSON 类型
-type JSONMap map[string]interface{}
-
-// Value 实现 driver.Valuer 接口
-func (m JSONMap) Value() (driver.Value, error) {
-	return json.Marshal(m)
-}
-
-// Scan 实现 sql.Scanner 接口
-func (m *JSONMap) Scan(value interface{}) error {
-	bytes, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(bytes, m)
-}
+// JSONMap is now imported from common/models
+// Use commonModels.JSONMap instead
+type JSONMap = commonModels.JSONMap
 
 // Task 传输任务
 type Task struct {

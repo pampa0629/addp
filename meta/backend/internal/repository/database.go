@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/addp/common/logger"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/models"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormLogger "gorm.io/gorm/logger"
 )
@@ -19,34 +19,28 @@ var DB *gorm.DB
 
 // InitDatabase 初始化数据库连接
 func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBName,
-		cfg.DBSchema,
-	)
-
-	dbLogger := newGormLogger(logger.With("component", "gorm"), gormLogger.Config{
-		SlowThreshold:             200 * time.Millisecond,
-		LogLevel:                  gormLogger.Warn,
-		IgnoreRecordNotFoundError: true,
-	})
-
-	db, err := gorm.Open(postgres.New(postgres.Config{
-		DSN:        dsn,
-		DriverName: "pgx/v5",
-	}), &gorm.Config{
-		Logger: dbLogger,
-		// 不使用 TablePrefix，直接通过 search_path 访问正确的 schema
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
+	// Use common repository InitDatabase
+	dbConfig := commonRepo.DatabaseConfig{
+		Host:     cfg.DBHost,
+		Port:     cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		DBName:   cfg.DBName,
+		Schema:   cfg.DBSchema,
+		SSLMode:  "disable",
 	}
 
-	// 设置连接池
+	// Initialize database with auto-migration
+	db, err := commonRepo.InitDatabase(dbConfig,
+		&models.ScanTask{},
+		&models.ScanTaskRun{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply custom settings for Meta module
+	// Set connection pool
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database instance: %w", err)
@@ -55,10 +49,13 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 
-	// 自动迁移新增的任务表
-	if err := autoMigrate(db); err != nil {
-		return nil, fmt.Errorf("failed to auto migrate: %w", err)
-	}
+	// Apply custom logger (optional, overwrites common logger)
+	dbLogger := newGormLogger(logger.With("component", "gorm"), gormLogger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  gormLogger.Warn,
+		IgnoreRecordNotFoundError: true,
+	})
+	db.Logger = dbLogger
 
 	DB = db
 	logger.L().Info("数据库连接成功", "host", cfg.DBHost, "schema", cfg.DBSchema)
@@ -143,10 +140,4 @@ func (l *gormSlogLogger) Trace(ctx context.Context, begin time.Time, fc func() (
 	}
 }
 
-// autoMigrate 自动迁移所有表
-func autoMigrate(db *gorm.DB) error {
-	return db.AutoMigrate(
-		&models.ScanTask{},
-		&models.ScanTaskRun{},
-	)
-}
+// Note: autoMigrate function removed - now handled by commonRepo.InitDatabase

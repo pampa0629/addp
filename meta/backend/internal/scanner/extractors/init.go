@@ -24,12 +24,14 @@ func init() {
 	// 5. 注册数据库提取器
 	scanner.Register(&SQLiteExtractor{})
 
-	// 6. 注册默认提取器（兜底，必须最后注册）
+	// 6. 注册Shapefile提取器
+	scanner.Register(&ShapefileExtractor{})
+
+	// 7. 注册默认提取器（兜底，必须最后注册）
 	scanner.Register(&DefaultExtractor{})
 
 	// 未来可以在此添加更多提取器：
 	// scanner.Register(&ParquetExtractor{})
-	// scanner.Register(&ShapefileExtractor{})
 	// scanner.Register(&ExcelExtractor{})
 	// scanner.Register(&WordExtractor{})
 	// scanner.Register(&VideoExtractor{})

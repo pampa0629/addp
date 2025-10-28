@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/repository"
 )
 
 // Preview modes
@@ -110,4 +111,63 @@ func (r *PreviewRegistry) Providers() []string {
 // sanitizeResourceType 统一资源类型比较。
 func sanitizeResourceType(resourceType string) string {
 	return strings.ToLower(strings.TrimSpace(resourceType))
+}
+
+// ProviderFactory 预览插件工厂函数类型
+type ProviderFactory func(*repository.MetadataRepository, *ObjectContentRegistry) (PreviewProvider, error)
+
+// 全局预览插件工厂注册表
+var (
+	globalProviderFactories = make(map[string]ProviderFactory)
+	globalFactoryMu         sync.RWMutex
+)
+
+// RegisterPreviewProvider 注册预览插件工厂到全局注册表
+// 通常在插件包的 init() 函数中调用
+func RegisterPreviewProvider(name string, factory ProviderFactory) {
+	globalFactoryMu.Lock()
+	defer globalFactoryMu.Unlock()
+
+	globalProviderFactories[name] = factory
+}
+
+// GetPreviewProviderFactory 获取已注册的插件工厂
+func GetPreviewProviderFactory(name string) ProviderFactory {
+	globalFactoryMu.RLock()
+	defer globalFactoryMu.RUnlock()
+
+	return globalProviderFactories[name]
+}
+
+// ListPreviewProviderFactories 列出所有已注册的插件工厂名称
+func ListPreviewProviderFactories() []string {
+	globalFactoryMu.RLock()
+	defer globalFactoryMu.RUnlock()
+
+	names := make([]string, 0, len(globalProviderFactories))
+	for name := range globalProviderFactories {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// RegisterBuiltinProviders 将所有全局注册的插件工厂实例化并注册到指定注册表
+func RegisterBuiltinProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, contentRegistry *ObjectContentRegistry) error {
+	globalFactoryMu.RLock()
+	factories := make(map[string]ProviderFactory, len(globalProviderFactories))
+	for name, factory := range globalProviderFactories {
+		factories[name] = factory
+	}
+	globalFactoryMu.RUnlock()
+
+	for _, factory := range factories {
+		provider, err := factory(metadataRepo, contentRegistry)
+		if err != nil {
+			return err
+		}
+		registry.Register(provider)
+	}
+
+	return nil
 }

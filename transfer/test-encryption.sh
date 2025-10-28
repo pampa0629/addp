@@ -109,7 +109,7 @@ MINIO_RESPONSE=$(curl -s -X POST http://localhost:8083/api/local-resources \
     "description": "secret_key加密测试",
     "is_active": true,
     "connection_info": {
-      "endpoint": "localhost:9000",
+      "endpoint": "localhost:9002",
       "access_key": "minioadmin",
       "secret_key": "plain_secret_key_456",
       "use_ssl": false

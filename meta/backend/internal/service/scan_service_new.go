@@ -133,7 +133,7 @@ func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.Me
 		depth = parent.Depth + 1
 	}
 
-	query := s.db.Where("res_id = ? AND tenant_id = ? AND node_type = ? AND name = ?", resourceID, tenantID, nodeType, name)
+	query := s.db.Unscoped().Where("res_id = ? AND tenant_id = ? AND node_type = ? AND name = ?", resourceID, tenantID, nodeType, name)
 	if parentID == nil {
 		query = query.Where("parent_node_id IS NULL")
 	} else {
@@ -179,7 +179,9 @@ func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.Me
 		return nil, err
 	}
 
-	updates := map[string]interface{}{}
+	updates := map[string]interface{}{
+		"deleted_at": nil, // 恢复软删除的节点
+	}
 	if node.Depth != depth {
 		updates["depth"] = depth
 		node.Depth = depth
@@ -207,7 +209,7 @@ func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.Me
 
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
-		if err := s.db.Model(&node).Updates(updates).Error; err != nil {
+		if err := s.db.Unscoped().Model(&node).Updates(updates).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -291,6 +293,9 @@ func (s *ScanServiceNew) upsertItemSelective(
 			} else if rp, ok := attrs["relative_path"].(string); ok {
 				path = rp
 			}
+			// 注意：path可能已经包含bucket前缀（历史设计）
+			// GenerateObjectFingerprint会再添加bucket，形成"bucket/bucket/path"
+			// 为了兼容性，保持这种方式
 			fingerprint = models.GenerateObjectFingerprint(resourceID, bucket, path)
 		} else if schema, ok := attrs["schema_name"].(string); ok {
 			// 关系数据库：使用 schema.table
@@ -314,8 +319,8 @@ func (s *ScanServiceNew) upsertItemSelective(
 	}
 
 	var item models.MetaItem
-	// 使用fingerprint查找记录（唯一索引）
-	err := s.db.Where("fingerprint = ?", fingerprint).First(&item).Error
+	// 使用fingerprint查找记录（唯一索引），包括软删除的记录
+	err := s.db.Unscoped().Where("fingerprint = ?", fingerprint).First(&item).Error
 
 	if err == gorm.ErrRecordNotFound {
 		// 创建新记录
@@ -346,7 +351,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		return nil, err
 	}
 
-	// 更新已有记录
+	// 更新已有记录（包括恢复软删除的记录）
 	updates := map[string]interface{}{
 		"node_id":             node.ID, // 允许node_id变化（数据移动）
 		"full_name":           fullName,
@@ -356,6 +361,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		"object_size_bytes":   objectSize,
 		"last_modified_at":    lastModified,
 		"updated_at":          time.Now(),
+		"deleted_at":          nil, // 恢复软删除的记录
 	}
 
 	// 只有当attrs不为nil时才更新attributes（shallow扫描时保留已有的deep元数据）
@@ -363,7 +369,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		updates["attributes"] = attrs
 	}
 
-	if err := s.db.Model(&item).Updates(updates).Error; err != nil {
+	if err := s.db.Unscoped().Model(&item).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 
@@ -727,12 +733,19 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 		s.log.Info("对象存储资源扫描开始", cloneLogFields(startFields, "allowed_bucket_count", len(buckets), "allowed_buckets", buckets)...)
 
+		// 记录本次扫描到的 bucket
+		scannedBuckets := make(map[string]bool)
+
 		for _, bucket := range buckets {
+			scannedBuckets[bucket] = true
+
 			var node models.MetaNode
 			err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
 				tenantID, resourceID, "bucket", bucket).First(&node).Error
 
-			if err == gorm.ErrRecordNotFound {
+			// 无论 bucket 是否已存在,都进行扫描以确保元数据同步
+			// 这样可以触发对象的增量更新和过期对象的清理
+			if err == gorm.ErrRecordNotFound || err == nil {
 				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, []string{bucket}, "deep", nil)
 				if err != nil {
 					s.log.Warn("对象存储桶扫描失败",
@@ -745,7 +758,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				}
 				totalBuckets += schemas
 				totalObjects += objects
-			} else if err != nil {
+			} else {
 				s.log.Warn("查询对象存储节点失败",
 					"resource_id", resourceID,
 					"tenant_id", tenantID,
@@ -754,6 +767,37 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				)
 			}
 		}
+
+		// 软删除那些不再存在的 bucket
+		var existingBuckets []models.MetaNode
+		if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ?",
+			tenantID, resourceID, "bucket").Find(&existingBuckets).Error; err != nil {
+			s.log.Warn("查询已存在 bucket 节点失败", "error", err)
+		} else {
+			for _, bucketNode := range existingBuckets {
+				if !scannedBuckets[bucketNode.Name] {
+					s.log.Info("Bucket 已不存在，标记删除",
+						"resource_id", resourceID,
+						"bucket", bucketNode.Name,
+					)
+					if err := s.db.Delete(&bucketNode).Error; err != nil {
+						s.log.Warn("软删除 bucket 节点失败",
+							"bucket", bucketNode.Name,
+							"error", err,
+						)
+					} else {
+						// 同时软删除该 bucket 下的所有对象
+						if err := s.db.Where("node_id = ?", bucketNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
+							s.log.Warn("软删除 bucket 下的对象失败",
+								"bucket", bucketNode.Name,
+								"error", err,
+							)
+						}
+					}
+				}
+			}
+		}
+
 		s.log.Info("对象存储资源扫描完成", cloneLogFields(startFields,
 			"buckets_scanned", totalBuckets,
 			"objects_scanned", totalObjects,
@@ -772,11 +816,19 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 	s.log.Info("数据库资源扫描开始", cloneLogFields(startFields, "schema_total", len(schemasInfo))...)
 
+	// 记录本次扫描到的 schema
+	scannedSchemas := make(map[string]bool)
+
 	for _, schemaInfo := range schemasInfo {
+		scannedSchemas[schemaInfo.Name] = true
+
 		var node models.MetaNode
 		err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
 			tenantID, resourceID, "schema", schemaInfo.Name).First(&node).Error
-		if err == gorm.ErrRecordNotFound {
+
+		// 无论 schema 是否已存在,都进行扫描以确保元数据同步
+		// 这样可以触发表的增量更新和过期表的清理
+		if err == gorm.ErrRecordNotFound || err == nil {
 			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaInfo.Name, "deep")
 			if err != nil {
 				s.log.Warn("Schema 扫描失败",
@@ -790,13 +842,48 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 			totalSchemas += schemas
 			totalTables += tables
 			totalFields += fields
-		} else if err != nil {
+		} else {
 			s.log.Warn("查询 Schema 节点失败",
 				"resource_id", resourceID,
 				"tenant_id", tenantID,
 				"schema", schemaInfo.Name,
 				"error", err,
 			)
+		}
+	}
+
+	// 软删除那些不再存在的 schema
+	var existingSchemas []models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ?",
+		tenantID, resourceID, "schema").Find(&existingSchemas).Error; err != nil {
+		s.log.Warn("查询已存在 schema 节点失败", "error", err)
+	} else {
+		s.log.Info("开始检查需要清理的 schema",
+			"resource_id", resourceID,
+			"existing_count", len(existingSchemas),
+			"scanned_count", len(scannedSchemas),
+		)
+		for _, schemaNode := range existingSchemas {
+			if !scannedSchemas[schemaNode.Name] {
+				s.log.Info("Schema 已不存在，标记删除",
+					"resource_id", resourceID,
+					"schema", schemaNode.Name,
+				)
+				if err := s.db.Delete(&schemaNode).Error; err != nil {
+					s.log.Warn("软删除 schema 节点失败",
+						"schema", schemaNode.Name,
+						"error", err,
+					)
+				} else {
+					// 同时软删除该 schema 下的所有表
+					if err := s.db.Where("node_id = ?", schemaNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
+						s.log.Warn("软删除 schema 下的表失败",
+							"schema", schemaNode.Name,
+							"error", err,
+						)
+					}
+				}
+			}
 		}
 	}
 
@@ -1336,22 +1423,18 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 			attrs["last_modified_at"] = meta.LastModified
 		}
 
-		// 生成fingerprint并记录 - 必须使用完整路径（包含scanPathPrefix）以确保文件唯一性
-		// 否则同一个文件在不同扫描路径下会产生不同的fingerprint
-		fullPath := trimmed
-		if scanPathPrefix != "" && trimmed != "" {
-			fullPath = scanPathPrefix + "/" + trimmed
-		} else if scanPathPrefix != "" {
-			fullPath = scanPathPrefix
-		}
-		fingerprint := models.GenerateObjectFingerprint(resourceID, meta.Bucket, fullPath)
+		// 生成fingerprint - 使用meta.Path（包含bucket前缀）
+		// 注意：meta.Path已经包含bucket前缀（如"addp/2024东北高斯三维.mov"）
+		// GenerateObjectFingerprint会再添加bucket，结果是"addp/addp/2024东北高斯三维.mov"
+		// 这是历史设计，为了保持兼容性，我们继续使用这种方式
+		fingerprint := models.GenerateObjectFingerprint(resourceID, meta.Bucket, meta.Path)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
 		}
 
-		// 检查记录是否已存在
+		// 检查记录是否已存在（包括软删除的记录）
 		var existingItem models.MetaItem
-		itemExists := s.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error == nil
+		itemExists := s.db.Unscoped().Where("fingerprint = ?", fingerprint).First(&existingItem).Error == nil
 
 		// 增量更新逻辑：对比 LastModifiedAt 和 SizeBytes
 		needsUpdate := !itemExists || // 新对象
@@ -1383,8 +1466,8 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 		var enhancedAttrs models.JSONMap
 		if strings.EqualFold(scanDepth, "deep") {
 			// 深度扫描：提取详细元数据（用于文件预览/搜索）
-			// 传递fullPath用于正确的fingerprint生成
-			enhancedAttrs = s.extractEnhancedMetadataWithCache(resourceID, meta, attrs, fullPath)
+			// 传递meta.Path用于正确的fingerprint生成
+			enhancedAttrs = s.extractEnhancedMetadataWithCache(resourceID, meta, attrs, meta.Path)
 		} else if itemExists {
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
 			// 但仍需要更新node_id（文件可能移动到了不同的目录）

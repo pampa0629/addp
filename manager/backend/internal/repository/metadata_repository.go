@@ -395,7 +395,7 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint) ([]models
 			n.total_size_bytes,
 			n.attributes
 		FROM metadata.meta_node AS n
-		WHERE n.res_id = ? AND n.parent_node_id IS NULL AND n.scan_status = '已扫描'
+		WHERE n.res_id = ? AND n.parent_node_id IS NULL AND n.scan_status = '已扫描' AND n.deleted_at IS NULL
 		ORDER BY n.name
 	`
 
@@ -427,7 +427,7 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint) ([]models
 			n.total_size_bytes,
 			n.attributes
 		FROM metadata.meta_node AS n
-		WHERE n.res_id = ? AND n.parent_node_id IS NOT NULL
+		WHERE n.res_id = ? AND n.parent_node_id IS NOT NULL AND n.deleted_at IS NULL
 		ORDER BY n.depth, n.name
 	`
 
@@ -454,7 +454,7 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint) ([]models
 			i.last_modified_at,
 			i.attributes
 		FROM metadata.meta_item AS i
-		WHERE i.res_id = ?
+		WHERE i.res_id = ? AND i.deleted_at IS NULL
 	`
 
 	var items []models.MetaItemLite
@@ -478,13 +478,13 @@ func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, 
 		fullPath = bucketName + "/" + strings.TrimLeft(objectPath, "/")
 	}
 
-	err := r.db.Table("meta_item AS i").
+	err := r.db.Table("metadata.meta_item AS i").
 		Select("i.id, i.res_id AS resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
 		Where("i.res_id = ?", resourceID).
 		Where("i.item_type = ?", "object").
 		Where("(i.attributes ->> 'bucket') = ?", bucketName).
 		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ? OR i.full_name = ?", fullPath, objectPath, fullPath).
-		Order("i.updated_at DESC").  // 优先返回最新更新的记录（通常有更完整的元数据）
+		Order("i.updated_at DESC"). // 优先返回最新更新的记录（通常有更完整的元数据）
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -498,7 +498,7 @@ func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, 
 // GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
 func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string) (*models.MetaNodeLite, error) {
 	var node models.MetaNodeLite
-	query := r.db.Table("meta_node AS n").
+	query := r.db.Table("metadata.meta_node AS n").
 		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
 		Where("n.res_id = ?", resourceID)
 
@@ -578,6 +578,14 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 	}
 	defer db.Close()
 
+	// 先检查数据库是否安装了 PostGIS 扩展
+	var hasPostGIS bool
+	postgisCheckQuery := `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'postgis')`
+	if err := db.QueryRow(postgisCheckQuery).Scan(&hasPostGIS); err != nil {
+		// 如果查询失败，假设没有 PostGIS
+		hasPostGIS = false
+	}
+
 	columnsQuery := `SELECT column_name, udt_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position`
 	colsRows, err := db.Query(columnsQuery, schemaName, tableName)
 	if err != nil {
@@ -600,7 +608,8 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		}
 		columns = append(columns, col)
 		columnInfos = append(columnInfos, columnInfo{name: col, udt: udt})
-		if udt == "geometry" || udt == "geography" {
+		// 只有在安装了 PostGIS 的情况下才识别几何列
+		if hasPostGIS && (udt == "geometry" || udt == "geography") {
 			geometryColumns = append(geometryColumns, col)
 		}
 	}
@@ -628,7 +637,8 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 	selectColumns := make([]string, len(columnInfos))
 	for i, info := range columnInfos {
 		identifier := pq.QuoteIdentifier(info.name)
-		if info.udt == "geometry" || info.udt == "geography" {
+		// 只有在安装了 PostGIS 且列类型是几何类型时才使用 ST_AsGeoJSON
+		if hasPostGIS && (info.udt == "geometry" || info.udt == "geography") {
 			selectColumns[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", identifier, identifier)
 		} else {
 			selectColumns[i] = identifier
@@ -719,7 +729,7 @@ func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInf
 // GetNodeByName 根据资源ID和节点名称获取节点信息
 func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string) (*models.MetaNodeLite, error) {
 	var node models.MetaNodeLite
-	err := r.db.Table("meta_node AS n").
+	err := r.db.Table("metadata.meta_node AS n").
 		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
 		Where("n.res_id = ? AND n.name = ? AND n.parent_node_id IS NULL", resourceID, nodeName).
 		First(&node).Error
@@ -732,7 +742,7 @@ func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string) (*m
 // GetChildNodes 获取节点的直接子节点
 func (r *MetadataRepository) GetChildNodes(parentNodeID uint) ([]models.MetaNodeLite, error) {
 	var nodes []models.MetaNodeLite
-	err := r.db.Table("meta_node AS n").
+	err := r.db.Table("metadata.meta_node AS n").
 		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
 		Where("n.parent_node_id = ?", parentNodeID).
 		Order("n.name").
@@ -746,7 +756,7 @@ func (r *MetadataRepository) GetChildNodes(parentNodeID uint) ([]models.MetaNode
 // GetNodeItems 获取节点下的所有子项（表/对象）
 func (r *MetadataRepository) GetNodeItems(nodeID uint) ([]models.MetaItemLite, error) {
 	var items []models.MetaItemLite
-	err := r.db.Table("meta_item AS i").
+	err := r.db.Table("metadata.meta_item AS i").
 		Select("i.id, i.res_id AS resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
 		Where("i.node_id = ?", nodeID).
 		Order("i.name").

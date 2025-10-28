@@ -1,8 +1,8 @@
 package router
 
 import (
+	"github.com/addp/common/middleware/cors"
 	"github.com/addp/gateway/internal/config"
-	"github.com/addp/gateway/internal/middleware"
 	"github.com/addp/gateway/internal/proxy"
 	"github.com/gin-gonic/gin"
 )
@@ -11,7 +11,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	router := gin.Default()
 
 	// CORS 中间件
-	router.Use(middleware.CORS())
+	router.Use(cors.CORS())
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {

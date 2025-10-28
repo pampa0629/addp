@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -23,17 +24,16 @@ func NewExecutionHandler(executionService *service.ExecutionService) *ExecutionH
 // GetExecution 获取执行记录详情
 // GET /api/executions/:id
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	execution, err := h.executionService.GetExecution(c.Request.Context(), uint(id), tenantID)
+	execution, err := h.executionService.GetExecution(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Execution not found"})
+		commonAPI.NotFoundError(c, "Execution not found")
 		return
 	}
 
@@ -46,25 +46,18 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	// 分页参数
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, pageSize := commonAPI.GetPaginationParams(c)
 
 	// 如果指定了 task_id，调用单任务执行记录查询
 	if taskIDStr := c.Query("task_id"); taskIDStr != "" {
 		if taskID, err := strconv.ParseUint(taskIDStr, 10, 32); err == nil {
 			executions, total, err := h.executionService.ListExecutions(c.Request.Context(), uint(taskID), tenantID, page, pageSize)
 			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
 
-			c.JSON(http.StatusOK, gin.H{
-				"data":       executions,
-				"total":      total,
-				"page":       page,
-				"page_size":  pageSize,
-				"total_page": (total + int64(pageSize) - 1) / int64(pageSize),
-			})
+			commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
 			return
 		}
 	}
@@ -77,63 +70,48 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 
 	executions, total, err := h.executionService.ListAllExecutions(c.Request.Context(), tenantID, filters, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":       executions,
-		"total":      total,
-		"page":       page,
-		"page_size":  pageSize,
-		"total_page": (total + int64(pageSize) - 1) / int64(pageSize),
-	})
+	commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
 }
 
 // GetTaskExecutions 获取指定任务的执行记录
 // GET /api/tasks/:id/executions
 func (h *ExecutionHandler) GetTaskExecutions(c *gin.Context) {
-	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+	taskID, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
 	// 分页参数
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, pageSize := commonAPI.GetPaginationParams(c)
 
 	// 使用 ListExecutions 方法
-	executions, total, err := h.executionService.ListExecutions(c.Request.Context(), uint(taskID), tenantID, page, pageSize)
+	executions, total, err := h.executionService.ListExecutions(c.Request.Context(), taskID, tenantID, page, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":       executions,
-		"total":      total,
-		"page":       page,
-		"page_size":  pageSize,
-		"total_page": (total + int64(pageSize) - 1) / int64(pageSize),
-	})
+	commonAPI.SendPaginatedResponse(c, executions, total, page, pageSize)
 }
 
 // CancelExecution 取消执行
 // POST /api/executions/:id/cancel
 func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.executionService.CancelExecution(c.Request.Context(), uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.executionService.CancelExecution(c.Request.Context(), id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -143,18 +121,17 @@ func (h *ExecutionHandler) CancelExecution(c *gin.Context) {
 // RetryExecution 重试失败的执行
 // POST /api/executions/:id/retry
 func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), uint(id), tenantID, userID)
+	newExecution, err := h.executionService.RetryExecution(c.Request.Context(), id, tenantID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -164,17 +141,16 @@ func (h *ExecutionHandler) RetryExecution(c *gin.Context) {
 // GetExecutionProgress 获取执行进度
 // GET /api/executions/:id/progress
 func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	progress, err := h.executionService.GetExecutionProgress(c.Request.Context(), uint(id), tenantID)
+	progress, err := h.executionService.GetExecutionProgress(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -184,18 +160,17 @@ func (h *ExecutionHandler) GetExecutionProgress(c *gin.Context) {
 // GetExecutionLogs 获取执行日志
 // GET /api/executions/:id/logs
 func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
 	// GetExecutionLogs 返回完整日志字符串
-	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), uint(id), tenantID)
+	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -222,7 +197,7 @@ func (h *ExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 
 	stats, err := h.executionService.GetExecutionStatistics(c.Request.Context(), tenantID, filters)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 

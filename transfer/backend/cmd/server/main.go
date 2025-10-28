@@ -5,14 +5,15 @@ import (
 	"log"
 
 	commonConfig "github.com/addp/common/config"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
+	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -60,7 +61,7 @@ func main() {
 	objectStorageService := service.NewObjectStorageService(localResourceService)
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.JWTSecret)
+	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.SystemServiceURL)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.Port)
@@ -77,45 +78,28 @@ func main() {
 
 // connectDatabase 连接数据库
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
-	// 构建 DSN（注意：DBPort 是 string 类型，使用 %s）
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
-		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSchema,
-	)
-
-	// 连接数据库
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+	// Use common repository InitDatabase
+	dbConfig := commonRepo.DatabaseConfig{
+		Host:     cfg.DBHost,
+		Port:     cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		DBName:   cfg.DBName,
+		Schema:   cfg.DBSchema,
+		SSLMode:  "disable",
 	}
 
-	log.Println("✅ Database connected successfully")
-
-	// 自动迁移（创建表）
-	if err := autoMigrate(db); err != nil {
-		return nil, fmt.Errorf("failed to migrate database: %w", err)
-	}
-
-	return db, nil
-}
-
-// autoMigrate 自动迁移数据库表
-func autoMigrate(db *gorm.DB) error {
-	log.Println("🔄 Running database migrations...")
-
-	// 导入所有需要迁移的模型（暂时不包括 Checkpoint）
-	err := db.AutoMigrate(
+	// Initialize database with auto-migration
+	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.Task{},
 		&models.TaskExecution{},
 		&models.DataMapping{},
 		&models.LocalResource{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)
-
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	log.Println("✅ Database migrations completed")
-	return nil
+	return db, nil
 }

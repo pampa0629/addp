@@ -60,7 +60,7 @@ type objectStoragePreviewProvider struct {
 	priority     int
 }
 
-func newObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
+func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
 	return &objectStoragePreviewProvider{
 		metadataRepo: metadataRepo,
 		content:      content,

@@ -131,7 +131,7 @@ SYSTEM_SERVICE_URL=http://localhost:8080
 
 # 存储配置
 STORAGE_TYPE=minio  # local, minio, s3, hdfs
-MINIO_ENDPOINT=localhost:9000
+MINIO_ENDPOINT=localhost:9002
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=addp-data
@@ -223,7 +223,7 @@ Manager:8081 ──┐
 ### MinIO / S3
 ```json
 {
-  "endpoint": "localhost:9000",
+  "endpoint": "localhost:9002",
   "accessKey": "minioadmin",
   "secretKey": "minioadmin",
   "bucket": "my-bucket",

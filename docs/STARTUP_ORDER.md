@@ -196,7 +196,7 @@ done
 echo -e "${GREEN}✓ Redis 就绪${NC}"
 
 echo "等待 MinIO 就绪..."
-until curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; do
+until curl -f http://localhost:9002/minio/health/live > /dev/null 2>&1; do
   echo -n "."
   sleep 1
 done

@@ -1,7 +1,8 @@
 package api
 
 import (
-	"github.com/addp/transfer/internal/middleware"
+	commonAuth "github.com/addp/common/middleware/auth"
+	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -12,14 +13,12 @@ func SetupRouter(
 	executionService *service.ExecutionService,
 	localResourceService *service.LocalResourceService,
 	objectStorageService *service.ObjectStorageService,
-	jwtSecret string,
+	systemURL string,
 ) *gin.Engine {
 	router := gin.Default()
 
 	// 全局中间件
-	router.Use(middleware.CORS())
-	router.Use(middleware.Logger())
-	router.Use(middleware.Recovery())
+	router.Use(commonCors.CORS())
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -42,7 +41,7 @@ func SetupRouter(
 
 	// 受保护接口（需要 JWT 认证）
 	protected := api.Group("")
-	protected.Use(middleware.Auth(jwtSecret))
+	protected.Use(commonAuth.SystemAuthMiddleware(systemURL))
 
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)

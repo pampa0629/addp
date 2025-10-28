@@ -525,8 +525,6 @@ const loadPreview = async () => {
  */
 const handleNodeClick = (node) => {
   selectedNode.value = node
-  ensureNodeExpanded(node?.id)
-  ensureNodePathExpanded(node?.id)
   currentPage.value = 1
   loadPreview()
 }

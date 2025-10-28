@@ -48,7 +48,7 @@ done
 # Wait for MinIO
 echo -n "Checking MinIO... "
 for i in {1..30}; do
-    if curl -sf http://localhost:${MINIO_API_PORT:-9002}/minio/health/live > /dev/null 2>&1; then
+    if curl -sf http://localhost:${MINIO_API_PORT:-9000}/minio/health/live > /dev/null 2>&1; then
         echo -e "${GREEN}✓${NC}"
         break
     fi
@@ -63,8 +63,8 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Service URLs:"
 echo -e "  PostgreSQL:     localhost:${POSTGRES_PORT:-5433}"
-echo -e "  MinIO API:      http://localhost:${MINIO_API_PORT:-9002}"
-echo -e "  MinIO Console:  http://localhost:${MINIO_CONSOLE_PORT:-9003}"
+echo -e "  MinIO API:      http://localhost:${MINIO_API_PORT:-9000}"
+echo -e "  MinIO Console:  http://localhost:${MINIO_CONSOLE_PORT:-9001}"
 echo ""
 echo "Credentials (default):"
 echo -e "  PostgreSQL:  ${POSTGRES_USER:-business} / ${POSTGRES_PASSWORD:-business_password}"

@@ -82,7 +82,7 @@ docker-compose logs -f
 docker exec -it business-postgres psql -U business -d business
 
 # 访问 MinIO 控制台
-open http://localhost:9003
+open http://localhost:9001
 # 默认账号: minioadmin / minioadmin
 ```
 
@@ -98,7 +98,7 @@ open http://localhost:9003
 - Password: `business_password` (根据 .env 配置)
 
 **MinIO 数据源**:
-- Endpoint: `host.docker.internal:9002` (Docker内) 或 `localhost:9002` (本地)
+- Endpoint: `host.docker.internal:9000` (Docker内) 或 `localhost:9000` (本地)
 - Access Key: `minioadmin`
 - Secret Key: `minioadmin`
 
@@ -107,8 +107,8 @@ open http://localhost:9003
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | PostgreSQL | 5433 | 业务数据库（避免与 ADDP 系统的 5432 冲突）|
-| MinIO API | 9002 | 对象存储 API（避免与 ADDP 系统的 9000 冲突）|
-| MinIO Console | 9003 | MinIO Web 控制台（避免与 ADDP 系统的 9001 冲突）|
+| MinIO API | 9000 | 对象存储 API（避免与 ADDP 系统的 9002 冲突）|
+| MinIO Console | 9001 | MinIO Web 控制台（避免与 ADDP 系统的 9003 冲突）|
 
 ## 数据管理
 
@@ -223,7 +223,7 @@ docker-compose ps
 docker-compose logs minio
 
 # 测试健康检查
-curl http://localhost:9002/minio/health/live
+curl http://localhost:9000/minio/health/live
 ```
 
 ### 数据持久化问题

@@ -12,6 +12,7 @@ import (
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	_ "github.com/addp/manager/internal/service/builtin" // 导入内置预览插件
 	"github.com/redis/go-redis/v9"
 )
 
@@ -77,6 +78,14 @@ func main() {
 	logger.L().Info("数据预览: 已激活内容插件")
 
 	previewRegistry := service.NewPreviewRegistry()
+
+	// 注册内置预览插件（通过 init() 自动注册到全局注册表）
+	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, contentRegistry); err != nil {
+		logger.L().Error("注册内置预览插件失败", "error", err)
+		os.Exit(1)
+	}
+
+	// 加载外部插件（从配置目录）
 	service.LoadPreviewPlugins(previewRegistry, metadataRepo, contentRegistry, cfg.PreviewPluginDir)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 

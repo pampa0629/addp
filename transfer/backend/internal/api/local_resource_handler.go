@@ -3,8 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
+	commonAPI "github.com/addp/common/api"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -37,6 +37,87 @@ type LocalResourceUpdateRequest struct {
 	ConnectionInfo *models.JSONMap `json:"connection_info"`
 }
 
+// mergeConnectionInfo 合并连接信息，保留敏感字段旧值（当请求中未提供或为空时）
+func mergeConnectionInfo(existing, incoming models.JSONMap) models.JSONMap {
+	// 如果没有传入新的连接信息，直接返回旧值副本
+	if incoming == nil {
+		return cloneJSONMap(existing)
+	}
+
+	merged := cloneJSONMap(existing)
+	if merged == nil {
+		merged = make(models.JSONMap)
+	}
+
+	// 写入请求中的字段，跳过前端的临时标记
+	for k, v := range incoming {
+		if k == "_has_password" || k == "_has_secret_key" {
+			continue
+		}
+		merged[k] = v
+	}
+
+	preserveSensitiveField(merged, existing, incoming, "password")
+	preserveSensitiveField(merged, existing, incoming, "secret_key")
+
+	return merged
+}
+
+func preserveSensitiveField(target, existing, incoming models.JSONMap, key string) {
+	if incoming == nil {
+		return
+	}
+	incomingVal, provided := incoming[key]
+	if !provided {
+		if existing != nil {
+			if oldVal, ok := existing[key]; ok {
+				target[key] = oldVal
+			} else {
+				delete(target, key)
+			}
+		} else {
+			delete(target, key)
+		}
+		return
+	}
+
+	switch val := incomingVal.(type) {
+	case string:
+		if val == "" {
+			if existing != nil {
+				if oldVal, ok := existing[key]; ok {
+					target[key] = oldVal
+				} else {
+					delete(target, key)
+				}
+			} else {
+				delete(target, key)
+			}
+		}
+	case nil:
+		if existing != nil {
+			if oldVal, ok := existing[key]; ok {
+				target[key] = oldVal
+			} else {
+				delete(target, key)
+			}
+		} else {
+			delete(target, key)
+		}
+	}
+}
+
+func cloneJSONMap(source models.JSONMap) models.JSONMap {
+	if source == nil {
+		return nil
+	}
+	cloned := make(models.JSONMap, len(source))
+	for k, v := range source {
+		cloned[k] = v
+	}
+	return cloned
+}
+
 // List 返回当前租户的资源列表
 func (h *LocalResourceHandler) List(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -44,7 +125,7 @@ func (h *LocalResourceHandler) List(c *gin.Context) {
 
 	resources, err := h.service.List(tenantID, resourceType)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -72,8 +153,7 @@ func (h *LocalResourceHandler) ListSystemResources(c *gin.Context) {
 // Create 新建资源
 func (h *LocalResourceHandler) Create(c *gin.Context) {
 	var req LocalResourceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
@@ -91,7 +171,7 @@ func (h *LocalResourceHandler) Create(c *gin.Context) {
 	}
 
 	if err := h.service.Create(resource); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -100,23 +180,21 @@ func (h *LocalResourceHandler) Create(c *gin.Context) {
 
 // Update 更新资源
 func (h *LocalResourceHandler) Update(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	var req LocalResourceUpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	resource, err := h.service.Get(uint(id), tenantID)
+	resource, err := h.service.Get(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		commonAPI.NotFoundError(c, "resource not found")
 		return
 	}
 
@@ -130,11 +208,11 @@ func (h *LocalResourceHandler) Update(c *gin.Context) {
 		resource.IsActive = *req.IsActive
 	}
 	if req.ConnectionInfo != nil {
-		resource.ConnectionInfo = *req.ConnectionInfo
+		resource.ConnectionInfo = mergeConnectionInfo(resource.ConnectionInfo, *req.ConnectionInfo)
 	}
 
 	if err := h.service.Update(resource); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -143,16 +221,15 @@ func (h *LocalResourceHandler) Update(c *gin.Context) {
 
 // Delete 删除资源
 func (h *LocalResourceHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.service.Delete(uint(id), tenantID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.service.Delete(id, tenantID); err != nil {
+		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
@@ -162,8 +239,7 @@ func (h *LocalResourceHandler) Delete(c *gin.Context) {
 // TestBeforeCreate 创建前测试连接
 func (h *LocalResourceHandler) TestBeforeCreate(c *gin.Context) {
 	var req LocalResourceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
@@ -177,15 +253,14 @@ func (h *LocalResourceHandler) TestBeforeCreate(c *gin.Context) {
 
 // TestExisting 测试已有资源
 func (h *LocalResourceHandler) TestExisting(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.service.TestConnection(uint(id), tenantID); err != nil {
+	if err := h.service.TestConnection(id, tenantID); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -195,23 +270,22 @@ func (h *LocalResourceHandler) TestExisting(c *gin.Context) {
 
 // Sync 推送到 System
 func (h *LocalResourceHandler) Sync(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+	id, ok := commonAPI.ParseUintParam(c, "id")
+	if !ok {
 		return
 	}
 
 	tenantID := c.GetUint("tenant_id")
 
-	resource, err := h.service.Get(uint(id), tenantID)
+	resource, err := h.service.Get(id, tenantID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		commonAPI.NotFoundError(c, "resource not found")
 		return
 	}
 
 	result, err := h.service.SyncToSystem(resource)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		commonAPI.ErrorResponse(c, http.StatusBadGateway, err.Error())
 		return
 	}
 

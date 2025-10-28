@@ -394,59 +394,56 @@ func (t *SpatialTransform) normalizeGeometrySRID(geometry geom.T) geom.T {
 	return geometry
 }
 
-// 注册空间转换器到全局注册表
-func init() {
-	RegisterTransform("spatial", NewSpatialTransform, TransformCapability{
-		Name:           "spatial",
-		Description:    "Transform spatial/geometry data between different formats (WKB, WKT, GeoJSON) and coordinate systems (SRID transformation)",
-		SupportedTypes: []string{"geometry", "geography", "blob", "binary", "bytea"},
-		ConfigSchema: map[string]interface{}{
-			"type":     "object",
-			"required": []string{"geometry_fields"},
-			"properties": map[string]interface{}{
-				"geometry_fields": map[string]interface{}{
-					"type":        "array",
-					"description": "List of geometry field names to transform",
-					"items": map[string]string{
-						"type": "string",
-					},
-					"minItems": 1,
+var SpatialTransformCapability = TransformCapability{
+	Name:           "spatial",
+	Description:    "Transform spatial/geometry data between different formats (WKB, WKT, GeoJSON) and coordinate systems (SRID transformation)",
+	SupportedTypes: []string{"geometry", "geography", "blob", "binary", "bytea"},
+	ConfigSchema: map[string]interface{}{
+		"type":     "object",
+		"required": []string{"geometry_fields"},
+		"properties": map[string]interface{}{
+			"geometry_fields": map[string]interface{}{
+				"type":        "array",
+				"description": "List of geometry field names to transform",
+				"items": map[string]string{
+					"type": "string",
 				},
-				"source_format": map[string]interface{}{
-					"type":        "string",
-					"description": "Source geometry format",
-					"enum":        []string{"wkb", "wkt", "ewkb", "ewkt", "geojson", "hexwkb"},
-					"default":     "wkb",
-				},
-				"target_format": map[string]interface{}{
-					"type":        "string",
-					"description": "Target geometry format",
-					"enum":        []string{"wkb", "wkt", "ewkb", "ewkt", "geojson", "hexwkb"},
-					"default":     "wkb",
-				},
-				"source_srid": map[string]interface{}{
-					"type":        "integer",
-					"description": "Source Spatial Reference System ID (e.g., 4326 for WGS84)",
-					"minimum":     0,
-				},
-				"target_srid": map[string]interface{}{
-					"type":        "integer",
-					"description": "Target Spatial Reference System ID (e.g., 3857 for Web Mercator)",
-					"minimum":     0,
-				},
-				"simplify_tolerance": map[string]interface{}{
-					"type":        "number",
-					"description": "Tolerance for geometry simplification (Douglas-Peucker algorithm)",
-					"minimum":     0,
-				},
-				"validate_geometry": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether to validate geometry validity",
-					"default":     false,
-				},
+				"minItems": 1,
+			},
+			"source_format": map[string]interface{}{
+				"type":        "string",
+				"description": "Source geometry format",
+				"enum":        []string{"wkb", "wkt", "ewkb", "ewkt", "geojson", "hexwkb"},
+				"default":     "wkb",
+			},
+			"target_format": map[string]interface{}{
+				"type":        "string",
+				"description": "Target geometry format",
+				"enum":        []string{"wkb", "wkt", "ewkb", "ewkt", "geojson", "hexwkb"},
+				"default":     "wkb",
+			},
+			"source_srid": map[string]interface{}{
+				"type":        "integer",
+				"description": "Source Spatial Reference System ID (e.g., 4326 for WGS84)",
+				"minimum":     0,
+			},
+			"target_srid": map[string]interface{}{
+				"type":        "integer",
+				"description": "Target Spatial Reference System ID (e.g., 3857 for Web Mercator)",
+				"minimum":     0,
+			},
+			"simplify_tolerance": map[string]interface{}{
+				"type":        "number",
+				"description": "Tolerance for geometry simplification (Douglas-Peucker algorithm)",
+				"minimum":     0,
+			},
+			"validate_geometry": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to validate geometry validity",
+				"default":     false,
 			},
 		},
-		Version: "1.0.0",
-		Author:  "ADDP Transfer Module",
-	})
+	},
+	Version: "1.0.0",
+	Author:  "ADDP Transfer Module",
 }

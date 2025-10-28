@@ -229,7 +229,7 @@ fi
 # 3. 上传到MinIO
 echo "上传视频到MinIO..."
 mc cp /tmp/test_video.mp4 local/addp/videos/test.mp4 2>/dev/null || \
-    curl -X PUT 'http://localhost:9000/addp/videos/test.mp4' \
+    curl -X PUT 'http://localhost:9002/addp/videos/test.mp4' \
       --user minioadmin:minioadmin \
       --data-binary @/tmp/test_video.mp4
 echo "✓ 视频已上传"

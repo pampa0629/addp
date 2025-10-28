@@ -14,7 +14,7 @@ import (
 
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
-	shp "github.com/addp/manager/internal/thirdparty/shp"
+	"github.com/jonas-p/go-shp"
 )
 
 const (
@@ -146,7 +146,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 
 	truncated := totalFeatures > len(features)
 	metadata := map[string]interface{}{
-		"geometry_type":         reader.GeometryType.String(),
+		"geometry_type":         int(reader.GeometryType),
 		"feature_count":         totalFeatures,
 		"preview_feature_count": len(features),
 		"fields":                fieldsMeta,

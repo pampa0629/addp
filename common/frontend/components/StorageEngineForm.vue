@@ -60,6 +60,9 @@
           show-password
         />
       </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        已存储密码，如无需修改请保持占位符不变。
+      </div>
       <el-form-item label="SSL 模式">
         <el-select v-model="formState.connection_info.sslmode">
           <el-option label="禁用 (disable)" value="disable" />
@@ -73,7 +76,7 @@
     <!-- MinIO / S3 -->
     <template v-else-if="formState.resource_type === 'minio' || formState.resource_type === 's3'">
       <el-form-item label="端点地址" prop="connection_info.endpoint">
-        <el-input v-model="formState.connection_info.endpoint" placeholder="localhost:9000" />
+        <el-input v-model="formState.connection_info.endpoint" placeholder="localhost:9002" />
       </el-form-item>
       <el-form-item label="Access Key" prop="connection_info.access_key">
         <el-input v-model="formState.connection_info.access_key" placeholder="Access Key" />
@@ -86,6 +89,9 @@
           show-password
         />
       </el-form-item>
+      <div v-if="hasStoredSecretKey" class="field-hint">
+        已存储密钥，如无需修改请保持占位符不变。
+      </div>
       <el-form-item label="Bucket">
         <el-input v-model="formState.connection_info.bucket" placeholder="存储桶名称（可选）" />
       </el-form-item>
@@ -102,6 +108,8 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+
+const SENSITIVE_PLACEHOLDER = '********'
 
 const props = defineProps({
   modelValue: {
@@ -136,29 +144,61 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'type-change'])
 
 const formRef = ref(null)
+const hasStoredPassword = ref(false)
+const hasStoredSecretKey = ref(false)
 
 const ensureConnectionDefaults = (form) => {
   if (!form.connection_info || typeof form.connection_info !== 'object') {
     form.connection_info = {}
   }
 
+  const original = { ...(form.connection_info || {}) }
+  const hadPassword = original._has_password === true
+  const hadSecret = original._has_secret_key === true
+
   if (form.resource_type === 'postgresql') {
     form.connection_info = {
-      host: form.connection_info.host ?? 'localhost',
-      port: form.connection_info.port ?? 5432,
-      database: form.connection_info.database ?? '',
-      user: form.connection_info.user ?? '',
-      password: form.connection_info.password ?? '',
-      sslmode: form.connection_info.sslmode ?? 'disable'
+      host: original.host ?? 'localhost',
+      port: original.port ?? 5432,
+      database: original.database ?? '',
+      user: original.user ?? '',
+      password: original.password ?? '',
+      sslmode: original.sslmode ?? 'disable'
     }
   } else if (form.resource_type === 'minio' || form.resource_type === 's3') {
     form.connection_info = {
-      endpoint: form.connection_info.endpoint ?? 'localhost:9000',
-      access_key: form.connection_info.access_key ?? '',
-      secret_key: form.connection_info.secret_key ?? '',
-      bucket: form.connection_info.bucket ?? '',
-      use_ssl: form.connection_info.use_ssl ?? false
+      endpoint: original.endpoint ?? 'localhost:9002',
+      access_key: original.access_key ?? '',
+      secret_key: original.secret_key ?? '',
+      bucket: original.bucket ?? '',
+      use_ssl: original.use_ssl ?? false
     }
+  } else {
+    form.connection_info = { ...original }
+  }
+
+  if (hadPassword) {
+    form.connection_info._has_password = true
+  } else {
+    delete form.connection_info._has_password
+  }
+
+  if (hadSecret) {
+    form.connection_info._has_secret_key = true
+  } else {
+    delete form.connection_info._has_secret_key
+  }
+}
+
+const applySensitiveHints = () => {
+  hasStoredPassword.value = formState.connection_info?._has_password === true
+  if (hasStoredPassword.value && (!formState.connection_info.password || formState.connection_info.password === '')) {
+    formState.connection_info.password = SENSITIVE_PLACEHOLDER
+  }
+
+  hasStoredSecretKey.value = formState.connection_info?._has_secret_key === true
+  if (hasStoredSecretKey.value && (!formState.connection_info.secret_key || formState.connection_info.secret_key === '')) {
+    formState.connection_info.secret_key = SENSITIVE_PLACEHOLDER
   }
 }
 
@@ -177,6 +217,7 @@ const syncFromProps = (value) => {
   formState.is_active = value.is_active !== undefined ? value.is_active : true
   formState.connection_info = { ...(value.connection_info || {}) }
   ensureConnectionDefaults(formState)
+  applySensitiveHints()
 }
 
 watch(
@@ -245,6 +286,7 @@ const computedRules = computed(() => {
 
 const handleTypeChange = (type) => {
   ensureConnectionDefaults(formState)
+  applySensitiveHints()
   emit('type-change', type)
 }
 
@@ -269,4 +311,64 @@ defineExpose({
   formRef,
   formState
 })
+
+watch(
+  () => formState.connection_info.password,
+  (value) => {
+    const metaFlag = formState.connection_info?._has_password === true
+    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
+      formState.connection_info.password = ''
+      return
+    }
+
+    if (value === SENSITIVE_PLACEHOLDER) {
+      hasStoredPassword.value = true
+      return
+    }
+
+    const hasValue = !!value
+    formState.connection_info._has_password = hasValue
+    hasStoredPassword.value = hasValue
+    if (!hasValue) {
+      delete formState.connection_info._has_password
+      if (formState.connection_info.password !== '') {
+        formState.connection_info.password = ''
+      }
+    }
+  }
+)
+
+watch(
+  () => formState.connection_info.secret_key,
+  (value) => {
+    const metaFlag = formState.connection_info?._has_secret_key === true
+    if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
+      formState.connection_info.secret_key = ''
+      return
+    }
+
+    if (value === SENSITIVE_PLACEHOLDER) {
+      hasStoredSecretKey.value = true
+      return
+    }
+
+    const hasValue = !!value
+    formState.connection_info._has_secret_key = hasValue
+    hasStoredSecretKey.value = hasValue
+    if (!hasValue) {
+      delete formState.connection_info._has_secret_key
+      if (formState.connection_info.secret_key !== '') {
+        formState.connection_info.secret_key = ''
+      }
+    }
+  }
+)
 </script>
+
+<style scoped>
+.field-hint {
+  margin: -8px 0 16px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+</style>

@@ -45,8 +45,8 @@ services:
       MINIO_ROOT_USER: ${BUSINESS_MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${BUSINESS_MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${BUSINESS_MINIO_API_PORT:-9002}:9000"     # API端口
-      - "${BUSINESS_MINIO_CONSOLE_PORT:-9003}:9001" # 控制台端口
+      - "${BUSINESS_MINIO_API_PORT:-9000}:9000"     # API端口
+      - "${BUSINESS_MINIO_CONSOLE_PORT:-9001}:9001" # 控制台端口
     volumes:
       - minio_data:/data
     healthcheck:

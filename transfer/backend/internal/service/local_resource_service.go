@@ -94,12 +94,14 @@ func (s *LocalResourceService) List(tenantID uint, resourceType string) ([]model
 	if err != nil {
 		return nil, err
 	}
-	// 解密所有资源的敏感信息
+	// 解密并脱敏敏感信息
 	for i := range resources {
-		if err := s.decryptConnectionInfo(resources[i].ConnectionInfo); err != nil {
+		connInfo := resources[i].ConnectionInfo
+		if err := s.decryptConnectionInfo(connInfo); err != nil {
 			s.logger.Warn("failed to decrypt connection info", "resource_id", resources[i].ID, "error", err)
 			// 解密失败不影响其他资源
 		}
+		s.sanitizeConnectionInfo(connInfo)
 	}
 	return resources, nil
 }
@@ -114,6 +116,12 @@ func (s *LocalResourceService) ListSystemResources(resourceType string, tenantID
 	resources, err := s.systemClient.ListResources(resourceType, tenantID)
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range resources {
+		if resources[i].ConnectionInfo != nil {
+			sanitizeMap(resources[i].ConnectionInfo)
+		}
 	}
 
 	filtered := make([]commonModels.Resource, 0, len(resources))
@@ -190,7 +198,12 @@ func (s *LocalResourceService) Create(resource *models.LocalResource) error {
 	if err := s.encryptConnectionInfo(resource.ConnectionInfo); err != nil {
 		return fmt.Errorf("failed to encrypt connection info: %w", err)
 	}
-	return s.repo.Create(resource)
+	if err := s.repo.Create(resource); err != nil {
+		return err
+	}
+	// 数据库已保存后，对返回对象进行脱敏，避免泄露密文
+	s.sanitizeConnectionInfo(resource.ConnectionInfo)
+	return nil
 }
 
 // Update 更新资源
@@ -199,7 +212,12 @@ func (s *LocalResourceService) Update(resource *models.LocalResource) error {
 	if err := s.encryptConnectionInfo(resource.ConnectionInfo); err != nil {
 		return fmt.Errorf("failed to encrypt connection info: %w", err)
 	}
-	return s.repo.Update(resource)
+	if err := s.repo.Update(resource); err != nil {
+		return err
+	}
+	// 更新成功后脱敏返回
+	s.sanitizeConnectionInfo(resource.ConnectionInfo)
+	return nil
 }
 
 // Delete 删除资源
@@ -246,6 +264,10 @@ func (s *LocalResourceService) SyncToSystem(resource *models.LocalResource) (*co
 	resp, err := s.systemClient.CreateResource(payload)
 	if err != nil {
 		return nil, err
+	}
+
+	if resp != nil && resp.ConnectionInfo != nil {
+		sanitizeMap(resp.ConnectionInfo)
 	}
 
 	return resp, nil
@@ -364,6 +386,8 @@ func (s *LocalResourceService) encryptConnectionInfo(connInfo models.JSONMap) er
 		return fmt.Errorf("encryption key must be 32 bytes, got %d", len(s.cfg.EncryptionKey))
 	}
 
+	removeMetaFields(connInfo)
+
 	// 加密 password 字段（PostgreSQL/MySQL）
 	if password, ok := connInfo["password"].(string); ok && password != "" {
 		encrypted, err := commonUtils.Encrypt(password, s.cfg.EncryptionKey)
@@ -428,6 +452,44 @@ func (s *LocalResourceService) cacheResource(resource *commonModels.Resource) {
 		expiresAt: time.Now().Add(s.cacheTTL),
 	}
 	s.cacheMu.Unlock()
+}
+
+// sanitizeConnectionInfo 在返回前对敏感字段进行脱敏处理
+func (s *LocalResourceService) sanitizeConnectionInfo(connInfo models.JSONMap) {
+	if connInfo == nil {
+		return
+	}
+	sanitizeMap(connInfo)
+}
+
+// sanitizeMap 对任意 map[string]interface{} 进行敏感字段脱敏
+func sanitizeMap(m map[string]interface{}) {
+	if m == nil {
+		return
+	}
+
+	if rawPassword, ok := m["password"]; ok {
+		if passwordStr, ok := rawPassword.(string); ok && passwordStr != "" {
+			m["_has_password"] = true
+		}
+		m["password"] = ""
+	}
+
+	if rawSecret, ok := m["secret_key"]; ok {
+		if secretStr, ok := rawSecret.(string); ok && secretStr != "" {
+			m["_has_secret_key"] = true
+		}
+		m["secret_key"] = ""
+	}
+}
+
+// removeMetaFields 清理前端使用的临时标记字段
+func removeMetaFields(connInfo models.JSONMap) {
+	if connInfo == nil {
+		return
+	}
+	delete(connInfo, "_has_password")
+	delete(connInfo, "_has_secret_key")
 }
 
 // ClearCache 清除所有资源缓存

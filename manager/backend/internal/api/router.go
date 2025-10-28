@@ -1,7 +1,8 @@
 package api
 
 import (
-	auth "github.com/addp/common/middleware/auth"
+	"github.com/addp/common/middleware/auth"
+	"github.com/addp/common/middleware/cors"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
@@ -11,16 +12,7 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 	router := gin.Default()
 
 	// CORS
-	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	})
+	router.Use(cors.CORS())
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
