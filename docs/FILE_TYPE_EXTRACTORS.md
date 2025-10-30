@@ -1,30 +1,23 @@
 # 文件类型元数据提取器插件
 
-本文档列出了ADDP系统支持的所有文件类型元数据提取器插件。所有插件遵循第三方插件架构，使用Meta Extractor SDK实现。
+本文档列出了ADDP系统支持的所有文件类型元数据提取器插件。所有插件实现统一的 `MetadataExtractor` 接口。
 
 ## 架构概述
 
 ```
 Meta Service (元数据服务)
   ↓
-Plugin Loader (plugins/plugins.go)
+Plugin Registry (meta/backend/plugins/registry.go)
   ↓
-Third-Party Plugins (第三方插件)
-  ├── Shapefile Extractor
-  ├── Video Extractor
-  ├── PDF Extractor
-  ├── Image Extractor
-  ├── CSV Extractor
-  ├── GeoJSON Extractor
-  ├── SQLite Extractor
-  └── Office Extractor
+Extractors (元数据提取器)
+  └── Built-in Extractors (meta/backend/plugins/extractors/*.go)
 ```
 
 ## 已实现的文件类型提取器
 
 ### 1. Shapefile提取器 (shapefile-extractor)
 
-**位置**: `/plugins/shapefile-extractor/`
+**位置**: `meta/backend/plugins/extractors/shapefile_extractor.go`
 
 **支持格式**:
 - `application/x-shapefile` (.shp)
@@ -40,7 +33,7 @@ Third-Party Plugins (第三方插件)
 
 ### 2. 视频提取器 (video-extractor)
 
-**位置**: `/plugins/video-extractor/`
+**位置**: `meta/backend/plugins/extractors/video_extractor.go`
 
 **支持格式**:
 - `video/mp4` (.mp4)
@@ -64,7 +57,7 @@ Third-Party Plugins (第三方插件)
 
 ### 3. PDF提取器 (pdf-extractor)
 
-**位置**: `/plugins/pdf-extractor/`
+**位置**: `meta/backend/plugins/extractors/pdf_extractor.go`
 
 **支持格式**:
 - `application/pdf` (.pdf)
@@ -87,7 +80,7 @@ Third-Party Plugins (第三方插件)
 
 ### 4. 图像提取器 (image-extractor)
 
-**位置**: `/plugins/image-extractor/`
+**位置**: `meta/backend/plugins/extractors/image_extractor.go`
 
 **支持格式**:
 - `image/jpeg` (.jpg, .jpeg)
@@ -114,7 +107,7 @@ Third-Party Plugins (第三方插件)
 
 ### 5. CSV提取器 (csv-extractor)
 
-**位置**: `/plugins/csv-extractor/`
+**位置**: `meta/backend/plugins/extractors/csv_extractor.go`
 
 **支持格式**:
 - `text/csv` (.csv)
@@ -138,7 +131,7 @@ Third-Party Plugins (第三方插件)
 
 ### 6. GeoJSON提取器 (geojson-extractor)
 
-**位置**: `/plugins/geojson-extractor/`
+**位置**: `meta/backend/plugins/extractors/geojson_extractor.go`
 
 **支持格式**:
 - `application/geo+json` (.geojson)
@@ -163,7 +156,7 @@ Third-Party Plugins (第三方插件)
 
 ### 7. SQLite提取器 (sqlite-extractor)
 
-**位置**: `/plugins/sqlite-extractor/`
+**位置**: `meta/backend/plugins/extractors/sqlite_extractor.go`
 
 **支持格式**:
 - `application/vnd.sqlite3` (.db, .sqlite, .sqlite3)
@@ -193,7 +186,7 @@ Third-Party Plugins (第三方插件)
 
 ### 8. Office文档提取器 (office-extractor)
 
-**位置**: `/plugins/office-extractor/`
+**位置**: `meta/backend/plugins/extractors/office_extractor.go`
 
 **支持格式**:
 - `application/vnd.openxmlformats-officedocument.wordprocessingml.document` (.docx)
@@ -225,18 +218,18 @@ Third-Party Plugins (第三方插件)
 
 ## 插件注册
 
-所有插件在Meta服务启动时通过 [`meta/backend/internal/scanner/plugins/plugins.go`](../meta/backend/internal/scanner/plugins/plugins.go) 自动注册。
+所有插件在Meta服务启动时通过 [`meta/backend/plugins/extractors/register.go`](../meta/backend/plugins/extractors/register.go) 自动注册。
 
 ```go
 func init() {
-    scanner.RegisterSDKExtractor(shapefile.GetExtractor())
-    scanner.RegisterSDKExtractor(video.GetExtractor())
-    scanner.RegisterSDKExtractor(pdf.GetExtractor())
-    scanner.RegisterSDKExtractor(image.GetExtractor())
-    scanner.RegisterSDKExtractor(csv.GetExtractor())
-    scanner.RegisterSDKExtractor(geojson.GetExtractor())
-    scanner.RegisterSDKExtractor(sqlite.GetExtractor())
-    scanner.RegisterSDKExtractor(office.GetExtractor())
+    RegisterExtractor("shapefile", &ShapefileExtractor{})
+    RegisterExtractor("video", &VideoExtractor{})
+    RegisterExtractor("pdf", &PDFExtractor{})
+    RegisterExtractor("image", &ImageExtractor{})
+    RegisterExtractor("csv", &CSVExtractor{})
+    RegisterExtractor("geojson", &GeoJSONExtractor{})
+    RegisterExtractor("sqlite", &SQLiteExtractor{})
+    RegisterExtractor("office", &OfficeExtractor{})
 }
 ```
 
@@ -276,74 +269,28 @@ Manager模块的数据预览界面读取 `meta_item.attributes` 字段，并通�
 
 如需添加新的文件类型支持，请遵循以下步骤：
 
-### 1. 创建插件目录
+### 1. 创建提取器文件
 
 ```bash
-mkdir -p /Users/pampa/code/addp/plugins/mytype-extractor
-cd /Users/pampa/code/addp/plugins/mytype-extractor
+cd meta/backend/plugins/extractors
+touch mytype_extractor.go
 ```
 
-### 2. 创建 go.mod
+### 2. 实现提取器接口
+
+在 `mytype_extractor.go` 中实现 `scanner.MetadataExtractor` 接口：
 
 ```go
-module github.com/addp/plugins/mytype-extractor
-
-go 1.23
-
-require github.com/addp/meta-extractor-sdk v1.0.0
-
-replace github.com/addp/meta-extractor-sdk => ../../meta/sdk
-```
-
-### 3. 实现提取器
-
-创建 `mytype_extractor.go`:
-
-```go
-package mytypeextractor
+package extractors
 
 import (
     "context"
-    sdk "github.com/addp/meta-extractor-sdk"
+    "path/filepath"
+
+    "github.com/addp/meta/internal/scanner"
 )
 
-// MyTypeMetadata 自定义元数据结构
-type MyTypeMetadata struct {
-    Field1 string `json:"field1"`
-    Field2 int    `json:"field2"`
-}
-
-func (m *MyTypeMetadata) TypeName() string {
-    return "mytype.metadata"
-}
-
-func (m *MyTypeMetadata) Schema() map[string]interface{} {
-    return map[string]interface{}{
-        "type": "object",
-        "properties": map[string]interface{}{
-            "field1": map[string]string{"type": "string"},
-            "field2": map[string]string{"type": "integer"},
-        },
-    }
-}
-
-func (m *MyTypeMetadata) ToMap() map[string]interface{} {
-    return map[string]interface{}{
-        "field1": m.Field1,
-        "field2": m.Field2,
-    }
-}
-
-func (m *MyTypeMetadata) FromMap(data map[string]interface{}) error {
-    // 实现反序列化逻辑
-    return nil
-}
-
-func init() {
-    sdk.RegisterMetadataType(&MyTypeMetadata{})
-}
-
-// MyTypeExtractor 提取器实现
+// MyTypeExtractor 自定义类型提取器
 type MyTypeExtractor struct{}
 
 func (e *MyTypeExtractor) SupportedTypes() []string {
@@ -354,59 +301,44 @@ func (e *MyTypeExtractor) Priority() int {
     return 50
 }
 
-func (e *MyTypeExtractor) Extract(ctx context.Context, input sdk.ExtractInput) (*sdk.Metadata, error) {
-    // 实现提取逻辑
-    metadata := sdk.NewMetadata(input.ObjectKey, "My Type File", input.Size)
-
-    myMeta := &MyTypeMetadata{
-        Field1: "value1",
-        Field2: 42,
+func (e *MyTypeExtractor) Extract(ctx context.Context, input scanner.ExtractInput) (*scanner.Metadata, error) {
+    // 创建基础元数据
+    metadata := &scanner.Metadata{
+        BasicInfo: scanner.BasicMetadata{
+            FileName:     filepath.Base(input.ObjectKey),
+            FileType:     "My Type File",
+            Size:         input.Size,
+            ContentType:  input.ContentType,
+            LastModified: input.LastModified,
+            ETag:         input.ETag,
+        },
+        CustomAttrs: make(map[string]interface{}),
     }
 
-    metadata.AddTypedMetadata("mytype_metadata", myMeta)
+    // 提取特定元数据
+    metadata.CustomAttrs["field1"] = "value1"
+    metadata.CustomAttrs["field2"] = 42
+
     return metadata, nil
 }
-
-func GetExtractor() sdk.MetadataExtractor {
-    return &MyTypeExtractor{}
-}
 ```
 
-### 4. 注册插件
+### 3. 注册提取器
 
-在 `meta/backend/internal/scanner/plugins/plugins.go` 中添加：
+在 `meta/backend/plugins/extractors/register.go` 中注册：
 
 ```go
-import (
-    mytype "github.com/addp/plugins/mytype-extractor"
-)
-
 func init() {
-    // ... 其他插件
-    scanner.RegisterSDKExtractor(mytype.GetExtractor())
+    // ... 其他提取器
+    RegisterExtractor("mytype", &MyTypeExtractor{})
 }
 ```
 
-### 5. 更新依赖
-
-在 `meta/backend/go.mod` 中添加：
-
-```go
-require (
-    github.com/addp/plugins/mytype-extractor v0.0.0
-)
-
-replace (
-    github.com/addp/plugins/mytype-extractor => ../../plugins/mytype-extractor
-)
-```
-
-### 6. 更新依赖并重启
+### 4. 重启服务
 
 ```bash
-cd /Users/pampa/code/addp/meta/backend
-go mod tidy
-# 重启Meta服务
+cd /Users/pampa/code/addp
+make dev-restart
 ```
 
 ## 优先级说明
@@ -428,14 +360,24 @@ go mod tidy
 所有插件都应该包含单元测试。测试示例：
 
 ```go
+package extractors
+
+import (
+    "context"
+    "strings"
+    "testing"
+
+    "github.com/addp/meta/internal/scanner"
+)
+
 func TestMyTypeExtractor_Extract(t *testing.T) {
     extractor := &MyTypeExtractor{}
 
-    input := sdk.ExtractInput{
+    input := scanner.ExtractInput{
         ObjectKey:   "test.mytype",
         ContentType: "application/x-mytype",
         Size:        1024,
-        Reader:      bytes.NewReader(testData),
+        Reader:      strings.NewReader("test content"),
     }
 
     metadata, err := extractor.Extract(context.Background(), input)
@@ -444,15 +386,14 @@ func TestMyTypeExtractor_Extract(t *testing.T) {
     }
 
     // 验证元数据
-    if metadata.BasicInfo.Name != "test.mytype" {
-        t.Errorf("Expected name test.mytype, got %s", metadata.BasicInfo.Name)
+    if metadata.BasicInfo.FileName != "test.mytype" {
+        t.Errorf("Expected filename test.mytype, got %s", metadata.BasicInfo.FileName)
     }
 }
 ```
 
 ## 相关文档
 
-- [第三方插件架构](./THIRD_PARTY_PLUGIN_ARCHITECTURE.md)
 - [元数据类型架构](./METADATA_TYPES_ARCHITECTURE.md)
 - [视频元数据提取](./VIDEO_METADATA_EXTRACTION_DONE.md)
-- [Meta Extractor SDK](../meta/sdk/README.md)
+- [插件架构重构](../PLUGIN_ARCHITECTURE_REFACTORING.md)

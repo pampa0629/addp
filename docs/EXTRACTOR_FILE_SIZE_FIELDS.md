@@ -59,7 +59,7 @@ func formatFileSize(size int64) string {
 ## 各提取器实现位置
 
 ### 1. 图片提取器
-**文件**: [`/plugins/image-extractor/image_extractor.go:77-78`](../plugins/image-extractor/image_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/image_extractor.go`](../meta/backend/internal/scanner/extractors/image_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -75,7 +75,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 2. PDF提取器
-**文件**: [`/plugins/pdf-extractor/pdf_extractor.go:167-168`](../plugins/pdf-extractor/pdf_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/pdf_extractor.go`](../meta/backend/internal/scanner/extractors/pdf_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -90,7 +90,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 3. CSV提取器
-**文件**: [`/plugins/csv-extractor/csv_extractor.go:174-175`](../plugins/csv-extractor/csv_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/csv_extractor.go`](../meta/backend/internal/scanner/extractors/csv_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -105,7 +105,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 4. GeoJSON提取器
-**文件**: [`/plugins/geojson-extractor/geojson_extractor.go:76-77`](../plugins/geojson-extractor/geojson_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/geojson_extractor.go`](../meta/backend/internal/scanner/extractors/geojson_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -121,7 +121,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 5. SQLite提取器
-**文件**: [`/plugins/sqlite-extractor/sqlite_extractor.go:193-194`](../plugins/sqlite-extractor/sqlite_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/sqlite_extractor.go`](../meta/backend/internal/scanner/extractors/sqlite_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -136,7 +136,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 6. Office文档提取器
-**文件**: [`/plugins/office-extractor/office_extractor.go:223-224`](../plugins/office-extractor/office_extractor.go)
+**文件**: [`meta/backend/internal/plugins/officeextractor/office_extractor.go`](../meta/backend/internal/plugins/officeextractor/office_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -151,7 +151,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 7. 视频提取器
-**文件**: [`/plugins/video-extractor/video_extractor.go:153-154`](../plugins/video-extractor/video_extractor.go)
+**文件**: [`meta/backend/internal/plugins/videoextractor/video_extractor.go`](../meta/backend/internal/plugins/videoextractor/video_extractor.go)
 
 ```go
 metadata.CustomAttrs["file_size"] = input.Size
@@ -167,7 +167,7 @@ metadata.CustomAttrs["file_size_human"] = formatFileSize(input.Size)
 ---
 
 ### 8. Shapefile提取器
-**文件**: [`/plugins/shapefile-extractor/shapefile_extractor.go`](../plugins/shapefile-extractor/shapefile_extractor.go)
+**文件**: [`meta/backend/internal/scanner/extractors/shapefile_extractor.go`](../meta/backend/internal/scanner/extractors/shapefile_extractor.go)
 
 **注**: Shapefile提取器可能需要单独添加文件大小字段（如尚未添加）
 
@@ -285,9 +285,7 @@ func TestImageExtractor_FileSize(t *testing.T) {
 ## 相关文档
 
 - [文件类型提取器总览](./FILE_TYPE_EXTRACTORS.md)
-- [第三方插件架构](./THIRD_PARTY_PLUGIN_ARCHITECTURE.md)
 - [元数据类型架构](./METADATA_TYPES_ARCHITECTURE.md)
-- [Meta Extractor SDK](../meta/sdk/README.md)
 
 ## 更新历史
 

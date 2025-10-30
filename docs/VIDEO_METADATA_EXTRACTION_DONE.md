@@ -292,7 +292,7 @@ LIMIT 5;
 - [METADATA_STORAGE.md](./METADATA_STORAGE.md) - 元数据存储架构
 - [VIDEO_METADATA_STATUS.md](./VIDEO_METADATA_STATUS.md) - 之前的状态（已过时）
 - [THIRD_PARTY_METADATA_TYPES.md](./THIRD_PARTY_METADATA_TYPES.md) - 扩展指南
-- [plugins/video-extractor/](../plugins/video-extractor/) - 视频提取器实现
+- [meta/backend/internal/plugins/videoextractor/](../meta/backend/internal/plugins/videoextractor/) - 视频提取器实现
 
 ## 🔧 代码改动总结
 

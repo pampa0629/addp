@@ -19,8 +19,8 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/scanner"
-	_ "github.com/addp/meta/internal/scanner/extractors" // 自动注册提取器
+	"github.com/addp/meta/plugins"
+	_ "github.com/addp/meta/plugins/extractors" // 自动注册提取器
 	"github.com/addp/meta/internal/search"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -388,7 +388,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 	return &item, nil
 }
 
-func buildFieldAttributes(fields []scanner.FieldInfo) []map[string]interface{} {
+func buildFieldAttributes(fields []plugins.FieldInfo) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		result = append(result, map[string]interface{}{
@@ -714,13 +714,13 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
 
-	if objectScanner, ok := scan.(scanner.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
+	if objectScanner, ok := scan.(plugins.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
 		buckets := objectScanner.AllowedBuckets()
 		if len(buckets) == 0 {
 			s.log.Info("对象存储资源未配置可扫描桶，跳过扫描", cloneLogFields(startFields, "allowed_bucket_count", 0)...)
@@ -918,7 +918,7 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
@@ -1005,13 +1005,13 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
 
-	objectScanner, ok := scan.(scanner.ObjectStorageScanner)
+	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
 	}
@@ -1037,7 +1037,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner scanner.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
+func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner plugins.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
 	s.log.Info("🔍 进入scanObjectStoragePaths函数",
 		"resource_id", resourceID,
 		"tenant_id", tenantID,
@@ -1273,7 +1273,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 	return totalBuckets, totalObjects, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []scanner.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
+func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []plugins.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
 	objects := 0
 
 	// 重要：在循环外部只处理一次scanPathPrefix，建立基础父节点
@@ -1535,7 +1535,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 	return objects, nil
 }
 
-func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenantID uint, schemaName string, tableInfo scanner.TableInfo, fields []scanner.FieldInfo, item *models.MetaItem) {
+func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenantID uint, schemaName string, tableInfo plugins.TableInfo, fields []plugins.FieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -1584,7 +1584,7 @@ func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenant
 	}
 }
 
-func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenantID, resourceID uint, meta scanner.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
+func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenantID, resourceID uint, meta plugins.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -2325,7 +2325,7 @@ func extractTimePtr(value interface{}) *time.Time {
 }
 
 // extractEnhancedMetadata 使用插件提取增强的元数据
-func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
+func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
 	// 如果S3Scanner已经提取了元数据，直接使用
 	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
 		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
@@ -2356,7 +2356,7 @@ func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.O
 	}
 
 	// 获取适配的元数据提取器
-	extractor := scanner.GetExtractor(contentType)
+	extractor := plugins.GetExtractor(contentType)
 	if extractor == nil {
 		// 没有合适的提取器，返回基础属性
 		return baseAttrs
@@ -2372,7 +2372,7 @@ func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta scanner.O
 // extractEnhancedMetadataWithCache 带缓存检查的元数据提取
 // 如果文件未修改（基于last_modified时间），跳过重新提取
 // fullPath: 文件在bucket中的完整路径（用于fingerprint生成）
-func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta scanner.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
+func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
 	// 生成fingerprint以查找已有记录 - 使用传入的fullPath确保一致性
 	bucket, _ := baseAttrs["bucket"].(string)
 	fingerprint := models.GenerateObjectFingerprint(resourceID, bucket, fullPath)
@@ -2474,7 +2474,7 @@ func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey 
 
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据
 // 当Manager预览时发现元数据未提取，可以调用此方法触发实时提取
-func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint, objectKey string, token string, objectReader io.Reader) (*scanner.Metadata, error) {
+func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint, objectKey string, token string, objectReader io.Reader) (*plugins.Metadata, error) {
 	// 检测内容类型
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
@@ -2482,7 +2482,7 @@ func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint
 	}
 
 	// 获取元数据提取器
-	extractor := scanner.GetExtractor(contentType)
+	extractor := plugins.GetExtractor(contentType)
 	if extractor == nil {
 		return nil, fmt.Errorf("no extractor available for content type: %s", contentType)
 	}
@@ -2495,7 +2495,7 @@ func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint
 	}
 
 	// 构建提取输入
-	input := scanner.ExtractInput{
+	input := plugins.ExtractInput{
 		ResourceID:  resourceID,
 		ObjectKey:   objectKey,
 		ContentType: contentType,
@@ -2547,7 +2547,7 @@ func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint
 	return metadata, nil
 }
 
-func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageScanner) []string {
+func prepareObjectPaths(paths, fallback []string, scanner plugins.ObjectStorageScanner) []string {
 	pathSet := map[string]struct{}{}
 	for _, p := range paths {
 		clean := sanitizeObjectPath(p)
@@ -2582,13 +2582,13 @@ func prepareObjectPaths(paths, fallback []string, scanner scanner.ObjectStorageS
 	return result
 }
 
-func filterObjectMetasForDepth(metas []scanner.ObjectMetadata, basePath string) []scanner.ObjectMetadata {
+func filterObjectMetasForDepth(metas []plugins.ObjectMetadata, basePath string) []plugins.ObjectMetadata {
 	base := sanitizeObjectPath(basePath)
 	if len(metas) == 0 {
 		return metas
 	}
 
-	filtered := make([]scanner.ObjectMetadata, 0, len(metas))
+	filtered := make([]plugins.ObjectMetadata, 0, len(metas))
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
 			filtered = append(filtered, meta)
@@ -2691,7 +2691,7 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 	return nil
 }
 
-func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan scanner.Scanner, tenantID, resourceID uint, schemaName string, scanDepth string) (int, int, int, error) {
+func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan plugins.Scanner, tenantID, resourceID uint, schemaName string, scanDepth string) (int, int, int, error) {
 	schemaNode, err := s.upsertNode(tenantID, resourceID, nil, "schema", schemaName, "", nil)
 	if err != nil {
 		return 0, 0, 0, err
@@ -2741,7 +2741,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 	scannedTables := make(map[string]bool) // 记录本次扫描到的表
 
 	for _, tableInfo := range tables {
-		var fields []scanner.FieldInfo
+		var fields []plugins.FieldInfo
 		var attrs models.JSONMap
 
 		scannedTables[tableInfo.Name] = true
@@ -2907,7 +2907,7 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}
@@ -2943,13 +2943,13 @@ func (s *ScanServiceNew) ListObjectStorageNodes(resourceID, tenantID uint, path,
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	scan, err := scanner.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
 
-	objectScanner, ok := scan.(scanner.ObjectStorageScanner)
+	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
 	if !ok {
 		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
 	}

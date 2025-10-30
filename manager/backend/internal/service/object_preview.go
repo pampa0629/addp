@@ -668,6 +668,14 @@ func inferContentType(objectPath, contentType string) string {
 	return "application/octet-stream"
 }
 
+func defaultExtension(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return ""
+	}
+	return ext
+}
+
 func isGenericContentType(contentType string) bool {
 	switch contentType {
 	case "", "application/octet-stream", "binary/octet-stream", "application/download", "application/force-download":

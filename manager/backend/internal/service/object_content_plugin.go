@@ -10,11 +10,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
+	"github.com/addp/common/format"
+	"github.com/addp/common/format/excel"
+	"github.com/addp/common/format/geojson"
+	"github.com/addp/common/format/sqlite"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/models"
 	_ "github.com/mattn/go-sqlite3"
@@ -95,6 +96,53 @@ func (r *ObjectContentRegistry) Resolve(req *ObjectContentRequest) ObjectContent
 		}
 	}
 	return nil
+}
+
+// ------------ 辅助函数 ------------
+
+func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]interface{} {
+	if req == nil {
+		return map[string]interface{}{}
+	}
+	metadata := map[string]interface{}{
+		"path":       req.Path,
+		"size_bytes": req.Size,
+		"limit":      limit,
+	}
+	if req.Extension != "" {
+		metadata["extension"] = req.Extension
+	}
+	if req.ContentType != "" {
+		metadata["content_type"] = req.ContentType
+	}
+	return metadata
+}
+
+func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int64) string {
+	sizeInMB := float64(req.Size) / (1024 * 1024)
+	limitInMB := float64(limit) / (1024 * 1024)
+	label := contentKindLabel(kind)
+	return fmt.Sprintf("%s 文件超过预览限制 (%.2f MB / %.2f MB)，建议下载查看", label, sizeInMB, limitInMB)
+}
+
+func contentKindLabel(kind string) string {
+	labels := map[string]string{
+		"pdf":      "PDF",
+		"docx":     "DOCX",
+		"wps":      "WPS",
+		"pptx":     "PPTX",
+		"image":    "图片",
+		"json":     "JSON",
+		"geojson":  "GeoJSON",
+		"excel":    "Excel",
+		"sqlite":   "SQLite",
+		"text":     "文本",
+		"markdown": "Markdown",
+	}
+	if label, ok := labels[kind]; ok {
+		return label
+	}
+	return strings.ToUpper(kind)
 }
 
 // ------------ 匹配器 ------------
@@ -308,6 +356,10 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 		}, truncated, nil
 	}
 	if h.kind == "geojson" {
+		if preview, err := buildGeoJSONPreview(ctx, clean, parsed); err == nil {
+			preview.Truncated = truncated
+			return preview, truncated, nil
+		}
 		return &models.ObjectPreviewContent{
 			Kind:    "geojson",
 			Text:    string(clean),
@@ -319,6 +371,124 @@ func (h *jsonContentHandler) Handle(ctx context.Context, req *ObjectContentReque
 		Text: string(clean),
 		JSON: parsed,
 	}, truncated, nil
+}
+
+func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (*models.ObjectPreviewContent, error) {
+	opts := format.DefaultParseOptions()
+	parser := geojson.NewParser(opts)
+
+	schema, err := parser.ParseSchema(ctx, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	sampleRecords, _ := parser.ReadRecords(ctx, bytes.NewReader(data), 0, 10)
+	metaMap, _ := parser.ExtractMetadata(ctx, bytes.NewReader(data))
+
+	metadata := make(map[string]interface{})
+	if metaMap != nil {
+		for k, v := range metaMap {
+			metadata[k] = v
+		}
+	}
+	if len(sampleRecords) > 0 {
+		metadata["sample_records"] = sampleRecords
+	}
+	if schema != nil {
+		metadata["columns"] = convertFormatColumns(schema)
+		if schema.GeometryField != nil {
+			metadata["geometry_field"] = *schema.GeometryField
+		}
+		if schema.GeometryType != nil {
+			metadata["geometry_type"] = *schema.GeometryType
+		}
+		if schema.SpatialRefSys != nil {
+			metadata["spatial_ref_sys"] = *schema.SpatialRefSys
+		}
+		if schema.RecordCount != nil {
+			metadata["record_count"] = *schema.RecordCount
+		}
+	}
+
+	return &models.ObjectPreviewContent{
+		Kind:     "geojson",
+		Text:     string(data),
+		GeoJSON:  parsed,
+		Metadata: metadata,
+	}, nil
+}
+
+func convertFormatColumns(schema *format.Schema) []map[string]interface{} {
+	if schema == nil {
+		return nil
+	}
+	columns := make([]map[string]interface{}, 0, len(schema.Fields))
+	for _, field := range schema.Fields {
+		col := map[string]interface{}{
+			"name":     field.Name,
+			"type":     string(field.Type),
+			"nullable": field.Nullable,
+		}
+		if field.Type == format.FieldTypeGeometry {
+			col["type"] = "geometry"
+		}
+		columns = append(columns, col)
+	}
+	return columns
+}
+
+func buildExcelPreviewFromAnalysis(analysis *excel.WorkbookAnalysis) map[string]interface{} {
+	if analysis == nil {
+		return map[string]interface{}{
+			"default_sheet": "",
+			"active_sheet":  "",
+			"sheets":        []map[string]interface{}{},
+			"summary":       map[string]interface{}{},
+		}
+	}
+
+	sheets := make([]map[string]interface{}, 0, len(analysis.Sheets))
+	for _, sheet := range analysis.Sheets {
+		sheetMap := map[string]interface{}{
+			"name":           sheet.Name,
+			"index":          sheet.Index,
+			"row_count":      sheet.RowCount,
+			"column_count":   sheet.ColumnCount,
+			"has_header":     sheet.HasHeader,
+			"headers":        sheet.Headers,
+			"column_types":   sheet.ColumnTypes,
+			"rows":           sheet.SampleRows,
+			"rows_truncated": sheet.RowsTruncated,
+		}
+		sheets = append(sheets, sheetMap)
+	}
+
+	summary := make(map[string]interface{}, len(analysis.Summary))
+	for k, v := range analysis.Summary {
+		summary[k] = v
+	}
+
+	return map[string]interface{}{
+		"default_sheet": analysis.DefaultSheet,
+		"active_sheet":  analysis.ActiveSheet,
+		"sheets":        sheets,
+		"summary":       summary,
+	}
+}
+
+func boolValue(v interface{}) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		return strings.EqualFold(val, "true")
+	case int:
+		return val != 0
+	case int64:
+		return val != 0
+	default:
+		return false
+	}
 }
 
 type excelContentHandler struct {
@@ -369,13 +539,23 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	}
 	defer workbook.Close()
 
-	preview, previewTruncated, err := h.buildExcelPreview(req, workbook)
+	sheetNames := workbook.GetSheetList()
+	options := excel.Options{
+		SheetLimit:      h.effectiveSheetLimit(len(sheetNames)),
+		RowLimit:        h.effectiveRowLimit(),
+		ColumnLimit:     h.effectiveColumnLimit(),
+		TypeDetectLimit: excelTypeDetectLimit,
+	}
+	analysis, err := excel.Analyze(ctx, workbook, &options)
 	if err != nil {
 		return &models.ObjectPreviewContent{
 			Kind: "excel",
 			Text: fmt.Sprintf("解析 Excel 失败: %v", err),
 		}, false, nil
 	}
+
+	preview := buildExcelPreviewFromAnalysis(analysis)
+	previewTruncated := boolValue(analysis.Summary["sheets_truncated"]) || boolValue(analysis.Summary["rows_truncated"])
 
 	metadata := map[string]interface{}{
 		"sheet_limit":  h.sheetLimit,
@@ -393,73 +573,6 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 		Metadata:  metadata,
 		Truncated: previewTruncated,
 	}, truncated || previewTruncated, nil
-}
-
-func (h *excelContentHandler) buildExcelPreview(req *ObjectContentRequest, workbook *excelize.File) (map[string]interface{}, bool, error) {
-	sheetNames := workbook.GetSheetList()
-	if len(sheetNames) == 0 {
-		summary := map[string]interface{}{
-			"sheet_count":    0,
-			"sampled_sheets": 0,
-			"row_limit":      h.effectiveRowLimit(),
-			"column_limit":   h.effectiveColumnLimit(),
-		}
-		if req != nil {
-			summary["size_bytes"] = req.Size
-		}
-		result := map[string]interface{}{
-			"default_sheet": "",
-			"active_sheet":  "",
-			"sheets":        []map[string]interface{}{},
-			"summary":       summary,
-		}
-		return result, false, nil
-	}
-
-	activeIndex := workbook.GetActiveSheetIndex()
-	if activeIndex < 0 || activeIndex >= len(sheetNames) {
-		activeIndex = 0
-	}
-	defaultSheet := sheetNames[activeIndex]
-
-	limitSheets := h.effectiveSheetLimit(len(sheetNames))
-	previewSheets := make([]map[string]interface{}, 0, limitSheets)
-	sheetsTruncated := false
-	anyRowsTruncated := false
-
-	for idx, name := range sheetNames {
-		if len(previewSheets) >= limitSheets {
-			sheetsTruncated = true
-			break
-		}
-		sheetPreview, rowsTruncated := h.extractSheetPreview(workbook, name, idx)
-		if rowsTruncated {
-			anyRowsTruncated = true
-		}
-		previewSheets = append(previewSheets, sheetPreview)
-	}
-
-	summary := map[string]interface{}{
-		"sheet_count":      len(sheetNames),
-		"sampled_sheets":   len(previewSheets),
-		"sheet_limit":      limitSheets,
-		"row_limit":        h.effectiveRowLimit(),
-		"column_limit":     h.effectiveColumnLimit(),
-		"sheets_truncated": sheetsTruncated,
-		"rows_truncated":   anyRowsTruncated,
-	}
-	if req != nil {
-		summary["size_bytes"] = req.Size
-	}
-
-	result := map[string]interface{}{
-		"default_sheet": defaultSheet,
-		"active_sheet":  defaultSheet,
-		"sheets":        previewSheets,
-		"summary":       summary,
-	}
-
-	return result, sheetsTruncated || anyRowsTruncated, nil
 }
 
 func (h *excelContentHandler) effectiveSheetLimit(total int) int {
@@ -482,107 +595,6 @@ func (h *excelContentHandler) effectiveColumnLimit() int {
 		return defaultExcelColumnLimit
 	}
 	return h.columnLimit
-}
-
-func (h *excelContentHandler) extractSheetPreview(workbook *excelize.File, sheetName string, index int) (map[string]interface{}, bool) {
-	dimCols, dimRows := excelSheetDimensions(workbook, sheetName)
-
-	rowsIter, err := workbook.Rows(sheetName)
-	if err != nil {
-		columnCount := dimCols
-		if columnCount <= 0 {
-			columnCount = h.effectiveColumnLimit()
-		}
-		headers := excelBuildHeaders(nil, columnCount, false)
-		return map[string]interface{}{
-			"name":           sheetName,
-			"index":          index,
-			"row_count":      excelEstimateRowCount(dimRows, 0, false),
-			"column_count":   columnCount,
-			"has_header":     false,
-			"headers":        headers,
-			"column_types":   make([]string, len(headers)),
-			"rows":           []map[string]interface{}{},
-			"rows_truncated": false,
-		}, false
-	}
-	defer rowsIter.Close()
-
-	rowLimit := maxInt(h.effectiveRowLimit(), excelSampleRowsFallback)
-	readLimit := rowLimit + 1
-	if readLimit <= 0 {
-		readLimit = excelMaxReadRows
-	}
-	if readLimit > excelMaxReadRows {
-		readLimit = excelMaxReadRows
-	}
-
-	headerCandidate := []string{}
-	rawRows := make([][]string, 0, minInt(rowLimit, excelSampleRowsFallback))
-	maxColumns := dimCols
-	rowIndex := 0
-
-	for rowsIter.Next() {
-		rowIndex++
-		if readLimit > 0 && rowIndex > readLimit {
-			break
-		}
-
-		raw, err := rowsIter.Columns()
-		if err != nil {
-			continue
-		}
-
-		trimmed := excelTrimStringSlice(raw)
-		if len(trimmed) > maxColumns {
-			maxColumns = len(trimmed)
-		}
-
-		if rowIndex == 1 {
-			headerCandidate = trimmed
-			continue
-		}
-
-		rawRows = append(rawRows, trimmed)
-	}
-
-	hasHeader := excelLooksLikeHeaderRow(headerCandidate)
-	if !hasHeader && len(headerCandidate) > 0 {
-		rawRows = append([][]string{headerCandidate}, rawRows...)
-	}
-
-	if maxColumns == 0 {
-		maxColumns = len(headerCandidate)
-	}
-
-	columnLimit := h.effectiveColumnLimit()
-	if columnLimit > 0 && maxColumns > columnLimit {
-		maxColumns = columnLimit
-	}
-	if maxColumns <= 0 {
-		maxColumns = columnLimit
-	}
-
-	headers := excelBuildHeaders(headerCandidate, maxColumns, hasHeader)
-	normalized := excelNormalizeRows(rawRows, maxColumns)
-	estimatedRows := excelEstimateRowCount(dimRows, len(normalized), hasHeader)
-	columnTypes := excelInferColumnTypes(normalized, maxColumns, excelTypeDetectLimit)
-	sampleRows := excelBuildSampleRows(headers, normalized, excelSampleRowsFallback)
-	rowsTruncated := estimatedRows > len(sampleRows)
-
-	sheet := map[string]interface{}{
-		"name":           sheetName,
-		"index":          index,
-		"row_count":      estimatedRows,
-		"column_count":   maxColumns,
-		"has_header":     hasHeader,
-		"headers":        headers,
-		"column_types":   columnTypes,
-		"rows":           sampleRows,
-		"rows_truncated": rowsTruncated,
-	}
-
-	return sheet, rowsTruncated
 }
 
 type textContentHandler struct {
@@ -709,8 +721,7 @@ func (h *sqliteContentHandler) Handle(ctx context.Context, req *ObjectContentReq
 
 // parseSQLiteDatabase 解析 SQLite 数据库文件并提取元数据和示例数据
 func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath string, req *ObjectContentRequest) (*models.ObjectPreviewContent, bool, error) {
-
-	dsn := fmt.Sprintf("file:%s?mode=ro&_query_only=1&_busy_timeout=5000", strings.ReplaceAll(tmpPath, "\\", "/"))
+	dsn := fmt.Sprintf("file:%s?mode=ro&_query_only=1&_busy_timeout=5000", strings.ReplaceAll(tmpPath, "\\\\", "/"))
 	logger.L().Info("SQLite 预览: 打开数据库", "dsn", dsn)
 
 	db, err := sql.Open("sqlite3", dsn)
@@ -720,631 +731,91 @@ func (h *sqliteContentHandler) parseSQLiteDatabase(ctx context.Context, tmpPath 
 	}
 	defer db.Close()
 
-	tableLimit := h.tableLimit
-	if tableLimit <= 0 {
-		tableLimit = defaultSQLiteTableLimit
+	options := sqlite.DefaultOptions()
+	if h.tableLimit > 0 {
+		options.TableLimit = h.tableLimit
+	} else {
+		options.TableLimit = defaultSQLiteTableLimit
 	}
-	rowLimit := h.rowLimit
-	if rowLimit <= 0 {
-		rowLimit = defaultSQLiteRowLimit
-	}
-
-	var totalTables int
-	countQuery := `
-		SELECT COUNT(*)
-		FROM sqlite_master
-		WHERE lower(type) IN ('table', 'view')
-		  AND name NOT LIKE 'sqlite_%'
-	`
-	logger.L().Info("SQLite 预览: 查询表数量", "query", countQuery)
-	if err := db.QueryRowContext(ctx, countQuery).Scan(&totalTables); err != nil {
-		logger.L().Error("SQLite 预览: 读取表数量失败", "error", err)
-		return nil, false, fmt.Errorf("读取 SQLite 表数量失败: %w", err)
-	}
-	logger.L().Info("SQLite 预览: 找到表", "total_tables", totalTables, "table_limit", tableLimit, "row_limit", rowLimit)
-
-	type tableMeta struct {
-		Name string
-		Type string
+	if h.rowLimit > 0 {
+		options.SampleRowLimit = h.rowLimit
+	} else {
+		options.SampleRowLimit = defaultSQLiteRowLimit
 	}
 
-	tableNames := make([]tableMeta, 0)
-	queryTables := fmt.Sprintf(`
-		SELECT name, type
-		FROM sqlite_master
-		WHERE lower(type) IN ('table', 'view')
-		  AND name NOT LIKE 'sqlite_%%'
-		ORDER BY name
-		LIMIT %d
-	`, tableLimit)
-	rows, err := db.QueryContext(ctx, queryTables)
+	analysis, err := sqlite.Analyze(ctx, db, &options)
 	if err != nil {
-		return nil, false, fmt.Errorf("读取 SQLite 表信息失败: %w", err)
-	}
-	for rows.Next() {
-		var name string
-		var objectType string
-		if err := rows.Scan(&name, &objectType); err != nil {
-			logger.L().Warn("SQLite 插件: 读取表名失败", "error", err)
-			continue
-		}
-		tableNames = append(tableNames, tableMeta{Name: name, Type: strings.ToLower(objectType)})
-	}
-	if err := rows.Err(); err != nil {
-		logger.L().Warn("SQLite 插件: 遍历表名异常", "error", err)
-	}
-	rows.Close()
-
-	type tableInfo struct {
-		Name          string                   `json:"name"`
-		Type          string                   `json:"type,omitempty"`
-		Columns       []string                 `json:"columns"`
-		RowCount      *int64                   `json:"row_count,omitempty"`
-		Rows          []map[string]interface{} `json:"rows"`
-		RowsTruncated bool                     `json:"rows_truncated,omitempty"`
+		logger.L().Error("SQLite 预览: 分析数据库失败", "error", err)
+		return nil, false, fmt.Errorf("提取 SQLite 元数据失败: %w", err)
 	}
 
-	tables := make([]tableInfo, 0, len(tableNames))
-	anyRowsTruncated := false
+	metadata := buildSQLiteMetadataMap(analysis.Metadata, req)
+	preview := buildSQLitePreviewFromAnalysis(analysis.Metadata)
 
-	for _, entry := range tableNames {
-		name := entry.Name
-		escaped := escapeSqliteIdentifier(name)
+	truncated := len(analysis.Metadata.Tables) < analysis.Metadata.TableCount || hasAnyTruncatedTable(analysis.Metadata.Tables)
 
-		columns := make([]string, 0)
-		pragmaQuery := fmt.Sprintf(`PRAGMA table_info(%s)`, escaped)
-		colRows, err := db.QueryContext(ctx, pragmaQuery)
-		if err != nil {
-			logger.L().Warn("SQLite 插件: 读取列信息失败", "table", name, "error", err)
-			continue
-		}
-		for colRows.Next() {
-			var (
-				cid       int
-				colName   string
-				colType   string
-				notnull   int
-				dfltValue interface{}
-				pk        int
-			)
-			if err := colRows.Scan(&cid, &colName, &colType, &notnull, &dfltValue, &pk); err != nil {
-				logger.L().Warn("SQLite 插件: 解析列信息失败", "table", name, "error", err)
-				continue
-			}
-			columns = append(columns, colName)
-		}
-		colRows.Close()
-
-		countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s`, escaped)
-		var rowCount int64
-		var hasRowCount bool
-		if err := db.QueryRowContext(ctx, countQuery).Scan(&rowCount); err != nil {
-			logger.L().Warn("SQLite 插件: 统计表行数失败", "table", name, "error", err)
-		} else {
-			hasRowCount = true
-		}
-
-		sampleRows := make([]map[string]interface{}, 0)
-		dataQuery := fmt.Sprintf(`SELECT * FROM %s LIMIT %d`, escaped, rowLimit)
-		dataRows, err := db.QueryContext(ctx, dataQuery)
-		if err != nil {
-			logger.L().Warn("SQLite 插件: 读取示例数据失败", "table", name, "error", err)
-		} else {
-			columnsFromQuery, err := dataRows.Columns()
-			if err != nil {
-				logger.L().Warn("SQLite 插件: 获取列名失败", "table", name, "error", err)
-			} else if len(columns) == 0 {
-				columns = columnsFromQuery
-			}
-
-			for dataRows.Next() {
-				values := make([]interface{}, len(columnsFromQuery))
-				valuePtrs := make([]interface{}, len(columnsFromQuery))
-				for i := range values {
-					valuePtrs[i] = &values[i]
-				}
-				if err := dataRows.Scan(valuePtrs...); err != nil {
-					logger.L().Warn("SQLite 插件: 解析行数据失败", "table", name, "error", err)
-					continue
-				}
-				row := make(map[string]interface{}, len(columnsFromQuery))
-				for i, col := range columnsFromQuery {
-					row[col] = normalizeSQLiteValue(values[i])
-				}
-				sampleRows = append(sampleRows, row)
-			}
-			dataRows.Close()
-		}
-
-		rowsTruncated := false
-		if hasRowCount && int64(len(sampleRows)) < rowCount {
-			rowsTruncated = true
-			anyRowsTruncated = true
-		}
-
-		var countPtr *int64
-		if hasRowCount {
-			countPtr = &rowCount
-		}
-
-		tables = append(tables, tableInfo{
-			Name:          name,
-			Type:          entry.Type,
-			Columns:       columns,
-			RowCount:      countPtr,
-			Rows:          sampleRows,
-			RowsTruncated: rowsTruncated,
-		})
-	}
-
-	result := map[string]interface{}{
-		"summary": map[string]interface{}{
-			"table_count":      totalTables,
-			"sampled_tables":   len(tables),
-			"table_limit":      tableLimit,
-			"row_limit":        rowLimit,
-			"size_bytes":       req.Size,
-			"tables_truncated": totalTables > len(tables),
-			"rows_truncated":   anyRowsTruncated,
-		},
-		"tables": tables,
-	}
-
-	isTruncated := totalTables > len(tables) || anyRowsTruncated
-
-	return &models.ObjectPreviewContent{
+	content := &models.ObjectPreviewContent{
 		Kind:      "sqlite",
-		JSON:      result,
-		Truncated: isTruncated,
-	}, isTruncated, nil
+		JSON:      preview,
+		Metadata:  metadata,
+		Truncated: truncated,
+	}
+
+	return content, truncated, nil
 }
 
-func escapeSqliteIdentifier(name string) string {
-	escaped := strings.ReplaceAll(name, `"`, `""`)
-	return `"` + escaped + `"`
-}
-
-func normalizeSQLiteValue(value interface{}) interface{} {
-	switch v := value.(type) {
-	case nil:
-		return nil
-	case []byte:
-		return string(v)
-	default:
-		return v
+func buildSQLiteMetadataMap(meta sqlite.Metadata, req *ObjectContentRequest) map[string]interface{} {
+	result := map[string]interface{}{
+		"version":     meta.Version,
+		"page_size":   meta.PageSize,
+		"page_count":  meta.PageCount,
+		"table_count": meta.TableCount,
+		"view_count":  meta.ViewCount,
+		"index_count": meta.IndexCount,
 	}
-}
-
-func excelSheetDimensions(workbook *excelize.File, sheetName string) (int, int) {
-	dimension, err := workbook.GetSheetDimension(sheetName)
-	if err != nil || dimension == "" {
-		return 0, 0
-	}
-
-	parts := strings.Split(dimension, ":")
-	if len(parts) == 1 {
-		col, row, err := excelize.CellNameToCoordinates(parts[0])
-		if err != nil {
-			return 0, 0
-		}
-		return col, row
-	}
-
-	startCol, startRow, err := excelize.CellNameToCoordinates(parts[0])
-	if err != nil {
-		return 0, 0
-	}
-	endCol, endRow, err := excelize.CellNameToCoordinates(parts[1])
-	if err != nil {
-		return 0, 0
-	}
-
-	if endCol < startCol || endRow < startRow {
-		return 0, 0
-	}
-
-	return endCol - startCol + 1, endRow - startRow + 1
-}
-
-func excelBuildHeaders(candidate []string, columnCount int, hasHeader bool) []string {
-	if columnCount <= 0 {
-		return []string{}
-	}
-	headers := make([]string, columnCount)
-	used := make(map[string]int)
-	for i := 0; i < columnCount; i++ {
-		var name string
-		if hasHeader && i < len(candidate) {
-			name = strings.TrimSpace(candidate[i])
-		}
-		if name == "" {
-			name = fmt.Sprintf("Column%d", i+1)
-		}
-
-		key := strings.ToLower(name)
-		if count, ok := used[key]; ok {
-			count++
-			used[key] = count
-			name = fmt.Sprintf("%s_%d", name, count)
-		} else {
-			used[key] = 1
-		}
-		headers[i] = name
-	}
-	return headers
-}
-
-func excelNormalizeRows(rows [][]string, columnCount int) [][]string {
-	if columnCount <= 0 {
-		return [][]string{}
-	}
-	normalized := make([][]string, len(rows))
-	for i, row := range rows {
-		normalized[i] = excelPadRow(row, columnCount)
-	}
-	return normalized
-}
-
-func excelPadRow(row []string, columnCount int) []string {
-	if columnCount <= 0 {
-		return []string{}
-	}
-	padded := make([]string, columnCount)
-	for i := 0; i < columnCount; i++ {
-		if i < len(row) {
-			padded[i] = strings.TrimSpace(row[i])
-		} else {
-			padded[i] = ""
-		}
-	}
-	return padded
-}
-
-func excelBuildSampleRows(headers []string, rows [][]string, limit int) []map[string]interface{} {
-	if len(headers) == 0 || len(rows) == 0 {
-		return []map[string]interface{}{}
-	}
-
-	if limit <= 0 || limit > len(rows) {
-		limit = len(rows)
-	}
-
-	result := make([]map[string]interface{}, 0, limit)
-	for i := 0; i < limit; i++ {
-		row := rows[i]
-		entry := make(map[string]interface{}, len(headers))
-		for j, header := range headers {
-			if j < len(row) {
-				entry[header] = row[j]
-			} else {
-				entry[header] = ""
-			}
-		}
-		result = append(result, entry)
+	if req != nil {
+		result["size_bytes"] = req.Size
 	}
 	return result
 }
 
-func excelInferColumnTypes(rows [][]string, columnCount, sampleLimit int) []string {
-	if columnCount <= 0 {
-		return []string{}
-	}
-	samples := make([][]string, columnCount)
-	for _, row := range rows {
-		for col := 0; col < columnCount; col++ {
-			if col < len(row) {
-				if sampleLimit <= 0 || len(samples[col]) < sampleLimit {
-					samples[col] = append(samples[col], row[col])
-				}
-			}
+func buildSQLitePreviewFromAnalysis(meta sqlite.Metadata) map[string]interface{} {
+	tables := make([]map[string]interface{}, 0, len(meta.Tables))
+	for _, tbl := range meta.Tables {
+		row := map[string]interface{}{
+			"name":           tbl.Name,
+			"type":           tbl.Type,
+			"columns":        tbl.Columns,
+			"rows":           tbl.SampleRows,
+			"rows_truncated": tbl.RowsTruncated,
 		}
-	}
-
-	columnTypes := make([]string, columnCount)
-	for i := 0; i < columnCount; i++ {
-		columnTypes[i] = excelInferColumnType(samples[i])
-	}
-	return columnTypes
-}
-
-func excelInferColumnType(values []string) string {
-	if len(values) == 0 {
-		return "string"
-	}
-
-	var intCount, floatCount, boolCount, dateCount, nullCount int
-
-	for _, raw := range values {
-		value := strings.TrimSpace(raw)
-		if value == "" || strings.EqualFold(value, "null") || strings.EqualFold(value, "na") {
-			nullCount++
-			continue
+		if tbl.RowCount != nil {
+			row["row_count"] = *tbl.RowCount
 		}
-		if excelIsBool(value) {
-			boolCount++
-			continue
-		}
-		if excelIsInteger(value) {
-			intCount++
-			continue
-		}
-		if excelIsFloat(value) {
-			floatCount++
-			continue
-		}
-		if excelIsDate(value) {
-			dateCount++
-			continue
-		}
+		tables = append(tables, row)
 	}
 
-	nonNull := len(values) - nullCount
-	if nonNull <= 0 {
-		return "string"
+	summary := map[string]interface{}{
+		"table_count":      meta.TableCount,
+		"sampled_tables":   len(meta.Tables),
+		"tables_truncated": meta.TableCount > len(meta.Tables),
+		"rows_truncated":   hasAnyTruncatedTable(meta.Tables),
 	}
 
-	if boolCount == nonNull {
-		return "boolean"
-	}
-	if dateCount > 0 && dateCount >= nonNull/2 {
-		return "date"
-	}
-	if floatCount+intCount == nonNull {
-		if floatCount > 0 {
-			return "number"
-		}
-		return "integer"
-	}
-	return "string"
-}
-
-func excelLooksLikeHeaderRow(row []string) bool {
-	if len(row) == 0 {
-		return false
-	}
-	hasNonNumeric := false
-	for _, cell := range row {
-		value := strings.TrimSpace(cell)
-		if value == "" {
-			return false
-		}
-		if !excelIsNumeric(value) {
-			hasNonNumeric = true
-		}
-	}
-	return hasNonNumeric
-}
-
-func excelEstimateRowCount(dimensionRows, loadedRows int, hasHeader bool) int {
-	if dimensionRows <= 0 {
-		if hasHeader && loadedRows > 0 {
-			return maxInt(loadedRows-1, 0)
-		}
-		return loadedRows
-	}
-	if hasHeader && dimensionRows > 0 {
-		dimensionRows--
-	}
-	if dimensionRows < loadedRows {
-		return loadedRows
-	}
-	return dimensionRows
-}
-
-func excelTrimStringSlice(values []string) []string {
-	result := make([]string, len(values))
-	for i, v := range values {
-		result[i] = strings.TrimSpace(v)
-	}
-	return result
-}
-
-func excelIsNumeric(value string) bool {
-	if value == "" {
-		return false
-	}
-	return excelIsInteger(value) || excelIsFloat(value)
-}
-
-func excelIsInteger(value string) bool {
-	_, err := strconv.ParseInt(value, 10, 64)
-	return err == nil
-}
-
-var excelFloatPattern = regexp.MustCompile(`^[+-]?(\d+\.\d+|\d+\.|\.\d+)$`)
-
-func excelIsFloat(value string) bool {
-	if excelFloatPattern.MatchString(value) {
-		return true
-	}
-	_, err := strconv.ParseFloat(value, 64)
-	return err == nil
-}
-
-func excelIsBool(value string) bool {
-	switch strings.ToLower(value) {
-	case "true", "false", "yes", "no", "y", "n", "1", "0":
-		return true
-	default:
-		return false
+	return map[string]interface{}{
+		"tables":  tables,
+		"summary": summary,
 	}
 }
 
-var excelDateLayouts = []string{
-	time.RFC3339,
-	"2006-01-02",
-	"2006/01/02",
-	"2006-1-2",
-	"2006-01-02 15:04:05",
-	"2006/01/02 15:04:05",
-	"02-01-2006",
-	"02/01/2006",
-	"01/02/2006",
-	"1/2/2006",
-	"02-Jan-2006",
-	"02-Jan-06",
-}
-
-func excelIsDate(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, layout := range excelDateLayouts {
-		if _, err := time.Parse(layout, value); err == nil {
+func hasAnyTruncatedTable(tables []sqlite.TableInfo) bool {
+	for _, tbl := range tables {
+		if tbl.RowsTruncated {
 			return true
 		}
 	}
 	return false
 }
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]interface{} {
-	if req == nil {
-		return map[string]interface{}{
-			"limit_bytes": limit,
-		}
-	}
-	meta := map[string]interface{}{
-		"limit_bytes": limit,
-	}
-	if req.Size > 0 {
-		meta["size_bytes"] = req.Size
-	}
-	if req.ContentType != "" {
-		meta["content_type"] = req.ContentType
-	}
-	if req.Path != "" {
-		meta["path"] = req.Path
-	}
-	if req.Extension != "" {
-		meta["extension"] = req.Extension
-	}
-	return meta
-}
-
-func buildLimitExceededMessage(kind string, req *ObjectContentRequest, limit int64) string {
-	label := contentKindLabel(kind)
-	limitLabel := formatByteSize(limit)
-	if req != nil && req.Size > 0 {
-		return fmt.Sprintf("%s大小 %s 超出预览限制（%s），建议下载查看。", label, formatByteSize(req.Size), limitLabel)
-	}
-	return fmt.Sprintf("%s超过预览限制（%s），建议下载查看。", label, limitLabel)
-}
-
-func contentKindLabel(kind string) string {
-	switch strings.ToLower(kind) {
-	case "pdf":
-		return "PDF 文件"
-	case "docx":
-		return "DOCX 文件"
-	case "wps":
-		return "WPS 文档"
-	case "pptx":
-		return "PPTX 文件"
-	case "image":
-		return "图片"
-	default:
-		upper := strings.ToUpper(kind)
-		if upper == "" {
-			return "文件"
-		}
-		return upper + " 文件"
-	}
-}
-
-func formatByteSize(size int64) string {
-	if size <= 0 {
-		return "未知大小"
-	}
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-		tb = gb * 1024
-	)
-
-	var value float64
-	var unit string
-	switch {
-	case size >= tb:
-		value = float64(size) / float64(tb)
-		unit = "TB"
-	case size >= gb:
-		value = float64(size) / float64(gb)
-		unit = "GB"
-	case size >= mb:
-		value = float64(size) / float64(mb)
-		unit = "MB"
-	case size >= kb:
-		value = float64(size) / float64(kb)
-		unit = "KB"
-	default:
-		return fmt.Sprintf("%d B", size)
-	}
-	if value >= 100 {
-		return fmt.Sprintf("%.0f %s", value, unit)
-	}
-	if value >= 10 {
-		return fmt.Sprintf("%.1f %s", value, unit)
-	}
-	return fmt.Sprintf("%.2f %s", value, unit)
-}
-
-// ------------ 工具方法 ------------
-
-func defaultExtension(path string) string {
-	if idx := strings.LastIndex(path, "."); idx != -1 && idx < len(path)-1 {
-		return strings.ToLower(path[idx:])
-	}
-	return ""
-}
-
-func normalizeExtensions(exts []string) []string {
-	if len(exts) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(exts))
-	for _, ext := range exts {
-		e := strings.TrimSpace(strings.ToLower(ext))
-		if e == "" {
-			continue
-		}
-		if !strings.HasPrefix(e, ".") {
-			e = "." + e
-		}
-		result = append(result, e)
-	}
-	return result
-}
-
-func normalizeContentTypes(types []string) []string {
-	if len(types) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(types))
-	for _, ct := range types {
-		t := strings.TrimSpace(strings.ToLower(ct))
-		if t != "" {
-			result = append(result, t)
-		}
-	}
-	return result
-}
-
-// ------------ 命令处理器 ------------
 
 type commandContentHandler struct {
 	baseContentHandler

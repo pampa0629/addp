@@ -1,20 +1,11 @@
 module github.com/addp/meta
 
-go 1.23.0
+go 1.24.0
 
 toolchain go1.24.2
 
 require (
 	github.com/addp/common v0.0.0
-	github.com/addp/meta-extractor-sdk v1.0.0
-	github.com/addp/plugins/csv-extractor v0.0.0
-	github.com/addp/plugins/geojson-extractor v0.0.0
-	github.com/addp/plugins/image-extractor v0.0.0
-	github.com/addp/plugins/office-extractor v0.0.0
-	github.com/addp/plugins/pdf-extractor v0.0.0
-	github.com/addp/plugins/shapefile-extractor v0.0.0
-	github.com/addp/plugins/sqlite-extractor v0.0.0
-	github.com/addp/plugins/video-extractor v0.0.0
 	github.com/elastic/go-elasticsearch/v8 v8.11.0
 	github.com/gin-contrib/cors v1.5.0
 	github.com/gin-gonic/gin v1.11.0
@@ -24,21 +15,11 @@ require (
 	github.com/minio/minio-go/v7 v7.0.64
 	github.com/redis/go-redis/v9 v9.16.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/xuri/excelize/v2 v2.10.0
 	gorm.io/gorm v1.31.0
 )
 
-replace (
-	github.com/addp/common => ../../common
-	github.com/addp/meta-extractor-sdk => ../sdk
-	github.com/addp/plugins/csv-extractor => ../../plugins/csv-extractor
-	github.com/addp/plugins/geojson-extractor => ../../plugins/geojson-extractor
-	github.com/addp/plugins/image-extractor => ../../plugins/image-extractor
-	github.com/addp/plugins/office-extractor => ../../plugins/office-extractor
-	github.com/addp/plugins/pdf-extractor => ../../plugins/pdf-extractor
-	github.com/addp/plugins/shapefile-extractor => ../../plugins/shapefile-extractor
-	github.com/addp/plugins/sqlite-extractor => ../../plugins/sqlite-extractor
-	github.com/addp/plugins/video-extractor => ../../plugins/video-extractor
-)
+replace github.com/addp/common => ../../common
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -74,30 +55,29 @@ require (
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pgvector/pgvector-go v0.1.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
-	github.com/richardlehane/msoleps v1.0.3 // indirect
+	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/tiendc/go-deepcopy v1.7.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twpayne/go-geom v1.6.1 // indirect
 	github.com/ugorji/go/codec v1.3.0 // indirect
-	github.com/xuri/efp v0.0.0-20231025114914-d1ff6096ae53 // indirect
-	github.com/xuri/excelize/v2 v2.8.1 // indirect
-	github.com/xuri/nfp v0.0.0-20230919160717-d98342af3f05 // indirect
+	github.com/xuri/efp v0.0.1 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/arch v0.20.0 // indirect
-	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/mod v0.25.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
-	golang.org/x/tools v0.34.0 // indirect
+	golang.org/x/crypto v0.43.0 // indirect
+	golang.org/x/mod v0.28.0 // indirect
+	golang.org/x/net v0.46.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/tools v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect

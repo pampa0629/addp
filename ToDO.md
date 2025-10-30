@@ -20,10 +20,7 @@ addp系统库
 代码文件？mvt快显瓦片？
 
 transfer模块
-*，统一插件式开发方式，统一对数据类型和数据格式的支持；doing
-待核实代码
-*，解决能看到超级管理员的问题；todo
-
+*，核实各类数据类型、数据格式和存储引擎的支持情况；todo
 *，如何让传输任务，给数据管理的导入、导出使用？ todo
 
 *，kafka等的支持；todo
@@ -35,18 +32,18 @@ transfer模块
 实现；todo
 
 数据类型：OK
+*，空间数据
+geojson、shape、geocsv、spatialite、
 *，文档类
 md、docx、wps、pdf
 *，表格类
 csv、sqlite、excel
 *，视频
-mov、
-*，空间数据
-geojson、shape、
+mov、mp4
 *，图片
 jpg、png、bmp
 *，todo：
-tiff、mosaic、？？？
+tiff、mosaic、filegdb、udb、？？？
 
 *，Parquet 列式存储
 格式研究，OK

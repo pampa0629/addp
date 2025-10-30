@@ -66,4 +66,3 @@ func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewReque
 		GeometryColumns: geometryColumns,
 	}, nil
 }
-

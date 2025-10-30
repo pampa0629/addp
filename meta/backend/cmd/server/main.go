@@ -16,9 +16,6 @@ import (
 	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/internal/service"
 	"github.com/redis/go-redis/v9"
-
-	// Import plugins package to auto-register third-party extractors
-	_ "github.com/addp/meta/internal/scanner/plugins"
 )
 
 func main() {

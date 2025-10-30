@@ -11,8 +11,6 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-// 已弃用：内置插件现在通过 init() 自动注册
-// 保留此 map 仅用于向后兼容外部插件加载器
 var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *ObjectContentRegistry) (PreviewProvider, error){
 	"postgresql-table": func(repo *repository.MetadataRepository, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewPostgresPreviewProvider(repo), nil
@@ -31,7 +29,6 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	},
 }
 
-// 已弃用：为兼容性保留旧的工厂接口
 var builtinProviderFactories = map[string]builtinProviderFactory{
 	"postgresql-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
 		return NewPostgresPreviewProvider(repo), nil
@@ -41,7 +38,6 @@ var builtinProviderFactories = map[string]builtinProviderFactory{
 	},
 }
 
-// LoadPreviewPlugins 从指定目录加载插件配置。支持多个目录，使用逗号或冒号分隔。
 func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, contentRegistry *ObjectContentRegistry, dirSpec string) {
 	if registry == nil || metadataRepo == nil {
 		return
@@ -116,7 +112,6 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 
 	switch cfg.pluginType() {
 	case "builtin":
-		// 优先使用新的工厂接口（支持 content registry）
 		factoryWithContent, ok := builtinProviderFactoriesWithContent[strings.TrimSpace(cfg.Builtin)]
 		if ok {
 			p, err := factoryWithContent(metadataRepo, contentRegistry)
@@ -126,7 +121,6 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 			}
 			provider = wrapProviderForOverrides(p, cfg)
 		} else {
-			// 回退到旧接口（不支持 content registry）
 			factory, ok := builtinProviderFactories[strings.TrimSpace(cfg.Builtin)]
 			if !ok {
 				logger.L().Warn("数据预览: 未知的内置插件", "config", path, "builtin", cfg.Builtin)
@@ -155,7 +149,6 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 	logger.L().Info("数据预览: 注册插件成功", "config", path, "plugin", provider.Name(), "priority", provider.Priority())
 }
 
-// RegisterBuiltinPluginFactory 允许扩展内置插件工厂。
 func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -168,7 +161,6 @@ func RegisterBuiltinPluginFactory(name string, factory builtinProviderFactory) e
 	return nil
 }
 
-// ParsePluginDirSpec 将插件目录配置解析为切片，用于对外调用。
 func ParsePluginDirSpec(spec string) []string {
 	return splitDirectories(spec)
 }

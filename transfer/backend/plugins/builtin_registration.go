@@ -1,0 +1,25 @@
+package plugins
+
+import (
+	"github.com/addp/transfer/plugins/readers"
+	"github.com/addp/transfer/plugins/writers"
+)
+
+func init() {
+	// JDBC 系列（兼容 PostgreSQL/MySQL）
+	MustRegisterConnector("jdbc", readers.NewJDBCReader, writers.NewJDBCWriter)
+	MustRegisterConnector("postgresql", readers.NewJDBCReader, writers.NewJDBCWriter)
+	MustRegisterConnector("mysql", readers.NewJDBCReader, writers.NewJDBCWriter)
+
+	// 空间数据格式
+	MustRegisterConnector("shapefile", readers.NewShapefileReader, writers.NewShapefileWriter)
+	MustRegisterConnector("geopackage", readers.NewGeoPackageReader, writers.NewGeoPackageWriter)
+	MustRegisterConnector("geojson", readers.NewGeoJSONReader, writers.NewGeoJSONWriter)
+
+	// 表格数据格式
+	MustRegisterConnector("csv", readers.NewCSVReader, writers.NewCSVWriter)
+
+	// 对象存储
+	MustRegisterConnector("s3", nil, writers.NewS3Writer)
+	MustRegisterConnector("minio", nil, writers.NewS3Writer)
+}

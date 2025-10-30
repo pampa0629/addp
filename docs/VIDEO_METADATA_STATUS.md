@@ -8,7 +8,7 @@
 
 ### 1. 视频元数据提取器（插件）
 
-**位置**: [plugins/video-extractor/video_extractor.go](../plugins/video-extractor/video_extractor.go)
+**位置**: [meta/backend/internal/plugins/videoextractor/video_extractor.go](../meta/backend/internal/plugins/videoextractor/video_extractor.go)
 
 **功能**：可以提取以下元数据
 - ✅ `duration`（视频时长，秒）
@@ -33,21 +33,20 @@
 - 读取前64KB用于格式识别
 - 针对不同容器格式使用不同的解析逻辑
 
-### 2. SDK类型系统
+### 2. 元数据存储
 
-**位置**: [meta/sdk/extractor_sdk.go](../meta/sdk/extractor_sdk.go)
+**架构**: 直接使用 JSONB 存储元数据
 
-- ✅ `TypedMetadata` 接口定义
-- ✅ `VideoMetadata` 结构体（在插件中）
-- ✅ 自动序列化为JSON格式（`_type`, `_schema`, `data`）
-- ✅ 类型注册机制（`RegisterMetadataType()`）
+- ✅ `VideoMetadata` 结构体（在插件中定义）
+- ✅ 自动序列化为JSON格式存储到 `meta_item.attributes`
+- ✅ 扁平化存储，无需类型注册机制
 
 ### 3. Meta Backend集成
 
 **位置**: [meta/backend/internal/scanner/plugins/plugins.go](../meta/backend/internal/scanner/plugins/plugins.go)
 
 - ✅ 视频提取器已注册到Meta Backend
-- ✅ 使用SDK适配器桥接插件和内部类型
+- ✅ 直接实现 `scanner.MetadataExtractor` 接口
 - ✅ Meta Backend启动时自动加载视频提取器
 
 ### 4. 数据库表结构
@@ -263,8 +262,7 @@ docker exec addp-postgres psql -U addp -d addp -c \
 
 - [METADATA_STORAGE.md](./METADATA_STORAGE.md) - 元数据存储架构详解
 - [THIRD_PARTY_METADATA_TYPES.md](./THIRD_PARTY_METADATA_TYPES.md) - 第三方元数据类型扩展
-- [plugins/video-extractor/README.md](../plugins/video-extractor/README.md) - 视频提取器使用文档
-- [plugins/video-extractor/TEST.md](../plugins/video-extractor/TEST.md) - 测试指南
+- [meta/backend/internal/plugins/videoextractor/video_extractor.go](../meta/backend/internal/plugins/videoextractor/video_extractor.go) - 视频提取器实现
 
 ## 🚀 下一步行动
 

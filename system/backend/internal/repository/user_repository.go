@@ -43,7 +43,11 @@ func (r *UserRepository) List(offset, limit int) ([]models.User, error) {
 
 func (r *UserRepository) ListByTenant(tenantID uint, offset, limit int) ([]models.User, error) {
 	var users []models.User
-	err := r.db.Where("tenant_id = ?", tenantID).Offset(offset).Limit(limit).Find(&users).Error
+	// 只返回指定租户的用户，排除超级管理员
+	err := r.db.Where("tenant_id = ? AND user_type != ?", tenantID, models.UserTypeSuperAdmin).
+		Offset(offset).
+		Limit(limit).
+		Find(&users).Error
 	return users, err
 }
 

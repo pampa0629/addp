@@ -101,7 +101,66 @@ if [ -d ".dev-pids" ]; then
     fi
   fi
 
-  # 清理 PID 文件
+fi
+
+# 停止前端服务
+echo -e "${YELLOW}停止前端服务...${NC}"
+
+if [ -d ".dev-pids" ]; then
+  if [ -f ".dev-pids/portal-frontend.pid" ]; then
+    PORTAL_FE_PID=$(cat .dev-pids/portal-frontend.pid)
+    if ps -p $PORTAL_FE_PID > /dev/null 2>&1; then
+      kill $PORTAL_FE_PID 2>/dev/null || true
+      echo "✓ Portal Frontend 已停止 (PID: $PORTAL_FE_PID)"
+    fi
+  fi
+
+  if [ -f ".dev-pids/system-frontend.pid" ]; then
+    SYSTEM_FE_PID=$(cat .dev-pids/system-frontend.pid)
+    if ps -p $SYSTEM_FE_PID > /dev/null 2>&1; then
+      kill $SYSTEM_FE_PID 2>/dev/null || true
+      echo "✓ System Frontend 已停止 (PID: $SYSTEM_FE_PID)"
+    fi
+  fi
+
+  if [ -f ".dev-pids/manager-frontend.pid" ]; then
+    MANAGER_FE_PID=$(cat .dev-pids/manager-frontend.pid)
+    if ps -p $MANAGER_FE_PID > /dev/null 2>&1; then
+      kill $MANAGER_FE_PID 2>/dev/null || true
+      echo "✓ Manager Frontend 已停止 (PID: $MANAGER_FE_PID)"
+    fi
+  fi
+
+  if [ -f ".dev-pids/meta-frontend.pid" ]; then
+    META_FE_PID=$(cat .dev-pids/meta-frontend.pid)
+    if ps -p $META_FE_PID > /dev/null 2>&1; then
+      kill $META_FE_PID 2>/dev/null || true
+      echo "✓ Meta Frontend 已停止 (PID: $META_FE_PID)"
+    fi
+  fi
+
+  if [ -f ".dev-pids/transfer-frontend.pid" ]; then
+    TRANSFER_FE_PID=$(cat .dev-pids/transfer-frontend.pid)
+    if ps -p $TRANSFER_FE_PID > /dev/null 2>&1; then
+      kill $TRANSFER_FE_PID 2>/dev/null || true
+      echo "✓ Transfer Frontend 已停止 (PID: $TRANSFER_FE_PID)"
+    fi
+  fi
+fi
+
+# 清理任何残留的 vite 进程
+pkill -f "vite" 2>/dev/null || true
+
+# 等待 vite 进程退出
+for i in {1..10}; do
+  if ! pgrep -f "vite" > /dev/null 2>&1; then
+    break
+  fi
+  sleep 0.5
+done
+
+# 清理 PID 文件
+if [ -d ".dev-pids" ]; then
   rm -rf .dev-pids
 fi
 
@@ -149,19 +208,6 @@ done
 pkill -f "/go-build.*/main$" 2>/dev/null || true
 
 echo "✓ 后端服务已停止"
-
-# 停止 npm 进程
-echo -e "${YELLOW}停止前端服务...${NC}"
-pkill -f "vite"
-
-# 等待 vite 进程退出
-for i in {1..10}; do
-  if ! pgrep -f "vite" > /dev/null 2>&1; then
-    break
-  fi
-  sleep 0.5
-done
-echo "✓ 前端服务已停止"
 
 # 停止 Docker 基础设施
 # echo -e "${YELLOW}停止基础设施...${NC}"

@@ -209,6 +209,32 @@ var builtinContentFactories = map[string]objectContentBuiltinFactory{
 	},
 }
 
+func normalizeExtensions(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, ext := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(ext))
+		if trimmed == "" {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, ".") {
+			trimmed = "." + trimmed
+		}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func normalizeContentTypes(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	for _, ct := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(ct))
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return normalized
+}
+
 func normalizeExtensionsOrDefault(values, fallback []string) []string {
 	if len(values) > 0 {
 		return normalizeExtensions(values)

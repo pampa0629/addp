@@ -7,8 +7,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common/frontend')
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
     }
+  },
+  optimizeDeps: {
+    exclude: []
   },
   server: {
     port: 5173,
@@ -16,7 +19,8 @@ export default defineConfig({
     fs: {
       allow: [
         resolve(__dirname, '..'),
-        resolve(__dirname, '../../common')
+        resolve(__dirname, '../../common'),
+        resolve(__dirname, '../../common-frontend')
       ]
     },
     proxy: {

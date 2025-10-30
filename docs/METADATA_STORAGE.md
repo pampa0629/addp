@@ -462,5 +462,5 @@ metadata.AddTypedMetadata("audio_metadata", audioMeta)
 
 - [THIRD_PARTY_METADATA_TYPES.md](./THIRD_PARTY_METADATA_TYPES.md) - 第三方元数据类型扩展指南
 - [METADATA_TYPES_ARCHITECTURE.md](./METADATA_TYPES_ARCHITECTURE.md) - 元数据类型架构详解
-- [plugins/video-extractor/](../plugins/video-extractor/) - 视频元数据提取器示例
-- [plugins/shapefile-extractor/](../plugins/shapefile-extractor/) - Shapefile元数据提取器示例
+- [meta/backend/internal/plugins/videoextractor/](../meta/backend/internal/plugins/videoextractor/) - 视频元数据提取器示例
+- [meta/backend/internal/scanner/extractors/shapefile_extractor.go](../meta/backend/internal/scanner/extractors/shapefile_extractor.go) - Shapefile元数据提取器示例

@@ -15,14 +15,21 @@ npm install file:../../common-frontend
 
 ```vue
 <script setup>
-import { ShapefilePreview, GeoJsonPreview, TablePreview } from '@addp/common-frontend'
+import { ShapefilePreview, GeoJsonPreview, TablePreview, StorageEngineForm } from '@addp/common-frontend'
 import { formatFileSize, detectFormatByExtension } from '@addp/common-frontend'
 
 const previewData = ref(null)
+const resourceForm = ref({
+  resource_type: 'postgresql',
+  name: '',
+  connection_info: {}
+})
 </script>
 
 <template>
   <ShapefilePreview :data="previewData" />
+
+  <StorageEngineForm v-model="resourceForm" />
 </template>
 ```
 
@@ -58,6 +65,10 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 - **GeoJsonPreview** - GeoJSON 文件预览（带地图）
 - **TablePreview** - 表格数据预览
 - **ImagePreview** - 图片预览
+
+### 表单组件
+
+- **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）
 
 ### 地图组件
 

@@ -55,6 +55,10 @@ tmp/
 temp/
 *.tmp
 
+# Cache directories
+.cache/
+**/.cache/
+
 # Vue/Vite
 .vite/
 **/.vite/

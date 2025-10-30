@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+// Helper function for tests
+func stringPtr(s string) *string {
+	return &s
+}
+
 func TestSchemaValidate(t *testing.T) {
 	tests := []struct {
 		name    string

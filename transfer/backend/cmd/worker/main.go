@@ -12,7 +12,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/config"
-	"github.com/addp/transfer/internal/connector"
+	"github.com/addp/transfer/plugins"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/internal/service"
 	_ "github.com/addp/transfer/internal/transform"
@@ -39,7 +39,7 @@ func main() {
 	registry := pipeline.NewConnectorRegistry()
 
 	// 注册所有连接器
-	if err := connector.RegisterAllConnectors(registry); err != nil {
+	if err := plugins.RegisterAllConnectors(registry); err != nil {
 		log.Fatalf("注册连接器失败: %v", err)
 	}
 	log.Printf("✅ 已注册连接器 - Readers: %v, Writers: %v",
