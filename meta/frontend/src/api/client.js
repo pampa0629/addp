@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const client = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8082' : '',
+  baseURL: import.meta.env.DEV ? 'http://localhost:8082' : '/api',
   timeout: 30000
 })
 

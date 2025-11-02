@@ -447,9 +447,25 @@ if [ ! -f "$ENV_FILE" ]; then
     ENCRYPTION_KEY=$(openssl rand -base64 32)
     sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$ENV_FILE"
 
-    # Generate POSTGRES_PASSWORD (16 bytes base64)
+    # Generate INTERNAL_API_KEY (32 bytes base64)
+    INTERNAL_API_KEY=$(openssl rand -base64 32)
+    sed -i.bak "s|^INTERNAL_API_KEY=.*|INTERNAL_API_KEY=${INTERNAL_API_KEY}|" "$ENV_FILE"
+
+    # Generate POSTGRES_PASSWORD (16 characters alphanumeric)
     POSTGRES_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
     sed -i.bak "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" "$ENV_FILE"
+
+    # Generate REDIS_PASSWORD (16 characters alphanumeric)
+    REDIS_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
+    sed -i.bak "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|" "$ENV_FILE"
+
+    # Generate MINIO_ROOT_PASSWORD (16 characters alphanumeric)
+    MINIO_ROOT_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
+    sed -i.bak "s|^MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}|" "$ENV_FILE"
+
+    # Generate BUSINESS_MINIO_SECRET_KEY (16 characters alphanumeric)
+    BUSINESS_MINIO_SECRET_KEY=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
+    sed -i.bak "s|^BUSINESS_MINIO_SECRET_KEY=.*|BUSINESS_MINIO_SECRET_KEY=${BUSINESS_MINIO_SECRET_KEY}|" "$ENV_FILE"
 
     # Set REGISTRY
     sed -i.bak "s|^REGISTRY=.*|REGISTRY=${REGISTRY}|" "$ENV_FILE"
@@ -462,7 +478,11 @@ if [ ! -f "$ENV_FILE" ]; then
     echo -e "${BLUE}Important:${NC} Save these credentials securely:"
     echo "  JWT_SECRET: ${JWT_SECRET:0:20}..."
     echo "  ENCRYPTION_KEY: ${ENCRYPTION_KEY:0:20}..."
+    echo "  INTERNAL_API_KEY: ${INTERNAL_API_KEY:0:20}..."
     echo "  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}"
+    echo "  REDIS_PASSWORD: ${REDIS_PASSWORD}"
+    echo "  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}"
+    echo "  BUSINESS_MINIO_SECRET_KEY: ${BUSINESS_MINIO_SECRET_KEY}"
 fi
 
 # =============================================================================

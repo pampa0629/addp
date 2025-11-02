@@ -204,11 +204,14 @@ const currentModule = ref('home')
 const iframeUrl = ref('')
 const isCollapsed = ref(false)
 
+// 生产环境使用 Nginx 路由的相对路径
+// 开发环境使用 localhost 端口
+const isDevelopment = import.meta.env.DEV
 const moduleUrls = {
-  system: 'http://localhost:5173',
-  manager: 'http://localhost:5174',
-  meta: 'http://localhost:5175',
-  transfer: 'http://localhost:5176'
+  system: isDevelopment ? 'http://localhost:5173' : '/system',
+  manager: isDevelopment ? 'http://localhost:5174' : '/manager',
+  meta: isDevelopment ? 'http://localhost:5175' : '/meta',
+  transfer: isDevelopment ? 'http://localhost:5176' : '/transfer'
 }
 
 onMounted(async () => {

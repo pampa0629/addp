@@ -59,6 +59,9 @@ temp/
 .cache/
 **/.cache/
 
+# Build cache (smart build system)
+.build-cache/
+
 # Vue/Vite
 .vite/
 **/.vite/

@@ -1,7 +1,7 @@
 ADDP Deployment Package
-Generated: 2025年11月 2日 星期日 11时55分06秒 HKT
+Generated: 2025年11月 2日 星期日 13时30分31秒 HKT
 Registry: localhost:5001
 Builder: pampa
-Host: localhost
+Host: bogon
 Git Branch: main
-Git Commit: 19a7eeb
+Git Commit: 1c840b1
