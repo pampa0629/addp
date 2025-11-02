@@ -255,3 +255,21 @@ restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
 docs: ## 生成 API 文档
 	@echo "$(GREEN)生成 API 文档...$(NC)"
 	@echo "$(YELLOW)TODO: 实现 API 文档生成$(NC)"
+
+# ==================== 生产环境命令 ====================
+
+prod-start: ## 启动生产环境（一键启动）
+	@./scripts/start-prod.sh
+
+prod-stop: ## 停止生产环境
+	@./scripts/stop-prod.sh
+
+prod-restart: ## 重启生产环境
+	@./scripts/stop-prod.sh
+	@./scripts/start-prod.sh
+
+prod-logs: ## 查看生产环境日志
+	@docker compose -f docker-compose.prod.yml logs -f
+
+prod-status: ## 查看生产环境状态
+	@docker compose -f docker-compose.prod.yml ps

@@ -1,0 +1,14 @@
+# Transfer Worker Dockerfile
+# Uses precompiled binary from bin/transfer-worker
+
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install ca-certificates for HTTPS requests
+RUN apk add --no-cache ca-certificates
+
+# Copy precompiled binary
+COPY ../../bin/transfer-worker ./worker
+
+CMD ["./worker"]

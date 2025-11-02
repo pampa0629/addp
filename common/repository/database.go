@@ -46,6 +46,15 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Create schema if it doesn't exist and schema is specified
+	if cfg.Schema != "" && cfg.Schema != "public" && cfg.Schema != "system" {
+		createSchemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.Schema)
+		if err := db.Exec(createSchemaSQL).Error; err != nil {
+			return nil, fmt.Errorf("failed to create schema %s: %w", cfg.Schema, err)
+		}
+		log.Printf("✅ Ensured schema exists: %s", cfg.Schema)
+	}
+
 	log.Printf("✅ Connected to database: %s@%s:%s/%s (schema: %s)",
 		cfg.User, cfg.Host, cfg.Port, cfg.DBName, cfg.Schema)
 

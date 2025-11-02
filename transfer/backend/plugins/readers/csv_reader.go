@@ -156,7 +156,6 @@ func (r *CSVReader) convertSchema(commonSchema *format.Schema) *pipeline.Schema 
 			Name:     field.Name,
 			Type:     string(field.Type),
 			Nullable: field.Nullable,
-			Comment:  field.Comment,
 		}
 	}
 

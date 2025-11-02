@@ -249,7 +249,8 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 	}
 
 	if len(cached) == 0 {
-		return nil, fmt.Errorf("no resource cache available; ensure System 服务可用并配置 INTERNAL_API_KEY")
+		s.log.Info("当前没有可用的资源", "tenant_id", tenantID)
+		return []*commonModels.Resource{}, nil // 返回空列表而不是错误
 	}
 
 	var resources []*commonModels.Resource

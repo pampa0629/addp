@@ -1,0 +1,15 @@
+FROM localhost:5001/alpine:latest
+
+# Automatic architecture detection
+ARG TARGETARCH
+
+WORKDIR /app
+
+# 复制本地编译好的二进制文件（自动选择正确架构）
+COPY gateway/server-${TARGETARCH} ./server
+
+# 暴露端口
+EXPOSE 8000
+
+# 运行
+CMD ["./server"]

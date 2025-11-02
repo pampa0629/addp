@@ -60,20 +60,25 @@ func AutoMigrate(db *gorm.DB) error {
 
 // InitSuperAdmin 初始化超级管理员用户
 func InitSuperAdmin(db *gorm.DB) error {
+	// 从环境变量读取超级管理员配置
+	adminUsername := getEnv("SUPER_ADMIN_USERNAME", "SuperAdmin")
+	adminPassword := getEnv("SUPER_ADMIN_PASSWORD", "20251001#SuperAdmin")
+	adminEmail := getEnv("SUPER_ADMIN_EMAIL", "superadmin@addp.com")
+
 	// 检查SuperAdmin用户是否存在
 	var user models.User
-	result := db.Where("username = ?", "SuperAdmin").First(&user)
+	result := db.Where("username = ?", adminUsername).First(&user)
 
 	if result.Error == gorm.ErrRecordNotFound {
 		// 创建SuperAdmin用户
-		passwordHash, err := utils.HashPassword("20251001#SuperAdmin")
+		passwordHash, err := utils.HashPassword(adminPassword)
 		if err != nil {
 			return err
 		}
 
 		superAdminUser := models.User{
-			Username:     "SuperAdmin",
-			Email:        "superadmin@addp.com",
+			Username:     adminUsername,
+			Email:        adminEmail,
 			PasswordHash: passwordHash,
 			FullName:     "系统超级管理员",
 			IsActive:     true,
@@ -86,7 +91,7 @@ func InitSuperAdmin(db *gorm.DB) error {
 			return err
 		}
 
-		log.Println("超级管理员已创建: SuperAdmin / 20251001#SuperAdmin")
+		log.Printf("✅ 超级管理员已创建: %s / %s\n", adminUsername, adminPassword)
 		return nil
 	}
 

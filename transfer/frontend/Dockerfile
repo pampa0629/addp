@@ -3,14 +3,16 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# 复制 package 文件
-COPY package*.json ./
+# 复制 common-frontend（依赖）
+COPY common-frontend /app/common-frontend
 
-# 安装依赖
+# 复制 transfer frontend
+COPY transfer/frontend/package*.json ./transfer/frontend/
+WORKDIR /app/transfer/frontend
 RUN npm install
 
 # 复制源代码
-COPY . .
+COPY transfer/frontend/ ./
 
 # 构建
 RUN npm run build
@@ -19,10 +21,10 @@ RUN npm run build
 FROM nginx:alpine
 
 # 复制构建产物
-COPY --from=builder /app/dist /usr/share/nginx/html/transfer
+COPY --from=builder /app/transfer/frontend/dist /usr/share/nginx/html/transfer
 
 # 复制 nginx 配置
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY transfer/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

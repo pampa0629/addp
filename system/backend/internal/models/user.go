@@ -15,8 +15,8 @@ const (
 
 type User struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
-	Username     string    `gorm:"uniqueIndex;not null" json:"username"`
-	Email        string    `gorm:"uniqueIndex" json:"email"`
+	Username     string    `gorm:"not null;unique" json:"username"`
+	Email        string    `gorm:"unique" json:"email"`
 	PasswordHash string    `gorm:"not null" json:"-"`
 	FullName     string    `json:"full_name"`
 	IsActive     bool      `gorm:"default:true" json:"is_active"`

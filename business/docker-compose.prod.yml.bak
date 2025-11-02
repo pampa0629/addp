@@ -1,0 +1,96 @@
+# Business Infrastructure - Production Deployment
+# 业务基础设施 - 生产环境部署配置
+#
+# 此配置文件用于在服务器上部署业务基础设施（PostgreSQL + MinIO）
+# 与 ADDP 系统基础设施完全独立，用于存储用户业务数据
+#
+# 使用方法:
+#   1. 复制到服务器: scp business/docker-compose.prod.yml server:/opt/addp-business/
+#   2. 配置环境变量: cp .env.example .env && vim .env
+#   3. 启动服务: docker-compose -f docker-compose.prod.yml up -d
+#
+# 注意:
+#   - Business 基础设施应该在 ADDP 系统之前启动
+#   - 端口配置避免与 ADDP 系统冲突 (PostgreSQL: 5433, MinIO: 9002-9003)
+
+services:
+  # ==================== PostgreSQL - 业务数据库 ====================
+  # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
+  postgres:
+    image: postgres:15-alpine
+    container_name: business-postgres
+    environment:
+      POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
+      POSTGRES_PASSWORD: ${BUSINESS_POSTGRES_PASSWORD:-business_password}
+      POSTGRES_DB: ${BUSINESS_POSTGRES_DB:-business}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - business_postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "${BUSINESS_POSTGRES_PORT:-5433}:5432"
+    networks:
+      - business-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BUSINESS_POSTGRES_USER:-business}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ==================== MinIO - 业务对象存储 ====================
+  # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
+  minio:
+    image: minio/minio:latest
+    container_name: business-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${BUSINESS_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${BUSINESS_MINIO_ROOT_PASSWORD:-minioadmin}
+      # 性能优化配置
+      MINIO_STORAGE_CLASS_STANDARD: EC:0
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "${BUSINESS_MINIO_API_PORT:-9002}:9000"     # API 端口（避免与 ADDP 系统 MinIO 冲突）
+      - "${BUSINESS_MINIO_CONSOLE_PORT:-9003}:9001" # 控制台端口
+    volumes:
+      - business_minio_data:/data
+    networks:
+      - business-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+# ==================== 数据卷 ====================
+volumes:
+  business_postgres_data:
+    driver: local
+    name: business_postgres_data
+  business_minio_data:
+    driver: local
+    name: business_minio_data
+
+# ==================== 网络 ====================
+networks:
+  business-network:
+    driver: bridge
+    name: business-network

@@ -1,0 +1,459 @@
+#!/bin/bash
+# =============================================================================
+# ADDP Server Setup Script
+# =============================================================================
+# Description: Initialize server environment and deploy ADDP services
+# Usage: ./3-server-setup.sh [OPTIONS]
+# Options:
+#   --registry REGISTRY_URL   Registry URL (default: detect from docker-compose)
+#   --skip-docker-install     Skip Docker installation check
+#   --skip-image-pull         Skip pulling images from registry
+# =============================================================================
+
+set -e
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Default values
+REGISTRY=""
+SKIP_DOCKER_INSTALL=false
+SKIP_IMAGE_PULL=false
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="$DEPLOY_DIR/docker-compose.prod.yml"
+ENV_FILE="$DEPLOY_DIR/.env.prod"
+ENV_EXAMPLE="$DEPLOY_DIR/.env.prod.example"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --registry)
+            REGISTRY="$2"
+            shift 2
+            ;;
+        --skip-docker-install)
+            SKIP_DOCKER_INSTALL=true
+            shift
+            ;;
+        --skip-image-pull)
+            SKIP_IMAGE_PULL=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            exit 1
+            ;;
+    esac
+done
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}ADDP Server Setup${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+echo -e "Deploy Directory: ${GREEN}${DEPLOY_DIR}${NC}"
+echo -e "Compose File: ${GREEN}${COMPOSE_FILE}${NC}"
+echo ""
+
+# =============================================================================
+# Step 1: Check Prerequisites
+# =============================================================================
+
+echo -e "${YELLOW}Step 1: Checking prerequisites...${NC}"
+
+# Check if we're in the right directory
+if [ ! -f "$COMPOSE_FILE" ]; then
+    echo -e "${RED}Error: docker-compose.prod.yml not found${NC}"
+    echo "Please run this script from the deployment directory"
+    exit 1
+fi
+
+# Detect OS
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        VER=$VERSION_ID
+    elif type lsb_release >/dev/null 2>&1; then
+        OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
+        VER=$(lsb_release -sr)
+    elif [ -f /etc/redhat-release ]; then
+        OS="centos"
+    else
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    fi
+    echo "$OS"
+}
+
+OS=$(detect_os)
+echo -e "Detected OS: ${GREEN}${OS}${NC}"
+
+# =============================================================================
+# Step 2: Install Docker and Docker Compose
+# =============================================================================
+
+if [ "$SKIP_DOCKER_INSTALL" = false ]; then
+    echo ""
+    echo -e "${YELLOW}Step 2: Installing Docker and Docker Compose...${NC}"
+
+    # Check if Docker is installed
+    if ! command -v docker &> /dev/null; then
+        echo -e "${YELLOW}Docker not found, installing...${NC}"
+
+        case "$OS" in
+            ubuntu|debian)
+                sudo apt-get update
+                sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+                curl -fsSL https://get.docker.com -o get-docker.sh
+                sudo sh get-docker.sh
+                sudo usermod -aG docker $USER
+                rm get-docker.sh
+                ;;
+            centos|rhel)
+                sudo yum install -y yum-utils
+                sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+                sudo yum install -y docker-ce docker-ce-cli containerd.io
+                sudo systemctl start docker
+                sudo systemctl enable docker
+                sudo usermod -aG docker $USER
+                ;;
+            darwin)
+                echo -e "${RED}Please install Docker Desktop for Mac manually${NC}"
+                echo "https://docs.docker.com/desktop/install/mac-install/"
+                exit 1
+                ;;
+            *)
+                echo -e "${RED}Unsupported OS: $OS${NC}"
+                echo "Please install Docker manually"
+                exit 1
+                ;;
+        esac
+
+        echo -e "${GREEN}✓ Docker installed${NC}"
+    else
+        echo -e "${GREEN}✓ Docker already installed${NC}"
+        docker --version
+    fi
+
+    # Check if Docker Compose is installed
+    if ! docker compose version &> /dev/null; then
+        echo -e "${YELLOW}Docker Compose plugin not found, installing...${NC}"
+
+        case "$OS" in
+            ubuntu|debian|centos|rhel)
+                # Docker Compose plugin should come with Docker
+                # If not, install it manually
+                COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+                sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                sudo chmod +x /usr/local/bin/docker-compose
+                ;;
+            darwin)
+                echo -e "${RED}Please install Docker Desktop for Mac${NC}"
+                exit 1
+                ;;
+        esac
+
+        echo -e "${GREEN}✓ Docker Compose installed${NC}"
+    else
+        echo -e "${GREEN}✓ Docker Compose already installed${NC}"
+        docker compose version
+    fi
+
+    # Start Docker service
+    if [ "$OS" != "darwin" ]; then
+        sudo systemctl start docker
+        sudo systemctl enable docker
+    fi
+
+else
+    echo ""
+    echo -e "${YELLOW}Step 2: Skipping Docker installation (--skip-docker-install)${NC}"
+fi
+
+# =============================================================================
+# Step 3: Configure Docker Registry Access
+# =============================================================================
+
+echo ""
+echo -e "${YELLOW}Step 3: Configuring Docker registry access...${NC}"
+
+# Detect registry from docker-compose.yml if not specified
+if [ -z "$REGISTRY" ]; then
+    REGISTRY=$(grep -oP 'image:\s*\K[^/]+(?=/)' "$COMPOSE_FILE" | head -1 || echo "")
+    if [ -z "$REGISTRY" ]; then
+        echo -e "${YELLOW}Warning: Could not detect registry from docker-compose.yml${NC}"
+        read -p "Enter registry URL (e.g., registry.example.com:5000): " REGISTRY
+    fi
+fi
+
+echo -e "Registry: ${GREEN}${REGISTRY}${NC}"
+
+# Configure insecure registry if using HTTP
+if [[ ! "$REGISTRY" =~ ^https:// ]]; then
+    echo -e "${YELLOW}Configuring insecure registry for HTTP access...${NC}"
+
+    DAEMON_JSON="/etc/docker/daemon.json"
+
+    if [ "$OS" = "darwin" ]; then
+        echo -e "${YELLOW}On macOS, please configure insecure registry in Docker Desktop:${NC}"
+        echo "Docker Desktop → Settings → Docker Engine"
+        echo "Add: \"insecure-registries\": [\"${REGISTRY}\"]"
+        read -p "Press Enter after configuring..."
+    else
+        # Create or update daemon.json
+        if [ -f "$DAEMON_JSON" ]; then
+            # Backup existing config
+            sudo cp "$DAEMON_JSON" "${DAEMON_JSON}.bak"
+
+            # Add insecure registry using jq if available, otherwise use python
+            if command -v jq &> /dev/null; then
+                sudo jq ". + {\"insecure-registries\": ([.\"insecure-registries\"[]?, \"$REGISTRY\"] | unique)}" "$DAEMON_JSON" > /tmp/daemon.json
+                sudo mv /tmp/daemon.json "$DAEMON_JSON"
+            else
+                # Fallback: use python
+                python3 << EOF
+import json
+with open('$DAEMON_JSON', 'r') as f:
+    config = json.load(f)
+if 'insecure-registries' not in config:
+    config['insecure-registries'] = []
+if '$REGISTRY' not in config['insecure-registries']:
+    config['insecure-registries'].append('$REGISTRY')
+with open('/tmp/daemon.json', 'w') as f:
+    json.dump(config, f, indent=2)
+EOF
+                sudo mv /tmp/daemon.json "$DAEMON_JSON"
+            fi
+        else
+            # Create new daemon.json
+            echo "{\"insecure-registries\": [\"$REGISTRY\"]}" | sudo tee "$DAEMON_JSON" > /dev/null
+        fi
+
+        # Restart Docker
+        sudo systemctl restart docker
+        sleep 3
+
+        echo -e "${GREEN}✓ Docker registry configured${NC}"
+    fi
+else
+    echo -e "${GREEN}✓ Using secure registry (HTTPS)${NC}"
+fi
+
+# Test registry connectivity
+echo -e "${YELLOW}Testing registry connectivity...${NC}"
+if curl -sf "http://${REGISTRY}/v2/" > /dev/null 2>&1 || curl -sf "https://${REGISTRY}/v2/" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Registry is accessible${NC}"
+else
+    echo -e "${RED}Warning: Cannot reach registry at ${REGISTRY}${NC}"
+    echo "Please ensure:"
+    echo "1. Registry is running"
+    echo "2. Network connectivity is available"
+    echo "3. Firewall allows access"
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+# =============================================================================
+# Step 4: Generate Environment Configuration
+# =============================================================================
+
+echo ""
+echo -e "${YELLOW}Step 4: Generating environment configuration...${NC}"
+
+if [ -f "$ENV_FILE" ]; then
+    echo -e "${YELLOW}Warning: .env.prod already exists${NC}"
+    read -p "Overwrite? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}✓ Using existing .env.prod${NC}"
+    else
+        rm "$ENV_FILE"
+    fi
+fi
+
+if [ ! -f "$ENV_FILE" ]; then
+    if [ ! -f "$ENV_EXAMPLE" ]; then
+        echo -e "${RED}Error: .env.prod.example not found${NC}"
+        exit 1
+    fi
+
+    # Copy template
+    cp "$ENV_EXAMPLE" "$ENV_FILE"
+
+    echo -e "${YELLOW}Generating secure keys...${NC}"
+
+    # Generate JWT_SECRET (32 bytes base64)
+    JWT_SECRET=$(openssl rand -base64 32)
+    sed -i.bak "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" "$ENV_FILE"
+
+    # Generate ENCRYPTION_KEY (32 bytes base64)
+    ENCRYPTION_KEY=$(openssl rand -base64 32)
+    sed -i.bak "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" "$ENV_FILE"
+
+    # Generate POSTGRES_PASSWORD (16 bytes base64)
+    POSTGRES_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
+    sed -i.bak "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" "$ENV_FILE"
+
+    # Set REGISTRY
+    sed -i.bak "s|^REGISTRY=.*|REGISTRY=${REGISTRY}|" "$ENV_FILE"
+
+    # Clean up backup files
+    rm -f "$ENV_FILE.bak"
+
+    echo -e "${GREEN}✓ Generated .env.prod with secure keys${NC}"
+    echo ""
+    echo -e "${BLUE}Important:${NC} Save these credentials securely:"
+    echo "  JWT_SECRET: ${JWT_SECRET:0:20}..."
+    echo "  ENCRYPTION_KEY: ${ENCRYPTION_KEY:0:20}..."
+    echo "  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}"
+fi
+
+# =============================================================================
+# Step 5: Build Custom PostgreSQL Image
+# =============================================================================
+
+echo ""
+echo -e "${YELLOW}Step 5: Building custom PostgreSQL image...${NC}"
+
+if [ -d "$DEPLOY_DIR/postgres" ] && [ -f "$DEPLOY_DIR/postgres/Dockerfile" ]; then
+    echo -e "${YELLOW}Building addp-postgres image with init scripts...${NC}"
+
+    cd "$DEPLOY_DIR/postgres"
+    docker build -t addp-postgres:15-alpine .
+
+    echo -e "${GREEN}✓ PostgreSQL image built${NC}"
+else
+    echo -e "${YELLOW}Warning: PostgreSQL Dockerfile not found${NC}"
+    echo "Using standard postgres:15-alpine image"
+fi
+
+cd "$DEPLOY_DIR"
+
+# =============================================================================
+# Step 6: Pull Service Images
+# =============================================================================
+
+if [ "$SKIP_IMAGE_PULL" = false ]; then
+    echo ""
+    echo -e "${YELLOW}Step 6: Pulling service images from registry...${NC}"
+
+    # Pull images using docker compose
+    if docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull; then
+        echo -e "${GREEN}✓ Images pulled successfully${NC}"
+    else
+        echo -e "${RED}Warning: Failed to pull some images${NC}"
+        echo "This may be normal if images don't exist in registry yet"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+    fi
+else
+    echo ""
+    echo -e "${YELLOW}Step 6: Skipping image pull (--skip-image-pull)${NC}"
+fi
+
+# =============================================================================
+# Step 7: Start Services
+# =============================================================================
+
+echo ""
+echo -e "${YELLOW}Step 7: Starting ADDP services...${NC}"
+
+# Stop any existing services
+echo -e "${YELLOW}Stopping existing services...${NC}"
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down || true
+
+# Start services
+echo -e "${YELLOW}Starting all services...${NC}"
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+
+# Wait for services to start
+echo -e "${YELLOW}Waiting for services to start...${NC}"
+sleep 10
+
+# =============================================================================
+# Step 8: Health Check
+# =============================================================================
+
+echo ""
+echo -e "${YELLOW}Step 8: Performing health checks...${NC}"
+
+# Check service status
+echo ""
+echo -e "${BLUE}Service Status:${NC}"
+docker compose -f "$COMPOSE_FILE" ps
+
+# Health check function
+check_health() {
+    local service=$1
+    local url=$2
+    local max_attempts=30
+    local attempt=0
+
+    echo -e "\n${YELLOW}Checking ${service}...${NC}"
+
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -sf "$url" > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ ${service} is healthy${NC}"
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        echo -ne "  Attempt $attempt/$max_attempts\r"
+        sleep 2
+    done
+
+    echo -e "${RED}✗ ${service} health check failed${NC}"
+    return 1
+}
+
+# Check key services
+echo ""
+echo -e "${BLUE}Health Checks:${NC}"
+
+check_health "PostgreSQL" "localhost:5432" || true
+check_health "Redis" "localhost:6379" || true
+check_health "MinIO" "http://localhost:9000/minio/health/live" || true
+check_health "System Backend" "http://localhost:8080/health" || true
+check_health "Gateway" "http://localhost:8000/health" || true
+check_health "Portal" "http://localhost:8000/" || true
+
+# =============================================================================
+# Deployment Summary
+# =============================================================================
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}Deployment Summary${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+echo -e "${GREEN}✓ ADDP deployment complete!${NC}"
+echo ""
+echo -e "${BLUE}Access Points:${NC}"
+echo "  Portal (Main):     http://$(hostname -I | awk '{print $1}'):8000"
+echo "  System Backend:    http://$(hostname -I | awk '{print $1}'):8080"
+echo "  Manager Backend:   http://$(hostname -I | awk '{print $1}'):8081"
+echo "  Meta Backend:      http://$(hostname -I | awk '{print $1}'):8082"
+echo "  MinIO Console:     http://$(hostname -I | awk '{print $1}'):9001"
+echo ""
+echo -e "${BLUE}Default Super Admin:${NC}"
+echo "  Username: SuperAdmin"
+echo "  Password: 20251001#SuperAdmin"
+echo ""
+echo -e "${RED}IMPORTANT:${NC} Change the default password after first login!"
+echo ""
+echo -e "${BLUE}Useful Commands:${NC}"
+echo "  View logs:         docker compose -f $COMPOSE_FILE logs -f"
+echo "  Stop services:     docker compose -f $COMPOSE_FILE down"
+echo "  Restart services:  docker compose -f $COMPOSE_FILE restart"
+echo "  Service status:    docker compose -f $COMPOSE_FILE ps"
+echo ""
+echo -e "${GREEN}Deployment completed successfully!${NC}"

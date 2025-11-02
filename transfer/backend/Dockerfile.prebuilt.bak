@@ -1,0 +1,18 @@
+FROM alpine:latest
+
+# Automatic architecture detection
+ARG TARGETARCH
+
+WORKDIR /app
+
+# Install curl for health checks
+RUN apk add --no-cache curl ca-certificates
+
+# 复制本地编译好的二进制文件（自动选择正确架构）
+COPY transfer/backend/server-${TARGETARCH} ./server
+
+# 暴露端口
+EXPOSE 8083
+
+# 运行
+CMD ["./server"]

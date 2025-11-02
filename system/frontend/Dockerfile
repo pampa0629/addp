@@ -2,14 +2,17 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
+# 复制 common-frontend (共享组件)
+COPY common-frontend /common-frontend
+
 # 复制 package.json
-COPY package.json ./
+COPY system/frontend/package.json ./
 
 # 安装依赖
 RUN npm install
 
 # 复制源代码
-COPY . .
+COPY system/frontend .
 
 # 构建
 RUN npm run build
@@ -21,7 +24,7 @@ FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # 复制 nginx 配置
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY system/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

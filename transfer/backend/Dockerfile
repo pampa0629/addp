@@ -1,24 +1,15 @@
-FROM golang:1.23-alpine AS builder
-
-ENV GOPROXY=https://goproxy.cn,direct
-
-WORKDIR /app
-
-RUN apk add --no-cache gcc musl-dev
-
-COPY go.mod go.sum ./
-
-RUN go mod download
-
-COPY . .
-
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+# Transfer Backend Dockerfile
+# Uses precompiled binary from bin/transfer-backend
 
 FROM alpine:latest
 
 WORKDIR /app
 
-COPY --from=builder /app/server .
+# Install curl for health checks
+RUN apk add --no-cache curl ca-certificates
+
+# Copy precompiled binary
+COPY ../../bin/transfer-backend ./server
 
 EXPOSE 8083
 
