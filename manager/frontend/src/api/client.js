@@ -1,9 +1,11 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/auth'
 
-// Manager 服务通过 Gateway 访问
+// Manager 服务通过独立端口访问
 const client = axios.create({
-  baseURL: import.meta.env.PROD ? '/api' : 'http://localhost:8081/api',
+  baseURL: import.meta.env.PROD
+    ? `${window.location.protocol}//${window.location.hostname}:8081/api`
+    : 'http://localhost:8081/api',
   timeout: 10000
 })
 

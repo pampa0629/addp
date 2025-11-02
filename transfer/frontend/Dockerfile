@@ -20,8 +20,8 @@ RUN npm run build
 # 生产阶段
 FROM nginx:alpine
 
-# 复制构建产物
-COPY --from=builder /app/transfer/frontend/dist /usr/share/nginx/html/transfer
+# 复制构建产物到 nginx html 根目录
+COPY --from=builder /app/transfer/frontend/dist /usr/share/nginx/html
 
 # 复制 nginx 配置
 COPY transfer/frontend/nginx.conf /etc/nginx/conf.d/default.conf

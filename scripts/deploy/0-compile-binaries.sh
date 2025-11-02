@@ -1,15 +1,21 @@
 #!/bin/bash
-# Binary Compiler
+# Binary Compiler with Smart Cache
 set -e
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
 MULTI_ARCH=false
+FORCE_REBUILD=false
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+COMPILE_CACHE_DIR="${PROJECT_ROOT}/.compile-cache"
+
+mkdir -p "$COMPILE_CACHE_DIR"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -17,6 +23,10 @@ while [[ $# -gt 0 ]]; do
             ARCH="$2"
             [[ "$ARCH" == "both" ]] && MULTI_ARCH=true && ARCH="amd64,arm64"
             shift 2
+            ;;
+        --force)
+            FORCE_REBUILD=true
+            shift
             ;;
         *)
             echo -e "${RED}Unknown: $1${NC}"
@@ -26,12 +36,76 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo -e "${BLUE}ADDP Binary Compiler${NC}"
-echo -e "Architecture: ${GREEN}${ARCH}${NC}\n"
+echo -e "Architecture: ${GREEN}${ARCH}${NC}"
+echo -e "Smart Cache: ${GREEN}Enabled${NC}\n"
+
+# Get latest source file modification time for a service
+get_source_mtime() {
+    local dir=$1
+    local latest=0
+
+    # Find all .go files and get the latest modification time
+    while IFS= read -r file; do
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            mtime=$(stat -f %m "$file" 2>/dev/null || echo 0)
+        else
+            mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+        fi
+        [[ $mtime -gt $latest ]] && latest=$mtime
+    done < <(find "$dir" -name "*.go" -type f 2>/dev/null)
+
+    echo "$latest"
+}
+
+# Check if binary needs recompilation
+needs_recompile() {
+    local name=$1 dir=$2 arch=$3 output=$4
+
+    # Force rebuild if --force flag is set
+    if [[ "$FORCE_REBUILD" == true ]]; then
+        return 0  # needs recompile
+    fi
+
+    # If binary doesn't exist, needs recompile
+    if [ ! -f "$dir/$output" ]; then
+        return 0  # needs recompile
+    fi
+
+    # Get binary modification time
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        binary_mtime=$(stat -f %m "$dir/$output" 2>/dev/null || echo 0)
+    else
+        binary_mtime=$(stat -c %Y "$dir/$output" 2>/dev/null || echo 0)
+    fi
+
+    # Check cache file
+    local cache_file="${COMPILE_CACHE_DIR}/${name}-${arch}.cache"
+    if [ -f "$cache_file" ]; then
+        cached_mtime=$(cat "$cache_file")
+    else
+        cached_mtime=0
+    fi
+
+    # Get latest source modification time
+    source_mtime=$(get_source_mtime "$dir")
+
+    # If source is newer than binary or cache, needs recompile
+    if [[ $source_mtime -gt $binary_mtime ]] || [[ $source_mtime -gt $cached_mtime ]]; then
+        return 0  # needs recompile
+    fi
+
+    return 1  # no need to recompile
+}
+
+# Update compile cache
+update_compile_cache() {
+    local name=$1 arch=$2
+    local cache_file="${COMPILE_CACHE_DIR}/${name}-${arch}.cache"
+    date +%s > "$cache_file"
+}
 
 compile_service() {
     local name=$1 dir=$2 arch=$3
-    echo -e "${YELLOW}Compiling ${name} for linux/${arch}...${NC}"
-    cd "$dir"
 
     # Detect entry point and output name
     local entry_point="./cmd/server"
@@ -41,46 +115,78 @@ compile_service() {
         # Special case for transfer-worker
         entry_point="./cmd/worker"
         output="worker"
-    elif [ ! -d "cmd/server" ] && [ -d "cmd/gateway" ]; then
+    elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
         entry_point="./cmd/gateway"
     fi
 
     [[ "$MULTI_ARCH" == true ]] && output="${output}-${arch}"
 
-    CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -ldflags="-s -w" -o "$output" $entry_point
+    # Check if recompilation is needed
+    if needs_recompile "$name" "$dir" "$arch" "$output"; then
+        echo -e "${YELLOW}Compiling ${name} for linux/${arch}...${NC}"
+        cd "$dir"
 
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓ Compiled ${name} ($(du -h $output | cut -f1))${NC}"
-        cd - > /dev/null
-        return 0
+        CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -ldflags="-s -w" -o "$output" $entry_point
+
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ Compiled ${name} ($(du -h $output | cut -f1))${NC}"
+            update_compile_cache "$name" "$arch"
+            cd - > /dev/null
+            return 0
+        else
+            echo -e "${RED}✗ Failed ${name}${NC}"
+            cd - > /dev/null
+            return 1
+        fi
     else
-        echo -e "${RED}✗ Failed ${name}${NC}"
-        cd - > /dev/null
-        return 1
+        # Use cached binary
+        echo -e "${CYAN}⚡ Using cached ${name} for linux/${arch} (no source changes)${NC}"
+        return 0
     fi
 }
 
 SERVICES=("system-backend:system/backend" "manager-backend:manager/backend" "meta-backend:meta/backend" "transfer-backend:transfer/backend" "transfer-worker:transfer/backend" "gateway:gateway")
 failed=()
+compiled=0
+cached=0
 
 for svc in "${SERVICES[@]}"; do
     name="${svc%%:*}"
     dir="${svc#*:}"
     echo -e "\n${BLUE}Building: ${name}${NC}"
-    
+
     if [[ "$MULTI_ARCH" == true ]]; then
         IFS=',' read -ra ARCHS <<< "$ARCH"
         for a in "${ARCHS[@]}"; do
-            compile_service "$name" "$dir" "$a" || failed+=("$name ($a)")
+            if compile_service "$name" "$dir" "$a"; then
+                if needs_recompile "$name" "$dir" "$a" "server" 2>/dev/null; then
+                    ((compiled++)) || true
+                else
+                    ((cached++)) || true
+                fi
+            else
+                failed+=("$name ($a)")
+            fi
         done
     else
-        compile_service "$name" "$dir" "$ARCH" || failed+=("$name")
+        if compile_service "$name" "$dir" "$ARCH"; then
+            if needs_recompile "$name" "$dir" "$ARCH" "server" 2>/dev/null; then
+                ((compiled++)) || true
+            else
+                ((cached++)) || true
+            fi
+        else
+            failed+=("$name")
+        fi
     fi
 done
 
 echo -e "\n${BLUE}Summary${NC}"
+echo -e "${GREEN}Compiled: ${compiled}${NC}"
+echo -e "${CYAN}Cached: ${cached}${NC}"
+
 if [ ${#failed[@]} -eq 0 ]; then
-    echo -e "${GREEN}✓ All compiled successfully${NC}"
+    echo -e "${GREEN}✓ All binaries ready${NC}"
     exit 0
 else
     echo -e "${RED}✗ Failed: ${failed[*]}${NC}"

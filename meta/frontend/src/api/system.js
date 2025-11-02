@@ -1,8 +1,12 @@
 import axios from 'axios'
 
-// 创建 System API 客户端 (直接访问 System 模块)
+// 创建 System API 客户端
+// 开发环境: 直接访问 System backend (localhost:8080)
+// 生产环境: 通过独立端口访问 System backend (host:8080)
 const systemClient = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: import.meta.env.DEV
+    ? 'http://localhost:8080'
+    : `${window.location.protocol}//${window.location.hostname}:8080`,
   timeout: 30000
 })
 

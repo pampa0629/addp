@@ -6,7 +6,7 @@ WORKDIR /app
 COPY common-frontend /common-frontend
 
 # 复制 package.json
-COPY system/frontend/package.json ./
+COPY system/frontend/package.json system/frontend/package-lock.json ./
 
 # 安装依赖
 RUN npm install

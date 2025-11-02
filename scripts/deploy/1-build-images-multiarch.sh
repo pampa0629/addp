@@ -54,6 +54,35 @@ cd "$PROJECT_ROOT"
 # Create build cache directory
 mkdir -p "$BUILD_CACHE_DIR"
 
+# =============================================================================
+# Auto-cleanup: Clean old deployment packages (keep latest 3)
+# =============================================================================
+
+echo -e "${CYAN}Checking for old deployment packages...${NC}"
+old_packages=$(ls -t addp-deploy-*.tar.gz 2>/dev/null | tail -n +4 || true)
+if [ -n "$old_packages" ]; then
+    count=$(echo "$old_packages" | wc -l | tr -d ' ')
+    echo -e "${YELLOW}Found $count old package(s), removing...${NC}"
+    echo "$old_packages" | xargs rm -f
+    echo -e "${GREEN}✓ Cleaned old packages${NC}"
+else
+    echo -e "${GREEN}✓ No old packages to clean${NC}"
+fi
+echo ""
+
+# =============================================================================
+# Auto-cleanup: Clean dangling Docker images silently
+# =============================================================================
+
+dangling=$(docker images -f "dangling=true" -q 2>/dev/null | head -20 || true)
+if [ -n "$dangling" ]; then
+    count=$(echo "$dangling" | wc -l | tr -d ' ')
+    echo -e "${YELLOW}Cleaning $count dangling Docker image(s)...${NC}"
+    echo "$dangling" | xargs docker rmi >/dev/null 2>&1 || true
+    echo -e "${GREEN}✓ Cleaned dangling images${NC}"
+    echo ""
+fi
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}ADDP Smart Multi-Arch Builder${NC}"
 echo -e "${BLUE}========================================${NC}"

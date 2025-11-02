@@ -208,10 +208,10 @@ const isCollapsed = ref(false)
 // 开发环境使用 localhost 端口
 const isDevelopment = import.meta.env.DEV
 const moduleUrls = {
-  system: isDevelopment ? 'http://localhost:5173' : '/system',
-  manager: isDevelopment ? 'http://localhost:5174' : '/manager',
-  meta: isDevelopment ? 'http://localhost:5175' : '/meta',
-  transfer: isDevelopment ? 'http://localhost:5176' : '/transfer'
+  system: isDevelopment ? 'http://localhost:5173' : `${window.location.protocol}//${window.location.hostname}:8090`,
+  manager: isDevelopment ? 'http://localhost:5174' : `${window.location.protocol}//${window.location.hostname}:8091`,
+  meta: isDevelopment ? 'http://localhost:5175' : `${window.location.protocol}//${window.location.hostname}:8092`,
+  transfer: isDevelopment ? 'http://localhost:5176' : `${window.location.protocol}//${window.location.hostname}:8093`
 }
 
 onMounted(async () => {
@@ -272,21 +272,24 @@ const handleMenuSelect = (index) => {
     }
 
     if (module === 'manager') {
+      // Manager 模块的路由: /data-explorer 等 (不需要 /manager 前缀)
       const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
-      url = `${moduleUrls[module]}/${module}/${actualPage}`
+      url = `${moduleUrls[module]}/${actualPage}`
     } else if (module === 'meta') {
+      // Meta 模块的路由: /scan, /lineage 等 (不需要 /meta 前缀)
       const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
       if (actualPage) {
-        url = `${moduleUrls[module]}/${module}/${actualPage}`
+        url = `${moduleUrls[module]}/${actualPage}`
       } else {
-        url = `${moduleUrls[module]}/${module}/`
+        url = `${moduleUrls[module]}/`
       }
     } else if (module === 'transfer') {
+      // Transfer 模块的路由: /tasks, /executions 等 (不需要 /transfer 前缀)
       const actualPage = transferPageMap[page] !== undefined ? transferPageMap[page] : page
       if (actualPage) {
-        url = `${moduleUrls[module]}/${module}/${actualPage}`
+        url = `${moduleUrls[module]}/${actualPage}`
       } else {
-        url = `${moduleUrls[module]}/${module}/`
+        url = `${moduleUrls[module]}/`
       }
     } else if (module === 'system') {
       // System 模块的路由: /users, /logs 等 (不需要 /system 前缀)

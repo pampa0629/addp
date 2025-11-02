@@ -26,6 +26,7 @@ REGISTRY="localhost:5001"
 SKIP_BUILD=false
 SKIP_TRANSFER=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD_ARCH="auto"  # auto, arm64, amd64, or both
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --registry)
             REGISTRY="$2"
+            shift 2
+            ;;
+        --arch)
+            BUILD_ARCH="$2"
             shift 2
             ;;
         --skip-build)
@@ -52,6 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --server USER@HOST    Target server for deployment (required)"
             echo "  --registry URL        Registry URL (default: localhost:5001)"
+            echo "  --arch ARCH           Build architecture: auto (default), arm64, amd64, or both"
             echo "  --skip-build          Skip image building"
             echo "  --skip-transfer       Skip file transfer"
             echo "  -h, --help            Show this help message"
@@ -96,6 +102,81 @@ else
     done
 fi
 
+# Auto-detect architecture if set to "auto"
+if [ "$BUILD_ARCH" = "auto" ]; then
+    DETECTED_ARCH="$(uname -m)"
+    case "$DETECTED_ARCH" in
+        x86_64)
+            BUILD_ARCH="amd64"
+            ;;
+        aarch64|arm64)
+            BUILD_ARCH="arm64"
+            ;;
+        *)
+            echo -e "${YELLOW}Warning: Unknown architecture $DETECTED_ARCH, defaulting to amd64${NC}"
+            BUILD_ARCH="amd64"
+            ;;
+    esac
+    echo -e "${GREEN}✓ Auto-detected CPU architecture: ${BUILD_ARCH}${NC}"
+    echo ""
+fi
+
+# Validate BUILD_ARCH
+case "$BUILD_ARCH" in
+    arm64|amd64|both)
+        ;;
+    *)
+        echo -e "${RED}Error: Invalid architecture '${BUILD_ARCH}'${NC}"
+        echo -e "${YELLOW}Valid options: auto, arm64, amd64, both${NC}"
+        exit 1
+        ;;
+esac
+
+# Auto-detect REGISTRY based on deployment mode
+if [ "$REGISTRY" = "localhost:5001" ]; then
+    # Default REGISTRY not changed by user, auto-detect
+    if [ "$IS_LOCAL" = true ]; then
+        # Local deployment - use localhost
+        REGISTRY="localhost:5001"
+    else
+        # Remote deployment - use development machine's IP
+        DETECT_IP_SCRIPT="$SCRIPT_DIR/detect-dev-ip.sh"
+
+        if [ -f "$DETECT_IP_SCRIPT" ]; then
+            # Use the dedicated IP detection script
+            DEV_MACHINE_IP=$("$DETECT_IP_SCRIPT" --target-server "$HOST" 2>/dev/null)
+            DETECT_EXIT_CODE=$?
+
+            if [ $DETECT_EXIT_CODE -eq 0 ] && [ -n "$DEV_MACHINE_IP" ] && [ "$DEV_MACHINE_IP" != "localhost" ]; then
+                REGISTRY="${DEV_MACHINE_IP}:5001"
+                echo -e "${GREEN}✓ Auto-detected development machine IP: ${DEV_MACHINE_IP}${NC}"
+                echo -e "${CYAN}  Using REGISTRY=${REGISTRY} for remote deployment${NC}"
+                echo ""
+            else
+                echo -e "${RED}Error: Failed to detect development machine IP${NC}"
+                echo -e "${YELLOW}Please specify registry manually: --registry <dev-machine-ip>:5001${NC}"
+                echo -e "${YELLOW}Or ensure you're connected to a network${NC}"
+                exit 1
+            fi
+        else
+            # Fallback to inline detection if script not found
+            echo -e "${YELLOW}Warning: IP detection script not found, using fallback method${NC}"
+            DEV_MACHINE_IP=$(ifconfig 2>/dev/null | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | grep -E '^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)' | head -1 || echo "localhost")
+
+            if [ "$DEV_MACHINE_IP" != "localhost" ]; then
+                REGISTRY="${DEV_MACHINE_IP}:5001"
+                echo -e "${GREEN}✓ Detected development machine IP: ${DEV_MACHINE_IP}${NC}"
+                echo -e "${CYAN}  Using REGISTRY=${REGISTRY}${NC}"
+                echo ""
+            else
+                echo -e "${RED}Error: Could not detect development machine IP${NC}"
+                echo -e "${YELLOW}Please specify registry manually: --registry <dev-machine-ip>:5001${NC}"
+                exit 1
+            fi
+        fi
+    fi
+fi
+
 DEPLOY_DIR="$HOME/addp"
 
 echo -e "${BLUE}========================================${NC}"
@@ -110,6 +191,7 @@ else
     echo -e "Target Server: ${GREEN}${SERVER}${NC}"
 fi
 echo -e "Registry: ${GREEN}${REGISTRY}${NC}"
+echo -e "Architecture: ${GREEN}${BUILD_ARCH}${NC}"
 echo ""
 
 # =============================================================================
@@ -259,10 +341,16 @@ if [ "$SKIP_BUILD" = false ]; then
         exit 1
     fi
 
-    # Compile binaries for both architectures
-    echo -e "${YELLOW}Compiling binaries for multi-arch deployment (amd64 + arm64)...${NC}"
+    # Determine compilation architecture
+    if [ "$BUILD_ARCH" = "both" ]; then
+        COMPILE_ARCH="both"
+        echo -e "${YELLOW}Compiling binaries for multi-arch deployment (amd64 + arm64)...${NC}"
+    else
+        COMPILE_ARCH="$BUILD_ARCH"
+        echo -e "${YELLOW}Compiling binaries for ${BUILD_ARCH} architecture...${NC}"
+    fi
 
-    if "$SCRIPT_DIR/0-compile-binaries.sh" --arch both; then
+    if "$SCRIPT_DIR/0-compile-binaries.sh" --arch "$COMPILE_ARCH"; then
         echo -e "${GREEN}✓ Binaries compiled successfully${NC}"
     else
         echo -e "${RED}✗ Compilation failed${NC}"
@@ -281,22 +369,40 @@ if [ "$SKIP_BUILD" = false ]; then
     echo -e "${BLUE}========================================${NC}"
     echo ""
 
-    # Use offline multi-arch build script (works without external network)
-    if [ ! -f "$SCRIPT_DIR/1-build-images-multiarch.sh" ]; then
-        echo -e "${RED}Error: 1-build-images-multiarch.sh not found${NC}"
-        exit 1
-    fi
+    # Choose build script based on architecture
+    if [ "$BUILD_ARCH" = "both" ]; then
+        # Multi-arch build
+        if [ ! -f "$SCRIPT_DIR/1-build-images-multiarch.sh" ]; then
+            echo -e "${RED}Error: 1-build-images-multiarch.sh not found${NC}"
+            exit 1
+        fi
 
-    # Build multi-arch images (amd64 + arm64) using offline method
-    echo -e "${YELLOW}Building multi-arch images (amd64 + arm64) - Offline mode...${NC}"
-    echo -e "${YELLOW}This builds each architecture separately then creates manifest lists${NC}"
-    echo ""
+        echo -e "${YELLOW}Building multi-arch images (amd64 + arm64) - Offline mode...${NC}"
+        echo -e "${YELLOW}This builds each architecture separately then creates manifest lists${NC}"
+        echo ""
 
-    if "$SCRIPT_DIR/1-build-images-multiarch.sh" --registry "$REGISTRY"; then
-        echo -e "${GREEN}✓ Multi-arch images built successfully${NC}"
+        if "$SCRIPT_DIR/1-build-images-multiarch.sh" --registry "$REGISTRY"; then
+            echo -e "${GREEN}✓ Multi-arch images built successfully${NC}"
+        else
+            echo -e "${RED}✗ Image build failed${NC}"
+            exit 1
+        fi
     else
-        echo -e "${RED}✗ Image build failed${NC}"
-        exit 1
+        # Single-arch build
+        if [ ! -f "$SCRIPT_DIR/1-build-images.sh" ]; then
+            echo -e "${RED}Error: 1-build-images.sh not found${NC}"
+            exit 1
+        fi
+
+        echo -e "${YELLOW}Building ${BUILD_ARCH} images...${NC}"
+        echo ""
+
+        if "$SCRIPT_DIR/1-build-images.sh" --registry "$REGISTRY"; then
+            echo -e "${GREEN}✓ ${BUILD_ARCH} images built successfully${NC}"
+        else
+            echo -e "${RED}✗ Image build failed${NC}"
+            exit 1
+        fi
     fi
 else
     echo -e "${YELLOW}Skipping build (--skip-build)${NC}"
@@ -385,8 +491,8 @@ if [ "$IS_LOCAL" = true ]; then
 
     chmod +x scripts/3-server-setup.sh
 
-    # Run setup script with --force for automatic overwrite
-    if ./scripts/3-server-setup.sh --force; then
+    # Run setup script with --force and --registry parameters
+    if ./scripts/3-server-setup.sh --force --registry "$REGISTRY"; then
         SETUP_SUCCESS=true
     else
         SETUP_SUCCESS=false

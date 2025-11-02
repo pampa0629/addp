@@ -25,6 +25,5 @@ export default defineConfig({
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
     }
-  },
-  base: '/transfer/'
+  }
 })

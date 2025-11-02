@@ -2,7 +2,9 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: import.meta.env.DEV
+    ? 'http://localhost:8083/api'
+    : `${window.location.protocol}//${window.location.hostname}:8083/api`,
   timeout: 30000
 })
 

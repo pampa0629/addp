@@ -253,9 +253,10 @@ echo -e "${YELLOW}Step 3: Configuring Docker registry access...${NC}"
 
 # Detect registry from docker-compose.yml if not specified
 if [ -z "$REGISTRY" ]; then
-    # Use awk for better cross-platform compatibility
-    REGISTRY=$(awk -F'[:/]' '/image:.*\//{print $2; exit}' "$COMPOSE_FILE" | tr -d ' ')
-    if [ -z "$REGISTRY" ] || [[ "$REGISTRY" == *"\$"* ]]; then
+    # Try to detect from ADDP service images (not infrastructure images like minio/postgres)
+    REGISTRY=$(awk -F'[:/]' '/image:.*addp-.*:/{print $2; exit}' "$COMPOSE_FILE" | tr -d ' ')
+
+    if [ -z "$REGISTRY" ] || [[ "$REGISTRY" == *"\$"* ]] || [[ "$REGISTRY" == *"{"* ]]; then
         # If detection failed or got a variable, use default
         REGISTRY="localhost:5001"
     fi
