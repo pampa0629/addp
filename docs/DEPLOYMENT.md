@@ -343,7 +343,8 @@ sudo firewall-cmd --reload
 ### Setup SSL/TLS (Recommended for Production)
 
 1. Obtain SSL certificate (Let's Encrypt, commercial CA, etc.)
-2. Update `configs/nginx.prod.conf` with SSL configuration
+2. Update `nginx/nginx.prod.conf` with SSL configuration
+   - In the deployment package, this file appears at `deploy-package/configs/nginx.prod.conf`
 3. Restart nginx service
 
 ---

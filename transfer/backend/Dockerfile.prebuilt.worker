@@ -5,11 +5,11 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-# Install ca-certificates for HTTPS requests
-RUN apk add --no-cache ca-certificates
+# 复制本地预编译的二进制（支持 worker 或 worker-<arch> 命名）
+COPY transfer/backend/worker* ./
+RUN if [ -f worker ]; then :; \
+    elif [ -f worker-amd64 ]; then mv worker-amd64 worker; \
+    elif [ -f worker-arm64 ]; then mv worker-arm64 worker; \
+    else echo "worker binary not found" && exit 1; fi
 
-# 复制本地编译好的二进制文件（自动选择正确架构）
-COPY transfer/backend/worker-${TARGETARCH} ./worker
-
-# 运行
 CMD ["./worker"]

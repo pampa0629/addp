@@ -93,7 +93,7 @@ Options:
 deploy-package/
 ├── docker-compose.prod.yml
 ├── .env.prod.example
-├── configs/nginx.prod.conf
+├── configs/nginx.prod.conf      # Source: nginx/nginx.prod.conf
 ├── postgres/Dockerfile
 ├── postgres/init-db.sql
 ├── scripts/3-server-setup.sh

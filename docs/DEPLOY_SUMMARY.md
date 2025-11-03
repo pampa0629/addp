@@ -57,7 +57,7 @@
 
 ```bash
 # 在开发机执行
-./scripts/deploy-to-server.sh pampa@192.168.1.182
+./scripts/deploy/deploy-all.sh --server pampa@192.168.1.182 --registry localhost:5001
 ```
 
 一键完成：
@@ -82,11 +82,19 @@ cp .env.prod.example .env
 vim .env  # 配置密码
 docker-compose -f docker-compose.prod.yml up -d
 
-# 4. 构建并部署 ADDP
+# 4. 构建并部署 ADDP（服务器本地构建）
 cd /opt/addp
-cp .env.example .env
-vim .env  # 配置密钥和密码
-./scripts/build-and-deploy-local.sh
+cp .env.prod.example .env.prod
+vim .env.prod  # 配置密钥和密码
+
+# 可选：预编译二进制（提升构建速度）
+./scripts/deploy/0-compile-binaries.sh --arch amd64
+
+# 构建并推送镜像到本地 registry（localhost:5001）
+./scripts/deploy/1-build-images.sh --registry localhost:5001
+
+# 启动
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
 ---
@@ -96,13 +104,12 @@ vim .env  # 配置密钥和密码
 ### 新增脚本
 
 1. **scripts/setup-local-registry.sh** - 本地 Registry 设置（支持自定义端口）
-2. **scripts/push-to-local-registry.sh** - 推送镜像到本地 Registry（单架构）
-3. **scripts/push-to-local-registry-multiarch.sh** - 多架构构建和推送
-4. **scripts/push-to-local-registry-multiarch-cached.sh** - 带缓存的多架构构建
-5. **scripts/deploy-from-registry.sh** - 从 Registry 拉取部署（macOS 兼容）
-6. **scripts/fix-macos-chown.sh** - 修复 macOS chown 兼容性
-7. **scripts/build-and-deploy-local.sh** - 服务器本地构建和部署（推荐）
-8. **scripts/deploy-to-server.sh** - 一键部署到服务器（推荐）
+2. **scripts/deploy/0-compile-binaries.sh** - 本地预编译二进制（可选，加速构建）
+3. **scripts/deploy/1-build-images.sh** - 本地构建并推送镜像（单架构）
+4. **scripts/deploy/1-build-images-multiarch.sh** - 多架构构建并推送
+5. **scripts/deploy/2-package-deploy.sh** - 产物打包与可选传输
+6. **scripts/deploy/3-server-setup.sh** - 服务器初始化与启动
+7. **scripts/deploy/deploy-all.sh** - 一键部署（构建+传输+启动）
 
 ### Business 基础设施
 
@@ -157,17 +164,17 @@ make dev-start
 ### 生产环境（局域网服务器）
 ```bash
 # 一键部署到服务器
-./scripts/deploy-to-server.sh pampa@192.168.1.182
+./scripts/deploy/deploy-all.sh --server pampa@192.168.1.182 --registry localhost:5001
 ```
 
 ### 生产环境（云服务器，网络良好）
 ```bash
 # 使用多架构镜像仓库（需要网络通畅）
 ./scripts/setup-local-registry.sh 5001
-./scripts/push-to-local-registry-multiarch.sh 5001
+./scripts/deploy/1-build-images-multiarch.sh --registry 开发机IP:5001
 
-# 在服务器上
-REGISTRY=开发机IP:5001 ./scripts/deploy-from-registry.sh
+# 在开发机触发一键部署
+./scripts/deploy/deploy-all.sh --server user@server-ip --registry 开发机IP:5001 --skip-build
 ```
 
 ---

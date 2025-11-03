@@ -119,5 +119,5 @@ echo ""
 
 echo "下一步:"
 echo "  1. 查看配置: cat $ENV_FILE"
-echo "  2. 运行部署: REGISTRY=$REGISTRY ./scripts/clean-deploy.sh"
+echo "  2. 运行部署: ./scripts/deploy/deploy-all.sh --server user@host --registry $REGISTRY"
 echo ""

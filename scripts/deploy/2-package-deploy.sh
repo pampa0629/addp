@@ -104,13 +104,13 @@ else
     fi
 fi
 
-# Copy Nginx configuration
+# Copy Nginx configuration (source moved to nginx/)
 echo -e "${YELLOW}Copying Nginx configuration...${NC}"
-if [ -f "configs/nginx.prod.conf" ]; then
-    cp configs/nginx.prod.conf "$OUTPUT_DIR/configs/"
+if [ -f "nginx/nginx.prod.conf" ]; then
+    cp nginx/nginx.prod.conf "$OUTPUT_DIR/configs/"
     echo -e "${GREEN}✓ nginx.prod.conf copied${NC}"
 else
-    echo -e "${YELLOW}Warning: configs/nginx.prod.conf not found${NC}"
+    echo -e "${YELLOW}Warning: nginx/nginx.prod.conf not found${NC}"
     echo "Nginx configuration will be generated on server"
 fi
 

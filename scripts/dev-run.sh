@@ -10,6 +10,11 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
+# Local Go caches and toolchain preference
+export GOMODCACHE="${ROOT_DIR}/.gomodcache"
+export GOPATH="${ROOT_DIR}/.gopath"
+export GOTOOLCHAIN="local"
+
 export POSTGRES_HOST=${POSTGRES_HOST:-localhost}
 export POSTGRES_PORT=${POSTGRES_PORT:-5432}
 export REDIS_HOST=${REDIS_HOST:-localhost}

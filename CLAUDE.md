@@ -1050,7 +1050,7 @@ make restart             # Restart System module
 make restart-full        # Restart all services
 
 # Building
-make build               # Build all Go binaries to bin/
+make build               # Build all artifacts to dist/
 make docker-build        # Build System Docker images
 make docker-build-all    # Build all service Docker images
 

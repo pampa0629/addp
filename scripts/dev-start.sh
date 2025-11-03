@@ -9,6 +9,11 @@ cd "${ROOT_DIR}"
 export PROJECT_ROOT="${ROOT_DIR}"
 mkdir -p logs
 
+# 本地 Go 构建缓存，避免写入系统 GOPATH，并优先使用本机 Go 工具链
+export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
+export GOPATH="${PROJECT_ROOT}/.gopath"
+export GOTOOLCHAIN="local"
+
 if [ -f "${ROOT_DIR}/.env" ]; then
   set -a
   # shellcheck source=/dev/null

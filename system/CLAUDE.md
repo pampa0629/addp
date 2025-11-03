@@ -63,8 +63,10 @@ go mod download
 # 开发模式运行
 go run cmd/server/main.go
 
-# 编译
-go build -o ../bin/server cmd/server/main.go
+# 编译（输出到统一 dist）
+GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) \
+  go build -ldflags "-s -w" \
+  -o ../../dist/release/backend/system/${GOOS}-${GOARCH}/system cmd/server/main.go
 
 # 运行测试
 go test ./...

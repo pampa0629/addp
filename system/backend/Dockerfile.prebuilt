@@ -5,8 +5,12 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-# 复制本地编译好的二进制文件（自动选择正确架构）
-COPY system/backend/server-${TARGETARCH} ./server
+# 复制本地编译好的二进制文件（支持 server 或 server-<arch> 命名）
+COPY system/backend/server* ./
+RUN if [ -f server ]; then :; \
+    elif [ -f server-amd64 ]; then mv server-amd64 server; \
+    elif [ -f server-arm64 ]; then mv server-arm64 server; \
+    else echo "server binary not found" && exit 1; fi
 
 # 暴露端口
 EXPOSE 8080

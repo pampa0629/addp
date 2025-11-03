@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
+const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
+const OUT_BASE = process.env.OUT_DIR
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -29,5 +32,11 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/system` : 'dist'),
+    sourcemap: BUILD_TYPE === 'debug',
+    minify: BUILD_TYPE !== 'debug',
+    emptyOutDir: true
   }
 })

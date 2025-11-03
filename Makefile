@@ -1,4 +1,5 @@
-.PHONY: help init dev build up down logs clean test dev-all
+.PHONY: help init dev build up down logs clean test dev-all \
+        build-backend build-frontend build-debug build-release clean-dist
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -18,6 +19,43 @@ help: ## 显示帮助信息
 	@echo "$(YELLOW)部署模式:$(NC)"
 	@echo "  - System Only:  仅启动 System 模块（默认）"
 	@echo "  - Full Platform: 启动所有模块 (使用 --profile full)"
+
+# ===== 统一构建产物目录与变量 =====
+# 统一输出目录：dist/{debug|release}/{backend|frontend}
+OUT_DIR ?= dist
+BUILD_TYPE ?= release
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
+
+# 本地 Go 构建缓存目录，避免写入系统 GOPATH 并降低权限/网络问题
+LOCAL_GOMODCACHE := $(abspath .gomodcache)
+LOCAL_GOPATH := $(abspath .gopath)
+# 优先使用本机 Go 工具链，避免自动拉取 toolchain
+GOTOOLCHAIN ?= local
+
+# Go 编译参数：debug 保留符号，release 精简符号
+GOFLAGS_DEBUG := -gcflags "all=-N -l"
+GOFLAGS_RELEASE := -ldflags "-s -w"
+
+# 内部函数：为指定服务编译到统一目录
+define build_one_service
+  @if [ -d $(1)/cmd ]; then \
+    name=$(2); \
+    outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/$$name/$(GOOS)-$(GOARCH); \
+    mkdir -p $$outdir; \
+    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir$(NC)"; \
+    if [ "$(BUILD_TYPE)" = "debug" ]; then \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
+    else \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
+    fi; \
+  else \
+    true; \
+  fi
+endef
 
 init: ## 初始化项目（创建必要的目录和配置文件）
 	@echo "$(GREEN)初始化项目...$(NC)"
@@ -65,15 +103,62 @@ dev-health: ## 检查开发模式服务健康状态
 	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
 	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
-build: ## 编译所有服务
-	@echo "$(GREEN)编译所有服务...$(NC)"
-	@cd system/backend && go build -o ../../bin/system cmd/server/main.go
-	@echo "$(GREEN)System 编译完成$(NC)"
-	@if [ -d gateway/cmd ]; then cd gateway && go build -o ../bin/gateway cmd/gateway/main.go && echo "$(GREEN)Gateway 编译完成$(NC)"; fi
-	@if [ -d manager/backend/cmd ]; then cd manager/backend && go build -o ../../bin/manager cmd/server/main.go && echo "$(GREEN)Manager 编译完成$(NC)"; fi
-	@if [ -d meta/backend/cmd ]; then cd meta/backend && go build -o ../../bin/meta cmd/server/main.go && echo "$(GREEN)Meta 编译完成$(NC)"; fi
-	@if [ -d transfer/backend/cmd ]; then cd transfer/backend && go build -o ../../bin/transfer cmd/server/main.go && echo "$(GREEN)Transfer 编译完成$(NC)"; fi
-	@echo "$(GREEN)所有服务编译完成！$(NC)"
+build: build-release ## 编译所有服务（默认 release 输出到 dist）
+
+# ===== 后端统一构建 =====
+build-backend: ## 编译所有后端服务到 dist/{BUILD_TYPE}/backend
+	@echo "$(GREEN)编译后端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
+	$(call build_one_service,system/backend,system)
+	@if [ -d gateway/cmd ]; then \
+	  outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/gateway/$(GOOS)-$(GOARCH); \
+	  mkdir -p $$outdir; \
+	  echo "$(GREEN)编译 gateway ($(BUILD_TYPE)) → $$outdir$(NC)"; \
+	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
+	    (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+	     cd gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../$$outdir/gateway$(BIN_SUFFIX) cmd/gateway/main.go); \
+	  else \
+	    (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+	     cd gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../$$outdir/gateway$(BIN_SUFFIX) cmd/gateway/main.go); \
+	  fi; \
+	fi
+	$(call build_one_service,manager/backend,manager)
+	$(call build_one_service,meta/backend,meta)
+	$(call build_one_service,transfer/backend,transfer)
+	@echo "$(GREEN)后端编译完成！$(NC)"
+
+# ===== 前端统一构建 =====
+build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|portal}
+	@echo "$(GREEN)编译前端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
+	@if [ -f system/frontend/package.json ]; then \
+	  echo "  - system/frontend"; \
+	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
+	    (cd system/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
+	  else \
+	    (cd system/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
+	  fi; \
+	fi
+	@if [ -f portal/frontend/package.json ]; then \
+	  echo "  - portal/frontend"; \
+	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
+	    (cd portal/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
+	  else \
+	    (cd portal/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
+	  fi; \
+	fi
+	@echo "$(GREEN)前端编译完成！$(NC)"
+
+# 便捷目标
+build-debug: ## 构建 debug（后端 + 前端）输出到 dist/debug
+	@$(MAKE) BUILD_TYPE=debug build-backend
+	@$(MAKE) BUILD_TYPE=debug build-frontend
+
+build-release: ## 构建 release（后端 + 前端）输出到 dist/release
+	@$(MAKE) BUILD_TYPE=release build-backend
+	@$(MAKE) BUILD_TYPE=release build-frontend
+
+clean-dist: ## 清理 dist 构建产物
+	@rm -rf $(OUT_DIR)
+	@echo "$(YELLOW)已清理 $(OUT_DIR)$(NC)"
 
 docker-build: ## 构建 Docker 镜像（仅 System 模块）
 	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"

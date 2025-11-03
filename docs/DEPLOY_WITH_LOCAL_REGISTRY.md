@@ -65,10 +65,10 @@ uname -m
 
 | 开发机 | 服务器 | 需要多平台构建？ | 使用脚本 |
 |--------|-------|----------------|---------|
-| ARM (M1/M2/M3) | Intel/AMD x86 | ✅ **是** | `push-to-local-registry-multiarch.sh` |
-| ARM | ARM | ❌ 否 | `push-to-local-registry.sh` |
-| Intel | Intel/AMD x86 | ❌ 否 | `push-to-local-registry.sh` |
-| Intel | ARM | ✅ 是 | `push-to-local-registry-multiarch.sh` |
+| ARM (M1/M2/M3) | Intel/AMD x86 | ✅ **是** | `scripts/deploy/1-build-images-multiarch.sh` |
+| ARM | ARM | ❌ 否 | `scripts/deploy/1-build-images.sh` |
+| Intel | Intel/AMD x86 | ❌ 否 | `scripts/deploy/1-build-images.sh` |
+| Intel | ARM | ✅ 是 | `scripts/deploy/1-build-images-multiarch.sh` |
 
 **详细的跨平台部署指南：** [docs/CROSS_PLATFORM_DEPLOYMENT.md](CROSS_PLATFORM_DEPLOYMENT.md)
 
@@ -186,10 +186,10 @@ Registry 信息：
 
 ```bash
 # 推送到 Registry（使用你的局域网 IP）
-./scripts/push-to-local-registry.sh 192.168.1.100:5000
+./scripts/deploy/1-build-images.sh --registry 192.168.1.100:5000
 
 # 或者推送到 localhost（然后在服务器上用局域网 IP 访问）
-./scripts/push-to-local-registry.sh localhost:5000
+./scripts/deploy/1-build-images.sh --registry localhost:5000
 ```
 
 **脚本会自动完成：**
@@ -257,7 +257,7 @@ curl http://localhost:5000/v2/_catalog
 # 方法 A: 使用 SCP（适合首次部署）
 scp docker-compose.prod.yml user@192.168.1.200:/opt/addp/
 scp .env.example user@192.168.1.200:/opt/addp/
-scp scripts/deploy-from-registry.sh user@192.168.1.200:/opt/addp/scripts/
+# 推荐使用一键部署脚本（无需单独拷贝部署脚本）
 scp scripts/init-db.sql user@192.168.1.200:/opt/addp/scripts/
 
 # 方法 B: 使用 rsync（支持断点续传，推荐）
@@ -411,7 +411,7 @@ openssl rand -base64 32
 
 ```bash
 # 设置 Registry 地址并执行部署
-REGISTRY=192.168.1.100:5000 ./scripts/deploy-from-registry.sh
+./scripts/deploy/deploy-all.sh --server user@192.168.1.200 --registry 192.168.1.100:5000 --skip-build
 ```
 
 **脚本会自动完成：**
@@ -613,7 +613,7 @@ manifest for 192.168.1.100:5000/addp-system-backend:latest not found
    ```
 2. 重新推送镜像：
    ```bash
-   ./scripts/push-to-local-registry.sh 192.168.1.100:5000
+   ./scripts/deploy/1-build-images.sh --registry 192.168.1.100:5000
    ```
 
 ---
@@ -668,7 +668,7 @@ addp-system-backend | Error: database connection failed
 # ========== 开发机 ==========
 # 1. 修改代码后重新构建并推送
 cd /Users/pampa/code/addp
-./scripts/push-to-local-registry.sh 192.168.1.100:5000
+./scripts/deploy/1-build-images.sh --registry 192.168.1.100:5000
 
 # ========== 服务器 ==========
 # 2. SSH 到服务器
@@ -712,8 +712,8 @@ docker-compose -f docker-compose.prod.yml ps
 | 文件名 | 位置 | 用途 |
 |--------|------|------|
 | `setup-local-registry.sh` | `scripts/` | 在开发机搭建 Registry |
-| `push-to-local-registry.sh` | `scripts/` | 构建并推送镜像到 Registry |
-| `deploy-from-registry.sh` | `scripts/` | 服务器端部署脚本 |
+| `scripts/deploy/1-build-images.sh` | `scripts/deploy/` | 本机构建并推送镜像 |
+| `scripts/deploy/deploy-all.sh` | `scripts/deploy/` | 一键部署（支持指定 registry 与 server） |
 | `docker-compose.prod.yml` | 项目根目录 | 生产环境 Compose 配置 |
 | `.env.example` | 项目根目录 | 环境变量模板 |
 

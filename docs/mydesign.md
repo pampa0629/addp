@@ -1,3 +1,6 @@
+请AI编程工具，无论是claude code还是codex，都不要修改本文档。
+这个文档是作者在编写维护的。
+
 本文档是对addp工程的基本设计原则的说明。
 
 addp：All Domain Data Platform，全域数据平台

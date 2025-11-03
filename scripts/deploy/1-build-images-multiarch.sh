@@ -227,11 +227,14 @@ build_arch_image() {
             dockerfile_path="${service_dir}/Dockerfile.prebuilt"
             build_context="."
 
-            # Check if binary exists
+            # Check if binary exists (support server or server-<arch>)
             local binary_path="${service_dir}/server-${arch}"
             if [ ! -f "$binary_path" ]; then
-                echo -e "${RED}Error: Binary not found at ${binary_path}${NC}"
-                echo -e "${YELLOW}Hint: Run ./scripts/deploy/0-compile-binaries.sh --arch both first${NC}"
+                binary_path="${service_dir}/server"
+            fi
+            if [ ! -f "$binary_path" ]; then
+                echo -e "${RED}Error: Binary not found at ${service_dir}/server(-${arch})${NC}"
+                echo -e "${YELLOW}Hint: Run ./scripts/deploy/0-compile-binaries.sh --arch both or native${NC}"
                 return 1
             fi
             ;;
@@ -242,7 +245,10 @@ build_arch_image() {
 
             local binary_path="${service_dir}/worker-${arch}"
             if [ ! -f "$binary_path" ]; then
-                echo -e "${RED}Error: Worker binary not found at ${binary_path}${NC}"
+                binary_path="${service_dir}/worker"
+            fi
+            if [ ! -f "$binary_path" ]; then
+                echo -e "${RED}Error: Worker binary not found at ${service_dir}/worker(-${arch})${NC}"
                 return 1
             fi
             ;;
@@ -253,7 +259,10 @@ build_arch_image() {
 
             local binary_path="${service_dir}/server-${arch}"
             if [ ! -f "$binary_path" ]; then
-                echo -e "${RED}Error: Gateway binary not found at ${binary_path}${NC}"
+                binary_path="${service_dir}/server"
+            fi
+            if [ ! -f "$binary_path" ]; then
+                echo -e "${RED}Error: Gateway binary not found at ${service_dir}/server(-${arch})${NC}"
                 return 1
             fi
             ;;

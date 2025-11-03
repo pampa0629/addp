@@ -256,15 +256,15 @@ docker-compose up -d
 ### 非容器化部署
 
 ```bash
-# 编译
+# 编译（默认 release 输出到 dist）
 make build
 
-# 运行
-./bin/system        # System 模块
-./bin/manager       # Manager 模块
-./bin/meta          # Meta 模块
-./bin/transfer      # Transfer 模块
-./bin/gateway       # Gateway 模块
+# 运行（以当前平台 linux-amd64 为例，按需替换）
+./dist/release/backend/system/linux-amd64/system      # System 模块
+./dist/release/backend/manager/linux-amd64/manager    # Manager 模块
+./dist/release/backend/meta/linux-amd64/meta          # Meta 模块
+./dist/release/backend/transfer/linux-amd64/transfer  # Transfer 模块
+./dist/release/backend/gateway/linux-amd64/gateway    # Gateway 模块
 ```
 
 ### 向量检索配置

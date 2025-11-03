@@ -15,7 +15,14 @@ FORCE_REBUILD=false
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPILE_CACHE_DIR="${PROJECT_ROOT}/.compile-cache"
 
-mkdir -p "$COMPILE_CACHE_DIR"
+# Local Go caches to avoid writing system GOPATH and avoid toolchain fetches
+LOCAL_GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
+LOCAL_GOPATH="${PROJECT_ROOT}/.gopath"
+export GOMODCACHE="${LOCAL_GOMODCACHE}"
+export GOPATH="${LOCAL_GOPATH}"
+export GOTOOLCHAIN="local"
+
+mkdir -p "$COMPILE_CACHE_DIR" "$LOCAL_GOMODCACHE" "$LOCAL_GOPATH"
 
 while [[ $# -gt 0 ]]; do
     case $1 in

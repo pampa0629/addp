@@ -34,13 +34,11 @@
 
 选择一种方式：
 
-#### 方式 A: 使用 scp
+#### 方式 A: 使用一键部署
 
 ```bash
-# 在开发机执行
-scp docker-compose.prod.yml pampa@192.168.31.174:~/addp/
-scp business/docker-compose.prod.yml pampa@192.168.31.174:~/addp/business/
-scp scripts/deploy-from-registry.sh pampa@192.168.31.174:~/addp/scripts/
+# 在开发机执行（自动传输所需文件并在服务器启动）
+./scripts/deploy/deploy-all.sh --server pampa@192.168.31.174 --registry 192.168.31.238:5001
 ```
 
 #### 方式 B: 使用 U 盘
@@ -48,15 +46,14 @@ scp scripts/deploy-from-registry.sh pampa@192.168.31.174:~/addp/scripts/
 1. 复制以下文件到 U 盘:
    - `docker-compose.prod.yml`
    - `business/docker-compose.prod.yml`
-   - `scripts/deploy-from-registry.sh`
+   - 使用 `scripts/deploy/deploy-all.sh` 无需单独传输部署脚本
 
 2. 在服务器上：
 ```bash
 # 假设 U 盘挂载在 /Volumes/USB
 cp /Volumes/USB/docker-compose.prod.yml ~/addp/
 cp /Volumes/USB/docker-compose.prod.yml ~/addp/business/
-cp /Volumes/USB/deploy-from-registry.sh ~/addp/scripts/
-chmod +x ~/addp/scripts/deploy-from-registry.sh
+# 使用一键部署脚本无需单独传输部署脚本
 ```
 
 #### 方式 C: 手动创建（如果网络不通）
@@ -74,11 +71,9 @@ ssh pampa@192.168.31.174
 # 2. 进入部署目录（使用用户目录，避免权限问题）
 cd ~/addp
 
-# 3. 确保脚本可执行
-chmod +x scripts/deploy-from-registry.sh
-
-# 4. 运行部署脚本
-REGISTRY=192.168.31.238:5001 ./scripts/deploy-from-registry.sh
+# 3. （若未使用一键部署）可以按以下命令手动执行
+#    - 构建/推送镜像（在开发机）
+#    - 服务器上 docker compose 启动
 ```
 
 脚本会自动：
@@ -260,7 +255,7 @@ elasticsearch:
 
 ```bash
 # 在开发机重新构建和推送
-./scripts/push-all-images.sh 5001
+./scripts/deploy/1-build-images-multiarch.sh --registry 5001
 
 # 在服务器重新拉取和部署
 ssh pampa@192.168.31.174

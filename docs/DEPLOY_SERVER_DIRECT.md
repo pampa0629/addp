@@ -45,7 +45,7 @@ sudo chown -R $USER addp  # macOS
 
 ```bash
 # 在开发机执行
-rsync -avz --exclude 'node_modules' --exclude 'bin' --exclude '.git' \
+rsync -avz --exclude 'node_modules' --exclude 'bin' --exclude 'dist' --exclude '.git' \
   /Users/pampa/code/addp/ \
   pampa@192.168.1.182:/opt/addp/
 ```
@@ -91,26 +91,37 @@ business-minio                Up        0.0.0.0:9002-9003->9000-9001/tcp
 ### 步骤 4: 构建并部署 ADDP 系统
 
 ```bash
+## 4.1 准备生产环境变量
 # 在服务器执行
 cd /opt/addp
+cp .env.prod.example .env.prod
+vim .env.prod
 
-# 配置环境变量
-cp .env.example .env
-vim .env
-
-# 重要配置:
+# 关键项（至少修改以下几项）：
 # JWT_SECRET=<强随机密钥>
+# ENCRYPTION_KEY=<强随机密钥>
+# INTERNAL_API_KEY=<强随机密钥>
 # POSTGRES_PASSWORD=<系统数据库密码>
 # REDIS_PASSWORD=<Redis密码>
-# MINIO_SYSTEM_ROOT_PASSWORD=<MinIO密码>
-# ENCRYPTION_KEY=<加密密钥>
+# MINIO_ROOT_PASSWORD=<MinIO密码>
 
-# 生成随机密钥
-openssl rand -base64 32
+# 可选：一键生成并写入（也可使用 scripts/start-prod.sh 自动生成）
+openssl rand -base64 32  # 手动生成备用密钥
 
-# 运行构建和部署脚本
-chmod +x scripts/build-and-deploy-local.sh
-./scripts/build-and-deploy-local.sh
+## 4.2 启动本地镜像仓库（如未运行）
+docker ps | grep registry || \
+  docker run -d -p 5001:5000 --restart=always --name registry registry:2
+
+## 4.3 预编译二进制（用于 Docker 预构建镜像路径）
+# 根据 CPU 架构选择，常见为 amd64；多架构可使用 both
+./scripts/deploy/0-compile-binaries.sh --arch amd64
+
+## 4.4 本地构建并推送镜像到注册表
+# 构建并推送所有服务镜像到 localhost:5001
+./scripts/deploy/1-build-images.sh --registry localhost:5001
+
+## 4.5 使用 Compose 启动全部服务
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
 ```
 
 脚本会：
@@ -122,10 +133,10 @@ chmod +x scripts/build-and-deploy-local.sh
 
 ```bash
 # 查看服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 
 # 查看日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f
 
 # 测试健康检查
 curl http://localhost:8080/health  # System backend
@@ -169,7 +180,7 @@ FROM golang:1.24-alpine AS builder
 
 **原因**: backend 服务需要从项目根目录构建（因为依赖 common/ 模块）
 
-**解决**: build-and-deploy-local.sh 已经正确处理，backend 使用 CONTEXT="."
+**解决**: 使用 `scripts/deploy/0-compile-binaries.sh` 统一处理，backend 使用 CONTEXT="."
 
 ### Q3: 服务启动失败 - "connection refused"
 
@@ -209,8 +220,10 @@ git pull origin main
 
 # 或重新传输文件（如果使用 scp/rsync）
 
-# 重新构建和部署
-./scripts/build-and-deploy-local.sh
+# 重新构建镜像并部署
+./scripts/deploy/0-compile-binaries.sh --arch amd64
+./scripts/deploy/1-build-images.sh --registry localhost:5001
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
 ---
@@ -221,13 +234,14 @@ git pull origin main
 
 ```bash
 # 停止服务
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml --env-file .env.prod down
 
 # 恢复旧版本代码
 git checkout <previous-commit>
 
 # 重新构建
-./scripts/build-and-deploy-local.sh
+./scripts/deploy/0-compile-binaries.sh --arch amd64
+./scripts/deploy/1-build-images.sh --registry localhost:5001
 ```
 
 ---
@@ -238,13 +252,14 @@ git checkout <previous-commit>
 
 ```bash
 # 停止并删除所有容器
-docker-compose -f docker-compose.prod.yml down -v
+docker compose -f docker-compose.prod.yml --env-file .env.prod down -v
 
 # 删除所有 ADDP 镜像
 docker images | grep "^addp-" | awk '{print $3}' | xargs docker rmi -f
 
 # 重新构建
-./scripts/build-and-deploy-local.sh
+./scripts/deploy/0-compile-binaries.sh --arch amd64
+./scripts/deploy/1-build-images.sh --registry localhost:5001
 ```
 
 ---
@@ -258,6 +273,33 @@ docker images | grep "^addp-" | awk '{print $3}' | xargs docker rmi -f
 
    # 备份业务数据库
    docker exec business-postgres pg_dump -U business_user business_db > backup-business-$(date +%Y%m%d).sql
+
+---
+
+## 可选：非容器化运行（本地二进制）
+
+在无需容器的环境下，可以直接构建并运行二进制（默认输出到统一目录 `dist/`）。
+
+```bash
+# 在服务器执行（或开发机）
+cd /opt/addp
+
+# 构建 release 产物（统一输出到 dist/release）
+make build-release
+
+# 按平台运行（示例为 linux-amd64）
+./dist/release/backend/system/linux-amd64/system      &
+./dist/release/backend/manager/linux-amd64/manager    &
+./dist/release/backend/meta/linux-amd64/meta          &
+./dist/release/backend/transfer/linux-amd64/transfer  &
+./dist/release/backend/gateway/linux-amd64/gateway    &
+
+# 前端静态资源位于
+# dist/release/frontend/system/
+# dist/release/frontend/portal/
+```
+
+注意：非容器化运行需要自行准备 PostgreSQL、Redis、MinIO 等依赖，并在 `.env` 中配置对应连接信息。
    ```
 
 2. **监控服务**:
