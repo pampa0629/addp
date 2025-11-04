@@ -9,6 +9,7 @@ services:
       POSTGRES_USER: addp
       POSTGRES_PASSWORD: addp_password
       POSTGRES_DB: addp
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
