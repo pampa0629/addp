@@ -100,6 +100,16 @@
       </el-form-item>
     </template>
 
+    <!-- SpatiaLite / SQLite (file-based) -->
+    <template v-else-if="formState.resource_type === 'spatialite' || formState.resource_type === 'sqlite'">
+      <el-form-item label="文件路径" prop="connection_info.file_path">
+        <el-input v-model="formState.connection_info.file_path" placeholder="/path/to/data.sqlite 或 .spatialite" />
+      </el-form-item>
+      <div class="field-hint">
+        该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。
+      </div>
+    </template>
+
     <el-form-item v-if="showActiveSwitch" label="激活状态">
       <el-switch v-model="formState.is_active" />
     </el-form-item>
@@ -128,7 +138,9 @@ const props = defineProps({
     type: Array,
     default: () => ([
       { label: 'PostgreSQL', value: 'postgresql' },
-      { label: 'MinIO', value: 'minio' }
+      { label: 'MySQL', value: 'mysql' },
+      { label: 'MinIO', value: 'minio' },
+      { label: 'SpatiaLite/SQLite', value: 'spatialite' }
     ])
   },
   showActiveSwitch: {
@@ -147,7 +159,7 @@ const formRef = ref(null)
 const hasStoredPassword = ref(false)
 const hasStoredSecretKey = ref(false)
 
-const ensureConnectionDefaults = (form) => {
+  const ensureConnectionDefaults = (form) => {
   if (!form.connection_info || typeof form.connection_info !== 'object') {
     form.connection_info = {}
   }
@@ -165,6 +177,14 @@ const ensureConnectionDefaults = (form) => {
       password: original.password ?? '',
       sslmode: original.sslmode ?? 'disable'
     }
+  } else if (form.resource_type === 'mysql') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 3306,
+      database: original.database ?? '',
+      user: original.user ?? '',
+      password: original.password ?? ''
+    }
   } else if (form.resource_type === 'minio' || form.resource_type === 's3') {
     form.connection_info = {
       endpoint: original.endpoint ?? 'localhost:9002',
@@ -172,6 +192,10 @@ const ensureConnectionDefaults = (form) => {
       secret_key: original.secret_key ?? '',
       bucket: original.bucket ?? '',
       use_ssl: original.use_ssl ?? false
+    }
+  } else if (form.resource_type === 'spatialite' || form.resource_type === 'sqlite') {
+    form.connection_info = {
+      file_path: original.file_path ?? ''
     }
   } else {
     form.connection_info = { ...original }
@@ -252,7 +276,8 @@ const rules = {
   'connection_info.password': [{ required: true, message: '请输入密码', trigger: 'blur' }],
   'connection_info.endpoint': [{ required: true, message: '请输入端点地址', trigger: 'blur' }],
   'connection_info.access_key': [{ required: true, message: '请输入 Access Key', trigger: 'blur' }],
-  'connection_info.secret_key': [{ required: true, message: '请输入 Secret Key', trigger: 'blur' }]
+  'connection_info.secret_key': [{ required: true, message: '请输入 Secret Key', trigger: 'blur' }],
+  'connection_info.file_path': [{ required: true, message: '请输入文件路径', trigger: 'blur' }]
 }
 
 const computedRules = computed(() => {
@@ -275,6 +300,14 @@ const computedRules = computed(() => {
       'connection_info.endpoint': rules['connection_info.endpoint'],
       'connection_info.access_key': rules['connection_info.access_key'],
       'connection_info.secret_key': rules['connection_info.secret_key']
+    }
+  }
+
+  if (formState.resource_type === 'spatialite' || formState.resource_type === 'sqlite') {
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.file_path': rules['connection_info.file_path']
     }
   }
 

@@ -1,5 +1,6 @@
 .PHONY: help init dev build up down logs clean test dev-all \
-        build-backend build-frontend build-debug build-release clean-dist
+        build-backend build-frontend build-debug build-release clean-dist \
+        infra-up infra-down infra-restart infra-status ports-validate
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -66,19 +67,38 @@ init: ## 初始化项目（创建必要的目录和配置文件）
 
 dev-system: ## 开发模式运行 System 模块
 	@echo "$(GREEN)启动 System 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd system/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
+	  export POSTGRES_HOST=localhost; \
+	  export REDIS_ADDR=localhost:6379; \
+	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
+	  cd system/backend && go run cmd/server/main.go'
 
 dev-manager: ## 开发模式运行 Manager 模块
 	@echo "$(GREEN)启动 Manager 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd manager/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
+	  export POSTGRES_HOST=localhost; \
+	  export REDIS_ADDR=localhost:6379; \
+	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
+	  cd manager/backend && go run cmd/server/main.go'
 
 dev-meta: ## 开发模式运行 Meta 模块
 	@echo "$(GREEN)启动 Meta 模块开发环境...$(NC)"
-	@bash -c 'set -a; [ -f .env ] && source .env; set +a; export POSTGRES_HOST=localhost; export REDIS_HOST=localhost; export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; cd meta/backend && go run cmd/server/main.go'
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
+	  export POSTGRES_HOST=localhost; \
+	  export REDIS_ADDR=localhost:6379; \
+	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
+	  cd meta/backend && go run cmd/server/main.go'
 
 dev-transfer: ## 开发模式运行 Transfer 模块
 	@echo "$(GREEN)启动 Transfer 模块开发环境...$(NC)"
-	@cd transfer/backend && go run cmd/server/main.go
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
+	  export REDIS_HOST=localhost; \
+	  export REDIS_PORT=6379; \
+	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  cd transfer/backend && go run cmd/server/main.go'
 
 dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
@@ -237,6 +257,23 @@ status: ## 显示所有服务状态
 	@echo "  - MinIO Console:    http://localhost:9003"
 	@echo "  - MinIO API:        http://localhost:9002"
 	@echo "  - Elasticsearch:    http://localhost:9200"
+
+# ===== 基础设施脚本别名 =====
+infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
+	@bash scripts/infra-up.sh
+
+infra-down: ## 停止系统库基础设施（可选 --rm） 用法：make infra-down ARGS=--rm
+	@bash scripts/infra-down.sh $(ARGS)
+
+infra-restart: ## 重启系统库基础设施（先停再启）
+	@bash scripts/infra-down.sh || true
+	@bash scripts/infra-up.sh
+
+infra-status: ## 查看系统库基础设施状态与健康
+	@bash scripts/infra-status.sh
+
+ports-validate: ## 校验 System/Business 端口分配是否符合策略
+	@bash scripts/ports-validate.sh
 
 ps: status ## 显示服务状态（别名）
 

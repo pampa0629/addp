@@ -86,6 +86,9 @@ func SetupRouter(
 		localResources.POST("/test-connection", localResourceHandler.TestBeforeCreate)
 		localResources.POST("/:id/test", localResourceHandler.TestExisting)
 		localResources.POST("/:id/sync", localResourceHandler.Sync)
+		// 元数据扫描（本地资源）
+		localResources.GET("/:id/tables", localResourceHandler.ListTables)
+		localResources.GET("/:id/fields", localResourceHandler.ListFields)
 	}
 
 	// 对象存储辅助接口

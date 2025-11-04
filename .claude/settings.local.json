@@ -69,7 +69,10 @@
       "Bash(killall -9 bash docker-compose)",
       "Bash(killall:*)",
       "Bash(/Users/pampa/code/addp/scripts/deploy/deploy-all.sh:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(go env:*)",
+      "Bash(go clean:*)",
+      "Bash(GOPROXY=https://goproxy.cn,direct go mod download:*)"
     ],
     "deny": [],
     "ask": []

@@ -29,6 +29,13 @@ const routes = [
         component: () => import('../views/FullTextSearch.vue'),
         meta: { requiresAuth: true, title: '全文检索-addp' }
       }
+      ,
+      {
+        path: 'spatial-preview',
+        name: 'SpatialPreview',
+        component: () => import('../views/SpatialPreview.vue'),
+        meta: { requiresAuth: true, title: '空间预览-addp' }
+      }
     ]
   }
 ]

@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, mvtService *service.MVTService) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -88,6 +88,13 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			searchGroup.GET("/history", handler.ListHistory)
 			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)
 			searchGroup.DELETE("/history", handler.ClearHistory)
+		}
+
+		// Vector tiles (MVT) preview
+		tiles := api.Group("/tiles")
+		{
+			tilesHandler := NewTilesHandler(mvtService)
+			tiles.GET("/:z/:x/:y.pbf", tilesHandler.GetTile)
 		}
 	}
 

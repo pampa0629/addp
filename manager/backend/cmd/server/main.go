@@ -101,7 +101,10 @@ func main() {
 	defer searchService.Close()
 
 	// 设置路由
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService)
+    // MVT service for spatial preview tiles
+    mvtService := service.NewMVTService(metadataRepo, resourceRepo)
+
+    router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, mvtService)
 
 	// 启动服务
 	addr := ":" + cfg.Port

@@ -178,9 +178,11 @@ API 网关服务：
 ### 开发 System 模块
 
 ```bash
-# 后端开发
-cd system/backend
-go run cmd/server/main.go
+# 启动基础设施（PostgreSQL/Redis/MinIO/Elasticsearch）
+make infra-up   # 或 ./scripts/infra-up.sh
+
+# 后端开发（自动为本地 Redis 设置认证：REDIS_PASSWORD=addp_redis）
+make dev-system
 
 # 前端开发
 cd system/frontend
@@ -198,7 +200,7 @@ make dev-manager
 make dev-meta
 
 # Transfer 模块
-make dev-transfer
+make dev-transfer   # 将自动为 Redis 设置 REDIS_PASSWORD=addp_redis
 
 # Gateway 模块
 make dev-gateway
@@ -208,6 +210,7 @@ make dev-gateway
 
 ```bash
 make help            # 显示所有可用命令
+make ports-validate  # 校验端口分配策略（见 docs/PORTS.md）
 make build           # 编译所有服务
 make test            # 运行测试
 make logs            # 查看日志

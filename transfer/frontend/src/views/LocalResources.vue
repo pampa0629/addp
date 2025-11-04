@@ -122,7 +122,9 @@ const resourceTypeMap = {
   'mysql': 'MySQL',
   'minio': 'MinIO',
   's3': 'Amazon S3',
-  'oss': '阿里云 OSS'
+  'oss': '阿里云 OSS',
+  'spatialite': 'SpatiaLite/SQLite',
+  'sqlite': 'SQLite'
 }
 
 const getResourceTypeLabel = (type) => {
@@ -135,7 +137,9 @@ const getResourceTypeColor = (type) => {
     'mysql': '',
     'minio': 'warning',
     's3': 'success',
-    'oss': 'info'
+    'oss': 'info',
+    'spatialite': 'info',
+    'sqlite': 'info'
   }
   return colorMap[type] || ''
 }

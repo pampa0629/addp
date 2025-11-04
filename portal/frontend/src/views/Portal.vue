@@ -205,13 +205,15 @@ const iframeUrl = ref('')
 const isCollapsed = ref(false)
 
 // 生产环境使用 Nginx 路由的相对路径
-// 开发环境使用 localhost 端口
+// 开发环境使用当前主机名 + 端口（避免硬编码 localhost 导致跨机器访问空白）
 const isDevelopment = import.meta.env.DEV
+const protocol = window.location.protocol
+const hostname = window.location.hostname
 const moduleUrls = {
-  system: isDevelopment ? 'http://localhost:5173' : `${window.location.protocol}//${window.location.hostname}:8090`,
-  manager: isDevelopment ? 'http://localhost:5174' : `${window.location.protocol}//${window.location.hostname}:8091`,
-  meta: isDevelopment ? 'http://localhost:5175' : `${window.location.protocol}//${window.location.hostname}:8092`,
-  transfer: isDevelopment ? 'http://localhost:5176' : `${window.location.protocol}//${window.location.hostname}:8093`
+  system: isDevelopment ? `${protocol}//${hostname}:5173` : `${protocol}//${hostname}:8090`,
+  manager: isDevelopment ? `${protocol}//${hostname}:5174` : `${protocol}//${hostname}:8091`,
+  meta: isDevelopment ? `${protocol}//${hostname}:5175` : `${protocol}//${hostname}:8092`,
+  transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}:8093`
 }
 
 onMounted(async () => {

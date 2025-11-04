@@ -1,16 +1,17 @@
 package service
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
-	"log/slog"
-	"os"
-	"strconv"
-	"sync"
-	"time"
+    "context"
+    "database/sql"
+    "fmt"
+    "log/slog"
+    "os"
+    "strconv"
+    "sync"
+    "time"
 
-	"errors"
+    "errors"
+    "strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
@@ -22,10 +23,12 @@ import (
 	"github.com/addp/transfer/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
+    "github.com/redis/go-redis/v9"
+    "gorm.io/gorm"
 
-	_ "github.com/lib/pq" // PostgreSQL driver for connection tests
+    _ "github.com/lib/pq" // PostgreSQL driver for connection tests
+    _ "github.com/mattn/go-sqlite3" // SQLite/SpatiaLite for local scans
+    _ "github.com/go-sql-driver/mysql" // MySQL for local scans
 )
 
 var (
@@ -274,14 +277,18 @@ func (s *LocalResourceService) SyncToSystem(resource *models.LocalResource) (*co
 }
 
 func (s *LocalResourceService) testConnection(resourceType string, connInfo models.JSONMap) error {
-	switch resourceType {
-	case "postgresql":
-		return s.testPostgreSQL(connInfo)
-	case "minio", "s3":
-		return s.testObjectStorage(connInfo)
-	default:
-		return fmt.Errorf("unsupported resource type: %s", resourceType)
-	}
+    switch resourceType {
+    case "postgresql":
+        return s.testPostgreSQL(connInfo)
+    case "mysql":
+        return s.testMySQL(connInfo)
+    case "minio", "s3":
+        return s.testObjectStorage(connInfo)
+    case "spatialite", "sqlite":
+        return s.testSpatiaLite(connInfo)
+    default:
+        return fmt.Errorf("unsupported resource type: %s", resourceType)
+    }
 }
 
 func (s *LocalResourceService) normalizeHost(host string) string {
@@ -346,6 +353,35 @@ func (s *LocalResourceService) testPostgreSQL(connInfo models.JSONMap) error {
 	return nil
 }
 
+func (s *LocalResourceService) testMySQL(connInfo models.JSONMap) error {
+    host, _ := connInfo["host"].(string)
+    host = s.normalizeHost(host)
+    var port int
+    switch v := connInfo["port"].(type) {
+    case float64:
+        port = int(v)
+    case int:
+        port = v
+    case string:
+        if parsed, err := strconv.Atoi(v); err == nil { port = parsed }
+    }
+    if port == 0 { port = 3306 }
+    database, _ := connInfo["database"].(string)
+    user, _ := connInfo["user"].(string)
+    password, _ := connInfo["password"].(string)
+    if host == "" || user == "" || database == "" {
+        return fmt.Errorf("missing required fields: host, user, database")
+    }
+    dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", user, password, host, port, database)
+    db, err := sql.Open("mysql", dsn)
+    if err != nil { return fmt.Errorf("failed to open connection: %w", err) }
+    defer db.Close()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    if err := db.PingContext(ctx); err != nil { return fmt.Errorf("failed to ping database: %w", err) }
+    return nil
+}
+
 func (s *LocalResourceService) testObjectStorage(connInfo models.JSONMap) error {
 	endpoint, _ := connInfo["endpoint"].(string)
 	if endpoint == "" {
@@ -378,6 +414,312 @@ func (s *LocalResourceService) testObjectStorage(connInfo models.JSONMap) error 
 	}
 
 	return nil
+}
+
+// ----- Metadata scan for local resources -----
+
+// ListTables 列出本地资源的表名（当前支持 spatialite/sqlite）
+func (s *LocalResourceService) ListTables(id, tenantID uint) ([]string, error) {
+    res, err := s.Get(id, tenantID)
+    if err != nil { return nil, err }
+    switch res.ResourceType {
+    case "spatialite", "sqlite":
+        return s.listSQLiteTables(res.ConnectionInfo)
+    case "postgresql":
+        return s.listPostgresTables(res.ConnectionInfo)
+    case "mysql":
+        return s.listMySQLTables(res.ConnectionInfo)
+    default:
+        return nil, fmt.Errorf("list tables not supported for resource type: %s", res.ResourceType)
+    }
+}
+
+// ListFields 列出指定表的字段信息
+func (s *LocalResourceService) ListFields(id, tenantID uint, table string) ([]map[string]interface{}, error) {
+    res, err := s.Get(id, tenantID)
+    if err != nil { return nil, err }
+    switch res.ResourceType {
+    case "spatialite", "sqlite":
+        return s.listSQLiteFields(res.ConnectionInfo, table)
+    case "postgresql":
+        return s.listPostgresFields(res.ConnectionInfo, table)
+    case "mysql":
+        return s.listMySQLFields(res.ConnectionInfo, table)
+    default:
+        return nil, fmt.Errorf("list fields not supported for resource type: %s", res.ResourceType)
+    }
+}
+
+func (s *LocalResourceService) testSpatiaLite(connInfo models.JSONMap) error {
+    filePath, _ := connInfo["file_path"].(string)
+    if filePath == "" { return fmt.Errorf("missing required field: file_path") }
+
+    db, err := sql.Open("sqlite3", filePath)
+    if err != nil { return fmt.Errorf("failed to open sqlite: %w", err) }
+    defer db.Close()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := db.PingContext(ctx); err != nil {
+        return fmt.Errorf("failed to ping sqlite: %w", err)
+    }
+
+    // Try to load SpatiaLite extension (ignore failure)
+    _, _ = db.ExecContext(ctx, "SELECT load_extension('mod_spatialite')")
+    return nil
+}
+
+func (s *LocalResourceService) listSQLiteTables(connInfo models.JSONMap) ([]string, error) {
+    filePath, _ := connInfo["file_path"].(string)
+    if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
+
+    db, err := sql.Open("sqlite3", filePath)
+    if err != nil { return nil, fmt.Errorf("failed to open sqlite: %w", err) }
+    defer db.Close()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    // Load extension if available
+    _, _ = db.ExecContext(ctx, "SELECT load_extension('mod_spatialite')")
+
+    // Exclude internal tables
+    rows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='table'`)
+    if err != nil { return nil, err }
+    defer rows.Close()
+
+    exclude := map[string]bool{
+        "sqlite_sequence": true,
+        "geometry_columns": true,
+        "spatial_ref_sys": true,
+        "views_geometry_columns": true,
+        "virts_geometry_columns": true,
+        "views_geometry_columns_auth": true,
+        "views_geometry_columns_statistics": true,
+        "views_geometry_columns_field_infos": true,
+    }
+    // Also exclude common GPKG tables if present
+    exclude["gpkg_contents"] = true
+    exclude["gpkg_geometry_columns"] = true
+
+    var tables []string
+    for rows.Next() {
+        var name string
+        if err := rows.Scan(&name); err != nil { return nil, err }
+        lower := name
+        if exclude[strings.ToLower(lower)] { continue }
+        tables = append(tables, name)
+    }
+    return tables, nil
+}
+
+func (s *LocalResourceService) listSQLiteFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+    filePath, _ := connInfo["file_path"].(string)
+    if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
+
+    db, err := sql.Open("sqlite3", filePath)
+    if err != nil { return nil, fmt.Errorf("failed to open sqlite: %w", err) }
+    defer db.Close()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    _, _ = db.ExecContext(ctx, "SELECT load_extension('mod_spatialite')")
+
+    pragma := fmt.Sprintf("PRAGMA table_info(%s)", table)
+    rows, err := db.QueryContext(ctx, pragma)
+    if err != nil { return nil, err }
+    defer rows.Close()
+
+    // Optionally detect geometry columns
+    geomCols := map[string]bool{}
+    grows, _ := db.QueryContext(ctx, `SELECT f_geometry_column FROM geometry_columns WHERE LOWER(f_table_name)=LOWER(?)`, table)
+    for grows != nil && grows.Next() {
+        var col string
+        if err := grows.Scan(&col); err == nil { geomCols[col] = true }
+    }
+    if grows != nil { grows.Close() }
+
+    type fieldRow struct{ cid int; name, ctype string; notnull int; dflt interface{}; pk int }
+    var out []map[string]interface{}
+    for rows.Next() {
+        var cid, notnull, pk int
+        var name, ctype string
+        var dflt interface{}
+        if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil { return nil, err }
+        f := map[string]interface{}{
+            "name":       name,
+            "data_type":  ctype,
+            "nullable":   notnull == 0,
+            "primary_key": pk == 1,
+        }
+        if geomCols[name] { f["is_geometry"] = true }
+        out = append(out, f)
+    }
+    return out, nil
+}
+
+// ------- PostgreSQL metadata -------
+
+func (s *LocalResourceService) pgConn(connInfo models.JSONMap) (*sql.DB, error) {
+    host, _ := connInfo["host"].(string)
+    host = s.normalizeHost(host)
+    var port int
+    switch v := connInfo["port"].(type) {
+    case float64:
+        port = int(v)
+    case int:
+        port = v
+    case string:
+        if parsed, err := strconv.Atoi(v); err == nil { port = parsed }
+    }
+    if port == 0 { port = 5432 }
+    database, _ := connInfo["database"].(string)
+    user, _ := connInfo["user"].(string)
+    password, _ := connInfo["password"].(string)
+    sslMode, _ := connInfo["sslmode"].(string)
+    if sslMode == "" { sslMode = "disable" }
+    dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s", host, port, user, password, database, sslMode)
+    return sql.Open("postgres", dsn)
+}
+
+func (s *LocalResourceService) listPostgresTables(connInfo models.JSONMap) ([]string, error) {
+    db, err := s.pgConn(connInfo)
+    if err != nil { return nil, err }
+    defer db.Close()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    rows, err := db.QueryContext(ctx, `
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE table_type='BASE TABLE'
+        AND table_schema NOT IN ('pg_catalog','information_schema')
+      ORDER BY table_schema, table_name`)
+    if err != nil { return nil, err }
+    defer rows.Close()
+    var out []string
+    for rows.Next() {
+        var schema, name string
+        if err := rows.Scan(&schema, &name); err != nil { return nil, err }
+        out = append(out, fmt.Sprintf("%s.%s", schema, name))
+    }
+    return out, nil
+}
+
+func splitSchemaTableInput(input string) (string, string) {
+    trimmed := strings.TrimSpace(input)
+    if trimmed == "" { return "", "" }
+    parts := strings.Split(trimmed, ".")
+    if len(parts) == 1 { return "public", strings.Trim(parts[0], `"`) }
+    return strings.Trim(parts[0], `"`), strings.Trim(parts[1], `"`)
+}
+
+func (s *LocalResourceService) listPostgresFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+    db, err := s.pgConn(connInfo)
+    if err != nil { return nil, err }
+    defer db.Close()
+    schema, name := splitSchemaTableInput(table)
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    rows, err := db.QueryContext(ctx, `
+      SELECT column_name, data_type, udt_name,
+             is_nullable='YES' AS nullable,
+             (SELECT COUNT(*)>0 FROM information_schema.table_constraints tc
+              JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name=kcu.constraint_name AND tc.table_schema=kcu.table_schema
+             WHERE tc.table_schema=$1 AND tc.table_name=$2 AND tc.constraint_type='PRIMARY KEY'
+               AND kcu.column_name=columns.column_name) AS pk
+      FROM information_schema.columns columns
+      WHERE table_schema=$1 AND table_name=$2
+      ORDER BY ordinal_position`, schema, name)
+    if err != nil { return nil, err }
+    defer rows.Close()
+    var out []map[string]interface{}
+    for rows.Next() {
+        var col, dataType, udt string
+        var nullable, pk bool
+        if err := rows.Scan(&col, &dataType, &udt, &nullable, &pk); err != nil { return nil, err }
+        out = append(out, map[string]interface{}{
+            "name": col,
+            "data_type": dataType,
+            "column_type": udt,
+            "nullable": nullable,
+            "primary_key": pk,
+        })
+    }
+    return out, nil
+}
+
+// ------- MySQL metadata -------
+
+func (s *LocalResourceService) mySQLConn(connInfo models.JSONMap) (*sql.DB, error) {
+    host, _ := connInfo["host"].(string)
+    host = s.normalizeHost(host)
+    var port int
+    switch v := connInfo["port"].(type) {
+    case float64:
+        port = int(v)
+    case int:
+        port = v
+    case string:
+        if parsed, err := strconv.Atoi(v); err == nil { port = parsed }
+    }
+    if port == 0 { port = 3306 }
+    database, _ := connInfo["database"].(string)
+    user, _ := connInfo["user"].(string)
+    password, _ := connInfo["password"].(string)
+    dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true", user, password, host, port, database)
+    return sql.Open("mysql", dsn)
+}
+
+func (s *LocalResourceService) listMySQLTables(connInfo models.JSONMap) ([]string, error) {
+    db, err := s.mySQLConn(connInfo)
+    if err != nil { return nil, err }
+    defer db.Close()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    rows, err := db.QueryContext(ctx, `
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = DATABASE() AND table_type='BASE TABLE'
+      ORDER BY table_name`)
+    if err != nil { return nil, err }
+    defer rows.Close()
+    var out []string
+    for rows.Next() {
+        var name string
+        if err := rows.Scan(&name); err != nil { return nil, err }
+        out = append(out, name)
+    }
+    return out, nil
+}
+
+func (s *LocalResourceService) listMySQLFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+    db, err := s.mySQLConn(connInfo)
+    if err != nil { return nil, err }
+    defer db.Close()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    rows, err := db.QueryContext(ctx, `
+      SELECT column_name, data_type, column_type,
+             is_nullable='YES' AS nullable,
+             column_key='PRI' AS pk
+      FROM information_schema.columns
+      WHERE table_schema = DATABASE() AND table_name = ?
+      ORDER BY ordinal_position`, table)
+    if err != nil { return nil, err }
+    defer rows.Close()
+    var out []map[string]interface{}
+    for rows.Next() {
+        var col, dataType, colType string
+        var nullable, pk bool
+        if err := rows.Scan(&col, &dataType, &colType, &nullable, &pk); err != nil { return nil, err }
+        out = append(out, map[string]interface{}{
+            "name": col,
+            "data_type": dataType,
+            "column_type": colType,
+            "nullable": nullable,
+            "primary_key": pk,
+        })
+    }
+    return out, nil
 }
 
 // encryptConnectionInfo 加密连接信息中的敏感字段

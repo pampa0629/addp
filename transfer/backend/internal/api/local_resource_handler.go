@@ -12,7 +12,7 @@ import (
 
 // LocalResourceHandler 提供本地存储引擎管理 API
 type LocalResourceHandler struct {
-	service *service.LocalResourceService
+    service *service.LocalResourceService
 }
 
 // NewLocalResourceHandler 构造函数
@@ -290,4 +290,38 @@ func (h *LocalResourceHandler) Sync(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// ListTables 列出本地资源下的表（针对文件型或直连数据源）
+func (h *LocalResourceHandler) ListTables(c *gin.Context) {
+    id, ok := commonAPI.ParseUintParam(c, "id")
+    if !ok { return }
+
+    tenantID := c.GetUint("tenant_id")
+    tables, err := h.service.ListTables(id, tenantID)
+    if err != nil {
+        commonAPI.InternalServerError(c, err.Error())
+        return
+    }
+    c.JSON(http.StatusOK, tables)
+}
+
+// ListFields 列出指定表的字段（含类型信息）
+func (h *LocalResourceHandler) ListFields(c *gin.Context) {
+    id, ok := commonAPI.ParseUintParam(c, "id")
+    if !ok { return }
+
+    table := c.Query("table")
+    if table == "" {
+        commonAPI.BadRequestError(c, "missing table parameter")
+        return
+    }
+
+    tenantID := c.GetUint("tenant_id")
+    fields, err := h.service.ListFields(id, tenantID, table)
+    if err != nil {
+        commonAPI.InternalServerError(c, err.Error())
+        return
+    }
+    c.JSON(http.StatusOK, fields)
 }

@@ -14,6 +14,12 @@ export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
 export GOPATH="${PROJECT_ROOT}/.gopath"
 export GOTOOLCHAIN="local"
 
+# Honor GOPROXY from environment/.env to avoid module i/o timeouts
+if [ -n "${GOPROXY}" ]; then
+  export GOPROXY
+  echo "Go module proxy set: ${GOPROXY}"
+fi
+
 if [ -f "${ROOT_DIR}/.env" ]; then
   set -a
   # shellcheck source=/dev/null
@@ -132,6 +138,7 @@ echo ""
 
 # 5. 启动 Transfer Backend
 echo -e "${YELLOW}Step 5/7: 启动 Transfer Backend${NC}"
+(cd transfer/backend && go mod download) >/dev/null 2>> logs/transfer-backend-stderr.log || true
 (cd transfer/backend && go run cmd/server/main.go) 2> logs/transfer-backend-stderr.log &
 TRANSFER_PID=$!
 
@@ -153,6 +160,7 @@ echo ""
 
 # 6. 启动 Transfer Worker
 echo -e "${YELLOW}Step 6/7: 启动 Transfer Worker${NC}"
+(cd transfer/backend && go mod download) >/dev/null 2>> logs/transfer-worker.log || true
 (cd transfer/backend && go run cmd/worker/main.go) > logs/transfer-worker.log 2>&1 &
 TRANSFER_WORKER_PID=$!
 echo -e "${GREEN}✓ Transfer Worker 启动中 (PID: $TRANSFER_WORKER_PID)${NC}"
@@ -186,45 +194,95 @@ echo -e "${YELLOW}Step 6/6: 启动前端服务${NC}"
 # 创建 PID 目录
 mkdir -p .dev-pids
 
+# 等待 HTTP 服务就绪的小工具函数
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+  local max_wait="${3:-60}"
+  local count=0
+  echo "等待 ${name} 就绪 (${url})..."
+  until curl -fsS "$url" > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    count=$((count + 1))
+    if [ "$count" -ge "$max_wait" ]; then
+      echo -e "\n${RED}✗ ${name} 启动超时${NC}"
+      return 1
+    fi
+  done
+  echo -e "\n${GREEN}✓ ${name} 就绪${NC}"
+}
+
+# 缺依赖时自动安装
+ensure_node_modules() {
+  local dir="$1"
+  local vite_bin="$dir/node_modules/.bin/vite"
+  if [ ! -d "$dir/node_modules" ]; then
+    echo "检测到 $dir 缺少依赖，执行 npm install ..."
+    (cd "$dir" && npm install)
+  fi
+  # 某些情况下 node_modules 存在但 devDependencies 未装全，补装一次
+  if [ ! -x "$vite_bin" ]; then
+    echo "未发现 Vite，可执行文件缺失：$vite_bin"
+    echo "在 $dir 重新安装依赖 (包含 devDependencies)..."
+    (cd "$dir" && npm install)
+  fi
+  if [ ! -x "$vite_bin" ]; then
+    echo -e "${RED}✗ 依赖安装后仍未找到 Vite: $vite_bin${NC}"
+    echo "请检查网络代理或手动执行: (cd $dir && npm install)"
+    exit 1
+  fi
+}
+
 # Portal Frontend
 echo "启动 Portal Frontend..."
+ensure_node_modules "portal/frontend"
 cd portal/frontend
 npm run dev -- --host 0.0.0.0 --port "${PORTAL_FE_PORT}" > ../../logs/portal-frontend.log 2>&1 &
 PORTAL_PID=$!
 cd ../..
-echo -e "${GREEN}✓ Portal Frontend 启动中 (PID: $PORTAL_PID, Port: ${PORTAL_FE_PORT})${NC}"
+wait_for_http "Portal Frontend" "http://localhost:${PORTAL_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Portal Frontend 运行中 (PID: $PORTAL_PID, Port: ${PORTAL_FE_PORT})${NC}"
 
 # System Frontend
 echo "启动 System Frontend..."
+ensure_node_modules "system/frontend"
 cd system/frontend
 npm run dev -- --host 0.0.0.0 --port "${SYSTEM_FE_PORT}" > ../../logs/system-frontend.log 2>&1 &
 SYSTEM_FE_PID=$!
 cd ../..
-echo -e "${GREEN}✓ System Frontend 启动中 (PID: $SYSTEM_FE_PID, Port: ${SYSTEM_FE_PORT})${NC}"
+wait_for_http "System Frontend" "http://localhost:${SYSTEM_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ System Frontend 运行中 (PID: $SYSTEM_FE_PID, Port: ${SYSTEM_FE_PORT})${NC}"
 
 # Manager Frontend
 echo "启动 Manager Frontend..."
+ensure_node_modules "manager/frontend"
 cd manager/frontend
 npm run dev -- --host 0.0.0.0 --port "${MANAGER_FE_PORT}" > ../../logs/manager-frontend.log 2>&1 &
 MANAGER_FE_PID=$!
 cd ../..
-echo -e "${GREEN}✓ Manager Frontend 启动中 (PID: $MANAGER_FE_PID, Port: ${MANAGER_FE_PORT})${NC}"
+wait_for_http "Manager Frontend" "http://localhost:${MANAGER_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Manager Frontend 运行中 (PID: $MANAGER_FE_PID, Port: ${MANAGER_FE_PORT})${NC}"
 
 # Meta Frontend
 echo "启动 Meta Frontend..."
+ensure_node_modules "meta/frontend"
 cd meta/frontend
 npm run dev -- --host 0.0.0.0 --port "${META_FE_PORT}" > ../../logs/meta-frontend.log 2>&1 &
 META_FE_PID=$!
 cd ../..
-echo -e "${GREEN}✓ Meta Frontend 启动中 (PID: $META_FE_PID, Port: ${META_FE_PORT})${NC}"
+wait_for_http "Meta Frontend" "http://localhost:${META_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Meta Frontend 运行中 (PID: $META_FE_PID, Port: ${META_FE_PORT})${NC}"
 
 # Transfer Frontend
 echo "启动 Transfer Frontend..."
+ensure_node_modules "transfer/frontend"
 cd transfer/frontend
 npm run dev -- --host 0.0.0.0 --port "${TRANSFER_FE_PORT}" > ../../logs/transfer-frontend.log 2>&1 &
 TRANSFER_FE_PID=$!
 cd ../..
-echo -e "${GREEN}✓ Transfer Frontend 启动中 (PID: $TRANSFER_FE_PID, Port: ${TRANSFER_FE_PORT})${NC}"
+wait_for_http "Transfer Frontend" "http://localhost:${TRANSFER_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Transfer Frontend 运行中 (PID: $TRANSFER_FE_PID, Port: ${TRANSFER_FE_PORT})${NC}"
 
 # 保存前端 PIDs
 echo $PORTAL_PID > .dev-pids/portal-frontend.pid

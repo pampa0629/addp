@@ -285,20 +285,4 @@ func (r *GeoPackageReader) inferGeometryType(ctx context.Context, columnName str
 	return geomType
 }
 
-// mapSQLiteType 映射 SQLite 类型到统一类型
-func mapSQLiteType(sqliteType string) string {
-	switch sqliteType {
-	case "TEXT":
-		return "string"
-	case "INTEGER":
-		return "int"
-	case "REAL", "NUMERIC":
-		return "float"
-	case "BLOB":
-		return "binary"
-	case "GEOMETRY":
-		return "geometry"
-	default:
-		return "string"
-	}
-}
+// 使用包内通用的 mapSQLiteType 实现（由其他文件提供）

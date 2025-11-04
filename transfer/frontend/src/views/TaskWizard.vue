@@ -99,6 +99,7 @@
               <el-radio-group v-model="sourceConnectorType" @change="handleSourceTypeChange">
                 <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
                 <el-radio-button label="mysql">MySQL</el-radio-button>
+                <el-radio-button label="spatialite">SpatiaLite/SQLite</el-radio-button>
                 <el-radio-button label="s3">S3/MinIO</el-radio-button>
               </el-radio-group>
             </el-form-item>
@@ -195,7 +196,7 @@
           <div class="step-section">
             <h3 class="step-section__title">配置读取参数</h3>
             <el-alert
-              v-if="selectedSourceLocalResource"
+              v-if="selectedSourceLocalResource && !['spatialite','sqlite'].includes(sourceConnectorType)"
               type="warning"
               :closable="false"
               style="margin-bottom: 12px"
@@ -262,6 +263,57 @@
                     <el-option label="时间戳" value="timestamp" />
                     <el-option label="整数 ID" value="integer" />
                   </el-select>
+                </el-form-item>
+              </el-form>
+            </div>
+
+            <!-- SpatiaLite/SQLite 源配置 -->
+            <div v-if="['spatialite', 'sqlite'].includes(sourceConnectorType)">
+              <el-form label-width="120px">
+                <el-form-item label="查询方式">
+                  <el-radio-group v-model="sourceConfig.queryType">
+                    <el-radio-button label="table">选择表</el-radio-button>
+                    <el-radio-button label="sql">自定义 SQL</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.queryType === 'table'" label="表名">
+                  <el-select
+                    v-model="sourceConfig.table"
+                    placeholder="选择表"
+                    filterable
+                    style="width: 100%"
+                    :loading="loadingSourceTables"
+                    @focus="handleLoadSourceTables"
+                  >
+                    <el-option
+                      v-for="table in availableSourceTables"
+                      :key="table"
+                      :label="table"
+                      :value="table"
+                    />
+                  </el-select>
+                  <div class="hint">
+                    从本地资源实时扫描 SQLite/SpatiaLite 表。
+                    <el-button type="primary" link size="small" @click="handleLoadSourceTables">
+                      刷新列表
+                    </el-button>
+                  </div>
+                </el-form-item>
+
+                <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
+                  <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
+                    placeholder="SELECT id, AsBinary(geom) AS geom, name FROM pois" />
+                  <div class="hint">自定义 SQL 需自行对几何列使用 AsBinary() 并命名为原列名。</div>
+                </el-form-item>
+
+                <el-form-item label="WHERE 条件">
+                  <el-input v-model="sourceConfig.where_clause" placeholder="可选：status = 'active'" />
+                </el-form-item>
+
+                <el-form-item label="空间字段">
+                  <el-input v-model="sourceConfig.geometry_fields" placeholder="可选：以逗号分隔，如 geom,geom2" />
+                  <div class="hint">不填则自动探测（基于 geometry_columns）。</div>
                 </el-form-item>
               </el-form>
             </div>
@@ -866,6 +918,31 @@ const spatialSourceFields = computed(() => {
 
 const hasSpatialSource = computed(() => spatialSourceFields.value.length > 0)
 
+// Debounce timer for auto-fetching fields when local sqlite/spatialite table changes
+let localSourceFieldsDebounce = null
+watch(
+  () => sourceConfig.value.table,
+  async (newTable) => {
+    if (!newTable) return
+    // only for local resource + spatialite/sqlite + table mode
+    if (
+      !sourceIsSystem.value &&
+      ['spatialite', 'sqlite'].includes(sourceConnectorType.value) &&
+      selectedSourceLocalResource.value &&
+      sourceConfig.value.queryType === 'table'
+    ) {
+      if (localSourceFieldsDebounce) clearTimeout(localSourceFieldsDebounce)
+      localSourceFieldsDebounce = setTimeout(async () => {
+        try {
+          await handleFetchFields('source')
+        } catch (e) {
+          console.error('自动加载本地源字段失败:', e)
+        }
+      }, 300)
+    }
+  }
+)
+
 const effectiveGeometryFields = computed(() => {
   if (!hasSpatialSource.value) {
     return []
@@ -921,6 +998,9 @@ const matchesConnectorType = (resourceType, connectorType) => {
   if (!type) return true
   if (type === 's3') {
     return ['s3', 'minio', 'oss'].includes(resource)
+  }
+  if (type === 'spatialite' || type === 'sqlite') {
+    return resource.includes('spatialite') || resource.includes('sqlite')
   }
   return resource.includes(type)
 }
@@ -1978,40 +2058,43 @@ const loadTaskForEdit = async () => {
 }
 
 const handleLoadSourceTables = async () => {
-  if (!sourceIsSystem.value) {
-    ElMessage.info('本地存储引擎暂不支持从元数据模块加载表，请手动配置')
-    return
-  }
-
-  if (!taskForm.value.source_id) {
+  if (!taskForm.value.source_id && !selectedSourceLocalResource.value) {
     ElMessage.warning('请先选择源数据源')
-    return
-  }
-
-  if (!['postgresql', 'mysql'].includes(sourceConnectorType.value)) {
     return
   }
 
   loadingSourceTables.value = true
   try {
-    const token = localStorage.getItem('token')
-    const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
-      params: { resource_id: taskForm.value.source_id },
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    if (response.data && Array.isArray(response.data)) {
-      availableSourceTables.value = response.data.map(item => item.name || item)
-      ElMessage.success(`已加载 ${availableSourceTables.value.length} 个表`)
+    if (sourceIsSystem.value) {
+      if (!['postgresql', 'mysql'].includes(sourceConnectorType.value)) {
+        return
+      }
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
+        params: { resource_id: taskForm.value.source_id },
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (response.data && Array.isArray(response.data)) {
+        availableSourceTables.value = response.data.map(item => item.name || item)
+        ElMessage.success(`已加载 ${availableSourceTables.value.length} 个表`)
+      } else {
+        ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
+      }
     } else {
-      ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
+      // 本地资源：统一调用后端列出表（支持 postgresql/mysql/spatialite/sqlite）
+      const res = await localResourcesAPI.listTables(selectedSourceLocalResource.value.id)
+      if (Array.isArray(res)) {
+        availableSourceTables.value = res
+      } else if (Array.isArray(res?.data)) {
+        availableSourceTables.value = res.data
+      } else {
+        availableSourceTables.value = []
+      }
+      ElMessage.success(`已加载 ${availableSourceTables.value.length} 个表`)
     }
   } catch (error) {
     console.error('加载表列表失败:', error)
-    if (error.response?.status === 404 || error.response?.data?.error?.includes('未找到')) {
-      ElMessage.warning('该数据源尚未扫描元数据，请先到元数据模块进行扫描')
-    } else {
-      ElMessage.error('加载表列表失败: ' + (error.response?.data?.error || error.message))
-    }
+    ElMessage.error('加载表列表失败: ' + (error.response?.data?.error || error.message))
   } finally {
     loadingSourceTables.value = false
   }
@@ -2061,11 +2144,6 @@ const handleLoadTargetTables = async () => {
 const handleFetchFields = async (type) => {
   const isSource = type === 'source'
   const useSystem = isSource ? sourceIsSystem.value : targetIsSystem.value
-  if (!useSystem) {
-    ElMessage.info('本地存储引擎暂不支持自动获取字段，请手动维护映射')
-    return
-  }
-
   const resourceId = isSource ? taskForm.value.source_id : taskForm.value.target_id
   const tableName = isSource ? sourceConfig.value.table : targetConfig.value.table
 
@@ -2086,74 +2164,97 @@ const handleFetchFields = async (type) => {
   }
 
   try {
-    const token = localStorage.getItem('token')
-    const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
-      params: {
-        resource_id: resourceId,
-        table_name: tableName,
-        include_details: true
-      },
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    if (useSystem) {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
+        params: {
+          resource_id: resourceId,
+          table_name: tableName,
+          include_details: true
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      })
 
-    if (response.data && Array.isArray(response.data)) {
-      if (isSource) {
-        if (response.data.length > 0 && typeof response.data[0] === 'object') {
-          sourceFieldDetails.value = response.data.map(field => ({
-            name: field.name || '',
-            data_type: field.data_type || '',
-            column_type: field.column_type || '',
-            default_value: field.default_value || '',
-            comment: field.comment || '',
-            is_nullable: field.is_nullable,
-            is_primary_key: field.is_primary_key,
-            is_unique_key: field.is_unique_key
-          }))
-          sourceFields.value = sourceFieldDetails.value.map(field => field.name).filter(Boolean)
+      if (response.data && Array.isArray(response.data)) {
+        if (isSource) {
+          if (response.data.length > 0 && typeof response.data[0] === 'object') {
+            sourceFieldDetails.value = response.data.map(field => ({
+              name: field.name || '',
+              data_type: field.data_type || '',
+              column_type: field.column_type || '',
+              default_value: field.default_value || '',
+              comment: field.comment || '',
+              is_nullable: field.is_nullable,
+              is_primary_key: field.is_primary_key,
+              is_unique_key: field.is_unique_key
+            }))
+            sourceFields.value = sourceFieldDetails.value.map(field => field.name).filter(Boolean)
+          } else {
+            sourceFieldDetails.value = (response.data || []).map(name => ({
+              name: String(name || ''),
+              data_type: '',
+              column_type: '',
+              default_value: '',
+              comment: '',
+              is_nullable: true,
+              is_primary_key: false,
+              is_unique_key: false
+            }))
+            sourceFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
+          }
+
+          if (hasSpatialSource.value && needsGeometrySelection.value) {
+            ensureGeometrySelectionDefaults(spatialSourceFields.value)
+            syncGeometryFieldsToConfig()
+          } else {
+            syncGeometryFieldsToConfig()
+          }
+
+          ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
+          sourceFieldsLoaded.value = true
         } else {
-          sourceFieldDetails.value = (response.data || []).map(name => ({
-            name: String(name || ''),
-            data_type: '',
-            column_type: '',
-            default_value: '',
-            comment: '',
-            is_nullable: true,
-            is_primary_key: false,
-            is_unique_key: false
-          }))
-          sourceFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
+          if (response.data.length > 0 && typeof response.data[0] === 'object') {
+            targetFieldDetails.value = response.data.map(field => ({
+              name: field.name || '',
+              data_type: field.data_type || '',
+              column_type: field.column_type || ''
+            }))
+            targetFields.value = targetFieldDetails.value.map(field => field.name).filter(Boolean)
+          } else {
+            targetFieldDetails.value = (response.data || []).map(name => ({
+              name: String(name || ''),
+              data_type: '',
+              column_type: ''
+            }))
+            targetFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
+          }
+          ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
+          targetFieldsLoaded.value = true
         }
-
-        if (hasSpatialSource.value && needsGeometrySelection.value) {
-          ensureGeometrySelectionDefaults(spatialSourceFields.value)
-          syncGeometryFieldsToConfig()
-        } else {
-          syncGeometryFieldsToConfig()
-        }
-
+      } else {
+        ElMessage.warning('未获取到字段信息')
+      }
+    } else {
+      // 本地资源：统一调用后端字段扫描（支持 postgresql/mysql/spatialite/sqlite）
+      if (!selectedSourceLocalResource.value) {
+        ElMessage.info('该类型本地资源暂不支持自动获取字段，请手动维护映射')
+        return
+      }
+      const res = await localResourcesAPI.listFields(selectedSourceLocalResource.value.id, tableName)
+      const data = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])
+      if (data && Array.isArray(data)) {
+        sourceFieldDetails.value = data.map(field => ({
+          name: field.name || '',
+          data_type: field.data_type || field.DataType || '',
+          column_type: field.column_type || field.ColumnType || '',
+          nullable: (field.nullable ?? field.is_nullable) !== false
+        }))
+        sourceFields.value = sourceFieldDetails.value.map(f => f.name)
         ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
         sourceFieldsLoaded.value = true
       } else {
-        if (response.data.length > 0 && typeof response.data[0] === 'object') {
-          targetFieldDetails.value = response.data.map(field => ({
-            name: field.name || '',
-            data_type: field.data_type || '',
-            column_type: field.column_type || ''
-          }))
-          targetFields.value = targetFieldDetails.value.map(field => field.name).filter(Boolean)
-        } else {
-          targetFieldDetails.value = (response.data || []).map(name => ({
-            name: String(name || ''),
-            data_type: '',
-            column_type: ''
-          }))
-          targetFields.value = response.data.map(item => (item == null ? '' : String(item))).filter(Boolean)
-        }
-        ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
-        targetFieldsLoaded.value = true
+        ElMessage.warning('未获取到字段信息')
       }
-    } else {
-      ElMessage.warning('未获取到字段信息')
     }
   } catch (error) {
     console.error('获取字段列表失败:', error)
@@ -2204,8 +2305,17 @@ const nextStep = async () => {
 const autoFetchAndMapFields = async () => {
   try {
     // 首先获取源字段
-    if (sourceIsSystem.value && sourceFields.value.length === 0) {
-      await handleFetchFields('source')
+    if (sourceFields.value.length === 0) {
+      if (sourceIsSystem.value) {
+        await handleFetchFields('source')
+      } else if (
+        ['spatialite', 'sqlite'].includes(sourceConnectorType.value) &&
+        selectedSourceLocalResource.value &&
+        sourceConfig.value.queryType === 'table' &&
+        (sourceConfig.value.table || '').trim() !== ''
+      ) {
+        await handleFetchFields('source')
+      }
     }
 
     // 等待源字段加载完成
@@ -2343,6 +2453,15 @@ const buildConnectorConfigFromResource = (resource) => {
     }
   }
 
+  if (['spatialite', 'sqlite'].includes(type)) {
+    return {
+      type: 'spatialite',
+      file_path: conn.file_path || '',
+      resource_type: resource.resource_type,
+      connection_info: conn
+    }
+  }
+
   return {
     resource_type: resource.resource_type,
     connection_info: conn
@@ -2357,6 +2476,19 @@ const handleSubmit = async () => {
     const config = {
       source: { ...sourceConfig.value },
       target: { ...targetConfig.value }
+    }
+
+    // 规范化 SpatiaLite 源配置的 geometry_fields（字符串 -> 数组）
+    if (['spatialite', 'sqlite'].includes(sourceConnectorType.value)) {
+      const gf = config.source.geometry_fields
+      if (typeof gf === 'string') {
+        const arr = gf.split(',').map(s => s.trim()).filter(Boolean)
+        if (arr.length > 0) {
+          config.source.geometry_fields = arr
+        } else {
+          delete config.source.geometry_fields
+        }
+      }
     }
 
     if (typeof config.source.parameters === 'string') {

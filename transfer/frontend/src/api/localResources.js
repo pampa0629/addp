@@ -16,6 +16,10 @@ export const localResourcesAPI = {
   testExisting: (id) => client.post(`/local-resources/${id}/test`),
   syncToSystem: (id) => client.post(`/local-resources/${id}/sync`),
 
+  // 本地元数据扫描
+  listTables: (id) => client.get(`/local-resources/${id}/tables`),
+  listFields: (id, table) => client.get(`/local-resources/${id}/fields`, { params: { table } }),
+
   // 获取 System 模块的存储引擎（用于任务配置）
   listSystemResources: (resourceType = null) => {
     const params = {}
