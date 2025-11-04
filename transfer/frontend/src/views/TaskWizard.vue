@@ -234,7 +234,7 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从元数据模块自动获取可用表列表。
+                    从元数据模块自动获取可用表列表。选择表后将自动获取字段信息。
                     <el-button type="primary" link size="small" @click="handleLoadSourceTables">
                       刷新列表
                     </el-button>
@@ -294,7 +294,7 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从本地资源实时扫描 SQLite/SpatiaLite 表。
+                    从本地资源实时扫描 SQLite/SpatiaLite 表。选择表后将自动获取字段信息。
                     <el-button type="primary" link size="small" @click="handleLoadSourceTables">
                       刷新列表
                     </el-button>
@@ -492,6 +492,7 @@
                     placeholder="选择表"
                     filterable
                     allow-create
+                    default-first-option
                     style="width: 100%"
                     :loading="loadingTargetTables"
                     @focus="handleLoadTargetTables"
@@ -504,7 +505,7 @@
                     />
                   </el-select>
                   <div class="hint">
-                    从元数据模块自动获取可用表列表，也可手动输入新表名。
+                    从元数据模块自动获取可用表列表;输入新表名后按回车确认。选择表后将自动获取字段信息。
                     <el-button type="primary" link size="small" @click="handleLoadTargetTables">
                       刷新列表
                     </el-button>
@@ -535,6 +536,11 @@
                     <el-option label="更新" value="update" />
                     <el-option label="报错" value="error" />
                   </el-select>
+                </el-form-item>
+
+                <el-form-item label="自动创建表">
+                  <el-switch v-model="targetConfig.create_table" />
+                  <div class="hint">PostgreSQL：若表不存在，根据字段映射自动建表</div>
                 </el-form-item>
               </el-form>
             </div>
@@ -918,28 +924,103 @@ const spatialSourceFields = computed(() => {
 
 const hasSpatialSource = computed(() => spatialSourceFields.value.length > 0)
 
-// Debounce timer for auto-fetching fields when local sqlite/spatialite table changes
-let localSourceFieldsDebounce = null
+// Debounce timers for auto-fetching fields when table selection changes
+let sourceFieldsAutoFetchDebounce = null
+let targetFieldsAutoFetchDebounce = null
+
+// Auto-fetch SOURCE fields after selecting a table (system or local), when using table mode
 watch(
   () => sourceConfig.value.table,
-  async (newTable) => {
-    if (!newTable) return
-    // only for local resource + spatialite/sqlite + table mode
-    if (
-      !sourceIsSystem.value &&
-      ['spatialite', 'sqlite'].includes(sourceConnectorType.value) &&
-      selectedSourceLocalResource.value &&
-      sourceConfig.value.queryType === 'table'
-    ) {
-      if (localSourceFieldsDebounce) clearTimeout(localSourceFieldsDebounce)
-      localSourceFieldsDebounce = setTimeout(async () => {
-        try {
-          await handleFetchFields('source')
-        } catch (e) {
-          console.error('自动加载本地源字段失败:', e)
-        }
-      }, 300)
+  async (newTable, oldTable) => {
+    // 只在表名真正改变时触发(避免初始化时重复触发)
+    if (!newTable || newTable === oldTable) return
+
+    // SQL 模式不需要自动获取(用户自定义 SQL)
+    if (sourceConfig.value.queryType === 'sql') return
+
+    // 必须已选择数据源
+    const hasResource = sourceIsSystem.value
+      ? !!taskForm.value.source_id
+      : !!selectedSourceLocalResource.value
+
+    if (!hasResource) {
+      console.log('自动获取源字段: 尚未选择数据源,跳过')
+      return
     }
+
+    // 清除之前的防抖定时器
+    if (sourceFieldsAutoFetchDebounce) clearTimeout(sourceFieldsAutoFetchDebounce)
+
+    // 300ms 防抖,避免快速切换表时多次请求
+    sourceFieldsAutoFetchDebounce = setTimeout(async () => {
+      console.log(`自动获取源字段: ${newTable}`)
+      try {
+        await handleFetchFields('source')
+
+        // 如果已经在字段映射步骤,且目标字段也已准备好,尝试自动匹配
+        if (currentStep.value === 3 && targetFields.value.length > 0) {
+          performAutoMatch()
+        }
+      } catch (e) {
+        console.error('自动加载源字段失败:', e)
+        // 只在非初始化阶段显示错误提示
+        if (!loadingTask.value && !isInitializingFromTask.value) {
+          ElMessage.warning(`自动获取源字段失败: ${e.message || '未知错误'}`)
+        }
+      }
+    }, 300)
+  }
+)
+
+// Auto-fetch TARGET fields after selecting a table (system only), when using table mode
+watch(
+  () => targetConfig.value.table,
+  async (newTable, oldTable) => {
+    // 只在表名真正改变时触发
+    if (!newTable || newTable === oldTable) return
+
+    // SQL 模式不需要自动获取
+    if (targetConfig.value.queryType === 'sql') return
+
+    // 目前只支持系统资源自动获取目标字段
+    if (!targetIsSystem.value) {
+      console.log('自动获取目标字段: 本地资源暂不支持,跳过')
+      return
+    }
+
+    // 只支持数据库类型
+    if (!['postgresql', 'mysql'].includes(targetConnectorType.value)) {
+      console.log('自动获取目标字段: 目标类型不支持,跳过')
+      return
+    }
+
+    // 必须已选择数据源
+    if (!taskForm.value.target_id) {
+      console.log('自动获取目标字段: 尚未选择数据源,跳过')
+      return
+    }
+
+    // 清除之前的防抖定时器
+    if (targetFieldsAutoFetchDebounce) clearTimeout(targetFieldsAutoFetchDebounce)
+
+    // 300ms 防抖
+    targetFieldsAutoFetchDebounce = setTimeout(async () => {
+      console.log(`自动获取目标字段: ${newTable}`)
+      try {
+        await handleFetchFields('target')
+
+        // 如果已经在字段映射步骤,且源字段也已准备好,尝试自动匹配
+        if (currentStep.value === 3 && sourceFields.value.length > 0) {
+          performAutoMatch()
+        }
+      } catch (e) {
+        console.error('自动加载目标字段失败:', e)
+        // 只在非初始化阶段显示错误提示
+        if (!loadingTask.value && !isInitializingFromTask.value) {
+          ElMessage.warning(`自动获取目标字段失败: ${e.message || '未知错误'}`)
+        }
+      }
+    }, 300)
   }
 )
 
@@ -2145,10 +2226,18 @@ const handleFetchFields = async (type) => {
   const isSource = type === 'source'
   const useSystem = isSource ? sourceIsSystem.value : targetIsSystem.value
   const resourceId = isSource ? taskForm.value.source_id : taskForm.value.target_id
+  const localResource = isSource ? selectedSourceLocalResource.value : selectedTargetLocalResource.value
   const tableName = isSource ? sourceConfig.value.table : targetConfig.value.table
+  const connectorType = isSource ? sourceConnectorType.value : targetConnectorType.value
 
-  if (!resourceId) {
+  // 验证必要参数
+  if (useSystem && !resourceId) {
     ElMessage.warning(`请先选择${isSource ? '源' : '目标'}数据源`)
+    return
+  }
+
+  if (!useSystem && !localResource) {
+    ElMessage.warning(`请先选择${isSource ? '源' : '目标'}本地存储引擎`)
     return
   }
 
@@ -2165,6 +2254,7 @@ const handleFetchFields = async (type) => {
 
   try {
     if (useSystem) {
+      // 系统资源: 从 Meta 模块获取字段
       const token = localStorage.getItem('token')
       const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
         params: {
@@ -2177,6 +2267,7 @@ const handleFetchFields = async (type) => {
 
       if (response.data && Array.isArray(response.data)) {
         if (isSource) {
+          // 处理源字段
           if (response.data.length > 0 && typeof response.data[0] === 'object') {
             sourceFieldDetails.value = response.data.map(field => ({
               name: field.name || '',
@@ -2213,6 +2304,7 @@ const handleFetchFields = async (type) => {
           ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
           sourceFieldsLoaded.value = true
         } else {
+          // 处理目标字段
           if (response.data.length > 0 && typeof response.data[0] === 'object') {
             targetFieldDetails.value = response.data.map(field => ({
               name: field.name || '',
@@ -2232,33 +2324,62 @@ const handleFetchFields = async (type) => {
           targetFieldsLoaded.value = true
         }
       } else {
-        ElMessage.warning('未获取到字段信息')
+        ElMessage.warning(`未获取到${isSource ? '源' : '目标'}字段信息,请确认元数据已扫描`)
       }
     } else {
-      // 本地资源：统一调用后端字段扫描（支持 postgresql/mysql/spatialite/sqlite）
-      if (!selectedSourceLocalResource.value) {
-        ElMessage.info('该类型本地资源暂不支持自动获取字段，请手动维护映射')
+      // 本地资源: 直接从数据库扫描字段
+      if (!localResource) {
+        ElMessage.info(`该类型本地资源暂不支持自动获取字段,请手动维护映射`)
         return
       }
-      const res = await localResourcesAPI.listFields(selectedSourceLocalResource.value.id, tableName)
+
+      console.log(`调用本地资源字段扫描: resourceId=${localResource.id}, table=${tableName}, type=${connectorType}`)
+
+      const res = await localResourcesAPI.listFields(localResource.id, tableName)
       const data = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])
-      if (data && Array.isArray(data)) {
-        sourceFieldDetails.value = data.map(field => ({
-          name: field.name || '',
-          data_type: field.data_type || field.DataType || '',
-          column_type: field.column_type || field.ColumnType || '',
-          nullable: (field.nullable ?? field.is_nullable) !== false
-        }))
-        sourceFields.value = sourceFieldDetails.value.map(f => f.name)
-        ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
-        sourceFieldsLoaded.value = true
+
+      if (data && Array.isArray(data) && data.length > 0) {
+        if (isSource) {
+          sourceFieldDetails.value = data.map(field => ({
+            name: field.name || '',
+            data_type: field.data_type || field.DataType || '',
+            column_type: field.column_type || field.ColumnType || '',
+            nullable: (field.nullable ?? field.is_nullable) !== false
+          }))
+          sourceFields.value = sourceFieldDetails.value.map(f => f.name).filter(Boolean)
+
+          if (hasSpatialSource.value && needsGeometrySelection.value) {
+            ensureGeometrySelectionDefaults(spatialSourceFields.value)
+            syncGeometryFieldsToConfig()
+          } else {
+            syncGeometryFieldsToConfig()
+          }
+
+          ElMessage.success(`已加载 ${sourceFields.value.length} 个源字段`)
+          sourceFieldsLoaded.value = true
+        } else {
+          targetFieldDetails.value = data.map(field => ({
+            name: field.name || '',
+            data_type: field.data_type || field.DataType || '',
+            column_type: field.column_type || field.ColumnType || ''
+          }))
+          targetFields.value = targetFieldDetails.value.map(f => f.name).filter(Boolean)
+          ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
+          targetFieldsLoaded.value = true
+        }
       } else {
-        ElMessage.warning('未获取到字段信息')
+        ElMessage.warning(`未获取到${isSource ? '源' : '目标'}字段信息,请检查表名是否正确`)
       }
     }
   } catch (error) {
     console.error('获取字段列表失败:', error)
-    ElMessage.error('获取字段列表失败: ' + (error.response?.data?.error || error.message))
+    const errorMsg = error.response?.data?.error || error.message || '未知错误'
+
+    if (error.response?.status === 404) {
+      ElMessage.error(`未找到表「${tableName}」的字段信息,请先到元数据模块扫描该数据源`)
+    } else {
+      ElMessage.error(`获取字段列表失败: ${errorMsg}`)
+    }
   } finally {
     if (isSource) {
       loadingSourceFields.value = false
@@ -2303,50 +2424,128 @@ const nextStep = async () => {
 }
 
 const autoFetchAndMapFields = async () => {
+  console.log('=== 进入字段映射步骤,开始自动获取字段 ===')
+
   try {
-    // 首先获取源字段
+    // 第一步: 获取源字段(如果还没有)
     if (sourceFields.value.length === 0) {
-      if (sourceIsSystem.value) {
+      console.log('源字段为空,尝试自动获取...')
+
+      if (sourceIsSystem.value && taskForm.value.source_id && sourceConfig.value.table) {
+        console.log('系统资源 + 表模式,获取源字段')
         await handleFetchFields('source')
       } else if (
-        ['spatialite', 'sqlite'].includes(sourceConnectorType.value) &&
+        !sourceIsSystem.value &&
         selectedSourceLocalResource.value &&
         sourceConfig.value.queryType === 'table' &&
-        (sourceConfig.value.table || '').trim() !== ''
+        sourceConfig.value.table
       ) {
+        console.log('本地资源 + 表模式,获取源字段')
         await handleFetchFields('source')
+      } else if (sourceConfig.value.queryType === 'sql') {
+        console.log('SQL 模式,无法自动获取源字段')
+        ElMessage.info('SQL 模式下无法自动获取字段,请手动添加映射')
+      } else {
+        console.log('缺少必要参数,无法获取源字段:', {
+          isSystem: sourceIsSystem.value,
+          resourceId: taskForm.value.source_id,
+          localResource: !!selectedSourceLocalResource.value,
+          table: sourceConfig.value.table,
+          queryType: sourceConfig.value.queryType
+        })
       }
+    } else {
+      console.log(`源字段已存在: ${sourceFields.value.length} 个`)
     }
 
     // 等待源字段加载完成
     await nextTick()
 
-    // 对于数据库目标，获取目标字段
-    if (targetIsSystem.value && ['postgresql', 'mysql'].includes(targetConnectorType.value)) {
-      if (targetFields.value.length === 0 && targetConfig.value.table) {
-        await handleFetchFields('target')
+    // 第二步: 获取目标字段(根据目标类型)
+    if (targetFields.value.length === 0) {
+      console.log('目标字段为空,尝试自动获取...')
+      console.log('目标配置信息:', {
+        isSystem: targetIsSystem.value,
+        connectorType: targetConnectorType.value,
+        resourceId: taskForm.value.target_id,
+        localResource: selectedTargetLocalResource.value?.id,
+        localResourceType: selectedTargetLocalResource.value?.resource_type,
+        table: targetConfig.value.table,
+        sourceFieldsCount: sourceFields.value.length
+      })
+
+      if (targetIsSystem.value && ['postgresql', 'mysql'].includes(targetConnectorType.value)) {
+        // 数据库目标: 从 Meta 模块获取字段
+        if (targetConfig.value.table) {
+          console.log('数据库目标 + 已选表,获取目标字段')
+          try {
+            await handleFetchFields('target')
+
+            // 检查是否成功获取到字段
+            if (targetFields.value.length === 0) {
+              // 可能是新表,使用源字段作为目标字段
+              console.log('目标字段为空(可能是新表),使用源字段作为目标字段')
+              if (sourceFields.value.length > 0) {
+                targetFields.value = [...sourceFields.value]
+                ElMessage.info('目标表可能是新表,已使用源字段自动创建映射')
+              } else {
+                ElMessage.warning('源字段和目标字段都为空,无法自动映射')
+              }
+            }
+          } catch (error) {
+            // 如果获取失败(404等错误),使用源字段作为目标字段
+            console.warn('获取目标字段失败,使用源字段:', error)
+            if (sourceFields.value.length > 0) {
+              console.log('使用源字段作为目标字段 (异常情况)')
+              targetFields.value = [...sourceFields.value]
+              ElMessage.info('无法从元数据获取目标字段,已使用源字段自动创建映射')
+            }
+          }
+        } else {
+          console.log('数据库目标但未选表,跳过获取目标字段')
+          ElMessage.warning('请先在目标设置中选择或输入目标表名')
+        }
+      } else if (targetConnectorType.value === 's3' ||
+                 (!targetIsSystem.value &&
+                  selectedTargetLocalResource.value &&
+                  ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value.resource_type || '').toLowerCase()))) {
+        // 对象存储目标: 使用源字段作为目标字段
+        console.log('对象存储目标,使用源字段作为目标字段')
+        targetFields.value = [...sourceFields.value]
+
+        if (hasSpatialSource.value && needsGeometrySelection.value) {
+          ensureGeometrySelectionDefaults(spatialSourceFields.value)
+        }
+        syncGeometryFieldsToConfig()
+      } else {
+        console.log('未知目标类型或缺少必要参数:', {
+          isSystem: targetIsSystem.value,
+          type: targetConnectorType.value,
+          localResource: selectedTargetLocalResource.value?.resource_type
+        })
+        ElMessage.warning('无法识别目标类型,请检查目标数据源配置')
       }
-    }
-    // 对于对象存储目标（本地或系统），使用源字段作为目标字段
-    else if (targetConnectorType.value === 's3' || (!targetIsSystem.value && selectedTargetLocalResource.value && ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value.resource_type || '').toLowerCase()))) {
-      targetFields.value = [...sourceFields.value]
-      if (hasSpatialSource.value && needsGeometrySelection.value) {
-        ensureGeometrySelectionDefaults(spatialSourceFields.value)
-      }
-      syncGeometryFieldsToConfig()
+    } else {
+      console.log(`目标字段已存在: ${targetFields.value.length} 个`)
     }
 
     // 等待所有字段加载完成
     await nextTick()
 
-    // 执行自动匹配
+    // 第三步: 执行自动匹配
+    console.log(`准备自动匹配: 源字段 ${sourceFields.value.length} 个, 目标字段 ${targetFields.value.length} 个`)
+
     if (sourceFields.value.length > 0 && targetFields.value.length > 0) {
       performAutoMatch()
     } else if (sourceFields.value.length === 0) {
-      ElMessage.warning('源字段列表为空，无法自动映射')
+      console.warn('源字段列表为空,无法自动映射')
+      ElMessage.warning('源字段列表为空,无法自动映射。请检查源数据源配置或手动添加映射。')
     } else if (targetFields.value.length === 0) {
-      ElMessage.warning('目标字段列表为空，无法自动映射')
+      console.warn('目标字段列表为空,无法自动映射')
+      ElMessage.warning('目标字段列表为空,无法自动映射。请检查目标数据源配置或手动添加映射。')
     }
+
+    console.log('=== 字段自动获取流程完成 ===')
   } catch (error) {
     console.error('自动字段映射失败:', error)
     ElMessage.error('自动字段映射失败: ' + error.message)
