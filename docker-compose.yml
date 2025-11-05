@@ -2,8 +2,9 @@ services:
   # ==================== 基础设施服务 ====================
 
   # PostgreSQL - ADDP系统数据库
+  # Note: Using postgis/postgis:15-3.4 (non-alpine) for ARM compatibility
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.4
     container_name: addp-postgres
     environment:
       POSTGRES_USER: addp

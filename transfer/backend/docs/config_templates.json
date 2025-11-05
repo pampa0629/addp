@@ -1,0 +1,301 @@
+{
+  "task_templates": {
+    "spatialite_to_postgis_small": {
+      "name": "Spatialite to PostGIS (Small Dataset < 1M)",
+      "description": "适用于小于 100 万条记录的数据导入，使用单线程模式",
+      "source_config": {
+        "type": "spatialite",
+        "config": {
+          "file_path": "/path/to/source.sqlite",
+          "table": "table_name",
+          "where_clause": "",
+          "geometry_fields": ["geom"]
+        },
+        "batch_size": 1000
+      },
+      "target_config": {
+        "type": "jdbc",
+        "config": {
+          "driver": "postgresql",
+          "host": "192.168.1.92",
+          "port": 5433,
+          "database": "business",
+          "username": "business",
+          "password": "business_password",
+          "table": "schema.table_name",
+          "write_mode": "insert",
+          "create_table": true,
+          "srid": 4326,
+          "geometry_columns": ["geom"]
+        },
+        "batch_size": 1000
+      },
+      "transforms": [],
+      "execution_mode": "serial"
+    },
+
+    "spatialite_to_postgis_medium": {
+      "name": "Spatialite to PostGIS (Medium Dataset 1M-10M)",
+      "description": "适用于 100 万 - 1000 万条记录，使用 4 核并行 + COPY",
+      "source_config": {
+        "type": "spatialite_parallel",
+        "config": {
+          "file_path": "/path/to/source.sqlite",
+          "table": "table_name",
+          "num_workers": 4,
+          "partition_key": "ROWID",
+          "partition_size": 100000,
+          "batch_size": 5000,
+          "geometry_fields": ["geom"]
+        },
+        "batch_size": 5000
+      },
+      "target_config": {
+        "type": "postgres_copy",
+        "config": {
+          "host": "192.168.1.92",
+          "port": 5433,
+          "database": "business",
+          "username": "business",
+          "password": "business_password",
+          "table": "schema.table_name",
+          "batch_size": 10000,
+          "max_connections": 4,
+          "create_table": true,
+          "srid": 4326,
+          "geometry_columns": ["geom"]
+        },
+        "batch_size": 10000
+      },
+      "transforms": [],
+      "execution_mode": "parallel",
+      "execution_config": {
+        "num_writers": 4,
+        "checkpoint_interval": 50
+      }
+    },
+
+    "spatialite_to_postgis_large": {
+      "name": "Spatialite to PostGIS (Large Dataset 10M-50M)",
+      "description": "适用于 1000 万 - 5000 万条记录，使用 8 核并行 + COPY + PostgreSQL 优化",
+      "source_config": {
+        "type": "spatialite_parallel",
+        "config": {
+          "file_path": "/path/to/source.sqlite",
+          "table": "table_name",
+          "num_workers": 8,
+          "partition_key": "ROWID",
+          "partition_size": 200000,
+          "batch_size": 8000,
+          "geometry_fields": ["geom"]
+        },
+        "batch_size": 8000
+      },
+      "target_config": {
+        "type": "postgres_copy",
+        "config": {
+          "host": "192.168.1.92",
+          "port": 5433,
+          "database": "business",
+          "username": "business",
+          "password": "business_password",
+          "table": "schema.table_name",
+          "batch_size": 20000,
+          "max_connections": 8,
+          "create_table": true,
+          "srid": 4326,
+          "geometry_columns": ["geom"],
+          "preallocate_table": true
+        },
+        "batch_size": 20000
+      },
+      "transforms": [],
+      "execution_mode": "parallel",
+      "execution_config": {
+        "num_writers": 8,
+        "checkpoint_interval": 100
+      },
+      "postgresql_optimization": {
+        "before_import": [
+          "ALTER SYSTEM SET synchronous_commit = 'off'",
+          "ALTER SYSTEM SET fsync = 'off'",
+          "ALTER SYSTEM SET full_page_writes = 'off'",
+          "SELECT pg_reload_conf()"
+        ],
+        "after_import": [
+          "ALTER SYSTEM SET synchronous_commit = 'on'",
+          "ALTER SYSTEM SET fsync = 'on'",
+          "ALTER SYSTEM SET full_page_writes = 'on'",
+          "SELECT pg_reload_conf()",
+          "VACUUM ANALYZE schema.table_name",
+          "CREATE INDEX IF NOT EXISTS idx_table_geom ON schema.table_name USING GIST(geom)"
+        ]
+      }
+    },
+
+    "spatialite_to_postgis_xlarge": {
+      "name": "Spatialite to PostGIS (Extra Large Dataset 50M+)",
+      "description": "适用于 5000 万条以上记录，使用 16 核并行 + COPY + 激进优化",
+      "source_config": {
+        "type": "spatialite_parallel",
+        "config": {
+          "file_path": "/path/to/source.sqlite",
+          "table": "table_name",
+          "num_workers": 16,
+          "partition_key": "id",
+          "partition_size": 500000,
+          "batch_size": 10000,
+          "geometry_fields": ["geom"]
+        },
+        "batch_size": 10000
+      },
+      "target_config": {
+        "type": "postgres_copy",
+        "config": {
+          "host": "192.168.1.92",
+          "port": 5433,
+          "database": "business",
+          "username": "business",
+          "password": "business_password",
+          "table": "schema.table_name",
+          "batch_size": 30000,
+          "max_connections": 12,
+          "create_table": true,
+          "srid": 4326,
+          "geometry_columns": ["geom"],
+          "preallocate_table": true
+        },
+        "batch_size": 30000
+      },
+      "transforms": [],
+      "execution_mode": "parallel",
+      "execution_config": {
+        "num_writers": 12,
+        "checkpoint_interval": 200
+      },
+      "hardware_requirements": {
+        "cpu_cores": "16+",
+        "memory_gb": 32,
+        "network": "10 Gbps",
+        "storage": "NVMe SSD"
+      },
+      "postgresql_optimization": {
+        "postgresql.conf": {
+          "shared_buffers": "8GB",
+          "work_mem": "512MB",
+          "maintenance_work_mem": "4GB",
+          "max_wal_size": "20GB",
+          "checkpoint_timeout": "60min",
+          "max_connections": 150,
+          "synchronous_commit": "off",
+          "fsync": "off",
+          "full_page_writes": "off"
+        },
+        "before_import": [
+          "ALTER TABLE schema.table_name SET (autovacuum_enabled = false)"
+        ],
+        "after_import": [
+          "ALTER TABLE schema.table_name SET (autovacuum_enabled = true)",
+          "VACUUM FULL ANALYZE schema.table_name",
+          "CREATE INDEX CONCURRENTLY idx_table_geom ON schema.table_name USING GIST(geom)",
+          "CLUSTER schema.table_name USING idx_table_geom"
+        ]
+      }
+    },
+
+    "spatialite_to_postgis_with_transform": {
+      "name": "Spatialite to PostGIS with Coordinate Transform",
+      "description": "导入时进行坐标系转换（如 GCJ02 → WGS84）",
+      "source_config": {
+        "type": "spatialite_parallel",
+        "config": {
+          "file_path": "/path/to/source.sqlite",
+          "table": "table_name",
+          "num_workers": 8,
+          "partition_size": 100000,
+          "batch_size": 5000,
+          "geometry_fields": ["geom"]
+        },
+        "batch_size": 5000
+      },
+      "target_config": {
+        "type": "postgres_copy",
+        "config": {
+          "host": "192.168.1.92",
+          "port": 5433,
+          "database": "business",
+          "username": "business",
+          "password": "business_password",
+          "table": "schema.table_name",
+          "batch_size": 10000,
+          "max_connections": 6,
+          "create_table": true,
+          "srid": 4326,
+          "geometry_columns": ["geom"]
+        },
+        "batch_size": 10000
+      },
+      "transforms": [
+        {
+          "type": "coordinate_transform",
+          "config": {
+            "geometry_field": "geom",
+            "source_crs": "GCJ02",
+            "target_crs": "WGS84",
+            "algorithm": "builtin"
+          }
+        }
+      ],
+      "execution_mode": "parallel",
+      "execution_config": {
+        "num_writers": 6,
+        "checkpoint_interval": 50
+      }
+    }
+  },
+
+  "usage_examples": {
+    "curl_create_task": {
+      "description": "使用 curl 创建导入任务",
+      "command": "curl -X POST http://localhost:8083/api/tasks -H 'Content-Type: application/json' -d @task_config.json"
+    },
+    "curl_start_execution": {
+      "description": "启动任务执行",
+      "command": "curl -X POST http://localhost:8083/api/tasks/{task_id}/execute"
+    },
+    "curl_check_progress": {
+      "description": "查看执行进度",
+      "command": "curl http://localhost:8083/api/executions/{execution_id}"
+    },
+    "curl_stop_execution": {
+      "description": "停止执行",
+      "command": "curl -X POST http://localhost:8083/api/executions/{execution_id}/stop"
+    }
+  },
+
+  "tuning_guide": {
+    "batch_size_guidelines": {
+      "small_records_lt_1kb": "10000-50000",
+      "medium_records_1kb_10kb": "5000-10000",
+      "large_records_gt_10kb": "1000-5000",
+      "with_geometry": "5000-10000"
+    },
+    "num_workers_guidelines": {
+      "cpu_cores_4": "2-4 workers",
+      "cpu_cores_8": "4-8 workers",
+      "cpu_cores_16": "8-16 workers",
+      "cpu_cores_32": "16-24 workers"
+    },
+    "partition_size_guidelines": {
+      "small_dataset_lt_1m": "50000-100000",
+      "medium_dataset_1m_10m": "100000-200000",
+      "large_dataset_10m_50m": "200000-500000",
+      "xlarge_dataset_gt_50m": "500000-1000000"
+    },
+    "network_optimization": {
+      "local_network": "batch_size可适当增大，减少网络往返次数",
+      "remote_network": "batch_size应适中，避免单批传输超时",
+      "low_bandwidth": "建议先压缩数据或使用网络优化工具"
+    }
+  }
+}

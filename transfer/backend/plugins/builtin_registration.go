@@ -15,10 +15,14 @@ func init() {
 	MustRegisterConnector("shapefile", readers.NewShapefileReader, writers.NewShapefileWriter)
 	MustRegisterConnector("geopackage", readers.NewGeoPackageReader, writers.NewGeoPackageWriter)
 	MustRegisterConnector("geojson", readers.NewGeoJSONReader, writers.NewGeoJSONWriter)
-    // SpatiaLite（仅 Reader）：输出几何为 WKB
-    MustRegisterConnector("spatialite", readers.NewSpatiaLiteReader, nil)
-    // 兼容别名：sqlite -> 使用同一 SpatiaLite Reader（要求文件具备空间扩展）
-    MustRegisterConnector("sqlite", readers.NewSpatiaLiteReader, nil)
+	// SpatiaLite（仅 Reader）：输出几何为 WKB
+	MustRegisterConnector("spatialite", readers.NewSpatiaLiteReader, nil)
+	// 兼容别名：sqlite -> 使用同一 SpatiaLite Reader（要求文件具备空间扩展）
+	MustRegisterConnector("sqlite", readers.NewSpatiaLiteReader, nil)
+
+	// 高性能并行版本（千万级数据优化）
+	MustRegisterConnector("spatialite_parallel", readers.NewSpatiaLiteParallelReader, nil)
+	MustRegisterConnector("postgres_copy", nil, writers.NewPostgresCOPYWriter)
 
 	// 表格数据格式
 	MustRegisterConnector("csv", readers.NewCSVReader, writers.NewCSVWriter)

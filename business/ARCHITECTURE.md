@@ -4,6 +4,8 @@
 
 本文档说明 ADDP 平台业务基础设施分离的架构设计和实现。
 
+**核心理念**: 业务基础设施与 ADDP 系统基础设施**完全独立**，使用官方 Docker Hub 镜像，无需自建仓库，简化部署流程。
+
 ## 变更概览
 
 ### 之前（单一基础设施）
@@ -30,9 +32,9 @@ docker-compose.yml
 ├── minio-system (9002-9003)  → 仅系统文件
 └── elasticsearch (9200)      → 全文检索
 
-business/docker-compose.yml (Business Infrastructure)
-├── postgres (5433)           → 仅业务数据
-└── minio (9000-9001)         → 仅业务文件
+business/docker-compose.yml (Business Infrastructure - 完全独立)
+├── postgis (5433)            → 仅业务数据 (官方镜像: postgis/postgis:15-3.4-alpine)
+└── minio (9000-9001)         → 仅业务文件 (官方镜像: minio/minio:latest)
 ```
 
 **优势**：
@@ -41,6 +43,9 @@ business/docker-compose.yml (Business Infrastructure)
 - ✅ 可针对业务数据配置更严格的安全策略
 - ✅ 业务存储可灵活替换为云服务（RDS、OSS）
 - ✅ 备份恢复策略更灵活
+- ✅ **无需自建镜像仓库**，直接使用官方镜像
+- ✅ **支持空间数据**，PostGIS 扩展开箱即用
+- ✅ **无容器依赖**，可独立于 ADDP 系统部署
 
 ## 数据职责划分
 
@@ -60,11 +65,13 @@ business/docker-compose.yml (Business Infrastructure)
 
 ### Business Infrastructure
 
-**PostgreSQL (业务数据库 - 端口 5433)**:
+**PostGIS (业务数据库 - 端口 5433)**:
 - 用户通过 ADDP 管理的实际业务数据
 - 例如：用户上传的 PostgreSQL 数据源中的表数据
-- 例如：Shapefile 转换后的关系数据
-- 动态创建的业务 schema 和表
+- 例如：Shapefile 转换后的空间数据
+- 动态创建的业务表（默认使用 public schema）
+- **PostGIS 扩展支持**: 空间数据类型、空间索引、空间查询函数
+- **官方镜像**: `postgis/postgis:15-3.4-alpine`
 
 **MinIO Business (业务文件存储 - 端口 9000-9001)**:
 - 用户上传的文件
@@ -72,6 +79,7 @@ business/docker-compose.yml (Business Infrastructure)
 - GeoJSON、KML、GML 等空间数据文件
 - 图片、视频、PDF 等媒体文件
 - 用户导出的数据文件
+- **官方镜像**: `minio/minio:latest`
 
 ## 文件结构
 

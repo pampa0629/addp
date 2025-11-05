@@ -188,19 +188,19 @@ echo ""
 
 # 步骤 5: 拉取镜像
 echo "=========================================="
-echo "  步骤 5/6: 拉取镜像"
+echo "  步骤 5/6: 拉取官方镜像"
 echo "=========================================="
 echo ""
 
-echo "==> 拉取 PostgreSQL 镜像..."
-docker pull postgres:15-alpine
+echo "==> 拉取 PostGIS 镜像（官方镜像）..."
+docker pull postgis/postgis:15-3.4-alpine
 echo ""
 
-echo "==> 拉取 MinIO 镜像..."
+echo "==> 拉取 MinIO 镜像（官方镜像）..."
 docker pull minio/minio:latest
 echo ""
 
-echo "✅ 所有镜像拉取成功"
+echo "✅ 所有官方镜像拉取成功"
 echo ""
 
 # 步骤 6: 启动服务

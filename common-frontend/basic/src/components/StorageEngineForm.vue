@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch, nextTick } from 'vue'
 
 const SENSITIVE_PLACEHOLDER = '********'
 
@@ -244,10 +244,19 @@ const syncFromProps = (value) => {
   applySensitiveHints()
 }
 
+// Avoid infinite update loop between props -> local state -> emit -> props
+let syncingFromProps = false
 watch(
   () => props.modelValue,
-  (value) => {
-    syncFromProps(value || {})
+  async (value) => {
+    syncingFromProps = true
+    try {
+      syncFromProps(value || {})
+    } finally {
+      // ensure local watchers run while the flag is set
+      await nextTick()
+      syncingFromProps = false
+    }
   },
   { immediate: true, deep: true }
 )
@@ -255,6 +264,8 @@ watch(
 watch(
   formState,
   (value) => {
+    // Skip emitting while we are syncing from props to prevent recursion
+    if (syncingFromProps) return
     emit('update:modelValue', {
       resource_type: value.resource_type,
       name: value.name,

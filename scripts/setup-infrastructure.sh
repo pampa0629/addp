@@ -37,10 +37,10 @@ echo -e "${BLUE}Step 1: Pulling Infrastructure Images${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# PostgreSQL
-echo -e "${YELLOW}[1/5] Pulling postgres:15-alpine...${NC}"
-docker pull --platform linux/${ARCH} postgres:15-alpine 2>/dev/null || docker pull postgres:15-alpine
-echo -e "${GREEN}✓ Pulled postgres${NC}"
+# PostgreSQL with PostGIS
+echo -e "${YELLOW}[1/5] Pulling postgis/postgis:15-3.4-alpine...${NC}"
+docker pull --platform linux/${ARCH} postgis/postgis:15-3.4-alpine 2>/dev/null || docker pull postgis/postgis:15-3.4-alpine
+echo -e "${GREEN}✓ Pulled postgis/postgis${NC}"
 
 # Redis
 echo -e "${YELLOW}[2/5] Pulling redis:7-alpine...${NC}"
@@ -72,9 +72,9 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # Tag and push
-docker tag postgres:15-alpine ${REGISTRY}/addp-infra-postgres:15-alpine
-docker push ${REGISTRY}/addp-infra-postgres:15-alpine
-echo -e "${GREEN}✓ Pushed postgres${NC}"
+docker tag postgis/postgis:15-3.4-alpine ${REGISTRY}/addp-infra-postgis:15-3.4-alpine
+docker push ${REGISTRY}/addp-infra-postgis:15-3.4-alpine
+echo -e "${GREEN}✓ Pushed postgis/postgis${NC}"
 
 docker tag redis:7-alpine ${REGISTRY}/addp-infra-redis:7-alpine
 docker push ${REGISTRY}/addp-infra-redis:7-alpine

@@ -1,20 +1,21 @@
 package main
 
 import (
-	"context"
-	"fmt"
-	"log"
-	"log/slog"
-	"os/signal"
-	"syscall"
-	"time"
+    "context"
+    "fmt"
+    "log"
+    "log/slog"
+    "os/signal"
+    "syscall"
+    "time"
 
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
-	"github.com/addp/transfer/internal/config"
-	"github.com/addp/transfer/plugins"
-	"github.com/addp/transfer/internal/repository"
-	"github.com/addp/transfer/internal/service"
+    "github.com/addp/transfer/internal/config"
+    "github.com/addp/transfer/internal/logging"
+    "github.com/addp/transfer/plugins"
+    "github.com/addp/transfer/internal/repository"
+    "github.com/addp/transfer/internal/service"
 	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/addp/transfer/pkg/pipeline"
@@ -23,6 +24,15 @@ import (
 )
 
 func main() {
+	// 设置本地时区为 Asia/Shanghai (CST)
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		log.Printf("⚠️  无法加载时区，使用系统默认时区: %v", err)
+	} else {
+		time.Local = loc
+		log.Printf("✅ 时区已设置为: %s", loc.String())
+	}
+
 	// 加载 .env 文件（从项目根目录，上4级：transfer/backend/cmd/worker → 根目录）
 	commonConfig.LoadEnv()
 
@@ -45,12 +55,14 @@ func main() {
 	log.Printf("✅ 已注册连接器 - Readers: %v, Writers: %v",
 		registry.ListReaders(), registry.ListWriters())
 
-	// 创建 logger 和 engine config
-	logger := slog.Default()
-	engineConfig := pipeline.DefaultEngineConfig()
+    // 创建 logger 和 engine config
+    // Wrap a stdout text handler with DB appender so logs are persisted per execution
+    execRepo := repository.NewExecutionRepository(db)
+    logger := logging.NewStdoutTextDBLogger(execRepo)
+    engineConfig := pipeline.DefaultEngineConfig()
 
-	stateManager := pipeline.NewStateManager(db)
-	engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
+    stateManager := pipeline.NewStateManager(db)
+    engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
 
 	// 创建任务队列
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)

@@ -1,6 +1,11 @@
 -- 全域数据平台数据库初始化脚本
 -- 为各个模块创建独立的 schema
 
+-- ==================== PostGIS 扩展 ====================
+-- 如使用 postgis/postgis 基础镜像，扩展已包含，仅需启用
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+
 -- ==================== System 模块 ====================
 CREATE SCHEMA IF NOT EXISTS system;
 

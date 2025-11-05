@@ -12,10 +12,13 @@
 #   docker-compose logs -f minio      # 查看MinIO日志
 
 services:
-  # PostgreSQL - 业务数据库
+  # PostgreSQL with PostGIS - 业务数据库
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
+  # 使用 PostGIS 扩展支持空间数据
+  # Note: Using postgis/postgis:15-3.4 (non-alpine) for multi-arch support (ARM64 + AMD64)
+  #       Docker will auto-select the correct platform based on host CPU
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.4
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
@@ -23,7 +26,7 @@ services:
       POSTGRES_DB: ${BUSINESS_POSTGRES_DB:-business}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
       - "${BUSINESS_POSTGRES_PORT:-5433}:5432"
     healthcheck:

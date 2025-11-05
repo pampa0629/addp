@@ -10,7 +10,7 @@ services:
   # ==================== 基础设施服务 ====================
 
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.4-alpine
     container_name: addp-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-addp}

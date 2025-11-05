@@ -168,7 +168,7 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 
 // ExecutionRepository 执行记录数据访问层
 type ExecutionRepository struct {
-	db *gorm.DB
+    db *gorm.DB
 }
 
 // NewExecutionRepository 创建执行记录仓库
@@ -223,6 +223,16 @@ func (r *ExecutionRepository) FinishExecution(id uint, status models.ExecutionSt
 	return r.db.Model(&models.TaskExecution{}).
 		Where("id = ?", id).
 		Updates(updates).Error
+}
+
+// AppendLog 追加一行日志到执行记录
+// 注意：当前实现依赖 PostgreSQL 的字符串连接运算符 "||"
+// 如果后端数据库切换为 MySQL，需要改为使用 CONCAT
+func (r *ExecutionRepository) AppendLog(executionID uint, line string) error {
+    // 为避免nil，使用 COALESCE
+    return r.db.Model(&models.TaskExecution{}).
+        Where("id = ?", executionID).
+        Update("logs", gorm.Expr("COALESCE(logs, '') || ?", line+"\n")).Error
 }
 
 // ListByTaskID 根据任务 ID 列出执行记录

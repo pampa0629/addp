@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
@@ -18,6 +19,15 @@ import (
 )
 
 func main() {
+	// 设置本地时区为 Asia/Shanghai (CST)
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		log.Printf("⚠️  无法加载时区，使用系统默认时区: %v", err)
+	} else {
+		time.Local = loc
+		log.Printf("✅ 时区已设置为: %s", loc.String())
+	}
+
 	// 加载 .env 文件（从项目根目录，使用无参数版本）
 	commonConfig.LoadEnv()
 

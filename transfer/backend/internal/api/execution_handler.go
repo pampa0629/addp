@@ -1,12 +1,13 @@
 package api
 
 import (
-	"net/http"
-	"strconv"
+    "net/http"
+    "strconv"
+    "strings"
 
-	commonAPI "github.com/addp/common/api"
-	"github.com/addp/transfer/internal/service"
-	"github.com/gin-gonic/gin"
+    commonAPI "github.com/addp/common/api"
+    "github.com/addp/transfer/internal/service"
+    "github.com/gin-gonic/gin"
 )
 
 // ExecutionHandler 执行记录管理 API Handler
@@ -167,14 +168,33 @@ func (h *ExecutionHandler) GetExecutionLogs(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	// GetExecutionLogs 返回完整日志字符串
-	logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
-	if err != nil {
-		commonAPI.InternalServerError(c, err.Error())
-		return
-	}
+    // 获取完整日志字符串
+    logs, err := h.executionService.GetExecutionLogs(c.Request.Context(), id, tenantID)
+    if err != nil {
+        commonAPI.InternalServerError(c, err.Error())
+        return
+    }
 
-	c.JSON(http.StatusOK, gin.H{"logs": logs})
+    // 拆分为行，并根据可选的 limit 参数进行裁剪
+    lines := []string{}
+    if logs != "" {
+        // 使用 \n 拆分，并去掉可能的末尾空行
+        raw := strings.Split(logs, "\n")
+        for _, line := range raw {
+            if line != "" {
+                lines = append(lines, line)
+            }
+        }
+    }
+
+    if limitStr := c.Query("limit"); limitStr != "" {
+        if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 && len(lines) > limit {
+            lines = lines[len(lines)-limit:]
+        }
+    }
+
+    // 返回数组，前端按行渲染
+    c.JSON(http.StatusOK, lines)
 }
 
 // GetExecutionStatistics 获取执行统计

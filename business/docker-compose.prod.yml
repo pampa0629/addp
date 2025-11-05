@@ -14,10 +14,12 @@
 #   - 端口配置避免与 ADDP 系统冲突 (PostgreSQL: 5433, MinIO: 9002-9003)
 
 services:
-  # ==================== PostgreSQL - 业务数据库 ====================
+  # ==================== PostgreSQL with PostGIS - 业务数据库 ====================
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
+  # 使用 PostGIS 扩展支持空间数据
+  # 直接从 Docker Hub 拉取官方镜像，无需自建仓库
   postgres:
-    image: ${REGISTRY:-localhost:5000}/addp-infra-postgres:15-alpine
+    image: postgis/postgis:15-3.4-alpine
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
@@ -48,8 +50,9 @@ services:
 
   # ==================== MinIO - 业务对象存储 ====================
   # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
+  # 直接从 Docker Hub 拉取官方镜像，无需自建仓库
   minio:
-    image: ${REGISTRY:-localhost:5000}/addp-infra-minio:latest
+    image: minio/minio:latest
     container_name: business-minio
     command: server /data --console-address ":9001"
     environment:

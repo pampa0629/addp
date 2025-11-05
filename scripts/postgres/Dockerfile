@@ -2,10 +2,10 @@
 # ADDP Custom PostgreSQL Image
 # =============================================================================
 # Description: PostgreSQL 15 with built-in ADDP database initialization script
-# Base Image: postgres:15-alpine
+# Base Image: postgis/postgis:15-3.4-alpine
 # =============================================================================
 
-FROM postgres:15-alpine
+FROM postgis/postgis:15-3.4-alpine
 
 # Metadata
 LABEL maintainer="ADDP Team"
