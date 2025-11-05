@@ -4,6 +4,11 @@
 -- 用于初始化业务数据库的基础 schema 和权限设置
 -- 实际的业务表会由各个数据源动态创建
 
+-- Install PostGIS extension for spatial data support
+-- 安装 PostGIS 扩展以支持空间数据
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+
 -- Create default schemas for different types of business data
 -- 为不同类型的业务数据创建默认 schema
 

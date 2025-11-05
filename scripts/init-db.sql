@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS metadata.meta_item (
     item_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
     full_name TEXT,
+    fingerprint VARCHAR(64) NOT NULL,
     status VARCHAR(32) DEFAULT 'active',
     meta_schema_version INTEGER DEFAULT 1,
     row_count BIGINT,
@@ -117,6 +118,7 @@ CREATE TABLE IF NOT EXISTS metadata.meta_item (
 
 CREATE INDEX IF NOT EXISTS idx_meta_item_node ON metadata.meta_item(node_id);
 CREATE INDEX IF NOT EXISTS idx_meta_item_type ON metadata.meta_item(item_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_item_fingerprint ON metadata.meta_item(fingerprint);
 
 CREATE TABLE IF NOT EXISTS metadata.meta_json_schema (
     id BIGSERIAL PRIMARY KEY,
@@ -259,7 +261,7 @@ CREATE TABLE IF NOT EXISTS transfer.checkpoints (
     id SERIAL PRIMARY KEY,
     task_id INTEGER NOT NULL,
     execution_id INTEGER NOT NULL,
-    offset BIGINT NOT NULL,
+    "offset" BIGINT NOT NULL,
     partition_id VARCHAR(255),
     state JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

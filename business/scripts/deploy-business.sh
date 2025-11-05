@@ -192,8 +192,8 @@ echo "  步骤 5/6: 拉取镜像"
 echo "=========================================="
 echo ""
 
-echo "==> 拉取 PostgreSQL 镜像..."
-docker pull postgres:15-alpine
+echo "==> 拉取 PostgreSQL + PostGIS 镜像..."
+docker pull postgis/postgis:15-3.4
 echo ""
 
 echo "==> 拉取 MinIO 镜像..."
@@ -271,6 +271,14 @@ done
 
 if [ "$MINIO_HEALTHY" != true ]; then
     echo "❌ 不健康（超时）"
+fi
+
+# PostGIS 扩展检查
+echo -n "PostGIS扩展... "
+if docker exec business-postgres psql -U ${BUSINESS_POSTGRES_USER:-business} -d ${BUSINESS_POSTGRES_DB:-business} -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null | grep -q "1"; then
+    echo "✅ 已安装"
+else
+    echo "⚠️  未安装（将在首次使用时自动安装）"
 fi
 
 echo ""

@@ -61,10 +61,12 @@ business/docker-compose.yml (Business Infrastructure)
 ### Business Infrastructure
 
 **PostgreSQL (业务数据库 - 端口 5433)**:
+- 使用 PostGIS 扩展支持空间数据（Shapefile、GeoJSON、WKT/WKB 等）
 - 用户通过 ADDP 管理的实际业务数据
 - 例如：用户上传的 PostgreSQL 数据源中的表数据
-- 例如：Shapefile 转换后的关系数据
+- 例如：Shapefile 转换后的关系数据（包含 GEOMETRY 列）
 - 动态创建的业务 schema 和表
+- 支持的空间类型：POINT、LINESTRING、POLYGON、MULTIPOINT、MULTILINESTRING、MULTIPOLYGON
 
 **MinIO Business (业务文件存储 - 端口 9000-9001)**:
 - 用户上传的文件
@@ -85,11 +87,12 @@ addp/
 │   ├── docker-compose.yml          # 业务基础设施编排
 │   ├── .env                        # 业务基础设施配置（需自行创建）
 │   ├── .env.example                # 业务配置模板
-│   ├── init-db.sql                 # 业务数据库初始化脚本
+│   ├── init-db.sql                 # 业务数据库初始化脚本（含 PostGIS）
 │   ├── README.md                   # 业务基础设施使用文档
 │   ├── ARCHITECTURE.md             # 本文档
 │   └── scripts/
-│       ├── start.sh                # 启动脚本
+│       ├── start.sh                # 启动脚本（自动安装 PostGIS）
+│       ├── install-postgis.sh      # PostGIS 扩展安装脚本
 │       └── stop.sh                 # 停止脚本
 │
 ├── system/                         # System 模块

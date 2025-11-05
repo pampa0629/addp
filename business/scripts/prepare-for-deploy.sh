@@ -114,9 +114,17 @@ if [[ "$test_local" =~ ^[Yy]$ ]]; then
     echo "❌ 不健康"
   fi
 
+  # PostGIS 扩展检查
+  echo -n "PostGIS扩展... "
+  if docker exec business-postgres psql -U business -d business -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null | grep -q "1"; then
+    echo "✅ 已安装"
+  else
+    echo "⚠️  未安装"
+  fi
+
   echo ""
   echo "本地测试服务访问地址："
-  echo "  - PostgreSQL: localhost:5433"
+  echo "  - PostgreSQL: localhost:5433 (含 PostGIS 扩展)"
   echo "  - MinIO API: http://localhost:9002"
   echo "  - MinIO Console: http://localhost:9003"
   echo ""
@@ -182,9 +190,16 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ## 服务访问
 
-- PostgreSQL: `localhost:5433`
+- PostgreSQL: `localhost:5433` (含 PostGIS 空间扩展)
 - MinIO API: `http://localhost:9002`
 - MinIO Console: `http://localhost:9003`
+
+## 空间数据支持
+
+Business PostgreSQL 已安装 PostGIS 扩展，支持：
+- Shapefile 数据导入
+- GeoJSON、WKT/WKB 格式
+- 空间类型：POINT、LINESTRING、POLYGON、MULTIPOINT、MULTILINESTRING、MULTIPOLYGON
 
 ## 管理命令
 

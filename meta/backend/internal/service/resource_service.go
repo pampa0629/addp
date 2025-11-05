@@ -375,7 +375,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 		Count int64
 	}
 	var totals []countRow
-	if err := s.db.Table("meta_node").
+	if err := s.db.Table("metadata.meta_node").
 		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
 		Where("parent_node_id IS NULL").
 		Select("res_id, COUNT(*) AS count").
@@ -388,7 +388,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 	}
 
 	var scanned []countRow
-	if err := s.db.Table("meta_node").
+	if err := s.db.Table("metadata.meta_node").
 		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
 		Where("parent_node_id IS NULL AND scan_status = ?", "已扫描").
 		Select("res_id, COUNT(*) AS count").
@@ -405,7 +405,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 		LastScanAt *time.Time `gorm:"column:last_scan_at"`
 	}
 	var lastScans []lastScanRow
-	if err := s.db.Table("meta_node").
+	if err := s.db.Table("metadata.meta_node").
 		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
 		Where("last_scan_at IS NOT NULL").
 		Select("res_id, MAX(last_scan_at) AS last_scan_at").

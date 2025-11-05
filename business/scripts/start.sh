@@ -117,6 +117,11 @@ for i in {1..30}; do
     echo -n "."
 done
 
+# Install PostGIS extension
+echo ""
+echo -e "${YELLOW}Installing PostGIS extension...${NC}"
+./scripts/install-postgis.sh
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Business Infrastructure Ready!${NC}"

@@ -16,8 +16,9 @@
 services:
   # ==================== PostgreSQL - 业务数据库 ====================
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
+  # 使用 PostGIS 镜像以支持空间数据（Shapefile、GeoJSON 等）
   postgres:
-    image: ${REGISTRY:-localhost:5000}/addp-infra-postgres:15-alpine
+    image: ${REGISTRY:-localhost:5000}/addp-infra-postgres-postgis:15-3.4
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
