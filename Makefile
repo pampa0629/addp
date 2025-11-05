@@ -32,6 +32,7 @@ BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
 # 本地 Go 构建缓存目录，避免写入系统 GOPATH 并降低权限/网络问题
 LOCAL_GOMODCACHE := $(abspath .gomodcache)
 LOCAL_GOPATH := $(abspath .gopath)
+LOCAL_GOCACHE := $(abspath .cache/go-build)
 # 优先使用本机 Go 工具链，避免自动拉取 toolchain
 GOTOOLCHAIN ?= local
 
@@ -44,13 +45,13 @@ define build_one_service
   @if [ -d $(1)/cmd ]; then \
     name=$(2); \
     outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/$$name/$(GOOS)-$(GOARCH); \
-    mkdir -p $$outdir; \
+    mkdir -p $$outdir $(LOCAL_GOCACHE); \
     echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir$(NC)"; \
     if [ "$(BUILD_TYPE)" = "debug" ]; then \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
        cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
     else \
-      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
        cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
     fi; \
   else \
@@ -98,6 +99,8 @@ dev-transfer: ## 开发模式运行 Transfer 模块
 	  export REDIS_HOST=localhost; \
 	  export REDIS_PORT=6379; \
 	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  export POSTGRES_HOST=localhost; \
+	  export GOCACHE=$(abspath .cache/go-build); \
 	  cd transfer/backend && go run cmd/server/main.go'
 
 dev-gateway: ## 开发模式运行 Gateway 模块

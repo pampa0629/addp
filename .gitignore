@@ -60,6 +60,7 @@ temp/
 **/.cache/
 .gomodcache/
 .gopath/
+**/.gocache/
 
 # Build cache (smart build system)
 .build-cache/
