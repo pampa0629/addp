@@ -81,7 +81,11 @@
       "Bash(chmod:*)",
       "Bash(curl:*)",
       "Bash(go build:*)",
-      "Bash(cd /Users/pampa/code/addp/transfer/backend && go build:*)"
+      "Bash(cd /Users/pampa/code/addp/transfer/backend && go build:*)",
+      "Bash(if [ -d transfer/backend/.gocache ])",
+      "Bash(then mv transfer/backend/.gocache/* .cache/go-build/)",
+      "Bash(else echo \"No cache to move\")",
+      "Bash(fi)"
     ],
     "deny": [],
     "ask": []
