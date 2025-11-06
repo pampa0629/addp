@@ -18,6 +18,7 @@ services:
   # 如需空间数据支持,网络恢复后可改用 postgis/postgis:15-3.3
   postgres:
     image: postgis/postgis:15-3.4
+    platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}  # Auto-detect or default to ARM64
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
@@ -41,6 +42,7 @@ services:
   # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
   minio:
     image: minio/minio:latest
+    platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}  # Auto-detect or default to ARM64
     container_name: business-minio
     command: server /data --console-address ":9001"
     environment:

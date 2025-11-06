@@ -95,7 +95,16 @@
       "Bash(osascript:*)",
       "Bash(open:*)",
       "Bash(docker info:*)",
-      "Bash(docker-compose up:*)"
+      "Bash(docker-compose up:*)",
+      "Bash(go test:*)",
+      "Bash(GOPROXY=https://goproxy.cn,direct go test:*)",
+      "Bash(GOPROXY=https://goproxy.cn,direct go mod tidy:*)",
+      "Bash(timeout 5 go test:*)",
+      "Bash(docker manifest inspect:*)",
+      "Bash(docker image inspect:*)",
+      "Bash(./scripts/verify-arch.sh:*)",
+      "Bash(./scripts/arch-info.sh:*)",
+      "Bash(timeout 120 docker pull:*)"
     ],
     "deny": [],
     "ask": []

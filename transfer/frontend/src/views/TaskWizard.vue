@@ -2759,6 +2759,12 @@ const handleSubmit = async () => {
       return
     }
 
+    // 映射字段名：mode → write_mode（后端期望 write_mode）
+    if (config.target.mode) {
+      config.target.write_mode = config.target.mode
+      delete config.target.mode
+    }
+
     const data = {
       ...taskForm.value,
       config,

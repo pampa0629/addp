@@ -9,7 +9,6 @@ import (
 
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
-	"github.com/lib/pq"
 )
 
 // PostgresCOPYWriter 使用 PostgreSQL COPY 协议的高性能写入器
@@ -26,7 +25,6 @@ type PostgresCOPYWriter struct {
 	tableEnsured    bool
 	stmt            *sql.Stmt
 	txn             *sql.Tx
-	copyIn          *pq.CopyIn
 	mu              sync.Mutex
 	totalWritten    int64
 }
@@ -44,6 +42,9 @@ type PostgresCOPYConfig struct {
 	CreateTable      bool     `json:"create_table"`
 	SRID             int      `json:"srid"`
 	GeometryColumns  []string `json:"geometry_columns"`
+
+	// 写入模式配置
+	WriteMode string `json:"write_mode"` // insert, replace（COPY 不支持 upsert）
 
 	// COPY 特定配置
 	MaxConnections   int  `json:"max_connections"`   // 连接池大小（默认 4）
@@ -65,6 +66,21 @@ func NewPostgresCOPYWriter(config pipeline.ConnectorConfig) (pipeline.Writer, er
 
 	if cfg.MaxConnections <= 0 {
 		cfg.MaxConnections = 4
+	}
+
+	// 设置默认写入模式为 insert
+	if cfg.WriteMode == "" {
+		cfg.WriteMode = "insert"
+	}
+
+	// COPY 协议不支持 upsert，如果配置了 upsert 则返回错误
+	if cfg.WriteMode == "upsert" {
+		return nil, fmt.Errorf("PostgresCOPYWriter does not support upsert mode, please use JDBCWriter instead or change write_mode to 'insert' or 'replace'")
+	}
+
+	// 验证 WriteMode 有效性
+	if cfg.WriteMode != "insert" && cfg.WriteMode != "replace" {
+		return nil, fmt.Errorf("invalid write_mode '%s', must be 'insert' or 'replace'", cfg.WriteMode)
 	}
 
 	cfg.UseCOPY = true // 强制使用 COPY
@@ -406,6 +422,15 @@ func (w *PostgresCOPYWriter) ensureTable(ctx context.Context, batch *pipeline.Da
 		w.qualifiedTableName(), strings.Join(columnDefs, ", "))
 	if _, err := w.db.ExecContext(ctx, createSQL); err != nil {
 		return fmt.Errorf("failed to create table %s: %w", w.table, err)
+	}
+
+	// 处理 write_mode: replace - 清空已存在的数据
+	if w.config.WriteMode == "replace" {
+		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s", w.qualifiedTableName())
+		if _, err := w.db.ExecContext(ctx, truncateSQL); err != nil {
+			return fmt.Errorf("failed to truncate table %s: %w", w.table, err)
+		}
+		fmt.Printf("INFO: Truncated table %s for replace mode\n", w.table)
 	}
 
 	// 禁用自动 VACUUM（导入时关闭以提升性能）
