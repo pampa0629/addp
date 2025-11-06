@@ -14,9 +14,10 @@
 services:
   # PostgreSQL - 业务数据库
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
-  # 使用 PostGIS 镜像以支持空间数据
+  # 注意: 当前使用 postgres:15-alpine (不含PostGIS)
+  # 如需空间数据支持,网络恢复后可改用 postgis/postgis:15-3.3
   postgres:
-    image: postgis/postgis:15-3.4
+    image: postgres:15-alpine
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}

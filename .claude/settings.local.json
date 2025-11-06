@@ -81,7 +81,21 @@
       "Bash(docker-compose down:*)",
       "Bash(./scripts/start.sh:*)",
       "Bash(docker search:*)",
-      "Bash(docker pull:*)"
+      "Bash(docker pull:*)",
+      "Bash(docker-compose up -d)",
+      "Bash(docker version:*)",
+      "Bash(timeout 120 docker-compose pull:*)",
+      "Bash(docker-compose pull:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(go build:*)",
+      "Bash(timeout 10 docker exec:*)",
+      "Bash(docker stats:*)",
+      "Bash(docker kill:*)",
+      "Bash(timeout 5 docker ps:*)",
+      "Bash(osascript:*)",
+      "Bash(open:*)",
+      "Bash(docker info:*)",
+      "Bash(docker-compose up:*)"
     ],
     "deny": [],
     "ask": []

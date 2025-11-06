@@ -367,14 +367,6 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 		return fmt.Errorf("failed to create table %s: %w", w.table, err)
 	}
 
-	// 处理 write_mode: replace - 清空已存在的数据
-	if w.writeMode == "replace" {
-		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s", w.qualifiedTableName())
-		if _, err := w.db.ExecContext(ctx, truncateSQL); err != nil {
-			return fmt.Errorf("failed to truncate table %s: %w", w.table, err)
-		}
-	}
-
 	w.tableEnsured = true
 	return nil
 }

@@ -6,8 +6,10 @@
 
 -- Install PostGIS extension for spatial data support
 -- 安装 PostGIS 扩展以支持空间数据
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS postgis_topology;
+-- 注意: postgres:15-alpine 镜像不包含 PostGIS
+-- 如需空间数据支持,请使用 postgis/postgis 镜像或手动安装 PostGIS
+-- CREATE EXTENSION IF NOT EXISTS postgis;
+-- CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
 -- Create default schemas for different types of business data
 -- 为不同类型的业务数据创建默认 schema
