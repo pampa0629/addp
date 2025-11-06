@@ -34,5 +34,5 @@ type MetaNode struct {
 }
 
 func (MetaNode) TableName() string {
-	return "meta_node"
+	return "metadata.meta_node"
 }

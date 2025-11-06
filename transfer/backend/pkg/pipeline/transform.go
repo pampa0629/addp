@@ -77,11 +77,15 @@ func (t *FieldMappingTransform) Apply(ctx context.Context, batch *DataBatch) (*D
 
 		for _, mapping := range t.mappings {
 			value, exists := row[mapping.Source]
+			usedDefault := false
 
 			// 使用默认值
 			if !exists || value == nil {
 				value = mapping.DefaultValue
+				usedDefault = true
 			}
+
+			value = normalizeEmptyValue(value, usedDefault)
 
 			// 类型转换
 			if value != nil && mapping.Type != "" {
@@ -204,6 +208,26 @@ func (t *FilterTransform) matchCondition(row map[string]interface{}, cond Filter
 // Name 返回转换器名称
 func (t *FilterTransform) Name() string {
 	return "Filter"
+}
+
+// normalizeEmptyValue 统一空值处理，避免将空字符串写入数值型列
+func normalizeEmptyValue(value interface{}, usedDefault bool) interface{} {
+	if value == nil {
+		return nil
+	}
+
+	switch v := value.(type) {
+	case string:
+		if strings.TrimSpace(v) == "" && usedDefault {
+			return nil
+		}
+	case []byte:
+		if len(v) == 0 && usedDefault {
+			return nil
+		}
+	}
+
+	return value
 }
 
 // convertType 类型转换

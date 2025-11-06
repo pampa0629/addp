@@ -21,7 +21,6 @@ type JDBCReader struct {
 	query        string
 	batchSize    int
 	offset       int64
-	rows         *sql.Rows
 	columns      []string
 	schema       *pipeline.Schema
 	mode         pipeline.ReaderMode
@@ -137,19 +136,18 @@ func (r *JDBCReader) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 
 // Read 读取一批数据
 func (r *JDBCReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
-	// 首次读取，执行查询
-	if r.rows == nil {
-		query := r.buildPaginatedQuery()
-		rows, err := r.db.QueryContext(ctx, query)
-		if err != nil {
-			return nil, fmt.Errorf("query failed: %w", err)
-		}
-		r.rows = rows
+	// 每次都执行新的分页查询
+	query := r.buildPaginatedQuery()
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
 
-		// 获取列名
+	// 获取列名（第一次或列名未初始化时）
+	if r.columns == nil {
 		columns, err := rows.Columns()
 		if err != nil {
-			rows.Close()
 			return nil, err
 		}
 		r.columns = columns
@@ -157,22 +155,25 @@ func (r *JDBCReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
 
 	// 读取批次数据
 	var batchRows []map[string]interface{}
-	for i := 0; i < r.batchSize && r.rows.Next(); i++ {
-		row, err := r.scanRow(r.rows)
+	for rows.Next() {
+		row, err := r.scanRow(rows)
 		if err != nil {
 			return nil, err
 		}
 		batchRows = append(batchRows, row)
-		r.offset++
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 
 	// 检查是否读完
 	if len(batchRows) == 0 {
-		r.rows.Close()
-		r.rows = nil
 		return nil, io.EOF
 	}
 
+	// 更新偏移量以便下次查询
+	r.offset += int64(len(batchRows))
 	r.lastReadAt = time.Now()
 
 	return &pipeline.DataBatch{
@@ -194,19 +195,11 @@ func (r *JDBCReader) Schema() (*pipeline.Schema, error) {
 // SeekTo 跳转到指定偏移量
 func (r *JDBCReader) SeekTo(offset int64) error {
 	r.offset = offset
-	if r.rows != nil {
-		r.rows.Close()
-		r.rows = nil
-	}
 	return nil
 }
 
 // Close 关闭连接
 func (r *JDBCReader) Close() error {
-	if r.rows != nil {
-		r.rows.Close()
-		r.rows = nil
-	}
 	if r.db != nil {
 		return r.db.Close()
 	}

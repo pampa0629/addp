@@ -73,6 +73,16 @@ cp .env.example .env
 
 ### 2. 启动业务基础设施
 
+**推荐方式（使用脚本）**:
+```bash
+# 启动所有服务并自动安装 PostGIS 扩展
+./scripts/start.sh
+
+# 或单独安装 PostGIS（如果之前已启动）
+./scripts/install-postgis.sh
+```
+
+**手动方式**:
 ```bash
 # 启动所有服务
 docker-compose up -d
@@ -91,13 +101,58 @@ docker-compose logs -f
 docker exec -it business-postgres psql -U business -d business
 
 # 验证 PostGIS 扩展
-business=# SELECT PostGIS_version();
-business=# \dx  # 查看已安装的扩展
+docker exec -it business-postgres psql -U business -d business -c "\dx"
+# 应该看到 postgis 和 postgis_topology 扩展
 
 # 访问 MinIO 控制台
 open http://localhost:9001
 # 默认账号: minioadmin / minioadmin
 ```
+
+## PostGIS 空间数据支持
+
+业务 PostgreSQL 数据库已配置 PostGIS 扩展以支持空间数据（Shapefile、GeoJSON 等）。
+
+### 自动安装
+
+使用 `./scripts/start.sh` 启动时会自动安装 PostGIS 扩展。
+
+### 手动安装
+
+如果需要手动安装或重新安装 PostGIS：
+
+```bash
+cd business
+./scripts/install-postgis.sh
+```
+
+该脚本会：
+1. 检查 PostGIS 是否已安装
+2. 安装 `postgis` 扩展（空间数据核心）
+3. 安装 `postgis_topology` 扩展（拓扑分析，可选）
+4. 显示已安装的扩展列表
+
+### 使用空间数据
+
+在 Transfer 模块导入空间数据时：
+
+1. **选择目标 schema**（推荐使用 `business_data`）：
+   - 目标表名填写：`business_data.spatial_points`
+   - 系统会自动创建 schema 和表
+
+2. **空间数据类型支持**：
+   - `GEOMETRY` - 通用几何类型
+   - `POINT` - 点
+   - `LINESTRING` - 线
+   - `POLYGON` - 面
+   - `MULTIPOINT`, `MULTILINESTRING`, `MULTIPOLYGON` - 多部件类型
+
+3. **示例导入 Shapefile**：
+   ```
+   数据源: MinIO bucket (已上传 Shapefile)
+   目标数据源: Business PostgreSQL
+   目标表: business_data.beijing_boundaries
+   ```
 
 ### 4. 连接到 ADDP
 

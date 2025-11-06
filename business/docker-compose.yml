@@ -14,9 +14,8 @@
 services:
   # PostgreSQL with PostGIS - 业务数据库
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
-  # 使用 PostGIS 扩展支持空间数据
-  # Note: Using postgis/postgis:15-3.4 (non-alpine) for multi-arch support (ARM64 + AMD64)
-  #       Docker will auto-select the correct platform based on host CPU
+  # 注意: 当前使用 postgres:15-alpine (不含PostGIS)
+  # 如需空间数据支持,网络恢复后可改用 postgis/postgis:15-3.3
   postgres:
     image: postgis/postgis:15-3.4
     container_name: business-postgres

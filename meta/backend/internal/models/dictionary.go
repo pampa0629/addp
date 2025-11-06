@@ -14,7 +14,7 @@ type MetaNodeTypeDict struct {
 }
 
 func (MetaNodeTypeDict) TableName() string {
-	return "meta_node_type_dict"
+	return "metadata.meta_node_type_dict"
 }
 
 // MetaNodeChildRule 限定父子节点的合法组合
@@ -25,7 +25,7 @@ type MetaNodeChildRule struct {
 }
 
 func (MetaNodeChildRule) TableName() string {
-	return "meta_node_child_rule"
+	return "metadata.meta_node_child_rule"
 }
 
 // MetaJSONSchema 存储属性 JSON 的结构定义与版本
@@ -39,7 +39,7 @@ type MetaJSONSchema struct {
 }
 
 func (MetaJSONSchema) TableName() string {
-	return "meta_json_schema"
+	return "metadata.meta_json_schema"
 }
 
 // MetaChangeLog 记录元数据同步或手工调整的变更
@@ -57,5 +57,5 @@ type MetaChangeLog struct {
 }
 
 func (MetaChangeLog) TableName() string {
-	return "meta_change_log"
+	return "metadata.meta_change_log"
 }

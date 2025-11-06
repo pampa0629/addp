@@ -31,5 +31,5 @@ type MetaItem struct {
 }
 
 func (MetaItem) TableName() string {
-	return "meta_item"
+	return "metadata.meta_item"
 }

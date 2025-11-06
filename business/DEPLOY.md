@@ -2,7 +2,7 @@
 
 Business 基础设施是 ADDP 系统的**业务数据层**，与 ADDP 系统基础设施**完全独立**。它包含：
 
-- **PostGIS** (端口 5433) - 存储用户实际业务数据，支持空间数据
+- **PostgreSQL** (端口 5433) - 存储用户实际业务数据
 - **MinIO** (端口 9002-9003) - 存储用户上传的文件
 
 **独立部署特性**：
@@ -97,6 +97,10 @@ docker-compose -f docker-compose.prod.yml up -d
 # 查看状态
 docker-compose -f docker-compose.prod.yml ps
 docker-compose -f docker-compose.prod.yml logs -f
+
+# 验证 PostGIS 扩展
+docker exec business-postgres psql -U business -d business -c "\dx"
+# 应该看到 postgis 和 postgis_topology 扩展
 ```
 
 ---

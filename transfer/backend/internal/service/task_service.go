@@ -440,20 +440,46 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 		s.logger.Warn("failed to update execution status", "error", err)
 	}
 
+	// 设置进度回调以定期更新日志和指标
+	s.engine.SetProgressCallback(func(logs string, metrics *pipeline.Metrics) {
+		if err := s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
+			"logs":            logs,
+			"records_read":    metrics.RecordsRead,
+			"records_written": metrics.RecordsWritten,
+			"bytes_read":      metrics.BytesRead,
+			"bytes_written":   metrics.BytesWritten,
+		}); err != nil {
+			s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
+		}
+	})
+
 	// 执行任务
 	if err := s.engine.Execute(ctx, execTask); err != nil {
 		s.logger.Error("task execution failed", "error", err, "task_id", taskID)
+
+		// 获取执行日志（包括错误日志）
+		executionLogs := s.engine.GetLogs()
+
+		// 更新执行记录，包含日志
+		s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
+			"logs": executionLogs,
+		})
+
 		s.updateExecutionError(task, executionID, err)
 		return err
 	}
 
-	// 更新执行指标
+	// 获取执行指标和日志
 	metrics := s.engine.GetMetrics()
+	executionLogs := s.engine.GetLogs()
+
+	// 更新执行指标和日志
 	s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
 		"records_read":    metrics.RecordsRead,
 		"records_written": metrics.RecordsWritten,
 		"bytes_read":      metrics.BytesRead,
 		"bytes_written":   metrics.BytesWritten,
+		"logs":            executionLogs,
 	})
 
 	// 完成执行

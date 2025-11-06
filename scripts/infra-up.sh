@@ -142,6 +142,12 @@ for i in $(seq 1 ${max_wait}); do
   if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ PostgreSQL 等待超时${NC}"; exit 1; fi
 done
 
+if [[ "${SKIP_INFRA_DB_INIT:-0}" != "1" ]]; then
+  bash "${SCRIPT_DIR}/infra-init-db.sh"
+else
+  echo -e "${YELLOW}▶ 跳过系统库初始化（SKIP_INFRA_DB_INIT=1）${NC}"
+fi
+
 # Redis
 printf "%s" "- Redis      "
 REDIS_PW="${REDIS_PASSWORD:-addp_redis}"

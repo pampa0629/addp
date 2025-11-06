@@ -28,7 +28,7 @@ type ScanTask struct {
 }
 
 func (ScanTask) TableName() string {
-	return "scan_tasks"
+	return "metadata.scan_tasks"
 }
 
 // ScanTaskRun 表示一次具体的扫描执行
@@ -56,5 +56,5 @@ type ScanTaskRun struct {
 }
 
 func (ScanTaskRun) TableName() string {
-	return "scan_task_runs"
+	return "metadata.scan_task_runs"
 }
