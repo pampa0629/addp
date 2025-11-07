@@ -28,6 +28,29 @@ if [ -f ./.env ]; then
   set +a
 fi
 
+# Ensure DOCKER_DEFAULT_PLATFORM is set (inherited from infra-restart.sh or default)
+if [ -z "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
+    ARCH=$(uname -m)
+    case "${ARCH}" in
+        x86_64)
+            export DOCKER_DEFAULT_PLATFORM="linux/amd64"
+            ;;
+        aarch64|arm64)
+            export DOCKER_DEFAULT_PLATFORM="linux/arm64"
+            ;;
+        armv7l)
+            export DOCKER_DEFAULT_PLATFORM="linux/arm/v7"
+            ;;
+        *)
+            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default platform${NC}"
+            ;;
+    esac
+
+    if [ -n "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
+        echo -e "${YELLOW}🏗️  Using platform: ${DOCKER_DEFAULT_PLATFORM}${NC}"
+    fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}✗ docker 未安装或不可用${NC}"
   exit 1
@@ -146,6 +169,20 @@ if [[ "${SKIP_INFRA_DB_INIT:-0}" != "1" ]]; then
   bash "${SCRIPT_DIR}/infra-init-db.sh"
 else
   echo -e "${YELLOW}▶ 跳过系统库初始化（SKIP_INFRA_DB_INIT=1）${NC}"
+fi
+
+# Install PostGIS extension (for ARM64 with postgres:15 image)
+if [[ "${SKIP_POSTGIS_INSTALL:-0}" != "1" ]]; then
+  # Check if using standard postgres image (needs PostGIS installation)
+  CURRENT_IMAGE=$(docker inspect addp-postgres --format '{{.Config.Image}}' 2>/dev/null || echo "")
+  if [[ "$CURRENT_IMAGE" == *"postgres:15"* ]] || [[ "$CURRENT_IMAGE" == "postgres:15" ]]; then
+    echo -e "${YELLOW}▶ Installing PostGIS extension...${NC}"
+    bash "${SCRIPT_DIR}/infra-init-postgis.sh"
+  else
+    echo -e "${YELLOW}▶ Skipping PostGIS installation (using PostGIS pre-installed image)${NC}"
+  fi
+else
+  echo -e "${YELLOW}▶ 跳过 PostGIS 安装（SKIP_POSTGIS_INSTALL=1）${NC}"
 fi
 
 # Redis

@@ -2,9 +2,9 @@
 -- 为各个模块创建独立的 schema
 
 -- ==================== PostGIS 扩展 ====================
--- 如使用 postgis/postgis 基础镜像，扩展已包含，仅需启用
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS postgis_topology;
+-- Note: PostGIS 扩展由 infra-init-postgis.sh 脚本单独安装
+-- ARM64: 先安装 PostGIS 包，再创建扩展
+-- AMD64: PostGIS 预装于 postgis/postgis:15-3.4 镜像中
 
 -- ==================== System 模块 ====================
 CREATE SCHEMA IF NOT EXISTS system;
@@ -25,14 +25,16 @@ CREATE TABLE IF NOT EXISTS manager.data_sources (
 
 CREATE TABLE IF NOT EXISTS manager.directories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    parent_id INTEGER REFERENCES manager.directories(id) ON DELETE CASCADE,
-    path TEXT NOT NULL,
-    type VARCHAR(20) NOT NULL, -- 'folder' or 'file'
-    size BIGINT DEFAULT 0,
-    created_by INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    name TEXT,
+    parent_id BIGINT REFERENCES manager.directories(id) ON DELETE CASCADE,
+    path TEXT,
+    type TEXT,
+    size BIGINT,
+    mime_type TEXT,
+    storage_id BIGINT,
+    created_by BIGINT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
     UNIQUE(parent_id, name)
 );
 
@@ -194,13 +196,13 @@ CREATE SCHEMA IF NOT EXISTS transfer;
 
 -- 任务表
 CREATE TABLE IF NOT EXISTS transfer.tasks (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     type VARCHAR(50) NOT NULL, -- 'import', 'export', 'sync'
     mode VARCHAR(20) DEFAULT 'batch', -- 'batch', 'stream', 'micro-batch'
-    source_id INTEGER, -- 关联 system.resources
-    target_id INTEGER, -- 关联 system.resources
+    source_id BIGINT, -- 关联 system.resources
+    target_id BIGINT, -- 关联 system.resources
     config JSONB NOT NULL,
     schedule VARCHAR(100), -- Cron 表达式
     batch_size INTEGER DEFAULT 1000,
@@ -208,9 +210,9 @@ CREATE TABLE IF NOT EXISTS transfer.tasks (
     retry_policy JSONB,
     status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'running', 'success', 'failed', 'paused'
     progress NUMERIC(5,2) DEFAULT 0,
-    last_execution_id INTEGER,
-    created_by INTEGER,
-    tenant_id INTEGER NOT NULL,
+    last_execution_id BIGINT,
+    created_by BIGINT,
+    tenant_id BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -224,9 +226,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_last_execution ON transfer.tasks(last_execu
 
 -- 任务执行记录表
 CREATE TABLE IF NOT EXISTS transfer.task_executions (
-    id SERIAL PRIMARY KEY,
-    task_id INTEGER NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
-    status VARCHAR(20) NOT NULL, -- 'pending', 'running', 'success', 'failed', 'cancelled'
+    id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
+    status TEXT NOT NULL, -- 'pending', 'running', 'success', 'failed', 'cancelled'
     start_time TIMESTAMP NOT NULL,
     end_time TIMESTAMP,
     records_read BIGINT DEFAULT 0,
@@ -238,7 +240,7 @@ CREATE TABLE IF NOT EXISTS transfer.task_executions (
     checkpoint_offset BIGINT DEFAULT 0,
     checkpoint_state JSONB,
     trigger_type VARCHAR(50), -- 'manual', 'schedule', 'api'
-    trigger_by INTEGER
+    trigger_by BIGINT
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_task ON transfer.task_executions(task_id);
@@ -247,8 +249,8 @@ CREATE INDEX IF NOT EXISTS idx_executions_start_time ON transfer.task_executions
 
 -- 字段映射表
 CREATE TABLE IF NOT EXISTS transfer.data_mappings (
-    id SERIAL PRIMARY KEY,
-    task_id INTEGER NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
+    id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
     source_field VARCHAR(255) NOT NULL,
     target_field VARCHAR(255) NOT NULL,
     transform VARCHAR(500),
@@ -263,9 +265,9 @@ CREATE INDEX IF NOT EXISTS idx_mappings_task ON transfer.data_mappings(task_id);
 
 -- Checkpoint 表（用于断点续传）
 CREATE TABLE IF NOT EXISTS transfer.checkpoints (
-    id SERIAL PRIMARY KEY,
-    task_id INTEGER NOT NULL,
-    execution_id INTEGER NOT NULL,
+    id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    execution_id BIGINT NOT NULL,
     "offset" BIGINT NOT NULL,
     partition_id VARCHAR(255),
     state JSONB,
@@ -285,20 +287,25 @@ END;
 $$ language 'plpgsql';
 
 -- Manager 模块触发器
+DROP TRIGGER IF EXISTS update_data_sources_updated_at ON manager.data_sources;
 CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON manager.data_sources
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_directories_updated_at ON manager.directories;
 CREATE TRIGGER update_directories_updated_at BEFORE UPDATE ON manager.directories
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Meta 模块触发器
+DROP TRIGGER IF EXISTS update_meta_node_updated_at ON metadata.meta_node;
 CREATE TRIGGER update_meta_node_updated_at BEFORE UPDATE ON metadata.meta_node
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_meta_item_updated_at ON metadata.meta_item;
 CREATE TRIGGER update_meta_item_updated_at BEFORE UPDATE ON metadata.meta_item
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Transfer 模块触发器
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON transfer.tasks;
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON transfer.tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

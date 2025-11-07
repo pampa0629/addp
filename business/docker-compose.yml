@@ -14,8 +14,7 @@
 services:
   # PostgreSQL with PostGIS - 业务数据库
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
-  # 注意: 当前使用 postgres:15-alpine (不含PostGIS)
-  # 如需空间数据支持,网络恢复后可改用 postgis/postgis:15-3.3
+  # 使用 PostGIS 官方镜像，内置空间扩展支持
   postgres:
     image: postgis/postgis:15-3.4
     platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}  # Auto-detect or default to ARM64

@@ -1,13 +1,27 @@
 -- Business Database Initialization Script
 -- 业务数据库初始化脚本
 --
--- 业务数据库用于存储用户通过 ADDP 管理的实际业务数据
--- 保留默认的 public schema，不创建额外的 schema 或表
--- 实际的业务表由用户上传数据时动态创建
+-- 此脚本在 PostgreSQL 容器首次启动时自动执行
+-- 用于初始化业务数据库的基础结构
 
--- Enable PostGIS extension (空间数据支持)
+-- Enable PostGIS extension for spatial data support
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
--- 提示信息
-SELECT 'Business database initialized with PostGIS support. Using default public schema.' AS info;
+-- Optional: Enable other useful extensions
+-- CREATE EXTENSION IF NOT EXISTS "uuid-ossp";  -- UUID generation
+-- CREATE EXTENSION IF NOT EXISTS hstore;        -- Key-value store
+-- CREATE EXTENSION IF NOT EXISTS pg_trgm;       -- Trigram matching for fuzzy search
+
+-- Grant permissions
+GRANT ALL PRIVILEGES ON DATABASE business TO business;
+
+-- Display installed extensions
+\dx
+
+-- Display PostGIS version
+SELECT PostGIS_Version();
+
+-- Success message
+\echo 'Business database initialization complete!'
+\echo 'PostGIS extension is ready for spatial data.'

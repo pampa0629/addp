@@ -89,6 +89,30 @@ fi
 
 # Start services
 echo -e "${GREEN}Starting business infrastructure services...${NC}"
+
+# Ensure DOCKER_DEFAULT_PLATFORM is set (inherited from restart.sh or default)
+if [ -z "${DOCKER_DEFAULT_PLATFORM}" ]; then
+    ARCH=$(uname -m)
+    case "${ARCH}" in
+        x86_64)
+            export DOCKER_DEFAULT_PLATFORM="linux/amd64"
+            ;;
+        aarch64|arm64)
+            export DOCKER_DEFAULT_PLATFORM="linux/arm64"
+            ;;
+        armv7l)
+            export DOCKER_DEFAULT_PLATFORM="linux/arm/v7"
+            ;;
+        *)
+            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default platform${NC}"
+            ;;
+    esac
+
+    if [ -n "${DOCKER_DEFAULT_PLATFORM}" ]; then
+        echo -e "${YELLOW}🏗️  Using platform: ${DOCKER_DEFAULT_PLATFORM}${NC}"
+    fi
+fi
+
 docker-compose up -d
 
 # Wait for services to be ready

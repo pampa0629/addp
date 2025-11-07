@@ -2,9 +2,11 @@ services:
   # ==================== 基础设施服务 ====================
 
   # PostgreSQL - ADDP系统数据库
-  # Note: Using postgis/postgis:15-3.4 (non-alpine) for ARM compatibility
+  # ARM64 (Apple Silicon): 使用标准 PostgreSQL + PostGIS 扩展 (通过 infra-init-postgis.sh 安装)
+  # AMD64: 可使用 POSTGRES_IMAGE=postgis/postgis:15-3.4 直接使用预装镜像
   postgres:
-    image: postgis/postgis:15-3.4
+    image: ${POSTGRES_IMAGE:-postgres:15}
+    platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}  # Auto-detect or default to ARM64
     container_name: addp-postgres
     environment:
       POSTGRES_USER: addp

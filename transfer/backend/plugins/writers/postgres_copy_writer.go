@@ -338,6 +338,7 @@ func (w *PostgresCOPYWriter) initializeMetadata(batch *pipeline.DataBatch) error
 func (w *PostgresCOPYWriter) detectGeometryColumns() {
 	candidates := make(map[string]geometryColumnMeta)
 
+	// 优先从 Schema 中检测几何字段
 	if w.schema != nil {
 		for _, field := range w.schema.Fields {
 			if strings.EqualFold(field.Type, "geometry") {
@@ -349,19 +350,27 @@ func (w *PostgresCOPYWriter) detectGeometryColumns() {
 					meta.SRID = w.config.SRID
 				}
 				candidates[field.Name] = meta
+				fmt.Printf("DEBUG: Detected geometry field from schema: %s (type=%s, srid=%d)\n",
+					field.Name, field.SpatialType, meta.SRID)
 			}
 		}
 	}
 
-	if len(candidates) == 0 && len(w.config.GeometryColumns) > 0 {
+	// 从配置中补充几何字段信息
+	if len(w.config.GeometryColumns) > 0 {
 		for _, name := range w.config.GeometryColumns {
-			candidates[name] = geometryColumnMeta{
-				SRID: w.config.SRID,
+			if _, exists := candidates[name]; !exists {
+				candidates[name] = geometryColumnMeta{
+					SRID: w.config.SRID,
+				}
+				fmt.Printf("DEBUG: Added geometry field from config: %s (srid=%d)\n", name, w.config.SRID)
 			}
 		}
 	}
 
 	if len(candidates) == 0 {
+		fmt.Printf("DEBUG: No geometry columns detected (schema=%v, config_geom_cols=%v)\n",
+			w.schema != nil, len(w.config.GeometryColumns))
 		return
 	}
 
@@ -370,10 +379,13 @@ func (w *PostgresCOPYWriter) detectGeometryColumns() {
 		for candidate, meta := range candidates {
 			if strings.EqualFold(candidate, col) {
 				w.geometryColumns[col] = meta
+				fmt.Printf("DEBUG: Matched geometry column: %s -> type=%s, srid=%d\n",
+					col, meta.SpatialType, meta.SRID)
 				break
 			}
 		}
 	}
+	fmt.Printf("DEBUG: Final geometry columns: %d detected\n", len(w.geometryColumns))
 }
 
 // ensureTable 确保表存在

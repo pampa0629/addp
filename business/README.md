@@ -6,9 +6,26 @@
 
 **重要特性**：
 - ✅ **完全独立**: 业务基础设施与 ADDP 系统基础设施物理隔离，无任何依赖关系
-- ✅ **官方镜像**: 直接从 Docker Hub 拉取官方镜像（PostGIS、MinIO），无需自建镜像仓库
+- ✅ **架构自适应**: 自动检测 CPU 架构 (ARM64/AMD64)，使用最优镜像
 - ✅ **空间数据支持**: 使用 PostGIS 扩展，原生支持空间数据存储和查询
 - ✅ **默认 schema**: 保留 PostgreSQL 默认的 public schema，业务表由用户动态创建
+
+## 架构自适应
+
+### 支持的架构
+
+| CPU 架构 | PostgreSQL 镜像 | PostGIS 安装方式 | 性能 |
+|---------|----------------|-----------------|------|
+| **ARM64** (Apple Silicon M1/M2/M3/M4) | `postgres:15` | 动态安装 (apt-get) | ⚡ 原生性能 |
+| **AMD64** (Intel/AMD x86_64) | `postgis/postgis:15-3.4` | 预装 | ⚡ 原生性能 |
+
+**快速启动** (自动检测):
+```bash
+cd business
+./scripts/restart.sh  # 自动检测架构并使用最优配置
+```
+
+详见 [ARCHITECTURE_DETECTION.md](ARCHITECTURE_DETECTION.md) 了解技术细节。
 
 ## 架构设计
 

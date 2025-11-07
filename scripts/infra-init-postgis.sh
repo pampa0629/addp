@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# PostGIS Extension Installation Script for Business PostgreSQL
-# 为业务 PostgreSQL 数据库安装 PostGIS 空间扩展
+# PostGIS Extension Installation Script for ADDP PostgreSQL
+# 为 ADDP PostgreSQL 数据库安装 PostGIS 空间扩展
 
 set -e
 
@@ -24,40 +24,39 @@ if [ -f .env ]; then
     set +a
 fi
 
-DB_USER=${BUSINESS_POSTGRES_USER:-business}
-DB_NAME=${BUSINESS_POSTGRES_DB:-business}
-DB_PORT=${BUSINESS_POSTGRES_PORT:-5433}
+DB_USER=${POSTGRES_USER:-addp}
+DB_NAME=${POSTGRES_DB:-addp}
 
 # Check if PostgreSQL container is running
-if ! docker ps --filter name=business-postgres --filter status=running | grep -q business-postgres; then
+if ! docker ps --filter name=addp-postgres --filter status=running | grep -q addp-postgres; then
     echo -e "${RED}✗ PostgreSQL container is not running!${NC}"
-    echo -e "${YELLOW}Please start it first: ./scripts/start.sh${NC}"
+    echo -e "${YELLOW}Please start it first: bash scripts/infra-up.sh${NC}"
     exit 1
 fi
 
 echo -e "${YELLOW}Checking PostGIS installation...${NC}"
 
 # Check if PostGIS is already installed
-POSTGIS_CHECK=$(docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null || echo "0")
+POSTGIS_CHECK=$(docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis';" 2>/dev/null || echo "0")
 POSTGIS_CHECK=$(echo "$POSTGIS_CHECK" | tr -d '[:space:]')
 
 if [ "$POSTGIS_CHECK" = "1" ]; then
     echo -e "${GREEN}✓ PostGIS is already installed${NC}"
 
     # Show PostGIS version
-    POSTGIS_VERSION=$(docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT PostGIS_Version();" 2>/dev/null || echo "Unknown")
+    POSTGIS_VERSION=$(docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT PostGIS_Version();" 2>/dev/null || echo "Unknown")
     echo -e "${GREEN}  Version: $POSTGIS_VERSION${NC}"
 else
     echo -e "${YELLOW}PostGIS not found. Installing packages...${NC}"
 
     # Check if PostGIS packages are installed in container
-    POSTGIS_PACKAGE_CHECK=$(docker exec business-postgres sh -c 'dpkg -l | grep postgis || echo "not-installed"')
+    POSTGIS_PACKAGE_CHECK=$(docker exec addp-postgres sh -c 'dpkg -l | grep postgis || echo "not-installed"')
 
     if echo "$POSTGIS_PACKAGE_CHECK" | grep -q "not-installed"; then
         echo -e "${YELLOW}Installing PostGIS packages in container...${NC}"
 
         # Install PostGIS packages (Debian-based container)
-        docker exec business-postgres sh -c '
+        docker exec addp-postgres sh -c '
             apt-get update -qq && \
             apt-get install -y -qq --no-install-recommends \
                 postgresql-15-postgis-3 \
@@ -78,7 +77,7 @@ else
 
     # Now create PostGIS extension in database
     echo -e "${YELLOW}Creating PostGIS extension in database...${NC}"
-    docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>&1
+    docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis;" 2>&1
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ PostGIS extension installed successfully${NC}"
@@ -92,7 +91,7 @@ fi
 echo ""
 echo -e "${YELLOW}Checking PostGIS Topology extension...${NC}"
 
-TOPOLOGY_CHECK=$(docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis_topology';" 2>/dev/null || echo "0")
+TOPOLOGY_CHECK=$(docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='postgis_topology';" 2>/dev/null || echo "0")
 TOPOLOGY_CHECK=$(echo "$TOPOLOGY_CHECK" | tr -d '[:space:]')
 
 if [ "$TOPOLOGY_CHECK" = "1" ]; then
@@ -100,7 +99,7 @@ if [ "$TOPOLOGY_CHECK" = "1" ]; then
 else
     echo -e "${YELLOW}PostGIS Topology not found. Installing...${NC}"
 
-    docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis_topology;" 2>&1
+    docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS postgis_topology;" 2>&1
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓ PostGIS Topology extension installed successfully${NC}"
@@ -117,10 +116,8 @@ echo ""
 
 # Show list of installed extensions
 echo "Installed PostgreSQL extensions:"
-docker exec business-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "\dx" 2>/dev/null
+docker exec addp-postgres psql -U "$DB_USER" -d "$DB_NAME" -c "\dx" 2>/dev/null
 
 echo ""
-echo -e "${GREEN}You can now import spatial data to the business database.${NC}"
-echo -e "${YELLOW}Tip: When using Transfer module, specify target table as:${NC}"
-echo -e "${YELLOW}     business_data.your_spatial_table${NC}"
+echo -e "${GREEN}ADDP system database now supports spatial data.${NC}"
 echo ""

@@ -68,25 +68,33 @@ bash ./scripts/stop.sh || true
 echo ""
 
 # Remove old architecture images if they exist
-echo -e "${YELLOW}🧹 Cleaning up old architecture images...${NC}"
+echo -e "${YELLOW}🧹 Cleaning up old images...${NC}"
 
-# Check if postgis image exists and remove if architecture mismatch
+# Remove PostGIS image (we'll use postgres:15 for ARM64)
 if docker image inspect postgis/postgis:15-3.4 &>/dev/null; then
-    OLD_ARCH=$(docker image inspect postgis/postgis:15-3.4 2>/dev/null | grep -m1 "Architecture" | awk -F'"' '{print $4}')
-    if [ "${OLD_ARCH}" != "${DOCKER_ARCH##*/}" ]; then
-        echo -e "   Removing old PostGIS image (${OLD_ARCH})..."
-        docker rmi -f postgis/postgis:15-3.4 || true
-    fi
+    echo -e "   Removing old PostGIS image..."
+    docker rmi -f postgis/postgis:15-3.4 || true
 fi
 
-# Check if minio image exists and remove if architecture mismatch (optional, usually fine)
-if docker image inspect minio/minio:latest &>/dev/null; then
-    OLD_MINIO_ARCH=$(docker image inspect minio/minio:latest 2>/dev/null | grep -m1 "Architecture" | awk -F'"' '{print $4}')
-    if [ "${OLD_MINIO_ARCH}" != "${DOCKER_ARCH##*/}" ]; then
-        echo -e "   Removing old MinIO image (${OLD_MINIO_ARCH})..."
-        docker rmi -f minio/minio:latest || true
-    fi
+if docker image inspect postgis/postgis:16-3.4 &>/dev/null; then
+    echo -e "   Removing PostGIS 16-3.4 image..."
+    docker rmi -f postgis/postgis:16-3.4 || true
 fi
+
+# Remove postgres:15 if exists (will re-pull with correct arch)
+if docker image inspect postgres:15 &>/dev/null; then
+    echo -e "   Removing old PostgreSQL 15 image..."
+    docker rmi -f postgres:15 || true
+fi
+
+# Remove MinIO image (will re-pull with correct arch)
+if docker image inspect minio/minio:latest &>/dev/null; then
+    echo -e "   Removing old MinIO image..."
+    docker rmi -f minio/minio:latest || true
+fi
+
+# Prune dangling images
+docker image prune -f &>/dev/null || true
 
 echo -e "${GREEN}✓ Cleanup complete${NC}"
 echo ""
@@ -95,15 +103,49 @@ echo ""
 echo -e "${YELLOW}📥 Pulling images for ${DISPLAY_ARCH} architecture...${NC}"
 export DOCKER_DEFAULT_PLATFORM="${DOCKER_ARCH}"
 
-# Pull PostGIS image for the correct architecture
-echo -e "   Pulling postgis/postgis:15-3.4 for ${DOCKER_ARCH}..."
-docker pull --platform="${DOCKER_ARCH}" postgis/postgis:15-3.4
+# Use PostGIS official image for all architectures (supports ARM64 and AMD64)
+POSTGRES_IMAGE="postgis/postgis:15-3.4"
+echo -e "   Using ${POSTGRES_IMAGE} (PostGIS pre-installed, multi-arch support)"
+
+export POSTGRES_IMAGE
+
+# Pull PostgreSQL image for the correct architecture with retries
+echo -e "   Pulling ${POSTGRES_IMAGE} for ${DOCKER_ARCH}..."
+MAX_RETRIES=3
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if docker pull --platform="${DOCKER_ARCH}" "${POSTGRES_IMAGE}"; then
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo -e "${YELLOW}   Retry $RETRY_COUNT/$MAX_RETRIES...${NC}"
+            sleep 2
+        else
+            echo -e "${RED}✗ Failed to pull PostgreSQL image after $MAX_RETRIES attempts${NC}"
+            exit 1
+        fi
+    fi
+done
 
 # Pull MinIO image (multi-arch, but explicit is safer)
 echo -e "   Pulling minio/minio:latest for ${DOCKER_ARCH}..."
 docker pull --platform="${DOCKER_ARCH}" minio/minio:latest
 
+# Verify the pulled images have correct architecture
+PG_ARCH=$(docker image inspect "${POSTGRES_IMAGE}" --format '{{.Architecture}}' 2>/dev/null || echo "unknown")
+MINIO_ARCH=$(docker image inspect minio/minio:latest --format '{{.Architecture}}' 2>/dev/null || echo "unknown")
+
 echo -e "${GREEN}✓ Images pulled successfully${NC}"
+echo -e "   PostgreSQL (${POSTGRES_IMAGE}): ${PG_ARCH}"
+echo -e "   MinIO: ${MINIO_ARCH}"
+
+if [ "${PG_ARCH}" != "${DOCKER_ARCH##*/}" ]; then
+    echo -e "${RED}✗ PostgreSQL architecture mismatch! Expected ${DOCKER_ARCH##*/}, got ${PG_ARCH}${NC}"
+    exit 1
+fi
+
 echo ""
 
 echo -e "${YELLOW}🚀 Starting services with correct architecture...${NC}"
@@ -120,9 +162,10 @@ echo -e "${GREEN}  Restart Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "Architecture: ${GREEN}${DISPLAY_ARCH}${NC} (${DOCKER_ARCH})"
+echo -e "PostgreSQL Image: ${GREEN}${POSTGRES_IMAGE}${NC}"
 echo ""
 echo "Verify with:"
-echo "  docker image inspect postgis/postgis:15-3.4 | grep Architecture"
+echo "  docker exec business-postgres psql -U business -d business -c 'SELECT PostGIS_Version();'"
 echo "  docker inspect business-postgres | grep Architecture"
 echo ""
 
