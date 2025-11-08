@@ -236,13 +236,26 @@ func convertType(value interface{}, targetType, format string) (interface{}, err
 		return nil, nil
 	}
 
+	// 空间类型保持原始 []byte 格式，不做转换
+	if targetType == "geometry" {
+		// 如果已经是 []byte（WKB 格式），直接返回
+		if b, ok := value.([]byte); ok {
+			return b, nil
+		}
+		// 如果是字符串（WKT 或 HEXEWKB），保持字符串
+		if s, ok := value.(string); ok {
+			return s, nil
+		}
+		return value, nil
+	}
+
 	valueStr := fmt.Sprintf("%v", value)
 
 	switch targetType {
 	case "string":
 		return valueStr, nil
 
-	case "int":
+	case "int", "integer":
 		if v, ok := value.(int64); ok {
 			return v, nil
 		}
@@ -257,13 +270,13 @@ func convertType(value interface{}, targetType, format string) (interface{}, err
 		}
 		return strconv.ParseFloat(valueStr, 64)
 
-	case "bool":
+	case "bool", "boolean":
 		if v, ok := value.(bool); ok {
 			return v, nil
 		}
 		return strconv.ParseBool(valueStr)
 
-	case "datetime":
+	case "datetime", "date", "timestamp":
 		if v, ok := value.(time.Time); ok {
 			return v, nil
 		}
@@ -271,6 +284,10 @@ func convertType(value interface{}, targetType, format string) (interface{}, err
 			format = time.RFC3339
 		}
 		return time.Parse(format, valueStr)
+
+	case "json":
+		// JSON 类型保持原样，可能是 string 或已解析的对象
+		return value, nil
 
 	default:
 		return value, nil

@@ -123,7 +123,21 @@
       "Bash(sqlite3:*)",
       "Bash(http://localhost:8083/api/tasks/1/execute)",
       "Bash(http://localhost:8083/api/tasks/1/enqueue)",
-      "Bash(http://localhost:8083/api/tasks/1/start)"
+      "Bash(http://localhost:8083/api/tasks/1/start)",
+      "Bash(find:*)",
+      "Bash(/tmp/login.json)",
+      "Bash(pgrep:*)",
+      "Bash(for:*)",
+      "Bash(do echo 'PID $pid:' lsof -p $pid)",
+      "Bash(./scripts/dev-restart.sh:*)",
+      "Bash(./scripts/dev-stop.sh:*)",
+      "Bash(xargs ps:*)",
+      "Bash(/Users/pampa/code/addp/.dev-pids/transfer.pid)",
+      "Bash(/Users/pampa/code/addp/.dev-pids/transfer-worker.pid)",
+      "Bash(ps:*)",
+      "Bash(sh:*)",
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjI1MDk5ODgsImlhdCI6MTc2MjUwODE4OH0.hT34grTz6s4pkX1cdkHjTgyyGr3DPC1YV7lDXMFxjlA' curl -s http://localhost:8083/api/tasks/2 -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjI1MDk5ODgsImlhdCI6MTc2MjUwODE4OH0.hT34grTz6s4pkX1cdkHjTgyyGr3DPC1YV7lDXMFxjlA' curl -s \"http://localhost:8083/api/tasks/2\" -H \"Authorization: Bearer $TOKEN\")"
     ],
     "deny": [],
     "ask": []

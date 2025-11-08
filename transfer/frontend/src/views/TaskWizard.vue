@@ -117,12 +117,7 @@
                   :key="option.value"
                   :label="`${option.name} (${option.resource_type})`"
                   :value="option.value"
-                >
-                  <span>{{ option.name }}</span>
-                  <span style="float: right; color: #8492a6; font-size: 13px">
-                    {{ option.resource_type }} · {{ option.originLabel }}
-                  </span>
-                </el-option>
+                />
               </el-select>
               <div class="hint">
                 <p>
@@ -303,8 +298,8 @@
 
                 <el-form-item v-if="sourceConfig.queryType === 'sql'" label="SQL 查询">
                   <el-input v-model="sourceConfig.query" type="textarea" :rows="5"
-                    placeholder="SELECT id, AsBinary(geom) AS geom, name FROM pois" />
-                  <div class="hint">自定义 SQL 需自行对几何列使用 AsBinary() 并命名为原列名。</div>
+                    placeholder="SELECT id, ST_AsBinary(geom) AS geom, name FROM pois" />
+                  <div class="hint">自定义 SQL 需自行对几何列使用 ST_AsBinary() 并命名为原列名（注意：使用 ST_AsBinary 而非 AsBinary，以确保兼容 PostGIS）。</div>
                 </el-form-item>
 
                 <el-form-item label="WHERE 条件">
@@ -401,12 +396,7 @@
                   :key="option.value"
                   :label="`${option.name} (${option.resource_type})`"
                   :value="option.value"
-                >
-                  <span>{{ option.name }}</span>
-                  <span style="float: right; color: #8492a6; font-size: 13px">
-                    {{ option.resource_type }} · {{ option.originLabel }}
-                  </span>
-                </el-option>
+                />
               </el-select>
               <div class="hint">
                 <p>
@@ -496,6 +486,7 @@
                     style="width: 100%"
                     :loading="loadingTargetTables"
                     @focus="handleLoadTargetTables"
+                    @change="handleTargetTableChange"
                   >
                     <el-option
                       v-for="table in availableTargetTables"
@@ -672,6 +663,8 @@
           <FieldMappingEditor
             :source-fields="sourceFields"
             :target-fields="targetFields"
+            :source-field-details="sourceFieldDetails"
+            :target-field-details="targetFieldDetails"
             v-model:mappings="fieldMappings"
             :auto-create-mode="targetConnectorType === 's3' || (!targetIsSystem && selectedTargetLocalResource && ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.resource_type || '').toLowerCase()))"
             @fetch-fields="handleFetchFields"
@@ -1015,10 +1008,10 @@ watch(
         }
       } catch (e) {
         console.error('自动加载目标字段失败:', e)
-        // 只在非初始化阶段显示错误提示
-        if (!loadingTask.value && !isInitializingFromTask.value) {
-          ElMessage.warning(`自动获取目标字段失败: ${e.message || '未知错误'}`)
-        }
+
+        // 对于目标字段，所有错误都静默处理（可能是新表或表未扫描）
+        // 用户可以在字段映射步骤手动配置或让系统自动使用源字段
+        console.log(`表「${newTable}」字段获取失败，可能是新表或未扫描。将在字段映射步骤自动处理。`)
       }
     }, 300)
   }
@@ -1351,7 +1344,7 @@ const normalizeId = (value) => {
 
 const normalizeConnectorType = (resourceType, config = {}) => {
   const type = (resourceType || '').toLowerCase()
-  if (['postgresql', 'mysql', 's3', 'csv', 'json'].includes(type)) {
+  if (['postgresql', 'mysql', 's3', 'csv', 'json', 'spatialite', 'sqlite'].includes(type)) {
     return type
   }
   if (['minio', 'oss'].includes(type)) {
@@ -1359,12 +1352,12 @@ const normalizeConnectorType = (resourceType, config = {}) => {
   }
 
   const driver = (config.driver || '').toLowerCase()
-  if (['postgresql', 'mysql'].includes(driver)) {
+  if (['postgresql', 'mysql', 'spatialite', 'sqlite'].includes(driver)) {
     return driver
   }
 
   const inferred = (config.type || '').toLowerCase()
-  if (['postgresql', 'mysql'].includes(inferred)) {
+  if (['postgresql', 'mysql', 'spatialite', 'sqlite'].includes(inferred)) {
     return inferred
   }
   if (['s3', 'minio', 'oss'].includes(inferred)) {
@@ -1393,6 +1386,12 @@ const prepareSourceConfigForDisplay = (rawConfig, connectorType) => {
 
 const prepareTargetConfigForDisplay = (rawConfig, connectorType) => {
   const sanitized = sanitizeConfigForDisplay(rawConfig)
+
+  // 将后端的 write_mode 映射回前端的 mode
+  if (sanitized.write_mode) {
+    sanitized.mode = sanitized.write_mode
+    delete sanitized.write_mode
+  }
 
   if (!('path' in sanitized) && typeof sanitized.file_name === 'string') {
     sanitized.path = sanitized.file_name
@@ -2092,6 +2091,26 @@ const loadTaskForEdit = async () => {
     syncGeometrySelectionFromConfig()
     syncGeometryFieldsToConfig()
 
+    // 恢复表列表（确保下拉框中有当前选中的表）
+    // 注意：需要在 nextTick 之后执行，确保数据源选择已经生效
+    await nextTick()
+
+    if (sourceConfig.value.table) {
+      // 将当前选中的表添加到可用表列表，避免下拉框显示为空
+      if (!availableSourceTables.value.includes(sourceConfig.value.table)) {
+        availableSourceTables.value = [sourceConfig.value.table]
+      }
+      console.log('恢复源表选择:', sourceConfig.value.table)
+    }
+
+    if (targetConfig.value.table) {
+      // 将当前选中的表添加到可用表列表，避免下拉框显示为空
+      if (!availableTargetTables.value.includes(targetConfig.value.table)) {
+        availableTargetTables.value = [targetConfig.value.table]
+      }
+      console.log('恢复目标表选择:', targetConfig.value.table)
+    }
+
     if (Array.isArray(rawSourceConfig.fields) && rawSourceConfig.fields.length > 0) {
       sourceFields.value = rawSourceConfig.fields
     }
@@ -2220,6 +2239,18 @@ const handleLoadTargetTables = async () => {
   } finally {
     loadingTargetTables.value = false
   }
+}
+
+// 目标表名改变时的处理
+const handleTargetTableChange = (newTable) => {
+  console.log(`目标表名改变: ${newTable}, 清空目标字段和映射`)
+  // 清空目标字段,强制在字段映射步骤重新获取
+  targetFields.value = []
+  targetFieldDetails.value = []
+  // 清空已有的字段映射
+  fieldMappings.value = []
+  // 提示用户
+  ElMessage.info('目标表已更改,请进入字段映射步骤重新配置')
 }
 
 const handleFetchFields = async (type) => {
@@ -2375,11 +2406,22 @@ const handleFetchFields = async (type) => {
     console.error('获取字段列表失败:', error)
     const errorMsg = error.response?.data?.error || error.message || '未知错误'
 
+    // 对于目标字段，无论什么错误都静默处理，让调用方决定如何处理
+    // 这样用户输入新表名或表未扫描时都不会看到错误提示
+    if (!isSource) {
+      console.log(`获取目标表「${tableName}」字段失败，可能是新表或未扫描，错误: ${errorMsg}`)
+      throw error  // 抛出异常，让调用方处理
+    }
+
+    // 只对源字段显示错误提示
     if (error.response?.status === 404) {
       ElMessage.error(`未找到表「${tableName}」的字段信息,请先到元数据模块扫描该数据源`)
     } else {
       ElMessage.error(`获取字段列表失败: ${errorMsg}`)
     }
+
+    // 抛出异常，让调用方知道获取失败
+    throw error
   } finally {
     if (isSource) {
       loadingSourceFields.value = false
@@ -2425,6 +2467,12 @@ const nextStep = async () => {
 
 const autoFetchAndMapFields = async () => {
   console.log('=== 进入字段映射步骤,开始自动获取字段 ===')
+  console.log('当前配置:', {
+    sourceTable: sourceConfig.value.table,
+    targetTable: targetConfig.value.table,
+    sourceFieldsCount: sourceFields.value.length,
+    targetFieldsCount: targetFields.value.length
+  })
 
   try {
     // 第一步: 获取源字段(如果还没有)
@@ -2462,7 +2510,12 @@ const autoFetchAndMapFields = async () => {
     await nextTick()
 
     // 第二步: 获取目标字段(根据目标类型)
-    if (targetFields.value.length === 0) {
+    // 需要重新获取目标字段的条件:
+    // 1. 目标字段为空
+    // 2. 或者目标字段不为空但需要强制刷新(表名可能已改变)
+    const shouldRefetchTarget = targetFields.value.length === 0
+
+    if (shouldRefetchTarget) {
       console.log('目标字段为空,尝试自动获取...')
       console.log('目标配置信息:', {
         isSystem: targetIsSystem.value,
@@ -2555,13 +2608,28 @@ const autoFetchAndMapFields = async () => {
 const performAutoMatch = () => {
   const newMappings = []
 
+  // 辅助函数：检测字段是否为几何类型
+  const detectFieldType = (sourceField) => {
+    // 检查源字段详情
+    const sourceDetail = sourceFieldDetails.value.find(f => f.name === sourceField)
+    if (sourceDetail && isSpatialField(sourceDetail)) {
+      return 'geometry'
+    }
+    // 检查目标字段详情
+    const targetDetail = targetFieldDetails.value.find(f => f.name === sourceField)
+    if (targetDetail && isSpatialField(targetDetail)) {
+      return 'geometry'
+    }
+    return 'string'
+  }
+
   // 第一步：完全匹配（字段名完全相同）
   sourceFields.value.forEach(sourceField => {
     if (targetFields.value.includes(sourceField)) {
       newMappings.push({
         source_field: sourceField,
         target_field: sourceField,
-        field_type: 'string',
+        field_type: detectFieldType(sourceField),
         transform: '',
         format: '',
         default_value: '',
@@ -2580,7 +2648,7 @@ const performAutoMatch = () => {
         newMappings.push({
           source_field: sourceField,
           target_field: targetField,
-          field_type: 'string',
+          field_type: detectFieldType(sourceField),
           transform: '',
           format: '',
           default_value: '',
@@ -2602,13 +2670,35 @@ const performAutoMatch = () => {
         newMappings.push({
           source_field: sourceField,
           target_field: sourceField,
-          field_type: 'string',
+          field_type: detectFieldType(sourceField),
           transform: '',
           format: '',
           default_value: '',
           nullable: true
         })
       }
+    })
+  }
+
+  // 第四步：对于数据库目标，如果源和目标字段完全一致（说明是新表或者自动填充的字段）
+  // 且没有任何匹配结果，则自动创建所有源字段的映射
+  const targetIsDatabase = ['postgresql', 'mysql'].includes(targetConnectorType.value)
+  const fieldsAreIdentical = sourceFields.value.length > 0 &&
+                             sourceFields.value.length === targetFields.value.length &&
+                             sourceFields.value.every(sf => targetFields.value.includes(sf))
+
+  if (targetIsDatabase && fieldsAreIdentical && newMappings.length === 0) {
+    console.log('检测到数据库目标，源和目标字段完全一致，自动创建全部映射')
+    sourceFields.value.forEach(sourceField => {
+      newMappings.push({
+        source_field: sourceField,
+        target_field: sourceField,
+        field_type: detectFieldType(sourceField),
+        transform: '',
+        format: '',
+        default_value: '',
+        nullable: true
+      })
     })
   }
 
@@ -2805,6 +2895,34 @@ const handleSubmit = async () => {
 const handleBack = () => {
   router.back()
 }
+
+// 监听步骤变化,在进入字段映射步骤时自动获取字段
+watch(currentStep, async (newStep, oldStep) => {
+  if (newStep === 3 && oldStep !== 3) {
+    // 进入字段映射步骤
+    console.log('=== 检测到进入字段映射步骤,检查是否需要自动获取字段 ===')
+    console.log('当前状态:', {
+      mappingsCount: fieldMappings.value.length,
+      sourceFieldsCount: sourceFields.value.length,
+      targetFieldsCount: targetFields.value.length,
+      sourceTable: sourceConfig.value.table,
+      targetTable: targetConfig.value.table,
+      sourceIsSystem: sourceIsSystem.value,
+      targetIsSystem: targetIsSystem.value,
+      targetConnectorType: targetConnectorType.value
+    })
+
+    // 如果字段映射为空,且有源和目标配置,则自动获取
+    if (fieldMappings.value.length === 0 &&
+        (selectedSourceOption.value || selectedSourceLocalResource.value) &&
+        (selectedTargetOption.value || selectedTargetLocalResource.value)) {
+      console.log('字段映射为空,触发自动获取和匹配')
+      await autoFetchAndMapFields()
+    } else {
+      console.log(`跳过自动获取: 映射数量=${fieldMappings.value.length}, 源=${!!selectedSourceOption.value}, 目标=${!!selectedTargetOption.value}`)
+    }
+  }
+})
 
 onMounted(async () => {
   await Promise.all([loadSystemResources(), loadLocalResources()])

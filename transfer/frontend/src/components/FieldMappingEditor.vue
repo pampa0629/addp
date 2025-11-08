@@ -77,6 +77,7 @@
               <el-option label="日期" value="date" />
               <el-option label="时间戳" value="timestamp" />
               <el-option label="JSON" value="json" />
+              <el-option label="空间" value="geometry" />
             </el-select>
           </template>
         </el-table-column>
@@ -157,6 +158,14 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
+  sourceFieldDetails: {
+    type: Array,
+    default: () => []
+  },
+  targetFieldDetails: {
+    type: Array,
+    default: () => []
+  },
   mappings: {
     type: Array,
     default: () => []
@@ -196,13 +205,22 @@ const handleAutoMatch = () => {
 
   const newMappings = []
 
+  // 创建源字段详情的快速查找 Map
+  const sourceFieldMap = new Map()
+  props.sourceFieldDetails.forEach(field => {
+    sourceFieldMap.set(field.name, field)
+  })
+
   // 完全匹配
   props.sourceFields.forEach(sourceField => {
     if (props.targetFields.includes(sourceField)) {
+      const fieldDetail = sourceFieldMap.get(sourceField)
+      const fieldType = fieldDetail?.is_geometry ? 'geometry' : 'string'
+
       newMappings.push({
         source_field: sourceField,
         target_field: sourceField,
-        field_type: 'string',
+        field_type: fieldType,
         transform: '',
         format: '',
         default_value: '',
@@ -220,10 +238,13 @@ const handleAutoMatch = () => {
 
       if (normalizedSource === normalizedTarget &&
           !newMappings.find(m => m.source_field === sourceField)) {
+        const fieldDetail = sourceFieldMap.get(sourceField)
+        const fieldType = fieldDetail?.is_geometry ? 'geometry' : 'string'
+
         newMappings.push({
           source_field: sourceField,
           target_field: targetField,
-          field_type: 'string',
+          field_type: fieldType,
           transform: '',
           format: '',
           default_value: '',
@@ -239,7 +260,12 @@ const handleAutoMatch = () => {
   }
 
   mappings.value = newMappings
-  ElMessage.success(`成功匹配 ${newMappings.length} 个字段`)
+  const geometryCount = newMappings.filter(m => m.field_type === 'geometry').length
+  if (geometryCount > 0) {
+    ElMessage.success(`成功匹配 ${newMappings.length} 个字段（包含 ${geometryCount} 个空间字段）`)
+  } else {
+    ElMessage.success(`成功匹配 ${newMappings.length} 个字段`)
+  }
 }
 
 // 添加映射

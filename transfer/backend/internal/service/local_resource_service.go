@@ -637,13 +637,19 @@ func (s *LocalResourceService) listPostgresFields(connInfo models.JSONMap, table
         var col, dataType, udt string
         var nullable, pk bool
         if err := rows.Scan(&col, &dataType, &udt, &nullable, &pk); err != nil { return nil, err }
-        out = append(out, map[string]interface{}{
+        field := map[string]interface{}{
             "name": col,
             "data_type": dataType,
             "column_type": udt,
             "nullable": nullable,
             "primary_key": pk,
-        })
+        }
+        // 检测 PostGIS 空间类型
+        if strings.EqualFold(dataType, "USER-DEFINED") &&
+           (strings.EqualFold(udt, "geometry") || strings.EqualFold(udt, "geography")) {
+            field["is_geometry"] = true
+        }
+        out = append(out, field)
     }
     return out, nil
 }

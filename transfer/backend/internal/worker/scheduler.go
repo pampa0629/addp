@@ -107,7 +107,7 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 	execution := &models.TaskExecution{
 		TaskID:      task.ID,
 		Status:      models.ExecutionStatusPending,
-		StartTime:   now,
+		StartTime:   models.LocalTime{Time: now},
 		TriggerType: "schedule",
 	}
 

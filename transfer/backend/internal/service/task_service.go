@@ -256,7 +256,7 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 	execution := &models.TaskExecution{
 		TaskID:      id,
 		Status:      models.ExecutionStatusPending,
-		StartTime:   now, // 设置开始时间
+		StartTime:   models.LocalTime{Time: now}, // 使用 LocalTime 包装
 		TriggerType: "manual",
 		TriggerBy:   &userID,
 	}

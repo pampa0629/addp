@@ -597,6 +597,15 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		udt  string
 	}
 
+	isSpatialType := func(udt string) bool {
+		switch udt {
+		case "geometry", "geography":
+			return true
+		default:
+			return false
+		}
+	}
+
 	var columnInfos []columnInfo
 	var columns []string
 	var geometryColumns []string
@@ -608,12 +617,16 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 		}
 		columns = append(columns, col)
 		columnInfos = append(columnInfos, columnInfo{name: col, udt: udt})
-		// 只有在安装了 PostGIS 的情况下才识别几何列
-		if hasPostGIS && (udt == "geometry" || udt == "geography") {
+		if isSpatialType(udt) {
 			geometryColumns = append(geometryColumns, col)
 		}
 	}
 	colsRows.Close()
+
+	// 若检测到空间字段但前面的 PostGIS 检查失败(常见于受限实例无法访问 pg_extension)，仍按 PostGIS 处理
+	if len(geometryColumns) > 0 && !hasPostGIS {
+		hasPostGIS = true
+	}
 
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schemaName), pq.QuoteIdentifier(tableName))
 	var totalCount int64
@@ -637,8 +650,7 @@ func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schema
 	selectColumns := make([]string, len(columnInfos))
 	for i, info := range columnInfos {
 		identifier := pq.QuoteIdentifier(info.name)
-		// 只有在安装了 PostGIS 且列类型是几何类型时才使用 ST_AsGeoJSON
-		if hasPostGIS && (info.udt == "geometry" || info.udt == "geography") {
+		if hasPostGIS && isSpatialType(info.udt) {
 			selectColumns[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", identifier, identifier)
 		} else {
 			selectColumns[i] = identifier

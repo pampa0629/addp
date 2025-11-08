@@ -25,27 +25,24 @@ echo ""
 ARCH=$(uname -m)
 echo -e "${YELLOW}🔍 Detecting CPU architecture: ${ARCH}${NC}"
 
-# Map architecture names
+# Select PostgreSQL + PostGIS image based on architecture
 case "${ARCH}" in
-    x86_64)
-        DOCKER_ARCH="linux/amd64"
-        DISPLAY_ARCH="AMD64"
-        ;;
     aarch64|arm64)
-        DOCKER_ARCH="linux/arm64"
+        POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
         DISPLAY_ARCH="ARM64"
+        echo -e "${GREEN}✓ Using ARM64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
         ;;
-    armv7l)
-        DOCKER_ARCH="linux/arm/v7"
-        DISPLAY_ARCH="ARMv7"
+    x86_64)
+        POSTGRES_IMAGE="postgis/postgis:15-3.4"
+        DISPLAY_ARCH="AMD64"
+        echo -e "${GREEN}✓ Using AMD64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
         ;;
     *)
         echo -e "${RED}✗ Unsupported architecture: ${ARCH}${NC}"
+        echo -e "${YELLOW}Supported: ARM64 (aarch64/arm64) or AMD64 (x86_64)${NC}"
         exit 1
         ;;
 esac
-
-echo -e "${GREEN}✓ Target platform: ${DISPLAY_ARCH} (${DOCKER_ARCH})${NC}"
 echo ""
 
 # Stop services
@@ -56,15 +53,29 @@ echo ""
 # Clean up old images
 echo -e "${YELLOW}🧹 Cleaning up old images...${NC}"
 
-# Remove PostGIS images
-if docker image inspect postgis/postgis:15-3.4 &>/dev/null; then
-    echo -e "   Removing old PostGIS image..."
-    docker rmi -f postgis/postgis:15-3.4 || true
-fi
+# Remove official PostGIS images (AMD64 only)
+for tag in "15-3.4" "16-3.4" "latest"; do
+    if docker image inspect "postgis/postgis:${tag}" &>/dev/null; then
+        if [ "${tag}" != "15-3.4" ] || [ "${POSTGRES_IMAGE}" != "postgis/postgis:15-3.4" ]; then
+            echo -e "   Removing old PostGIS ${tag} image..."
+            docker rmi -f "postgis/postgis:${tag}" || true
+        fi
+    fi
+done
 
-# Remove postgres:15 if exists (will re-pull with correct arch)
+# Remove old ARM64 PostGIS images
+for tag in "15-3.4" "latest"; do
+    if docker image inspect "imresamu/postgis-arm64:${tag}" &>/dev/null; then
+        if [ "imresamu/postgis-arm64:${tag}" != "${POSTGRES_IMAGE}" ]; then
+            echo -e "   Removing old ARM64 PostGIS ${tag} image..."
+            docker rmi -f "imresamu/postgis-arm64:${tag}" || true
+        fi
+    fi
+done
+
+# Remove standard postgres:15 if exists
 if docker image inspect postgres:15 &>/dev/null; then
-    echo -e "   Removing old PostgreSQL 15 image..."
+    echo -e "   Removing standard PostgreSQL 15 image..."
     docker rmi -f postgres:15 || true
 fi
 
@@ -74,29 +85,19 @@ docker image prune -f &>/dev/null || true
 echo -e "${GREEN}✓ Cleanup complete${NC}"
 echo ""
 
-# Pull the correct architecture images
+# Pull the PostgreSQL + PostGIS image
 echo -e "${YELLOW}📥 Pulling images for ${DISPLAY_ARCH} architecture...${NC}"
-export DOCKER_DEFAULT_PLATFORM="${DOCKER_ARCH}"
-
-# ARM64: Use standard PostgreSQL + PostGIS extension (installed via script)
-# AMD64: Use postgis/postgis:15-3.4 directly
-if [ "${DOCKER_ARCH}" = "linux/arm64" ]; then
-    POSTGRES_IMAGE="postgres:15"
-    echo -e "   ARM64 detected: Using ${POSTGRES_IMAGE} (PostGIS will be installed as extension)"
-else
-    POSTGRES_IMAGE="postgis/postgis:15-3.4"
-    echo -e "   AMD64 detected: Using ${POSTGRES_IMAGE} (PostGIS pre-installed)"
-fi
 
 export POSTGRES_IMAGE
 
-# Pull PostgreSQL image for the correct architecture with retries
-echo -e "   Pulling ${POSTGRES_IMAGE} for ${DOCKER_ARCH}..."
+# Pull PostgreSQL + PostGIS image with retries
+echo -e "   Pulling ${POSTGRES_IMAGE}..."
 MAX_RETRIES=3
 RETRY_COUNT=0
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker pull --platform="${DOCKER_ARCH}" "${POSTGRES_IMAGE}"; then
+    if docker pull "${POSTGRES_IMAGE}"; then
+        echo -e "${GREEN}✓ PostgreSQL + PostGIS image pulled successfully${NC}"
         break
     else
         RETRY_COUNT=$((RETRY_COUNT + 1))
@@ -110,41 +111,31 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     fi
 done
 
-# Verify the pulled image has correct architecture
-PG_ARCH=$(docker image inspect "${POSTGRES_IMAGE}" --format '{{.Architecture}}' 2>/dev/null || echo "unknown")
-
-echo -e "${GREEN}✓ Image pulled successfully${NC}"
-echo -e "   PostgreSQL (${POSTGRES_IMAGE}): ${PG_ARCH}"
-
-if [ "${PG_ARCH}" != "${DOCKER_ARCH##*/}" ]; then
-    echo -e "${RED}✗ PostgreSQL architecture mismatch! Expected ${DOCKER_ARCH##*/}, got ${PG_ARCH}${NC}"
-    exit 1
-fi
-
 echo ""
 
 # Start infrastructure
-echo -e "${YELLOW}🚀 Starting infrastructure with correct architecture...${NC}"
-
-# Export platform for docker-compose
-export DOCKER_DEFAULT_PLATFORM="${DOCKER_ARCH}"
+echo -e "${YELLOW}🚀 Starting infrastructure services...${NC}"
 
 bash scripts/infra-up.sh
+
+# Install pgvector extension for vector embeddings support
+echo ""
+echo -e "${YELLOW}📦 Installing pgvector extension...${NC}"
+bash scripts/infra-init-pgvector.sh
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Restart Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "Architecture: ${GREEN}${DISPLAY_ARCH}${NC} (${DOCKER_ARCH})"
+echo -e "Architecture: ${GREEN}${DISPLAY_ARCH}${NC}"
 echo -e "PostgreSQL Image: ${GREEN}${POSTGRES_IMAGE}${NC}"
+echo -e "PostGIS: ${GREEN}Built-in${NC}"
+echo -e "pgvector: ${GREEN}Installed${NC}"
 echo ""
-echo "Verify with:"
-echo "  docker image inspect ${POSTGRES_IMAGE} | grep Architecture"
-echo "  docker inspect addp-postgres | grep Architecture"
+echo "Verify extensions:"
+echo "  docker exec addp-postgres psql -U addp -d addp -c '\\dx'"
+echo "  docker exec addp-postgres psql -U addp -d addp -c 'SELECT PostGIS_Version();'"
+echo "  docker exec addp-postgres psql -U addp -d addp -c 'SELECT extversion FROM pg_extension WHERE extname = '\"'\"'vector'\"'\"';'"
 echo ""
-if [ "${DOCKER_ARCH}" = "linux/arm64" ]; then
-    echo -e "${YELLOW}Note: PostGIS extension will be installed via infra-init-postgis.sh script${NC}"
-    echo ""
-fi
 

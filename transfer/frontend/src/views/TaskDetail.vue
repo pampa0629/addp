@@ -333,7 +333,24 @@ const getExecutionLabel = (status) => {
 }
 
 const formatDate = (date) => {
-  return date ? new Date(date).toLocaleString('zh-CN') : '-'
+  if (!date) return '-'
+  try {
+    const d = new Date(date)
+    // 检查是否为有效日期
+    if (isNaN(d.getTime())) return '-'
+
+    // 使用更明确的格式化（避免年份错误）
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    const seconds = String(d.getSeconds()).padStart(2, '0')
+
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  } catch (e) {
+    return '-'
+  }
 }
 
 const formatSchedule = (cron) => {

@@ -1,10 +1,68 @@
 package models
 
 import (
+	"database/sql/driver"
 	"time"
 
 	commonModels "github.com/addp/common/models"
 )
+
+// LocalTime 本地时间类型，序列化为不带时区的本地时间字符串
+type LocalTime struct {
+	time.Time
+}
+
+// MarshalJSON 自定义 JSON 序列化，返回本地时间格式
+func (t LocalTime) MarshalJSON() ([]byte, error) {
+	if t.Time.IsZero() {
+		return []byte("null"), nil
+	}
+	// 格式化为本地时间字符串（不带时区标识）
+	formatted := t.Time.Format(`"2006-01-02T15:04:05"`)
+	return []byte(formatted), nil
+}
+
+// UnmarshalJSON 自定义 JSON 反序列化
+func (t *LocalTime) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
+	}
+	str := string(data)
+	if len(str) > 2 {
+		str = str[1 : len(str)-1] // 去掉引号
+	}
+	parsed, err := time.Parse("2006-01-02T15:04:05", str)
+	if err != nil {
+		// 尝试其他格式
+		parsed, err = time.Parse(time.RFC3339, str)
+		if err != nil {
+			return err
+		}
+	}
+	t.Time = parsed
+	return nil
+}
+
+// Scan 实现 sql.Scanner 接口，允许从数据库读取时间
+func (t *LocalTime) Scan(value interface{}) error {
+	if value == nil {
+		t.Time = time.Time{}
+		return nil
+	}
+	if v, ok := value.(time.Time); ok {
+		t.Time = v
+		return nil
+	}
+	return nil
+}
+
+// Value 实现 driver.Valuer 接口，允许写入数据库
+func (t LocalTime) Value() (driver.Value, error) {
+	if t.Time.IsZero() {
+		return nil, nil
+	}
+	return t.Time, nil
+}
 
 // TaskType 任务类型
 type TaskType string
@@ -86,8 +144,8 @@ type TaskExecution struct {
 	ID               uint            `gorm:"primaryKey" json:"id"`
 	TaskID           uint            `gorm:"not null;index:idx_executions_task" json:"task_id"`
 	Status           ExecutionStatus `gorm:"type:varchar(20);not null;index:idx_executions_status" json:"status"`
-	StartTime        time.Time       `gorm:"not null;index:idx_executions_start_time" json:"start_time"`
-	EndTime          *time.Time      `json:"end_time,omitempty"`
+	StartTime        LocalTime       `gorm:"not null;index:idx_executions_start_time;type:timestamp" json:"start_time"`
+	EndTime          *LocalTime      `gorm:"type:timestamp" json:"end_time,omitempty"`
 	RecordsRead      int64           `gorm:"default:0" json:"records_read"`
 	RecordsWritten   int64           `gorm:"default:0" json:"records_written"`
 	BytesRead        int64           `gorm:"default:0" json:"bytes_read"`
@@ -108,9 +166,9 @@ func (TaskExecution) TableName() string {
 // Duration 返回执行时长
 func (e *TaskExecution) Duration() time.Duration {
 	if e.EndTime == nil {
-		return time.Since(e.StartTime)
+		return time.Since(e.StartTime.Time)
 	}
-	return e.EndTime.Sub(e.StartTime)
+	return e.EndTime.Time.Sub(e.StartTime.Time)
 }
 
 // DataMapping 数据映射配置

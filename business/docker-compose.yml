@@ -14,10 +14,9 @@
 services:
   # PostgreSQL with PostGIS - 业务数据库
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
-  # 使用 PostGIS 官方镜像，内置空间扩展支持
+  # 使用社区ARM64 PostGIS镜像,内置空间扩展支持
   postgres:
-    image: postgis/postgis:15-3.4
-    platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}  # Auto-detect or default to ARM64
+    image: imresamu/postgis-arm64:15-3.4
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}

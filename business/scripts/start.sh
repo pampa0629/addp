@@ -90,27 +90,23 @@ fi
 # Start services
 echo -e "${GREEN}Starting business infrastructure services...${NC}"
 
-# Ensure DOCKER_DEFAULT_PLATFORM is set (inherited from restart.sh or default)
-if [ -z "${DOCKER_DEFAULT_PLATFORM}" ]; then
+# Ensure POSTGRES_IMAGE is set (inherited from restart.sh or default to ARM64)
+if [ -z "${POSTGRES_IMAGE}" ]; then
     ARCH=$(uname -m)
     case "${ARCH}" in
-        x86_64)
-            export DOCKER_DEFAULT_PLATFORM="linux/amd64"
-            ;;
         aarch64|arm64)
-            export DOCKER_DEFAULT_PLATFORM="linux/arm64"
+            export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+            echo -e "${YELLOW}🏗️  Using ARM64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
             ;;
-        armv7l)
-            export DOCKER_DEFAULT_PLATFORM="linux/arm/v7"
+        x86_64)
+            export POSTGRES_IMAGE="postgis/postgis:15-3.4"
+            echo -e "${YELLOW}🏗️  Using AMD64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
             ;;
         *)
-            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default platform${NC}"
+            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default ARM64 image${NC}"
+            export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
             ;;
     esac
-
-    if [ -n "${DOCKER_DEFAULT_PLATFORM}" ]; then
-        echo -e "${YELLOW}🏗️  Using platform: ${DOCKER_DEFAULT_PLATFORM}${NC}"
-    fi
 fi
 
 docker-compose up -d
@@ -141,10 +137,19 @@ for i in {1..30}; do
     echo -n "."
 done
 
-# Install PostGIS extension
+# Verify PostGIS extension (should be pre-installed in image)
 echo ""
-echo -e "${YELLOW}Installing PostGIS extension...${NC}"
-./scripts/install-postgis.sh
+echo -e "${YELLOW}Verifying PostGIS extension...${NC}"
+PG_EXTENSIONS=$(docker-compose exec -T postgres psql -U ${BUSINESS_POSTGRES_USER:-business} -d ${BUSINESS_POSTGRES_DB:-business} -t -c "\dx postgis" 2>/dev/null || echo "")
+
+if echo "$PG_EXTENSIONS" | grep -q "postgis"; then
+    POSTGIS_VERSION=$(docker-compose exec -T postgres psql -U ${BUSINESS_POSTGRES_USER:-business} -d ${BUSINESS_POSTGRES_DB:-business} -t -c "SELECT PostGIS_Version();" 2>/dev/null | tr -d '[:space:]' || echo "Unknown")
+    echo -e "${GREEN}✓ PostGIS extension installed (version: ${POSTGIS_VERSION})${NC}"
+else
+    echo -e "${YELLOW}⚠️  PostGIS extension not found. Creating...${NC}"
+    docker-compose exec -T postgres psql -U ${BUSINESS_POSTGRES_USER:-business} -d ${BUSINESS_POSTGRES_DB:-business} -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_topology;" 2>&1 | grep -v "^$" || true
+    echo -e "${GREEN}✓ PostGIS extension created${NC}"
+fi
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

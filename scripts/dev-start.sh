@@ -74,8 +74,10 @@ TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 
 # 2. 启动 System Backend
 echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"
-(cd system/backend && go run cmd/server/main.go) 2> logs/system-backend-stderr.log &
+cd system/backend
+go run cmd/server/main.go 2> ../../logs/system-backend-stderr.log &
 SYSTEM_PID=$!
+cd ../..
 
 # 等待 System Backend 就绪
 echo "等待 System Backend 就绪..."
@@ -96,8 +98,10 @@ echo ""
 
 # 3. 启动 Manager Backend
 echo -e "${YELLOW}Step 3/5: 启动 Manager Backend${NC}"
-(cd manager/backend && go run cmd/server/main.go) 2> logs/manager-backend-stderr.log &
+cd manager/backend
+go run cmd/server/main.go 2> ../../logs/manager-backend-stderr.log &
 MANAGER_PID=$!
+cd ../..
 
 # 等待 Manager Backend 就绪
 echo "等待 Manager Backend 就绪..."
@@ -117,8 +121,10 @@ echo ""
 
 # 4. 启动 Meta Backend
 echo -e "${YELLOW}Step 4/6: 启动 Meta Backend${NC}"
-(cd meta/backend && go run cmd/server/main.go) 2> logs/meta-backend-stderr.log &
+cd meta/backend
+go run cmd/server/main.go 2> ../../logs/meta-backend-stderr.log &
 META_PID=$!
+cd ../..
 
 # 等待 Meta Backend 就绪
 echo "等待 Meta Backend 就绪..."
@@ -138,9 +144,11 @@ echo ""
 
 # 5. 启动 Transfer Backend
 echo -e "${YELLOW}Step 5/7: 启动 Transfer Backend${NC}"
-(cd transfer/backend && go mod download) >/dev/null 2>> logs/transfer-backend-stderr.log || true
-(cd transfer/backend && go run cmd/server/main.go) 2> logs/transfer-backend-stderr.log &
+cd transfer/backend
+go mod download >/dev/null 2>> ../../logs/transfer-backend-stderr.log || true
+go run cmd/server/main.go 2> ../../logs/transfer-backend-stderr.log &
 TRANSFER_PID=$!
+cd ../..
 
 # 等待 Transfer Backend 就绪
 echo "等待 Transfer Backend 就绪..."
@@ -160,17 +168,21 @@ echo ""
 
 # 6. 启动 Transfer Worker
 echo -e "${YELLOW}Step 6/7: 启动 Transfer Worker${NC}"
-(cd transfer/backend && go mod download) >/dev/null 2>> logs/transfer-worker.log || true
-(cd transfer/backend && go run cmd/worker/main.go) > logs/transfer-worker.log 2>&1 &
+cd transfer/backend
+go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true
+go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1 &
 TRANSFER_WORKER_PID=$!
+cd ../..
 echo -e "${GREEN}✓ Transfer Worker 启动中 (PID: $TRANSFER_WORKER_PID)${NC}"
 echo "  注意: Transfer Worker 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
 # 7. 启动 Gateway
 echo -e "${YELLOW}Step 7/7: 启动 Gateway${NC}"
-(cd gateway && go run cmd/gateway/main.go) 2> logs/gateway-stderr.log &
+cd gateway
+go run cmd/gateway/main.go 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
+cd ..
 
 # 等待 Gateway 就绪
 echo "等待 Gateway 就绪..."

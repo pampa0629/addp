@@ -1,10 +1,21 @@
 -- 全域数据平台数据库初始化脚本
 -- 为各个模块创建独立的 schema
+--
+-- 空间数据与向量扩展支持:
+-- - PostGIS: 空间数据类型和空间函数 (geometry, geography等)
+-- - pgvector: 向量嵌入和相似度搜索 (vector类型, 支持多模态AI应用)
 
 -- ==================== PostGIS 扩展 ====================
--- Note: PostGIS 扩展由 infra-init-postgis.sh 脚本单独安装
--- ARM64: 先安装 PostGIS 包，再创建扩展
--- AMD64: PostGIS 预装于 postgis/postgis:15-3.4 镜像中
+-- PostGIS 扩展预装于 PostGIS 镜像中
+-- ARM64: imresamu/postgis-arm64:15-3.4
+-- AMD64: postgis/postgis:15-3.4
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_topology;
+
+-- ==================== pgvector 扩展 ====================
+-- Note: pgvector 扩展由 infra-init-pgvector.sh 脚本安装
+-- (需要从源码编译,不在包仓库中)
+-- 用于多模态向量检索、相似度搜索、最近邻查询等场景
 
 -- ==================== System 模块 ====================
 CREATE SCHEMA IF NOT EXISTS system;
