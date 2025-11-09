@@ -3,22 +3,29 @@
 ## 一分钟快速开始
 
 ```bash
-# 1. 进入目录
+# 1. 进入 ABS 项目
 cd /Users/pampa/code/addp/study/abs
 
-# 2. 初始化项目
+# 2. 初始化依赖和配置模板
 make init
 
-# 3. 配置 API Key
-# 编辑 backend/.env，设置你的 Claude API key
-echo "CLAUDE_API_KEY=sk-ant-your-key-here" >> backend/.env
+# 3. 配置 Codex CLI（默认代码生成器）
+mkdir -p ~/.codex
+echo "your-codex-api-key-here" > ~/.codex/.apikey   # 写入真实 API Key
+chmod 600 ~/.codex/.apikey                          # 确保只有当前用户可读
 
-# 4. 启动系统
-./start.sh
+# 4. 验证 codex CLI 是否可用
+which codex
+codex --version
 
-# 5. 打开浏览器
-# 访问 http://localhost:5180
+# 5. 启动 ABS（同时启动前后端）
+./restart.sh
+
+# 6. 打开浏览器访问 UI
+open http://localhost:5180  # 或复制到浏览器地址栏
 ```
+
+> 提示：`backend/.env` 已将 `CODE_GENERATOR` 设为 `codex_cli`，并将 `CODEX_CLI_ARGS` 包裹在双引号中（千万不要去掉）。
 
 ## 测试示例
 
@@ -61,13 +68,33 @@ lsof -ti:8090 | xargs kill  # 后端
 lsof -ti:5180 | xargs kill  # 前端
 ```
 
-### API Key 错误
-确保你的 API key 正确设置在 `backend/.env` 中
+### Codex CLI 未安装或不可用
+```bash
+# 重新安装 CLI（任选其一）
+npm install -g @openai/codex
+# 或
+brew install codex
+
+# 将安装路径加入 PATH 后再次验证
+which codex
+```
+
+### 找不到 Codex API Key 文件
+```bash
+ls -la ~/.codex/.apikey  # 应该存在且权限为 600
+cat ~/.codex/.apikey     # 确认内容为有效 API Key
+```
 
 ### 依赖未安装
 ```bash
 cd backend && go mod download
 cd frontend && npm install
+```
+
+### CODEX_CLI_ARGS 解析错误
+确保 `backend/.env` 中保留双引号，例如：
+```bash
+CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"
 ```
 
 ## 停止服务

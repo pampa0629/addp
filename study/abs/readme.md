@@ -3,7 +3,7 @@
 **AI-powered code generation and auto-deployment system**
 
 ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系统会自动：
-1. 使用 Claude AI 生成代码
+1. 使用 Codex CLI（默认）或其他已配置的代码生成器生成代码
 2. 自动编译代码
 3. 自动部署并运行应用
 
@@ -13,7 +13,7 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 
 ## Features
 
-- 🤖 **AI Code Generation** - 基于 Claude Sonnet 4.5
+- 🤖 **AI Code Generation** - 默认通过 Codex CLI，亦可切换 Codex API / Claude
 - 📝 **Natural Language Input** - 用简单的中英文描述需求
 - ⚡ **Auto-Compile** - 自动编译 Go 代码（更多语言即将支持）
 - 🚀 **Auto-Deploy** - 自动启动应用程序
@@ -29,8 +29,8 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 ┌─────────────────────────────────────────────────────────────┐
 │  Frontend (Vue 3 + Pinia)                                   │
 │  - Floating input component                                 │
-│  - Real-time task status updates via WebSocket             │
-│  - Task history and management                             │
+│  - Real-time task status updates via WebSocket              │
+│  - Task history and management                              │
 │  Port: 5180                                                 │
 └─────────────────┬───────────────────────────────────────────┘
                   │
@@ -38,19 +38,29 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Backend (Go + Gin)                                         │
-│  - REST API for task management                            │
-│  - Claude API integration                                  │
-│  - Code generation & compilation                           │
-│  - WebSocket for real-time updates                        │
-│  Port: 8090                                                │
+│  - REST API for task management                             │
+│  - Codex CLI integration（默认）                            │
+│  - 可切换 Codex API / Claude                                │
+│  - Code generation & compilation                            │
+│  - WebSocket for real-time updates                          │
+│  Port: 8090                                                 │
 └─────────────────┬───────────────────────────────────────────┘
                   │
-                  │ HTTPS
+                  │ CLI exec
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Claude API (Anthropic)                                     │
-│  - Code generation via Messages API                        │
-│  - Model: claude-sonnet-4-5-20250929                       │
+│  Codex CLI（本地）                                          │
+│  - 读取 ~/.codex/.apikey 中的 API Key                       │
+│  - 执行 codex exec / codex plan                             │
+│  - 参数来自 CODEX_CLI_ARGS                                  │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  │ HTTPS（由 CLI 或直接后端发起）
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Codex / Claude APIs（远程，可选）                          │
+│  - gpt-5（Codex/AICodeMirror）                              │
+│  - claude-sonnet-4-5-20250929（Anthropic）                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +72,9 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 
 - **Go 1.23+** - 后端运行环境
 - **Node.js 18+** - 前端运行环境
-- **Anthropic API Key** - 在 https://console.anthropic.com/ 获取
+- **Codex CLI** - `npm install -g @openai/codex` 或 `brew install codex`
+- **Codex API Key** - 写入 `~/.codex/.apikey`（CLI 默认读取）
+- （可选）**Anthropic API Key** - 仅在切换到 Claude 模式时需要
 
 ### Installation
 
@@ -73,17 +85,25 @@ cd /path/to/addp/study/abs
 # 2. 初始化（安装依赖并创建配置文件）
 make init
 
-# 3. 编辑 backend/.env 添加你的 Claude API key
-vim backend/.env
-# 设置: CLAUDE_API_KEY=sk-ant-...
+# 3. 准备 Codex CLI（若尚未完成）
+npm install -g @openai/codex      # 或者 brew install codex
+mkdir -p ~/.codex
+echo "your-codex-api-key-here" > ~/.codex/.apikey
+chmod 600 ~/.codex/.apikey
+
+# 4. 启动脚本会同时拉起前后端
+./restart.sh
+
+# 5. 打开浏览器访问 UI
+open http://localhost:5180
 ```
 
 ### Running ABS
 
-**方式 1: 使用启动脚本（推荐）**
+**方式 1: 使用 `restart.sh`（推荐）**
 
 ```bash
-./start.sh
+./restart.sh
 ```
 
 **方式 2: 使用 Make**
@@ -97,7 +117,7 @@ make dev-backend  # 终端 1
 make dev-frontend # 终端 2
 ```
 
-**方式 3: 手动启动**
+**方式 3: 手动启动（或 `./start.sh`）**
 
 ```bash
 # 终端 1 - Backend
@@ -230,56 +250,72 @@ ws.onmessage = (event) => {
 
 ## Configuration
 
-### Environment Variables
+### 默认：Codex CLI 模式
 
-编辑 `backend/.env`:
+`backend/.env` 已预配置为 Codex CLI，关键字段如下：
 
 ```bash
-# 必需
-CODE_GENERATOR=codex                                   # 默认直连 Codex API，可改为 codex_cli 或 claude
-CODEX_API_KEY=sk-ant-api03-...                         # Codex / OpenAI API key
+CODE_GENERATOR=codex_cli
+CODEX_CLI_PATH=codex
+CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"  # ⚠️ 保留双引号
+CODEX_CLI_TIMEOUT=300s
 
-# 推荐配置（指向 aicodemirror 代理）
-CODEX_BASE_URL=https://api.aicodemirror.com/api/codex/backend-api/codex
-CODEX_MODEL=gpt-5
-
-# Codex CLI（允许后端驱动本地 codex exec）
-CODEX_CLI_PATH=codex                                   # CLI 可执行文件路径
-CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"       # 额外 CLI 参数
-CODEX_CLI_TIMEOUT=300s                                 # 单次 CLI 运行的超时时长
-
-# 其它服务配置
-PORT=8090                                              # 后端端口
-FRONTEND_URL=http://localhost:5180                     # 前端 URL (用于 CORS)
-WORKSPACE_DIR=./workspace                              # 生成代码存储路径
-AUTO_RELOAD=true                                       # 代码变更时自动重载
-
-# Legacy Claude（如需切回）
-CLAUDE_API_KEY=sk-ant-...                              # 你的 Anthropic API key
-CLAUDE_MODEL=claude-sonnet-4-5-20250929                # 使用的 Claude 模型
+PORT=8090
+FRONTEND_URL=http://localhost:5180
+WORKSPACE_DIR=./workspace
+AUTO_RELOAD=true
+APPS_DATA_FILE=./workspace/apps.json
 ```
 
-### Codex 代理环境准备（aicodemirror）
+- API Key 不放在 `.env`，而是保存在 `~/.codex/.apikey`。
+- 使用 `which codex && codex --version` 验证 CLI 是否可用。
+- 如需自定义参数，可修改 `CODEX_CLI_ARGS`，但务必保持一整个字符串。
 
-1. 安装 Codex 官方 CLI（任选其一）:
+### 切换到 Codex API 模式（直连服务）
+
+```bash
+CODE_GENERATOR=codex
+CODEX_API_KEY=sk-your-codex-key
+CODEX_BASE_URL=https://api.aicodemirror.com/api/codex/backend-api/codex
+CODEX_MODEL=gpt-5
+```
+
+此模式会跳过 CLI，直接使用 HTTP 请求调用 Codex/AICodeMirror 服务。
+
+### 切换到 Claude 模式（可选）
+
+```bash
+CODE_GENERATOR=claude
+ANTHROPIC_API_KEY=sk-ant-your-key
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+CLAUDE_MODEL=claude-sonnet-4-5-20250929
+```
+
+后端保留了 Claude 客户端，修改 `.env` 并重启即可恢复。
+
+### Codex CLI / 代理配置示例（aicodemirror）
+
+1. 安装 Codex 官方 CLI:
    ```bash
-   npm install -g @openai/codex
-   # or
-   brew install codex
+   npm install -g @openai/codex   # 或 brew install codex
    ```
-2. 清理并创建配置目录:
+2. 准备配置目录:
    ```bash
    rm -rf ~/.codex
    mkdir ~/.codex
    ```
-3. 在代理仪表板创建 API Key，将值填入 `abs/backend/.env` 的 `CODEX_API_KEY`。
-4. 新建 `~/.codex/auth.json`:
+3. 在代理仪表板创建 API Key，并写入 `~/.codex/.apikey`:
+   ```bash
+   echo "your-api-key" > ~/.codex/.apikey
+   chmod 600 ~/.codex/.apikey
+   ```
+4. （可选）创建 `~/.codex/auth.json` 存放其它所需密钥:
    ```json
    {
-     "OPENAI_API_KEY": "你的API_KEY"
+     "OPENAI_API_KEY": "your-api-key"
    }
    ```
-5. 新建 `~/.codex/config.toml`（原样粘贴即可）:
+5. 创建 `~/.codex/config.toml`:
    ```toml
    model_provider = "aicodemirror"
    model = "gpt-5"
@@ -292,29 +328,9 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929                # 使用的 Claude 模型
    base_url = "https://api.aicodemirror.com/api/codex/backend-api/codex"
    wire_api = "responses"
    ```
-6. 重启终端并执行 `codex -V` 确认 CLI 安装成功。
+6. 重启终端并执行 `codex -V` 或 `codex --version` 验证安装及配置。
 
-完成后，ABS 后端会直接通过 `CODEX_BASE_URL` 调用该代理，前端无需额外调整。
-
-### 使用 Codex CLI 模式
-
-如果希望由 Codex CLI 完成规划/执行，可在 `.env` 中设置：
-
-```bash
-CODE_GENERATOR=codex_cli
-CODEX_CLI_PATH=codex                     # 或绝对路径 /usr/local/bin/codex
-CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"
-CODEX_CLI_TIMEOUT=300s
-```
-
-同时请确保：
-
-1. 宿主机已安装 Codex CLI (`npm install -g @openai/codex` 或 `brew install codex`) 并执行过一次 `codex login`/`codex -V` 以完成认证；
-2. `.codex` 目录中的 `auth.json`/`config.toml` 配置了可用的 API key、代理等；
-3. ABS 后端所在用户可以访问 CLI，可通过 `which codex` 验证；
-4. 若 CLI 需要特定环境变量（如 `OPENAI_API_KEY`），与 `.env` 中的 `CODEX_API_KEY` 保持一致即可。
-
-后端会为每个任务创建独立的临时工作区，调用 `codex exec --json` 执行任务，再将 CLI 产出的文件内容回传给现有流水线。CLI 若在任务过程中修改文件/输出命令，都会限制在该临时目录，不会污染仓库。
+完成后，ABS 后端在处理任务时会通过 CLI 自动读取上述配置，并根据 `.env` 中的 CLI 参数运行 `codex exec --json`。CLI 会在临时工作目录内执行，生成的代码再写回 `workspace/`，不会污染仓库。
 
 ---
 
@@ -377,9 +393,9 @@ abs/
          ↓
 3. 后端创建任务并异步开始处理
          ↓
-4. Task Service 调用 Codex API（可选切回 Claude）
+4. Task Service 调用 Codex CLI（默认，可切换到 Codex/Claude API）
          ↓
-5. Codex 生成代码
+5. Codex 提供的模型生成代码
          ↓
 6. 代码写入 workspace/<task-id>/
          ↓
@@ -409,17 +425,33 @@ abs/
 
 ### 后端无法启动
 
+**错误: `codex: command not found`**
+
+解决方案: 尚未安装 Codex CLI 或未加入 PATH。执行：
+```bash
+npm install -g @openai/codex    # 或 brew install codex
+which codex && codex --version
+```
+
+**错误: `failed to read ~/.codex/.apikey` 或 `API key not found`**
+
+解决方案: 创建 API Key 文件并设置权限：
+```bash
+mkdir -p ~/.codex
+echo "your-codex-api-key" > ~/.codex/.apikey
+chmod 600 ~/.codex/.apikey
+```
+
 **错误: `CODEX_API_KEY environment variable is required`**
 
-解决方案: 默认使用 Codex，需要在 `backend/.env` 中填入 key:
+解决方案: 仅当你将 `CODE_GENERATOR` 改成 `codex`（直连 API）时才需要。在 `.env` 中写入 key：
 ```bash
-CODE_GENERATOR=codex
 CODEX_API_KEY=sk-code-your-key
 ```
 
 **错误: `CLAUDE_API_KEY environment variable is required`**
 
-解决方案: 仅当 `CODE_GENERATOR=claude` 时需要。将 Anthropic key 写入:
+解决方案: 仅当 `CODE_GENERATOR=claude` 时生效，把 Anthropic key 写入 `.env`：
 ```bash
 CLAUDE_API_KEY=sk-ant-your-key-here
 ```
@@ -444,7 +476,7 @@ npm install
 
 **错误: `API error (status 401)`**
 
-解决方案: API key 无效。检查 `CODEX_API_KEY`（或使用 Claude 时的 `CLAUDE_API_KEY`）是否正确。
+解决方案: API key 无效。默认使用 Codex CLI 时，检查 `~/.codex/.apikey` 是否存在且内容正确；改用 Codex API 或 Claude 时，再检查 `.env` 中的 `CODEX_API_KEY` / `CLAUDE_API_KEY`。
 
 **错误: `compilation failed`**
 
@@ -485,7 +517,7 @@ npm install
    ```
 3. 在 `deployCode()` 中添加部署逻辑
 
-### 自定义 Claude 提示词
+### 自定义 Claude 提示词（仅 Claude 模式）
 
 编辑 `backend/internal/service/claude_client.go` 中的系统提示词:
 
