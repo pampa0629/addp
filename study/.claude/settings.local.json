@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(xargs:*)",
+      "Bash(find:*)",
+      "Bash(chmod:*)",
+      "Bash(curl:*)",
+      "Bash(test:*)",
+      "Bash(lsof:*)",
+      "Bash(cat:*)",
+      "Bash(python3:*)",
+      "Bash(/tmp/test_claude_api.sh)",
+      "Bash(go build:*)",
+      "Bash(make stop:*)",
+      "Bash(make dev:*)",
+      "Bash(pkill:*)",
+      "Bash(.env)",
+      "Bash(codex:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
