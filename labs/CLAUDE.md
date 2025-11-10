@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-**Location**: `/Users/pampa/code/addp/study/`
+**Location**: `/Users/pampa/code/addp/labs/`
 
 This is a research and experimentation directory for the ADDP (All Domain Data Platform) project. Each subdirectory contains isolated feature experiments that do not interact with the main ADDP system, allowing for rapid prototyping without increasing complexity.
 
@@ -25,7 +25,7 @@ Designed for rapid prototyping and AI-assisted development.
 ## Repository Structure
 
 ```
-study/
+labs/
 ├── readme.md                     # Repository overview
 ├── CLAUDE.md                     # This file
 ├── QUICK_START.md                # Quick start guide
@@ -81,7 +81,7 @@ study/
 ## Quick Start Commands
 
 ```bash
-# From study/abs directory
+# From labs/abs directory
 cd abs
 
 # One-time setup
@@ -417,7 +417,7 @@ PORT=8091
 
 ## Project Philosophy
 
-This `study/` directory is intentionally isolated from the main ADDP system to:
+This `labs/` directory is intentionally isolated from the main ADDP system to:
 
 - ✅ Enable rapid experimentation without affecting production
 - ✅ Test bleeding-edge AI code generation capabilities

@@ -50,7 +50,7 @@ codex --version
 ### 3. 启动 ABS 系统
 
 ```bash
-cd /Users/pampa/code/addp/study/abs
+cd /Users/pampa/code/addp/labs/abs
 ./restart.sh
 ```
 

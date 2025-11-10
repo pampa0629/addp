@@ -4,7 +4,7 @@
 
 ```bash
 # 1. 进入 ABS 项目
-cd /Users/pampa/code/addp/study/abs
+cd /Users/pampa/code/addp/labs/abs
 
 # 2. 初始化依赖和配置模板
 make init

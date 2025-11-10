@@ -35,7 +35,7 @@ chmod 600 ~/.codex/.apikey
 ### 步骤 2：启动系统
 
 ```bash
-cd /Users/pampa/code/addp/study/abs
+cd /Users/pampa/code/addp/labs/abs
 ./restart.sh
 ```
 

@@ -80,7 +80,7 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 
 ```bash
 # 1. 进入 ABS 目录
-cd /path/to/addp/study/abs
+cd /path/to/addp/labs/abs
 
 # 2. 初始化（安装依赖并创建配置文件）
 make init
@@ -592,7 +592,7 @@ make clean         # 清理构建产物和工作空间
 
 ## Contributing
 
-这是 `/study/abs` 下的内部研究项目。欢迎改进:
+这是 `/labs/abs` 下的内部研究项目。欢迎改进:
 
 1. 用各种提示词测试系统
 2. 报告 bug

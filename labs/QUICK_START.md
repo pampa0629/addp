@@ -7,7 +7,7 @@
 ## Project Location
 
 ```
-/Users/pampa/code/addp/study/
+/Users/pampa/code/addp/labs/
 ├── abs/backend/     # Go server (port 8090)
 ├── abs/frontend/    # Vue app (port 5180)
 └── CLAUDE.md        # Full architecture documentation
@@ -17,7 +17,7 @@
 
 ### 1. Backend Setup
 ```bash
-cd /Users/pampa/code/addp/study/abs/backend
+cd /Users/pampa/code/addp/labs/abs/backend
 
 # Copy environment template
 cp .env.example .env
@@ -32,7 +32,7 @@ go run cmd/server/main.go
 
 ### 2. Frontend Setup (new terminal)
 ```bash
-cd /Users/pampa/code/addp/study/abs/frontend
+cd /Users/pampa/code/addp/labs/abs/frontend
 
 # Install dependencies
 npm install

@@ -63,12 +63,12 @@ ls -la ~/.codex/.apikey
 which codex
 
 # 3. 验证 .env 配置
-cd /Users/pampa/code/addp/study/abs/backend
+cd /Users/pampa/code/addp/labs/abs/backend
 grep CODEX_CLI_ARGS .env
 # 输出应该包含双引号：CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"
 
 # 4. 测试启动
-cd /Users/pampa/code/addp/study/abs
+cd /Users/pampa/code/addp/labs/abs
 ./restart.sh
 ```
 
