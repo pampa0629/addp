@@ -1,6 +1,7 @@
 package service
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,15 +38,18 @@ func LoadConfig() *Config {
 	provider := strings.ToLower(getEnv("CODE_GENERATOR", "codex_cli"))
 
 	// Get workspace directory and convert to absolute path
-	workspaceDir := getEnv("WORKSPACE_DIR", "./workspace")
+	// Default to ../workspace (parent directory) since backend runs from backend/ dir
+	workspaceDir := getEnv("WORKSPACE_DIR", "../workspace")
+	log.Printf("[DEBUG-CONFIG] workspaceDir before Abs: %s", workspaceDir)
 	absWorkspaceDir, err := filepath.Abs(workspaceDir)
+	log.Printf("[DEBUG-CONFIG] absWorkspaceDir after Abs: %s, err: %v", absWorkspaceDir, err)
 	if err != nil {
 		// Fallback to relative path if conversion fails
 		absWorkspaceDir = workspaceDir
 	}
 
 	// Get apps data file path and convert to absolute path
-	appsDataFile := getEnv("APPS_DATA_FILE", "./workspace/apps.json")
+	appsDataFile := getEnv("APPS_DATA_FILE", "../workspace/apps.json")
 	absAppsDataFile, err := filepath.Abs(appsDataFile)
 	if err != nil {
 		// Fallback to relative path if conversion fails

@@ -291,7 +291,7 @@ func normalizeCommand(cmd []string) []string {
 	return result
 }
 
-// DeleteApp 删除应用及其工作目录
+// DeleteApp 删除应用及其工作目录（包括所有 backup 目录）
 func (s *AppService) DeleteApp(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -308,11 +308,34 @@ func (s *AppService) DeleteApp(id string) error {
 		}
 	}
 
-	// 删除工作目录
+	// 删除工作目录及所有备份目录
 	workdir := s.resolveWorkspaceDir(app)
 	if workdir != "" {
+		// 删除主工作目录
 		if err := os.RemoveAll(workdir); err != nil {
 			return fmt.Errorf("failed to delete workspace directory: %w", err)
+		}
+
+		// 删除所有对应的备份目录（格式：{taskID}.backup.{timestamp}）
+		workspaceRoot := filepath.Dir(workdir)
+		baseName := filepath.Base(workdir)
+
+		// 查找所有备份目录
+		entries, err := os.ReadDir(workspaceRoot)
+		if err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				// 匹配 {taskID}.backup.* 格式
+				if strings.HasPrefix(entry.Name(), baseName+".backup.") {
+					backupPath := filepath.Join(workspaceRoot, entry.Name())
+					if err := os.RemoveAll(backupPath); err != nil {
+						// 记录错误但不中断流程
+						fmt.Printf("Warning: failed to delete backup directory %s: %v\n", backupPath, err)
+					}
+				}
+			}
 		}
 	}
 

@@ -3,7 +3,9 @@ package api
 import (
 	"abs/internal/models"
 	"abs/internal/service"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -190,15 +192,31 @@ func (h *Handler) Health(c *gin.Context) {
 func ServeWorkspaceFile(workspaceDir string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		filepath := c.Param("filepath")
-		// 确保路径以 / 开头
-		if len(filepath) > 0 && filepath[0] != '/' {
-			filepath = "/" + filepath
-		}
+
+		// filepath 已经包含前导斜杠（例如：/app-id/index.html）
+		// 拼接时确保没有双斜杠
 		fullPath := workspaceDir + filepath
 
-		// Debug log
-		println("ServeWorkspaceFile:", fullPath)
+		// Debug logs
+		log.Printf("[DEBUG] ServeWorkspaceFile - workspaceDir: %s", workspaceDir)
+		log.Printf("[DEBUG] ServeWorkspaceFile - filepath param: %s", filepath)
+		log.Printf("[DEBUG] ServeWorkspaceFile - fullPath: %s", fullPath)
 
-		c.File(fullPath)
+		// 检查文件是否存在
+		info, err := os.Stat(fullPath)
+		if err != nil {
+			log.Printf("[ERROR] File stat error: %v", err)
+			c.String(http.StatusNotFound, "File not found")
+			return
+		}
+
+		// 如果是目录，尝试查找 index.html
+		if info.IsDir() {
+			fullPath = fullPath + "/index.html"
+			log.Printf("[DEBUG] IsDir, trying index.html: %s", fullPath)
+		}
+
+		// 使用 http.ServeFile 避免 301 重定向问题
+		http.ServeFile(c.Writer, c.Request, fullPath)
 	}
 }

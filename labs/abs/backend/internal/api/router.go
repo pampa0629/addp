@@ -36,7 +36,16 @@ func SetupRouter(taskService *service.TaskService, appService *service.AppServic
 		api.POST("/apps/:id/modify", handler.ModifyApp)
 		api.DELETE("/apps/:id", handler.DeleteApp)
 
-		// Workspace file serving (用于前端 iframe)
+		// App proxy - 反向代理到应用的实际端口
+		// 优先级高于 workspace 路由，放在前面
+		api.GET("/app-proxy/:app_id/*path", ProxyToApp(appService))
+		api.POST("/app-proxy/:app_id/*path", ProxyToApp(appService))
+		api.PUT("/app-proxy/:app_id/*path", ProxyToApp(appService))
+		api.DELETE("/app-proxy/:app_id/*path", ProxyToApp(appService))
+		api.PATCH("/app-proxy/:app_id/*path", ProxyToApp(appService))
+		api.OPTIONS("/app-proxy/:app_id/*path", ProxyToApp(appService))
+
+		// Workspace file serving (用于前端 iframe - 静态文件)
 		api.GET("/workspace/*filepath", ServeWorkspaceFile(config.WorkspaceDir))
 	}
 

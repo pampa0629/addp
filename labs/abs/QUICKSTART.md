@@ -3,8 +3,8 @@
 ## 一分钟快速开始
 
 ```bash
-# 1. 进入 ABS 项目
-cd /Users/pampa/code/addp/labs/abs
+# 1. 进入 ABS 项目根目录
+cd abs  # 或完整路径: cd /path/to/addp/labs/abs
 
 # 2. 初始化依赖和配置模板
 make init
@@ -25,7 +25,7 @@ codex --version
 open http://localhost:5180  # 或复制到浏览器地址栏
 ```
 
-> 提示：`backend/.env` 已将 `CODE_GENERATOR` 设为 `codex_cli`，并将 `CODEX_CLI_ARGS` 包裹在双引号中（千万不要去掉）。
+> 提示：`.env` 已将 `CODE_GENERATOR` 设为 `codex_cli`，并将 `CODEX_CLI_ARGS` 包裹在双引号中（千万不要去掉）。
 
 ## 测试示例
 
@@ -56,8 +56,9 @@ Use in-memory storage. Listen on port 9999.
 
 - 实时进度显示在浮动框中
 - 所有任务在主面板显示
-- 生成的代码在 `backend/workspace/<task-id>/`
+- 生成的代码在 `workspace/<task-id>/` (相对于abs根目录)
 - 编译后的程序会自动运行
+- 应用访问地址: `http://localhost:5180?app=<task-id>`
 
 ## 故障排除
 
@@ -87,12 +88,13 @@ cat ~/.codex/.apikey     # 确认内容为有效 API Key
 
 ### 依赖未安装
 ```bash
+# 从abs根目录执行
 cd backend && go mod download
-cd frontend && npm install
+cd ../frontend && npm install
 ```
 
 ### CODEX_CLI_ARGS 解析错误
-确保 `backend/.env` 中保留双引号，例如：
+确保 `.env` 中保留双引号，例如：
 ```bash
 CODEX_CLI_ARGS="--skip-git-repo-check --full-auto"
 ```

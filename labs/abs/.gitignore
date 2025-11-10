@@ -1,5 +1,8 @@
 # Backend
 backend/.env
+
+# Root env
+.env
 backend/workspace/*
 backend/tmp/
 

@@ -116,7 +116,6 @@
                   </button>
                   <button
                     class="btn-submit"
-                    :disabled="!app.entry_url"
                     @click="openApp(app)"
                   >
                     进入应用
@@ -202,9 +201,61 @@
     </div>
 
     <FloatingInput />
-  </div>
 
-  <FloatingInput v-if="previewAppId" />
+    <!-- App Modification Dialog -->
+    <div v-if="showModifyDialog" class="modal-overlay" @click="closeModifyDialog">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>🤖 AI 修改应用</h2>
+          <button class="btn-close" @click="closeModifyDialog">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="app-info">
+            <span class="app-icon" v-if="modifyingApp?.icon">{{ modifyingApp.icon }}</span>
+            <div>
+              <h3>{{ modifyingApp?.name }}</h3>
+              <p>{{ modifyingApp?.description || '暂无描述' }}</p>
+            </div>
+          </div>
+
+          <div class="modify-input-section">
+            <label>
+              <span class="label-text">描述你想要的修改：</span>
+              <textarea
+                v-model="modifyPrompt"
+                placeholder="例如：把背景颜色改成蓝色，或者：添加一个显示时间的功能"
+                rows="5"
+                :disabled="modifying"
+                class="modify-textarea"
+              ></textarea>
+            </label>
+          </div>
+
+          <div v-if="modifyError" class="error-message">
+            {{ modifyError }}
+          </div>
+
+          <div v-if="modifySuccess" class="success-message">
+            ✅ 修改任务已提交！正在处理中，请稍后查看应用中心...
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-clear" @click="closeModifyDialog" :disabled="modifying">
+            取消
+          </button>
+          <button
+            class="btn-submit"
+            @click="submitModification"
+            :disabled="!modifyPrompt.trim() || modifying"
+          >
+            {{ modifying ? '提交中...' : '🚀 提交修改' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -215,6 +266,7 @@ import FloatingInput from './components/FloatingInput.vue'
 import wsService from './api/websocket'
 import { getStatusLabel } from './utils/status'
 import AppPreview from './views/AppPreview.vue'
+import { appAPI } from './api/client'
 
 const taskStore = useTaskStore()
 const appCenterStore = useAppCenterStore()
@@ -245,6 +297,14 @@ const newAppForm = reactive({
   startCommand: '',
   tags: ''
 })
+
+// App modification state
+const showModifyDialog = ref(false)
+const modifyingApp = ref(null)
+const modifyPrompt = ref('')
+const modifying = ref(false)
+const modifyError = ref('')
+const modifySuccess = ref(false)
 
 const toggleAppForm = () => {
   showAppForm.value = !showAppForm.value
@@ -306,13 +366,42 @@ const launchApp = async (id) => {
 }
 
 const openApp = (app) => {
-  if (!app?.entry_url) return
-  const sameOrigin = app.entry_url.startsWith(window.location.origin)
-  if (sameOrigin) {
-    window.location.href = app.entry_url
-    return
+  if (!app?.id) return
+  // Open preview page in a new tab with app query parameter
+  const url = `${window.location.origin}/?app=${app.id}`
+  window.open(url, '_blank')
+}
+
+const closeModifyDialog = () => {
+  showModifyDialog.value = false
+  modifyingApp.value = null
+  modifyPrompt.value = ''
+  modifyError.value = ''
+  modifySuccess.value = false
+}
+
+const submitModification = async () => {
+  if (!modifyPrompt.value.trim() || !modifyingApp.value) return
+
+  modifying.value = true
+  modifyError.value = ''
+  modifySuccess.value = false
+
+  try {
+    await appAPI.modify(modifyingApp.value.id, modifyPrompt.value.trim())
+    modifySuccess.value = true
+    modifyPrompt.value = ''
+
+    // Auto-close after 2 seconds and refresh apps
+    setTimeout(() => {
+      closeModifyDialog()
+      appCenterStore.fetchApps()
+    }, 2000)
+  } catch (error) {
+    modifyError.value = error.response?.data?.error || error.message || '修改失败'
+  } finally {
+    modifying.value = false
   }
-  window.open(app.entry_url, '_blank', 'noopener,noreferrer')
 }
 
 const deleteApp = async (id) => {
@@ -679,6 +768,26 @@ body {
   cursor: not-allowed;
 }
 
+.btn-modify {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-modify:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.btn-modify:active {
+  transform: translateY(0);
+}
+
 .app-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -873,5 +982,158 @@ body {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #333;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: #999;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-close:hover {
+  background: #f5f5f5;
+  color: #333;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.app-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.app-info .app-icon {
+  width: 56px;
+  height: 56px;
+  font-size: 32px;
+}
+
+.app-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.app-info p {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.modify-input-section {
+  margin-bottom: 16px;
+}
+
+.label-text {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #333;
+  font-size: 15px;
+}
+
+.modify-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s;
+  line-height: 1.6;
+}
+
+.modify-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.modify-textarea:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 20px 24px;
+  border-top: 2px solid #f0f0f0;
+}
+
+.error-message {
+  padding: 12px;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  color: #c33;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.success-message {
+  padding: 12px;
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  color: #155724;
+  font-size: 14px;
+  margin-bottom: 12px;
 }
 </style>

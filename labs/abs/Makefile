@@ -17,14 +17,14 @@ init:
 	@echo "Installing frontend dependencies..."
 	cd frontend && npm install
 	@echo "Creating .env file..."
-	cd backend && cp -n .env.example .env || true
+	cp -n .env.example .env || true
 	@echo "✅ Initialization complete!"
 	@echo ""
-	@echo "⚠️  IMPORTANT: Edit backend/.env and set your CLAUDE_API_KEY"
+	@echo "⚠️  IMPORTANT: Edit .env and set your CLAUDE_API_KEY"
 
 dev-backend:
 	@echo "Starting ABS backend..."
-	cd backend && go run cmd/server/main.go
+	set -a; [ -f .env ] && . ./.env; set +a; cd backend && go run cmd/server/main.go
 
 dev-frontend:
 	@echo "Starting ABS frontend..."
@@ -39,13 +39,27 @@ dev:
 
 stop:
 	@echo "Stopping ABS services..."
+	@# 1. Stop registered apps
+	@if [ -f workspace/apps.json ]; then \
+		echo "  ⮑ Stopping registered apps..."; \
+		APP_PIDS=$$(grep -o '"running_pid":[0-9]*' workspace/apps.json 2>/dev/null | grep -o '[0-9]*' || true); \
+		if [ -n "$$APP_PIDS" ]; then \
+			for pid in $$APP_PIDS; do \
+				if ps -p $$pid >/dev/null 2>&1; then \
+					echo "    Killing app PID=$$pid"; \
+					kill $$pid 2>/dev/null || true; \
+				fi; \
+			done; \
+		fi; \
+	fi
+	@# 2. Stop ABS core services
 	@pkill -f "go run cmd/server/main.go" || true
 	@pkill -f "vite" || true
 	@echo "✅ Services stopped"
 
 clean:
 	@echo "Cleaning workspace..."
-	rm -rf backend/workspace/*
+	rm -rf workspace/*
 	@echo "Cleaning build artifacts..."
 	rm -rf frontend/dist
 	rm -rf frontend/node_modules/.vite

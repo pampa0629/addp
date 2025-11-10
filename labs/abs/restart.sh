@@ -27,7 +27,13 @@ resolve_dir_path() {
     if [[ "$target" = /* ]]; then
         printf '%s\n' "$target"
     else
-        (cd "$BACKEND_DIR" && cd "$target" && pwd)
+        # Prefer resolving relative to project root (e.g., ./workspace lives under abs/)
+        if (cd "$PROJECT_ROOT" && cd "$target") 2>/dev/null; then
+            (cd "$PROJECT_ROOT" && cd "$target" && pwd)
+        else
+            # Fallback: try relative to backend dir for backward compatibility
+            (cd "$BACKEND_DIR" && cd "$target" && pwd) 2>/dev/null || true
+        fi
     fi
 }
 
@@ -43,7 +49,13 @@ resolve_file_path() {
         dir=$(dirname "$target")
         local file
         file=$(basename "$target")
-        (cd "$BACKEND_DIR" && cd "$dir" && printf '%s/%s\n' "$(pwd)" "$file")
+        # Prefer project root for relative file paths
+        if (cd "$PROJECT_ROOT" && cd "$dir") 2>/dev/null; then
+            (cd "$PROJECT_ROOT" && cd "$dir" && printf '%s/%s\n' "$(pwd)" "$file")
+        else
+            # Fallback to backend dir
+            (cd "$BACKEND_DIR" && cd "$dir" && printf '%s/%s\n' "$(pwd)" "$file") 2>/dev/null || true
+        fi
     fi
 }
 
@@ -70,6 +82,26 @@ stop_active_services() {
     log_step "🛑 正在停止已运行的 ABS 服务..."
 
     local stopped=false
+
+    # 1. 停止 ABS 管理的应用进程
+    local apps_json="${PROJECT_ROOT}/workspace/apps.json"
+    if [ -f "$apps_json" ]; then
+        echo -e "${YELLOW}  ⮑ 检查注册应用的运行进程...${NC}"
+        # 提取所有 running_pid
+        local app_pids
+        app_pids=$(grep -o '"running_pid":[0-9]*' "$apps_json" 2>/dev/null | grep -o '[0-9]*' || true)
+        if [ -n "$app_pids" ]; then
+            for pid in $app_pids; do
+                if ps -p "$pid" >/dev/null 2>&1; then
+                    echo -e "${GREEN}  ⮑ 停止应用进程 PID=$pid${NC}"
+                    kill "$pid" >/dev/null 2>&1 || true
+                    stopped=true
+                fi
+            done
+        fi
+    fi
+
+    # 2. 停止 ABS 核心服务（backend 和 frontend）
     local patterns=("cmd/server/main.go" "backend/bin/server" "npm run dev" "vite --host" "vite --port")
     for pattern in "${patterns[@]}"; do
         if pkill -f "$pattern" >/dev/null 2>&1; then
@@ -78,6 +110,7 @@ stop_active_services() {
         fi
     done
 
+    # 3. 清理端口占用
     local ports=(8090 5180)
     for port in "${ports[@]}"; do
         local pids
@@ -92,25 +125,25 @@ stop_active_services() {
     if [ "$stopped" = false ]; then
         echo -e "${GREEN}✅ 没有检测到已运行的 ABS 实例${NC}"
     else
-        echo -e "${GREEN}✅ 已停止旧实例${NC}"
+        echo -e "${GREEN}✅ 已停止旧实例（包括注册应用）${NC}"
     fi
 }
 
 ensure_env_ready() {
-    if [ ! -f "backend/.env" ]; then
-        echo -e "${YELLOW}⚠️  未找到 backend/.env，正在从模板创建...${NC}"
-        cp backend/.env.example backend/.env
-        echo -e "${YELLOW}⚠️  请编辑 backend/.env 并配置 CODE_GENERATOR 和相应的 API 密钥${NC}"
+    if [ ! -f ".env" ]; then
+        echo -e "${YELLOW}⚠️  未找到 .env，正在从模板创建...${NC}"
+        cp .env.example .env
+        echo -e "${YELLOW}⚠️  请编辑 .env 并配置 CODE_GENERATOR 和相应的 API 密钥${NC}"
     fi
 
     # set -a 确保 .env 中的变量自动 export，供子进程使用
     set -a
     # shellcheck disable=SC1091
-    source backend/.env
+    source .env
     set +a
 
-    # Normalize relative paths defined in backend/.env to ensure they resolve
-    # correctly even when this script runs outside backend/.
+    # Normalize relative paths defined in .env.
+    # Paths like ./workspace are intended to be relative to the project root.
     if [ -n "${WORKSPACE_DIR:-}" ]; then
         RESOLVED_WORKSPACE_DIR=$(resolve_dir_path "$WORKSPACE_DIR")
         if [ -n "$RESOLVED_WORKSPACE_DIR" ]; then
@@ -143,7 +176,7 @@ ensure_env_ready() {
         codex)
             # Codex API 模式：检查 API Key
             if [ -z "${CODEX_API_KEY:-}" ] || [ "$CODEX_API_KEY" = "your-codex-api-key-here" ]; then
-                echo -e "${RED}❌ backend/.env 中未配置有效的 CODEX_API_KEY${NC}"
+                echo -e "${RED}❌ .env 中未配置有效的 CODEX_API_KEY${NC}"
                 exit 1
             fi
             echo -e "${GREEN}✅ 使用 Codex API 模式${NC}"
@@ -151,7 +184,7 @@ ensure_env_ready() {
         claude)
             # Claude 模式：检查 API Key
             if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ "$ANTHROPIC_API_KEY" = "your-api-key-here" ]; then
-                echo -e "${RED}❌ backend/.env 中未配置有效的 ANTHROPIC_API_KEY${NC}"
+                echo -e "${RED}❌ .env 中未配置有效的 ANTHROPIC_API_KEY${NC}"
                 exit 1
             fi
             echo -e "${GREEN}✅ 使用 Claude 模式${NC}"
@@ -186,6 +219,35 @@ start_frontend() {
     FRONTEND_PID=$!
 }
 
+restart_registered_apps() {
+    log_step "🔄 重新启动注册的应用..."
+
+    local apps_json="${PROJECT_ROOT}/workspace/apps.json"
+    if [ ! -f "$apps_json" ]; then
+        echo -e "${YELLOW}  ⮑ 未找到 apps.json，跳过应用重启${NC}"
+        return
+    fi
+
+    # 通过后端 API 重启应用
+    local backend_url="http://localhost:${PORT:-8090}"
+    local app_ids
+    app_ids=$(grep -o '"id":"[^"]*"' "$apps_json" 2>/dev/null | cut -d'"' -f4 || true)
+
+    if [ -z "$app_ids" ]; then
+        echo -e "${YELLOW}  ⮑ 没有注册的应用${NC}"
+        return
+    fi
+
+    for app_id in $app_ids; do
+        echo -e "${YELLOW}  ⮑ 重启应用: $app_id${NC}"
+        curl -s -X POST "$backend_url/api/apps/$app_id/launch" > /dev/null || {
+            echo -e "${RED}  ⮑ 重启失败: $app_id${NC}"
+        }
+    done
+
+    echo -e "${GREEN}✅ 应用重启完成${NC}"
+}
+
 cleanup() {
     echo -e "${YELLOW}\n🧹 收尾：停止当前会话启动的服务...${NC}"
     if [ -n "${BACKEND_PID}" ] && ps -p "${BACKEND_PID}" >/dev/null 2>&1; then
@@ -215,6 +277,10 @@ else
 fi
 
 start_frontend
+
+# 等待前端就绪后重启应用
+sleep 3
+restart_registered_apps
 
 echo -e "\n${GREEN}✅ ABS 已重新启动！${NC}"
 echo "  Frontend: http://localhost:5180"

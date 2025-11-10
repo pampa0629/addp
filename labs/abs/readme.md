@@ -39,8 +39,8 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 ┌─────────────────────────────────────────────────────────────┐
 │  Backend (Go + Gin)                                         │
 │  - REST API for task management                             │
-│  - Codex CLI integration（默认）                            │
-│  - 可切换 Codex API / Claude                                │
+│  - Codex CLI integration（默认）                             │
+│  - 可切换 Codex API / Claude                                 │
 │  - Code generation & compilation                            │
 │  - WebSocket for real-time updates                          │
 │  Port: 8090                                                 │
@@ -49,18 +49,18 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
                   │ CLI exec
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Codex CLI（本地）                                          │
-│  - 读取 ~/.codex/.apikey 中的 API Key                       │
+│  Codex CLI（本地）                                           │
+│  - 读取 ~/.codex/.apikey 中的 API Key                        │
 │  - 执行 codex exec / codex plan                             │
-│  - 参数来自 CODEX_CLI_ARGS                                  │
+│  - 参数来自 CODEX_CLI_ARGS                                   │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   │ HTTPS（由 CLI 或直接后端发起）
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Codex / Claude APIs（远程，可选）                          │
-│  - gpt-5（Codex/AICodeMirror）                              │
-│  - claude-sonnet-4-5-20250929（Anthropic）                  │
+│  Codex / Claude APIs（远程，可选）                            │
+│  - gpt-5（Codex/AICodeMirror）                               │
+│  - claude-sonnet-4-5-20250929（Anthropic）                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,7 +80,7 @@ ABS (AI-Bootstrapping) 允许你用自然语言描述想要构建的功能，系
 
 ```bash
 # 1. 进入 ABS 目录
-cd /path/to/addp/labs/abs
+cd ./abs
 
 # 2. 初始化（安装依赖并创建配置文件）
 make init
@@ -185,7 +185,8 @@ npm run dev
 - 所有任务显示在主面板
 - 点击任务卡片查看完整详情
 - 实时查看任务处理日志
-- 生成的代码存储在 `backend/workspace/<task-id>/`
+- 生成的代码存储在 `workspace/<task-id>/` (相对于abs根目录)
+- 应用访问地址: `http://localhost:5180?app=<task-id>`
 
 ---
 
@@ -252,7 +253,7 @@ ws.onmessage = (event) => {
 
 ### 默认：Codex CLI 模式
 
-`backend/.env` 已预配置为 Codex CLI，关键字段如下：
+`.env` 已预配置为 Codex CLI，关键字段如下：
 
 ```bash
 CODE_GENERATOR=codex_cli
@@ -262,9 +263,9 @@ CODEX_CLI_TIMEOUT=300s
 
 PORT=8090
 FRONTEND_URL=http://localhost:5180
-WORKSPACE_DIR=./workspace
+WORKSPACE_DIR=workspace              # 相对于abs根目录，不使用./前缀
 AUTO_RELOAD=true
-APPS_DATA_FILE=./workspace/apps.json
+APPS_DATA_FILE=workspace/apps.json   # 相对于abs根目录
 ```
 
 - API Key 不放在 `.env`，而是保存在 `~/.codex/.apikey`。
@@ -330,7 +331,7 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
    ```
 6. 重启终端并执行 `codex -V` 或 `codex --version` 验证安装及配置。
 
-完成后，ABS 后端在处理任务时会通过 CLI 自动读取上述配置，并根据 `.env` 中的 CLI 参数运行 `codex exec --json`。CLI 会在临时工作目录内执行，生成的代码再写回 `workspace/`，不会污染仓库。
+完成后，ABS 后端在处理任务时会通过 CLI 自动读取上述配置，并根据 `.env` 中的 CLI 参数运行 `codex exec --json`。CLI 会在临时工作目录内执行，生成的代码再写回 `workspace/`（相对于abs根目录），不会污染仓库。
 
 ---
 
@@ -356,8 +357,6 @@ abs/
 │   │       ├── task_service.go   # 任务处理
 │   │       └── websocket.go      # WebSocket 管理器
 │   ├── workspace/            # 生成的代码存储
-│   ├── .env.example          # 环境变量模板
-│   ├── .env                  # 你的配置（已忽略）
 │   └── go.mod
 │
 ├── frontend/                  # Vue 3 前端
@@ -375,6 +374,8 @@ abs/
 │   ├── package.json
 │   └── vite.config.js
 │
+├── .env.example               # 环境变量模板（根目录）
+├── .env                       # 你的配置（已忽略，根目录）
 ├── Makefile                   # 构建命令
 ├── start.sh                   # 启动脚本
 └── README.md                  # 本文件
@@ -460,7 +461,7 @@ CLAUDE_API_KEY=sk-ant-your-key-here
 
 解决方案: 端口 8090 已被占用。可以:
 1. 杀死占用端口的进程: `lsof -ti:8090 | xargs kill`
-2. 在 `backend/.env` 中修改端口: `PORT=8091`
+2. 在 `.env` 中修改端口: `PORT=8091`
 
 ### 前端无法启动
 
@@ -487,7 +488,7 @@ npm install
 尝试:
 1. 提示词更具体
 2. 查看日志了解具体编译错误
-3. 手动修复 `workspace/<task-id>/` 中的代码
+3. 手动修复 `workspace/<task-id>/` 中的代码（相对于abs根目录）
 
 ### WebSocket 无法连接
 
@@ -496,7 +497,7 @@ npm install
 解决方案:
 1. 确保后端在 8090 端口运行
 2. 检查浏览器控制台的 CORS 错误
-3. 验证 `backend/.env` 中的 `FRONTEND_URL` 与前端 URL 匹配
+3. 验证 `.env` 中的 `FRONTEND_URL` 与前端 URL 匹配
 
 ---
 
@@ -612,7 +613,7 @@ ADDP 内部项目 - 查看主 ADDP 仓库的许可证详情。
 问题和疑问:
 
 1. 仔细阅读本 README
-2. 查看后端日志: `backend/workspace/<task-id>/`
+2. 查看后端日志: `./workspace/<task-id>/`
 3. 检查浏览器控制台的前端错误
 4. 向 ADDP 团队寻求帮助
 

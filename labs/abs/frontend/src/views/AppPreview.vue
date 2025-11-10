@@ -24,67 +24,77 @@
     </section>
 
     <section v-else class="preview-body">
-      <!-- HTML应用：直接嵌入iframe -->
-      <div v-if="isHTMLApp" class="game-frame-container">
-        <h3>🎮 游戏运行中</h3>
-        <iframe
-          :src="`/api/workspace/${app.workspace_path}/index.html`"
-          class="game-iframe"
-          frameborder="0"
-        ></iframe>
-        <div class="game-controls">
-          <button class="btn-outline" @click="reloadGame">重新加载游戏</button>
-          <button class="btn-submit" @click="openInNewTab">在新标签页打开</button>
-        </div>
-      </div>
-
-      <!-- 普通应用：显示运行状态 -->
-      <div v-else class="preview-card">
-        <div class="preview-card-header">
-          <div>
-            <p class="preview-label">状态</p>
-            <span class="preview-status" :class="app.status">{{ getAppStatusLabel(app.status) }}</span>
+      <!-- 直接在页面中嵌入应用 -->
+      <div class="app-frame-container">
+        <div class="app-frame-header">
+          <h3>{{ app.icon || '🚀' }} 应用运行中</h3>
+          <div class="app-frame-actions">
+            <button class="btn-outline" @click="reloadAppFrame">重新加载</button>
+            <button class="btn-submit" @click="openInNewTab" v-if="app.entry_url">在新标签页打开</button>
           </div>
-          <div class="preview-actions">
+        </div>
+
+        <!-- 如果检测到服务端口，优先使用服务 URL 嵌入 -->
+        <iframe
+          v-if="isServerApp"
+          :key="iframeKey"
+          :src="serverURL"
+          class="app-iframe"
+          frameborder="0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+
+        <!-- 如果是 HTML 应用，使用 workspace 路径 -->
+        <iframe
+          v-else-if="isHTMLApp"
+          :key="iframeKey"
+          :src="getHTMLAppURL()"
+          class="app-iframe"
+          frameborder="0"
+          sandbox="allow-scripts allow-same-origin allow-forms"
+        ></iframe>
+
+        <!-- 如果有 entry_url 且不是主应用 URL，使用 entry_url -->
+        <iframe
+          v-else-if="app.entry_url && !isMainAppURL(app.entry_url)"
+          :key="iframeKey"
+          :src="app.entry_url"
+          class="app-iframe"
+          frameborder="0"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+
+        <!-- 否则显示运行状态和输出 -->
+        <div v-else class="app-status-view">
+          <div class="status-header">
+            <span class="preview-status" :class="app.status">{{ getAppStatusLabel(app.status) }}</span>
             <button class="btn-outline" :disabled="launching" @click="launchCurrentApp">
               {{ launching ? '启动中…' : '重新运行' }}
             </button>
-            <button
-              v-if="hasExternalEntry"
-              class="btn-submit"
-              @click="openExternalEntry"
-            >
-              打开真实入口
-            </button>
           </div>
-        </div>
 
-        <div v-if="app.last_start_result" class="preview-log">
-          <div class="preview-log-header">
-            <h3>最新输出</h3>
-            <span>{{ app.last_started_at ? formatDate(app.last_started_at) : '刚刚' }}</span>
+          <div v-if="app.last_start_result" class="preview-log">
+            <div class="preview-log-header">
+              <h3>最新输出</h3>
+              <span>{{ app.last_started_at ? formatDate(app.last_started_at) : '刚刚' }}</span>
+            </div>
+            <pre>{{ app.last_start_result }}</pre>
           </div>
-          <pre>{{ app.last_start_result }}</pre>
-        </div>
 
-        <div v-else class="preview-log empty">
-          暂无运行输出，点击"重新运行"查看最新结果
-        </div>
+          <div v-else class="preview-log empty">
+            暂无运行输出，点击"重新运行"查看最新结果
+          </div>
 
-        <div class="preview-meta">
-          <div>
-            <p class="preview-label">启动命令</p>
-            <code v-if="app.start_command?.length">{{ app.start_command.join(' ') }}</code>
-            <span v-else>未配置启动命令</span>
-          </div>
-          <div>
-            <p class="preview-label">Workspace</p>
-            <code>{{ app.workspace_path || 'N/A' }}</code>
-          </div>
-          <div>
-            <p class="preview-label">应用入口</p>
-            <span v-if="hasExternalEntry">{{ app.entry_url }}</span>
-            <span v-else>由 ABS 托管（当 AI 提供真实入口后会自动替换）</span>
+          <div class="preview-meta">
+            <div>
+              <p class="preview-label">启动命令</p>
+              <code v-if="app.start_command?.length">{{ app.start_command.join(' ') }}</code>
+              <span v-else>未配置启动命令</span>
+            </div>
+            <div>
+              <p class="preview-label">Workspace</p>
+              <code>{{ app.workspace_path || 'N/A' }}</code>
+            </div>
           </div>
         </div>
       </div>
@@ -176,10 +186,35 @@ const launching = computed(() => {
   return appCenterStore.isLaunching(foundApp.id)
 })
 
-const hasExternalEntry = computed(() => {
-  if (!app.value?.entry_url) return false
-  return !isInternalPreviewLink(app.value.entry_url)
+// 从启动命令中检测是否为服务型应用，并使用反向代理 URL
+const serverURL = computed(() => {
+  const a = app.value
+  if (!a) return ''
+  const cmd = a.start_command || []
+  let hasPort = false
+
+  // 检测启动命令中是否包含端口配置（--port, -p, --p）
+  for (let i = 0; i < cmd.length; i++) {
+    const token = String(cmd[i])
+    if (token === '--port' || token === '-p' || token === '--p') {
+      hasPort = true
+      break
+    }
+    if (token.match(/^--port=\d+$/) || token.match(/^-p=\d+$/)) {
+      hasPort = true
+      break
+    }
+  }
+
+  // 如果检测到端口配置，使用反向代理 URL（统一入口，无需知道具体端口）
+  if (hasPort) {
+    return `/api/app-proxy/${a.id}/`
+  }
+  return ''
 })
+
+// 识别服务型应用（具备可访问的端口）
+const isServerApp = computed(() => !!serverURL.value)
 
 // 检测是否为 HTML 应用
 const isHTMLApp = computed(() => {
@@ -192,14 +227,63 @@ const isHTMLApp = computed(() => {
 
 const iframeKey = ref(0)
 
-const reloadGame = () => {
+const reloadAppFrame = () => {
   iframeKey.value++
 }
 
+// 检测 URL 是否指向主应用自身（防止无限嵌套）
+const isMainAppURL = (url) => {
+  if (!url) return false
+  try {
+    const urlObj = new URL(url, window.location.origin)
+    const currentOrigin = window.location.origin
+    const currentPort = window.location.port
+
+    // 如果 URL 指向相同的 origin 和 port，且包含 ?app= 参数，则认为是主应用
+    return urlObj.origin === currentOrigin &&
+           urlObj.port === currentPort &&
+           urlObj.searchParams.has('app')
+  } catch {
+    return false
+  }
+}
+
+const getHTMLAppURL = () => {
+  if (!app.value?.workspace_path) return ''
+
+  // 尝试多个可能的路径：
+  // 1. public/index.html (新的 Python 应用结构)
+  // 2. index.html (传统结构，如马里奥游戏)
+  const hasPythonStructure = app.value.start_command?.some(cmd =>
+    cmd.includes('python') || cmd.includes('server.py')
+  )
+
+  if (hasPythonStructure) {
+    return `/api/workspace/${app.value.workspace_path}/public/index.html`
+  }
+  return `/api/workspace/${app.value.workspace_path}/index.html`
+}
+
 const openInNewTab = () => {
-  if (!app.value?.workspace_path) return
-  const url = `/api/workspace/${app.value.workspace_path}/index.html`
-  window.open(url, '_blank', 'noopener,noreferrer')
+  if (!app.value) return
+
+  // 若检测到服务端口，打开反向代理 URL（相对路径，浏览器会自动补全）
+  if (serverURL.value) {
+    // 将相对路径转换为绝对 URL
+    const absoluteURL = new URL(serverURL.value, window.location.origin).href
+    window.open(absoluteURL, '_blank', 'noopener,noreferrer')
+    return
+  }
+
+  // 如果是 HTML 应用，打开 workspace 路径
+  if (isHTMLApp.value && app.value.workspace_path) {
+    const url = getHTMLAppURL()
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  // 如果有 entry_url，打开 entry_url
+  else if (app.value.entry_url) {
+    window.open(app.value.entry_url, '_blank', 'noopener,noreferrer')
+  }
 }
 
 const loadApp = async () => {
@@ -250,7 +334,7 @@ const modifyApp = async () => {
   modifySuccess.value = false
 
   try {
-    const response = await appAPI.modify(app.value.id, modifyPrompt.value.trim())
+    await appAPI.modify(app.value.id, modifyPrompt.value.trim())
     modifySuccess.value = true
     modifyPrompt.value = ''
 
@@ -271,11 +355,6 @@ const modifyApp = async () => {
   }
 }
 
-const openExternalEntry = () => {
-  if (!app.value?.entry_url) return
-  window.open(app.value.entry_url, '_blank', 'noopener,noreferrer')
-}
-
 const goBack = () => {
   window.location.href = window.location.origin
 }
@@ -284,16 +363,6 @@ const formatDate = (value) => {
   if (!value) return ''
   const date = new Date(value)
   return date.toLocaleString()
-}
-
-const isInternalPreviewLink = (url) => {
-  if (!url) return false
-  try {
-    const parsed = new URL(url, window.location.origin)
-    return parsed.origin === window.location.origin && parsed.searchParams.has('app')
-  } catch {
-    return false
-  }
 }
 
 const getAppStatusLabel = (status) => {
@@ -461,8 +530,8 @@ onMounted(loadApp)
   color: #4f4f73;
 }
 
-/* HTML 应用/游戏的 iframe 样式 */
-.game-frame-container {
+/* 应用 iframe 容器样式 */
+.app-frame-container {
   background: white;
   border-radius: 16px;
   padding: 24px;
@@ -470,24 +539,47 @@ onMounted(loadApp)
   margin-bottom: 24px;
 }
 
-.game-frame-container h3 {
+.app-frame-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 16px;
-  color: #333;
 }
 
-.game-iframe {
+.app-frame-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 20px;
+}
+
+.app-frame-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.app-iframe {
   width: 100%;
   height: 700px;
   border-radius: 12px;
   border: 2px solid #e8ecff;
-  background: #000;
+  background: #f8f9ff;
   margin-bottom: 16px;
 }
 
-.game-controls {
+/* 状态视图样式 */
+.app-status-view {
+  background: #f8f9ff;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.status-header {
   display: flex;
-  gap: 12px;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e8ecff;
 }
 
 /* 修改功能样式 */

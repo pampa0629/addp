@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"io"
 	"os"
 	"os/exec"
@@ -116,7 +117,7 @@ func (s *TaskService) CreateModificationTask(appID, modificationPrompt string) (
 用户的修改需求：
 %s
 
-请基于上述代码进行修改，保留原有功能，只针对用户需求进行调整。如果是多文件项目，请保持文件结构并使用 filepath 标记。`, existingCode, modificationPrompt)
+请参考已有的代码和原有功能，结合用户提出的需求进行修改。如果是多文件项目，请保持文件结构并使用 filepath 标记。`, existingCode, modificationPrompt)
 
 	// 创建任务
 	task := &models.Task{
@@ -580,7 +581,7 @@ func (s *TaskService) autoRegisterApp(task *models.Task) {
 		Cover:         manifest.Cover,
 		EntryURL:      entryURL,
 		TaskID:        task.ID,
-		WorkspacePath: task.ID,
+		WorkspacePath: filepath.Join("workspace", task.ID), // Relative path from abs root
 		StartCommand:  manifest.StartCommand.ToSlice(),
 		Tags:          manifest.Tags,
 	}
@@ -630,23 +631,66 @@ func (s *TaskService) loadManifestFromFile(workspaceDir string) (*models.AppMani
 }
 
 func (s *TaskService) buildFallbackManifest(task *models.Task, workspaceDir string) *models.AppManifest {
-	startCmd := s.detectStartCommand(workspaceDir)
-	if len(startCmd) == 0 {
-		return nil
-	}
+    startCmd := s.detectStartCommand(workspaceDir)
+    if len(startCmd) == 0 {
+        return nil
+    }
 
-	entryURL := s.previewEntryURL(task)
-	if entryURL == "" {
-		return nil
-	}
+    // Static HTML app: keep preview entry and no start command env injection
+    if len(startCmd) >= 1 && strings.ToLower(startCmd[0]) == "echo" {
+        entryURL := s.previewEntryURL(task)
+        if entryURL == "" {
+            return nil
+        }
+        return &models.AppManifest{
+            Name:         s.deriveAppName(task),
+            Description:  fmt.Sprintf("自动注册于 %s", time.Now().Format("2006-01-02 15:04")),
+            EntryURL:     entryURL,
+            StartCommand: models.ManifestCommand(startCmd),
+            Tags:         []string{"auto-generated"},
+        }
+    }
 
-	return &models.AppManifest{
-		Name:         s.deriveAppName(task),
-		Description:  fmt.Sprintf("自动注册于 %s", time.Now().Format("2006-01-02 15:04")),
-		EntryURL:     entryURL,
-		StartCommand: models.ManifestCommand(startCmd),
-		Tags:         []string{"auto-generated"},
-	}
+    // Server-like app: allocate a free port and set PORT for the process.
+    port := allocateFreePort()
+    if port == 0 {
+        // Fallback to preview URL (not ideal for servers but avoids crash)
+        entryURL := s.previewEntryURL(task)
+        if entryURL == "" {
+            entryURL = "http://localhost:8000"
+        }
+        return &models.AppManifest{
+            Name:         s.deriveAppName(task),
+            Description:  fmt.Sprintf("自动注册于 %s", time.Now().Format("2006-01-02 15:04")),
+            EntryURL:     entryURL,
+            StartCommand: models.ManifestCommand(startCmd),
+            Tags:         []string{"auto-generated"},
+        }
+    }
+
+    // Wrap with env PORT=xxxx to avoid port conflicts and make entry_url stable
+    newCmd := make([]string, 0, len(startCmd)+2)
+    newCmd = append(newCmd, "env", fmt.Sprintf("PORT=%d", port))
+    newCmd = append(newCmd, startCmd...)
+
+    return &models.AppManifest{
+        Name:         s.deriveAppName(task),
+        Description:  fmt.Sprintf("自动注册于 %s", time.Now().Format("2006-01-02 15:04")),
+        EntryURL:     fmt.Sprintf("http://localhost:%d", port),
+        StartCommand: models.ManifestCommand(newCmd),
+        Tags:         []string{"auto-generated"},
+    }
+}
+
+// allocateFreePort binds to 127.0.0.1:0 to obtain a free TCP port, then closes it.
+func allocateFreePort() int {
+    l, err := net.Listen("tcp", "127.0.0.1:0")
+    if err != nil {
+        return 0
+    }
+    defer l.Close()
+    addr := l.Addr().(*net.TCPAddr)
+    return addr.Port
 }
 
 func (s *TaskService) deriveAppName(task *models.Task) string {

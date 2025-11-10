@@ -35,7 +35,7 @@ chmod 600 ~/.codex/.apikey
 ### 步骤 2：启动系统
 
 ```bash
-cd /Users/pampa/code/addp/labs/abs
+cd ./abs
 ./restart.sh
 ```
 
@@ -109,7 +109,7 @@ cd /Users/pampa/code/addp/labs/abs
 
 ## 📝 配置说明
 
-### 当前配置（backend/.env）
+### 当前配置（.env）
 
 ```bash
 CODE_GENERATOR=codex_cli

@@ -6,7 +6,7 @@
 
 - Claude 相关代码已保留但暂停使用
 - 默认代码生成器：`codex_cli`
-- 配置文件：`backend/.env`
+- 配置文件：`.env`
 
 ## 快速启动步骤
 
@@ -50,7 +50,7 @@ codex --version
 ### 3. 启动 ABS 系统
 
 ```bash
-cd /Users/pampa/code/addp/labs/abs
+cd abs
 ./restart.sh
 ```
 
@@ -61,7 +61,7 @@ cd /Users/pampa/code/addp/labs/abs
 
 ## 配置选项说明
 
-### 当前 .env 配置（backend/.env）
+### 当前 .env 配置（.env）
 
 ```bash
 # 代码生成器选择
@@ -77,10 +77,10 @@ CODEX_CLI_TIMEOUT=300s                            # 超时时间（5分钟）
 PORT=8090
 FRONTEND_URL=http://localhost:5180
 
-# 工作空间配置
-WORKSPACE_DIR=./workspace
+# 工作空间配置（相对于 abs/ 根目录）
+WORKSPACE_DIR=workspace
 AUTO_RELOAD=true
-APPS_DATA_FILE=./workspace/apps.json
+APPS_DATA_FILE=workspace/apps.json
 ```
 
 **注意事项**：
@@ -91,7 +91,7 @@ APPS_DATA_FILE=./workspace/apps.json
 
 ### 切换到 Codex API 模式
 
-编辑 `backend/.env`：
+编辑 `.env`：
 
 ```bash
 CODE_GENERATOR=codex
@@ -102,7 +102,7 @@ CODEX_MODEL=gpt-5
 
 ### 切换到 Claude 模式（如需启用）
 
-编辑 `backend/.env`：
+编辑 `.env`：
 
 ```bash
 CODE_GENERATOR=claude
@@ -136,7 +136,7 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 ### 问题：任务执行超时
 
 **解决方案**：
-增加超时时间，编辑 `backend/.env`：
+增加超时时间，编辑 `.env`：
 ```bash
 CODEX_CLI_TIMEOUT=600s  # 增加到 10 分钟
 ```
@@ -174,8 +174,8 @@ tail -f /tmp/abs-backend.log
 
 ## 相关文件
 
-- 配置模板：`backend/.env.example`
-- 当前配置：`backend/.env`
+- 配置模板：`.env.example`
+- 当前配置：`.env`
 - 启动脚本：`restart.sh`
 - 代码生成器选择逻辑：`backend/internal/service/task_service.go`
 - 配置加载逻辑：`backend/internal/service/config.go`

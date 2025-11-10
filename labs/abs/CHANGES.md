@@ -20,7 +20,7 @@
 
 ---
 
-### 1. ✅ 更新配置模板（backend/.env.example）
+### 1. ✅ 更新配置模板（.env.example）
 
 - 将默认代码生成器从 `claude` 改为 `codex_cli`
 - 清晰标注各配置段落
@@ -42,7 +42,7 @@
 - 添加智能检测逻辑，根据 `CODE_GENERATOR` 检查对应的配置
 - 支持三种模式：`codex_cli`、`codex`、`claude`
 
-### 4. ✅ 创建简化配置文件（backend/.env）
+### 4. ✅ 创建简化配置文件（.env）
 
 - 仅包含 Codex CLI 相关配置
 - 移除所有 Claude 相关配置
@@ -66,14 +66,14 @@
 
 3. **启动系统**：
    ```bash
-   cd /Users/pampa/code/addp/labs/abs
+   cd ./abs
    ./restart.sh
    ```
 
 ### 配置文件位置
 
-- **模板文件**：`backend/.env.example`（已更新）
-- **当前配置**：`backend/.env`（已创建）
+- **模板文件**：`.env.example`（已更新）
+- **当前配置**：`.env`（已创建）
 - **启动脚本**：`restart.sh`（已更新）
 - **配置指南**：`CODEX_SETUP.md`（新建）
 
@@ -89,7 +89,7 @@
 
 ### 如何重新启用 Claude
 
-只需修改 `backend/.env`：
+只需修改 `.env`：
 
 ```bash
 CODE_GENERATOR=claude
@@ -132,8 +132,8 @@ CLAUDE_MODEL=claude-sonnet-4-5-20250929
 
 | 文件 | 状态 | 说明 |
 |------|------|------|
-| `backend/.env.example` | ✅ 已修改 | 更新为 Codex CLI 优先，CODEX_CLI_ARGS 加双引号 |
-| `backend/.env` | ✅ 已创建 | 简化配置，仅 Codex CLI，CODEX_CLI_ARGS 加双引号 |
+| `.env.example` | ✅ 已修改 | 更新为 Codex CLI 优先，CODEX_CLI_ARGS 加双引号 |
+| `.env` | ✅ 已创建 | 简化配置，仅 Codex CLI，CODEX_CLI_ARGS 加双引号 |
 | `backend/cmd/server/main.go` | ✅ 已修改 | 修复配置验证逻辑，区分 codex 和 codex_cli |
 | `restart.sh` | ✅ 已修改 | 智能检测配置 |
 | `backend/internal/service/task_service.go` | ✅ 已修改 | 代码生成器选择逻辑 |

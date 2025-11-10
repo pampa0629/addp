@@ -16,20 +16,20 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}🤖 Starting ABS - AI Bootstrapping System${NC}"
 echo ""
 
-# Check if .env exists
-if [ ! -f "backend/.env" ]; then
+# Check if .env exists (at project root)
+if [ ! -f ".env" ]; then
     echo -e "${YELLOW}⚠️  No .env file found. Creating from template...${NC}"
-    cp backend/.env.example backend/.env
-    echo -e "${RED}❌ IMPORTANT: Edit backend/.env and set your CLAUDE_API_KEY${NC}"
+    cp .env.example .env
+    echo -e "${RED}❌ IMPORTANT: Edit .env and set your CLAUDE_API_KEY${NC}"
     echo -e "${YELLOW}Press Enter after updating the API key...${NC}"
     read
 fi
 
 # Check if CLAUDE_API_KEY is set
-source backend/.env
+source .env
 if [ -z "$CLAUDE_API_KEY" ] || [ "$CLAUDE_API_KEY" = "your-anthropic-api-key-here" ]; then
-    echo -e "${RED}❌ CLAUDE_API_KEY is not set in backend/.env${NC}"
-    echo "Please edit backend/.env and add your Anthropic API key"
+    echo -e "${RED}❌ CLAUDE_API_KEY is not set in .env${NC}"
+    echo "Please edit .env and add your Anthropic API key"
     exit 1
 fi
 
