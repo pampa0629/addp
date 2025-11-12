@@ -1,0 +1,24 @@
+datasources:
+  - id: "dltb"
+    name: "测试建筑物数据"
+    type: "postgis"
+    connection:
+      schema: "public"
+      table: "dltb"
+      geometry_column: "smgeometry"
+      srid: 2360
+
+    tile_config:
+      min_zoom: 8
+      max_zoom: 18
+      buffer: 64
+      extent: 4096
+      simplification: 0.5
+
+    properties:
+      - name: "SmID"
+        type: "integer"
+      - name: "SmUserID"
+        type: "integer"
+
+    filters: []

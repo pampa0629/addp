@@ -1,0 +1,30 @@
+# 应用配置（示例模板）
+# 将本文件复制为 app.yaml 并根据你的实际环境填写
+
+# 服务配置
+port: 8090
+frontend_url: http://localhost:5180
+log_level: info
+
+# PostgreSQL / PostGIS 配置
+database:
+  host: 127.0.0.1
+  port: "5433"
+  name: business
+  user: business
+  password: business_password
+  max_open_conns: 50
+  max_idle_conns: 10
+  # 连接存活时间，支持 300s、5m 等标准时长写法
+  conn_max_lifetime: 5m
+
+# Redis 缓存配置（请按你的环境填写）
+redis:
+  host: 127.0.0.1
+  port: "6379"
+  password: ""
+  # 缓存过期时间，例如 24h、12h、30m
+  cache_ttl: 24h
+  # 最大内存提示（服务端需要自行配置 maxmemory 策略）
+  max_memory: 8gb
+

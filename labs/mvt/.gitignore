@@ -1,0 +1,22 @@
+*.log
+*.tmp
+.DS_Store
+
+# Backend
+backend/logs/
+backend/workspace/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Build
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
