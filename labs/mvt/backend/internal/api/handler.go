@@ -74,7 +74,7 @@ func (h *Handler) GetTile(c *gin.Context) {
         func() (interface{}, error) {
             genStart := time.Now()
             raw, err := h.tileService.GenerateTile(ctx, datasourceID, z, x, y)
-            if err != nil { return nil, err }
+            if err != nil { return nil, &service.GenError{Err: err, Elapsed: time.Since(genStart)} }
             // 根据耗时与大小决定是否持久化到 PG（配置化阈值）
             dur := time.Since(genStart)
             minDur := h.cfg.CachePolicy.PersistMinDuration
@@ -99,7 +99,13 @@ func (h *Handler) GetTile(c *gin.Context) {
             return gz, nil
         })
     if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        if ge, ok := err.(*service.GenError); ok {
+            log.Printf("[ERROR] Tile generation failed (%s): ds=%s z=%d x=%d y=%d err=%v", ge.Elapsed, datasourceID, z, x, y, ge.Err)
+            c.JSON(http.StatusInternalServerError, gin.H{"error": ge.Err.Error(), "elapsed_ms": ge.Elapsed.Milliseconds()})
+        } else {
+            log.Printf("[ERROR] Tile generation failed: ds=%s z=%d x=%d y=%d err=%v", datasourceID, z, x, y, err)
+            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        }
         return
     }
 
