@@ -20,6 +20,12 @@ type Config struct {
     // Redis 配置
     Redis RedisConfig `yaml:"redis"`
 
+    // 缓存策略配置
+    CachePolicy CachePolicyConfig `yaml:"cache_policy"`
+
+    // 预热配置
+    Prewarm PrewarmConfig `yaml:"prewarm"`
+
     // 日志配置
     LogLevel string `yaml:"log_level"`
 
@@ -48,6 +54,27 @@ type RedisConfig struct {
     MaxMemory string        `yaml:"max_memory"`
 }
 
+// CachePolicyConfig 缓存落库策略（阈值）
+type CachePolicyConfig struct {
+    // 生成耗时达到该阈值则落库（默认 3s）
+    PersistMinDuration time.Duration `yaml:"persist_min_duration"`
+    // 压缩前（原始 MVT）大小达到该阈值（单位 KB）则落库（默认 100KB）
+    PersistMinRawKB    int           `yaml:"persist_min_raw_kb"`
+}
+
+// PrewarmConfig 预热
+type PrewarmConfig struct {
+    Enabled     bool `yaml:"enabled"`
+    // 预热的最大缩放级别（默认 6）
+    MaxZoom     int  `yaml:"max_zoom"`
+    // 预热并发数（默认 2）
+    Concurrency int  `yaml:"concurrency"`
+    // 生成单瓦片的超时（默认 200s）
+    GenerateTimeout time.Duration `yaml:"generate_timeout"`
+    // 写缓存的超时（默认 20s）
+    CacheTimeout    time.Duration `yaml:"cache_timeout"`
+}
+
 // Load 加载配置
 func Load() (*Config, error) {
 	var config *Config
@@ -72,27 +99,38 @@ func Load() (*Config, error) {
 	}
 
 	// 2. 如果 YAML 加载失败，使用最小默认配置
-	if config == nil {
-		fmt.Printf("[DEBUG CONFIG] Using fallback default config\n")
-		config = &Config{
-			Port:        "8090",
-			FrontendURL: "http://localhost:5180",
-			LogLevel:    "info",
-			Database: DatabaseConfig{
-				Host:            "localhost",
-				Port:            "5432",
-				MaxOpenConns:    25,
-				MaxIdleConns:    5,
-				ConnMaxLifetime: 5 * time.Minute,
-			},
-			Redis: RedisConfig{
-				Host:      "localhost",
-				Port:      "6379",
-				CacheTTL:  24 * time.Hour,
-				MaxMemory: "2gb",
-			},
-		}
-	}
+    if config == nil {
+        fmt.Printf("[DEBUG CONFIG] Using fallback default config\n")
+        config = &Config{
+            Port:        "8090",
+            FrontendURL: "http://localhost:5180",
+            LogLevel:    "info",
+            Database: DatabaseConfig{
+                Host:            "localhost",
+                Port:            "5432",
+                MaxOpenConns:    25,
+                MaxIdleConns:    5,
+                ConnMaxLifetime: 5 * time.Minute,
+            },
+            Redis: RedisConfig{
+                Host:      "localhost",
+                Port:      "6379",
+                CacheTTL:  24 * time.Hour,
+                MaxMemory: "2gb",
+            },
+            CachePolicy: CachePolicyConfig{
+                PersistMinDuration: 3 * time.Second,
+                PersistMinRawKB:    100,
+            },
+            Prewarm: PrewarmConfig{
+                Enabled:     true,
+                MaxZoom:     6,
+                Concurrency: 2,
+                GenerateTimeout: 200 * time.Second,
+                CacheTimeout:    20 * time.Second,
+            },
+        }
+    }
 
 	// 3. 环境变量覆盖（优先级最高）
 	if v := os.Getenv("PORT"); v != "" {
@@ -147,14 +185,50 @@ func Load() (*Config, error) {
 	if v := os.Getenv("REDIS_PASSWORD"); v != "" {
 		config.Redis.Password = v
 	}
-	if v := os.Getenv("CACHE_TTL"); v != "" {
-		if duration, err := time.ParseDuration(v); err == nil {
-			config.Redis.CacheTTL = duration
-		}
-	}
-	if v := os.Getenv("CACHE_MAX_MEMORY"); v != "" {
-		config.Redis.MaxMemory = v
-	}
+    if v := os.Getenv("CACHE_TTL"); v != "" {
+        if duration, err := time.ParseDuration(v); err == nil {
+            config.Redis.CacheTTL = duration
+        }
+    }
+    if v := os.Getenv("CACHE_MAX_MEMORY"); v != "" {
+        config.Redis.MaxMemory = v
+    }
+    // 缓存策略环境变量
+    if v := os.Getenv("CACHE_PERSIST_MIN_DURATION"); v != "" {
+        if duration, err := time.ParseDuration(v); err == nil {
+            config.CachePolicy.PersistMinDuration = duration
+        }
+    }
+    if v := os.Getenv("CACHE_PERSIST_MIN_RAW_KB"); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            config.CachePolicy.PersistMinRawKB = n
+        }
+    }
+    // 预热环境变量
+    if v := os.Getenv("PREWARM_ENABLED"); v != "" {
+        config.Prewarm.Enabled = v == "1" || v == "true" || v == "TRUE"
+    }
+    if v := os.Getenv("PREWARM_MAX_ZOOM"); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            config.Prewarm.MaxZoom = n
+        }
+    }
+    if v := os.Getenv("PREWARM_CONCURRENCY"); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            if n <= 0 { n = 1 }
+            config.Prewarm.Concurrency = n
+        }
+    }
+    if v := os.Getenv("PREWARM_GENERATE_TIMEOUT"); v != "" {
+        if d, err := time.ParseDuration(v); err == nil {
+            config.Prewarm.GenerateTimeout = d
+        }
+    }
+    if v := os.Getenv("PREWARM_CACHE_TIMEOUT"); v != "" {
+        if d, err := time.ParseDuration(v); err == nil {
+            config.Prewarm.CacheTimeout = d
+        }
+    }
 
 	fmt.Printf("[DEBUG CONFIG] Final config - Port: %s, Database: %s@%s:%s/%s\n",
 		config.Port, config.Database.User, config.Database.Host,

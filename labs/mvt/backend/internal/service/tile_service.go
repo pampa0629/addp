@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
+    "sync"
 
 	"github.com/addp/mvt/internal/config"
 	"github.com/addp/mvt/internal/models"
@@ -17,6 +18,7 @@ import (
 type TileService struct {
 	db          *sql.DB
 	dataSources map[string]*models.DataSource
+    mu          sync.RWMutex
 }
 
 // NewTileService 创建瓦片服务
@@ -57,7 +59,9 @@ func NewTileService(cfg *config.Config, dataSources []models.DataSource) (*TileS
 // GenerateTile 生成 MVT 瓦片
 func (s *TileService) GenerateTile(ctx context.Context, datasourceID string, z, x, y int) ([]byte, error) {
 	// 获取数据源配置
+	s.mu.RLock()
 	ds, exists := s.dataSources[datasourceID]
+	s.mu.RUnlock()
 	if !exists {
 		return nil, fmt.Errorf("datasource not found: %s", datasourceID)
 	}
@@ -128,12 +132,29 @@ func (s *TileService) buildMVTQuery(ds *models.DataSource, z, x, y int) string {
 		filterClause = " AND " + strings.Join(ds.Filters, " AND ")
 	}
 
-	// 简化SQL：直接使用ST_TileEnvelope作为bbox
-	query := fmt.Sprintf(`
+    // 简化SQL：直接使用ST_TileEnvelope作为bbox
+    // 计算当前缩放的有效像素阈值（按区间规则优先，其次全局阈值）
+    effectiveMinPxLine := ds.TileConfig.MinPxLine
+    effectiveMinPxPoly := ds.TileConfig.MinPxPoly
+    for _, r := range ds.TileConfig.PixelRules {
+        if z >= r.MinZoom && z <= r.MaxZoom {
+            if r.MinPxLine > 0 {
+                effectiveMinPxLine = r.MinPxLine
+            }
+            if r.MinPxPoly > 0 {
+                effectiveMinPxPoly = r.MinPxPoly
+            }
+            break
+        }
+    }
+    // 根据配置决定是否启用基于像素阈值的小要素过滤
+    pixelFilterEnabled := effectiveMinPxLine > 0 || effectiveMinPxPoly > 0
+
+    baseCTE := fmt.Sprintf(`
 WITH mvtgeom AS (
     SELECT
         ST_AsMVTGeom(
-            ST_Transform(ST_SetSRID("%s", %d), 3857),
+            ST_Transform("%s", 3857),
             ST_TileEnvelope($1, $2, $3),
             extent => %d,
             buffer => %d,
@@ -141,29 +162,64 @@ WITH mvtgeom AS (
         ) AS geom
         %s
     FROM "%s"."%s"
-    WHERE ST_SetSRID("%s", %d) && ST_Transform(ST_TileEnvelope($1, $2, $3), %d)
+    WHERE "%s" && ST_Transform(ST_TileEnvelope($1, $2, $3), %d)
       %s
 )
-SELECT ST_AsMVT(mvtgeom.*, '%s', %d) FROM mvtgeom WHERE geom IS NOT NULL;
 `,
-		ds.Connection.GeometryColumn, ds.Connection.SRID, // ST_SetSRID(geom, srid)
-		ds.TileConfig.Extent,                             // extent
-		ds.TileConfig.Buffer,                             // buffer
-		propColumns,                                      // property columns
-		ds.Connection.Schema, ds.Connection.Table,        // FROM schema.table
-		ds.Connection.GeometryColumn, ds.Connection.SRID, // WHERE ST_SetSRID(geom, srid)
-		ds.Connection.SRID,                               // tile envelope SRID
-		filterClause,                                     // optional filters
-		ds.ID,                                            // layer name
-		ds.TileConfig.Extent,                             // MVT extent
-	)
+        ds.Connection.GeometryColumn,                     // geometry column
+        ds.TileConfig.Extent,                             // extent
+        ds.TileConfig.Buffer,                             // buffer
+        propColumns,                                      // property columns
+        ds.Connection.Schema, ds.Connection.Table,        // FROM schema.table
+        ds.Connection.GeometryColumn,                     // WHERE geom && bbox
+        ds.Connection.SRID,                               // tile envelope SRID
+        filterClause,                                     // optional filters
+    )
 
-	return query
+    var query string
+    if pixelFilterEnabled {
+        // 瓦片空间后过滤：按像素阈值剔除极小线/面
+        // 1px = (extent/256) 瓦片单位
+        query = fmt.Sprintf(`%s
+SELECT ST_AsMVT(t.*, '%s', %d)
+FROM (
+  SELECT *
+  FROM mvtgeom
+  WHERE geom IS NOT NULL
+    AND (
+      CASE
+        WHEN ST_Dimension(geom) = 1 THEN ST_Length(geom) >= (%f * (%d.0/256.0))
+        WHEN ST_Dimension(geom) = 2 THEN ST_Area(geom)  >= POWER((%f * (%d.0/256.0)), 2)
+        ELSE TRUE
+      END
+    )
+) AS t;`,
+            baseCTE,
+            ds.ID,                    // layer name
+            ds.TileConfig.Extent,     // MVT extent
+            effectiveMinPxLine,       // min pixels for line
+            ds.TileConfig.Extent,
+            effectiveMinPxPoly,       // min pixels for polygon
+            ds.TileConfig.Extent,
+        )
+    } else {
+        // 不启用像素过滤：保持原逻辑
+        query = fmt.Sprintf(`%s
+SELECT ST_AsMVT(mvtgeom.*, '%s', %d) FROM mvtgeom WHERE geom IS NOT NULL;`,
+            baseCTE,
+            ds.ID,
+            ds.TileConfig.Extent,
+        )
+    }
+
+    return query
 }
 
 // GetDataSource 获取数据源配置
 func (s *TileService) GetDataSource(datasourceID string) (*models.DataSource, error) {
+	s.mu.RLock()
 	ds, exists := s.dataSources[datasourceID]
+	s.mu.RUnlock()
 	if !exists {
 		return nil, fmt.Errorf("datasource not found: %s", datasourceID)
 	}
@@ -172,6 +228,8 @@ func (s *TileService) GetDataSource(datasourceID string) (*models.DataSource, er
 
 // ListDataSources 列出所有数据源
 func (s *TileService) ListDataSources() []models.DataSource {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	result := make([]models.DataSource, 0, len(s.dataSources))
 	for _, ds := range s.dataSources {
 		result = append(result, *ds)
@@ -181,7 +239,9 @@ func (s *TileService) ListDataSources() []models.DataSource {
 
 // GetDataSourceExtent 获取数据源的空间范围（返回 WGS84 经纬度坐标）
 func (s *TileService) GetDataSourceExtent(datasourceID string) ([]float64, error) {
+    s.mu.RLock()
     ds, exists := s.dataSources[datasourceID]
+    s.mu.RUnlock()
     if !exists {
         return nil, fmt.Errorf("datasource not found: %s", datasourceID)
     }
@@ -235,4 +295,16 @@ func (s *TileService) GetDataSourceExtent(datasourceID string) ([]float64, error
 // Close 关闭数据库连接
 func (s *TileService) Close() error {
 	return s.db.Close()
+}
+
+// UpdateDataSources 热更新数据源配置
+func (s *TileService) UpdateDataSources(newSources []models.DataSource) {
+    dsMap := make(map[string]*models.DataSource)
+    for i := range newSources {
+        dsMap[newSources[i].ID] = &newSources[i]
+    }
+    s.mu.Lock()
+    s.dataSources = dsMap
+    s.mu.Unlock()
+    log.Printf("[INFO] Datasources reloaded: %d entries", len(dsMap))
 }

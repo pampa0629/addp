@@ -9,11 +9,26 @@ datasources:
       srid: 2360
 
     tile_config:
-      min_zoom: 8
+      min_zoom: 6
       max_zoom: 18
       buffer: 64
       extent: 4096
       simplification: 0.5
+      min_px_line: 1.0
+      min_px_poly: 10.0
+      pixel_rules:
+        - min_zoom: 6
+          max_zoom: 8
+          min_px_line: 0.0
+          min_px_poly: 2.0
+        - min_zoom: 9
+          max_zoom: 12
+          min_px_line: 1.5
+          min_px_poly: 5.0
+        - min_zoom: 13
+          max_zoom: 18
+          min_px_line: 1.5
+          min_px_poly: 3.0
 
     properties:
       - name: "SmID"

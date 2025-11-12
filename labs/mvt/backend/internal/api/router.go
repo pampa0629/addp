@@ -1,9 +1,10 @@
 package api
 
 import (
-	"github.com/addp/mvt/internal/config"
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
+    "github.com/addp/mvt/internal/config"
+    "github.com/addp/mvt/internal/middleware"
+    "github.com/gin-contrib/cors"
+    "github.com/gin-gonic/gin"
 )
 
 // SetupRouter 配置路由
@@ -15,23 +16,27 @@ func SetupRouter(cfg *config.Config, handler *Handler) *gin.Engine {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	router := gin.Default()
+    router := gin.Default()
 
-	// CORS 配置
-	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{cfg.FrontendURL},
-		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
-		ExposeHeaders:    []string{"Content-Length", "X-Cache"},
-		AllowCredentials: true,
-		MaxAge:           12 * 3600,
-	}))
+    // CORS 配置
+    router.Use(cors.New(cors.Config{
+        AllowOrigins:     []string{cfg.FrontendURL},
+        AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+        AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
+        ExposeHeaders:    []string{"Content-Length", "X-Cache"},
+        AllowCredentials: true,
+        MaxAge:           12 * 3600,
+    }))
+
+    // 注意：不要对瓦片二进制做二次 gzip。
+    // 将 gzip 中间件仅应用于 API JSON 路由，避免与瓦片处理器的预压缩相冲突。
 
 	// 健康检查
 	router.GET("/health", handler.Health)
 
 	// API 路由组
-	api := router.Group("/api")
+    api := router.Group("/api")
+    api.Use(middleware.Gzip())
 	{
 		// 数据源管理
 		api.GET("/datasources", handler.ListDataSources)

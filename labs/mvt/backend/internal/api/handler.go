@@ -1,29 +1,34 @@
 package api
 
 import (
-	"context"
-	"log"
-	"net/http"
-	"strconv"
-	"time"
+    "context"
+    "log"
+    "net/http"
+    "strconv"
+    "time"
 
-	"github.com/addp/mvt/internal/models"
-	"github.com/addp/mvt/internal/service"
-	"github.com/gin-gonic/gin"
+    appcfg "github.com/addp/mvt/internal/config"
+    "github.com/addp/mvt/internal/models"
+    "github.com/addp/mvt/internal/service"
+    "github.com/gin-gonic/gin"
+    "golang.org/x/sync/singleflight"
 )
 
 // Handler API 处理器
 type Handler struct {
-	tileService  *service.TileService
-	cacheService *service.CacheService
+    tileService  *service.TileService
+    cacheService *service.CacheService
+    sf           singleflight.Group
+    cfg          *appcfg.Config
 }
 
 // NewHandler 创建处理器
-func NewHandler(tileService *service.TileService, cacheService *service.CacheService) *Handler {
-	return &Handler{
-		tileService:  tileService,
-		cacheService: cacheService,
-	}
+func NewHandler(tileService *service.TileService, cacheService *service.CacheService, cfg *appcfg.Config) *Handler {
+    return &Handler{
+        tileService:  tileService,
+        cacheService: cacheService,
+        cfg:          cfg,
+    }
 }
 
 // GetTile 获取 MVT 瓦片
@@ -44,44 +49,68 @@ func (h *Handler) GetTile(c *gin.Context) {
 	log.Printf("[DEBUG HANDLER] URL=%s, datasourceID=%s, z=%d, x=%d, y=%d",
 		c.Request.URL.Path, datasourceID, z, x, y)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 
-	// 1. 尝试从缓存获取
-	cachedTile, err := h.cacheService.GetTile(ctx, datasourceID, z, x, y)
-	if err != nil {
-		log.Printf("Cache error: %v", err)
-	}
+    // 1. 尝试从缓存获取（内存→Redis→PG），返回 gzip
+    cachedTile, err := h.cacheService.GetTile(ctx, datasourceID, z, x, y)
+    if err != nil {
+        log.Printf("Cache error: %v", err)
+    }
 
-	if cachedTile != nil {
-		c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
-		c.Header("Cache-Control", "public, max-age=86400")
-		c.Header("X-Cache", "HIT")
-		c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", cachedTile)
-		return
-	}
+    if cachedTile != nil {
+        c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
+        c.Header("Content-Encoding", "gzip")
+        c.Header("Cache-Control", "public, max-age=86400")
+        c.Header("X-Cache", "HIT")
+        c.Header("Vary", "Accept-Encoding")
+        c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", cachedTile)
+        return
+    }
 
-	// 2. 从 PostGIS 生成瓦片
-	tile, err := h.tileService.GenerateTile(ctx, datasourceID, z, x, y)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+    // 2. singleflight 合并并生成→gzip→缓存
+    v, err, _ := h.sf.Do(
+        datasourceID+":"+strconv.Itoa(z)+":"+strconv.Itoa(x)+":"+strconv.Itoa(y),
+        func() (interface{}, error) {
+            genStart := time.Now()
+            raw, err := h.tileService.GenerateTile(ctx, datasourceID, z, x, y)
+            if err != nil { return nil, err }
+            // 根据耗时与大小决定是否持久化到 PG（配置化阈值）
+            dur := time.Since(genStart)
+            minDur := h.cfg.CachePolicy.PersistMinDuration
+            minKB  := h.cfg.CachePolicy.PersistMinRawKB
+            if minDur <= 0 { minDur = 3 * time.Second }
+            if minKB <= 0 { minKB = 100 }
+            persist := dur >= minDur || len(raw) >= minKB*1024
 
-	// 3. 异步写入缓存
-	go func() {
-		cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := h.cacheService.SetTile(cacheCtx, datasourceID, z, x, y, tile); err != nil {
-			log.Printf("Failed to cache tile: %v", err)
-		}
-	}()
+            // 压缩为 gzip
+            gz, err := h.cacheService.Gzip(raw)
+            if err != nil { return nil, err }
 
-	// 4. 返回瓦片
-	c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
-	c.Header("Cache-Control", "public, max-age=86400")
-	c.Header("X-Cache", "MISS")
-	c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", tile)
+            // 异步写缓存（容错）
+            go func(gzData []byte, persist bool) {
+                cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+                defer cancel()
+                if err := h.cacheService.SetTileWithOptions(cacheCtx, datasourceID, z, x, y, gzData, service.SetTileOptions{PersistToPG: persist}); err != nil {
+                    log.Printf("Failed to cache tile: %v", err)
+                }
+            }(gz, persist)
+
+            return gz, nil
+        })
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+        return
+    }
+
+    // 3. 返回 gzip 瓦片
+    gz := v.([]byte)
+    c.Header("Content-Type", "application/vnd.mapbox-vector-tile")
+    c.Header("Content-Encoding", "gzip")
+    c.Header("Cache-Control", "public, max-age=86400")
+    c.Header("X-Cache", "MISS")
+    c.Header("Vary", "Accept-Encoding")
+    c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", gz)
 }
 
 // ListDataSources 列出所有数据源
@@ -128,7 +157,7 @@ func (h *Handler) GetDataSource(c *gin.Context) {
 func (h *Handler) ClearCache(c *gin.Context) {
 	datasourceID := c.Param("datasource_id")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 
 	var err error

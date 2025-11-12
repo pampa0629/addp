@@ -21,11 +21,22 @@ type ConnectionConfig struct {
 
 // TileConfig 瓦片配置
 type TileConfig struct {
-	MinZoom        int     `yaml:"min_zoom" json:"min_zoom"`
-	MaxZoom        int     `yaml:"max_zoom" json:"max_zoom"`
-	Buffer         int     `yaml:"buffer" json:"buffer"`
-	Extent         int     `yaml:"extent" json:"extent"`
-	Simplification float64 `yaml:"simplification" json:"simplification"`
+    MinZoom        int     `yaml:"min_zoom" json:"min_zoom"`
+    MaxZoom        int     `yaml:"max_zoom" json:"max_zoom"`
+    Buffer         int     `yaml:"buffer" json:"buffer"`
+    Extent         int     `yaml:"extent" json:"extent"`
+    Simplification float64 `yaml:"simplification" json:"simplification"`
+    MinPxLine      float64 `yaml:"min_px_line" json:"min_px_line"`
+    MinPxPoly      float64 `yaml:"min_px_poly" json:"min_px_poly"`
+    PixelRules     []PixelRule `yaml:"pixel_rules" json:"pixel_rules"`
+}
+
+// PixelRule 瓦片像素阈值规则（按缩放区间）
+type PixelRule struct {
+    MinZoom    int     `yaml:"min_zoom" json:"min_zoom"`
+    MaxZoom    int     `yaml:"max_zoom" json:"max_zoom"`
+    MinPxLine  float64 `yaml:"min_px_line" json:"min_px_line"`
+    MinPxPoly  float64 `yaml:"min_px_poly" json:"min_px_poly"`
 }
 
 // Property 属性字段定义
