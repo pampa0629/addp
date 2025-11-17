@@ -20,12 +20,12 @@ func main() {
         log.Fatalf("Failed to load config: %v", err)
     }
 
-    // 打印关键启动参数（包含预热与缓存策略超时）
+    // 打印关键启动参数（包含预热与缓存策略）
     log.Printf("Config: port=%s, frontend_url=%s, log_level=%s", cfg.Port, cfg.FrontendURL, cfg.LogLevel)
     log.Printf("DB: host=%s port=%s name=%s user=%s", cfg.Database.Host, cfg.Database.Port, cfg.Database.Name, cfg.Database.User)
     log.Printf("Redis: addr=%s ttl=%s", cfg.GetRedisAddr(), cfg.Redis.CacheTTL.String())
     log.Printf("CachePolicy: persist_min_duration=%s persist_min_raw_kb=%d", cfg.CachePolicy.PersistMinDuration, cfg.CachePolicy.PersistMinRawKB)
-    log.Printf("Prewarm: enabled=%t max_zoom=%d concurrency=%d generate_timeout=%s cache_timeout=%s", cfg.Prewarm.Enabled, cfg.Prewarm.MaxZoom, cfg.Prewarm.Concurrency, cfg.Prewarm.GenerateTimeout, cfg.Prewarm.CacheTimeout)
+    log.Printf("Prewarm: enabled=%t max_zoom=%d concurrency=%d", cfg.Prewarm.Enabled, cfg.Prewarm.MaxZoom, cfg.Prewarm.Concurrency)
 
 	// 2. 加载数据源配置
 	datasourcesPath := getEnv("DATASOURCES_CONFIG", "config/datasources.yaml")

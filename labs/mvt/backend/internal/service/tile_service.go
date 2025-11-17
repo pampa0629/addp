@@ -16,33 +16,57 @@ import (
 
 // TileService 瓦片服务
 type TileService struct {
-	db          *sql.DB
+	db          *sql.DB  // 主连接池（预热使用）
+	priorityDB  *sql.DB  // 优先级连接池（浏览请求使用）
 	dataSources map[string]*models.DataSource
     mu          sync.RWMutex
 }
 
 // NewTileService 创建瓦片服务
 func NewTileService(cfg *config.Config, dataSources []models.DataSource) (*TileService, error) {
-	// 连接 PostgreSQL
+	// 主连接池（预热使用，较小连接数避免占用过多资源）
 	db, err := sql.Open("pgx", cfg.GetDSN())
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// 配置连接池
-	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
-	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	// 配置主连接池（预热用，限制连接数）
+	prewarmMaxConns := cfg.Database.MaxOpenConns / 2  // 预热最多用一半连接
+	if prewarmMaxConns < 5 { prewarmMaxConns = 5 }
+	db.SetMaxOpenConns(prewarmMaxConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns / 2)
 	db.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
+
+	// 优先级连接池（浏览请求使用，保证响应速度）
+	priorityDB, err := sql.Open("pgx", cfg.GetDSN())
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to connect to priority database: %w", err)
+	}
+
+	// 配置优先级连接池（浏览请求用，保证足够连接）
+	priorityDB.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	priorityDB.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	priorityDB.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
 
 	// 验证连接
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		priorityDB.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Printf("[INFO] Connected to database successfully")
+	if err := priorityDB.PingContext(ctx); err != nil {
+		db.Close()
+		priorityDB.Close()
+		return nil, fmt.Errorf("failed to ping priority database: %w", err)
+	}
+
+	log.Printf("[INFO] Connected to database successfully (main pool: %d, priority pool: %d)",
+		prewarmMaxConns, cfg.Database.MaxOpenConns)
 
 	// 构建数据源映射
 	dsMap := make(map[string]*models.DataSource)
@@ -52,12 +76,23 @@ func NewTileService(cfg *config.Config, dataSources []models.DataSource) (*TileS
 
 	return &TileService{
 		db:          db,
+		priorityDB:  priorityDB,
 		dataSources: dsMap,
 	}, nil
 }
 
 // GenerateTile 生成 MVT 瓦片
 func (s *TileService) GenerateTile(ctx context.Context, datasourceID string, z, x, y int) ([]byte, error) {
+	return s.generateTileWithDB(ctx, datasourceID, z, x, y, s.priorityDB)
+}
+
+// GenerateTilePrewarm 预热专用：生成 MVT 瓦片（使用主连接池）
+func (s *TileService) GenerateTilePrewarm(ctx context.Context, datasourceID string, z, x, y int) ([]byte, error) {
+	return s.generateTileWithDB(ctx, datasourceID, z, x, y, s.db)
+}
+
+// generateTileWithDB 内部实现：使用指定数据库连接生成瓦片
+func (s *TileService) generateTileWithDB(ctx context.Context, datasourceID string, z, x, y int, db *sql.DB) ([]byte, error) {
 	// 获取数据源配置
 	s.mu.RLock()
 	ds, exists := s.dataSources[datasourceID]
@@ -85,7 +120,7 @@ func (s *TileService) GenerateTile(ctx context.Context, datasourceID string, z, 
 
 	// 执行查询（先用硬编码测试）
 	var mvtData []byte
-	row := s.db.QueryRowContext(ctx, testQuery)
+	row := db.QueryRowContext(ctx, testQuery)
 
 	// 尝试扫描并详细记录错误
 	err := row.Scan(&mvtData)
@@ -283,7 +318,7 @@ func (s *TileService) GetDataSourceExtent(datasourceID string) ([]float64, error
 	defer cancel()
 
 	var minLng, minLat, maxLng, maxLat float64
-	err := s.db.QueryRowContext(ctx, query).Scan(&minLng, &minLat, &maxLng, &maxLat)
+	err := s.db.QueryRowContext(ctx, query).Scan(&minLng, &minLat, &maxLng, &maxLat)  // 使用主连接池（低优先级）
 	if err != nil {
 		return nil, fmt.Errorf("failed to query extent: %w", err)
 	}
@@ -294,7 +329,17 @@ func (s *TileService) GetDataSourceExtent(datasourceID string) ([]float64, error
 
 // Close 关闭数据库连接
 func (s *TileService) Close() error {
-	return s.db.Close()
+	var err1, err2 error
+	if s.db != nil {
+		err1 = s.db.Close()
+	}
+	if s.priorityDB != nil {
+		err2 = s.priorityDB.Close()
+	}
+	if err1 != nil {
+		return err1
+	}
+	return err2
 }
 
 // UpdateDataSources 热更新数据源配置

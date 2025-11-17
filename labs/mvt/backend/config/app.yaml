@@ -28,21 +28,19 @@ redis:
   # 最大内存提示（服务端需要自行配置 maxmemory 策略）
   max_memory: 8gb
 
-# 缓存策略：控制何时将瓦片持久化写入 Postgres
+# 缓存策略：控制浏览请求何时将瓦片持久化写入 Postgres
+# 注意：预热阶段的瓦片始终持久化，不受此配置影响
 cache_policy:
   # 生成耗时超过该阈值时落库（如 3s、1500ms）
-  persist_min_duration: 3s
+  persist_min_duration: 1s
   # 原始 MVT（压缩前）的大小超过该阈值（KB）时落库
-  persist_min_raw_kb: 100
+  persist_min_raw_kb: 50
 
-# 预热：启动后自动生成低缩放层级的瓦片并缓存
+# 预热：启动后自动生成低缩放层级的瓦片并缓存到 PG
+# 预热阶段：所有生成的瓦片强制持久化，无大小或时间限制
 prewarm:
   enabled: true
-  # 预热的最大缩放级别（不限制运行期缓存，仅限制启动预热范围）
-  max_zoom: 8
-  # 并发 worker 数
+  # 预热的最大缩放级别（例如 8 表示 z=0~8 层全部预热）
+  max_zoom: 9
+  # 并发 worker 数（建议根据 CPU 核心数和数据库连接池调整）
   concurrency: 10
-  # 生成单瓦片的超时（例如 200s, 3m）
-  generate_timeout: 20000s
-  # 写入缓存（Redis/PG）的超时
-  cache_timeout: 200s

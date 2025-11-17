@@ -69,10 +69,6 @@ type PrewarmConfig struct {
     MaxZoom     int  `yaml:"max_zoom"`
     // 预热并发数（默认 2）
     Concurrency int  `yaml:"concurrency"`
-    // 生成单瓦片的超时（默认 200s）
-    GenerateTimeout time.Duration `yaml:"generate_timeout"`
-    // 写缓存的超时（默认 20s）
-    CacheTimeout    time.Duration `yaml:"cache_timeout"`
 }
 
 // Load 加载配置
@@ -126,8 +122,6 @@ func Load() (*Config, error) {
                 Enabled:     true,
                 MaxZoom:     6,
                 Concurrency: 2,
-                GenerateTimeout: 200 * time.Second,
-                CacheTimeout:    20 * time.Second,
             },
         }
     }
@@ -217,16 +211,6 @@ func Load() (*Config, error) {
         if n, err := strconv.Atoi(v); err == nil {
             if n <= 0 { n = 1 }
             config.Prewarm.Concurrency = n
-        }
-    }
-    if v := os.Getenv("PREWARM_GENERATE_TIMEOUT"); v != "" {
-        if d, err := time.ParseDuration(v); err == nil {
-            config.Prewarm.GenerateTimeout = d
-        }
-    }
-    if v := os.Getenv("PREWARM_CACHE_TIMEOUT"); v != "" {
-        if d, err := time.ParseDuration(v); err == nil {
-            config.Prewarm.CacheTimeout = d
         }
     }
 

@@ -12,7 +12,8 @@ import (
 
 // StartPrewarm 在服务启动后异步预热低缩放级别瓦片
 // 遍历各数据源的空间范围，在 [0, MaxZoom] 内按范围计算 x/y 范围并生成瓦片。
-// 是否持久化到 PG 由配置阈值（耗时/大小）决定。
+// 预热阶段：所有瓦片强制持久化到 PG（无大小/时间限制）
+// 使用独立的主连接池，避免影响浏览请求性能
 func StartPrewarm(cfg *appcfg.Config, tiles *TileService, cache *CacheService) {
     maxZoom := cfg.Prewarm.MaxZoom
     if maxZoom < 0 { maxZoom = 0 }
@@ -22,12 +23,15 @@ func StartPrewarm(cfg *appcfg.Config, tiles *TileService, cache *CacheService) {
     datasources := tiles.ListDataSources()
     if len(datasources) == 0 { return }
 
-    log.Printf("[PREWARM] Start prewarming %d datasources, z=0..%d, concurrency=%d", len(datasources), maxZoom, conc)
+    log.Printf("[PREWARM] Start prewarming %d datasources, z=0..%d, concurrency=%d (using dedicated connection pool)", len(datasources), maxZoom, conc)
 
     // worker pool
     type job struct{ dsID string; z, x, y int }
     jobs := make(chan job, 1024)
     var wg sync.WaitGroup
+
+    // 速率限制器：每个 worker 在处理完一个任务后稍作休息，避免过度占用资源
+    rateLimitDelay := 10 * time.Millisecond  // 每个瓦片之间暂停 10ms
 
     // workers
     for i := 0; i < conc; i++ {
@@ -35,31 +39,34 @@ func StartPrewarm(cfg *appcfg.Config, tiles *TileService, cache *CacheService) {
         go func() {
             defer wg.Done()
             for j := range jobs {
-                genTO := cfg.Prewarm.GenerateTimeout
-                if genTO <= 0 { genTO = 200 * time.Second }
-                ctx, cancel := context.WithTimeout(context.Background(), genTO)
+                // 预热阶段不设置生成超时限制（允许复杂查询完成）
+                ctx := context.Background()
                 start := time.Now()
-                raw, err := tiles.GenerateTile(ctx, j.dsID, j.z, j.x, j.y)
-                cancel()
-                if err != nil { continue }
+                raw, err := tiles.GenerateTilePrewarm(ctx, j.dsID, j.z, j.x, j.y)  // 使用预热专用方法（主连接池）
+                if err != nil {
+                    log.Printf("[PREWARM] Generate failed for %s z=%d x=%d y=%d: %v", j.dsID, j.z, j.x, j.y, err)
+                    continue
+                }
                 if len(raw) == 0 { continue }
 
-                // 阈值规则（按原始 MVT 大小判断）
-                minDur := cfg.CachePolicy.PersistMinDuration
-                if minDur <= 0 { minDur = 3 * time.Second }
-                minKB := cfg.CachePolicy.PersistMinRawKB
-                if minKB <= 0 { minKB = 100 }
-                persist := time.Since(start) >= minDur || len(raw) >= minKB*1024
-                // 压缩
+                // 预热阶段：强制持久化所有瓦片到 PG（无大小/时间限制）
                 gz, err := cache.Gzip(raw)
-                if err != nil { continue }
+                if err != nil {
+                    log.Printf("[PREWARM] Gzip failed for %s z=%d x=%d y=%d: %v", j.dsID, j.z, j.x, j.y, err)
+                    continue
+                }
 
-                // 写缓存
-                cacheTO := cfg.Prewarm.CacheTimeout
-                if cacheTO <= 0 { cacheTO = 20 * time.Second }
-                cctx, ccancel := context.WithTimeout(context.Background(), cacheTO)
-                _ = cache.SetTileWithOptions(cctx, j.dsID, j.z, j.x, j.y, gz, SetTileOptions{PersistToPG: persist})
-                ccancel()
+                // 写缓存：不设置超时（确保持久化成功）
+                cctx := context.Background()
+                if err := cache.SetTileWithOptions(cctx, j.dsID, j.z, j.x, j.y, gz, SetTileOptions{PersistToPG: true}); err != nil {
+                    log.Printf("[PREWARM] Cache failed for %s z=%d x=%d y=%d: %v", j.dsID, j.z, j.x, j.y, err)
+                } else {
+                    dur := time.Since(start)
+                    log.Printf("[PREWARM] Cached %s z=%d x=%d y=%d (size=%d bytes, took=%s)", j.dsID, j.z, j.x, j.y, len(gz), dur)
+                }
+
+                // 速率限制：暂停一小段时间，避免过度占用资源
+                time.Sleep(rateLimitDelay)
             }
         }()
     }
