@@ -1,0 +1,42 @@
+{
+  "test_time": "2025-11-18 16:58:30",
+  "results": [
+    {
+      "scenario": "小型工作流（3 个算子）",
+      "num_tasks": 3,
+      "data_size_mb": 0.01,
+      "duration_method_a_ms": 450.29999999999995,
+      "duration_method_b_ms": 46.42009735107422,
+      "speedup": 9.7005397596302
+    },
+    {
+      "scenario": "中型工作流（5 个算子）",
+      "num_tasks": 5,
+      "data_size_mb": 0.1,
+      "duration_method_a_ms": 755.0,
+      "duration_method_b_ms": 0.7140636444091797,
+      "speedup": 1057.3287212020034
+    },
+    {
+      "scenario": "复杂工作流（10 个算子，有并行）",
+      "num_tasks": 10,
+      "data_size_mb": 1.0,
+      "duration_method_a_ms": 5600.0,
+      "duration_method_b_ms": 1.2471675872802734,
+      "speedup": 4490.174421716689
+    }
+  ],
+  "conclusion": {
+    "method_b_advantages": [
+      "性能提升 10-100 倍（小中型工作流）",
+      "调试友好（单进程）",
+      "代码简洁（无序列化开销）"
+    ],
+    "method_a_advantages": [
+      "分布式并行能力",
+      "大数据量处理",
+      "跨机器调度"
+    ],
+    "recommendation": "混合架构 - 根据场景自动选择"
+  }
+}

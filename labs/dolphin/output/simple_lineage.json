@@ -1,0 +1,89 @@
+{
+  "graph_id": "demo-001",
+  "pipeline_name": "POI缓冲区分析（简化版）",
+  "created_at": "2025-11-18T16:28:19.043106",
+  "assets": {
+    "asset-0": {
+      "asset_id": "asset-0",
+      "name": "POI点数据",
+      "record_count": 10,
+      "created_at": "2025-11-18T16:28:19.043117"
+    },
+    "asset-1": {
+      "asset_id": "asset-1",
+      "name": "投影转换_output",
+      "record_count": 10,
+      "created_at": "2025-11-18T16:28:19.043119"
+    },
+    "asset-2": {
+      "asset_id": "asset-2",
+      "name": "500米缓冲区_output",
+      "record_count": 10,
+      "created_at": "2025-11-18T16:28:19.043120"
+    },
+    "asset-3": {
+      "asset_id": "asset-3",
+      "name": "面积过滤_output",
+      "record_count": 8,
+      "created_at": "2025-11-18T16:28:19.043121"
+    },
+    "asset-4": {
+      "asset_id": "asset-4",
+      "name": "添加质心_output",
+      "record_count": 8,
+      "created_at": "2025-11-18T16:28:19.043122"
+    }
+  },
+  "executions": {
+    "exec-0": {
+      "execution_id": "exec-0",
+      "operator_name": "投影转换",
+      "input_assets": [
+        "asset-0"
+      ],
+      "output_assets": [
+        "asset-1"
+      ],
+      "elapsed_seconds": 0.004
+    },
+    "exec-1": {
+      "execution_id": "exec-1",
+      "operator_name": "500米缓冲区",
+      "input_assets": [
+        "asset-1"
+      ],
+      "output_assets": [
+        "asset-2"
+      ],
+      "elapsed_seconds": 0.001
+    },
+    "exec-2": {
+      "execution_id": "exec-2",
+      "operator_name": "面积过滤",
+      "input_assets": [
+        "asset-2"
+      ],
+      "output_assets": [
+        "asset-3"
+      ],
+      "elapsed_seconds": 0.002
+    },
+    "exec-3": {
+      "execution_id": "exec-3",
+      "operator_name": "添加质心",
+      "input_assets": [
+        "asset-3"
+      ],
+      "output_assets": [
+        "asset-4"
+      ],
+      "elapsed_seconds": 0.001
+    }
+  },
+  "root_assets": [
+    "asset-0"
+  ],
+  "leaf_assets": [
+    "asset-4"
+  ]
+}

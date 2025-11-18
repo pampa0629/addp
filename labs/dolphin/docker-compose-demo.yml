@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # PostgreSQL - DolphinScheduler 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: dolphin-postgres
+    environment:
+      POSTGRES_USER: dolphinscheduler
+      POSTGRES_PASSWORD: dolphinscheduler123
+      POSTGRES_DB: dolphinscheduler
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dolphin-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dolphinscheduler"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ZooKeeper - DolphinScheduler 协调服务
+  zookeeper:
+    image: zookeeper:3.8
+    container_name: dolphin-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/data
+    networks:
+      - dolphin-network
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # DolphinScheduler Standalone Server (All-in-One)
+  dolphinscheduler:
+    image: apache/dolphinscheduler-standalone-server:3.2.1
+    container_name: dolphin-standalone
+    environment:
+      # 数据库配置
+      DATABASE: postgresql
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dolphinscheduler
+      SPRING_DATASOURCE_USERNAME: dolphinscheduler
+      SPRING_DATASOURCE_PASSWORD: dolphinscheduler123
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      # ZooKeeper 配置
+      REGISTRY_ZOOKEEPER_CONNECT_STRING: zookeeper:2181
+
+      # 时区配置
+      TZ: Asia/Shanghai
+      SPRING_JACKSON_TIME_ZONE: Asia/Shanghai
+
+      # 资源存储配置
+      RESOURCE_STORAGE_TYPE: LOCAL
+      RESOURCE_UPLOAD_PATH: /dolphinscheduler/resources
+
+      # Python 环境
+      PYTHON_LAUNCHER: /usr/bin/python3
+    ports:
+      - "12345:12345"  # API 端口
+    volumes:
+      - dolphin_logs:/opt/dolphinscheduler/logs
+      - dolphin_resources:/dolphinscheduler/resources
+      # 挂载空间算子代码到容器
+      - ./backend/spatial:/opt/dolphinscheduler/spatial:ro
+      - ./backend/requirements.txt:/opt/dolphinscheduler/requirements.txt:ro
+      # 挂载测试脚本
+      - ./scripts/test-in-container.sh:/scripts/test-in-container.sh:ro
+    networks:
+      - dolphin-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12345/dolphinscheduler/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  postgres_data:
+    driver: local
+  zookeeper_data:
+    driver: local
+  dolphin_logs:
+    driver: local
+  dolphin_resources:
+    driver: local
+
+networks:
+  dolphin-network:
+    driver: bridge

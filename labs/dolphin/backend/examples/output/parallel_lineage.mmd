@@ -1,0 +1,16 @@
+graph LR
+    buffer_天安门[buffer]
+    buffer_故宫[buffer]
+    buffer_景山公园[buffer]
+    buffer_北海公园[buffer]
+    buffer_天坛[buffer]
+    union_all[union]
+    buffer_天坛 --> union_all
+    buffer_天安门 --> union_all
+    buffer_北海公园 --> union_all
+    buffer_景山公园 --> union_all
+    buffer_故宫 --> union_all
+    centroid[centroid]
+    union_all --> centroid
+    area[get_area]
+    union_all --> area

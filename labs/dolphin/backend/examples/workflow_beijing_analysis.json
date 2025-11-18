@@ -1,0 +1,46 @@
+{
+  "name": "beijing_analysis",
+  "tasks": [
+    {
+      "id": "create_center",
+      "operator": "create_point",
+      "description": "创建分析中心点",
+      "params": {
+        "lon": 116.404,
+        "lat": 39.915
+      }
+    },
+    {
+      "id": "buffer_1km",
+      "operator": "buffer",
+      "description": "1km 缓冲区",
+      "params": {
+        "input_geom": {
+          "$ref": "create_center"
+        },
+        "distance": 0.009,
+        "segments": 32
+      }
+    },
+    {
+      "id": "hull",
+      "operator": "convex_hull",
+      "description": "计算凸包",
+      "params": {
+        "input_geom": {
+          "$ref": "buffer_1km"
+        }
+      }
+    },
+    {
+      "id": "export_wkt",
+      "operator": "export_to_wkt",
+      "description": "导出为 WKT 格式",
+      "params": {
+        "input_geom": {
+          "$ref": "hull"
+        }
+      }
+    }
+  ]
+}
