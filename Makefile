@@ -59,6 +59,25 @@ define build_one_service
   fi
 endef
 
+# 内部函数：为 Worker 服务编译到统一目录
+define build_one_worker
+  @if [ -d $(1)/cmd/worker ]; then \
+    name=$(2)-worker; \
+    outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/$$name/$(GOOS)-$(GOARCH); \
+    mkdir -p $$outdir $(LOCAL_GOCACHE); \
+    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir$(NC)"; \
+    if [ "$(BUILD_TYPE)" = "debug" ]; then \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../../$$outdir/worker$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
+    else \
+      (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../$$outdir/worker$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
+    fi; \
+  else \
+    true; \
+  fi
+endef
+
 init: ## 初始化项目（创建必要的目录和配置文件）
 	@echo "$(GREEN)初始化项目...$(NC)"
 	@mkdir -p system/data
@@ -149,6 +168,13 @@ build-backend: ## 编译所有后端服务到 dist/{BUILD_TYPE}/backend
 	$(call build_one_service,transfer/backend,transfer)
 	@echo "$(GREEN)后端编译完成！$(NC)"
 
+# ===== Worker 构建 =====
+build-workers: ## 编译所有 Worker 服务到 dist/{BUILD_TYPE}/backend
+	@echo "$(GREEN)编译 Worker 服务（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
+	$(call build_one_worker,transfer/backend,transfer)
+	$(call build_one_worker,meta/backend,meta)
+	@echo "$(GREEN)Worker 编译完成！$(NC)"
+
 # ===== 前端统一构建 =====
 build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|portal}
 	@echo "$(GREEN)编译前端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
@@ -171,12 +197,14 @@ build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|port
 	@echo "$(GREEN)前端编译完成！$(NC)"
 
 # 便捷目标
-build-debug: ## 构建 debug（后端 + 前端）输出到 dist/debug
+build-debug: ## 构建 debug（后端 + 前端 + workers）输出到 dist/debug
 	@$(MAKE) BUILD_TYPE=debug build-backend
+	@$(MAKE) BUILD_TYPE=debug build-workers
 	@$(MAKE) BUILD_TYPE=debug build-frontend
 
-build-release: ## 构建 release（后端 + 前端）输出到 dist/release
+build-release: ## 构建 release（后端 + 前端 + workers）输出到 dist/release
 	@$(MAKE) BUILD_TYPE=release build-backend
+	@$(MAKE) BUILD_TYPE=release build-workers
 	@$(MAKE) BUILD_TYPE=release build-frontend
 
 clean-dist: ## 清理 dist 构建产物

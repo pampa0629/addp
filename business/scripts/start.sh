@@ -90,24 +90,48 @@ fi
 # Start services
 echo -e "${GREEN}Starting business infrastructure services...${NC}"
 
-# Ensure POSTGRES_IMAGE is set (inherited from restart.sh or default to ARM64)
+# Auto-detect CPU architecture and set PostgreSQL image
 if [ -z "${POSTGRES_IMAGE}" ]; then
     ARCH=$(uname -m)
+    echo -e "${YELLOW}🔍 Detecting CPU architecture: ${ARCH}${NC}"
     case "${ARCH}" in
         aarch64|arm64)
             export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
-            echo -e "${YELLOW}🏗️  Using ARM64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
+            export DOCKER_PLATFORM="linux/arm64"
+            echo -e "${GREEN}✓ Using ARM64 images${NC}"
+            echo -e "  PostgreSQL: ${POSTGRES_IMAGE}"
+            echo -e "  Docker Platform: ${DOCKER_PLATFORM}"
             ;;
         x86_64)
             export POSTGRES_IMAGE="postgis/postgis:15-3.4"
-            echo -e "${YELLOW}🏗️  Using AMD64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
+            export DOCKER_PLATFORM="linux/amd64"
+            echo -e "${GREEN}✓ Using AMD64 images${NC}"
+            echo -e "  PostgreSQL: ${POSTGRES_IMAGE}"
+            echo -e "  Docker Platform: ${DOCKER_PLATFORM}"
             ;;
         *)
-            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default ARM64 image${NC}"
+            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, defaulting to ARM64 images${NC}"
             export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+            export DOCKER_PLATFORM="linux/arm64"
+            ;;
+    esac
+else
+    echo -e "${GREEN}✓ Using configured POSTGRES_IMAGE: ${POSTGRES_IMAGE}${NC}"
+    # Also detect platform for MinIO even if POSTGRES_IMAGE is set
+    ARCH=$(uname -m)
+    case "${ARCH}" in
+        aarch64|arm64)
+            export DOCKER_PLATFORM="linux/arm64"
+            ;;
+        x86_64)
+            export DOCKER_PLATFORM="linux/amd64"
+            ;;
+        *)
+            export DOCKER_PLATFORM="linux/arm64"
             ;;
     esac
 fi
+echo ""
 
 docker-compose up -d
 

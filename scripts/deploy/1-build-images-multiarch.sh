@@ -238,8 +238,8 @@ build_arch_image() {
                 return 1
             fi
             ;;
-        transfer-worker)
-            # Transfer worker special case
+        transfer-worker|meta-worker)
+            # Worker services special case
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
 

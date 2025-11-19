@@ -17,9 +17,12 @@ services:
   # ==================== PostgreSQL with PostGIS - 业务数据库 ====================
   # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
   # 使用 PostGIS 扩展支持空间数据
+  # 镜像根据CPU架构自动选择:
+  #   - ARM64: imresamu/postgis-arm64:15-3.4
+  #   - AMD64: postgis/postgis:15-3.4
   # 直接从 Docker Hub 拉取官方镜像，无需自建仓库
   postgres:
-    image: postgis/postgis:15-3.4-alpine
+    image: ${POSTGRES_IMAGE:-postgis/postgis:15-3.4}
     container_name: business-postgres
     environment:
       POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
@@ -50,9 +53,11 @@ services:
 
   # ==================== MinIO - 业务对象存储 ====================
   # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
+  # MinIO 官方镜像支持多架构，自动适配服务器 CPU
   # 直接从 Docker Hub 拉取官方镜像，无需自建仓库
   minio:
     image: minio/minio:latest
+    platform: ${DOCKER_PLATFORM:-linux/amd64}  # 自动适配 CPU 架构
     container_name: business-minio
     command: server /data --console-address ":9001"
     environment:

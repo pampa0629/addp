@@ -19,13 +19,21 @@ import (
 	"gorm.io/gorm"
 )
 
+// TaskQueue 任务队列接口（避免循环依赖）
+type TaskQueue interface {
+	EnqueueScanTask(ctx context.Context, runID, taskID, tenantID uint) error
+	Close() error
+}
+
 // ScanTaskService 管理扫描任务、运行队列与调度
 type ScanTaskService struct {
 	db              *gorm.DB
 	scanService     *ScanServiceNew
 	resourceService *ResourceService
 	log             *slog.Logger
+	taskQueue       TaskQueue // 任务队列（可选，用于异步执行）
 
+	// 本地队列（当 taskQueue 为 nil 时使用）
 	queue        chan uint
 	workers      int
 	stopCh       chan struct{}
@@ -69,14 +77,22 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceServic
 	}
 }
 
+// SetTaskQueue 设置任务队列（用于异步执行）
+func (s *ScanTaskService) SetTaskQueue(queue TaskQueue) {
+	s.taskQueue = queue
+}
+
 // Start 启动任务服务（队列消费者 + 定时调度）
+// 如果配置了 taskQueue，则只启动定时调度，不启动本地 worker
 func (s *ScanTaskService) Start(ctx context.Context) error {
 	s.log.Info("启动扫描任务服务")
 
-	// 启动工作协程
-	for i := 0; i < s.workers; i++ {
-		s.wg.Add(1)
-		go s.workerLoop()
+	// 如果没有配置任务队列，启动本地工作协程
+	if s.taskQueue == nil {
+		for i := 0; i < s.workers; i++ {
+			s.wg.Add(1)
+			go s.workerLoop()
+		}
 	}
 
 	// 恢复未完成的运行
@@ -202,6 +218,36 @@ func (s *ScanTaskService) unscheduleTask(taskID uint) {
 }
 
 func (s *ScanTaskService) enqueueRun(runID uint) {
+	// 如果配置了任务队列，使用任务队列
+	if s.taskQueue != nil {
+		// 获取 run 信息以提取 tenantID 和 taskID
+		var run models.ScanTaskRun
+		if err := s.db.First(&run, runID).Error; err != nil {
+			s.log.Error("获取运行信息失败", "run_id", runID, "error", err)
+			return
+		}
+
+		ctx := context.Background()
+		taskID := uint(0)
+		if run.TaskID != nil {
+			taskID = *run.TaskID
+		}
+
+		if err := s.taskQueue.EnqueueScanTask(ctx, runID, taskID, run.TenantID); err != nil {
+			s.log.Error("任务入队失败", "run_id", runID, "error", err)
+			// 回退：标记运行失败
+			s.db.Model(&models.ScanTaskRun{}).
+				Where("id = ?", runID).
+				Updates(map[string]interface{}{
+					"status":           runStatusFailed,
+					"progress_message": fmt.Sprintf("任务入队失败: %v", err),
+					"updated_at":       time.Now(),
+				})
+		}
+		return
+	}
+
+	// 否则使用本地队列
 	select {
 	case s.queue <- runID:
 	default:
@@ -255,6 +301,11 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 
 	s.enqueueRun(run.ID)
 	return run, nil
+}
+
+// ExecuteScanRun 执行扫描运行（供 Worker 调用）
+func (s *ScanTaskService) ExecuteScanRun(ctx context.Context, runID uint) error {
+	return s.executeRun(ctx, runID)
 }
 
 func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
@@ -960,4 +1011,226 @@ func cloneJSONMap(m models.JSONMap) models.JSONMap {
 		clone[k] = v
 	}
 	return clone
+}
+
+// CreateOrUpdateTaskFromScanConfig 根据资源的扫描配置创建或更新自动扫描任务
+func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModels.Resource) error {
+	if resource == nil || resource.ScanConfig == nil || !resource.ScanConfig.Enabled {
+		return nil
+	}
+
+	scanConfig := resource.ScanConfig
+	tenantID := uint(0)
+	if resource.TenantID != nil {
+		tenantID = *resource.TenantID
+	}
+
+	// 查找是否已有该资源的自动扫描任务
+	var existingTask models.ScanTask
+	err := s.db.Where("resource_id = ? AND tenant_id = ? AND name LIKE ?",
+		resource.ID, tenantID, "自动扫描%").First(&existingTask).Error
+
+	// 构建任务名称
+	taskName := fmt.Sprintf("自动扫描 - %s", resource.Name)
+
+	// 构建 Cron 表达式
+	cronExpr, err := s.buildCronExpression(scanConfig)
+	if err != nil {
+		return fmt.Errorf("构建 Cron 表达式失败: %w", err)
+	}
+
+	// 构建任务参数
+	parameters := models.JSONMap{
+		"scan_depth": scanConfig.ScanDepth,
+	}
+	if len(scanConfig.SchemaNames) > 0 {
+		parameters["schema_names"] = scanConfig.SchemaNames
+	}
+	if len(scanConfig.ObjectPaths) > 0 {
+		parameters["object_paths"] = scanConfig.ObjectPaths
+	}
+
+	// 如果任务不存在，创建新任务
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		task := &models.ScanTask{
+			TenantID:       tenantID,
+			ResourceID:     resource.ID,
+			Name:           taskName,
+			Description:    "由存储引擎注册时自动创建",
+			ScheduleType:   scanConfig.ScheduleType,
+			CronExpression: cronExpr,
+			Enabled:        true,
+			Parameters:     parameters,
+		}
+
+		if err := s.db.Create(task).Error; err != nil {
+			return fmt.Errorf("创建自动扫描任务失败: %w", err)
+		}
+
+		// 调度任务
+		if err := s.scheduleTask(task); err != nil {
+			s.log.Warn("调度任务失败", "task_id", task.ID, "error", err)
+		}
+
+		s.log.Info("自动扫描任务已创建",
+			"task_id", task.ID,
+			"resource_id", resource.ID,
+			"resource_name", resource.Name,
+			"schedule_type", scanConfig.ScheduleType)
+
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("查询已有任务失败: %w", err)
+	}
+
+	// 任务已存在，更新配置
+	updates := map[string]interface{}{
+		"name":            taskName,
+		"schedule_type":   scanConfig.ScheduleType,
+		"cron_expression": cronExpr,
+		"enabled":         scanConfig.Enabled,
+		"parameters":      parameters,
+		"updated_at":      time.Now(),
+	}
+
+	if err := s.db.Model(&existingTask).Updates(updates).Error; err != nil {
+		return fmt.Errorf("更新自动扫描任务失败: %w", err)
+	}
+
+	// 重新调度任务
+	s.unscheduleTask(existingTask.ID)
+	updatedTask := existingTask
+	updatedTask.Name = taskName
+	updatedTask.ScheduleType = scanConfig.ScheduleType
+	updatedTask.CronExpression = cronExpr
+	updatedTask.Enabled = scanConfig.Enabled
+	updatedTask.Parameters = parameters
+
+	if err := s.scheduleTask(&updatedTask); err != nil {
+		s.log.Warn("重新调度任务失败", "task_id", updatedTask.ID, "error", err)
+	}
+
+	s.log.Info("自动扫描任务已更新",
+		"task_id", existingTask.ID,
+		"resource_id", resource.ID,
+		"resource_name", resource.Name,
+		"schedule_type", scanConfig.ScheduleType)
+
+	return nil
+}
+
+// DeleteTaskByResourceID 删除指定资源关联的所有自动扫描任务
+func (s *ScanTaskService) DeleteTaskByResourceID(resourceID uint) error {
+	var tasks []models.ScanTask
+	if err := s.db.Where("resource_id = ? AND name LIKE ?", resourceID, "自动扫描%").Find(&tasks).Error; err != nil {
+		return fmt.Errorf("查询资源关联任务失败: %w", err)
+	}
+
+	if len(tasks) == 0 {
+		return nil // 没有任务需要删除
+	}
+
+	for _, task := range tasks {
+		// 取消调度
+		s.unscheduleTask(task.ID)
+
+		// 删除任务
+		if err := s.db.Delete(&task).Error; err != nil {
+			s.log.Warn("删除任务失败", "task_id", task.ID, "error", err)
+			continue
+		}
+
+		s.log.Info("自动扫描任务已删除", "task_id", task.ID, "resource_id", resourceID)
+	}
+
+	return nil
+}
+
+// buildCronExpression 根据 ScanConfig 构建 Cron 表达式
+func (s *ScanTaskService) buildCronExpression(config *commonModels.ScanConfig) (string, error) {
+	if config == nil {
+		return "", errors.New("扫描配置为空")
+	}
+
+	switch config.ScheduleType {
+	case "manual":
+		return "", nil // 手动触发，不需要 Cron 表达式
+
+	case "cron":
+		if config.CronExpression == "" {
+			return "", errors.New("Cron 类型必须提供 cron_expression")
+		}
+		// 验证 Cron 表达式
+		if _, err := s.parser.Parse(config.CronExpression); err != nil {
+			return "", fmt.Errorf("无效的 Cron 表达式: %w", err)
+		}
+		return config.CronExpression, nil
+
+	case "daily":
+		// 每日执行：从 schedule_time 解析 HH:mm
+		hour, minute := 0, 0
+		if config.ScheduleTime != "" {
+			parts := strings.Split(config.ScheduleTime, ":")
+			if len(parts) == 2 {
+				if h, err := strconv.Atoi(parts[0]); err == nil {
+					hour = h
+				}
+				if m, err := strconv.Atoi(parts[1]); err == nil {
+					minute = m
+				}
+			}
+		}
+		return fmt.Sprintf("%d %d * * *", minute, hour), nil
+
+	case "weekly":
+		// 每周执行：从 schedule_time 解析 HH:mm，从 schedule_value 获取星期几
+		hour, minute := 0, 0
+		if config.ScheduleTime != "" {
+			parts := strings.Split(config.ScheduleTime, ":")
+			if len(parts) == 2 {
+				if h, err := strconv.Atoi(parts[0]); err == nil {
+					hour = h
+				}
+				if m, err := strconv.Atoi(parts[1]); err == nil {
+					minute = m
+				}
+			}
+		}
+		days := "0" // 默认周日
+		if len(config.ScheduleValue) > 0 {
+			dayStrs := make([]string, len(config.ScheduleValue))
+			for i, day := range config.ScheduleValue {
+				dayStrs[i] = strconv.Itoa(day)
+			}
+			days = strings.Join(dayStrs, ",")
+		}
+		return fmt.Sprintf("%d %d * * %s", minute, hour, days), nil
+
+	case "monthly":
+		// 每月执行：从 schedule_time 解析 HH:mm，从 schedule_value 获取日期
+		hour, minute := 0, 0
+		if config.ScheduleTime != "" {
+			parts := strings.Split(config.ScheduleTime, ":")
+			if len(parts) == 2 {
+				if h, err := strconv.Atoi(parts[0]); err == nil {
+					hour = h
+				}
+				if m, err := strconv.Atoi(parts[1]); err == nil {
+					minute = m
+				}
+			}
+		}
+		dates := "1" // 默认每月1号
+		if len(config.ScheduleValue) > 0 {
+			dateStrs := make([]string, len(config.ScheduleValue))
+			for i, date := range config.ScheduleValue {
+				dateStrs[i] = strconv.Itoa(date)
+			}
+			dates = strings.Join(dateStrs, ",")
+		}
+		return fmt.Sprintf("%d %d %s * *", minute, hour, dates), nil
+
+	default:
+		return "", fmt.Errorf("不支持的调度类型: %s", config.ScheduleType)
+	}
 }

@@ -1,0 +1,53 @@
+# MVT 应用配置
+# 使用 ADDP 系统的 Redis 和 MinIO
+
+# 服务配置
+port: 8090
+frontend_url: http://localhost:5180
+log_level: info
+
+# PostgreSQL / PostGIS 配置（用于 MVT 实时生成）
+database:
+  host: 127.0.0.1
+  port: "5433"
+  name: business
+  user: business
+  password: business_password
+  max_open_conns: 50
+  max_idle_conns: 10
+  conn_max_lifetime: 5m
+
+# Redis 缓存配置（使用 ADDP 系统 Redis）
+redis:
+  host: 127.0.0.1
+  port: "6379"
+  password: "addp_redis"           # ADDP 系统 Redis 密码
+  cache_ttl: 24h                   # 24小时过期，配合 LRU 驱逐
+  # 注意：ADDP Redis 已配置 maxmemory 2gb + allkeys-lru
+  # 新瓦片进来时自动驱逐最久未访问的老瓦片
+
+# MinIO 对象存储配置（使用 ADDP 系统 MinIO，替代 PostgreSQL 缓存表）
+minio:
+  endpoint: "127.0.0.1:9002"       # ADDP MinIO API 端口（注意是 9002 不是 9000）
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "addp-mvt-cache"         # MVT 专用 bucket
+  use_ssl: false                   # 本地开发使用 HTTP
+  region: ""                       # 可选
+
+# 缓存策略：控制浏览请求何时将瓦片持久化写入 MinIO
+# 注意：预热阶段的瓦片始终持久化
+cache_policy:
+  # 生成耗时超过该阈值时落 MinIO（如 1s、1500ms）
+  persist_min_duration: 1s
+  # 原始 MVT（压缩前）的大小超过该阈值（KB）时落 MinIO
+  persist_min_raw_kb: 50
+  # 内存 LRU 容量（扩大以应对 MinIO 延迟）
+  memory_lru_size: 8192
+
+# 预热：启动后自动生成低缩放层级的瓦片并缓存
+# 预热阶段：所有生成的瓦片强制持久化到 MinIO
+prewarm:
+  enabled: true
+  max_zoom: 9                      # 预热 z=0..9
+  concurrency: 10                  # 并发 worker 数

@@ -11,6 +11,7 @@ import (
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/redis/go-redis/v9"
+	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
 
@@ -46,6 +47,11 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, err
 	}
 
+	// 验证扫描配置
+	if err := s.validateScanConfig(req.ScanConfig); err != nil {
+		return nil, fmt.Errorf("扫描配置验证失败: %w", err)
+	}
+
 	// 加密敏感字段
 	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
 	if err != nil {
@@ -57,6 +63,7 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		ResourceType:   req.ResourceType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
+		ScanConfig:     req.ScanConfig, // 保存扫描配置
 		CreatedBy:      &createdBy,
 		TenantID:       user.TenantID, // 继承用户的租户ID
 		IsActive:       true,
@@ -80,6 +87,11 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 		return nil, errors.New("无效的请求数据")
 	}
 
+	// 验证扫描配置
+	if err := s.validateScanConfig(req.ScanConfig); err != nil {
+		return nil, fmt.Errorf("扫描配置验证失败: %w", err)
+	}
+
 	encryptedConnInfo, err := s.encryptSensitiveFields(req.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("加密连接信息失败: %w", err)
@@ -95,6 +107,7 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 		ResourceType:   req.ResourceType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
+		ScanConfig:     req.ScanConfig, // 保存扫描配置
 		TenantID:       tenantPtr,
 		IsActive:       true,
 		CreatedBy:      createdBy,
@@ -189,6 +202,13 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 		return nil, err
 	}
 
+	// 验证扫描配置
+	if req.ScanConfig != nil {
+		if err := s.validateScanConfig(req.ScanConfig); err != nil {
+			return nil, fmt.Errorf("扫描配置验证失败: %w", err)
+		}
+	}
+
 	if req.Name != nil {
 		resource.Name = *req.Name
 	}
@@ -208,6 +228,9 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 	}
 	if req.IsActive != nil {
 		resource.IsActive = *req.IsActive
+	}
+	if req.ScanConfig != nil {
+		resource.ScanConfig = req.ScanConfig
 	}
 
 	if err := s.repo.Update(resource); err != nil {
@@ -547,4 +570,41 @@ func (s *ResourceService) ensureResourceManagementPermission(user *models.User) 
 		return nil
 	}
 	return ErrResourceForbidden
+}
+
+// validateScanConfig 验证扫描配置的有效性
+func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
+	if config == nil || !config.Enabled {
+		return nil
+	}
+
+	// 验证调度类型
+	validScheduleTypes := map[string]bool{
+		"manual":  true,
+		"daily":   true,
+		"weekly":  true,
+		"monthly": true,
+		"cron":    true,
+	}
+	if !validScheduleTypes[config.ScheduleType] {
+		return fmt.Errorf("无效的调度类型: %s", config.ScheduleType)
+	}
+
+	// 验证 Cron 表达式
+	if config.ScheduleType == "cron" {
+		if config.CronExpression == "" {
+			return errors.New("调度类型为 cron 时必须提供 cron_expression")
+		}
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+		if _, err := parser.Parse(config.CronExpression); err != nil {
+			return fmt.Errorf("无效的 Cron 表达式: %w", err)
+		}
+	}
+
+	// 验证扫描深度
+	if config.ScanDepth != "" && config.ScanDepth != "shallow" && config.ScanDepth != "deep" {
+		return fmt.Errorf("无效的扫描深度: %s (必须是 shallow 或 deep)", config.ScanDepth)
+	}
+
+	return nil
 }

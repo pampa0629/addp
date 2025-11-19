@@ -33,6 +33,13 @@ type ResourceService struct {
 	cacheTTL        time.Duration                // 缓存生存时间，默认 5 分钟
 	log             *slog.Logger
 	eventSubscriber *events.ResourceEventSubscriber // Redis 事件订阅器
+	taskService     ScanTaskServiceInterface        // 扫描任务服务（用于处理 ScanConfig）
+}
+
+// ScanTaskServiceInterface 扫描任务服务接口（避免循环依赖）
+type ScanTaskServiceInterface interface {
+	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Resource) error
+	DeleteTaskByResourceID(resourceID uint) error
 }
 
 func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *ResourceService {
@@ -78,6 +85,12 @@ func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient 
 	}
 
 	return service
+}
+
+// SetTaskService 设置扫描任务服务（在 main.go 中初始化后调用）
+func (s *ResourceService) SetTaskService(taskService ScanTaskServiceInterface) {
+	s.taskService = taskService
+	s.log.Info("扫描任务服务已注入到资源服务")
 }
 
 // ensureInternalClient 尝试按需初始化内部客户端（用于本地脚本未显式传入密钥的情况）
@@ -455,19 +468,62 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 		"timestamp", event.Timestamp)
 
 	switch event.Action {
-	case events.ActionCreate:
-		// 资源创建：不需要特殊处理，等待下次访问时自动加载
-		s.log.Debug("资源已创建，等待首次访问时加载", "resource_id", event.ResourceID)
-
-	case events.ActionUpdate:
-		// 资源更新：清除缓存，强制下次访问时重新获取
+	case events.ActionCreate, events.ActionUpdate:
+		// 资源创建或更新：检查 ScanConfig
 		s.ClearResourceCache(event.ResourceID)
-		s.log.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+
+		// 如果配置了 taskService，尝试处理扫描配置
+		if s.taskService != nil && s.internalClient != nil {
+			// 获取资源详情（包含 ScanConfig）
+			resource, err := s.internalClient.GetResource(event.ResourceID)
+			if err != nil {
+				s.log.Error("获取资源详情失败，跳过扫描配置处理",
+					"resource_id", event.ResourceID,
+					"error", err)
+				return nil // 不阻塞事件处理
+			}
+
+			// 检查是否有扫描配置
+			if resource.ScanConfig != nil && resource.ScanConfig.Enabled {
+				// 创建或更新扫描任务
+				if err := s.taskService.CreateOrUpdateTaskFromScanConfig(resource); err != nil {
+					s.log.Error("处理扫描配置失败",
+						"resource_id", event.ResourceID,
+						"error", err)
+					return err
+				}
+				s.log.Info("扫描配置已同步到扫描任务", "resource_id", event.ResourceID)
+			} else {
+				// 如果扫描配置被禁用或删除，删除对应的自动任务
+				if err := s.taskService.DeleteTaskByResourceID(event.ResourceID); err != nil {
+					s.log.Warn("删除自动扫描任务失败",
+						"resource_id", event.ResourceID,
+						"error", err)
+				} else {
+					s.log.Info("扫描配置已禁用，自动任务已删除", "resource_id", event.ResourceID)
+				}
+			}
+		}
+
+		if event.Action == events.ActionCreate {
+			s.log.Debug("资源已创建", "resource_id", event.ResourceID)
+		} else {
+			s.log.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+		}
 
 	case events.ActionDelete:
-		// 资源删除：清除缓存
+		// 资源删除：清除缓存并删除扫描任务
 		s.ClearResourceCache(event.ResourceID)
-		s.log.Info("资源已删除，缓存已清除", "resource_id", event.ResourceID)
+
+		if s.taskService != nil {
+			if err := s.taskService.DeleteTaskByResourceID(event.ResourceID); err != nil {
+				s.log.Warn("删除资源关联的扫描任务失败",
+					"resource_id", event.ResourceID,
+					"error", err)
+			} else {
+				s.log.Info("资源已删除，关联任务已清理", "resource_id", event.ResourceID)
+			}
+		}
 		// TODO: 可以考虑删除相关的元数据（meta_node, meta_item）
 
 	default:

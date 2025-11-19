@@ -20,6 +20,9 @@ type Config struct {
     // Redis 配置
     Redis RedisConfig `yaml:"redis"`
 
+    // MinIO 配置
+    MinIO MinIOConfig `yaml:"minio"`
+
     // 缓存策略配置
     CachePolicy CachePolicyConfig `yaml:"cache_policy"`
 
@@ -56,10 +59,22 @@ type RedisConfig struct {
 
 // CachePolicyConfig 缓存落库策略（阈值）
 type CachePolicyConfig struct {
-    // 生成耗时达到该阈值则落库（默认 3s）
+    // 生成耗时达到该阈值则落库（默认 1s）
     PersistMinDuration time.Duration `yaml:"persist_min_duration"`
-    // 压缩前（原始 MVT）大小达到该阈值（单位 KB）则落库（默认 100KB）
+    // 压缩前（原始 MVT）大小达到该阈值（单位 KB）则落库（默认 50KB）
     PersistMinRawKB    int           `yaml:"persist_min_raw_kb"`
+    // 内存 LRU 容量（默认 8192）
+    MemoryLRUSize      int           `yaml:"memory_lru_size"`
+}
+
+// MinIOConfig MinIO 对象存储配置
+type MinIOConfig struct {
+    Endpoint  string `yaml:"endpoint"`
+    AccessKey string `yaml:"access_key"`
+    SecretKey string `yaml:"secret_key"`
+    Bucket    string `yaml:"bucket"`
+    UseSSL    bool   `yaml:"use_ssl"`
+    Region    string `yaml:"region"`
 }
 
 // PrewarmConfig 预热
@@ -111,12 +126,22 @@ func Load() (*Config, error) {
             Redis: RedisConfig{
                 Host:      "localhost",
                 Port:      "6379",
+                Password:  "addp_redis",
                 CacheTTL:  24 * time.Hour,
                 MaxMemory: "2gb",
             },
+            MinIO: MinIOConfig{
+                Endpoint:  "localhost:9002",
+                AccessKey: "minioadmin",
+                SecretKey: "minioadmin",
+                Bucket:    "addp-mvt-cache",
+                UseSSL:    false,
+                Region:    "",
+            },
             CachePolicy: CachePolicyConfig{
-                PersistMinDuration: 3 * time.Second,
-                PersistMinRawKB:    100,
+                PersistMinDuration: 1 * time.Second,
+                PersistMinRawKB:    50,
+                MemoryLRUSize:      8192,
             },
             Prewarm: PrewarmConfig{
                 Enabled:     true,
@@ -187,6 +212,27 @@ func Load() (*Config, error) {
     if v := os.Getenv("CACHE_MAX_MEMORY"); v != "" {
         config.Redis.MaxMemory = v
     }
+
+    // MinIO 环境变量覆盖
+    if v := os.Getenv("MINIO_ENDPOINT"); v != "" {
+        config.MinIO.Endpoint = v
+    }
+    if v := os.Getenv("MINIO_ACCESS_KEY"); v != "" {
+        config.MinIO.AccessKey = v
+    }
+    if v := os.Getenv("MINIO_SECRET_KEY"); v != "" {
+        config.MinIO.SecretKey = v
+    }
+    if v := os.Getenv("MINIO_BUCKET"); v != "" {
+        config.MinIO.Bucket = v
+    }
+    if v := os.Getenv("MINIO_USE_SSL"); v != "" {
+        config.MinIO.UseSSL = v == "1" || v == "true" || v == "TRUE"
+    }
+    if v := os.Getenv("MINIO_REGION"); v != "" {
+        config.MinIO.Region = v
+    }
+
     // 缓存策略环境变量
     if v := os.Getenv("CACHE_PERSIST_MIN_DURATION"); v != "" {
         if duration, err := time.ParseDuration(v); err == nil {
@@ -198,6 +244,14 @@ func Load() (*Config, error) {
             config.CachePolicy.PersistMinRawKB = n
         }
     }
+    if v := os.Getenv("CACHE_MEMORY_LRU_SIZE"); v != "" {
+        if n, err := strconv.Atoi(v); err == nil {
+            if n > 0 {
+                config.CachePolicy.MemoryLRUSize = n
+            }
+        }
+    }
+
     // 预热环境变量
     if v := os.Getenv("PREWARM_ENABLED"); v != "" {
         config.Prewarm.Enabled = v == "1" || v == "true" || v == "TRUE"

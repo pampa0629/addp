@@ -192,12 +192,41 @@ echo "  步骤 5/6: 拉取官方镜像"
 echo "=========================================="
 echo ""
 
-echo "==> 拉取 PostGIS 镜像（官方镜像）..."
-docker pull postgis/postgis:15-3.4-alpine
+# Detect CPU architecture
+ARCH=$(uname -m)
+echo "==> 检测 CPU 架构: ${ARCH}"
+
+case "${ARCH}" in
+    aarch64|arm64)
+        POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+        DOCKER_PLATFORM="linux/arm64"
+        DISPLAY_ARCH="ARM64"
+        echo "✅ 使用 ARM64 镜像"
+        echo "   PostgreSQL: ${POSTGRES_IMAGE}"
+        echo "   Docker Platform: ${DOCKER_PLATFORM}"
+        ;;
+    x86_64)
+        POSTGRES_IMAGE="postgis/postgis:15-3.4"
+        DOCKER_PLATFORM="linux/amd64"
+        DISPLAY_ARCH="AMD64"
+        echo "✅ 使用 AMD64 镜像"
+        echo "   PostgreSQL: ${POSTGRES_IMAGE}"
+        echo "   Docker Platform: ${DOCKER_PLATFORM}"
+        ;;
+    *)
+        echo "❌ 不支持的架构: ${ARCH}"
+        echo "支持的架构: ARM64 (aarch64/arm64) 或 AMD64 (x86_64)"
+        exit 1
+        ;;
+esac
 echo ""
 
-echo "==> 拉取 MinIO 镜像（官方镜像）..."
-docker pull minio/minio:latest
+echo "==> 拉取 PostGIS 镜像（${DISPLAY_ARCH} 架构）..."
+docker pull "${POSTGRES_IMAGE}"
+echo ""
+
+echo "==> 拉取 MinIO 镜像（${DISPLAY_ARCH} 架构）..."
+docker pull --platform="${DOCKER_PLATFORM}" minio/minio:latest
 echo ""
 
 echo "✅ 所有官方镜像拉取成功"
@@ -213,6 +242,9 @@ echo "==> 停止旧服务（如果存在）..."
 docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
 
 echo "==> 启动 Business 基础设施..."
+# Export POSTGRES_IMAGE and DOCKER_PLATFORM for docker-compose
+export POSTGRES_IMAGE
+export DOCKER_PLATFORM
 if docker-compose -f "$COMPOSE_FILE" up -d; then
     echo "✅ 服务启动成功"
 else

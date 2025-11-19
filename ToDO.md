@@ -10,7 +10,7 @@ doing：
     默认支持postgis，根据cpu自动拉取镜像
     初始化脚本检查
 
-*，meta worker的剥离；
+*，meta worker的剥离；to test
 
 *，mvt 快显的集成；
 

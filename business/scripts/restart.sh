@@ -25,11 +25,13 @@ echo -e "${YELLOW}🔍 Detecting CPU architecture: ${ARCH}${NC}"
 case "${ARCH}" in
     aarch64|arm64)
         POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+        DOCKER_PLATFORM="linux/arm64"
         DISPLAY_ARCH="ARM64"
         echo -e "${GREEN}✓ Using ARM64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
         ;;
     x86_64)
         POSTGRES_IMAGE="postgis/postgis:15-3.4"
+        DOCKER_PLATFORM="linux/amd64"
         DISPLAY_ARCH="AMD64"
         echo -e "${GREEN}✓ Using AMD64 PostGIS image: ${POSTGRES_IMAGE}${NC}"
         ;;
@@ -107,6 +109,7 @@ echo ""
 echo -e "${YELLOW}📥 Pulling images for ${DISPLAY_ARCH} architecture...${NC}"
 
 export POSTGRES_IMAGE
+export DOCKER_PLATFORM
 
 # Pull PostgreSQL + PostGIS image with retries
 echo -e "   Pulling ${POSTGRES_IMAGE}..."
@@ -129,10 +132,10 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     fi
 done
 
-# Pull MinIO image
-echo -e "   Pulling minio/minio:latest..."
-if docker pull minio/minio:latest; then
-    echo -e "${GREEN}✓ MinIO image pulled successfully${NC}"
+# Pull MinIO image with correct architecture
+echo -e "   Pulling minio/minio:latest for ${DISPLAY_ARCH}..."
+if docker pull --platform="${DOCKER_PLATFORM}" minio/minio:latest; then
+    echo -e "${GREEN}✓ MinIO image pulled successfully (${DOCKER_PLATFORM})${NC}"
 else
     echo -e "${RED}✗ Failed to pull MinIO image${NC}"
     exit 1

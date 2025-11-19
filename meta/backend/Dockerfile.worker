@@ -1,0 +1,14 @@
+# Meta Worker Dockerfile (prebuilt binary)
+
+FROM alpine:latest
+
+WORKDIR /app
+
+# Install ca-certificates for HTTPS requests
+RUN apk add --no-cache ca-certificates
+
+# Copy precompiled binary produced by scripts/deploy/0-compile-binaries.sh
+# or `make build-meta-worker`, then move/copy to meta/backend/worker
+COPY meta/backend/worker ./worker
+
+CMD ["./worker"]

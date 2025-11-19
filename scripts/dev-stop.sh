@@ -86,6 +86,21 @@ if [ -d ".dev-pids" ]; then
     fi
   fi
 
+  if [ -f ".dev-pids/meta-worker.pid" ]; then
+    META_WORKER_PID=$(cat .dev-pids/meta-worker.pid)
+    if ps -p $META_WORKER_PID > /dev/null 2>&1; then
+      kill $META_WORKER_PID
+      # 等待进程真正退出
+      for i in {1..10}; do
+        if ! ps -p $META_WORKER_PID > /dev/null 2>&1; then
+          break
+        fi
+        sleep 0.5
+      done
+      echo "✓ Meta Worker 已停止 (PID: $META_WORKER_PID)"
+    fi
+  fi
+
   if [ -f ".dev-pids/gateway.pid" ]; then
     GATEWAY_PID=$(cat .dev-pids/gateway.pid)
     if ps -p $GATEWAY_PID > /dev/null 2>&1; then

@@ -2,6 +2,7 @@ package config
 
 import (
 	"strings"
+	"time"
 
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
@@ -38,10 +39,16 @@ type Config struct {
 	// 在线向量化服务配置
 	EmbeddingService EmbeddingServiceConfig
 
-	// Redis 配置（用于资源变更事件同步）
-	RedisAddr     string
+	// Redis 配置（用于资源变更事件同步和任务队列）
+	RedisHost     string
+	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	// Worker 配置
+	ConcurrentTasks int
+	MaxRetries      int
+	RetryDelay      time.Duration
 }
 
 func resolveElasticsearchURL() string {
@@ -97,9 +104,15 @@ func LoadConfig() *Config {
 	cfg.ElasticsearchDisableTLSVerify = commonConfig.GetEnvBool("ELASTICSEARCH_SKIP_VERIFY", false)
 
 	// Redis 配置
-	cfg.RedisAddr = commonConfig.GetEnv("REDIS_ADDR", "localhost:6379")
+	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")
+	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
+
+	// Worker 配置
+	cfg.ConcurrentTasks = commonConfig.GetEnvInt("CONCURRENT_TASKS", 10)
+	cfg.MaxRetries = commonConfig.GetEnvInt("MAX_RETRIES", 3)
+	cfg.RetryDelay = commonConfig.GetEnvDuration("RETRY_DELAY", "30s")
 
 	defaultHost := cfg.DBHost
 	if defaultHost == "" {

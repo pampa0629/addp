@@ -354,8 +354,8 @@ build_service() {
     local dockerfile_path=""
 
     case "$service" in
-        transfer-worker)
-            # Transfer worker: special case with worker binary
+        transfer-worker|meta-worker)
+            # Worker services: special case with worker binary
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
 
@@ -618,6 +618,7 @@ main() {
         "meta-backend:meta/backend"
         "transfer-backend:transfer/backend"
         "transfer-worker:transfer/backend"
+        "meta-worker:meta/backend"
         "gateway:gateway"
         "portal:portal/frontend"
         "system-frontend:system/frontend"

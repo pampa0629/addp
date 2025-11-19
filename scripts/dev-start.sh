@@ -167,7 +167,7 @@ echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
 echo ""
 
 # 6. 启动 Transfer Worker
-echo -e "${YELLOW}Step 6/7: 启动 Transfer Worker${NC}"
+echo -e "${YELLOW}Step 6/8: 启动 Transfer Worker${NC}"
 cd transfer/backend
 go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true
 go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1 &
@@ -177,8 +177,19 @@ echo -e "${GREEN}✓ Transfer Worker 启动中 (PID: $TRANSFER_WORKER_PID)${NC}"
 echo "  注意: Transfer Worker 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
+# 6.5 启动 Meta Worker
+echo -e "${YELLOW}Step 6.5/8: 启动 Meta Worker${NC}"
+cd meta/backend
+go mod download >/dev/null 2>> ../../logs/meta-worker.log || true
+go run cmd/worker/main.go > ../../logs/meta-worker.log 2>&1 &
+META_WORKER_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Meta Worker 启动中 (PID: $META_WORKER_PID)${NC}"
+echo "  注意: Meta Worker 依赖 Redis，请确保 Redis 已启动"
+echo ""
+
 # 7. 启动 Gateway
-echo -e "${YELLOW}Step 7/7: 启动 Gateway${NC}"
+echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
 cd gateway
 go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
@@ -334,6 +345,7 @@ echo "  Manager:  logs/manager-backend.log"
 echo "  Meta:     logs/meta-backend.log"
 echo "  Transfer: logs/transfer-backend.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
+echo "  Meta Worker: logs/meta-worker.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
@@ -348,4 +360,5 @@ echo $MANAGER_PID > .dev-pids/manager.pid
 echo $META_PID > .dev-pids/meta.pid
 echo $TRANSFER_PID > .dev-pids/transfer.pid
 echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
+echo $META_WORKER_PID > .dev-pids/meta-worker.pid
 echo $GATEWAY_PID > .dev-pids/gateway.pid
