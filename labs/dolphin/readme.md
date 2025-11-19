@@ -323,13 +323,62 @@ cd backend/cmd/server && go run main.go         # 启动 Go 服务
 
 本项目遵循 ADDP 平台的开源协议。
 
+## 🆕 Temporal Python SDK 集成 (NEW!)
+
+除了 DolphinScheduler,本项目现已集成 **Temporal Python SDK**,提供代码优先的工作流编排方式!
+
+### 🎯 Temporal vs DolphinScheduler
+
+| 特性 | Temporal | DolphinScheduler |
+|-----|----------|------------------|
+| 定义方式 | Python 代码 | UI 拖拽 |
+| 类型安全 | ✅ 强类型 | ❌ JSON |
+| 调试体验 | ✅ IDE 断点 | ⚠️ 日志查看 |
+| 适用场景 | 开发团队主导 | 运维团队主导 |
+
+### 🚀 快速开始 (Temporal)
+
+```bash
+# 1. 启动 Temporal Server
+docker-compose -f docker-compose-temporal.yml up -d
+
+# 2. 启动 Worker
+cd backend/temporal
+pip install -r requirements.txt
+python worker.py
+
+# 3. 运行示例 (新终端)
+python examples/run_buffer_workflow.py \
+  --input ../../data/sample.geojson \
+  --output ../../output/buffer_result.geojson \
+  --distance 100
+
+# 4. 访问 Temporal UI
+open http://localhost:8080
+```
+
+### 📖 详细文档
+
+完整的 Temporal 集成文档: [backend/temporal/README.md](backend/temporal/README.md)
+
+**核心特性**:
+- ✅ 代码即 DAG - Python 函数定义工作流
+- ✅ 自动重试 - 内置容错机制
+- ✅ 类型安全 - 完整 Python 类型提示
+- ✅ IDE 友好 - 支持断点调试
+
+---
+
 ## 🔗 相关链接
 
 - [Apache DolphinScheduler 官网](https://dolphinscheduler.apache.org/)
+- [Temporal 官方文档](https://docs.temporal.io/)
 - [Shapely 文档](https://shapely.readthedocs.io/)
 - [GeoJSON 规范](https://geojson.org/)
 - [ADDP 平台主仓库](https://github.com/addp/addp)
 
 ---
 
-**开始体验**: `make start && make web` 🚀
+**开始体验**:
+- DolphinScheduler: `make start && make web` 🚀
+- Temporal: 查看 [backend/temporal/README.md](backend/temporal/README.md) 📖

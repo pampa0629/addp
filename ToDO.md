@@ -6,11 +6,17 @@ doing：
 *，并行传输：sqlite 到 pg空间库
     排查错误，查看日志
 
-*，business 编排的修改
+*，business 编排的修改；是不是好了？
     默认支持postgis，根据cpu自动拉取镜像
     初始化脚本检查
 
-独立编排器
+*，meta worker的剥离；
+
+*，mvt 快显的集成；
+
+*，sql开发；
+
+独立编排调度模块（orchestrator / schedule ）
 *，考虑用Temporal，先做进一步单独项目的验证
 *，参考 labs/dolphin/docs/ 下的TEMPORAL_ARCHITECTURE.md文档
 *，实现 sql 调度

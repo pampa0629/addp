@@ -1,9 +1,11 @@
-# Temporal + HTTP API + Asynq 统一任务编排架构设计
+# Scheduler + HTTP API + Asynq 统一任务编排架构设计
 
 **版本**: v1.0
 **日期**: 2025-01-20
 **状态**: 设计阶段
 **适用范围**: ADDP 全平台（Transfer、Meta、Manager 等模块）
+
+**说明**: Scheduler 是调度编排引擎的通用名称，底层基于 Temporal 实现（技术细节）。命名与技术框架解耦，便于将来替换底层实现。
 
 ---
 
@@ -14,7 +16,7 @@
 - [3. 架构概览](#3-架构概览)
 - [4. 核心设计原则](#4-核心设计原则)
 - [5. 详细设计](#5-详细设计)
-  - [5.1 Temporal 编排层](#51-temporal-编排层)
+  - [5.1 Scheduler 编排层](#51-scheduler-编排层)
   - [5.2 模块 API 层](#52-模块-api-层)
   - [5.3 Asynq 队列层](#53-asynq-队列层)
   - [5.4 Worker 执行层](#54-worker-执行层)
@@ -49,12 +51,17 @@
 
 ### 1.2 技术选型考量
 
-**为什么选择 Temporal**：
+**为什么选择 Temporal 作为底层实现**：
 - ✅ Go 原生实现，内存占用低（~200-300MB）
 - ✅ 强大的工作流编排能力（代码定义 DAG）
 - ✅ 支持长时间运行的持久化工作流（数月/数年）
 - ✅ 内置重试、超时、补偿机制
 - ✅ 易于扩展（只需实现 Go 接口）
+
+**为什么命名为 Scheduler 而非 Temporal**：
+- ✅ 技术中立，不绑定特定框架
+- ✅ 将来可替换底层实现（Cadence、自研等）
+- ✅ 对用户更友好，业务人员容易理解
 
 **为什么保留 Asynq**：
 - ✅ 简单异步任务无需 Temporal 的复杂性
@@ -68,15 +75,15 @@
 
 ### 2.1 核心目标
 
-1. **职责分离**：Temporal 负责编排，各模块负责执行
-2. **渐进式迁移**：新功能用 Temporal，旧功能保留 Asynq
-3. **完全解耦**：Temporal 通过 HTTP API 与模块通信，不依赖任何业务代码
+1. **职责分离**：Scheduler 负责编排，各模块负责执行
+2. **渐进式迁移**：新功能用 Scheduler，旧功能保留 Asynq
+3. **完全解耦**：Scheduler 通过 HTTP API 与模块通信，不依赖任何业务代码
 4. **易于测试**：每个步骤都是独立的 HTTP 请求，可单独测试
 5. **统一监控**：所有任务状态可通过 HTTP API 查询
 
 ### 2.2 非功能目标
 
-- **性能**：Temporal + Asynq 总内存占用 < 500MB（vs DolphinScheduler 2GB+）
+- **性能**：Scheduler + Asynq 总内存占用 < 500MB（vs DolphinScheduler 2GB+）
 - **可靠性**：支持任务重试、超时、补偿逻辑
 - **可扩展性**：支持水平扩展（Worker 多副本）
 - **可观测性**：统一日志格式，支持 Prometheus 指标
@@ -106,14 +113,14 @@
 │  │    ↓                        ↓                                 │  │
 │  │  简单任务                 复杂编排                            │  │
 │  │    ↓                        ↓                                 │  │
-│  │  直接 Enqueue          启动 Temporal Workflow                 │  │
+│  │  直接 Enqueue          启动 Scheduler Workflow                 │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────┘
 
                               ↓ gRPC (复杂编排场景)
 
 ┌────────────────────────────────────────────────────────────────────────┐
-│                  Temporal Server (编排引擎)                            │
+│                  Temporal Server (Scheduler 底层) (编排引擎)                            │
 │                                                                        │
 │  工作流示例：ETL 数据管道                                              │
 │  ┌──────────────────────────────────────────────────────────────┐   │
@@ -253,7 +260,7 @@
     ↓
 Transfer API: POST /api/workflows/execute
     ↓
-启动 Temporal Workflow: ETLWorkflow
+启动 Scheduler Workflow: ETLWorkflow
     ↓
 [步骤 1] HTTP POST → Transfer API: /api/tasks/extract
     ↓
@@ -292,7 +299,7 @@ Temporal 轮询: HTTP GET /api/tasks/123/status
 - ✅ 灵活性：各模块可以独立升级，不影响工作流定义
 
 **实现**：
-- Temporal Workflow 只调用 HTTP Activity
+- Scheduler Workflow 只调用 HTTP Activity
 - 所有业务逻辑在各模块的 Worker 中执行
 
 ### 4.2 各模块 API 提供任务触发接口
@@ -351,17 +358,17 @@ Temporal 轮询: HTTP GET /api/tasks/123/status
 
 ## 5. 详细设计
 
-### 5.1 Temporal 编排层
+### 5.1 Scheduler 编排层
 
 #### 5.1.1 目录结构
 
 ```
-temporal/                        # 独立 Temporal 项目
+scheduler/                        # 独立 Temporal 项目
 ├── go.mod                       # 独立 Go module
 ├── go.sum
 ├── cmd/
 │   └── worker/
-│       └── main.go              # Temporal Worker 启动入口
+│       └── main.go              # Scheduler Worker 启动入口
 ├── workflows/
 │   ├── etl_workflow.go          # ETL 工作流
 │   ├── scan_workflow.go         # 元数据扫描工作流
@@ -404,7 +411,7 @@ temporal/                        # 独立 Temporal 项目
 ```go
 // cmd/worker/main.go
 func main() {
-    // 连接到 Temporal Server
+    // 连接到 Temporal Server (Scheduler 底层)
     c, err := client.Dial(client.Options{
         HostPort: "localhost:7233",
     })
@@ -755,12 +762,12 @@ func (h *ScanHandler) RegisterHandlers(mux *asynq.ServeMux) {
 
 ## 6. 完整代码示例
 
-### 6.1 Temporal Workflow 实现
+### 6.1 Scheduler Workflow 实现
 
 #### 6.1.1 通用 HTTP Activity
 
 ```go
-// temporal/activities/http.go
+// scheduler/activities/http.go
 package activities
 
 import (
@@ -856,7 +863,7 @@ func HTTPActivity(ctx context.Context, req HTTPRequest) (HTTPResponse, error) {
 #### 6.1.2 轮询任务状态 Activity
 
 ```go
-// temporal/activities/poll.go
+// scheduler/activities/poll.go
 package activities
 
 import (
@@ -946,14 +953,14 @@ func PollTaskStatusActivity(ctx context.Context, req PollRequest) error {
 #### 6.1.3 ETL 工作流实现
 
 ```go
-// temporal/workflows/etl_workflow.go
+// scheduler/workflows/etl_workflow.go
 package workflows
 
 import (
     "fmt"
     "time"
     "go.temporal.io/sdk/workflow"
-    "github.com/addp/temporal/activities"
+    "github.com/addp/scheduler/activities"
 )
 
 type ETLWorkflowInput struct {
@@ -1137,14 +1144,14 @@ func ETLWorkflow(ctx workflow.Context, input ETLWorkflowInput) error {
 #### 6.1.4 元数据扫描工作流
 
 ```go
-// temporal/workflows/scan_workflow.go
+// scheduler/workflows/scan_workflow.go
 package workflows
 
 import (
     "fmt"
     "time"
     "go.temporal.io/sdk/workflow"
-    "github.com/addp/temporal/activities"
+    "github.com/addp/scheduler/activities"
 )
 
 type ScanDatabaseWorkflowInput struct {
@@ -1732,7 +1739,7 @@ services:
     profiles:
       - full
 
-  # ==================== Temporal Worker (新增) ====================
+  # ==================== Scheduler Worker (新增) ====================
   temporal-worker:
     build:
       context: ./temporal
@@ -1862,25 +1869,25 @@ META_ASYNQ_CONCURRENCY=5
 
 ### 阶段 1：基础设施准备（1 周）
 
-- [ ] 部署 Temporal Server（Docker Compose）
+- [ ] 部署 Temporal Server (Scheduler 底层)（Docker Compose）
 - [ ] 配置 Temporal 连接到现有 PostgreSQL
 - [ ] 验证 Temporal Web UI 可访问（http://localhost:8233）
 - [ ] 更新 `.env` 添加 Temporal 配置
 
-### 阶段 2：Temporal Worker 开发（2 周）
+### 阶段 2：Scheduler Worker 开发（2 周）
 
-- [ ] 创建 `temporal/` 独立项目
+- [ ] 创建 `scheduler/` 独立项目
 - [ ] 实现通用 HTTP Activity
 - [ ] 实现轮询任务状态 Activity
 - [ ] 实现第一个简单工作流（单步 HTTP 调用）
-- [ ] 测试 Temporal Worker 与 Server 通信
+- [ ] 测试 Scheduler Worker 与 Server 通信
 
 ### 阶段 3：Transfer 模块集成（3 周）
 
 - [ ] 扩展 Transfer API（新增任务触发接口）
 - [ ] 扩展 Asynq 队列（新增任务类型）
 - [ ] 扩展 Worker Handler（新增任务处理器）
-- [ ] 实现 ETL 工作流（Temporal 编排）
+- [ ] 实现 ETL 工作流（Scheduler 编排）
 - [ ] 端到端测试（Portal → Temporal → Transfer API → Asynq → Worker）
 
 ### 阶段 4：Meta 模块集成（3 周）
@@ -1888,7 +1895,7 @@ META_ASYNQ_CONCURRENCY=5
 - [ ] 创建 `meta/backend/cmd/worker/main.go`
 - [ ] 实现 Meta Asynq 队列和 Handler
 - [ ] 扩展 Meta API（扫描和血缘接口）
-- [ ] 实现扫描工作流（Temporal 编排）
+- [ ] 实现扫描工作流（Scheduler 编排）
 - [ ] 迁移现有 goroutine-based worker 到 Asynq
 
 ### 阶段 5：监控和可观测性（2 周）
@@ -2063,7 +2070,7 @@ http_request_duration_seconds{method="POST", endpoint="/api/tasks/extract"}
 
 ### 11.2 相关文件
 
-- 本文档：`/Users/pampa/code/addp/labs/dolphin/docs/TEMPORAL_ARCHITECTURE.md`
+- 本文档：`/Users/pampa/code/addp/labs/dolphin/docs/SCHEDULER_ARCHITECTURE.md`
 - Transfer Worker：`/Users/pampa/code/addp/transfer/backend/internal/worker/`
 - Meta 扫描服务：`/Users/pampa/code/addp/meta/backend/internal/service/scan_service.go`
 

@@ -1,0 +1,12 @@
+{
+  "input_file": "data/sample.geojson",
+  "output_file": "output/complex_result.geojson",
+  "pipeline_config": {
+    "buffer_distance": 100.0,
+    "clip_layers": [],
+    "min_area": 1000.0,
+    "simplify_tolerance": 5.0,
+    "source_crs": "EPSG:4326",
+    "compute_crs": "EPSG:3857"
+  }
+}
