@@ -39,7 +39,27 @@ results = engine.run()  # 总耗时 <1ms
 
 ## 🚀 快速开始
 
-### 🎯 5 分钟快速体验（推荐）
+### ⭐ 推荐方式：UI 拖拽式编排（零代码）
+
+**最适合最终用户**：无需编程，在 DolphinScheduler UI 上直接拖拽算子节点
+
+```bash
+# 1. 启动 DolphinScheduler
+make start
+
+# 2. 启动空间算子 API 服务（新终端）
+make api-start
+
+# 3. 打开 Web UI
+# 访问: http://localhost:12345/dolphinscheduler/ui
+# 登录: admin / dolphinscheduler123
+
+# 4. 在 UI 中拖拽 HTTP 任务节点进行编排
+```
+
+**完整指南**: 查看 [UI_BASED_WORKFLOW_GUIDE.md](UI_BASED_WORKFLOW_GUIDE.md) ⭐
+
+### 方式 2：快速体验演示环境
 
 体验完整的 DolphinScheduler + 空间分析工作流：
 
@@ -57,7 +77,7 @@ make demo-test
 
 **详细步骤**: 查看 [QUICKSTART.md](QUICKSTART.md)
 
-### 方式 2: 本地运行示例（无需 Docker）
+### 方式 3: 本地运行示例（无需 Docker）
 
 ```bash
 cd backend
@@ -70,7 +90,7 @@ python3 examples/comprehensive_demo.py
 python3 examples/performance_test.py
 ```
 
-### 方式 2: DolphinScheduler 调度
+### 方式 4: DolphinScheduler 调度（开发者）
 
 ```bash
 # 1. 启动 DolphinScheduler
@@ -107,12 +127,24 @@ python3 backend/spatial/operator_executor.py '{
 
 ## 📚 核心文档
 
+### 推荐阅读顺序（按用户类型）
+
+#### 最终用户（业务分析师、GIS 工程师）
 | 文档 | 说明 |
 |------|------|
-| [QUICKSTART.md](QUICKSTART.md) | 分步学习指南（初学者必读） |
-| [SPATIAL_OPERATOR_GUIDE.md](SPATIAL_OPERATOR_GUIDE.md) | 空间算子系统架构和使用方法 |
-| [DOLPHIN_INTEGRATION.md](DOLPHIN_INTEGRATION.md) | 集成到 DolphinScheduler 的详细方案 |
-| [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | 演示脚本（含北京缓冲区分析案例） |
+| [API_VERIFICATION.md](API_VERIFICATION.md) ⭐ | API 服务功能验证报告 |
+| [UI_BASED_WORKFLOW_GUIDE.md](UI_BASED_WORKFLOW_GUIDE.md) ⭐ | UI 拖拽式编排完整指南（零代码） |
+| [UI_SOLUTION_SUMMARY.md](UI_SOLUTION_SUMMARY.md) | 新旧方案对比和架构设计 |
+| [QUICKSTART.md](QUICKSTART.md) | 5 分钟快速入门 |
+
+#### 开发者
+| 文档 | 说明 |
+|------|------|
+| [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md) | 完整实施报告 |
+| [WORKFLOW_ENGINE_GUIDE.md](WORKFLOW_ENGINE_GUIDE.md) | 工作流引擎详解 |
+| [HYBRID_ARCHITECTURE.md](HYBRID_ARCHITECTURE.md) | 混合架构设计 |
+| [DOLPHIN_INTEGRATION_GUIDE.md](DOLPHIN_INTEGRATION_GUIDE.md) | DolphinScheduler 集成指南 |
+| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | 实施总结 |
 | [CLAUDE.md](CLAUDE.md) | 技术架构和开发指南 |
 
 ## 🧩 系统架构

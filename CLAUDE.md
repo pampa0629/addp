@@ -697,6 +697,48 @@ make docker-build-all   # Rebuild all services
 docker-compose up -d    # Restart
 ```
 
+### Docker Swarm Mode (High Availability)
+
+For production environments requiring high availability, use Docker Swarm mode instead of standard Compose:
+
+```bash
+# 1. Initialize Swarm (one-time setup)
+docker swarm init
+
+# 2. Deploy to Swarm
+docker stack deploy -c docker-compose.prod.yml addp
+
+# 3. Verify services
+docker service ls
+docker service ps addp_transfer-worker  # Should show 2 replicas
+
+# 4. View logs
+docker service logs -f addp_transfer-worker
+
+# 5. Scale manually (if needed)
+docker service scale addp_transfer-worker=3
+
+# 6. Update services (zero downtime)
+docker service update --image addp-transfer-worker:v2.0 addp_transfer-worker
+
+# 7. Stop services
+docker stack rm addp
+```
+
+**Key Benefits of Swarm Mode**:
+- ✅ **Auto-recovery**: Crashed containers automatically replaced with new replicas
+- ✅ **Load balancing**: Built-in load balancing across replicas
+- ✅ **Zero-downtime updates**: Rolling updates without service interruption
+- ✅ **Resource management**: CPU and memory limits/reservations
+
+**Transfer Worker High Availability** (configured in docker-compose.prod.yml):
+- Default: 2 replicas running simultaneously
+- Auto-restart on failure
+- CPU limit: 2 cores per worker
+- Memory limit: 2GB per worker
+
+See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment guide.
+
 **Data Persistence**:
 
 **ADDP System** (docker-compose.yml):
@@ -825,6 +867,25 @@ docker-compose up -d    # Restart
 - Retry mechanism for failed transfers
 
 **Database**: PostgreSQL `transfer` schema (tables: tasks, task_executions, data_mappings)
+
+**Task Queue Architecture**:
+- **Queue Naming**: Uses module-prefixed queues to avoid conflicts with other modules
+  - `transfer:critical` - High priority tasks (紧急任务)
+  - `transfer:default` - Normal priority tasks (普通任务)
+  - `transfer:low` - Low priority tasks (低优先级任务)
+- **Redis Storage Structure**:
+  ```
+  asynq:transfer:default:pending    → 等待处理的任务
+  asynq:transfer:default:active     → 正在处理的任务
+  asynq:transfer:default:scheduled  → 延迟执行的任务
+  asynq:transfer:default:retry      → 失败重试队列
+  asynq:transfer:default:archived   → 永久失败的任务 (死信队列)
+  ```
+- **Multi-Module Isolation**: Each module uses its own queue namespace
+  - Transfer: `transfer:*` queues
+  - Meta (future): `meta:*` queues
+  - Other modules: `{module_name}:*` queues
+- **Worker Configuration**: Runs with Docker Swarm for high availability (2 replicas by default)
 
 ## Inter-Service Communication
 

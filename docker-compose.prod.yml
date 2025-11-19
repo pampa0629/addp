@@ -276,7 +276,7 @@ services:
 
   transfer-worker:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-worker:${IMAGE_TAG:-latest}
-    container_name: addp-transfer-worker
+    # container_name removed for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=transfer
       - DB_HOST=postgres
@@ -290,6 +290,7 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
+      - CONCURRENT_TASKS=15  # Each worker handles 15 concurrent tasks
     networks:
       - addp-network
     depends_on:
@@ -300,6 +301,29 @@ services:
       transfer-backend:
         condition: service_started
     restart: unless-stopped
+    # Docker Swarm high availability configuration
+    deploy:
+      replicas: 2  # Run 2 worker instances for high availability
+      restart_policy:
+        condition: any  # Restart on any failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1  # Update one container at a time
+        delay: 10s
+        failure_action: rollback
+        order: start-first  # Start new container before stopping old one
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      resources:
+        limits:
+          cpus: '2'      # Max 2 CPU cores per worker
+          memory: 2G     # Max 2GB memory per worker
+        reservations:
+          cpus: '0.5'    # Reserve at least 0.5 CPU core
+          memory: 512M   # Reserve at least 512MB memory
     profiles:
       - full
 

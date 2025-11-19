@@ -137,7 +137,18 @@
       "Bash(ps:*)",
       "Bash(sh:*)",
       "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjI1MDk5ODgsImlhdCI6MTc2MjUwODE4OH0.hT34grTz6s4pkX1cdkHjTgyyGr3DPC1YV7lDXMFxjlA' curl -s http://localhost:8083/api/tasks/2 -H \"Authorization: Bearer $TOKEN\")",
-      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjI1MDk5ODgsImlhdCI6MTc2MjUwODE4OH0.hT34grTz6s4pkX1cdkHjTgyyGr3DPC1YV7lDXMFxjlA' curl -s \"http://localhost:8083/api/tasks/2\" -H \"Authorization: Bearer $TOKEN\")"
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjI1MDk5ODgsImlhdCI6MTc2MjUwODE4OH0.hT34grTz6s4pkX1cdkHjTgyyGr3DPC1YV7lDXMFxjlA' curl -s \"http://localhost:8083/api/tasks/2\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(rm:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(if [ -f logs/meta-backend.log ])",
+      "Bash(then tail -100 logs/meta-backend.log)",
+      "Bash(fi)",
+      "Bash(go mod init:*)",
+      "Bash(go run:*)",
+      "Bash(/Users/pampa/code/addp/scripts/debug-scan.sh:*)",
+      "Bash(GOPROXY=https://goproxy.cn,direct go run:*)",
+      "Bash(/dev/null ps aux)",
+      "Bash(/dev/null sleep 2 lsof -i :8082)"
     ],
     "deny": [],
     "ask": []

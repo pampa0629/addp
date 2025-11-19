@@ -75,7 +75,7 @@ TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 # 2. 启动 System Backend
 echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"
 cd system/backend
-go run cmd/server/main.go 2> ../../logs/system-backend-stderr.log &
+go run cmd/server/main.go > ../../logs/system-backend.log 2> ../../logs/system-backend-stderr.log &
 SYSTEM_PID=$!
 cd ../..
 
@@ -99,7 +99,7 @@ echo ""
 # 3. 启动 Manager Backend
 echo -e "${YELLOW}Step 3/5: 启动 Manager Backend${NC}"
 cd manager/backend
-go run cmd/server/main.go 2> ../../logs/manager-backend-stderr.log &
+go run cmd/server/main.go > ../../logs/manager-backend.log 2> ../../logs/manager-backend-stderr.log &
 MANAGER_PID=$!
 cd ../..
 
@@ -122,7 +122,7 @@ echo ""
 # 4. 启动 Meta Backend
 echo -e "${YELLOW}Step 4/6: 启动 Meta Backend${NC}"
 cd meta/backend
-go run cmd/server/main.go 2> ../../logs/meta-backend-stderr.log &
+go run cmd/server/main.go > ../../logs/meta-backend.log 2> ../../logs/meta-backend-stderr.log &
 META_PID=$!
 cd ../..
 
@@ -146,7 +146,7 @@ echo ""
 echo -e "${YELLOW}Step 5/7: 启动 Transfer Backend${NC}"
 cd transfer/backend
 go mod download >/dev/null 2>> ../../logs/transfer-backend-stderr.log || true
-go run cmd/server/main.go 2> ../../logs/transfer-backend-stderr.log &
+go run cmd/server/main.go > ../../logs/transfer-backend.log 2> ../../logs/transfer-backend-stderr.log &
 TRANSFER_PID=$!
 cd ../..
 
@@ -180,7 +180,7 @@ echo ""
 # 7. 启动 Gateway
 echo -e "${YELLOW}Step 7/7: 启动 Gateway${NC}"
 cd gateway
-go run cmd/gateway/main.go 2> ../logs/gateway-stderr.log &
+go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
 cd ..
 

@@ -84,9 +84,9 @@ func main() {
 		asynq.Config{
 			Concurrency: cfg.ConcurrentTasks, // 并发任务数
 			Queues: map[string]int{
-				"critical": 6, // 高优先级队列
-				"default":  3, // 默认队列
-				"low":      1, // 低优先级队列
+				"transfer:critical": 6, // 高优先级队列
+				"transfer:default":  3, // 默认队列
+				"transfer:low":      1, // 低优先级队列
 			},
 			// 重试配置
 			RetryDelayFunc: func(n int, err error, task *asynq.Task) time.Duration {

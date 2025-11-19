@@ -32,8 +32,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.ScanTask{},
-		&models.ScanTaskRun{},
+		&models.MetaNode{},     // 元数据节点（schema/prefix）
+		&models.MetaItem{},     // 元数据条目（table/object）
+		&models.ScanTask{},     // 扫描任务定义
+		&models.ScanTaskRun{},  // 扫描任务执行记录
 	)
 	if err != nil {
 		return nil, err

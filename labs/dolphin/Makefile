@@ -9,6 +9,11 @@ help:
 	@echo "  make demo-test     - 测试空间算子工作流引擎"
 	@echo "  make demo-stop     - 停止演示环境"
 	@echo ""
+	@echo "🎨 UI 拖拽式编排 (推荐给最终用户):"
+	@echo "  make api-start     - 启动空间算子 API 服务"
+	@echo "  make api-test      - 测试 API 服务"
+	@echo "  make api-list      - 查看可用算子列表"
+	@echo ""
 	@echo "基础命令:"
 	@echo "  make start         - 启动 DolphinScheduler 容器"
 	@echo "  make web           - 打开 Web UI (浏览器)"
@@ -23,6 +28,7 @@ help:
 	@echo "  默认账号: admin / dolphinscheduler123"
 	@echo ""
 	@echo "📚 文档:"
+	@echo "  UI_BASED_WORKFLOW_GUIDE.md     - UI 拖拽式编排指南 (推荐)"
 	@echo "  QUICKSTART.md                  - 5 分钟快速入门"
 	@echo "  DOLPHIN_INTEGRATION_GUIDE.md   - 完整集成指南"
 	@echo "  WORKFLOW_ENGINE_GUIDE.md       - 工作流引擎使用指南"
@@ -144,4 +150,20 @@ demo-examples:
 demo-performance:
 	@echo "==> 运行性能对比测试..."
 	@cd backend && python3 examples/performance_test.py
+
+# =============================================================================
+# API 服务命令（用于 UI 拖拽式编排）
+# =============================================================================
+
+api-start:
+	@echo "==> 启动空间算子 API 服务..."
+	@bash scripts/start-api.sh
+
+api-test:
+	@echo "==> 测试 API 服务..."
+	@curl -f http://localhost:5001/health && echo "" && echo "✅ API 服务正常运行"
+
+api-list:
+	@echo "==> 获取可用算子列表..."
+	@curl -s http://localhost:5001/operators | python3 -m json.tool
 

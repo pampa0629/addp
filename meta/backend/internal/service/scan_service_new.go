@@ -918,11 +918,27 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
 	}
 
+	s.log.Info("🔑 连接字符串已构建",
+		"resource_id", resourceID,
+		"resource_type", resource.ResourceType,
+		"conn_str_length", len(connStr),
+	)
+
 	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
 	if err != nil {
+		s.log.Error("❌ 创建Scanner失败",
+			"resource_id", resourceID,
+			"resource_type", resource.ResourceType,
+			"error", err,
+		)
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
+
+	s.log.Info("✅ Scanner创建成功",
+		"resource_id", resourceID,
+		"resource_type", resource.ResourceType,
+	)
 
 	// 如果未指定Schema，则扫描所有Schema
 	if len(schemaNames) == 0 {
@@ -2729,10 +2745,30 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 		"existing_tables", len(existingTableMap),
 	)
 
+	s.log.Info("🔍 即将调用 scan.ScanTables",
+		"schema", schemaName,
+		"resource_id", resourceID,
+	)
+
 	tables, err := scan.ScanTables(schemaName)
+
+	s.log.Info("📊 scan.ScanTables 返回结果",
+		"schema", schemaName,
+		"tables_count", len(tables),
+		"has_error", err != nil,
+		"error", err,
+	)
+
 	if err != nil {
 		s.finalizeNodeState(schemaNode, "未扫描", 0, 0, err.Error())
 		return 0, 0, 0, err
+	}
+
+	if len(tables) == 0 {
+		s.log.Warn("⚠️  ScanTables 返回空数组",
+			"schema", schemaName,
+			"resource_id", resourceID,
+		)
 	}
 
 	totalTables := 0
@@ -2740,7 +2776,19 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 	var totalSize int64
 	scannedTables := make(map[string]bool) // 记录本次扫描到的表
 
-	for _, tableInfo := range tables {
+	s.log.Info("🔄 开始处理扫描到的表",
+		"schema", schemaName,
+		"total_tables_from_scanner", len(tables),
+	)
+
+	for i, tableInfo := range tables {
+		s.log.Info(fmt.Sprintf("📋 处理第 %d/%d 张表", i+1, len(tables)),
+			"table_name", tableInfo.Name,
+			"table_type", tableInfo.Type,
+			"row_count", tableInfo.RowCount,
+			"size_bytes", tableInfo.SizeBytes,
+		)
+
 		var fields []plugins.FieldInfo
 		var attrs models.JSONMap
 
@@ -2753,6 +2801,13 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			(existingItem.SizeBytes != nil && *existingItem.SizeBytes != tableInfo.SizeBytes) || // 大小变化
 			(existingItem.RowCount == nil && tableInfo.RowCount != 0) || // 之前未记录行数
 			(existingItem.SizeBytes == nil && tableInfo.SizeBytes != 0) // 之前未记录大小
+
+		s.log.Info("🔍 检查更新条件",
+			"table", tableInfo.Name,
+			"existing_item", existingItem != nil,
+			"needs_update", needsUpdate,
+			"is_deep_scan", isDeepScan,
+		)
 
 		// 浅度扫描时，如果表未变化，跳过更新（保留已有的深度元数据）
 		if !isDeepScan && existingItem != nil && !needsUpdate {
@@ -2767,9 +2822,12 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 
 		// 浅度扫描：跳过字段扫描
 		if isDeepScan {
+			s.log.Info("开始扫描字段",
+				"table", tableInfo.Name,
+			)
 			fields, err = scan.ScanFields(schemaName, tableInfo.Name)
 			if err != nil {
-				s.log.Warn("字段扫描失败",
+				s.log.Warn("❌ 字段扫描失败，跳过此表",
 					"resource_id", resourceID,
 					"tenant_id", tenantID,
 					"schema", schemaName,
@@ -2778,6 +2836,11 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 				)
 				continue
 			}
+
+			s.log.Info("✅ 字段扫描成功",
+				"table", tableInfo.Name,
+				"field_count", len(fields),
+			)
 
 			attrs = models.JSONMap{
 				"schema":        schemaName,
@@ -2802,13 +2865,18 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			}
 		}
 
+		s.log.Info("准备写入表元数据",
+			"table", tableInfo.Name,
+			"full_name", composeNodeFullName(tableInfo.Name, schemaNode, "."),
+		)
+
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
 		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
 		item, err := s.upsertItem(tenantID, resourceID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
 		if err != nil {
-			s.log.Error("表元数据持久化失败",
+			s.log.Error("❌ 表元数据持久化失败，跳过此表",
 				"resource_id", resourceID,
 				"tenant_id", tenantID,
 				"schema", schemaName,
@@ -2817,6 +2885,11 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			)
 			continue
 		}
+
+		s.log.Info("✅ 表元数据写入成功",
+			"table", tableInfo.Name,
+			"item_id", item.ID,
+		)
 
 		// 深度扫描才索引表资产
 		if isDeepScan {
