@@ -22,11 +22,20 @@ database:
 redis:
   host: 127.0.0.1
   port: "6379"
-  password: ""
+  password: "addp_redis"
   # 缓存过期时间，例如 24h、12h、30m
   cache_ttl: 24h
   # 最大内存提示（服务端需要自行配置 maxmemory 策略）
   max_memory: 8gb
+
+# MinIO 对象存储配置（使用 ADDP 的 MinIO）
+minio:
+  endpoint: localhost:9002
+  access_key: minioadmin
+  secret_key: minioadmin
+  bucket: addp-mvt-cache
+  use_ssl: false
+  region: ""
 
 # 缓存策略：控制浏览请求何时将瓦片持久化写入 Postgres
 # 注意：预热阶段的瓦片始终持久化，不受此配置影响

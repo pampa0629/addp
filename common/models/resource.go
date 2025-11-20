@@ -24,6 +24,35 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, c)
 }
 
+// ScanConfig 元数据扫描配置
+type ScanConfig struct {
+	Enabled        bool     `json:"enabled"`                   // 是否启用扫描
+	ScheduleType   string   `json:"schedule_type"`             // manual, daily, weekly, monthly, cron
+	CronExpression string   `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron 时使用）
+	ScheduleTime   string   `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
+	ScheduleValue  []int    `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
+	ScanDepth      string   `json:"scan_depth"`                // shallow, deep
+	SchemaNames    []string `json:"schema_names,omitempty"`    // PostgreSQL schemas（留空表示扫描所有）
+	ObjectPaths    []string `json:"object_paths,omitempty"`    // MinIO prefixes（留空表示扫描根目录）
+}
+
+// Value 实现 driver.Valuer 接口，用于 GORM 写入数据库
+func (s ScanConfig) Value() (driver.Value, error) {
+	return json.Marshal(s)
+}
+
+// Scan 实现 sql.Scanner 接口，用于 GORM 从数据库读取
+func (s *ScanConfig) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	bytes, ok := value.([]byte)
+	if !ok {
+		return nil
+	}
+	return json.Unmarshal(bytes, s)
+}
+
 // Resource 资源信息（对应 system.resources 表）
 type Resource struct {
 	ID             uint           `gorm:"column:id" json:"id"`
@@ -32,6 +61,7 @@ type Resource struct {
 	ResourceType   string         `gorm:"column:resource_type" json:"resource_type"`
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json" json:"connection_info"`
 	Description    string         `gorm:"column:description" json:"description"`
+	ScanConfig     *ScanConfig    `gorm:"column:scan_config;type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）
 	IsActive       bool           `gorm:"column:is_active" json:"is_active"`
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 	// Status 字段不存在于 system.resources 表中，移除

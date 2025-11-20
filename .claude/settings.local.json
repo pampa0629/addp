@@ -151,7 +151,8 @@
       "Bash(/dev/null sleep 2 lsof -i :8082)",
       "Bash(mkdir:*)",
       "Bash(make build-workers:*)",
-      "Bash(go get:*)"
+      "Bash(go get:*)",
+      "Bash(redis-cli:*)"
     ],
     "deny": [],
     "ask": []

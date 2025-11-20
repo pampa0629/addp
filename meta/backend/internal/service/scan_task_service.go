@@ -1020,10 +1020,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	}
 
 	scanConfig := resource.ScanConfig
-	tenantID := uint(0)
-	if resource.TenantID != nil {
-		tenantID = *resource.TenantID
-	}
+	tenantID := resource.TenantID
 
 	// 查找是否已有该资源的自动扫描任务
 	var existingTask models.ScanTask
@@ -1034,7 +1031,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	taskName := fmt.Sprintf("自动扫描 - %s", resource.Name)
 
 	// 构建 Cron 表达式
-	cronExpr, err := s.buildCronExpression(scanConfig)
+	cronExpr, err := s.buildCronExpressionFromScanConfig(scanConfig)
 	if err != nil {
 		return fmt.Errorf("构建 Cron 表达式失败: %w", err)
 	}
@@ -1146,8 +1143,8 @@ func (s *ScanTaskService) DeleteTaskByResourceID(resourceID uint) error {
 	return nil
 }
 
-// buildCronExpression 根据 ScanConfig 构建 Cron 表达式
-func (s *ScanTaskService) buildCronExpression(config *commonModels.ScanConfig) (string, error) {
+// buildCronExpressionFromScanConfig 根据 ScanConfig 构建 Cron 表达式
+func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels.ScanConfig) (string, error) {
 	if config == nil {
 		return "", errors.New("扫描配置为空")
 	}

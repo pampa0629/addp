@@ -58,7 +58,7 @@ func StartPrewarm(cfg *appcfg.Config, tiles *TileService, cache *CacheService) {
 
                 // 写缓存：不设置超时（确保持久化成功）
                 cctx := context.Background()
-                if err := cache.SetTileWithOptions(cctx, j.dsID, j.z, j.x, j.y, gz, SetTileOptions{PersistToPG: true}); err != nil {
+                if err := cache.SetTileWithOptions(cctx, j.dsID, j.z, j.x, j.y, gz, SetTileOptions{PersistToMinIO: true}); err != nil {
                     log.Printf("[PREWARM] Cache failed for %s z=%d x=%d y=%d: %v", j.dsID, j.z, j.x, j.y, err)
                 } else {
                     dur := time.Since(start)

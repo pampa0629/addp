@@ -91,7 +91,7 @@ func (h *Handler) GetTile(c *gin.Context) {
             go func(gzData []byte, persist bool) {
                 cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
                 defer cancel()
-                if err := h.cacheService.SetTileWithOptions(cacheCtx, datasourceID, z, x, y, gzData, service.SetTileOptions{PersistToPG: persist}); err != nil {
+                if err := h.cacheService.SetTileWithOptions(cacheCtx, datasourceID, z, x, y, gzData, service.SetTileOptions{PersistToMinIO: persist}); err != nil {
                     log.Printf("Failed to cache tile: %v", err)
                 }
             }(gz, persist)
