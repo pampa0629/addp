@@ -42,6 +42,10 @@ func main() {
 	// 初始化 Service 层
 	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, nil)
 	scanService := service.NewScanServiceNew(db, resourceService)
+	preprocessService, err := service.NewPreprocessService(db, resourceService)
+	if err != nil {
+		log.Fatalf("Failed to create preprocess service: %v", err)
+	}
 
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
 	scanTaskService := service.NewScanTaskService(db, scanService, resourceService)
@@ -52,7 +56,7 @@ func main() {
 	defer taskQueue.Close()
 
 	// 创建任务处理器
-	taskHandler := worker.NewTaskHandler(scanTaskService)
+	taskHandler := worker.NewTaskHandler(scanTaskService, preprocessService)
 
 	// 创建 Asynq Server
 	srv := asynq.NewServer(

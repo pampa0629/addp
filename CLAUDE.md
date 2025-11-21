@@ -827,8 +827,21 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 - Table and field metadata extraction (names, types, sizes, comments)
 - Object storage metadata extraction (prefix hierarchy, object types, sizes)
 - Automatic and scheduled scanning with cron expressions (default: daily at midnight)
+- **Event-driven automatic scanning**: System registration triggers Meta scanning (via Redis Pub/Sub)
 - Multi-tenant metadata isolation
 - **JSON-based flexible attributes** with schema versioning
+
+**Automatic Scanning Trigger**:
+When registering a storage engine in System module, you can configure automatic metadata scanning:
+- **Immediate**: Scan starts automatically after registration (no manual trigger needed)
+- **Daily/Weekly**: Creates scheduled task in Meta module
+- **Manual**: No automatic scanning, requires manual trigger in Meta frontend
+
+This is implemented via **event-driven architecture**:
+1. System publishes resource change event to Redis when creating/updating resources
+2. Meta subscribes to these events and checks `ScanConfig.ScheduleType`
+3. If `ScheduleType == "immediate"`, Meta automatically creates and enqueues a scan task
+4. No circular dependency: System → Redis Pub/Sub → Meta (one-way communication)
 
 **Scanning Workflow**:
 1. Sync data sources from System module `/api/resources`

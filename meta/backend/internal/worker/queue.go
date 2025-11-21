@@ -12,7 +12,8 @@ import (
 
 // TaskType 定义任务类型常量
 const (
-	TypeScanTask = "meta:scan"
+	TypeScanTask       = "meta:scan"
+	TypePreprocessTask = "meta:preprocess"
 )
 
 // TaskQueue 任务队列管理器
@@ -44,6 +45,13 @@ type ScanTaskPayload struct {
 	RunID    uint `json:"run_id"`
 	TaskID   uint `json:"task_id"`
 	TenantID uint `json:"tenant_id"`
+}
+
+// PreprocessTaskPayload 预处理任务载荷
+type PreprocessTaskPayload struct {
+	ItemID   uint   `json:"item_id"`
+	TenantID uint   `json:"tenant_id"`
+	Type     string `json:"type"` // "mvt_tiles", "vector_embedding"
 }
 
 // EnqueueScanTask 将扫描任务加入队列
@@ -152,4 +160,53 @@ func (q *TaskQueue) CancelTask(taskID string) error {
 // Close 关闭队列连接
 func (q *TaskQueue) Close() error {
 	return q.client.Close()
+}
+
+// EnqueuePreprocessTask 将预处理任务加入队列
+func (q *TaskQueue) EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string) error {
+	// 默认队列为 "meta:default"
+	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType,
+		asynq.Queue("meta:default"),
+	)
+}
+
+// EnqueuePreprocessTaskWithOptions 将预处理任务加入队列（支持 Asynq 选项）
+func (q *TaskQueue) EnqueuePreprocessTaskWithOptions(ctx context.Context, itemID, tenantID uint, preprocessType string, opts ...asynq.Option) error {
+	payload, err := json.Marshal(PreprocessTaskPayload{
+		ItemID:   itemID,
+		TenantID: tenantID,
+		Type:     preprocessType,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	task := asynq.NewTask(TypePreprocessTask, payload, opts...)
+
+	info, err := q.client.EnqueueContext(ctx, task)
+	if err != nil {
+		return fmt.Errorf("failed to enqueue task: %w", err)
+	}
+
+	log.Printf("✅ Preprocess task enqueued: id=%s queue=%s type=%s item_id=%d",
+		info.ID, info.Queue, preprocessType, itemID)
+	return nil
+}
+
+// EnqueuePreprocessTaskWithPriority 根据优先级将预处理任务加入队列
+func (q *TaskQueue) EnqueuePreprocessTaskWithPriority(ctx context.Context, itemID, tenantID uint, preprocessType, priority string) error {
+	// 根据优先级选择队列
+	queueName := "meta:default"
+	switch priority {
+	case "critical":
+		queueName = "meta:critical"
+	case "low":
+		queueName = "meta:low"
+	default:
+		queueName = "meta:default"
+	}
+
+	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType,
+		asynq.Queue(queueName),
+	)
 }

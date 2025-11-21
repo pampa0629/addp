@@ -216,6 +216,13 @@ for i in $(seq 1 ${max_wait}); do
   if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ MinIO 等待超时${NC}"; exit 1; fi
 done
 
+# Initialize MinIO buckets
+if [[ "${SKIP_MINIO_INIT:-0}" != "1" ]]; then
+  bash "${SCRIPT_DIR}/infra-init-minio.sh"
+else
+  echo -e "${YELLOW}▶ 跳过 MinIO buckets 初始化（SKIP_MINIO_INIT=1）${NC}"
+fi
+
 # Elasticsearch
 printf "%s" "- Elastic    "
 for i in $(seq 1 ${max_wait}); do

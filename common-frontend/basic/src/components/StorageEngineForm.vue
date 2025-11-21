@@ -38,6 +38,13 @@
       />
     </el-form-item>
 
+    <el-form-item v-if="showActiveSwitch" label="激活状态">
+      <el-switch v-model="formState.is_active" />
+      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+        禁用后，该资源将不会出现在可用列表中
+      </span>
+    </el-form-item>
+
     <!-- PostgreSQL -->
     <template v-if="formState.resource_type === 'postgresql'">
       <el-form-item label="主机地址" prop="connection_info.host">
@@ -110,9 +117,192 @@
       </div>
     </template>
 
-    <el-form-item v-if="showActiveSwitch" label="激活状态">
-      <el-switch v-model="formState.is_active" />
+    <!-- 元数据扫描配置 -->
+    <el-divider content-position="left">元数据扫描配置（可选）</el-divider>
+
+    <!-- 1. 立即扫描开关 -->
+    <el-form-item label="注册后立即扫描">
+      <el-switch v-model="immediateScanEnabled" />
+      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+        保存资源后立即触发一次全量扫描，快速生成元数据
+      </span>
     </el-form-item>
+
+    <!-- 2. 定时扫描开关 -->
+    <el-form-item label="定时自动扫描">
+      <el-switch v-model="scheduledScanEnabled" />
+      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+        按设定的频率自动扫描，保持元数据最新
+      </span>
+    </el-form-item>
+
+    <!-- 3. 定时扫描详细配置（仅在开关打开时显示） -->
+    <template v-if="scheduledScanEnabled">
+      <el-form-item label="扫描频率" style="margin-left: 30px;">
+        <el-radio-group v-model="formState.scan_config.schedule_type">
+          <el-radio label="daily">每天</el-radio>
+          <el-radio label="weekly">每周</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item label="执行时间" style="margin-left: 30px;">
+        <el-time-select
+          v-model="formState.scan_config.schedule_time"
+          start="00:00"
+          step="01:00"
+          end="23:00"
+          placeholder="选择时间"
+        />
+      </el-form-item>
+
+      <el-form-item
+        v-if="formState.scan_config.schedule_type === 'weekly'"
+        label="执行日期"
+        style="margin-left: 30px;"
+      >
+        <el-checkbox-group v-model="formState.scan_config.schedule_value">
+          <el-checkbox :label="1">周一</el-checkbox>
+          <el-checkbox :label="2">周二</el-checkbox>
+          <el-checkbox :label="3">周三</el-checkbox>
+          <el-checkbox :label="4">周四</el-checkbox>
+          <el-checkbox :label="5">周五</el-checkbox>
+          <el-checkbox :label="6">周六</el-checkbox>
+          <el-checkbox :label="0">周日</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+    </template>
+
+    <!-- 4. 公共扫描配置（只要任一扫描启用就显示） -->
+    <template v-if="immediateScanEnabled || scheduledScanEnabled">
+      <el-form-item label="扫描深度">
+        <el-radio-group v-model="formState.scan_config.scan_depth">
+          <el-radio label="basic">基础扫描（仅结构）</el-radio>
+          <el-radio label="deep">深度扫描（含统计信息）</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <!-- 空间数据预处理配置（仅 PostgreSQL） -->
+      <template v-if="formState.resource_type === 'postgresql'">
+        <el-divider content-position="left">空间数据预处理（可选）</el-divider>
+
+        <el-form-item label="启用 MVT 预处理">
+          <el-switch
+            v-model="formState.scan_config.preprocessing.enabled"
+          />
+          <div class="field-hint">
+            扫描完成后自动为空间表生成 MVT 瓦片缓存，加速地图渲染
+          </div>
+        </el-form-item>
+
+        <template v-if="formState.scan_config.preprocessing.enabled">
+          <el-form-item label="自动触发" style="margin-left: 30px">
+            <el-switch
+              v-model="formState.scan_config.preprocessing.auto_trigger"
+            />
+            <div class="field-hint">
+              扫描完成后立即开始瓦片预处理
+            </div>
+          </el-form-item>
+
+          <el-form-item label="最大缩放级别" style="margin-left: 30px">
+            <el-input-number
+              v-model="formState.scan_config.preprocessing.mvt_config.max_zoom"
+              :min="0"
+              :max="18"
+              :step="1"
+            />
+            <div class="field-hint">
+              瓦片最大缩放层级（0-18），默认 18。实际生成级别由自适应停止策略决定
+            </div>
+          </el-form-item>
+
+          <el-form-item label="并发数" style="margin-left: 30px">
+            <el-input-number
+              v-model="formState.scan_config.preprocessing.mvt_config.concurrency"
+              :min="1"
+              :max="20"
+              :step="1"
+            />
+            <div class="field-hint">
+              瓦片生成并发任务数（1-20），默认 10
+            </div>
+          </el-form-item>
+
+          <el-collapse style="margin-left: 30px; margin-bottom: 18px">
+            <el-collapse-item title="高级配置（停止阈值）" name="advanced">
+              <el-form-item label="时间阈值（秒）">
+                <el-input-number
+                  v-model="formState.scan_config.preprocessing.mvt_config.stop_threshold_sec"
+                  :min="0.1"
+                  :max="60"
+                  :step="0.5"
+                  :precision="1"
+                />
+                <div class="field-hint">
+                  当平均生成时间小于此值时停止，默认 3.0 秒
+                </div>
+              </el-form-item>
+
+              <el-form-item label="大小阈值（KB）">
+                <el-input-number
+                  v-model="formState.scan_config.preprocessing.mvt_config.stop_threshold_kb"
+                  :min="1"
+                  :max="500"
+                  :step="10"
+                  :precision="0"
+                />
+                <div class="field-hint">
+                  当平均瓦片大小小于此值时停止，默认 50 KB
+                </div>
+              </el-form-item>
+            </el-collapse-item>
+          </el-collapse>
+        </template>
+      </template>
+
+      <!-- PostgreSQL 特定配置 -->
+      <el-form-item
+        v-if="formState.resource_type === 'postgresql'"
+        label="扫描的 Schema"
+      >
+        <el-select
+          v-model="formState.scan_config.schema_names"
+          multiple
+          filterable
+          allow-create
+          placeholder="留空则扫描所有 schema"
+        >
+          <el-option
+            v-for="schema in ['public', 'information_schema']"
+            :key="schema"
+            :label="schema"
+            :value="schema"
+          />
+        </el-select>
+        <div class="field-hint">
+          可手动输入 schema 名称，留空将扫描所有 schema
+        </div>
+      </el-form-item>
+
+      <!-- MinIO / S3 特定配置 -->
+      <el-form-item
+        v-if="formState.resource_type === 'minio' || formState.resource_type === 's3'"
+        label="扫描的路径前缀"
+      >
+        <el-select
+          v-model="formState.scan_config.object_paths"
+          multiple
+          filterable
+          allow-create
+          placeholder="留空则扫描根目录"
+        >
+          <el-option label="/" value="/" />
+        </el-select>
+        <div class="field-hint">
+          可手动输入路径前缀（如 data/, images/），留空将扫描整个 bucket
+        </div>
+      </el-form-item>
+    </template>
   </el-form>
 </template>
 
@@ -158,6 +348,8 @@ const emit = defineEmits(['update:modelValue', 'type-change'])
 const formRef = ref(null)
 const hasStoredPassword = ref(false)
 const hasStoredSecretKey = ref(false)
+const immediateScanEnabled = ref(false)
+const scheduledScanEnabled = ref(false)
 
   const ensureConnectionDefaults = (form) => {
   if (!form.connection_info || typeof form.connection_info !== 'object') {
@@ -231,7 +423,29 @@ const formState = reactive({
   name: '',
   description: '',
   is_active: true,
-  connection_info: {}
+  connection_info: {},
+  scan_config: {
+    enabled: false,
+    immediate_scan: false,
+    scheduled_scan: false,
+    schedule_type: 'daily',
+    schedule_time: '00:00',
+    schedule_value: [],
+    scan_depth: 'basic',
+    schema_names: [],
+    object_paths: [],
+    preprocessing: {
+      enabled: false,
+      auto_trigger: true,
+      types: ['mvt_tiles'],
+      mvt_config: {
+        max_zoom: 18,
+        concurrency: 10,
+        stop_threshold_sec: 3.0,
+        stop_threshold_kb: 50.0
+      }
+    }
+  }
 })
 
 const syncFromProps = (value) => {
@@ -240,6 +454,40 @@ const syncFromProps = (value) => {
   formState.description = value.description || ''
   formState.is_active = value.is_active !== undefined ? value.is_active : true
   formState.connection_info = { ...(value.connection_info || {}) }
+
+  // 同步扫描配置
+  if (value.scan_config) {
+    formState.scan_config = {
+      enabled: value.scan_config.enabled || false,
+      immediate_scan: value.scan_config.immediate_scan || false,
+      scheduled_scan: value.scan_config.scheduled_scan || false,
+      schedule_type: value.scan_config.schedule_type || 'daily',
+      schedule_time: value.scan_config.schedule_time || '00:00',
+      schedule_value: value.scan_config.schedule_value || [],
+      scan_depth: value.scan_config.scan_depth || 'basic',
+      schema_names: value.scan_config.schema_names || [],
+      object_paths: value.scan_config.object_paths || [],
+      preprocessing: {
+        enabled: value.scan_config.preprocessing?.enabled || false,
+        auto_trigger: value.scan_config.preprocessing?.auto_trigger !== undefined
+          ? value.scan_config.preprocessing.auto_trigger
+          : true,
+        types: value.scan_config.preprocessing?.types || ['mvt_tiles'],
+        mvt_config: {
+          max_zoom: value.scan_config.preprocessing?.mvt_config?.max_zoom || 18,
+          concurrency: value.scan_config.preprocessing?.mvt_config?.concurrency || 10,
+          stop_threshold_sec: value.scan_config.preprocessing?.mvt_config?.stop_threshold_sec || 3.0,
+          stop_threshold_kb: value.scan_config.preprocessing?.mvt_config?.stop_threshold_kb || 50.0
+        }
+      }
+    }
+    immediateScanEnabled.value = value.scan_config.immediate_scan || false
+    scheduledScanEnabled.value = value.scan_config.scheduled_scan || false
+  } else {
+    immediateScanEnabled.value = false
+    scheduledScanEnabled.value = false
+  }
+
   ensureConnectionDefaults(formState)
   applySensitiveHints()
 }
@@ -261,18 +509,44 @@ watch(
   { immediate: true, deep: true }
 )
 
+// 计算属性：判断是否启用了任何扫描配置
+const scanConfigEnabled = computed(() => {
+  return immediateScanEnabled.value || scheduledScanEnabled.value
+})
+
+// 监听立即扫描开关，同步到 formState
+watch(immediateScanEnabled, (value) => {
+  formState.scan_config.immediate_scan = value
+})
+
+// 监听定时扫描开关，同步到 formState
+watch(scheduledScanEnabled, (value) => {
+  formState.scan_config.scheduled_scan = value
+  if (!value) {
+    // 禁用定时扫描时，重置相关配置
+    formState.scan_config.schedule_type = 'daily'
+    formState.scan_config.schedule_time = '00:00'
+    formState.scan_config.schedule_value = []
+  }
+})
+
 watch(
   formState,
   (value) => {
     // Skip emitting while we are syncing from props to prevent recursion
     if (syncingFromProps) return
-    emit('update:modelValue', {
+    const payload = {
       resource_type: value.resource_type,
       name: value.name,
       description: value.description,
       is_active: value.is_active,
       connection_info: { ...value.connection_info }
-    })
+    }
+    // 只在启用扫描时发送 scan_config
+    if (scanConfigEnabled.value) {
+      payload.scan_config = { ...value.scan_config }
+    }
+    emit('update:modelValue', payload)
   },
   { deep: true }
 )

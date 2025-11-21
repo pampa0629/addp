@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +28,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// TaskQueueInterface 任务队列接口（避免循环导入）
+type TaskQueueInterface interface {
+	EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string) error
+}
+
 // ScanServiceNew 新的统一扫描服务
 type ScanServiceNew struct {
 	db                 *gorm.DB
@@ -38,6 +44,7 @@ type ScanServiceNew struct {
 	embeddingTimeout   time.Duration
 	objectClients      map[uint]*minio.Client
 	objectClientMu     sync.Mutex
+	taskQueue          TaskQueueInterface
 }
 
 const (
@@ -72,6 +79,11 @@ func NewScanServiceNew(db *gorm.DB, resourceService *ResourceService) *ScanServi
 // SetIndexer 注入搜索索引器
 func (s *ScanServiceNew) SetIndexer(indexer *search.Indexer) {
 	s.indexer = indexer
+}
+
+// SetTaskQueue 注入任务队列（用于预处理任务）
+func (s *ScanServiceNew) SetTaskQueue(queue TaskQueueInterface) {
+	s.taskQueue = queue
 }
 
 // EnableDocumentVectorization 为文档扫描启用向量化
@@ -296,13 +308,13 @@ func (s *ScanServiceNew) upsertItemSelective(
 			// 注意：path可能已经包含bucket前缀（历史设计）
 			// GenerateObjectFingerprint会再添加bucket，形成"bucket/bucket/path"
 			// 为了兼容性，保持这种方式
-			fingerprint = models.GenerateObjectFingerprint(resourceID, bucket, path)
+			fingerprint = commonModels.GenerateObjectFingerprint(resourceID, bucket, path)
 		} else if schema, ok := attrs["schema_name"].(string); ok {
 			// 关系数据库：使用 schema.table
-			fingerprint = models.GenerateTableFingerprint(resourceID, schema, name)
+			fingerprint = commonModels.GenerateTableFingerprint(resourceID, schema, name)
 		} else {
 			// 其他类型：使用 fullName
-			fingerprint = models.GenerateItemFingerprint(resourceID, fullName)
+			fingerprint = commonModels.GenerateItemFingerprint(resourceID, fullName)
 		}
 	} else {
 		// 无attributes，使用fullName作为标识
@@ -614,6 +626,13 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 			"started_at":      scanLog.StartedAt,
 		}
 		s.completeImmediateRun(directRun, resultSummary, completedAt)
+	}
+
+	// 触发预处理任务（如果配置了自动触发）
+	ctx := context.Background()
+	if err := s.triggerPreprocessingIfEnabled(ctx, resource, tenantID); err != nil {
+		s.log.Warn("预处理任务触发失败", "resource_id", resource.ID, "error", err)
+		// 不影响扫描结果，仅记录警告
 	}
 
 	return &models.ScanResponse{
@@ -1443,7 +1462,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 		// 注意：meta.Path已经包含bucket前缀（如"addp/2024东北高斯三维.mov"）
 		// GenerateObjectFingerprint会再添加bucket，结果是"addp/addp/2024东北高斯三维.mov"
 		// 这是历史设计，为了保持兼容性，我们继续使用这种方式
-		fingerprint := models.GenerateObjectFingerprint(resourceID, meta.Bucket, meta.Path)
+		fingerprint := commonModels.GenerateObjectFingerprint(resourceID, meta.Bucket, meta.Path)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
 		}
@@ -2391,7 +2410,7 @@ func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta plugins.O
 func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
 	// 生成fingerprint以查找已有记录 - 使用传入的fullPath确保一致性
 	bucket, _ := baseAttrs["bucket"].(string)
-	fingerprint := models.GenerateObjectFingerprint(resourceID, bucket, fullPath)
+	fingerprint := commonModels.GenerateObjectFingerprint(resourceID, bucket, fullPath)
 
 	// 查找已有的meta_item记录
 	var existingItem models.MetaItem

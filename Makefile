@@ -349,11 +349,16 @@ db-shell: ## 连接到 PostgreSQL 数据库
 redis-cli: ## 连接到 Redis
 	@docker compose exec redis redis-cli -a addp_redis
 
-minio-setup: ## 初始化 MinIO bucket
+minio-setup: ## 初始化 MinIO bucket (legacy, 使用 init-minio 替代)
 	@echo "$(GREEN)初始化 MinIO...$(NC)"
-	@docker compose exec minio mc alias set local http://localhost:9002 minioadmin minioadmin
+	@docker compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
 	@docker compose exec minio mc mb local/addp-data --ignore-existing
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
+
+init-minio: ## 初始化 MinIO buckets (包括 mvt-tiles 等)
+	@./scripts/infra-init-minio.sh
+
+init-minio-mvt: init-minio ## 初始化 MVT 瓦片缓存 bucket (alias for init-minio)
 
 install-deps: ## 安装所有依赖
 	@echo "$(GREEN)安装依赖...$(NC)"

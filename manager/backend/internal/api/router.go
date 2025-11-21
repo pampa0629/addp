@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, mvtService *service.MVTService) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, mvtService *service.MVTService, spatialService *service.SpatialPreviewService) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -95,6 +95,17 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 		{
 			tilesHandler := NewTilesHandler(mvtService)
 			tiles.GET("/:z/:x/:y.pbf", tilesHandler.GetTile)
+		}
+
+		// Spatial preview (cached MVT tiles from meta preprocessing)
+		if spatialService != nil {
+			spatial := api.Group("/spatial")
+			{
+				spatialHandler := NewSpatialPreviewHandler(spatialService)
+				spatial.GET("/:fingerprint/metadata", spatialHandler.GetTileMetadata)
+				spatial.GET("/:fingerprint/tiles/:z/:x/:y.mvt", spatialHandler.GetTile)
+				spatial.HEAD("/:fingerprint/tiles/:z/:x/:y.mvt", spatialHandler.CheckTileExists)
+			}
 		}
 	}
 

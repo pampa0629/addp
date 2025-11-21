@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -40,6 +41,7 @@ type ResourceService struct {
 type ScanTaskServiceInterface interface {
 	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Resource) error
 	DeleteTaskByResourceID(resourceID uint) error
+	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*models.ScanTaskRun, error)
 }
 
 func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *ResourceService {
@@ -363,6 +365,13 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 	return resource, nil
 }
 
+// GetResource 实现 mvt.ResourceService 接口
+// 用于 MVT 生成器获取资源连接信息
+func (s *ResourceService) GetResource(resourceID, tenantID uint) (*commonModels.Resource, error) {
+	// 直接调用 GetResourceByID，使用空 token（因为是内部调用）
+	return s.GetResourceByID(resourceID, tenantID, "")
+}
+
 // GetResourcesWithStats 获取资源及其扫描统计
 func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
 	resources, err := s.GetResourcesByTenant(tenantID)
@@ -484,15 +493,34 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 			}
 
 			// 检查是否有扫描配置
-			if resource.ScanConfig != nil && resource.ScanConfig.Enabled {
-				// 创建或更新扫描任务
-				if err := s.taskService.CreateOrUpdateTaskFromScanConfig(resource); err != nil {
-					s.log.Error("处理扫描配置失败",
-						"resource_id", event.ResourceID,
-						"error", err)
-					return err
+			if resource.ScanConfig != nil && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
+				// 1. 处理立即扫描
+				if resource.ScanConfig.ImmediateScan {
+					s.log.Info("检测到立即扫描配置，准备触发扫描", "resource_id", event.ResourceID)
+					go func() {
+						if err := s.triggerImmediateScan(resource); err != nil {
+							s.log.Error("立即扫描失败",
+								"resource_id", event.ResourceID,
+								"error", err)
+						} else {
+							s.log.Info("立即扫描已触发", "resource_id", event.ResourceID)
+						}
+					}()
 				}
-				s.log.Info("扫描配置已同步到扫描任务", "resource_id", event.ResourceID)
+
+				// 2. 处理定时扫描
+				if resource.ScanConfig.ScheduledScan {
+					s.log.Info("检测到定时扫描配置，准备创建定时任务",
+						"resource_id", event.ResourceID,
+						"schedule_type", resource.ScanConfig.ScheduleType)
+					if err := s.taskService.CreateOrUpdateTaskFromScanConfig(resource); err != nil {
+						s.log.Error("创建定时扫描任务失败",
+							"resource_id", event.ResourceID,
+							"error", err)
+						return err
+					}
+					s.log.Info("定时扫描任务已创建", "resource_id", event.ResourceID)
+				}
 			} else {
 				// 如果扫描配置被禁用或删除，删除对应的自动任务
 				if err := s.taskService.DeleteTaskByResourceID(event.ResourceID); err != nil {
@@ -539,4 +567,49 @@ func (s *ResourceService) Stop() {
 		s.eventSubscriber.Stop()
 		s.log.Info("资源事件订阅器已停止")
 	}
+}
+
+// triggerImmediateScan 立即触发扫描（用于 immediate 类型的 ScanConfig）
+func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) error {
+	if s.taskService == nil {
+		return fmt.Errorf("扫描任务服务未初始化")
+	}
+
+	if resource.ScanConfig == nil {
+		return fmt.Errorf("资源 %d 没有扫描配置", resource.ID)
+	}
+
+	// 构建扫描请求
+	req := &models.ScanRequest{
+		ResourceID:  resource.ID,
+		SchemaNames: resource.ScanConfig.SchemaNames,
+		ObjectPaths: resource.ScanConfig.ObjectPaths,
+		ScanDepth:   resource.ScanConfig.ScanDepth,
+		ScanType:    "auto", // 标记为自动扫描
+	}
+
+	// 如果没有指定扫描深度，使用默认值
+	if req.ScanDepth == "" {
+		req.ScanDepth = "basic"
+	}
+
+	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）
+	tenantID := resource.TenantID
+	if tenantID == 0 {
+		tenantID = 1 // 默认租户
+	}
+
+	// 使用系统内部 token 创建扫描任务
+	ctx := context.Background()
+	run, err := s.taskService.CreateManualRun(ctx, tenantID, 0, "", req)
+	if err != nil {
+		return fmt.Errorf("创建立即扫描任务失败: %w", err)
+	}
+
+	s.log.Info("立即扫描任务已创建",
+		"resource_id", resource.ID,
+		"run_id", run.ID,
+		"tenant_id", tenantID)
+
+	return nil
 }

@@ -22,14 +22,35 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 
 // ScanConfig 元数据扫描配置
 type ScanConfig struct {
-	Enabled        bool     `json:"enabled"`                   // 是否启用扫描
-	ScheduleType   string   `json:"schedule_type"`             // manual, daily, weekly, monthly, cron
-	CronExpression string   `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron 时使用）
-	ScheduleTime   string   `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
-	ScheduleValue  []int    `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
-	ScanDepth      string   `json:"scan_depth"`                // shallow, deep
-	SchemaNames    []string `json:"schema_names,omitempty"`    // PostgreSQL schemas（留空表示扫描所有）
-	ObjectPaths    []string `json:"object_paths,omitempty"`    // MinIO prefixes（留空表示扫描根目录）
+	Enabled        bool                 `json:"enabled"`                   // 是否启用扫描（总开关，兼容旧版）
+	ImmediateScan  bool                 `json:"immediate_scan"`            // 注册后立即扫描
+	ScheduledScan  bool                 `json:"scheduled_scan"`            // 启用定时扫描
+	ScheduleType   string               `json:"schedule_type"`             // daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
+	CronExpression string               `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron 时使用）
+	ScheduleTime   string               `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
+	ScheduleValue  []int                `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
+	ScanDepth      string               `json:"scan_depth"`                // shallow, deep
+	SchemaNames    []string             `json:"schema_names,omitempty"`    // PostgreSQL schemas（留空表示扫描所有）
+	ObjectPaths    []string             `json:"object_paths,omitempty"`    // MinIO prefixes（留空表示扫描根目录）
+	Preprocessing  *PreprocessingConfig `json:"preprocessing,omitempty"`   // 预处理配置（可选）
+}
+
+// PreprocessingConfig 预处理配置
+// 预处理是指在扫描完成后对数据进行额外的处理，以优化后续的访问性能
+type PreprocessingConfig struct {
+	Enabled     bool              `json:"enabled"`              // 是否启用预处理
+	AutoTrigger bool              `json:"auto_trigger"`         // 扫描完成后自动触发预处理
+	Types       []string          `json:"types"`                // 预处理类型列表 ["mvt_tiles", "vector_embedding"]
+	MVTConfig   *MVTPreprocessConfig `json:"mvt_config,omitempty"` // MVT 瓦片预处理配置
+}
+
+// MVTPreprocessConfig MVT 瓦片预处理配置
+// MVT (Mapbox Vector Tiles) 用于空间数据的高性能可视化
+type MVTPreprocessConfig struct {
+	MaxZoom          int     `json:"max_zoom"`           // 最大缩放级别 (0-18, 默认 18)
+	Concurrency      int     `json:"concurrency"`        // 并发生成数 (1-20, 默认 10)
+	StopThresholdSec float64 `json:"stop_threshold_sec"` // 自适应停止阈值：平均生成时间（秒）< 该值则停止（默认 3.0）
+	StopThresholdKB  float64 `json:"stop_threshold_kb"`  // 自适应停止阈值：平均瓦片大小（KB）< 该值则停止（默认 50.0）
 }
 
 func (s ScanConfig) Value() (driver.Value, error) {

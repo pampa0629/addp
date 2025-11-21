@@ -104,7 +104,11 @@ func main() {
     // MVT service for spatial preview tiles
     mvtService := service.NewMVTService(metadataRepo, resourceRepo)
 
-    router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, mvtService)
+    // Spatial preview service (for cached MVT tiles from meta preprocessing)
+    spatialService := service.NewSpatialPreviewService()
+    logger.L().Info("空间预览服务已初始化")
+
+    router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, mvtService, spatialService)
 
 	// 启动服务
 	addr := ":" + cfg.Port

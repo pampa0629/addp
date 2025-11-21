@@ -152,7 +152,14 @@
       "Bash(mkdir:*)",
       "Bash(make build-workers:*)",
       "Bash(go get:*)",
-      "Bash(redis-cli:*)"
+      "Bash(redis-cli:*)",
+      "Bash(./scripts/dev-health.sh:*)",
+      "Bash(make:*)",
+      "Bash(/Users/pampa/code/addp/scripts/init-minio-mvt.sh)",
+      "Bash(brew install:*)",
+      "Bash(/Users/pampa/code/addp/scripts/infra-init-minio.sh)",
+      "Bash(gtimeout 10 go run:*)",
+      "Bash(/Users/pampa/code/addp/scripts/dev-restart.sh:*)"
     ],
     "deny": [],
     "ask": []
