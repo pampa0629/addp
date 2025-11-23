@@ -76,7 +76,7 @@ func (s *MVTService) GetTile(ctx context.Context, tenantID *uint, resourceID uin
 
     // Build query
     opt := spatial.MVTOptions{Layer: table, Extent: 4096, Buffer: 64, SRID: srid, Simplify: true}
-    sqlStr, args := spatial.BuildMVTQuery(schema, table, geomCol, cols, z, x, y, opt)
+    sqlStr, args := spatial.BuildMVTQuery(schema, table, geomCol, cols, z, x, y, opt, "id")
 
     // Execute
     var mvt []byte

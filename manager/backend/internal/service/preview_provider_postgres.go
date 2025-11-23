@@ -64,5 +64,10 @@ func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewReque
 		Page:            req.Page,
 		PageSize:        req.PageSize,
 		GeometryColumns: geometryColumns,
+		// Populate MVT preview metadata for frontend decision-making
+		ResourceID:   req.Resource.ID,
+		Schema:       req.Schema,
+		Table:        req.Table,
+		ResourceType: req.Resource.ResourceType,
 	}, nil
 }

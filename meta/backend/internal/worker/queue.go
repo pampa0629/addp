@@ -49,9 +49,10 @@ type ScanTaskPayload struct {
 
 // PreprocessTaskPayload 预处理任务载荷
 type PreprocessTaskPayload struct {
-	ItemID   uint   `json:"item_id"`
-	TenantID uint   `json:"tenant_id"`
-	Type     string `json:"type"` // "mvt_tiles", "vector_embedding"
+	ItemID    uint   `json:"item_id"`
+	TenantID  uint   `json:"tenant_id"`
+	Type      string `json:"type"`      // "mvt_tiles", "vector_embedding"
+	ScanRunID *uint  `json:"scan_run_id,omitempty"` // 关联的扫描运行ID（用于状态更新）
 }
 
 // EnqueueScanTask 将扫描任务加入队列
@@ -163,19 +164,20 @@ func (q *TaskQueue) Close() error {
 }
 
 // EnqueuePreprocessTask 将预处理任务加入队列
-func (q *TaskQueue) EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string) error {
+func (q *TaskQueue) EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string, scanRunID *uint) error {
 	// 默认队列为 "meta:default"
-	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType,
+	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType, scanRunID,
 		asynq.Queue("meta:default"),
 	)
 }
 
 // EnqueuePreprocessTaskWithOptions 将预处理任务加入队列（支持 Asynq 选项）
-func (q *TaskQueue) EnqueuePreprocessTaskWithOptions(ctx context.Context, itemID, tenantID uint, preprocessType string, opts ...asynq.Option) error {
+func (q *TaskQueue) EnqueuePreprocessTaskWithOptions(ctx context.Context, itemID, tenantID uint, preprocessType string, scanRunID *uint, opts ...asynq.Option) error {
 	payload, err := json.Marshal(PreprocessTaskPayload{
-		ItemID:   itemID,
-		TenantID: tenantID,
-		Type:     preprocessType,
+		ItemID:    itemID,
+		TenantID:  tenantID,
+		Type:      preprocessType,
+		ScanRunID: scanRunID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -194,7 +196,7 @@ func (q *TaskQueue) EnqueuePreprocessTaskWithOptions(ctx context.Context, itemID
 }
 
 // EnqueuePreprocessTaskWithPriority 根据优先级将预处理任务加入队列
-func (q *TaskQueue) EnqueuePreprocessTaskWithPriority(ctx context.Context, itemID, tenantID uint, preprocessType, priority string) error {
+func (q *TaskQueue) EnqueuePreprocessTaskWithPriority(ctx context.Context, itemID, tenantID uint, preprocessType, priority string, scanRunID *uint) error {
 	// 根据优先级选择队列
 	queueName := "meta:default"
 	switch priority {
@@ -206,7 +208,7 @@ func (q *TaskQueue) EnqueuePreprocessTaskWithPriority(ctx context.Context, itemI
 		queueName = "meta:default"
 	}
 
-	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType,
+	return q.EnqueuePreprocessTaskWithOptions(ctx, itemID, tenantID, preprocessType, scanRunID,
 		asynq.Queue(queueName),
 	)
 }

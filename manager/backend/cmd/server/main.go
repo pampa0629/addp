@@ -103,14 +103,15 @@ func main() {
 	defer searchService.Close()
 
 	// 设置路由
-    // MVT service for spatial preview tiles
-    mvtService := service.NewMVTService(metadataRepo, resourceRepo)
+	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
+	unifiedMVTService := service.NewUnifiedMVTService(
+		service.NewSpatialPreviewService(redisClient),
+		service.NewMVTService(metadataRepo, resourceRepo),
+		metadataRepo,
+	)
+	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
-    // Spatial preview service (for cached MVT tiles from meta preprocessing)
-    spatialService := service.NewSpatialPreviewService()
-    logger.L().Info("空间预览服务已初始化")
-
-    router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, mvtService, spatialService)
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, resourceRepo, metadataRepo)
 
 	// 启动服务
 	addr := ":" + cfg.Port

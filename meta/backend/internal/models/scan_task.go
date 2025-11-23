@@ -51,6 +51,16 @@ type ScanTaskRun struct {
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 	TriggerUserID   *uint      `json:"trigger_user_id,omitempty"`
+
+	// 预处理任务状态跟踪
+	PreprocessStatus      string     `gorm:"size:32;default:'pending'" json:"preprocess_status"` // pending/running/success/failed/skipped
+	PreprocessStartedAt   *time.Time `json:"preprocess_started_at,omitempty"`
+	PreprocessCompletedAt *time.Time `json:"preprocess_completed_at,omitempty"`
+	PreprocessTaskCount   int        `gorm:"default:0" json:"preprocess_task_count"`              // 触发的预处理任务数量
+	PreprocessSuccessCount int       `gorm:"default:0" json:"preprocess_success_count"`           // 成功的预处理任务数量
+	PreprocessFailedCount int        `gorm:"default:0" json:"preprocess_failed_count"`            // 失败的预处理任务数量
+	PreprocessErrorMessage string    `gorm:"type:text" json:"preprocess_error_message,omitempty"` // 预处理错误信息
+
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }

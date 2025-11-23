@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	metaModels "github.com/addp/meta/internal/models"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -62,7 +62,7 @@ func (g *TileGenerator) GenerateTile(
 	}
 
 	// 3. 提取表信息
-	schema, _ := item.Attributes["schema_name"].(string)
+	schema, _ := item.Attributes["schema"].(string)
 	tableName := item.Name
 
 	// 4. 构建连接字符串
@@ -78,12 +78,12 @@ func (g *TileGenerator) GenerateTile(
 	}
 	defer db.Close()
 
-	// 6. 构建 MVT 查询
-	query := g.buildMVTQuery(schema, tableName, geomColumn, int(srid), z, x, y)
+	// 6. 构建 MVT 查询（使用 common/spatial 统一实现）
+	sqlStr, args := g.buildMVTQuery(schema, tableName, geomColumn, int(srid), z, x, y)
 
 	// 7. 执行查询
 	var mvtData []byte
-	err = db.QueryRowContext(ctx, query).Scan(&mvtData)
+	err = db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvtData)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return []byte{}, nil // 空瓦片
@@ -100,48 +100,21 @@ func (g *TileGenerator) GenerateTile(
 	return mvtData, nil
 }
 
-// buildMVTQuery 构建 MVT 查询 SQL
+// buildMVTQuery 构建 MVT 查询 SQL（使用 common/spatial 统一实现）
 func (g *TileGenerator) buildMVTQuery(
 	schema, table, geomColumn string,
 	srid, z, x, y int,
-) string {
-	// 使用 PostGIS ST_AsMVT 函数生成 MVT
-	// 参考: https://postgis.net/docs/ST_AsMVT.html
-
-	query := fmt.Sprintf(`
-WITH mvtgeom AS (
-    SELECT
-        ST_AsMVTGeom(
-            ST_Transform("%s", 3857),
-            ST_TileEnvelope(%d, %d, %d),
-            extent => 4096,
-            buffer => 64,
-            clip_geom => true
-        ) AS geom
-    FROM "%s"."%s"
-    WHERE "%s" && ST_Transform(ST_TileEnvelope(%d, %d, %d), %d)
-      AND ST_Intersects("%s", ST_Transform(ST_TileEnvelope(%d, %d, %d), %d))
-)
-SELECT ST_AsMVT(mvtgeom.*, '%s', 4096, 'geom')
-FROM mvtgeom
-WHERE geom IS NOT NULL;
-	`,
-		// ST_AsMVTGeom 参数
-		geomColumn,
-		z, x, y,
-		// FROM 子句
-		schema, table,
-		// WHERE 空间索引过滤
-		geomColumn,
-		z, x, y, srid,
-		// WHERE ST_Intersects
-		geomColumn,
-		z, x, y, srid,
-		// ST_AsMVT layer name
-		table,
-	)
-
-	return strings.TrimSpace(query)
+) (string, []interface{}) {
+	// 使用 common/spatial.BuildMVTQuery 统一实现
+	// Meta Worker 预处理不需要 simplify（速度更重要）和列选择（保留所有列）
+	opt := spatial.MVTOptions{
+		Layer:    table,
+		Extent:   4096,
+		Buffer:   64,
+		SRID:     srid,
+		Simplify: false, // 预处理阶段不简化，保留完整精度
+	}
+	return spatial.BuildMVTQuery(schema, table, geomColumn, []string{}, z, x, y, opt, "id")
 }
 
 // GetSpatialExtent 获取空间表的范围（WGS84）
@@ -166,7 +139,7 @@ func (g *TileGenerator) GetSpatialExtent(
 	// Note: SRID not needed here as we transform to WGS84 (4326) in the query
 
 	// 3. 提取表信息
-	schema, _ := item.Attributes["schema_name"].(string)
+	schema, _ := item.Attributes["schema"].(string)
 	tableName := item.Name
 
 	// 4. 构建连接字符串

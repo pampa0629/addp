@@ -174,6 +174,18 @@ for i in {1..10}; do
   sleep 0.5
 done
 
+# 清理 Vite 缓存（避免旧代码被缓存）
+echo -e "${YELLOW}清理前端缓存...${NC}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend"; do
+  if [ -d "$frontend_dir" ]; then
+    rm -rf "$frontend_dir/node_modules/.vite" "$frontend_dir/.vite" 2>/dev/null || true
+  fi
+done
+echo "✓ 前端缓存已清理"
+
 # 清理 PID 文件
 if [ -d ".dev-pids" ]; then
   rm -rf .dev-pids

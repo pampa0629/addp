@@ -73,7 +73,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPreviewComponent } from '@/plugins/previews'
 
@@ -612,6 +612,11 @@ watch(
     downloading.value = false
   }
 )
+
+// 组件卸载时清理状态（防止 race condition 导致的错误）
+onUnmounted(() => {
+  downloading.value = false
+})
 
 const title = computed(() => {
   if (!props.selectedNode) return '数据预览'

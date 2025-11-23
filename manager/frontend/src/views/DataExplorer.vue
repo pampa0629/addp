@@ -508,6 +508,11 @@ const loadPreview = async () => {
 
     previewData.value = normalizePreviewPayload(response.data, selectedNode.value)
   } catch (error) {
+    // 忽略请求取消错误（用户快速点击时的正常行为）
+    if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+      return
+    }
+
     if (requestId !== previewRequestId) {
       return
     }

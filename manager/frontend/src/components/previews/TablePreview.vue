@@ -1,6 +1,6 @@
 <template>
   <div class="table-preview">
-    <!-- 地图预览 -->
+    <!-- 地图预览 (统一使用 MVT 瓦片) -->
     <template v-if="hasGeometry && showMap">
       <div class="map-controls">
         <div class="toggle-wrapper">
@@ -17,18 +17,22 @@
         </el-select>
       </div>
 
-      <MapContainer
+      <!-- 统一使用 MVT 瓦片预览（所有空间表）-->
+      <VectorTilePreview
         ref="mapRef"
-        :features="geoFeatures"
-        :base-map-type="baseMapType"
-        :height="mapHeight + 'px'"
-        @feature-click="handleFeatureClick"
+        :resource-id="resourceId"
+        :schema="schema"
+        :table="table"
+        :geom="activeGeometryColumn"
+        :cols="displayColumns"
+        :center="mapCenter"
+        :zoom="mapZoom"
       />
 
       <div class="map-splitter" @mousedown="startMapResize"></div>
     </template>
 
-    <!-- 表格区域 -->
+    <!-- 表格区域（保持原有分页逻辑）-->
     <div class="table-wrapper">
       <el-table
         ref="tableRef"
@@ -69,7 +73,9 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { useResizable } from '@/composables/useResizable'
-import MapContainer from '@/components/map/MapContainer.vue'
+import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
+import { dataExplorerAPI } from '@/api/dataExplorer'
+import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   data: {
@@ -103,41 +109,17 @@ const geometryColumns = computed(() => props.data?.geometry_columns || [])
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
 
-const escapeHtml = (value) => {
-  if (value === null || value === undefined) return ''
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
+// 资源信息（用于 MVT 预览）
+const resourceId = computed(() => props.data?.resourceId)
+const schema = computed(() => props.data?.schema)
+const table = computed(() => props.data?.table || props.data?.path)
 
-const formatCellValue = (value) => {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'object') {
-    try {
-      return JSON.stringify(value)
-    } catch (_error) {
-      return '[object]'
-    }
-  }
-  return String(value)
-}
-
-const buildPopupContent = (row) => {
-  if (!row) {
-    return '<div class="map-popup-content">暂无数据</div>'
-  }
-  const rowsHtml = (displayColumns.value || [])
-    .map((col) => {
-      const label = escapeHtml(col)
-      const value = escapeHtml(formatCellValue(row[col]))
-      return `<div class="map-popup-row"><span class="map-popup-label">${label}</span><span class="map-popup-value">${value}</span></div>`
-    })
-    .join('')
-  return `<div class="map-popup-content">${rowsHtml || '<div class="map-popup-row">暂无可展示字段</div>'}</div>`
-}
+// 地图配置
+const mapCenter = computed(() => {
+  // 可从 props.data?.extent 中计算中心点
+  return [120.2, 30.3] // 默认中心点
+})
+const mapZoom = computed(() => 10) // 默认缩放级别
 
 // 过滤掉几何列后的显示列
 const displayColumns = computed(() => {
@@ -156,80 +138,48 @@ const tableData = computed(() => {
   }))
 })
 
-// 转换为 GeoJSON Features
-const geoFeatures = computed(() => {
-  if (!hasGeometry.value || !activeGeometryColumn.value) return []
-  const column = activeGeometryColumn.value
-  return tableData.value
-    .map((row) => {
-      const geometryStr = row[column]
-      if (!geometryStr) return null
-      try {
-        const geometry = typeof geometryStr === 'string' ? JSON.parse(geometryStr) : geometryStr
-        return {
-          type: 'Feature',
-          geometry,
-          properties: row
-        }
-      } catch (error) {
-        console.warn('解析 GeoJSON 失败', error)
-        return null
-      }
-    })
-    .filter(Boolean)
-})
-
-const focusRowOnMap = (row, options = {}) => {
-  const rowKey = row?.__rowKey
-  if (!rowKey || !mapRef.value || typeof mapRef.value.focusFeature !== 'function') return
-  mapRef.value.focusFeature(rowKey, {
-    fit: options.fit !== undefined ? options.fit : true,
-    openPopup: !!options.openPopup,
-    popupContent: options.popupContent,
-    coordinate: options.coordinate,
-    position: options.position,
-    keepPopup: options.keepPopup,
-    padding: options.padding
-  })
-}
-
-const showPopupForRow = (row, payload = {}) => {
-  if (!mapRef.value || typeof mapRef.value.showPopup !== 'function') return
-  const content = `<div class="map-popup">${buildPopupContent(row)}</div>`
-  mapRef.value.showPopup({
-    content,
-    coordinate: payload.coordinate,
-    position: payload.position
-  })
-}
-
 const getRowKey = (row) => {
   return row?.__rowKey || row?.id || row?.ID || row?._id || row?.uuid || String(Math.random())
 }
 
-const handleRowClick = (row) => {
+const handleRowClick = async (row) => {
   currentRowKey.value = row?.__rowKey || ''
   if (tableRef.value) {
     tableRef.value.setCurrentRow(row)
   }
-  if (hasGeometry.value && showMap.value) {
-    if (mapRef.value && typeof mapRef.value.hidePopup === 'function') {
-      mapRef.value.hidePopup()
+
+  // MVT 预览模式下，通过 API 查询要素中心点并定位
+  if (hasGeometry.value && showMap.value && mapRef.value) {
+    const featureId = row.id || row.ID || row._id || row.uuid
+    if (!featureId) {
+      console.warn('表格行缺少主键ID，无法定位到地图')
+      return
     }
-    focusRowOnMap(row, { openPopup: false })
+
+    try {
+      // 调用后端 API 查询要素中心点
+      const response = await dataExplorerAPI.getFeatureCentroid(
+        resourceId.value,
+        schema.value,
+        table.value,
+        featureId,
+        activeGeometryColumn.value,
+        'id'  // 主键列名，可根据实际情况调整
+      )
+
+      const centroid = response.data
+      // 调用地图组件的定位方法
+      if (mapRef.value && typeof mapRef.value.focusFeatureById === 'function') {
+        mapRef.value.focusFeatureById(featureId, centroid)
+      }
+    } catch (error) {
+      console.error('查询要素中心点失败:', error)
+      // 用户点击行时如果查询失败，只记录错误不弹窗，避免打断交互
+    }
   }
 }
 
-const handleFeatureClick = ({ feature, coordinate, position }) => {
-  const rowData = feature?.properties
-  if (rowData && tableRef.value) {
-    currentRowKey.value = rowData.__rowKey || ''
-    tableRef.value.setCurrentRow(rowData)
-  }
-  if (rowData && hasGeometry.value) {
-    showPopupForRow(rowData, { coordinate, position })
-  }
-}
+// handleFeatureClick 已删除（MVT 模式下暂不支持地图→表格定位）
 
 const handlePageChange = (page) => {
   currentPage.value = page
@@ -245,25 +195,6 @@ watch(
     }
   },
   { immediate: true }
-)
-
-watch(
-  showMap,
-  (value) => {
-    if (!value && mapRef.value && typeof mapRef.value.hidePopup === 'function') {
-      mapRef.value.hidePopup()
-    }
-  }
-)
-
-watch(
-  () => geoFeatures.value,
-  () => {
-    if (mapRef.value && typeof mapRef.value.hidePopup === 'function') {
-      mapRef.value.hidePopup()
-    }
-  },
-  { deep: true }
 )
 
 onMounted(() => {

@@ -4,11 +4,12 @@ import (
 	"github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/cors"
 	"github.com/addp/manager/internal/config"
+	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, mvtService *service.MVTService, spatialService *service.SpatialPreviewService) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, unifiedMVTService *service.UnifiedMVTService, resourceRepo *repository.ResourceRepository, metadataRepo *repository.MetadataRepository) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -71,6 +72,10 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			resources.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
 			resources.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
 			resources.GET("/:id/tables", metadataHandler.GetTables)
+
+			// 要素查询（用于表格与地图关联）
+			featureHandler := NewFeatureHandler(resourceRepo, metadataRepo)
+			resources.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
 		}
 
 		// 表管理
@@ -90,23 +95,13 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			searchGroup.DELETE("/history", handler.ClearHistory)
 		}
 
-		// Vector tiles (MVT) preview
-		tiles := api.Group("/tiles")
-		{
-			tilesHandler := NewTilesHandler(mvtService)
-			tiles.GET("/:z/:x/:y.pbf", tilesHandler.GetTile)
-		}
-
-		// Spatial preview (cached MVT tiles from meta preprocessing)
-		if spatialService != nil {
-			spatial := api.Group("/spatial")
-			{
-				spatialHandler := NewSpatialPreviewHandler(spatialService)
-				spatial.GET("/:fingerprint/metadata", spatialHandler.GetTileMetadata)
-				spatial.GET("/:fingerprint/tiles/:z/:x/:y.mvt", spatialHandler.GetTile)
-				spatial.HEAD("/:fingerprint/tiles/:z/:x/:y.mvt", spatialHandler.CheckTileExists)
-			}
-		}
+		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
+		// GET /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
+		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
+		resources.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y.mvt", func(c *gin.Context) {
+			unifiedTilesHandler := NewUnifiedTilesHandler(unifiedMVTService)
+			unifiedTilesHandler.GetTile(c)
+		})
 	}
 
 	return router

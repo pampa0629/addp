@@ -255,16 +255,20 @@ func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*mvt.T
 
 // triggerPreprocessingIfEnabled 扫描完成后触发预处理
 // 在 ScanResource 方法的末尾调用
+// 返回值: (taskCount, error) - taskCount 是触发的预处理任务数量
 func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
 	ctx context.Context,
 	resource *commonModels.Resource,
 	tenantID uint,
-) error {
+	scanRunID uint, // 新增：关联的扫描运行ID
+) (int, error) {
 	// 1. 检查资源的预处理配置
 	if resource.ScanConfig == nil ||
 		resource.ScanConfig.Preprocessing == nil ||
 		!resource.ScanConfig.Preprocessing.Enabled {
-		return nil // 未启用预处理
+		// 未启用预处理，标记为 skipped
+		s.updatePreprocessStatus(scanRunID, "skipped", 0, 0, 0, "")
+		return 0, nil
 	}
 
 	preprocessing := resource.ScanConfig.Preprocessing
@@ -278,13 +282,15 @@ func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
 
 	if err != nil {
 		logger.L().Error("Failed to query spatial items", "error", err)
-		return fmt.Errorf("failed to query spatial items: %w", err)
+		s.updatePreprocessStatus(scanRunID, "failed", 0, 0, 0, err.Error())
+		return 0, fmt.Errorf("failed to query spatial items: %w", err)
 	}
 
 	if len(spatialItems) == 0 {
 		logger.L().Info("No spatial tables found, skipping preprocessing",
 			"resource_id", resource.ID)
-		return nil
+		s.updatePreprocessStatus(scanRunID, "skipped", 0, 0, 0, "")
+		return 0, nil
 	}
 
 	logger.L().Info("Found spatial tables for preprocessing",
@@ -296,10 +302,24 @@ func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
 	if s.taskQueue == nil {
 		logger.L().Warn("TaskQueue not available, preprocessing tasks cannot be enqueued",
 			"resource_id", resource.ID)
-		return fmt.Errorf("task queue not available for preprocessing")
+		errMsg := "task queue not available for preprocessing"
+		s.updatePreprocessStatus(scanRunID, "failed", 0, 0, 0, errMsg)
+		return 0, fmt.Errorf(errMsg)
 	}
 
+	// 标记预处理开始
+	now := time.Now()
+	s.db.Model(&models.ScanTaskRun{}).Where("id = ?", scanRunID).Updates(map[string]interface{}{
+		"preprocess_status":     "running",
+		"preprocess_started_at": now,
+	})
+
 	// 为每个启用的预处理类型创建任务
+	taskCount := 0
+	successCount := 0
+	failedCount := 0
+	var lastError error
+
 	for _, preprocessType := range preprocessing.Types {
 		if preprocessType != "mvt_tiles" {
 			// 其他类型暂不支持
@@ -307,16 +327,20 @@ func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
 		}
 
 		for _, item := range spatialItems {
-			// 入队预处理任务
-			if err := s.taskQueue.EnqueuePreprocessTask(ctx, item.ID, tenantID, preprocessType); err != nil {
+			taskCount++
+			// 入队预处理任务，关联 scanRunID
+			if err := s.taskQueue.EnqueuePreprocessTask(ctx, item.ID, tenantID, preprocessType, &scanRunID); err != nil {
 				logger.L().Error("Failed to enqueue preprocessing task",
 					"item_id", item.ID,
 					"type", preprocessType,
 					"error", err)
+				failedCount++
+				lastError = err
 				// 继续处理其他表，不阻塞
 				continue
 			}
 
+			successCount++
 			logger.L().Info("Preprocessing task enqueued",
 				"item_id", item.ID,
 				"table", item.Name,
@@ -325,5 +349,39 @@ func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
 		}
 	}
 
-	return nil
+	// 更新预处理统计
+	status := "running" // 任务已入队，等待 worker 处理
+	var errMsg string
+	if lastError != nil {
+		errMsg = lastError.Error()
+	}
+	s.updatePreprocessStatus(scanRunID, status, taskCount, successCount, failedCount, errMsg)
+
+	return taskCount, nil
+}
+
+// updatePreprocessStatus 更新预处理状态
+func (s *ScanServiceNew) updatePreprocessStatus(
+	scanRunID uint,
+	status string,
+	taskCount, successCount, failedCount int,
+	errorMessage string,
+) {
+	updates := map[string]interface{}{
+		"preprocess_status":        status,
+		"preprocess_task_count":    taskCount,
+		"preprocess_success_count": successCount,
+		"preprocess_failed_count":  failedCount,
+	}
+
+	if errorMessage != "" {
+		updates["preprocess_error_message"] = errorMessage
+	}
+
+	if status == "success" || status == "failed" || status == "skipped" {
+		now := time.Now()
+		updates["preprocess_completed_at"] = now
+	}
+
+	s.db.Model(&models.ScanTaskRun{}).Where("id = ?", scanRunID).Updates(updates)
 }

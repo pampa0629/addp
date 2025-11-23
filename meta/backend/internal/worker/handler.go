@@ -52,11 +52,11 @@ func (h *TaskHandler) HandlePreprocessTask(ctx context.Context, t *asynq.Task) e
 		return fmt.Errorf("无法解析任务载荷: %w", err)
 	}
 
-	log.Printf("🔄 开始执行预处理任务 - ItemID: %d, TenantID: %d, Type: %s",
-		payload.ItemID, payload.TenantID, payload.Type)
+	log.Printf("🔄 开始执行预处理任务 - ItemID: %d, TenantID: %d, Type: %s, ScanRunID: %v",
+		payload.ItemID, payload.TenantID, payload.Type, payload.ScanRunID)
 
 	// 执行预处理任务
-	err := h.preprocessSvc.ExecutePreprocess(ctx, payload.ItemID, payload.TenantID, payload.Type)
+	err := h.preprocessSvc.ExecutePreprocess(ctx, payload.ItemID, payload.TenantID, payload.Type, payload.ScanRunID)
 	if err != nil {
 		log.Printf("❌ 预处理任务执行失败 - ItemID: %d, Error: %v", payload.ItemID, err)
 		return fmt.Errorf("预处理任务执行失败: %w", err)

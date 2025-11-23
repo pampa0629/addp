@@ -95,6 +95,19 @@
             <el-tag :type="statusTag(row.status)">{{ formatRunStatus(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="缓存预处理" width="160">
+          <template #default="{ row }">
+            <div v-if="row.preprocess_task_count > 0" style="font-size: 12px">
+              <el-tag :type="preprocessStatusTag(row.preprocess_status)" size="small">
+                {{ formatPreprocessStatus(row.preprocess_status) }}
+              </el-tag>
+              <div style="margin-top: 4px; color: #909399">
+                {{ row.preprocess_success_count }}/{{ row.preprocess_task_count }} 成功
+              </div>
+            </div>
+            <span v-else style="color: #c0c4cc">-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="进度" width="180">
           <template #default="{ row }">
             <el-progress :percentage="row.progress_percent || 0" :status="progressStatus(row.status)" />
@@ -312,6 +325,40 @@ const formatTriggerType = type => {
 const formatDate = value => {
   if (!value) return '-'
   return new Date(value).toLocaleString('zh-CN')
+}
+
+const formatPreprocessStatus = status => {
+  switch (status) {
+    case 'pending':
+      return '未开始'
+    case 'running':
+      return '进行中'
+    case 'success':
+      return '成功'
+    case 'failed':
+      return '失败'
+    case 'skipped':
+      return '已跳过'
+    default:
+      return status || '-'
+  }
+}
+
+const preprocessStatusTag = status => {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'running':
+      return 'warning'
+    case 'failed':
+      return 'danger'
+    case 'pending':
+      return 'info'
+    case 'skipped':
+      return ''
+    default:
+      return ''
+  }
 }
 
 const runDisplayName = row => {

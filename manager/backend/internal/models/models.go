@@ -213,6 +213,11 @@ type TablePreview struct {
 	PageSize        int                      `json:"page_size"`
 	GeometryColumns []string                 `json:"geometry_columns"`
 	Object          *ObjectPreview           `json:"object,omitempty"`
+	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
+	ResourceID   uint   `json:"resourceId,omitempty"`   // Resource ID for MVT API
+	Schema       string `json:"schema,omitempty"`       // Schema name for MVT API
+	Table        string `json:"table,omitempty"`        // Table name for MVT API
+	ResourceType string `json:"resourceType,omitempty"` // Resource type (e.g., "postgresql")
 }
 
 type ObjectPreview struct {

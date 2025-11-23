@@ -38,26 +38,45 @@ const token = () => localStorage.getItem('token') || ''
 
 const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
-  const q = new URLSearchParams()
-  q.set('resource_id', String(props.resourceId))
-  q.set('schema', props.schema)
-  q.set('table', props.table)
-  if (props.geom) q.set('geom', props.geom)
-  if (props.srid) q.set('srid', String(props.srid))
-  if (props.cols?.length) q.set('cols', props.cols.join(','))
-  // token via header; avoid leaking token into URL unless required
-  return `${base}/tiles/{z}/{x}/{y}.pbf?${q.toString()}`
+
+  // 新的 RESTful API 格式：
+  // /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
+  let path = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}.mvt`
+
+  // 添加可选查询参数
+  const params = []
+  if (props.geom && props.geom !== 'geom') {
+    params.push(`geom=${encodeURIComponent(props.geom)}`)
+  }
+  if (props.srid && props.srid !== 4326) {
+    params.push(`srid=${props.srid}`)
+  }
+  if (props.cols?.length) {
+    params.push(`cols=${props.cols.map(c => encodeURIComponent(c)).join(',')}`)
+  }
+
+  return params.length > 0 ? `${path}?${params.join('&')}` : path
 })
 
 function makeVectorLayer() {
   const vtSource = new VectorTileSource({
     format: new MVT(),
     tileUrlFunction: (tileCoord) => {
-      const [z, x, y] = tileCoord
-      return tilesURLTemplate.value
+      // OpenLayers 使用 [z, x, -y-1] 格式（TMS）
+      // 需要转换为标准 XYZ 格式: y = 2^z - y - 1
+      const z = tileCoord[0]
+      const x = tileCoord[1]
+      const y = tileCoord[2]
+
+      // 转换 TMS Y 坐标到 XYZ 格式
+      const xyzY = Math.pow(2, z) - y - 1
+
+      const url = tilesURLTemplate.value
         .replace('{z}', z)
         .replace('{x}', x)
-        .replace('{y}', y)
+        .replace('{y}', xyzY)
+
+      return url
     },
     tileLoadFunction: async (tile, src) => {
       try {
@@ -119,6 +138,26 @@ function fromLonLat(lonLat) {
   y = (y * 20037508.34) / 180
   return [x, y]
 }
+
+// 通过 ID 定位要素（用于表格行点击后定位到地图）
+function focusFeatureById(featureId, centroid) {
+  if (!map || !centroid) return
+
+  const { lon, lat } = centroid
+  const center = fromLonLat([lon, lat])
+
+  // 平移地图到要素中心点，并适当放大
+  map.getView().animate({
+    center,
+    zoom: 16, // 放大到合适的缩放级别
+    duration: 500
+  })
+}
+
+// 暴露方法给父组件调用
+defineExpose({
+  focusFeatureById
+})
 
 onMounted(() => initMap())
 onBeforeUnmount(() => {

@@ -106,6 +106,11 @@ Frontend services (optional)
 - Run `make dev-health` to verify which services are running
 - See [docs/STARTUP_ORDER.md](docs/STARTUP_ORDER.md) for detailed dependency documentation
 
+**Important Development Workflow**:
+- **After modifying backend code**, always use `./scripts/dev-restart.sh` to restart all services
+- This ensures all processes (including workers) are recompiled with the latest changes
+- Manual restart of individual services may cause version mismatch issues
+
 ## Technology Stack
 
 ### Backend

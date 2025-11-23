@@ -64,6 +64,9 @@ func main() {
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 	defer taskQueue.Close()
 
+	// 注入任务队列到 scanService（用于触发预处理任务）
+	scanService.SetTaskQueue(taskQueue)
+
 	// 创建任务处理器
 	taskHandler := worker.NewTaskHandler(scanTaskService, preprocessService)
 

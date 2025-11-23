@@ -101,8 +101,8 @@ export function useOpenLayersMap(config) {
       new TileLayer({
         source: new XYZ({
           url: `https://t{0-7}.tianditu.gov.cn/${layerId}_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${layerId}&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${key}`,
-          maxZoom: 18,
-          crossOrigin: 'anonymous'
+          maxZoom: 18
+          // 移除 crossOrigin: 'anonymous' 避免天地图 CORS 问题
         })
       })
 
@@ -213,15 +213,29 @@ export function useOpenLayersMap(config) {
       return
     }
 
+    // 调试：查看原始 features
+    console.log('[OpenLayers] 收到 features:', features.length, '个')
+    if (features.length > 0) {
+      console.log('[OpenLayers] 第一个 feature 示例:', features[0])
+    }
+
     const featureCollection = {
       type: 'FeatureCollection',
       features
     }
 
-    const olFeatures = geoJSONFormat.readFeatures(featureCollection, {
-      dataProjection: 'EPSG:4326',
-      featureProjection: 'EPSG:3857'
-    })
+    let olFeatures
+    try {
+      olFeatures = geoJSONFormat.readFeatures(featureCollection, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857'
+      })
+      console.log('[OpenLayers] 解析后 olFeatures:', olFeatures.length, '个')
+    } catch (error) {
+      console.error('解析 GeoJSON 失败:', error)
+      ElMessage.error('地图数据解析失败')
+      return
+    }
 
     if (olFeatures.length === 0) {
       mapInstance.value.getView().setCenter(fromLonLat(DEFAULT_CENTER))
@@ -229,7 +243,25 @@ export function useOpenLayersMap(config) {
       return
     }
 
+    // 验证并添加有效的 feature
+    const validFeatures = []
     olFeatures.forEach((feature, index) => {
+      const geometry = feature.getGeometry()
+
+      // 详细调试信息
+      console.log(`[OpenLayers] Feature ${index}:`, {
+        feature,
+        geometry,
+        geometryType: geometry?.getType?.(),
+        hasExtent: typeof geometry?.getExtent === 'function',
+        extentValue: geometry?.getExtent?.()
+      })
+
+      if (!geometry || typeof geometry.getExtent !== 'function') {
+        console.warn('跳过无效几何对象 [索引:', index, ']:', feature, 'geometry:', geometry)
+        return
+      }
+
       const originalFeature = features[index]
       feature.set('originalFeature', originalFeature)
       const rowData = originalFeature?.properties || {}
@@ -249,9 +281,17 @@ export function useOpenLayersMap(config) {
           original: originalFeature
         })
       }
+      validFeatures.push(feature)
     })
 
-    vectorSource.value.addFeatures(olFeatures)
+    console.log('[OpenLayers] 有效 features:', validFeatures.length, '个')
+
+    if (validFeatures.length === 0) {
+      console.warn('没有有效的几何对象')
+      return
+    }
+
+    vectorSource.value.addFeatures(validFeatures)
 
     const extent = vectorSource.value.getExtent()
     if (extent && isFinite(extent[0])) {
@@ -303,20 +343,27 @@ export function useOpenLayersMap(config) {
     if (!record) return false
     const { feature, row } = record
     const geometry = feature.getGeometry()
-    if (!geometry) return false
+    if (!geometry || typeof geometry.getExtent !== 'function') {
+      console.warn('跳过无效几何对象,无法聚焦')
+      return false
+    }
 
     const shouldFit = options.fit !== false
     const padding = options.padding || [40, 40, 40, 40]
     const maxZoom = options.maxZoom || 16
 
     if (shouldFit) {
-      const extent = geometry.getExtent()
-      if (extent && isFinite(extent[0])) {
-        mapInstance.value.getView().fit(extent, {
-          padding,
-          maxZoom,
-          duration: 300
-        })
+      try {
+        const extent = geometry.getExtent()
+        if (extent && isFinite(extent[0])) {
+          mapInstance.value.getView().fit(extent, {
+            padding,
+            maxZoom,
+            duration: 300
+          })
+        }
+      } catch (error) {
+        console.error('获取几何范围失败:', error)
       }
     }
 
@@ -325,18 +372,24 @@ export function useOpenLayersMap(config) {
       if (content) {
         let coordinate = options.coordinate
         if (!coordinate) {
-          const type = geometry.getType()
-          if (type === 'Point') {
-            coordinate = geometry.getCoordinates()
-          } else if (type === 'MultiPoint') {
-            coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
-          } else if (type.includes('Polygon') && geometry.getInteriorPoint) {
-            coordinate = geometry.getInteriorPoint().getCoordinates()
-          } else {
-            coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
+          try {
+            const type = geometry.getType()
+            if (type === 'Point') {
+              coordinate = geometry.getCoordinates()
+            } else if (type === 'MultiPoint') {
+              coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
+            } else if (type.includes('Polygon') && geometry.getInteriorPoint) {
+              coordinate = geometry.getInteriorPoint().getCoordinates()
+            } else {
+              coordinate = geometry.getClosestPoint(mapInstance.value.getView().getCenter())
+            }
+          } catch (error) {
+            console.error('获取几何坐标失败:', error)
           }
         }
-        showPopup(content, coordinate)
+        if (coordinate) {
+          showPopup(content, coordinate)
+        }
       }
     } else if (!options.keepPopup) {
       hidePopup()

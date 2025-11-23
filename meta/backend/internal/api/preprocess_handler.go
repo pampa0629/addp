@@ -54,14 +54,14 @@ func (h *PreprocessHandler) TriggerPreprocess(c *gin.Context) {
 		return
 	}
 
-	// 将任务加入队列
+	// 将任务加入队列（手动触发时不关联 scanRunID）
 	ctx := c.Request.Context()
 
 	var enqueueErr error
 	if req.Priority != "" {
-		enqueueErr = h.taskQueue.EnqueuePreprocessTaskWithPriority(ctx, uint(itemID), tenantID, req.Type, req.Priority)
+		enqueueErr = h.taskQueue.EnqueuePreprocessTaskWithPriority(ctx, uint(itemID), tenantID, req.Type, req.Priority, nil)
 	} else {
-		enqueueErr = h.taskQueue.EnqueuePreprocessTask(ctx, uint(itemID), tenantID, req.Type)
+		enqueueErr = h.taskQueue.EnqueuePreprocessTask(ctx, uint(itemID), tenantID, req.Type, nil)
 	}
 
 	if enqueueErr != nil {

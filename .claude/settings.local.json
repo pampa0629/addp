@@ -167,7 +167,15 @@
       "Bash(jq:*)",
       "Bash(head -10 echo -e \"\\n=== Manager Backend (main.go) ===\" grep -A5 \"RedisAddr\\|redis.NewClient\" /Users/zengzhiming/code/addp/manager/backend/cmd/server/main.go)",
       "Bash(else ls -la logs/)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(else echo \"Meta backend log not found\")",
+      "Bash(timeout 120 tail:*)",
+      "Bash(gunzip:*)",
+      "Bash(xxd:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 5 go run:*)",
+      "Bash(npm run dev:*)",
+      "Bash(npm ls:*)"
     ],
     "deny": [],
     "ask": []

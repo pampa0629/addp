@@ -67,27 +67,31 @@ func NewPreprocessService(db *gorm.DB, resourceService *ResourceService) (*Prepr
 }
 
 // ExecutePreprocess 执行预处理任务（供 Worker 调用）
-func (s *PreprocessService) ExecutePreprocess(ctx context.Context, itemID, tenantID uint, preprocessType string) error {
+func (s *PreprocessService) ExecutePreprocess(ctx context.Context, itemID, tenantID uint, preprocessType string, scanRunID *uint) error {
 	logger.L().Info("开始预处理任务",
 		"item_id", itemID,
 		"tenant_id", tenantID,
-		"type", preprocessType)
+		"type", preprocessType,
+		"scan_run_id", scanRunID)
 
 	// 1. 查询 meta_item
 	var item models.MetaItem
 	if err := s.db.Where("id = ? AND tenant_id = ?", itemID, tenantID).First(&item).Error; err != nil {
+		s.updatePreprocessTaskStatus(scanRunID, false, fmt.Sprintf("meta_item not found: %v", err))
 		return fmt.Errorf("meta_item not found: %w", err)
 	}
 
 	// 2. 检查是否为空间表
 	spatialMeta, ok := item.Attributes["spatial_metadata"].(map[string]interface{})
 	if !ok {
+		s.updatePreprocessTaskStatus(scanRunID, false, fmt.Sprintf("item %d is not a spatial table", itemID))
 		return fmt.Errorf("item %d is not a spatial table", itemID)
 	}
 
 	// 3. 获取资源配置
 	resource, err := s.resourceService.GetResourceByID(item.ResID, tenantID, "")
 	if err != nil {
+		s.updatePreprocessTaskStatus(scanRunID, false, fmt.Sprintf("failed to get resource: %v", err))
 		return fmt.Errorf("failed to get resource: %w", err)
 	}
 
@@ -95,21 +99,32 @@ func (s *PreprocessService) ExecutePreprocess(ctx context.Context, itemID, tenan
 	if resource.ScanConfig == nil ||
 		resource.ScanConfig.Preprocessing == nil ||
 		!resource.ScanConfig.Preprocessing.Enabled {
+		s.updatePreprocessTaskStatus(scanRunID, false, fmt.Sprintf("preprocessing not enabled for resource %d", resource.ID))
 		return fmt.Errorf("preprocessing not enabled for resource %d", resource.ID)
 	}
 
 	preprocessing := resource.ScanConfig.Preprocessing
 
 	// 5. 根据类型分发
+	var execErr error
 	switch preprocessType {
 	case "mvt_tiles":
-		return s.executeMVTPreprocess(ctx, &item, tenantID, resource, preprocessing, spatialMeta)
+		execErr = s.executeMVTPreprocess(ctx, &item, tenantID, resource, preprocessing, spatialMeta)
 	case "vector_embedding":
 		// TODO: 实现向量嵌入预处理
-		return fmt.Errorf("vector_embedding not implemented yet")
+		execErr = fmt.Errorf("vector_embedding not implemented yet")
 	default:
-		return fmt.Errorf("unknown preprocess type: %s", preprocessType)
+		execErr = fmt.Errorf("unknown preprocess type: %s", preprocessType)
 	}
+
+	// 6. 更新预处理任务状态
+	if execErr != nil {
+		s.updatePreprocessTaskStatus(scanRunID, false, execErr.Error())
+		return execErr
+	}
+
+	s.updatePreprocessTaskStatus(scanRunID, true, "")
+	return nil
 }
 
 // executeMVTPreprocess 执行 MVT 瓦片预处理
@@ -221,4 +236,62 @@ func (s *PreprocessService) executeMVTPreprocess(
 		"duration_sec", metadata.GenerationSec)
 
 	return nil
+}
+
+// updatePreprocessTaskStatus 更新预处理任务状态
+// 如果 scanRunID 为 nil，表示是手动触发的任务，不更新 ScanTaskRun
+func (s *PreprocessService) updatePreprocessTaskStatus(scanRunID *uint, success bool, errorMsg string) {
+	if scanRunID == nil {
+		return // 手动触发的任务，不关联 ScanTaskRun
+	}
+
+	// 获取当前 ScanTaskRun 的状态
+	var scanRun models.ScanTaskRun
+	if err := s.db.Where("id = ?", *scanRunID).First(&scanRun).Error; err != nil {
+		logger.L().Warn("查询 ScanTaskRun 失败", "scan_run_id", *scanRunID, "error", err)
+		return
+	}
+
+	// 更新计数器
+	updates := make(map[string]interface{})
+	if success {
+		updates["preprocess_success_count"] = scanRun.PreprocessSuccessCount + 1
+	} else {
+		updates["preprocess_failed_count"] = scanRun.PreprocessFailedCount + 1
+		if errorMsg != "" {
+			// 追加错误信息
+			if scanRun.PreprocessErrorMessage != "" {
+				updates["preprocess_error_message"] = scanRun.PreprocessErrorMessage + "; " + errorMsg
+			} else {
+				updates["preprocess_error_message"] = errorMsg
+			}
+		}
+	}
+
+	// 检查是否所有任务都已完成
+	newSuccessCount := scanRun.PreprocessSuccessCount
+	newFailedCount := scanRun.PreprocessFailedCount
+	if success {
+		newSuccessCount++
+	} else {
+		newFailedCount++
+	}
+
+	totalCompleted := newSuccessCount + newFailedCount
+	if totalCompleted >= scanRun.PreprocessTaskCount {
+		// 所有任务都已完成
+		if newFailedCount == 0 {
+			updates["preprocess_status"] = "success"
+		} else if newSuccessCount == 0 {
+			updates["preprocess_status"] = "failed"
+		} else {
+			updates["preprocess_status"] = "success" // 部分成功也算成功
+		}
+		updates["preprocess_completed_at"] = time.Now()
+	}
+
+	// 执行更新
+	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", *scanRunID).Updates(updates).Error; err != nil {
+		logger.L().Warn("更新预处理任务状态失败", "scan_run_id", *scanRunID, "error", err)
+	}
 }

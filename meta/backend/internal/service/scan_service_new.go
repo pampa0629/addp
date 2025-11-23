@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,7 +30,7 @@ import (
 
 // TaskQueueInterface 任务队列接口（避免循环导入）
 type TaskQueueInterface interface {
-	EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string) error
+	EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string, scanRunID *uint) error
 }
 
 // ScanServiceNew 新的统一扫描服务
@@ -625,13 +626,16 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 			"started_at":      scanLog.StartedAt,
 		}
 		s.completeImmediateRun(directRun, resultSummary, completedAt)
-	}
 
-	// 触发预处理任务（如果配置了自动触发）
-	ctx := context.Background()
-	if err := s.triggerPreprocessingIfEnabled(ctx, resource, tenantID); err != nil {
-		s.log.Warn("预处理任务触发失败", "resource_id", resource.ID, "error", err)
-		// 不影响扫描结果，仅记录警告
+		// 触发预处理任务（如果配置了自动触发）
+		ctx := context.Background()
+		taskCount, err := s.triggerPreprocessingIfEnabled(ctx, resource, tenantID, directRun.ID)
+		if err != nil {
+			s.log.Warn("预处理任务触发失败", "resource_id", resource.ID, "error", err)
+			// 不影响扫描结果，仅记录警告
+		} else if taskCount > 0 {
+			s.log.Info("预处理任务已触发", "resource_id", resource.ID, "task_count", taskCount)
+		}
 	}
 
 	return &models.ScanResponse{
@@ -2865,6 +2869,33 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 				"table_type":    tableInfo.Type,
 				"table_comment": tableInfo.Comment,
 				"fields":        buildFieldAttributes(fields),
+			}
+
+			// 扫描空间元数据（仅 PostgreSQL）
+			if resource.ResourceType == "postgresql" {
+				// 尝试从 scanner 中获取数据库连接
+				type dbGetter interface {
+					GetDB() *sql.DB
+				}
+				if dbScanner, ok := scan.(dbGetter); ok {
+					spatialMeta, err := s.scanSpatialMetadata(context.Background(), dbScanner.GetDB(), schemaName, tableInfo.Name)
+					if err != nil {
+						s.log.Warn("空间元数据扫描失败",
+							"schema", schemaName,
+							"table", tableInfo.Name,
+							"error", err,
+						)
+					} else if spatialMeta != nil {
+						// 将空间元数据添加到 attributes
+						attrs["spatial_metadata"] = spatialMeta
+						s.log.Info("✅ 空间元数据扫描成功",
+							"table", tableInfo.Name,
+							"geometry_column", spatialMeta.GeometryColumn,
+							"srid", spatialMeta.SRID,
+							"extent", spatialMeta.Extent,
+						)
+					}
+				}
 			}
 		} else {
 			// 浅度扫描：不包含字段信息（保留已有的字段信息）

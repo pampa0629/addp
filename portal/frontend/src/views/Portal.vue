@@ -189,13 +189,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 import { Fold, Expand } from '@element-plus/icons-vue'
 
 const router = useRouter()
-const route = useRoute()
 const authStore = useAuthStore()
 
 const user = computed(() => authStore.user)
@@ -230,16 +229,23 @@ const handleMenuSelect = (index) => {
   console.log('Portal: Menu selected:', index)
   activeMenu.value = index
 
-  if (index === '/') {
+  // 安全检查：确保 index 是字符串
+  if (!index || typeof index !== 'string' || index === '/') {
     currentModule.value = 'home'
     iframeUrl.value = ''
     console.log('Portal: Navigating to home, clearing iframe')
     return
   }
 
-  const parts = index.split('/')
-  const module = parts[1] // system, manager, meta, transfer
-  const page = parts[2] || '' // users, logs, datasources, etc.
+  const parts = index.split('/').filter(p => p) // 过滤掉空字符串
+  if (parts.length === 0) {
+    currentModule.value = 'home'
+    iframeUrl.value = ''
+    return
+  }
+
+  const module = parts[0] // system, manager, meta, transfer
+  const page = parts[1] || '' // users, logs, datasources, etc.
 
   console.log('Portal: Parsed - module:', module, 'page:', page)
   currentModule.value = module

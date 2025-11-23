@@ -164,6 +164,11 @@ func (s *PostgresScanner) ScanFields(schemaName, tableName string) ([]format.Fie
 	return fields, rows.Err()
 }
 
+// GetDB 返回底层的数据库连接（用于空间元数据扫描等高级功能）
+func (s *PostgresScanner) GetDB() *sql.DB {
+	return s.db
+}
+
 // Close 关闭数据库连接
 func (s *PostgresScanner) Close() error {
 	return s.db.Close()
