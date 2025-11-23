@@ -39,7 +39,8 @@ type Config struct {
 	VectorSearchMaxDistance float64
 
 	// Redis 配置（用于资源变更事件同步）
-	RedisAddr     string
+	RedisHost     string
+	RedisPort     string
 	RedisPassword string
 	RedisDB       int
 }
@@ -150,7 +151,8 @@ func Load() *Config {
 	}
 
 	// Redis 配置
-	cfg.RedisAddr = commonConfig.GetEnv("REDIS_ADDR", "localhost:6379")
+	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")
+	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 

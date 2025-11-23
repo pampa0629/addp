@@ -32,7 +32,8 @@ func LoadEnv() {
 		envPath = filepath.Join(root, ".env")
 	}
 
-	if err := godotenv.Load(envPath); err != nil {
+	// 使用 Overload 强制覆盖环境变量（开发模式需要 .env 文件优先）
+	if err := godotenv.Overload(envPath); err != nil {
 		logger.L().Warn("环境变量文件加载失败，使用系统环境变量", "path", envPath, "error", err)
 	} else {
 		logger.L().Info("已加载 .env 配置", "path", envPath)

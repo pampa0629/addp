@@ -14,6 +14,7 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -39,8 +40,17 @@ func main() {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
 
-	// 初始化 Service 层
-	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, nil)
+	// 创建 Redis 客户端用于事件订阅
+	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	log.Printf("✅ Redis 客户端已初始化: %s", redisAddr)
+
+	// 初始化 Service 层（传入 Redis 客户端用于事件订阅）
+	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
 	scanService := service.NewScanServiceNew(db, resourceService)
 	preprocessService, err := service.NewPreprocessService(db, resourceService)
 	if err != nil {
@@ -50,8 +60,7 @@ func main() {
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
 	scanTaskService := service.NewScanTaskService(db, scanService, resourceService)
 
-	// 创建任务队列
-	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
+	// 创建任务队列（复用已有的 redisAddr）
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 	defer taskQueue.Close()
 

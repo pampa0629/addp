@@ -35,35 +35,44 @@ func LoadServiceConfiguration(cfg ServiceConfigLoader) error {
 
 // RedisConfig holds Redis connection configuration
 type RedisConfig struct {
-	Addr     string
+	Host     string
+	Port     string
 	Password string
 	DB       int
 }
 
 // LoadRedisConfig loads Redis configuration from environment variables
+// Uses REDIS_HOST + REDIS_PORT format for consistency with other configs (PostgreSQL, etc.)
 func LoadRedisConfig() RedisConfig {
 	return RedisConfig{
-		Addr:     GetEnv("REDIS_ADDR", "localhost:6379"),
+		Host:     GetEnv("REDIS_HOST", "localhost"),
+		Port:     GetEnv("REDIS_PORT", "6379"),
 		Password: GetEnv("REDIS_PASSWORD", ""),
 		DB:       GetEnvInt("REDIS_DB", 0),
 	}
 }
 
+// Addr returns the Redis address in "host:port" format
+func (c RedisConfig) Addr() string {
+	return fmt.Sprintf("%s:%s", c.Host, c.Port)
+}
+
 // InitRedisClient initializes Redis client with the given configuration
-// Returns nil if Redis is not configured (addr is empty)
+// Returns nil if Redis is not configured (host is empty)
 func InitRedisClient(cfg RedisConfig) *redis.Client {
-	if cfg.Addr == "" {
+	if cfg.Host == "" {
 		log.Println("⚠️  Redis not configured, skipping initialization")
 		return nil
 	}
 
+	addr := cfg.Addr()
 	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
+		Addr:     addr,
 		Password: cfg.Password,
 		DB:       cfg.DB,
 	})
 
-	log.Printf("✅ Redis client initialized: %s (DB: %d)", cfg.Addr, cfg.DB)
+	log.Printf("✅ Redis client initialized: %s (DB: %d)", addr, cfg.DB)
 	return client
 }
 

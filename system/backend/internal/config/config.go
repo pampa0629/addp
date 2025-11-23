@@ -34,7 +34,8 @@ type Config struct {
 	TDTKey          string
 
 	// Redis 配置（用于事件通知）
-	RedisAddr     string
+	RedisHost     string
+	RedisPort     string
 	RedisPassword string
 	RedisDB       int
 }
@@ -108,7 +109,8 @@ func Load() *Config {
 		TDTKey:          getEnv("TDT_KEY", "fa4585302823605b16464e5838dafdcd"),
 
 		// Redis 配置
-		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 	}

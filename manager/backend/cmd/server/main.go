@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,13 +49,14 @@ func main() {
 
 	// 初始化 Redis 客户端（可选，用于资源变更事件同步）
 	var redisClient *redis.Client
-	if cfg.RedisAddr != "" {
+	if cfg.RedisHost != "" {
+		redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     cfg.RedisAddr,
+			Addr:     redisAddr,
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		})
-		logger.L().Info("Redis 客户端已初始化", "addr", cfg.RedisAddr)
+		logger.L().Info("Redis 客户端已初始化", "addr", redisAddr)
 	} else {
 		logger.L().Warn("Redis 未配置，资源变更事件同步功能将被禁用")
 	}
