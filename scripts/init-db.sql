@@ -52,6 +52,51 @@ CREATE TABLE IF NOT EXISTS manager.directories (
 CREATE INDEX IF NOT EXISTS idx_directories_parent ON manager.directories(parent_id);
 CREATE INDEX IF NOT EXISTS idx_directories_path ON manager.directories(path);
 
+-- 快显任务表
+CREATE TABLE IF NOT EXISTS manager.quick_view (
+    id SERIAL PRIMARY KEY,
+    tenant_id INT NOT NULL,
+    resource_id INT NOT NULL,
+    schema_name VARCHAR(255) NOT NULL,
+    table_name VARCHAR(255) NOT NULL,
+
+    -- 快显状态
+    status VARCHAR(50) NOT NULL DEFAULT 'none', -- 'none', 'generating', 'ready', 'failed'
+    error_message TEXT,
+
+    -- 缓存配置
+    min_zoom INT, -- 自动计算得到（不设默认值）
+    max_zoom INT DEFAULT 18,
+    actual_max_zoom INT, -- 实际生成到第几层
+
+    -- 统计信息
+    total_tiles INT DEFAULT 0,
+    cached_tiles INT DEFAULT 0,
+    last_zoom_avg_time_ms FLOAT, -- 最后一层的平均生成时间
+    last_zoom_avg_size_kb FLOAT, -- 最后一层的平均瓦片大小
+
+    -- 停止条件配置
+    stop_threshold_time_ms FLOAT DEFAULT 300,
+    stop_threshold_size_kb FLOAT DEFAULT 100,
+
+    -- 指纹（用于 MinIO 路径）
+    fingerprint VARCHAR(64) NOT NULL,
+
+    -- 空间范围（存储快照，避免依赖 meta）
+    extent JSONB, -- [minLng, minLat, maxLng, maxLat]
+
+    -- 时间戳
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(tenant_id, resource_id, schema_name, table_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_quick_view_status ON manager.quick_view(status);
+CREATE INDEX IF NOT EXISTS idx_quick_view_fingerprint ON manager.quick_view(fingerprint);
+
 CREATE TABLE IF NOT EXISTS manager.data_source_permissions (
     id SERIAL PRIMARY KEY,
     data_source_id INTEGER REFERENCES manager.data_sources(id) ON DELETE CASCADE,
@@ -304,6 +349,10 @@ CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON manager.data_sour
 
 DROP TRIGGER IF EXISTS update_directories_updated_at ON manager.directories;
 CREATE TRIGGER update_directories_updated_at BEFORE UPDATE ON manager.directories
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_quick_view_updated_at ON manager.quick_view;
+CREATE TRIGGER update_quick_view_updated_at BEFORE UPDATE ON manager.quick_view
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Meta 模块触发器

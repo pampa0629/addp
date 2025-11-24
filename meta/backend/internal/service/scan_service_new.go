@@ -28,11 +28,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// TaskQueueInterface 任务队列接口（避免循环导入）
-type TaskQueueInterface interface {
-	EnqueuePreprocessTask(ctx context.Context, itemID, tenantID uint, preprocessType string, scanRunID *uint) error
-}
-
 // ScanServiceNew 新的统一扫描服务
 type ScanServiceNew struct {
 	db                 *gorm.DB
@@ -44,7 +39,6 @@ type ScanServiceNew struct {
 	embeddingTimeout   time.Duration
 	objectClients      map[uint]*minio.Client
 	objectClientMu     sync.Mutex
-	taskQueue          TaskQueueInterface
 }
 
 const (
@@ -79,11 +73,6 @@ func NewScanServiceNew(db *gorm.DB, resourceService *ResourceService) *ScanServi
 // SetIndexer 注入搜索索引器
 func (s *ScanServiceNew) SetIndexer(indexer *search.Indexer) {
 	s.indexer = indexer
-}
-
-// SetTaskQueue 注入任务队列（用于预处理任务）
-func (s *ScanServiceNew) SetTaskQueue(queue TaskQueueInterface) {
-	s.taskQueue = queue
 }
 
 // EnableDocumentVectorization 为文档扫描启用向量化
@@ -617,6 +606,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 		reporter.Message("扫描完成")
 	}
 
+	// 完成运行记录
 	if directRun != nil {
 		resultSummary := models.JSONMap{
 			"schemas_scanned": schemas,
@@ -626,15 +616,20 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 			"started_at":      scanLog.StartedAt,
 		}
 		s.completeImmediateRun(directRun, resultSummary, completedAt)
-
-		// 触发预处理任务（如果配置了自动触发）
-		ctx := context.Background()
-		taskCount, err := s.triggerPreprocessingIfEnabled(ctx, resource, tenantID, directRun.ID)
+	} else {
+		// 创建扫描运行记录
+		run, err := s.createImmediateRunRecord(resource, tenantID, schemaNames, objectPaths, startTime)
 		if err != nil {
-			s.log.Warn("预处理任务触发失败", "resource_id", resource.ID, "error", err)
-			// 不影响扫描结果，仅记录警告
-		} else if taskCount > 0 {
-			s.log.Info("预处理任务已触发", "resource_id", resource.ID, "task_count", taskCount)
+			s.log.Warn("创建扫描运行记录失败", "resource_id", resource.ID, "error", err)
+		} else {
+			resultSummary := models.JSONMap{
+				"schemas_scanned": schemas,
+				"tables_scanned":  tables,
+				"fields_scanned":  fields,
+				"duration_ms":     scanLog.DurationMs,
+				"started_at":      scanLog.StartedAt,
+			}
+			s.completeImmediateRun(run, resultSummary, completedAt)
 		}
 	}
 

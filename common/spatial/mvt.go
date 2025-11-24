@@ -60,16 +60,20 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
     qTable := pq.QuoteIdentifier(table)
     qGeom := pq.QuoteIdentifier(geomCol)
 
-    // 确保主键列被包含（用于前端关联）
-    if primaryKey == "" {
-        primaryKey = "id" // 默认使用 "id" 作为主键
+    // 主键列处理（用于前端关联）
+    // 如果 primaryKey 为空字符串,则不包含主键列
+    var qPrimaryKey string
+    usePrimaryKey := false
+    if primaryKey != "" {
+        usePrimaryKey = true
+        qPrimaryKey = pq.QuoteIdentifier(primaryKey)
     }
-    qPrimaryKey := pq.QuoteIdentifier(primaryKey)
 
     // Build column list, quoted
-    // 确保主键列在列表中
     colsMap := make(map[string]bool)
-    colsMap[primaryKey] = true // 主键列必须包含
+    if usePrimaryKey {
+        colsMap[primaryKey] = true // 主键列必须包含
+    }
 
     var colsSQL string
     if len(cols) > 0 {
@@ -81,13 +85,15 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
         }
     }
 
-    // 构建列列表：主键列 + 其他列
+    // 构建列列表
     quoted := make([]string, 0, len(colsMap))
-    // 首先添加主键列
-    quoted = append(quoted, qPrimaryKey)
+    if usePrimaryKey {
+        // 首先添加主键列
+        quoted = append(quoted, qPrimaryKey)
+    }
     // 然后添加其他列
     for colName := range colsMap {
-        if colName != primaryKey && !strings.EqualFold(colName, geomCol) {
+        if (!usePrimaryKey || colName != primaryKey) && !strings.EqualFold(colName, geomCol) {
             quoted = append(quoted, pq.QuoteIdentifier(colName))
         }
     }
@@ -97,7 +103,8 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
 
     // Optionally simplify before transform for coarse zoom levels
     simplify := "ST_Transform(t." + geomCol + ", 3857)"
-    args := []interface{}{z, x, y, opt.Layer, opt.Extent, opt.Buffer, opt.SRID}
+    // SRID 必须直接内联到 SQL 中，不能作为参数（PostGIS 限制）
+    args := []interface{}{z, x, y, opt.Layer, opt.Extent, opt.Buffer}
     if opt.Simplify {
         tol := SimplifyTolerance(z)
         simplify = fmt.Sprintf("ST_Transform(ST_SimplifyPreserveTopology(t.%s, %f), 3857)", geomCol, tol)
@@ -107,7 +114,7 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
 WITH b AS (
   SELECT
     ST_TileEnvelope($1, $2, $3) AS g3857,
-    ST_Transform(ST_TileEnvelope($1, $2, $3), $7) AS g_src
+    ST_Transform(ST_TileEnvelope($1, $2, $3), %d) AS g_src
 )
 SELECT ST_AsMVT(m, $4, $5, 'geom')
 FROM (
@@ -123,6 +130,7 @@ FROM (
   WHERE t.%s && b.g_src
     AND ST_Intersects(t.%s, b.g_src)
 ) AS m`,
+        opt.SRID, // 直接内联 SRID
         simplify,
         colsSQL,
         qSchema,

@@ -181,85 +181,6 @@
         </el-radio-group>
       </el-form-item>
 
-      <!-- 空间数据预处理配置（仅 PostgreSQL） -->
-      <template v-if="formState.resource_type === 'postgresql'">
-        <el-divider content-position="left">空间数据预处理（可选）</el-divider>
-
-        <el-form-item label="启用 MVT 预处理">
-          <el-switch
-            v-model="formState.scan_config.preprocessing.enabled"
-          />
-          <div class="field-hint">
-            扫描完成后自动为空间表生成 MVT 瓦片缓存，加速地图渲染
-          </div>
-        </el-form-item>
-
-        <template v-if="formState.scan_config.preprocessing.enabled">
-          <el-form-item label="自动触发" style="margin-left: 30px">
-            <el-switch
-              v-model="formState.scan_config.preprocessing.auto_trigger"
-            />
-            <div class="field-hint">
-              扫描完成后立即开始瓦片预处理
-            </div>
-          </el-form-item>
-
-          <el-form-item label="最大缩放级别" style="margin-left: 30px">
-            <el-input-number
-              v-model="formState.scan_config.preprocessing.mvt_config.max_zoom"
-              :min="0"
-              :max="18"
-              :step="1"
-            />
-            <div class="field-hint">
-              瓦片最大缩放层级（0-18），默认 18。实际生成级别由自适应停止策略决定
-            </div>
-          </el-form-item>
-
-          <el-form-item label="并发数" style="margin-left: 30px">
-            <el-input-number
-              v-model="formState.scan_config.preprocessing.mvt_config.concurrency"
-              :min="1"
-              :max="20"
-              :step="1"
-            />
-            <div class="field-hint">
-              瓦片生成并发任务数（1-20），默认 10
-            </div>
-          </el-form-item>
-
-          <el-collapse style="margin-left: 30px; margin-bottom: 18px">
-            <el-collapse-item title="高级配置（停止阈值）" name="advanced">
-              <el-form-item label="时间阈值（秒）">
-                <el-input-number
-                  v-model="formState.scan_config.preprocessing.mvt_config.stop_threshold_sec"
-                  :min="0.1"
-                  :max="60"
-                  :step="0.5"
-                  :precision="1"
-                />
-                <div class="field-hint">
-                  当平均生成时间小于此值时停止，默认 3.0 秒
-                </div>
-              </el-form-item>
-
-              <el-form-item label="大小阈值（KB）">
-                <el-input-number
-                  v-model="formState.scan_config.preprocessing.mvt_config.stop_threshold_kb"
-                  :min="1"
-                  :max="500"
-                  :step="10"
-                  :precision="0"
-                />
-                <div class="field-hint">
-                  当平均瓦片大小小于此值时停止，默认 50 KB
-                </div>
-              </el-form-item>
-            </el-collapse-item>
-          </el-collapse>
-        </template>
-      </template>
-
       <!-- PostgreSQL 特定配置 -->
       <el-form-item
         v-if="formState.resource_type === 'postgresql'"
@@ -433,18 +354,7 @@ const formState = reactive({
     schedule_value: [],
     scan_depth: 'basic',
     schema_names: [],
-    object_paths: [],
-    preprocessing: {
-      enabled: false,
-      auto_trigger: true,
-      types: ['mvt_tiles'],
-      mvt_config: {
-        max_zoom: 18,
-        concurrency: 10,
-        stop_threshold_sec: 3.0,
-        stop_threshold_kb: 50.0
-      }
-    }
+    object_paths: []
   }
 })
 
@@ -466,20 +376,7 @@ const syncFromProps = (value) => {
       schedule_value: value.scan_config.schedule_value || [],
       scan_depth: value.scan_config.scan_depth || 'basic',
       schema_names: value.scan_config.schema_names || [],
-      object_paths: value.scan_config.object_paths || [],
-      preprocessing: {
-        enabled: value.scan_config.preprocessing?.enabled || false,
-        auto_trigger: value.scan_config.preprocessing?.auto_trigger !== undefined
-          ? value.scan_config.preprocessing.auto_trigger
-          : true,
-        types: value.scan_config.preprocessing?.types || ['mvt_tiles'],
-        mvt_config: {
-          max_zoom: value.scan_config.preprocessing?.mvt_config?.max_zoom || 18,
-          concurrency: value.scan_config.preprocessing?.mvt_config?.concurrency || 10,
-          stop_threshold_sec: value.scan_config.preprocessing?.mvt_config?.stop_threshold_sec || 3.0,
-          stop_threshold_kb: value.scan_config.preprocessing?.mvt_config?.stop_threshold_kb || 50.0
-        }
-      }
+      object_paths: value.scan_config.object_paths || []
     }
     immediateScanEnabled.value = value.scan_config.immediate_scan || false
     scheduledScanEnabled.value = value.scan_config.scheduled_scan || false

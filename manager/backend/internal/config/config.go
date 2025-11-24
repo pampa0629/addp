@@ -43,6 +43,12 @@ type Config struct {
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	// MinIO 配置（用于 MVT 瓦片存储）
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioUseSSL    bool
 }
 
 func resolveElasticsearchURL() string {
@@ -155,6 +161,12 @@ func Load() *Config {
 	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
+
+	// MinIO 配置（用于 MVT 瓦片存储）
+	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_ENDPOINT", "localhost:9002")
+	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))
+	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))
+	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	return cfg
 }

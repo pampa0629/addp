@@ -188,6 +188,17 @@ echo -e "${GREEN}✓ Meta Worker 启动中 (PID: $META_WORKER_PID)${NC}"
 echo "  注意: Meta Worker 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
+# 6.6 启动 Manager Worker
+echo -e "${YELLOW}Step 6.6/8: 启动 Manager Worker${NC}"
+cd manager/backend
+go mod download >/dev/null 2>> ../../logs/manager-worker.log || true
+go run cmd/worker/main.go > ../../logs/manager-worker.log 2>&1 &
+MANAGER_WORKER_PID=$!
+cd ../..
+echo -e "${GREEN}✓ Manager Worker 启动中 (PID: $MANAGER_WORKER_PID)${NC}"
+echo "  注意: Manager Worker 依赖 Redis 和 MinIO，请确保已启动"
+echo ""
+
 # 7. 启动 Gateway
 echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
 cd gateway
@@ -346,6 +357,7 @@ echo "  Meta:     logs/meta-backend.log"
 echo "  Transfer: logs/transfer-backend.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
+echo "  Manager Worker: logs/manager-worker.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
@@ -361,4 +373,5 @@ echo $META_PID > .dev-pids/meta.pid
 echo $TRANSFER_PID > .dev-pids/transfer.pid
 echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
 echo $META_WORKER_PID > .dev-pids/meta-worker.pid
+echo $MANAGER_WORKER_PID > .dev-pids/manager-worker.pid
 echo $GATEWAY_PID > .dev-pids/gateway.pid

@@ -86,10 +86,6 @@ func main() {
 	if searchIndexer != nil {
 		scanService.SetIndexer(searchIndexer)
 	}
-	// 如果配置了任务队列，也注入到 scanService（用于预处理）
-	if taskQueue != nil {
-		scanService.SetTaskQueue(taskQueue)
-	}
 
 	var pgVectorStore *vectorstore.PgVectorStore
 	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {
@@ -131,13 +127,6 @@ func main() {
 	// 将 taskService 注入到 resourceService（用于处理 ScanConfig）
 	resourceService.SetTaskService(taskService)
 
-	// 创建预处理服务
-	preprocessService, err := service.NewPreprocessService(db, resourceService)
-	if err != nil {
-		logger.L().Error("预处理服务创建失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 如果配置了任务队列，则使用任务队列（worker 模式）
 	if taskQueue != nil {
 		taskService.SetTaskQueue(taskQueue)
@@ -152,7 +141,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService, preprocessService, taskQueue)
+	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

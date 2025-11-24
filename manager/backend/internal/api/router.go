@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, unifiedMVTService *service.UnifiedMVTService, resourceRepo *repository.ResourceRepository, metadataRepo *repository.MetadataRepository) *gin.Engine {
+func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, unifiedMVTService *service.UnifiedMVTService, quickViewService *service.QuickViewService, resourceRepo *repository.ResourceRepository, metadataRepo *repository.MetadataRepository) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -96,13 +96,29 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 		}
 
 		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
-		// GET /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
+		// GET /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
 		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
-		resources.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y.mvt", func(c *gin.Context) {
+		resources.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y", func(c *gin.Context) {
 			unifiedTilesHandler := NewUnifiedTilesHandler(unifiedMVTService)
 			unifiedTilesHandler.GetTile(c)
 		})
+
+		// Quick View API
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		resources.POST("/:id/spatial/:schema/:table/quick-view", quickViewHandler.TriggerQuickView)
+		resources.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
+		resources.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
 	}
+
+	// Quick View 任务列表和统计（全局）
+	api.GET("/quick-view/tasks", func(c *gin.Context) {
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		quickViewHandler.ListQuickViewTasks(c)
+	})
+	api.GET("/quick-view/statistics", func(c *gin.Context) {
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		quickViewHandler.GetStatistics(c)
+	})
 
 	return router
 }

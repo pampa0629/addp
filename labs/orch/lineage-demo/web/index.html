@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据血缘追踪 - Lineage Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        .results {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .lineage-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f9f9f9;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .lineage-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .lineage-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .workflow-id {
+            font-weight: 600;
+            color: #667eea;
+            font-size: 16px;
+        }
+
+        .status {
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-failed {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .lineage-flow {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 15px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+        }
+
+        .data-box {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #667eea;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .data-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .data-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .arrow {
+            font-size: 24px;
+            color: #667eea;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .metric {
+            background: white;
+            padding: 8px;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔗 数据血缘追踪系统</h1>
+            <p class="subtitle">基于 Temporal Workflow 的数据血缘追踪 Demo |
+                <a href="http://localhost:8088" target="_blank">Temporal UI</a>
+            </p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>查询类型</label>
+                <select id="queryType">
+                    <option value="all">所有血缘记录</option>
+                    <option value="upstream">上游血缘（数据来源）</option>
+                    <option value="downstream">下游血缘（数据去向）</option>
+                    <option value="workflow">工作流血缘</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="itemIdGroup" style="display: none;">
+                <label>数据项 ID</label>
+                <input type="number" id="itemId" placeholder="例如: 123 或 1123">
+            </div>
+
+            <div class="control-group" id="workflowIdGroup" style="display: none;">
+                <label>工作流 ID</label>
+                <input type="text" id="workflowId" placeholder="例如: shapefile-to-mvt-20251124-001">
+            </div>
+
+            <button onclick="queryLineage()">🔍 查询血缘</button>
+        </div>
+
+        <div class="results">
+            <div id="loading" class="loading" style="display: none;">
+                ⏳ 查询中...
+            </div>
+            <div id="empty" class="empty">
+                请选择查询类型并输入参数，然后点击查询按钮
+            </div>
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        // 切换查询类型
+        document.getElementById('queryType').addEventListener('change', function() {
+            const type = this.value;
+            const itemIdGroup = document.getElementById('itemIdGroup');
+            const workflowIdGroup = document.getElementById('workflowIdGroup');
+
+            if (type === 'upstream' || type === 'downstream') {
+                itemIdGroup.style.display = 'block';
+                workflowIdGroup.style.display = 'none';
+            } else if (type === 'workflow') {
+                itemIdGroup.style.display = 'none';
+                workflowIdGroup.style.display = 'block';
+            } else {
+                itemIdGroup.style.display = 'none';
+                workflowIdGroup.style.display = 'none';
+            }
+        });
+
+        // 查询血缘
+        async function queryLineage() {
+            const type = document.getElementById('queryType').value;
+            const itemId = document.getElementById('itemId').value;
+            const workflowId = document.getElementById('workflowId').value;
+
+            let url = 'http://localhost:9090/api/lineage/';
+            if (type === 'all') {
+                url += 'all';
+            } else if (type === 'upstream') {
+                if (!itemId) {
+                    alert('请输入数据项 ID');
+                    return;
+                }
+                url += `upstream?item_id=${itemId}`;
+            } else if (type === 'downstream') {
+                if (!itemId) {
+                    alert('请输入数据项 ID');
+                    return;
+                }
+                url += `downstream?item_id=${itemId}`;
+            } else if (type === 'workflow') {
+                if (!workflowId) {
+                    alert('请输入工作流 ID');
+                    return;
+                }
+                url += `workflow/${workflowId}`;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('empty').style.display = 'none';
+            document.getElementById('results').innerHTML = '';
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+
+                const lineages = data.lineages || data.upstream || data.downstream || [];
+                if (lineages.length === 0) {
+                    document.getElementById('empty').textContent = '未找到血缘记录';
+                    document.getElementById('empty').style.display = 'block';
+                    return;
+                }
+
+                renderLineages(lineages);
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('empty').textContent = '查询失败: ' + error.message;
+                document.getElementById('empty').style.display = 'block';
+            }
+        }
+
+        // 渲染血缘记录
+        function renderLineages(lineages) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = lineages.map(lineage => `
+                <div class="lineage-item">
+                    <div class="lineage-header">
+                        <div class="workflow-id">${lineage.workflow_name || lineage.workflow_id}</div>
+                        <div class="status status-${lineage.status}">${lineage.status}</div>
+                    </div>
+
+                    <div class="lineage-flow">
+                        <div class="data-box">
+                            <div class="data-label">源数据</div>
+                            <div class="data-value">ID: ${lineage.source_item_id}</div>
+                            <div class="data-label">${lineage.source_type}</div>
+                            <div class="data-label">${lineage.source_path}</div>
+                        </div>
+                        <div class="arrow">→</div>
+                        <div class="data-box">
+                            <div class="data-label">目标数据</div>
+                            <div class="data-value">ID: ${lineage.target_item_id}</div>
+                            <div class="data-label">${lineage.target_type}</div>
+                            <div class="data-label">${lineage.target_path}</div>
+                        </div>
+                    </div>
+
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-label">WorkflowID</div>
+                            <div class="metric-value">${lineage.workflow_id}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">RunID</div>
+                            <div class="metric-value">${lineage.run_id.substring(0, 12)}...</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">执行耗时</div>
+                            <div class="metric-value">${(lineage.duration_ms / 1000).toFixed(2)} 秒</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">处理记录数</div>
+                            <div class="metric-value">${lineage.records_processed.toLocaleString()}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">写入字节数</div>
+                            <div class="metric-value">${(lineage.bytes_written / 1024 / 1024).toFixed(2)} MB</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">创建时间</div>
+                            <div class="metric-value">${new Date(lineage.created_at).toLocaleString()}</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 10px; font-size: 12px;">
+                        <a href="http://localhost:8088/namespaces/default/workflows/${lineage.workflow_id}/${lineage.run_id}" target="_blank">
+                            🔗 在 Temporal UI 中查看
+                        </a>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 页面加载时自动查询所有血缘
+        window.onload = () => {
+            queryLineage();
+        };
+    </script>
+</body>
+</html>

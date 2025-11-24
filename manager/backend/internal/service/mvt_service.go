@@ -74,9 +74,16 @@ func (s *MVTService) GetTile(ctx context.Context, tenantID *uint, resourceID uin
     }
     defer db.Close()
 
+    // 动态查询表的主键列名
+    primaryKey, err := s.getPrimaryKeyColumn(ctx, db, schema, table)
+    if err != nil {
+        logger.L().Warn("Failed to get primary key column, using 'id' as fallback", "error", err, "schema", schema, "table", table)
+        primaryKey = "id" // 回退到默认值
+    }
+
     // Build query
     opt := spatial.MVTOptions{Layer: table, Extent: 4096, Buffer: 64, SRID: srid, Simplify: true}
-    sqlStr, args := spatial.BuildMVTQuery(schema, table, geomCol, cols, z, x, y, opt, "id")
+    sqlStr, args := spatial.BuildMVTQuery(schema, table, geomCol, cols, z, x, y, opt, primaryKey)
 
     // Execute
     var mvt []byte
@@ -90,6 +97,29 @@ func (s *MVTService) GetTile(ctx context.Context, tenantID *uint, resourceID uin
         return []byte{}, nil
     }
     return mvt, nil
+}
+
+// getPrimaryKeyColumn 查询表的主键列名
+// 从 PostgreSQL 系统表中查询,如果表有主键则返回主键列名,否则返回空字符串
+func (s *MVTService) getPrimaryKeyColumn(ctx context.Context, db *sql.DB, schema, table string) (string, error) {
+    query := `
+        SELECT a.attname
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = ($1 || '.' || $2)::regclass
+          AND i.indisprimary
+        LIMIT 1
+    `
+    var pkColumn string
+    err := db.QueryRowContext(ctx, query, schema, table).Scan(&pkColumn)
+    if err == sql.ErrNoRows {
+        // 表没有主键,返回空字符串(不强制要求主键)
+        return "", nil
+    }
+    if err != nil {
+        return "", fmt.Errorf("query primary key failed: %w", err)
+    }
+    return pkColumn, nil
 }
 
 // Note: access policy and ErrResourceAccessDenied are defined in metadata_service.go

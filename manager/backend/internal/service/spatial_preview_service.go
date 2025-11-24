@@ -348,18 +348,18 @@ func (s *SpatialPreviewService) ensureMinIOClient(ctx context.Context) error {
 		return nil
 	}
 
-	// 从环境变量或配置读取 MinIO 连接信息
-	endpoint := os.Getenv("BUSINESS_MINIO_ENDPOINT")
+	// MVT 瓦片存储在系统 MinIO（不是业务 MinIO）
+	endpoint := os.Getenv("MINIO_SYSTEM_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:9002" // 默认值
+		endpoint = "localhost:9002" // 默认值（系统 MinIO）
 	}
 
-	accessKey := os.Getenv("BUSINESS_MINIO_ACCESS_KEY")
+	accessKey := os.Getenv("MINIO_SYSTEM_ACCESS_KEY")
 	if accessKey == "" {
 		accessKey = "minioadmin"
 	}
 
-	secretKey := os.Getenv("BUSINESS_MINIO_SECRET_KEY")
+	secretKey := os.Getenv("MINIO_SYSTEM_SECRET_KEY")
 	if secretKey == "" {
 		secretKey = "minioadmin"
 	}

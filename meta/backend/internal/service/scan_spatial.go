@@ -7,9 +7,7 @@ import (
 	"time"
 
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/internal/mvt"
 )
 
 // scanSpatialMetadata 扫描空间表的几何元数据
@@ -18,7 +16,7 @@ func (s *ScanServiceNew) scanSpatialMetadata(
 	ctx context.Context,
 	db *sql.DB,
 	schema, table string,
-) (*mvt.SpatialMetadata, error) {
+) (*models.SpatialMetadata, error) {
 	// 1. 检测几何列
 	geomColumn, err := s.detectGeometryColumn(db, schema, table)
 	if err != nil || geomColumn == "" {
@@ -56,7 +54,7 @@ func (s *ScanServiceNew) scanSpatialMetadata(
 	// 6. 检查是否有 updated_at 字段
 	hasUpdatedAt, updatedAtColumn := s.detectUpdatedAtColumn(db, schema, table)
 
-	return &mvt.SpatialMetadata{
+	return &models.SpatialMetadata{
 		GeometryColumn:  geomColumn,
 		SRID:            srid,
 		Extent:          extent,
@@ -222,7 +220,7 @@ func (s *ScanServiceNew) detectUpdatedAtColumn(db *sql.DB, schema, table string)
 }
 
 // getTableStats 查询表统计信息（用于变更检测）
-func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*mvt.TableStats, error) {
+func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*models.TableStats, error) {
 	query := `
 		SELECT
 			n_tup_ins + n_tup_upd + n_tup_del as total_changes,
@@ -233,7 +231,7 @@ func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*mvt.T
 		WHERE schemaname = $1 AND relname = $2
 	`
 
-	stats := &mvt.TableStats{}
+	stats := &models.TableStats{}
 	var lastAnalyze time.Time
 	err := db.QueryRow(query, schema, table).Scan(
 		&stats.TotalChanges,
@@ -251,137 +249,4 @@ func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*mvt.T
 
 	stats.LastAnalyze = lastAnalyze
 	return stats, nil
-}
-
-// triggerPreprocessingIfEnabled 扫描完成后触发预处理
-// 在 ScanResource 方法的末尾调用
-// 返回值: (taskCount, error) - taskCount 是触发的预处理任务数量
-func (s *ScanServiceNew) triggerPreprocessingIfEnabled(
-	ctx context.Context,
-	resource *commonModels.Resource,
-	tenantID uint,
-	scanRunID uint, // 新增：关联的扫描运行ID
-) (int, error) {
-	// 1. 检查资源的预处理配置
-	if resource.ScanConfig == nil ||
-		resource.ScanConfig.Preprocessing == nil ||
-		!resource.ScanConfig.Preprocessing.Enabled {
-		// 未启用预处理，标记为 skipped
-		s.updatePreprocessStatus(scanRunID, "skipped", 0, 0, 0, "")
-		return 0, nil
-	}
-
-	preprocessing := resource.ScanConfig.Preprocessing
-
-	// 2. 查询所有空间表（有 spatial_metadata 的 meta_item）
-	var spatialItems []models.MetaItem
-	err := s.db.Where(
-		"res_id = ? AND tenant_id = ? AND attributes ? 'spatial_metadata'",
-		resource.ID, tenantID,
-	).Find(&spatialItems).Error
-
-	if err != nil {
-		logger.L().Error("Failed to query spatial items", "error", err)
-		s.updatePreprocessStatus(scanRunID, "failed", 0, 0, 0, err.Error())
-		return 0, fmt.Errorf("failed to query spatial items: %w", err)
-	}
-
-	if len(spatialItems) == 0 {
-		logger.L().Info("No spatial tables found, skipping preprocessing",
-			"resource_id", resource.ID)
-		s.updatePreprocessStatus(scanRunID, "skipped", 0, 0, 0, "")
-		return 0, nil
-	}
-
-	logger.L().Info("Found spatial tables for preprocessing",
-		"resource_id", resource.ID,
-		"count", len(spatialItems))
-
-	// 3. 为每个空间表创建预处理任务
-	// 检查是否有 taskQueue 可用
-	if s.taskQueue == nil {
-		logger.L().Warn("TaskQueue not available, preprocessing tasks cannot be enqueued",
-			"resource_id", resource.ID)
-		errMsg := "task queue not available for preprocessing"
-		s.updatePreprocessStatus(scanRunID, "failed", 0, 0, 0, errMsg)
-		return 0, fmt.Errorf(errMsg)
-	}
-
-	// 标记预处理开始
-	now := time.Now()
-	s.db.Model(&models.ScanTaskRun{}).Where("id = ?", scanRunID).Updates(map[string]interface{}{
-		"preprocess_status":     "running",
-		"preprocess_started_at": now,
-	})
-
-	// 为每个启用的预处理类型创建任务
-	taskCount := 0
-	successCount := 0
-	failedCount := 0
-	var lastError error
-
-	for _, preprocessType := range preprocessing.Types {
-		if preprocessType != "mvt_tiles" {
-			// 其他类型暂不支持
-			continue
-		}
-
-		for _, item := range spatialItems {
-			taskCount++
-			// 入队预处理任务，关联 scanRunID
-			if err := s.taskQueue.EnqueuePreprocessTask(ctx, item.ID, tenantID, preprocessType, &scanRunID); err != nil {
-				logger.L().Error("Failed to enqueue preprocessing task",
-					"item_id", item.ID,
-					"type", preprocessType,
-					"error", err)
-				failedCount++
-				lastError = err
-				// 继续处理其他表，不阻塞
-				continue
-			}
-
-			successCount++
-			logger.L().Info("Preprocessing task enqueued",
-				"item_id", item.ID,
-				"table", item.Name,
-				"fingerprint", item.Fingerprint,
-				"type", preprocessType)
-		}
-	}
-
-	// 更新预处理统计
-	status := "running" // 任务已入队，等待 worker 处理
-	var errMsg string
-	if lastError != nil {
-		errMsg = lastError.Error()
-	}
-	s.updatePreprocessStatus(scanRunID, status, taskCount, successCount, failedCount, errMsg)
-
-	return taskCount, nil
-}
-
-// updatePreprocessStatus 更新预处理状态
-func (s *ScanServiceNew) updatePreprocessStatus(
-	scanRunID uint,
-	status string,
-	taskCount, successCount, failedCount int,
-	errorMessage string,
-) {
-	updates := map[string]interface{}{
-		"preprocess_status":        status,
-		"preprocess_task_count":    taskCount,
-		"preprocess_success_count": successCount,
-		"preprocess_failed_count":  failedCount,
-	}
-
-	if errorMessage != "" {
-		updates["preprocess_error_message"] = errorMessage
-	}
-
-	if status == "success" || status == "failed" || status == "skipped" {
-		now := time.Now()
-		updates["preprocess_completed_at"] = now
-	}
-
-	s.db.Model(&models.ScanTaskRun{}).Where("id = ?", scanRunID).Updates(updates)
 }

@@ -184,6 +184,67 @@ services:
     profiles:
       - full
 
+  # ==================== Manager Worker 服务 ====================
+
+  manager-worker:
+    image: ${REGISTRY:-localhost:5001}/addp-manager-worker:${IMAGE_TAG:-latest}
+    # container_name removed for Swarm compatibility (allows multiple replicas)
+    environment:
+      - DB_SCHEMA=manager
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-addp}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - DB_NAME=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ENABLE_SERVICE_INTEGRATION=true
+      - CONCURRENT_TASKS=10  # Each worker handles 10 concurrent quick view tasks
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_USE_SSL=false
+    networks:
+      - addp-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      manager-backend:
+        condition: service_started
+    restart: unless-stopped
+    # Docker Swarm high availability configuration
+    deploy:
+      replicas: 2  # Run 2 worker instances for high availability
+      restart_policy:
+        condition: any  # Restart on any failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1  # Update one container at a time
+        delay: 10s
+        failure_action: rollback
+        order: start-first  # Start new container before stopping old one
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      resources:
+        limits:
+          cpus: '2'      # Max 2 CPU cores per worker
+          memory: 2G     # Max 2GB memory per worker
+        reservations:
+          cpus: '0.5'    # Reserve at least 0.5 CPU core
+          memory: 512M   # Reserve at least 512MB memory
+    profiles:
+      - full
+
   # ==================== Meta 模块 ====================
 
   meta-backend:

@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"time"
 
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 )
@@ -19,6 +19,7 @@ type UnifiedMVTService struct {
 	spatialPreviewService *SpatialPreviewService // 缓存访问（内存 LRU → Redis → MinIO）
 	mvtService            *MVTService            // 实时生成（直接从 PG 查询）
 	metadataRepo          *repository.MetadataRepository
+	quickViewService      *QuickViewService      // 快显服务（可选，用于更新统计）
 }
 
 // NewUnifiedMVTService 创建统一的 MVT 服务
@@ -31,7 +32,13 @@ func NewUnifiedMVTService(
 		spatialPreviewService: spatialPreviewService,
 		mvtService:            mvtService,
 		metadataRepo:          metadataRepo,
+		quickViewService:      nil, // 延迟注入
 	}
+}
+
+// SetQuickViewService 设置快显服务（避免循环依赖）
+func (s *UnifiedMVTService) SetQuickViewService(quickViewService *QuickViewService) {
+	s.quickViewService = quickViewService
 }
 
 // TileResponse 瓦片响应结构
@@ -99,9 +106,15 @@ func (s *UnifiedMVTService) GetTile(
 		"duration", duration,
 		"size", len(tileData))
 
-	// 4. 如果生成时间 > 300ms，异步持久化到 MinIO（包括回填 Redis 和内存缓存）
-	if duration > 300*time.Millisecond && len(tileData) > 0 {
-		go s.persistToMinIO(context.Background(), fingerprint, z, x, y, tileData)
+	// 4. 判断是否需要自动缓存（生成时间 > 300ms 或 大小 > 100KB）
+	tileSizeKB := float64(len(tileData)) / 1024.0
+	durationMs := float64(duration.Milliseconds())
+	shouldCache := durationMs > 300 || tileSizeKB > 100
+
+	if shouldCache && len(tileData) > 0 {
+		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存）
+		go s.persistToMinIO(context.Background(), fingerprint, z, x, y, tileData,
+			resourceID, schema, table, tenantID, durationMs, tileSizeKB)
 	}
 
 	return &TileResponse{
@@ -112,15 +125,22 @@ func (s *UnifiedMVTService) GetTile(
 }
 
 // calculateFingerprint 计算表的 fingerprint（内部使用，对前端透明）
-// 格式：SHA256(resourceID:schema.table)
+// 使用 common 模块的统一算法：SHA256(resourceID:schema.table)
 func (s *UnifiedMVTService) calculateFingerprint(resourceID uint, schema, table string) string {
-	key := fmt.Sprintf("%d:%s.%s", resourceID, schema, table)
-	hash := sha256.Sum256([]byte(key))
-	return fmt.Sprintf("%x", hash)
+	return commonModels.GenerateTableFingerprint(resourceID, schema, table)
 }
 
 // persistToMinIO 持久化瓦片到 MinIO（异步执行，不阻塞响应）
-func (s *UnifiedMVTService) persistToMinIO(ctx context.Context, fingerprint string, z, x, y int, tileData []byte) {
+func (s *UnifiedMVTService) persistToMinIO(
+	ctx context.Context,
+	fingerprint string,
+	z, x, y int,
+	tileData []byte,
+	resourceID uint,
+	schema, table string,
+	tenantID *uint,
+	durationMs, tileSizeKB float64,
+) {
 	// 1. Gzip 压缩瓦片数据
 	var buf bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buf)
@@ -169,4 +189,24 @@ func (s *UnifiedMVTService) persistToMinIO(ctx context.Context, fingerprint stri
 	// 5. 回填上层缓存（Redis + 内存 LRU）
 	cacheKey := s.spatialPreviewService.buildCacheKey(fingerprint, z, x, y)
 	s.spatialPreviewService.backfillCache(ctx, cacheKey, compressed)
+
+	// 6. 更新快显统计（如果有QuickViewService且表有快显记录）
+	if s.quickViewService != nil && tenantID != nil {
+		err := s.quickViewService.IncrementCachedTiles(
+			ctx,
+			*tenantID,
+			resourceID,
+			schema,
+			table,
+			durationMs,
+			tileSizeKB,
+		)
+		if err != nil {
+			// 不阻塞，仅记录日志
+			logger.L().Debug("更新快显统计失败（可能表无快显记录）",
+				"error", err,
+				"resource_id", resourceID,
+				"table", fmt.Sprintf("%s.%s", schema, table))
+		}
+	}
 }

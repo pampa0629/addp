@@ -38,12 +38,8 @@ const token = () => localStorage.getItem('token') || ''
 
 const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
+  let path = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
 
-  // 新的 RESTful API 格式：
-  // /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
-  let path = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}.mvt`
-
-  // 添加可选查询参数
   const params = []
   if (props.geom && props.geom !== 'geom') {
     params.push(`geom=${encodeURIComponent(props.geom)}`)
@@ -62,12 +58,9 @@ function makeVectorLayer() {
   const vtSource = new VectorTileSource({
     format: new MVT(),
     tileUrlFunction: (tileCoord) => {
-      // OpenLayers 使用 [z, x, -y-1] 格式（TMS）
-      // 需要转换为标准 XYZ 格式: y = 2^z - y - 1
       const z = tileCoord[0]
       const x = tileCoord[1]
       const y = tileCoord[2]
-
       // 转换 TMS Y 坐标到 XYZ 格式
       const xyzY = Math.pow(2, z) - y - 1
 
@@ -78,25 +71,24 @@ function makeVectorLayer() {
 
       return url
     },
-    tileLoadFunction: async (tile, src) => {
-      try {
-        const res = await fetch(src, {
-          headers: {
-            Authorization: token() ? `Bearer ${token()}` : ''
-          }
-        })
+    tileLoadFunction: (tile, src) => {
+      // 非阻塞加载
+      fetch(src, {
+        headers: { Authorization: token() ? `Bearer ${token()}` : '' }
+      }).then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const buf = await res.arrayBuffer()
+        return res.arrayBuffer()
+      }).then(buf => {
         tile.setLoader((extent, resolution, projection) => {
           const format = tile.getFormat() || new MVT()
           const features = format.readFeatures(buf, { extent, featureProjection: projection })
           tile.setFeatures(features)
           tile.setProjection(projection)
         })
-      } catch (e) {
-        error.value = `加载切片失败: ${e?.message || e}`
-        tile.setState(3) // ERROR
-      }
+      }).catch(e => {
+        console.error('加载切片失败:', src, e)
+        tile.setState(3)
+      })
     }
   })
 
@@ -109,9 +101,9 @@ function makeVectorLayer() {
     } else if (geomType.includes('Line')) {
       return new Style({ stroke: new Stroke({ color: '#ff5722', width: 2 }) })
     }
+    // 面要素: 只显示边框,不填充(彻底不遮挡底图)
     return new Style({
-      fill: new Fill({ color: 'rgba(0, 136, 136, 0.4)' }),
-      stroke: new Stroke({ color: '#008888', width: 1 })
+      stroke: new Stroke({ color: '#E65100', width: 1.5 })
     })
   }
 
@@ -119,19 +111,36 @@ function makeVectorLayer() {
 }
 
 function initMap() {
+  // 使用高德地图底图 - 正确的多URL配置
   const base = new TileLayer({
-    source: new XYZ({ url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', crossOrigin: 'anonymous' })
+    source: new XYZ({
+      urls: [
+        'https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+        'https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+        'https://webrd03.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+        'https://webrd04.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}'
+      ],
+      crossOrigin: 'anonymous'
+    }),
+    zIndex: 0  // 底图在最下层
   })
+
   const vt = makeVectorLayer()
+  vt.setZIndex(10)  // MVT图层在上层
+
   map = new Map({
     target: mapEl.value,
     layers: [base, vt],
-    view: new View({ center: fromLonLat(props.center), zoom: props.zoom })
+    view: new View({
+      center: fromLonLat(props.center),
+      zoom: props.zoom,
+      maxZoom: 18,
+      minZoom: 3
+    })
   })
 }
 
 function fromLonLat(lonLat) {
-  // minimal transform for WebMercator; OpenLayers expects EPSG:3857
   const [lon, lat] = lonLat
   const x = (lon * 20037508.34) / 180
   let y = Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180)
@@ -139,25 +148,14 @@ function fromLonLat(lonLat) {
   return [x, y]
 }
 
-// 通过 ID 定位要素（用于表格行点击后定位到地图）
 function focusFeatureById(featureId, centroid) {
   if (!map || !centroid) return
-
   const { lon, lat } = centroid
   const center = fromLonLat([lon, lat])
-
-  // 平移地图到要素中心点，并适当放大
-  map.getView().animate({
-    center,
-    zoom: 16, // 放大到合适的缩放级别
-    duration: 500
-  })
+  map.getView().animate({ center, zoom: 16, duration: 500 })
 }
 
-// 暴露方法给父组件调用
-defineExpose({
-  focusFeatureById
-})
+defineExpose({ focusFeatureById })
 
 onMounted(() => initMap())
 onBeforeUnmount(() => {
@@ -168,11 +166,12 @@ onBeforeUnmount(() => {
 })
 
 watch(() => [props.resourceId, props.schema, props.table, props.geom, props.cols?.join(','), props.srid], () => {
-  // Recreate vector layer on source change
   if (!map) return
   const layers = map.getLayers()
   const vtIdx = layers.getLength() - 1
-  layers.setAt(vtIdx, makeVectorLayer())
+  const newVt = makeVectorLayer()
+  newVt.setZIndex(10)
+  layers.setAt(vtIdx, newVt)
 })
 </script>
 

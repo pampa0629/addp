@@ -7,12 +7,11 @@ import (
 	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
-	"github.com/addp/meta/internal/worker"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, preprocessSvc *service.PreprocessService, taskQueue *worker.TaskQueue) *gin.Engine {
+func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -30,10 +29,6 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 
 	// 创建Handler
 	handler := NewHandler(resourceService, scanService, taskService)
-	var preprocessHandler *PreprocessHandler
-	if preprocessSvc != nil && taskQueue != nil {
-		preprocessHandler = NewPreprocessHandler(preprocessSvc, taskQueue)
-	}
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -69,13 +64,6 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
 		api.GET("/metadata/tables", handler.GetTables)
 		api.GET("/metadata/fields", handler.GetTableFields)
-
-		// 预处理相关（如果可用）
-		if preprocessHandler != nil {
-			api.POST("/preprocess/items/:item_id", preprocessHandler.TriggerPreprocess)
-			api.GET("/preprocess/items/:item_id/status", preprocessHandler.GetPreprocessStatus)
-			api.DELETE("/preprocess/items/:item_id/cache", preprocessHandler.ClearCache)
-		}
 
 		// 缓存管理
 		api.DELETE("/cache/resources/:resource_id", handler.ClearResourceCache)

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -64,11 +65,17 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	}
 
 	yStr := c.Param("y")
+	// Log for debugging
+	fmt.Printf("DEBUG: Raw y parameter: '%s'\n", yStr)
+	// The route is now /:y without .mvt, so no need to trim
+	fmt.Printf("DEBUG: Using y parameter as-is: '%s'\n", yStr)
 	y, err := strconv.Atoi(yStr)
 	if err != nil || y < 0 {
+		fmt.Printf("DEBUG: Failed to parse y='%s': err=%v\n", yStr, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid y parameter"})
 		return
 	}
+	fmt.Printf("DEBUG: Parsed y=%d\n", y)
 
 	// 2. 解析查询参数（可选）
 	geomCol := c.DefaultQuery("geom", "geom")
@@ -80,15 +87,11 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 		return
 	}
 
-	// 解析列列表（最多 8 列）
+	// 解析列列表
 	var cols []string
 	colsParam := c.Query("cols")
 	if colsParam != "" {
 		cols = strings.Split(colsParam, ",")
-		if len(cols) > 8 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "maximum 8 columns allowed"})
-			return
-		}
 		// 去除空白字符
 		for i := range cols {
 			cols[i] = strings.TrimSpace(cols[i])
@@ -116,6 +119,8 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 		srid,
 	)
 	if err != nil {
+		fmt.Printf("ERROR: GetTile failed: %v\n", err)
+		fmt.Printf("ERROR: Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n", resourceID, schema, table, z, x, y)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

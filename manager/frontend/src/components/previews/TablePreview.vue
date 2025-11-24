@@ -15,19 +15,31 @@
             :value="item.value"
           />
         </el-select>
+
+        <!-- Quick View Button -->
+        <el-button
+          type="primary"
+          size="small"
+          :loading="quickViewLoading"
+          @click="handleQuickView"
+        >
+          {{ quickViewStatus === 'completed' ? '快显已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用快显' }}
+        </el-button>
       </div>
 
       <!-- 统一使用 MVT 瓦片预览（所有空间表）-->
-      <VectorTilePreview
-        ref="mapRef"
-        :resource-id="resourceId"
-        :schema="schema"
-        :table="table"
-        :geom="activeGeometryColumn"
-        :cols="displayColumns"
-        :center="mapCenter"
-        :zoom="mapZoom"
-      />
+      <div class="map-container" :style="{ height: mapHeight + 'px' }">
+        <VectorTilePreview
+          ref="mapRef"
+          :resource-id="resourceId"
+          :schema="schema"
+          :table="table"
+          :geom="activeGeometryColumn"
+          :cols="displayColumns"
+          :center="mapCenter"
+          :zoom="mapZoom"
+        />
+      </div>
 
       <div class="map-splitter" @mousedown="startMapResize"></div>
     </template>
@@ -70,11 +82,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { useResizable } from '@/composables/useResizable'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
+import { quickViewAPI } from '@/api/quickView'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -101,6 +114,11 @@ const currentRowKey = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
 
+// Quick View state
+const quickViewLoading = ref(false)
+const quickViewStatus = ref('none') // 'none' | 'generating' | 'completed' | 'failed'
+let quickViewPollingTimer = null
+
 const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
 const total = computed(() => props.data?.total || 0)
@@ -112,7 +130,14 @@ const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
 // 资源信息（用于 MVT 预览）
 const resourceId = computed(() => props.data?.resourceId)
 const schema = computed(() => props.data?.schema)
-const table = computed(() => props.data?.table || props.data?.path)
+const table = computed(() => {
+  const rawTable = props.data?.table || props.data?.path
+  // 如果table包含schema前缀（如 "public.dltb"），去除前缀
+  if (rawTable && rawTable.includes('.')) {
+    return rawTable.split('.').pop()
+  }
+  return rawTable
+})
 
 // 地图配置
 const mapCenter = computed(() => {
@@ -186,6 +211,88 @@ const handlePageChange = (page) => {
   emit('page-change', page)
 }
 
+// Quick View 处理函数
+const handleQuickView = async () => {
+  if (!resourceId.value || !schema.value || !table.value) {
+    ElMessage.warning('缺少必要参数，无法启用快显')
+    return
+  }
+
+  if (quickViewStatus.value === 'generating') {
+    ElMessage.info('快显缓存正在生成中，请稍后')
+    return
+  }
+
+  try {
+    quickViewLoading.value = true
+    await quickViewAPI.triggerQuickView(resourceId.value, schema.value, table.value, {
+      max_zoom: 18,
+      concurrency: 10,
+      priority: 'default'
+    })
+    quickViewStatus.value = 'generating'
+    ElMessage.success('快显任务已启动，正在后台生成缓存')
+
+    // 开始轮询状态
+    startQuickViewPolling()
+  } catch (error) {
+    console.error('启用快显失败:', error)
+    ElMessage.error(error.response?.data?.error || '启用快显失败')
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 获取快显状态
+const fetchQuickViewStatus = async () => {
+  if (!resourceId.value || !schema.value || !table.value) {
+    return
+  }
+
+  try {
+    const response = await quickViewAPI.getQuickViewStatus(resourceId.value, schema.value, table.value)
+    const status = response.data?.status
+
+    if (status) {
+      quickViewStatus.value = status
+
+      // 如果状态变为完成或失败，停止轮询
+      if (status === 'completed' || status === 'failed') {
+        stopQuickViewPolling()
+
+        if (status === 'completed') {
+          ElMessage.success('快显缓存生成完成')
+        } else if (status === 'failed') {
+          ElMessage.error('快显缓存生成失败')
+        }
+      }
+    }
+  } catch (error) {
+    // 如果返回404，说明还没有快显记录
+    if (error.response?.status === 404) {
+      quickViewStatus.value = 'none'
+    }
+    // 其他错误不处理，避免频繁弹窗
+  }
+}
+
+// 开始轮询快显状态
+const startQuickViewPolling = () => {
+  stopQuickViewPolling() // 先清除旧的定时器
+
+  quickViewPollingTimer = setInterval(() => {
+    fetchQuickViewStatus()
+  }, 3000) // 每3秒查询一次
+}
+
+// 停止轮询
+const stopQuickViewPolling = () => {
+  if (quickViewPollingTimer) {
+    clearInterval(quickViewPollingTimer)
+    quickViewPollingTimer = null
+  }
+}
+
 // 当 baseMapOptions 变化时，自动设置默认底图
 watch(
   baseMapOptions,
@@ -197,8 +304,28 @@ watch(
   { immediate: true }
 )
 
+// 监听表变化，重新获取快显状态
+watch(
+  () => [resourceId.value, schema.value, table.value],
+  () => {
+    if (hasGeometry.value && resourceId.value && schema.value && table.value) {
+      fetchQuickViewStatus()
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   loadMapConfig()
+
+  // 初始化时获取快显状态
+  if (hasGeometry.value && resourceId.value && schema.value && table.value) {
+    fetchQuickViewStatus()
+  }
+})
+
+onUnmounted(() => {
+  stopQuickViewPolling()
 })
 </script>
 
@@ -229,6 +356,14 @@ onMounted(() => {
 
 .base-map-select {
   min-width: 160px;
+}
+
+.map-container {
+  position: relative;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f5f5f5;
 }
 
 .map-splitter {

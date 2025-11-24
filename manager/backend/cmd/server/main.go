@@ -13,6 +13,7 @@ import (
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
+	"github.com/addp/manager/internal/worker"
 	_ "github.com/addp/manager/internal/service/builtin" // 导入内置预览插件
 	"github.com/redis/go-redis/v9"
 )
@@ -111,7 +112,18 @@ func main() {
 	)
 	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
 
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, resourceRepo, metadataRepo)
+	// 初始化 Task Queue（用于 Quick View 批量缓存生成）
+	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
+	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
+
+	// 初始化 Quick View 服务（依赖 Redis 和数据库）
+	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient)
+
+	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
+	unifiedMVTService.SetQuickViewService(quickViewService)
+	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
+
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo)
 
 	// 启动服务
 	addr := ":" + cfg.Port
