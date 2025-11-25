@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
@@ -80,7 +82,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		params.MaxZoom = 18
 	}
 	if params.Concurrency == 0 {
-		params.Concurrency = 10
+		params.Concurrency = 20  // 提高默认并发数（原来是10）
 	}
 
 	// 7. 创建或更新快显记录
@@ -165,31 +167,130 @@ type SpatialMetadataResult struct {
 }
 
 // getSpatialMetadataFromMeta 从Meta模块获取空间元数据
-// TODO: 这里需要实现调用Meta API或直接查询meta_item表
 func (s *QuickViewService) getSpatialMetadataFromMeta(
 	ctx context.Context,
 	tenantID, resourceID uint,
 	schema, table string,
 ) (*SpatialMetadataResult, error) {
-	// 方案1: 调用Meta的API（如果Meta提供了查询接口）
-	// 方案2: 直接查询meta_item表（需要数据库连接）
-	// 方案3: 作为参数从前端传递（临时方案）
+	// 使用原生 SQL 查询 meta_item 表获取空间元数据
+	query := `
+		SELECT
+			COALESCE(attributes->'spatial_metadata'->>'geometry_column', '') AS geometry_column,
+			COALESCE((attributes->'spatial_metadata'->>'srid')::int, 0) AS srid,
+			COALESCE((attributes->'spatial_metadata'->'extent')::text, '[]') AS extent,
+			COALESCE(attributes->'table_metadata'->>'primary_key', '') AS primary_key,
+			COALESCE((attributes->'fields')::text, '[]') AS fields_json
+		FROM metadata.meta_item
+		WHERE res_id = $1
+			AND item_type = 'table'
+			AND attributes->>'schema' = $2
+			AND name = $3
+			AND tenant_id = $4
+			AND deleted_at IS NULL
+		LIMIT 1
+	`
 
-	// 临时实现：返回默认值
-	// 实际使用时需要替换为真实的Meta查询
-	logger.L().Warn("Using default spatial metadata - should query from Meta module",
+	type QueryResult struct {
+		GeometryColumn string
+		SRID           int
+		ExtentJSON     string
+		PrimaryKey     string
+		FieldsJSON     string
+	}
+
+	var result QueryResult
+	// 通过 repo 访问数据库
+	db := s.repo.GetDB()
+
+	// 执行查询并手动扫描结果
+	row := db.Raw(query, resourceID, schema, table, tenantID).Row()
+	err := row.Scan(&result.GeometryColumn, &result.SRID, &result.ExtentJSON, &result.PrimaryKey, &result.FieldsJSON)
+	if err != nil {
+		logger.L().Warn("Failed to query spatial metadata from Meta, using defaults",
+			"resource_id", resourceID,
+			"table", fmt.Sprintf("%s.%s", schema, table),
+			"error", err)
+
+		// 降级：返回默认值
+		return &SpatialMetadataResult{
+			GeomColumn: "geom",
+			SRID:       4326,
+			PrimaryKey: "id",
+			Extent:     []float64{},
+		}, nil
+	}
+
+	// 调试：输出原始查询结果
+	logger.L().Debug("Raw query result from Meta",
 		"resource_id", resourceID,
-		"table", fmt.Sprintf("%s.%s", schema, table))
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"geom_col", result.GeometryColumn,
+		"srid", result.SRID,
+		"primary_key", result.PrimaryKey,
+		"fields_json_len", len(result.FieldsJSON))
 
-	// 这里需要查询meta_item表获取spatial_metadata
-	// SELECT attributes->'spatial_metadata' FROM metadata.meta_item
-	// WHERE res_id = ? AND name = ? AND attributes->'schema' = ?
+	// 检查是否查询到结果
+	if result.GeometryColumn == "" {
+		logger.L().Warn("No spatial metadata found in Meta, using defaults",
+			"resource_id", resourceID,
+			"table", fmt.Sprintf("%s.%s", schema, table))
+
+		return &SpatialMetadataResult{
+			GeomColumn: "geom",
+			SRID:       4326,
+			PrimaryKey: "id",
+			Extent:     []float64{},
+		}, nil
+	}
+
+	// 解析 extent JSON
+	var extent []float64
+	if result.ExtentJSON != "" {
+		if err := json.Unmarshal([]byte(result.ExtentJSON), &extent); err != nil {
+			logger.L().Warn("Failed to parse extent JSON", "extent", result.ExtentJSON, "error", err)
+			extent = []float64{}
+		}
+	}
+
+	// 使用查询到的主键，如果为空则从字段列表中查找
+	primaryKey := result.PrimaryKey
+	if primaryKey == "" && result.FieldsJSON != "" {
+		// 从字段列表中查找标记为主键的字段
+		var fields []map[string]interface{}
+		if err := json.Unmarshal([]byte(result.FieldsJSON), &fields); err == nil {
+			for _, field := range fields {
+				if isPK, ok := field["is_primary_key"].(bool); ok && isPK {
+					if name, ok := field["name"].(string); ok {
+						primaryKey = name
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// 如果还是没找到主键，使用默认值
+	if primaryKey == "" {
+		primaryKey = "id" // 默认主键名
+		logger.L().Warn("No primary key found in Meta, using default",
+			"resource_id", resourceID,
+			"table", fmt.Sprintf("%s.%s", schema, table),
+			"default_pk", primaryKey)
+	}
+
+	logger.L().Info("✅ 已从 Meta 获取空间元数据",
+		"resource_id", resourceID,
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"geom_col", result.GeometryColumn,
+		"srid", result.SRID,
+		"primary_key", primaryKey,
+		"extent", extent)
 
 	return &SpatialMetadataResult{
-		GeomColumn: "geom",         // 默认值
-		SRID:       4326,           // 默认WGS84
-		PrimaryKey: "id",           // 默认主键
-		Extent:     []float64{},    // 需要从meta获取
+		GeomColumn: result.GeometryColumn,
+		SRID:       result.SRID,
+		PrimaryKey: primaryKey,
+		Extent:     extent,
 	}, nil
 }
 
@@ -278,7 +379,7 @@ func (s *QuickViewService) IncrementCachedTiles(
 }
 
 // calculateFingerprint 计算表的指纹（用于 MinIO 路径）
-// 格式: {resource_id}/{schema}/{table}
+// 使用 common 模块的统一算法：SHA256(resourceID:schema.table)
 func calculateFingerprint(resourceID uint, schema, table string) string {
-	return fmt.Sprintf("%d/%s/%s", resourceID, schema, table)
+	return commonModels.GenerateTableFingerprint(resourceID, schema, table)
 }

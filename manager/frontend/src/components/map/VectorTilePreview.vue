@@ -23,8 +23,6 @@ const props = defineProps({
   schema: { type: String, required: true },
   table: { type: String, required: true },
   geom: { type: String, default: 'geom' },
-  cols: { type: Array, default: () => ['id'] },
-  srid: { type: Number, default: 4326 },
   center: { type: Array, default: () => [120.2, 30.3] },
   zoom: { type: Number, default: 10 }
 })
@@ -40,18 +38,12 @@ const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
   let path = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
 
-  const params = []
+  // 只传递非默认的几何列名
   if (props.geom && props.geom !== 'geom') {
-    params.push(`geom=${encodeURIComponent(props.geom)}`)
-  }
-  if (props.srid && props.srid !== 4326) {
-    params.push(`srid=${props.srid}`)
-  }
-  if (props.cols?.length) {
-    params.push(`cols=${props.cols.map(c => encodeURIComponent(c)).join(',')}`)
+    path += `?geom=${encodeURIComponent(props.geom)}`
   }
 
-  return params.length > 0 ? `${path}?${params.join('&')}` : path
+  return path
 })
 
 function makeVectorLayer() {
@@ -165,7 +157,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => [props.resourceId, props.schema, props.table, props.geom, props.cols?.join(','), props.srid], () => {
+watch(() => [props.resourceId, props.schema, props.table, props.geom], () => {
   if (!map) return
   const layers = map.getLayers()
   const vtIdx = layers.getLength() - 1

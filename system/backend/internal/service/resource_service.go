@@ -574,36 +574,44 @@ func (s *ResourceService) ensureResourceManagementPermission(user *models.User) 
 
 // validateScanConfig 验证扫描配置的有效性
 func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
-	if config == nil || !config.Enabled {
+	if config == nil {
 		return nil
 	}
 
-	// 验证调度类型
-	validScheduleTypes := map[string]bool{
-		"manual":  true,
-		"daily":   true,
-		"weekly":  true,
-		"monthly": true,
-		"cron":    true,
-	}
-	if !validScheduleTypes[config.ScheduleType] {
-		return fmt.Errorf("无效的调度类型: %s", config.ScheduleType)
+	// 验证调度类型（仅在启用定时扫描时验证）
+	if config.ScheduledScan {
+		validScheduleTypes := map[string]bool{
+			"daily":   true,
+			"weekly":  true,
+			"monthly": true,
+			"cron":    true,
+		}
+		if !validScheduleTypes[config.ScheduleType] {
+			return fmt.Errorf("无效的调度类型: %s", config.ScheduleType)
+		}
+
+		// 验证 Cron 表达式
+		if config.ScheduleType == "cron" {
+			if config.CronExpression == "" {
+				return errors.New("调度类型为 cron 时必须提供 cron_expression")
+			}
+			parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+			if _, err := parser.Parse(config.CronExpression); err != nil {
+				return fmt.Errorf("无效的 Cron 表达式: %w", err)
+			}
+		}
 	}
 
-	// 验证 Cron 表达式
-	if config.ScheduleType == "cron" {
-		if config.CronExpression == "" {
-			return errors.New("调度类型为 cron 时必须提供 cron_expression")
-		}
-		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		if _, err := parser.Parse(config.CronExpression); err != nil {
-			return fmt.Errorf("无效的 Cron 表达式: %w", err)
+	// 验证立即扫描深度
+	if config.ImmediateScan && config.ImmediateDepth != "" {
+		if config.ImmediateDepth != "basic" && config.ImmediateDepth != "deep" {
+			return fmt.Errorf("无效的立即扫描深度: %s (必须是 basic 或 deep)", config.ImmediateDepth)
 		}
 	}
 
-	// 验证扫描深度
-	if config.ScanDepth != "" && config.ScanDepth != "shallow" && config.ScanDepth != "deep" {
-		return fmt.Errorf("无效的扫描深度: %s (必须是 shallow 或 deep)", config.ScanDepth)
+	// 兼容旧版字段验证
+	if config.ScanDepth != "" && config.ScanDepth != "shallow" && config.ScanDepth != "deep" && config.ScanDepth != "basic" {
+		return fmt.Errorf("无效的扫描深度: %s (必须是 shallow, basic 或 deep)", config.ScanDepth)
 	}
 
 	return nil

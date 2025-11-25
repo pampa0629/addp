@@ -8,7 +8,7 @@
 
 ### 1. 指纹机制
 - **不可变指纹**: `SHA256(resID:schema.table)` - 仅基于表物理位置，不依赖数据内容
-- **目录结构**: MinIO 路径 `addp-mvt-cached/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz`
+- **目录结构**: MinIO 路径 `mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz`
 - **无历史版本**: 数据更新时直接删除旧瓦片并重新生成
 
 ### 2. 自适应缩放停止策略
@@ -71,10 +71,10 @@ type MVTPreprocessConfig struct {
 **1.3 MinIO 初始化脚本** ([scripts/init-minio-mvt.sh](../scripts/init-minio-mvt.sh))
 ```bash
 #!/bin/bash
-# 创建 addp-mvt-cached bucket
+# 创建 mvt-tiles bucket
 # 设置公开读权限（前端直接访问）
-mc mb addp-minio/addp-mvt-cached
-mc anonymous set download addp-minio/addp-mvt-cached
+mc mb addp-minio/mvt-tiles
+mc anonymous set download addp-minio/mvt-tiles
 ```
 
 ### Phase 2: MVT 核心实现 ✅
@@ -225,7 +225,7 @@ func (s *SpatialPreviewService) GetTileMetadata(ctx, fingerprint string) (map[st
 func (s *SpatialPreviewService) GetTile(ctx, fingerprint string, z, x, y int) ([]byte, error)
 func (s *SpatialPreviewService) CheckTileExists(ctx, fingerprint string, z, x, y int) (bool, error)
 ```
-- 从 MinIO `addp-mvt-cached` 读取预缓存瓦片
+- 从 MinIO `mvt-tiles` 读取预缓存瓦片
 - 直接返回压缩的 MVT 数据
 
 **4.2 API 端点** ([manager/backend/internal/api/spatial_preview_handler.go](../manager/backend/internal/api/spatial_preview_handler.go:1))
@@ -268,7 +268,7 @@ func (h *SpatialPreviewHandler) CheckTileExists(c *gin.Context)
 ## MinIO 目录结构
 
 ```
-addp-mvt-cached/
+mvt-tiles/
 ├── README.txt                                    # 说明文档
 ├── {fingerprint_1}/                              # SHA256(resID:schema.table)
 │   ├── metadata.json                             # 预处理元数据
@@ -409,7 +409,7 @@ cd manager/backend && go run cmd/server/main.go
 ### 5. 验证
 ```bash
 # 检查瓦片是否生成
-mc ls addp-minio/addp-mvt-cached/
+mc ls addp-minio/mvt-tiles/
 
 # 测试瓦片访问
 curl -I http://localhost:8081/api/spatial/{fingerprint}/tiles/0/0/0.mvt \

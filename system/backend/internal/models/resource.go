@@ -24,14 +24,15 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 type ScanConfig struct {
 	Enabled        bool                 `json:"enabled"`                   // 是否启用扫描（总开关，兼容旧版）
 	ImmediateScan  bool                 `json:"immediate_scan"`            // 注册后立即扫描
-	ScheduledScan  bool                 `json:"scheduled_scan"`            // 启用定时扫描
+	ImmediateDepth string               `json:"immediate_depth,omitempty"` // 立即扫描深度：basic（基础）或 deep（深度）
+	ScheduledScan  bool                 `json:"scheduled_scan"`            // 启用定时扫描（深度固定为 deep）
 	ScheduleType   string               `json:"schedule_type"`             // daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
 	CronExpression string               `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron 时使用）
 	ScheduleTime   string               `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
 	ScheduleValue  []int                `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
-	ScanDepth      string               `json:"scan_depth"`                // shallow, deep
-	SchemaNames    []string             `json:"schema_names,omitempty"`    // PostgreSQL schemas（留空表示扫描所有）
-	ObjectPaths    []string             `json:"object_paths,omitempty"`    // MinIO prefixes（留空表示扫描根目录）
+	ScanDepth      string               `json:"scan_depth"`                // 兼容旧版字段：shallow, deep
+	SchemaNames    []string             `json:"schema_names,omitempty"`    // 已废弃：PostgreSQL schemas（系统自动过滤）
+	ObjectPaths    []string             `json:"object_paths,omitempty"`    // 已废弃：MinIO prefixes（系统自动过滤）
 	Preprocessing  *PreprocessingConfig `json:"preprocessing,omitempty"`   // 预处理配置（可选）
 }
 

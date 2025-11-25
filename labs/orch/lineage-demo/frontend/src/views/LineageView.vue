@@ -146,9 +146,40 @@ const fetchAllLineage = async () => {
   loading.value = true
   try {
     const result = await getAllLineage()
-    graphData.nodes = result.nodes || []
-    graphData.edges = result.edges || []
-    ElMessage.success('加载成功')
+    // 将血缘关系数组转换为图谱格式
+    const nodeMap = new Map()
+    const edges = []
+
+    result.forEach(rel => {
+      // 添加源节点
+      if (!nodeMap.has(rel.source_item_id)) {
+        nodeMap.set(rel.source_item_id, {
+          id: String(rel.source_item_id),
+          name: rel.source_path.split('.').pop() || `节点${rel.source_item_id}`,
+          type: rel.source_type
+        })
+      }
+
+      // 添加目标节点
+      if (!nodeMap.has(rel.target_item_id)) {
+        nodeMap.set(rel.target_item_id, {
+          id: String(rel.target_item_id),
+          name: rel.target_path.split('.').pop() || `节点${rel.target_item_id}`,
+          type: rel.target_type
+        })
+      }
+
+      // 添加边
+      edges.push({
+        source: String(rel.source_item_id),
+        target: String(rel.target_item_id),
+        transform_type: rel.lineage_type
+      })
+    })
+
+    graphData.nodes = Array.from(nodeMap.values())
+    graphData.edges = edges
+    ElMessage.success(`加载成功：${graphData.nodes.length} 个节点, ${graphData.edges.length} 条边`)
   } catch (error) {
     ElMessage.error('加载失败: ' + error.message)
   } finally {
@@ -183,8 +214,34 @@ const fetchUpstream = async () => {
   loading.value = true
   try {
     const result = await getUpstream(selectedNode.value.id)
-    graphData.nodes = result.nodes || []
-    graphData.edges = result.edges || []
+    // 转换数据格式
+    const nodeMap = new Map()
+    const edges = []
+
+    result.forEach(rel => {
+      if (!nodeMap.has(rel.source_item_id)) {
+        nodeMap.set(rel.source_item_id, {
+          id: String(rel.source_item_id),
+          name: rel.source_path.split('.').pop() || `节点${rel.source_item_id}`,
+          type: rel.source_type
+        })
+      }
+      if (!nodeMap.has(rel.target_item_id)) {
+        nodeMap.set(rel.target_item_id, {
+          id: String(rel.target_item_id),
+          name: rel.target_path.split('.').pop() || `节点${rel.target_item_id}`,
+          type: rel.target_type
+        })
+      }
+      edges.push({
+        source: String(rel.source_item_id),
+        target: String(rel.target_item_id),
+        transform_type: rel.lineage_type
+      })
+    })
+
+    graphData.nodes = Array.from(nodeMap.values())
+    graphData.edges = edges
     ElMessage.success('已显示上游节点')
   } catch (error) {
     ElMessage.error('查询失败: ' + error.message)
@@ -200,8 +257,34 @@ const fetchDownstream = async () => {
   loading.value = true
   try {
     const result = await getDownstream(selectedNode.value.id)
-    graphData.nodes = result.nodes || []
-    graphData.edges = result.edges || []
+    // 转换数据格式
+    const nodeMap = new Map()
+    const edges = []
+
+    result.forEach(rel => {
+      if (!nodeMap.has(rel.source_item_id)) {
+        nodeMap.set(rel.source_item_id, {
+          id: String(rel.source_item_id),
+          name: rel.source_path.split('.').pop() || `节点${rel.source_item_id}`,
+          type: rel.source_type
+        })
+      }
+      if (!nodeMap.has(rel.target_item_id)) {
+        nodeMap.set(rel.target_item_id, {
+          id: String(rel.target_item_id),
+          name: rel.target_path.split('.').pop() || `节点${rel.target_item_id}`,
+          type: rel.target_type
+        })
+      }
+      edges.push({
+        source: String(rel.source_item_id),
+        target: String(rel.target_item_id),
+        transform_type: rel.lineage_type
+      })
+    })
+
+    graphData.nodes = Array.from(nodeMap.values())
+    graphData.edges = edges
     ElMessage.success('已显示下游节点')
   } catch (error) {
     ElMessage.error('查询失败: ' + error.message)
@@ -239,6 +322,11 @@ const selectNodeFromList = (node) => {
 
 .graph-card, .detail-card, .list-card {
   height: 100%;
+}
+
+.graph-card :deep(.el-card__body) {
+  height: calc(100vh - 280px);
+  padding: 0;
 }
 
 .card-header {

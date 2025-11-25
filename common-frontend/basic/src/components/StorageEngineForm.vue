@@ -118,117 +118,97 @@
     </template>
 
     <!-- 元数据扫描配置 -->
-    <el-divider content-position="left">元数据扫描配置（可选）</el-divider>
-
-    <!-- 1. 立即扫描开关 -->
-    <el-form-item label="注册后立即扫描">
-      <el-switch v-model="immediateScanEnabled" />
-      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-        保存资源后立即触发一次全量扫描，快速生成元数据
+    <el-divider content-position="left">
+      <span style="cursor: pointer; user-select: none;" @click="scanConfigExpanded = !scanConfigExpanded">
+        元数据扫描配置（可选）
+        <el-icon style="margin-left: 4px;">
+          <component :is="scanConfigExpanded ? 'ArrowDown' : 'ArrowRight'" />
+        </el-icon>
       </span>
-    </el-form-item>
+    </el-divider>
 
-    <!-- 2. 定时扫描开关 -->
-    <el-form-item label="定时自动扫描">
-      <el-switch v-model="scheduledScanEnabled" />
-      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-        按设定的频率自动扫描，保持元数据最新
-      </span>
-    </el-form-item>
-
-    <!-- 3. 定时扫描详细配置（仅在开关打开时显示） -->
-    <template v-if="scheduledScanEnabled">
-      <el-form-item label="扫描频率" style="margin-left: 30px;">
-        <el-radio-group v-model="formState.scan_config.schedule_type">
-          <el-radio label="daily">每天</el-radio>
-          <el-radio label="weekly">每周</el-radio>
-        </el-radio-group>
+    <!-- 扫描配置内容（可折叠） -->
+    <template v-if="scanConfigExpanded">
+      <!-- 1. 立即扫描开关 -->
+      <el-form-item label="注册后立即扫描">
+        <el-switch v-model="immediateScanEnabled" />
+        <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+          保存资源后立即触发一次全量扫描，快速生成元数据
+        </span>
       </el-form-item>
 
-      <el-form-item label="执行时间" style="margin-left: 30px;">
-        <el-time-select
-          v-model="formState.scan_config.schedule_time"
-          start="00:00"
-          step="01:00"
-          end="23:00"
-          placeholder="选择时间"
-        />
+      <!-- 1.1 立即扫描深度配置（仅在立即扫描启用时显示） -->
+      <template v-if="immediateScanEnabled">
+        <el-form-item label="立即扫描深度" style="margin-left: 30px;">
+          <el-radio-group v-model="formState.scan_config.immediate_depth">
+            <el-radio label="basic">基础扫描（推荐）</el-radio>
+            <el-radio label="deep">深度扫描</el-radio>
+          </el-radio-group>
+          <div class="field-hint">
+            基础扫描仅获取结构信息（表名、字段类型），速度快（秒级）<br/>
+            深度扫描包含统计信息（行数、大小等），可能需要较长时间（分钟级）
+          </div>
+        </el-form-item>
+      </template>
+
+      <!-- 2. 定时扫描开关 -->
+      <el-form-item label="定时自动扫描">
+        <el-switch v-model="scheduledScanEnabled" />
+        <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+          按设定的频率自动深度扫描，保持元数据最新
+        </span>
       </el-form-item>
 
-      <el-form-item
-        v-if="formState.scan_config.schedule_type === 'weekly'"
-        label="执行日期"
-        style="margin-left: 30px;"
-      >
-        <el-checkbox-group v-model="formState.scan_config.schedule_value">
-          <el-checkbox :label="1">周一</el-checkbox>
-          <el-checkbox :label="2">周二</el-checkbox>
-          <el-checkbox :label="3">周三</el-checkbox>
-          <el-checkbox :label="4">周四</el-checkbox>
-          <el-checkbox :label="5">周五</el-checkbox>
-          <el-checkbox :label="6">周六</el-checkbox>
-          <el-checkbox :label="0">周日</el-checkbox>
-        </el-checkbox-group>
-      </el-form-item>
-    </template>
+      <!-- 2.1 定时扫描详细配置（仅在开关打开时显示） -->
+      <template v-if="scheduledScanEnabled">
+        <el-form-item label="扫描频率" style="margin-left: 30px;">
+          <el-radio-group v-model="formState.scan_config.schedule_type">
+            <el-radio label="daily">每天</el-radio>
+            <el-radio label="weekly">每周</el-radio>
+          </el-radio-group>
+        </el-form-item>
 
-    <!-- 4. 公共扫描配置（只要任一扫描启用就显示） -->
-    <template v-if="immediateScanEnabled || scheduledScanEnabled">
-      <el-form-item label="扫描深度">
-        <el-radio-group v-model="formState.scan_config.scan_depth">
-          <el-radio label="basic">基础扫描（仅结构）</el-radio>
-          <el-radio label="deep">深度扫描（含统计信息）</el-radio>
-        </el-radio-group>
-      </el-form-item>
-
-      <!-- PostgreSQL 特定配置 -->
-      <el-form-item
-        v-if="formState.resource_type === 'postgresql'"
-        label="扫描的 Schema"
-      >
-        <el-select
-          v-model="formState.scan_config.schema_names"
-          multiple
-          filterable
-          allow-create
-          placeholder="留空则扫描所有 schema"
-        >
-          <el-option
-            v-for="schema in ['public', 'information_schema']"
-            :key="schema"
-            :label="schema"
-            :value="schema"
+        <el-form-item label="执行时间" style="margin-left: 30px;">
+          <el-time-select
+            v-model="formState.scan_config.schedule_time"
+            start="00:00"
+            step="01:00"
+            end="23:00"
+            placeholder="选择时间"
           />
-        </el-select>
-        <div class="field-hint">
-          可手动输入 schema 名称，留空将扫描所有 schema
-        </div>
-      </el-form-item>
+        </el-form-item>
 
-      <!-- MinIO / S3 特定配置 -->
-      <el-form-item
-        v-if="formState.resource_type === 'minio' || formState.resource_type === 's3'"
-        label="扫描的路径前缀"
-      >
-        <el-select
-          v-model="formState.scan_config.object_paths"
-          multiple
-          filterable
-          allow-create
-          placeholder="留空则扫描根目录"
+        <el-form-item
+          v-if="formState.scan_config.schedule_type === 'weekly'"
+          label="执行日期"
+          style="margin-left: 30px;"
         >
-          <el-option label="/" value="/" />
-        </el-select>
-        <div class="field-hint">
-          可手动输入路径前缀（如 data/, images/），留空将扫描整个 bucket
-        </div>
-      </el-form-item>
+          <el-checkbox-group v-model="formState.scan_config.schedule_value">
+            <el-checkbox :label="1">周一</el-checkbox>
+            <el-checkbox :label="2">周二</el-checkbox>
+            <el-checkbox :label="3">周三</el-checkbox>
+            <el-checkbox :label="4">周四</el-checkbox>
+            <el-checkbox :label="5">周五</el-checkbox>
+            <el-checkbox :label="6">周六</el-checkbox>
+            <el-checkbox :label="0">周日</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <!-- 2.2 定时扫描深度提示（固定深度扫描） -->
+        <el-form-item label="扫描深度" style="margin-left: 30px;">
+          <span style="color: var(--el-text-color-regular)">深度扫描（固定）</span>
+          <div class="field-hint">
+            定时扫描固定使用深度扫描，获取完整的统计信息（行数、大小、字段分布等）
+          </div>
+        </el-form-item>
+      </template>
     </template>
   </el-form>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch, nextTick } from 'vue'
+import { ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 
 const SENSITIVE_PLACEHOLDER = '********'
 
@@ -269,8 +249,9 @@ const emit = defineEmits(['update:modelValue', 'type-change'])
 const formRef = ref(null)
 const hasStoredPassword = ref(false)
 const hasStoredSecretKey = ref(false)
-const immediateScanEnabled = ref(false)
-const scheduledScanEnabled = ref(false)
+const immediateScanEnabled = ref(true)  // 默认启用立即扫描
+const scheduledScanEnabled = ref(true)  // 默认启用定时扫描
+const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折叠）
 
   const ensureConnectionDefaults = (form) => {
   if (!form.connection_info || typeof form.connection_info !== 'object') {
@@ -346,15 +327,13 @@ const formState = reactive({
   is_active: true,
   connection_info: {},
   scan_config: {
-    enabled: false,
-    immediate_scan: false,
-    scheduled_scan: false,
-    schedule_type: 'daily',
-    schedule_time: '00:00',
-    schedule_value: [],
-    scan_depth: 'basic',
-    schema_names: [],
-    object_paths: []
+    enabled: false,  // 兼容旧版
+    immediate_scan: true,  // 默认启用立即扫描
+    immediate_depth: 'basic',  // 立即扫描默认基础
+    scheduled_scan: true,  // 默认启用定时扫描
+    schedule_type: 'daily',  // 默认每天
+    schedule_time: '00:00',  // 凌晨执行
+    schedule_value: []
   }
 })
 
@@ -369,20 +348,19 @@ const syncFromProps = (value) => {
   if (value.scan_config) {
     formState.scan_config = {
       enabled: value.scan_config.enabled || false,
-      immediate_scan: value.scan_config.immediate_scan || false,
-      scheduled_scan: value.scan_config.scheduled_scan || false,
+      immediate_scan: value.scan_config.immediate_scan !== undefined ? value.scan_config.immediate_scan : true,
+      immediate_depth: value.scan_config.immediate_depth || 'basic',
+      scheduled_scan: value.scan_config.scheduled_scan !== undefined ? value.scan_config.scheduled_scan : true,
       schedule_type: value.scan_config.schedule_type || 'daily',
       schedule_time: value.scan_config.schedule_time || '00:00',
-      schedule_value: value.scan_config.schedule_value || [],
-      scan_depth: value.scan_config.scan_depth || 'basic',
-      schema_names: value.scan_config.schema_names || [],
-      object_paths: value.scan_config.object_paths || []
+      schedule_value: value.scan_config.schedule_value || []
     }
-    immediateScanEnabled.value = value.scan_config.immediate_scan || false
-    scheduledScanEnabled.value = value.scan_config.scheduled_scan || false
+    immediateScanEnabled.value = formState.scan_config.immediate_scan
+    scheduledScanEnabled.value = formState.scan_config.scheduled_scan
   } else {
-    immediateScanEnabled.value = false
-    scheduledScanEnabled.value = false
+    // 新建资源时使用默认值
+    immediateScanEnabled.value = true
+    scheduledScanEnabled.value = true
   }
 
   ensureConnectionDefaults(formState)

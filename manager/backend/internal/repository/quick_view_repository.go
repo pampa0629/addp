@@ -17,6 +17,11 @@ func NewQuickViewRepository(db *gorm.DB) *QuickViewRepository {
 	return &QuickViewRepository{db: db}
 }
 
+// GetDB 获取数据库连接（用于复杂查询）
+func (r *QuickViewRepository) GetDB() *gorm.DB {
+	return r.db
+}
+
 // Create 创建快显记录
 func (r *QuickViewRepository) Create(qv *models.QuickView) error {
 	return r.db.Create(qv).Error

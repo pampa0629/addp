@@ -25,7 +25,14 @@ type TaskHandler struct {
 // NewTaskHandler 创建任务处理器
 func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 	// 创建 SystemClient 用于获取资源连接信息
-	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	// 注意：InternalAPIKey 用于服务间认证，如果为空则无法调用 System API
+	if cfg.InternalAPIKey == "" {
+		logger.L().Warn("InternalAPIKey 为空，Worker 可能无法访问 System API")
+	}
+
+	// 使用 NewSystemClientWithInternalKey 创建客户端（服务间调用）
+	// 这样会调用 /internal/resources API 而不是 /api/resources
+	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 
 	// 创建 ResourceService 适配器
 	resourceService := &resourceServiceAdapter{
@@ -46,6 +53,12 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 	if err != nil {
 		logger.L().Error("Failed to create QuickViewService", "error", err)
 	}
+
+	logger.L().Info("TaskHandler 初始化完成",
+		"system_url", cfg.SystemServiceURL,
+		"has_api_key", cfg.InternalAPIKey != "",
+		"auth_mode", "internal_key",
+		"minio_endpoint", cfg.MinioEndpoint)
 
 	return &TaskHandler{
 		db:              db,
@@ -75,8 +88,8 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		logger.L().Error("Failed to update status to generating", "error", err)
 	}
 
-	// 2. 执行快显缓存生成
-	result, err := h.quickViewService.Generate(ctx, mvt.QuickViewConfig{
+	// 2. 执行快显缓存生成（使用混合入队模式）
+	result, err := h.quickViewService.GenerateMixed(ctx, mvt.QuickViewConfig{
 		ResourceID:      payload.ResourceID,
 		TenantID:        payload.TenantID,
 		Schema:          payload.SchemaName,

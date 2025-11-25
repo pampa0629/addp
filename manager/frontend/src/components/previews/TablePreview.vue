@@ -35,7 +35,6 @@
           :schema="schema"
           :table="table"
           :geom="activeGeometryColumn"
-          :cols="displayColumns"
           :center="mapCenter"
           :zoom="mapZoom"
         />

@@ -39,7 +39,7 @@ type S3Scanner struct {
 	cfg           s3Config
 	allowedBucket map[string]struct{}
 	resourceID    uint   // 资源ID，用于元数据提取
-	scanDepth     string // 扫描深度：deep（深度）或 shallow（浅度）
+	scanDepth     string // 扫描深度：deep（深度）或 basic（基础）
 }
 
 var reservedObjectSegments = map[string]struct{}{

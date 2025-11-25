@@ -273,7 +273,7 @@ func (s *ScanServiceNew) upsertItem(
 }
 
 // upsertItemSelective 选择性更新item
-// 当attrs为nil时，不更新attributes字段（用于shallow扫描保留deep扫描的元数据）
+// 当attrs为nil时，不更新attributes字段（用于basic扫描保留deep扫描的元数据）
 func (s *ScanServiceNew) upsertItemSelective(
 	tenantID, resourceID uint,
 	node *models.MetaNode,
@@ -307,7 +307,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		}
 	} else {
 		// 无attributes，使用fullName作为标识
-		// 注意：当attrs为nil时（shallow扫描保留已有数据），需要先查找已有记录获取指纹
+		// 注意：当attrs为nil时（basic扫描保留已有数据），需要先查找已有记录获取指纹
 		var existingItem models.MetaItem
 		err := s.db.Where("res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
 			resourceID, node.ID, itemType, name).First(&existingItem).Error
@@ -365,7 +365,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		"deleted_at":          nil, // 恢复软删除的记录
 	}
 
-	// 只有当attrs不为nil时才更新attributes（shallow扫描时保留已有的deep元数据）
+	// 只有当attrs不为nil时才更新attributes（basic扫描时保留已有的deep元数据）
 	if attrs != nil {
 		updates["attributes"] = attrs
 	}
@@ -527,11 +527,19 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 
 	// 标准化 scanDepth 参数
 	if scanDepth == "" {
-		scanDepth = "deep"
+		scanDepth = "basic" // 默认使用基础扫描
 	}
 	scanDepth = strings.ToLower(scanDepth)
-	if scanDepth != "shallow" && scanDepth != "deep" {
-		scanDepth = "deep" // 默认深度扫描
+
+	// 标准化深度值：统一使用 basic/deep 命名
+	// 向后兼容：自动将旧版 shallow 转换为 basic
+	if scanDepth == "shallow" {
+		scanDepth = "basic" // 向后兼容：shallow 自动转为 basic
+	}
+
+	// 验证有效值
+	if scanDepth != "basic" && scanDepth != "deep" {
+		scanDepth = "basic" // 无效值默认使用基础扫描
 	}
 
 	// 创建扫描日志
@@ -957,7 +965,7 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 		"resource_type", resource.ResourceType,
 	)
 
-	// 如果未指定Schema，则扫描所有Schema
+	// 如果未指定Schema，则扫描所有Schema（自动过滤系统schema）
 	if len(schemaNames) == 0 {
 		if reporter != nil {
 			reporter.Message("未指定 Schema，正在获取完整列表")
@@ -966,8 +974,30 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 		if err != nil {
 			return 0, 0, 0, err
 		}
+
+		// 系统 schema 黑名单（自动过滤）
+		systemSchemas := map[string]bool{
+			"pg_catalog":         true,
+			"information_schema": true,
+			"pg_toast":           true,
+		}
+
 		for _, info := range schemasInfo {
+			// 过滤系统 schema
+			if systemSchemas[info.Name] {
+				s.log.Debug("跳过系统 schema", "schema", info.Name)
+				continue
+			}
+			// 过滤 pg_toast 开头的 schema（动态生成的临时表）
+			if strings.HasPrefix(info.Name, "pg_toast_") {
+				s.log.Debug("跳过系统临时 schema", "schema", info.Name)
+				continue
+			}
 			schemaNames = append(schemaNames, info.Name)
+		}
+
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("已过滤系统 schema，待扫描 %d 个用户 schema", len(schemaNames)))
 		}
 	}
 
@@ -1546,7 +1576,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 			return objects, err
 		}
 
-		// 只在deep扫描时索引（shallow扫描的数据不完整）
+		// 只在deep扫描时索引（basic扫描的数据不完整）
 		if scanDepth == "deep" {
 			s.indexObjectAsset(resource, tenantID, resourceID, meta, trimmed, fullName, item)
 		}

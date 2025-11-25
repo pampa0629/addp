@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // QuickView 快显模型
@@ -43,10 +41,10 @@ type QuickView struct {
 	Extent JSONFloatArray `gorm:"type:jsonb" json:"extent"` // [minLng, minLat, maxLng, maxLat]
 
 	// 时间戳
-	StartedAt   *gorm.DeletedAt `gorm:"" json:"started_at,omitempty"`
-	CompletedAt *gorm.DeletedAt `gorm:"" json:"completed_at,omitempty"`
-	CreatedAt   time.Time      `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time      `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	StartedAt   *time.Time `gorm:"" json:"started_at,omitempty"`
+	CompletedAt *time.Time `gorm:"" json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // TableName 指定表名

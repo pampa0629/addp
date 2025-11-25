@@ -81,6 +81,16 @@ func (s *MVTService) GetTile(ctx context.Context, tenantID *uint, resourceID uin
         primaryKey = "id" // 回退到默认值
     }
 
+    // 如果 cols 为空，查询所有列（除了几何列）
+    if len(cols) == 0 {
+        allCols, err := s.getAllColumns(ctx, db, schema, table, geomCol)
+        if err != nil {
+            logger.L().Warn("Failed to get all columns, using empty list", "error", err)
+        } else {
+            cols = allCols
+        }
+    }
+
     // Build query
     opt := spatial.MVTOptions{Layer: table, Extent: 4096, Buffer: 64, SRID: srid, Simplify: true}
     sqlStr, args := spatial.BuildMVTQuery(schema, table, geomCol, cols, z, x, y, opt, primaryKey)
@@ -120,6 +130,39 @@ func (s *MVTService) getPrimaryKeyColumn(ctx context.Context, db *sql.DB, schema
         return "", fmt.Errorf("query primary key failed: %w", err)
     }
     return pkColumn, nil
+}
+
+// getAllColumns 查询表的所有列名（排除几何列）
+// 用于当前端未指定 cols 参数时，自动获取所有属性列
+func (s *MVTService) getAllColumns(ctx context.Context, db *sql.DB, schema, table, geomCol string) ([]string, error) {
+    query := `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = $1
+          AND table_name = $2
+          AND column_name != $3
+        ORDER BY ordinal_position
+    `
+    rows, err := db.QueryContext(ctx, query, schema, table, geomCol)
+    if err != nil {
+        return nil, fmt.Errorf("query columns failed: %w", err)
+    }
+    defer rows.Close()
+
+    var cols []string
+    for rows.Next() {
+        var colName string
+        if err := rows.Scan(&colName); err != nil {
+            return nil, err
+        }
+        cols = append(cols, colName)
+    }
+
+    if err := rows.Err(); err != nil {
+        return nil, err
+    }
+
+    return cols, nil
 }
 
 // Note: access policy and ErrResourceAccessDenied are defined in metadata_service.go

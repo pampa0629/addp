@@ -199,7 +199,13 @@
       "Bash(shasum:*)",
       "Bash(TK=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjM5Njg4OTQsImlhdCI6MTc2Mzk2NzA5NH0.2wDetbYqHkVceQubZMf9W4iQDSdaT09lARBtjsRxDkM)",
       "Bash(time curl:*)",
-      "Bash(./scripts/dev-modtidy.sh:*)"
+      "Bash(./scripts/dev-modtidy.sh:*)",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjM5NzA1NzYsImlhdCI6MTc2Mzk2ODc3Nn0.jjs4RMybrrBNecMJ_KEHFpnpNRTrHlmiiudQfx2r7T4')",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjM5NzA1NzYsImlhdCI6MTc2Mzk2ODc3Nn0.jjs4RMybrrBNecMJ_KEHFpnpNRTrHlmiiudQfx2r7T4' curl -v \"http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/6/50/27?geom=smgeometry\" -H \"Authorization: Bearer $TK\" -o /tmp/tile-test.bin)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQwNzAxMjMsImlhdCI6MTc2NDA2ODMyM30.GpznLZQWG4XapBPQYmWnkOgCa9Kp4PBapmr5hJwxNbM\")",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQwNzAxMjMsImlhdCI6MTc2NDA2ODMyM30.GpznLZQWG4XapBPQYmWnkOgCa9Kp4PBapmr5hJwxNbM' curl -v \"http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/6/50/27?geom=smgeometry\" -H \"Authorization: Bearer $TK\" -o /tmp/tile-test.bin)",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQwNzAxMjMsImlhdCI6MTc2NDA2ODMyM30.GpznLZQWG4XapBPQYmWnkOgCa9Kp4PBapmr5hJwxNbM')",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQwNjg3OTcsImlhdCI6MTc2NDA2Njk5N30.Tcz0M97CI1D6jbIgPCrqT5SFdB9IhGWcrCVOIdIqXK8' curl -v \"http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/6/50/27?geom=smgeometry\" -H \"Authorization: Bearer $TK\" -o /tmp/tile-z6-50-27.bin)"
     ],
     "deny": [],
     "ask": []

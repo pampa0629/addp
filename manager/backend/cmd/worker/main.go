@@ -102,7 +102,7 @@ func main() {
 	log.Println("✅ Worker 已安全关闭")
 }
 
-// connectDatabase 连接数据库
+// connectDatabase 连接数据库并配置连接池
 func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Use common repository InitDatabase (worker doesn't need auto-migration)
 	dbConfig := commonRepo.DatabaseConfig{
@@ -120,6 +120,20 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
+
+	// 配置数据库连接池（优化快显瓦片生成性能）
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("获取底层 sql.DB 失败: %w", err)
+	}
+
+	// 连接池配置：支持高并发瓦片生成
+	// 快显任务可能同时生成大量瓦片，需要足够的数据库连接
+	sqlDB.SetMaxOpenConns(50)           // 最大打开连接数（labs/mvt 默认 25，快显任务需要更多）
+	sqlDB.SetMaxIdleConns(10)           // 最大空闲连接数
+	sqlDB.SetConnMaxLifetime(5 * time.Minute) // 连接最大生命周期
+
+	log.Printf("✅ 数据库连接池已配置: MaxOpenConns=50, MaxIdleConns=10")
 
 	return db, nil
 }

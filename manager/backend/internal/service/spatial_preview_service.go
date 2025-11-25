@@ -176,22 +176,30 @@ func (s *SpatialPreviewService) GetTileMetadata(ctx context.Context, fingerprint
 func (s *SpatialPreviewService) GetTile(ctx context.Context, fingerprint string, z, x, y int) ([]byte, error) {
 	key := s.buildCacheKey(fingerprint, z, x, y)
 
+	logger.L().Info("🔍 开始查找瓦片",
+		"fingerprint", fingerprint,
+		"z", z, "x", x, "y", y,
+		"cache_key", key)
+
 	// 1️⃣ 内存 LRU 缓存（最快，1-2ms）
 	if s.memEnabled {
 		if data, ok := s.memCache.Get(key); ok {
-			logger.L().Debug("瓦片命中内存缓存",
+			logger.L().Info("✅ 瓦片命中内存缓存",
 				"fingerprint", fingerprint,
 				"z", z, "x", x, "y", y,
 				"size", len(data))
 			return data, nil
 		}
+		logger.L().Info("❌ 内存缓存未命中", "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+	} else {
+		logger.L().Info("⚠️  内存缓存未启用")
 	}
 
 	// 2️⃣ Redis 缓存（中等速度，3-10ms）
 	if s.redisClient != nil {
 		data, err := s.redisClient.Get(ctx, key).Bytes()
 		if err == nil && len(data) > 0 {
-			logger.L().Debug("瓦片命中 Redis 缓存",
+			logger.L().Info("✅ 瓦片命中 Redis 缓存",
 				"fingerprint", fingerprint,
 				"z", z, "x", x, "y", y,
 				"size", len(data))
@@ -205,27 +213,52 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, fingerprint string,
 		if err != nil && err != redis.Nil {
 			logger.L().Warn("Redis 读取失败", "error", err)
 		}
+		logger.L().Info("❌ Redis 缓存未命中", "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+	} else {
+		logger.L().Info("⚠️  Redis 客户端未初始化")
 	}
 
 	// 3️⃣ MinIO 持久化存储（Meta 预缓存的瓦片，5-20ms）
+	logger.L().Info("🔧 尝试初始化 MinIO 客户端...")
 	if err := s.ensureMinIOClient(ctx); err != nil {
+		logger.L().Error("❌ MinIO 客户端初始化失败", "error", err)
 		return nil, fmt.Errorf("failed to initialize MinIO client: %w", err)
 	}
+	logger.L().Info("✅ MinIO 客户端已初始化")
 
 	objectName := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	logger.L().Info("📦 尝试从 MinIO 读取对象",
+		"bucket", s.bucket,
+		"object", objectName)
+
 	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("tile not found: %w", err)
+		logger.L().Error("❌ MinIO GetObject 失败", "error", err, "object", objectName)
+		return nil, fmt.Errorf("tile not found in MinIO: %w", err)
 	}
 	defer obj.Close()
+
+	// 检查对象状态
+	objInfo, err := obj.Stat()
+	if err != nil {
+		logger.L().Error("❌ MinIO 对象 Stat 失败", "error", err, "object", objectName)
+		return nil, fmt.Errorf("failed to stat MinIO object: %w", err)
+	}
+	logger.L().Info("📊 MinIO 对象信息", "size", objInfo.Size, "content_type", objInfo.ContentType)
 
 	// 读取全部数据
 	data, err := io.ReadAll(obj)
 	if err != nil {
+		logger.L().Error("❌ 读取 MinIO 数据失败", "error", err)
 		return nil, fmt.Errorf("failed to read tile data: %w", err)
 	}
 
-	logger.L().Debug("瓦片从 MinIO 加载",
+	if len(data) == 0 {
+		logger.L().Warn("⚠️  从 MinIO 读取的数据为空!", "object", objectName)
+		return nil, fmt.Errorf("empty data read from MinIO")
+	}
+
+	logger.L().Info("✅ 瓦片从 MinIO 加载成功",
 		"fingerprint", fingerprint,
 		"z", z, "x", x, "y", y,
 		"size", len(data))
@@ -351,17 +384,23 @@ func (s *SpatialPreviewService) ensureMinIOClient(ctx context.Context) error {
 	// MVT 瓦片存储在系统 MinIO（不是业务 MinIO）
 	endpoint := os.Getenv("MINIO_SYSTEM_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:9002" // 默认值（系统 MinIO）
+		endpoint = "localhost:9002" // 默认值（系统 MinIO API 宿主机端口）
 	}
 
 	accessKey := os.Getenv("MINIO_SYSTEM_ACCESS_KEY")
 	if accessKey == "" {
-		accessKey = "minioadmin"
+		accessKey = os.Getenv("MINIO_ROOT_USER") // 回退到系统 MinIO 配置
+		if accessKey == "" {
+			accessKey = "minioadmin"
+		}
 	}
 
 	secretKey := os.Getenv("MINIO_SYSTEM_SECRET_KEY")
 	if secretKey == "" {
-		secretKey = "minioadmin"
+		secretKey = os.Getenv("MINIO_ROOT_PASSWORD") // 回退到系统 MinIO 配置
+		if secretKey == "" {
+			secretKey = "minioadmin"
+		}
 	}
 
 	// 初始化 MinIO 客户端

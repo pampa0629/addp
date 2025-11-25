@@ -49,7 +49,7 @@ type TileResponse struct {
 }
 
 // GetTile 获取 MVT 瓦片（统一入口，自动缓存穿透）
-// 流程：内存 LRU → Redis → MinIO → 实时 PG 生成 → 持久化到 MinIO
+// 流程：快显预生成缓存 → 内存 LRU → Redis → MinIO → 实时 PG 生成 → 持久化到 MinIO
 func (s *UnifiedMVTService) GetTile(
 	ctx context.Context,
 	tenantID *uint,
@@ -63,19 +63,22 @@ func (s *UnifiedMVTService) GetTile(
 
 	// 1. 计算 fingerprint（对前端透明）
 	fingerprint := s.calculateFingerprint(resourceID, schema, table)
+	logger.L().Info("📍 统一MVT服务收到请求",
+		"resource_id", resourceID,
+		"schema", schema,
+		"table", table,
+		"z", z, "x", x, "y", y,
+		"fingerprint", fingerprint)
 
 	// 2. 尝试从三层缓存获取（内存 LRU → Redis → MinIO）
+	// MinIO 中包含快显预生成和实时缓存的瓦片，两者存储在同一位置
+	logger.L().Info("🔎 尝试从缓存获取瓦片...")
 	tileData, err := s.spatialPreviewService.GetTile(ctx, fingerprint, z, x, y)
 	if err == nil && len(tileData) > 0 {
 		duration := time.Since(startTime)
-		logger.L().Debug("瓦片从缓存获取",
-			"resource_id", resourceID,
-			"schema", schema,
-			"table", table,
-			"z", z, "x", x, "y", y,
-			"from_cache", true,
-			"duration", duration,
-			"size", len(tileData))
+		logger.L().Info("✅ 从缓存返回瓦片",
+			"size", len(tileData),
+			"duration", duration)
 		return &TileResponse{
 			Data:      tileData,
 			FromCache: true,
@@ -83,8 +86,15 @@ func (s *UnifiedMVTService) GetTile(
 		}, nil
 	}
 
+	// 特别记录：缓存返回了空数据或错误
+	if err != nil {
+		logger.L().Warn("⚠️  缓存查询出错", "error", err)
+	} else if len(tileData) == 0 {
+		logger.L().Warn("⚠️  缓存返回空数据")
+	}
+
 	// 3. 缓存未命中，从 PG 实时生成
-	logger.L().Debug("缓存未命中，开始实时生成瓦片",
+	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片",
 		"resource_id", resourceID,
 		"schema", schema,
 		"table", table,

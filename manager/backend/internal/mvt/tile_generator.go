@@ -78,36 +78,44 @@ func (g *TileGenerator) GenerateTile(
 		params.PrimaryKey,
 	)
 
-	// 5. Debug logging
-	logger.L().Info("🔍 执行 MVT 查询",
+	// 5. 详细日志：记录瓦片请求和 SQL
+	logger.L().Info("📍 开始生成 MVT 瓦片",
+		"resource_id", params.ResourceID,
+		"tenant_id", params.TenantID,
 		"z", params.Z, "x", params.X, "y", params.Y,
 		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
 		"geom_col", params.GeomColumn,
 		"srid", params.SRID,
 		"primary_key", params.PrimaryKey)
 
+	// 记录 SQL 查询（用于调试）
+	logger.L().Debug("🔍 MVT SQL 查询",
+		"sql", sqlStr,
+		"args", args)
+
 	// 6. 执行查询
 	var mvtData []byte
 	err = db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvtData)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.L().Warn("❌ MVT 查询无结果",
+			logger.L().Info("📭 MVT 查询无结果（空瓦片）",
 				"z", params.Z, "x", params.X, "y", params.Y,
 				"table", fmt.Sprintf("%s.%s", params.Schema, params.Table))
 			return []byte{}, nil // 空瓦片
 		}
-		logger.L().Error("MVT query failed",
+		logger.L().Error("❌ MVT 查询失败",
 			"error", err,
 			"z", params.Z, "x", params.X, "y", params.Y,
 			"schema", params.Schema,
-			"table", params.Table)
+			"table", params.Table,
+			"sql", sqlStr)
 		return nil, fmt.Errorf("failed to execute MVT query: %w", err)
 	}
 
-	logger.L().Info("✅ MVT 查询完成",
+	logger.L().Info("✅ MVT 瓦片生成完成",
 		"z", params.Z, "x", params.X, "y", params.Y,
 		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
-		"data_length", len(mvtData))
+		"data_size", fmt.Sprintf("%d bytes", len(mvtData)))
 
 	return mvtData, nil
 }

@@ -1036,15 +1036,9 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 		return fmt.Errorf("构建 Cron 表达式失败: %w", err)
 	}
 
-	// 构建任务参数
+	// 构建任务参数：定时扫描固定使用 deep 深度，不使用 schema_names 和 object_paths（系统自动过滤）
 	parameters := models.JSONMap{
-		"scan_depth": scanConfig.ScanDepth,
-	}
-	if len(scanConfig.SchemaNames) > 0 {
-		parameters["schema_names"] = scanConfig.SchemaNames
-	}
-	if len(scanConfig.ObjectPaths) > 0 {
-		parameters["object_paths"] = scanConfig.ObjectPaths
+		"scan_depth": "deep", // 定时扫描固定深度
 	}
 
 	// 如果任务不存在，创建新任务

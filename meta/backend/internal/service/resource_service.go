@@ -579,18 +579,20 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 		return fmt.Errorf("资源 %d 没有扫描配置", resource.ID)
 	}
 
-	// 构建扫描请求
-	req := &models.ScanRequest{
-		ResourceID:  resource.ID,
-		SchemaNames: resource.ScanConfig.SchemaNames,
-		ObjectPaths: resource.ScanConfig.ObjectPaths,
-		ScanDepth:   resource.ScanConfig.ScanDepth,
-		ScanType:    "auto", // 标记为自动扫描
+	// 确定扫描深度：优先使用 ImmediateDepth，否则回退到旧版 ScanDepth
+	scanDepth := resource.ScanConfig.ImmediateDepth
+	if scanDepth == "" {
+		scanDepth = resource.ScanConfig.ScanDepth
+	}
+	if scanDepth == "" {
+		scanDepth = "basic" // 默认使用基础扫描
 	}
 
-	// 如果没有指定扫描深度，使用默认值
-	if req.ScanDepth == "" {
-		req.ScanDepth = "basic"
+	// 构建扫描请求（不再使用 SchemaNames 和 ObjectPaths，系统自动过滤）
+	req := &models.ScanRequest{
+		ResourceID: resource.ID,
+		ScanDepth:  scanDepth,
+		ScanType:   "auto", // 标记为自动扫描
 	}
 
 	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）
@@ -609,6 +611,7 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 	s.log.Info("立即扫描任务已创建",
 		"resource_id", resource.ID,
 		"run_id", run.ID,
+		"scan_depth", scanDepth,
 		"tenant_id", tenantID)
 
 	return nil
