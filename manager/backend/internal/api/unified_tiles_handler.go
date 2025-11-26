@@ -103,9 +103,15 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	// 3. 获取租户 ID（从 JWT 中间件注入）
 	var tenantID *uint
 	if tid, exists := c.Get("tenant_id"); exists {
+		fmt.Printf("DEBUG: tenant_id exists in context, value=%v, type=%T\n", tid, tid)
 		if tidUint, ok := tid.(uint); ok {
 			tenantID = &tidUint
+			fmt.Printf("DEBUG: Successfully converted to uint: %d\n", tidUint)
+		} else {
+			fmt.Printf("DEBUG: Failed to convert tenant_id to uint\n")
 		}
+	} else {
+		fmt.Printf("DEBUG: tenant_id does NOT exist in context\n")
 	}
 
 	// 4. 调用统一服务获取瓦片

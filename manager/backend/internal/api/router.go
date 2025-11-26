@@ -1,6 +1,7 @@
 package api
 
 import (
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/cors"
 	"github.com/addp/manager/internal/config"
@@ -9,7 +10,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, metadataService *service.MetadataService, searchService *service.FullTextSearchService, historyService *service.SearchHistoryService, unifiedMVTService *service.UnifiedMVTService, quickViewService *service.QuickViewService, resourceRepo *repository.ResourceRepository, metadataRepo *repository.MetadataRepository) *gin.Engine {
+func SetupRouter(
+	cfg *config.Config,
+	resourceService *service.ResourceService,
+	metadataService *service.MetadataService,
+	searchService *service.FullTextSearchService,
+	historyService *service.SearchHistoryService,
+	unifiedMVTService *service.UnifiedMVTService,
+	quickViewService *service.QuickViewService,
+	resourceRepo *repository.ResourceRepository,
+	metadataRepo *repository.MetadataRepository,
+	systemClient *commonClient.SystemClient,
+) *gin.Engine {
 	router := gin.Default()
 
 	// CORS
@@ -97,7 +109,7 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 
 		// 瓦片配置 API（获取 MinZoom/MaxZoom）
 		// 注意：必须在 tiles 路由之前注册，避免路由冲突
-		tileConfigHandler := NewTileConfigHandler(quickViewService)
+		tileConfigHandler := NewTileConfigHandler(quickViewService, systemClient, cfg)
 		resources.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
 
 		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
@@ -108,14 +120,33 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			unifiedTilesHandler.GetTile(c)
 		})
 
-		// Quick View API
+		// Pre-Cache API（预缓存 - 推荐使用）
+		// Quick View API（快显 - 保留作为别名，向后兼容）
 		quickViewHandler := NewQuickViewHandler(quickViewService)
+
+		// 新路由：pre-cache（推荐）
+		resources.POST("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.TriggerQuickView)
+		resources.GET("/:id/spatial/:schema/:table/pre-cache/status", quickViewHandler.GetQuickViewStatus)
+		resources.DELETE("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.ClearQuickView)
+
+		// 旧路由：quick-view（别名，向后兼容）
 		resources.POST("/:id/spatial/:schema/:table/quick-view", quickViewHandler.TriggerQuickView)
 		resources.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
 		resources.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
 	}
 
-	// Quick View 任务列表和统计（全局）
+	// Pre-Cache 任务列表和统计（全局）
+	// 新路由（推荐）
+	api.GET("/pre-cache/tasks", func(c *gin.Context) {
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		quickViewHandler.ListQuickViewTasks(c)
+	})
+	api.GET("/pre-cache/statistics", func(c *gin.Context) {
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		quickViewHandler.GetStatistics(c)
+	})
+
+	// 旧路由（别名，向后兼容）
 	api.GET("/quick-view/tasks", func(c *gin.Context) {
 		quickViewHandler := NewQuickViewHandler(quickViewService)
 		quickViewHandler.ListQuickViewTasks(c)

@@ -61,6 +61,7 @@ func (s *UnifiedMVTService) GetTile(
 	z, x, y int,
 	srid int,
 ) (*TileResponse, error) {
+	fmt.Printf("⚡⚡⚡ UnifiedMVTService.GetTile() 被调用！z=%d, x=%d, y=%d\n", z, x, y)
 	startTime := time.Now()
 
 	// 1. 计算 fingerprint（对前端透明）
@@ -73,14 +74,20 @@ func (s *UnifiedMVTService) GetTile(
 		"fingerprint", fingerprint)
 
 	// 2. 验证 zoom 层级是否合理（基于数据的地理范围）
-	// 从快显配置中获取 extent 和 srid，如果 zoom 过低则返回空瓦片
-	logger.L().Debug("🔍 检查 zoom 验证条件",
+	// - zoom < minZoom: 返回空瓦片（数据太小，不可见）
+	// - minZoom <= zoom <= maxZoom: 正常处理（预缓存范围）
+	// - zoom > maxZoom: 允许但降低缓存优先级（超出预缓存范围）
+	logger.L().Info("🔍 检查 zoom 验证条件",
 		"quickViewService_nil", s.quickViewService == nil,
 		"tenantID_nil", tenantID == nil,
 		"tenantID", tenantID)
+
+	var minZoom, maxZoom int
+	var beyondMaxZoom bool // 是否超出预缓存范围
+
 	if s.quickViewService != nil && tenantID != nil {
 		qv, err := s.quickViewService.GetStatus(ctx, *tenantID, resourceID, schema, table)
-		logger.L().Debug("🔍 GetStatus 结果",
+		logger.L().Info("🔍 GetStatus 结果",
 			"err", err,
 			"extent_len", len(qv.Extent),
 			"extent", qv.Extent)
@@ -91,9 +98,15 @@ func (s *UnifiedMVTService) GetTile(
 				sridToUse = 4326
 			}
 
-			// 验证 zoom 是否在有效范围内
-			if !spatial.ShouldGenerateTileAtZoom(z, qv.Extent, sridToUse) {
-				minZoom := spatial.CalculateMinZoomFromExtent(qv.Extent, sridToUse)
+			// 计算 minZoom 和 maxZoom
+			minZoom = spatial.CalculateMinZoomFromExtent(qv.Extent, sridToUse)
+			maxZoom = qv.MaxZoom // 从快显配置获取（智能计算的 maxZoom）
+			if maxZoom == 0 {
+				maxZoom = 18 // 默认值
+			}
+
+			// 验证 zoom 是否低于 minZoom（返回空瓦片）
+			if z < minZoom {
 				logger.L().Info("Zoom 层级过低，返回空瓦片",
 					"z", z,
 					"min_zoom", minZoom,
@@ -105,6 +118,15 @@ func (s *UnifiedMVTService) GetTile(
 					FromCache: false,
 					Duration:  time.Since(startTime),
 				}, nil
+			}
+
+			// 检查是否超出 maxZoom（允许但降低缓存优先级）
+			if z > maxZoom {
+				beyondMaxZoom = true
+				logger.L().Info("Zoom 层级超出预缓存范围，使用实时生成模式",
+					"z", z,
+					"max_zoom", maxZoom,
+					"will_cache_if_heavy", true)
 			}
 		}
 	}
@@ -171,10 +193,26 @@ func (s *UnifiedMVTService) GetTile(
 		"duration", duration,
 		"size", len(tileData))
 
-	// 5. 判断是否需要自动缓存（生成时间 > 100ms 或 大小 > 50KB）
+	// 5. 判断是否需要自动缓存
+	// - 预缓存范围内（z <= maxZoom）: 生成时间 > 100ms 或 大小 > 50KB
+	// - 超出预缓存范围（z > maxZoom）: 更严格的缓存条件（生成时间 > 200ms 且 大小 > 100KB）
 	tileSizeKB := float64(len(tileData)) / 1024.0
 	durationMs := float64(duration.Milliseconds())
-	shouldCache := durationMs > 100 || tileSizeKB > 50
+
+	var shouldCache bool
+	if beyondMaxZoom {
+		// 超出预缓存范围：仅缓存高成本瓦片（避免缓存爆炸）
+		shouldCache = durationMs > 200 && tileSizeKB > 100
+		logger.L().Info("超出预缓存范围的瓦片缓存判断",
+			"z", z,
+			"duration_ms", durationMs,
+			"size_kb", tileSizeKB,
+			"should_cache", shouldCache,
+			"reason", "beyond_max_zoom_strict_policy")
+	} else {
+		// 预缓存范围内：正常缓存策略
+		shouldCache = durationMs > 100 || tileSizeKB > 50
+	}
 
 	if shouldCache && len(tileData) > 0 {
 		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存）

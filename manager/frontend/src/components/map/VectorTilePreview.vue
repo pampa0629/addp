@@ -5,6 +5,7 @@
 
 <script setup>
 import { onMounted, onBeforeUnmount, ref, watch, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import Map from 'ol/Map.js'
 import View from 'ol/View.js'
 import TileLayer from 'ol/layer/Tile.js'
@@ -16,6 +17,8 @@ import Style from 'ol/style/Style.js'
 import Fill from 'ol/style/Fill.js'
 import Stroke from 'ol/style/Stroke.js'
 import CircleStyle from 'ol/style/Circle.js'
+import { defaults as defaultInteractions, MouseWheelZoom } from 'ol/interaction.js'
+import { defaults as defaultControls } from 'ol/control.js'
 import client from '@/api/client'
 
 const props = defineProps({
@@ -32,6 +35,7 @@ let map
 const error = ref('')
 const tileConfig = ref(null) // 瓦片配置（从后端获取）
 const isLoadingConfig = ref(false) // 防止重复加载
+let lastWarningZoom = null // 避免重复提示
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
@@ -76,6 +80,8 @@ function makeVectorLayer() {
   const vtSource = new VectorTileSource({
     format: new MVT(),
     cacheSize: 512,  // 增加客户端缓存,减少重复请求
+    maxZoom: 20,  // 支持更高层级的瓦片请求
+    // ✅ 限制最大并发加载瓦片数（预留请求给底图）
     tileUrlFunction: (tileCoord) => {
       const z = tileCoord[0]
       const x = tileCoord[1]
@@ -133,7 +139,25 @@ async function initMap() {
   // 1. 先获取瓦片配置
   await fetchTileConfig()
 
-  // 2. 使用高德地图底图 - 正确的多URL配置
+  // 2. 计算地图初始中心点和缩放级别
+  let initialCenter = props.center
+  let initialZoom = props.zoom
+
+  // 如果后端返回了 extent，使用它来计算中心点
+  if (tileConfig.value.extent && tileConfig.value.extent.length === 4) {
+    const [minX, minY, maxX, maxY] = tileConfig.value.extent
+    initialCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
+
+    // min_zoom 是后端算法计算的最佳初始视图层级
+    // 在此层级，数据占据视口约 50%（实际约 35% 因向下取整），留有适当边距，已是"全幅显示"
+    initialZoom = tileConfig.value.min_zoom || props.zoom
+
+    console.log('Using extent-based center:', initialCenter, 'initial zoom:', initialZoom)
+  } else {
+    console.log('No extent available, using default center:', initialCenter)
+  }
+
+  // 3. 使用高德地图底图 - 正确的多URL配置
   const base = new TileLayer({
     source: new XYZ({
       urls: [
@@ -150,20 +174,62 @@ async function initMap() {
   const vt = makeVectorLayer()
   vt.setZIndex(10)  // MVT图层在上层
 
-  // 3. 创建地图（使用后端返回的 minZoom/maxZoom）
+  // 4. 创建地图（移除 zoom 硬限制）
   map = new Map({
     target: mapEl.value,
     layers: [base, vt],
     maxTilesLoading: 16,  // 增加并发加载瓦片数,优化加载速度
+    interactions: defaultInteractions({ mouseWheelZoom: false }).extend([
+      new MouseWheelZoom({
+        duration: 200,  // 缩放动画时长(毫秒)
+        timeout: 40     // 滚轮事件延迟
+      })
+    ]),
+    controls: defaultControls({
+      zoom: true,
+      zoomOptions: {
+        zoomInTipLabel: '放大',
+        zoomOutTipLabel: '缩小'
+      }
+    }),
     view: new View({
-      center: fromLonLat(props.center),
-      zoom: props.zoom,
-      maxZoom: tileConfig.value.max_zoom,  // 后端计算
-      minZoom: tileConfig.value.min_zoom   // 后端计算
+      center: fromLonLat(initialCenter),
+      zoom: initialZoom,
+      maxZoom: 20,  // 固定最大值，不限制用户
+      minZoom: 1,   // 固定最小值，不限制用户
+      smoothResolutionConstraint: false,    // 禁用平滑分辨率,只使用整数缩放级别
+      constrainResolution: true            // 强制整数缩放级别
     })
   })
 
-  console.log(`Map zoom range: ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}`)
+  // 监听 zoom 变化，显示超出范围提示
+  map.getView().on('change:resolution', () => {
+    const currentZoom = Math.round(map.getView().getZoom())
+
+    // 避免在同一 zoom 重复提示
+    if (currentZoom === lastWarningZoom) return
+
+    if (currentZoom < tileConfig.value.min_zoom) {
+      ElMessage.warning({
+        message: `当前层级 ${currentZoom} 低于建议范围，数据可能不可见。建议放大到 ${tileConfig.value.min_zoom} 层级`,
+        duration: 3000,
+        showClose: true
+      })
+      lastWarningZoom = currentZoom
+    } else if (currentZoom > tileConfig.value.max_zoom) {
+      ElMessage.info({
+        message: `当前层级 ${currentZoom} 超出预缓存范围 (${tileConfig.value.max_zoom})，加载可能较慢`,
+        duration: 3000,
+        showClose: true
+      })
+      lastWarningZoom = currentZoom
+    } else {
+      // 回到正常范围，清除警告状态
+      lastWarningZoom = null
+    }
+  })
+
+  console.log(`Map zoom range (suggested): ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}, actual: 1 - 20`)
 }
 
 function fromLonLat(lonLat) {
@@ -178,7 +244,7 @@ function focusFeatureById(featureId, centroid) {
   if (!map || !centroid) return
   const { lon, lat } = centroid
   const center = fromLonLat([lon, lat])
-  map.getView().animate({ center, zoom: 16, duration: 500 })
+  map.getView().animate({ center, zoom: 16, duration: 300 })  // 优化动画时长(从500ms降到300ms)
 }
 
 defineExpose({ focusFeatureById })
@@ -196,15 +262,26 @@ watch(() => [props.resourceId, props.schema, props.table, props.geom], async () 
 
   // 重置配置状态，允许重新加载
   tileConfig.value = null
+  lastWarningZoom = null // 重置警告状态
 
   // 重新获取瓦片配置
   await fetchTileConfig()
 
-  // 更新地图的 zoom 范围
-  const view = map.getView()
-  view.setMinZoom(tileConfig.value.min_zoom)
-  view.setMaxZoom(tileConfig.value.max_zoom)
-  console.log(`Updated zoom range: ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}`)
+  console.log(`Updated zoom range (suggested): ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}`)
+
+  // 如果有 extent，更新地图中心点
+  if (tileConfig.value.extent && tileConfig.value.extent.length === 4) {
+    const [minX, minY, maxX, maxY] = tileConfig.value.extent
+    const newCenter = [(minX + maxX) / 2, (minY + maxY) / 2]
+
+    // min_zoom 本身就是最佳初始视图
+    const view = map.getView()
+    const newZoom = tileConfig.value.min_zoom || view.getZoom()
+
+    view.setCenter(fromLonLat(newCenter))
+    view.setZoom(newZoom)
+    console.log('Updated map center to extent:', newCenter, 'zoom:', newZoom)
+  }
 
   // 更新 MVT 图层
   const layers = map.getLayers()

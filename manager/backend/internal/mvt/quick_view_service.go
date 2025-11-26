@@ -17,9 +17,11 @@ import (
 // QuickViewService 快显服务
 // 负责批量生成 MVT 瓦片并存储到 MinIO
 type QuickViewService struct {
-	tileGen     *TileGenerator
-	minioClient *minio.Client
-	bucket      string
+	tileGen          *TileGenerator
+	minioClient      *minio.Client
+	bucket           string
+	pipelineGen      *PipelineTileGenerator // 流水线生成器
+	usePipeline      bool                   // 是否使用流水线模式
 }
 
 // QuickViewConfig 快显配置
@@ -77,14 +79,26 @@ func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig) (*QuickVi
 		logger.L().Info("Created MinIO bucket", "bucket", minioCfg.Bucket)
 	}
 
+	// 创建 MinIO 上传适配器
+	uploader := &minioUploaderAdapter{
+		client: client,
+		bucket: minioCfg.Bucket,
+	}
+
+	// 初始化流水线生成器
+	pipelineGen := NewPipelineTileGenerator(tileGen, uploader, minioCfg.Bucket)
+
 	logger.L().Info("QuickView service initialized",
 		"endpoint", minioCfg.Endpoint,
-		"bucket", minioCfg.Bucket)
+		"bucket", minioCfg.Bucket,
+		"pipeline_mode", "enabled")
 
 	return &QuickViewService{
 		tileGen:     tileGen,
 		minioClient: client,
 		bucket:      minioCfg.Bucket,
+		pipelineGen: pipelineGen,
+		usePipeline: true, // 默认启用流水线模式
 	}, nil
 }
 
@@ -104,9 +118,38 @@ func (s *QuickViewService) Generate(
 	ctx context.Context,
 	cfg QuickViewConfig,
 ) (*GenerateResult, error) {
+	// 使用流水线并行模式
+	if s.usePipeline {
+		pipelineCfg := PipelineGenerateConfig{
+			QuickViewConfig:  cfg,
+			IdleThreshold:    cfg.Concurrency / 2, // 50% 空闲时启动下一层
+			MaxPendingTasks:  cfg.Concurrency * 10,
+		}
+
+		result, err := s.pipelineGen.GeneratePipeline(ctx, pipelineCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		// 转换结果（PipelineGenerateResult 嵌入了 GenerateResult）
+		logger.L().Info("流水线模式生成完成",
+			"efficiency", result.PipelineEfficiency)
+
+		return &result.GenerateResult, nil
+	}
+
+	// 原有的逐层串行模式（保留作为备用）
+	return s.generateSequential(ctx, cfg)
+}
+
+// generateSequential 逐层串行生成（原有实现，作为备用）
+func (s *QuickViewService) generateSequential(
+	ctx context.Context,
+	cfg QuickViewConfig,
+) (*GenerateResult, error) {
 	startTime := time.Now()
 
-	logger.L().Info("开始生成快显缓存",
+	logger.L().Info("开始生成快显缓存（串行模式）",
 		"resource_id", cfg.ResourceID,
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 		"min_zoom", cfg.MinZoom,
@@ -187,7 +230,7 @@ func (s *QuickViewService) Generate(
 		logger.L().Error("Failed to save metadata", "error", err)
 	}
 
-	logger.L().Info("快显生成完成",
+	logger.L().Info("快显生成完成（串行模式）",
 		"total_tiles", result.TotalTiles,
 		"cached_tiles", result.CachedTiles,
 		"duration_sec", result.GenerationSec,
@@ -435,4 +478,32 @@ func (s *QuickViewService) GetTile(
 	}
 
 	return data, nil
+}
+
+// minioUploaderAdapter MinIO 上传适配器（实现 MinIOUploader 接口）
+type minioUploaderAdapter struct {
+	client *minio.Client
+	bucket string
+}
+
+func (a *minioUploaderAdapter) PutTile(ctx context.Context, fingerprint string, z, x, y int, data []byte) error {
+	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+
+	_, err := a.client.PutObject(ctx, a.bucket, objectPath, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{
+			ContentType: "application/octet-stream",
+			UserMetadata: map[string]string{
+				"z":          fmt.Sprintf("%d", z),
+				"x":          fmt.Sprintf("%d", x),
+				"y":          fmt.Sprintf("%d", y),
+				"encoding":   "gzip",
+				"created_at": time.Now().Format(time.RFC3339),
+			},
+		})
+
+	if err != nil {
+		return fmt.Errorf("failed to put tile to minio: %w", err)
+	}
+
+	return nil
 }

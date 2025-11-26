@@ -49,6 +49,23 @@ type Config struct {
 	MinioAccessKey string
 	MinioSecretKey string
 	MinioUseSSL    bool
+
+	// MVT 预缓存配置
+	PreCache PreCacheConfig
+}
+
+// PreCacheConfig MVT 预缓存相关配置
+type PreCacheConfig struct {
+	// 每瓦片目标记录数（用于计算 maxZoom）
+	TargetRecordsPerTile int
+
+	// 缓存策略阈值
+	MinDurationForCacheMS int // 生成耗时阈值（毫秒）
+	MinSizeForCacheKB     int // 瓦片大小阈值（KB）
+
+	// 生成配置
+	MaxZoom     int // 全局最大 zoom 层级
+	Concurrency int // 并发协程数
 }
 
 func resolveElasticsearchURL() string {
@@ -167,6 +184,15 @@ func Load() *Config {
 	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))
 	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
+
+	// MVT 预缓存配置
+	cfg.PreCache = PreCacheConfig{
+		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 1000),
+		MinDurationForCacheMS: commonConfig.GetEnvInt("PRE_CACHE_MIN_DURATION_MS", 100),
+		MinSizeForCacheKB:     commonConfig.GetEnvInt("PRE_CACHE_MIN_SIZE_KB", 50),
+		MaxZoom:               commonConfig.GetEnvInt("PRE_CACHE_MAX_ZOOM", 18),
+		Concurrency:           commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10),
+	}
 
 	return cfg
 }

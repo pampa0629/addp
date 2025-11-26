@@ -16,14 +16,14 @@
           />
         </el-select>
 
-        <!-- Quick View Button -->
+        <!-- Pre-Cache Button -->
         <el-button
           type="primary"
           size="small"
           :loading="quickViewLoading"
           @click="handleQuickView"
         >
-          {{ quickViewStatus === 'completed' ? '快显已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用快显' }}
+          {{ quickViewStatus === 'completed' ? '预缓存已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用预缓存' }}
         </el-button>
       </div>
 
@@ -35,8 +35,6 @@
           :schema="schema"
           :table="table"
           :geom="activeGeometryColumn"
-          :center="mapCenter"
-          :zoom="mapZoom"
         />
       </div>
 
@@ -113,7 +111,7 @@ const currentRowKey = ref('')
 const currentPage = ref(1)
 const pageSize = ref(10)
 
-// Quick View state
+// Pre-Cache state
 const quickViewLoading = ref(false)
 const quickViewStatus = ref('none') // 'none' | 'generating' | 'completed' | 'failed'
 let quickViewPollingTimer = null
@@ -137,13 +135,6 @@ const table = computed(() => {
   }
   return rawTable
 })
-
-// 地图配置
-const mapCenter = computed(() => {
-  // 可从 props.data?.extent 中计算中心点
-  return [120.2, 30.3] // 默认中心点
-})
-const mapZoom = computed(() => 10) // 默认缩放级别
 
 // 过滤掉几何列后的显示列
 const displayColumns = computed(() => {
@@ -210,15 +201,15 @@ const handlePageChange = (page) => {
   emit('page-change', page)
 }
 
-// Quick View 处理函数
+// Pre-Cache 处理函数
 const handleQuickView = async () => {
   if (!resourceId.value || !schema.value || !table.value) {
-    ElMessage.warning('缺少必要参数，无法启用快显')
+    ElMessage.warning('缺少必要参数，无法启用预缓存')
     return
   }
 
   if (quickViewStatus.value === 'generating') {
-    ElMessage.info('快显缓存正在生成中，请稍后')
+    ElMessage.info('预缓存正在生成中，请稍后')
     return
   }
 
@@ -230,19 +221,19 @@ const handleQuickView = async () => {
       priority: 'default'
     })
     quickViewStatus.value = 'generating'
-    ElMessage.success('快显任务已启动，正在后台生成缓存')
+    ElMessage.success('预缓存任务已启动，正在后台生成缓存')
 
     // 开始轮询状态
     startQuickViewPolling()
   } catch (error) {
-    console.error('启用快显失败:', error)
-    ElMessage.error(error.response?.data?.error || '启用快显失败')
+    console.error('启用预缓存失败:', error)
+    ElMessage.error(error.response?.data?.error || '启用预缓存失败')
   } finally {
     quickViewLoading.value = false
   }
 }
 
-// 获取快显状态
+// 获取预缓存状态
 const fetchQuickViewStatus = async () => {
   if (!resourceId.value || !schema.value || !table.value) {
     return
@@ -260,14 +251,14 @@ const fetchQuickViewStatus = async () => {
         stopQuickViewPolling()
 
         if (status === 'completed') {
-          ElMessage.success('快显缓存生成完成')
+          ElMessage.success('预缓存生成完成')
         } else if (status === 'failed') {
-          ElMessage.error('快显缓存生成失败')
+          ElMessage.error('预缓存生成失败')
         }
       }
     }
   } catch (error) {
-    // 如果返回404，说明还没有快显记录
+    // 如果返回404，说明还没有预缓存记录
     if (error.response?.status === 404) {
       quickViewStatus.value = 'none'
     }
@@ -275,7 +266,7 @@ const fetchQuickViewStatus = async () => {
   }
 }
 
-// 开始轮询快显状态
+// 开始轮询预缓存状态
 const startQuickViewPolling = () => {
   stopQuickViewPolling() // 先清除旧的定时器
 
@@ -303,7 +294,7 @@ watch(
   { immediate: true }
 )
 
-// 监听表变化，重新获取快显状态
+// 监听表变化，重新获取预缓存状态
 watch(
   () => [resourceId.value, schema.value, table.value],
   () => {
@@ -317,7 +308,7 @@ watch(
 onMounted(() => {
   loadMapConfig()
 
-  // 初始化时获取快显状态
+  // 初始化时获取预缓存状态
   if (hasGeometry.value && resourceId.value && schema.value && table.value) {
     fetchQuickViewStatus()
   }

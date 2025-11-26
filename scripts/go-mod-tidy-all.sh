@@ -11,6 +11,7 @@ while IFS= read -r mod_file; do
 done < <(find "${REPO_ROOT}" \
   -path "${REPO_ROOT}/.git" -prune -o \
   -path "${REPO_ROOT}/.gomodcache" -prune -o \
+  -path "${REPO_ROOT}/scripts" -prune -o \
   -path "*/vendor" -prune -o \
   -name go.mod -print | LC_ALL=C sort)
 

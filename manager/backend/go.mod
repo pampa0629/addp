@@ -16,6 +16,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.95
 	github.com/redis/go-redis/v9 v9.16.0
 	github.com/xuri/excelize/v2 v2.10.0
+	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.0
 )
@@ -82,5 +83,4 @@ require (
 	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/tools v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
-	gorm.io/driver/postgres v1.6.0 // indirect
 )

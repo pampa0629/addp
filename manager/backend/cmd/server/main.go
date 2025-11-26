@@ -123,7 +123,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo)
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient)
 
 	// 启动服务
 	addr := ":" + cfg.Port
