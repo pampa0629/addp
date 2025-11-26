@@ -222,7 +222,8 @@
       "Bash(__NEW_LINE__ echo \"发送测试请求...\")",
       "Bash(__NEW_LINE__ echo \"\")",
       "Bash(z=6 大小: 0 字节)",
-      "Bash(z=12 大小: 1516780 字节)"
+      "Bash(z=12 大小: 1516780 字节)",
+      "Bash(npm uninstall:*)"
     ],
     "deny": [],
     "ask": []
