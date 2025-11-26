@@ -8,8 +8,8 @@ import (
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
-	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/worker"
 	"gorm.io/gorm"
@@ -74,7 +74,8 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	if params.MinZoom != nil {
 		minZoom = *params.MinZoom
 	} else if len(spatialMeta.Extent) == 4 {
-		minZoom = mvt.CalculateOptimalMinZoom(spatialMeta.Extent)
+		// 使用统一的计算函数（支持不同坐标系）
+		minZoom = spatial.CalculateMinZoomFromExtent(spatialMeta.Extent, spatialMeta.SRID)
 	}
 
 	// 6. 设置默认值

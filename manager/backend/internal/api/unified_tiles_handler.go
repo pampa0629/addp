@@ -30,6 +30,8 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 //   - srid: 空间参考系（默认 4326）
 //   - cols: 返回列，逗号分隔（最多 8 列）
 func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
+	fmt.Printf("🔵 UnifiedTilesHandler.GetTile 被调用: %s\n", c.Request.URL.Path)
+
 	// 1. 解析路径参数
 	resourceIDStr := c.Param("id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)

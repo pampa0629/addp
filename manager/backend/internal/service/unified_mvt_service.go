@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 )
@@ -70,7 +72,44 @@ func (s *UnifiedMVTService) GetTile(
 		"z", z, "x", x, "y", y,
 		"fingerprint", fingerprint)
 
-	// 2. 尝试从三层缓存获取（内存 LRU → Redis → MinIO）
+	// 2. 验证 zoom 层级是否合理（基于数据的地理范围）
+	// 从快显配置中获取 extent 和 srid，如果 zoom 过低则返回空瓦片
+	logger.L().Debug("🔍 检查 zoom 验证条件",
+		"quickViewService_nil", s.quickViewService == nil,
+		"tenantID_nil", tenantID == nil,
+		"tenantID", tenantID)
+	if s.quickViewService != nil && tenantID != nil {
+		qv, err := s.quickViewService.GetStatus(ctx, *tenantID, resourceID, schema, table)
+		logger.L().Debug("🔍 GetStatus 结果",
+			"err", err,
+			"extent_len", len(qv.Extent),
+			"extent", qv.Extent)
+		if err == nil && len(qv.Extent) == 4 {
+			// 使用 SRID（默认 4326，TODO: 从 Meta 获取准确的 SRID）
+			sridToUse := srid
+			if sridToUse == 0 {
+				sridToUse = 4326
+			}
+
+			// 验证 zoom 是否在有效范围内
+			if !spatial.ShouldGenerateTileAtZoom(z, qv.Extent, sridToUse) {
+				minZoom := spatial.CalculateMinZoomFromExtent(qv.Extent, sridToUse)
+				logger.L().Info("Zoom 层级过低，返回空瓦片",
+					"z", z,
+					"min_zoom", minZoom,
+					"extent", qv.Extent,
+					"srid", sridToUse)
+				// 返回空瓦片，让前端停止请求（不是错误）
+				return &TileResponse{
+					Data:      []byte{}, // 空瓦片
+					FromCache: false,
+					Duration:  time.Since(startTime),
+				}, nil
+			}
+		}
+	}
+
+	// 3. 尝试从三层缓存获取（内存 LRU → Redis → MinIO）
 	// MinIO 中包含快显预生成和实时缓存的瓦片，两者存储在同一位置
 	logger.L().Info("🔎 尝试从缓存获取瓦片...")
 	tileData, err := s.spatialPreviewService.GetTile(ctx, fingerprint, z, x, y)
@@ -93,15 +132,31 @@ func (s *UnifiedMVTService) GetTile(
 		logger.L().Warn("⚠️  缓存返回空数据")
 	}
 
-	// 3. 缓存未命中，从 PG 实时生成
+	// 4. 缓存未命中，从 PG 实时生成（添加超时保护）
 	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片",
 		"resource_id", resourceID,
 		"schema", schema,
 		"table", table,
 		"z", z, "x", x, "y", y)
 
-	tileData, err = s.mvtService.GetTile(ctx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
+	// 创建 5 秒超时的 context（实时生成必须快速响应）
+	genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tileData, err = s.mvtService.GetTile(genCtx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
 	if err != nil {
+		// 特殊处理超时错误：返回空瓦片而非错误（优雅降级）
+		if errors.Is(err, context.DeadlineExceeded) {
+			logger.L().Warn("实时 MVT 生成超时，返回空瓦片",
+				"z", z, "x", x, "y", y,
+				"timeout", "5s",
+				"duration", time.Since(startTime))
+			return &TileResponse{
+				Data:      []byte{}, // 空瓦片
+				FromCache: false,
+				Duration:  time.Since(startTime),
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
 	}
 
@@ -116,10 +171,10 @@ func (s *UnifiedMVTService) GetTile(
 		"duration", duration,
 		"size", len(tileData))
 
-	// 4. 判断是否需要自动缓存（生成时间 > 300ms 或 大小 > 100KB）
+	// 5. 判断是否需要自动缓存（生成时间 > 100ms 或 大小 > 50KB）
 	tileSizeKB := float64(len(tileData)) / 1024.0
 	durationMs := float64(duration.Milliseconds())
-	shouldCache := durationMs > 300 || tileSizeKB > 100
+	shouldCache := durationMs > 100 || tileSizeKB > 50
 
 	if shouldCache && len(tileData) > 0 {
 		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存）

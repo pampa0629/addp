@@ -30,9 +30,35 @@ const props = defineProps({
 const mapEl = ref(null)
 let map
 const error = ref('')
+const tileConfig = ref(null) // 瓦片配置（从后端获取）
+const isLoadingConfig = ref(false) // 防止重复加载
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
+
+// 获取瓦片配置（MinZoom/MaxZoom）
+async function fetchTileConfig() {
+  // 防止重复请求
+  if (isLoadingConfig.value || tileConfig.value) {
+    return
+  }
+
+  isLoadingConfig.value = true
+
+  try {
+    const url = `/resources/${props.resourceId}/spatial/${props.schema}/${props.table}/tile-config`
+    console.log('Fetching tile config from:', url)
+    const response = await client.get(url)
+    tileConfig.value = response.data
+    console.log('Tile config loaded:', tileConfig.value)
+  } catch (err) {
+    console.warn('Failed to load tile config, using defaults:', err)
+    // 失败时使用默认配置
+    tileConfig.value = { min_zoom: 6, max_zoom: 18 }
+  } finally {
+    isLoadingConfig.value = false
+  }
+}
 
 const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
@@ -49,6 +75,7 @@ const tilesURLTemplate = computed(() => {
 function makeVectorLayer() {
   const vtSource = new VectorTileSource({
     format: new MVT(),
+    cacheSize: 512,  // 增加客户端缓存,减少重复请求
     tileUrlFunction: (tileCoord) => {
       const z = tileCoord[0]
       const x = tileCoord[1]
@@ -102,8 +129,11 @@ function makeVectorLayer() {
   return new VectorTileLayer({ source: vtSource, style: styleFn })
 }
 
-function initMap() {
-  // 使用高德地图底图 - 正确的多URL配置
+async function initMap() {
+  // 1. 先获取瓦片配置
+  await fetchTileConfig()
+
+  // 2. 使用高德地图底图 - 正确的多URL配置
   const base = new TileLayer({
     source: new XYZ({
       urls: [
@@ -120,16 +150,20 @@ function initMap() {
   const vt = makeVectorLayer()
   vt.setZIndex(10)  // MVT图层在上层
 
+  // 3. 创建地图（使用后端返回的 minZoom/maxZoom）
   map = new Map({
     target: mapEl.value,
     layers: [base, vt],
+    maxTilesLoading: 16,  // 增加并发加载瓦片数,优化加载速度
     view: new View({
       center: fromLonLat(props.center),
       zoom: props.zoom,
-      maxZoom: 18,
-      minZoom: 3
+      maxZoom: tileConfig.value.max_zoom,  // 后端计算
+      minZoom: tileConfig.value.min_zoom   // 后端计算
     })
   })
+
+  console.log(`Map zoom range: ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}`)
 }
 
 function fromLonLat(lonLat) {
@@ -157,8 +191,22 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => [props.resourceId, props.schema, props.table, props.geom], () => {
+watch(() => [props.resourceId, props.schema, props.table, props.geom], async () => {
   if (!map) return
+
+  // 重置配置状态，允许重新加载
+  tileConfig.value = null
+
+  // 重新获取瓦片配置
+  await fetchTileConfig()
+
+  // 更新地图的 zoom 范围
+  const view = map.getView()
+  view.setMinZoom(tileConfig.value.min_zoom)
+  view.setMaxZoom(tileConfig.value.max_zoom)
+  console.log(`Updated zoom range: ${tileConfig.value.min_zoom} - ${tileConfig.value.max_zoom}`)
+
+  // 更新 MVT 图层
   const layers = map.getLayers()
   const vtIdx = layers.getLength() - 1
   const newVt = makeVectorLayer()

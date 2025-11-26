@@ -95,6 +95,11 @@ func SetupRouter(cfg *config.Config, resourceService *service.ResourceService, m
 			searchGroup.DELETE("/history", handler.ClearHistory)
 		}
 
+		// 瓦片配置 API（获取 MinZoom/MaxZoom）
+		// 注意：必须在 tiles 路由之前注册，避免路由冲突
+		tileConfigHandler := NewTileConfigHandler(quickViewService)
+		resources.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
+
 		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
 		// GET /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
 		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
