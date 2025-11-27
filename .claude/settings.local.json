@@ -14,7 +14,8 @@
       "Bash(while read:*)",
       "Bash(do docker exec addp-redis redis-cli -a addp_redis DEL $key 2)",
       "Bash(/dev/null done)",
-      "Bash(FINGERPRINT=9d471f70796ad82037b77f2e4439d0eb59dc762a97fe2b3b3bbe05c023f83bd4 echo '=== MinIO 当前瓦片层级 ===' docker exec addp-minio ls /data/mvt-tiles/$FINGERPRINT/tiles/)"
+      "Bash(FINGERPRINT=9d471f70796ad82037b77f2e4439d0eb59dc762a97fe2b3b3bbe05c023f83bd4 echo '=== MinIO 当前瓦片层级 ===' docker exec addp-minio ls /data/mvt-tiles/$FINGERPRINT/tiles/)",
+      "Bash(.dev-pids/manager-frontend.pid)"
     ],
     "deny": [],
     "ask": []

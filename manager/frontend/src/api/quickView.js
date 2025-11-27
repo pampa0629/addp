@@ -7,6 +7,13 @@ import request from './client'
  */
 export const quickViewAPI = {
   /**
+   * 获取瓦片配置（计算 minZoom 和 maxZoom）
+   */
+  getTileConfig(resourceId, schema, table) {
+    return request.get(`/resources/${resourceId}/spatial/${schema}/${table}/tile-config`)
+  },
+
+  /**
    * 触发预缓存生成
    */
   triggerQuickView(resourceId, schema, table, params = {}) {

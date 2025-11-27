@@ -85,7 +85,7 @@ import { useResizable } from '@/composables/useResizable'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const props = defineProps({
   data: {
@@ -201,7 +201,7 @@ const handlePageChange = (page) => {
   emit('page-change', page)
 }
 
-// Pre-Cache 处理函数
+// Pre-Cache 处理函数 (两步式：先预览配置，再确认生成)
 const handleQuickView = async () => {
   if (!resourceId.value || !schema.value || !table.value) {
     ElMessage.warning('缺少必要参数，无法启用预缓存')
@@ -215,17 +215,59 @@ const handleQuickView = async () => {
 
   try {
     quickViewLoading.value = true
+
+    // 步骤1: 获取瓦片配置（计算 minZoom 和 maxZoom）
+    const configResponse = await quickViewAPI.getTileConfig(resourceId.value, schema.value, table.value)
+    const tileConfig = configResponse.data
+
+    const { min_zoom: calculatedMin, max_zoom: calculatedMax, extent, srid } = tileConfig
+
+    // 步骤2: 使用 MessageBox 让用户确认或修改配置
+    const { value } = await ElMessageBox.prompt(
+      `检测到数据范围：\n` +
+      `  - 记录数: ${extent ? '已计算' : '未知'}\n` +
+      `  - 坐标系: SRID ${srid || 4326}\n\n` +
+      `建议配置：\n` +
+      `  - MinZoom: ${calculatedMin}\n` +
+      `  - MaxZoom: ${calculatedMax}\n\n` +
+      `请输入 MinZoom,MaxZoom (例如: 4,11)`,
+      '确认预缓存配置',
+      {
+        confirmButtonText: '开始生成',
+        cancelButtonText: '取消',
+        inputValue: `${calculatedMin},${calculatedMax}`,
+        inputPattern: /^\d+,\d+$/,
+        inputErrorMessage: '请输入正确格式: MinZoom,MaxZoom (例如: 4,11)'
+      }
+    )
+
+    // 解析用户输入
+    const [minZoom, maxZoom] = value.split(',').map(v => parseInt(v.trim(), 10))
+
+    if (minZoom >= maxZoom) {
+      ElMessage.error('MinZoom 必须小于 MaxZoom')
+      return
+    }
+
+    // 步骤3: 提交任务到后端
     await quickViewAPI.triggerQuickView(resourceId.value, schema.value, table.value, {
-      max_zoom: 18,
+      min_zoom: minZoom,
+      max_zoom: maxZoom,
       concurrency: 10,
       priority: 'default'
     })
+
     quickViewStatus.value = 'generating'
-    ElMessage.success('预缓存任务已启动，正在后台生成缓存')
+    ElMessage.success(`预缓存任务已启动 (z${minZoom}-z${maxZoom})，正在后台生成`)
 
     // 开始轮询状态
     startQuickViewPolling()
   } catch (error) {
+    // 用户取消操作
+    if (error === 'cancel') {
+      ElMessage.info('已取消预缓存')
+      return
+    }
     console.error('启用预缓存失败:', error)
     ElMessage.error(error.response?.data?.error || '启用预缓存失败')
   } finally {
