@@ -37,8 +37,9 @@ func (MetaItem) TableName() string {
 // SpatialMetadata 空间表元数据（用于 attributes 字段存储）
 type SpatialMetadata struct {
 	GeometryColumn  string     `json:"geometry_column"`   // 几何列名
-	SRID            int        `json:"srid"`              // 空间参考系
-	Extent          []float64  `json:"extent"`            // 边界范围 [minX, minY, maxX, maxY]
+	SRID            int        `json:"srid"`              // 表的原始空间参考系
+	ExtentSRID      int        `json:"extent_srid"`       // extent 的坐标系（总是 4326）
+	Extent          []float64  `json:"extent"`            // 边界范围 [minX, minY, maxX, maxY]（WGS84 度）
 	GeometryTypes   []string   `json:"geometry_types"`    // 几何类型列表
 	HasSpatialIndex bool       `json:"has_spatial_index"` // 是否有空间索引
 	IndexName       string     `json:"index_name"`        // 空间索引名称

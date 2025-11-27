@@ -181,8 +181,9 @@ async function initMap() {
     maxTilesLoading: 16,  // 增加并发加载瓦片数,优化加载速度
     interactions: defaultInteractions({ mouseWheelZoom: false }).extend([
       new MouseWheelZoom({
-        duration: 200,  // 缩放动画时长(毫秒)
-        timeout: 40     // 滚轮事件延迟
+        duration: 100,  // 缩放动画时长(毫秒) - 缩短以提升响应速度
+        timeout: 100,   // 滚轮事件延迟 - 增大合并窗口，让连续滚动更流畅
+        useAnchor: true // 以鼠标位置为中心缩放，交互更自然
       })
     ]),
     controls: defaultControls({
@@ -197,8 +198,9 @@ async function initMap() {
       zoom: initialZoom,
       maxZoom: 20,  // 固定最大值，不限制用户
       minZoom: 1,   // 固定最小值，不限制用户
-      smoothResolutionConstraint: false,    // 禁用平滑分辨率,只使用整数缩放级别
-      constrainResolution: true            // 强制整数缩放级别
+      smoothResolutionConstraint: true,     // 启用平滑分辨率，允许非整数zoom，缩放更流畅
+      constrainResolution: false,           // 允许非整数缩放级别（如12.5），提升缩放体验
+      enableRotation: false                 // 禁用地图旋转，避免误操作
     })
   })
 

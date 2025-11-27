@@ -57,6 +57,7 @@ func (s *ScanServiceNew) scanSpatialMetadata(
 	return &models.SpatialMetadata{
 		GeometryColumn:  geomColumn,
 		SRID:            srid,
+		ExtentSRID:      4326, // extent 总是 WGS84（calculateExtent 内部使用 ST_Transform）
 		Extent:          extent,
 		GeometryTypes:   geomTypes,
 		HasSpatialIndex: hasIndex,

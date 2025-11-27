@@ -90,20 +90,18 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 
 	// 2. 执行快显缓存生成（使用混合入队模式）
 	result, err := h.quickViewService.GenerateMixed(ctx, mvt.QuickViewConfig{
-		ResourceID:      payload.ResourceID,
-		TenantID:        payload.TenantID,
-		Schema:          payload.SchemaName,
-		Table:           payload.TableName,
-		GeomColumn:      payload.GeomColumn,
-		SRID:            payload.SRID,
-		PrimaryKey:      payload.PrimaryKey,
-		Extent:          payload.Extent,
-		MinZoom:         payload.MinZoom,
-		MaxZoom:         payload.MaxZoom,
-		Concurrency:     payload.Concurrency,
-		StopThresholdMs: payload.StopThresholdMs,
-		StopThresholdKB: payload.StopThresholdKB,
-		Fingerprint:     payload.Fingerprint,
+		ResourceID:  payload.ResourceID,
+		TenantID:    payload.TenantID,
+		Schema:      payload.SchemaName,
+		Table:       payload.TableName,
+		GeomColumn:  payload.GeomColumn,
+		SRID:        payload.SRID,
+		PrimaryKey:  payload.PrimaryKey,
+		Extent:      payload.Extent,
+		MinZoom:     payload.MinZoom,
+		MaxZoom:     payload.MaxZoom,
+		Concurrency: payload.Concurrency,
+		Fingerprint: payload.Fingerprint,
 	})
 
 	if err != nil {

@@ -49,9 +49,12 @@ func CalculateMaxZoomByRecordCount(recordCount int64, targetRecordsPerTile int, 
 		// 估算每个瓦片的平均记录数
 		avgRecordsPerTile := float64(recordCount) / float64(tileCount)
 
-		// 如果平均记录数低于阈值，这就是 maxZoom
+		// 如果平均记录数低于阈值,返回上一个层级(即最后一个高于阈值的层级)
 		if avgRecordsPerTile < float64(targetRecordsPerTile) {
-			return z
+			if z > minZoom {
+				return z - 1 // 返回上一个层级
+			}
+			return minZoom // 边界情况:至少返回minZoom
 		}
 	}
 

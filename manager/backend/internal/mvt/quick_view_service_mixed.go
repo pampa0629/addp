@@ -62,7 +62,6 @@ func (s *QuickViewService) GenerateMixed(
 		emptyTiles     int
 		totalGenTime   float64
 		totalSize      int64
-		stopped        bool // 该层是否已达到停止条件
 	}
 
 	statsMap := make(map[int]*zoomStats)
@@ -109,26 +108,14 @@ func (s *QuickViewService) GenerateMixed(
 
 			// 遍历所有层级，尝试分发任务
 			for _, zr := range zoomRanges {
-				stats := statsMap[zr.zoom]
 				prog := zoomProgress[zr.zoom]
 
-				// 跳过已完成或已停止的层级
+				// 跳过已完成的层级
 				if prog.finished {
 					continue
 				}
 
 				allFinished = false
-
-				// 检查该层是否应该停止
-				stats.Lock()
-				if stats.stopped {
-					stats.Unlock()
-					prog.finished = true
-					logger.L().Info("层级已停止任务分发", "zoom", zr.zoom,
-						"generated", stats.generatedTiles, "total", stats.totalTiles)
-					continue
-				}
-				stats.Unlock()
 
 				// 分发该层的下一个瓦片任务
 				if prog.currentY <= zr.maxY {
@@ -190,28 +177,6 @@ func (s *QuickViewService) GenerateMixed(
 			stats.emptyTiles++
 		}
 
-		processed := stats.generatedTiles + stats.emptyTiles
-
-		// 实时检查停止条件（每处理10个瓦片检查一次）
-		if !stats.stopped && processed >= 10 && processed%10 == 0 {
-			avgGenTimeMs := 0.0
-			avgSizeKB := 0.0
-			if stats.generatedTiles > 0 {
-				avgGenTimeMs = stats.totalGenTime / float64(stats.generatedTiles) / 1e6
-				avgSizeKB = float64(stats.totalSize) / float64(stats.generatedTiles) / 1024.0
-			}
-
-			if avgGenTimeMs > cfg.StopThresholdMs || avgSizeKB > cfg.StopThresholdKB {
-				stats.stopped = true
-				logger.L().Info("层级达到停止阈值",
-					"zoom", result.coord.Z,
-					"avg_time_ms", avgGenTimeMs,
-					"avg_size_kb", avgSizeKB,
-					"threshold_ms", cfg.StopThresholdMs,
-					"threshold_kb", cfg.StopThresholdKB)
-			}
-		}
-
 		stats.Unlock()
 
 		processedTiles++
@@ -246,8 +211,7 @@ func (s *QuickViewService) GenerateMixed(
 			"empty", stats.emptyTiles,
 			"total", stats.totalTiles,
 			"avg_time_ms", avgTimeMs,
-			"avg_size_kb", avgSizeKB,
-			"stopped", stats.stopped)
+			"avg_size_kb", avgSizeKB)
 
 		// 记录最后有效层级（非空且已处理）
 		if stats.generatedTiles > 0 {

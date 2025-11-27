@@ -38,7 +38,8 @@ type QuickView struct {
 	Fingerprint string `gorm:"not null;size:64;index:idx_quick_view_fingerprint" json:"fingerprint"`
 
 	// 空间范围（存储快照，避免依赖 meta）
-	Extent JSONFloatArray `gorm:"type:jsonb" json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	Extent     JSONFloatArray `gorm:"type:jsonb" json:"extent"`                               // [minLng, minLat, maxLng, maxLat]
+	ExtentSRID int            `gorm:"column:extent_srid;default:4326" json:"extent_srid,omitempty"` // extent 的坐标系
 
 	// 时间戳
 	StartedAt   *time.Time `gorm:"" json:"started_at,omitempty"`

@@ -92,14 +92,14 @@ func (s *UnifiedMVTService) GetTile(
 			"extent_len", len(qv.Extent),
 			"extent", qv.Extent)
 		if err == nil && len(qv.Extent) == 4 {
-			// 使用 SRID（默认 4326，TODO: 从 Meta 获取准确的 SRID）
-			sridToUse := srid
-			if sridToUse == 0 {
-				sridToUse = 4326
+			// 使用 ExtentSRID（QuickView 中记录的 extent 坐标系）
+			extentSRID := qv.ExtentSRID
+			if extentSRID == 0 {
+				extentSRID = 4326 // 向后兼容，默认 WGS84
 			}
 
 			// 计算 minZoom 和 maxZoom
-			minZoom = spatial.CalculateMinZoomFromExtent(qv.Extent, sridToUse)
+			minZoom = spatial.CalculateMinZoomFromExtent(qv.Extent, extentSRID)
 			maxZoom = qv.MaxZoom // 从快显配置获取（智能计算的 maxZoom）
 			if maxZoom == 0 {
 				maxZoom = 18 // 默认值
@@ -111,7 +111,7 @@ func (s *UnifiedMVTService) GetTile(
 					"z", z,
 					"min_zoom", minZoom,
 					"extent", qv.Extent,
-					"srid", sridToUse)
+					"extent_srid", extentSRID)
 				// 返回空瓦片，让前端停止请求（不是错误）
 				return &TileResponse{
 					Data:      []byte{}, // 空瓦片

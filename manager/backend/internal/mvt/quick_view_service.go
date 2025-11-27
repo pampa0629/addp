@@ -27,19 +27,17 @@ type QuickViewService struct {
 // QuickViewConfig 快显配置
 type QuickViewConfig struct {
 	ResourceID       uint
-	TenantID         uint
-	Schema           string
-	Table            string
-	GeomColumn       string
-	SRID             int
-	PrimaryKey       string
-	Extent           []float64 // [minLng, minLat, maxLng, maxLat]
-	MinZoom          int       // 自动计算或指定
-	MaxZoom          int
-	Concurrency      int
-	StopThresholdMs  float64 // 毫秒
-	StopThresholdKB  float64 // KB
-	Fingerprint      string
+	TenantID    uint
+	Schema      string
+	Table       string
+	GeomColumn  string
+	SRID        int
+	PrimaryKey  string
+	Extent      []float64 // [minLng, minLat, maxLng, maxLat]
+	MinZoom     int       // 自动计算或指定
+	MaxZoom     int
+	Concurrency int
+	Fingerprint string
 }
 
 // MinIOConfig MinIO 配置
@@ -179,18 +177,6 @@ func (s *QuickViewService) generateSequential(
 			"empty_tiles", stats.EmptyTiles,
 			"avg_gen_time_ms", stats.AvgGenTimeMs,
 			"avg_size_kb", stats.AvgSizeKB)
-
-		// 检查停止条件
-		if s.shouldStop(stats, cfg.StopThresholdMs, cfg.StopThresholdKB) {
-			logger.L().Info("达到停止阈值",
-				"zoom", z,
-				"avg_gen_time_ms", stats.AvgGenTimeMs,
-				"avg_size_kb", stats.AvgSizeKB)
-
-			result.ActualMaxZoom = z
-			result.StopReason = "adaptive_threshold"
-			break
-		}
 
 		// 达到最大层级
 		if z == cfg.MaxZoom {
@@ -392,16 +378,6 @@ func (s *QuickViewService) processTile(
 		genTimeMs: float64(time.Since(startTime).Milliseconds()),
 		sizeBytes: int64(len(mvtData)),
 	}
-}
-
-// shouldStop 判断是否应该停止生成
-func (s *QuickViewService) shouldStop(stats *ZoomLevelStats, thresholdMs, thresholdKB float64) bool {
-	if stats.GeneratedTiles == 0 {
-		return true // 当前层无数据，停止
-	}
-
-	// 平均生成时间 <= 阈值 且 平均大小 <= 阈值
-	return stats.AvgGenTimeMs <= thresholdMs && stats.AvgSizeKB <= thresholdKB
 }
 
 // putTile 存储瓦片到 MinIO

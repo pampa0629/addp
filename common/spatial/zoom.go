@@ -4,29 +4,36 @@ import "math"
 
 // CalculateMinZoomFromExtent 根据地理范围计算最小可见 zoom 层级
 // extent: [minX, minY, maxX, maxY]
-// srid: 坐标系 SRID（如 4326, 3857, 2360 等）
+// extentSRID: extent 的坐标系 SRID（如 4326, 3857, 2360 等）
+//             如果为 0，默认为 4326（WGS84）
 // 返回合适的最小 zoom 层级，使得整个范围能在单个视口内显示
 //
 // 算法说明：
-// 1. 如果是投影坐标系（如 3857、2360），先转换为地理坐标系（度）
-// 2. 计算范围的宽度和高度
-// 3. 基于 "数据占据视口 50%" 的目标计算合适的 zoom
-// 4. Web Mercator 在 zoom 0 时全球宽度为 360 度，每增加一级 zoom 减半
+// 1. 如果 extentSRID 为 0，默认为 4326
+// 2. 如果是投影坐标系（如 3857、2360），先转换为地理坐标系（度）
+// 3. 计算范围的宽度和高度
+// 4. 基于 "数据占据视口 50%" 的目标计算合适的 zoom
+// 5. Web Mercator 在 zoom 0 时全球宽度为 360 度，每增加一级 zoom 减半
 //
 // 示例：
 // - 广西省（~5度）→ MinZoom = 7
 // - 全国（~60度）→ MinZoom = 3
 // - 城市（~0.5度）→ MinZoom = 9
-func CalculateMinZoomFromExtent(extent []float64, srid int) int {
+func CalculateMinZoomFromExtent(extent []float64, extentSRID int) int {
 	if len(extent) != 4 {
 		return 6 // 默认值
 	}
 
 	minX, minY, maxX, maxY := extent[0], extent[1], extent[2], extent[3]
 
+	// 0. 如果 extentSRID 为 0 或未指定，默认为 4326
+	if extentSRID == 0 {
+		extentSRID = 4326
+	}
+
 	// 1. 坐标系转换：将投影坐标转换为地理坐标（度）
-	if srid != 4326 {
-		minX, minY, maxX, maxY = transformToGeographic(minX, minY, maxX, maxY, srid)
+	if extentSRID != 4326 {
+		minX, minY, maxX, maxY = transformToGeographic(minX, minY, maxX, maxY, extentSRID)
 	}
 
 	// 2. 计算范围的宽度和高度（度）
@@ -97,8 +104,8 @@ func transformToGeographic(minX, minY, maxX, maxY float64, srid int) (float64, f
 
 // ShouldGenerateTileAtZoom 判断指定 zoom 层级是否应该生成瓦片
 // 用于前端和后端统一验证
-func ShouldGenerateTileAtZoom(z int, extent []float64, srid int) bool {
-	minZoom := CalculateMinZoomFromExtent(extent, srid)
+func ShouldGenerateTileAtZoom(z int, extent []float64, extentSRID int) bool {
+	minZoom := CalculateMinZoomFromExtent(extent, extentSRID)
 	maxZoom := 18 // 固定最大 zoom
 
 	return z >= minZoom && z <= maxZoom

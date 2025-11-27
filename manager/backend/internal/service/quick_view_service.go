@@ -12,6 +12,7 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/worker"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -66,6 +67,15 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		return fmt.Errorf("failed to get spatial metadata: %w", err)
 	}
 
+	// 2.5 获取表记录数（从 pg_stat_user_tables，高性能）
+	recordCount, err := s.getTableRecordCount(ctx, params.ResourceID, params.SchemaName, params.TableName)
+	if err != nil {
+		logger.L().Warn("⚠️  Failed to get record count, will use default MaxZoom",
+			"error", err)
+		recordCount = 0
+	}
+	spatialMeta.RecordCount = recordCount
+
 	// 3. 计算fingerprint（使用 resource_id + schema + table 的组合）
 	fingerprint := calculateFingerprint(params.ResourceID, params.SchemaName, params.TableName)
 
@@ -74,16 +84,44 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	if params.MinZoom != nil {
 		minZoom = *params.MinZoom
 	} else if len(spatialMeta.Extent) == 4 {
-		// 使用统一的计算函数（支持不同坐标系）
-		minZoom = spatial.CalculateMinZoomFromExtent(spatialMeta.Extent, spatialMeta.SRID)
+		// 使用统一的计算函数（使用 extent 的坐标系）
+		logger.L().Info("🧮 计算 MinZoom",
+			"extent", spatialMeta.Extent,
+			"extent_srid", spatialMeta.ExtentSRID,
+			"table_srid", spatialMeta.SRID)
+		minZoom = spatial.CalculateMinZoomFromExtent(spatialMeta.Extent, spatialMeta.ExtentSRID)
+		logger.L().Info("✅ MinZoom 计算完成",
+			"result", minZoom,
+			"extent_srid_used", spatialMeta.ExtentSRID)
 	}
 
-	// 6. 设置默认值
+	// 6. 计算 MaxZoom（基于记录数和 extent 智能计算）
 	if params.MaxZoom == 0 {
-		params.MaxZoom = 18
+		if spatialMeta.RecordCount > 0 && len(spatialMeta.Extent) == 4 {
+			var extentArray [4]float64
+			copy(extentArray[:], spatialMeta.Extent)
+
+			// 使用 targetRecordsPerTile = 5000（适合千万级数据）
+			params.MaxZoom = spatial.CalculateMaxZoomByRecordCount(
+				spatialMeta.RecordCount,
+				5000, // 阈值：5000 条/瓦片
+				extentArray,
+				spatialMeta.ExtentSRID,
+			)
+
+			logger.L().Info("🧮 MaxZoom 自动计算完成",
+				"record_count", spatialMeta.RecordCount,
+				"target_per_tile", 5000,
+				"result", params.MaxZoom)
+		} else {
+			params.MaxZoom = 18 // 降级到默认值
+			logger.L().Warn("⚠️  无法计算 MaxZoom，使用默认值 18",
+				"record_count", spatialMeta.RecordCount,
+				"extent_len", len(spatialMeta.Extent))
+		}
 	}
 	if params.Concurrency == 0 {
-		params.Concurrency = 20  // 提高默认并发数（原来是10）
+		params.Concurrency = 20 // 提高默认并发数（原来是10）
 	}
 
 	// 7. 创建或更新快显记录
@@ -97,6 +135,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		MaxZoom:             params.MaxZoom,
 		Fingerprint:         fingerprint,
 		Extent:              spatialMeta.Extent,
+		ExtentSRID:          spatialMeta.ExtentSRID,
 		StopThresholdTimeMs: 300,
 		StopThresholdSizeKB: 100,
 	}
@@ -161,10 +200,12 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 
 // SpatialMetadataResult 空间元数据结果
 type SpatialMetadataResult struct {
-	GeomColumn string
-	SRID       int
-	PrimaryKey string
-	Extent     []float64
+	GeomColumn  string
+	SRID        int   // 表的原始坐标系
+	ExtentSRID  int   // extent 的坐标系
+	PrimaryKey  string
+	Extent      []float64
+	RecordCount int64 // 表记录数
 }
 
 // getSpatialMetadataFromMeta 从Meta模块获取空间元数据
@@ -178,6 +219,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		SELECT
 			COALESCE(attributes->'spatial_metadata'->>'geometry_column', '') AS geometry_column,
 			COALESCE((attributes->'spatial_metadata'->>'srid')::int, 0) AS srid,
+			COALESCE((attributes->'spatial_metadata'->>'extent_srid')::int, 4326) AS extent_srid,
 			COALESCE((attributes->'spatial_metadata'->'extent')::text, '[]') AS extent,
 			COALESCE(attributes->'table_metadata'->>'primary_key', '') AS primary_key,
 			COALESCE((attributes->'fields')::text, '[]') AS fields_json
@@ -194,6 +236,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 	type QueryResult struct {
 		GeometryColumn string
 		SRID           int
+		ExtentSRID     int
 		ExtentJSON     string
 		PrimaryKey     string
 		FieldsJSON     string
@@ -205,7 +248,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 
 	// 执行查询并手动扫描结果
 	row := db.Raw(query, resourceID, schema, table, tenantID).Row()
-	err := row.Scan(&result.GeometryColumn, &result.SRID, &result.ExtentJSON, &result.PrimaryKey, &result.FieldsJSON)
+	err := row.Scan(&result.GeometryColumn, &result.SRID, &result.ExtentSRID, &result.ExtentJSON, &result.PrimaryKey, &result.FieldsJSON)
 	if err != nil {
 		logger.L().Warn("Failed to query spatial metadata from Meta, using defaults",
 			"resource_id", resourceID,
@@ -216,6 +259,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		return &SpatialMetadataResult{
 			GeomColumn: "geom",
 			SRID:       4326,
+			ExtentSRID: 4326,
 			PrimaryKey: "id",
 			Extent:     []float64{},
 		}, nil
@@ -239,6 +283,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		return &SpatialMetadataResult{
 			GeomColumn: "geom",
 			SRID:       4326,
+			ExtentSRID: 4326,
 			PrimaryKey: "id",
 			Extent:     []float64{},
 		}, nil
@@ -284,15 +329,69 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		"table", fmt.Sprintf("%s.%s", schema, table),
 		"geom_col", result.GeometryColumn,
 		"srid", result.SRID,
+		"extent_srid", result.ExtentSRID,
 		"primary_key", primaryKey,
 		"extent", extent)
 
 	return &SpatialMetadataResult{
-		GeomColumn: result.GeometryColumn,
-		SRID:       result.SRID,
-		PrimaryKey: primaryKey,
-		Extent:     extent,
+		GeomColumn:  result.GeometryColumn,
+		SRID:        result.SRID,
+		ExtentSRID:  result.ExtentSRID,
+		PrimaryKey:  primaryKey,
+		Extent:      extent,
+		RecordCount: 0, // 初始为 0，由 getTableRecordCount 填充
 	}, nil
+}
+
+// getTableRecordCount 获取表记录数
+// 优先从元数据获取，如果没有则从 pg_stat_user_tables 查询（高性能，无需 COUNT）
+func (s *QuickViewService) getTableRecordCount(
+	ctx context.Context,
+	resourceID uint,
+	schema, table string,
+) (int64, error) {
+	// 1. 先从 SystemClient 获取资源连接信息
+	if s.systemClient == nil {
+		return 0, fmt.Errorf("system client not initialized")
+	}
+
+	resource, err := s.systemClient.GetResource(resourceID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get resource: %w", err)
+	}
+
+	// 2. 构建业务数据库连接
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return 0, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 3. 连接业务数据库
+	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to business database: %w", err)
+	}
+	sqlDB, _ := db.DB()
+	defer sqlDB.Close()
+
+	// 4. 从 pg_stat_user_tables 查询（性能最优，无需 COUNT）
+	var recordCount int64
+	query := `
+		SELECT COALESCE(n_live_tup, 0)
+		FROM pg_stat_user_tables
+		WHERE schemaname = $1 AND relname = $2
+	`
+	err = db.Raw(query, schema, table).Scan(&recordCount).Error
+	if err != nil {
+		logger.L().Warn("Failed to get record count from pg_stat_user_tables",
+			"schema", schema, "table", table, "error", err)
+		return 0, err
+	}
+
+	logger.L().Info("📊 从 pg_stat_user_tables 获取记录数",
+		"schema", schema, "table", table, "count", recordCount)
+
+	return recordCount, nil
 }
 
 // GetStatus 获取快显状态
