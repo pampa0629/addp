@@ -222,16 +222,7 @@
       "Bash(__NEW_LINE__ echo \"发送测试请求...\")",
       "Bash(__NEW_LINE__ echo \"\")",
       "Bash(z=6 大小: 0 字节)",
-      "Bash(z=12 大小: 1516780 字节)",
-      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQxNDAzMjcsImlhdCI6MTc2NDEzODUyN30.4ygEhxU41OLGqMjzEDUq-Rd9WHbkPR8p-w0L33kTVp8' curl -s \"http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config\" -H \"Authorization: Bearer $TK\")",
-      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQxNDQ3MzgsImlhdCI6MTc2NDE0MjkzOH0.b-8IowROuVlD8JEnJreL5WEjZA-CiCOgQy4Gcl64k3c' curl -s \"http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config\" -H \"Authorization: Bearer $TK\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQxNDU5OTMsImlhdCI6MTc2NDE0NDE5M30.tW3oRrUaIy2X5gPEHNq2gQhpZ58vvk4p_U7MtDJxw08\")",
-      "Bash(__NEW_LINE__ curl -s \"http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/10/820/580?geom=smgeometry\" )",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQxNDY2NzksImlhdCI6MTc2NDE0NDg3OX0.2ku9utcI53kaBi_pDpjh6WPf_TRt5nNWmQzyHDxleJk\" curl -s \"http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config\" -H \"Authorization: Bearer $TOKEN\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQwNzAxMjMsImlhdCI6MTc2NDA2ODMyM30.GpznLZQWG4XapBPQYmWnkOgCa9Kp4PBapmr5hJwxNbM\" curl -s \"http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config\" -H \"Authorization: Bearer $TOKEN\")",
-      "Bash(logs/manager-backend.log)",
-      "Bash(__NEW_LINE__ echo \"发送 tile-config 请求...\")",
-      "Bash(__NEW_LINE__ sleep 2)"
+      "Bash(z=12 大小: 1516780 字节)"
     ],
     "deny": [],
     "ask": []
