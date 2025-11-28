@@ -37,8 +37,16 @@ const tileConfig = ref(null) // 瓦片配置（从后端获取）
 const isLoadingConfig = ref(false) // 防止重复加载
 let lastWarningZoom = null // 避免重复提示
 
+// ✅ 跟踪所有进行中的瓦片请求
+const activeTileRequests = ref(new Map())  // key: "z/x/y", value: AbortController
+
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
+
+// ✅ 构建瓦片唯一标识
+function buildTileKey(z, x, y) {
+  return `${z}/${x}/${y}`
+}
 
 // 获取瓦片配置（MinZoom/MaxZoom）
 async function fetchTileConfig() {
@@ -81,39 +89,72 @@ function makeVectorLayer() {
     format: new MVT(),
     cacheSize: 512,  // 增加客户端缓存,减少重复请求
     maxZoom: 20,  // 支持更高层级的瓦片请求
-    // ✅ 限制最大并发加载瓦片数（预留请求给底图）
+    // ✅ 直接使用 XYZ 格式（OpenLayers VectorTileSource 默认就是 XYZ）
     tileUrlFunction: (tileCoord) => {
       const z = tileCoord[0]
       const x = tileCoord[1]
-      const y = tileCoord[2]
-      // 转换 TMS Y 坐标到 XYZ 格式
-      const xyzY = Math.pow(2, z) - y - 1
+      const y = tileCoord[2]  // 直接使用，不转换！
 
       const url = tilesURLTemplate.value
         .replace('{z}', z)
         .replace('{x}', x)
-        .replace('{y}', xyzY)
+        .replace('{y}', y)  // ✅ 修复：直接使用 y，不做 TMS 转换
 
       return url
     },
     tileLoadFunction: (tile, src) => {
-      // 非阻塞加载
-      fetch(src, {
-        headers: { Authorization: token() ? `Bearer ${token()}` : '' }
-      }).then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.arrayBuffer()
-      }).then(buf => {
-        tile.setLoader((extent, resolution, projection) => {
-          const format = tile.getFormat() || new MVT()
-          const features = format.readFeatures(buf, { extent, featureProjection: projection })
-          tile.setFeatures(features)
-          tile.setProjection(projection)
-        })
-      }).catch(e => {
-        console.error('加载切片失败:', src, e)
+      // ✅ 提取瓦片坐标
+      const match = src.match(/\/tiles\/[^/]+\/[^/]+\/(\d+)\/(\d+)\/(\d+)/)
+      if (!match) {
+        console.warn('无法解析瓦片URL:', src)
         tile.setState(3)
+        return
+      }
+
+      const z = parseInt(match[1], 10)
+      const x = parseInt(match[2], 10)
+      const y = parseInt(match[3], 10)
+      const tileKey = buildTileKey(z, x, y)
+
+      // ✅ 取消该瓦片之前未完成的请求
+      if (activeTileRequests.value.has(tileKey)) {
+        const oldController = activeTileRequests.value.get(tileKey)
+        oldController.abort()
+        console.debug('取消旧瓦片请求:', tileKey)
+      }
+
+      // ✅ 创建新的 AbortController
+      const controller = new AbortController()
+      activeTileRequests.value.set(tileKey, controller)
+
+      // ✅ 发起请求 (关联取消信号)
+      fetch(src, {
+        headers: { Authorization: token() ? `Bearer ${token()}` : '' },
+        signal: controller.signal
       })
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.arrayBuffer()
+        })
+        .then(buf => {
+          tile.setLoader((extent, resolution, projection) => {
+            const format = tile.getFormat() || new MVT()
+            const features = format.readFeatures(buf, { extent, featureProjection: projection })
+            tile.setFeatures(features)
+            tile.setProjection(projection)
+          })
+        })
+        .catch(e => {
+          if (e.name === 'AbortError') {
+            console.debug('瓦片请求已取消:', tileKey)
+            return
+          }
+          console.error('加载切片失败:', src, e)
+          tile.setState(3)
+        })
+        .finally(() => {
+          activeTileRequests.value.delete(tileKey)
+        })
     }
   })
 
@@ -251,8 +292,35 @@ function focusFeatureById(featureId, centroid) {
 
 defineExpose({ focusFeatureById })
 
-onMounted(() => initMap())
+onMounted(() => {
+  initMap()
+
+  // ✅ 监听地图移动,取消不同 zoom 的请求
+  setTimeout(() => {
+    if (map) {
+      map.on('movestart', () => {
+        const currentZoom = Math.round(map.getView().getZoom())
+
+        activeTileRequests.value.forEach((controller, tileKey) => {
+          const [z] = tileKey.split('/').map(Number)
+          if (z !== currentZoom) {
+            controller.abort()
+            activeTileRequests.value.delete(tileKey)
+            console.debug('取消不同层级的瓦片请求:', tileKey)
+          }
+        })
+      })
+    }
+  }, 500) // 等待地图初始化完成
+})
+
 onBeforeUnmount(() => {
+  // ✅ 组件卸载时清理所有请求
+  activeTileRequests.value.forEach((controller) => {
+    controller.abort()
+  })
+  activeTileRequests.value.clear()
+
   if (map) {
     map.setTarget(null)
     map = null

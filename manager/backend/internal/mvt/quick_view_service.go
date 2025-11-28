@@ -323,7 +323,20 @@ func (s *QuickViewService) processTile(
 ) *tileResult {
 	startTime := time.Now()
 
-	// 1. 生成瓦片
+	// 1. 检查瓦片是否已存在于 MinIO
+	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", cfg.Fingerprint, coord.Z, coord.X, coord.Y)
+	_, err := s.minioClient.StatObject(ctx, s.bucket, objectPath, minio.StatObjectOptions{})
+	if err == nil {
+		// 瓦片已存在，跳过生成（用 -1 标记）
+		return &tileResult{
+			coord:     coord,
+			isEmpty:   false,
+			genTimeMs: float64(time.Since(startTime).Milliseconds()),
+			sizeBytes: -1, // -1 表示跳过（已存在）
+		}
+	}
+
+	// 2. 瓦片不存在，生成瓦片
 	params := TileGenerationParams{
 		ResourceID: cfg.ResourceID,
 		TenantID:   cfg.TenantID,
@@ -345,7 +358,7 @@ func (s *QuickViewService) processTile(
 		}
 	}
 
-	// 2. 空瓦片，不存储
+	// 3. 空瓦片，不存储
 	if len(mvtData) == 0 {
 		return &tileResult{
 			coord:     coord,
@@ -354,7 +367,7 @@ func (s *QuickViewService) processTile(
 		}
 	}
 
-	// 3. 压缩
+	// 4. 压缩
 	gzData, err := gzipCompress(mvtData)
 	if err != nil {
 		return &tileResult{
@@ -363,7 +376,7 @@ func (s *QuickViewService) processTile(
 		}
 	}
 
-	// 4. 存储到 MinIO
+	// 5. 存储到 MinIO
 	err = s.putTile(ctx, cfg.Fingerprint, coord.Z, coord.X, coord.Y, gzData)
 	if err != nil {
 		return &tileResult{

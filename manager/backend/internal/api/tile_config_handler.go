@@ -146,7 +146,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	} else if len(extent) == 4 {
 		// 有 extent 但未启用快显：计算参考值，使用更宽松的范围
 		calculatedMin := spatial.CalculateMinZoomFromExtent(extent, extentSRID)
-		minZoom = calculatedMin - 2
+		minZoom = calculatedMin  // - 2
 		if minZoom < 1 {
 			minZoom = 1
 		}

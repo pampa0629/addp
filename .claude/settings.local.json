@@ -15,7 +15,19 @@
       "Bash(do docker exec addp-redis redis-cli -a addp_redis DEL $key 2)",
       "Bash(/dev/null done)",
       "Bash(FINGERPRINT=9d471f70796ad82037b77f2e4439d0eb59dc762a97fe2b3b3bbe05c023f83bd4 echo '=== MinIO 当前瓦片层级 ===' docker exec addp-minio ls /data/mvt-tiles/$FINGERPRINT/tiles/)",
-      "Bash(.dev-pids/manager-frontend.pid)"
+      "Bash(.dev-pids/manager-frontend.pid)",
+      "Bash(chmod:*)",
+      "Bash(./scripts/infra-init-redis.sh:*)",
+      "Bash(make init-redis:*)",
+      "Bash(TK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQyMTk3NTQsImlhdCI6MTc2NDIxNzk1NH0.7Up6rxwbvXCz_cfwJNLkMuIYbDKYsb54lyhVZNKA0vk')",
+      "Bash(/tmp/test-tile-size.sh)",
+      "Bash(/tmp/diagnose-tile-pipeline.sh)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQzMjIwNzAsImlhdCI6MTc2NDMyMDI3MH0.qoMCNotJ9dxpexXHUg1U9jaRSNDAbxxfZKeK-PFOwZ8\")",
+      "Bash(/tmp/test-mvt-optimizations.sh)",
+      "Bash(/tmp/test-singleflight.sh)",
+      "Bash(/tmp/diagnose-mvt.sh)",
+      "Bash(/tmp/test-correct-tile.sh:*)",
+      "Bash(/tmp/test-cache-pipeline.sh)"
     ],
     "deny": [],
     "ask": []

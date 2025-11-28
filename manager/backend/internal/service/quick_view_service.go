@@ -8,7 +8,6 @@ import (
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/worker"
@@ -79,47 +78,18 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	// 3. 计算fingerprint（使用 resource_id + schema + table 的组合）
 	fingerprint := calculateFingerprint(params.ResourceID, params.SchemaName, params.TableName)
 
-	// 5. 自动计算MinZoom（如果未指定）
-	minZoom := 6 // 默认值
-	if params.MinZoom != nil {
-		minZoom = *params.MinZoom
-	} else if len(spatialMeta.Extent) == 4 {
-		// 使用统一的计算函数（使用 extent 的坐标系）
-		logger.L().Info("🧮 计算 MinZoom",
-			"extent", spatialMeta.Extent,
-			"extent_srid", spatialMeta.ExtentSRID,
-			"table_srid", spatialMeta.SRID)
-		minZoom = spatial.CalculateMinZoomFromExtent(spatialMeta.Extent, spatialMeta.ExtentSRID)
-		logger.L().Info("✅ MinZoom 计算完成",
-			"result", minZoom,
-			"extent_srid_used", spatialMeta.ExtentSRID)
+	// 5. 验证必需参数（前端必须提供用户确认的值）
+	if params.MinZoom == nil {
+		return fmt.Errorf("min_zoom 是必需参数（必须由用户确认）")
 	}
-
-	// 6. 计算 MaxZoom（基于记录数和 extent 智能计算）
 	if params.MaxZoom == 0 {
-		if spatialMeta.RecordCount > 0 && len(spatialMeta.Extent) == 4 {
-			var extentArray [4]float64
-			copy(extentArray[:], spatialMeta.Extent)
-
-			// 使用 targetRecordsPerTile = 5000（适合千万级数据）
-			params.MaxZoom = spatial.CalculateMaxZoomByRecordCount(
-				spatialMeta.RecordCount,
-				5000, // 阈值：5000 条/瓦片
-				extentArray,
-				spatialMeta.ExtentSRID,
-			)
-
-			logger.L().Info("🧮 MaxZoom 自动计算完成",
-				"record_count", spatialMeta.RecordCount,
-				"target_per_tile", 5000,
-				"result", params.MaxZoom)
-		} else {
-			params.MaxZoom = 18 // 降级到默认值
-			logger.L().Warn("⚠️  无法计算 MaxZoom，使用默认值 18",
-				"record_count", spatialMeta.RecordCount,
-				"extent_len", len(spatialMeta.Extent))
-		}
+		return fmt.Errorf("max_zoom 是必需参数（必须由用户确认）")
 	}
+
+	minZoom := *params.MinZoom
+	// params.MaxZoom 直接使用，无需计算
+
+	// 6. 设置默认并发数
 	if params.Concurrency == 0 {
 		params.Concurrency = 20 // 提高默认并发数（原来是10）
 	}

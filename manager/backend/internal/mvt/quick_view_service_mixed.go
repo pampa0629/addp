@@ -51,7 +51,7 @@ func (s *QuickViewService) GenerateMixed(
 	}
 
 	// 2. 创建统一的任务队列和结果通道
-	jobs := make(chan TileCoord, cfg.Concurrency*4) // 缓冲区为并发数的4倍
+	jobs := make(chan TileCoord, cfg.Concurrency*2) // 缓冲区为并发数的2倍
 	results := make(chan *tileResult, cfg.Concurrency*4)
 
 	// 3. 每层统计数据（线程安全）
@@ -60,6 +60,7 @@ func (s *QuickViewService) GenerateMixed(
 		totalTiles     int
 		generatedTiles int
 		emptyTiles     int
+		skippedTiles   int // 跳过的瓦片数（已存在）
 		totalGenTime   float64
 		totalSize      int64
 	}
@@ -82,78 +83,92 @@ func (s *QuickViewService) GenerateMixed(
 		}(i)
 	}
 
-	// 5. 动态任务分发器（在单独的goroutine中）
+	// 5. 流式任务分发器（在单独的goroutine中）
 	go func() {
 		defer close(jobs)
 
-		// 为每层维护当前任务索引
-		type progress struct {
-			currentX, currentY int
-			finished           bool
-		}
+		logger.L().Info("📋 开始流式分发任务",
+			"total_tasks", totalTaskCount,
+			"min_zoom", cfg.MinZoom,
+			"max_zoom", cfg.MaxZoom,
+			"concurrency", cfg.Concurrency)
 
-		zoomProgress := make(map[int]*progress)
+		// 先打印所有层级的队列计划
+		logger.L().Info("📊 预缓存队列计划:")
 		for _, zr := range zoomRanges {
-			zoomProgress[zr.zoom] = &progress{
-				currentX: zr.minX,
-				currentY: zr.minY,
-				finished: false,
-			}
+			logger.L().Info(fmt.Sprintf("  z%d: %d 个瓦片 (x[%d-%d] y[%d-%d])",
+				zr.zoom, zr.totalTiles, zr.minX, zr.maxX, zr.minY, zr.maxY))
 		}
 
-		// 持续分发任务，直到所有层级完成或停止
-		for {
-			allFinished := true
-			tasksDispatched := false
+		dispatched := 0
+		dispatchedPerZoom := make(map[int]int) // 记录每层实际分发的任务数
 
-			// 遍历所有层级，尝试分发任务
-			for _, zr := range zoomRanges {
-				prog := zoomProgress[zr.zoom]
+		for _, zr := range zoomRanges {
+			logger.L().Info(fmt.Sprintf("🚀 开始分发 z%d 层级任务", zr.zoom),
+				"zoom", zr.zoom,
+				"expected_tiles", zr.totalTiles,
+				"range", fmt.Sprintf("x[%d-%d] y[%d-%d]", zr.minX, zr.maxX, zr.minY, zr.maxY))
 
-				// 跳过已完成的层级
-				if prog.finished {
-					continue
-				}
+			zoomStartDispatched := dispatched
 
-				allFinished = false
-
-				// 分发该层的下一个瓦片任务
-				if prog.currentY <= zr.maxY {
+			for x := zr.minX; x <= zr.maxX; x++ {
+				for y := zr.minY; y <= zr.maxY; y++ {
 					select {
-					case jobs <- TileCoord{Z: zr.zoom, X: prog.currentX, Y: prog.currentY}:
-						tasksDispatched = true
+					case jobs <- TileCoord{Z: zr.zoom, X: x, Y: y}:
+						dispatched++
 
-						// 更新进度
-						prog.currentX++
-						if prog.currentX > zr.maxX {
-							prog.currentX = zr.minX
-							prog.currentY++
+						// 每层前10个任务详细记录
+						if dispatched-zoomStartDispatched <= 10 {
+							logger.L().Debug(fmt.Sprintf("  ✓ 已入队: z%d/%d/%d", zr.zoom, x, y))
 						}
 
-						// 检查是否完成
-						if prog.currentY > zr.maxY {
-							prog.finished = true
+						if dispatched%100 == 0 {
+							progress := float64(dispatched) / float64(totalTaskCount) * 100
+							logger.L().Info("📈 任务分发进度",
+								"dispatched", dispatched,
+								"total", totalTaskCount,
+								"progress", fmt.Sprintf("%.1f%%", progress),
+								"current_zoom", zr.zoom)
 						}
 
 					case <-ctx.Done():
+						logger.L().Warn("⚠️  任务分发被中断",
+							"dispatched", dispatched,
+							"total", totalTaskCount,
+							"stopped_at_zoom", zr.zoom)
 						return
-					default:
-						// 队列满，跳过此层，尝试下一层
 					}
-				} else {
-					prog.finished = true
 				}
 			}
 
-			// 所有层级完成
-			if allFinished {
-				break
-			}
+			actualDispatched := dispatched - zoomStartDispatched
+			dispatchedPerZoom[zr.zoom] = actualDispatched
 
-			// 如果本轮没有分发任何任务，稍作休息避免busy loop
-			if !tasksDispatched {
-				time.Sleep(10 * time.Millisecond)
-			}
+			logger.L().Info(fmt.Sprintf("✅ z%d 层级任务分发完成", zr.zoom),
+				"zoom", zr.zoom,
+				"expected", zr.totalTiles,
+				"actual_dispatched", actualDispatched,
+				"match", actualDispatched == zr.totalTiles)
+		}
+
+		// 最终汇总
+		logger.L().Info("🎉 所有任务分发完成",
+			"total_dispatched", dispatched,
+			"expected_total", totalTaskCount,
+			"match", dispatched == totalTaskCount)
+
+		// 打印每层分发统计
+		logger.L().Info("📊 各层级分发统计:")
+		for _, zr := range zoomRanges {
+			actual := dispatchedPerZoom[zr.zoom]
+			logger.L().Info(fmt.Sprintf("  z%d: %d/%d 个任务 %s",
+				zr.zoom, actual, zr.totalTiles,
+				func() string {
+					if actual == zr.totalTiles {
+						return "✅"
+					}
+					return fmt.Sprintf("❌ 缺失 %d 个", zr.totalTiles-actual)
+				}()))
 		}
 	}()
 
@@ -165,27 +180,42 @@ func (s *QuickViewService) GenerateMixed(
 
 	// 7. 处理结果并实时统计
 	processedTiles := 0
+	processedPerZoom := make(map[int]int) // 记录每层实际处理完成的瓦片数
+
 	for result := range results {
 		stats := statsMap[result.coord.Z]
 		stats.Lock()
 
-		if result.err == nil && result.sizeBytes > 0 {
-			stats.generatedTiles++
-			stats.totalGenTime += result.genTimeMs * 1e6 // 转换为纳秒
-			stats.totalSize += result.sizeBytes
-		} else {
-			stats.emptyTiles++
+		if result.err == nil {
+			if result.sizeBytes > 0 {
+				// 新生成的瓦片
+				stats.generatedTiles++
+				stats.totalGenTime += result.genTimeMs * 1e6 // 转换为纳秒
+				stats.totalSize += result.sizeBytes
+			} else if result.sizeBytes == -1 {
+				// 跳过的瓦片（已存在）
+				stats.skippedTiles++
+			} else if result.isEmpty {
+				// 空瓦片
+				stats.emptyTiles++
+			}
 		}
 
 		stats.Unlock()
 
 		processedTiles++
+		processedPerZoom[result.coord.Z]++
+
 		if processedTiles%100 == 0 {
-			logger.L().Info("快显生成进度",
+			logger.L().Info("⚙️  快显生成进度",
 				"processed", processedTiles,
 				"total_estimated", totalTaskCount)
 		}
 	}
+
+	logger.L().Info("✅ 所有瓦片处理完成",
+		"total_processed", processedTiles,
+		"expected", totalTaskCount)
 
 	// 8. 汇总结果
 	result := &GenerateResult{}
@@ -208,6 +238,7 @@ func (s *QuickViewService) GenerateMixed(
 		logger.L().Info("层级统计",
 			"zoom", zr.zoom,
 			"generated", stats.generatedTiles,
+			"skipped", stats.skippedTiles,
 			"empty", stats.emptyTiles,
 			"total", stats.totalTiles,
 			"avg_time_ms", avgTimeMs,

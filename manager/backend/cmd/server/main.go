@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
@@ -103,11 +105,11 @@ func main() {
 	}
 	defer searchService.Close()
 
-	// 设置路由
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
+	mvtService := service.NewMVTService(metadataRepo, resourceRepo)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		service.NewSpatialPreviewService(redisClient),
-		service.NewMVTService(metadataRepo, resourceRepo),
+		mvtService,
 		metadataRepo,
 	)
 	logger.L().Info("统一 MVT 服务已初始化（RESTful API + 三层缓存穿透架构）")
@@ -124,6 +126,20 @@ func main() {
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
 	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient)
+
+	// ✅ 注册优雅关闭处理器（关闭所有数据库连接池）
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		logger.L().Info("收到关闭信号，正在清理资源...")
+		if err := mvtService.Close(); err != nil {
+			logger.L().Error("关闭数据库连接池失败", "error", err)
+		} else {
+			logger.L().Info("所有数据库连接池已关闭")
+		}
+		os.Exit(0)
+	}()
 
 	// 启动服务
 	addr := ":" + cfg.Port

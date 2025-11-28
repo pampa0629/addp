@@ -17,6 +17,7 @@ services:
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
+    shm_size: 512mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U addp"]
       interval: 10s

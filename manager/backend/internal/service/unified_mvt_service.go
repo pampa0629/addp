@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
+	"golang.org/x/sync/singleflight"
 )
 
 // UnifiedMVTService 统一的 MVT 服务
@@ -22,6 +23,7 @@ type UnifiedMVTService struct {
 	mvtService            *MVTService            // 实时生成（直接从 PG 查询）
 	metadataRepo          *repository.MetadataRepository
 	quickViewService      *QuickViewService      // 快显服务（可选，用于更新统计）
+	sf                    singleflight.Group     // ✅ Singleflight 防缓存击穿
 }
 
 // NewUnifiedMVTService 创建统一的 MVT 服务
@@ -154,44 +156,59 @@ func (s *UnifiedMVTService) GetTile(
 		logger.L().Warn("⚠️  缓存返回空数据")
 	}
 
-	// 4. 缓存未命中，从 PG 实时生成（添加超时保护）
-	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片",
+	// 4. 缓存未命中，使用 singleflight 从 PG 实时生成
+	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片 (singleflight)",
 		"resource_id", resourceID,
 		"schema", schema,
 		"table", table,
 		"z", z, "x", x, "y", y)
 
-	// 创建 5 秒超时的 context（实时生成必须快速响应）
-	genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
+	// ✅ 构建 singleflight key (确保相同瓦片的并发请求使用同一 key)
+	sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", resourceID, schema, table, z, x, y)
 
-	tileData, err = s.mvtService.GetTile(genCtx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
-	if err != nil {
-		// 特殊处理超时错误：返回空瓦片而非错误（优雅降级）
-		if errors.Is(err, context.DeadlineExceeded) {
-			logger.L().Warn("实时 MVT 生成超时，返回空瓦片",
-				"z", z, "x", x, "y", y,
-				"timeout", "5s",
-				"duration", time.Since(startTime))
-			return &TileResponse{
-				Data:      []byte{}, // 空瓦片
-				FromCache: false,
-				Duration:  time.Since(startTime),
-			}, nil
+	// ✅ singleflight.Do: 多个并发请求同一瓦片时,只生成一次
+	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
+		// 创建 5 秒超时的 context（实时生成必须快速响应）
+		genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
+		if err != nil {
+			// 特殊处理超时错误：返回空瓦片而非错误（优雅降级）
+			if errors.Is(err, context.DeadlineExceeded) {
+				logger.L().Warn("实时 MVT 生成超时，返回空瓦片",
+					"z", z, "x", x, "y", y,
+					"timeout", "5s")
+				return []byte{}, nil
+			}
+			return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
 		}
-		return nil, fmt.Errorf("failed to generate tile from PG: %w", err)
+
+		return tileData, nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
+	tileData = v.([]byte)
 	duration := time.Since(startTime)
 
-	logger.L().Info("瓦片实时生成完成",
-		"resource_id", resourceID,
-		"schema", schema,
-		"table", table,
-		"z", z, "x", x, "y", y,
-		"from_cache", false,
-		"duration", duration,
-		"size", len(tileData))
+	// ✅ 记录是否为 singleflight 合并的请求
+	if shared {
+		logger.L().Info("✅ Singleflight 合并请求 (共享结果)",
+			"sf_key", sfKey,
+			"duration", duration,
+			"size", len(tileData))
+	} else {
+		logger.L().Info("瓦片实时生成完成 (首次请求)",
+			"resource_id", resourceID,
+			"schema", schema,
+			"table", table,
+			"z", z, "x", x, "y", y,
+			"duration", duration,
+			"size", len(tileData))
+	}
 
 	// 5. 判断是否需要自动缓存
 	// - 预缓存范围内（z <= maxZoom）: 生成时间 > 100ms 或 大小 > 50KB

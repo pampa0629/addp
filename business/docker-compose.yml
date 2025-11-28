@@ -37,6 +37,7 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
       - "${BUSINESS_POSTGRES_PORT:-5433}:5432"
+    shm_size: 512mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${BUSINESS_POSTGRES_USER:-business}"]
       interval: 10s

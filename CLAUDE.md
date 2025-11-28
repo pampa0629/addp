@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 交流语言 / Communication Language
+
+**重要**: 在此项目中,**请尽可能使用中文与用户交流**。除非用户明确使用英文提问,否则默认使用中文回复。
+
+**Important**: In this project, **please communicate with users in Chinese as much as possible**. Use English only when the user explicitly asks questions in English.
+
 ## Repository Structure
 
 **ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform structured as microservices. Each service has its own directory:

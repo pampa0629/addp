@@ -187,7 +187,7 @@ func Load() *Config {
 
 	// MVT 预缓存配置
 	cfg.PreCache = PreCacheConfig{
-		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 1000),
+		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 5000),
 		MinDurationForCacheMS: commonConfig.GetEnvInt("PRE_CACHE_MIN_DURATION_MS", 100),
 		MinSizeForCacheKB:     commonConfig.GetEnvInt("PRE_CACHE_MIN_SIZE_KB", 50),
 		MaxZoom:               commonConfig.GetEnvInt("PRE_CACHE_MAX_ZOOM", 18),
