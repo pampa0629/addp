@@ -38,7 +38,7 @@ const isLoadingConfig = ref(false) // 防止重复加载
 let lastWarningZoom = null // 避免重复提示
 
 // ✅ 跟踪所有进行中的瓦片请求
-const activeTileRequests = ref(new Map())  // key: "z/x/y", value: AbortController
+const activeTileRequests = new Map()  // key: "z/x/y", value: AbortController (不需要 ref)
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
@@ -89,19 +89,8 @@ function makeVectorLayer() {
     format: new MVT(),
     cacheSize: 512,  // 增加客户端缓存,减少重复请求
     maxZoom: 20,  // 支持更高层级的瓦片请求
-    // ✅ 直接使用 XYZ 格式（OpenLayers VectorTileSource 默认就是 XYZ）
-    tileUrlFunction: (tileCoord) => {
-      const z = tileCoord[0]
-      const x = tileCoord[1]
-      const y = tileCoord[2]  // 直接使用，不转换！
-
-      const url = tilesURLTemplate.value
-        .replace('{z}', z)
-        .replace('{x}', x)
-        .replace('{y}', y)  // ✅ 修复：直接使用 y，不做 TMS 转换
-
-      return url
-    },
+    url: tilesURLTemplate.value,  // ✅ 使用 URL 模板（OpenLayers 会自动替换 {z}/{x}/{y}）
+    // ✅ 自定义 tile loader 实现 AbortController
     tileLoadFunction: (tile, src) => {
       // ✅ 提取瓦片坐标
       const match = src.match(/\/tiles\/[^/]+\/[^/]+\/(\d+)\/(\d+)\/(\d+)/)
@@ -117,15 +106,15 @@ function makeVectorLayer() {
       const tileKey = buildTileKey(z, x, y)
 
       // ✅ 取消该瓦片之前未完成的请求
-      if (activeTileRequests.value.has(tileKey)) {
-        const oldController = activeTileRequests.value.get(tileKey)
+      if (activeTileRequests.has(tileKey)) {
+        const oldController = activeTileRequests.get(tileKey)
         oldController.abort()
         console.debug('取消旧瓦片请求:', tileKey)
       }
 
       // ✅ 创建新的 AbortController
       const controller = new AbortController()
-      activeTileRequests.value.set(tileKey, controller)
+      activeTileRequests.set(tileKey, controller)
 
       // ✅ 发起请求 (关联取消信号)
       fetch(src, {
@@ -137,12 +126,13 @@ function makeVectorLayer() {
           return res.arrayBuffer()
         })
         .then(buf => {
-          tile.setLoader((extent, resolution, projection) => {
-            const format = tile.getFormat() || new MVT()
-            const features = format.readFeatures(buf, { extent, featureProjection: projection })
-            tile.setFeatures(features)
-            tile.setProjection(projection)
+          const format = tile.getFormat() || new MVT()
+          const features = format.readFeatures(buf, {
+            extent: tile.getExtent(),
+            featureProjection: tile.getProjection()
           })
+          tile.setFeatures(features)
+          tile.setState(2) // 设置为已加载状态
         })
         .catch(e => {
           if (e.name === 'AbortError') {
@@ -150,10 +140,10 @@ function makeVectorLayer() {
             return
           }
           console.error('加载切片失败:', src, e)
-          tile.setState(3)
+          tile.setState(3) // 设置为错误状态
         })
         .finally(() => {
-          activeTileRequests.value.delete(tileKey)
+          activeTileRequests.delete(tileKey)
         })
     }
   })
@@ -301,11 +291,11 @@ onMounted(() => {
       map.on('movestart', () => {
         const currentZoom = Math.round(map.getView().getZoom())
 
-        activeTileRequests.value.forEach((controller, tileKey) => {
+        activeTileRequests.forEach((controller, tileKey) => {
           const [z] = tileKey.split('/').map(Number)
           if (z !== currentZoom) {
             controller.abort()
-            activeTileRequests.value.delete(tileKey)
+            activeTileRequests.delete(tileKey)
             console.debug('取消不同层级的瓦片请求:', tileKey)
           }
         })
@@ -316,10 +306,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   // ✅ 组件卸载时清理所有请求
-  activeTileRequests.value.forEach((controller) => {
+  activeTileRequests.forEach((controller) => {
     controller.abort()
   })
-  activeTileRequests.value.clear()
+  activeTileRequests.clear()
 
   if (map) {
     map.setTarget(null)

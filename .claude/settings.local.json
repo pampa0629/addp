@@ -27,7 +27,9 @@
       "Bash(/tmp/test-singleflight.sh)",
       "Bash(/tmp/diagnose-mvt.sh)",
       "Bash(/tmp/test-correct-tile.sh:*)",
-      "Bash(/tmp/test-cache-pipeline.sh)"
+      "Bash(/tmp/test-cache-pipeline.sh)",
+      "Bash(/tmp/test-all-cached-tiles.sh:*)",
+      "Bash(/tmp/check-token.sh)"
     ],
     "deny": [],
     "ask": []
