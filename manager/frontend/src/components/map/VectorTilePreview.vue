@@ -37,8 +37,8 @@ const tileConfig = ref(null) // 瓦片配置（从后端获取）
 const isLoadingConfig = ref(false) // 防止重复加载
 let lastWarningZoom = null // 避免重复提示
 
-// ✅ 跟踪所有进行中的瓦片请求
-const activeTileRequests = new Map()  // key: "z/x/y", value: AbortController (不需要 ref)
+// ✅ 跟踪所有进行中的瓦片请求 (使用 let 以便在闭包中正确引用)
+let activeTileRequests = new Map()  // key: "z/x/y", value: AbortController
 
 const apiBase = computed(() => client.defaults.baseURL)
 const token = () => localStorage.getItem('token') || ''
@@ -291,14 +291,17 @@ onMounted(() => {
       map.on('movestart', () => {
         const currentZoom = Math.round(map.getView().getZoom())
 
-        activeTileRequests.forEach((controller, tileKey) => {
-          const [z] = tileKey.split('/').map(Number)
-          if (z !== currentZoom) {
-            controller.abort()
-            activeTileRequests.delete(tileKey)
-            console.debug('取消不同层级的瓦片请求:', tileKey)
-          }
-        })
+        // ✅ 防御性检查: 确保 activeTileRequests 是 Map
+        if (activeTileRequests && activeTileRequests.forEach) {
+          activeTileRequests.forEach((controller, tileKey) => {
+            const [z] = tileKey.split('/').map(Number)
+            if (z !== currentZoom) {
+              controller.abort()
+              activeTileRequests.delete(tileKey)
+              console.debug('取消不同层级的瓦片请求:', tileKey)
+            }
+          })
+        }
       })
     }
   }, 500) // 等待地图初始化完成
@@ -306,10 +309,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   // ✅ 组件卸载时清理所有请求
-  activeTileRequests.forEach((controller) => {
-    controller.abort()
-  })
-  activeTileRequests.clear()
+  if (activeTileRequests && activeTileRequests.forEach) {
+    activeTileRequests.forEach((controller) => {
+      controller.abort()
+    })
+    activeTileRequests.clear()
+  }
 
   if (map) {
     map.setTarget(null)
