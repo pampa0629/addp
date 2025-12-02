@@ -221,7 +221,7 @@ services:
     restart: unless-stopped
     # Docker Swarm high availability configuration
     deploy:
-      replicas: 2  # Run 2 worker instances for high availability
+      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
       restart_policy:
         condition: any  # Restart on any failure
         delay: 5s
@@ -364,7 +364,7 @@ services:
     restart: unless-stopped
     # Docker Swarm high availability configuration
     deploy:
-      replicas: 2  # Run 2 worker instances for high availability
+      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
       restart_policy:
         condition: any  # Restart on any failure
         delay: 5s
@@ -422,7 +422,7 @@ services:
     restart: unless-stopped
     # Docker Swarm high availability configuration
     deploy:
-      replicas: 2  # Run 2 worker instances for high availability
+      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
       restart_policy:
         condition: any  # Restart on any failure
         delay: 5s

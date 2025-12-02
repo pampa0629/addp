@@ -123,7 +123,7 @@ func main() {
 		defer pgVectorStore.Close()
 	}
 
-	taskService := service.NewScanTaskService(db, scanService, resourceService)
+	taskService := service.NewScanTaskService(db, scanService, resourceService, redisClient)
 	// 将 taskService 注入到 resourceService（用于处理 ScanConfig）
 	resourceService.SetTaskService(taskService)
 

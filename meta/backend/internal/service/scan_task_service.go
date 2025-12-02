@@ -15,6 +15,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
+	"github.com/redis/go-redis/v9"
 	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
@@ -30,8 +31,9 @@ type ScanTaskService struct {
 	db              *gorm.DB
 	scanService     *ScanServiceNew
 	resourceService *ResourceService
+	dedupService    *ScanDedupService // 扫描去重服务
 	log             *slog.Logger
-	taskQueue       TaskQueue // 任务队列（可选，用于异步执行）
+	taskQueue       TaskQueue // 任务队列（可选,用于异步执行）
 
 	// 本地队列（当 taskQueue 为 nil 时使用）
 	queue        chan uint
@@ -58,15 +60,21 @@ type ListRunsOptions struct {
 }
 
 // NewScanTaskService 创建任务服务
-func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceService *ResourceService) *ScanTaskService {
+func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceService *ResourceService, redisClient *redis.Client) *ScanTaskService {
 	if scanService == nil {
 		scanService = NewScanServiceNew(db, resourceService)
+	}
+
+	var dedupService *ScanDedupService
+	if redisClient != nil {
+		dedupService = NewScanDedupService(redisClient)
 	}
 
 	return &ScanTaskService{
 		db:              db,
 		scanService:     scanService,
 		resourceService: resourceService,
+		dedupService:    dedupService,
 		log:             logger.With("component", "scan_task_service"),
 		queue:           make(chan uint, 128),
 		workers:         2,
@@ -272,6 +280,18 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
 
+	// Redis 去重检查（手动触发）
+	if s.dedupService != nil {
+		taskKey := s.dedupService.GenerateTaskKey(tenantID, req.ResourceID, models.TriggerTypeManual)
+		if s.dedupService.CheckTaskExists(ctx, taskKey) {
+			return nil, fmt.Errorf("该资源正在扫描中，请稍后再试")
+		}
+		// 标记任务运行中（2小时超时）
+		if err := s.dedupService.MarkTaskRunning(ctx, taskKey, 2*time.Hour); err != nil {
+			s.log.Warn("标记任务运行失败", "error", err)
+		}
+	}
+
 	params := models.JSONMap{
 		"schema_names": req.SchemaNames,
 		"object_paths": req.ObjectPaths,
@@ -313,6 +333,21 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 	if err := s.db.First(&run, runID).Error; err != nil {
 		return err
 	}
+
+	// 任务完成后清理去重标记和更新扫描时间
+	defer func() {
+		if s.dedupService != nil {
+			taskKey := s.dedupService.GenerateTaskKey(run.TenantID, run.ResourceID, run.TriggerType)
+			if err := s.dedupService.ClearTask(context.Background(), taskKey); err != nil {
+				s.log.Warn("清除任务标记失败", "run_id", runID, "error", err)
+			}
+
+			// 更新最后扫描时间
+			if err := s.dedupService.UpdateLastScanTime(context.Background(), run.ResourceID); err != nil {
+				s.log.Warn("更新最后扫描时间失败", "run_id", runID, "error", err)
+			}
+		}
+	}()
 
 	if strings.TrimSpace(run.StorageType) == "" {
 		storageType := s.lookupStorageType(run.ResourceID, run.TenantID)
@@ -726,12 +761,39 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 }
 
 func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
+	ctx := context.Background()
 	var task models.ScanTask
 	if err := s.db.First(&task, taskID).Error; err != nil {
 		return err
 	}
 	if !task.Enabled {
 		return nil
+	}
+
+	// Redis 去重检查（定时触发）
+	if s.dedupService != nil {
+		taskKey := s.dedupService.GenerateTaskKey(task.TenantID, task.ResourceID, models.TriggerTypeScheduled)
+		if s.dedupService.CheckTaskExists(ctx, taskKey) {
+			s.log.Info("该资源正在扫描中，跳过本次定时触发", "task_id", taskID)
+			return nil
+		}
+
+		// 时间戳检查：定时扫描至少间隔 6 小时
+		lastScan, err := s.dedupService.GetLastScanTime(ctx, task.ResourceID)
+		if err == nil && lastScan != nil {
+			if time.Since(*lastScan) < 6*time.Hour {
+				s.log.Info("距离上次扫描不足 6 小时，跳过本次定时触发",
+					"task_id", taskID,
+					"last_scan", lastScan,
+					"since", time.Since(*lastScan))
+				return nil
+			}
+		}
+
+		// 标记任务运行中（2小时超时）
+		if err := s.dedupService.MarkTaskRunning(ctx, taskKey, 2*time.Hour); err != nil {
+			s.log.Warn("标记任务运行失败", "error", err)
+		}
 	}
 
 	storageType := s.lookupStorageType(task.ResourceID, task.TenantID)

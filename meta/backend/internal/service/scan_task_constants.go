@@ -9,5 +9,6 @@ const (
 
 	triggerTypeManual    = "manual"
 	triggerTypeScheduled = "scheduled"
-	triggerTypeSystem    = "system"
+	triggerTypeAuto      = "auto"      // 自动触发（Transfer 完成后等）
+	triggerTypeSystem    = "system"    // 系统触发（保留兼容）
 )

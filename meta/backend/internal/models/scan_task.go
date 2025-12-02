@@ -6,6 +6,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// TriggerType 常量
+const (
+	TriggerTypeManual    = "manual"    // 手动触发
+	TriggerTypeScheduled = "scheduled" // 定时触发
+	TriggerTypeAuto      = "auto"      // 自动触发（如 Transfer 完成后）
+)
+
 // ScanTask 定义可复用的元数据扫描任务（手动或定时）
 type ScanTask struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`

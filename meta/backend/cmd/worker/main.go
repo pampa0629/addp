@@ -54,7 +54,7 @@ func main() {
 	scanService := service.NewScanServiceNew(db, resourceService)
 
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
-	scanTaskService := service.NewScanTaskService(db, scanService, resourceService)
+	scanTaskService := service.NewScanTaskService(db, scanService, resourceService, redisClient)
 
 	// 创建任务队列（复用已有的 redisAddr）
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
