@@ -97,6 +97,21 @@
             </el-menu-item>
           </el-sub-menu>
 
+          <el-sub-menu index="orchestrator">
+            <template #title>
+              <el-icon><Operation /></el-icon>
+              <span>编排引擎</span>
+            </template>
+            <el-menu-item index="/orchestrator/orchestrations">
+              <el-icon><List /></el-icon>
+              <span>编排任务</span>
+            </el-menu-item>
+            <el-menu-item index="/orchestrator/executions">
+              <el-icon><Timer /></el-icon>
+              <span>执行记录</span>
+            </el-menu-item>
+          </el-sub-menu>
+
           <el-sub-menu index="system">
             <template #title>
               <el-icon><Setting /></el-icon>
@@ -164,6 +179,17 @@
               </el-card>
             </el-col>
           </el-row>
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('orchestrator')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
+                  <h2>编排引擎</h2>
+                  <p>工作流编排、任务调度、执行管理</p>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
         </div>
         <div v-else class="iframe-wrapper">
           <div class="iframe-container">
@@ -192,7 +218,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -212,7 +238,8 @@ const moduleUrls = {
   system: isDevelopment ? `${protocol}//${hostname}:5173` : `${protocol}//${hostname}:8090`,
   manager: isDevelopment ? `${protocol}//${hostname}:5174` : `${protocol}//${hostname}:8091`,
   meta: isDevelopment ? `${protocol}//${hostname}:5175` : `${protocol}//${hostname}:8092`,
-  transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}:8093`
+  transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}:8093`,
+  orchestrator: isDevelopment ? `${protocol}//${hostname}:5177` : `${protocol}//${hostname}:8094`
 }
 
 onMounted(async () => {
@@ -279,6 +306,13 @@ const handleMenuSelect = (index) => {
       '': 'tasks'
     }
 
+    // Orchestrator 模块的路由映射
+    const orchestratorPageMap = {
+      'orchestrations': 'orchestrations',
+      'executions': 'executions',
+      '': 'orchestrations'
+    }
+
     if (module === 'manager') {
       // Manager 模块的路由: /data-explorer 等 (不需要 /manager 前缀)
       const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
@@ -294,6 +328,14 @@ const handleMenuSelect = (index) => {
     } else if (module === 'transfer') {
       // Transfer 模块的路由: /tasks, /executions 等 (不需要 /transfer 前缀)
       const actualPage = transferPageMap[page] !== undefined ? transferPageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${actualPage}`
+      } else {
+        url = `${moduleUrls[module]}/`
+      }
+    } else if (module === 'orchestrator') {
+      // Orchestrator 模块的路由: /orchestrations, /executions 等 (不需要 /orchestrator 前缀)
+      const actualPage = orchestratorPageMap[page] !== undefined ? orchestratorPageMap[page] : page
       if (actualPage) {
         url = `${moduleUrls[module]}/${actualPage}`
       } else {
@@ -336,6 +378,8 @@ const navigateToModule = (module) => {
     handleMenuSelect('/meta/scan')
   } else if (module === 'transfer') {
     handleMenuSelect('/transfer/tasks')
+  } else if (module === 'orchestrator') {
+    handleMenuSelect('/orchestrator/orchestrations')
   }
 }
 

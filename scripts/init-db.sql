@@ -413,4 +413,9 @@ GROUP BY t.id, t.name;
 -- INSERT INTO transfer.tasks (name, type, config, created_by) VALUES
 -- ('Daily User Sync', 'sync', '{"batch_size": 1000}', 1);
 
+-- ==================== Orchestrator Schema ====================
+\echo 'Creating orchestrator schema...'
+\i scripts/init-orchestrator.sql
+\echo 'Orchestrator schema created successfully'
+
 COMMIT;

@@ -122,6 +122,16 @@ dev-transfer: ## 开发模式运行 Transfer 模块
 	  export GOCACHE=$(abspath .cache/go-build); \
 	  cd transfer/backend && go run cmd/server/main.go'
 
+dev-orchestrator: ## 开发模式运行 Orchestrator 模块
+	@echo "$(GREEN)启动 Orchestrator 模块开发环境...$(NC)"
+	@bash -c 'set -a; [ -f .env ] && source .env; set +a; \
+	  export REDIS_HOST=localhost; \
+	  export REDIS_PORT=6379; \
+	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
+	  export POSTGRES_HOST=localhost; \
+	  export GOCACHE=$(abspath .cache/go-build); \
+	  cd orchestrator/backend && go run cmd/server/main.go'
+
 dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
 	@cd gateway && go run cmd/gateway/main.go
@@ -264,6 +274,9 @@ logs-meta: ## 查看 Meta 模块日志
 logs-transfer: ## 查看 Transfer 模块日志
 	@docker compose logs -f transfer-backend transfer-worker
 
+logs-orchestrator: ## 查看 Orchestrator 模块日志
+	@docker compose logs -f orchestrator-backend orchestrator-frontend
+
 logs-gateway: ## 查看 Gateway 模块日志
 	@docker compose logs -f gateway
 
@@ -281,6 +294,8 @@ status: ## 显示所有服务状态
 	@echo "  - Meta Frontend:    http://localhost:8092  (未实现)"
 	@echo "  - Transfer Backend: http://localhost:8083  (未实现)"
 	@echo "  - Transfer Frontend:http://localhost:8093  (未实现)"
+	@echo "  - Orchestrator Backend: http://localhost:8084"
+	@echo "  - Orchestrator Frontend:http://localhost:8094"
 	@echo ""
 	@echo "$(YELLOW)基础设施服务:$(NC)"
 	@echo "  - PostgreSQL:       localhost:5432"

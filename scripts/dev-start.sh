@@ -43,6 +43,7 @@ SYSTEM_FE_PORT=${SYSTEM_FE_PORT:-5173}
 MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
 META_FE_PORT=${META_FE_PORT:-5175}
 TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
+ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 
 # 1. 启动基础设施
 # echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
@@ -199,6 +200,30 @@ echo -e "${GREEN}✓ Manager Worker 启动中 (PID: $MANAGER_WORKER_PID)${NC}"
 echo "  注意: Manager Worker 依赖 Redis 和 MinIO，请确保已启动"
 echo ""
 
+# 6.7 启动 Orchestrator Backend
+echo -e "${YELLOW}Step 6.7/8: 启动 Orchestrator Backend${NC}"
+cd orchestrator/backend
+go mod download >/dev/null 2>> ../../logs/orchestrator-backend-stderr.log || true
+go run cmd/server/main.go > ../../logs/orchestrator-backend.log 2> ../../logs/orchestrator-backend-stderr.log &
+ORCHESTRATOR_PID=$!
+cd ../..
+
+# 等待 Orchestrator 就绪
+echo "等待 Orchestrator Backend 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8084/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/orchestrator-backend-stderr.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Orchestrator Backend 就绪 (PID: $ORCHESTRATOR_PID)${NC}"
+echo ""
+
 # 7. 启动 Gateway
 echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
 cd gateway
@@ -318,12 +343,23 @@ cd ../..
 wait_for_http "Transfer Frontend" "http://localhost:${TRANSFER_FE_PORT}" "$MAX_WAIT" || exit 1
 echo -e "${GREEN}✓ Transfer Frontend 运行中 (PID: $TRANSFER_FE_PID, Port: ${TRANSFER_FE_PORT})${NC}"
 
+# Orchestrator Frontend
+echo "启动 Orchestrator Frontend..."
+ensure_node_modules "orchestrator/frontend"
+cd orchestrator/frontend
+npm run dev -- --host 0.0.0.0 --port "${ORCHESTRATOR_FE_PORT}" > ../../logs/orchestrator-frontend.log 2>&1 &
+ORCHESTRATOR_FE_PID=$!
+cd ../..
+wait_for_http "Orchestrator Frontend" "http://localhost:${ORCHESTRATOR_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Orchestrator Frontend 运行中 (PID: $ORCHESTRATOR_FE_PID, Port: ${ORCHESTRATOR_FE_PORT})${NC}"
+
 # 保存前端 PIDs
 echo $PORTAL_PID > .dev-pids/portal-frontend.pid
 echo $SYSTEM_FE_PID > .dev-pids/system-frontend.pid
 echo $MANAGER_FE_PID > .dev-pids/manager-frontend.pid
 echo $META_FE_PID > .dev-pids/meta-frontend.pid
 echo $TRANSFER_FE_PID > .dev-pids/transfer-frontend.pid
+echo $ORCHESTRATOR_FE_PID > .dev-pids/orchestrator-frontend.pid
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -337,10 +373,12 @@ echo "  System:   http://localhost:8080"
 echo "  Manager:  http://localhost:8081"
 echo "  Meta:     http://localhost:8082"
 echo "  Transfer: http://localhost:8083"
+echo "  Orchestrator: http://localhost:8084"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
 echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
+echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
 echo ""
 echo "进程 PID:"
 echo "  System:   $SYSTEM_PID"
@@ -348,6 +386,7 @@ echo "  Manager:  $MANAGER_PID"
 echo "  Meta:     $META_PID"
 echo "  Transfer: $TRANSFER_PID"
 echo "  Transfer Worker: $TRANSFER_WORKER_PID"
+echo "  Orchestrator: $ORCHESTRATOR_PID"
 echo "  Gateway:  $GATEWAY_PID"
 echo ""
 echo "日志文件:"
@@ -358,6 +397,7 @@ echo "  Transfer: logs/transfer-backend.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Manager Worker: logs/manager-worker.log"
+echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"

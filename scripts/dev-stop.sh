@@ -116,6 +116,21 @@ if [ -d ".dev-pids" ]; then
     fi
   fi
 
+  if [ -f ".dev-pids/orchestrator-backend.pid" ]; then
+    ORCHESTRATOR_PID=$(cat .dev-pids/orchestrator-backend.pid)
+    if ps -p $ORCHESTRATOR_PID > /dev/null 2>&1; then
+      kill $ORCHESTRATOR_PID
+      # 等待进程真正退出
+      for i in {1..10}; do
+        if ! ps -p $ORCHESTRATOR_PID > /dev/null 2>&1; then
+          break
+        fi
+        sleep 0.5
+      done
+      echo "✓ Orchestrator Backend 已停止 (PID: $ORCHESTRATOR_PID)"
+    fi
+  fi
+
   if [ -f ".dev-pids/gateway.pid" ]; then
     GATEWAY_PID=$(cat .dev-pids/gateway.pid)
     if ps -p $GATEWAY_PID > /dev/null 2>&1; then
@@ -176,6 +191,14 @@ if [ -d ".dev-pids" ]; then
       echo "✓ Transfer Frontend 已停止 (PID: $TRANSFER_FE_PID)"
     fi
   fi
+
+  if [ -f ".dev-pids/orchestrator-frontend.pid" ]; then
+    ORCHESTRATOR_FE_PID=$(cat .dev-pids/orchestrator-frontend.pid)
+    if ps -p $ORCHESTRATOR_FE_PID > /dev/null 2>&1; then
+      kill $ORCHESTRATOR_FE_PID 2>/dev/null || true
+      echo "✓ Orchestrator Frontend 已停止 (PID: $ORCHESTRATOR_FE_PID)"
+    fi
+  fi
 fi
 
 # 清理任何残留的 vite 进程
@@ -194,7 +217,7 @@ echo -e "${YELLOW}清理前端缓存...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend"; do
+for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend" "$ROOT_DIR/orchestrator/frontend"; do
   if [ -d "$frontend_dir" ]; then
     rm -rf "$frontend_dir/node_modules/.vite" "$frontend_dir/.vite" 2>/dev/null || true
   fi
@@ -218,6 +241,7 @@ MODULES=(
   "transfer/backend|go run cmd/worker/main.go"
   "meta/backend|go run cmd/worker/main.go"
   "manager/backend|go run cmd/worker/main.go"
+  "orchestrator/backend|go run cmd/server/main.go"
   "gateway|go run cmd/gateway/main.go"
 )
 
