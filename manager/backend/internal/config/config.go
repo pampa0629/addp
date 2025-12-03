@@ -35,15 +35,6 @@ type Config struct {
 	// 向量检索阈值配置
 	VectorSearchMaxDistance float64
 
-	// 向量数据库配置（PgVector）
-	VectorDB VectorDBConfig
-
-	// 在线向量化服务配置
-	EmbeddingService EmbeddingServiceConfig
-
-	// 向量检索阈值配置
-	VectorSearchMaxDistance float64
-
 	// Redis 配置（用于资源变更事件同步）
 	RedisHost     string
 	RedisPort     string
