@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "description": "ADDP 平台前端共享组件库",
   "type": "module",
-  "main": "src/index.js",
+  "main": "basic/src/index.js",
   "files": [
-    "src"
+    "basic/src",
+    "map/src"
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

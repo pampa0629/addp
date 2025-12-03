@@ -41,7 +41,19 @@
       "Bash(export TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQzMjIwNzAsImlhdCI6MTc2NDMyMDI3MH0.qoMCNotJ9dxpexXHUg1U9jaRSNDAbxxfZKeK-PFOwZ8\":*)",
       "Bash(echo \"=== 测试 1: 首次手动触发扫描 ===\" curl -s -X POST \"http://localhost:8082/api/scan/run/manual\" -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"\"\"\"resource_id\"\"\"\": 1}')",
       "Bash(echo -e \"\\n=== 测试 2: 立即再次触发 (应被去重拦截) ===\" sleep 1 curl -s -X POST \"http://localhost:8082/api/scan/run/manual\" -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"\"\"\"resource_id\"\"\"\": 1}')",
-      "Bash(/tmp/test-meta-dedup.sh)"
+      "Bash(/tmp/test-meta-dedup.sh)",
+      "Bash(npm install:*)",
+      "Bash(./scripts/dev-restart.sh:*)",
+      "Bash(npm run dev:*)",
+      "Bash(for i in {1..10})",
+      "Bash(do if curl -sf http://localhost:8084/health)",
+      "Bash(then echo \"Orchestrator backend is ready\")",
+      "Bash(break)",
+      "Bash(fi)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(python3:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6Inp1aHUxIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjQ3NDYyMjksImlhdCI6MTc2NDc0NDQyOX0.5RPgmn_tVSKEo3Ft_1LtO6zFsjLedgbB_oXoCSO2QF4\")"
     ],
     "deny": [],
     "ask": []

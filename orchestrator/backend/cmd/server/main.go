@@ -57,7 +57,7 @@ func main() {
 	log.Println("✅ 调度器启动成功")
 
 	// 设置路由
-	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler)
+	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

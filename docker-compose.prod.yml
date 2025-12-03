@@ -68,24 +68,24 @@ services:
       timeout: 5s
       retries: 5
 
-  elasticsearch:
-    image: localhost:5001/addp-infra-elasticsearch:8.11.0
-    container_name: addp-elasticsearch
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: addp-meilisearch
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - MEILI_ENV=production
+      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
     volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
+      - meilisearch_data:/meili_data
     ports:
-      - "9200:9200"
+      - "7700:7700"
     networks:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
   # ==================== System 模块 ====================
@@ -529,4 +529,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_system_data:
-  elasticsearch_data:
+  meilisearch_data:

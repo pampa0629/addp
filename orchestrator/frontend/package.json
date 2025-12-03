@@ -8,10 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@addp/common-frontend": "file:../../common-frontend",
     "@antv/g6": "^4.8.24",
+    "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.6.5",
     "element-plus": "^2.5.6",
-    "pinia": "^2.1.7",
+    "pinia": "^2.3.1",
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"
   },

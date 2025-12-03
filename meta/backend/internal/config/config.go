@@ -24,14 +24,11 @@ type Config struct {
 	DeepScanTimeout   string
 	DeepScanBatchSize int
 
-	// Elasticsearch 配置
-	ElasticsearchURL              string
-	ElasticsearchUsername         string
-	ElasticsearchPassword         string
-	ElasticsearchAPIKey           string
-	ElasticsearchAssetIndex       string
-	ElasticsearchDocumentIndex    string
-	ElasticsearchDisableTLSVerify bool
+	// Meilisearch 配置
+	MeilisearchURL           string
+	MeilisearchMasterKey     string
+	MeilisearchAssetIndex    string
+	MeilisearchDocumentIndex string
 
 	// 向量数据库配置（PgVector）
 	VectorDB VectorDBConfig
@@ -51,10 +48,10 @@ type Config struct {
 	RetryDelay      time.Duration
 }
 
-func resolveElasticsearchURL() string {
-	url := commonConfig.GetEnv("ELASTICSEARCH_URL", "")
+func resolveMeilisearchURL() string {
+	url := commonConfig.GetEnv("MEILISEARCH_URL", "")
 	if url == "" {
-		url = commonConfig.GetEnv("ELASTICSEARCH_URL_LOCAL", "")
+		url = commonConfig.GetEnv("MEILISEARCH_URL_LOCAL", "")
 	}
 	return url
 }
@@ -95,13 +92,11 @@ func LoadConfig() *Config {
 		cfg.InternalAPIKey = cfg.BaseConfig.InternalAPIKey
 	}
 
-	cfg.ElasticsearchURL = resolveElasticsearchURL()
-	cfg.ElasticsearchUsername = commonConfig.GetEnv("ELASTICSEARCH_USERNAME", "")
-	cfg.ElasticsearchPassword = commonConfig.GetEnv("ELASTICSEARCH_PASSWORD", "")
-	cfg.ElasticsearchAPIKey = commonConfig.GetEnv("ELASTICSEARCH_API_KEY", "")
-	cfg.ElasticsearchAssetIndex = commonConfig.GetEnv("ELASTICSEARCH_INDEX", "metadata-assets")
-	cfg.ElasticsearchDocumentIndex = commonConfig.GetEnv("META_DOCUMENT_INDEX", commonConfig.GetEnv("ASSET_DOCUMENT_INDEX", "asset-documents"))
-	cfg.ElasticsearchDisableTLSVerify = commonConfig.GetEnvBool("ELASTICSEARCH_SKIP_VERIFY", false)
+	cfg.MeilisearchURL = resolveMeilisearchURL()
+	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "metadata-assets")
+	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX",
+		commonConfig.GetEnv("META_DOCUMENT_INDEX", "asset-documents"))
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

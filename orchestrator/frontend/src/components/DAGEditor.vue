@@ -1,16 +1,41 @@
 <template>
   <div class="dag-editor">
     <div class="toolbar">
-      <el-button-group>
-        <el-button @click="addNode('transfer')" type="primary">Transfer</el-button>
-        <el-button @click="addNode('meta')" type="success">Meta</el-button>
-        <el-button @click="addNode('manager')" type="warning">Manager</el-button>
-      </el-button-group>
-      <el-button type="danger" @click="deleteSelected" :disabled="!selectedNode">删除节点</el-button>
-      <el-button type="info" @click="clearGraph">清空</el-button>
+      <div class="toolbar-left">
+        <el-button-group>
+          <el-button @click="addNode('transfer')" type="primary" size="small">
+            <el-icon><Plus /></el-icon> Transfer
+          </el-button>
+          <el-button @click="addNode('meta')" type="success" size="small">
+            <el-icon><Plus /></el-icon> Meta
+          </el-button>
+          <el-button @click="addNode('manager')" type="warning" size="small">
+            <el-icon><Plus /></el-icon> Manager
+          </el-button>
+        </el-button-group>
+
+        <el-divider direction="vertical" />
+
+        <el-button type="danger" size="small" @click="deleteSelected" :disabled="!selectedNode">
+          <el-icon><Delete /></el-icon> 删除
+        </el-button>
+        <el-button type="info" size="small" @click="clearGraph">
+          <el-icon><DocumentDelete /></el-icon> 清空
+        </el-button>
+      </div>
+
+      <div class="toolbar-tips">
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>
+            <span class="tips-text">
+              💡 从左侧拖拽任务 | 从节点拖出连线建立依赖 | 点击节点配置
+            </span>
+          </template>
+        </el-alert>
+      </div>
     </div>
 
-    <div id="dag-container" ref="container"></div>
+    <div id="dag-container" ref="container" @dragover.prevent @drop="handleDrop"></div>
 
     <!-- 节点配置抽屉 -->
     <el-drawer v-model="drawerVisible" title="配置步骤" size="40%">
@@ -62,9 +87,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import G6 from '@antv/g6'
 import { ElMessage } from 'element-plus'
+import { Plus, Delete, DocumentDelete } from '@element-plus/icons-vue'
 
 const props = defineProps({
   initialSteps: {
@@ -90,19 +116,50 @@ onMounted(() => {
 })
 
 function initGraph() {
+  if (!container.value) {
+    console.error('容器未找到')
+    return
+  }
+
   const width = container.value.offsetWidth || 1200
-  const height = 600
+  const height = container.value.offsetHeight || 600
+
+  console.log('初始化 G6 画布:', { width, height })
 
   graph.value = new G6.Graph({
     container: container.value,
     width,
     height,
     modes: {
-      default: ['drag-canvas', 'drag-node', 'click-select']
+      default: [
+        'drag-canvas',
+        'drag-node',
+        'click-select',
+        {
+          type: 'create-edge',  // 启用创建边模式
+          trigger: 'drag',      // 拖拽触发
+          key: undefined,       // 不需要按键
+          shouldBegin(e) {
+            // 只允许从节点开始拖拽
+            return e.item && e.item.getType() === 'node'
+          },
+          shouldEnd(e) {
+            // 只允许拖到节点上结束
+            return e.item && e.item.getType() === 'node'
+          }
+        }
+      ]
     },
     defaultNode: {
       type: 'rect',
       size: [150, 60],
+      // 添加锚点配置
+      anchorPoints: [
+        [0.5, 0],    // 上
+        [1, 0.5],    // 右
+        [0.5, 1],    // 下
+        [0, 0.5]     // 左
+      ],
       style: {
         fill: '#5B8FF9',
         stroke: '#1890FF',
@@ -117,7 +174,7 @@ function initGraph() {
       }
     },
     defaultEdge: {
-      type: 'polyline',
+      type: 'polyline',  // 折线,自动避障
       style: {
         stroke: '#A3B1BF',
         lineWidth: 2,
@@ -148,38 +205,100 @@ function initGraph() {
     }
   })
 
-  // Shift + 拖拽建立依赖关系
-  let sourceNode = null
-  graph.value.on('node:mousedown', (evt) => {
-    if (evt.originalEvent.shiftKey) {
-      sourceNode = evt.item
+  // 边创建后的处理
+  graph.value.on('aftercreateedge', (e) => {
+    const edge = e.edge
+    const source = edge.getSource()
+    const target = edge.getTarget()
+
+    // 检查是否会形成环
+    if (hasLoop(source.getID(), target.getID())) {
+      graph.value.removeItem(edge)
+      ElMessage.warning('不能创建环形依赖')
+      return
     }
-  })
 
-  graph.value.on('node:mouseup', (evt) => {
-    if (sourceNode && evt.originalEvent.shiftKey && sourceNode !== evt.item) {
-      const source = sourceNode.getID()
-      const target = evt.item.getID()
-
-      // 检查是否已存在边
-      const edges = graph.value.getEdges()
-      const exists = edges.some(edge =>
-        edge.getSource().getID() === source && edge.getTarget().getID() === target
-      )
-
-      if (!exists) {
-        graph.value.addItem('edge', {
-          source,
-          target
-        })
-        ElMessage.success('已建立依赖关系')
-      }
-      sourceNode = null
-    }
+    ElMessage.success('已建立依赖关系')
+    emitSteps()
   })
 }
 
+// 检测环的辅助函数
+function hasLoop(sourceId, targetId) {
+  const edges = graph.value.getEdges()
+  const visited = new Set()
+  const stack = [targetId]
+
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (current === sourceId) return true
+    if (visited.has(current)) continue
+
+    visited.add(current)
+
+    edges.forEach(edge => {
+      if (edge.getSource().getID() === current) {
+        stack.push(edge.getTarget().getID())
+      }
+    })
+  }
+
+  return false
+}
+
+// 处理从任务面板拖放
+function handleDrop(event) {
+  event.preventDefault()
+
+  try {
+    const data = event.dataTransfer.getData('application/json')
+    if (!data) return
+
+    const nodeData = JSON.parse(data)
+
+    // 获取画布坐标
+    const point = graph.value.getPointByClient(event.clientX, event.clientY)
+
+    // 创建节点
+    const colors = {
+      transfer: '#5B8FF9',
+      meta: '#5AD8A6',
+      manager: '#F6BD16'
+    }
+
+    const id = `${nodeData.module}-${Date.now()}`
+
+    graph.value.addItem('node', {
+      id,
+      label: nodeData.name,
+      module: nodeData.module,
+      taskId: nodeData.taskId,
+      name: nodeData.name,
+      action: 'execute',
+      endpoint: nodeData.endpoint || '',
+      method: nodeData.method || 'POST',
+      parameters: nodeData.parameters || {},
+      timeout: 300,
+      x: point.x,
+      y: point.y,
+      style: {
+        fill: colors[nodeData.module]
+      }
+    })
+
+    ElMessage.success(`已添加任务: ${nodeData.name}`)
+    emitSteps()
+  } catch (error) {
+    console.error('拖放失败:', error)
+  }
+}
+
 function addNode(module) {
+  if (!graph.value) {
+    ElMessage.error('画布未初始化')
+    return
+  }
+
   const id = `${module}-${Date.now()}`
   const colors = {
     transfer: '#5B8FF9',
@@ -187,23 +306,48 @@ function addNode(module) {
     manager: '#F6BD16'
   }
 
-  graph.value.addItem('node', {
+  // 获取画布中心位置
+  const width = container.value.offsetWidth || 1200
+  const height = container.value.offsetHeight || 600
+  const centerX = width / 2 + Math.random() * 100 - 50
+  const centerY = height / 2 + Math.random() * 100 - 50
+
+  const nodeModel = {
     id,
     label: module.toUpperCase(),
     module,
+    name: '',
     action: '',
     endpoint: '',
     method: 'POST',
     parameters: {},
     timeout: 300,
     style: {
-      fill: colors[module]
+      fill: colors[module],
+      stroke: '#1890FF',
+      lineWidth: 2
     },
-    x: Math.random() * 800 + 200,
-    y: Math.random() * 400 + 100
-  })
+    x: centerX,
+    y: centerY
+  }
 
-  ElMessage.success(`已添加 ${module} 节点`)
+  // 添加节点到图中
+  const node = graph.value.addItem('node', nodeModel)
+
+  // 确保节点可见
+  graph.value.paint()
+  graph.value.setItemState(node, 'selected', true)
+
+  ElMessage.success(`已添加 ${module} 节点,点击节点可配置`)
+
+  // 延迟打开配置抽屉,确保节点已经渲染
+  setTimeout(() => {
+    currentNode.value = { ...nodeModel }
+    parametersStr.value = '{}'
+    drawerVisible.value = true
+  }, 100)
+
+  emitSteps()
 }
 
 function handleNodeClick(evt) {
@@ -281,10 +425,12 @@ function convertToSteps(graphData) {
 }
 
 function loadSteps(steps) {
+  if (!graph.value) return
+
   const nodes = []
   const edges = []
 
-  steps.forEach((step, index) => {
+  steps.forEach((step) => {
     const colors = {
       transfer: '#5B8FF9',
       meta: '#5AD8A6',
@@ -322,7 +468,8 @@ defineExpose({
   getSteps: () => {
     const data = graph.value.save()
     return convertToSteps(data)
-  }
+  },
+  loadSteps  // 暴露 loadSteps 方法供父组件调用
 })
 </script>
 
@@ -335,17 +482,44 @@ defineExpose({
 }
 
 .toolbar {
-  padding: 16px;
+  padding: 12px 16px;
   background: white;
   border-bottom: 1px solid #dcdfe6;
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.toolbar-left {
+  display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.toolbar-tips {
+  flex: 1;
+  max-width: 600px;
+}
+
+.tips-text {
+  font-size: 12px;
+  color: #606266;
 }
 
 #dag-container {
   flex: 1;
   background: #fafbfc;
   position: relative;
+  overflow: hidden;
+}
+
+:deep(.el-alert--info) {
+  padding: 8px 12px;
+}
+
+:deep(.el-alert__title) {
+  font-size: 12px;
 }
 </style>

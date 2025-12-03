@@ -12,6 +12,7 @@ func SetupRouter(
 	execRepo *repository.ExecutionRepository,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
+	moduleClient *service.ModuleClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -29,7 +30,7 @@ func SetupRouter(
 		c.Next()
 	})
 
-	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler)
+	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient)
 
 	api := router.Group("/api")
 	{
@@ -44,6 +45,9 @@ func SetupRouter(
 		api.POST("/orchestrations/:id/execute", handler.Execute)
 		api.GET("/orchestrations/:id/executions", handler.ListExecutions)
 		api.GET("/orch-executions/:id", handler.GetExecution)
+
+		// 模块任务列表 (用于拖拽复用)
+		api.GET("/tasks/list", handler.ListModuleTasks)
 	}
 
 	// 健康检查

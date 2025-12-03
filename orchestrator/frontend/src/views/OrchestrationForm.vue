@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <el-form :model="form" label-width="120px" class="form-content">
+    <el-form :model="form" label-width="120px" class="form-metadata">
       <el-form-item label="编排名称" required>
         <el-input v-model="form.name" placeholder="请输入编排名称"></el-input>
       </el-form-item>
@@ -17,7 +17,7 @@
         <el-input
           v-model="form.description"
           type="textarea"
-          :rows="3"
+          :rows="2"
           placeholder="请输入描述信息"
         ></el-input>
       </el-form-item>
@@ -26,57 +26,58 @@
         <el-switch v-model="form.enabled"></el-switch>
       </el-form-item>
 
-      <el-form-item label="Cron 表达式">
+      <el-form-item label="定时调度">
         <el-input
           v-model="form.cron_expr"
-          placeholder="例如: 0 0 * * * (每天零点执行)"
+          placeholder="点击按钮配置定时调度"
+          readonly
         >
           <template #append>
-            <el-button @click="showCronHelp">帮助</el-button>
+            <el-button @click="scheduleDialogVisible = true">配置</el-button>
           </template>
         </el-input>
       </el-form-item>
+    </el-form>
 
-      <el-form-item label="编排步骤" required>
+    <!-- 三栏布局 -->
+    <div class="three-column-layout">
+      <!-- 左侧任务库 -->
+      <TaskPanel class="left-panel" />
+
+      <!-- 中央 DAG 画布 -->
+      <div class="center-panel">
         <DAGEditor
           ref="dagEditor"
           :initial-steps="form.steps"
           @update:steps="handleStepsUpdate"
-          style="height: 600px; width: 100%"
         />
-      </el-form-item>
-    </el-form>
-
-    <!-- Cron 帮助对话框 -->
-    <el-dialog v-model="cronHelpVisible" title="Cron 表达式格式" width="600px">
-      <div class="cron-help">
-        <p><strong>格式:</strong> 分 时 日 月 周</p>
-        <p><strong>示例:</strong></p>
-        <ul>
-          <li><code>0 0 * * *</code> - 每天零点执行</li>
-          <li><code>0 */2 * * *</code> - 每2小时执行一次</li>
-          <li><code>30 9 * * 1-5</code> - 工作日上午9:30执行</li>
-          <li><code>0 12 1 * *</code> - 每月1号中午12点执行</li>
-        </ul>
       </div>
-    </el-dialog>
+    </div>
+
+    <!-- 定时调度对话框 -->
+    <ScheduleBuilderDialog
+      v-model="scheduleDialogVisible"
+      @select="handleScheduleSelect"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DAGEditor from '../components/DAGEditor.vue'
+import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
+import { ScheduleBuilderDialog } from '@addp/common-frontend'
 
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
+const scheduleDialogVisible = ref(false)
 
 const isEdit = ref(false)
 const saving = ref(false)
-const cronHelpVisible = ref(false)
 
 const form = reactive({
   name: '',
@@ -94,6 +95,16 @@ onMounted(async () => {
   }
 })
 
+// 监听 form.steps 变化,同步到 DAGEditor (修复问题4)
+watch(() => form.steps, (newSteps) => {
+  if (newSteps && newSteps.length > 0 && dagEditor.value) {
+    // 等待下一个 tick 确保 DAGEditor 已经初始化
+    setTimeout(() => {
+      dagEditor.value.loadSteps(newSteps)
+    }, 100)
+  }
+}, { deep: true })
+
 async function loadOrchestration(id) {
   try {
     const data = await orchestrationAPI.get(id)
@@ -105,6 +116,10 @@ async function loadOrchestration(id) {
 
 function handleStepsUpdate(steps) {
   form.steps = steps
+}
+
+function handleScheduleSelect(expression) {
+  form.cron_expr = expression
 }
 
 async function handleSave() {
@@ -138,18 +153,15 @@ async function handleSave() {
 function handleCancel() {
   router.back()
 }
-
-function showCronHelp() {
-  cronHelpVisible.value = true
-}
 </script>
 
 <style scoped>
 .orchestration-form {
-  padding: 20px;
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: 20px;
+  overflow: hidden;
 }
 
 .header {
@@ -157,29 +169,35 @@ function showCronHelp() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-shrink: 0;
 }
 
-h2 {
+.header h2 {
   margin: 0;
 }
 
-.form-content {
+.form-metadata {
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.three-column-layout {
   flex: 1;
-  overflow-y: auto;
+  display: flex;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.cron-help {
-  line-height: 1.8;
+.left-panel {
+  width: 280px;
+  flex-shrink: 0;
 }
 
-.cron-help code {
-  background: #f5f7fa;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-family: monospace;
-}
-
-.cron-help ul {
-  padding-left: 20px;
+.center-panel {
+  flex: 1;
+  min-width: 0;
+  background: #fafbfc;
+  overflow: hidden;
 }
 </style>

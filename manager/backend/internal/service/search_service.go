@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,16 +16,13 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/vectorstore"
 	"github.com/addp/manager/internal/config"
-	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/meilisearch/meilisearch-go"
 	"log/slog"
 )
 
 var (
-	// ErrFullTextSearchDisabled 在未配置 ES 时返回
+	// ErrFullTextSearchDisabled 在未配置搜索引擎时返回
 	ErrFullTextSearchDisabled = errors.New("full text search is not configured")
-
-	highlightPreTags  = []string{"<mark>"}
-	highlightPostTags = []string{"</mark>"}
 )
 
 const (
@@ -35,7 +31,7 @@ const (
 
 // FullTextSearchService 提供全文检索能力
 type FullTextSearchService struct {
-	client            *elasticsearch.Client
+	client            *meilisearch.Client
 	documentIndex     string
 	assetIndex        string
 	enabled           bool
@@ -109,9 +105,9 @@ type FullTextSearchResult struct {
 // NewFullTextSearchService 构建全文检索服务
 func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error) {
 	svc := &FullTextSearchService{
-		documentIndex: strings.TrimSpace(cfg.ElasticsearchDocumentIndex),
-		assetIndex:    strings.TrimSpace(cfg.ElasticsearchAssetIndex),
-		enabled:       strings.TrimSpace(cfg.ElasticsearchURL) != "",
+		documentIndex: strings.TrimSpace(cfg.MeilisearchDocumentIndex),
+		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:           logger.With("component", "manager_fulltext_search"),
 		models: map[embedding.Modality]string{
 			embedding.ModalityText:     cfg.EmbeddingService.TextModel,
@@ -132,36 +128,26 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 	}
 
 	if !svc.enabled {
-		svc.log.Info("Elasticsearch 未配置，全文检索功能已禁用")
+		svc.log.Info("Meilisearch 未配置，全文检索功能已禁用")
 		return svc, nil
 	}
 
-	esCfg := elasticsearch.Config{
-		Addresses: []string{cfg.ElasticsearchURL},
-	}
-	if cfg.ElasticsearchUsername != "" || cfg.ElasticsearchPassword != "" {
-		esCfg.Username = cfg.ElasticsearchUsername
-		esCfg.Password = cfg.ElasticsearchPassword
-	}
-	if cfg.ElasticsearchAPIKey != "" {
-		esCfg.APIKey = cfg.ElasticsearchAPIKey
-	}
-	if cfg.ElasticsearchDisableTLSVerify {
-		esCfg.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 - 由配置项控制
-		}
-	}
-
-	client, err := elasticsearch.NewClient(esCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create elasticsearch client: %w", err)
-	}
+	// 创建 Meilisearch 客户端
+	client := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host:   cfg.MeilisearchURL,
+		APIKey: cfg.MeilisearchMasterKey,
+	})
 	svc.client = client
+
+	// 初始化索引配置
+	if err := svc.initIndexes(); err != nil {
+		return nil, fmt.Errorf("failed to initialize indexes: %w", err)
+	}
 
 	svc.log.Info("全文检索服务已启用",
 		"document_index", svc.documentIndex,
 		"asset_index", svc.assetIndex,
-		"url", cfg.ElasticsearchURL,
+		"url", cfg.MeilisearchURL,
 	)
 
 	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {
@@ -225,6 +211,50 @@ func (s *FullTextSearchService) initVectorComponents(cfg *config.Config) error {
 	return nil
 }
 
+// initIndexes 初始化 Meilisearch 索引配置
+func (s *FullTextSearchService) initIndexes() error {
+	// 配置文档索引
+	docIndex := s.client.Index(s.documentIndex)
+
+	// 设置可搜索字段 (按权重排序)
+	_, err := docIndex.UpdateSearchableAttributes(&[]string{
+		"title",           // 最高权重
+		"file_name",       // 次高权重
+		"content_preview", // 次高权重
+		"content",         // 正文内容
+		"metadata.description",
+		"metadata.tags",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update searchable attributes: %w", err)
+	}
+
+	// 设置可过滤字段
+	_, err = docIndex.UpdateFilterableAttributes(&[]string{
+		"tenant_id",
+		"resource_id",
+		"resource_type",
+		"document_type",
+		"bucket",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update filterable attributes: %w", err)
+	}
+
+	// 设置可排序字段
+	_, err = docIndex.UpdateSortableAttributes(&[]string{
+		"created_date",
+		"last_modified",
+		"file_size",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update sortable attributes: %w", err)
+	}
+
+	s.log.Info("索引配置已更新", "index", s.documentIndex)
+	return nil
+}
+
 // Enabled 返回全文检索是否可用
 func (s *FullTextSearchService) Enabled() bool {
 	return s != nil && s.enabled && s.client != nil && s.documentIndex != ""
@@ -257,120 +287,60 @@ func (s *FullTextSearchService) SearchDocuments(
 		pageSize = 50
 	}
 
-	from := (page - 1) * pageSize
+	offset := (page - 1) * pageSize
 
-	boolFilters := make([]interface{}, 0, 2)
+	// 构建过滤条件
+	var filter string
 	if tenantID != nil {
-		boolFilters = append(boolFilters, map[string]interface{}{
-			"term": map[string]interface{}{
-				"tenant_id": *tenantID,
-			},
-		})
+		filter = fmt.Sprintf("tenant_id = %d", *tenantID)
 	}
 
-	body := map[string]interface{}{
-		"from": from,
-		"size": pageSize,
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []interface{}{
-					map[string]interface{}{
-						"multi_match": map[string]interface{}{
-							"query":  query,
-							"fields": []string{"title^3", "file_name^2", "content", "content_preview^2", "metadata.description", "metadata.tags"},
-						},
-					},
-				},
-				"filter": boolFilters,
-			},
-		},
-		"highlight": map[string]interface{}{
-			"pre_tags":  highlightPreTags,
-			"post_tags": highlightPostTags,
-			"fields": map[string]interface{}{
-				"content":          map[string]interface{}{"fragment_size": 120, "number_of_fragments": 3},
-				"content_preview":  map[string]interface{}{"fragment_size": 120, "number_of_fragments": 3},
-				"title":            map[string]interface{}{"fragment_size": 80, "number_of_fragments": 1},
-				"file_name":        map[string]interface{}{"fragment_size": 80, "number_of_fragments": 1},
-				"metadata.tags":    map[string]interface{}{"fragment_size": 40, "number_of_fragments": 1},
-				"metadata.summary": map[string]interface{}{"fragment_size": 100, "number_of_fragments": 1},
-			},
-		},
-		"_source": []string{
-			"document_id",
-			"asset_id",
-			"tenant_id",
-			"resource_id",
-			"resource_name",
-			"resource_type",
-			"bucket",
-			"relative_path",
-			"file_name",
-			"document_type",
-			"title",
-			"author",
-			"keywords",
-			"content_preview",
-			"content_type",
-			"file_size",
-			"word_count",
-			"page_count",
-			"last_modified",
-			"created_date",
-			"modified_date",
-			"metadata",
-		},
+	// 构建搜索请求
+	searchReq := &meilisearch.SearchRequest{
+		Query:                 query,
+		Filter:                filter,
+		AttributesToHighlight: []string{"title", "file_name", "content", "content_preview", "metadata.tags", "metadata.summary"},
+		HighlightPreTag:       "<mark>",
+		HighlightPostTag:      "</mark>",
+		Offset:                int64(offset),
+		Limit:                 int64(pageSize),
+		ShowMatchesPosition:   false,
 	}
 
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode search body: %w", err)
-	}
-
-	res, err := s.client.Search(
-		s.client.Search.WithContext(ctx),
-		s.client.Search.WithIndex(s.documentIndex),
-		s.client.Search.WithBody(bytes.NewReader(bodyBytes)),
-		s.client.Search.WithTrackTotalHits(true),
-	)
+	// 执行搜索
+	index := s.client.Index(s.documentIndex)
+	resp, err := index.Search(query, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute search: %w", err)
 	}
-	defer res.Body.Close()
 
-	if res.IsError() {
-		return nil, fmt.Errorf("search request failed: %s", res.String())
-	}
-
-	var response esSearchResponse
-	if err := json.NewDecoder(res.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode search response: %w", err)
-	}
-
+	// 解析结果
 	result := &FullTextSearchResult{
-		Total:    response.Hits.Total.Value,
+		Total:    int(resp.EstimatedTotalHits),
 		Page:     page,
 		PageSize: pageSize,
-		Hits:     make([]FullTextDocument, 0, len(response.Hits.Hits)),
+		Hits:     make([]FullTextDocument, 0, len(resp.Hits)),
 	}
 
-	for _, hit := range response.Hits.Hits {
-		doc := mapDocumentHit(hit)
+	for _, hit := range resp.Hits {
+		doc := mapMeilisearchHit(hit)
 
+		// 租户过滤
 		if tenantID != nil && doc.ResourceID == 0 {
-			// 若 ES 索引中缺失 resource_id，则尝试跳过避免无效结果
 			continue
 		}
 
 		result.Hits = append(result.Hits, doc)
 	}
 
+	// 向量检索 (保持不变)
 	if s.vectorStore != nil && s.textEmbedder != nil {
 		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
 		} else {
 			result.VectorHits = vectorHits
+			// 合并去重逻辑
 			existing := make(map[string]struct{}, len(result.Hits))
 			for _, doc := range result.Hits {
 				if doc.DocumentID == "" {
@@ -754,138 +724,114 @@ func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
 	return doc
 }
 
+// mapMeilisearchHit 将 Meilisearch 搜索结果映射为 FullTextDocument
+func mapMeilisearchHit(hit interface{}) FullTextDocument {
+	hitMap, ok := hit.(map[string]interface{})
+	if !ok {
+		return FullTextDocument{}
+	}
+
+	doc := FullTextDocument{}
+
+	// 基础字段
+	if val, ok := hitMap["document_id"].(string); ok {
+		doc.DocumentID = val
+	}
+	if val, ok := hitMap["asset_id"].(string); ok {
+		doc.AssetID = val
+	}
+	if val, ok := hitMap["resource_id"].(float64); ok {
+		doc.ResourceID = uint(val)
+	}
+	if val, ok := hitMap["resource_name"].(string); ok {
+		doc.ResourceName = val
+	}
+	if val, ok := hitMap["resource_type"].(string); ok {
+		doc.ResourceType = val
+	}
+	if val, ok := hitMap["bucket"].(string); ok {
+		doc.Bucket = val
+		doc.Schema = val // bucket 等价于 schema
+	}
+	if val, ok := hitMap["relative_path"].(string); ok {
+		doc.RelativePath = val
+		if doc.Bucket != "" {
+			doc.ObjectKey = fmt.Sprintf("%s/%s", doc.Bucket, strings.TrimLeft(val, "/"))
+		}
+	}
+	if val, ok := hitMap["file_name"].(string); ok {
+		doc.FileName = val
+	}
+	if val, ok := hitMap["document_type"].(string); ok {
+		doc.DocumentType = val
+	}
+	if val, ok := hitMap["title"].(string); ok {
+		doc.Title = val
+	}
+	if val, ok := hitMap["author"].(string); ok {
+		doc.Author = val
+	}
+	if val, ok := hitMap["content_preview"].(string); ok {
+		doc.ContentPreview = val
+	}
+	if val, ok := hitMap["content_type"].(string); ok {
+		doc.ContentType = val
+	}
+	if val, ok := hitMap["file_size"].(float64); ok {
+		doc.FileSize = int64(val)
+	}
+	if val, ok := hitMap["word_count"].(float64); ok {
+		doc.WordCount = int(val)
+	}
+	if val, ok := hitMap["page_count"].(float64); ok {
+		doc.PageCount = int(val)
+	}
+	if val, ok := hitMap["last_modified"].(string); ok {
+		doc.LastModified = normalizeTimeString(val)
+	}
+	if val, ok := hitMap["created_date"].(string); ok {
+		doc.CreatedDate = normalizeTimeString(val)
+	}
+	if val, ok := hitMap["modified_date"].(string); ok {
+		doc.ModifiedDate = normalizeTimeString(val)
+	}
+
+	// keywords 数组
+	if val, ok := hitMap["keywords"].([]interface{}); ok {
+		keywords := make([]string, 0, len(val))
+		for _, kw := range val {
+			if s, ok := kw.(string); ok {
+				keywords = append(keywords, s)
+			}
+		}
+		doc.Keywords = keywords
+	}
+
+	// metadata 对象
+	if val, ok := hitMap["metadata"].(map[string]interface{}); ok {
+		doc.Metadata = val
+	}
+
+	// 高亮结果 (_formatted 字段)
+	if formatted, ok := hitMap["_formatted"].(map[string]interface{}); ok {
+		highlights := make(map[string][]string)
+		for key, val := range formatted {
+			if strVal, ok := val.(string); ok && strings.Contains(strVal, "<mark>") {
+				highlights[key] = []string{strVal}
+			}
+		}
+		doc.Highlights = highlights
+	}
+
+	// 相关度分数
+	if score, ok := hitMap["_rankingScore"].(float64); ok {
+		doc.Score = score
+	}
+
+	return doc
+}
+
 // --- 内部辅助结构 ---
-
-type esSearchResponse struct {
-	Hits struct {
-		Total struct {
-			Value int `json:"value"`
-		} `json:"total"`
-		Hits []struct {
-			Index     string              `json:"_index"`
-			ID        string              `json:"_id"`
-			Score     float64             `json:"_score"`
-			Source    documentSource      `json:"_source"`
-			Highlight map[string][]string `json:"highlight"`
-		} `json:"hits"`
-	} `json:"hits"`
-}
-
-type documentSource struct {
-	DocumentID     string                 `json:"document_id"`
-	AssetID        string                 `json:"asset_id"`
-	TenantID       interface{}            `json:"tenant_id"`
-	ResourceID     interface{}            `json:"resource_id"`
-	ResourceName   string                 `json:"resource_name"`
-	ResourceType   string                 `json:"resource_type"`
-	Bucket         string                 `json:"bucket"`
-	RelativePath   string                 `json:"relative_path"`
-	FileName       string                 `json:"file_name"`
-	DocumentType   string                 `json:"document_type"`
-	Title          string                 `json:"title"`
-	Author         string                 `json:"author"`
-	Keywords       []string               `json:"keywords"`
-	ContentPreview string                 `json:"content_preview"`
-	ContentType    string                 `json:"content_type"`
-	FileSize       interface{}            `json:"file_size"`
-	WordCount      interface{}            `json:"word_count"`
-	PageCount      interface{}            `json:"page_count"`
-	LastModified   string                 `json:"last_modified"`
-	CreatedDate    string                 `json:"created_date"`
-	ModifiedDate   string                 `json:"modified_date"`
-	Metadata       map[string]interface{} `json:"metadata"`
-}
-
-func mapDocumentHit(hit struct {
-	Index     string              `json:"_index"`
-	ID        string              `json:"_id"`
-	Score     float64             `json:"_score"`
-	Source    documentSource      `json:"_source"`
-	Highlight map[string][]string `json:"highlight"`
-}) FullTextDocument {
-	source := hit.Source
-
-	resourceID := toUint(source.ResourceID)
-	bucket := strings.TrimSpace(source.Bucket)
-	relativePath := strings.TrimSpace(source.RelativePath)
-	objectKey := ""
-	if bucket != "" && relativePath != "" {
-		objectKey = strings.TrimLeft(relativePath, "/")
-		objectKey = fmt.Sprintf("%s/%s", bucket, objectKey)
-	}
-
-	result := FullTextDocument{
-		DocumentID:     source.DocumentID,
-		AssetID:        source.AssetID,
-		Score:          hit.Score,
-		ResourceID:     resourceID,
-		ResourceName:   source.ResourceName,
-		ResourceType:   source.ResourceType,
-		Bucket:         bucket,
-		Schema:         bucket, // 对象存储中 bucket 等价于 schema
-		RelativePath:   relativePath,
-		ObjectKey:      objectKey,
-		FileName:       source.FileName,
-		DocumentType:   source.DocumentType,
-		Title:          source.Title,
-		Author:         source.Author,
-		Keywords:       source.Keywords,
-		ContentPreview: source.ContentPreview,
-		ContentType:    source.ContentType,
-		FileSize:       toInt64(source.FileSize),
-		WordCount:      int(toInt64(source.WordCount)),
-		PageCount:      int(toInt64(source.PageCount)),
-		LastModified:   normalizeTimeString(source.LastModified),
-		CreatedDate:    normalizeTimeString(source.CreatedDate),
-		ModifiedDate:   normalizeTimeString(source.ModifiedDate),
-		Metadata:       source.Metadata,
-		Highlights:     hit.Highlight,
-	}
-
-	return result
-}
-
-func toUint(value interface{}) uint {
-	switch v := value.(type) {
-	case nil:
-		return 0
-	case float64:
-		if v < 0 {
-			return 0
-		}
-		return uint(v)
-	case json.Number:
-		if i64, err := v.Int64(); err == nil && i64 > 0 {
-			return uint(i64)
-		}
-	case string:
-		if trimmed := strings.TrimSpace(v); trimmed != "" {
-			if i64, err := strconv.ParseInt(trimmed, 10, 64); err == nil && i64 > 0 {
-				return uint(i64)
-			}
-		}
-	}
-	return 0
-}
-
-func toInt64(value interface{}) int64 {
-	switch v := value.(type) {
-	case nil:
-		return 0
-	case float64:
-		return int64(v)
-	case json.Number:
-		i64, _ := v.Int64()
-		return i64
-	case string:
-		if trimmed := strings.TrimSpace(v); trimmed != "" {
-			if i64, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
-				return i64
-			}
-		}
-	}
-	return 0
-}
 
 func normalizeTimeString(value string) string {
 	value = strings.TrimSpace(value)

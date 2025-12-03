@@ -20,14 +20,20 @@ type Config struct {
 	PreviewPluginDir string
 	MetaServiceURL   string
 
-	// Elasticsearch 配置
-	ElasticsearchURL              string
-	ElasticsearchUsername         string
-	ElasticsearchPassword         string
-	ElasticsearchAPIKey           string
-	ElasticsearchDocumentIndex    string
-	ElasticsearchAssetIndex       string
-	ElasticsearchDisableTLSVerify bool
+	// Meilisearch 配置
+	MeilisearchURL           string
+	MeilisearchMasterKey     string
+	MeilisearchDocumentIndex string
+	MeilisearchAssetIndex    string
+
+	// 向量数据库配置（PgVector）
+	VectorDB VectorDBConfig
+
+	// 在线向量化服务配置
+	EmbeddingService EmbeddingServiceConfig
+
+	// 向量检索阈值配置
+	VectorSearchMaxDistance float64
 
 	// 向量数据库配置（PgVector）
 	VectorDB VectorDBConfig
@@ -68,10 +74,10 @@ type PreCacheConfig struct {
 	Concurrency int // 并发协程数
 }
 
-func resolveElasticsearchURL() string {
-	url := commonConfig.GetEnv("ELASTICSEARCH_URL", "")
+func resolveMeilisearchURL() string {
+	url := commonConfig.GetEnv("MEILISEARCH_URL", "")
 	if url == "" {
-		url = commonConfig.GetEnv("ELASTICSEARCH_URL_LOCAL", "")
+		url = commonConfig.GetEnv("MEILISEARCH_URL_LOCAL", "")
 	}
 	return url
 }
@@ -96,13 +102,11 @@ func Load() *Config {
 		MetaServiceURL:   metaURL,
 	}
 
-	cfg.ElasticsearchURL = resolveElasticsearchURL()
-	cfg.ElasticsearchUsername = commonConfig.GetEnv("ELASTICSEARCH_USERNAME", "")
-	cfg.ElasticsearchPassword = commonConfig.GetEnv("ELASTICSEARCH_PASSWORD", "")
-	cfg.ElasticsearchAPIKey = commonConfig.GetEnv("ELASTICSEARCH_API_KEY", "")
-	cfg.ElasticsearchDocumentIndex = commonConfig.GetEnv("META_DOCUMENT_INDEX", commonConfig.GetEnv("ASSET_DOCUMENT_INDEX", "asset-documents"))
-	cfg.ElasticsearchAssetIndex = commonConfig.GetEnv("ELASTICSEARCH_INDEX", "metadata-assets")
-	cfg.ElasticsearchDisableTLSVerify = commonConfig.GetEnvBool("ELASTICSEARCH_SKIP_VERIFY", false)
+	cfg.MeilisearchURL = resolveMeilisearchURL()
+	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
+	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX",
+		commonConfig.GetEnv("META_DOCUMENT_INDEX", "asset-documents"))
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "metadata-assets")
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

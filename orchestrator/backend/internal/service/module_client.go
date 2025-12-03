@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // ModuleClient HTTP 客户端用于调用其他模块
@@ -24,21 +27,54 @@ func NewModuleClient(baseURLs map[string]string) *ModuleClient {
 	}
 }
 
-// Call 调用模块 API
-func (c *ModuleClient) Call(ctx context.Context, module, endpoint, method string, params map[string]interface{}) (interface{}, error) {
+// Call 调用模块 API (支持从 gin.Context 或 context.Context 调用)
+func (c *ModuleClient) Call(ctx interface{}, module, endpoint, method string, params map[string]interface{}) (interface{}, error) {
 	baseURL := c.baseURLs[module]
 	if baseURL == "" {
 		return nil, fmt.Errorf("未配置模块 %s 的 URL", module)
 	}
 
-	url := baseURL + endpoint
-	body, _ := json.Marshal(params)
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	targetURL := baseURL + endpoint
+	var req *http.Request
+	var err error
+	var reqCtx context.Context
+	var authHeader string
+
+	// 根据 ctx 类型提取 context 和 auth header
+	switch v := ctx.(type) {
+	case *gin.Context:
+		reqCtx = v.Request.Context()
+		authHeader = v.GetHeader("Authorization")
+	case context.Context:
+		reqCtx = v
+		authHeader = "" // 后台任务暂时没有认证,将来可以从配置获取系统 token
+	default:
+		return nil, fmt.Errorf("不支持的 context 类型")
+	}
+
+	// GET 请求使用 query params,其他方法使用 body
+	if method == "GET" && params != nil {
+		queryParams := url.Values{}
+		for k, v := range params {
+			queryParams.Add(k, fmt.Sprintf("%v", v))
+		}
+		targetURL += "?" + queryParams.Encode()
+		req, err = http.NewRequestWithContext(reqCtx, method, targetURL, nil)
+	} else {
+		body, _ := json.Marshal(params)
+		req, err = http.NewRequestWithContext(reqCtx, method, targetURL, bytes.NewReader(body))
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// 转发 Authorization header (如果有)
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

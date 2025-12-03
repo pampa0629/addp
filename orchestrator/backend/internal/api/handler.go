@@ -12,10 +12,11 @@ import (
 
 // OrchestrationHandler 编排 API 处理器
 type OrchestrationHandler struct {
-	orchRepo  *repository.OrchestrationRepository
-	execRepo  *repository.ExecutionRepository
-	executor  *service.Executor
-	scheduler *service.Scheduler
+	orchRepo     *repository.OrchestrationRepository
+	execRepo     *repository.ExecutionRepository
+	executor     *service.Executor
+	scheduler    *service.Scheduler
+	moduleClient *service.ModuleClient
 }
 
 // NewOrchestrationHandler 创建处理器
@@ -24,12 +25,14 @@ func NewOrchestrationHandler(
 	execRepo *repository.ExecutionRepository,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
+	moduleClient *service.ModuleClient,
 ) *OrchestrationHandler {
 	return &OrchestrationHandler{
-		orchRepo:  orchRepo,
-		execRepo:  execRepo,
-		executor:  executor,
-		scheduler: scheduler,
+		orchRepo:     orchRepo,
+		execRepo:     execRepo,
+		executor:     executor,
+		scheduler:    scheduler,
+		moduleClient: moduleClient,
 	}
 }
 
@@ -221,3 +224,69 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 
 	c.JSON(http.StatusOK, exec)
 }
+
+// ListModuleTasks 列出指定模块的任务
+// GET /api/tasks/list?module=transfer|meta|manager&page=1&page_size=100
+func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
+	module := c.Query("module")
+	if module == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 module 参数"})
+		return
+	}
+
+	var result interface{}
+	var err error
+
+	switch module {
+	case "transfer":
+		result, err = h.listTransferTasks(c)
+	case "meta":
+		result, err = h.listMetaTasks(c)
+	case "manager":
+		result, err = h.listManagerTasks(c)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的模块名称"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *OrchestrationHandler) listTransferTasks(c *gin.Context) (interface{}, error) {
+	page := c.DefaultQuery("page", "1")
+	pageSize := c.DefaultQuery("page_size", "100")
+
+	params := map[string]interface{}{}
+	if page != "" {
+		params["page"] = page
+	}
+	if pageSize != "" {
+		params["page_size"] = pageSize
+	}
+	if taskType := c.Query("type"); taskType != "" {
+		params["type"] = taskType
+	}
+	if status := c.Query("status"); status != "" {
+		params["status"] = status
+	}
+
+	return h.moduleClient.Call(c, "transfer", "/api/tasks", "GET", params)
+}
+
+func (h *OrchestrationHandler) listMetaTasks(c *gin.Context) (interface{}, error) {
+	return h.moduleClient.Call(c, "meta", "/api/meta/scan/tasks", "GET", nil)
+}
+
+func (h *OrchestrationHandler) listManagerTasks(c *gin.Context) (interface{}, error) {
+	// Manager 模块暂无通用任务列表API,返回空列表
+	return map[string]interface{}{
+		"items": []interface{}{},
+		"total": 0,
+	}, nil
+}
+

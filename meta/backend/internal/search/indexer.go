@@ -1,140 +1,27 @@
 package search
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/meta/internal/config"
-	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"github.com/meilisearch/meilisearch-go"
 	"log/slog"
 )
 
-const (
-	defaultAssetIndexMapping = `{
-  "settings": {
-    "analysis": {
-      "analyzer": {
-        "default_text": {
-          "tokenizer": "standard",
-          "filter": ["lowercase"]
-        }
-      }
-    }
-  },
-  "mappings": {
-    "properties": {
-      "asset_id": { "type": "keyword" },
-      "tenant_id": { "type": "long" },
-      "resource_id": { "type": "long" },
-      "resource_name": { "type": "keyword" },
-      "resource_type": { "type": "keyword" },
-      "asset_type": { "type": "keyword" },
-      "name": {
-        "type": "text",
-        "analyzer": "default_text",
-        "fields": {
-          "keyword": { "type": "keyword", "ignore_above": 256 }
-        }
-      },
-      "full_name": {
-        "type": "text",
-        "analyzer": "default_text",
-        "fields": {
-          "keyword": { "type": "keyword", "ignore_above": 512 }
-        }
-      },
-      "schema": { "type": "keyword" },
-      "table_type": { "type": "keyword" },
-      "bucket": { "type": "keyword" },
-      "path": { "type": "keyword" },
-      "relative_path": { "type": "keyword" },
-      "description": { "type": "text", "analyzer": "default_text" },
-      "tags": { "type": "keyword" },
-      "row_count": { "type": "long" },
-      "size_bytes": { "type": "long" },
-      "object_size_bytes": { "type": "long" },
-      "last_modified": { "type": "date" },
-      "metadata": { "type": "object" },
-      "fields": {
-        "type": "nested",
-        "properties": {
-          "name": { "type": "keyword" },
-          "data_type": { "type": "keyword" },
-          "column_type": { "type": "keyword" },
-          "comment": { "type": "text", "analyzer": "default_text" },
-          "ordinal_position": { "type": "integer" },
-          "is_nullable": { "type": "boolean" },
-          "is_primary_key": { "type": "boolean" },
-          "is_unique_key": { "type": "boolean" }
-        }
-      },
-      "updated_at": { "type": "date" }
-    }
-  }
-}`
-	defaultDocumentIndexMapping = `{
-  "settings": {
-    "analysis": {
-      "analyzer": {
-        "default_text": {
-          "tokenizer": "standard",
-          "filter": ["lowercase"]
-        }
-      }
-    }
-  },
-  "mappings": {
-    "properties": {
-      "document_id": { "type": "keyword" },
-      "asset_id": { "type": "keyword" },
-      "tenant_id": { "type": "long" },
-      "resource_id": { "type": "long" },
-      "resource_name": { "type": "keyword" },
-      "resource_type": { "type": "keyword" },
-      "bucket": { "type": "keyword" },
-      "relative_path": { "type": "keyword" },
-      "file_name": {
-        "type": "text",
-        "analyzer": "default_text",
-        "fields": {
-          "keyword": { "type": "keyword", "ignore_above": 256 }
-        }
-      },
-      "file_path": { "type": "keyword" },
-      "document_type": { "type": "keyword" },
-      "title": { "type": "text", "analyzer": "default_text" },
-      "author": { "type": "keyword" },
-      "keywords": { "type": "keyword" },
-      "content": { "type": "text", "analyzer": "default_text" },
-      "content_preview": { "type": "text", "analyzer": "default_text" },
-      "content_type": { "type": "keyword" },
-      "file_size": { "type": "long" },
-      "word_count": { "type": "integer" },
-      "page_count": { "type": "integer" },
-      "last_modified": { "type": "date" },
-      "created_date": { "type": "date" },
-      "modified_date": { "type": "date" },
-      "metadata": { "type": "object" },
-      "updated_at": { "type": "date" }
-    }
-  }
-}`
-	defaultIndexRefresh = "true"
-)
+// Meilisearch 不需要预定义 mapping，在 ensureIndexes 中通过 API 配置
 
-// Indexer 封装 Elasticsearch 操作
+// Indexer 封装 Meilisearch 操作
 type Indexer struct {
-	client        *elasticsearch.Client
+	client        *meilisearch.Client
 	assetIndex    string
 	documentIndex string
 	enabled       bool
+	mu            sync.RWMutex
 	log           *slog.Logger
 }
 
@@ -205,52 +92,38 @@ type DocumentRecord struct {
 	UpdatedAt      time.Time              `json:"updated_at"`
 }
 
-// NewIndexer 创建索引器（若未配置 Elasticsearch URL，则返回禁用状态）
+// NewIndexer 创建索引器（若未配置 Meilisearch URL，则返回禁用状态）
 func NewIndexer(cfg *config.Config) (*Indexer, error) {
-	indexer := &Indexer{
-		assetIndex:    cfg.ElasticsearchAssetIndex,
-		documentIndex: cfg.ElasticsearchDocumentIndex,
-		enabled:       cfg.ElasticsearchURL != "",
-		log:           logger.With("component", "meta_search_indexer"),
+	idx := &Indexer{
+		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		documentIndex: strings.TrimSpace(cfg.MeilisearchDocumentIndex),
+		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
+		log:           logger.With("component", "meta_indexer"),
 	}
 
-	if !indexer.enabled {
-		indexer.log.Info("Elasticsearch 未配置，已禁用搜索索引功能")
-		return indexer, nil
+	if !idx.enabled {
+		idx.log.Info("Meilisearch 未配置，索引功能已禁用")
+		return idx, nil
 	}
 
-	esCfg := elasticsearch.Config{
-		Addresses: []string{cfg.ElasticsearchURL},
-	}
-	if cfg.ElasticsearchUsername != "" || cfg.ElasticsearchPassword != "" {
-		esCfg.Username = cfg.ElasticsearchUsername
-		esCfg.Password = cfg.ElasticsearchPassword
-	}
-	if cfg.ElasticsearchAPIKey != "" {
-		esCfg.APIKey = cfg.ElasticsearchAPIKey
-	}
-	if cfg.ElasticsearchDisableTLSVerify {
-		esCfg.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 - 控制由配置决定
-		}
+	// 创建 Meilisearch 客户端
+	client := meilisearch.NewClient(meilisearch.ClientConfig{
+		Host:   cfg.MeilisearchURL,
+		APIKey: cfg.MeilisearchMasterKey,
+	})
+	idx.client = client
+
+	// 初始化索引配置
+	if err := idx.ensureIndexes(); err != nil {
+		return nil, fmt.Errorf("failed to initialize indexes: %w", err)
 	}
 
-	client, err := elasticsearch.NewClient(esCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create elasticsearch client: %w", err)
-	}
-	indexer.client = client
+	idx.log.Info("Meilisearch 索引器已启用",
+		"asset_index", idx.assetIndex,
+		"document_index", idx.documentIndex,
+	)
 
-	if err := indexer.ensureIndex(indexer.assetIndex, defaultAssetIndexMapping); err != nil {
-		return nil, err
-	}
-	if indexer.documentIndex != "" {
-		if err := indexer.ensureIndex(indexer.documentIndex, defaultDocumentIndexMapping); err != nil {
-			return nil, err
-		}
-	}
-
-	return indexer, nil
+	return idx, nil
 }
 
 // Enabled 判断是否启用了索引功能
@@ -258,32 +131,81 @@ func (i *Indexer) Enabled() bool {
 	return i != nil && i.enabled && i.client != nil
 }
 
-func (i *Indexer) ensureIndex(name, mapping string) error {
-	if name == "" {
-		return fmt.Errorf("index name cannot be empty")
+// ensureIndexes 确保 Meilisearch 索引存在并配置正确
+func (i *Indexer) ensureIndexes() error {
+	// 配置资产索引
+	assetIndex := i.client.Index(i.assetIndex)
+
+	// 设置可搜索字段
+	_, err := assetIndex.UpdateSearchableAttributes(&[]string{
+		"name",
+		"full_name",
+		"description",
+		"tags",
+		"fields.name",    // 嵌套字段搜索
+		"fields.comment",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update asset searchable attributes: %w", err)
 	}
 
-	exists, err := i.client.Indices.Exists([]string{name})
+	// 设置可过滤字段
+	_, err = assetIndex.UpdateFilterableAttributes(&[]string{
+		"tenant_id",
+		"resource_id",
+		"resource_type",
+		"asset_type",
+		"schema",
+		"bucket",
+		"table_type",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to check index %s: %w", name, err)
-	}
-	defer exists.Body.Close()
-	if exists.StatusCode == http.StatusOK {
-		return nil
-	}
-	if exists.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("unexpected response when checking index %s: %s", name, exists.String())
+		return fmt.Errorf("failed to update asset filterable attributes: %w", err)
 	}
 
-	res, err := i.client.Indices.Create(name, i.client.Indices.Create.WithBody(bytes.NewReader([]byte(mapping))))
+	// 设置可排序字段
+	_, err = assetIndex.UpdateSortableAttributes(&[]string{
+		"last_modified",
+		"size_bytes",
+		"row_count",
+	})
 	if err != nil {
-		return fmt.Errorf("failed to create index %s: %w", name, err)
+		return fmt.Errorf("failed to update asset sortable attributes: %w", err)
 	}
-	defer res.Body.Close()
-	if res.IsError() {
-		return fmt.Errorf("failed to create index %s: %s", name, res.String())
+
+	// 配置文档索引
+	if i.documentIndex != "" {
+		docIndex := i.client.Index(i.documentIndex)
+
+		_, err = docIndex.UpdateSearchableAttributes(&[]string{
+			"title",
+			"file_name",
+			"content",
+			"content_preview",
+			"keywords",
+			"author",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to update document searchable attributes: %w", err)
+		}
+
+		_, err = docIndex.UpdateFilterableAttributes(&[]string{
+			"tenant_id",
+			"resource_id",
+			"resource_type",
+			"document_type",
+			"bucket",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to update document filterable attributes: %w", err)
+		}
 	}
-	i.log.Info("已创建 Elasticsearch 索引", "index", name)
+
+	i.log.Info("索引配置已更新",
+		"asset_index", i.assetIndex,
+		"document_index", i.documentIndex,
+	)
+
 	return nil
 }
 
@@ -292,53 +214,99 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 	if !i.Enabled() || record == nil || record.AssetID == "" {
 		return nil
 	}
+
 	record.UpdatedAt = time.Now().UTC()
-	body, err := json.Marshal(record)
-	if err != nil {
-		return fmt.Errorf("failed to marshal asset record: %w", err)
+
+	// 将 record 转换为 map (Meilisearch 需要主键字段)
+	doc := map[string]interface{}{
+		"id":                 record.AssetID, // Meilisearch 主键
+		"asset_id":           record.AssetID,
+		"tenant_id":          record.TenantID,
+		"resource_id":        record.ResourceID,
+		"resource_name":      record.ResourceName,
+		"resource_type":      record.ResourceType,
+		"asset_type":         record.AssetType,
+		"name":               record.Name,
+		"full_name":          record.FullName,
+		"schema":             record.Schema,
+		"table_type":         record.TableType,
+		"bucket":             record.Bucket,
+		"path":               record.Path,
+		"relative_path":      record.RelativePath,
+		"description":        record.Description,
+		"tags":               record.Tags,
+		"row_count":          record.RowCount,
+		"size_bytes":         record.SizeBytes,
+		"object_size_bytes":  record.ObjectSizeBytes,
+		"last_modified":      record.LastModified,
+		"metadata":           record.Metadata,
+		"fields":             record.Fields,
+		"updated_at":         record.UpdatedAt,
 	}
 
-	req := esapi.IndexRequest{
-		Index:      i.assetIndex,
-		DocumentID: record.AssetID,
-		Body:       bytes.NewReader(body),
-		Refresh:    defaultIndexRefresh,
-	}
-	res, err := req.Do(ctx, i.client)
+	// 单条写入
+	index := i.client.Index(i.assetIndex)
+	task, err := index.AddDocuments([]map[string]interface{}{doc})
 	if err != nil {
 		return fmt.Errorf("failed to index asset: %w", err)
 	}
-	defer res.Body.Close()
-	if res.IsError() {
-		return fmt.Errorf("index asset error: %s", res.String())
-	}
+
+	i.log.Debug("资产已索引",
+		"asset_id", record.AssetID,
+		"task_uid", task.TaskUID,
+	)
+
 	return nil
 }
 
 // IndexDocument 写入/更新文档全文索引
 func (i *Indexer) IndexDocument(ctx context.Context, record *DocumentRecord) error {
-	if !i.Enabled() || i.documentIndex == "" || record == nil || record.DocumentID == "" {
+	if !i.Enabled() || i.documentIndex == "" {
 		return nil
 	}
+
 	record.UpdatedAt = time.Now().UTC()
-	body, err := json.Marshal(record)
-	if err != nil {
-		return fmt.Errorf("failed to marshal document record: %w", err)
+
+	doc := map[string]interface{}{
+		"id":              record.DocumentID, // Meilisearch 主键
+		"document_id":     record.DocumentID,
+		"asset_id":        record.AssetID,
+		"tenant_id":       record.TenantID,
+		"resource_id":     record.ResourceID,
+		"resource_name":   record.ResourceName,
+		"resource_type":   record.ResourceType,
+		"bucket":          record.Bucket,
+		"relative_path":   record.RelativePath,
+		"file_name":       record.FileName,
+		"file_path":       record.FilePath,
+		"document_type":   record.DocumentType,
+		"title":           record.Title,
+		"author":          record.Author,
+		"keywords":        record.Keywords,
+		"content":         record.Content,
+		"content_preview": record.ContentPreview,
+		"content_type":    record.ContentType,
+		"file_size":       record.FileSize,
+		"word_count":      record.WordCount,
+		"page_count":      record.PageCount,
+		"last_modified":   record.LastModified,
+		"created_date":    record.CreatedDate,
+		"modified_date":   record.ModifiedDate,
+		"metadata":        record.Metadata,
+		"updated_at":      record.UpdatedAt,
 	}
-	req := esapi.IndexRequest{
-		Index:      i.documentIndex,
-		DocumentID: record.DocumentID,
-		Body:       bytes.NewReader(body),
-		Refresh:    defaultIndexRefresh,
-	}
-	res, err := req.Do(ctx, i.client)
+
+	index := i.client.Index(i.documentIndex)
+	task, err := index.AddDocuments([]map[string]interface{}{doc})
 	if err != nil {
 		return fmt.Errorf("failed to index document: %w", err)
 	}
-	defer res.Body.Close()
-	if res.IsError() {
-		return fmt.Errorf("index document error: %s", res.String())
-	}
+
+	i.log.Debug("文档已索引",
+		"document_id", record.DocumentID,
+		"task_uid", task.TaskUID,
+	)
+
 	return nil
 }
 
@@ -347,149 +315,118 @@ func (i *Indexer) DeleteDocument(ctx context.Context, documentID string) error {
 	if !i.Enabled() || i.documentIndex == "" || documentID == "" {
 		return nil
 	}
-	req := esapi.DeleteRequest{
-		Index:      i.documentIndex,
-		DocumentID: documentID,
-		Refresh:    defaultIndexRefresh,
-	}
-	res, err := req.Do(ctx, i.client)
+
+	index := i.client.Index(i.documentIndex)
+	task, err := index.DeleteDocument(documentID)
 	if err != nil {
-		return fmt.Errorf("failed to delete document: %w", err)
+		return fmt.Errorf("failed to delete document %s: %w", documentID, err)
 	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusNotFound {
-		return nil
-	}
-	if res.IsError() {
-		return fmt.Errorf("delete document error: %s", res.String())
-	}
+
+	i.log.Info("文档已删除",
+		"document_id", documentID,
+		"task_uid", task.TaskUID,
+	)
+
 	return nil
 }
 
 // DeleteObjects 删除指定 Bucket/路径下的对象索引
 func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, bucket, relativePath string) error {
-	if !i.Enabled() || bucket == "" {
+	if !i.Enabled() {
 		return nil
 	}
 
-	assetQuery := buildObjectDeleteQuery(tenantID, resourceID, bucket, relativePath)
-	if err := i.deleteByQuery(ctx, i.assetIndex, assetQuery); err != nil {
-		return err
+	// 构建过滤条件
+	filters := []string{
+		fmt.Sprintf("tenant_id = %d", tenantID),
+		fmt.Sprintf("resource_id = %d", resourceID),
+		fmt.Sprintf("asset_type = 'object'"),
 	}
+
+	if bucket != "" {
+		filters = append(filters, fmt.Sprintf("bucket = '%s'", escapeFilterValue(bucket)))
+	}
+
+	if relativePath != "" {
+		// 支持前缀匹配
+		filters = append(filters, fmt.Sprintf("relative_path ^= '%s'", escapeFilterValue(relativePath)))
+	}
+
+	filterStr := strings.Join(filters, " AND ")
+
+	// 删除资产索引中的记录
+	assetIndex := i.client.Index(i.assetIndex)
+	task, err := assetIndex.DeleteDocuments(&meilisearch.DocumentsQuery{
+		Filter: filterStr,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete objects from asset index: %w", err)
+	}
+
+	i.log.Info("对象资产已删除",
+		"tenant_id", tenantID,
+		"resource_id", resourceID,
+		"bucket", bucket,
+		"path", relativePath,
+		"task_uid", task.TaskUID,
+	)
+
+	// 删除文档索引中的记录
 	if i.documentIndex != "" {
-		docQuery := buildDocumentDeleteQuery(tenantID, resourceID, bucket, relativePath)
-		if err := i.deleteByQuery(ctx, i.documentIndex, docQuery); err != nil {
-			return err
+		docIndex := i.client.Index(i.documentIndex)
+		task, err := docIndex.DeleteDocuments(&meilisearch.DocumentsQuery{
+			Filter: filterStr,
+		})
+		if err != nil {
+			i.log.Warn("删除文档索引失败", "error", err)
+		} else {
+			i.log.Info("对象文档已删除", "task_uid", task.TaskUID)
 		}
 	}
+
 	return nil
+}
+
+// escapeFilterValue 转义过滤值中的特殊字符
+func escapeFilterValue(value string) string {
+	// Meilisearch 过滤字符串需要转义单引号
+	return strings.ReplaceAll(value, "'", "\\'")
 }
 
 // DeleteTables 删除某租户资源下指定 Schema 的表索引
 func (i *Indexer) DeleteTables(ctx context.Context, tenantID, resourceID uint, schemaName string) error {
-	if !i.Enabled() || schemaName == "" {
+	if !i.Enabled() || i.assetIndex == "" {
 		return nil
 	}
 
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []interface{}{
-					map[string]interface{}{"term": map[string]interface{}{"tenant_id": tenantID}},
-					map[string]interface{}{"term": map[string]interface{}{"resource_id": resourceID}},
-					map[string]interface{}{"term": map[string]interface{}{"asset_type": "table"}},
-					map[string]interface{}{"term": map[string]interface{}{"schema": schemaName}},
-				},
-			},
-		},
+	filters := []string{
+		fmt.Sprintf("tenant_id = %d", tenantID),
+		fmt.Sprintf("resource_id = %d", resourceID),
+		fmt.Sprintf("asset_type = 'table'"),
 	}
-	return i.deleteByQuery(ctx, i.assetIndex, query)
-}
 
-func (i *Indexer) deleteByQuery(ctx context.Context, index string, body map[string]interface{}) error {
-	if index == "" || body == nil {
-		return nil
+	if schemaName != "" {
+		filters = append(filters, fmt.Sprintf("schema = '%s'", escapeFilterValue(schemaName)))
 	}
-	payload, err := json.Marshal(body)
+
+	filterStr := strings.Join(filters, " AND ")
+
+	index := i.client.Index(i.assetIndex)
+	task, err := index.DeleteDocuments(&meilisearch.DocumentsQuery{
+		Filter: filterStr,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to marshal delete-by-query body: %w", err)
+		return fmt.Errorf("failed to delete tables: %w", err)
 	}
-	req := esapi.DeleteByQueryRequest{
-		Index:   []string{index},
-		Body:    bytes.NewReader(payload),
-		Refresh: esapi.BoolPtr(true),
-	}
-	res, err := req.Do(ctx, i.client)
-	if err != nil {
-		return fmt.Errorf("failed to execute delete-by-query on %s: %w", index, err)
-	}
-	defer res.Body.Close()
-	if res.IsError() {
-		return fmt.Errorf("delete-by-query error on %s: %s", index, res.String())
-	}
+
+	i.log.Info("表资产已删除",
+		"tenant_id", tenantID,
+		"resource_id", resourceID,
+		"schema", schemaName,
+		"task_uid", task.TaskUID,
+	)
+
 	return nil
-}
-
-func buildObjectDeleteQuery(tenantID, resourceID uint, bucket, relativePath string) map[string]interface{} {
-	must := []interface{}{
-		map[string]interface{}{"term": map[string]interface{}{"tenant_id": tenantID}},
-		map[string]interface{}{"term": map[string]interface{}{"resource_id": resourceID}},
-		map[string]interface{}{"term": map[string]interface{}{"bucket": bucket}},
-	}
-
-	// asset index uses "asset_type"
-	mustAssetType := map[string]interface{}{"term": map[string]interface{}{"asset_type": "object"}}
-	must = append(must, mustAssetType)
-
-	var filter []interface{}
-	if relativePath != "" {
-		filter = append(filter, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"should": []interface{}{
-					map[string]interface{}{"term": map[string]interface{}{"relative_path": relativePath}},
-					map[string]interface{}{"prefix": map[string]interface{}{"relative_path": relativePath + "/"}},
-				},
-			},
-		})
-	}
-
-	return map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must":   must,
-				"filter": filter,
-			},
-		},
-	}
-}
-
-func buildDocumentDeleteQuery(tenantID, resourceID uint, bucket, relativePath string) map[string]interface{} {
-	must := []interface{}{
-		map[string]interface{}{"term": map[string]interface{}{"tenant_id": tenantID}},
-		map[string]interface{}{"term": map[string]interface{}{"resource_id": resourceID}},
-		map[string]interface{}{"term": map[string]interface{}{"bucket": bucket}},
-	}
-
-	var filter []interface{}
-	if relativePath != "" {
-		filter = append(filter, map[string]interface{}{
-			"bool": map[string]interface{}{
-				"should": []interface{}{
-					map[string]interface{}{"term": map[string]interface{}{"relative_path": relativePath}},
-					map[string]interface{}{"prefix": map[string]interface{}{"relative_path": relativePath + "/"}},
-				},
-			},
-		})
-	}
-
-	return map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must":   must,
-				"filter": filter,
-			},
-		},
-	}
 }
 
 // NormalizeMap 递归转换 map 中的时间等类型，便于 JSON 序列化
