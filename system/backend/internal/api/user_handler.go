@@ -114,3 +114,25 @@ func (h *UserHandler) Me(c *gin.Context) {
 
 	c.JSON(http.StatusOK, user)
 }
+
+func (h *UserHandler) ChangePassword(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
+		return
+	}
+
+	var req models.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	currentUserID := c.GetUint("user_id")
+	if err := h.userService.ChangePassword(uint(id), &req, currentUserID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
+}

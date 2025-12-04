@@ -103,7 +103,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 ### 新增脚本
 
-1. **scripts/setup-local-registry.sh** - 本地 Registry 设置（支持自定义端口）
+1. **scripts/setup/local-registry.sh** - 本地 Registry 设置（支持自定义端口）
 2. **scripts/deploy/0-compile-binaries.sh** - 本地预编译二进制（可选，加速构建）
 3. **scripts/deploy/1-build-images.sh** - 本地构建并推送镜像（单架构）
 4. **scripts/deploy/1-build-images-multiarch.sh** - 多架构构建并推送
@@ -170,7 +170,7 @@ make dev-start
 ### 生产环境（云服务器，网络良好）
 ```bash
 # 使用多架构镜像仓库（需要网络通畅）
-./scripts/setup-local-registry.sh 5001
+./scripts/setup/local-registry.sh 5001
 ./scripts/deploy/1-build-images-multiarch.sh --registry 开发机IP:5001
 
 # 在开发机触发一键部署

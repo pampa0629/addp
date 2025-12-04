@@ -56,7 +56,7 @@ make logs           # 查看所有日志
 # 1. 按正确顺序启动所有服务 (推荐)
 make dev-start
 # 或直接运行:
-./scripts/dev-start.sh
+./scripts/dev/start.sh
 
 # 2. 检查服务健康状态
 make dev-health
@@ -64,7 +64,7 @@ make dev-health
 # 3. 停止所有服务
 make dev-stop
 # 或直接运行:
-./scripts/dev-stop.sh
+./scripts/dev/stop.sh
 ```
 
 **启动顺序**:
@@ -88,7 +88,7 @@ Gateway (API 路由)
 - ✅ 日志文件 - 将输出重定向到 `logs/` 目录便于调试
 
 **启动脚本详情**:
-- 位置: `scripts/dev-start.sh`
+- 位置: `scripts/dev/start.sh`
 - 等待 `/health` 端点返回 200 后继续
 - 创建 `.dev-pids/` 目录跟踪进程 ID
 - 日志存储在 `logs/` 目录 (例如 `logs/system-backend.log`)
@@ -161,7 +161,6 @@ ADDP 采用**系统与业务数据分离**的架构设计：
 - `postgres`: 存储 ADDP 系统元数据（用户、资源配置、元数据索引、任务定义等）
 - `redis`: 缓存和任务队列
 - `minio`: 存储系统文件（用户头像、系统配置等）
-- `elasticsearch`: 全文检索
 
 **业务基础设施**（business/docker-compose.yml，独立部署）:
 - `postgres`: 存储用户通过 ADDP 管理的实际业务数据（用户上传的 PostgreSQL 数据等）
@@ -573,7 +572,6 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 | Redis | 6379 | 6379 | 缓存 & 队列 |
 | MinIO System API | 9000 | 9000 | 系统文件存储 |
 | MinIO System Console | 9001 | 9001 | 系统 MinIO Web UI |
-| Elasticsearch | 9200 | 9200 | 全文检索 |
 
 **业务基础设施服务** (通过 `business/docker-compose.yml` 部署):
 
@@ -702,7 +700,6 @@ docker-compose up -d    # 重启
 - PostgreSQL: `postgres_data` 卷 (ADDP 系统元数据)
 - Redis: `redis_data` 卷 (缓存和队列)
 - MinIO System: `minio_system_data` 卷 (系统文件)
-- Elasticsearch: `elasticsearch_data` 卷 (搜索索引)
 
 **业务基础设施** (business/docker-compose.yml):
 - PostgreSQL: `business_postgres_data` 卷 (用户业务数据)
@@ -1097,9 +1094,9 @@ make clean-all           # 删除所有数据和卷 (破坏性)
 ### 构建 & 部署
 - [`Makefile`](Makefile) - 项目级编排命令
 - [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema 初始化
-- [`scripts/dev-start.sh`](scripts/dev-start.sh) - 开发启动脚本 (按顺序启动所有服务)
-- [`scripts/dev-stop.sh`](scripts/dev-stop.sh) - 开发停止脚本 (停止所有服务)
-- [`scripts/dev-run.sh`](scripts/dev-run.sh) - 本地开发助手 (旧版)
+- [`scripts/dev/start.sh`](scripts/dev/start.sh) - 开发启动脚本 (按顺序启动所有服务)
+- [`scripts/dev/stop.sh`](scripts/dev/stop.sh) - 开发停止脚本 (停止所有服务)
+- [`scripts/dev/run.sh`](scripts/dev/run.sh) - 本地开发助手 (旧版)
 
 ### 关键源文件
 - System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)

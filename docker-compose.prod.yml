@@ -407,15 +407,12 @@ services:
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10  # Each worker handles 10 concurrent scan tasks
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
     networks:
       - addp-network
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      elasticsearch:
         condition: service_healthy
       meta-backend:
         condition: service_started

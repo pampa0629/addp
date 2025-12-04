@@ -156,7 +156,7 @@ scp business/scripts/deploy-business.sh user@server:/opt/
 cd /Users/pampa/code/addp
 
 # 运行 Registry 搭建脚本
-./scripts/setup-local-registry.sh
+./scripts/setup/local-registry.sh
 ```
 
 **脚本会自动完成：**

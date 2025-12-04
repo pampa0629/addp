@@ -23,5 +23,9 @@ export const usersAPI = {
 
   me: () => {
     return client.get('/users/me')
+  },
+
+  changePassword: (id, data) => {
+    return client.put(`/users/${id}/change-password`, data)
   }
 }

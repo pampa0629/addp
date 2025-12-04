@@ -60,7 +60,23 @@ const handleLogin = async () => {
     ElMessage.success('登录成功')
     router.push('/')
   } catch (error) {
-    ElMessage.error(error.response?.data?.error || '登录失败')
+    console.error('登录失败:', error)
+
+    // 详细的错误消息处理
+    let errorMessage = '登录失败'
+
+    if (error.response) {
+      // 服务器返回错误
+      errorMessage = error.response.data?.error || `请求失败 (${error.response.status})`
+    } else if (error.request) {
+      // 请求已发送但没有收到响应
+      errorMessage = '网络连接失败，请检查服务器是否启动'
+    } else {
+      // 其他错误
+      errorMessage = error.message || '未知错误'
+    }
+
+    ElMessage.error(errorMessage)
   } finally {
     loading.value = false
   }

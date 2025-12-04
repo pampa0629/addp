@@ -333,7 +333,7 @@ manager-worker:
 ```
 
 #### 7.2 开发脚本 (未开始)
-**需修改**: `scripts/dev-start.sh`
+**需修改**: `scripts/dev/start.sh`
 
 在 Step 6 (启动Workers) 部分添加:
 ```bash
@@ -345,7 +345,7 @@ echo $! > "$PID_DIR/manager-worker.pid"
 echo -e "${GREEN}✓ Manager Worker started (PID: $!)${NC}"
 ```
 
-**需修改**: `scripts/dev-stop.sh` 和 `scripts/dev-restart.sh`
+**需修改**: `scripts/dev/stop.sh` 和 `scripts/dev/restart.sh`
 
 确保Manager Worker被正确停止和重启
 

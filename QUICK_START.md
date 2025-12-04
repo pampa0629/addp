@@ -19,7 +19,7 @@ docker run -d -p 5001:5000 --restart=always --name registry registry:2
 ### 方法 1: 使用启动脚本（推荐）
 
 ```bash
-./scripts/start-prod.sh
+./scripts/prod/start.sh
 ```
 
 **脚本会自动**：
@@ -77,7 +77,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ### 使用停止脚本
 
 ```bash
-./scripts/stop-prod.sh
+./scripts/prod/stop.sh
 ```
 
 ### 手动停止
@@ -201,10 +201,10 @@ docker compose -f docker-compose.prod.yml logs system-backend
 
 ```bash
 # 启动
-./scripts/start-prod.sh
+./scripts/prod/start.sh
 
 # 停止
-./scripts/stop-prod.sh
+./scripts/prod/stop.sh
 
 # 重启
 docker compose -f docker-compose.prod.yml restart
@@ -228,7 +228,6 @@ docker compose -f docker-compose.prod.yml exec postgres psql -U addp -d addp
 | System Frontend | http://localhost:8090 |
 | System Backend API | http://localhost:8080 |
 | MinIO Console | http://localhost:9001 |
-| Elasticsearch | http://localhost:9200 |
 | PostgreSQL | localhost:5432 |
 | Redis | localhost:6379 |
 

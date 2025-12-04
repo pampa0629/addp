@@ -68,7 +68,7 @@ type MVTPreprocessConfig struct {
 }
 ```
 
-**1.3 MinIO 初始化脚本** ([scripts/init-minio-mvt.sh](../scripts/init-minio-mvt.sh))
+**1.3 MinIO 初始化脚本** ([scripts/setup/init-minio-mvt.sh](../scripts/setup/init-minio-mvt.sh))
 ```bash
 #!/bin/bash
 # 创建 mvt-tiles bucket
@@ -382,7 +382,7 @@ curl -X GET http://localhost:8082/api/meta/preprocess/items/123/status \
 
 ### 1. 初始化 MinIO
 ```bash
-./scripts/init-minio-mvt.sh
+./scripts/setup/init-minio-mvt.sh
 ```
 
 ### 2. 启动服务

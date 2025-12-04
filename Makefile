@@ -91,7 +91,6 @@ dev-system: ## 开发模式运行 System 模块
 	  export POSTGRES_HOST=localhost; \
 	  export REDIS_ADDR=localhost:6379; \
 	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
 	  cd system/backend && go run cmd/server/main.go'
 
 dev-manager: ## 开发模式运行 Manager 模块
@@ -100,7 +99,6 @@ dev-manager: ## 开发模式运行 Manager 模块
 	  export POSTGRES_HOST=localhost; \
 	  export REDIS_ADDR=localhost:6379; \
 	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
 	  cd manager/backend && go run cmd/server/main.go'
 
 dev-meta: ## 开发模式运行 Meta 模块
@@ -109,7 +107,6 @@ dev-meta: ## 开发模式运行 Meta 模块
 	  export POSTGRES_HOST=localhost; \
 	  export REDIS_ADDR=localhost:6379; \
 	  export REDIS_PASSWORD=$${REDIS_PASSWORD:-addp_redis}; \
-	  export ELASTICSEARCH_URL=$${ELASTICSEARCH_URL_LOCAL:-http://localhost:9200}; \
 	  cd meta/backend && go run cmd/server/main.go'
 
 dev-transfer: ## 开发模式运行 Transfer 模块
@@ -138,15 +135,15 @@ dev-gateway: ## 开发模式运行 Gateway 模块
 
 dev-start: ## 开发模式启动所有服务（按正确顺序）
 	@echo "$(GREEN)启动完整开发环境...$(NC)"
-	@bash scripts/dev-start.sh
+	@bash scripts/dev/start.sh
 
 dev-stop: ## 停止所有开发模式服务
 	@echo "$(YELLOW)停止开发环境...$(NC)"
-	@bash scripts/dev-stop.sh
+	@bash scripts/dev/stop.sh
 
 dev-all: ## 本地开发模式启动全部后端与前端服务
 	@echo "$(GREEN)启动完整开发环境（Go + Vite）...$(NC)"
-	@bash scripts/dev-run.sh
+	@bash scripts/dev/run.sh
 
 dev-health: ## 检查开发模式服务健康状态
 	@echo "$(GREEN)检查服务健康状态...$(NC)"
@@ -245,9 +242,9 @@ up-full: ## 启动所有服务（完整平台）
 	@echo "$(GREEN)所有服务已启动！$(NC)"
 	@$(MAKE) status
 
-up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO, Elasticsearch）
+up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO）
 	@echo "$(GREEN)启动基础设施服务...$(NC)"
-	@docker compose up -d postgres redis minio elasticsearch
+	@docker compose up -d postgres redis minio
 	@echo "$(GREEN)基础设施服务已启动！$(NC)"
 
 down: ## 停止所有服务
@@ -302,24 +299,23 @@ status: ## 显示所有服务状态
 	@echo "  - Redis:            localhost:6379"
 	@echo "  - MinIO Console:    http://localhost:9003"
 	@echo "  - MinIO API:        http://localhost:9002"
-	@echo "  - Elasticsearch:    http://localhost:9200"
 
 # ===== 基础设施脚本别名 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
-	@bash scripts/infra-up.sh
+	@bash scripts/infra/up.sh
 
 infra-down: ## 停止系统库基础设施（可选 --rm） 用法：make infra-down ARGS=--rm
-	@bash scripts/infra-down.sh $(ARGS)
+	@bash scripts/infra/down.sh $(ARGS)
 
 infra-restart: ## 重启系统库基础设施（先停再启）
-	@bash scripts/infra-down.sh || true
-	@bash scripts/infra-up.sh
+	@bash scripts/infra/down.sh || true
+	@bash scripts/infra/up.sh
 
 infra-status: ## 查看系统库基础设施状态与健康
-	@bash scripts/infra-status.sh
+	@bash scripts/infra/status.sh
 
 ports-validate: ## 校验 System/Business 端口分配是否符合策略
-	@bash scripts/ports-validate.sh
+	@bash scripts/utils/ports-validate.sh
 
 ps: status ## 显示服务状态（别名）
 
@@ -355,7 +351,7 @@ test-system: ## 运行 System 模块测试
 
 db-migrate: ## 运行数据库迁移（重新初始化数据库）
 	@echo "$(GREEN)运行数据库迁移...$(NC)"
-	@docker compose exec -T postgres psql -U addp -d addp < scripts/init-db.sql
+	@docker compose exec -T postgres psql -U addp -d addp < scripts/infra/init-db.sql
 	@echo "$(GREEN)数据库迁移完成$(NC)"
 
 db-shell: ## 连接到 PostgreSQL 数据库
@@ -371,12 +367,12 @@ minio-setup: ## 初始化 MinIO bucket (legacy, 使用 init-minio 替代)
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
 
 init-minio: ## 初始化 MinIO buckets (包括 mvt-tiles 等)
-	@./scripts/infra-init-minio.sh
+	@./scripts/infra/init-minio.sh
 
 init-minio-mvt: init-minio ## 初始化 MVT 瓦片缓存 bucket (alias for init-minio)
 
 init-redis: ## 初始化 Redis 任务队列和缓存配置
-	@./scripts/infra-init-redis.sh
+	@./scripts/infra/init-redis.sh
 
 install-deps: ## 安装所有依赖
 	@echo "$(GREEN)安装依赖...$(NC)"
@@ -435,14 +431,14 @@ docs: ## 生成 API 文档
 # ==================== 生产环境命令 ====================
 
 prod-start: ## 启动生产环境（一键启动）
-	@./scripts/start-prod.sh
+	@./scripts/prod/start.sh
 
 prod-stop: ## 停止生产环境
-	@./scripts/stop-prod.sh
+	@./scripts/prod/stop.sh
 
 prod-restart: ## 重启生产环境
-	@./scripts/stop-prod.sh
-	@./scripts/start-prod.sh
+	@./scripts/prod/stop.sh
+	@./scripts/prod/start.sh
 
 prod-logs: ## 查看生产环境日志
 	@docker compose -f docker-compose.prod.yml logs -f

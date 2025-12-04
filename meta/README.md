@@ -18,7 +18,7 @@ Meta 是全域数据平台的元数据服务，负责数据的元数据解析、
 - **语言**: Go 1.21+
 - **框架**: Gin
 - **ORM**: GORM
-- **数据库**: PostgreSQL (元数据存储) / Elasticsearch (全文检索)
+- **数据库**: PostgreSQL (元数据存储)
 - **图数据库**: Neo4j / ArangoDB (血缘关系，可选)
 - **前端**: Vue 3 + Element Plus + G6 (血缘图可视化)
 
@@ -163,7 +163,6 @@ type MetadataParser interface {
 - MySQL / PostgreSQL (表结构)
 - MongoDB (Collection Schema)
 - ClickHouse
-- Elasticsearch
 
 ### 半结构化数据
 - XML
@@ -211,7 +210,6 @@ type MetadataParser interface {
 ### 阶段 5: 高级特性
 - [ ] 插件系统框架
 - [ ] Parquet/Avro 解析器
-- [ ] Elasticsearch 集成（可选）
 - [ ] 字段级血缘追踪
 
 ## 配置说明
@@ -229,10 +227,6 @@ DB_NAME=metadata
 DB_USER=meta
 DB_PASSWORD=password
 
-# Elasticsearch 配置（可选）
-ELASTICSEARCH_URL=http://elasticsearch:9200
-ELASTICSEARCH_INDEX=metadata
-
 # 血缘图数据库（可选）
 GRAPH_DB_TYPE=neo4j  # neo4j, arangodb, postgres
 NEO4J_URL=bolt://neo4j:7687
@@ -243,35 +237,6 @@ NEO4J_PASSWORD=password
 PARSER_SAMPLE_SIZE=10000     # 统计信息采样行数
 PARSER_TIMEOUT=300s          # 解析超时时间
 ```
-
-## Elasticsearch 集成示例
-
-当前仓库附带一个 `cmd/ingest-docx` CLI，用于演示如何将对象存储中的 DOCX 文档全文索引到 Elasticsearch：
-
-```bash
-cd meta/backend
-
-# 默认读取 ELASTICSEARCH_URL_LOCAL 或 ELASTICSEARCH_URL，若未设置则使用 http://localhost:9200
-go run ./cmd/ingest-docx \
-  --file ../../manager/frontend/node_modules/mammoth/test/test-data/simple-list.docx \
-  --index asset-documents
-```
-
-执行流程：
-- 使用内置 `office-extractor` 插件提取文档标题、作者、页数等元数据；
-- 解压 `word/document.xml` 并抽取正文文本，生成 `content` 与 `content_preview`；
-- 如目标索引不存在，会自动创建 `asset-documents` 索引并配置基础映射；
-- 以文档内容的 `SHA-256` 作为 `_id` 写入 Elasticsearch，便于后续幂等写入与去重。
-
-当环境变量 `ELASTICSEARCH_URL` 配置生效后，Meta 后端在执行元数据扫描时也会自动将以下信息写入 Elasticsearch：
-- 关系型库的 Schema / 表及字段结构，落入 `ELASTICSEARCH_INDEX`（默认为 `metadata-assets`）索引；
-- 对象存储中文档的正文与元数据：DOCX/DOCM、PPTX、XLSX、PDF 等 Office 格式；
-- 结构化文本文件（CSV/TSV、JSON/TXT/日志等）截取样例行或内容摘要；
-- GeoJSON、Shapefile、SQLite 等结构化文件的概要信息（几何、字段、表结构）；
-以上数据统一写入 `META_DOCUMENT_INDEX`（默认为 `asset-documents`）以供全文检索。
-索引内容可通过 Elasticsearch API 或自建可视化面板查看，为后续全文搜索和多维筛选提供基础。
-
-该示例为后续批量扫描（S3 / MinIO 对象、数据库 BLOB 等）提供模板，可根据业务需要扩展字段或替换为消息队列驱动流程。
 
 ## 运行方式
 

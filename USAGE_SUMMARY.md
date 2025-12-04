@@ -10,8 +10,8 @@
 - ✅ PostgreSQL 自定义镜像（含超级管理员）
 
 ### 2. 生产环境启动脚本
-- ✅ `scripts/start-prod.sh` - 一键启动生产环境
-- ✅ `scripts/stop-prod.sh` - 停止生产环境
+- ✅ `scripts/prod/start.sh` - 一键启动生产环境
+- ✅ `scripts/prod/stop.sh` - 停止生产环境
 - ✅ 自动生成安全密钥
 - ✅ 自动检查端口冲突
 - ✅ 健康检查和状态显示
@@ -35,7 +35,7 @@
 docker run -d -p 5001:5000 --restart=always --name registry registry:2
 
 # 2. 启动 ADDP
-./scripts/start-prod.sh
+./scripts/prod/start.sh
 
 # 3. 访问
 open http://localhost:8090
@@ -85,8 +85,8 @@ cd ~/addp
 ## 📁 重要文件说明
 
 ### 启动脚本
-- `scripts/start-prod.sh` - **生产环境启动脚本（本地使用）**
-- `scripts/stop-prod.sh` - 生产环境停止脚本
+- `scripts/prod/start.sh` - **生产环境启动脚本（本地使用）**
+- `scripts/prod/stop.sh` - 生产环境停止脚本
 
 ### 部署脚本
 - `scripts/deploy/deploy-all.sh` - 一键部署到服务器
@@ -126,7 +126,6 @@ cd ~/addp
 | System Frontend | http://localhost:8090 | 主界面 |
 | System Backend | http://localhost:8080 | API |
 | MinIO Console | http://localhost:9001 | 对象存储 |
-| Elasticsearch | http://localhost:9200 | 搜索引擎 |
 | PostgreSQL | localhost:5432 | 数据库 |
 | Redis | localhost:6379 | 缓存 |
 
@@ -136,8 +135,8 @@ cd ~/addp
 
 ### 启动和停止
 ```bash
-./scripts/start-prod.sh    # 启动
-./scripts/stop-prod.sh     # 停止
+./scripts/prod/start.sh    # 启动
+./scripts/prod/stop.sh     # 停止
 ```
 
 ### 查看状态
@@ -208,8 +207,8 @@ make dev-stop      # 停止开发环境
 
 ### 生产环境
 ```bash
-./scripts/start-prod.sh    # 或 make prod-start
-./scripts/stop-prod.sh     # 或 make prod-stop
+./scripts/prod/start.sh    # 或 make prod-start
+./scripts/prod/stop.sh     # 或 make prod-stop
 ```
 
 **区别**:
@@ -253,7 +252,7 @@ open http://localhost:8090
 
 **现在您可以**:
 
-1. ✅ 一条命令启动本地环境: `./scripts/start-prod.sh`
+1. ✅ 一条命令启动本地环境: `./scripts/prod/start.sh`
 2. ✅ 一条命令部署到服务器: `./scripts/deploy/deploy-all.sh --server user@host`
 3. ✅ 自动处理所有配置和密钥生成
 4. ✅ 自动检查和修复常见问题

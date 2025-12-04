@@ -41,9 +41,9 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
-            <!-- 普通用户只能编辑自己，不能删除 -->
+            <!-- 普通用户只能编辑自己，可以修改自己的密码 -->
             <template v-if="currentUser?.user_type === 'user'">
               <el-button
                 v-if="row.id === currentUser?.id"
@@ -52,10 +52,24 @@
                 :icon="Edit"
                 @click="openEditDialog(row)"
               >编辑</el-button>
+              <el-button
+                v-if="row.id === currentUser?.id"
+                size="small"
+                type="warning"
+                :icon="Key"
+                @click="openChangePasswordDialog(row)"
+              >修改密码</el-button>
             </template>
-            <!-- 租户管理员可以编辑和删除普通用户 -->
+            <!-- 租户管理员可以编辑所有用户，可以修改自己的密码，可以删除普通用户 -->
             <template v-else-if="currentUser?.user_type === 'tenant_admin'">
               <el-button size="small" type="primary" :icon="Edit" @click="openEditDialog(row)">编辑</el-button>
+              <el-button
+                v-if="row.id === currentUser?.id"
+                size="small"
+                type="warning"
+                :icon="Key"
+                @click="openChangePasswordDialog(row)"
+              >修改密码</el-button>
               <el-button
                 v-if="row.user_type === 'user'"
                 size="small"
@@ -63,6 +77,23 @@
                 :icon="Delete"
                 @click="handleDelete(row)"
               >删除</el-button>
+            </template>
+            <!-- 超级管理员可以编辑自己，可以修改自己的密码 -->
+            <template v-else-if="currentUser?.user_type === 'super_admin'">
+              <el-button
+                v-if="row.id === currentUser?.id"
+                size="small"
+                type="primary"
+                :icon="Edit"
+                @click="openEditDialog(row)"
+              >编辑</el-button>
+              <el-button
+                v-if="row.id === currentUser?.id"
+                size="small"
+                type="warning"
+                :icon="Key"
+                @click="openChangePasswordDialog(row)"
+              >修改密码</el-button>
             </template>
           </template>
         </el-table-column>
@@ -94,12 +125,13 @@
           <el-input v-model="userForm.username" :disabled="isEdit" placeholder="请输入用户名" />
         </el-form-item>
 
-        <el-form-item label="密码" prop="password">
+        <!-- 密码字段只在创建新用户时显示 -->
+        <el-form-item label="密码" prop="password" v-if="!isEdit">
           <el-input
             v-model="userForm.password"
             type="password"
             show-password
-            :placeholder="isEdit ? '不修改请留空' : '请输入密码'"
+            placeholder="请输入密码"
           />
         </el-form-item>
 
@@ -133,6 +165,57 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 修改密码对话框 -->
+    <el-dialog
+      v-model="passwordDialogVisible"
+      title="修改密码"
+      width="500px"
+      @close="resetPasswordForm"
+    >
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordRules"
+        label-width="100px"
+      >
+        <el-form-item label="旧密码" prop="old_password">
+          <el-input
+            v-model="passwordForm.old_password"
+            type="password"
+            show-password
+            placeholder="请输入旧密码"
+          />
+        </el-form-item>
+
+        <el-form-item label="新密码" prop="new_password">
+          <el-input
+            v-model="passwordForm.new_password"
+            type="password"
+            show-password
+            placeholder="请输入新密码（至少6位）"
+          />
+        </el-form-item>
+
+        <el-form-item label="确认密码" prop="confirm_password">
+          <el-input
+            v-model="passwordForm.confirm_password"
+            type="password"
+            show-password
+            placeholder="请再次输入新密码"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="passwordDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleChangePassword" :loading="passwordSubmitLoading">
+            确定
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -140,7 +223,7 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { usersAPI } from '../api/users'
 import { authAPI } from '../api/auth'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Key } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../store/auth'
 import Tenants from './Tenants.vue'
@@ -167,6 +250,18 @@ const userForm = reactive({
   full_name: '',
   is_active: true,
   user_type: 'user'
+})
+
+// 密码修改对话框相关
+const passwordDialogVisible = ref(false)
+const passwordSubmitLoading = ref(false)
+const passwordFormRef = ref(null)
+const changingUserId = ref(null)
+
+const passwordForm = reactive({
+  old_password: '',
+  new_password: '',
+  confirm_password: ''
 })
 
 // 用户类型相关函数
@@ -205,6 +300,29 @@ const rules = {
   ],
   email: [
     { type: 'email', message: '请输入正确的邮箱地址', trigger: 'blur' }
+  ]
+}
+
+const passwordRules = {
+  old_password: [
+    { required: true, message: '请输入旧密码', trigger: 'blur' }
+  ],
+  new_password: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '密码长度不能少于 6 位', trigger: 'blur' }
+  ],
+  confirm_password: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value !== passwordForm.new_password) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
   ]
 }
 
@@ -278,10 +396,19 @@ const handleSubmit = async () => {
           // 编辑用户
           const data = {
             email: userForm.email || null,
-            full_name: userForm.full_name || null,
-            is_active: userForm.is_active,
-            user_type: userForm.user_type
+            full_name: userForm.full_name || null
           }
+
+          // 只有租户管理员编辑其他用户时，才提交 is_active 和 user_type
+          const isEditingOthers = editingUserId.value !== currentUser.value?.id
+          const isTenantAdmin = currentUser.value?.user_type === 'tenant_admin'
+
+          if (isEditingOthers && isTenantAdmin) {
+            data.is_active = userForm.is_active
+            data.user_type = userForm.user_type
+          }
+
+          // 密码字段条件化提交
           if (userForm.password) {
             data.password = userForm.password
           }
@@ -334,6 +461,50 @@ const handleDelete = (row) => {
     }
   }).catch(() => {
     // 用户取消
+  })
+}
+
+// 打开修改密码对话框
+const openChangePasswordDialog = (row) => {
+  changingUserId.value = row.id
+  resetPasswordForm()
+  passwordDialogVisible.value = true
+}
+
+// 重置密码表单
+const resetPasswordForm = () => {
+  passwordForm.old_password = ''
+  passwordForm.new_password = ''
+  passwordForm.confirm_password = ''
+  if (passwordFormRef.value) {
+    nextTick(() => {
+      passwordFormRef.value?.clearValidate()
+    })
+  }
+}
+
+// 修改密码
+const handleChangePassword = async () => {
+  if (!passwordFormRef.value) return
+
+  await passwordFormRef.value.validate(async (valid) => {
+    if (valid) {
+      passwordSubmitLoading.value = true
+      try {
+        await usersAPI.changePassword(changingUserId.value, {
+          old_password: passwordForm.old_password,
+          new_password: passwordForm.new_password
+        })
+        ElMessage.success('密码修改成功')
+        passwordDialogVisible.value = false
+        resetPasswordForm()
+      } catch (error) {
+        console.error('修改密码失败:', error)
+        ElMessage.error(error.response?.data?.error || '修改密码失败')
+      } finally {
+        passwordSubmitLoading.value = false
+      }
+    }
   })
 }
 

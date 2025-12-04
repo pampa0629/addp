@@ -512,7 +512,7 @@ Kafka 等流式连接器作为 Phase 5 扩展
 复杂转换（JOIN、聚合）暂不支持，避免重复造轮子
 后续演进
 支持 CDC (Change Data Capture)
-支持更多数据源（ClickHouse、Elasticsearch、MongoDB）
+支持更多数据源（ClickHouse、MongoDB）
 引入 Schema Registry 管理数据 schema 版本
 支持数据质量校验（行数校验、checksum 对比）
 User approved the plan

@@ -20,11 +20,10 @@
 - addp-gateway
 - addp-portal
 
-**基础设施镜像（4个）**:
+**基础设施镜像（3个）**:
 - addp-infra-postgres-init:15-alpine ⭐ **新版本，含初始化脚本**
 - addp-infra-redis:7-alpine
 - addp-infra-minio:latest
-- addp-infra-elasticsearch:8.11.0
 
 ---
 
@@ -94,7 +93,6 @@ docker-compose -f docker-compose.prod.yml ps
 # addp-postgres            Up (healthy)
 # addp-redis               Up (healthy)
 # addp-minio-system        Up
-# addp-elasticsearch       Up
 # addp-system-backend      Up (healthy)
 # addp-gateway             Up (healthy)
 # addp-portal              Up
@@ -223,15 +221,9 @@ ports:
 
 ### 问题 4: 内存不足
 
-**错误**: Elasticsearch 启动失败
+**错误**: 容器内存不足导致服务崩溃
 
-**解决**: 调整 ES 内存限制
-
-```yaml
-elasticsearch:
-  environment:
-    - "ES_JAVA_OPTS=-Xms512m -Xmx512m"  # 降低内存使用
-```
+**解决**: 调整 Docker 内存限制或增加服务器内存
 
 ---
 
@@ -245,7 +237,6 @@ elasticsearch:
 | Gateway | http://192.168.31.174:8000 | API 网关 |
 | System Backend | http://192.168.31.174:8080 | 系统后端 API |
 | MinIO Console | http://192.168.31.174:9001 | 文件管理 |
-| Elasticsearch | http://192.168.31.174:9200 | 搜索引擎 |
 
 ---
 

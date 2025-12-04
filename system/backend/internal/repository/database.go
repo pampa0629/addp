@@ -112,3 +112,108 @@ func InitSuperAdmin(db *gorm.DB) error {
 
 	return nil
 }
+
+// InitDefaultTenant 初始化默认租户和租户管理员
+// 仅在开发环境且显式启用时创建,生产环境强制禁用
+func InitDefaultTenant(db *gorm.DB) error {
+	// 检查是否启用默认租户功能
+	enableDefaultTenant := getEnv("ENABLE_DEFAULT_TENANT", "false")
+	env := getEnv("ENV", "development")
+
+	// 生产环境强制禁用
+	if env == "production" {
+		log.Println("⚠️  跳过默认租户初始化 (生产环境禁止创建默认测试账户)")
+		return nil
+	}
+
+	// 未显式启用则跳过
+	if enableDefaultTenant != "true" {
+		log.Println("ℹ️  跳过默认租户初始化 (未启用 ENABLE_DEFAULT_TENANT)")
+		return nil
+	}
+
+	// 从环境变量读取默认租户配置
+	tenantName := getEnv("DEFAULT_TENANT_NAME", "默认租户")
+	tenantDesc := getEnv("DEFAULT_TENANT_DESCRIPTION", "用于开发和测试的默认租户")
+	adminUsername := getEnv("DEFAULT_ADMIN_USERNAME", "admin")
+	adminPassword := getEnv("DEFAULT_ADMIN_PASSWORD", "123456")
+	adminEmail := getEnv("DEFAULT_ADMIN_EMAIL", "admin@addp.com")
+
+	// 1. 检查并创建默认租户
+	var tenant models.Tenant
+	result := db.Where("name = ?", tenantName).First(&tenant)
+
+	if result.Error == gorm.ErrRecordNotFound {
+		// 创建默认租户
+		tenant = models.Tenant{
+			Name:        tenantName,
+			Description: tenantDesc,
+			IsActive:    true,
+		}
+
+		if err := db.Create(&tenant).Error; err != nil {
+			log.Printf("❌ 默认租户创建失败: %v\n", err)
+			return err
+		}
+
+		log.Printf("✅ 默认租户已创建: %s (ID: %d)\n", tenantName, tenant.ID)
+	} else if result.Error != nil {
+		log.Printf("❌ 查询默认租户失败: %v\n", result.Error)
+		return result.Error
+	} else {
+		log.Printf("ℹ️  默认租户已存在: %s (ID: %d)\n", tenantName, tenant.ID)
+	}
+
+	// 2. 检查并创建租户管理员
+	var user models.User
+	result = db.Where("username = ?", adminUsername).First(&user)
+
+	if result.Error == gorm.ErrRecordNotFound {
+		// 创建租户管理员用户
+		passwordHash, err := utils.HashPassword(adminPassword)
+		if err != nil {
+			log.Printf("❌ 密码加密失败: %v\n", err)
+			return err
+		}
+
+		tenantAdmin := models.User{
+			Username:     adminUsername,
+			Email:        adminEmail,
+			PasswordHash: passwordHash,
+			FullName:     "默认租户管理员",
+			IsActive:     true,
+			UserType:     models.UserTypeTenantAdmin,
+			TenantID:     &tenant.ID, // 关联到默认租户
+			IsSuperuser:  false,
+		}
+
+		if err := db.Create(&tenantAdmin).Error; err != nil {
+			log.Printf("❌ 租户管理员创建失败: %v\n", err)
+			return err
+		}
+
+		log.Printf("✅ 默认租户管理员已创建: %s / %s (租户: %s)\n", adminUsername, adminPassword, tenantName)
+		return nil
+	}
+
+	if result.Error != nil {
+		log.Printf("❌ 查询租户管理员失败: %v\n", result.Error)
+		return result.Error
+	}
+
+	// 如果用户已存在,确保类型和租户关联正确
+	if user.UserType != models.UserTypeTenantAdmin || user.TenantID == nil || *user.TenantID != tenant.ID {
+		user.UserType = models.UserTypeTenantAdmin
+		user.TenantID = &tenant.ID
+		user.IsSuperuser = false
+		if err := db.Save(&user).Error; err != nil {
+			log.Printf("❌ 更新租户管理员信息失败: %v\n", err)
+			return err
+		}
+		log.Printf("ℹ️  租户管理员信息已更新: %s (租户: %s)\n", adminUsername, tenantName)
+	} else {
+		log.Printf("ℹ️  租户管理员已存在: %s (租户: %s)\n", adminUsername, tenantName)
+	}
+
+	return nil
+}

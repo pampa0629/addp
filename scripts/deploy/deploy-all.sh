@@ -241,13 +241,6 @@ else
     echo -e "${GREEN}✓ ${REGISTRY}/addp-infra-minio:latest${NC}"
 fi
 
-if ! check_image_exists "${REGISTRY}/addp-infra-elasticsearch:8.11.0"; then
-    echo -e "${RED}✗ ${REGISTRY}/addp-infra-elasticsearch:8.11.0 not found${NC}"
-    INFRA_MISSING=true
-else
-    echo -e "${GREEN}✓ ${REGISTRY}/addp-infra-elasticsearch:8.11.0${NC}"
-fi
-
 echo ""
 
 if [ "$INFRA_MISSING" = true ]; then
@@ -256,7 +249,7 @@ if [ "$INFRA_MISSING" = true ]; then
     echo -e "${YELLOW}========================================${NC}"
     echo ""
     echo -e "${YELLOW}This is a one-time setup that will:${NC}"
-    echo -e "  1. Pull official images from Docker Hub (alpine, redis, minio, elasticsearch)"
+    echo -e "  1. Pull official images from Docker Hub (alpine, redis, minio)"
     echo -e "  2. Tag and push to local registry (${REGISTRY})"
     echo -e "  3. Create multi-arch manifests (AMD64 + ARM64)"
     echo ""
@@ -264,7 +257,7 @@ if [ "$INFRA_MISSING" = true ]; then
     echo ""
 
     # Pull and push Alpine
-    echo -e "${BLUE}[1/4] Alpine (backend base image)${NC}"
+    echo -e "${BLUE}[1/3] Alpine (backend base image)${NC}"
     docker pull --platform linux/amd64 alpine:latest 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
     docker pull --platform linux/arm64 alpine:latest 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
     docker tag alpine:latest ${REGISTRY}/alpine:latest-amd64
@@ -290,7 +283,7 @@ if [ "$INFRA_MISSING" = true ]; then
     echo ""
 
     # Pull and push MinIO
-    echo -e "${BLUE}[3/4] MinIO (object storage)${NC}"
+    echo -e "${BLUE}[3/3] MinIO (object storage)${NC}"
     docker pull --platform linux/amd64 minio/minio:latest 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
     docker pull --platform linux/arm64 minio/minio:latest 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
     docker tag minio/minio:latest ${REGISTRY}/addp-infra-minio:latest-amd64
@@ -300,19 +293,6 @@ if [ "$INFRA_MISSING" = true ]; then
     docker buildx imagetools create --tag ${REGISTRY}/addp-infra-minio:latest \
         ${REGISTRY}/addp-infra-minio:latest-amd64 ${REGISTRY}/addp-infra-minio:latest-arm64
     echo -e "${GREEN}✓ MinIO ready${NC}"
-    echo ""
-
-    # Pull and push Elasticsearch
-    echo -e "${BLUE}[4/4] Elasticsearch (search engine)${NC}"
-    docker pull --platform linux/amd64 elasticsearch:8.11.0 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
-    docker pull --platform linux/arm64 elasticsearch:8.11.0 2>&1 | grep -v "Pulling\|pull\|layer\|Waiting\|Download" || true
-    docker tag elasticsearch:8.11.0 ${REGISTRY}/addp-infra-elasticsearch:8.11.0-amd64
-    docker tag elasticsearch:8.11.0 ${REGISTRY}/addp-infra-elasticsearch:8.11.0-arm64
-    docker push ${REGISTRY}/addp-infra-elasticsearch:8.11.0-amd64 2>&1 | grep -v "Unavailable\|Layer already exists" || true
-    docker push ${REGISTRY}/addp-infra-elasticsearch:8.11.0-arm64 2>&1 | grep -v "Unavailable\|Layer already exists" || true
-    docker buildx imagetools create --tag ${REGISTRY}/addp-infra-elasticsearch:8.11.0 \
-        ${REGISTRY}/addp-infra-elasticsearch:8.11.0-amd64 ${REGISTRY}/addp-infra-elasticsearch:8.11.0-arm64
-    echo -e "${GREEN}✓ Elasticsearch ready${NC}"
     echo ""
 
 

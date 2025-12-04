@@ -9,7 +9,6 @@
 - **数据预览**: 支持多种格式的在线预览（CSV、JSON、Parquet、Excel 等）
 - **元数据扫描**: 自动扫描数据库表结构和字段信息
 - **权限控制**: 管理用户对数据源和目录的访问权限
-- **全文检索**: 基于 Elasticsearch 的文档与元数据快速检索
 
 ## 🚀 快速开始
 
@@ -135,15 +134,6 @@ MINIO_ENDPOINT=localhost:9002
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=addp-data
-
-# Elasticsearch (全文检索)
-ELASTICSEARCH_URL=http://localhost:9200
-ELASTICSEARCH_USERNAME=
-ELASTICSEARCH_PASSWORD=
-ELASTICSEARCH_API_KEY=
-ELASTICSEARCH_INDEX=metadata-assets
-META_DOCUMENT_INDEX=asset-documents
-ELASTICSEARCH_SKIP_VERIFY=false
 
 # 预览配置
 PREVIEW_MAX_ROWS=1000

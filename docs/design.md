@@ -53,7 +53,6 @@ addp：All Domain Data Platform，全域数据平台
 所有模块，均采用一套内置的系统存储。
 当前已使用：
 Postgresql数据库管理结构化数据（开启spatial空间扩展和vector向量扩展）
-elasticsearch管理全文检索。
 后续会根据实际需要增加redis、minio等内置的系统存储能力。
 ## 内置系统数据库
 内部根据各模块名字划分为不同schema，如system、meta等。

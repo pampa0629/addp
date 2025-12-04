@@ -105,7 +105,7 @@ vim .env.prod
 # REDIS_PASSWORD=<Redis密码>
 # MINIO_ROOT_PASSWORD=<MinIO密码>
 
-# 可选：一键生成并写入（也可使用 scripts/start-prod.sh 自动生成）
+# 可选：一键生成并写入（也可使用 scripts/prod/start.sh 自动生成）
 openssl rand -base64 32  # 手动生成备用密钥
 
 ## 4.2 启动本地镜像仓库（如未运行）

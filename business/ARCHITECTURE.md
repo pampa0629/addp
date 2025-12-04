@@ -29,8 +29,7 @@ docker-compose.yml
 主 docker-compose.yml (ADDP System)
 ├── postgres (5432)           → 仅系统元数据
 ├── redis (6379)              → 缓存和队列
-├── minio-system (9002-9003)  → 仅系统文件
-└── elasticsearch (9200)      → 全文检索
+└── minio-system (9002-9003)  → 仅系统文件
 
 business/docker-compose.yml (Business Infrastructure - 完全独立)
 ├── postgis (5433)            → 仅业务数据 (官方镜像: postgis/postgis:15-3.4-alpine)

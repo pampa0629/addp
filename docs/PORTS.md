@@ -8,8 +8,6 @@
 - Redis: `6379`
 - MinIO API: `9002`
 - MinIO Console: `9003`
-- Elasticsearch HTTP: `9200`
-- Elasticsearch Transport: `9300`
 
 来源：`docker-compose.yml`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra-up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
 

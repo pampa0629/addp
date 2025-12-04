@@ -13,10 +13,15 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async login(username, password) {
-      const response = await authAPI.login(username, password)
-      this.token = response.data.access_token
-      localStorage.setItem('token', this.token)
-      await this.fetchUser()
+      try {
+        const response = await authAPI.login(username, password)
+        this.token = response.data.access_token
+        localStorage.setItem('token', this.token)
+        await this.fetchUser()
+      } catch (error) {
+        console.error('Auth Store - 登录失败:', error)
+        throw error  // 重新抛出错误让调用者处理
+      }
     },
 
     setToken(token) {
@@ -25,8 +30,13 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async fetchUser() {
-      const response = await authAPI.getMe()
-      this.user = response.data
+      try {
+        const response = await authAPI.getMe()
+        this.user = response.data
+      } catch (error) {
+        console.error('Auth Store - 获取用户信息失败:', error)
+        throw error
+      }
     },
 
     logout() {

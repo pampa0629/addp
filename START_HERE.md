@@ -3,7 +3,7 @@
 ## 一条命令启动
 
 ```bash
-./scripts/start-prod.sh
+./scripts/prod/start.sh
 ```
 
 就这么简单！
@@ -13,7 +13,7 @@
 ## 停止服务
 
 ```bash
-./scripts/stop-prod.sh
+./scripts/prod/stop.sh
 ```
 
 ---

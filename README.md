@@ -178,7 +178,7 @@ API 网关服务：
 ### 开发 System 模块
 
 ```bash
-# 启动基础设施（PostgreSQL/Redis/MinIO/Elasticsearch）
+# 启动基础设施（PostgreSQL/Redis/MinIO）
 make infra-up   # 或 ./scripts/infra-up.sh
 
 # 后端开发（自动为本地 Redis 设置认证：REDIS_PASSWORD=addp_redis）
@@ -348,8 +348,6 @@ MINIO_ROOT_PASSWORD=your-minio-password
 | Redis | 6379 | 缓存/队列 |
 | MinIO API | 9002 | 对象存储 |
 | MinIO Console | 9003 | MinIO 管理界面 |
-| Elasticsearch REST | 9200 | 全文检索 API |
-| Elasticsearch Transport | 9300 | 节点通信 |
 
 ## 🗄️ 数据库
 

@@ -269,7 +269,7 @@ cd transfer/backend/scripts
 
 ```bash
 cd /Users/pampa/code/addp
-./scripts/setup-high-performance-import.sh
+./scripts/setup/high-performance-import.sh
 ```
 
 部署脚本将自动:

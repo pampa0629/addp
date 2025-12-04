@@ -93,14 +93,14 @@ func (s *PostgresScanner) ScanTables(schemaName string) ([]format.TableInfo, err
 运行诊断脚本查看详细状态：
 
 ```bash
-./scripts/debug-scan.sh
+./scripts/debug/scan/debug.sh
 ```
 
 ### 方案3: 清理重新扫描
 
 ```bash
 # 1. 停止所有服务
-./scripts/dev-stop.sh
+./scripts/dev/stop.sh
 
 # 2. 清理旧数据
 docker-compose exec -T postgres psql -U addp -d addp <<EOF
@@ -109,7 +109,7 @@ DELETE FROM metadata.meta_node WHERE res_id = 2;
 EOF
 
 # 3. 启动服务
-./scripts/dev-start.sh
+./scripts/dev/start.sh
 
 # 4. 在UI重新执行扫描，观察日志
 tail -f logs/meta-backend.log
@@ -154,12 +154,12 @@ s.log.Info("扫描表完成",
 - [scan_service_new.go](../meta/backend/internal/service/scan_service_new.go) - 扫描服务主逻辑
 - [postgres_scanner.go](../meta/backend/plugins/scanners/postgres_scanner.go) - PostgreSQL扫描器
 - [resource_service.go](../meta/backend/internal/service/resource_service.go) - 资源服务（密码解密）
-- [debug-scan.sh](../scripts/debug-scan.sh) - 诊断脚本
-- [fix-scan.sh](../scripts/fix-scan.sh) - 修复脚本
+- [debug-scan.sh](../scripts/debug/scan/debug.sh) - 诊断脚本
+- [fix-scan.sh](../scripts/debug/scan/fix.sh) - 修复脚本
 
 ## 下一步行动
 
-1. **立即执行**: 运行 `./scripts/debug-scan.sh` 确认问题
+1. **立即执行**: 运行 `./scripts/debug/scan/debug.sh` 确认问题
 2. **验证配置**: 检查 `.env` 中的 `ENCRYPTION_KEY`
 3. **重新扫描**: 在UI触发扫描，观察 `logs/meta-backend.log`
 4. **如果仍失败**: 运行 `scripts/test-db-connection.go` 测试连接

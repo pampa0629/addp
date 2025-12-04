@@ -68,8 +68,6 @@ Postgresql数据库管理结构化数据，并开启了spatial空间扩展和vec
 支持空间元数据的存储
 ### vector扩展
 支持多模态向量提取结果的存储和向量检索
-## elasticsearch
-实现全文检索。
 ## redis
 实现数据传输时的队列缓存
 ## todo

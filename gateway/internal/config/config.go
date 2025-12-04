@@ -9,6 +9,7 @@ type Config struct {
 	ManagerServiceURL  string
 	MetaServiceURL     string
 	TransferServiceURL string
+	DevelopServiceURL  string
 }
 
 func Load() *Config {
@@ -24,6 +25,7 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
+		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
 	}
 }
 

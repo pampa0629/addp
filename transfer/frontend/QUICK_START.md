@@ -20,7 +20,7 @@
 
 ```bash
 cd /Users/pampa/code/addp
-./scripts/dev-start.sh
+./scripts/dev/start.sh
 ```
 
 访问：http://localhost:5176/tasks
@@ -190,7 +190,7 @@ src/
 
 ## ✅ 下一步
 
-1. ✅ 启动服务：`./scripts/dev-start.sh`
+1. ✅ 启动服务：`./scripts/dev/start.sh`
 2. ✅ 访问界面：http://localhost:5176
 3. ✅ 创建任务：点击"新建任务"
 4. ✅ 查看文档：阅读 [UI_UPGRADE_GUIDE.md](../UI_UPGRADE_GUIDE.md)

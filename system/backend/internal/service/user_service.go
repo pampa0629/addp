@@ -174,16 +174,20 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 
 	// 只有超级管理员和租户管理员可以修改激活状态和用户类型
 	if currentUser.UserType == models.UserTypeSuperAdmin || currentUser.UserType == models.UserTypeTenantAdmin {
-		if req.IsActive != nil {
-			user.IsActive = *req.IsActive
-		}
-		if req.UserType != nil {
-			// 验证用户类型修改权限
-			if err := s.validateCreatePermission(currentUser, *req.UserType); err != nil {
-				return nil, err
+		// 只有在修改他人时，才允许更新 is_active 和 user_type
+		// 修改自己时，忽略这些字段，防止权限提升攻击
+		if currentUser.ID != user.ID {
+			if req.IsActive != nil {
+				user.IsActive = *req.IsActive
 			}
-			user.UserType = *req.UserType
-			user.IsSuperuser = *req.UserType == models.UserTypeSuperAdmin
+			if req.UserType != nil {
+				// 验证用户类型修改权限
+				if err := s.validateCreatePermission(currentUser, *req.UserType); err != nil {
+					return nil, err
+				}
+				user.UserType = *req.UserType
+				user.IsSuperuser = *req.UserType == models.UserTypeSuperAdmin
+			}
 		}
 	}
 
@@ -314,4 +318,31 @@ func (s *UserService) Authenticate(username, password string) (*models.User, err
 	}
 
 	return user, nil
+}
+
+// ChangePassword 修改密码（需要验证旧密码）
+func (s *UserService) ChangePassword(userID uint, req *models.ChangePasswordRequest, currentUserID uint) error {
+	// 只能修改自己的密码
+	if userID != currentUserID {
+		return errors.New("只能修改自己的密码")
+	}
+
+	user, err := s.repo.GetByID(userID)
+	if err != nil {
+		return errors.New("用户不存在")
+	}
+
+	// 验证旧密码
+	if !utils.CheckPassword(req.OldPassword, user.PasswordHash) {
+		return errors.New("旧密码错误")
+	}
+
+	// Hash 新密码
+	passwordHash, err := utils.HashPassword(req.NewPassword)
+	if err != nil {
+		return err
+	}
+
+	user.PasswordHash = passwordHash
+	return s.repo.Update(user)
 }

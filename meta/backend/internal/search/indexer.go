@@ -356,9 +356,7 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, 
 
 	// 删除资产索引中的记录
 	assetIndex := i.client.Index(i.assetIndex)
-	task, err := assetIndex.DeleteDocuments(&meilisearch.DocumentsQuery{
-		Filter: filterStr,
-	})
+	task, err := assetIndex.DeleteDocumentsByFilter(filterStr)
 	if err != nil {
 		return fmt.Errorf("failed to delete objects from asset index: %w", err)
 	}
@@ -374,9 +372,7 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, 
 	// 删除文档索引中的记录
 	if i.documentIndex != "" {
 		docIndex := i.client.Index(i.documentIndex)
-		task, err := docIndex.DeleteDocuments(&meilisearch.DocumentsQuery{
-			Filter: filterStr,
-		})
+		task, err := docIndex.DeleteDocumentsByFilter(filterStr)
 		if err != nil {
 			i.log.Warn("删除文档索引失败", "error", err)
 		} else {
@@ -412,9 +408,7 @@ func (i *Indexer) DeleteTables(ctx context.Context, tenantID, resourceID uint, s
 	filterStr := strings.Join(filters, " AND ")
 
 	index := i.client.Index(i.assetIndex)
-	task, err := index.DeleteDocuments(&meilisearch.DocumentsQuery{
-		Filter: filterStr,
-	})
+	task, err := index.DeleteDocumentsByFilter(filterStr)
 	if err != nil {
 		return fmt.Errorf("failed to delete tables: %w", err)
 	}

@@ -16,7 +16,6 @@ PORTS=(
   "8082:Meta Backend"
   "9000:MinIO API"
   "9001:MinIO Console"
-  "9200:Elasticsearch"
   "5170:Portal"
 )
 

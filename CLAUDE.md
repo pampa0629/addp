@@ -62,7 +62,7 @@ make logs           # View all logs
 # 1. Start all services in correct order (Recommended)
 make dev-start
 # Or directly:
-./scripts/dev-start.sh
+./scripts/dev/start.sh
 
 # 2. Check service health
 make dev-health
@@ -70,7 +70,7 @@ make dev-health
 # 3. Stop all services
 make dev-stop
 # Or directly:
-./scripts/dev-stop.sh
+./scripts/dev/stop.sh
 ```
 
 **Startup Order**:
@@ -94,7 +94,7 @@ Frontend services (optional)
 - ✅ Log files - redirects output to `logs/` directory for easy debugging
 
 **Startup Script Details**:
-- Location: `scripts/dev-start.sh`
+- Location: `scripts/dev/start.sh`
 - Waits for `/health` endpoint to return 200 before proceeding
 - Creates `.dev-pids/` directory to track process IDs
 - Logs stored in `logs/` directory (e.g., `logs/system-backend.log`)
@@ -113,7 +113,7 @@ Frontend services (optional)
 - See [docs/STARTUP_ORDER.md](docs/STARTUP_ORDER.md) for detailed dependency documentation
 
 **Important Development Workflow**:
-- **After modifying backend code**, always use `./scripts/dev-restart.sh` to restart all services
+- **After modifying backend code**, always use `./scripts/dev/restart.sh` to restart all services
 - This ensures all processes (including workers) are recompiled with the latest changes
 - Manual restart of individual services may cause version mismatch issues
 
@@ -172,7 +172,6 @@ ADDP 采用**系统与业务数据分离**的架构设计：
 - `postgres`: 存储 ADDP 系统元数据（用户、资源配置、元数据索引、任务定义等）
 - `redis`: 缓存和任务队列
 - `minio`: 存储系统文件（用户头像、系统配置等）
-- `elasticsearch`: 全文检索
 
 **业务基础设施**（business/docker-compose.yml，独立部署）:
 - `postgres`: 存储用户通过 ADDP 管理的实际业务数据（用户上传的 PostgreSQL 数据等）
@@ -585,7 +584,6 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 | Redis | 6379 | 6379 | Cache & queue |
 | MinIO System API | 9000 | 9000 | System file storage |
 | MinIO System Console | 9001 | 9001 | System MinIO web UI |
-| Elasticsearch | 9200 | 9200 | Full-text search |
 
 **Business Infrastructure Services** (deployed via `business/docker-compose.yml`):
 
@@ -605,6 +603,71 @@ docker-compose up -d
 ```
 
 ## Testing
+
+### 默认测试账户 (仅用于开发和测试环境)
+
+ADDP 系统在首次启动时可自动创建测试账户,方便开发调试。
+
+**重要**: 此功能默认**禁用**,需要在 `.env` 文件中显式启用,且在生产环境强制禁止使用。
+
+#### 超级管理员账户
+
+- **用户名**: `SuperAdmin`
+- **密码**: `20251001#SuperAdmin`
+- **用户类型**: `super_admin` (超级管理员)
+- **租户**: 无 (跨租户管理)
+- **权限**: 管理租户、查看系统级日志、不能直接操作业务数据
+- **用途**: 系统级管理、租户管理
+- **创建方式**: 应用启动时自动创建 (总是启用)
+
+#### 默认租户管理员账户
+
+- **租户**: 默认租户
+- **用户名**: `admin`
+- **密码**: `123456`
+- **用户类型**: `tenant_admin` (租户管理员)
+- **权限**: 管理默认租户下的用户、资源、数据
+- **用途**: 日常开发调试、演示使用
+- **创建方式**: 需要在 `.env` 中设置 `ENABLE_DEFAULT_TENANT=true` 启用
+
+#### 启用默认租户账户
+
+在 `.env` 文件中添加以下配置:
+
+```bash
+# 启用默认租户和租户管理员账户创建
+ENABLE_DEFAULT_TENANT=true
+
+# 可选: 自定义默认账户信息
+DEFAULT_TENANT_NAME=默认租户
+DEFAULT_ADMIN_USERNAME=admin
+DEFAULT_ADMIN_PASSWORD=123456
+DEFAULT_ADMIN_EMAIL=admin@addp.com
+```
+
+#### 安全提示
+
+- ⚠️ **仅用于开发和测试环境** - 这些账户密码较弱,不应在生产环境使用
+- ⚠️ **生产环境强制禁用** - 即使设置 `ENABLE_DEFAULT_TENANT=true`,在 `ENV=production` 时也不会创建
+- ⚠️ **默认禁用** - 未设置 `ENABLE_DEFAULT_TENANT=true` 时不会创建默认租户账户
+- 💡 可通过环境变量自定义账户信息 (用户名、密码、邮箱等)
+- 💡 账户创建是幂等的,重复启动不会重复创建
+
+#### 登录测试
+
+使用默认账户登录:
+
+```bash
+# 使用超级管理员登录
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
+
+# 使用租户管理员登录
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "123456"}'
+```
 
 ### Running Tests
 
@@ -756,7 +819,6 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 - PostgreSQL: `postgres_data` volume (ADDP system metadata)
 - Redis: `redis_data` volume (cache and queues)
 - MinIO System: `minio_system_data` volume (system files)
-- Elasticsearch: `elasticsearch_data` volume (search indexes)
 
 **Business Infrastructure** (business/docker-compose.yml):
 - PostgreSQL: `business_postgres_data` volume (user business data)
@@ -1183,9 +1245,9 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 ### Build & Deploy
 - [`Makefile`](Makefile) - Project-wide orchestration commands
 - [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema initialization
-- [`scripts/dev-start.sh`](scripts/dev-start.sh) - Development startup script (按顺序启动所有服务)
-- [`scripts/dev-stop.sh`](scripts/dev-stop.sh) - Development stop script (停止所有服务)
-- [`scripts/dev-run.sh`](scripts/dev-run.sh) - Local development helper (legacy)
+- [`scripts/dev/start.sh`](scripts/dev/start.sh) - Development startup script (按顺序启动所有服务)
+- [`scripts/dev/stop.sh`](scripts/dev/stop.sh) - Development stop script (停止所有服务)
+- [`scripts/dev/run.sh`](scripts/dev/run.sh) - Local development helper (legacy)
 
 ### Key Source Files
 - System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)

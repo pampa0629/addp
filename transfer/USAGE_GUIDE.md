@@ -22,7 +22,7 @@
 ```bash
 # 方式一：使用推荐的启动脚本（会按顺序启动所有服务）
 cd /Users/pampa/code/addp
-./scripts/dev-start.sh
+./scripts/dev/start.sh
 
 # 方式二：单独启动 Transfer 后端和 Worker
 cd transfer/backend

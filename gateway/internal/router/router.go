@@ -31,6 +31,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				"manager":  cfg.ManagerServiceURL,
 				"meta":     cfg.MetaServiceURL,
 				"transfer": cfg.TransferServiceURL,
+				"develop":  cfg.DevelopServiceURL,
 			},
 		})
 	})
@@ -40,6 +41,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	managerProxy := proxy.NewServiceProxy(cfg.ManagerServiceURL)
 	metaProxy := proxy.NewServiceProxy(cfg.MetaServiceURL)
 	transferProxy := proxy.NewServiceProxy(cfg.TransferServiceURL)
+	developProxy := proxy.NewServiceProxy(cfg.DevelopServiceURL)
 
 	// 路由规则
 	api := router.Group("/api")
@@ -66,6 +68,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		// Transfer 模块路由（任务、传输）
 		api.Any("/tasks/*path", transferProxy.Handle)
 		api.Any("/executions/*path", transferProxy.Handle)
+
+		// Develop 模块路由（SQL 开发、脚本管理）
+		api.Any("/develop/*path", developProxy.Handle)
 	}
 
 	return router
