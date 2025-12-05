@@ -218,6 +218,49 @@ clean-dist: ## 清理 dist 构建产物
 	@rm -rf $(OUT_DIR)
 	@echo "$(YELLOW)已清理 $(OUT_DIR)$(NC)"
 
+# ==================== 生产环境本地编译 ====================
+
+build-backends: ## 编译所有后端服务到 dist/ 目录（用于生产镜像）
+	@echo "$(GREEN)编译所有后端服务（Linux AMD64）...$(NC)"
+	@mkdir -p dist
+	@echo "$(YELLOW)编译 system-backend...$(NC)"
+	@cd system/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/system-backend ./cmd/server
+	@echo "$(YELLOW)编译 manager-backend...$(NC)"
+	@cd manager/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/manager-backend ./cmd/server
+	@echo "$(YELLOW)编译 manager-worker...$(NC)"
+	@cd manager/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/manager-worker ./cmd/worker
+	@echo "$(YELLOW)编译 meta-backend...$(NC)"
+	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-backend ./cmd/server
+	@echo "$(YELLOW)编译 meta-worker...$(NC)"
+	@cd meta/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/meta-worker ./cmd/worker
+	@echo "$(YELLOW)编译 transfer-backend...$(NC)"
+	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-backend ./cmd/server
+	@echo "$(YELLOW)编译 transfer-worker...$(NC)"
+	@cd transfer/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/transfer-worker ./cmd/worker
+	@echo "$(YELLOW)编译 orchestrator-backend...$(NC)"
+	@cd orchestrator/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/orchestrator-backend ./cmd/server
+	@echo "$(YELLOW)编译 develop-backend...$(NC)"
+	@cd develop/backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../dist/develop-backend ./cmd/server
+	@echo "$(YELLOW)编译 gateway...$(NC)"
+	@cd gateway && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../dist/gateway ./cmd/gateway
+	@echo "$(GREEN)所有后端编译完成！$(NC)"
+	@ls -lh dist/
+
+prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用预编译二进制）
+	@echo "$(GREEN)构建所有生产镜像（从项目根目录）...$(NC)"
+	@docker build -t localhost:5001/addp-system-backend:latest -f system/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-manager-backend:latest -f manager/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-manager-worker:latest -f manager/worker/Dockerfile .
+	@docker build -t localhost:5001/addp-meta-backend:latest -f meta/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-meta-worker:latest -f meta/worker/Dockerfile .
+	@docker build -t localhost:5001/addp-transfer-backend:latest -f transfer/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-transfer-worker:latest -f transfer/worker/Dockerfile .
+	@docker build -t localhost:5001/addp-orchestrator-backend:latest -f orchestrator/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-develop-backend:latest -f develop/backend/Dockerfile .
+	@docker build -t localhost:5001/addp-gateway:latest -f gateway/Dockerfile .
+	@echo "$(GREEN)所有后端镜像构建完成！$(NC)"
+	@echo "$(YELLOW)提示：前端镜像需要在各自目录单独构建$(NC)"
+
 docker-build: ## 构建 Docker 镜像（仅 System 模块）
 	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"
 	@docker compose build system-backend system-frontend
@@ -428,20 +471,118 @@ docs: ## 生成 API 文档
 	@echo "$(GREEN)生成 API 文档...$(NC)"
 	@echo "$(YELLOW)TODO: 实现 API 文档生成$(NC)"
 
+check-frontend: ## 检查所有 frontend 的 Docker 配置是否符合规范
+	@echo "$(GREEN)检查 frontend Docker 配置...$(NC)"
+	@./scripts/setup/standardize-frontend-docker.sh
+
+fix-frontend: ## 自动修复 frontend Docker 配置问题（创建缺失的 .dockerignore）
+	@echo "$(GREEN)修复 frontend Docker 配置...$(NC)"
+	@./scripts/setup/standardize-frontend-docker.sh --fix
+
+registry-start: ## 启动本地 Docker Registry（镜像构建必需）
+	@echo "$(GREEN)启动本地 Docker Registry...$(NC)"
+	@./scripts/setup/start-registry.sh
+
+registry-stop: ## 停止本地 Docker Registry
+	@echo "$(YELLOW)停止本地 Docker Registry...$(NC)"
+	@docker stop registry || true
+	@echo "$(GREEN)Registry 已停止$(NC)"
+
+registry-restart: ## 重启本地 Docker Registry
+	@echo "$(YELLOW)重启本地 Docker Registry...$(NC)"
+	@docker rm -f registry 2>/dev/null || true
+	@./scripts/setup/start-registry.sh
+
+registry-status: ## 检查本地 Docker Registry 状态
+	@./scripts/setup/check-registry.sh
+
 # ==================== 生产环境命令 ====================
 
-prod-start: ## 启动生产环境（一键启动）
-	@./scripts/prod/start.sh
+prod-up-infra: ## 启动基础设施层（Postgres, Redis, MinIO, Meilisearch）
+	@echo "$(GREEN)启动基础设施层...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile infra up -d
+	@echo "$(GREEN)等待基础设施就绪...$(NC)"
+	@bash scripts/prod/wait-infra.sh
+	@echo "$(GREEN)基础设施已就绪！$(NC)"
 
-prod-stop: ## 停止生产环境
-	@./scripts/prod/stop.sh
+prod-down-infra: ## 停止基础设施层
+	@echo "$(YELLOW)停止基础设施层...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile infra down
+	@echo "$(GREEN)基础设施已停止$(NC)"
 
-prod-restart: ## 重启生产环境
-	@./scripts/prod/stop.sh
-	@./scripts/prod/start.sh
+prod-restart-infra: ## 重启基础设施层
+	@$(MAKE) prod-down-infra
+	@$(MAKE) prod-up-infra
 
-prod-logs: ## 查看生产环境日志
-	@docker compose -f docker-compose.prod.yml logs -f
+prod-up-addp: ## 启动所有 ADDP 应用服务（需要先启动 infra）
+	@echo "$(GREEN)启动 ADDP 应用服务...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile addp up -d
+	@echo "$(GREEN)ADDP 应用服务已启动$(NC)"
+	@$(MAKE) prod-status
 
-prod-status: ## 查看生产环境状态
-	@docker compose -f docker-compose.prod.yml ps
+prod-down-addp: ## 停止所有 ADDP 应用服务（保留基础设施）
+	@echo "$(YELLOW)停止 ADDP 应用服务...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile addp down
+	@echo "$(GREEN)ADDP 应用服务已停止（基础设施保持运行）$(NC)"
+
+prod-restart-addp: ## 重启所有 ADDP 应用服务
+	@$(MAKE) prod-down-addp
+	@$(MAKE) prod-up-addp
+
+prod-up: ## 启动完整平台（基础设施 + ADDP 应用）
+	@echo "$(GREEN)启动完整 ADDP 平台...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile infra --profile addp up -d
+	@echo "$(GREEN)完整平台已启动$(NC)"
+	@$(MAKE) prod-status
+
+prod-down: ## 停止完整平台
+	@echo "$(YELLOW)停止完整平台...$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile infra --profile addp down
+	@echo "$(GREEN)完整平台已停止$(NC)"
+
+prod-restart: ## 重启完整平台
+	@$(MAKE) prod-down
+	@$(MAKE) prod-up
+
+prod-logs-infra: ## 查看基础设施日志
+	@docker compose -f docker-compose.prod.yml logs -f postgres redis minio meilisearch
+
+prod-logs-addp: ## 查看所有 ADDP 应用日志
+	@docker compose -f docker-compose.prod.yml --profile addp logs -f
+
+prod-logs-orchestrator: ## 查看 Orchestrator 日志
+	@docker compose -f docker-compose.prod.yml logs -f orchestrator-backend orchestrator-frontend
+
+prod-logs-develop: ## 查看 Develop 日志
+	@docker compose -f docker-compose.prod.yml logs -f develop-backend develop-frontend
+
+prod-status: ## 显示所有服务状态和访问地址
+	@echo "$(GREEN)生产环境服务状态:$(NC)"
+	@docker compose -f docker-compose.prod.yml --profile infra --profile addp ps
+	@echo ""
+	@echo "$(YELLOW)访问地址:$(NC)"
+	@echo "  Portal (统一门户):      http://localhost:8000"
+	@echo "  System 管理界面:        http://localhost:8090"
+	@echo "  Manager 管理界面:       http://localhost:8091"
+	@echo "  Meta 管理界面:          http://localhost:8092"
+	@echo "  Transfer 管理界面:      http://localhost:8093"
+	@echo "  Orchestrator 管理界面:  http://localhost:8094"
+	@echo "  Develop SQL 工作台:     http://localhost:8095"
+	@echo ""
+	@echo "$(YELLOW)API 端点:$(NC)"
+	@echo "  Gateway API:            http://localhost:8000/api"
+	@echo "  System Backend:         http://localhost:8080"
+	@echo "  Manager Backend:        http://localhost:8081"
+	@echo "  Meta Backend:           http://localhost:8082"
+	@echo "  Transfer Backend:       http://localhost:8083"
+	@echo "  Orchestrator Backend:   http://localhost:8084"
+	@echo "  Develop Backend:        http://localhost:8085"
+
+prod-health: ## 检查所有服务健康状态
+	@bash scripts/prod/health-check.sh
+
+# 向后兼容别名（可选）
+prod-start: prod-up  ## 别名：启动生产环境
+prod-stop: prod-down ## 别名：停止生产环境
+prod-logs: prod-logs-addp ## 别名：查看应用日志
+

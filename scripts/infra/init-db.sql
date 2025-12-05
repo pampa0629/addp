@@ -489,4 +489,7 @@ CREATE INDEX IF NOT EXISTS idx_develop_deps_depends ON develop.script_dependenci
 -- Note: Orchestrator schema is initialized separately via scripts/init-orchestrator.sql
 -- This is handled by infra-init-db.sh script
 
+-- ==================== Orchestrator 模块 ====================
+CREATE SCHEMA IF NOT EXISTS orchestrator;
+
 COMMIT;

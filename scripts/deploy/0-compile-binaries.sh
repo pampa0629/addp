@@ -120,8 +120,8 @@ compile_service() {
     local entry_point="./cmd/server"
     local output="server"
 
-    if [ "$name" = "transfer-worker" ] || [ "$name" = "meta-worker" ]; then
-        # Special case for workers
+    if [[ "$name" == *"-worker" ]]; then
+        # Special case for workers (transfer-worker, meta-worker, manager-worker)
         entry_point="./cmd/worker"
         output="worker"
     elif [ ! -d "$dir/cmd/server" ] && [ -d "$dir/cmd/gateway" ]; then
@@ -154,7 +154,18 @@ compile_service() {
     fi
 }
 
-SERVICES=("system-backend:system/backend" "manager-backend:manager/backend" "meta-backend:meta/backend" "transfer-backend:transfer/backend" "transfer-worker:transfer/backend" "meta-worker:meta/backend" "gateway:gateway")
+SERVICES=(
+    "system-backend:system/backend"
+    "manager-backend:manager/backend"
+    "manager-worker:manager/backend"
+    "meta-backend:meta/backend"
+    "meta-worker:meta/backend"
+    "transfer-backend:transfer/backend"
+    "transfer-worker:transfer/backend"
+    "orchestrator-backend:orchestrator/backend"
+    "develop-backend:develop/backend"
+    "gateway:gateway"
+)
 failed=()
 compiled=0
 cached=0

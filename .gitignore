@@ -88,3 +88,4 @@ system/backend/server*
 transfer/backend/server*
 transfer/backend/worker*
 *.stat
+dist/

@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 usage() {
@@ -42,12 +42,12 @@ if ! docker compose version >/dev/null 2>&1; then
   echo -e "${RED}✗ docker compose 不可用${NC}"; exit 1
 fi
 
-echo -e "${YELLOW}▶ 停止基础设施容器: postgres, redis, minio${NC}"
-docker compose stop postgres redis minio
+echo -e "${YELLOW}▶ 停止基础设施容器: postgres, redis, minio, meilisearch${NC}"
+docker compose stop postgres redis minio meilisearch
 
 if [[ "$REMOVE" == true ]]; then
   echo -e "${YELLOW}▶ 清理容器（不删除数据卷）${NC}"
-  docker compose rm -f postgres redis minio || true
+  docker compose rm -f postgres redis minio meilisearch || true
 fi
 
 echo -e "${GREEN}✓ 完成${NC}"

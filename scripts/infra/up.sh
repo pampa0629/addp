@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 echo -e "${BLUE}========================================${NC}"
@@ -20,12 +20,34 @@ echo -e "${BLUE}ADDP Infrastructure Up (Postgres/Redis/MinIO)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Optional: load env overrides if present
 if [ -f ./.env ]; then
   set -a
   # shellcheck disable=SC1091
   source ./.env || true
   set +a
+fi
+
+# Detect CPU architecture and set PostgreSQL image
+if [ -z "${POSTGRES_IMAGE:-}" ]; then
+    ARCH=$(uname -m)
+    case "${ARCH}" in
+        x86_64)
+            export POSTGRES_IMAGE="postgis/postgis:15-3.4"
+            ;;
+        aarch64|arm64)
+            export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
+            ;;
+        armv7l)
+            export POSTGRES_IMAGE="postgis/postgis:15-3.4"  # Fallback to AMD64
+            ;;
+        *)
+            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default image${NC}"
+            ;;
+    esac
+
+    if [ -n "${POSTGRES_IMAGE:-}" ]; then
+        echo -e "${YELLOW}🏗️  Auto-detected PostgreSQL image: ${POSTGRES_IMAGE}${NC}"
+    fi
 fi
 
 # Ensure DOCKER_DEFAULT_PLATFORM is set (inherited from infra-restart.sh or default)
@@ -132,8 +154,8 @@ else
   echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 可用${NC}"
 fi
 
-echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio${NC}"
-docker compose up -d postgres redis minio
+echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio, meilisearch${NC}"
+docker compose up -d postgres redis minio meilisearch
 
 echo ""
 echo -e "${YELLOW}等待服务就绪...${NC}"
@@ -152,7 +174,7 @@ for i in $(seq 1 ${max_wait}); do
 done
 
 if [[ "${SKIP_INFRA_DB_INIT:-0}" != "1" ]]; then
-  bash "${SCRIPT_DIR}/infra-init-db.sh"
+  bash "${SCRIPT_DIR}/init-db.sh"
 else
   echo -e "${YELLOW}▶ 跳过系统库初始化（SKIP_INFRA_DB_INIT=1）${NC}"
 fi
@@ -163,7 +185,7 @@ if [[ "${SKIP_POSTGIS_INSTALL:-0}" != "1" ]]; then
   CURRENT_IMAGE=$(docker inspect addp-postgres --format '{{.Config.Image}}' 2>/dev/null || echo "")
   if [[ "$CURRENT_IMAGE" == *"postgres:15"* ]] || [[ "$CURRENT_IMAGE" == "postgres:15" ]]; then
     echo -e "${YELLOW}▶ Installing PostGIS extension...${NC}"
-    bash "${SCRIPT_DIR}/infra-init-postgis.sh"
+    bash "${SCRIPT_DIR}/init-postgis.sh"
   else
     echo -e "${YELLOW}▶ Skipping PostGIS installation (using PostGIS pre-installed image)${NC}"
   fi
@@ -204,10 +226,21 @@ done
 
 # Initialize MinIO buckets
 if [[ "${SKIP_MINIO_INIT:-0}" != "1" ]]; then
-  bash "${SCRIPT_DIR}/infra-init-minio.sh"
+  bash "${SCRIPT_DIR}/init-minio.sh"
 else
   echo -e "${YELLOW}▶ 跳过 MinIO buckets 初始化（SKIP_MINIO_INIT=1）${NC}"
 fi
+
+# Meilisearch
+printf "%s" "- Meilisearch "
+for i in $(seq 1 ${max_wait}); do
+  if curl -sf http://localhost:7700/health >/dev/null 2>&1; then
+    echo -e "${GREEN}✓${NC}"
+    break
+  fi
+  sleep 1; printf "%s" "."
+  if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ Meilisearch 等待超时${NC}"; exit 1; fi
+done
 
 echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"
@@ -217,5 +250,6 @@ echo "  - PostgreSQL:  localhost:5432  user=addp  password=addp_password  db=add
 echo "  - Redis:       localhost:6379  password=addp_redis"
 echo "  - MinIO API:   http://localhost:9002  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
 echo "  - MinIO Console:http://localhost:9003"
+echo "  - Meilisearch: http://localhost:7700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

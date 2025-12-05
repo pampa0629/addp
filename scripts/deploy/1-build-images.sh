@@ -290,10 +290,27 @@ EOF
 check_registry() {
     echo -e "${YELLOW}Checking registry accessibility...${NC}"
 
-    if ! curl -sf "http://${REGISTRY}/v2/" > /dev/null 2>&1; then
+    if ! curl -sf --max-time 5 "http://${REGISTRY}/v2/" > /dev/null 2>&1; then
         echo -e "${RED}Error: Registry ${REGISTRY} is not accessible${NC}"
-        echo "Please start the local registry:"
-        echo "  docker run -d -p 5001:5000 --restart=always --name registry registry:2"
+        echo ""
+        echo -e "${YELLOW}Troubleshooting steps:${NC}"
+        echo "  ${BLUE}1.${NC} Check if registry container is running:"
+        echo "     docker ps | grep registry"
+        echo ""
+        echo "  ${BLUE}2.${NC} If not running, start registry container:"
+        echo "     docker run -d -p 5001:5000 --restart=always --name registry registry:2"
+        echo ""
+        echo "  ${BLUE}3.${NC} If running but not accessible, restart it:"
+        echo "     docker rm -f registry"
+        echo "     docker run -d -p 5001:5000 --restart=always --name registry registry:2"
+        echo ""
+        echo "  ${BLUE}4.${NC} Verify registry health:"
+        echo "     curl http://localhost:5001/v2/"
+        echo "     # Should return: {}"
+        echo ""
+        echo -e "${YELLOW}Alternatively, use Makefile command:${NC}"
+        echo "     make registry-start"
+        echo ""
         exit 1
     fi
 
@@ -342,6 +359,12 @@ build_service() {
     local service_dir=$2
     local image_name="${REGISTRY}/addp-${service}:latest"
 
+    # Check if service directory exists
+    if [ ! -d "$service_dir" ]; then
+        echo -e "${YELLOW}Warning: Service directory $service_dir not found, skipping${NC}"
+        return 0  # Not an error, just skip
+    fi
+
     echo ""
     echo -e "${BLUE}========================================${NC}"
     echo -e "${BLUE}Building: ${service}${NC}"
@@ -354,7 +377,7 @@ build_service() {
     local dockerfile_path=""
 
     case "$service" in
-        transfer-worker|meta-worker)
+        transfer-worker|meta-worker|manager-worker)
             # Worker services: special case with worker binary
             dockerfile_path="${service_dir}/Dockerfile.prebuilt.worker"
             build_context="."
@@ -397,143 +420,8 @@ build_service() {
             ;;
 
         *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
-                build_context="."
-                dockerfile_path="${service_dir}/Dockerfile"
-            else
-                build_context="${service_dir}"
-                dockerfile_path="${service_dir}/Dockerfile"
-            fi
-
-            if [ ! -f "${service_dir}/Dockerfile" ]; then
-                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
-                return 1
-            fi
-            ;;
-        *-frontend|portal|nginx)
-            # Frontends: system-frontend and transfer-frontend need root context for common-frontend
-            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ]; then
+            # Frontends: system-frontend, transfer-frontend, and orchestrator-frontend need root context for common-frontend
+            if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ] || [ "$service" = "orchestrator-frontend" ]; then
                 build_context="."
                 dockerfile_path="${service_dir}/Dockerfile"
             else
@@ -617,14 +505,19 @@ main() {
         "manager-backend:manager/backend"
         "meta-backend:meta/backend"
         "transfer-backend:transfer/backend"
+        "orchestrator-backend:orchestrator/backend"
+        "develop-backend:develop/backend"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
+        "manager-worker:manager/backend"
         "gateway:gateway"
         "portal:portal/frontend"
         "system-frontend:system/frontend"
         "manager-frontend:manager/frontend"
         "meta-frontend:meta/frontend"
         "transfer-frontend:transfer/frontend"
+        "orchestrator-frontend:orchestrator/frontend"
+        "develop-frontend:develop/frontend"
         "nginx:nginx"
     )
 

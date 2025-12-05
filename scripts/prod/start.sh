@@ -1,183 +1,181 @@
 #!/bin/bash
-# =============================================================================
-# ADDP Production Startup Script
-# =============================================================================
-# Description: Start ADDP production services with automatic configuration
-# Usage: ./scripts/prod/start.sh
-# =============================================================================
+# ADDP 生产环境启动脚本
+# 用途：按正确顺序启动所有 ADDP 服务（基础设施 + 后端 + 前端 + Portal）
 
 set -e
 
-# Color codes
-RED='\033[0;31m'
+# 颜色定义
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-cd "$PROJECT_ROOT"
-
-echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}ADDP Production Startup${NC}"
-echo -e "${BLUE}========================================${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}ADDP 生产环境启动脚本${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Check if .env.prod exists
-if [ ! -f ".env.prod" ]; then
-    echo -e "${YELLOW}⚠️  .env.prod not found, creating from template...${NC}"
-
-    if [ ! -f ".env.prod.example" ]; then
-        echo -e "${RED}Error: .env.prod.example not found${NC}"
-        exit 1
-    fi
-
-    # Copy template
-    cp .env.prod.example .env.prod
-
-    echo -e "${YELLOW}Generating secure keys...${NC}"
-
-    # Generate secure keys
-    JWT_SECRET=$(openssl rand -base64 32)
-    ENCRYPTION_KEY=$(openssl rand -base64 32)
-    INTERNAL_API_KEY=$(openssl rand -base64 32)
-    POSTGRES_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
-    REDIS_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
-    MINIO_PASSWORD=$(openssl rand -base64 16 | tr -d '=/+' | cut -c1-16)
-
-    # Update .env.prod
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        sed -i '' "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env.prod
-        sed -i '' "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env.prod
-        sed -i '' "s|^INTERNAL_API_KEY=.*|INTERNAL_API_KEY=${INTERNAL_API_KEY}|" .env.prod
-        sed -i '' "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" .env.prod
-        sed -i '' "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|" .env.prod
-        sed -i '' "s|^MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}|" .env.prod
-        sed -i '' "s|^REGISTRY=.*|REGISTRY=localhost:5001|" .env.prod
-    else
-        # Linux
-        sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env.prod
-        sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENCRYPTION_KEY}|" .env.prod
-        sed -i "s|^INTERNAL_API_KEY=.*|INTERNAL_API_KEY=${INTERNAL_API_KEY}|" .env.prod
-        sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" .env.prod
-        sed -i "s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=${REDIS_PASSWORD}|" .env.prod
-        sed -i "s|^MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}|" .env.prod
-        sed -i "s|^REGISTRY=.*|REGISTRY=localhost:5001|" .env.prod
-    fi
-
-    echo -e "${GREEN}✓ Created .env.prod with secure keys${NC}"
-    echo ""
-    echo -e "${BLUE}Generated credentials:${NC}"
-    echo "  PostgreSQL Password: ${POSTGRES_PASSWORD}"
-    echo "  Redis Password: ${REDIS_PASSWORD}"
-    echo "  MinIO Password: ${MINIO_PASSWORD}"
-    echo ""
-    echo -e "${YELLOW}⚠️  Save these credentials securely!${NC}"
-    echo ""
-fi
-
-# Check if registry is running
-echo -e "${YELLOW}Checking Docker registry...${NC}"
-if ! curl -sf http://localhost:5001/v2/ > /dev/null 2>&1; then
-    echo -e "${RED}Error: Docker registry not accessible at localhost:5001${NC}"
-    echo ""
-    echo "Please start the registry:"
-    echo "  docker run -d -p 5001:5000 --restart=always --name registry registry:2"
-    echo ""
-    echo "Or check if registry is running:"
-    echo "  docker ps | grep registry"
+# 检查 docker 是否运行
+if ! docker info > /dev/null 2>&1; then
+    echo -e "${RED}错误: Docker 未运行${NC}"
     exit 1
 fi
-echo -e "${GREEN}✓ Registry is accessible${NC}"
 
-# Check for port conflicts
-echo -e "${YELLOW}Checking for port conflicts...${NC}"
-PORTS_IN_USE=()
+# 第一步：启动基础设施层
+echo -e "${YELLOW}[1/4] 启动基础设施层 (PostgreSQL, Redis, MinIO, Meilisearch)...${NC}"
+docker compose -f docker-compose.infra.yml up -d
 
-for port in 5432 6379 8080 8090 9000 9001; do
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        PORTS_IN_USE+=($port)
-    fi
+echo -e "${YELLOW}等待基础设施就绪...${NC}"
+bash scripts/prod/wait-infra.sh
+
+# 第二步：启动 System Backend（其他服务依赖它）
+echo -e "${YELLOW}[2/4] 启动 System Backend...${NC}"
+docker compose -f docker-compose.app.yml up -d system-backend
+
+echo -e "${YELLOW}等待 System Backend 就绪...${NC}"
+timeout=60
+counter=0
+until curl -f http://localhost:8080/health > /dev/null 2>&1; do
+  sleep 2
+  counter=$((counter + 2))
+  if [ $counter -ge $timeout ]; then
+    echo -e "${RED}错误: System Backend 启动超时${NC}"
+    docker compose -f docker-compose.app.yml logs system-backend | tail -30
+    exit 1
+  fi
 done
+echo -e "${GREEN}✓ System Backend 已就绪${NC}"
 
-if [ ${#PORTS_IN_USE[@]} -gt 0 ]; then
-    echo -e "${YELLOW}⚠️  Following ports are in use: ${PORTS_IN_USE[*]}${NC}"
-    echo ""
-    read -p "Stop conflicting services? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        for port in "${PORTS_IN_USE[@]}"; do
-            echo -e "${YELLOW}Stopping processes on port $port...${NC}"
-            lsof -ti:$port | xargs kill -9 2>/dev/null || true
-        done
-        echo -e "${GREEN}✓ Ports cleared${NC}"
-    else
-        echo -e "${RED}Cannot start services with port conflicts${NC}"
-        exit 1
-    fi
-fi
+# 第三步：启动其他后端服务
+echo -e "${YELLOW}[3/4] 启动所有业务后端服务...${NC}"
+docker compose -f docker-compose.app.yml up -d \
+  manager-backend \
+  manager-worker \
+  meta-backend \
+  meta-worker \
+  transfer-backend \
+  transfer-worker \
+  orchestrator-backend \
+  develop-backend \
+  gateway
 
-# Start services
-echo ""
-echo -e "${YELLOW}Starting ADDP services...${NC}"
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
-
-# Wait for services to start
-echo ""
-echo -e "${YELLOW}Waiting for services to start...${NC}"
+# 第四步：等待所有后端服务就绪
+echo -e "${YELLOW}[4/5] 等待所有后端服务就绪（最多 90 秒）...${NC}"
 sleep 10
 
-# Check service status
-echo ""
-echo -e "${BLUE}Service Status:${NC}"
-docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+# 检查各后端服务健康
+services=(
+  "manager-backend:8081"
+  "meta-backend:8082"
+  "transfer-backend:8083"
+  "orchestrator-backend:8084"
+  "develop-backend:8085"
+  "gateway:8000"
+)
 
-# Health checks
-echo ""
-echo -e "${BLUE}Performing health checks...${NC}"
+all_healthy=true
+for service_port in "${services[@]}"; do
+  service=$(echo $service_port | cut -d: -f1)
+  port=$(echo $service_port | cut -d: -f2)
 
-check_service() {
-    local name=$1
-    local url=$2
-    local max_attempts=30
-    local attempt=0
+  # 等待最多 30 秒
+  timeout=30
+  counter=0
+  healthy=false
 
-    while [ $attempt -lt $max_attempts ]; do
-        if curl -sf "$url" > /dev/null 2>&1; then
-            echo -e "${GREEN}✓ ${name} is healthy${NC}"
-            return 0
-        fi
-        attempt=$((attempt + 1))
-        sleep 1
-    done
+  while [ $counter -lt $timeout ]; do
+    if curl -f http://localhost:$port/health > /dev/null 2>&1; then
+      echo -e "${GREEN}✓ $service${NC}"
+      healthy=true
+      break
+    fi
+    sleep 2
+    counter=$((counter + 2))
+  done
 
-    echo -e "${YELLOW}⚠ ${name} health check timeout${NC}"
-    return 1
-}
+  if [ "$healthy" = false ]; then
+    echo -e "${RED}✗ $service (超时)${NC}"
+    all_healthy=false
+  fi
+done
 
-check_service "System Backend" "http://localhost:8080/health"
-check_service "System Frontend" "http://localhost:8090"
+# 第五步：启动前端服务和 Portal
+echo -e "${YELLOW}[5/5] 启动前端服务和 Portal 统一门户...${NC}"
+docker compose -f docker-compose.app.yml up -d \
+  system-frontend \
+  manager-frontend \
+  meta-frontend \
+  transfer-frontend \
+  orchestrator-frontend \
+  develop-frontend \
+  portal \
+  nginx
 
-# Display access information
+echo -e "${YELLOW}等待前端服务启动...${NC}"
+sleep 5
+
+# 检查 Portal 和 Nginx 是否启动
+if docker ps | grep -q "portal"; then
+  echo -e "${GREEN}✓ Portal 统一门户已启动${NC}"
+else
+  echo -e "${YELLOW}⚠️  Portal 启动失败或未找到镜像${NC}"
+  all_healthy=false
+fi
+
+if docker ps | grep -q "nginx"; then
+  echo -e "${GREEN}✓ Nginx 统一网关已启动${NC}"
+else
+  echo -e "${YELLOW}⚠️  Nginx 启动失败或未找到镜像${NC}"
+  all_healthy=false
+fi
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}ADDP Started Successfully!${NC}"
+if [ "$all_healthy" = true ]; then
+  echo -e "${GREEN}✅ 所有服务启动成功！${NC}"
+else
+  echo -e "${YELLOW}⚠️  部分服务启动失败或超时${NC}"
+fi
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "${BLUE}Access URLs:${NC}"
-echo "  System Frontend: http://localhost:8090"
-echo "  System Backend:  http://localhost:8080"
-echo "  MinIO Console:   http://localhost:9001"
+
+# 显示服务状态
+echo -e "${YELLOW}服务运行状态:${NC}"
+echo -e "${YELLOW}基础设施层:${NC}"
+docker compose -f docker-compose.infra.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 echo ""
-echo -e "${BLUE}Super Admin Login:${NC}"
-echo "  Username: SuperAdmin"
-echo "  Password: 20251001#SuperAdmin"
+echo -e "${YELLOW}应用服务层:${NC}"
+docker compose -f docker-compose.app.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+
 echo ""
-echo -e "${YELLOW}⚠️  IMPORTANT: Change the default password after first login!${NC}"
+echo -e "${YELLOW}API 端点:${NC}"
+echo -e "  System Backend:         http://localhost:8080"
+echo -e "  Manager Backend:        http://localhost:8081"
+echo -e "  Meta Backend:           http://localhost:8082"
+echo -e "  Transfer Backend:       http://localhost:8083"
+echo -e "  Orchestrator Backend:   http://localhost:8084"
+echo -e "  Develop Backend:        http://localhost:8085"
+echo -e "  Gateway API:            http://localhost:8000"
+
 echo ""
-echo -e "${BLUE}Useful Commands:${NC}"
-echo "  View logs:    docker compose -f docker-compose.prod.yml logs -f"
-echo "  Stop:         docker compose -f docker-compose.prod.yml down"
-echo "  Restart:      docker compose -f docker-compose.prod.yml restart"
+echo -e "${YELLOW}前端访问地址:${NC}"
+echo -e "  ${GREEN}✨ Portal 统一门户 (推荐):  http://localhost:80${NC}"
+echo -e ""
+echo -e "  独立模块访问:"
+echo -e "  - System Frontend:      http://localhost:8090"
+echo -e "  - Manager Frontend:     http://localhost:8091"
+echo -e "  - Meta Frontend:        http://localhost:8092"
+echo -e "  - Transfer Frontend:    http://localhost:8093"
+echo -e "  - Orchestrator Frontend: http://localhost:8094"
+echo -e "  - Develop Frontend:     http://localhost:8095"
+
+echo ""
+echo -e "${YELLOW}常用命令:${NC}"
+echo -e "  查看基础设施日志:   docker compose -f docker-compose.infra.yml logs -f [service-name]"
+echo -e "  查看应用日志:       docker compose -f docker-compose.app.yml logs -f [service-name]"
+echo -e "  停止基础设施:       docker compose -f docker-compose.infra.yml down"
+echo -e "  停止应用服务:       docker compose -f docker-compose.app.yml down"
+echo -e "  重启服务:           docker compose -f docker-compose.app.yml restart [service-name]"
+echo -e "  健康检查:           bash scripts/prod/health-check.sh"
+
 echo ""

@@ -1,0 +1,409 @@
+# Frontend Docker 构建规范
+
+本文档规定了 ADDP 平台所有前端模块的 Docker 镜像构建标准。
+
+## 目录结构要求
+
+每个 frontend 目录必须包含以下文件：
+
+```
+<module>/frontend/
+├── Dockerfile          # 多阶段构建配置
+├── nginx.conf          # Nginx 配置（SPA 路由支持）
+├── .dockerignore       # 构建排除规则
+├── package.json        # 依赖声明（必须有 build 脚本）
+└── src/                # 源代码
+```
+
+## Dockerfile 规范
+
+### 标准模板（独立构建）
+
+适用于：manager, orchestrator, meta（不依赖 common-frontend）
+
+```dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# 复制 package.json
+COPY package.json package-lock.json ./
+
+# 安装依赖
+RUN npm install
+
+# 复制源代码
+COPY . .
+
+# 构建
+RUN npm run build
+
+# 运行阶段
+FROM nginx:alpine
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 nginx 配置
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+### 项目根构建模板
+
+适用于：system, transfer（依赖 common-frontend）
+
+```dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# 复制 common-frontend（如有依赖）
+COPY common-frontend /common-frontend
+
+# 复制 package.json
+COPY system/frontend/package.json system/frontend/package-lock.json ./
+
+# 安装依赖
+RUN npm install
+
+# 复制源代码
+COPY system/frontend .
+
+# 构建
+RUN npm run build
+
+# 运行阶段
+FROM nginx:alpine
+
+# 复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 nginx 配置
+COPY system/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**关键区别**：
+- 独立构建：在模块目录内执行 `docker build`
+- 项目根构建：在项目根目录执行 `docker build`（需要访问 common-frontend）
+
+## nginx.conf 规范
+
+所有前端必须支持 Vue Router 的 history 模式：
+
+```nginx
+server {
+    listen 80;
+    server_name localhost;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA fallback - all routes handled by Vue Router
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Optional: API proxy to Gateway (if needed in production)
+    # location /api/ {
+    #     proxy_pass http://gateway:8000;
+    #     proxy_set_header Host $host;
+    #     proxy_set_header X-Real-IP $remote_addr;
+    # }
+}
+```
+
+**必须包含**：
+- `try_files $uri $uri/ /index.html;` - SPA 路由回退
+- `listen 80;` - 容器内端口
+- `index index.html;` - 默认文件
+
+## .dockerignore 规范
+
+排除不必要的文件以减小构建上下文：
+
+```dockerignore
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+dist-ssr/
+.output/
+.nuxt/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temp
+*.log
+.cache/
+```
+
+## 端口分配规范
+
+| 模块                  | Docker 端口 | Dev 端口 | 说明              |
+| --------------------- | ----------- | -------- | ----------------- |
+| Portal Frontend       | 8000        | 5170     | 统一入口          |
+| System Frontend       | 8090        | 5173     | 系统管理          |
+| Manager Frontend      | 8091        | 5174     | 数据管理          |
+| Meta Frontend         | 8092        | 5175     | 元数据            |
+| Transfer Frontend     | 8093        | 5176     | 数据传输          |
+| Orchestrator Frontend | 8094        | 5177     | 编排调度          |
+| Develop Frontend      | 8095        | 5178     | 开发工具          |
+
+## package.json 要求
+
+必须包含 `build` 脚本：
+
+```json
+{
+  "name": "manager-frontend",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}
+```
+
+## 构建流程
+
+### 前置要求：启动本地 Docker Registry
+
+**重要**：在构建镜像之前，必须先启动本地 Docker Registry。
+
+```bash
+# 方法 1：使用 Makefile 命令（推荐）
+make registry-start
+
+# 方法 2：使用脚本
+./scripts/setup/start-registry.sh
+
+# 方法 3：手动启动
+docker run -d -p 5001:5000 --restart=always --name registry registry:2
+```
+
+**验证 Registry 是否正常**：
+
+```bash
+# 检查状态
+make registry-status
+
+# 或者手动测试
+curl http://localhost:5001/v2/
+# 应该返回: {}
+```
+
+**Registry 管理命令**：
+
+```bash
+make registry-start    # 启动 registry
+make registry-stop     # 停止 registry
+make registry-restart  # 重启 registry
+make registry-status   # 查看状态
+```
+
+### 手动构建单个模块
+
+**独立构建模式**（manager, orchestrator）：
+
+```bash
+cd manager/frontend
+docker build -t localhost:5001/addp-manager-frontend:latest .
+docker push localhost:5001/addp-manager-frontend:latest
+```
+
+**项目根构建模式**（system, transfer）：
+
+```bash
+cd /path/to/addp  # 项目根目录
+docker build -t localhost:5001/addp-system-frontend:latest \
+  -f system/frontend/Dockerfile .
+docker push localhost:5001/addp-system-frontend:latest
+```
+
+### 批量构建所有模块
+
+使用项目提供的构建脚本：
+
+```bash
+# 构建所有服务（包括所有 frontend）
+./scripts/deploy/1-build-images.sh
+
+# 只构建特定 frontend
+./scripts/deploy/1-build-images.sh --services manager-frontend,meta-frontend
+
+# 跳过缓存强制重新构建
+./scripts/deploy/1-build-images.sh --skip-cache
+
+# 多架构构建（ARM64 + AMD64）
+./scripts/deploy/1-build-images.sh --multi-arch
+```
+
+## 标准化检查工具
+
+使用脚本检查所有 frontend 是否符合规范：
+
+```bash
+# 检查模式（只报告问题）
+./scripts/setup/standardize-frontend-docker.sh
+
+# 修复模式（自动创建缺失的 .dockerignore）
+./scripts/setup/standardize-frontend-docker.sh --fix
+```
+
+**检查项目**：
+- ✅ Dockerfile 是否存在
+- ✅ nginx.conf 是否存在
+- ✅ .dockerignore 是否存在
+- ✅ package.json 是否存在
+- ⚠️ 是否使用 node:18-alpine 基础镜像
+- ⚠️ 是否使用多阶段构建
+- ⚠️ nginx.conf 是否有 SPA fallback
+
+## 集成到 docker-compose
+
+所有 frontend 应使用 `profile: full` 避免默认启动：
+
+```yaml
+manager-frontend:
+  build:
+    context: ./manager/frontend
+    dockerfile: Dockerfile
+  ports:
+    - "8091:80"
+  networks:
+    - addp-network
+  profiles:
+    - full
+  depends_on:
+    - gateway
+```
+
+**特殊情况**（system, transfer）：
+
+```yaml
+system-frontend:
+  build:
+    context: .
+    dockerfile: system/frontend/Dockerfile
+  ports:
+    - "8090:80"
+  networks:
+    - addp-network
+  profiles:
+    - full
+```
+
+## 常见问题
+
+### Q1: 构建失败提示 "Registry localhost:5001 is not accessible"？
+
+**A:** 这是最常见的问题。本地 Docker Registry 没有启动或无法访问。
+
+**解决方案**：
+```bash
+# 1. 检查 registry 状态
+make registry-status
+
+# 2. 如果未运行，启动 registry
+make registry-start
+
+# 3. 验证可访问
+curl http://localhost:5001/v2/
+# 应该返回: {}
+
+# 4. 重新运行构建
+./scripts/deploy/1-build-images.sh
+```
+
+**如果 registry 容器存在但无法访问**（Connection reset by peer）：
+```bash
+# 删除并重新创建
+make registry-restart
+
+# 或者手动执行
+docker rm -f registry
+docker run -d -p 5001:5000 --restart=always --name registry registry:2
+```
+
+### Q2: 为什么有些 frontend 用项目根构建？
+
+**A:** system 和 transfer 依赖 `common-frontend` 共享组件，必须从项目根目录构建才能访问。
+
+### Q3: build 失败提示找不到 common-frontend？
+
+**A:** 确保：
+1. 在项目根目录执行构建（不是 frontend 子目录）
+2. Dockerfile 中 COPY 路径正确
+3. common-frontend 目录存在
+
+### Q4: nginx 404 on refresh？
+
+**A:** 检查 nginx.conf 是否有 `try_files $uri $uri/ /index.html;` 配置。
+
+### Q5: 镜像体积过大？
+
+**A:** 确保：
+1. 使用多阶段构建（builder + nginx）
+2. .dockerignore 排除 node_modules 和 dist
+3. 使用 alpine 基础镜像
+
+### Q6: 如何测试 Dockerfile？
+
+```bash
+# 本地构建测试
+docker build -t test-frontend .
+
+# 运行测试
+docker run -p 8080:80 test-frontend
+
+# 访问 http://localhost:8080
+```
+
+## 添加新 Frontend 模块的 Checklist
+
+- [ ] 创建 `<module>/frontend/Dockerfile`
+- [ ] 创建 `<module>/frontend/nginx.conf`
+- [ ] 创建 `<module>/frontend/.dockerignore`
+- [ ] 确保 `package.json` 有 `build` 脚本
+- [ ] 添加到 `scripts/deploy/1-build-images.sh` 的 services 列表
+- [ ] 添加到 `docker-compose.yml` 或 `docker-compose.prod.yml`
+- [ ] 运行 `./scripts/setup/standardize-frontend-docker.sh` 检查
+- [ ] 测试本地构建：`docker build -t test .`
+- [ ] 测试运行：`docker run -p 8080:80 test`
+
+## 参考资料
+
+- 构建脚本：[scripts/deploy/1-build-images.sh](../deploy/1-build-images.sh)
+- 标准化工具：[scripts/setup/standardize-frontend-docker.sh](standardize-frontend-docker.sh)
+- Manager 示例：[manager/frontend/Dockerfile](../../manager/frontend/Dockerfile)
+- System 示例：[system/frontend/Dockerfile](../../system/frontend/Dockerfile)

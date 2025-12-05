@@ -13,7 +13,7 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 echo -e "${BLUE}========================================${NC}"
@@ -47,7 +47,7 @@ echo ""
 
 # Stop services
 echo -e "${YELLOW}🛑 Stopping infrastructure services...${NC}"
-bash scripts/infra/down.sh || true
+bash "${SCRIPT_DIR}/down.sh" || true
 echo ""
 
 # Clean up old images
@@ -116,12 +116,12 @@ echo ""
 # Start infrastructure
 echo -e "${YELLOW}🚀 Starting infrastructure services...${NC}"
 
-bash scripts/infra/up.sh
+bash "${SCRIPT_DIR}/up.sh"
 
 # Install pgvector extension for vector embeddings support
 echo ""
 echo -e "${YELLOW}📦 Installing pgvector extension...${NC}"
-bash scripts/infra/init-pgvector.sh
+bash "${SCRIPT_DIR}/init-pgvector.sh"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

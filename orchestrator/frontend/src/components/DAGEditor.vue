@@ -16,8 +16,18 @@
 
         <el-divider direction="vertical" />
 
+        <el-button
+          :type="isAddEdgeMode ? 'primary' : 'default'"
+          size="small"
+          @click="toggleAddEdgeMode"
+        >
+          <el-icon><Connection /></el-icon> {{ isAddEdgeMode ? '退出连线' : '连线模式' }}
+        </el-button>
+
+        <el-divider direction="vertical" />
+
         <el-button type="danger" size="small" @click="deleteSelected" :disabled="!selectedNode">
-          <el-icon><Delete /></el-icon> 删除
+          <el-icon><Delete /></el-icon> 删除{{ selectedNode ? (selectedNode.getType && selectedNode.getType() === 'edge' ? '连线' : '节点') : '' }}
         </el-button>
         <el-button type="info" size="small" @click="clearGraph">
           <el-icon><DocumentDelete /></el-icon> 清空
@@ -28,7 +38,10 @@
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
             <span class="tips-text">
-              💡 从左侧拖拽任务 | 从节点拖出连线建立依赖 | 点击节点配置
+              {{ isAddEdgeMode
+                ? '🔗 连线模式：依次点击两个节点建立连线'
+                : '💡 拖拽任务到画布 | 点击"连线模式"按钮后可建立连线 | 点击节点配置'
+              }}
             </span>
           </template>
         </el-alert>
@@ -90,7 +103,7 @@
 import { onMounted, ref } from 'vue'
 import G6 from '@antv/g6'
 import { ElMessage } from 'element-plus'
-import { Plus, Delete, DocumentDelete } from '@element-plus/icons-vue'
+import { Plus, Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
 
 const props = defineProps({
   initialSteps: {
@@ -107,6 +120,7 @@ const drawerVisible = ref(false)
 const currentNode = ref({})
 const parametersStr = ref('')
 const selectedNode = ref(null)
+const isAddEdgeMode = ref(false)
 
 onMounted(() => {
   initGraph()
@@ -131,28 +145,30 @@ function initGraph() {
     width,
     height,
     modes: {
-      default: [
-        'drag-canvas',
-        'drag-node',
-        'click-select',
-        {
-          type: 'create-edge',  // 启用创建边模式
-          trigger: 'drag',      // 拖拽触发
-          key: undefined,       // 不需要按键
-          shouldBegin(e) {
-            // 只允许从节点开始拖拽
-            return e.item && e.item.getType() === 'node'
-          },
-          shouldEnd(e) {
-            // 只允许拖到节点上结束
-            return e.item && e.item.getType() === 'node'
-          }
-        }
-      ]
+      default: ['drag-canvas', 'drag-node', 'click-select'],
+      // 连线模式：点击两次节点创建连线
+      addEdge: ['drag-canvas', 'click-select', 'create-edge']
+    },
+    // 启用边的选中状态
+    nodeStateStyles: {
+      selected: {
+        stroke: '#f00',
+        lineWidth: 3
+      }
+    },
+    edgeStateStyles: {
+      selected: {
+        stroke: '#f00',
+        lineWidth: 3
+      },
+      hover: {
+        stroke: '#1890ff',
+        lineWidth: 3
+      }
     },
     defaultNode: {
       type: 'rect',
-      size: [150, 60],
+      size: [120, 50],  // 调整节点大小：宽120px，高50px
       // 添加锚点配置
       anchorPoints: [
         [0.5, 0],    // 上
@@ -169,8 +185,19 @@ function initGraph() {
       labelCfg: {
         style: {
           fill: '#fff',
-          fontSize: 14
+          fontSize: 13  // 调整字体大小
         }
+      },
+      // 显示锚点
+      linkPoints: {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true,
+        size: 10,  // 增大锚点尺寸，更容易点击
+        lineWidth: 2,
+        fill: '#fff',
+        stroke: '#1890FF'
       }
     },
     defaultEdge: {
@@ -183,23 +210,26 @@ function initGraph() {
           fill: '#A3B1BF'
         }
       }
-    },
-    layout: {
-      type: 'dagre',
-      rankdir: 'LR',
-      nodesep: 50,
-      ranksep: 100
     }
+    // 移除自动布局配置，改为手动放置节点
+    // layout: {
+    //   type: 'dagre',
+    //   rankdir: 'LR',
+    //   nodesep: 50,
+    //   ranksep: 100
+    // }
   })
 
-  // 节点点击事件
-  graph.value.on('node:click', handleNodeClick)
+  // 节点双击事件（配置节点）
+  graph.value.on('node:dblclick', handleNodeClick)
 
   // 节点选中事件
   graph.value.on('nodeselectchange', (evt) => {
     const selectedItems = evt.selectedItems
     if (selectedItems.nodes && selectedItems.nodes.length > 0) {
       selectedNode.value = selectedItems.nodes[0]
+    } else if (selectedItems.edges && selectedItems.edges.length > 0) {
+      selectedNode.value = selectedItems.edges[0]
     } else {
       selectedNode.value = null
     }
@@ -252,12 +282,31 @@ function handleDrop(event) {
 
   try {
     const data = event.dataTransfer.getData('application/json')
-    if (!data) return
+    if (!data) {
+      console.warn('未获取到拖放数据')
+      return
+    }
 
     const nodeData = JSON.parse(data)
+    console.log('拖放节点数据:', nodeData)
 
     // 获取画布坐标
     const point = graph.value.getPointByClient(event.clientX, event.clientY)
+    console.log('原始画布坐标:', point)
+
+    // 确保坐标在可见范围内（修复负坐标问题）
+    const width = container.value.offsetWidth || 1200
+    const height = container.value.offsetHeight || 600
+
+    // 如果坐标超出合理范围，使用随机位置在画布中心附近
+    let x = point.x
+    let y = point.y
+
+    if (x < 0 || x > width || y < 0 || y > height) {
+      x = width / 2 + Math.random() * 200 - 100
+      y = height / 2 + Math.random() * 200 - 100
+      console.log('坐标超出范围，使用中心位置:', { x, y })
+    }
 
     // 创建节点
     const colors = {
@@ -268,7 +317,7 @@ function handleDrop(event) {
 
     const id = `${nodeData.module}-${Date.now()}`
 
-    graph.value.addItem('node', {
+    const nodeModel = {
       id,
       label: nodeData.name,
       module: nodeData.module,
@@ -279,17 +328,30 @@ function handleDrop(event) {
       method: nodeData.method || 'POST',
       parameters: nodeData.parameters || {},
       timeout: 300,
-      x: point.x,
-      y: point.y,
+      x,
+      y,
       style: {
-        fill: colors[nodeData.module]
+        fill: colors[nodeData.module],
+        stroke: '#1890FF',
+        lineWidth: 2
       }
-    })
+    }
+
+    console.log('添加节点模型:', nodeModel)
+
+    // 添加节点
+    const node = graph.value.addItem('node', nodeModel)
+    console.log('节点已添加，node ID:', node.getID())
+
+    // 重绘画布
+    graph.value.paint()
+    console.log('画布已重绘')
 
     ElMessage.success(`已添加任务: ${nodeData.name}`)
     emitSteps()
   } catch (error) {
     console.error('拖放失败:', error)
+    ElMessage.error('添加节点失败: ' + error.message)
   }
 }
 
@@ -377,9 +439,17 @@ function saveNodeConfig() {
 
 function deleteSelected() {
   if (selectedNode.value) {
+    const itemType = selectedNode.value.getType ? selectedNode.value.getType() : 'edge'
+
     graph.value.removeItem(selectedNode.value)
     selectedNode.value = null
-    ElMessage.success('节点已删除')
+
+    if (itemType === 'edge') {
+      ElMessage.success('连线已删除')
+    } else {
+      ElMessage.success('节点已删除')
+    }
+
     emitSteps()
   }
 }
@@ -461,7 +531,20 @@ function loadSteps(steps) {
 
   graph.value.data({ nodes, edges })
   graph.value.render()
-  graph.value.fitView()
+}
+
+function toggleAddEdgeMode() {
+  isAddEdgeMode.value = !isAddEdgeMode.value
+
+  if (isAddEdgeMode.value) {
+    // 切换到连线模式
+    graph.value.setMode('addEdge')
+    ElMessage.info('已进入连线模式，依次点击两个节点建立连线')
+  } else {
+    // 切换回默认模式
+    graph.value.setMode('default')
+    ElMessage.info('已退出连线模式')
+  }
 }
 
 defineExpose({

@@ -7,10 +7,11 @@ export default {
    * @returns {Promise<{items: Array, total: number}>}
    */
   async listTransferTasks(params = {}) {
-    const response = await client.get('/tasks/list', {
+    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
+    const data = await client.get('/tasks/list', {
       params: { module: 'transfer', page_size: 100, ...params }
     })
-    return response.data
+    return data
   },
 
   /**
@@ -18,10 +19,11 @@ export default {
    * @returns {Promise<Array>}
    */
   async listMetaTasks() {
-    const response = await client.get('/tasks/list', {
+    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
+    const data = await client.get('/tasks/list', {
       params: { module: 'meta' }
     })
-    return response.data
+    return data
   },
 
   /**
@@ -29,9 +31,10 @@ export default {
    * @returns {Promise<Array>}
    */
   async listManagerTasks() {
-    const response = await client.get('/tasks/list', {
+    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
+    const data = await client.get('/tasks/list', {
       params: { module: 'manager' }
     })
-    return response.data
+    return data
   }
 }

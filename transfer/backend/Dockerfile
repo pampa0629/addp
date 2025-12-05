@@ -1,15 +1,15 @@
-# Transfer Backend Dockerfile (prebuilt binary)
-
 FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates tzdata curl
 
 WORKDIR /app
 
-# Install curl for health checks
-RUN apk add --no-cache curl ca-certificates
+# 从项目根目录的 dist/ 复制预编译的二进制
+COPY dist/transfer-backend ./server
 
-# Copy precompiled binary produced by scripts/deploy/0-compile-binaries.sh
-# or `make build` to dist, then move/copy to transfer/backend/server
-COPY transfer/backend/server ./server
+RUN chmod +x ./server
+
+ENV TZ=Asia/Shanghai
 
 EXPOSE 8083
 

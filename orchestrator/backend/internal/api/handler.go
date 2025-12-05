@@ -275,11 +275,50 @@ func (h *OrchestrationHandler) listTransferTasks(c *gin.Context) (interface{}, e
 		params["status"] = status
 	}
 
-	return h.moduleClient.Call(c, "transfer", "/api/tasks", "GET", params)
+	result, err := h.moduleClient.Call(c, "transfer", "/api/tasks", "GET", params)
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换格式: {data: [...], total: X} -> {items: [...], total: X}
+	// Transfer API 使用 common.SendPaginatedResponse 返回 {data, total, page, page_size}
+	// 前端期望 {items, total} 格式
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		if data, exists := resultMap["data"]; exists {
+			return map[string]interface{}{
+				"items": data,
+				"total": resultMap["total"],
+			}, nil
+		}
+	}
+
+	return result, nil
 }
 
 func (h *OrchestrationHandler) listMetaTasks(c *gin.Context) (interface{}, error) {
-	return h.moduleClient.Call(c, "meta", "/api/meta/scan/tasks", "GET", nil)
+	result, err := h.moduleClient.Call(c, "meta", "/api/meta/scan/tasks", "GET", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换格式: {data: [...]} -> {items: [...], total: X}
+	// Meta API 返回 {data: [...]} 格式
+	// 前端期望 {items, total} 格式
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		if data, exists := resultMap["data"]; exists {
+			items := data
+			total := 0
+			if arr, ok := data.([]interface{}); ok {
+				total = len(arr)
+			}
+			return map[string]interface{}{
+				"items": items,
+				"total": total,
+			}, nil
+		}
+	}
+
+	return result, nil
 }
 
 func (h *OrchestrationHandler) listManagerTasks(c *gin.Context) (interface{}, error) {

@@ -1,19 +1,29 @@
-FROM node:18-alpine AS builder
+FROM localhost:5001/node:18.20.5-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# 复制 package.json
+COPY package.json ./
 
-RUN npm install
+# 安装依赖 (不使用 lock 文件以避免 npm bug)
+# 显式安装 rollup 的本地依赖
+RUN npm install --no-package-lock && \
+    npm install --no-save @rollup/rollup-linux-arm64-musl && \
+    npm cache clean --force
 
+# 复制源代码
 COPY . .
 
+# 构建
 RUN npm run build
 
-FROM nginx:alpine
+# 运行阶段
+FROM localhost:5001/nginx:alpine
 
+# 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# 复制 nginx 配置
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

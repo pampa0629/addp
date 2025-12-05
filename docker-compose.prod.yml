@@ -10,7 +10,7 @@ services:
   # ==================== 基础设施服务 ====================
 
   postgres:
-    image: postgis/postgis:15-3.4-alpine
+    image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
     container_name: addp-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-addp}
@@ -29,6 +29,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - infra
 
   redis:
     image: redis:7-alpine
@@ -46,16 +48,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - infra
 
-  minio-system:
+  minio:
     image: minio/minio:latest
-    container_name: addp-minio-system
+    container_name: addp-minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      - minio_system_data:/data
+      - minio_data:/data
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -67,6 +71,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - infra
 
   meilisearch:
     image: getmeili/meilisearch:v1.7
@@ -87,6 +93,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    profiles:
+      - infra
 
   # ==================== System 模块 ====================
 
@@ -123,6 +131,8 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
+    profiles:
+      - addp
 
   system-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-system-frontend:${IMAGE_TAG:-latest}
@@ -134,6 +144,8 @@ services:
     depends_on:
       - system-backend
     restart: unless-stopped
+    profiles:
+      - addp
 
   # ==================== Manager 模块 ====================
 
@@ -169,7 +181,7 @@ services:
       retries: 30
       start_period: 60s
     profiles:
-      - full
+      - addp
 
   manager-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-manager-frontend:${IMAGE_TAG:-latest}
@@ -182,7 +194,7 @@ services:
       - manager-backend
     restart: unless-stopped
     profiles:
-      - full
+      - addp
 
   # ==================== Manager Worker 服务 ====================
 
@@ -220,30 +232,32 @@ services:
         condition: service_started
     restart: unless-stopped
     # Docker Swarm high availability configuration
-    deploy:
-      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
-      restart_policy:
-        condition: any  # Restart on any failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      update_config:
-        parallelism: 1  # Update one container at a time
-        delay: 10s
-        failure_action: rollback
-        order: start-first  # Start new container before stopping old one
-      rollback_config:
-        parallelism: 1
-        delay: 5s
-      resources:
-        limits:
-          cpus: '2'      # Max 2 CPU cores per worker
-          memory: 2G     # Max 2GB memory per worker
-        reservations:
-          cpus: '0.5'    # Reserve at least 0.5 CPU core
-          memory: 512M   # Reserve at least 512MB memory
+    # NOTE: deploy config is commented out for docker-compose mode
+    # Uncomment when using docker stack deploy (Swarm mode)
+    # deploy:
+    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
+    #   restart_policy:
+    #     condition: any  # Restart on any failure
+    #     delay: 5s
+    #     max_attempts: 3
+    #     window: 120s
+    #   update_config:
+    #     parallelism: 1  # Update one container at a time
+    #     delay: 10s
+    #     failure_action: rollback
+    #     order: start-first  # Start new container before stopping old one
+    #   rollback_config:
+    #     parallelism: 1
+    #     delay: 5s
+    #   resources:
+    #     limits:
+    #       cpus: '2'      # Max 2 CPU cores per worker
+    #       memory: 2G     # Max 2GB memory per worker
+    #     reservations:
+    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
+    #       memory: 512M   # Reserve at least 512MB memory
     profiles:
-      - full
+      - addp
 
   # ==================== Meta 模块 ====================
 
@@ -279,7 +293,7 @@ services:
       retries: 30
       start_period: 60s
     profiles:
-      - full
+      - addp
 
   meta-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-meta-frontend:${IMAGE_TAG:-latest}
@@ -292,7 +306,7 @@ services:
       - meta-backend
     restart: unless-stopped
     profiles:
-      - full
+      - addp
 
   # ==================== Transfer 模块 ====================
 
@@ -333,7 +347,7 @@ services:
       retries: 30
       start_period: 60s
     profiles:
-      - full
+      - addp
 
   transfer-worker:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-worker:${IMAGE_TAG:-latest}
@@ -363,30 +377,32 @@ services:
         condition: service_started
     restart: unless-stopped
     # Docker Swarm high availability configuration
-    deploy:
-      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
-      restart_policy:
-        condition: any  # Restart on any failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      update_config:
-        parallelism: 1  # Update one container at a time
-        delay: 10s
-        failure_action: rollback
-        order: start-first  # Start new container before stopping old one
-      rollback_config:
-        parallelism: 1
-        delay: 5s
-      resources:
-        limits:
-          cpus: '2'      # Max 2 CPU cores per worker
-          memory: 2G     # Max 2GB memory per worker
-        reservations:
-          cpus: '0.5'    # Reserve at least 0.5 CPU core
-          memory: 512M   # Reserve at least 512MB memory
+    # NOTE: deploy config is commented out for docker-compose mode
+    # Uncomment when using docker stack deploy (Swarm mode)
+    # deploy:
+    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
+    #   restart_policy:
+    #     condition: any  # Restart on any failure
+    #     delay: 5s
+    #     max_attempts: 3
+    #     window: 120s
+    #   update_config:
+    #     parallelism: 1  # Update one container at a time
+    #     delay: 10s
+    #     failure_action: rollback
+    #     order: start-first  # Start new container before stopping old one
+    #   rollback_config:
+    #     parallelism: 1
+    #     delay: 5s
+    #   resources:
+    #     limits:
+    #       cpus: '2'      # Max 2 CPU cores per worker
+    #       memory: 2G     # Max 2GB memory per worker
+    #     reservations:
+    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
+    #       memory: 512M   # Reserve at least 512MB memory
     profiles:
-      - full
+      - addp
 
   # ==================== Meta Worker 服务 ====================
 
@@ -418,30 +434,32 @@ services:
         condition: service_started
     restart: unless-stopped
     # Docker Swarm high availability configuration
-    deploy:
-      replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
-      restart_policy:
-        condition: any  # Restart on any failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      update_config:
-        parallelism: 1  # Update one container at a time
-        delay: 10s
-        failure_action: rollback
-        order: start-first  # Start new container before stopping old one
-      rollback_config:
-        parallelism: 1
-        delay: 5s
-      resources:
-        limits:
-          cpus: '2'      # Max 2 CPU cores per worker
-          memory: 2G     # Max 2GB memory per worker
-        reservations:
-          cpus: '0.5'    # Reserve at least 0.5 CPU core
-          memory: 512M   # Reserve at least 512MB memory
+    # NOTE: deploy config is commented out for docker-compose mode
+    # Uncomment when using docker stack deploy (Swarm mode)
+    # deploy:
+    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
+    #   restart_policy:
+    #     condition: any  # Restart on any failure
+    #     delay: 5s
+    #     max_attempts: 3
+    #     window: 120s
+    #   update_config:
+    #     parallelism: 1  # Update one container at a time
+    #     delay: 10s
+    #     failure_action: rollback
+    #     order: start-first  # Start new container before stopping old one
+    #   rollback_config:
+    #     parallelism: 1
+    #     delay: 5s
+    #   resources:
+    #     limits:
+    #       cpus: '2'      # Max 2 CPU cores per worker
+    #       memory: 2G     # Max 2GB memory per worker
+    #     reservations:
+    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
+    #       memory: 512M   # Reserve at least 512MB memory
     profiles:
-      - full
+      - addp
 
   transfer-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-frontend:${IMAGE_TAG:-latest}
@@ -454,7 +472,113 @@ services:
       - transfer-backend
     restart: unless-stopped
     profiles:
-      - full
+      - addp
+
+  # ==================== Orchestrator 模块 ====================
+
+  orchestrator-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-orchestrator-backend:${IMAGE_TAG:-latest}
+    container_name: addp-orchestrator-backend
+    environment:
+      - PORT=8084
+      - DB_SCHEMA=orchestrator
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-addp}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_NAME=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ENABLE_SERVICE_INTEGRATION=true
+      - GIN_MODE=release
+    ports:
+      - "8084:8084"
+    networks:
+      - addp-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    profiles:
+      - addp
+
+  orchestrator-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-orchestrator-frontend:${IMAGE_TAG:-latest}
+    container_name: addp-orchestrator-frontend
+    ports:
+      - "8094:80"
+    networks:
+      - addp-network
+    depends_on:
+      - orchestrator-backend
+    restart: unless-stopped
+    profiles:
+      - addp
+
+  # ==================== Develop 模块 (SQL 开发工作台) ====================
+
+  develop-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
+    container_name: addp-develop-backend
+    environment:
+      - PORT=8085
+      - ENV=production
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - ENABLE_SERVICE_INTEGRATION=true
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=develop
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - GIN_MODE=release
+    ports:
+      - "8085:8085"
+    networks:
+      - addp-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    profiles:
+      - addp
+
+  develop-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-develop-frontend:${IMAGE_TAG:-latest}
+    container_name: addp-develop-frontend
+    ports:
+      - "8095:80"
+    networks:
+      - addp-network
+    depends_on:
+      - develop-backend
+    restart: unless-stopped
+    profiles:
+      - addp
 
   # ==================== Gateway 服务 ====================
 
@@ -466,8 +590,13 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - MANAGER_SERVICE_URL=http://manager-backend:8081
       - META_SERVICE_URL=http://meta-backend:8082
+      - TRANSFER_SERVICE_URL=http://transfer-backend:8083
+      - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
+      - DEVELOP_SERVICE_URL=http://develop-backend:8085
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
+    ports:
+      - "8000:8000"
     networks:
       - addp-network
     depends_on:
@@ -481,7 +610,7 @@ services:
       retries: 30
       start_period: 60s
     profiles:
-      - full
+      - addp
 
   # ==================== Portal 统一门户 ====================
 
@@ -494,7 +623,7 @@ services:
       - gateway
     restart: unless-stopped
     profiles:
-      - full
+      - addp
 
   # ==================== Nginx 统一网关 ====================
 
@@ -516,7 +645,7 @@ services:
       timeout: 5s
       retries: 3
     profiles:
-      - full
+      - addp
 
 networks:
   addp-network:
@@ -525,5 +654,5 @@ networks:
 volumes:
   postgres_data:
   redis_data:
-  minio_system_data:
+  minio_data:
   meilisearch_data:

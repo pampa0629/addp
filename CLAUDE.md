@@ -12,14 +12,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform structured as microservices. Each service has its own directory:
 
-- **common/** - Shared library module: common client code, models, config loader, and utilities used across all services
+- **common/** - Shared backend library: common client code, models, config loader, and utilities used across all backend services
+- **common-frontend/** - Shared frontend library: Vue 3 components, utilities, and type definitions for frontend reuse
+  - **basic/** - Basic UI components without map dependencies (StorageEngineForm, ImagePreview, formatters)
+  - **map/** - Map-related components requiring OpenLayers and Gaode Map (GeoJsonPreview, ShapefilePreview, TablePreview)
+- **portal/** - Unified portal entry point with iframe-based module integration - **IMPLEMENTED**
 - **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL system schema)
 - **gateway/** - API gateway: handles external requests and routes to internal services - **IMPLEMENTED** (reverse proxy)
 - **manager/** - Data management: data source connections, upload directory organization, data preview - **PARTIALLY IMPLEMENTED** (Go backend structure created)
 - **meta/** - Metadata service: data metadata parsing/storage/querying, schema scanning with cron scheduling - **IMPLEMENTED** (PostgreSQL metadata schema)
 - **transfer/** - Data transfer: data import/export/synchronization - *Planned*
 
-All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO). Common code is shared via the `common` module to avoid duplication.
+All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO). Common code is shared via the `common` module (backend) and `common-frontend` module (frontend) to avoid duplication.
 
 ## Quick Start
 
@@ -50,6 +54,38 @@ make status         # Check service status
 make logs           # View all logs
 ```
 
+### Production Deployment (Recommended for Production)
+
+**生产环境一键部署**：使用 `scripts/prod/start.sh` 按正确顺序启动完整平台（基础设施 + 后端 + 前端 + Portal）
+
+```bash
+# From project root
+./scripts/prod/start.sh
+```
+
+**部署流程** (自动执行):
+
+1. **启动基础设施** (PostgreSQL, Redis, MinIO, Meilisearch)
+2. **启动 System Backend** (其他服务依赖它)
+3. **启动业务后端** (Manager, Meta, Transfer, Orchestrator, Develop, Gateway)
+4. **启动前端服务** (所有模块前端 + Portal + Nginx)
+5. **健康检查** (验证所有服务就绪)
+
+**访问地址** (部署完成后):
+
+- **✨ Portal 统一入口 (推荐)**: http://localhost:80
+  - 统一登录，一键访问所有模块
+  - 通过 Nginx 反向代理，提供最佳用户体验
+- **Portal 独立访问** (开发调试): http://localhost:5170
+- **API Gateway**: http://localhost:8000
+- **独立模块访问** (如需单独访问):
+  - System: http://localhost:8090
+  - Manager: http://localhost:8091
+  - Meta: http://localhost:8092
+  - Transfer: http://localhost:8093
+  - Orchestrator: http://localhost:8094
+  - Develop: http://localhost:8095
+
 **For detailed System module documentation, see `system/CLAUDE.md`.**
 
 ### Development Mode Startup (Recommended)
@@ -74,6 +110,7 @@ make dev-stop
 ```
 
 **Startup Order**:
+
 ```
 Infrastructure (PostgreSQL, Redis, MinIO)
   ↓
@@ -87,6 +124,7 @@ Frontend services (optional)
 ```
 
 **Key Features**:
+
 - ✅ Automatic health check waiting - ensures each service is ready before starting the next
 - ✅ Progress indicators - color-coded output shows startup status
 - ✅ PID tracking - stores process IDs for graceful shutdown
@@ -94,6 +132,7 @@ Frontend services (optional)
 - ✅ Log files - redirects output to `logs/` directory for easy debugging
 
 **Startup Script Details**:
+
 - Location: `scripts/dev/start.sh`
 - Waits for `/health` endpoint to return 200 before proceeding
 - Creates `.dev-pids/` directory to track process IDs
@@ -101,6 +140,7 @@ Frontend services (optional)
 - Optional frontend startup (prompts user)
 
 **Service URLs** (after successful startup):
+
 - Portal: http://localhost:5170
 - Gateway: http://localhost:8000
 - System Backend: http://localhost:8080
@@ -108,11 +148,13 @@ Frontend services (optional)
 - Meta Backend: http://localhost:8082
 
 **Troubleshooting**:
+
 - If startup fails, check logs in `logs/` directory
 - Run `make dev-health` to verify which services are running
 - See [docs/STARTUP_ORDER.md](docs/STARTUP_ORDER.md) for detailed dependency documentation
 
 **Important Development Workflow**:
+
 - **After modifying backend code**, always use `./scripts/dev/restart.sh` to restart all services
 - This ensures all processes (including workers) are recompiled with the latest changes
 - Manual restart of individual services may cause version mismatch issues
@@ -120,6 +162,7 @@ Frontend services (optional)
 ## Technology Stack
 
 ### Backend
+
 - **Language**: Go 1.23+
 - **HTTP Framework**: Gin
 - **ORM**: GORM
@@ -129,6 +172,7 @@ Frontend services (optional)
 - **Task Queue**: Asynq (Redis-based, for Transfer module), Cron (for Meta module scheduling)
 
 ### Frontend
+
 - **Framework**: Vue 3 + Composition API
 - **Build Tool**: Vite
 - **UI Library**: Element Plus
@@ -137,6 +181,7 @@ Frontend services (optional)
 - **HTTP Client**: Axios (with interceptors for auth)
 
 ### Infrastructure
+
 - **Containerization**: Docker + Docker Compose
 - **Reverse Proxy**: Nginx (production), Gateway service (API routing)
 - **Database Schema Isolation**: PostgreSQL schemas (manager, metadata, transfer)
@@ -169,15 +214,18 @@ ADDP 采用**系统与业务数据分离**的架构设计：
 ```
 
 **系统基础设施**（主 docker-compose.yml）:
+
 - `postgres`: 存储 ADDP 系统元数据（用户、资源配置、元数据索引、任务定义等）
 - `redis`: 缓存和任务队列
 - `minio`: 存储系统文件（用户头像、系统配置等）
 
 **业务基础设施**（business/docker-compose.yml，独立部署）:
+
 - `postgres`: 存储用户通过 ADDP 管理的实际业务数据（用户上传的 PostgreSQL 数据等）
 - `minio`: 存储用户上传的业务文件（Shapefile、GeoJSON、图片、视频等）
 
 **分离优势**:
+
 - ✅ 数据隔离: 系统数据与业务数据物理分离
 - ✅ 独立扩展: 业务数据量增长时可单独扩展
 - ✅ 安全性: 业务数据库可配置更严格的访问控制
@@ -237,18 +285,20 @@ transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Pla
 **Two Access Modes**:
 
 1. **Unified Portal Mode** (Recommended for users):
+
    - Single entry: http://localhost:5170 (dev) or http://localhost:8000 (prod)
    - Integrated navigation with all modules
    - Module frontends load in iframe within portal
    - One login for all modules
-
 2. **Standalone Module Mode** (For independent deployment):
+
    - Direct access to each module frontend
    - System: http://localhost:5173, Manager: http://localhost:5174
    - Each module has its own login
    - Suitable for deploying single module independently
 
 **Key Frontend Principles**:
+
 - Portal provides unified UX with consistent navigation
 - Module frontends remain independent and can be deployed standalone
 - All frontends share JWT auth pattern (token in localStorage)
@@ -269,17 +319,20 @@ transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Pla
 All modules use **PostgreSQL 15** with schema isolation for data separation.
 
 **System Module (system schema)**:
+
 - **users** - User accounts with bcrypt hashed passwords
 - **tenants** - Tenant information for multi-tenancy
 - **audit_logs** - Automatic logging of all non-GET operations (via `LoggerMiddleware`)
 - **resources** - Flexible resource configurations with JSON connection_info field (encrypted)
 
 **Manager Module (manager schema)**:
+
 - **data_sources** - Data source connections and configurations
 - **directories** - File organization and hierarchy
 - **permissions** - Access control for data sources and directories
 
 **Meta Module (metadata schema)** - IMPLEMENTED:
+
 - **meta_node** - Hierarchical nodes (schemas, prefixes, collections) with recursive structure, referencing `system.resources` by `res_id`
 - **meta_item** - Leaf items (tables, objects, files) with JSON attributes
 - **meta_dictionary** - Node type and child rule definitions for validation
@@ -288,6 +341,7 @@ All modules use **PostgreSQL 15** with schema isolation for data separation.
 Note: Meta module uses a **unified hierarchical model** (resource → node → item) to support both relational databases and object storage, replacing the old type-specific tables (schemas, tables, fields)
 
 **Transfer Module (transfer schema)** - PLANNED:
+
 - **tasks** - Transfer task definitions
 - **task_executions** - Task execution history
 - **data_mappings** - Field mapping configurations
@@ -301,6 +355,7 @@ GORM AutoMigrate handles schema updates automatically on startup. PostgreSQL sch
 The platform implements a centralized configuration management pattern where **System module acts as the configuration center** for all other modules.
 
 **Architecture**:
+
 ```
 ┌────────────────────────────────────────────────────┐
 │   System Module (Configuration Center)            │
@@ -332,12 +387,14 @@ The platform implements a centralized configuration management pattern where **S
 ```
 
 **What is Centralized**:
+
 1. **Authentication**: `JWT_SECRET` - ensures all services use the same JWT signing key
 2. **System Database**: PostgreSQL connection info - single source for system data
 3. **Business Databases**: Resources managed in System's `resources` table - all data source configs
 4. **Encryption Key**: `ENCRYPTION_KEY` - consistent encryption across services
 
 **Configuration Loading Flow**:
+
 ```
 Module Startup
    ↓
@@ -351,6 +408,7 @@ Try to fetch config from System (/internal/config)
 ```
 
 **Benefits**:
+
 - ✅ **Single Source of Truth**: Change database password once, restart services to apply
 - ✅ **Security**: Sensitive configs centrally managed and encrypted
 - ✅ **Flexibility**: Supports both integrated and standalone deployment modes
@@ -401,11 +459,13 @@ ENABLE_SERVICE_INTEGRATION=true    # Enable config center
 The `common` module provides shared code to avoid duplication across Manager, Meta, and Transfer modules.
 
 **Contents**:
+
 - [client/system.go](common/client/system.go) - SystemClient for communicating with System module
 - [models/resource.go](common/models/resource.go) - Shared Resource model and BuildConnectionString utility
 - [config/loader.go](common/config/loader.go) - Centralized configuration loading with fallback
 
 **Usage Pattern**:
+
 ```go
 // In module's go.mod
 require (github.com/addp/common v0.0.0)
@@ -427,12 +487,98 @@ connStr, err := commonModels.BuildConnectionString(resource)
 ```
 
 **Key Design Principles**:
+
 - Minimal external dependencies (only Go stdlib)
 - All modules use identical SystemClient implementation
 - Resource model is canonical across all services
 - Breaking changes to common affect all modules - test thoroughly
 
 **See Also**: [docs/COMMON_MODULE.md](docs/COMMON_MODULE.md)
+
+## Common Frontend
+
+The `common-frontend` module provides shared Vue 3 components, utilities, and type definitions for frontend reuse across modules.
+
+**Architecture**: Split into two sub-modules to avoid unnecessary dependencies:
+
+```
+common-frontend/
+├── basic/          # Basic UI components (no map dependencies)
+│   └── src/
+│       ├── components/  - StorageEngineForm, ImagePreview, ExtractedMetadata
+│       ├── utils/       - formatters, type utilities
+│       ├── types/       - FieldType, FormatType, ResourceType
+│       └── index.js
+│
+└── map/            # Map-related components (requires ol and @amap/amap-jsapi-loader)
+    └── src/
+        ├── components/  - MapContainer, GeoJsonPreview, ShapefilePreview, TablePreview
+        ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
+        └── utils/       - geo utilities, formatters
+```
+
+**Usage Patterns**:
+
+**For modules WITHOUT map features** (System, Transfer):
+
+```javascript
+// vite.config.js
+resolve: {
+  alias: {
+    '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
+  }
+}
+
+// In components
+import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { formatFileSize, formatDateTime } from '@common-ui'
+```
+
+**For modules WITH map features** (Manager):
+
+```javascript
+// vite.config.js
+resolve: {
+  alias: {
+    '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
+  }
+}
+
+// package.json dependencies
+{
+  "ol": "^9.2.4",
+  "@amap/amap-jsapi-loader": "^1.0.1"
+}
+
+// In components
+import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
+```
+
+**Key Components**:
+
+- **Preview Components**: ShapefilePreview, GeoJsonPreview, TablePreview, ImagePreview
+- **Form Components**: StorageEngineForm (PostgreSQL/MinIO/S3 configuration)
+- **Map Components**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
+- **Utilities**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
+- **Types**: FieldType, FormatType, ResourceType (aligned with backend models)
+
+**Benefits**:
+
+- ✅ **Modular Dependencies**: Modules only install what they need
+- ✅ **Reduced Bundle Size**: Basic modules save ~2-3MB by excluding map libraries
+- ✅ **Type Safety**: Shared type definitions ensure frontend-backend consistency
+- ✅ **DRY Compliance**: UI components reused instead of duplicated
+- ✅ **Unified Maintenance**: All shared components in one place
+
+**Module Usage**:
+
+- **System Frontend**: Uses `basic` (StorageEngineForm for resource configuration)
+- **Manager Frontend**: Uses `map` (GeoJsonPreview, ShapefilePreview, TablePreview for data preview)
+- **Meta Frontend**: Uses `basic` (ExtractedMetadata for metadata display)
+- **Transfer Frontend**: Uses `basic` (field type utilities for mapping UI)
+- **Portal Frontend**: Uses `basic` (common UI elements)
+
+**See Also**: [common-frontend/README.md](common-frontend/README.md), [common-frontend/ARCHITECTURE.md](common-frontend/ARCHITECTURE.md)
 
 ## Development Workflows
 
@@ -441,6 +587,7 @@ connStr, err := commonModels.BuildConnectionString(resource)
 Follow the layered architecture pattern used throughout the codebase:
 
 1. **Define data models** in `internal/models/`:
+
    ```go
    type CreateResourceRequest struct {
        Name           string                 `json:"name" binding:"required"`
@@ -448,23 +595,23 @@ Follow the layered architecture pattern used throughout the codebase:
        ConnectionInfo map[string]interface{} `json:"connection_info"`
    }
    ```
-
 2. **Add repository methods** in `internal/repository/`:
+
    ```go
    func (r *ResourceRepository) Create(resource *models.Resource) error {
        return r.db.Create(resource).Error
    }
    ```
-
 3. **Implement business logic** in `internal/service/`:
+
    ```go
    func (s *ResourceService) CreateResource(req *CreateResourceRequest) (*Resource, error) {
        // Validation, encryption, business rules
        return s.repo.Create(resource)
    }
    ```
-
 4. **Create HTTP handler** in `internal/api/`:
+
    ```go
    func (h *ResourceHandler) Create(c *gin.Context) {
        var req CreateResourceRequest
@@ -476,8 +623,8 @@ Follow the layered architecture pattern used throughout the codebase:
        c.JSON(201, resource)
    }
    ```
-
 5. **Register route** in `internal/api/router.go`:
+
    ```go
    protected.POST("/resources", resourceHandler.Create)
    ```
@@ -489,6 +636,7 @@ Follow the layered architecture pattern used throughout the codebase:
 GORM AutoMigrate handles schema changes automatically:
 
 1. **Modify model struct** in `internal/models/`:
+
    ```go
    type Resource struct {
        ID             uint      `gorm:"primaryKey"`
@@ -496,8 +644,8 @@ GORM AutoMigrate handles schema changes automatically:
        NewField       string    `gorm:"default:''" json:"new_field"` // Add new field
    }
    ```
-
 2. **Add to AutoMigrate** in `internal/repository/database.go`:
+
    ```go
    db.AutoMigrate(
        &models.Resource{},
@@ -505,16 +653,17 @@ GORM AutoMigrate handles schema changes automatically:
        // Add new models here
    )
    ```
-
 3. **Restart application** - migration runs on startup
 
 **For Complex Migrations**:
+
 - Create SQL script in `scripts/migrations/` for data transformations
 - Run manually via `make db-migrate` before deploying new version
 - Document breaking changes in PR description
 
 **Meta Module Specifics**:
 The unified metadata model (resource/node/item) requires coordinated updates:
+
 - Model structs in [meta/backend/internal/models/](meta/backend/internal/models/)
 - Dictionary validation in `meta_dictionary` table
 - JSON schema version in `attributes` field if structure changes
@@ -523,12 +672,14 @@ The unified metadata model (resource/node/item) requires coordinated updates:
 ### Adding Frontend Pages
 
 **Important**: Add pages to the correct frontend based on functionality:
+
 - System features (users, logs, resources) → `system/frontend/`
 - Manager features (data sources, directories) → `manager/frontend/`
 - Meta features (metadata, lineage) → `meta/frontend/`
 - Transfer features (tasks, executions) → `transfer/frontend/`
 
 Steps for each frontend:
+
 1. Create Vue component in `<module>/frontend/src/views/`
 2. Add API functions in `<module>/frontend/src/api/`
 3. Register route in `<module>/frontend/src/router/index.js`
@@ -539,6 +690,7 @@ Steps for each frontend:
 ### Environment Variables
 
 Root `.env` file (copy from `.env.example`):
+
 ```bash
 # Security (MUST change for production)
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
@@ -568,34 +720,45 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 
 **ADDP System Services**:
 
-| Service | Dev Port | Docker Port | Description |
-|---------|----------|-------------|-------------|
-| **Portal Frontend** | **5170** | **8000** | **Unified entry point** |
-| Gateway | 8000 | 8000 | API Gateway (backend routing) |
-| System Backend | 8080 | 8080 | Auth, users, logs |
-| System Frontend | 5173 | 8090 | Standalone access |
-| Manager Backend | 8081 | 8081 | Data sources, files |
-| Manager Frontend | 5174 | 8091 | Standalone access |
-| Meta Backend | 8082 | 8082 | Metadata, lineage |
-| Meta Frontend | 5175 | 8092 | Standalone access |
-| Transfer Backend | 8083 | 8083 | Import/export tasks |
-| Transfer Frontend | 5176 | 8093 | Standalone access |
-| PostgreSQL (System) | 5432 | 5432 | ADDP system metadata |
-| Redis | 6379 | 6379 | Cache & queue |
-| MinIO System API | 9000 | 9000 | System file storage |
-| MinIO System Console | 9001 | 9001 | System MinIO web UI |
+
+| Service              | Dev Port | Docker Port | Description                   |
+| -------------------- | -------- | ----------- | ----------------------------- |
+| **Nginx Gateway**    | **80**   | **80**      | **Unified entry (recommended)** |
+| **Portal Frontend**  | **5170** | **5170**    | **Portal UI (via Nginx)**     |
+| Gateway              | 8000     | 8000        | API Gateway (backend routing) |
+| System Backend       | 8080     | 8080        | Auth, users, logs             |
+| System Frontend      | 5173     | 8090        | Standalone access             |
+| Manager Backend      | 8081     | 8081        | Data sources, files           |
+| Manager Frontend     | 5174     | 8091        | Standalone access             |
+| Meta Backend         | 8082     | 8082        | Metadata, lineage             |
+| Meta Frontend        | 5175     | 8092        | Standalone access             |
+| Transfer Backend     | 8083     | 8083        | Import/export tasks           |
+| Transfer Frontend    | 5176     | 8093        | Standalone access             |
+| Orchestrator Backend | 8084     | 8084        | Workflow orchestration        |
+| Orchestrator Frontend| 5177     | 8094        | Standalone access             |
+| Develop Backend      | 8085     | 8085        | Development tools             |
+| Develop Frontend     | 5178     | 8095        | Standalone access             |
+| PostgreSQL (System)  | 5432     | 5432        | ADDP system metadata          |
+| Redis                | 6379     | 6379        | Cache & queue                 |
+| MinIO System API     | 9000     | 9000        | System file storage           |
+| MinIO System Console | 9001     | 9001        | System MinIO web UI           |
+| Meilisearch          | 7700     | 7700        | Full-text search engine       |
 
 **Business Infrastructure Services** (deployed via `business/docker-compose.yml`):
 
-| Service | Docker Port | Description |
-|---------|-------------|-------------|
-| PostgreSQL (Business) | 5433 | User business data storage |
-| MinIO Business API | 9002 | User file storage |
-| MinIO Business Console | 9003 | Business MinIO web UI |
 
-**Recommended Access**: Use Portal at **http://localhost:5170** for unified experience
+| Service                | Docker Port | Description                |
+| ---------------------- | ----------- | -------------------------- |
+| PostgreSQL (Business)  | 5433        | User business data storage |
+| MinIO Business API     | 9002        | User file storage          |
+| MinIO Business Console | 9003        | Business MinIO web UI      |
+
+**Recommended Access**:
+- **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)
+- **开发环境**: http://localhost:5170 (Portal 独立访问) 或各模块独立端口
 
 **Business Infrastructure Setup**:
+
 ```bash
 cd business
 cp .env.example .env
@@ -800,12 +963,14 @@ docker stack rm addp
 ```
 
 **Key Benefits of Swarm Mode**:
+
 - ✅ **Auto-recovery**: Crashed containers automatically replaced with new replicas
 - ✅ **Load balancing**: Built-in load balancing across replicas
 - ✅ **Zero-downtime updates**: Rolling updates without service interruption
 - ✅ **Resource management**: CPU and memory limits/reservations
 
 **Transfer Worker High Availability** (configured in docker-compose.prod.yml):
+
 - Default: 2 replicas running simultaneously
 - Auto-restart on failure
 - CPU limit: 2 cores per worker
@@ -816,21 +981,25 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 **Data Persistence**:
 
 **ADDP System** (docker-compose.yml):
+
 - PostgreSQL: `postgres_data` volume (ADDP system metadata)
 - Redis: `redis_data` volume (cache and queues)
 - MinIO System: `minio_system_data` volume (system files)
 
 **Business Infrastructure** (business/docker-compose.yml):
+
 - PostgreSQL: `business_postgres_data` volume (user business data)
 - MinIO Business: `business_minio_data` volume (user files)
 
 ## API Endpoints Summary
 
 **Public**:
+
 - `POST /api/auth/login` - Login
 - `POST /api/auth/register` - Register
 
 **Protected** (require JWT):
+
 - `GET /api/users/me` - Current user
 - `GET /api/users` - List users
 - `GET/PUT/DELETE /api/users/:id` - User CRUD
@@ -840,9 +1009,11 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 ## Service Architecture Details
 
 ### Gateway Service (IMPLEMENTED)
+
 **Purpose**: Unified API entry point for all microservices
 
 **Key Features**:
+
 - HTTP reverse proxy using Gin
 - Route matching by URL prefix (`/api/auth/*` → System, `/api/datasources/*` → Manager, etc.)
 - CORS middleware for cross-origin requests
@@ -854,9 +1025,11 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 **Architecture Files**: See `gateway/ARCHITECTURE.md` for detailed request flow and routing rules
 
 ### Manager Service (IMPLEMENTED)
+
 **Purpose**: Data source management, file organization, and data preview
 
 **Implemented Features**:
+
 - **Object storage preview** (MinIO, S3, OSS):
   - Directory/prefix navigation with hierarchical listing
   - Object content preview (text, JSON, GeoJSON, images)
@@ -872,11 +1045,13 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 - Connection info decryption for secure access
 
 **Key Files**:
+
 - Backend preview service: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
 - Frontend preview components: [manager/frontend/src/components/previews/](manager/frontend/src/components/previews/)
 - Preview plugin registry: [manager/frontend/src/plugins/previews/index.js](manager/frontend/src/plugins/previews/index.js)
 
 **Planned Features**:
+
 - Database data preview (table records with pagination)
 - Video/audio preview
 - Additional office formats (XLS, CSV)
@@ -886,9 +1061,11 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 **Database**: PostgreSQL `manager` schema
 
 ### Meta Service (IMPLEMENTED)
+
 **Purpose**: Metadata management and data lineage
 
 **Implemented Features**:
+
 - Data source synchronization from System module
 - **Unified hierarchical metadata model** for all data source types:
   - Relational databases: resource (database) → node (schema) → item (table/view)
@@ -906,17 +1083,20 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 
 **Automatic Scanning Trigger**:
 When registering a storage engine in System module, you can configure automatic metadata scanning:
+
 - **Immediate**: Scan starts automatically after registration (no manual trigger needed)
 - **Daily/Weekly**: Creates scheduled task in Meta module
 - **Manual**: No automatic scanning, requires manual trigger in Meta frontend
 
 This is implemented via **event-driven architecture**:
+
 1. System publishes resource change event to Redis when creating/updating resources
 2. Meta subscribes to these events and checks `ScanConfig.ScheduleType`
 3. If `ScheduleType == "immediate"`, Meta automatically creates and enqueues a scan task
 4. No circular dependency: System → Redis Pub/Sub → Meta (one-way communication)
 
 **Scanning Workflow**:
+
 1. Sync data sources from System module `/api/resources`
 2. Select data source and schemas/prefixes to scan
 3. Extract metadata hierarchically:
@@ -927,12 +1107,14 @@ This is implemented via **event-driven architecture**:
 6. Support manual triggers and scheduled auto-sync
 
 **Architectural Highlights**:
+
 - **Node type validation**: `meta_dictionary` tables enforce valid parent-child relationships
 - **Soft delete**: All entities use `deleted_at` for safe deletion and recovery
 - **Path tracking**: Nodes maintain `depth`, `path` (ID chain), and `full_name` for efficient querying
 - **Incremental sync**: `sync_version` and `last_synced_at` enable change detection
 
 **Planned Features**:
+
 - Data lineage tracking (source → transformation → target)
 - Tag-based search and discovery
 - Extended metadata statistics and profiling
@@ -941,9 +1123,11 @@ This is implemented via **event-driven architecture**:
 **Database**: PostgreSQL `metadata` schema (tables: meta_node, meta_item, meta_dictionary, meta_change_log)
 
 ### Transfer Service (PLANNED)
+
 **Purpose**: Data import/export and synchronization
 
 **Planned Features**:
+
 - Import from external sources (databases, APIs, files)
 - Export to various targets
 - Scheduled tasks with Cron expressions
@@ -955,6 +1139,7 @@ This is implemented via **event-driven architecture**:
 **Database**: PostgreSQL `transfer` schema (tables: tasks, task_executions, data_mappings)
 
 **Task Queue Architecture**:
+
 - **Queue Naming**: Uses module-prefixed queues to avoid conflicts with other modules
   - `transfer:critical` - High priority tasks (紧急任务)
   - `transfer:default` - Normal priority tasks (普通任务)
@@ -976,6 +1161,7 @@ This is implemented via **event-driven architecture**:
 ## Inter-Service Communication
 
 **Current Pattern**: HTTP REST calls between services
+
 - Services discover each other via environment variables (e.g., `SYSTEM_SERVICE_URL`)
 - Manager/Meta/Transfer can call System APIs for user validation
 - Manager notifies Meta when new data sources are added
@@ -992,12 +1178,14 @@ This is implemented via **event-driven architecture**:
 **Core Principle**: Avoid code duplication across modules. Extract common functionality to the `common/` module.
 
 **Why it matters**:
+
 - ✅ Single point of maintenance - fix bugs once, benefit all modules
 - ✅ Consistency - all modules use identical implementations
 - ✅ Reduces error risk - no need to remember to update multiple locations
 - ✅ Easier refactoring - change logic in one place
 
 **Examples of shared code in `common/`**:
+
 - **`common/config/LoadEnv(levelsUp int)`** - Load .env file from project root
   ```go
   // In each module's main.go
@@ -1009,16 +1197,19 @@ This is implemented via **event-driven architecture**:
 - **`common/config/LoadSharedConfig()`** - Fetch config from System
 
 **When to extract to common/**:
+
 1. Code appears in 2+ modules with minimal variation
 2. Logic is module-agnostic (not specific to one service's business domain)
 3. Function can be parameterized to handle differences (e.g., path depth)
 
 **When NOT to extract**:
+
 - Module-specific business logic
 - Code that's likely to diverge between modules
 - Single-use functions with no reuse potential
 
 **Implementation pattern**:
+
 ```go
 // Step 1: Add to common/config/loader.go or create new file
 func SharedFunction(param int) {
@@ -1039,6 +1230,7 @@ commonConfig.SharedFunction(value)
 When implementing or extending services:
 
 1. **Follow System module pattern**:
+
    ```
    service/backend/
    ├── cmd/server/main.go       # Entry point
@@ -1051,30 +1243,30 @@ When implementing or extending services:
    │   └── config/              # Configuration
    └── pkg/utils/               # Shared utilities
    ```
-
 2. **Database conventions**:
+
    - Use PostgreSQL schema isolation (except System which uses SQLite)
    - GORM for ORM with AutoMigrate
    - Add schemas to `scripts/init-db.sql`
    - Use `updated_at` triggers for timestamp tracking
-
 3. **Configuration**:
+
    - Read from environment variables via `internal/config/config.go`
    - Support both development and Docker deployment modes
    - Set defaults for missing env vars
-
 4. **Authentication**:
+
    - Reuse System module's JWT validation logic
    - Import auth middleware from System or create identical one
    - Extract user_id from JWT claims and pass to service layer
-
 5. **Docker integration**:
+
    - Create Dockerfile in service root
    - Add service to `docker-compose.yml` with `profile: full`
    - Use health checks for dependency management
    - Connect to `addp-network` for inter-service communication
-
 6. **Frontend integration**:
+
    - Create independent `<module>/frontend/` directory
    - Copy structure from `system/frontend/` (Vue 3 + Pinia + Element Plus)
    - Create `api/client.js` pointing to module's backend
@@ -1132,11 +1324,13 @@ npm run dev
 ### Frontend-Backend Connection in Development
 
 **Development mode** (direct backend connection):
+
 - System frontend → System backend (localhost:8080)
 - Manager frontend → Manager backend (localhost:8081)
 - Auth requests → System backend (localhost:8080)
 
 **Production mode** (via Gateway):
+
 - All frontend requests → Gateway (localhost:8000)
 - Gateway routes to appropriate backend
 
@@ -1145,24 +1339,54 @@ npm run dev
 When implementing a new module (e.g., Meta), follow these steps:
 
 1. **Copy frontend structure**:
+
    ```bash
    cp -r system/frontend meta/frontend
    cd meta/frontend
    ```
-
 2. **Update configuration**:
+
    - `package.json`: Change name to `meta-frontend`
    - `vite.config.js`: Change port to unique number (e.g., 5175)
    - `index.html`: Update title
    - `src/router/index.js`: Set base path to `/meta/`
    - `src/api/client.js`: Point baseURL to meta backend (8082)
    - Keep `src/api/auth.js` pointing to System backend (8080)
+3. **Configure common-frontend alias** (choose based on module needs):
 
-3. **Update views and components** to match module's functionality
+   For modules **without map features** (System, Meta, Transfer):
+   ```javascript
+   // vite.config.js
+   resolve: {
+     alias: {
+       '@': resolve(__dirname, 'src'),
+       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
+     }
+   }
+   ```
 
-4. **Add Dockerfile and nginx.conf** (copy from manager/frontend as template)
+   For modules **with map features** (Manager):
+   ```javascript
+   // vite.config.js
+   resolve: {
+     alias: {
+       '@': resolve(__dirname, 'src'),
+       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
+     }
+   }
 
-5. **Add to docker-compose.yml**:
+   // package.json - add map dependencies
+   {
+     "dependencies": {
+       "ol": "^9.2.4",
+       "@amap/amap-jsapi-loader": "^1.0.1"
+     }
+   }
+   ```
+4. **Update views and components** to match module's functionality
+5. **Add Dockerfile and nginx.conf** (copy from manager/frontend as template)
+6. **Add to docker-compose.yml**:
+
    ```yaml
    meta-frontend:
      build:
@@ -1172,6 +1396,30 @@ When implementing a new module (e.g., Meta), follow these steps:
      profiles:
        - full
    ```
+
+**Using Common Frontend Components**:
+
+```vue
+<script setup>
+// For basic modules
+import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { formatFileSize, FieldType } from '@common-ui'
+
+// For map-enabled modules
+import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
+
+const resourceForm = ref({
+  resource_type: 'postgresql',
+  name: '',
+  connection_info: {}
+})
+</script>
+
+<template>
+  <StorageEngineForm v-model="resourceForm" />
+  <TablePreview :data="tableData" />
+</template>
+```
 
 ## Common Make Commands (Project Root)
 
@@ -1230,19 +1478,24 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 ## Important File Locations
 
 ### Configuration
+
 - [`.env`](.env) - Root environment variables (shared config)
 - [`.env.example`](.env.example) - Template with all available options
 - [`docker-compose.yml`](docker-compose.yml) - Service definitions and networking
 
 ### Documentation
+
 - [`CLAUDE.md`](CLAUDE.md) - This file (platform-wide architecture)
 - [`AGENTS.md`](AGENTS.md) - Repository conventions and guidelines
 - [`system/CLAUDE.md`](system/CLAUDE.md) - System module details
 - [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway routing logic
 - [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - Configuration center guide
 - [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common module usage
+- [`common-frontend/README.md`](common-frontend/README.md) - Common frontend components guide
+- [`common-frontend/ARCHITECTURE.md`](common-frontend/ARCHITECTURE.md) - Common frontend architecture
 
 ### Build & Deploy
+
 - [`Makefile`](Makefile) - Project-wide orchestration commands
 - [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema initialization
 - [`scripts/dev/start.sh`](scripts/dev/start.sh) - Development startup script (按顺序启动所有服务)
@@ -1250,14 +1503,18 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 - [`scripts/dev/run.sh`](scripts/dev/run.sh) - Local development helper (legacy)
 
 ### Key Source Files
+
 - System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)
 - Manager preview: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
 - Meta scanning: [meta/backend/internal/service/scan_service.go](meta/backend/internal/service/scan_service.go)
 - Common client: [common/client/system.go](common/client/system.go)
+- Common frontend basic: [common-frontend/basic/src/index.js](common-frontend/basic/src/index.js)
+- Common frontend map: [common-frontend/map/src/index.js](common-frontend/map/src/index.js)
 
 ## Troubleshooting
 
 **Services won't start**:
+
 ```bash
 make status              # Check what's running
 docker-compose ps        # Check container status
@@ -1265,12 +1522,14 @@ make logs                # Check for errors
 ```
 
 **Port conflicts**:
+
 ```bash
 lsof -i :8080            # Check what's using port 8080
 # Kill process or change port in docker-compose.yml
 ```
 
 **Database connection issues**:
+
 ```bash
 docker-compose ps postgres    # Ensure PostgreSQL is running
 make db-shell                 # Try connecting manually
@@ -1278,6 +1537,7 @@ docker-compose restart postgres
 ```
 
 **Cannot access MinIO**:
+
 ```bash
 make minio-setup         # Initialize MinIO buckets
 curl http://localhost:9001   # Check MinIO console

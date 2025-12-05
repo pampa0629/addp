@@ -1,28 +1,16 @@
-# 构建阶段
-FROM golang:1.24-alpine AS builder
-
-ENV GOPROXY=https://proxy.golang.org,direct
-
-WORKDIR /app
-
-# 复制依赖文件
-COPY go.mod go.sum ./
-RUN go mod download
-
-# 复制源代码
-COPY . .
-
-# 编译
-RUN CGO_ENABLED=0 GOOS=linux go build -o gateway cmd/gateway/main.go
-
-# 运行阶段
 FROM alpine:latest
 
+RUN apk --no-cache add ca-certificates tzdata curl
+
 WORKDIR /app
 
-# 从构建阶段复制二进制文件
-COPY --from=builder /app/gateway .
+# 从项目根目录的 dist/ 复制预编译的二进制
+COPY dist/gateway ./server
+
+RUN chmod +x ./server
+
+ENV TZ=Asia/Shanghai
 
 EXPOSE 8000
 
-CMD ["./gateway"]
+CMD ["./server"]

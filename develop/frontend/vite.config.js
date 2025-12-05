@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     vue(),
     monacoEditorPlugin({
-      languageWorkers: ['editorWorkerService', 'sql']
+      languages: ['sql', 'json', 'javascript', 'typescript']
     })
   ],
   server: {
