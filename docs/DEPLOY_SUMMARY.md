@@ -57,13 +57,13 @@
 
 ```bash
 # 在开发机执行
-./scripts/deploy/deploy-all.sh --server pampa@192.168.1.182 --registry localhost:5001
+./scripts/prod/deploy.sh v1.0.0 --registry localhost:5001
 ```
 
 一键完成：
-1. 传输代码到服务器
-2. 部署 Business 基础设施
-3. 构建 ADDP 镜像
+1. 编译多架构二进制
+2. 构建并推送镜像
+3. 部署到生产环境
 4. 启动所有服务
 
 #### 手动部署
@@ -88,10 +88,10 @@ cp .env.prod.example .env.prod
 vim .env.prod  # 配置密钥和密码
 
 # 可选：预编译二进制（提升构建速度）
-./scripts/deploy/0-compile-binaries.sh --arch amd64
+./scripts/build/compile.sh --arch amd64
 
 # 构建并推送镜像到本地 registry（localhost:5001）
-./scripts/deploy/1-build-images.sh --registry localhost:5001
+./scripts/build/build-images.sh --registry localhost:5001
 
 # 启动
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
@@ -104,9 +104,9 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ### 新增脚本
 
 1. **scripts/setup/local-registry.sh** - 本地 Registry 设置（支持自定义端口）
-2. **scripts/deploy/0-compile-binaries.sh** - 本地预编译二进制（可选，加速构建）
-3. **scripts/deploy/1-build-images.sh** - 本地构建并推送镜像（单架构）
-4. **scripts/deploy/1-build-images-multiarch.sh** - 多架构构建并推送
+2. **scripts/build/compile.sh** - 本地预编译二进制（可选，加速构建）
+3. **scripts/build/build-images.sh** - 本地构建并推送镜像（单架构或多架构）
+4. **scripts/prod/deploy.sh** - 一键部署脚本（编译 → 构建 → 部署）
 5. **scripts/deploy/2-package-deploy.sh** - 产物打包与可选传输
 6. **scripts/deploy/3-server-setup.sh** - 服务器初始化与启动
 7. **scripts/deploy/deploy-all.sh** - 一键部署（构建+传输+启动）

@@ -114,11 +114,11 @@ docker ps | grep registry || \
 
 ## 4.3 预编译二进制（用于 Docker 预构建镜像路径）
 # 根据 CPU 架构选择，常见为 amd64；多架构可使用 both
-./scripts/deploy/0-compile-binaries.sh --arch amd64
+./scripts/build/compile.sh --arch amd64
 
 ## 4.4 本地构建并推送镜像到注册表
 # 构建并推送所有服务镜像到 localhost:5001
-./scripts/deploy/1-build-images.sh --registry localhost:5001
+./scripts/build/build-images.sh --registry localhost:5001
 
 ## 4.5 使用 Compose 启动全部服务
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
@@ -180,7 +180,7 @@ FROM golang:1.24-alpine AS builder
 
 **原因**: backend 服务需要从项目根目录构建（因为依赖 common/ 模块）
 
-**解决**: 使用 `scripts/deploy/0-compile-binaries.sh` 统一处理，backend 使用 CONTEXT="."
+**解决**: 使用 `scripts/build/compile.sh` 统一处理，backend 使用 CONTEXT="."
 
 ### Q3: 服务启动失败 - "connection refused"
 
@@ -221,8 +221,8 @@ git pull origin main
 # 或重新传输文件（如果使用 scp/rsync）
 
 # 重新构建镜像并部署
-./scripts/deploy/0-compile-binaries.sh --arch amd64
-./scripts/deploy/1-build-images.sh --registry localhost:5001
+./scripts/build/compile.sh --arch amd64
+./scripts/build/build-images.sh --registry localhost:5001
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
@@ -240,8 +240,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down
 git checkout <previous-commit>
 
 # 重新构建
-./scripts/deploy/0-compile-binaries.sh --arch amd64
-./scripts/deploy/1-build-images.sh --registry localhost:5001
+./scripts/build/compile.sh --arch amd64
+./scripts/build/build-images.sh --registry localhost:5001
 ```
 
 ---
@@ -258,8 +258,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down -v
 docker images | grep "^addp-" | awk '{print $3}' | xargs docker rmi -f
 
 # 重新构建
-./scripts/deploy/0-compile-binaries.sh --arch amd64
-./scripts/deploy/1-build-images.sh --registry localhost:5001
+./scripts/build/compile.sh --arch amd64
+./scripts/build/build-images.sh --registry localhost:5001
 ```
 
 ---

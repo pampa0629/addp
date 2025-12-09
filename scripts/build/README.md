@@ -17,17 +17,20 @@
 ### 使用方法
 
 ```bash
-# 基本用法（编译本机架构）
+# 容器构建（默认，编译 Linux 二进制用于 Docker）
 ./scripts/build/compile.sh
 
-# 编译多架构（amd64 + arm64）
+# 本地开发（编译本机操作系统的可执行文件）
+./scripts/build/compile.sh --local
+
+# 编译多架构（amd64 + arm64，用于容器）
 ./scripts/build/compile.sh --arch both
 
 # 强制重新编译（忽略缓存）
 ./scripts/build/compile.sh --force
 
 # 组合使用
-./scripts/build/compile.sh --arch both --force
+./scripts/build/compile.sh --local --force
 ```
 
 ### 参数说明
@@ -35,6 +38,7 @@
 | 参数 | 值 | 说明 |
 |------|------|------|
 | `--arch` | `amd64` \| `arm64` \| `both` | 目标架构（默认：自动检测本机架构） |
+| `--local` | - | 本地开发模式，编译本机 OS 可执行文件（macOS/Linux/Windows） |
 | `--force` | - | 强制重新编译，忽略缓存 |
 
 ### 环境变量
@@ -42,13 +46,13 @@
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `BUILD_TYPE` | `release` | 构建类型（`release` 或 `debug`） |
-| `GOOS` | `linux` | 目标操作系统 |
+| `GOOS` | `linux` | 目标操作系统（使用 `--local` 时自动检测） |
 
 ### 输出目录结构
 
 ```
 dist/
-├── release-linux-amd64/        # 生产构建 + Linux + AMD64
+├── release-linux-amd64/        # 容器构建（Linux + AMD64）
 │   ├── system                   # System 后端
 │   ├── gateway                  # API Gateway
 │   ├── manager-backend          # Manager 后端
@@ -60,8 +64,11 @@ dist/
 │   ├── orchestrator-backend     # Orchestrator 后端
 │   └── develop-backend          # Develop 后端
 │
-└── release-linux-arm64/        # ARM64 架构
-    └── (同上)
+├── release-linux-arm64/        # 容器构建（Linux + ARM64）
+│   └── (同上)
+│
+└── release-darwin-arm64/       # 本地构建（macOS Apple Silicon）
+    └── (同上，使用 --local 时生成)
 ```
 
 ### 智能缓存机制
@@ -74,18 +81,30 @@ dist/
 ### 示例
 
 ```bash
-# 场景 1: 本地开发（快速编译）
+# 场景 1: 容器构建（默认，用于 Docker）
 ./scripts/build/compile.sh
 
-# 场景 2: 生产发布（多架构）
+# 场景 2: 本地开发调试（macOS 上直接运行）
+./scripts/build/compile.sh --local
+# 输出: dist/release-darwin-arm64/system (可直接运行)
+
+# 场景 3: 生产发布（多架构容器）
 ./scripts/build/compile.sh --arch both
 
-# 场景 3: 调试构建
-BUILD_TYPE=debug ./scripts/build/compile.sh
+# 场景 4: 调试构建（本地 + 调试符号）
+BUILD_TYPE=debug ./scripts/build/compile.sh --local
 
-# 场景 4: 清理缓存重新编译
+# 场景 5: 清理缓存重新编译
 ./scripts/build/compile.sh --force
 ```
+
+### 使用场景对比
+
+| 场景 | 命令 | 输出 | 用途 |
+|------|------|------|------|
+| **容器构建** | `./scripts/build/compile.sh` | `dist/release-linux-{arch}/` | 用于 Docker 镜像构建 |
+| **本地开发** | `./scripts/build/compile.sh --local` | `dist/release-{os}-{arch}/` | macOS/Linux 上直接运行调试 |
+| **多架构发布** | `./scripts/build/compile.sh --arch both` | Linux amd64 + arm64 | 生产环境跨平台部署 |
 
 ---
 

@@ -396,17 +396,20 @@ build_service() {
                 return 1
             fi
 
-            # Check if worker binary exists
-            local binary_path="${service_dir}/worker"
+            # Check if worker binary exists in dist/ directory
+            local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+            local binary_name="${service%-worker}-worker"  # e.g., transfer-worker
+            local binary_path="dist/${BUILD_TYPE:-release}-linux-${arch}/${binary_name}"
+
             if [ ! -f "$binary_path" ]; then
                 echo -e "${RED}Error: Worker binary not found at ${binary_path}${NC}"
-                echo -e "${YELLOW}Hint: Run ./scripts/deploy/0-compile-binaries.sh first${NC}"
+                echo -e "${YELLOW}Hint: Run ./scripts/build/compile.sh --arch ${arch} first${NC}"
                 return 1
             fi
             ;;
 
         *-backend|gateway)
-            # Backends: use prebuilt binary Dockerfile (requires Step 0 compilation)
+            # Backends: use prebuilt binary Dockerfile (requires compile.sh first)
             dockerfile_path="${service_dir}/Dockerfile.prebuilt"
             build_context="."
 
@@ -417,11 +420,17 @@ build_service() {
                 return 1
             fi
 
-            # Check if binary exists
-            local binary_path="${service_dir}/server"
+            # Check if binary exists in dist/ directory
+            local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+            local binary_name="${service%-backend}"  # system-backend → system
+            if [ "$service" = "gateway" ]; then
+                binary_name="gateway"
+            fi
+            local binary_path="dist/${BUILD_TYPE:-release}-linux-${arch}/${binary_name}"
+
             if [ ! -f "$binary_path" ]; then
                 echo -e "${RED}Error: Binary not found at ${binary_path}${NC}"
-                echo -e "${YELLOW}Hint: Run ./scripts/deploy/0-compile-binaries.sh first${NC}"
+                echo -e "${YELLOW}Hint: Run ./scripts/build/compile.sh --arch ${arch} first${NC}"
                 return 1
             fi
             ;;
@@ -450,9 +459,16 @@ build_service() {
 
     # Build command differs for native vs multi-arch
     local build_cmd
+
+    # Extract architecture for BUILD_ARG (first platform if multiple)
+    local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+
     if [ "$MULTI_ARCH" = true ]; then
         # Multi-arch build with buildx (requires push to registry)
         build_cmd="docker buildx build \
+            --build-arg BUILD_ARCH=${arch} \
+            --build-arg GOOS=linux \
+            --build-arg BUILD_TYPE=${BUILD_TYPE:-release} \
             --platform ${BUILD_PLATFORMS} \
             --tag ${image_name} \
             --push \
@@ -466,6 +482,9 @@ build_service() {
     else
         # Native platform build with regular docker (load to local)
         build_cmd="docker build \
+            --build-arg BUILD_ARCH=${arch} \
+            --build-arg GOOS=linux \
+            --build-arg BUILD_TYPE=${BUILD_TYPE:-release} \
             --tag ${image_name} \
             --platform ${BUILD_PLATFORMS} \
             -f ${dockerfile_path}"
