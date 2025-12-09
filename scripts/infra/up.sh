@@ -16,7 +16,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}ADDP Infrastructure Up (Postgres/Redis/MinIO)${NC}"
+echo -e "${BLUE}ADDP Infrastructure Up${NC}"
+echo -e "${BLUE}(PostgreSQL/Redis/MinIO/Meilisearch)${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -115,8 +116,8 @@ legacy_override="docker-compose.override.autogen.yml"
 
 # PostgreSQL（固定 5432）
 if [ "$(check_port "$PG_PORT")" = "busy" ]; then
-  if port_used_by_container "$PG_PORT" "addp-postgres"; then
-    echo -e "  ${GREEN}PostgreSQL 端口 ${PG_PORT} 已由 addp-postgres 使用，继续...${NC}"
+  if port_used_by_container "$PG_PORT" "postgres"; then
+    echo -e "  ${GREEN}PostgreSQL 端口 ${PG_PORT} 已由 postgres 使用，继续...${NC}"
   else
     echo -e "  ${RED}✗ PostgreSQL 端口 ${PG_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${PG_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
@@ -127,8 +128,8 @@ fi
 
 # Redis（固定 6379）
 if [ "$(check_port "$REDIS_PORT")" = "busy" ]; then
-  if port_used_by_container "$REDIS_PORT" "addp-redis"; then
-    echo -e "  ${GREEN}Redis 端口 ${REDIS_PORT} 已由 addp-redis 使用，继续...${NC}"
+  if port_used_by_container "$REDIS_PORT" "redis"; then
+    echo -e "  ${GREEN}Redis 端口 ${REDIS_PORT} 已由 redis 使用，继续...${NC}"
   else
     echo -e "  ${RED}✗ Redis 端口 ${REDIS_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${REDIS_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
@@ -139,8 +140,8 @@ fi
 
 # MinIO（固定 9002/9003）
 if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CONSOLE_PORT")" = "busy" ]; then
-  if port_used_by_container "$MINIO_API_PORT" "addp-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "addp-minio"; then
-    echo -e "  ${GREEN}MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 addp-minio 使用，继续...${NC}"
+  if port_used_by_container "$MINIO_API_PORT" "minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "minio"; then
+    echo -e "  ${GREEN}MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 minio 使用，继续...${NC}"
   elif port_used_by_container "$MINIO_API_PORT" "business-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "business-minio"; then
     echo -e "  ${RED}✗ 检测到 business-minio 使用了系统保留端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}${NC}"
     echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9000/9001，然后重启 business。"
@@ -154,8 +155,46 @@ else
   echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 可用${NC}"
 fi
 
+echo -e "${YELLOW}▶ 检查 Docker 镜像...${NC}"
+
+# Images to check
+IMAGES=(
+  "${POSTGRES_IMAGE:-postgis/postgis:15-3.4}"
+  "redis:7-alpine"
+  "minio/minio:latest"
+  "getmeili/meilisearch:v1.7"
+)
+
+for image in "${IMAGES[@]}"; do
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo -e "  ${BLUE}拉取镜像: $image${NC}"
+    docker pull "$image"
+  else
+    echo -e "  ${GREEN}✓ $image 已存在${NC}"
+  fi
+done
+
+echo ""
+echo -e "${YELLOW}▶ 检查服务运行状态...${NC}"
+
+# Check if services are already running
+RUNNING_SERVICES=$(docker compose -f docker-compose.infra.yml ps --status running --format "{{.Service}}" 2>/dev/null || true)
+
+if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch"; then
+  echo -e "  ${GREEN}检测到部分服务已在运行${NC}"
+  echo "  运行中的服务:"
+  for svc in postgres redis minio meilisearch; do
+    if echo "$RUNNING_SERVICES" | grep -q "^${svc}$"; then
+      echo -e "    ${GREEN}✓ $svc${NC}"
+    fi
+  done
+  echo ""
+  echo -e "  ${YELLOW}将确保所有服务都处于运行状态（docker compose up -d 是幂等操作）${NC}"
+fi
+
+echo ""
 echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio, meilisearch${NC}"
-docker compose up -d postgres redis minio meilisearch
+docker compose -f docker-compose.infra.yml up -d
 
 echo ""
 echo -e "${YELLOW}等待服务就绪...${NC}"
@@ -165,7 +204,7 @@ max_wait=90
 # PostgreSQL
 printf "%s" "- PostgreSQL "
 for i in $(seq 1 ${max_wait}); do
-  if docker compose exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
+  if docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -179,18 +218,11 @@ else
   echo -e "${YELLOW}▶ 跳过系统库初始化（SKIP_INFRA_DB_INIT=1）${NC}"
 fi
 
-# Install PostGIS extension (for ARM64 with postgres:15 image)
-if [[ "${SKIP_POSTGIS_INSTALL:-0}" != "1" ]]; then
-  # Check if using standard postgres image (needs PostGIS installation)
-  CURRENT_IMAGE=$(docker inspect addp-postgres --format '{{.Config.Image}}' 2>/dev/null || echo "")
-  if [[ "$CURRENT_IMAGE" == *"postgres:15"* ]] || [[ "$CURRENT_IMAGE" == "postgres:15" ]]; then
-    echo -e "${YELLOW}▶ Installing PostGIS extension...${NC}"
-    bash "${SCRIPT_DIR}/init-postgis.sh"
-  else
-    echo -e "${YELLOW}▶ Skipping PostGIS installation (using PostGIS pre-installed image)${NC}"
-  fi
+# Install PostgreSQL extensions (PostGIS + pgvector)
+if [[ "${SKIP_POSTGRESQL_INIT:-0}" != "1" ]]; then
+  bash "${SCRIPT_DIR}/init-postgresql.sh"
 else
-  echo -e "${YELLOW}▶ 跳过 PostGIS 安装（SKIP_POSTGIS_INSTALL=1）${NC}"
+  echo -e "${YELLOW}▶ 跳过 PostgreSQL 扩展安装（SKIP_POSTGRESQL_INIT=1）${NC}"
 fi
 
 # Redis
@@ -198,7 +230,7 @@ printf "%s" "- Redis      "
 REDIS_PW="${REDIS_PASSWORD:-addp_redis}"
 last_out=""
 for i in $(seq 1 ${max_wait}); do
-  out=$(docker compose exec -T redis sh -lc "redis-cli -h 127.0.0.1 -p 6379 -a '${REDIS_PW}' ping" 2>&1 || true)
+  out=$(docker compose -f docker-compose.infra.yml exec -T redis sh -lc "redis-cli -h 127.0.0.1 -p 6379 -a '${REDIS_PW}' ping" 2>&1 || true)
   if echo "$out" | grep -q "PONG"; then
     echo -e "${GREEN}✓${NC}"
     break
@@ -208,7 +240,7 @@ for i in $(seq 1 ${max_wait}); do
   if [ "$i" -eq "$max_wait" ]; then \
     echo -e "\n${RED}✗ Redis 等待超时${NC}"; \
     if [ -n "$last_out" ]; then echo "最近一次输出: $last_out"; fi; \
-    echo "请检查: docker compose logs -f redis"; \
+    echo "请检查: docker compose -f docker-compose.infra.yml logs -f redis"; \
     exit 1; \
   fi
 done
@@ -241,6 +273,13 @@ for i in $(seq 1 ${max_wait}); do
   sleep 1; printf "%s" "."
   if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ Meilisearch 等待超时${NC}"; exit 1; fi
 done
+
+# Initialize Meilisearch indexes
+if [[ "${SKIP_MEILISEARCH_INIT:-0}" != "1" ]]; then
+  bash "${SCRIPT_DIR}/init-meilisearch.sh"
+else
+  echo -e "${YELLOW}▶ 跳过 Meilisearch 索引初始化（SKIP_MEILISEARCH_INIT=1）${NC}"
+fi
 
 echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"

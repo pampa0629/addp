@@ -43,36 +43,53 @@ META_FE_PORT=${META_FE_PORT:-5175}
 TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 
+# 0. 检查 Go 模块依赖
+echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
+echo ""
+
+if [[ "${SKIP_MODTIDY:-0}" != "1" ]]; then
+  if bash "${SCRIPT_DIR}/modtidy.sh"; then
+    echo -e "${GREEN}✓ Go 依赖检查完成${NC}"
+  else
+    echo -e "${YELLOW}⚠️  Go 依赖检查失败,继续启动(可能需手动修复)${NC}"
+  fi
+else
+  echo -e "${YELLOW}ℹ️  跳过 Go 依赖检查(设置了 SKIP_MODTIDY=1)${NC}"
+fi
+echo ""
+
 # 1. 启动基础设施
-# echo -e "${YELLOW}Step 1/5: 启动基础设施（PostgreSQL, Redis, MinIO）${NC}"
-# docker-compose up -d postgres redis minio
-# sleep 5
+echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, MinIO, Meilisearch）${NC}"
+echo ""
 
-# # 等待基础设施就绪
-# echo "等待 PostgreSQL 就绪..."
-# until docker exec addp-postgres pg_isready -U addp > /dev/null 2>&1; do
-#   echo -n "."
-#   sleep 1
-# done
-# echo -e "${GREEN}✓ PostgreSQL 就绪${NC}"
+# 检查基础设施是否已运行
+INFRA_RUNNING=false
+if docker compose -f docker-compose.infra.yml ps --status running postgres redis minio meilisearch 2>/dev/null | grep -q "Up"; then
+  # 检查所有4个服务是否都在运行
+  RUNNING_COUNT=$(docker compose -f docker-compose.infra.yml ps --status running postgres redis minio meilisearch 2>/dev/null | grep -c "Up" || echo "0")
+  if [ "$RUNNING_COUNT" -eq 4 ]; then
+    INFRA_RUNNING=true
+    echo -e "${GREEN}✓ 基础设施已在运行,跳过启动${NC}"
+    echo -e "${YELLOW}  (如需重启基础设施,请运行: bash scripts/infra/down.sh && bash scripts/infra/up.sh)${NC}"
+  fi
+fi
 
-# echo "等待 Redis 就绪..."
-# until docker exec addp-redis redis-cli ping > /dev/null 2>&1; do
-#   echo -n "."
-#   sleep 1
-# done
-# echo -e "${GREEN}✓ Redis 就绪${NC}"
+# 如果基础设施未完全运行,则启动
+if [ "$INFRA_RUNNING" = false ]; then
+  echo -e "${YELLOW}启动基础设施服务...${NC}"
+  # 调用基础设施启动脚本(单一职责原则)
+  if ! bash "${ROOT_DIR}/scripts/infra/up.sh"; then
+    echo -e "${RED}✗ 基础设施启动失败,请检查 Docker 是否运行${NC}"
+    echo -e "${YELLOW}提示: 运行 'docker info' 检查 Docker 状态${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✓ 基础设施启动完成${NC}"
+fi
 
-# echo "等待 MinIO 就绪..."
-# until curl -f http://localhost:9002/minio/health/live > /dev/null 2>&1; do
-#   echo -n "."
-#   sleep 1
-# done
-# echo -e "${GREEN}✓ MinIO 就绪${NC}"
-# echo ""
+echo ""
 
 # 2. 启动 System Backend
-echo -e "${YELLOW}Step 2/5: 启动 System Backend${NC}"
+echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
 cd system/backend
 go run cmd/server/main.go > ../../logs/system-backend.log 2> ../../logs/system-backend-stderr.log &
 SYSTEM_PID=$!
@@ -96,7 +113,7 @@ echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
 echo ""
 
 # 3. 启动 Manager Backend
-echo -e "${YELLOW}Step 3/5: 启动 Manager Backend${NC}"
+echo -e "${YELLOW}Step 3/7: 启动 Manager Backend${NC}"
 cd manager/backend
 go run cmd/server/main.go > ../../logs/manager-backend.log 2> ../../logs/manager-backend-stderr.log &
 MANAGER_PID=$!
@@ -119,7 +136,7 @@ echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
 echo ""
 
 # 4. 启动 Meta Backend
-echo -e "${YELLOW}Step 4/6: 启动 Meta Backend${NC}"
+echo -e "${YELLOW}Step 4/7: 启动 Meta Backend${NC}"
 cd meta/backend
 go run cmd/server/main.go > ../../logs/meta-backend.log 2> ../../logs/meta-backend-stderr.log &
 META_PID=$!
@@ -166,7 +183,7 @@ echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
 echo ""
 
 # 6. 启动 Transfer Worker
-echo -e "${YELLOW}Step 6/8: 启动 Transfer Worker${NC}"
+echo -e "${YELLOW}Step 6/7: 启动 Transfer Worker${NC}"
 cd transfer/backend
 go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true
 go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1 &
@@ -177,7 +194,7 @@ echo "  注意: Transfer Worker 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
 # 6.5 启动 Meta Worker
-echo -e "${YELLOW}Step 6.5/8: 启动 Meta Worker${NC}"
+echo -e "${YELLOW}Step 6.5/7: 启动 Meta Worker${NC}"
 cd meta/backend
 go mod download >/dev/null 2>> ../../logs/meta-worker.log || true
 go run cmd/worker/main.go > ../../logs/meta-worker.log 2>&1 &
@@ -188,7 +205,7 @@ echo "  注意: Meta Worker 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
 # 6.6 启动 Manager Worker
-echo -e "${YELLOW}Step 6.6/8: 启动 Manager Worker${NC}"
+echo -e "${YELLOW}Step 6.6/7: 启动 Manager Worker${NC}"
 cd manager/backend
 go mod download >/dev/null 2>> ../../logs/manager-worker.log || true
 go run cmd/worker/main.go > ../../logs/manager-worker.log 2>&1 &
@@ -199,7 +216,7 @@ echo "  注意: Manager Worker 依赖 Redis 和 MinIO，请确保已启动"
 echo ""
 
 # 6.7 启动 Orchestrator Backend
-echo -e "${YELLOW}Step 6.7/8: 启动 Orchestrator Backend${NC}"
+echo -e "${YELLOW}Step 6.7/7: 启动 Orchestrator Backend${NC}"
 cd orchestrator/backend
 go mod download >/dev/null 2>> ../../logs/orchestrator-backend-stderr.log || true
 go run cmd/server/main.go > ../../logs/orchestrator-backend.log 2> ../../logs/orchestrator-backend-stderr.log &
@@ -223,7 +240,7 @@ echo -e "${GREEN}✓ Orchestrator Backend 就绪 (PID: $ORCHESTRATOR_PID)${NC}"
 echo ""
 
 # 7. 启动 Gateway
-echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
+echo -e "${YELLOW}Step 7/7: 启动 Gateway${NC}"
 cd gateway
 go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
@@ -245,8 +262,8 @@ done
 echo -e "${GREEN}✓ Gateway 就绪 (PID: $GATEWAY_PID)${NC}"
 echo ""
 
-# 6. 启动前端服务
-echo -e "${YELLOW}Step 6/6: 启动前端服务${NC}"
+# 8. 启动前端服务
+echo -e "${YELLOW}Step 8: 启动前端服务${NC}"
 
 # 创建 PID 目录
 mkdir -p .dev-pids

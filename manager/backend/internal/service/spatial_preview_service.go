@@ -131,7 +131,7 @@ func NewSpatialPreviewService(redisClient *redis.Client) *SpatialPreviewService 
 	}
 
 	svc := &SpatialPreviewService{
-		bucket:      "mvt-tiles",
+		bucket:      "manager",
 		redisClient: redisClient,
 		redisTTL:    24 * time.Hour, // Redis 缓存 24 小时
 		memCache:    newLRU(lruSize),
@@ -345,7 +345,7 @@ func (s *SpatialPreviewService) GetStats(ctx context.Context) map[string]interfa
 func (s *SpatialPreviewService) ClearCache(ctx context.Context, fingerprint string) error {
 	// 1. 清除 Redis 缓存
 	if s.redisClient != nil {
-		pattern := fmt.Sprintf("mvt:spatial:%s:*", fingerprint)
+		pattern := fmt.Sprintf("manager:cache:mvt:spatial:%s:*", fingerprint)
 		iter := s.redisClient.Scan(ctx, 0, pattern, 100).Iterator()
 		keys := []string{}
 		for iter.Next(ctx) {
@@ -372,7 +372,7 @@ func (s *SpatialPreviewService) ClearCache(ctx context.Context, fingerprint stri
 
 // buildCacheKey 构建缓存键（用于内存和 Redis）
 func (s *SpatialPreviewService) buildCacheKey(fingerprint string, z, x, y int) string {
-	return fmt.Sprintf("mvt:spatial:%s:%d:%d:%d", fingerprint, z, x, y)
+	return fmt.Sprintf("manager:cache:mvt:spatial:%s:%d:%d:%d", fingerprint, z, x, y)
 }
 
 // ensureMinIOClient 确保 MinIO 客户端已初始化

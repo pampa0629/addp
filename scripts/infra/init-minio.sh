@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ADDP Infrastructure MinIO Initialization
-# 初始化 MinIO buckets（包括 MVT 瓦片缓存等）
+# 初始化 MinIO buckets（按模块组织）
 # 由 infra-up.sh 自动调用
 
 set -euo pipefail
@@ -24,9 +24,10 @@ if [ -f ./.env ]; then
   set +a
 fi
 
-MINIO_ENDPOINT="${BUSINESS_MINIO_ENDPOINT:-localhost:9002}"
-MINIO_ACCESS_KEY="${BUSINESS_MINIO_ACCESS_KEY:-minioadmin}"
-MINIO_SECRET_KEY="${BUSINESS_MINIO_SECRET_KEY:-minioadmin}"
+# MinIO 连接配置（系统 MinIO）
+MINIO_ENDPOINT="${MINIO_API_PORT:-9000}"
+MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-minioadmin}"
+MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo -e "${RED}✗ docker 未安装或不可用${NC}"
@@ -39,56 +40,80 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 # 确认 MinIO 容器正在运行
-if ! docker compose ps --status running minio >/dev/null 2>&1; then
+if ! docker compose -f docker-compose.infra.yml ps --status running minio >/dev/null 2>&1; then
   echo -e "${RED}✗ MinIO 容器未运行，无法初始化 buckets${NC}"
   echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
   exit 1
 fi
 
-echo -e "${YELLOW}▶ 初始化 MinIO buckets${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}MinIO Buckets 初始化（模块化组织）${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
 
 # 配置 MinIO alias（使用容器内的 mc 命令）
-# 注意：容器内部使用 9000 端口，而不是宿主机映射的 9002
-echo -e "  ${BLUE}配置 MinIO 连接...${NC}"
-if ! docker compose exec -T minio mc alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
+# 注意：容器内部使用 9000 端口
+echo -e "${YELLOW}▶ 配置 MinIO 连接...${NC}"
+if ! docker compose -f docker-compose.infra.yml exec -T minio mc alias set local "http://localhost:9000" "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}" >/dev/null 2>&1; then
   echo -e "${RED}✗ MinIO 连接配置失败${NC}"
   exit 1
 fi
+echo -e "  ${GREEN}✓ MinIO 连接成功${NC}"
+echo ""
 
-# 创建 buckets（幂等操作，已存在不报错）
+# 创建模块化 buckets（幂等操作，已存在不报错）
+echo -e "${YELLOW}▶ 创建模块化 Buckets...${NC}"
 BUCKETS=(
-  "mvt-tiles:MVT 瓦片缓存（Meta模块空间快显）"
-  "addp-data:通用数据存储"
+  "system:System 模块（用户头像、系统配置）"
+  "manager:Manager 模块（预览缓存、MVT 瓦片）"
+  "meta:Meta 模块（元数据相关文件）"
+  "transfer:Transfer 模块（传输临时文件）"
+  "orchestrator:Orchestrator 模块（编排文件）"
+  "develop:Develop 模块（查询结果导出）"
 )
 
 for bucket_info in "${BUCKETS[@]}"; do
   IFS=':' read -r bucket_name bucket_desc <<< "$bucket_info"
 
   # 检查 bucket 是否存在
-  if docker compose exec -T minio mc ls "local/${bucket_name}" >/dev/null 2>&1; then
-    echo -e "  ${GREEN}✓ Bucket '${bucket_name}' 已存在${NC} (${bucket_desc})"
+  if docker compose -f docker-compose.infra.yml exec -T minio mc ls "local/${bucket_name}" >/dev/null 2>&1; then
+    echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 已存在"
   else
-    echo -e "  ${BLUE}创建 Bucket '${bucket_name}'...${NC} (${bucket_desc})"
-    if docker compose exec -T minio mc mb "local/${bucket_name}" >/dev/null 2>&1; then
-      echo -e "  ${GREEN}✓ Bucket '${bucket_name}' 创建成功${NC}"
+    echo -e "  ${BLUE}▸ ${bucket_name}${NC} - 创建中..."
+    if docker compose -f docker-compose.infra.yml exec -T minio mc mb "local/${bucket_name}" >/dev/null 2>&1; then
+      echo -e "  ${GREEN}✓ ${bucket_name}${NC} - 创建成功"
     else
-      echo -e "  ${RED}✗ Bucket '${bucket_name}' 创建失败${NC}"
+      echo -e "  ${RED}✗ ${bucket_name}${NC} - 创建失败"
       exit 1
     fi
   fi
 done
 
-# 设置 mvt-tiles 为公开读（前端需要直接访问瓦片）
-echo -e "  ${BLUE}设置 mvt-tiles 访问策略为公开读...${NC}"
-if docker compose exec -T minio mc anonymous set download "local/mvt-tiles" >/dev/null 2>&1; then
-  echo -e "  ${GREEN}✓ mvt-tiles 访问策略设置完成${NC}"
+echo ""
+echo -e "${YELLOW}▶ 设置 Bucket 访问策略...${NC}"
+
+# 设置 manager bucket 公开读（MVT 瓦片需要前端直接访问）
+echo -e "  ${BLUE}▸ manager - 设置为公开读（MVT 瓦片访问）${NC}"
+if docker compose -f docker-compose.infra.yml exec -T minio mc anonymous set download "local/manager" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}✓ manager - 访问策略设置完成${NC}"
 else
-  echo -e "  ${YELLOW}⚠️  mvt-tiles 访问策略设置失败（可能已设置）${NC}"
+  echo -e "  ${YELLOW}⚠️  manager - 访问策略设置失败（可能已设置）${NC}"
 fi
 
-echo -e "${GREEN}✓ MinIO buckets 初始化完成${NC}"
 echo ""
-echo "已创建的 Buckets:"
-echo "  - mvt-tiles:  http://${MINIO_ENDPOINT}/mvt-tiles  (公开读)"
-echo "  - addp-data:  http://${MINIO_ENDPOINT}/addp-data  (私有)"
+echo -e "${GREEN}✓ MinIO Buckets 初始化完成${NC}"
+echo ""
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}Bucket 访问信息${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo "  访问地址: http://localhost:${MINIO_ENDPOINT}"
+echo "  控制台:   http://localhost:$(($MINIO_ENDPOINT + 1))"
+echo ""
+echo "  已创建的 Buckets:"
+echo "  - system        (私有)  : 用户头像、系统配置"
+echo "  - manager       (公开读): 预览缓存、MVT 瓦片"
+echo "  - meta          (私有)  : 元数据文件"
+echo "  - transfer      (私有)  : 传输临时文件"
+echo "  - orchestrator  (私有)  : 编排文件"
+echo "  - develop       (私有)  : 查询结果导出"
 echo ""

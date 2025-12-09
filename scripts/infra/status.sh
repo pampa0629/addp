@@ -22,7 +22,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}▶ 容器状态（docker compose ps）${NC}"
-docker compose ps postgres redis minio meilisearch || true
+docker compose -f docker-compose.infra.yml ps postgres redis minio meilisearch || true
 
 echo ""
 echo -e "${YELLOW}▶ 健康检查${NC}"
@@ -40,7 +40,7 @@ MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 9003)
 
 # Postgres
 printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
-if docker compose exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
+if docker compose -f docker-compose.infra.yml exec -T postgres pg_isready -U addp >/dev/null 2>&1; then
   echo -e "${GREEN}Healthy${NC}"
 else
   echo -e "${RED}Unhealthy${NC}"
@@ -48,7 +48,7 @@ fi
 
 # Redis
 printf "%s" "- Redis (localhost:${REDIS_PORT}):       "
-if docker compose exec -T redis redis-cli -a addp_redis ping 2>/dev/null | grep -q PONG; then
+if docker compose -f docker-compose.infra.yml exec -T redis redis-cli -a addp_redis ping 2>/dev/null | grep -q PONG; then
   echo -e "${GREEN}Healthy${NC}"
 else
   echo -e "${RED}Unhealthy${NC}"

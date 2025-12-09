@@ -22,12 +22,15 @@ help: ## 显示帮助信息
 	@echo "  - Full Platform: 启动所有模块 (使用 --profile full)"
 
 # ===== 统一构建产物目录与变量 =====
-# 统一输出目录：dist/{debug|release}/{backend|frontend}
+# 扁平化输出目录：dist/{type}-{build}-{os}-{arch}/
 OUT_DIR ?= dist
 BUILD_TYPE ?= release
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 BIN_SUFFIX := $(if $(filter windows,$(GOOS)),.exe,)
+
+# 多架构编译支持
+MULTI_ARCHS := amd64 arm64
 
 # 本地 Go 构建缓存目录，避免写入系统 GOPATH 并降低权限/网络问题
 LOCAL_GOMODCACHE := $(abspath .gomodcache)
@@ -40,38 +43,40 @@ GOTOOLCHAIN ?= local
 GOFLAGS_DEBUG := -gcflags "all=-N -l"
 GOFLAGS_RELEASE := -ldflags "-s -w"
 
-# 内部函数：为指定服务编译到统一目录
+# 内部函数：为指定服务编译到统一目录（扁平化结构）
+# 参数: $(1)=模块目录, $(2)=二进制名称, $(3)=cmd路径(可选,默认cmd/server/main.go)
 define build_one_service
   @if [ -d $(1)/cmd ]; then \
     name=$(2); \
-    outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/$$name/$(GOOS)-$(GOARCH); \
+    cmd_path=$(if $(3),$(3),cmd/server/main.go); \
+    outdir=$(CURDIR)/$(OUT_DIR)/$(BUILD_TYPE)-$(GOOS)-$(GOARCH); \
     mkdir -p $$outdir $(LOCAL_GOCACHE); \
-    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir$(NC)"; \
+    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir/$$name$(NC)"; \
     if [ "$(BUILD_TYPE)" = "debug" ]; then \
       (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o $$outdir/$$name$(BIN_SUFFIX) $$cmd_path 2>&1) || exit 1; \
     else \
       (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../$$outdir/$$name$(BIN_SUFFIX) cmd/server/main.go 2>&1) || exit 1; \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o $$outdir/$$name$(BIN_SUFFIX) $$cmd_path 2>&1) || exit 1; \
     fi; \
   else \
     true; \
   fi
 endef
 
-# 内部函数：为 Worker 服务编译到统一目录
+# 内部函数：为 Worker 服务编译到统一目录（与 backend 合并）
 define build_one_worker
   @if [ -d $(1)/cmd/worker ]; then \
     name=$(2)-worker; \
-    outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/$$name/$(GOOS)-$(GOARCH); \
+    outdir=$(CURDIR)/$(OUT_DIR)/$(BUILD_TYPE)-$(GOOS)-$(GOARCH); \
     mkdir -p $$outdir $(LOCAL_GOCACHE); \
-    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir$(NC)"; \
+    echo "$(GREEN)编译 $$name ($(BUILD_TYPE)) → $$outdir/$$name$(NC)"; \
     if [ "$(BUILD_TYPE)" = "debug" ]; then \
       (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../../$$outdir/worker$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o $$outdir/$$name$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
     else \
       (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOCACHE=$(LOCAL_GOCACHE) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../../$$outdir/worker$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
+       cd $(1) && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o $$outdir/$$name$(BIN_SUFFIX) cmd/worker/main.go 2>&1) || exit 1; \
     fi; \
   else \
     true; \
@@ -155,32 +160,45 @@ dev-health: ## 检查开发模式服务健康状态
 build: build-release ## 编译所有服务（默认 release 输出到 dist）
 
 # ===== 后端统一构建 =====
-build-backend: ## 编译所有后端服务到 dist/{BUILD_TYPE}/backend
+build-backend: ## 编译所有后端服务到 dist/{BUILD_TYPE}-{GOOS}-{GOARCH}/
 	@echo "$(GREEN)编译后端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
 	$(call build_one_service,system/backend,system)
-	@if [ -d gateway/cmd ]; then \
-	  outdir=$(OUT_DIR)/$(BUILD_TYPE)/backend/gateway/$(GOOS)-$(GOARCH); \
-	  mkdir -p $$outdir; \
-	  echo "$(GREEN)编译 gateway ($(BUILD_TYPE)) → $$outdir$(NC)"; \
-	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
-	    (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-	     cd gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_DEBUG) -o ../$$outdir/gateway$(BIN_SUFFIX) cmd/gateway/main.go); \
-	  else \
-	    (GOMODCACHE=$(LOCAL_GOMODCACHE) GOPATH=$(LOCAL_GOPATH) GOTOOLCHAIN=$(GOTOOLCHAIN) \
-	     cd gateway && GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GOFLAGS_RELEASE) -o ../$$outdir/gateway$(BIN_SUFFIX) cmd/gateway/main.go); \
-	  fi; \
-	fi
+	$(call build_one_service,gateway,gateway,cmd/gateway/main.go)
 	$(call build_one_service,manager/backend,manager)
 	$(call build_one_service,meta/backend,meta)
 	$(call build_one_service,transfer/backend,transfer)
 	@echo "$(GREEN)后端编译完成！$(NC)"
 
-# ===== Worker 构建 =====
-build-workers: ## 编译所有 Worker 服务到 dist/{BUILD_TYPE}/backend
+# ===== Worker 构建 (合并到同一目录) =====
+build-workers: ## 编译所有 Worker 到 dist/{BUILD_TYPE}-{GOOS}-{GOARCH}/
 	@echo "$(GREEN)编译 Worker 服务（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
 	$(call build_one_worker,transfer/backend,transfer)
 	$(call build_one_worker,meta/backend,meta)
 	@echo "$(GREEN)Worker 编译完成！$(NC)"
+
+# ===== 多架构编译 =====
+build-backend-multiarch: ## 编译所有后端服务（amd64 + arm64）
+	@echo "$(GREEN)编译后端（多架构: $(MULTI_ARCHS)）→ $(OUT_DIR)$(NC)"
+	@for arch in $(MULTI_ARCHS); do \
+		echo "$(YELLOW)编译架构: $$arch$(NC)"; \
+		$(MAKE) GOARCH=$$arch build-backend; \
+	done
+	@echo "$(GREEN)多架构后端编译完成！$(NC)"
+
+build-workers-multiarch: ## 编译所有 Worker 服务（amd64 + arm64）
+	@echo "$(GREEN)编译 Worker（多架构: $(MULTI_ARCHS)）→ $(OUT_DIR)$(NC)"
+	@for arch in $(MULTI_ARCHS); do \
+		echo "$(YELLOW)编译架构: $$arch$(NC)"; \
+		$(MAKE) GOARCH=$$arch build-workers; \
+	done
+	@echo "$(GREEN)多架构 Worker 编译完成！$(NC)"
+
+build-backend-all-multiarch: build-backend-multiarch build-workers-multiarch ## 编译所有服务（后端 + Worker，多架构）
+
+build-backend-all-local: ## 编译所有服务（仅当前架构，快速）
+	@echo "$(GREEN)编译所有服务（当前架构: $(GOARCH)）→ $(OUT_DIR)$(NC)"
+	@$(MAKE) build-backend build-workers
+	@echo "$(GREEN)本地架构编译完成！$(NC)"
 
 # ===== 前端统一构建 =====
 build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|portal}
@@ -263,17 +281,17 @@ prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用�
 
 docker-build: ## 构建 Docker 镜像（仅 System 模块）
 	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"
-	@docker compose build system-backend system-frontend
+	@docker compose -f docker-compose.app.yml build system-backend system-frontend
 	@echo "$(GREEN)构建完成！$(NC)"
 
 docker-build-all: ## 构建所有服务的 Docker 镜像
 	@echo "$(GREEN)构建所有服务的 Docker 镜像...$(NC)"
-	@docker compose --profile full build
+	@docker compose -f docker-compose.app.yml --profile full build
 	@echo "$(GREEN)所有镜像构建完成！$(NC)"
 
 up: ## 启动 System 模块（基础服务）
 	@echo "$(GREEN)启动 System 模块...$(NC)"
-	@docker compose up -d system-backend system-frontend
+	@docker compose -f docker-compose.app.yml up -d system-backend system-frontend
 	@echo "$(GREEN)System 模块已启动！$(NC)"
 	@echo "$(YELLOW)访问地址:$(NC)"
 	@echo "  - System Backend:  http://localhost:8080"
@@ -281,18 +299,18 @@ up: ## 启动 System 模块（基础服务）
 
 up-full: ## 启动所有服务（完整平台）
 	@echo "$(GREEN)启动完整平台（所有服务）...$(NC)"
-	@docker compose --profile full up -d
+	@docker compose -f docker-compose.app.yml --profile full up -d
 	@echo "$(GREEN)所有服务已启动！$(NC)"
 	@$(MAKE) status
 
-up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO）
+up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO, Meilisearch）
 	@echo "$(GREEN)启动基础设施服务...$(NC)"
-	@docker compose up -d postgres redis minio
+	@docker compose -f docker-compose.infra.yml up -d
 	@echo "$(GREEN)基础设施服务已启动！$(NC)"
 
 down: ## 停止所有服务
 	@echo "$(YELLOW)停止所有服务...$(NC)"
-	@docker compose --profile full down
+	@docker compose -f docker-compose.app.yml --profile full down
 	@echo "$(GREEN)所有服务已停止$(NC)"
 
 restart: down up ## 重启 System 模块
@@ -300,29 +318,29 @@ restart: down up ## 重启 System 模块
 restart-full: down up-full ## 重启所有服务
 
 logs: ## 查看所有服务日志
-	@docker compose --profile full logs -f
+	@docker compose -f docker-compose.app.yml --profile full logs -f
 
 logs-system: ## 查看 System 模块日志
-	@docker compose logs -f system-backend system-frontend
+	@docker compose -f docker-compose.app.yml logs -f system-backend system-frontend
 
 logs-manager: ## 查看 Manager 模块日志
-	@docker compose logs -f manager-backend
+	@docker compose -f docker-compose.app.yml logs -f manager-backend
 
 logs-meta: ## 查看 Meta 模块日志
-	@docker compose logs -f meta-backend
+	@docker compose -f docker-compose.app.yml logs -f meta-backend
 
 logs-transfer: ## 查看 Transfer 模块日志
-	@docker compose logs -f transfer-backend transfer-worker
+	@docker compose -f docker-compose.app.yml logs -f transfer-backend transfer-worker
 
 logs-orchestrator: ## 查看 Orchestrator 模块日志
-	@docker compose logs -f orchestrator-backend orchestrator-frontend
+	@docker compose -f docker-compose.app.yml logs -f orchestrator-backend orchestrator-frontend
 
 logs-gateway: ## 查看 Gateway 模块日志
-	@docker compose logs -f gateway
+	@docker compose -f docker-compose.app.yml logs -f gateway
 
 status: ## 显示所有服务状态
 	@echo "$(GREEN)服务状态:$(NC)"
-	@docker compose --profile full ps
+	@docker compose -f docker-compose.app.yml --profile full ps
 	@echo ""
 	@echo "$(YELLOW)服务访问地址:$(NC)"
 	@echo "  - Gateway:          http://localhost:8000  (未实现)"
@@ -374,7 +392,8 @@ clean-all: clean ## 清理所有数据（包括 Docker volumes 和数据库）
 	@echo "$(RED)警告: 此操作将删除所有数据！$(NC)"
 	@read -p "确认删除所有数据？(yes/no): " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
-		docker compose --profile full down -v; \
+		docker compose -f docker-compose.app.yml --profile full down -v; \
+		docker compose -f docker-compose.infra.yml down -v; \
 		rm -rf system/data/*.db; \
 		echo "$(GREEN)所有数据已清理$(NC)"; \
 	else \
@@ -394,19 +413,19 @@ test-system: ## 运行 System 模块测试
 
 db-migrate: ## 运行数据库迁移（重新初始化数据库）
 	@echo "$(GREEN)运行数据库迁移...$(NC)"
-	@docker compose exec -T postgres psql -U addp -d addp < scripts/infra/init-db.sql
+	@docker compose -f docker-compose.infra.yml exec -T postgres psql -U addp -d addp < scripts/infra/init-db.sql
 	@echo "$(GREEN)数据库迁移完成$(NC)"
 
 db-shell: ## 连接到 PostgreSQL 数据库
-	@docker compose exec postgres psql -U addp -d addp
+	@docker compose -f docker-compose.infra.yml exec postgres psql -U addp -d addp
 
 redis-cli: ## 连接到 Redis
-	@docker compose exec redis redis-cli -a addp_redis
+	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis
 
 minio-setup: ## 初始化 MinIO bucket (legacy, 使用 init-minio 替代)
 	@echo "$(GREEN)初始化 MinIO...$(NC)"
-	@docker compose exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
-	@docker compose exec minio mc mb local/addp-data --ignore-existing
+	@docker compose -f docker-compose.infra.yml exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+	@docker compose -f docker-compose.infra.yml exec minio mc mb local/addp-data --ignore-existing
 	@echo "$(GREEN)MinIO 初始化完成$(NC)"
 
 init-minio: ## 初始化 MinIO buckets (包括 mvt-tiles 等)
@@ -445,16 +464,16 @@ health: ## 检查所有服务健康状态
 	@curl -s http://localhost:8080/health || echo "$(RED)  ✗ 不可用$(NC)"
 	@echo ""
 	@echo "PostgreSQL:"
-	@docker compose exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@docker compose -f docker-compose.infra.yml exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "Redis:"
-	@docker compose exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "MinIO:"
 	@curl -s http://localhost:9002/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"
 	@mkdir -p backups
-	@docker compose exec -T postgres pg_dump -U addp addp > backups/addp_$(shell date +%Y%m%d_%H%M%S).sql
+	@docker compose -f docker-compose.infra.yml exec -T postgres pg_dump -U addp addp > backups/addp_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "$(GREEN)数据库备份完成$(NC)"
 
 restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
@@ -463,7 +482,7 @@ restore: ## 恢复数据库（需要指定备份文件 FILE=xxx.sql）
 		exit 1; \
 	fi
 	@echo "$(YELLOW)恢复数据库: $(FILE)$(NC)"
-	@docker compose exec -T postgres psql -U addp -d addp < $(FILE)
+	@docker compose -f docker-compose.infra.yml exec -T postgres psql -U addp -d addp < $(FILE)
 	@echo "$(GREEN)数据库恢复完成$(NC)"
 
 .PHONY: docs

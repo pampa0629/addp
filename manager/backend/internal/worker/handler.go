@@ -48,7 +48,7 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 		AccessKey: cfg.MinioAccessKey,
 		SecretKey: cfg.MinioSecretKey,
 		UseSSL:    cfg.MinioUseSSL,
-		Bucket:    "mvt-tiles",
+		Bucket:    "manager",
 	})
 	if err != nil {
 		logger.L().Error("Failed to create QuickViewService", "error", err)

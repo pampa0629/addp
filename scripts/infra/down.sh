@@ -43,11 +43,11 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo -e "${YELLOW}▶ 停止基础设施容器: postgres, redis, minio, meilisearch${NC}"
-docker compose stop postgres redis minio meilisearch
+docker compose -f docker-compose.infra.yml stop postgres redis minio meilisearch
 
 if [[ "$REMOVE" == true ]]; then
   echo -e "${YELLOW}▶ 清理容器（不删除数据卷）${NC}"
-  docker compose rm -f postgres redis minio meilisearch || true
+  docker compose -f docker-compose.infra.yml rm -f postgres redis minio meilisearch || true
 fi
 
 echo -e "${GREEN}✓ 完成${NC}"

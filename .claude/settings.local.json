@@ -116,7 +116,17 @@
       "Bash(do echo \"Updating $f\" sed -i '' 's|FROM node:|FROM localhost:5001/node:|g' \"$f\" sed -i '' 's|FROM nginx:alpine|FROM localhost:5001/nginx:alpine|g' \"$f\" done)",
       "Bash(for dir in system/backend manager/backend meta/backend transfer/backend orchestrator/backend develop/backend gateway)",
       "Bash(do echo -n '$dir: ' ls -lh $dir/server)",
-      "Bash(docker builder prune:*)"
+      "Bash(docker builder prune:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(BUILD_TYPE=release GOOS=linux GOARCH=amd64 make build-backend:*)",
+      "Bash(BUILD_TYPE=release GOOS=linux GOARCH=amd64 make:*)",
+      "Bash(./scripts/build/compile.sh:*)",
+      "Bash(time ./scripts/build/compile.sh:*)",
+      "Bash(docker images:*)",
+      "Bash(docker rmi:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

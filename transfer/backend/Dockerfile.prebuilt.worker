@@ -1,15 +1,15 @@
-FROM alpine:latest
+FROM localhost:5001/alpine:latest
 
-# Automatic architecture detection
-ARG TARGETARCH
+# Build arguments for precise binary selection
+ARG BUILD_ARCH=amd64
+ARG BUILD_TYPE=release
+ARG GOOS=linux
 
 WORKDIR /app
 
-# 复制本地预编译的二进制（支持 worker 或 worker-<arch> 命名）
-COPY transfer/backend/worker* ./
-RUN if [ -f worker ]; then :; \
-    elif [ -f worker-amd64 ]; then mv worker-amd64 worker; \
-    elif [ -f worker-arm64 ]; then mv worker-arm64 worker; \
-    else echo "worker binary not found" && exit 1; fi
+# 复制本地编译好的 worker 二进制文件（从扁平化 dist/ 目录）
+# 路径: dist/{build}-{os}-{arch}/transfer-worker
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/transfer-worker ./worker
+RUN chmod +x ./worker
 
 CMD ["./worker"]

@@ -64,6 +64,11 @@ temp/
 
 # Build cache (smart build system)
 .build-cache/
+.compile-cache/
+
+# Local development PIDs
+.local-pids/
+.dev-pids/
 
 # Vue/Vite
 .vite/
@@ -80,12 +85,5 @@ deploy-package/
 deploy-package-test/
 addp-deploy-*.tar.gz
 
-# Built binaries (Go services)
-gateway/server*
-manager/backend/server*
-meta/backend/server*
-system/backend/server*
-transfer/backend/server*
-transfer/backend/worker*
-*.stat
+# Build artifacts (unified - all binaries in dist/)
 dist/

@@ -1,16 +1,16 @@
 FROM localhost:5001/alpine:latest
 
-# Automatic architecture detection
-ARG TARGETARCH
+# Build arguments for precise binary selection
+ARG BUILD_ARCH=amd64
+ARG BUILD_TYPE=release
+ARG GOOS=linux
 
 WORKDIR /app
 
-# 复制本地编译好的二进制文件（支持 server 或 server-<arch> 命名）
-COPY orchestrator/backend/server* ./
-RUN if [ -f server ]; then :; \
-    elif [ -f server-amd64 ]; then mv server-amd64 server; \
-    elif [ -f server-arm64 ]; then mv server-arm64 server; \
-    else echo "server binary not found" && exit 1; fi
+# 复制本地编译好的二进制文件（从扁平化 dist/ 目录）
+# 路径: dist/{build}-{os}-{arch}/orchestrator
+COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/orchestrator ./server
+RUN chmod +x ./server
 
 # 暴露端口
 EXPOSE 8084

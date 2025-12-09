@@ -1,101 +1,19 @@
-# 生产环境 docker-compose 配置
+# ADDP 生产环境应用服务配置
 # 用于从私有 Registry 拉取镜像部署
 #
+# ⚠️ 重要: 需要先启动基础设施服务!
+#
 # 使用方法:
-#   1. 复制到服务器: scp docker-compose.prod.yml server:/opt/addp/
+#   1. 启动基础设施: docker compose -f docker-compose.infra.yml up -d
 #   2. 配置 Registry: export REGISTRY=192.168.1.100:5001
-#   3. 启动服务: docker-compose -f docker-compose.prod.yml --profile full up -d
+#   3. 启动应用服务: docker compose -f docker-compose.prod.yml --profile addp up -d
+#
+# 说明:
+#   - 基础设施服务(PostgreSQL, Redis, MinIO, Meilisearch) 已在 docker-compose.infra.yml 中定义
+#   - 本文件仅包含应用服务(System, Manager, Meta, Transfer, Orchestrator, Develop, Gateway, Portal, Nginx)
+#   - 使用 --profile addp 启动所有应用服务
 
 services:
-  # ==================== 基础设施服务 ====================
-
-  postgres:
-    image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
-    container_name: addp-postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-addp}
-      POSTGRES_USER: ${POSTGRES_USER:-addp}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-addp_password}
-      PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - addp-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-addp}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - infra
-
-  redis:
-    image: redis:7-alpine
-    container_name: addp-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-addp_redis}
-    volumes:
-      - redis_data:/data
-    ports:
-      - "6379:6379"
-    networks:
-      - addp-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - infra
-
-  minio:
-    image: minio/minio:latest
-    container_name: addp-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    networks:
-      - addp-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - infra
-
-  meilisearch:
-    image: getmeili/meilisearch:v1.7
-    container_name: addp-meilisearch
-    environment:
-      - MEILI_ENV=production
-      - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}
-      - MEILI_NO_ANALYTICS=true
-    volumes:
-      - meilisearch_data:/meili_data
-    ports:
-      - "7700:7700"
-    networks:
-      - addp-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    profiles:
-      - infra
-
   # ==================== System 模块 ====================
 
   system-backend:
@@ -119,11 +37,8 @@ services:
       - "8080:8080"
     networks:
       - addp-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # 注意: 依赖的基础设施服务(postgres, redis)在 docker-compose.infra.yml 中
+    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -168,9 +83,9 @@ services:
       - "8081:8081"
     networks:
       - addp-network
+    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
+    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
-      postgres:
-        condition: service_healthy
       system-backend:
         condition: service_started
     restart: unless-stopped
@@ -280,9 +195,9 @@ services:
       - "8082:8082"
     networks:
       - addp-network
+    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
+    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
-      postgres:
-        condition: service_healthy
       system-backend:
         condition: service_started
     restart: unless-stopped
@@ -552,9 +467,9 @@ services:
       - "8085:8085"
     networks:
       - addp-network
+    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
+    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
-      postgres:
-        condition: service_healthy
       system-backend:
         condition: service_started
     restart: unless-stopped
@@ -649,10 +564,5 @@ services:
 
 networks:
   addp-network:
-    driver: bridge
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-  meilisearch_data:
+    name: addp-network
+    external: true  # 使用 docker-compose.infra.yml 创建的网络

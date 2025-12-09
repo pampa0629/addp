@@ -1,26 +1,58 @@
 # ADDP 基础设施脚本
 
-本目录包含所有与 ADDP 基础设施（PostgreSQL、Redis、MinIO）相关的初始化和管理脚本。
+本目录包含所有与 ADDP 基础设施（PostgreSQL、Redis、MinIO、Meilisearch）相关的初始化和管理脚本。
+
+## 核心原则
+
+本目录遵循以下7个核心原则:
+
+1. **单一职责**: 同样功能只在一处实现,其他地方调用
+2. **适应性**: 适应不同环境(OS、CPU架构),脚本自动适配
+3. **清晰明了**: 一看就懂的结构和命名
+4. **可重复执行**: 幂等性,多次执行不会破坏系统
+5. **易用性**: 用户无需了解技术细节,按顺序执行即可
+6. **分散和集中**: 模块相关配置分散,整体管理脚本集中
+7. **敢于删除**: 删除重复或无用的内容,避免违反单一职责原则
 
 ## 目录结构
 
 ```
 scripts/infra/
-├── README.md                    # 本文件
-├── up.sh                        # 启动基础设施服务
-├── down.sh                      # 停止基础设施服务
-├── restart.sh                   # 重启基础设施服务
-├── status.sh                    # 查看服务状态
-├── init-db.sh                   # 初始化数据库（执行所有 SQL 文件）
-├── init-db.sql                  # 主数据库 schema 初始化
-├── init-orchestrator.sql        # Orchestrator 模块 schema
-├── init-minio.sh                # 初始化 MinIO buckets
-├── init-redis.sh                # 初始化 Redis 配置
-├── init-postgis.sh              # 初始化 PostGIS 扩展
-└── init-pgvector.sh             # 初始化 pgvector 扩展
+├── README.md                         # 本文件
+├── up.sh                             # 启动基础设施服务
+├── down.sh                           # 停止基础设施服务
+├── status.sh                         # 查看服务状态
+├── init-db.sh                        # 初始化数据库（执行所有 SQL 文件）
+├── init-db.sql                       # 主数据库 schema 初始化（所有模块）
+├── init-minio.sh                     # 初始化 MinIO buckets（模块化）
+├── init-redis.sh                     # 初始化 Redis 配置
+├── init-postgresql.sh                # 初始化 PostgreSQL 扩展（PostGIS + pgvector）
+└── init-meilisearch.sh               # 初始化 Meilisearch 索引（模块化）
 ```
 
 ## 使用方法
+
+### 快速启动（推荐）
+
+```bash
+# 1. 启动基础设施（自动完成所有初始化）
+./scripts/infra/up.sh
+
+# 2. 查看状态
+./scripts/infra/status.sh
+
+# 3. 停止基础设施
+./scripts/infra/down.sh
+```
+
+`up.sh` 会自动执行以下操作:
+- ✅ 检查并拉取 Docker 镜像
+- ✅ 启动容器（PostgreSQL, Redis, MinIO, Meilisearch）
+- ✅ 等待服务健康检查
+- ✅ 初始化数据库 schema
+- ✅ 安装 PostgreSQL 扩展（PostGIS + pgvector）
+- ✅ 初始化 MinIO buckets
+- ✅ 初始化 Meilisearch 索引
 
 ### 通过 Makefile（推荐）
 
@@ -34,9 +66,6 @@ make infra-status
 # 停止基础设施
 make infra-down
 
-# 重启基础设施
-make infra-restart
-
 # 初始化数据库
 make db-migrate
 
@@ -47,17 +76,24 @@ make init-minio
 make init-redis
 ```
 
-### 直接调用脚本
+### 手动初始化脚本
+
+如果需要单独运行某个初始化脚本:
 
 ```bash
-# 启动基础设施（自动进行端口检查和健康检查）
-./scripts/infra/up.sh
+# 初始化数据库（支持清理选项）
+./scripts/infra/init-db.sh                     # 正常初始化（幂等）
+./scripts/infra/init-db.sh --drop-schema meta  # 重建 meta schema
+./scripts/infra/init-db.sh --drop-all          # 清空所有 ADDP schema（慎用！）
 
-# 初始化数据库（按顺序执行所有 SQL 文件）
-./scripts/infra/init-db.sh
-
-# 初始化 MinIO buckets（包括 mvt-tiles 等）
+# 初始化 MinIO buckets（模块化 buckets）
 ./scripts/infra/init-minio.sh
+
+# 初始化 PostgreSQL 扩展（PostGIS + pgvector）
+./scripts/infra/init-postgresql.sh
+
+# 初始化 Meilisearch 索引
+./scripts/infra/init-meilisearch.sh
 
 # 初始化 Redis（配置任务队列和缓存）
 ./scripts/infra/init-redis.sh
@@ -67,90 +103,529 @@ make init-redis
 
 # 停止所有基础设施服务
 ./scripts/infra/down.sh
+```
 
-# 完整重启（清理旧镜像、重建、重启）
-./scripts/infra/restart.sh
+## 模块化资源隔离架构
+
+ADDP 采用**模块化资源隔离**架构,每个模块拥有独立的命名空间:
+
+### PostgreSQL Schema 隔离
+
+```
+addp (database)
+├── system       → System 模块（用户、租户、日志、资源）
+├── manager      → Manager 模块（数据源、目录、快显）
+├── metadata     → Meta 模块（元数据节点、元数据项、字典）
+├── transfer     → Transfer 模块（任务、执行记录、检查点）
+├── orchestrator → Orchestrator 模块（编排定义、执行实例）
+└── develop      → Develop 模块（SQL 脚本管理）
+```
+
+### MinIO Bucket 隔离
+
+```
+MinIO
+├── system/             → System 模块（用户头像、系统配置）
+├── manager/            → Manager 模块（预览缓存、MVT 瓦片）
+│   └── mvt-tiles/      → MVT 瓦片存储
+├── meta/               → Meta 模块（元数据相关文件）
+├── transfer/           → Transfer 模块（传输临时文件）
+├── orchestrator/       → Orchestrator 模块（编排文件）
+└── develop/            → Develop 模块（查询结果导出）
+```
+
+**特殊配置**: `manager` bucket 设置为公开读,以支持 MVT 瓦片的前端直接访问。
+
+### Redis Key 命名规范
+
+格式: `{module}:{middleware}:{function}:{id}`
+
+示例:
+```
+meta:cache:scan_task:1:123:full           → Meta 模块扫描任务缓存
+meta:cache:scan_last_time:123             → Meta 模块上次扫描时间
+manager:cache:mvt:spatial:fingerprint:*   → Manager 模块 MVT 瓦片缓存
+transfer:cache:checkpoint:456             → Transfer 模块检查点缓存
+```
+
+### Asynq Queue 命名规范
+
+格式: `{module}:{priority}`
+
+示例:
+```
+meta:default      → Meta 模块默认队列
+transfer:critical → Transfer 模块高优先级队列
+transfer:default  → Transfer 模块默认队列
+transfer:low      → Transfer 模块低优先级队列
+```
+
+### Meilisearch Index 命名规范
+
+格式: `{module}:{resource_type}`
+
+示例:
+```
+meta:assets       → Meta 模块资产索引
+manager:files     → Manager 模块文件索引
+develop:results   → Develop 模块查询结果索引
+```
+
+## 脚本详细说明
+
+### up.sh
+
+**功能**: 启动基础设施容器并完成所有初始化
+
+**特性**:
+- ✅ 自动检测 CPU 架构（x86_64/ARM64）并选择合适的 PostgreSQL 镜像
+- ✅ 自动检查并拉取缺失的 Docker 镜像
+- ✅ 端口占用检查（5432, 6379, 9000-9001, 7700）
+- ✅ 服务运行状态检查（幂等操作,已运行服务不会重启）
+- ✅ 健康检查等待（确保服务完全就绪）
+- ✅ 自动调用所有初始化脚本
+
+**环境变量**:
+- `SKIP_INFRA_DB_INIT=1` - 跳过数据库初始化
+- `SKIP_POSTGRESQL_INIT=1` - 跳过 PostgreSQL 扩展安装
+- `SKIP_MEILISEARCH_INIT=1` - 跳过 Meilisearch 索引初始化
+
+**使用示例**:
+```bash
+# 正常启动（完整初始化）
+./scripts/infra/up.sh
+
+# 跳过数据库初始化（仅启动容器）
+SKIP_INFRA_DB_INIT=1 ./scripts/infra/up.sh
+
+# ARM64 架构强制使用特定镜像
+POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
+```
+
+### down.sh
+
+**功能**: 停止基础设施容器
+
+**特性**:
+- ✅ 安全停止所有服务
+- ✅ 保留数据卷（数据不丢失）
+- ✅ 显式指定 docker-compose.infra.yml
+
+**使用示例**:
+```bash
+./scripts/infra/down.sh
+```
+
+### status.sh
+
+**功能**: 查看服务状态和健康检查
+
+**输出信息**:
+- 容器运行状态
+- PostgreSQL 连接状态
+- Redis 连接状态
+- MinIO 连接状态
+- Meilisearch 连接状态
+- 访问地址和端口
+
+**使用示例**:
+```bash
+./scripts/infra/status.sh
+```
+
+### init-db.sh
+
+**功能**: 初始化数据库 schema
+
+**特性**:
+- ✅ 幂等性（使用 `CREATE ... IF NOT EXISTS`）
+- ✅ 支持选择性清理（`--drop-schema`, `--drop-all`）
+- ✅ 执行 `init-db.sql`（包含所有模块 schema）
+- ✅ 自动检查 PostgreSQL 容器是否运行
+
+**使用示例**:
+```bash
+# 正常初始化（幂等,不会删除数据）
+./scripts/infra/init-db.sh
+
+# 重建 metadata schema（删除并重新创建）
+./scripts/infra/init-db.sh --drop-schema metadata
+
+# 清空所有 ADDP schema（慎用！会删除所有数据）
+./scripts/infra/init-db.sh --drop-all
+```
+
+### init-minio.sh
+
+**功能**: 初始化 MinIO buckets（模块化组织）
+
+**创建的 Buckets**:
+- `system` - System 模块（用户头像、系统配置）
+- `manager` - Manager 模块（预览缓存、MVT 瓦片）- **公开读**
+- `meta` - Meta 模块（元数据相关文件）
+- `transfer` - Transfer 模块（传输临时文件）
+- `orchestrator` - Orchestrator 模块（编排文件）
+- `develop` - Develop 模块（查询结果导出）
+
+**访问地址**:
+- API: http://localhost:9000
+- Console: http://localhost:9001
+
+**使用示例**:
+```bash
+./scripts/infra/init-minio.sh
+```
+
+### init-postgresql.sh
+
+**功能**: 安装 PostgreSQL 扩展（PostGIS + pgvector）
+
+**安装的扩展**:
+- **PostGIS 3.4** - 空间数据操作支持
+  - postgis - 核心空间功能
+  - postgis_topology - 拓扑支持
+- **pgvector 0.7.0** - 向量检索支持
+  - 从源码编译安装
+  - 支持向量嵌入和相似度搜索
+
+**特性**:
+- ✅ 幂等性（已安装扩展不会重复安装）
+- ✅ 版本检测和显示
+- ✅ 自动处理依赖包安装
+- ✅ 编译后自动清理构建依赖
+
+**使用示例**:
+```bash
+./scripts/infra/init-postgresql.sh
+```
+
+### init-meilisearch.sh
+
+**功能**: 初始化 Meilisearch 索引（模块化命名）
+
+**创建的索引**:
+- `meta:assets` - Meta 模块统一索引（元数据资产）
+- `manager:files` - Manager 模块文件索引（目录文件）
+- `develop:results` - Develop 模块查询结果索引
+
+**访问地址**: http://localhost:7700
+
+**使用示例**:
+```bash
+./scripts/infra/init-meilisearch.sh
+```
+
+### init-redis.sh
+
+**功能**: 初始化 Redis 配置和验证连接
+
+**特性**:
+- ✅ 连接验证
+- ✅ 显示 Redis 统计信息
+- ✅ 支持可选清理（`--clean` 参数）
+
+**使用示例**:
+```bash
+# 验证连接和显示统计
+./scripts/infra/init-redis.sh
+
+# 清空所有 Asynq 队列数据（慎用！）
+./scripts/infra/init-redis.sh --clean
 ```
 
 ## SQL 初始化文件
 
-SQL 文件按顺序执行（在 `init-db.sh` 中定义）：
+### init-db.sql
 
-1. **init-db.sql** - 主数据库 schema
-   - System schema（用户、租户、审计日志、资源）
-   - Manager schema（数据源、目录、权限、快显）
-   - Metadata schema（元数据节点、元数据项、字典、变更日志）
-   - Transfer schema（任务、执行记录、数据映射、检查点）
-   - Develop schema（SQL 脚本管理）
+**包含所有模块的 schema**（单一职责原则）:
 
-2. **init-orchestrator.sql** - Orchestrator 模块
-   - Orchestrator schema（编排定义、执行实例）
+1. **System Schema**
+   - users - 用户账户
+   - tenants - 租户信息
+   - audit_logs - 审计日志
+   - resources - 资源配置（数据源连接信息）
 
-### 添加新的 SQL 初始化文件
+2. **Manager Schema**
+   - data_sources - 数据源连接
+   - directories - 目录组织
+   - permissions - 访问控制
+   - quick_view - 快显配置
 
-如果需要添加新模块的 SQL 初始化：
+3. **Metadata Schema**
+   - meta_node - 元数据节点（层次结构）
+   - meta_item - 元数据项（叶子节点）
+   - meta_dictionary - 节点类型和规则定义
+   - meta_change_log - 变更追踪
 
-1. 创建新的 SQL 文件，例如 `init-newmodule.sql`
-2. 在 `init-db.sh` 中的 `SQL_FILES` 数组添加该文件路径：
-   ```bash
-   SQL_FILES=(
-     "${SCRIPT_DIR}/init-db.sql"
-     "${SCRIPT_DIR}/init-orchestrator.sql"
-     "${SCRIPT_DIR}/init-newmodule.sql"  # 新增
-   )
-   ```
-3. 重新运行 `./scripts/infra/init-db.sh` 即可
+4. **Transfer Schema**
+   - tasks - 传输任务定义
+   - task_executions - 任务执行历史
+   - data_mappings - 字段映射配置
+   - checkpoints - 任务检查点
 
-## 脚本说明
+5. **Orchestrator Schema**
+   - orchestrations - 编排定义
+   - orchestration_instances - 编排执行实例
 
-### up.sh
-- 启动 PostgreSQL、Redis、MinIO 容器
-- 自动进行端口占用检查
-- 等待服务健康检查通过
-- 自动初始化 PostGIS 和 pgvector 扩展
+6. **Develop Schema**
+   - sql_scripts - SQL 脚本管理
 
-### down.sh
-- 停止所有基础设施容器
-- 支持 `--rm` 参数移除容器（不删除数据卷）
+**设计原则**:
+- ✅ 所有模块 schema 统一管理（遵循单一职责原则）
+- ✅ 使用 `CREATE ... IF NOT EXISTS`（幂等性）
+- ✅ 外键约束确保数据完整性
+- ✅ 自动时间戳（created_at, updated_at）
+- ✅ 软删除支持（deleted_at）
 
-### restart.sh
-- 完整的重启流程
-- 清理旧 Docker 镜像
-- 重新构建必要的服务
-- 等待服务健康后自动初始化扩展
+## 跨平台支持
 
-### status.sh
-- 显示所有容器状态
-- 检查健康状态
-- 显示访问 URL 和端口信息
+### CPU 架构自动检测
 
-### init-db.sh
-- 按顺序执行所有 SQL 初始化文件
-- 支持多个 SQL 文件的模块化管理
-- 自动检查 PostgreSQL 容器是否运行
-- 使用事务确保数据一致性
+`up.sh` 自动检测 CPU 架构并选择合适的 PostgreSQL 镜像:
 
-### init-minio.sh
-- 创建必要的 MinIO buckets
-- 配置 bucket 策略
-- 初始化 MVT 瓦片缓存目录
+**x86_64**（默认）:
+```bash
+POSTGRES_IMAGE=postgis/postgis:15-3.4
+```
 
-### init-redis.sh
-- 配置 Redis 认证
-- 初始化 Asynq 任务队列
-- 设置缓存命名空间
-- 配置持久化策略
+**ARM64**（macOS M1/M2, ARM64 Linux）:
+```bash
+POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4
+```
+
+**手动覆盖**:
+```bash
+# 在 .env 文件中设置
+POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4
+
+# 或运行时指定
+POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
+```
+
+## 环境变量配置
+
+### 配置文件说明
+
+- **.env.example** - 配置模板（提交到 Git）
+  - 包含所有默认值
+  - 详细注释说明
+  - 安全提示（生产环境必须修改的字段）
+
+- **.env** - 实际配置（不提交到 Git）
+  - 从 .env.example 复制
+  - 填写实际密码和配置
+  - 本地开发或生产部署使用
+
+**遵循原则**:
+- ✅ 单一来源: 默认值只在 .env.example 定义
+- ✅ docker-compose.infra.yml 不提供默认值（强制从 .env 读取）
+- ✅ 开发环境可使用默认值
+- ✅ 生产环境必须修改敏感配置
+
+### 关键环境变量
+
+```bash
+# PostgreSQL（必填）
+POSTGRES_USER=addp
+POSTGRES_PASSWORD=addp_password          # ⚠️ 生产环境必须修改
+POSTGRES_DB=addp
+
+# Redis（必填）
+REDIS_PASSWORD=addp_redis                # ⚠️ 生产环境必须修改
+
+# MinIO（必填）
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin           # ⚠️ 生产环境必须修改
+MINIO_API_PORT=9000
+MINIO_CONSOLE_PORT=9001
+
+# Meilisearch（必填）
+MEILISEARCH_MASTER_KEY=your-master-key   # ⚠️ 生产环境必须修改
+MEILISEARCH_URL_LOCAL=http://localhost:7700
+
+# PostgreSQL 镜像（可选,默认 x86_64）
+POSTGRES_IMAGE=postgis/postgis:15-3.4
+# ARM64: POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4
+
+# 跳过初始化（可选）
+SKIP_INFRA_DB_INIT=0
+SKIP_POSTGRESQL_INIT=0
+SKIP_MEILISEARCH_INIT=0
+```
 
 ## 注意事项
 
-1. **执行顺序很重要**：先启动基础设施（`up.sh`），再初始化数据库（`init-db.sh`）
-2. **数据持久化**：所有数据存储在 Docker volumes 中，停止容器不会丢失数据
-3. **端口冲突**：启动前会自动检查端口是否被占用
-4. **健康检查**：脚本会等待服务完全启动后才继续执行
-5. **幂等性**：所有 SQL 脚本使用 `IF NOT EXISTS`，可以重复执行
+### 执行顺序
+
+1. ✅ **先启动基础设施**: `./scripts/infra/up.sh`
+2. ✅ **再启动应用服务**: `make dev-start` 或 `make up-full`
+
+`up.sh` 会自动完成所有初始化,无需手动执行其他脚本。
+
+### 数据持久化
+
+所有数据存储在 Docker volumes 中:
+- `postgres_data` - PostgreSQL 数据
+- `redis_data` - Redis 数据
+- `minio_data` - MinIO 对象存储
+- `meilisearch_data` - Meilisearch 索引
+
+**停止容器不会丢失数据**,除非显式删除 volumes:
+```bash
+# 危险操作！会删除所有数据
+docker compose -f docker-compose.infra.yml down -v
+```
+
+### 端口冲突检查
+
+`up.sh` 启动前会自动检查以下端口:
+- 5432 (PostgreSQL)
+- 6379 (Redis)
+- 9000 (MinIO API)
+- 9001 (MinIO Console)
+- 7700 (Meilisearch)
+
+如果端口被占用,脚本会报错并提示处理方法。
+
+### 健康检查
+
+所有初始化脚本都会:
+- ✅ 检查容器是否运行
+- ✅ 等待服务完全就绪
+- ✅ 验证连接成功
+- ✅ 显示详细状态信息
+
+### 幂等性保证
+
+所有脚本和 SQL 都是幂等的:
+- ✅ 可以多次执行
+- ✅ 不会重复创建资源
+- ✅ 不会删除已有数据（除非显式指定 --drop 参数）
+
+## 容器命名规范
+
+**Docker Compose 项目名**: `addp-infra`
+
+所有基础设施容器使用简洁命名(由 Docker Compose 项目名自动管理):
+- `postgres` - PostgreSQL 容器
+- `redis` - Redis 容器
+- `minio` - MinIO 容器
+- `meilisearch` - Meilisearch 容器
+
+**实际容器名**: 由于 Docker Compose 项目名为 `addp-infra`,容器的完整名称会自动添加项目前缀,如 `addp-infra-postgres-1`
+
+**好处**:
+- ✅ 简洁命名: 容器名直接反映服务类型
+- ✅ 项目隔离: Docker Compose 自动添加项目前缀避免冲突
+- ✅ 便于管理: `docker compose -f docker-compose.infra.yml ps` 查看所有服务
+
+## 故障排查
+
+### PostgreSQL 连接失败
+
+```bash
+# 检查容器状态
+docker ps | grep postgres
+
+# 查看日志
+docker logs postgres
+
+# 手动测试连接
+docker compose -f docker-compose.infra.yml exec postgres psql -U addp -d addp
+```
+
+### Redis 连接失败
+
+```bash
+# 检查容器状态
+docker ps | grep redis
+
+# 查看日志
+docker logs redis
+
+# 手动测试连接（注意替换密码）
+docker compose -f docker-compose.infra.yml exec redis redis-cli -a 'addp_redis' ping
+```
+
+### MinIO 连接失败
+
+```bash
+# 检查容器状态
+docker ps | grep minio
+
+# 访问控制台
+open http://localhost:9001
+
+# 查看日志
+docker logs minio
+```
+
+### Meilisearch 连接失败
+
+```bash
+# 检查容器状态
+docker ps | grep meilisearch
+
+# 测试连接
+curl http://localhost:7700/health
+
+# 查看日志
+docker logs meilisearch
+```
+
+### 端口被占用
+
+```bash
+# 查看端口占用情况（macOS/Linux）
+lsof -i :5432
+lsof -i :6379
+lsof -i :9000
+
+# 杀掉占用端口的进程
+kill -9 <PID>
+
+# 或在 .env 中修改端口
+MINIO_API_PORT=9010
+MINIO_CONSOLE_PORT=9011
+```
 
 ## 相关文档
 
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构说明
+- [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施容器配置
+- [.env.example](../../.env.example) - 环境变量配置模板
+- [docs/CONFIG_CENTER.md](../../docs/CONFIG_CENTER.md) - 配置中心使用指南
 - [docs/INFRA_ARCHITECTURE_DETECTION.md](../../docs/INFRA_ARCHITECTURE_DETECTION.md) - 基础设施架构检测
-- [docker-compose.yml](../../docker-compose.yml) - Docker Compose 配置
+
+## 更新日志
+
+### v0.0.12 (2024-12-08)
+
+**优化基础设施脚本（遵循7个核心原则）**:
+
+1. ✅ **单一职责原则**:
+   - 删除 `init-orchestrator.sql`（内容已合并到 `init-db.sql`）
+   - 删除 `restart.sh`（功能重复）
+   - 删除 `pull-images.sh`（功能已集成到 `up.sh`）
+   - 删除 `fix-collation.sh`（临时修复脚本）
+   - 合并 `init-postgis.sh` 和 `init-pgvector.sh` 为 `init-postgresql.sh`
+
+2. ✅ **模块化资源隔离**:
+   - MinIO buckets: `system/`, `manager/`, `meta/`, `transfer/`, `orchestrator/`, `develop/`
+   - Redis keys: `{module}:{middleware}:{function}:{id}` 命名规范
+   - Meilisearch indexes: `{module}:{resource_type}` 命名规范
+   - 容器命名: 使用简洁名称,由 Docker Compose 项目名 `addp-infra` 统一管理
+
+3. ✅ **环境变量管理**:
+   - docker-compose.infra.yml 移除所有默认值（单一来源原则）
+   - .env.example 作为唯一的默认值定义位置
+   - 添加详细的安全提示注释
+
+4. ✅ **跨平台支持**:
+   - 自动检测 x86_64/ARM64 架构
+   - 支持 PostgreSQL 镜像自动选择
+
+5. ✅ **新增功能**:
+   - Meilisearch 索引自动初始化
+   - PostgreSQL 扩展统一安装脚本
+   - 镜像自动检查和拉取

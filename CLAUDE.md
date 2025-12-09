@@ -100,6 +100,9 @@ make dev-start
 # Or directly:
 ./scripts/dev/start.sh
 
+# Skip Go dependency check (faster startup, saves 5-10 seconds)
+SKIP_MODTIDY=1 ./scripts/dev/start.sh
+
 # 2. Check service health
 make dev-health
 
@@ -109,27 +112,47 @@ make dev-stop
 ./scripts/dev/stop.sh
 ```
 
+**Startup Process** (automatic):
+
+1. **Step 0**: Go 依赖检查 (`go mod tidy`, can skip with `SKIP_MODTIDY=1`)
+2. **Step 1**: Infrastructure startup (calls `scripts/infra/up.sh` - PostgreSQL, Redis, MinIO, Meilisearch)
+3. **Step 2-7**: Backend services (in dependency order)
+   - System Backend (8080) - configuration center, auth service
+   - Manager Backend (8081) + Meta Backend (8082) (parallel)
+   - Transfer Backend (8083) + Workers
+   - Orchestrator Backend (8084)
+   - Gateway (8000) - API router
+4. **Step 8**: Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
+
 **Startup Order**:
 
 ```
-Infrastructure (PostgreSQL, Redis, MinIO)
+Infrastructure (PostgreSQL, Redis, MinIO, Meilisearch) [auto-started by start.sh]
   ↓
-System Backend (auth, config center)
+System Backend (8080) - auth, config center
   ↓
-Manager Backend + Meta Backend (parallel)
+Manager Backend (8081) + Meta Backend (8082) (parallel)
   ↓
-Gateway (API router)
+Transfer Backend (8083) + Transfer Worker + Meta Worker + Manager Worker
   ↓
-Frontend services (optional)
+Orchestrator Backend (8084)
+  ↓
+Gateway (8000) - API router
+  ↓
+Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
 ```
 
 **Key Features**:
 
-- ✅ Automatic health check waiting - ensures each service is ready before starting the next
-- ✅ Progress indicators - color-coded output shows startup status
-- ✅ PID tracking - stores process IDs for graceful shutdown
-- ✅ Timeout handling - fails fast if service doesn't start within 60 seconds
-- ✅ Log files - redirects output to `logs/` directory for easy debugging
+- ✅ **Single Command**: One script starts everything (infrastructure + backends + frontends)
+- ✅ **Automatic dependency checking**: `go mod tidy` before startup (can skip with `SKIP_MODTIDY=1`)
+- ✅ **Infrastructure auto-startup**: Calls `scripts/infra/up.sh` automatically
+- ✅ **Smart skip**: If infrastructure is already running, skips restart (avoids pgvector recompilation)
+- ✅ **Health check waiting**: Ensures each service is ready before starting the next
+- ✅ **Progress indicators**: Color-coded output shows startup status
+- ✅ **PID tracking**: Stores process IDs for graceful shutdown
+- ✅ **Timeout handling**: Fails fast if service doesn't start within 60 seconds
+- ✅ **Log files**: Redirects output to `logs/` directory for easy debugging
 
 **Startup Script Details**:
 
@@ -137,6 +160,7 @@ Frontend services (optional)
 - Waits for `/health` endpoint to return 200 before proceeding
 - Creates `.dev-pids/` directory to track process IDs
 - Logs stored in `logs/` directory (e.g., `logs/system-backend.log`)
+- See `scripts/dev/README.md` for detailed documentation
 - Optional frontend startup (prompts user)
 
 **Service URLs** (after successful startup):
@@ -157,6 +181,10 @@ Frontend services (optional)
 
 - **After modifying backend code**, always use `./scripts/dev/restart.sh` to restart all services
 - This ensures all processes (including workers) are recompiled with the latest changes
+- **Note**: `restart.sh` does NOT restart infrastructure containers (PostgreSQL, Redis, MinIO, Meilisearch)
+  - Reason: Avoids pgvector extension recompilation (saves 1-2 minutes)
+  - If infrastructure restart needed: `bash scripts/infra/down.sh && bash scripts/infra/up.sh`
+  - `start.sh` automatically detects running infrastructure and skips startup
 - Manual restart of individual services may cause version mismatch issues
 
 ## Technology Stack
@@ -189,18 +217,25 @@ Frontend services (optional)
 
 ### Infrastructure Architecture
 
-ADDP 采用**系统与业务数据分离**的架构设计：
+ADDP 采用**系统与业务数据分离**的架构设计:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  ADDP System Infrastructure (docker-compose.yml)           │
+│  ADDP System Infrastructure (docker-compose.infra.yml)      │
+│  Project Name: addp-infra                                    │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ postgres     │  │ redis        │  │ minio-system │     │
+│  │ postgres     │  │ redis        │  │ minio        │     │
 │  │ (系统元数据) │  │ (缓存/队列)  │  │ (系统文件)   │     │
-│  │ Port: 5432   │  │ Port: 6379   │  │ Port: 9000-1 │     │
+│  │ Port: 5433*  │  │ Port: 6379   │  │ Port: 9000-1 │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
+│                    ┌──────────────┐                        │
+│                    │ meilisearch  │                        │
+│                    │ (全文检索)   │                        │
+│                    │ Port: 7700   │                        │
+│                    └──────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
+  * 默认 5433 避免与本地 PostgreSQL 冲突，可配置为 5432
 
 ┌─────────────────────────────────────────────────────────────┐
 │  Business Infrastructure (business/docker-compose.yml)      │
@@ -208,30 +243,100 @@ ADDP 采用**系统与业务数据分离**的架构设计：
 │  ┌──────────────┐  ┌──────────────┐                        │
 │  │ postgres     │  │ minio        │                        │
 │  │ (业务数据库) │  │ (业务文件)   │                        │
-│  │ Port: 5433   │  │ Port: 9002-3 │                        │
+│  │ Port: 5434   │  │ Port: 9002-3 │                        │
 │  └──────────────┘  └──────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**系统基础设施**（主 docker-compose.yml）:
+**系统基础设施** (docker-compose.infra.yml):
 
-- `postgres`: 存储 ADDP 系统元数据（用户、资源配置、元数据索引、任务定义等）
-- `redis`: 缓存和任务队列
-- `minio`: 存储系统文件（用户头像、系统配置等）
+- **Docker Compose 项目名**: `addp-infra`
+- **容器命名**: 简洁命名 (postgres, redis, minio, meilisearch)，由项目名统一管理隔离
+- **postgres**: 存储 ADDP 系统元数据 (用户、资源配置、元数据索引、任务定义等)
+- **redis**: 缓存和任务队列 (Asynq)
+- **minio**: 存储系统文件 (用户头像、系统配置、模块化 buckets)
+- **meilisearch**: 全文检索引擎 (元数据资产搜索、文件索引)
 
-**业务基础设施**（business/docker-compose.yml，独立部署）:
+**业务基础设施** (business/docker-compose.yml，独立部署):
 
-- `postgres`: 存储用户通过 ADDP 管理的实际业务数据（用户上传的 PostgreSQL 数据等）
-- `minio`: 存储用户上传的业务文件（Shapefile、GeoJSON、图片、视频等）
+- `postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
+- `minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
 
 **分离优势**:
 
 - ✅ 数据隔离: 系统数据与业务数据物理分离
 - ✅ 独立扩展: 业务数据量增长时可单独扩展
 - ✅ 安全性: 业务数据库可配置更严格的访问控制
-- ✅ 可替换性: 业务基础设施可替换为云服务（RDS、OSS）
+- ✅ 可替换性: 业务基础设施可替换为云服务 (RDS、OSS)
+- ✅ 端口隔离: 避免端口冲突，支持本地服务和容器服务并存
+
+**基础设施管理**:
+- 启动: `bash scripts/infra/up.sh` (自动完成所有初始化)
+- 状态: `bash scripts/infra/status.sh`
+- 停止: `bash scripts/infra/down.sh`
+- 详见: [scripts/infra/README.md](scripts/infra/README.md)
 
 详见 [business/README.md](business/README.md)
+
+### Module-Based Resource Isolation
+
+ADDP 采用**模块化资源隔离**策略,确保各模块资源独立管理:
+
+**PostgreSQL Schema 隔离**:
+```sql
+CREATE SCHEMA IF NOT EXISTS system;       -- System 模块(用户、租户、资源)
+CREATE SCHEMA IF NOT EXISTS manager;      -- Manager 模块(数据源、目录)
+CREATE SCHEMA IF NOT EXISTS metadata;     -- Meta 模块(元数据、血缘)
+CREATE SCHEMA IF NOT EXISTS transfer;     -- Transfer 模块(传输任务)
+CREATE SCHEMA IF NOT EXISTS orchestrator; -- Orchestrator 模块(编排)
+CREATE SCHEMA IF NOT EXISTS develop;      -- Develop 模块(查询、开发)
+```
+
+**MinIO Bucket 隔离** (系统 MinIO, 端口 9000-9001):
+```
+system/             -- System 模块(用户头像、系统配置)
+manager/            -- Manager 模块(预览缓存、MVT 瓦片)
+  └── mvt-tiles/    -- MVT 瓦片存储路径
+meta/               -- Meta 模块(元数据相关文件)
+transfer/           -- Transfer 模块(传输临时文件)
+orchestrator/       -- Orchestrator 模块(编排文件)
+develop/            -- Develop 模块(查询结果导出)
+```
+
+**Redis Key 命名规范**:
+```
+{module}:{middleware}:{function}:{id}
+
+示例:
+- meta:cache:scan_task:{tenant_id}:{resource_id}:{scan_type}
+- meta:cache:scan_last_time:{resource_id}
+- manager:cache:mvt:spatial:{fingerprint}:{z}:{x}:{y}
+```
+
+**Asynq Queue 命名规范**:
+```
+{module}:{priority}
+
+示例:
+- meta:default / meta:critical / meta:low        -- Meta 扫描任务队列
+- transfer:default / transfer:critical / transfer:low  -- Transfer 传输任务队列
+```
+
+**Meilisearch Index 命名规范**:
+```
+{module}:{resource_type}
+
+示例:
+- meta:assets        -- Meta 模块资产索引
+- manager:files      -- Manager 模块文件索引
+- develop:results    -- Develop 模块查询结果索引
+```
+
+**命名规范优势**:
+- ✅ 清晰隔离: 一眼看出资源归属模块
+- ✅ 避免冲突: 不同模块资源不会相互干扰
+- ✅ 易于管理: 可按模块清理、备份、监控资源
+- ✅ 统一规范: 所有基础设施遵循相同命名模式
 
 ## Key Architectural Patterns
 
@@ -831,6 +936,8 @@ curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```
+
+**初始化位置**: `system/backend/internal/repository/database.go`
 
 ### Running Tests
 

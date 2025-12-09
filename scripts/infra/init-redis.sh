@@ -48,7 +48,7 @@ fi
 
 # Helper function to execute Redis commands
 redis_exec() {
-  docker exec addp-redis redis-cli -a "${REDIS_PASSWORD}" "$@" 2>/dev/null
+  docker exec redis redis-cli -a "${REDIS_PASSWORD}" "$@" 2>/dev/null
 }
 
 # Parse command line arguments
@@ -214,7 +214,7 @@ echo ""
 echo -e "${YELLOW}==========================================="
 echo -e "  Redis 访问信息"
 echo -e "===========================================${NC}"
-echo "  连接命令: docker exec -it addp-redis redis-cli -a ${REDIS_PASSWORD}"
-echo "  监控命令: docker exec addp-redis redis-cli -a ${REDIS_PASSWORD} INFO"
+echo "  连接命令: docker exec -it redis redis-cli -a ${REDIS_PASSWORD}"
+echo "  监控命令: docker exec redis redis-cli -a ${REDIS_PASSWORD} INFO"
 echo "  清理数据: bash scripts/infra/init-redis.sh --clean"
 echo ""
