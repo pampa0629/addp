@@ -1,0 +1,510 @@
+# Build Scripts 使用指南
+
+本目录包含 ADDP 项目的编译和镜像构建脚本，遵循单一职责和参数化原则。
+
+## 目录
+
+- [compile.sh](#compilesh) - 二进制编译器
+- [build-images.sh](#build-imagessh) - Docker 镜像构建器  
+- [package.sh](#packagesh) - 部署包生成器
+
+---
+
+## compile.sh
+
+**用途**: 编译所有 ADDP 后端服务的二进制文件（带智能缓存）
+
+### 使用方法
+
+```bash
+# 基本用法（编译本机架构）
+./scripts/build/compile.sh
+
+# 编译多架构（amd64 + arm64）
+./scripts/build/compile.sh --arch both
+
+# 强制重新编译（忽略缓存）
+./scripts/build/compile.sh --force
+
+# 组合使用
+./scripts/build/compile.sh --arch both --force
+```
+
+### 参数说明
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| `--arch` | `amd64` \| `arm64` \| `both` | 目标架构（默认：自动检测本机架构） |
+| `--force` | - | 强制重新编译，忽略缓存 |
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `BUILD_TYPE` | `release` | 构建类型（`release` 或 `debug`） |
+| `GOOS` | `linux` | 目标操作系统 |
+
+### 输出目录结构
+
+```
+dist/
+├── release-linux-amd64/        # 生产构建 + Linux + AMD64
+│   ├── system                   # System 后端
+│   ├── gateway                  # API Gateway
+│   ├── manager-backend          # Manager 后端
+│   ├── manager-worker           # Manager Worker
+│   ├── meta-backend             # Meta 后端
+│   ├── meta-worker              # Meta Worker
+│   ├── transfer-backend         # Transfer 后端
+│   ├── transfer-worker          # Transfer Worker
+│   ├── orchestrator-backend     # Orchestrator 后端
+│   └── develop-backend          # Develop 后端
+│
+└── release-linux-arm64/        # ARM64 架构
+    └── (同上)
+```
+
+### 智能缓存机制
+
+- 自动检测源代码修改时间
+- 仅重新编译变更的服务
+- 使用 `.compile-cache/` 存储缓存元数据
+- 使用 `--force` 可跳过缓存检查
+
+### 示例
+
+```bash
+# 场景 1: 本地开发（快速编译）
+./scripts/build/compile.sh
+
+# 场景 2: 生产发布（多架构）
+./scripts/build/compile.sh --arch both
+
+# 场景 3: 调试构建
+BUILD_TYPE=debug ./scripts/build/compile.sh
+
+# 场景 4: 清理缓存重新编译
+./scripts/build/compile.sh --force
+```
+
+---
+
+## build-images.sh
+
+**用途**: 构建 ADDP 服务的 Docker 镜像（支持单架构和多架构）
+
+### 使用方法
+
+```bash
+# 基本用法（构建本机架构镜像）
+./scripts/build/build-images.sh
+
+# 构建多架构镜像（amd64 + arm64）
+./scripts/build/build-images.sh --multi-arch
+
+# 指定 Registry
+./scripts/build/build-images.sh --registry harbor.example.com:5001
+
+# 禁用构建缓存
+./scripts/build/build-images.sh --skip-cache
+
+# 仅构建特定服务
+./scripts/build/build-images.sh --services system-backend,manager-backend
+
+# 组合使用（生产场景）
+IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
+  --multi-arch \
+  --registry myregistry.com:5001
+```
+
+### 参数说明
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| `--registry` | URL | Registry 地址（默认：`localhost:5001`） |
+| `--multi-arch` | - | 构建多架构镜像（amd64 + arm64） |
+| `--skip-cache` | - | 禁用 Docker 构建缓存 |
+| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`） |
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `REGISTRY` | `localhost:5001` | Registry 地址 |
+| `IMAGE_TAG` | `latest` | 镜像标签 |
+| `BUILD_TYPE` | `release` | 构建类型（需与 compile.sh 一致） |
+
+### 构建的服务列表
+
+**后端服务**:
+- `system-backend` - System 后端
+- `manager-backend` - Manager 后端
+- `meta-backend` - Meta 后端
+- `transfer-backend` - Transfer 后端
+- `orchestrator-backend` - Orchestrator 后端
+- `develop-backend` - Develop 后端
+- `gateway` - API Gateway
+
+**Worker 服务**:
+- `meta-worker` - Meta Worker
+- `transfer-worker` - Transfer Worker
+- `manager-worker` - Manager Worker
+
+**前端服务**:
+- `portal-frontend` - Portal 前端
+- `system-frontend` - System 前端
+- `manager-frontend` - Manager 前端
+- `meta-frontend` - Meta 前端
+- `transfer-frontend` - Transfer 前端
+- `orchestrator-frontend` - Orchestrator 前端
+- `develop-frontend` - Develop 前端
+
+### 前置条件
+
+**必须先运行 compile.sh**，否则会报错：
+
+```bash
+# 错误示例
+./scripts/build/build-images.sh
+# ❌ 错误: amd64 架构的二进制文件不存在
+
+# 正确流程
+./scripts/build/compile.sh           # 1. 先编译
+./scripts/build/build-images.sh      # 2. 再构建镜像
+```
+
+### 镜像命名规范
+
+```
+{REGISTRY}/addp-{SERVICE}:{TAG}
+
+示例:
+localhost:5001/addp-system-backend:latest
+localhost:5001/addp-manager-backend:v1.0.0
+localhost:5001/addp-meta-worker:latest
+```
+
+### 多架构构建说明
+
+使用 `--multi-arch` 时：
+- 需要 Docker Buildx 支持
+- 构建平台：`linux/amd64,linux/arm64`
+- 自动检测并使用 buildx builder
+- 镜像会同时包含两个架构
+
+### 示例
+
+```bash
+# 场景 1: 本地开发测试
+./scripts/build/compile.sh
+./scripts/build/build-images.sh
+
+# 场景 2: 构建特定服务
+./scripts/build/compile.sh
+./scripts/build/build-images.sh --services system-backend
+
+# 场景 3: 生产单架构发布
+./scripts/build/compile.sh --arch amd64
+IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
+  --registry hub.docker.com/myorg
+
+# 场景 4: 生产多架构发布
+./scripts/build/compile.sh --arch both
+IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
+  --multi-arch \
+  --registry hub.docker.com/myorg
+
+# 场景 5: 推送到私有 Registry
+./scripts/build/compile.sh --arch both
+IMAGE_TAG=v1.2.0 ./scripts/build/build-images.sh \
+  --multi-arch \
+  --registry harbor.example.com:5001
+docker push harbor.example.com:5001/addp-system-backend:v1.2.0
+```
+
+---
+
+## package.sh
+
+**用途**: 生成完整的部署包（包含 docker-compose 文件、脚本、配置）
+
+### 使用方法
+
+```bash
+# 基本用法（生成到 ./deploy-package）
+./scripts/build/package.sh
+
+# 指定输出目录
+./scripts/build/package.sh --output ./production-package
+
+# 指定 Registry
+./scripts/build/package.sh --registry harbor.example.com:5001
+
+# 自动传输到服务器
+./scripts/build/package.sh --server ubuntu@192.168.1.100
+
+# 组合使用
+./scripts/build/package.sh \
+  --output ./package-v1.0.0 \
+  --registry myregistry.com:5001 \
+  --server ubuntu@production-server
+```
+
+### 参数说明
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| `--output` | 目录路径 | 输出目录（默认：`./deploy-package`） |
+| `--registry` | URL | Registry 地址 |
+| `--server` | `user@host` | 自动传输到远程服务器 |
+
+### 生成的包结构
+
+```
+deploy-package/
+├── docker-compose.infra.yml       # 基础设施配置
+├── docker-compose.app.yml         # 应用服务配置
+├── .env.example                   # 环境变量模板
+├── scripts/
+│   ├── prod/
+│   │   ├── start.sh              # 启动脚本
+│   │   ├── stop.sh               # 停止脚本
+│   │   └── health-check.sh       # 健康检查
+│   └── utils/
+│       └── check/                # 验证脚本
+└── README.md                      # 部署说明
+```
+
+### 示例
+
+```bash
+# 场景 1: 本地打包
+./scripts/build/package.sh
+
+# 场景 2: 生产发布打包
+./scripts/build/package.sh \
+  --output ./release-v1.0.0 \
+  --registry hub.docker.com/myorg
+
+# 场景 3: 打包并传输到服务器
+./scripts/build/package.sh \
+  --output ./package \
+  --server ubuntu@192.168.1.100
+```
+
+---
+
+## 完整的构建流程
+
+### 本地开发测试流程
+
+```bash
+# 1. 编译本机架构
+./scripts/build/compile.sh
+
+# 2. 构建本地镜像
+./scripts/build/build-images.sh
+
+# 3. 启动测试
+docker-compose -f docker-compose.infra.yml up -d
+docker-compose -f docker-compose.app.yml up -d
+
+# 4. 验证
+curl http://localhost:8080/health
+```
+
+### 生产发布流程
+
+```bash
+# 1. 编译多架构二进制
+./scripts/build/compile.sh --arch both
+
+# 2. 构建多架构镜像
+IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
+  --multi-arch \
+  --registry hub.docker.com/myorg
+
+# 3. 推送镜像到 Registry（手动）
+for service in system-backend manager-backend meta-backend; do
+  docker push hub.docker.com/myorg/addp-${service}:v1.0.0
+done
+
+# 4. 生成部署包
+./scripts/build/package.sh \
+  --output ./release-v1.0.0 \
+  --registry hub.docker.com/myorg
+
+# 5. 传输到生产服务器
+scp -r ./release-v1.0.0 ubuntu@production-server:/opt/addp/
+
+# 6. 在生产服务器上部署
+ssh ubuntu@production-server
+cd /opt/addp/release-v1.0.0
+./scripts/prod/start.sh
+```
+
+### CI/CD 自动化流程
+
+```yaml
+# .github/workflows/release.yml 示例
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Compile binaries
+        run: ./scripts/build/compile.sh --arch both
+
+      - name: Build images
+        env:
+          REGISTRY: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ github.ref_name }}
+        run: |
+          ./scripts/build/build-images.sh \
+            --multi-arch \
+            --registry $REGISTRY
+
+      - name: Package deployment
+        run: |
+          ./scripts/build/package.sh \
+            --output ./release-${{ github.ref_name }} \
+            --registry ghcr.io/${{ github.repository }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-package
+          path: ./release-${{ github.ref_name }}
+```
+
+---
+
+## 与设计文档的对应关系
+
+| 设计文档功能 | 当前实现 | 状态 |
+|-------------|---------|------|
+| `compile.sh --arch both` | ✅ 完全实现 | 完全匹配 |
+| `build-images.sh --arch both` | `--multi-arch` | 功能等价 |
+| `--tag <version>` | 环境变量 `IMAGE_TAG` | 功能等价 |
+| `--push` | 需手动 `docker push` | 可手动操作 |
+| `--registry <url>` | ✅ 完全实现 | 完全匹配 |
+| `--service <name>` | `--services <list>` | 功能增强 |
+
+---
+
+## 故障排查
+
+### 问题 1: 二进制文件不存在
+
+**错误信息**:
+```
+错误: amd64 架构的二进制文件不存在
+请先运行: ./scripts/build/compile.sh --arch amd64
+```
+
+**解决方法**:
+```bash
+# 先编译，再构建镜像
+./scripts/build/compile.sh
+./scripts/build/build-images.sh
+```
+
+### 问题 2: Docker Buildx 不可用
+
+**错误信息**:
+```
+ERROR: multiple platforms feature is currently not supported for docker driver
+```
+
+**解决方法**:
+```bash
+# 创建 buildx builder
+docker buildx create --use --name addp-builder
+
+# 验证
+docker buildx ls
+```
+
+### 问题 3: Registry 连接失败
+
+**错误信息**:
+```
+error: failed to push manifest to localhost:5001
+```
+
+**解决方法**:
+```bash
+# 检查 Registry 是否运行
+docker ps | grep registry
+
+# 启动本地 Registry
+docker run -d -p 5001:5000 --name registry registry:2
+
+# 或者使用远程 Registry
+./scripts/build/build-images.sh --registry hub.docker.com/myorg
+```
+
+### 问题 4: 缓存导致构建问题
+
+**解决方法**:
+```bash
+# 清理编译缓存
+rm -rf .compile-cache/
+
+# 清理 Docker 缓存
+docker builder prune -af
+
+# 强制重新编译和构建
+./scripts/build/compile.sh --force
+./scripts/build/build-images.sh --skip-cache
+```
+
+---
+
+## 相关文档
+
+- [scripts/prod/README.md](../prod/README.md) - 生产部署脚本文档
+- [scripts/dev/README.md](../dev/README.md) - 开发环境脚本文档
+- [scripts/design.md](../design.md) - Scripts 架构设计文档
+- [CLAUDE.md](../../CLAUDE.md) - 项目总体架构文档
+
+---
+
+## 最佳实践
+
+1. **本地开发**: 使用默认参数，快速迭代
+   ```bash
+   ./scripts/build/compile.sh && ./scripts/build/build-images.sh
+   ```
+
+2. **生产发布**: 始终使用多架构构建和明确的版本标签
+   ```bash
+   ./scripts/build/compile.sh --arch both
+   IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh --multi-arch
+   ```
+
+3. **CI/CD**: 使用环境变量传递配置
+   ```bash
+   BUILD_TYPE=release IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh
+   ```
+
+4. **调试**: 使用 debug 构建类型
+   ```bash
+   BUILD_TYPE=debug ./scripts/build/compile.sh
+   BUILD_TYPE=debug ./scripts/build/build-images.sh
+   ```
+
+5. **缓存管理**: 定期清理缓存以避免问题
+   ```bash
+   # 每周一次
+   rm -rf .compile-cache/ .gomodcache/ .cache/
+   docker builder prune -af
+   ```

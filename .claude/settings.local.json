@@ -126,7 +126,10 @@
       "Bash(time ./scripts/build/compile.sh:*)",
       "Bash(docker images:*)",
       "Bash(docker rmi:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(./scripts/build/build-images.sh:*)",
+      "Bash(/Users/pampa/code/addp/scripts/prod/deploy.sh:*)"
     ],
     "deny": [],
     "ask": []
