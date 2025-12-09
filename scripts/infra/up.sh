@@ -98,14 +98,15 @@ echo -e "${YELLOW}▶ 端口占用检查（固定端口，不自动改）${NC}"
 # default desired ports
 PG_PORT=5432
 REDIS_PORT=6379
-MINIO_API_PORT=9002
-MINIO_CONSOLE_PORT=9003
+MINIO_API_PORT=9000
+MINIO_CONSOLE_PORT=9001
 
 port_used_by_container() {
   local port="$1"; local name="$2"
   local ports
   ports=$(docker ps --filter name="^/${name}$" --format '{{.Ports}}' 2>/dev/null || true)
-  if echo "$ports" | grep -q ":${port}->"; then
+  # 支持范围起始 (:9000-> 或 :9000-9001->), 范围结束 (-9001->), 单端口 (:9000->)
+  if echo "$ports" | grep -qE "(^|:)${port}(-[0-9]+)?->|[0-9]+-${port}->"; then
     return 0
   fi
   return 1
@@ -138,13 +139,13 @@ else
   echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 可用${NC}"
 fi
 
-# MinIO（固定 9002/9003）
+# MinIO（固定 9000/9001）
 if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CONSOLE_PORT")" = "busy" ]; then
   if port_used_by_container "$MINIO_API_PORT" "minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "minio"; then
     echo -e "  ${GREEN}MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 minio 使用，继续...${NC}"
   elif port_used_by_container "$MINIO_API_PORT" "business-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "business-minio"; then
     echo -e "  ${RED}✗ 检测到 business-minio 使用了系统保留端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}${NC}"
-    echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9000/9001，然后重启 business。"
+    echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9002/9003，然后重启 business。"
     exit 1
   else
     echo -e "  ${RED}✗ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 被其他进程占用${NC}"
@@ -248,7 +249,7 @@ done
 # MinIO
 printf "%s" "- MinIO      "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf http://localhost:9002/minio/health/live >/dev/null 2>&1; then
+  if curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -287,8 +288,8 @@ echo ""
 echo "访问地址与默认凭据："
 echo "  - PostgreSQL:  localhost:5432  user=addp  password=addp_password  db=addp"
 echo "  - Redis:       localhost:6379  password=addp_redis"
-echo "  - MinIO API:   http://localhost:9002  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
-echo "  - MinIO Console:http://localhost:9003"
+echo "  - MinIO API:   http://localhost:9000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
+echo "  - MinIO Console:http://localhost:9001"
 echo "  - Meilisearch: http://localhost:7700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

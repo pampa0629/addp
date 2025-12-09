@@ -384,7 +384,7 @@ func (s *SpatialPreviewService) ensureMinIOClient(ctx context.Context) error {
 	// MVT 瓦片存储在系统 MinIO（不是业务 MinIO）
 	endpoint := os.Getenv("MINIO_SYSTEM_ENDPOINT")
 	if endpoint == "" {
-		endpoint = "localhost:9002" // 默认值（系统 MinIO API 宿主机端口）
+		endpoint = "localhost:9000" // 默认值（系统 MinIO API 宿主机端口）
 	}
 
 	accessKey := os.Getenv("MINIO_SYSTEM_ACCESS_KEY")

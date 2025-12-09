@@ -1,42 +1,43 @@
 #!/bin/bash
-# ADDP Local Service Restarter
-# 重启单个或所有服务
+# =============================================================================
+# ADDP Local Docker Deployment Restarter
+# =============================================================================
+# Description: Restart ADDP services by stopping and starting them
+# Usage: ./scripts/local/restart.sh [OPTIONS]
+#
+# Options:
+#   --all       Restart both application and infrastructure layers
+#
+# Default behavior: Restart application layer only (keep infrastructure running)
+# =============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SERVICE=$1
-
-# Colors
+# Color codes
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-if [ -z "$SERVICE" ]; then
-    echo -e "${BLUE}🔄 Restarting all services...${NC}"
-    "$SCRIPT_DIR/stop.sh"
-    sleep 2
-    "$SCRIPT_DIR/start.sh"
-else
-    echo -e "${BLUE}🔄 Restarting ${SERVICE}...${NC}"
-
-    PID_DIR="${SCRIPT_DIR}/../../.local-pids"
-    PID_FILE="${PID_DIR}/${SERVICE}.pid"
-
-    # Stop service
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if kill -0 "$PID" 2>/dev/null; then
-            echo "Stopping ${SERVICE} (PID: ${PID})..."
-            kill "$PID"
-            sleep 2
-        fi
-        rm -f "$PID_FILE"
-    fi
-
-    # Restart all to maintain dependency order
-    echo "Restarting all services to maintain dependency order..."
-    "$SCRIPT_DIR/stop.sh"
-    sleep 1
-    "$SCRIPT_DIR/start.sh"
+# Parse arguments
+RESTART_ALL=""
+if [[ "$1" == "--all" ]]; then
+    RESTART_ALL="--all"
 fi
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}🔄 ADDP Local Docker Restart${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+# Stop services (but keep volumes)
+"$SCRIPT_DIR/stop.sh" $RESTART_ALL
+
+# Wait for containers to fully stop
+echo ""
+echo "⏳ Waiting 3 seconds for containers to fully stop..."
+sleep 3
+
+# Start services
+echo ""
+"$SCRIPT_DIR/start.sh"

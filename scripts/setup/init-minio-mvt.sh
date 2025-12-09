@@ -25,10 +25,11 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}🚀 初始化 MinIO MVT 瓦片缓存 Bucket...${NC}"
 
-# MinIO 连接配置（从 .env 读取或使用默认值）
-MINIO_ENDPOINT=${BUSINESS_MINIO_ENDPOINT:-"localhost:9002"}
-MINIO_ACCESS_KEY=${BUSINESS_MINIO_ACCESS_KEY:-"minioadmin"}
-MINIO_SECRET_KEY=${BUSINESS_MINIO_SECRET_KEY:-"minioadmin"}
+# MVT 瓦片存储在系统 MinIO（不是业务 MinIO）
+# 系统 MinIO 端口: 9000 (API), 9001 (Console)
+MINIO_ENDPOINT=${MINIO_SYSTEM_ENDPOINT:-${MINIO_ENDPOINT:-"localhost:9000"}}
+MINIO_ACCESS_KEY=${MINIO_SYSTEM_ACCESS_KEY:-${MINIO_ROOT_USER:-"minioadmin"}}
+MINIO_SECRET_KEY=${MINIO_SYSTEM_SECRET_KEY:-${MINIO_ROOT_PASSWORD:-"minioadmin"}}
 BUCKET_NAME="mvt-tiles"
 
 # 检查 mc 是否安装
@@ -107,7 +108,7 @@ echo ""
 echo "  Bucket 名称: ${BUCKET_NAME}"
 echo "  访问端点: http://${MINIO_ENDPOINT}"
 echo "  访问策略: 公开读 (download)"
-echo "  Web 控制台: http://$(echo ${MINIO_ENDPOINT} | sed 's/:9002/:9003/')"
+echo "  Web 控制台: http://$(echo ${MINIO_ENDPOINT} | sed 's/:9000/:9001/')"
 echo ""
 echo "使用方法:"
 echo "  - 预处理完成后，瓦片将自动存储在此 Bucket"

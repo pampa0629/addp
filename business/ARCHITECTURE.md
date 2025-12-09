@@ -26,14 +26,14 @@ docker-compose.yml
 ### 之后（分离架构）
 
 ```
-主 docker-compose.yml (ADDP System)
-├── postgres (5432)           → 仅系统元数据
-├── redis (6379)              → 缓存和队列
-└── minio-system (9002-9003)  → 仅系统文件
+docker-compose.infra.yml (ADDP System Infrastructure)
+├── postgres (5432)     → 仅系统元数据
+├── redis (6379)        → 缓存和队列
+└── minio (9000-9001)   → 仅系统文件
 
 business/docker-compose.yml (Business Infrastructure - 完全独立)
-├── postgis (5433)            → 仅业务数据 (官方镜像: postgis/postgis:15-3.4-alpine)
-└── minio (9000-9001)         → 仅业务文件 (官方镜像: minio/minio:latest)
+├── postgis (5433)            → 仅业务数据 (官方镜像: postgis/postgis:15-3.4)
+└── minio (9002-9003)         → 仅业务文件 (官方镜像: minio/minio:latest)
 ```
 
 **优势**：
@@ -56,7 +56,7 @@ business/docker-compose.yml (Business Infrastructure - 完全独立)
 - `metadata` schema: 元数据索引、节点树、字典定义
 - `transfer` schema: 传输任务定义、执行历史、映射规则
 
-**MinIO System (系统文件存储 - 端口 9002-9003)**:
+**MinIO System (系统文件存储 - 端口 9000-9001)**:
 - 用户头像
 - 系统配置文件
 - 日志归档文件
@@ -72,7 +72,7 @@ business/docker-compose.yml (Business Infrastructure - 完全独立)
 - **PostGIS 扩展支持**: 空间数据类型、空间索引、空间查询函数
 - **官方镜像**: `postgis/postgis:15-3.4-alpine`
 
-**MinIO Business (业务文件存储 - 端口 9000-9001)**:
+**MinIO Business (业务文件存储 - 端口 9002-9003)**:
 - 用户上传的文件
 - Shapefile 文件及其组成部分（.shp, .dbf, .shx, .prj）
 - GeoJSON、KML、GML 等空间数据文件

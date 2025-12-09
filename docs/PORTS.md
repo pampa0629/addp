@@ -6,34 +6,35 @@
 
 - PostgreSQL: `5432`
 - Redis: `6379`
-- MinIO API: `9002`
-- MinIO Console: `9003`
+- MinIO API: `9000`
+- MinIO Console: `9001`
+- Meilisearch: `7700`
 
 来源：`docker-compose.infra.yml`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
 
 ## Business (业务基础设施)
 
 - PostgreSQL: `5433`
-- MinIO API: `9000`（推荐）
-- MinIO Console: `9001`（推荐）
+- MinIO API: `9002`
+- MinIO Console: `9003`
 
 来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
 
-```
+```bash
 BUSINESS_POSTGRES_PORT=5433
-BUSINESS_MINIO_API_PORT=9000
-BUSINESS_MINIO_CONSOLE_PORT=9001
+BUSINESS_MINIO_API_PORT=9002
+BUSINESS_MINIO_CONSOLE_PORT=9003
 ```
 
 ## Reserved Policy（保留规则）
 
-- System MinIO 使用 9002/9003，Business 侧不得占用这两个端口。
-- Business MinIO 使用 9000/9001，System 侧不得占用这两个端口。
+- **System MinIO 使用 9000/9001**，Business 侧不得占用这两个端口。
+- **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
 - System PostgreSQL 使用 5432；Business PostgreSQL 使用 5433。
 
 脚本约束：
-- `scripts/infra-up.sh`：若检测到 `business-minio` 占用了 9002/9003，将报错并退出，提示修改 `business/.env`。
-- `business/scripts/start.sh`：若配置了 `9002/9003`，将报错并退出，提示改为 `9000/9001`；对 `5433` 端口仅警告不改动。
+- `scripts/infra/up.sh`：若检测到 `business-minio` 占用了 9000/9001，将报错并退出，提示修改 `business/.env`。
+- `business/scripts/start.sh`：若配置了 9000/9001，将报错并退出，提示改为 9002/9003；对 5433 端口仅警告不改动。
 
 ## 快速校验
 

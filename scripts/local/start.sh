@@ -1,148 +1,224 @@
 #!/bin/bash
-# ADDP Local Service Starter
-# 从预编译的 dist/ 二进制文件启动所有服务
+# =============================================================================
+# ADDP Local Docker Deployment Starter
+# =============================================================================
+# Description: Start ADDP services using Docker Compose (infrastructure + app)
+# Usage: ./scripts/local/start.sh
+#
+# Features:
+#   - Idempotent: Can be run multiple times safely
+#   - Checks Docker availability
+#   - Validates required images exist
+#   - Starts infrastructure layer (PostgreSQL, Redis, MinIO, Meilisearch)
+#   - Starts application layer (all backends, frontends, workers, gateway, nginx)
+#   - Waits for health checks before proceeding
+# =============================================================================
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Configuration
-PID_DIR="${ROOT_DIR}/.local-pids"
-LOG_DIR="${ROOT_DIR}/logs/local"
-
-# Detect architecture
-ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/aarch64/arm64/')
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-BUILD_TYPE="${BUILD_TYPE:-release}"
-BUILD_NAME="${BUILD_TYPE}-${OS}-${ARCH}"
-
-# Binary directory
-BIN_DIR="${ROOT_DIR}/dist/${BUILD_NAME}"
-
-# Colors
+# Color codes
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-echo -e "${BLUE}🚀 Starting ADDP services (local mode)${NC}"
-echo -e "${BLUE}📦 Using binaries from: ${BIN_DIR}${NC}"
+# Configuration
+REGISTRY="${REGISTRY:-localhost:5001}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}🚀 ADDP Local Docker Deployment${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Check if binaries exist
-if [ ! -d "$BIN_DIR" ]; then
-    echo -e "${RED}❌ Binaries not found in ${BIN_DIR}${NC}"
-    echo -e "${YELLOW}Run: make build-backend-all OR ./scripts/build/compile.sh${NC}"
-    exit 1
-fi
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
-# Create directories
-mkdir -p "$PID_DIR" "$LOG_DIR"
+# Check if Docker is running
+check_docker() {
+    echo -e "${YELLOW}▶️  Checking Docker status...${NC}"
 
-# Start function
-start_service() {
-    local service=$1
-    local port=$2
-    local deps=$3  # Space-separated dependency services
-
-    local binary="${BIN_DIR}/${service}"
-    local pid_file="${PID_DIR}/${service}.pid"
-    local log_file="${LOG_DIR}/${service}.log"
-
-    # Check if already running
-    if [ -f "$pid_file" ]; then
-        local pid=$(cat "$pid_file")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo -e "${YELLOW}⚠️  ${service} already running (PID: ${pid})${NC}"
-            return 0
-        fi
+    if ! docker info &> /dev/null; then
+        echo -e "${RED}❌ Docker is not running${NC}"
+        echo ""
+        echo -e "${YELLOW}Please start Docker:${NC}"
+        echo "  macOS:  open -a Docker"
+        echo "  Linux:  sudo systemctl start docker"
+        echo ""
+        exit 1
     fi
 
-    # Check dependencies
-    for dep in $deps; do
-        if ! check_service_health "$dep"; then
-            echo -e "${RED}❌ Dependency not ready: ${dep}${NC}"
-            return 1
+    echo -e "${GREEN}✓ Docker is running${NC}"
+}
+
+# Check if required images exist
+check_images() {
+    echo -e "${YELLOW}▶️  Checking required images...${NC}"
+
+    local required_images=(
+        "${REGISTRY}/addp-system-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-manager-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-meta-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-transfer-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-orchestrator-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-develop-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
+        "${REGISTRY}/addp-portal:${IMAGE_TAG}"
+        "${REGISTRY}/addp-nginx:${IMAGE_TAG}"
+    )
+
+    local missing_images=()
+
+    for image in "${required_images[@]}"; do
+        if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${image}$"; then
+            missing_images+=("$image")
         fi
     done
 
-    # Check binary exists
-    if [ ! -f "$binary" ]; then
-        echo -e "${RED}❌ Binary not found: ${binary}${NC}"
-        return 1
+    if [ ${#missing_images[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Missing images:${NC}"
+        for img in "${missing_images[@]}"; do
+            echo -e "  - ${img}"
+        done
+        echo ""
+        echo -e "${YELLOW}Please build images first:${NC}"
+        echo "  bash scripts/build/compile.sh"
+        echo "  bash scripts/build/build-images.sh"
+        echo ""
+        exit 1
     fi
 
-    # Start service
-    echo -e "${GREEN}▶️  Starting ${service} on port ${port}...${NC}"
-
-    cd "${ROOT_DIR}/${service}/backend" 2>/dev/null || cd "${ROOT_DIR}/${service}" || cd "${ROOT_DIR}"
-    nohup "$binary" > "$log_file" 2>&1 &
-    local pid=$!
-    echo "$pid" > "$pid_file"
-
-    # Wait for health check
-    if wait_for_health "http://localhost:${port}/health" 60; then
-        echo -e "${GREEN}✅ ${service} started (PID: ${pid})${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ ${service} failed to start${NC}"
-        echo -e "${YELLOW}Check logs: tail -f $log_file${NC}"
-        return 1
-    fi
+    echo -e "${GREEN}✓ All required images found${NC}"
 }
 
-# Health check function
-check_service_health() {
-    local service=$1
-    local pid_file="${PID_DIR}/${service}.pid"
-
-    [ -f "$pid_file" ] || return 1
-
-    local pid=$(cat "$pid_file")
-    kill -0 "$pid" 2>/dev/null
-}
-
+# Wait for service to be healthy
 wait_for_health() {
     local url=$1
-    local timeout=$2
+    local service_name=$2
+    local timeout=${3:-120}
     local elapsed=0
+
+    echo -e "${YELLOW}⏳ Waiting for ${service_name} to be healthy...${NC}"
 
     while [ $elapsed -lt $timeout ]; do
         if curl -sf "$url" > /dev/null 2>&1; then
+            echo -e "${GREEN}✓ ${service_name} is healthy${NC}"
             return 0
         fi
         sleep 2
         elapsed=$((elapsed + 2))
     done
 
+    echo -e "${RED}⚠️  ${service_name} health check timeout (${timeout}s)${NC}"
+    echo -e "${YELLOW}Note: Service may still be starting. Check logs with:${NC}"
+    echo "  docker compose -f docker-compose.app.yml logs ${service_name}"
     return 1
 }
 
-# Service startup order (system → business → gateway)
-start_service "system" 8080 ""
-start_service "manager" 8081 "system"
-start_service "meta" 8082 "system"
-start_service "transfer" 8083 "system"
-start_service "orchestrator" 8084 "system"
-start_service "develop" 8085 "system"
-start_service "gateway" 8000 "system manager meta"
+# =============================================================================
+# Main Deployment
+# =============================================================================
+
+cd "$ROOT_DIR"
+
+# Step 1: Check Docker
+check_docker
+
+# Step 2: Check images
+check_images
+
+# Step 3: Start infrastructure layer (delegate to infra/up.sh)
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}📦 Starting Infrastructure Layer${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo -e "${YELLOW}▶️  Delegating to scripts/infra/up.sh...${NC}"
+echo ""
+
+# Call the dedicated infrastructure startup script
+# This script handles:
+# - Port conflict checking
+# - Image pulling if needed
+# - Idempotent service startup (skips if already running)
+# - Database/MinIO/Meilisearch initialization
+# - Health checks for all services
+if bash "$SCRIPT_DIR/../infra/up.sh"; then
+    echo ""
+    echo -e "${GREEN}✓ Infrastructure layer ready${NC}"
+else
+    echo -e "${RED}❌ Infrastructure startup failed${NC}"
+    echo -e "${YELLOW}Check logs with: docker compose -f docker-compose.infra.yml logs${NC}"
+    exit 1
+fi
+
+# Step 4: Start application layer
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}🚀 Starting Application Layer${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo -e "${YELLOW}▶️  Starting application services...${NC}"
+docker compose -f docker-compose.app.yml up -d
+
+echo -e "${CYAN}Application services:${NC}"
+docker compose -f docker-compose.app.yml ps
+
+# Wait for key services to be healthy
+echo ""
+echo -e "${YELLOW}⏳ Waiting for key services to be healthy...${NC}"
+
+# Wait for System Backend (critical)
+if docker compose -f docker-compose.app.yml ps system-backend | grep -q "Up"; then
+    wait_for_health "http://localhost:8080/health" "System Backend" 120
+fi
+
+# Wait for Gateway
+if docker compose -f docker-compose.app.yml ps gateway | grep -q "Up"; then
+    wait_for_health "http://localhost:8000/health" "Gateway" 60
+fi
+
+# Wait for Nginx
+if docker compose -f docker-compose.app.yml ps nginx | grep -q "Up"; then
+    wait_for_health "http://localhost:80/health" "Nginx" 30
+fi
+
+# =============================================================================
+# Summary
+# =============================================================================
 
 echo ""
-echo -e "${GREEN}✅ All services started successfully!${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}✅ ADDP Services Started${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
-echo "Service URLs:"
-echo "  Gateway:      http://localhost:8000"
-echo "  System:       http://localhost:8080"
-echo "  Manager:      http://localhost:8081"
-echo "  Meta:         http://localhost:8082"
-echo "  Transfer:     http://localhost:8083"
-echo "  Orchestrator: http://localhost:8084"
-echo "  Develop:      http://localhost:8085"
+
+echo -e "${GREEN}Access URLs:${NC}"
+echo -e "  ${CYAN}Portal (Recommended):${NC} http://localhost:80"
+echo -e "  ${CYAN}Gateway:${NC}              http://localhost:8000"
+echo -e "  ${CYAN}System Backend:${NC}       http://localhost:8080"
 echo ""
-echo "Management commands:"
-echo "  Status:  ./scripts/local/status.sh"
-echo "  Stop:    ./scripts/local/stop.sh"
-echo "  Restart: ./scripts/local/restart.sh [service]"
-echo "  Logs:    tail -f logs/local/*.log"
+
+echo -e "${GREEN}Infrastructure:${NC}"
+echo -e "  ${CYAN}PostgreSQL:${NC}           localhost:5433"
+echo -e "  ${CYAN}Redis:${NC}                localhost:6379"
+echo -e "  ${CYAN}MinIO Console:${NC}        http://localhost:9001"
+echo -e "  ${CYAN}Meilisearch:${NC}          http://localhost:7700"
+echo ""
+
+echo -e "${GREEN}Management Commands:${NC}"
+echo -e "  ${CYAN}Status:${NC}   bash scripts/local/status.sh"
+echo -e "  ${CYAN}Stop:${NC}     bash scripts/local/stop.sh"
+echo -e "  ${CYAN}Restart:${NC}  bash scripts/local/restart.sh"
+echo -e "  ${CYAN}Logs:${NC}     docker compose -f docker-compose.app.yml logs -f [service]"
+echo ""
+
+echo -e "${YELLOW}Note:${NC} Some services may take additional time to fully initialize."
+echo -e "      Use 'status.sh' to check detailed service status."
+echo ""

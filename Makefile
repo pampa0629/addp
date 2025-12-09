@@ -358,8 +358,8 @@ status: ## 显示所有服务状态
 	@echo "$(YELLOW)基础设施服务:$(NC)"
 	@echo "  - PostgreSQL:       localhost:5432"
 	@echo "  - Redis:            localhost:6379"
-	@echo "  - MinIO Console:    http://localhost:9003"
-	@echo "  - MinIO API:        http://localhost:9002"
+	@echo "  - MinIO Console:    http://localhost:9001"
+	@echo "  - MinIO API:        http://localhost:9000"
 
 # ===== 基础设施脚本别名 =====
 infra-up: ## 启动系统库基础设施（带端口预检与健康检查）
@@ -468,7 +468,7 @@ health: ## 检查所有服务健康状态
 	@echo "Redis:"
 	@docker compose -f docker-compose.infra.yml exec redis redis-cli -a addp_redis ping > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 	@echo "MinIO:"
-	@curl -s http://localhost:9002/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
+	@curl -s http://localhost:9000/minio/health/live > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
 
 backup: ## 备份数据库
 	@echo "$(GREEN)备份数据库...$(NC)"

@@ -129,7 +129,15 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(./scripts/build/build-images.sh:*)",
-      "Bash(/Users/pampa/code/addp/scripts/prod/deploy.sh:*)"
+      "Bash(/Users/pampa/code/addp/scripts/prod/deploy.sh:*)",
+      "Bash(docker image inspect:*)",
+      "Bash(timeout 600 bash:*)",
+      "Bash(jq:*)",
+      "Bash(./scripts/build/package.sh:*)",
+      "Bash(du:*)",
+      "Bash(__NEW_LINE__ docker ps --filter name=\"^/postgres$\\|^/redis$\" --format 'table {{.Names}}\\t{{.Ports}}')",
+      "Bash(__NEW_LINE__ docker ps --format 'table {{.Names}}\\t{{.Ports}}')",
+      "Bash(./scripts/infra/up.sh:*)"
     ],
     "deny": [],
     "ask": []

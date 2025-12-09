@@ -245,18 +245,18 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 
 ## package.sh
 
-**用途**: 生成完整的部署包（包含 docker-compose 文件、脚本、配置）
+**用途**: 生成部署包，支持离线部署和镜像仓库部署两种模式
 
 ### 使用方法
 
 ```bash
-# 基本用法（生成到 ./deploy-package）
+# 离线部署包（默认，包含构建脚本）
 ./scripts/build/package.sh
 
-# 指定输出目录
-./scripts/build/package.sh --output ./production-package
+# 镜像仓库部署包（轻量，仅配置文件）
+./scripts/build/package.sh --mode registry
 
-# 指定 Registry
+# 指定 Registry URL
 ./scripts/build/package.sh --registry harbor.example.com:5001
 
 # 自动传输到服务器
@@ -264,8 +264,8 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 
 # 组合使用
 ./scripts/build/package.sh \
-  --output ./package-v1.0.0 \
-  --registry myregistry.com:5001 \
+  --mode offline \
+  --registry localhost:5001 \
   --server ubuntu@production-server
 ```
 
@@ -273,42 +273,124 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 
 | 参数 | 值 | 说明 |
 |------|------|------|
-| `--output` | 目录路径 | 输出目录（默认：`./deploy-package`） |
-| `--registry` | URL | Registry 地址 |
+| `--mode` | `offline` \| `registry` | 部署模式（默认：`offline`） |
+| `--registry` | URL | Registry 地址（默认：`localhost:5001`） |
 | `--server` | `user@host` | 自动传输到远程服务器 |
+
+### 两种部署模式
+
+#### Offline Mode（离线部署）
+
+**适用场景**：服务器无法访问镜像仓库，需要在服务器上本地构建
+
+**包含内容**：
+- 所有配置文件（docker-compose, .env, nginx）
+- 基础设施脚本（scripts/infra/）
+- 生产脚本（scripts/prod/）
+- **构建脚本**（scripts/build/compile.sh, build-images.sh）
+- 业务基础设施（business/）
+- **Tarball 打包**（dist/addp-deploy-offline-{timestamp}.tar.gz）
+
+**部署流程**：
+1. 传输完整包到服务器
+2. 在服务器上编译二进制（compile.sh）
+3. 在服务器上构建镜像（build-images.sh）
+4. 从本地 registry 部署
+
+**优点**：
+- ✅ 无需网络访问镜像仓库
+- ✅ 可针对服务器架构优化编译
+- ✅ 完全自包含
+
+**缺点**：
+- ⚠️ 部署时间较长（需要编译）
+- ⚠️ 服务器需要 Go 和 Docker 构建环境
+
+#### Registry Mode（镜像仓库部署）
+
+**适用场景**：服务器可访问镜像仓库，镜像已预先构建并推送
+
+**包含内容**：
+- 所有配置文件（docker-compose, .env, nginx）
+- 基础设施脚本（scripts/infra/）
+- 生产脚本（scripts/prod/）
+- 业务基础设施（business/）
+- **不包含**构建脚本
+- **不生成** tarball（轻量包）
+
+**部署流程**：
+1. 传输配置包到服务器
+2. 配置 Registry 访问
+3. 从 Registry 拉取镜像
+4. 立即部署
+
+**优点**：
+- ✅ 部署速度快（无需编译）
+- ✅ 服务器无需构建环境
+- ✅ 镜像构建与部署分离
+
+**缺点**：
+- ⚠️ 需要维护镜像仓库
+- ⚠️ 依赖网络访问 Registry
 
 ### 生成的包结构
 
+**Offline Mode**:
 ```
-deploy-package/
+dist/package-offline-{timestamp}/
 ├── docker-compose.infra.yml       # 基础设施配置
-├── docker-compose.app.yml         # 应用服务配置
+├── docker-compose.prod.yml        # 应用服务配置
 ├── .env.example                   # 环境变量模板
 ├── scripts/
-│   ├── prod/
-│   │   ├── start.sh              # 启动脚本
-│   │   ├── stop.sh               # 停止脚本
-│   │   └── health-check.sh       # 健康检查
-│   └── utils/
-│       └── check/                # 验证脚本
-└── README.md                      # 部署说明
+│   ├── infra/                     # 基础设施初始化（含 init-db.sql）
+│   ├── prod/                      # 生产启动脚本
+│   └── build/                     # 构建脚本（仅离线模式）
+│       ├── compile.sh
+│       └── build-images.sh
+├── business/                      # 业务基础设施
+├── nginx/                         # Nginx 配置
+├── README.md                      # 离线部署说明
+└── DEPLOY_INFO.txt                # 部署包元信息
+
+Tarball: dist/addp-deploy-offline-{timestamp}.tar.gz
+```
+
+**Registry Mode**:
+```
+dist/package-registry-{timestamp}/
+├── docker-compose.infra.yml       # 基础设施配置
+├── docker-compose.prod.yml        # 应用服务配置（Registry URLs 已更新）
+├── .env.example                   # 环境变量模板
+├── scripts/
+│   ├── infra/                     # 基础设施初始化
+│   └── prod/                      # 生产启动脚本
+├── business/                      # 业务基础设施
+├── nginx/                         # Nginx 配置
+├── README.md                      # 镜像仓库部署说明
+└── DEPLOY_INFO.txt                # 部署包元信息
+
+（无 tarball，直接 rsync 目录）
 ```
 
 ### 示例
 
 ```bash
-# 场景 1: 本地打包
-./scripts/build/package.sh
+# 场景 1: 离线部署打包
+./scripts/build/package.sh --mode offline
 
-# 场景 2: 生产发布打包
-./scripts/build/package.sh \
-  --output ./release-v1.0.0 \
-  --registry hub.docker.com/myorg
+# 场景 2: 镜像仓库部署打包
+./scripts/build/package.sh --mode registry --registry harbor.example.com:5001
 
-# 场景 3: 打包并传输到服务器
+# 场景 3: 离线部署并传输到服务器
 ./scripts/build/package.sh \
-  --output ./package \
+  --mode offline \
   --server ubuntu@192.168.1.100
+
+# 场景 4: 私有仓库部署
+./scripts/build/package.sh \
+  --mode registry \
+  --registry myregistry.com:5001 \
+  --server ubuntu@production-server
 ```
 
 ---

@@ -37,8 +37,8 @@ fi
 # Preflight port checks with auto-fix
 echo -e "${YELLOW}Checking port availability...${NC}"
 
-API_PORT=${BUSINESS_MINIO_API_PORT:-9000}
-CONSOLE_PORT=${BUSINESS_MINIO_CONSOLE_PORT:-9001}
+API_PORT=${BUSINESS_MINIO_API_PORT:-9002}
+CONSOLE_PORT=${BUSINESS_MINIO_CONSOLE_PORT:-9003}
 PG_PORT=${BUSINESS_POSTGRES_PORT:-5433}
 
 check_port() {
@@ -70,10 +70,10 @@ if [ "$(check_port "$PG_PORT")" = "busy" ]; then
     fi
 fi
 
-# Enforce reserved policy: Business MinIO must NOT use 9002/9003 (system reserved)
-if [ "${API_PORT}" = "9002" ] || [ "${CONSOLE_PORT}" = "9003" ]; then
-    echo -e "${RED}✗ 配置不合法：Business MinIO 端口不能使用 9002/9003（系统保留）。${NC}"
-    echo -e "${YELLOW}请在 business/.env 设置 BUSINESS_MINIO_API_PORT=9000 和 BUSINESS_MINIO_CONSOLE_PORT=9001，然后重试。${NC}"
+# Enforce reserved policy: Business MinIO must use 9002/9003 (NOT 9000/9001 which are system reserved)
+if [ "${API_PORT}" = "9000" ] || [ "${CONSOLE_PORT}" = "9001" ]; then
+    echo -e "${RED}✗ 配置不合法：Business MinIO 端口不能使用 9000/9001（系统 MinIO 保留）。${NC}"
+    echo -e "${YELLOW}请在 business/.env 设置 BUSINESS_MINIO_API_PORT=9002 和 BUSINESS_MINIO_CONSOLE_PORT=9003，然后重试。${NC}"
     exit 1
 fi
 
@@ -153,7 +153,7 @@ done
 # Wait for MinIO
 echo -n "Checking MinIO... "
 for i in {1..30}; do
-    if curl -sf http://localhost:${BUSINESS_MINIO_API_PORT:-9000}/minio/health/live > /dev/null 2>&1; then
+    if curl -sf http://localhost:${BUSINESS_MINIO_API_PORT:-9002}/minio/health/live > /dev/null 2>&1; then
         echo -e "${GREEN}✓${NC}"
         break
     fi
@@ -182,8 +182,8 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Service URLs:"
 echo -e "  PostgreSQL:     localhost:${BUSINESS_POSTGRES_PORT:-5433}"
-echo -e "  MinIO API:      http://localhost:${BUSINESS_MINIO_API_PORT:-9000}"
-echo -e "  MinIO Console:  http://localhost:${BUSINESS_MINIO_CONSOLE_PORT:-9001}"
+echo -e "  MinIO API:      http://localhost:${BUSINESS_MINIO_API_PORT:-9002}"
+echo -e "  MinIO Console:  http://localhost:${BUSINESS_MINIO_CONSOLE_PORT:-9003}"
 echo ""
 echo "Credentials (default):"
 echo -e "  PostgreSQL:  ${BUSINESS_POSTGRES_USER:-business} / ${BUSINESS_POSTGRES_PASSWORD:-business_password}"

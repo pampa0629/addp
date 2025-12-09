@@ -1,44 +1,151 @@
 #!/bin/bash
-# ADDP Local Service Status Checker
+# =============================================================================
+# ADDP Local Docker Deployment Status
+# =============================================================================
+# Description: Show status of ADDP services running in Docker Compose
+# Usage: ./scripts/local/status.sh
+# =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-PID_DIR="${ROOT_DIR}/.local-pids"
-
-# Colors
+# Color codes
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-RED='\033[0;31m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-echo -e "${BLUE}📊 ADDP Local Services Status${NC}"
+cd "$ROOT_DIR"
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}📊 ADDP Docker Services Status${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
 
-SERVICES=("system" "manager" "meta" "transfer" "orchestrator" "develop" "gateway")
+# =============================================================================
+# Infrastructure Layer Status
+# =============================================================================
 
-for service in "${SERVICES[@]}"; do
-    pid_file="${PID_DIR}/${service}.pid"
+echo -e "${CYAN}=== Infrastructure Layer ===${NC}"
+echo ""
 
-    if [ ! -f "$pid_file" ]; then
-        echo -e "${RED}❌ ${service}: Not running (no PID file)${NC}"
-        continue
-    fi
+if docker compose -f docker-compose.infra.yml ps --format json 2>/dev/null | grep -q .; then
+    docker compose -f docker-compose.infra.yml ps
+else
+    echo -e "${YELLOW}No infrastructure services running${NC}"
+fi
 
-    pid=$(cat "$pid_file")
+echo ""
 
-    if kill -0 "$pid" 2>/dev/null; then
-        # Check memory usage
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            mem=$(ps -o rss= -p $pid | awk '{printf "%.1fMB", $1/1024}')
-        else
-            mem=$(ps -o rss= -p $pid | awk '{printf "%.1fMB", $1/1024}')
-        fi
-        echo -e "${GREEN}✅ ${service}: Running (PID: ${pid}, MEM: ${mem})${NC}"
-    else
-        echo -e "${RED}❌ ${service}: Dead (stale PID: ${pid})${NC}"
-    fi
-done
+# =============================================================================
+# Application Layer Status
+# =============================================================================
 
+echo -e "${CYAN}=== Application Layer ===${NC}"
+echo ""
+
+if docker compose -f docker-compose.app.yml ps --format json 2>/dev/null | grep -q .; then
+    docker compose -f docker-compose.app.yml ps
+else
+    echo -e "${YELLOW}No application services running${NC}"
+fi
+
+echo ""
+
+# =============================================================================
+# Service URLs
+# =============================================================================
+
+echo -e "${CYAN}=== Service URLs ===${NC}"
+echo ""
+
+# Check if key services are running
+SYSTEM_RUNNING=$(docker compose -f docker-compose.app.yml ps system-backend --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+GATEWAY_RUNNING=$(docker compose -f docker-compose.app.yml ps gateway --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+NGINX_RUNNING=$(docker compose -f docker-compose.app.yml ps nginx --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+POSTGRES_RUNNING=$(docker compose -f docker-compose.infra.yml ps postgres --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+
+if [ "$NGINX_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Portal (Recommended):  http://localhost:80"
+else
+    echo -e "  ${RED}✗${NC} Portal:                http://localhost:80 ${YELLOW}(not running)${NC}"
+fi
+
+if [ "$GATEWAY_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Gateway:               http://localhost:8000"
+else
+    echo -e "  ${RED}✗${NC} Gateway:               http://localhost:8000 ${YELLOW}(not running)${NC}"
+fi
+
+if [ "$SYSTEM_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} System Backend:        http://localhost:8080"
+else
+    echo -e "  ${RED}✗${NC} System Backend:        http://localhost:8080 ${YELLOW}(not running)${NC}"
+fi
+
+echo ""
+echo -e "${CYAN}Infrastructure:${NC}"
+
+if [ "$POSTGRES_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} PostgreSQL:            localhost:5433"
+else
+    echo -e "  ${RED}✗${NC} PostgreSQL:            localhost:5433 ${YELLOW}(not running)${NC}"
+fi
+
+REDIS_RUNNING=$(docker compose -f docker-compose.infra.yml ps redis --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+if [ "$REDIS_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Redis:                 localhost:6379"
+else
+    echo -e "  ${RED}✗${NC} Redis:                 localhost:6379 ${YELLOW}(not running)${NC}"
+fi
+
+MINIO_RUNNING=$(docker compose -f docker-compose.infra.yml ps minio --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+if [ "$MINIO_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} MinIO Console:         http://localhost:9001"
+else
+    echo -e "  ${RED}✗${NC} MinIO Console:         http://localhost:9001 ${YELLOW}(not running)${NC}"
+fi
+
+MEILISEARCH_RUNNING=$(docker compose -f docker-compose.infra.yml ps meilisearch --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+if [ "$MEILISEARCH_RUNNING" -gt 0 ]; then
+    echo -e "  ${GREEN}✓${NC} Meilisearch:           http://localhost:7700"
+else
+    echo -e "  ${RED}✗${NC} Meilisearch:           http://localhost:7700 ${YELLOW}(not running)${NC}"
+fi
+
+echo ""
+
+# =============================================================================
+# Resource Usage (Top 5 containers by memory)
+# =============================================================================
+
+echo -e "${CYAN}=== Resource Usage (Top 5 by Memory) ===${NC}"
+echo ""
+
+# Get all ADDP containers
+CONTAINER_IDS=$(docker ps --filter "name=addp" --filter "name=postgres" --filter "name=redis" --filter "name=minio" --filter "name=meilisearch" --filter "name=gateway" --filter "name=nginx" --filter "name=system" --filter "name=manager" --filter "name=meta" --filter "name=transfer" --filter "name=orchestrator" --filter "name=develop" --filter "name=portal" --format "{{.ID}}" 2>/dev/null)
+
+if [ -n "$CONTAINER_IDS" ]; then
+    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" $CONTAINER_IDS | head -6
+else
+    echo -e "${YELLOW}No containers found${NC}"
+fi
+
+echo ""
+
+# =============================================================================
+# Management Commands
+# =============================================================================
+
+echo -e "${CYAN}=== Management Commands ===${NC}"
+echo ""
+echo -e "  ${GREEN}Start:${NC}   bash scripts/local/start.sh"
+echo -e "  ${GREEN}Stop:${NC}    bash scripts/local/stop.sh"
+echo -e "  ${GREEN}Restart:${NC} bash scripts/local/restart.sh"
+echo -e "  ${GREEN}Logs:${NC}    docker compose -f docker-compose.app.yml logs -f [service]"
+echo ""
+echo -e "${CYAN}Example:${NC}"
+echo -e "  docker compose -f docker-compose.app.yml logs -f system-backend"
 echo ""

@@ -10,6 +10,7 @@
 #   --skip-cache              Force rebuild without cache
 #   --services SERVICE_LIST   Build specific services (comma-separated)
 #   --multi-arch              Build for both ARM64 and AMD64 (default: native only)
+#   --force                   Force rebuild all images (skip smart cache check)
 #
 # Default behavior: Builds for native platform only (faster, no Docker Hub needed)
 # Use --multi-arch for cross-platform deployment (requires Docker Hub access)
@@ -32,6 +33,7 @@ SERVICES_TO_BUILD="all"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_PLATFORMS="linux/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"  # Native platform by default
 MULTI_ARCH=false
+FORCE_BUILD=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -55,6 +57,10 @@ while [[ $# -gt 0 ]]; do
         --multi-arch)
             MULTI_ARCH=true
             BUILD_PLATFORMS="linux/amd64,linux/arm64"
+            shift
+            ;;
+        --force)
+            FORCE_BUILD=true
             shift
             ;;
         *)
@@ -324,35 +330,79 @@ check_registry() {
     echo -e "${GREEN}✓ Registry is accessible${NC}"
 }
 
-# Function to check if service code has changed
+# Function to check if service needs rebuild
 check_service_changed() {
     local service=$1
     local service_dir=$2
     local image_name="${REGISTRY}/addp-${service}:${IMAGE_TAG}"
+    local cache_dir=".build-cache"
+    local cache_file="${cache_dir}/${service}-${IMAGE_TAG}.timestamp"
 
     # Check if image exists in registry using tags API
     local tags_response=$(curl -s "http://${REGISTRY}/v2/addp-${service}/tags/list")
 
-    if ! echo "$tags_response" | grep -q '"latest"'; then
+    if ! echo "$tags_response" | grep -q "\"${IMAGE_TAG}\""; then
         echo -e "${YELLOW}Image doesn't exist in registry, building...${NC}"
         return 1  # Need to build
     fi
 
-    # Image exists, now check if source code has changed
-    # Get the most recent modification time of source files
-    local latest_source_time=$(find "$service_dir" -type f -name "*.go" -o -name "*.mod" -o -name "*.sum" -o -name "Dockerfile" | xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+    # Create cache directory if it doesn't exist
+    mkdir -p "$cache_dir"
 
-    if [ -z "$latest_source_time" ]; then
-        # Can't determine source modification time, rebuild to be safe
-        echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
-        return 1
+    # Get last build time from cache file (0 if doesn't exist)
+    local last_build_time=0
+    if [ -f "$cache_file" ]; then
+        last_build_time=$(cat "$cache_file" 2>/dev/null || echo "0")
     fi
 
-    # Get image creation time from local Docker (if exists)
-    local image_time=$(docker image inspect "${REGISTRY}/addp-${service}:${IMAGE_TAG}" 2>/dev/null | jq -r '.[0].Created' | date -j -f "%Y-%m-%dT%H:%M:%S" +%s 2>/dev/null || echo "0")
+    # Determine what to compare based on service type
+    local comparison_time=0
 
-    if [ "$latest_source_time" -gt "$image_time" ]; then
-        echo -e "${YELLOW}Source code changed, rebuilding...${NC}"
+    case "$service" in
+        *-backend|gateway|*-worker)
+            # Backend/Worker services: compare binary file time
+            local arch=$(echo "$BUILD_PLATFORMS" | sed 's|linux/||' | cut -d',' -f1)
+            local binary_name
+
+            if [[ "$service" == *-worker ]]; then
+                binary_name="${service%-worker}-worker"  # transfer-worker → transfer-worker
+            elif [ "$service" = "gateway" ]; then
+                binary_name="gateway"
+            else
+                binary_name="${service%-backend}"  # system-backend → system
+            fi
+
+            local binary_path="dist/${BUILD_TYPE:-release}-linux-${arch}/${binary_name}"
+
+            if [ ! -f "$binary_path" ]; then
+                echo -e "${YELLOW}Binary not found at ${binary_path}, rebuilding...${NC}"
+                return 1
+            fi
+
+            comparison_time=$(stat -f "%m" "$binary_path" 2>/dev/null || echo "0")
+            ;;
+
+        *-frontend|portal|nginx)
+            # Frontend services: compare source file time (Dockerfile + source files)
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.vue" -o -name "*.js" -o -name "*.ts" -o -name "Dockerfile" -o -name "nginx.conf" ')' \
+                -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
+        *)
+            echo -e "${YELLOW}Unknown service type, rebuilding...${NC}"
+            return 1
+            ;;
+    esac
+
+    # Compare with last build time
+    if [ "$comparison_time" -gt "$last_build_time" ]; then
+        echo -e "${YELLOW}Changes detected (source newer than last build), rebuilding...${NC}"
         return 1  # Need to rebuild
     else
         echo -e "${GREEN}✓ Image exists and up-to-date, skipping build${NC}"
@@ -504,6 +554,9 @@ build_service() {
             echo -e "${YELLOW}Pushing ${image_name} to registry...${NC}"
             if docker push "${image_name}"; then
                 echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+                # Update build cache timestamp
+                mkdir -p ".build-cache"
+                date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
                 return 0
             else
                 echo -e "${RED}✗ Failed to push ${service}${NC}"
@@ -511,6 +564,9 @@ build_service() {
             fi
         else
             echo -e "${GREEN}✓ Successfully built and pushed ${service}${NC}"
+            # Update build cache timestamp
+            mkdir -p ".build-cache"
+            date +%s > ".build-cache/${service}-${IMAGE_TAG}.timestamp"
             return 0
         fi
     else
@@ -567,10 +623,18 @@ main() {
     echo ""
 
     local failed_services=()
+    local skipped_services=()
 
     # Build each service
     for service_def in "${services[@]}"; do
         IFS=':' read -r service_name service_dir <<< "$service_def"
+
+        # Check if service needs rebuild (unless --force is specified)
+        if [ "$FORCE_BUILD" = false ] && check_service_changed "$service_name" "$service_dir"; then
+            echo -e "${GREEN}✓ Skipping ${service_name} (unchanged)${NC}"
+            skipped_services+=("$service_name")
+            continue
+        fi
 
         if ! build_service "$service_name" "$service_dir"; then
             failed_services+=("$service_name")
@@ -583,8 +647,14 @@ main() {
     echo -e "${BLUE}Build Summary${NC}"
     echo -e "${BLUE}========================================${NC}"
 
+    # Show skipped services if any
+    if [ ${#skipped_services[@]} -gt 0 ]; then
+        echo -e "${GREEN}✓ Skipped ${#skipped_services[@]} unchanged service(s)${NC}"
+    fi
+
     if [ ${#failed_services[@]} -eq 0 ]; then
-        echo -e "${GREEN}✓ All services built successfully${NC}"
+        local built_count=$((${#services[@]} - ${#skipped_services[@]}))
+        echo -e "${GREEN}✓ Successfully built ${built_count} service(s)${NC}"
         echo ""
         echo "Images pushed to: ${REGISTRY}"
         echo "Platforms: ${BUILD_PLATFORMS}"

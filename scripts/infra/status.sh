@@ -35,8 +35,8 @@ get_port() {
 
 PG_PORT=$(get_port postgres 5432 || echo 5432)
 REDIS_PORT=$(get_port redis 6379 || echo 6379)
-MINIO_API_PORT=$(get_port minio 9000 || echo 9002)
-MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 9003)
+MINIO_API_PORT=$(get_port minio 9000 || echo 9000)
+MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 9001)
 
 # Postgres
 printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
