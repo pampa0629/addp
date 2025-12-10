@@ -91,3 +91,61 @@ type ScanTaskRunView struct {
 	ResourceName string `json:"resource_name,omitempty"`
 	ResourceType string `json:"resource_type,omitempty"`
 }
+
+// MetadataTreeResponse 元数据树响应（用于 Manager 查询）
+type MetadataTreeResponse struct {
+	TopNodes   []MetaNodeLite `json:"top_nodes"`
+	ChildNodes []MetaNodeLite `json:"child_nodes"`
+	Items      []MetaItemLite `json:"items"`
+}
+
+// MetaNodeLite 元数据节点简化模型（用于返回给 Manager）
+type MetaNodeLite struct {
+	ID             uint                   `json:"id"`
+	TenantID       uint                   `json:"tenant_id"`
+	ResID          uint                   `json:"res_id"`
+	ParentNodeID   *uint                  `json:"parent_node_id,omitempty"`
+	NodeType       string                 `json:"node_type"`
+	Name           string                 `json:"name"`
+	FullName       string                 `json:"full_name"`
+	Depth          int                    `json:"depth"`
+	Path           string                 `json:"path"`
+	ScanStatus     string                 `json:"scan_status"`
+	LastScanAt     *string                `json:"last_scan_at,omitempty"`
+	ItemCount      int                    `json:"item_count"`
+	TotalSizeBytes int64                  `json:"total_size_bytes"`
+	Attributes     map[string]interface{} `json:"attributes,omitempty"`
+}
+
+// MetaItemLite 元数据项简化模型（用于返回给 Manager）
+type MetaItemLite struct {
+	ID              uint                   `json:"id"`
+	TenantID        uint                   `json:"tenant_id"`
+	ResID           uint                   `json:"res_id"`
+	NodeID          uint                   `json:"node_id"`
+	ItemType        string                 `json:"item_type"`
+	Name            string                 `json:"name"`
+	FullName        string                 `json:"full_name"`
+	RowCount        *int64                 `json:"row_count,omitempty"`
+	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
+	ObjectSizeBytes *int64                 `json:"object_size_bytes,omitempty"`
+	LastModifiedAt  *string                `json:"last_modified_at,omitempty"`
+	Attributes      map[string]interface{} `json:"attributes,omitempty"`
+}
+
+// SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
+type SpatialMetadataResponse struct {
+	GeometryColumn string                   `json:"geometry_column"`
+	SRID           int                      `json:"srid"`
+	ExtentSRID     int                      `json:"extent_srid"`
+	Extent         []float64                `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	PrimaryKey     string                   `json:"primary_key"`
+	Fields         []FieldInfo              `json:"fields"`
+}
+
+// FieldInfo 字段信息
+type FieldInfo struct {
+	Name         string `json:"name"`
+	DataType     string `json:"data_type"`
+	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
+}

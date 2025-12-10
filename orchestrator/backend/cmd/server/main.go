@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
@@ -37,15 +38,25 @@ func main() {
 	orchRepo := repository.NewOrchestrationRepository(db)
 	execRepo := repository.NewExecutionRepository(db)
 
-	// 初始化 ModuleClient
+	// 初始化 EngineRegistry（从 System 动态加载引擎）
+	engineRegistry := service.NewEngineRegistry(
+		cfg.SystemServiceURL,
+		cfg.InternalAPIKey,
+		5*time.Minute, // 缓存 TTL
+	)
+
+	// 初始化 TaskClient（通用任务客户端）
+	taskClient := service.NewTaskClient(30 * time.Second)
+
+	// 初始化 ModuleClient（向后兼容旧的硬编码模式）
 	moduleClient := service.NewModuleClient(map[string]string{
 		"transfer": cfg.TransferServiceURL,
 		"meta":     cfg.MetaServiceURL,
 		"manager":  cfg.ManagerServiceURL,
 	})
 
-	// 初始化 Executor
-	executor := service.NewExecutor(execRepo, orchRepo, moduleClient)
+	// 初始化 Executor（支持新旧两种模式）
+	executor := service.NewExecutor(execRepo, orchRepo, engineRegistry, taskClient, moduleClient)
 
 	// 初始化 Scheduler
 	scheduler := service.NewScheduler(orchRepo, execRepo, executor)
@@ -55,6 +66,7 @@ func main() {
 	defer scheduler.Stop()
 
 	log.Println("✅ 调度器启动成功")
+	log.Println("✅ 引擎注册表已初始化（从 System 动态加载）")
 
 	// 设置路由
 	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient)

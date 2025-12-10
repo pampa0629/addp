@@ -235,11 +235,12 @@ const isDevelopment = import.meta.env.DEV
 const protocol = window.location.protocol
 const hostname = window.location.hostname
 const moduleUrls = {
-  system: isDevelopment ? `${protocol}//${hostname}:5173` : `${protocol}//${hostname}:8090`,
-  manager: isDevelopment ? `${protocol}//${hostname}:5174` : `${protocol}//${hostname}:8091`,
-  meta: isDevelopment ? `${protocol}//${hostname}:5175` : `${protocol}//${hostname}:8092`,
-  transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}:8093`,
-  orchestrator: isDevelopment ? `${protocol}//${hostname}:5177` : `${protocol}//${hostname}:8094`
+  system: isDevelopment ? `${protocol}//${hostname}:5173` : `${protocol}//${hostname}/system`,
+  manager: isDevelopment ? `${protocol}//${hostname}:5174` : `${protocol}//${hostname}/manager`,
+  meta: isDevelopment ? `${protocol}//${hostname}:5175` : `${protocol}//${hostname}/meta`,
+  transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}/transfer`,
+  orchestrator: isDevelopment ? `${protocol}//${hostname}:5177` : `${protocol}//${hostname}/orchestrator`,
+  develop: isDevelopment ? `${protocol}//${hostname}:5178` : `${protocol}//${hostname}/develop`
 }
 
 onMounted(async () => {

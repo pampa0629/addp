@@ -27,6 +27,7 @@ type MetadataService struct {
 	metadataRepo   *repository.MetadataRepository
 	resourceRepo   *repository.ResourceRepository
 	systemClient   *commonClient.SystemClient
+	metaClient     *commonClient.MetaClient
 	previews       *PreviewRegistry
 	content        *ObjectContentRegistry
 	metaServiceURL string
@@ -45,7 +46,7 @@ type ExplorerNodeRefreshRequest struct {
 	ResourceType string `json:"resource_type"`
 }
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
+func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
 	pr := previewRegistry
 	if pr == nil {
 		pr = NewPreviewRegistry()
@@ -61,6 +62,7 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRep
 		metadataRepo:   metadataRepo,
 		resourceRepo:   resourceRepo,
 		systemClient:   systemClient,
+		metaClient:     metaClient,
 		previews:       pr,
 		content:        cr,
 		metaServiceURL: strings.TrimRight(metaServiceURL, "/"),
@@ -607,7 +609,7 @@ func (s *MetadataService) GetLegacyResourceTree(tenantID *uint) ([]models.DataEx
 }
 
 func (s *MetadataService) buildResourceTree(resource *models.Resource) (*models.DataExplorerResource, error) {
-	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID)
+	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID, s.metaClient)
 	if err != nil {
 		if errors.Is(err, repository.ErrMetadataSchemaMissing) {
 			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "resource_id", resource.ID)

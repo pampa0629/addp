@@ -797,7 +797,7 @@ filter: ['==', ['get', 'category'], 'building']
 
 ### 5. 部署架构
 
-#### 5.1 业务基础设施扩展
+#### 5.1 业务库扩展
 
 ```yaml
 # business/docker-compose.yml (新增 PostGIS)
@@ -1061,7 +1061,7 @@ CMD ["/app/transfer-server"]
 ## 附录：快速启动命令
 
 ```bash
-# 1. 启动业务基础设施 (含 PostGIS)
+# 1. 启动业务库 (含 PostGIS)
 cd business
 docker-compose up -d
 

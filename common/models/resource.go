@@ -67,6 +67,14 @@ type Resource struct {
 	ScanConfig     *ScanConfig    `gorm:"column:scan_config;type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）
 	IsActive       bool           `gorm:"column:is_active" json:"is_active"`
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
+
+	// 能力注册字段（用于计算引擎）
+	UniqueIdentifier  *string `gorm:"column:unique_identifier" json:"unique_identifier,omitempty"`
+	IsBuiltin         bool    `gorm:"column:is_builtin" json:"is_builtin"`
+	Capabilities      *string `gorm:"column:capabilities" json:"capabilities,omitempty"`           // JSONB 字符串
+	TaskAPIConfig     *string `gorm:"column:task_api_config" json:"task_api_config,omitempty"`     // JSONB 字符串
+	HealthCheckConfig *string `gorm:"column:health_check_config" json:"health_check_config,omitempty"` // JSONB 字符串
+
 	// Status 字段不存在于 system.resources 表中，移除
 }
 

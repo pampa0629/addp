@@ -6,7 +6,7 @@
 1. ✅ 所有 ADDP 应用镜像已推送（7个）
 2. ✅ 所有基础设施镜像已推送（4个）
 3. ✅ PostgreSQL 使用自定义镜像（包含初始化脚本，无需文件挂载）
-4. ✅ docker-compose.prod.yml 已更新
+4. ✅ docker-compose.yml 已更新
 5. ✅ 所有推送脚本已修复
 
 ### 📦 Registry 镜像清单（12个）
@@ -43,15 +43,15 @@
 #### 方式 B: 使用 U 盘
 
 1. 复制以下文件到 U 盘:
-   - `docker-compose.prod.yml`
-   - `business/docker-compose.prod.yml`
+   - `docker-compose.yml`
+   - `business/docker-compose.yml`
    - 使用 `scripts/deploy/deploy-all.sh` 无需单独传输部署脚本
 
 2. 在服务器上：
 ```bash
 # 假设 U 盘挂载在 /Volumes/USB
-cp /Volumes/USB/docker-compose.prod.yml ~/addp/
-cp /Volumes/USB/docker-compose.prod.yml ~/addp/business/
+cp /Volumes/USB/docker-compose.yml ~/addp/
+cp /Volumes/USB/docker-compose.yml ~/addp/business/
 # 使用一键部署脚本无需单独传输部署脚本
 ```
 
@@ -86,7 +86,7 @@ cd ~/addp
 
 ```bash
 # 查看所有容器状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 
 # 应该看到所有服务都是 Up 状态:
 # NAME                     STATE
@@ -99,7 +99,7 @@ docker-compose -f docker-compose.prod.yml ps
 # ...
 
 # 查看日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.yml logs -f
 
 # 测试访问
 curl http://localhost:8080/health  # System backend
@@ -212,7 +212,7 @@ docker ps | grep registry
 
 **错误**: `port is already allocated`
 
-**解决**: 修改 docker-compose.prod.yml 中的端口映射
+**解决**: 修改 docker-compose.yml 中的端口映射
 
 ```yaml
 ports:
@@ -251,8 +251,8 @@ ports:
 # 在服务器重新拉取和部署
 ssh pampa@192.168.31.174
 cd ~/addp
-REGISTRY=192.168.31.238:5001 docker-compose -f docker-compose.prod.yml pull
-docker-compose -f docker-compose.prod.yml up -d
+REGISTRY=192.168.31.238:5001 docker-compose -f docker-compose.yml pull
+docker-compose -f docker-compose.yml up -d
 ```
 
 ---

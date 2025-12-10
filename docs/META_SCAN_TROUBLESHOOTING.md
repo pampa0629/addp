@@ -117,11 +117,14 @@ tail -f logs/meta-backend.log
 
 ### 方案4: 测试数据库连接
 
-运行连接测试脚本：
+使用 psql 测试连接：
 
 ```bash
-cd scripts
-go run test-db-connection.go
+# 测试业务数据库连接
+PGPASSWORD=business_password psql -h localhost -p 5433 -U business -d business -c "SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast') ORDER BY schema_name;"
+
+# 测试查询表
+PGPASSWORD=business_password psql -h localhost -p 5433 -U business -d business -c "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;"
 ```
 
 ### 方案5: 增加详细日志
@@ -162,4 +165,5 @@ s.log.Info("扫描表完成",
 1. **立即执行**: 运行 `./scripts/debug/scan/debug.sh` 确认问题
 2. **验证配置**: 检查 `.env` 中的 `ENCRYPTION_KEY`
 3. **重新扫描**: 在UI触发扫描，观察 `logs/meta-backend.log`
-4. **如果仍失败**: 运行 `scripts/test-db-connection.go` 测试连接
+4. **如果仍失败**: 使用 `psql` 命令测试数据库连接（见上面"方案4"）
+

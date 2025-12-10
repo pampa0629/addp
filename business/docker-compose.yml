@@ -1,45 +1,30 @@
-# Business Infrastructure Services
-# 业务数据存储服务 - 独立部署，服务于所有业务数据
+# Business Database Services
+# 业务库服务 - 存储用户业务数据
 #
 # 包含服务:
-# - postgres: 业务数据库（用于存储实际业务数据，如用户上传的数据源）
-# - minio: 业务对象存储（用于存储用户上传的文件、shapefile等业务数据）
+# - postgres: 业务数据库（PostGIS 支持空间数据）
+# - minio: 业务对象存储（用户文件）
 #
 # 使用方法:
-#   docker-compose up -d              # 启动业务基础设施
-#   docker-compose down               # 停止服务
-#   docker-compose logs -f postgres   # 查看数据库日志
-#   docker-compose logs -f minio      # 查看MinIO日志
+#   docker-compose up -d    # 启动
+#   docker-compose down     # 停止
+#   docker-compose logs -f  # 查看日志
 
 services:
-  # PostgreSQL with PostGIS - 业务数据库
-  # 用于存储用户上传的实际业务数据（通过 ADDP 管理的各类数据源）
-  # 镜像根据CPU架构自动选择:
-  #   - ARM64: imresamu/postgis-arm64:15-3.4
-  #   - AMD64: postgis/postgis:15-3.4
   postgres:
-    image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
+    image: ${POSTGRES_IMAGE:-postgis/postgis:15-3.4}
     container_name: business-postgres
     environment:
-      POSTGRES_USER: ${BUSINESS_POSTGRES_USER:-business}
-      POSTGRES_PASSWORD: ${BUSINESS_POSTGRES_PASSWORD:-business_password}
-      POSTGRES_DB: ${BUSINESS_POSTGRES_DB:-business}
-    command: >
-      postgres
-      -c shared_buffers=256MB
-      -c work_mem=16MB
-      -c maintenance_work_mem=128MB
-      -c max_worker_processes=16
-      -c max_parallel_workers=8
-      -c max_parallel_workers_per_gather=4
+      POSTGRES_USER: ${POSTGRES_USER:-business}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-business_password}
+      POSTGRES_DB: ${POSTGRES_DB:-business}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
-      - "${BUSINESS_POSTGRES_PORT:-5433}:5432"
-    shm_size: 512mb
+      - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${BUSINESS_POSTGRES_USER:-business}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-business}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,20 +32,16 @@ services:
       - business-network
     restart: unless-stopped
 
-  # MinIO - 业务对象存储
-  # 用于存储用户上传的文件、shapefile、图片、视频等业务数据
-  # MinIO 官方镜像支持多架构，自动适配当前 CPU
   minio:
     image: minio/minio:latest
-    platform: ${DOCKER_PLATFORM:-linux/arm64}  # 自动适配 CPU 架构
     container_name: business-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${BUSINESS_MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${BUSINESS_MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
-      - "${BUSINESS_MINIO_API_PORT:-9002}:9000"     # API端口 (宿主机9002 -> 容器9000)
-      - "${BUSINESS_MINIO_CONSOLE_PORT:-9003}:9001" # 控制台端口 (宿主机9003 -> 容器9001)
+      - "${MINIO_API_PORT:-9002}:9000"
+      - "${MINIO_CONSOLE_PORT:-9003}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -74,11 +55,8 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
   minio_data:
-    driver: local
 
 networks:
   business-network:
     driver: bridge
-    name: business-network

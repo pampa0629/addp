@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/middleware"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
@@ -27,6 +28,13 @@ func NewHandler(resourceService *service.ResourceService, scanService *service.S
 		scanService:     scanService,
 		taskService:     taskService,
 	}
+}
+
+// handleServiceError 统一处理 Service 层错误，返回合适的 HTTP 状态码
+func (h *Handler) handleServiceError(c *gin.Context, err error) {
+	statusCode := metaErrors.HTTPStatusCode(err)
+	message := metaErrors.ErrorMessage(err)
+	c.JSON(statusCode, gin.H{"error": message})
 }
 
 // GetObjectMetadata 获取对象的元数据
@@ -690,4 +698,179 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "资源缓存已刷新",
 	})
+}
+
+// ========== 新增：用于 Manager 模块的元数据查询接口 ==========
+
+// GetMetadataTree 获取资源的完整元数据树
+// GET /api/meta/resources/:resource_id/tree
+func (h *Handler) GetMetadataTree(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Param("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	tree, err := h.scanService.GetMetadataTree(tenantID, uint(resourceID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": tree})
+}
+
+// GetMetaNodeByID 获取单个节点详情
+// GET /api/meta/nodes/:node_id
+func (h *Handler) GetMetaNodeByID(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	nodeIDStr := c.Param("node_id")
+	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node_id"})
+		return
+	}
+
+	node, err := h.scanService.GetMetaNodeByID(tenantID, uint(nodeID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": node})
+}
+
+// GetNodeChildren 获取节点的子节点
+// GET /api/meta/nodes/:node_id/children
+func (h *Handler) GetNodeChildren(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	nodeIDStr := c.Param("node_id")
+	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node_id"})
+		return
+	}
+
+	nodes, err := h.scanService.GetNodeChildren(tenantID, uint(nodeID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": nodes})
+}
+
+// GetNodeItems 获取节点下的项目
+// GET /api/meta/nodes/:node_id/items
+func (h *Handler) GetNodeItems(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	nodeIDStr := c.Param("node_id")
+	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid node_id"})
+		return
+	}
+
+	items, err := h.scanService.GetNodeItems(tenantID, uint(nodeID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": items})
+}
+
+// QueryNodeByPath 按路径查询节点
+// GET /api/meta/nodes/by-path?resource_id=X&path=Y
+func (h *Handler) QueryNodeByPath(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	path := c.Query("path")
+	if path == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing path parameter"})
+		return
+	}
+
+	node, err := h.scanService.GetNodeByPath(tenantID, uint(resourceID), path)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": node})
+}
+
+// QueryItemByPath 按路径查询项目（对象存储）
+// GET /api/meta/items/by-path?resource_id=X&bucket=Y&path=Z
+func (h *Handler) QueryItemByPath(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	bucket := c.Query("bucket")
+	if bucket == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing bucket parameter"})
+		return
+	}
+
+	path := c.Query("path")
+
+	item, err := h.scanService.GetItemByPath(tenantID, uint(resourceID), bucket, path)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": item})
+}
+
+// GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
+// GET /api/meta/metadata/tables/spatial?resource_id=X&schema=Y&table=Z
+func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
+	tenantID := middleware.GetTenantID(c)
+
+	resourceIDStr := c.Query("resource_id")
+	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
+		return
+	}
+
+	schema := c.Query("schema")
+	if schema == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing schema parameter"})
+		return
+	}
+
+	table := c.Query("table")
+	if table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing table parameter"})
+		return
+	}
+
+	spatialMeta, err := h.scanService.GetTableSpatialMetadata(tenantID, uint(resourceID), schema, table)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": spatialMeta})
 }

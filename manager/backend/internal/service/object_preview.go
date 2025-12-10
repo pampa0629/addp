@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
@@ -56,13 +57,15 @@ func mergeJSONMaps(maps ...models.JSONMap) models.JSONMap {
 
 type objectStoragePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
+	metaClient   *commonClient.MetaClient
 	content      *ObjectContentRegistry
 	priority     int
 }
 
-func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, content *ObjectContentRegistry) PreviewProvider {
+func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, content *ObjectContentRegistry) PreviewProvider {
 	return &objectStoragePreviewProvider{
 		metadataRepo: metadataRepo,
+		metaClient:   metaClient,
 		content:      content,
 		priority:     95,
 	}
@@ -134,19 +137,19 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	var node *models.MetaNodeLite
 
 	if objectPath != "" {
-		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath); err == nil {
+		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath, p.metaClient); err == nil {
 			item = fetchedItem
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, p.metaClient); err == nil {
 			node = fetchedNode
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 	} else {
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, p.metaClient); err == nil {
 			node = fetchedNode
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err

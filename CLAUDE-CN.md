@@ -129,7 +129,7 @@ Gateway (API 路由)
 - **容器化**: Docker + Docker Compose
 - **反向代理**: Nginx (生产环境), Gateway 服务 (API 路由)
 - **数据库 Schema 隔离**: PostgreSQL schemas (manager, metadata, transfer)
-- **数据分离**: 系统基础设施 (ADDP 元数据) + 业务基础设施 (用户数据) 独立部署
+- **数据分离**: 系统基础设施 (ADDP 元数据) + 业务库 (用户数据) 独立部署
 
 ### 基础设施架构
 
@@ -154,7 +154,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
   * 默认 5433 避免与本地 PostgreSQL 冲突，可配置为 5432
 
 ┌─────────────────────────────────────────────────────────────┐
-│  业务基础设施 (business/docker-compose.yml)                 │
+│  业务库 (business/docker-compose.yml)                 │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐                        │
 │  │ postgres     │  │ minio        │                        │
@@ -173,7 +173,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 - **minio**: 存储系统文件 (用户头像、系统配置、模块化 buckets)
 - **meilisearch**: 全文检索引擎 (元数据资产搜索、文件索引)
 
-**业务基础设施** (business/docker-compose.yml，独立部署):
+**业务库** (business/docker-compose.yml，独立部署):
 
 - `postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
 - `minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
@@ -182,7 +182,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 - ✅ 数据隔离: 系统数据与业务数据物理分离
 - ✅ 独立扩展: 业务数据量增长时可单独扩展
 - ✅ 安全性: 业务数据库可配置更严格的访问控制
-- ✅ 可替换性: 业务基础设施可替换为云服务 (RDS、OSS)
+- ✅ 可替换性: 业务库可替换为云服务 (RDS、OSS)
 - ✅ 端口隔离: 避免端口冲突，支持本地服务和容器服务并存
 
 **基础设施管理**:
@@ -592,7 +592,7 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 | MinIO System API | 9000 | 9000 | 系统文件存储 |
 | MinIO System Console | 9001 | 9001 | 系统 MinIO Web UI |
 
-**业务基础设施服务** (通过 `business/docker-compose.yml` 部署):
+**业务库服务** (通过 `business/docker-compose.yml` 部署):
 
 | 服务 | Docker 端口 | 描述 |
 |------|-------------|------|
@@ -602,7 +602,7 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 
 **推荐访问**: 使用 **http://localhost:5170** 的 Portal 获得统一体验
 
-**业务基础设施设置**:
+**业务库设置**:
 ```bash
 cd business
 cp .env.example .env
@@ -665,12 +665,12 @@ func TestResourceService_Create(t *testing.T) {
 
 ## Docker 部署
 
-### 业务基础设施 (首先部署)
+### 业务库 (首先部署)
 
-业务基础设施需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
+业务库需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
 
 ```bash
-# 1. 首先部署业务基础设施
+# 1. 首先部署业务库
 cd business
 cp .env.example .env
 # 编辑 .env 配置密码
@@ -693,7 +693,7 @@ make down           # 停止服务
 ### 完整平台
 
 ```bash
-# 从项目根目录 (确保业务基础设施已运行)
+# 从项目根目录 (确保业务库已运行)
 make up-full        # 使用 --profile full 启动所有服务
 make status         # 检查所有服务状态
 make logs           # 查看所有日志
@@ -720,7 +720,7 @@ docker-compose up -d    # 重启
 - Redis: `redis_data` 卷 (缓存和队列)
 - MinIO System: `minio_system_data` 卷 (系统文件)
 
-**业务基础设施** (business/docker-compose.yml):
+**业务库** (business/docker-compose.yml):
 - PostgreSQL: `business_postgres_data` 卷 (用户业务数据)
 - MinIO Business: `business_minio_data` 卷 (用户文件)
 
@@ -1111,11 +1111,33 @@ make clean-all           # 删除所有数据和卷 (破坏性)
 - [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common 模块使用
 
 ### 构建 & 部署
+
 - [`Makefile`](Makefile) - 项目级编排命令
-- [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema 初始化
-- [`scripts/dev/start.sh`](scripts/dev/start.sh) - 开发启动脚本 (按顺序启动所有服务)
-- [`scripts/dev/stop.sh`](scripts/dev/stop.sh) - 开发停止脚本 (停止所有服务)
-- [`scripts/dev/run.sh`](scripts/dev/run.sh) - 本地开发助手 (旧版)
+- [`scripts/`](scripts/) - 开发、构建、部署的所有自动化脚本
+  - [`scripts/infra/`](scripts/infra/) - 基础设施管理 (PostgreSQL, Redis, MinIO, Meilisearch)
+    - `up.sh` - 启动基础设施 + 自动初始化
+    - `down.sh` - 停止基础设施
+    - `status.sh` - 检查服务健康状态
+    - `init-db.sh` - 初始化数据库 schemas
+  - [`scripts/dev/`](scripts/dev/) - 开发模式脚本 (直接运行 Go/npm 进程)
+    - `start.sh` - 启动完整开发环境 (基础设施 + 后端 + 前端)
+    - `stop.sh` - 停止所有开发服务
+    - `restart.sh` - 重启所有服务
+    - `modtidy.sh` - 清理 Go 模块依赖
+  - [`scripts/build/`](scripts/build/) - 编译和 Docker 镜像构建
+    - `compile.sh` - 编译 Go 二进制文件 (go build)
+    - `build-images.sh` - 构建 Docker 镜像 (docker build)
+    - `package.sh` - 打包部署产物 (docker save/push)
+  - [`scripts/local/`](scripts/local/) - 本地 Docker Compose 部署
+    - `start.sh` - 通过 Docker Compose 启动完整平台
+    - `stop.sh` - 停止 Docker 服务
+    - `status.sh` - 查看容器状态和资源使用
+  - [`scripts/prod/`](scripts/prod/) - 生产环境部署脚本
+    - `start.sh` - 启动生产环境 (分步执行)
+    - `stop.sh` - 停止生产服务
+    - `health-check.sh` - 健康监控
+    - `swarm/` - Docker Swarm 高可用部署
+  - 详见 [`scripts/README.md`](scripts/README.md) 完整脚本文档
 
 ### 关键源文件
 - System auth: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)

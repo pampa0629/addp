@@ -10,6 +10,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
@@ -68,10 +69,28 @@ func main() {
 	resourceCacheService := service.NewResourceCacheService(cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
 	_ = resourceCacheService // TODO: 集成到 metadataService 中使用
 
+	// 初始化缓存管理器和扫描事件处理器（用于 Meta 扫描完成后自动刷新缓存）
+	var scanEventHandler *service.ScanEventHandler
+	if redisClient != nil {
+		cacheManager := service.NewCacheManager(metadataRepo, redisClient)
+		scanEventHandler = service.NewScanEventHandler(cacheManager, redisClient)
+		logger.L().Info("扫描事件订阅已启动，将自动清理扫描完成的资源缓存")
+	}
+
 	// 初始化 System 客户端（用于拉取解密的资源连接信息）
 	var systemClient *commonClient.SystemClient
 	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	}
+
+	// 初始化 Meta 客户端（用于查询元数据）
+	var metaClient *commonClient.MetaClient
+	if cfg.EnableMetaIntegration && cfg.InternalAPIKey != "" && cfg.MetaServiceURL != "" {
+		metaClient = commonClient.NewMetaClientWithInternalKey(cfg.MetaServiceURL, cfg.InternalAPIKey)
+		logger.L().Info("MetaClient 已初始化",
+			"meta_url", cfg.MetaServiceURL)
+	} else {
+		logger.L().Warn("Meta 集成未启用或配置不完整，元数据查询功能将不可用")
 	}
 
 	contentRegistry := service.NewObjectContentRegistry()
@@ -85,19 +104,19 @@ func main() {
 	previewRegistry := service.NewPreviewRegistry()
 
 	// 注册内置预览插件（通过 init() 自动注册到全局注册表）
-	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, contentRegistry); err != nil {
+	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, metaClient, contentRegistry); err != nil {
 		logger.L().Error("注册内置预览插件失败", "error", err)
 		os.Exit(1)
 	}
 
 	// 加载外部插件（从配置目录）
-	service.LoadPreviewPlugins(previewRegistry, metadataRepo, contentRegistry, cfg.PreviewPluginDir)
+	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.PreviewPluginDir)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services
 	resourceService := service.NewResourceService(resourceRepo)
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
-	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
+	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
 	searchService, err := service.NewFullTextSearchService(cfg)
 	if err != nil {
 		logger.L().Error("初始化全文检索服务失败", "error", err)
@@ -119,7 +138,7 @@ func main() {
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 
 	// 初始化 Quick View 服务（依赖 Redis 和数据库）
-	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient)
+	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient)
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
@@ -127,12 +146,23 @@ func main() {
 
 	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient)
 
+	// 注册能力到 System 模块（在服务启动后）
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
+		go registerCapabilities(cfg)
+	}
+
 	// ✅ 注册优雅关闭处理器（关闭所有数据库连接池）
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
 		logger.L().Info("收到关闭信号，正在清理资源...")
+
+		// 停止扫描事件订阅
+		if scanEventHandler != nil {
+			scanEventHandler.Stop()
+		}
+
 		if err := mvtService.Close(); err != nil {
 			logger.L().Error("关闭数据库连接池失败", "error", err)
 		} else {
@@ -163,4 +193,89 @@ func buildContentDirSpec(dirs []string) string {
 		contentDirs = append(contentDirs, filepath.Join(trimmed, "content"))
 	}
 	return strings.Join(contentDirs, ",")
+}
+
+// registerCapabilities 注册 Manager 模块的能力到 System
+func registerCapabilities(cfg *config.Config) {
+	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+
+	// 构建能力声明
+	capabilities := &commonModels.Capability{
+		Compute: []commonModels.ComputeCapability{
+			{
+				Type:             "cache.tile",
+				SupportedSources: []string{"postgresql", "geojson", "shapefile"},
+				Features:         []string{"async", "zoom_range", "bbox_filter", "mvt"},
+			},
+		},
+	}
+
+	// 构建任务 API 配置
+	baseURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	taskAPIConfig := &commonModels.TaskAPIConfig{
+		BaseURL: baseURL,
+		Endpoints: map[string]commonModels.APIEndpoint{
+			"create": {
+				Method: "POST",
+				Path:   "/api/quick-view",
+				BodyTemplate: map[string]interface{}{
+					"tenant_id":  "{{.TenantID}}",
+					"table_name": "{{.TableName}}",
+					"min_zoom":   "{{.MinZoom}}",
+					"max_zoom":   "{{.MaxZoom}}",
+				},
+			},
+			"status": {
+				Method: "GET",
+				Path:   "/api/quick-view/status",
+				QueryParams: map[string]string{
+					"table_name": "{{.TableName}}",
+				},
+				ResponseMapping: &commonModels.ResponseMapping{
+					StatusField:   "status",
+					MessageField:  "error_message",
+					ProgressField: "progress",
+					TaskIDField:   "id",
+				},
+			},
+			"list": {
+				Method: "GET",
+				Path:   "/api/quick-view/list",
+				QueryParams: map[string]string{
+					"tenant_id": "{{.TenantID}}",
+				},
+			},
+		},
+		Timeout: map[string]int{
+			"create": 30,
+			"status": 10,
+			"list":   10,
+		},
+	}
+
+	// 健康检查配置
+	healthCheckConfig := &commonModels.HealthCheckConfig{
+		Endpoint: "/health",
+		Timeout:  5,
+		Interval: 60,
+	}
+
+	// 注册请求
+	req := &commonModels.CapabilityRegistrationRequest{
+		UniqueIdentifier:  "manager.tile_cache.default",
+		Name:              "Manager Tile Cache Engine",
+		ResourceType:      "compute_engine",
+		IsBuiltin:         true,
+		Capabilities:      capabilities,
+		TaskAPIConfig:     taskAPIConfig,
+		HealthCheckConfig: healthCheckConfig,
+		Description:       "内置 MVT 瓦片缓存引擎，支持空间数据快速预览",
+	}
+
+	// 发送注册请求（失败不阻塞启动）
+	if err := systemClient.RegisterCapability(req); err != nil {
+		logger.L().Warn("能力注册失败（不影响服务运行）", "error", err)
+	} else {
+		logger.L().Info("Manager 模块能力已注册到 System", "unique_identifier", req.UniqueIdentifier)
+	}
 }

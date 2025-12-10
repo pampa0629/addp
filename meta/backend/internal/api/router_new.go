@@ -37,7 +37,8 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 
 	// API路由组（需要认证）
 	api := router.Group("/api/meta")
-	api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL)) // JWT 验证
+	api.Use(auth.TenantIsolationMiddleware())                 // 租户隔离
 	{
 		// 资源相关
 		api.GET("/resources", handler.GetResources)
@@ -64,6 +65,15 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.POST("/metadata/extract", handler.ExtractObjectMetadata)
 		api.GET("/metadata/tables", handler.GetTables)
 		api.GET("/metadata/fields", handler.GetTableFields)
+
+		// 新增：用于 Manager 模块的元数据查询接口
+		api.GET("/resources/:resource_id/tree", handler.GetMetadataTree)
+		api.GET("/nodes/:node_id", handler.GetMetaNodeByID)
+		api.GET("/nodes/:node_id/children", handler.GetNodeChildren)
+		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
+		api.GET("/nodes/by-path", handler.QueryNodeByPath)
+		api.GET("/items/by-path", handler.QueryItemByPath)
+		api.GET("/metadata/tables/spatial", handler.GetTableSpatialMetadata)
 
 		// 缓存管理
 		api.DELETE("/cache/resources/:resource_id", handler.ClearResourceCache)

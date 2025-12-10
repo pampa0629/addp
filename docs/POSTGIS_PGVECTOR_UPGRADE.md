@@ -44,7 +44,7 @@ make infra-restart
 4. 启动PostgreSQL容器
 5. 安装pgvector扩展
 
-### 2. 重启业务基础设施 (仅启用PostGIS)
+### 2. 重启业务库 (仅启用PostGIS)
 
 ```bash
 cd ~/code/addp/business

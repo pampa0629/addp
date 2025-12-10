@@ -1,0 +1,170 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"time"
+
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
+)
+
+// EngineRegistry 引擎注册表（从 System 动态加载计算引擎配置）
+type EngineRegistry struct {
+	systemClient *commonClient.SystemClient
+	engines      map[string]*commonModels.Resource // key: unique_identifier
+	mu           sync.RWMutex
+	cacheTTL     time.Duration
+	lastRefresh  time.Time
+}
+
+// NewEngineRegistry 创建引擎注册表
+func NewEngineRegistry(systemURL, internalAPIKey string, cacheTTL time.Duration) *EngineRegistry {
+	if cacheTTL == 0 {
+		cacheTTL = 5 * time.Minute // 默认缓存 5 分钟
+	}
+
+	return &EngineRegistry{
+		systemClient: commonClient.NewSystemClientWithInternalKey(systemURL, internalAPIKey),
+		engines:      make(map[string]*commonModels.Resource),
+		cacheTTL:     cacheTTL,
+	}
+}
+
+// GetEngine 根据 unique_identifier 获取引擎配置
+func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*commonModels.Resource, error) {
+	// 先检查缓存
+	r.mu.RLock()
+	if engine, ok := r.engines[identifier]; ok && time.Since(r.lastRefresh) < r.cacheTTL {
+		r.mu.RUnlock()
+		return engine, nil
+	}
+	r.mu.RUnlock()
+
+	// 缓存未命中或过期，从 System 查询
+	engine, err := r.systemClient.GetCapabilityByIdentifier(identifier)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine %s: %w", identifier, err)
+	}
+
+	// 更新缓存
+	r.mu.Lock()
+	r.engines[identifier] = engine
+	r.mu.Unlock()
+
+	return engine, nil
+}
+
+// GetEnginesByCapability 根据能力类型获取所有匹配的引擎
+// 例如: capabilityType = "scan" 返回所有支持扫描的引擎
+func (r *EngineRegistry) GetEnginesByCapability(ctx context.Context, capabilityType string) ([]*commonModels.Resource, error) {
+	// 检查缓存是否有效
+	r.mu.RLock()
+	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
+	r.mu.RUnlock()
+
+	if !cacheValid {
+		// 刷新缓存
+		if err := r.RefreshCache(ctx); err != nil {
+			return nil, fmt.Errorf("failed to refresh engine cache: %w", err)
+		}
+	}
+
+	// 从缓存中过滤匹配的引擎
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var matchedEngines []*commonModels.Resource
+	for _, engine := range r.engines {
+		if engine.Capabilities == nil {
+			continue
+		}
+
+		// 解析 Capabilities JSON
+		var capability commonModels.Capability
+		if err := unmarshalCapability(engine.Capabilities, &capability); err != nil {
+			continue
+		}
+
+		// 检查是否有匹配的计算能力
+		for _, compute := range capability.Compute {
+			if compute.Type == capabilityType {
+				matchedEngines = append(matchedEngines, engine)
+				break
+			}
+		}
+	}
+
+	return matchedEngines, nil
+}
+
+// RefreshCache 刷新所有引擎缓存
+func (r *EngineRegistry) RefreshCache(ctx context.Context) error {
+	// 从 System 查询所有计算引擎
+	filters := map[string]string{
+		"resource_type": "compute_engine",
+		"is_active":     "true",
+	}
+
+	engines, err := r.systemClient.ListCapabilities(filters)
+	if err != nil {
+		return fmt.Errorf("failed to list capabilities: %w", err)
+	}
+
+	// 更新缓存
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// 清空现有缓存
+	r.engines = make(map[string]*commonModels.Resource)
+
+	// 重新填充
+	for _, engine := range engines {
+		if engine.UniqueIdentifier != nil {
+			r.engines[*engine.UniqueIdentifier] = engine
+		}
+	}
+
+	r.lastRefresh = time.Now()
+	return nil
+}
+
+// ListAllEngines 列出所有已注册的引擎
+func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*commonModels.Resource, error) {
+	// 检查缓存是否有效
+	r.mu.RLock()
+	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
+	r.mu.RUnlock()
+
+	if !cacheValid {
+		// 刷新缓存
+		if err := r.RefreshCache(ctx); err != nil {
+			return nil, fmt.Errorf("failed to refresh engine cache: %w", err)
+		}
+	}
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	engines := make([]*commonModels.Resource, 0, len(r.engines))
+	for _, engine := range r.engines {
+		engines = append(engines, engine)
+	}
+
+	return engines, nil
+}
+
+// unmarshalCapability 辅助函数：解析 Capabilities JSON 字符串
+func unmarshalCapability(capabilitiesJSON *string, result *commonModels.Capability) error {
+	if capabilitiesJSON == nil {
+		return fmt.Errorf("capabilities is nil")
+	}
+
+	if err := json.Unmarshal([]byte(*capabilitiesJSON), result); err != nil {
+		return fmt.Errorf("failed to unmarshal capabilities: %w", err)
+	}
+
+	return nil
+}

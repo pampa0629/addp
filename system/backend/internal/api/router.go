@@ -53,6 +53,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	logService := service.NewLogService(logRepo, userRepo)
 	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
+	registryService := service.NewRegistryService(resourceRepo)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService, userRepo))
@@ -142,6 +143,15 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		internal.GET("/resources", resourceHandler.ListInternal)
 		internal.GET("/resources/:id", resourceHandler.GetByIDInternal)
 		internal.POST("/resources", resourceHandler.CreateInternal)
+
+		// 能力注册 API
+		registry := internal.Group("/registry")
+		{
+			registryHandler := NewRegistryHandler(registryService)
+			registry.POST("/capabilities", registryHandler.RegisterCapability)
+			registry.GET("/capabilities", registryHandler.ListCapabilities)
+			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
+		}
 	}
 
 	return router

@@ -41,7 +41,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/manager/'),
+  history: createWebHistory(import.meta.env.DEV ? '/' : '/manager/'),
   routes
 })
 

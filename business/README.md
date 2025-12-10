@@ -1,330 +1,171 @@
-# Business Infrastructure Services
+# Business Database
 
 ## 概述
 
-本目录包含**业务数据基础设施**的独立容器编排配置，与 ADDP 系统本身的基础设施**完全分离部署**。
+业务库为 ADDP 平台提供业务数据存储，与 ADDP 系统库完全独立部署。
 
-**重要特性**：
-- ✅ **完全独立**: 业务基础设施与 ADDP 系统基础设施物理隔离，无任何依赖关系
-- ✅ **架构自适应**: 自动检测 CPU 架构 (ARM64/AMD64)，使用最优镜像
-- ✅ **空间数据支持**: 使用 PostGIS 扩展，原生支持空间数据存储和查询
-- ✅ **默认 schema**: 保留 PostgreSQL 默认的 public schema，业务表由用户动态创建
+**包含服务**：
+- **PostgreSQL (PostGIS)**：业务数据库，端口 5433
+- **MinIO**：业务对象存储，端口 9002-9003
 
-## 架构自适应
-
-### 支持的架构
-
-| CPU 架构 | PostgreSQL 镜像 | PostGIS 安装方式 | 性能 |
-|---------|----------------|-----------------|------|
-| **ARM64** (Apple Silicon M1/M2/M3/M4) | `postgres:15` | 动态安装 (apt-get) | ⚡ 原生性能 |
-| **AMD64** (Intel/AMD x86_64) | `postgis/postgis:15-3.4` | 预装 | ⚡ 原生性能 |
-
-**快速启动** (自动检测):
-```bash
-cd business
-./scripts/restart.sh  # 自动检测架构并使用最优配置
-```
-
-详见 [ARCHITECTURE_DETECTION.md](ARCHITECTURE_DETECTION.md) 了解技术细节。
-
-## 架构设计
-
-### 为什么分离业务基础设施？
-
-ADDP 平台采用**系统与业务数据分离**的架构设计：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ADDP 系统 (主 docker-compose.yml)                          │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ postgres     │  │ redis        │  │ minio-system │     │
-│  │ (系统元数据) │  │ (缓存/队列)  │  │ (系统文件)   │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ Application Services                                 │  │
-│  │ system / manager / meta / transfer                   │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-           ↓ 通过网络连接访问业务数据（无依赖关系）
-┌─────────────────────────────────────────────────────────────┐
-│  Business Infrastructure (business/docker-compose.yml)      │
-│  ⚠️  完全独立部署，可先于或后于 ADDP 系统启动                 │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐                        │
-│  │ postgis      │  │ minio        │                        │
-│  │ (业务数据库) │  │ (业务文件)   │                        │
-│  │ 官方镜像     │  │ 官方镜像     │                        │
-│  └──────────────┘  └──────────────┘                        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 职责划分
-
-| 组件 | 位置 | 镜像来源 | 用途 | 示例数据 |
-|------|------|----------|------|----------|
-| **postgres (ADDP)** | 主编排 | 自建镜像 | 存储 ADDP 系统的元数据 | 用户账号、资源配置、元数据索引、任务定义 |
-| **postgis (Business)** | 业务编排 | **官方镜像** | 存储用户实际业务数据 | 用户上传的数据、Shapefile 空间数据表 |
-| **minio-system (ADDP)** | 主编排 | 自建镜像 | 存储 ADDP 系统文件 | 用户头像、系统配置文件、日志归档 |
-| **minio (Business)** | 业务编排 | **官方镜像** | 存储用户业务文件 | Shapefile、GeoJSON、图片、视频、PDF |
-
-### 优势
-
-1. **数据隔离**: 系统数据与业务数据物理分离，互不影响
-2. **独立扩展**: 业务数据量增长时，可单独扩展业务基础设施
-3. **安全性**: 业务数据库可配置更严格的访问控制
-4. **备份策略**: 系统数据和业务数据可采用不同的备份频率
-5. **可替换性**: 业务基础设施可替换为云服务（如 RDS、OSS）而不影响 ADDP 系统
-6. **无依赖部署**: 业务基础设施使用官方镜像，无需自建镜像仓库，可独立部署
+**关键特性**：
+- ✅ 独立部署，无依赖
+- ✅ CPU 架构自适应（ARM64/AMD64）
+- ✅ PostGIS 空间数据支持
+- ✅ 幂等启动脚本
 
 ## 快速开始
 
-### 1. 配置环境变量
-
 ```bash
-cd business
+# 1. 配置环境变量
 cp .env.example .env
-# 编辑 .env 修改数据库密码等配置
-```
+# 编辑 .env 修改密码
 
-### 2. 启动业务基础设施
+# 2. 启动服务
+./start.sh
 
-**推荐方式（使用脚本）**:
-```bash
-# 启动所有服务并自动安装 PostGIS 扩展
-./scripts/start.sh
-
-# 或单独安装 PostGIS（如果之前已启动）
-./scripts/install-postgis.sh
-```
-
-**手动方式**:
-```bash
-# 启动所有服务
-docker-compose up -d
-
-# 查看服务状态
+# 3. 验证服务
 docker-compose ps
-
-# 查看日志
-docker-compose logs -f
 ```
 
-### 3. 验证服务
+## 架构说明
+
+### 与 ADDP 系统库的区别
+
+| 组件 | ADDP 系统库 | Business 业务库 |
+|------|------------|----------------|
+| PostgreSQL | 端口 5432 | 端口 5433 |
+| MinIO | 端口 9000-9001 | 端口 9002-9003 |
+| 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
+| 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
+
+### CPU 架构自适应
+
+启动脚本自动检测架构并选择最优镜像：
+
+| CPU 架构 | PostgreSQL 镜像 | 性能 |
+|---------|----------------|------|
+| **ARM64** (Apple Silicon) | `imresamu/postgis-arm64:15-3.4` | ⚡ 原生性能 |
+| **AMD64** (Intel/AMD) | `postgis/postgis:15-3.4` | ⚡ 原生性能 |
+
+## 脚本说明
+
+### start.sh - 启动服务
 
 ```bash
-# 测试 PostgreSQL (PostGIS) 连接
-docker exec -it business-postgres psql -U business -d business
-
-# 验证 PostGIS 扩展
-docker exec -it business-postgres psql -U business -d business -c "\dx"
-# 应该看到 postgis 和 postgis_topology 扩展
-
-# 访问 MinIO 控制台
-open http://localhost:9001
-# 默认账号: minioadmin / minioadmin
+./start.sh
 ```
 
-## PostGIS 空间数据支持
+**功能**：检查配置、检测架构、启动服务、验证健康状态、安装 PostGIS
+**特性**：幂等执行（可重复运行）
 
-业务 PostgreSQL 数据库已配置 PostGIS 扩展以支持空间数据（Shapefile、GeoJSON 等）。
-
-### 自动安装
-
-使用 `./scripts/start.sh` 启动时会自动安装 PostGIS 扩展。
-
-### 手动安装
-
-如果需要手动安装或重新安装 PostGIS：
+### stop.sh - 停止服务
 
 ```bash
-cd business
-./scripts/install-postgis.sh
+./stop.sh
 ```
 
-该脚本会：
-1. 检查 PostGIS 是否已安装
-2. 安装 `postgis` 扩展（空间数据核心）
-3. 安装 `postgis_topology` 扩展（拓扑分析，可选）
-4. 显示已安装的扩展列表
+停止所有业务库服务。
 
-### 使用空间数据
-
-在 Transfer 模块导入空间数据时：
-
-1. **选择目标 schema**（推荐使用 `business_data`）：
-   - 目标表名填写：`business_data.spatial_points`
-   - 系统会自动创建 schema 和表
-
-2. **空间数据类型支持**：
-   - `GEOMETRY` - 通用几何类型
-   - `POINT` - 点
-   - `LINESTRING` - 线
-   - `POLYGON` - 面
-   - `MULTIPOINT`, `MULTILINESTRING`, `MULTIPOLYGON` - 多部件类型
-
-3. **示例导入 Shapefile**：
-   ```
-   数据源: MinIO bucket (已上传 Shapefile)
-   目标数据源: Business PostgreSQL
-   目标表: business_data.beijing_boundaries
-   ```
-
-### 4. 连接到 ADDP
-
-业务基础设施启动后，在 ADDP 系统中配置数据源时使用以下连接信息：
-
-**PostgreSQL 数据源**:
-- Host: `host.docker.internal` (Docker内) 或 `localhost` (本地)
-- Port: `5433`
-- Database: `business`
-- Username: `business`
-- Password: `business_password` (根据 .env 配置)
-
-**MinIO 数据源**:
-- Endpoint: `host.docker.internal:9000` (Docker内) 或 `localhost:9000` (本地)
-- Access Key: `minioadmin`
-- Secret Key: `minioadmin`
-
-## 服务端口
-
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| PostgreSQL | 5433 | 业务数据库（避免与 ADDP 系统的 5432 冲突）|
-| MinIO API | 9000 | 对象存储 API（避免与 ADDP 系统的 9002 冲突）|
-| MinIO Console | 9001 | MinIO Web 控制台（避免与 ADDP 系统的 9003 冲突）|
-
-## 数据管理
-
-### 备份业务数据
+### restart.sh - 重启服务
 
 ```bash
-# 备份 PostgreSQL
-docker exec business-postgres pg_dump -U business -d business > backup.sql
-
-# 备份 MinIO（使用 mc 命令行工具）
-mc mirror business-minio/addp-data ./minio-backup
+./restart.sh
 ```
 
-### 恢复业务数据
+检测架构、清理旧镜像、重启服务（幂等）。
+
+## 常用操作
+
+### 查看日志
 
 ```bash
-# 恢复 PostgreSQL
-docker exec -i business-postgres psql -U business -d business < backup.sql
-
-# 恢复 MinIO
-mc mirror ./minio-backup business-minio/addp-data
+docker-compose logs -f postgres  # PostgreSQL 日志
+docker-compose logs -f minio     # MinIO 日志
 ```
 
-### 数据迁移
-
-如果需要将业务数据迁移到云服务：
-
-1. **迁移到云数据库 (如 AWS RDS, 阿里云 RDS)**:
-   ```bash
-   # 导出数据
-   pg_dump -h localhost -p 5433 -U business -d business > export.sql
-
-   # 导入到云数据库
-   psql -h <云数据库地址> -U <用户名> -d <数据库名> < export.sql
-   ```
-
-2. **迁移到云对象存储 (如 AWS S3, 阿里云 OSS)**:
-   ```bash
-   # 使用云服务提供的同步工具
-   aws s3 sync s3://business-bucket/ ./local-backup/
-   # 或
-   ossutil sync oss://business-bucket/ ./local-backup/
-   ```
-
-## 运维命令
+### 数据备份
 
 ```bash
-# 查看容器状态
-docker-compose ps
+# 备份
+docker exec business-postgres pg_dump -U business business > backup.sql
 
-# 查看日志
-docker-compose logs -f postgres
-docker-compose logs -f minio
-
-# 重启服务
-docker-compose restart
-
-# 停止服务
-docker-compose down
-
-# 停止服务并删除数据（⚠️ 危险操作）
-docker-compose down -v
-
-# 进入 PostgreSQL 容器
-docker exec -it business-postgres bash
-
-# 进入 MinIO 容器
-docker exec -it business-minio sh
+# 恢复
+docker exec -i business-postgres psql -U business business < backup.sql
 ```
 
-## 安全建议
+### PostGIS 验证
 
-1. **生产环境必须修改默认密码**:
-   - PostgreSQL: `POSTGRES_PASSWORD`
-   - MinIO: `MINIO_ROOT_USER` 和 `MINIO_ROOT_PASSWORD`
+```bash
+docker exec business-postgres psql -U business -d business -c "SELECT PostGIS_Version();"
+```
 
-2. **限制网络访问**:
-   - 使用防火墙限制端口访问
-   - 考虑只允许 Docker 内部网络访问
+## 生产部署
 
-3. **定期备份**:
-   - 建议每天自动备份业务数据
-   - 备份文件存储在异地
+### 1. 部署到服务器
 
-4. **监控**:
-   - 监控磁盘使用率
-   - 监控数据库连接数
-   - 设置告警阈值
+```bash
+# 复制文件
+scp -r business/ user@server:/opt/addp-business/
+
+# 登录并启动
+ssh user@server
+cd /opt/addp-business
+cp .env.example .env
+vim .env  # ⚠️ 修改密码（必须！）
+./start.sh
+```
+
+### 2. 安全加固（必须！）
+
+1. **修改默认密码**：使用 `openssl rand -base64 32` 生成强密码
+2. **限制网络访问**：仅允许 ADDP 系统访问
+3. **定期备份**：配置 crontab 自动备份
+4. **监控磁盘**：定期检查数据卷大小
+5. **更新镜像**：定期运行 `docker-compose pull && ./restart.sh`
 
 ## 故障排查
 
-### PostgreSQL 无法连接
+### 端口冲突
 
 ```bash
-# 检查容器是否运行
-docker-compose ps
-
-# 查看日志
-docker-compose logs postgres
-
-# 测试连接
-docker exec business-postgres pg_isready -U business
+lsof -nP -i :5433           # 查看占用
+# 修改 .env 中的 POSTGRES_PORT
 ```
 
-### MinIO 无法访问
+### 架构不匹配
 
 ```bash
-# 检查容器状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs minio
-
-# 测试健康检查
-curl http://localhost:9000/minio/health/live
+./restart.sh  # 自动检测并使用正确架构
 ```
 
-### 数据持久化问题
+### 数据恢复
 
 ```bash
-# 检查 volume
-docker volume ls | grep business
-
-# 查看 volume 详情
-docker volume inspect business_postgres_data
-docker volume inspect business_minio_data
+./stop.sh
+docker volume rm business_postgres_data
+./start.sh
+docker exec -i business-postgres psql -U business business < backup.sql
 ```
 
-## 相关文档
+## 技术细节
 
-- [ADDP 主文档](../CLAUDE.md)
-- [Docker Compose 官方文档](https://docs.docker.com/compose/)
-- [PostgreSQL 文档](https://www.postgresql.org/docs/)
-- [MinIO 文档](https://min.io/docs/)
+- **PostgreSQL**: 15.x + PostGIS 3.4.x
+- **MinIO**: latest
+- **网络**: business-network (bridge)
+- **持久化**: Docker volumes
+- **架构**: ARM64, AMD64
+
+## 常见问题
+
+**Q: 业务库和系统库有什么区别？**  
+A: 系统库存储 ADDP 平台元数据，业务库存储用户实际业务数据。
+
+**Q: 为什么需要 PostGIS？**  
+A: 支持 Shapefile、GeoJSON 等空间数据的存储和查询。
+
+**Q: 可以替换为云服务吗？**  
+A: 可以！支持 AWS RDS/S3、阿里云 RDS/OSS 等云服务。
+
+**Q: 脚本可以重复执行吗？**  
+A: 可以！所有脚本都是幂等的。

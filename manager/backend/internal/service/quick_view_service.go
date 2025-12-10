@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/addp/common/logger"
@@ -20,6 +19,7 @@ type QuickViewService struct {
 	repo         *repository.QuickViewRepository
 	taskQueue    *worker.TaskQueue
 	systemClient *commonClient.SystemClient
+	metaClient   *commonClient.MetaClient
 }
 
 // NewQuickViewService 创建快显服务
@@ -27,11 +27,13 @@ func NewQuickViewService(
 	db *gorm.DB,
 	taskQueue *worker.TaskQueue,
 	systemClient *commonClient.SystemClient,
+	metaClient *commonClient.MetaClient,
 ) *QuickViewService {
 	return &QuickViewService{
 		repo:         repository.NewQuickViewRepository(db),
 		taskQueue:    taskQueue,
 		systemClient: systemClient,
+		metaClient:   metaClient,
 	}
 }
 
@@ -184,131 +186,23 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 	tenantID, resourceID uint,
 	schema, table string,
 ) (*SpatialMetadataResult, error) {
-	// 使用原生 SQL 查询 meta_item 表获取空间元数据
-	query := `
-		SELECT
-			COALESCE(attributes->'spatial_metadata'->>'geometry_column', '') AS geometry_column,
-			COALESCE((attributes->'spatial_metadata'->>'srid')::int, 0) AS srid,
-			COALESCE((attributes->'spatial_metadata'->>'extent_srid')::int, 4326) AS extent_srid,
-			COALESCE((attributes->'spatial_metadata'->'extent')::text, '[]') AS extent,
-			COALESCE(attributes->'table_metadata'->>'primary_key', '') AS primary_key,
-			COALESCE((attributes->'fields')::text, '[]') AS fields_json
-		FROM metadata.meta_item
-		WHERE res_id = $1
-			AND item_type = 'table'
-			AND attributes->>'schema' = $2
-			AND name = $3
-			AND tenant_id = $4
-			AND deleted_at IS NULL
-		LIMIT 1
-	`
-
-	type QueryResult struct {
-		GeometryColumn string
-		SRID           int
-		ExtentSRID     int
-		ExtentJSON     string
-		PrimaryKey     string
-		FieldsJSON     string
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query spatial metadata")
 	}
 
-	var result QueryResult
-	// 通过 repo 访问数据库
-	db := s.repo.GetDB()
-
-	// 执行查询并手动扫描结果
-	row := db.Raw(query, resourceID, schema, table, tenantID).Row()
-	err := row.Scan(&result.GeometryColumn, &result.SRID, &result.ExtentSRID, &result.ExtentJSON, &result.PrimaryKey, &result.FieldsJSON)
+	// 通过 Meta API 查询空间元数据
+	spatialMeta, err := s.metaClient.GetTableSpatialMetadata(resourceID, schema, table)
 	if err != nil {
-		logger.L().Warn("Failed to query spatial metadata from Meta, using defaults",
-			"resource_id", resourceID,
-			"table", fmt.Sprintf("%s.%s", schema, table),
-			"error", err)
-
-		// 降级：返回默认值
-		return &SpatialMetadataResult{
-			GeomColumn: "geom",
-			SRID:       4326,
-			ExtentSRID: 4326,
-			PrimaryKey: "id",
-			Extent:     []float64{},
-		}, nil
+		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
 
-	// 调试：输出原始查询结果
-	logger.L().Debug("Raw query result from Meta",
-		"resource_id", resourceID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"geom_col", result.GeometryColumn,
-		"srid", result.SRID,
-		"primary_key", result.PrimaryKey,
-		"fields_json_len", len(result.FieldsJSON))
-
-	// 检查是否查询到结果
-	if result.GeometryColumn == "" {
-		logger.L().Warn("No spatial metadata found in Meta, using defaults",
-			"resource_id", resourceID,
-			"table", fmt.Sprintf("%s.%s", schema, table))
-
-		return &SpatialMetadataResult{
-			GeomColumn: "geom",
-			SRID:       4326,
-			ExtentSRID: 4326,
-			PrimaryKey: "id",
-			Extent:     []float64{},
-		}, nil
-	}
-
-	// 解析 extent JSON
-	var extent []float64
-	if result.ExtentJSON != "" {
-		if err := json.Unmarshal([]byte(result.ExtentJSON), &extent); err != nil {
-			logger.L().Warn("Failed to parse extent JSON", "extent", result.ExtentJSON, "error", err)
-			extent = []float64{}
-		}
-	}
-
-	// 使用查询到的主键，如果为空则从字段列表中查找
-	primaryKey := result.PrimaryKey
-	if primaryKey == "" && result.FieldsJSON != "" {
-		// 从字段列表中查找标记为主键的字段
-		var fields []map[string]interface{}
-		if err := json.Unmarshal([]byte(result.FieldsJSON), &fields); err == nil {
-			for _, field := range fields {
-				if isPK, ok := field["is_primary_key"].(bool); ok && isPK {
-					if name, ok := field["name"].(string); ok {
-						primaryKey = name
-						break
-					}
-				}
-			}
-		}
-	}
-
-	// 如果还是没找到主键，使用默认值
-	if primaryKey == "" {
-		primaryKey = "id" // 默认主键名
-		logger.L().Warn("No primary key found in Meta, using default",
-			"resource_id", resourceID,
-			"table", fmt.Sprintf("%s.%s", schema, table),
-			"default_pk", primaryKey)
-	}
-
-	logger.L().Info("✅ 已从 Meta 获取空间元数据",
-		"resource_id", resourceID,
-		"table", fmt.Sprintf("%s.%s", schema, table),
-		"geom_col", result.GeometryColumn,
-		"srid", result.SRID,
-		"extent_srid", result.ExtentSRID,
-		"primary_key", primaryKey,
-		"extent", extent)
-
+	// 转换为 QuickViewService 内部的数据结构
 	return &SpatialMetadataResult{
-		GeomColumn:  result.GeometryColumn,
-		SRID:        result.SRID,
-		ExtentSRID:  result.ExtentSRID,
-		PrimaryKey:  primaryKey,
-		Extent:      extent,
+		GeomColumn:  spatialMeta.GeometryColumn,
+		SRID:        spatialMeta.SRID,
+		ExtentSRID:  spatialMeta.ExtentSRID,
+		Extent:      spatialMeta.Extent,
+		PrimaryKey:  spatialMeta.PrimaryKey,
 		RecordCount: 0, // 初始为 0，由 getTableRecordCount 填充
 	}, nil
 }

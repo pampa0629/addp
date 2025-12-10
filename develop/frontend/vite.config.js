@@ -10,7 +10,7 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5177,
+    port: 5178,
     proxy: {
       '/api': {
         target: 'http://localhost:8085',
@@ -18,5 +18,5 @@ export default defineConfig({
       }
     }
   },
-  base: '/develop/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/develop/'
 })

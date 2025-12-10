@@ -237,6 +237,18 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
+│  ADDP Application Layer (docker-compose.yml)                │
+│  Project Name: addp-app                                      │
+│                                                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │ system-      │  │ manager-     │  │ meta-        │     │
+│  │ backend      │  │ backend      │  │ backend      │     │
+│  │ Port: 8080   │  │ Port: 8081   │  │ Port: 8082   │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+│  ... 其他服务 (Transfer, Orchestrator, Develop, 前端等) ... │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
 │  Business Infrastructure (business/docker-compose.yml)      │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐                        │
@@ -256,7 +268,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 - **minio**: 存储系统文件 (用户头像、系统配置、模块化 buckets)
 - **meilisearch**: 全文检索引擎 (元数据资产搜索、文件索引)
 
-**业务基础设施** (business/docker-compose.yml，独立部署):
+**业务库** (business/docker-compose.yml，独立部署):
 
 - `postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
 - `minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
@@ -266,7 +278,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 - ✅ 数据隔离: 系统数据与业务数据物理分离
 - ✅ 独立扩展: 业务数据量增长时可单独扩展
 - ✅ 安全性: 业务数据库可配置更严格的访问控制
-- ✅ 可替换性: 业务基础设施可替换为云服务 (RDS、OSS)
+- ✅ 可替换性: 业务库可替换为云服务 (RDS、OSS)
 - ✅ 端口隔离: 避免端口冲突，支持本地服务和容器服务并存
 
 **MinIO 端口分配**（严格固定）:
@@ -1013,7 +1025,7 @@ Frontend tests are not yet implemented. When adding Vue components, document man
 
 ### Business Infrastructure (Deploy First)
 
-业务基础设施需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
+业务库需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
 
 ```bash
 # 1. Deploy business infrastructure first
@@ -1068,7 +1080,7 @@ For production environments requiring high availability, use Docker Swarm mode i
 docker swarm init
 
 # 2. Deploy to Swarm
-docker stack deploy -c docker-compose.prod.yml addp
+docker stack deploy -c docker-compose.yml addp
 
 # 3. Verify services
 docker service ls
@@ -1094,7 +1106,7 @@ docker stack rm addp
 - ✅ **Zero-downtime updates**: Rolling updates without service interruption
 - ✅ **Resource management**: CPU and memory limits/reservations
 
-**Transfer Worker High Availability** (configured in docker-compose.prod.yml):
+**Transfer Worker High Availability** (configured in docker-compose.yml):
 
 - Default: 2 replicas running simultaneously
 - Auto-restart on failure
@@ -1622,10 +1634,31 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 ### Build & Deploy
 
 - [`Makefile`](Makefile) - Project-wide orchestration commands
-- [`scripts/init-db.sql`](scripts/init-db.sql) - PostgreSQL schema initialization
-- [`scripts/dev/start.sh`](scripts/dev/start.sh) - Development startup script (按顺序启动所有服务)
-- [`scripts/dev/stop.sh`](scripts/dev/stop.sh) - Development stop script (停止所有服务)
-- [`scripts/dev/run.sh`](scripts/dev/run.sh) - Local development helper (legacy)
+- [`scripts/`](scripts/) - All automation scripts for development, build, and deployment
+  - [`scripts/infra/`](scripts/infra/) - Infrastructure management (PostgreSQL, Redis, MinIO, Meilisearch)
+    - `up.sh` - Start infrastructure + auto-initialization
+    - `down.sh` - Stop infrastructure
+    - `status.sh` - Check service health
+    - `init-db.sh` - Initialize database schemas
+  - [`scripts/dev/`](scripts/dev/) - Development mode scripts (direct Go/npm processes)
+    - `start.sh` - Start complete dev environment (infra + backends + frontends)
+    - `stop.sh` - Stop all dev services
+    - `restart.sh` - Restart all services
+    - `modtidy.sh` - Clean Go module dependencies
+  - [`scripts/build/`](scripts/build/) - Compilation and Docker image building
+    - `compile.sh` - Compile Go binaries (go build)
+    - `build-images.sh` - Build Docker images (docker build)
+    - `package.sh` - Package deployment artifacts (docker save/push)
+  - [`scripts/local/`](scripts/local/) - Local Docker Compose deployment
+    - `start.sh` - Start complete platform via Docker Compose
+    - `stop.sh` - Stop Docker services
+    - `status.sh` - View container status and resource usage
+  - [`scripts/prod/`](scripts/prod/) - Production deployment scripts
+    - `start.sh` - Start production environment (step-by-step)
+    - `stop.sh` - Stop production services
+    - `health-check.sh` - Health monitoring
+    - `swarm/` - Docker Swarm high availability deployment
+  - See [`scripts/README.md`](scripts/README.md) for complete scripts documentation
 
 ### Key Source Files
 

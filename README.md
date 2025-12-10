@@ -1,0 +1,366 @@
+# ADDP - All Domain Data Platform
+
+<div align="center">
+
+**全域数据平台 - 企业级微服务数据平台**
+
+[![Version](https://img.shields.io/badge/version-0.0.13-blue.svg)](https://github.com/addp/addp)
+[![Go](https://img.shields.io/badge/Go-1.23+-00ADD8.svg)](https://golang.org/)
+[![Vue](https://img.shields.io/badge/Vue-3.x-4FC08D.svg)](https://vuejs.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+[English](#english) | [中文文档](#中文文档)
+
+</div>
+
+---
+
+## 中文文档
+
+### 📖 项目简介
+
+ADDP (All Domain Data Platform / 全域数据平台) 是一个企业级数据平台，采用微服务架构，提供数据管理、元数据服务、数据传输、工作流编排等完整的数据平台解决方案。
+
+### ✨ 核心特性
+
+- 🏗️ **微服务架构** - 模块化设计，独立部署，弹性扩展
+- 🔐 **统一认证** - 基于 JWT 的认证系统，多租户支持
+- 📊 **数据管理** - 多数据源连接、数据预览、元数据扫描
+- 🔄 **数据传输** - 数据导入/导出/同步，支持增量传输
+- 🎯 **工作流编排** - 可视化编排，任务调度，监控告警
+- 🗺️ **空间数据支持** - 完整的 GIS 数据处理能力
+- 📱 **统一 Portal** - 一键登录，所有模块统一访问入口
+
+### 🚀 快速开始
+
+#### 前置要求
+
+- **Go** 1.23+
+- **Node.js** 16+
+- **Docker** & **Docker Compose** (可选，用于容器化部署)
+- **PostgreSQL** 15+ (开发模式需要)
+
+#### 方式一：开发模式 (推荐开发调试)
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/addp/addp.git
+cd addp
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 修改数据库密码等配置
+
+# 3. 一键启动完整开发环境
+bash scripts/dev/start.sh
+
+# 访问服务
+# - Portal: http://localhost:5170
+# - Gateway: http://localhost:8000
+# - System Backend: http://localhost:8080
+```
+
+**特点**：
+- ✅ 直接运行 Go 和 npm 进程，无需 Docker
+- ✅ 代码修改后快速重启
+- ✅ 自动启动基础设施容器 (PostgreSQL, Redis, MinIO)
+- ✅ 健康检查和日志管理
+
+#### 方式二：本地 Docker 部署 (推荐集成测试)
+
+```bash
+# 1. 编译和构建镜像
+bash scripts/build/compile.sh
+bash scripts/build/build-images.sh
+
+# 2. 启动完整平台
+bash scripts/local/start.sh
+
+# 访问服务
+# - Portal (推荐): http://localhost:80
+# - Gateway: http://localhost:8000
+```
+
+**特点**：
+- ✅ 完全容器化，与生产环境一致
+- ✅ 自动镜像验证和健康检查
+- ✅ 资源使用监控
+
+#### 方式三：生产环境部署
+
+```bash
+# 1. 准备部署包
+bash scripts/build/compile.sh --arch both
+IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh --multi-arch
+bash scripts/build/package.sh --mode registry
+
+# 2. 部署到生产服务器
+bash scripts/prod/start.sh
+
+# 3. 健康检查
+bash scripts/prod/health-check.sh
+
+# 访问服务
+# - ✨ 统一入口: http://localhost （Nginx）
+# - Portal: http://localhost:5170
+# - Gateway: http://localhost:8000
+```
+
+**特点**：
+- ✅ 分步启动，依赖关系明确
+- ✅ 支持 Docker Swarm 高可用部署
+- ✅ 健康监控和自动重启
+
+### 📁 项目结构
+
+```
+addp/
+├── common/              # 共享后端库 (client, models, config)
+├── common-frontend/     # 共享前端组件 (Vue 3)
+│   ├── basic/          # 基础 UI 组件
+│   └── map/            # 地图相关组件
+├── portal/             # 统一 Portal 入口
+├── system/             # 核心系统模块 (认证、日志、资源管理)
+├── gateway/            # API 网关
+├── manager/            # 数据管理模块 (数据源、预览)
+├── meta/               # 元数据服务 (扫描、血缘)
+├── transfer/           # 数据传输模块 (导入/导出)
+├── orchestrator/       # 工作流编排模块
+├── develop/            # 数据开发模块
+├── business/           # 业务库 (独立部署)
+├── scripts/            # 自动化脚本 (⭐ 核心工具)
+│   ├── infra/         # 基础设施管理
+│   ├── dev/           # 开发模式
+│   ├── build/         # 编译和构建
+│   ├── local/         # 本地部署
+│   └── prod/          # 生产部署
+├── docs/              # 详细文档
+├── nginx/             # Nginx 配置
+├── Makefile           # Make 命令封装
+├── .env.example       # 环境变量模板
+└── docker-compose*.yml # Docker Compose 配置
+```
+
+### 🛠️ Scripts 脚本工具
+
+ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全流程：
+
+| 目录 | 用途 | 核心脚本 | 使用场景 |
+|------|------|---------|---------|
+| **scripts/infra/** | 基础设施管理 | `up.sh`, `down.sh`, `status.sh` | 启动/停止 PostgreSQL、Redis、MinIO |
+| **scripts/dev/** | 开发模式 | `start.sh`, `stop.sh`, `restart.sh` | 日常开发调试 |
+| **scripts/build/** | 编译构建 | `compile.sh`, `build-images.sh`, `package.sh` | 构建发布版本 |
+| **scripts/local/** | 本地部署 | `start.sh`, `stop.sh`, `status.sh` | 本地容器化测试 |
+| **scripts/prod/** | 生产部署 | `start.sh`, `health-check.sh`, `swarm/` | 生产环境部署 |
+
+📚 **详细文档**: 查看 [scripts/README.md](scripts/README.md) 了解完整使用指南
+
+### 🏗️ 技术栈
+
+#### 后端
+
+- **语言**: Go 1.23+
+- **Web 框架**: Gin
+- **ORM**: GORM
+- **数据库**: PostgreSQL 15 (schema 隔离)
+- **缓存/队列**: Redis 7
+- **对象存储**: MinIO (S3 兼容)
+- **任务队列**: Asynq (Redis 基础)
+- **全文搜索**: Meilisearch
+
+#### 前端
+
+- **框架**: Vue 3 + Composition API
+- **构建工具**: Vite
+- **UI 库**: Element Plus
+- **状态管理**: Pinia
+- **路由**: Vue Router
+- **地图**: OpenLayers + 高德地图
+
+#### 基础设施
+
+- **容器化**: Docker + Docker Compose
+- **反向代理**: Nginx
+- **高可用**: Docker Swarm (可选)
+
+### 🔑 默认账户
+
+#### 超级管理员 (总是启用)
+
+- **用户名**: `SuperAdmin`
+- **密码**: `20251001#SuperAdmin`
+- **权限**: 系统级管理、租户管理
+
+#### 默认租户管理员 (可选启用)
+
+- **用户名**: `admin`
+- **密码**: `123456`
+- **启用方式**: 在 `.env` 中设置 `ENABLE_DEFAULT_TENANT=true`
+- **权限**: 默认租户管理
+
+⚠️ **生产环境必须修改默认密码！**
+
+### 📊 服务端口
+
+| 服务 | 开发端口 | 生产端口 | 说明 |
+|------|---------|---------|------|
+| **Nginx Gateway** | - | **80** | **统一入口 (推荐)** |
+| **Portal** | **5170** | **5170** | Portal 前端 |
+| Gateway | 8000 | 8000 | API 网关 |
+| System Backend | 8080 | 8080 | 认证、用户管理 |
+| Manager Backend | 8081 | 8081 | 数据管理 |
+| Meta Backend | 8082 | 8082 | 元数据服务 |
+| Transfer Backend | 8083 | 8083 | 数据传输 |
+| Orchestrator Backend | 8084 | 8084 | 工作流编排 |
+| PostgreSQL | 5432 | 5432 | 系统数据库 |
+| Redis | 6379 | 6379 | 缓存和队列 |
+| MinIO API | 9000 | 9000 | 对象存储 |
+| MinIO Console | 9001 | 9001 | MinIO 管理界面 |
+
+### 📚 文档
+
+- **[CLAUDE.md](CLAUDE.md)** - 完整项目架构和开发指南 (English)
+- **[CLAUDE-CN.md](CLAUDE-CN.md)** - 完整项目架构和开发指南 (中文)
+- **[scripts/README.md](scripts/README.md)** - Scripts 脚本使用指南
+- **[docs/](docs/)** - 详细技术文档
+  - [DEPLOYMENT.md](docs/DEPLOYMENT.md) - 部署指南
+  - [CONFIG_CENTER.md](docs/CONFIG_CENTER.md) - 配置中心
+  - [DOCKER_SWARM.md](docs/DOCKER_SWARM.md) - Swarm 高可用部署
+
+### 🤝 贡献
+
+欢迎贡献！请遵循以下步骤：
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
+
+### 📝 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+### 🙏 致谢
+
+感谢所有为 ADDP 做出贡献的开发者！
+
+---
+
+## English
+
+### 📖 About
+
+ADDP (All Domain Data Platform) is an enterprise-level data platform built on microservices architecture, providing comprehensive data management, metadata services, data transfer, and workflow orchestration solutions.
+
+### ✨ Key Features
+
+- 🏗️ **Microservices Architecture** - Modular design, independent deployment, elastic scaling
+- 🔐 **Unified Authentication** - JWT-based auth system with multi-tenancy support
+- 📊 **Data Management** - Multi-source connections, data preview, metadata scanning
+- 🔄 **Data Transfer** - Import/export/sync with incremental transfer support
+- 🎯 **Workflow Orchestration** - Visual orchestration, task scheduling, monitoring
+- 🗺️ **Spatial Data Support** - Complete GIS data processing capabilities
+- 📱 **Unified Portal** - Single sign-on, unified access to all modules
+
+### 🚀 Quick Start
+
+#### Option 1: Development Mode (Recommended for Development)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/addp/addp.git
+cd addp
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env to update passwords
+
+# 3. Start complete dev environment
+bash scripts/dev/start.sh
+
+# Access services
+# - Portal: http://localhost:5170
+# - Gateway: http://localhost:8000
+```
+
+#### Option 2: Local Docker Deployment (Recommended for Testing)
+
+```bash
+# 1. Build images
+bash scripts/build/compile.sh
+bash scripts/build/build-images.sh
+
+# 2. Start platform
+bash scripts/local/start.sh
+
+# Access services
+# - Portal (Recommended): http://localhost:80
+```
+
+#### Option 3: Production Deployment
+
+```bash
+# 1. Build and package
+bash scripts/build/compile.sh --arch both
+IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh --multi-arch
+bash scripts/build/package.sh --mode registry
+
+# 2. Deploy to production
+bash scripts/prod/start.sh
+
+# 3. Health check
+bash scripts/prod/health-check.sh
+```
+
+### 🛠️ Scripts Toolchain
+
+Complete automation scripts for development, build, and deployment:
+
+| Directory | Purpose | Core Scripts | Use Case |
+|-----------|---------|--------------|----------|
+| **scripts/infra/** | Infrastructure | `up.sh`, `down.sh`, `status.sh` | Manage PostgreSQL, Redis, MinIO |
+| **scripts/dev/** | Development | `start.sh`, `stop.sh`, `restart.sh` | Daily development |
+| **scripts/build/** | Build & Compile | `compile.sh`, `build-images.sh`, `package.sh` | Build releases |
+| **scripts/local/** | Local Deploy | `start.sh`, `stop.sh`, `status.sh` | Local testing |
+| **scripts/prod/** | Production | `start.sh`, `health-check.sh`, `swarm/` | Production deployment |
+
+📚 **Documentation**: See [scripts/README.md](scripts/README.md) for complete guide
+
+### 🏗️ Tech Stack
+
+**Backend**: Go 1.23+, Gin, GORM, PostgreSQL 15, Redis 7, MinIO, Asynq
+
+**Frontend**: Vue 3, Vite, Element Plus, Pinia, OpenLayers
+
+**Infrastructure**: Docker, Docker Compose, Nginx, Docker Swarm (optional)
+
+### 🔑 Default Accounts
+
+**Super Admin**: Username: `SuperAdmin`, Password: `20251001#SuperAdmin`
+
+**Tenant Admin** (optional): Username: `admin`, Password: `123456`
+
+⚠️ **Change default passwords in production!**
+
+### 📚 Documentation
+
+- **[CLAUDE.md](CLAUDE.md)** - Complete architecture and development guide (English)
+- **[CLAUDE-CN.md](CLAUDE-CN.md)** - Complete architecture and development guide (Chinese)
+- **[scripts/README.md](scripts/README.md)** - Scripts usage guide
+- **[docs/](docs/)** - Detailed technical documentation
+
+### 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Made with ❤️ by ADDP Team**
+
+[Documentation](docs/) · [Report Bug](https://github.com/addp/addp/issues) · [Request Feature](https://github.com/addp/addp/issues)
+
+</div>

@@ -180,3 +180,105 @@ func (c *SystemClient) CreateResource(payload map[string]interface{}) (*models.R
 
 	return &resource, nil
 }
+
+// RegisterCapability 注册能力（服务间调用，无需 JWT）
+func (c *SystemClient) RegisterCapability(req *models.CapabilityRegistrationRequest) error {
+	bodyBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/internal/registry/capabilities", c.baseURL)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// ListCapabilities 查询能力列表（支持过滤）
+func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.Resource, error) {
+	url := fmt.Sprintf("%s/internal/registry/capabilities", c.baseURL)
+
+	// 添加查询参数
+	if len(filters) > 0 {
+		queryParams := []string{}
+		for k, v := range filters {
+			queryParams = append(queryParams, fmt.Sprintf("%s=%s", k, v))
+		}
+		url += "?" + strings.Join(queryParams, "&")
+	}
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resources []*models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return resources, nil
+}
+
+// GetCapabilityByIdentifier 根据 unique_identifier 查询能力
+func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Resource, error) {
+	url := fmt.Sprintf("%s/internal/registry/capabilities/%s", c.baseURL, identifier)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resource models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resource); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &resource, nil
+}
+

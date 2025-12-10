@@ -75,10 +75,10 @@ vim .env
 # MINIO_ROOT_PASSWORD=<强密码>
 
 # 启动 Business 基础设施
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # 验证
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 ```
 
 预期输出:
@@ -121,7 +121,7 @@ docker ps | grep registry || \
 ./scripts/build/build-images.sh --registry localhost:5001
 
 ## 4.5 使用 Compose 启动全部服务
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
+docker compose -f docker-compose.yml --env-file .env.prod up -d --remove-orphans
 ```
 
 脚本会：
@@ -133,10 +133,10 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-or
 
 ```bash
 # 查看服务状态
-docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+docker compose -f docker-compose.yml --env-file .env.prod ps
 
 # 查看日志
-docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f
+docker compose -f docker-compose.yml --env-file .env.prod logs -f
 
 # 测试健康检查
 curl http://localhost:8080/health  # System backend
@@ -187,7 +187,7 @@ FROM golang:1.24-alpine AS builder
 **检查**:
 ```bash
 # 确认 Business 基础设施已启动
-docker-compose -f business/docker-compose.prod.yml ps
+docker-compose -f business/docker-compose.yml ps
 
 # 确认 PostgreSQL 可访问
 docker exec -it business-postgres psql -U business_user -d business_db -c "SELECT 1"
@@ -223,7 +223,7 @@ git pull origin main
 # 重新构建镜像并部署
 ./scripts/build/compile.sh --arch amd64
 ./scripts/build/build-images.sh --registry localhost:5001
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+docker compose -f docker-compose.yml --env-file .env.prod up -d
 ```
 
 ---
@@ -234,7 +234,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 ```bash
 # 停止服务
-docker compose -f docker-compose.prod.yml --env-file .env.prod down
+docker compose -f docker-compose.yml --env-file .env.prod down
 
 # 恢复旧版本代码
 git checkout <previous-commit>
@@ -252,7 +252,7 @@ git checkout <previous-commit>
 
 ```bash
 # 停止并删除所有容器
-docker compose -f docker-compose.prod.yml --env-file .env.prod down -v
+docker compose -f docker-compose.yml --env-file .env.prod down -v
 
 # 删除所有 ADDP 镜像
 docker images | grep "^addp-" | awk '{print $3}' | xargs docker rmi -f
@@ -305,7 +305,7 @@ make build-release
 2. **监控服务**:
    ```bash
    # 使用 cron 定期检查服务状态
-   */5 * * * * cd /opt/addp && docker-compose -f docker-compose.prod.yml ps | grep -q "Up" || /opt/addp/scripts/restart-services.sh
+   */5 * * * * cd /opt/addp && docker-compose -f docker-compose.yml ps | grep -q "Up" || /opt/addp/scripts/restart-services.sh
    ```
 
 3. **日志轮转**:
@@ -324,7 +324,7 @@ make build-release
 4. **使用域名**:
    - 配置 Nginx 反向代理
    - 申请 SSL 证书（Let's Encrypt）
-   - 修改 docker-compose.prod.yml 端口映射
+   - 修改 docker-compose.yml 端口映射
 
 ---
 
@@ -359,10 +359,10 @@ docker --version
 docker-compose --version
 
 # 服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 
 # 最近日志
-docker-compose -f docker-compose.prod.yml logs --tail=100
+docker-compose -f docker-compose.yml logs --tail=100
 
 # 镜像列表
 docker images | grep addp

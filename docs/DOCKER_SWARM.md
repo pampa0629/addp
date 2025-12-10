@@ -28,7 +28,7 @@ docker-compose up -d
 
 #### Swarm 模式（生产环境）
 ```
-docker stack deploy -c docker-compose.prod.yml addp
+docker stack deploy -c docker-compose.yml addp
   ↓
 启动 2 个 transfer-worker 副本（replicas: 2）
   ↓
@@ -89,10 +89,10 @@ cp .env.example .env
 
 ```bash
 # 部署完整平台（包括 Transfer Worker）
-docker stack deploy -c docker-compose.prod.yml addp
+docker stack deploy -c docker-compose.yml addp
 
 # 或者只部署 Transfer 模块
-docker stack deploy -c docker-compose.prod.yml --with-registry-auth addp
+docker stack deploy -c docker-compose.yml --with-registry-auth addp
 ```
 
 **部署输出**：
@@ -326,8 +326,8 @@ docker swarm leave --force
 |------|---------|------|
 | **本地开发** | Compose | `docker-compose up -d` |
 | **CI/CD 测试** | Compose | `docker-compose up -d` |
-| **单机生产** | Swarm | `docker stack deploy -c docker-compose.prod.yml addp` |
-| **多机集群** | Swarm | `docker stack deploy -c docker-compose.prod.yml addp` |
+| **单机生产** | Swarm | `docker stack deploy -c docker-compose.yml addp` |
+| **多机集群** | Swarm | `docker stack deploy -c docker-compose.yml addp` |
 
 ### 功能对比
 
@@ -346,7 +346,7 @@ docker swarm leave --force
 **同一配置文件支持两种模式**：
 
 ```yaml
-# docker-compose.prod.yml
+# docker-compose.yml
 services:
   transfer-worker:
     image: addp-transfer-worker:latest
@@ -367,7 +367,7 @@ services:
 ### Prometheus 监控（推荐）
 
 ```yaml
-# 添加到 docker-compose.prod.yml
+# 添加到 docker-compose.yml
 services:
   prometheus:
     image: prom/prometheus
@@ -561,7 +561,7 @@ docker swarm init
 
 #### 步骤 3：部署到 Swarm
 ```bash
-docker stack deploy -c docker-compose.prod.yml addp
+docker stack deploy -c docker-compose.yml addp
 ```
 
 #### 步骤 4：恢复数据（如果需要）

@@ -72,10 +72,18 @@ func (s *ScanConfig) Scan(value interface{}) error {
 type Resource struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	Name           string         `gorm:"not null;index" json:"name"`
-	ResourceType   string         `gorm:"not null" json:"resource_type"` // database, compute_engine
+	ResourceType   string         `gorm:"not null" json:"resource_type"` // database, compute_engine, object_storage
 	ConnectionInfo ConnectionInfo `gorm:"type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"type:text" json:"description"`
 	ScanConfig     *ScanConfig    `gorm:"type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）
+
+	// 能力注册字段（用于 Orchestrator 动态发现）
+	UniqueIdentifier  *string        `gorm:"size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "meta.scanner.default"）
+	IsBuiltin         bool           `gorm:"default:false;index" json:"is_builtin"`                                        // 是否为内置引擎（内置引擎不可删除）
+	Capabilities      *string        `gorm:"type:jsonb" json:"capabilities,omitempty"`                                     // 能力声明（JSONB）
+	TaskAPIConfig     *string        `gorm:"type:jsonb" json:"task_api_config,omitempty"`                                  // 任务 API 配置（JSONB，仅计算引擎）
+	HealthCheckConfig *string        `gorm:"type:jsonb" json:"health_check_config,omitempty"`                              // 健康检查配置（JSONB）
+
 	CreatedBy      *uint          `json:"created_by"`
 	TenantID       *uint          `gorm:"index" json:"tenant_id"` // 租户ID,SuperAdmin创建的资源为null
 	IsActive       bool           `gorm:"default:true" json:"is_active"`

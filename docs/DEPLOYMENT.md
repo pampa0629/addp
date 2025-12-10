@@ -211,7 +211,7 @@ Package all necessary files for server deployment:
 
 ```
 deploy-package/
-├── docker-compose.prod.yml    # Service definitions
+├── docker-compose.yml    # Service definitions
 ├── .env.prod.example          # Config template
 ├── configs/
 │   └── nginx.prod.conf        # Nginx configuration
@@ -277,7 +277,7 @@ cd ~/addp
 
 ```bash
 cd ~/addp
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml ps
 ```
 
 Expected output:
@@ -298,10 +298,10 @@ portal-frontend     Up 1 minute         80/tcp
 
 ```bash
 # All services
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.yml logs -f
 
 # Specific service
-docker compose -f docker-compose.prod.yml logs -f system-backend
+docker compose -f docker-compose.yml logs -f system-backend
 ```
 
 #### 3. Test Endpoints
@@ -381,16 +381,16 @@ sudo systemctl restart docker
 
 ```bash
 # Check logs
-docker compose -f docker-compose.prod.yml logs service-name
+docker compose -f docker-compose.yml logs service-name
 
 # Check service status
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml ps
 
 # Restart service
-docker compose -f docker-compose.prod.yml restart service-name
+docker compose -f docker-compose.yml restart service-name
 
 # Rebuild and restart
-docker compose -f docker-compose.prod.yml up -d --force-recreate service-name
+docker compose -f docker-compose.yml up -d --force-recreate service-name
 ```
 
 ### Database Connection Errors
@@ -401,13 +401,13 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate service-name
 
 ```bash
 # Check PostgreSQL logs
-docker compose -f docker-compose.prod.yml logs postgres
+docker compose -f docker-compose.yml logs postgres
 
 # Verify PostgreSQL is running
-docker compose -f docker-compose.prod.yml exec postgres pg_isready
+docker compose -f docker-compose.yml exec postgres pg_isready
 
 # Check database initialization
-docker compose -f docker-compose.prod.yml exec postgres \
+docker compose -f docker-compose.yml exec postgres \
   psql -U addp -d addp -c "\dt system.*"
 
 # Should show system schema tables
@@ -426,7 +426,7 @@ sudo lsof -i :8000
 # Kill process (if safe)
 sudo kill -9 <PID>
 
-# Or change port in docker-compose.prod.yml
+# Or change port in docker-compose.yml
 # Then restart services
 ```
 
@@ -459,7 +459,7 @@ docker ps
 free -h
 docker stats
 
-# Adjust service limits in docker-compose.prod.yml:
+# Adjust service limits in docker-compose.yml:
 services:
   system-backend:
     deploy:
@@ -476,24 +476,24 @@ services:
 
 ```bash
 # Real-time logs
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.yml logs -f
 
 # Last 100 lines
-docker compose -f docker-compose.prod.yml logs --tail=100
+docker compose -f docker-compose.yml logs --tail=100
 
 # Specific service
-docker compose -f docker-compose.prod.yml logs -f system-backend
+docker compose -f docker-compose.yml logs -f system-backend
 ```
 
 ### Backup Database
 
 ```bash
 # Backup
-docker compose -f docker-compose.prod.yml exec postgres \
+docker compose -f docker-compose.yml exec postgres \
   pg_dump -U addp addp > backup_$(date +%Y%m%d).sql
 
 # Restore
-cat backup_20251031.sql | docker compose -f docker-compose.prod.yml exec -T postgres \
+cat backup_20251031.sql | docker compose -f docker-compose.yml exec -T postgres \
   psql -U addp addp
 ```
 
@@ -501,23 +501,23 @@ cat backup_20251031.sql | docker compose -f docker-compose.prod.yml exec -T post
 
 ```bash
 # Pull new images
-docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.yml pull
 
 # Restart services
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # Check status
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml ps
 ```
 
 ### Stop Services
 
 ```bash
 # Stop all services
-docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.yml down
 
 # Stop and remove volumes (⚠️ deletes data)
-docker compose -f docker-compose.prod.yml down -v
+docker compose -f docker-compose.yml down -v
 ```
 
 ---

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
 	pq "github.com/lib/pq"
@@ -374,150 +376,76 @@ func (r *MetadataRepository) UnmarkTableAsManaged(tableID uint) error {
 }
 
 // ListScannedNodesAndItems 获取指定资源的顶层节点、子节点和条目
-func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
+func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
 	if resourceID == 0 {
 		return nil, nil, nil, fmt.Errorf("resourceID is required")
 	}
 
-	topQuery := `
-		SELECT
-			n.id,
-			n.res_id AS resource_id,
-			n.res_id,
-			n.parent_node_id,
-			n.node_type,
-			n.name,
-			n.full_name,
-			n.path,
-			n.depth,
-			n.last_scan_at,
-			n.item_count,
-			n.total_size_bytes,
-			n.attributes
-		FROM metadata.meta_node AS n
-		WHERE n.res_id = ? AND n.parent_node_id IS NULL AND n.scan_status = '已扫描' AND n.deleted_at IS NULL
-		ORDER BY n.name
-	`
-
-	var topNodes []models.MetaNodeLite
-	if err := r.db.Raw(topQuery, resourceID).Scan(&topNodes).Error; err != nil {
-		if isUndefinedTableError(err) {
-			return nil, nil, nil, ErrMetadataSchemaMissing
-		}
-		return nil, nil, nil, fmt.Errorf("failed to query top-level nodes: %w", err)
+	if metaClient == nil {
+		return nil, nil, nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	if len(topNodes) == 0 {
-		return []models.MetaNodeLite{}, []models.MetaNodeLite{}, []models.MetaItemLite{}, nil
+	// 通过 Meta API 获取元数据树
+	tree, err := metaClient.GetMetadataTree(resourceID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get metadata tree from Meta API: %w", err)
 	}
 
-	childQuery := `
-		SELECT
-			n.id,
-			n.res_id AS resource_id,
-			n.res_id,
-			n.parent_node_id,
-			n.node_type,
-			n.name,
-			n.full_name,
-			n.path,
-			n.depth,
-			n.last_scan_at,
-			n.item_count,
-			n.total_size_bytes,
-			n.attributes
-		FROM metadata.meta_node AS n
-		WHERE n.res_id = ? AND n.parent_node_id IS NOT NULL AND n.deleted_at IS NULL
-		ORDER BY n.depth, n.name
-	`
-
-	var childNodes []models.MetaNodeLite
-	if err := r.db.Raw(childQuery, resourceID).Scan(&childNodes).Error; err != nil {
-		if isUndefinedTableError(err) {
-			return nil, nil, nil, ErrMetadataSchemaMissing
-		}
-		return nil, nil, nil, fmt.Errorf("failed to query descendant nodes: %w", err)
+	// 将 commonModels.MetaNode/MetaItem 转换为 models.MetaNodeLite/MetaItemLite
+	topNodes := make([]models.MetaNodeLite, len(tree.TopNodes))
+	for i, node := range tree.TopNodes {
+		topNodes[i] = convertMetaNodeToLite(node)
 	}
 
-	itemQuery := `
-		SELECT
-			i.id,
-			i.res_id AS resource_id,
-			i.res_id,
-			i.node_id,
-			i.item_type,
-			i.name,
-			i.full_name,
-			i.row_count,
-			i.size_bytes,
-			i.object_size_bytes,
-			i.last_modified_at,
-			i.attributes
-		FROM metadata.meta_item AS i
-		WHERE i.res_id = ? AND i.deleted_at IS NULL
-	`
+	childNodes := make([]models.MetaNodeLite, len(tree.ChildNodes))
+	for i, node := range tree.ChildNodes {
+		childNodes[i] = convertMetaNodeToLite(node)
+	}
 
-	var items []models.MetaItemLite
-	if err := r.db.Raw(itemQuery, resourceID).Scan(&items).Error; err != nil {
-		if isUndefinedTableError(err) {
-			return nil, nil, nil, ErrMetadataSchemaMissing
-		}
-		return nil, nil, nil, fmt.Errorf("failed to query meta items: %w", err)
+	items := make([]models.MetaItemLite, len(tree.Items))
+	for i, item := range tree.Items {
+		items[i] = convertMetaItemToLite(item)
 	}
 
 	return topNodes, childNodes, items, nil
 }
 
 // GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
-func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
-	var item models.MetaItemLite
-
-	// 构建完整路径（bucket/path）用于匹配 attributes->>'path'
-	fullPath := bucketName
-	if objectPath != "" {
-		fullPath = bucketName + "/" + strings.TrimLeft(objectPath, "/")
+func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string, metaClient *commonClient.MetaClient) (*models.MetaItemLite, error) {
+	if metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	err := r.db.Table("metadata.meta_item AS i").
-		Select("i.id, i.res_id AS resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
-		Where("i.res_id = ?", resourceID).
-		Where("i.item_type = ?", "object").
-		Where("(i.attributes ->> 'bucket') = ?", bucketName).
-		Where("(i.attributes ->> 'path') = ? OR (i.attributes ->> 'relative_path') = ? OR i.full_name = ?", fullPath, objectPath, fullPath).
-		Order("i.updated_at DESC"). // 优先返回最新更新的记录（通常有更完整的元数据）
-		First(&item).Error
+	// 通过 Meta API 查询对象元数据
+	item, err := metaClient.GetItemByPath(resourceID, bucketName, objectPath)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, gorm.ErrRecordNotFound
-		}
-		return nil, fmt.Errorf("failed to query object metadata: %w", err)
+		return nil, fmt.Errorf("failed to get item metadata from Meta API: %w", err)
 	}
-	return &item, nil
+
+	lite := convertMetaItemToLite(*item)
+	return &lite, nil
 }
 
 // GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
-func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string) (*models.MetaNodeLite, error) {
-	var node models.MetaNodeLite
-	query := r.db.Table("metadata.meta_node AS n").
-		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Where("n.res_id = ?", resourceID)
-
-	cleanPath := strings.Trim(relativePath, "/")
-	if cleanPath == "" {
-		query = query.Where("n.parent_node_id IS NULL").Where("n.name = ?", bucketName)
-	} else {
-		query = query.Where("n.node_type IN ('bucket','prefix')").
-			Where("(n.attributes ->> 'path') = ? OR n.full_name = ?", cleanPath, cleanPath)
+func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+	if metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
-	if err := query.First(&node).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, gorm.ErrRecordNotFound
-		}
-		return nil, fmt.Errorf("failed to query object metadata node: %w", err)
+	// 构建节点路径
+	nodePath := bucketName
+	if relativePath != "" {
+		nodePath = bucketName + "/" + strings.TrimLeft(relativePath, "/")
 	}
 
-	return &node, nil
+	// 通过 Meta API 查询节点
+	node, err := metaClient.GetNodeByPath(resourceID, nodePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node metadata from Meta API: %w", err)
+	}
+
+	lite := convertMetaNodeToLite(*node)
+	return &lite, nil
 }
 
 // QueryTablePreview 查询表数据预览
@@ -739,42 +667,95 @@ func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInf
 }
 
 // GetNodeByName 根据资源ID和节点名称获取节点信息
-func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string) (*models.MetaNodeLite, error) {
-	var node models.MetaNodeLite
-	err := r.db.Table("metadata.meta_node AS n").
-		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Where("n.res_id = ? AND n.name = ? AND n.parent_node_id IS NULL", resourceID, nodeName).
-		First(&node).Error
-	if err != nil {
-		return nil, err
+func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+	if metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
-	return &node, nil
+
+	// 通过 Meta API 按名称查询节点
+	node, err := metaClient.GetNodeByPath(resourceID, nodeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node by name from Meta API: %w", err)
+	}
+
+	lite := convertMetaNodeToLite(*node)
+	return &lite, nil
 }
 
 // GetChildNodes 获取节点的直接子节点
-func (r *MetadataRepository) GetChildNodes(parentNodeID uint) ([]models.MetaNodeLite, error) {
-	var nodes []models.MetaNodeLite
-	err := r.db.Table("metadata.meta_node AS n").
-		Select("n.id, n.res_id AS resource_id, n.res_id, n.parent_node_id, n.node_type, n.name, n.full_name, n.path, n.depth, n.last_scan_at, n.item_count, n.total_size_bytes, n.attributes").
-		Where("n.parent_node_id = ?", parentNodeID).
-		Order("n.name").
-		Find(&nodes).Error
-	if err != nil {
-		return nil, err
+func (r *MetadataRepository) GetChildNodes(parentNodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, error) {
+	if metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
-	return nodes, nil
+
+	// 通过 Meta API 获取子节点
+	nodes, err := metaClient.GetNodeChildren(parentNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get child nodes from Meta API: %w", err)
+	}
+
+	lites := make([]models.MetaNodeLite, len(nodes))
+	for i, node := range nodes {
+		lites[i] = convertMetaNodeToLite(node)
+	}
+
+	return lites, nil
 }
 
 // GetNodeItems 获取节点下的所有子项（表/对象）
-func (r *MetadataRepository) GetNodeItems(nodeID uint) ([]models.MetaItemLite, error) {
-	var items []models.MetaItemLite
-	err := r.db.Table("metadata.meta_item AS i").
-		Select("i.id, i.res_id AS resource_id, i.res_id, i.node_id, i.item_type, i.name, i.full_name, i.row_count, i.size_bytes, i.object_size_bytes, i.last_modified_at, i.attributes").
-		Where("i.node_id = ?", nodeID).
-		Order("i.name").
-		Find(&items).Error
-	if err != nil {
-		return nil, err
+func (r *MetadataRepository) GetNodeItems(nodeID uint, metaClient *commonClient.MetaClient) ([]models.MetaItemLite, error) {
+	if metaClient == nil {
+		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
-	return items, nil
+
+	// 通过 Meta API 获取节点下的项目
+	items, err := metaClient.GetNodeItems(nodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node items from Meta API: %w", err)
+	}
+
+	lites := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		lites[i] = convertMetaItemToLite(item)
+	}
+
+	return lites, nil
 }
+
+// convertMetaNodeToLite 将 commonModels.MetaNode 转换为 models.MetaNodeLite
+func convertMetaNodeToLite(node commonModels.MetaNode) models.MetaNodeLite {
+	return models.MetaNodeLite{
+		ID:             node.ID,
+		ResourceID:     node.ResID,
+		ResID:          node.ResID,
+		ParentNodeID:   node.ParentNodeID,
+		NodeType:       node.NodeType,
+		Name:           node.Name,
+		FullName:       node.FullName,
+		Path:           node.Path,
+		Depth:          node.Depth,
+		LastScanAt:     node.LastScanAt,
+		ItemCount:      node.ItemCount,
+		TotalSizeBytes: node.TotalSizeBytes,
+		Attributes:     node.Attributes,
+	}
+}
+
+// convertMetaItemToLite 将 commonModels.MetaItem 转换为 models.MetaItemLite
+func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
+	return models.MetaItemLite{
+		ID:              item.ID,
+		ResourceID:      item.ResID,
+		ResID:           item.ResID,
+		NodeID:          item.NodeID,
+		ItemType:        item.ItemType,
+		Name:            item.Name,
+		FullName:        item.FullName,
+		RowCount:        item.RowCount,
+		SizeBytes:       item.SizeBytes,
+		ObjectSizeBytes: item.ObjectSizeBytes,
+		LastModifiedAt:  item.LastModifiedAt,
+		Attributes:      item.Attributes,
+	}
+}
+

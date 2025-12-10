@@ -137,7 +137,19 @@
       "Bash(du:*)",
       "Bash(__NEW_LINE__ docker ps --filter name=\"^/postgres$\\|^/redis$\" --format 'table {{.Names}}\\t{{.Ports}}')",
       "Bash(__NEW_LINE__ docker ps --format 'table {{.Names}}\\t{{.Ports}}')",
-      "Bash(./scripts/infra/up.sh:*)"
+      "Bash(./scripts/infra/up.sh:*)",
+      "Bash(npm run build:*)",
+      "Bash(timeout 300 bash:*)",
+      "Bash(docker buildx build:*)",
+      "Bash(docker stop:*)",
+      "Bash(localhost:5001/addp-orchestrator-frontend:latest)",
+      "Bash(git -C /Users/pampa/code/addp log --oneline --follow -- business)",
+      "Bash(test:*)",
+      "Bash(git -C /Users/pampa/code/addp log --oneline -1)",
+      "Bash(git -C /Users/pampa/code/addp log --oneline --all \"--grep=setup\\|infrastructure\")",
+      "Bash(./business/restart.sh:*)",
+      "Bash(gofmt:*)",
+      "Bash(go env:*)"
     ],
     "deny": [],
     "ask": []

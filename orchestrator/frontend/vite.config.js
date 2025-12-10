@@ -19,5 +19,5 @@ export default defineConfig({
       }
     }
   },
-  base: '/'
+  base: process.env.NODE_ENV === 'development' ? '/' : '/orchestrator/'  // 开发模式用 /，生产模式用 /orchestrator/
 })

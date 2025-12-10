@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 )
 
 // Executor 编排执行器
 type Executor struct {
-	execRepo     *repository.ExecutionRepository
-	orchRepo     *repository.OrchestrationRepository
+	execRepo       *repository.ExecutionRepository
+	orchRepo       *repository.OrchestrationRepository
+	engineRegistry *EngineRegistry
+	taskClient     *TaskClient
+	// 保留旧客户端以支持向后兼容
 	moduleClient *ModuleClient
 }
 
@@ -20,12 +24,16 @@ type Executor struct {
 func NewExecutor(
 	execRepo *repository.ExecutionRepository,
 	orchRepo *repository.OrchestrationRepository,
-	moduleClient *ModuleClient,
+	engineRegistry *EngineRegistry,
+	taskClient *TaskClient,
+	moduleClient *ModuleClient, // 可选，用于向后兼容
 ) *Executor {
 	return &Executor{
-		execRepo:     execRepo,
-		orchRepo:     orchRepo,
-		moduleClient: moduleClient,
+		execRepo:       execRepo,
+		orchRepo:       orchRepo,
+		engineRegistry: engineRegistry,
+		taskClient:     taskClient,
+		moduleClient:   moduleClient,
 	}
 }
 
@@ -97,10 +105,98 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	return nil
 }
 
-// executeStep 执行单个步骤
+// executeStep 执行单个步骤（支持新旧两种模式）
 func (e *Executor) executeStep(ctx context.Context, step *models.Step) (models.StepResult, error) {
 	start := time.Now()
 	result := models.StepResult{StartedAt: start, Status: "running"}
+
+	// 判断使用新架构还是旧架构
+	if step.EngineIdentifier != "" {
+		// 新架构：动态引擎调用
+		return e.executeWithDynamicEngine(ctx, step, start)
+	} else if step.Module != "" {
+		// 旧架构：硬编码模块调用（向后兼容）
+		return e.executeWithModuleClient(ctx, step, start)
+	}
+
+	result.Status = "failed"
+	result.Error = "invalid step: neither engine_identifier nor module specified"
+	result.EndedAt = time.Now()
+	result.Duration = time.Since(start).Milliseconds()
+	return result, fmt.Errorf(result.Error)
+}
+
+// executeWithDynamicEngine 使用动态引擎执行步骤（新架构）
+func (e *Executor) executeWithDynamicEngine(ctx context.Context, step *models.Step, start time.Time) (models.StepResult, error) {
+	result := models.StepResult{StartedAt: start, Status: "running"}
+
+	// 1. 从注册中心获取引擎配置
+	engine, err := e.engineRegistry.GetEngine(ctx, step.EngineIdentifier)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("failed to get engine %s: %v", step.EngineIdentifier, err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf(result.Error)
+	}
+
+	// 2. 创建任务
+	taskID, err := e.taskClient.CreateTask(ctx, engine, step.Parameters)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("failed to create task: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf(result.Error)
+	}
+
+	// 3. 执行任务
+	executionID, err := e.taskClient.ExecuteTask(ctx, engine, taskID, step.Parameters)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("failed to execute task: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf(result.Error)
+	}
+
+	// 4. 轮询任务状态
+	timeout := time.Duration(step.Timeout) * time.Second
+	if timeout == 0 {
+		timeout = 5 * time.Minute
+	}
+
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	taskResult, err := e.pollTaskStatusDynamic(pollCtx, engine, executionID)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = fmt.Sprintf("task execution failed: %v", err)
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf(result.Error)
+	}
+
+	// 5. 成功
+	result.Status = "success"
+	result.Result = taskResult
+	result.EndedAt = time.Now()
+	result.Duration = time.Since(start).Milliseconds()
+	return result, nil
+}
+
+// executeWithModuleClient 使用旧的 ModuleClient 执行步骤（向后兼容）
+func (e *Executor) executeWithModuleClient(ctx context.Context, step *models.Step, start time.Time) (models.StepResult, error) {
+	result := models.StepResult{StartedAt: start, Status: "running"}
+
+	if e.moduleClient == nil {
+		result.Status = "failed"
+		result.Error = "module client not available"
+		result.EndedAt = time.Now()
+		result.Duration = time.Since(start).Milliseconds()
+		return result, fmt.Errorf(result.Error)
+	}
 
 	// 1. 调用模块 API (启动任务)
 	taskID, err := e.moduleClient.Call(ctx, step.Module, step.Endpoint, step.Method, step.Parameters)
@@ -138,7 +234,35 @@ func (e *Executor) executeStep(ctx context.Context, step *models.Step) (models.S
 	return result, nil
 }
 
-// pollTaskStatus 轮询任务状态
+// pollTaskStatusDynamic 轮询任务状态（新架构）
+func (e *Executor) pollTaskStatusDynamic(ctx context.Context, engine *commonModels.Resource, taskID string) (map[string]interface{}, error) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("轮询超时")
+		case <-ticker.C:
+			status, err := e.taskClient.GetTaskStatus(ctx, engine, taskID)
+			if err != nil {
+				continue
+			}
+
+			switch status.Status {
+			case "completed", "success":
+				return status.Raw, nil
+			case "failed":
+				if status.Message != "" {
+					return nil, fmt.Errorf("任务失败: %s", status.Message)
+				}
+				return nil, fmt.Errorf("任务失败")
+			}
+		}
+	}
+}
+
+// pollTaskStatus 轮询任务状态（旧架构）
 func (e *Executor) pollTaskStatus(ctx context.Context, module string, taskID interface{}) (map[string]interface{}, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

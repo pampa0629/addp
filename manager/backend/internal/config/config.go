@@ -15,10 +15,11 @@ type Config struct {
 	commonConfig.BaseConfig
 
 	// Manager 模块特有配置
-	Port             string
-	DBSchema         string
-	PreviewPluginDir string
-	MetaServiceURL   string
+	Port                  string
+	DBSchema              string
+	PreviewPluginDir      string
+	MetaServiceURL        string
+	EnableMetaIntegration bool
 
 	// Meilisearch 配置
 	MeilisearchURL           string
@@ -87,10 +88,11 @@ func Load() *Config {
 	defaultPluginDir := strings.Join(pluginDirs, ",")
 
 	cfg := &Config{
-		Port:             commonConfig.GetEnv("PORT", "8081"),
-		DBSchema:         commonConfig.GetEnv("DB_SCHEMA", "manager"),
-		PreviewPluginDir: defaultPluginDir,
-		MetaServiceURL:   metaURL,
+		Port:                  commonConfig.GetEnv("PORT", "8081"),
+		DBSchema:              commonConfig.GetEnv("DB_SCHEMA", "manager"),
+		PreviewPluginDir:      defaultPluginDir,
+		MetaServiceURL:        metaURL,
+		EnableMetaIntegration: commonConfig.GetEnvBool("ENABLE_META_INTEGRATION", true),
 	}
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()

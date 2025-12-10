@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/addp/common/embedding"
+	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/vectorstore"
+	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/plugins"
 	_ "github.com/addp/meta/plugins/extractors" // 自动注册提取器
@@ -39,6 +41,7 @@ type ScanServiceNew struct {
 	embeddingTimeout   time.Duration
 	objectClients      map[uint]*minio.Client
 	objectClientMu     sync.Mutex
+	scanEventPublisher *events.ScanEventPublisher // 扫描事件发布器
 }
 
 const (
@@ -75,6 +78,11 @@ func (s *ScanServiceNew) SetIndexer(indexer *search.Indexer) {
 	s.indexer = indexer
 }
 
+// SetScanEventPublisher 注入扫描事件发布器
+func (s *ScanServiceNew) SetScanEventPublisher(publisher *events.ScanEventPublisher) {
+	s.scanEventPublisher = publisher
+}
+
 // EnableDocumentVectorization 为文档扫描启用向量化
 func (s *ScanServiceNew) EnableDocumentVectorization(store *vectorstore.PgVectorStore, embedder embedding.MultiModalEmbedder, timeout time.Duration) {
 	s.vectorStore = store
@@ -88,6 +96,76 @@ func (s *ScanServiceNew) EnableDocumentVectorization(store *vectorstore.PgVector
 func (s *ScanServiceNew) DisableDocumentVectorization() {
 	s.vectorStore = nil
 	s.multiModalEmbedder = nil
+}
+
+// verifyResourceAccess 验证租户是否有权限访问资源
+// 返回 nil 表示有权限，返回错误表示无权限或资源不存在
+func (s *ScanServiceNew) verifyResourceAccess(resourceID, tenantID uint, token string) error {
+	// 通过 ResourceService 获取资源（内部已包含租户校验）
+	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+	if err != nil {
+		s.log.Warn("资源访问验证失败",
+			"resource_id", resourceID,
+			"tenant_id", tenantID,
+			"error", err)
+		return metaErrors.ErrResourceAccessDenied
+	}
+
+	// 非超级管理员（tenant_id > 0）必须验证租户匹配
+	if tenantID > 0 && resource.TenantID != tenantID {
+		s.log.Warn("跨租户访问被拒绝",
+			"resource_id", resourceID,
+			"resource_tenant_id", resource.TenantID,
+			"request_tenant_id", tenantID)
+		return metaErrors.ErrResourceAccessDenied
+	}
+
+	return nil
+}
+
+// publishScanCompletedEvent 发布扫描完成事件（异步）
+func (s *ScanServiceNew) publishScanCompletedEvent(resourceID, tenantID uint, summary models.JSONMap) {
+	if s.scanEventPublisher == nil {
+		return // 未配置事件发布器，跳过
+	}
+
+	// 异步发布，不阻塞主流程
+	go func() {
+		// 从 summary 中提取扫描信息
+		scannedNodes := []string{}
+		scannedItemsCount := 0
+		scanType := events.ScanTypeDatabase // 默认为数据库扫描
+
+		if schemasScanned, ok := summary["schemas_scanned"].(int); ok && schemasScanned > 0 {
+			scanType = events.ScanTypeDatabase
+		}
+		if objectsScanned, ok := summary["objects_scanned"].(int); ok && objectsScanned > 0 {
+			scanType = events.ScanTypeObjectStorage
+			scannedItemsCount = objectsScanned
+		}
+		if tablesScanned, ok := summary["tables_scanned"].(int); ok {
+			scannedItemsCount += tablesScanned
+		}
+
+		event := events.ScanCompletedEvent{
+			ResourceID:        resourceID,
+			TenantID:          tenantID,
+			ScanType:          scanType,
+			ScannedNodes:      scannedNodes,
+			ScannedItemsCount: scannedItemsCount,
+			Timestamp:         time.Now(),
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := s.scanEventPublisher.PublishScanCompleted(ctx, event); err != nil {
+			s.log.Error("发布扫描完成事件失败",
+				"resource_id", resourceID,
+				"tenant_id", tenantID,
+				"error", err)
+		}
+	}()
 }
 
 func isObjectStorageType(resourceType string) bool {
@@ -721,7 +799,11 @@ func (s *ScanServiceNew) completeImmediateRun(run *models.ScanTaskRun, summary m
 
 	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
 		s.log.Error("更新即时运行成功状态出错", "run_id", run.ID, "error", err)
+		return
 	}
+
+	// 发布扫描完成事件（异步，不阻塞主流程）
+	s.publishScanCompletedEvent(run.ResourceID, run.TenantID, summary)
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema
@@ -3293,5 +3375,273 @@ func toBool(value interface{}) bool {
 		return v != 0
 	default:
 		return false
+	}
+}
+
+// ========== 新增：用于 Manager 模块的元数据查询接口 ==========
+
+// GetMetadataTree 获取资源的完整元数据树（顶层节点+子节点+项）
+func (s *ScanServiceNew) GetMetadataTree(tenantID, resourceID uint) (*models.MetadataTreeResponse, error) {
+	// 查询顶层节点
+	var topNodes []models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, resourceID).
+		Find(&topNodes).Error; err != nil {
+		return nil, fmt.Errorf("failed to query top nodes: %w", err)
+	}
+
+	// 查询子节点
+	var childNodes []models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NOT NULL", tenantID, resourceID).
+		Find(&childNodes).Error; err != nil {
+		return nil, fmt.Errorf("failed to query child nodes: %w", err)
+	}
+
+	// 查询所有项
+	var items []models.MetaItem
+	if err := s.db.Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("failed to query items: %w", err)
+	}
+
+	// 转换为 Lite 模型
+	topNodesLite := make([]models.MetaNodeLite, len(topNodes))
+	for i, node := range topNodes {
+		topNodesLite[i] = convertToMetaNodeLite(node)
+	}
+
+	childNodesLite := make([]models.MetaNodeLite, len(childNodes))
+	for i, node := range childNodes {
+		childNodesLite[i] = convertToMetaNodeLite(node)
+	}
+
+	itemsLite := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		itemsLite[i] = convertToMetaItemLite(item)
+	}
+
+	return &models.MetadataTreeResponse{
+		TopNodes:   topNodesLite,
+		ChildNodes: childNodesLite,
+		Items:      itemsLite,
+	}, nil
+}
+
+// GetNodeByPath 按路径查询节点（支持 Schema/Bucket/Prefix）
+func (s *ScanServiceNew) GetNodeByPath(tenantID, resourceID uint, nodePath string) (*models.MetaNodeLite, error) {
+	var node models.MetaNode
+
+	// 尝试按 full_name 查询
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND full_name = ?", tenantID, resourceID, nodePath).
+		First(&node).Error
+	if err == nil {
+		result := convertToMetaNodeLite(node)
+		return &result, nil
+	}
+
+	// 尝试按 name 查询顶层节点
+	err = s.db.Where("tenant_id = ? AND res_id = ? AND name = ? AND parent_node_id IS NULL", tenantID, resourceID, nodePath).
+		First(&node).Error
+	if err != nil {
+		return nil, fmt.Errorf("node not found: %w", err)
+	}
+
+	result := convertToMetaNodeLite(node)
+	return &result, nil
+}
+
+// GetItemByPath 按路径查询项目（对象存储）
+func (s *ScanServiceNew) GetItemByPath(tenantID, resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
+	var item models.MetaItem
+
+	// 构建完整路径
+	fullPath := bucketName
+	if objectPath != "" {
+		fullPath = bucketName + "/" + strings.TrimPrefix(objectPath, "/")
+	}
+
+	// 尝试多种路径匹配方式
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ?", tenantID, resourceID, "object").
+		Where("(attributes->>'bucket' = ? AND (attributes->>'path' = ? OR attributes->>'relative_path' = ? OR full_name = ?))",
+			bucketName, fullPath, objectPath, fullPath).
+		First(&item).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("item not found: %w", err)
+	}
+
+	result := convertToMetaItemLite(item)
+	return &result, nil
+}
+
+// GetNodeChildren 获取节点的子节点
+func (s *ScanServiceNew) GetNodeChildren(tenantID, nodeID uint) ([]models.MetaNodeLite, error) {
+	var nodes []models.MetaNode
+
+	// 先查询节点是否存在并验证租户
+	var parentNode models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&parentNode).Error; err != nil {
+		return nil, fmt.Errorf("parent node not found: %w", err)
+	}
+
+	if err := s.db.Where("tenant_id = ? AND parent_node_id = ?", tenantID, nodeID).
+		Order("name").
+		Find(&nodes).Error; err != nil {
+		return nil, fmt.Errorf("failed to query child nodes: %w", err)
+	}
+
+	result := make([]models.MetaNodeLite, len(nodes))
+	for i, node := range nodes {
+		result[i] = convertToMetaNodeLite(node)
+	}
+
+	return result, nil
+}
+
+// GetNodeItems 获取节点下的项目
+func (s *ScanServiceNew) GetNodeItems(tenantID, nodeID uint) ([]models.MetaItemLite, error) {
+	var items []models.MetaItem
+
+	// 先查询节点是否存在并验证租户
+	var parentNode models.MetaNode
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&parentNode).Error; err != nil {
+		return nil, fmt.Errorf("parent node not found: %w", err)
+	}
+
+	if err := s.db.Where("tenant_id = ? AND node_id = ?", tenantID, nodeID).
+		Order("name").
+		Find(&items).Error; err != nil {
+		return nil, fmt.Errorf("failed to query node items: %w", err)
+	}
+
+	result := make([]models.MetaItemLite, len(items))
+	for i, item := range items {
+		result[i] = convertToMetaItemLite(item)
+	}
+
+	return result, nil
+}
+
+// GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
+func (s *ScanServiceNew) GetTableSpatialMetadata(tenantID, resourceID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
+	var item models.MetaItem
+
+	// 查询表元数据
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ? AND name = ?", tenantID, resourceID, "table", table).
+		Where("attributes->>'schema' = ?", schema).
+		First(&item).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("table metadata not found: %w", err)
+	}
+
+	// 提取空间元数据
+	spatialMeta := &models.SpatialMetadataResponse{
+		Fields: []models.FieldInfo{},
+	}
+
+	// 提取 spatial_metadata
+	if spatialData, ok := item.Attributes["spatial_metadata"].(map[string]interface{}); ok {
+		if geomCol, ok := spatialData["geometry_column"].(string); ok {
+			spatialMeta.GeometryColumn = geomCol
+		}
+		if srid, ok := spatialData["srid"].(float64); ok {
+			spatialMeta.SRID = int(srid)
+		}
+		if extentSRID, ok := spatialData["extent_srid"].(float64); ok {
+			spatialMeta.ExtentSRID = int(extentSRID)
+		}
+		if extent, ok := spatialData["extent"].([]interface{}); ok {
+			spatialMeta.Extent = make([]float64, len(extent))
+			for i, v := range extent {
+				if f, ok := v.(float64); ok {
+					spatialMeta.Extent[i] = f
+				}
+			}
+		}
+	}
+
+	// 提取 table_metadata
+	if tableMeta, ok := item.Attributes["table_metadata"].(map[string]interface{}); ok {
+		if pk, ok := tableMeta["primary_key"].(string); ok {
+			spatialMeta.PrimaryKey = pk
+		}
+	}
+
+	// 提取字段信息
+	if fields, ok := item.Attributes["fields"].([]interface{}); ok {
+		for _, f := range fields {
+			if fieldMap, ok := f.(map[string]interface{}); ok {
+				fieldInfo := models.FieldInfo{
+					Name:         toString(fieldMap["name"]),
+					DataType:     toString(fieldMap["data_type"]),
+					IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
+				}
+				spatialMeta.Fields = append(spatialMeta.Fields, fieldInfo)
+			}
+		}
+	}
+
+	return spatialMeta, nil
+}
+
+// GetMetaNodeByID 获取单个节点详情
+func (s *ScanServiceNew) GetMetaNodeByID(tenantID, nodeID uint) (*models.MetaNodeLite, error) {
+	var node models.MetaNode
+
+	if err := s.db.Where("tenant_id = ? AND id = ?", tenantID, nodeID).First(&node).Error; err != nil {
+		return nil, fmt.Errorf("node not found: %w", err)
+	}
+
+	result := convertToMetaNodeLite(node)
+	return &result, nil
+}
+
+// convertToMetaNodeLite 转换为 MetaNodeLite
+func convertToMetaNodeLite(node models.MetaNode) models.MetaNodeLite {
+	var lastScanAt *string
+	if node.LastScanAt != nil {
+		formatted := node.LastScanAt.Format(time.RFC3339)
+		lastScanAt = &formatted
+	}
+
+	return models.MetaNodeLite{
+		ID:             node.ID,
+		TenantID:       node.TenantID,
+		ResID:          node.ResID,
+		ParentNodeID:   node.ParentNodeID,
+		NodeType:       node.NodeType,
+		Name:           node.Name,
+		FullName:       node.FullName,
+		Depth:          node.Depth,
+		Path:           node.Path,
+		ScanStatus:     node.ScanStatus,
+		LastScanAt:     lastScanAt,
+		ItemCount:      node.ItemCount,
+		TotalSizeBytes: node.TotalSizeBytes,
+		Attributes:     node.Attributes,
+	}
+}
+
+// convertToMetaItemLite 转换为 MetaItemLite
+func convertToMetaItemLite(item models.MetaItem) models.MetaItemLite {
+	var lastModifiedAt *string
+	if item.LastModifiedAt != nil {
+		formatted := item.LastModifiedAt.Format(time.RFC3339)
+		lastModifiedAt = &formatted
+	}
+
+	return models.MetaItemLite{
+		ID:              item.ID,
+		TenantID:        item.TenantID,
+		ResID:           item.ResID,
+		NodeID:          item.NodeID,
+		ItemType:        item.ItemType,
+		Name:            item.Name,
+		FullName:        item.FullName,
+		RowCount:        item.RowCount,
+		SizeBytes:       item.SizeBytes,
+		ObjectSizeBytes: item.ObjectSizeBytes,
+		LastModifiedAt:  lastModifiedAt,
+		Attributes:      item.Attributes,
 	}
 }

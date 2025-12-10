@@ -45,10 +45,16 @@ func (s *Steps) Scan(value interface{}) error {
 type Step struct {
 	ID         string                 `json:"id"`         // 唯一ID
 	Name       string                 `json:"name"`       // 步骤名称
-	Module     string                 `json:"module"`     // "transfer"/"meta"/"manager"
-	Action     string                 `json:"action"`     // "execute"/"scan"/"cache"
-	Endpoint   string                 `json:"endpoint"`   // "/api/tasks/:id/execute"
-	Method     string                 `json:"method"`     // "POST"/"GET"
+
+	// 新架构：使用 EngineIdentifier 动态查找引擎
+	EngineIdentifier string `json:"engine_identifier,omitempty"` // "meta.scanner.default"
+
+	// 旧架构：硬编码模块名（向后兼容）
+	Module     string                 `json:"module"`     // "transfer"/"meta"/"manager"（已废弃）
+	Action     string                 `json:"action"`     // "execute"/"scan"/"cache"（已废弃）
+	Endpoint   string                 `json:"endpoint"`   // "/api/tasks/:id/execute"（已废弃）
+	Method     string                 `json:"method"`     // "POST"/"GET"（已废弃）
+
 	Parameters map[string]interface{} `json:"parameters"` // 请求参数
 	DependsOn  []string               `json:"depends_on"` // 依赖步骤 ID 列表
 	Timeout    int                    `json:"timeout"`    // 超时秒数

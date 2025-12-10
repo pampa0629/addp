@@ -11,7 +11,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/develop/'),
+  history: createWebHistory(import.meta.env.DEV ? '/' : '/develop/'),
   routes
 })
 

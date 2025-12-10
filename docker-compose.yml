@@ -1,24 +1,36 @@
-# ADDP 生产环境应用服务配置
-# 用于从私有 Registry 拉取镜像部署
+# ADDP 应用服务层配置
+# Application Layer: All ADDP microservices (System, Manager, Meta, Transfer, Orchestrator, Develop, Gateway)
 #
-# ⚠️ 重要: 需要先启动基础设施服务!
+# 🎯 这是合并后的统一配置文件，适用于开发、测试和生产环境
 #
-# 使用方法:
-#   1. 启动基础设施: docker compose -f docker-compose.infra.yml up -d
-#   2. 配置 Registry: export REGISTRY=192.168.1.100:5001
-#   3. 启动应用服务: docker compose -f docker-compose.prod.yml --profile addp up -d
+# 前置条件: 需要先启动基础设施层
+#   docker compose -f docker-compose.infra.yml up -d
 #
-# 说明:
-#   - 基础设施服务(PostgreSQL, Redis, MinIO, Meilisearch) 已在 docker-compose.infra.yml 中定义
-#   - 本文件仅包含应用服务(System, Manager, Meta, Transfer, Orchestrator, Develop, Gateway, Portal, Nginx)
-#   - 使用 --profile addp 启动所有应用服务
+# 基本使用:
+#   启动所有服务: docker compose up -d
+#   停止所有服务: docker compose down
+#   查看日志:     docker compose logs -f
+#   服务状态:     docker compose ps
+#
+# 环境变量配置（可选，支持不同部署场景）:
+#   COMPOSE_PROJECT_NAME - 项目名称前缀，用于容器命名（默认: addp）
+#   NGINX_PORT           - Nginx 统一网关端口（默认: 80）
+#   PORTAL_PORT          - Portal 独立访问端口（默认: 5170）
+#   REGISTRY             - 镜像仓库地址（默认: localhost:5001）
+#   IMAGE_TAG            - 镜像标签（默认: latest）
+#
+# Docker Swarm 高可用模式:
+#   取消 Worker 服务中的 deploy 配置注释后，使用以下命令部署:
+#   docker stack deploy -c docker-compose.yml addp
+
+name: addp-app
 
 services:
   # ==================== System 模块 ====================
 
   system-backend:
     image: ${REGISTRY:-localhost:5001}/addp-system-backend:${IMAGE_TAG:-latest}
-    container_name: addp-system-backend
+    container_name: system-backend
     environment:
       - PORT=8080
       - JWT_SECRET=${JWT_SECRET}
@@ -37,8 +49,6 @@ services:
       - "8080:8080"
     networks:
       - addp-network
-    # 注意: 依赖的基础设施服务(postgres, redis)在 docker-compose.infra.yml 中
-    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -46,12 +56,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   system-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-system-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-system-frontend
+    container_name: system-frontend
     ports:
       - "8090:80"
     networks:
@@ -59,14 +67,12 @@ services:
     depends_on:
       - system-backend
     restart: unless-stopped
-    profiles:
-      - addp
 
   # ==================== Manager 模块 ====================
 
   manager-backend:
     image: ${REGISTRY:-localhost:5001}/addp-manager-backend:${IMAGE_TAG:-latest}
-    container_name: addp-manager-backend
+    container_name: manager-backend
     environment:
       - PORT=8081
       - DB_SCHEMA=manager
@@ -83,8 +89,6 @@ services:
       - "8081:8081"
     networks:
       - addp-network
-    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
-    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
       system-backend:
         condition: service_started
@@ -95,12 +99,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   manager-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-manager-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-manager-frontend
+    container_name: manager-frontend
     ports:
       - "8091:80"
     networks:
@@ -108,14 +110,10 @@ services:
     depends_on:
       - manager-backend
     restart: unless-stopped
-    profiles:
-      - addp
-
-  # ==================== Manager Worker 服务 ====================
 
   manager-worker:
     image: ${REGISTRY:-localhost:5001}/addp-manager-worker:${IMAGE_TAG:-latest}
-    # container_name removed for Swarm compatibility (allows multiple replicas)
+    # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=manager
       - DB_HOST=postgres
@@ -129,7 +127,7 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
-      - CONCURRENT_TASKS=10  # Each worker handles 10 concurrent quick view tasks
+      - CONCURRENT_TASKS=10
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -137,14 +135,7 @@ services:
     networks:
       - addp-network
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      manager-backend:
-        condition: service_started
+      - manager-backend
     restart: unless-stopped
     # Docker Swarm high availability configuration
     # NOTE: deploy config is commented out for docker-compose mode
@@ -171,14 +162,12 @@ services:
     #     reservations:
     #       cpus: '0.5'    # Reserve at least 0.5 CPU core
     #       memory: 512M   # Reserve at least 512MB memory
-    profiles:
-      - addp
 
   # ==================== Meta 模块 ====================
 
   meta-backend:
     image: ${REGISTRY:-localhost:5001}/addp-meta-backend:${IMAGE_TAG:-latest}
-    container_name: addp-meta-backend
+    container_name: meta-backend
     environment:
       - PORT=8082
       - DB_SCHEMA=metadata
@@ -187,6 +176,9 @@ services:
       - DB_USER=${POSTGRES_USER:-addp}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
       - DB_NAME=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
@@ -195,8 +187,6 @@ services:
       - "8082:8082"
     networks:
       - addp-network
-    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
-    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
       system-backend:
         condition: service_started
@@ -207,12 +197,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   meta-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-meta-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-meta-frontend
+    container_name: meta-frontend
     ports:
       - "8092:80"
     networks:
@@ -220,14 +208,60 @@ services:
     depends_on:
       - meta-backend
     restart: unless-stopped
-    profiles:
-      - addp
+
+  meta-worker:
+    image: ${REGISTRY:-localhost:5001}/addp-meta-worker:${IMAGE_TAG:-latest}
+    # Note: No container_name for Swarm compatibility (allows multiple replicas)
+    environment:
+      - DB_SCHEMA=metadata
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-addp}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
+      - DB_NAME=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - ENABLE_SERVICE_INTEGRATION=true
+      - CONCURRENT_TASKS=10
+    networks:
+      - addp-network
+    depends_on:
+      - meta-backend
+    restart: unless-stopped
+    # Docker Swarm high availability configuration
+    # NOTE: deploy config is commented out for docker-compose mode
+    # Uncomment when using docker stack deploy (Swarm mode)
+    # deploy:
+    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
+    #   restart_policy:
+    #     condition: any  # Restart on any failure
+    #     delay: 5s
+    #     max_attempts: 3
+    #     window: 120s
+    #   update_config:
+    #     parallelism: 1  # Update one container at a time
+    #     delay: 10s
+    #     failure_action: rollback
+    #     order: start-first  # Start new container before stopping old one
+    #   rollback_config:
+    #     parallelism: 1
+    #     delay: 5s
+    #   resources:
+    #     limits:
+    #       cpus: '2'      # Max 2 CPU cores per worker
+    #       memory: 2G     # Max 2GB memory per worker
+    #     reservations:
+    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
+    #       memory: 512M   # Reserve at least 512MB memory
 
   # ==================== Transfer 模块 ====================
 
   transfer-backend:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-backend:${IMAGE_TAG:-latest}
-    container_name: addp-transfer-backend
+    container_name: transfer-backend
     environment:
       - PORT=8083
       - DB_SCHEMA=transfer
@@ -248,10 +282,6 @@ services:
     networks:
       - addp-network
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       system-backend:
         condition: service_started
     restart: unless-stopped
@@ -261,12 +291,21 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
+
+  transfer-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-transfer-frontend:${IMAGE_TAG:-latest}
+    container_name: transfer-frontend
+    ports:
+      - "8093:80"
+    networks:
+      - addp-network
+    depends_on:
+      - transfer-backend
+    restart: unless-stopped
 
   transfer-worker:
     image: ${REGISTRY:-localhost:5001}/addp-transfer-worker:${IMAGE_TAG:-latest}
-    # container_name removed for Swarm compatibility (allows multiple replicas)
+    # Note: No container_name for Swarm compatibility (allows multiple replicas)
     environment:
       - DB_SCHEMA=transfer
       - DB_HOST=postgres
@@ -280,120 +319,43 @@ services:
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
-      - CONCURRENT_TASKS=15  # Each worker handles 15 concurrent tasks
-    networks:
-      - addp-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      transfer-backend:
-        condition: service_started
-    restart: unless-stopped
-    # Docker Swarm high availability configuration
-    # NOTE: deploy config is commented out for docker-compose mode
-    # Uncomment when using docker stack deploy (Swarm mode)
-    # deploy:
-    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
-    #   restart_policy:
-    #     condition: any  # Restart on any failure
-    #     delay: 5s
-    #     max_attempts: 3
-    #     window: 120s
-    #   update_config:
-    #     parallelism: 1  # Update one container at a time
-    #     delay: 10s
-    #     failure_action: rollback
-    #     order: start-first  # Start new container before stopping old one
-    #   rollback_config:
-    #     parallelism: 1
-    #     delay: 5s
-    #   resources:
-    #     limits:
-    #       cpus: '2'      # Max 2 CPU cores per worker
-    #       memory: 2G     # Max 2GB memory per worker
-    #     reservations:
-    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
-    #       memory: 512M   # Reserve at least 512MB memory
-    profiles:
-      - addp
-
-  # ==================== Meta Worker 服务 ====================
-
-  meta-worker:
-    image: ${REGISTRY:-localhost:5001}/addp-meta-worker:${IMAGE_TAG:-latest}
-    # container_name removed for Swarm compatibility (allows multiple replicas)
-    environment:
-      - DB_SCHEMA=metadata
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-addp}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
-      - DB_NAME=${POSTGRES_DB:-addp}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
-      - ENABLE_SERVICE_INTEGRATION=true
-      - CONCURRENT_TASKS=10  # Each worker handles 10 concurrent scan tasks
-    networks:
-      - addp-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      meta-backend:
-        condition: service_started
-    restart: unless-stopped
-    # Docker Swarm high availability configuration
-    # NOTE: deploy config is commented out for docker-compose mode
-    # Uncomment when using docker stack deploy (Swarm mode)
-    # deploy:
-    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
-    #   restart_policy:
-    #     condition: any  # Restart on any failure
-    #     delay: 5s
-    #     max_attempts: 3
-    #     window: 120s
-    #   update_config:
-    #     parallelism: 1  # Update one container at a time
-    #     delay: 10s
-    #     failure_action: rollback
-    #     order: start-first  # Start new container before stopping old one
-    #   rollback_config:
-    #     parallelism: 1
-    #     delay: 5s
-    #   resources:
-    #     limits:
-    #       cpus: '2'      # Max 2 CPU cores per worker
-    #       memory: 2G     # Max 2GB memory per worker
-    #     reservations:
-    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
-    #       memory: 512M   # Reserve at least 512MB memory
-    profiles:
-      - addp
-
-  transfer-frontend:
-    image: ${REGISTRY:-localhost:5001}/addp-transfer-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-transfer-frontend
-    ports:
-      - "8093:80"
+      - CONCURRENT_TASKS=15
     networks:
       - addp-network
     depends_on:
       - transfer-backend
     restart: unless-stopped
-    profiles:
-      - addp
+    # Docker Swarm high availability configuration
+    # NOTE: deploy config is commented out for docker-compose mode
+    # Uncomment when using docker stack deploy (Swarm mode)
+    # deploy:
+    #   replicas: 1  # Single instance resident (changed from 2 to save 50% memory)
+    #   restart_policy:
+    #     condition: any  # Restart on any failure
+    #     delay: 5s
+    #     max_attempts: 3
+    #     window: 120s
+    #   update_config:
+    #     parallelism: 1  # Update one container at a time
+    #     delay: 10s
+    #     failure_action: rollback
+    #     order: start-first  # Start new container before stopping old one
+    #   rollback_config:
+    #     parallelism: 1
+    #     delay: 5s
+    #   resources:
+    #     limits:
+    #       cpus: '2'      # Max 2 CPU cores per worker
+    #       memory: 2G     # Max 2GB memory per worker
+    #     reservations:
+    #       cpus: '0.5'    # Reserve at least 0.5 CPU core
+    #       memory: 512M   # Reserve at least 512MB memory
 
   # ==================== Orchestrator 模块 ====================
 
   orchestrator-backend:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-backend:${IMAGE_TAG:-latest}
-    container_name: addp-orchestrator-backend
+    container_name: orchestrator-backend
     environment:
       - PORT=8084
       - DB_SCHEMA=orchestrator
@@ -414,10 +376,6 @@ services:
     networks:
       - addp-network
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       system-backend:
         condition: service_started
     restart: unless-stopped
@@ -427,12 +385,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   orchestrator-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-orchestrator-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-orchestrator-frontend
+    container_name: orchestrator-frontend
     ports:
       - "8094:80"
     networks:
@@ -440,14 +396,12 @@ services:
     depends_on:
       - orchestrator-backend
     restart: unless-stopped
-    profiles:
-      - addp
 
   # ==================== Develop 模块 (SQL 开发工作台) ====================
 
   develop-backend:
     image: ${REGISTRY:-localhost:5001}/addp-develop-backend:${IMAGE_TAG:-latest}
-    container_name: addp-develop-backend
+    container_name: develop-backend
     environment:
       - PORT=8085
       - ENV=production
@@ -467,8 +421,6 @@ services:
       - "8085:8085"
     networks:
       - addp-network
-    # 注意: 依赖的基础设施服务(postgres)在 docker-compose.infra.yml 中
-    # 请确保已先启动: docker compose -f docker-compose.infra.yml up -d
     depends_on:
       system-backend:
         condition: service_started
@@ -479,12 +431,10 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   develop-frontend:
     image: ${REGISTRY:-localhost:5001}/addp-develop-frontend:${IMAGE_TAG:-latest}
-    container_name: addp-develop-frontend
+    container_name: develop-frontend
     ports:
       - "8095:80"
     networks:
@@ -492,14 +442,12 @@ services:
     depends_on:
       - develop-backend
     restart: unless-stopped
-    profiles:
-      - addp
 
   # ==================== Gateway 服务 ====================
 
   gateway:
     image: ${REGISTRY:-localhost:5001}/addp-gateway:${IMAGE_TAG:-latest}
-    container_name: addp-gateway
+    container_name: gateway
     environment:
       - PORT=8000
       - SYSTEM_SERVICE_URL=http://system-backend:8080
@@ -524,29 +472,27 @@ services:
       timeout: 5s
       retries: 30
       start_period: 60s
-    profiles:
-      - addp
 
   # ==================== Portal 统一门户 ====================
 
   portal:
     image: ${REGISTRY:-localhost:5001}/addp-portal:${IMAGE_TAG:-latest}
-    container_name: addp-portal
+    container_name: portal
+    ports:
+      - "${PORTAL_PORT:-5170}:80"  # Portal 可独立访问（开发调试用）
     networks:
       - addp-network
     depends_on:
       - gateway
     restart: unless-stopped
-    profiles:
-      - addp
 
   # ==================== Nginx 统一网关 ====================
 
   nginx:
     image: ${REGISTRY:-localhost:5001}/addp-nginx:${IMAGE_TAG:-latest}
-    container_name: addp-nginx
+    container_name: nginx
     ports:
-      - "8000:80"
+      - "${NGINX_PORT:-80}:80"
     networks:
       - addp-network
     depends_on:
@@ -559,10 +505,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-    profiles:
-      - addp
 
 networks:
   addp-network:
+    external: true
     name: addp-network
-    external: true  # 使用 docker-compose.infra.yml 创建的网络

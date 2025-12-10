@@ -19,7 +19,11 @@ type Config struct {
 	DBName     string
 	DBSchema   string
 
-	// 模块服务 URL
+	// System 服务配置（用于能力注册中心）
+	SystemServiceURL string
+	InternalAPIKey   string
+
+	// 模块服务 URL（向后兼容）
 	TransferServiceURL string
 	MetaServiceURL     string
 	ManagerServiceURL  string
@@ -41,6 +45,9 @@ func LoadConfig() *Config {
 		DBPassword: getEnv("DB_PASSWORD", "addp_password"),
 		DBName:     getEnv("DB_NAME", "addp"),
 		DBSchema:   "orchestrator",
+
+		SystemServiceURL: getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		InternalAPIKey:   getEnv("INTERNAL_API_KEY", ""),
 
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),

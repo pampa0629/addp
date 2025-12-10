@@ -126,10 +126,10 @@ cp .env.example .env
 vim .env
 
 # 启动 Business 基础设施
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # 验证部署
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 ```
 
 **或者使用一键部署脚本：**
@@ -255,14 +255,14 @@ curl http://localhost:5000/v2/_catalog
 # 替换 user@server-ip 为你的服务器信息
 
 # 方法 A: 使用 SCP（适合首次部署）
-scp docker-compose.prod.yml user@192.168.1.200:/opt/addp/
+scp docker-compose.yml user@192.168.1.200:/opt/addp/
 scp .env.example user@192.168.1.200:/opt/addp/
 # 推荐使用一键部署脚本（无需单独拷贝部署脚本）
 scp scripts/init-db.sql user@192.168.1.200:/opt/addp/scripts/
 
 # 方法 B: 使用 rsync（支持断点续传，推荐）
 rsync -avz --exclude 'node_modules' --exclude 'bin' --exclude '.git' \
-  docker-compose.prod.yml \
+  docker-compose.yml \
   .env.example \
   scripts/ \
   user@192.168.1.200:/opt/addp/
@@ -385,7 +385,7 @@ REDIS_PASSWORD=<强密码>
 MINIO_SYSTEM_ROOT_USER=admin
 MINIO_SYSTEM_ROOT_PASSWORD=<强密码>
 
-# 业务基础设施
+# 业务库
 BUSINESS_MINIO_ENDPOINT=localhost:9002
 BUSINESS_MINIO_ACCESS_KEY=admin
 BUSINESS_MINIO_SECRET_KEY=<强密码>
@@ -475,7 +475,7 @@ Pulling system-backend ... done
 
 ```bash
 # 查看所有服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 
 # 预期输出（所有服务 State 为 Up）
 NAME                    STATE     PORTS
@@ -492,7 +492,7 @@ curl http://localhost:8080/health  # System backend
 curl http://localhost:8000/health  # Gateway
 
 # 查看日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.yml logs -f
 ```
 
 ---
@@ -526,25 +526,25 @@ API 网关: http://192.168.1.200:8000
 
 ```bash
 # 查看服务状态
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 
 # 查看实时日志
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.yml logs -f
 
 # 查看特定服务日志
-docker-compose -f docker-compose.prod.yml logs -f system-backend
+docker-compose -f docker-compose.yml logs -f system-backend
 
 # 重启所有服务
-docker-compose -f docker-compose.prod.yml --profile full restart
+docker-compose -f docker-compose.yml --profile full restart
 
 # 重启单个服务
-docker-compose -f docker-compose.prod.yml restart system-backend
+docker-compose -f docker-compose.yml restart system-backend
 
 # 停止所有服务
-docker-compose -f docker-compose.prod.yml --profile full down
+docker-compose -f docker-compose.yml --profile full down
 
 # 停止并删除数据卷（谨慎！）
-docker-compose -f docker-compose.prod.yml --profile full down -v
+docker-compose -f docker-compose.yml --profile full down -v
 ```
 
 ---
@@ -556,8 +556,8 @@ docker-compose -f docker-compose.prod.yml --profile full down -v
 docker images | grep addp
 
 # 更新镜像（当开发机推送新版本后）
-REGISTRY=192.168.1.100:5000 docker-compose -f docker-compose.prod.yml pull
-docker-compose -f docker-compose.prod.yml --profile full up -d
+REGISTRY=192.168.1.100:5000 docker-compose -f docker-compose.yml pull
+docker-compose -f docker-compose.yml --profile full up -d
 
 # 清理未使用的镜像
 docker image prune -a
@@ -628,16 +628,16 @@ addp-system-backend | Error: database connection failed
 **解决方法：**
 1. 查看详细日志：
    ```bash
-   docker-compose -f docker-compose.prod.yml logs system-backend
+   docker-compose -f docker-compose.yml logs system-backend
    ```
 2. 检查 `.env` 配置是否正确
 3. 确认 PostgreSQL 服务健康：
    ```bash
-   docker-compose -f docker-compose.prod.yml ps postgres
+   docker-compose -f docker-compose.yml ps postgres
    ```
 4. 重启服务：
    ```bash
-   docker-compose -f docker-compose.prod.yml restart system-backend
+   docker-compose -f docker-compose.yml restart system-backend
    ```
 
 ---
@@ -676,13 +676,13 @@ ssh user@192.168.1.200
 cd /opt/addp
 
 # 3. 拉取新镜像
-REGISTRY=192.168.1.100:5000 docker-compose -f docker-compose.prod.yml pull
+REGISTRY=192.168.1.100:5000 docker-compose -f docker-compose.yml pull
 
 # 4. 滚动更新（不停机）
-docker-compose -f docker-compose.prod.yml --profile full up -d
+docker-compose -f docker-compose.yml --profile full up -d
 
 # 5. 查看更新后的服务
-docker-compose -f docker-compose.prod.yml ps
+docker-compose -f docker-compose.yml ps
 ```
 
 ---
@@ -714,7 +714,7 @@ docker-compose -f docker-compose.prod.yml ps
 | `setup-local-registry.sh` | `scripts/` | 在开发机搭建 Registry |
 | `scripts/deploy/1-build-images.sh` | `scripts/deploy/` | 本机构建并推送镜像 |
 | `scripts/deploy/deploy-all.sh` | `scripts/deploy/` | 一键部署（支持指定 registry 与 server） |
-| `docker-compose.prod.yml` | 项目根目录 | 生产环境 Compose 配置 |
+| `docker-compose.yml` | 项目根目录 | 生产环境 Compose 配置 |
 | `.env.example` | 项目根目录 | 环境变量模板 |
 
 ---
@@ -723,7 +723,7 @@ docker-compose -f docker-compose.prod.yml ps
 
 如果遇到问题，请：
 1. 查看本文档的故障排查部分
-2. 检查服务日志：`docker-compose -f docker-compose.prod.yml logs`
+2. 检查服务日志：`docker-compose -f docker-compose.yml logs`
 3. 提交 Issue 到项目仓库
 
 ---

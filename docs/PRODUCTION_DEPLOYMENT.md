@@ -129,7 +129,7 @@ Portal + Nginx (统一入口)
 docker compose -f docker-compose.infra.yml ps
 
 # 应用服务
-docker compose -f docker-compose.app.yml ps
+docker compose -f docker-compose.yml ps
 
 # 查看所有容器
 docker ps
@@ -142,42 +142,42 @@ docker ps
 docker compose -f docker-compose.infra.yml logs -f [service-name]
 
 # 查看应用服务日志
-docker compose -f docker-compose.app.yml logs -f [service-name]
+docker compose -f docker-compose.yml logs -f [service-name]
 
 # 示例: 查看 Portal 日志
-docker compose -f docker-compose.app.yml logs -f portal
+docker compose -f docker-compose.yml logs -f portal
 
 # 示例: 查看 Nginx 日志
-docker compose -f docker-compose.app.yml logs -f nginx
+docker compose -f docker-compose.yml logs -f nginx
 ```
 
 ### 重启服务
 
 ```bash
 # 重启单个服务
-docker compose -f docker-compose.app.yml restart [service-name]
+docker compose -f docker-compose.yml restart [service-name]
 
 # 示例: 重启 Portal
-docker compose -f docker-compose.app.yml restart portal
+docker compose -f docker-compose.yml restart portal
 
 # 示例: 重启 Nginx
-docker compose -f docker-compose.app.yml restart nginx
+docker compose -f docker-compose.yml restart nginx
 
 # 重启所有应用服务
-docker compose -f docker-compose.app.yml restart
+docker compose -f docker-compose.yml restart
 ```
 
 ### 停止服务
 
 ```bash
 # 停止应用服务
-docker compose -f docker-compose.app.yml down
+docker compose -f docker-compose.yml down
 
 # 停止基础设施
 docker compose -f docker-compose.infra.yml down
 
 # 停止所有服务
-docker compose -f docker-compose.infra.yml down && docker compose -f docker-compose.app.yml down
+docker compose -f docker-compose.infra.yml down && docker compose -f docker-compose.yml down
 ```
 
 ## 健康检查
@@ -217,13 +217,13 @@ curl http://localhost:8080/health
 docker ps | grep portal
 
 # 2. 查看 Portal 日志
-docker compose -f docker-compose.app.yml logs portal
+docker compose -f docker-compose.yml logs portal
 
 # 3. 检查 Nginx 配置是否正确
 docker exec nginx cat /etc/nginx/nginx.conf
 
 # 4. 重启 Portal 和 Nginx
-docker compose -f docker-compose.app.yml restart portal nginx
+docker compose -f docker-compose.yml restart portal nginx
 ```
 
 ### 2. Nginx 显示 502 Bad Gateway
@@ -239,7 +239,7 @@ curl http://localhost:8000/health
 curl http://localhost:5170
 
 # 3. 查看 Nginx 日志
-docker compose -f docker-compose.app.yml logs nginx
+docker compose -f docker-compose.yml logs nginx
 
 # 4. 重新启动后端服务
 ./scripts/prod/start.sh
@@ -267,7 +267,7 @@ docker network inspect addp-network
 ./scripts/prod/start.sh
 
 # 手动启动缺失的服务
-docker compose -f docker-compose.app.yml up -d [service-name]
+docker compose -f docker-compose.yml up -d [service-name]
 ```
 
 ## 镜像管理
@@ -291,7 +291,7 @@ docker build -t localhost:5001/addp-nginx:latest nginx/
 
 ## 性能优化建议
 
-1. **资源限制**: 在 `docker-compose.app.yml` 中为容器设置资源限制
+1. **资源限制**: 在 `docker-compose.yml` 中为容器设置资源限制
 2. **Nginx 缓存**: 配置静态资源缓存提升响应速度
 3. **数据库连接池**: 调整后端服务的数据库连接池大小
 4. **Worker 副本数**: 根据负载调整 Worker 服务副本数量

@@ -194,7 +194,7 @@ make fix-frontend
    - .dockerignore（可由脚本自动创建）
    - package.json（含 build 脚本）
 3. 添加到 `scripts/deploy/1-build-images.sh` 的 services 列表
-4. 添加到 `docker-compose.yml` 或 `docker-compose.prod.yml`
+4. 添加到 `docker-compose.yml` 或 `docker-compose.yml`
 5. 运行 `make check-frontend` 验证
 6. 测试构建：`docker build -t test .`
 

@@ -396,7 +396,7 @@ docker run -p 8080:80 test-frontend
 - [ ] 创建 `<module>/frontend/.dockerignore`
 - [ ] 确保 `package.json` 有 `build` 脚本
 - [ ] 添加到 `scripts/deploy/1-build-images.sh` 的 services 列表
-- [ ] 添加到 `docker-compose.yml` 或 `docker-compose.prod.yml`
+- [ ] 添加到 `docker-compose.yml` 或 `docker-compose.yml`
 - [ ] 运行 `./scripts/setup/standardize-frontend-docker.sh` 检查
 - [ ] 测试本地构建：`docker build -t test .`
 - [ ] 测试运行：`docker run -p 8080:80 test`

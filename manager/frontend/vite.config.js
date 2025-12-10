@@ -18,5 +18,6 @@ export default defineConfig({
         changeOrigin: true
       }
     }
-  }
+  },
+  base: process.env.NODE_ENV === 'development' ? '/' : '/manager/'  // 开发模式用 /，生产模式用 /manager/
 })

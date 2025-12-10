@@ -83,7 +83,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/transfer/'),
+  history: createWebHistory(import.meta.env.DEV ? '/' : '/transfer/'),
   routes
 })
 

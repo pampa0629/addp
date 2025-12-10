@@ -281,17 +281,17 @@ prod-build-images: build-backends ## 构建所有生产 Docker 镜像（使用�
 
 docker-build: ## 构建 Docker 镜像（仅 System 模块）
 	@echo "$(GREEN)构建 System 模块 Docker 镜像...$(NC)"
-	@docker compose -f docker-compose.app.yml build system-backend system-frontend
+	@docker compose -f docker-compose.yml build system-backend system-frontend
 	@echo "$(GREEN)构建完成！$(NC)"
 
 docker-build-all: ## 构建所有服务的 Docker 镜像
 	@echo "$(GREEN)构建所有服务的 Docker 镜像...$(NC)"
-	@docker compose -f docker-compose.app.yml --profile full build
+	@docker compose -f docker-compose.yml --profile full build
 	@echo "$(GREEN)所有镜像构建完成！$(NC)"
 
 up: ## 启动 System 模块（基础服务）
 	@echo "$(GREEN)启动 System 模块...$(NC)"
-	@docker compose -f docker-compose.app.yml up -d system-backend system-frontend
+	@docker compose -f docker-compose.yml up -d system-backend system-frontend
 	@echo "$(GREEN)System 模块已启动！$(NC)"
 	@echo "$(YELLOW)访问地址:$(NC)"
 	@echo "  - System Backend:  http://localhost:8080"
@@ -299,7 +299,7 @@ up: ## 启动 System 模块（基础服务）
 
 up-full: ## 启动所有服务（完整平台）
 	@echo "$(GREEN)启动完整平台（所有服务）...$(NC)"
-	@docker compose -f docker-compose.app.yml --profile full up -d
+	@docker compose -f docker-compose.yml --profile full up -d
 	@echo "$(GREEN)所有服务已启动！$(NC)"
 	@$(MAKE) status
 
@@ -310,7 +310,7 @@ up-infra: ## 仅启动基础设施服务（PostgreSQL, Redis, MinIO, Meilisearch
 
 down: ## 停止所有服务
 	@echo "$(YELLOW)停止所有服务...$(NC)"
-	@docker compose -f docker-compose.app.yml --profile full down
+	@docker compose -f docker-compose.yml --profile full down
 	@echo "$(GREEN)所有服务已停止$(NC)"
 
 restart: down up ## 重启 System 模块
@@ -318,29 +318,29 @@ restart: down up ## 重启 System 模块
 restart-full: down up-full ## 重启所有服务
 
 logs: ## 查看所有服务日志
-	@docker compose -f docker-compose.app.yml --profile full logs -f
+	@docker compose -f docker-compose.yml --profile full logs -f
 
 logs-system: ## 查看 System 模块日志
-	@docker compose -f docker-compose.app.yml logs -f system-backend system-frontend
+	@docker compose -f docker-compose.yml logs -f system-backend system-frontend
 
 logs-manager: ## 查看 Manager 模块日志
-	@docker compose -f docker-compose.app.yml logs -f manager-backend
+	@docker compose -f docker-compose.yml logs -f manager-backend
 
 logs-meta: ## 查看 Meta 模块日志
-	@docker compose -f docker-compose.app.yml logs -f meta-backend
+	@docker compose -f docker-compose.yml logs -f meta-backend
 
 logs-transfer: ## 查看 Transfer 模块日志
-	@docker compose -f docker-compose.app.yml logs -f transfer-backend transfer-worker
+	@docker compose -f docker-compose.yml logs -f transfer-backend transfer-worker
 
 logs-orchestrator: ## 查看 Orchestrator 模块日志
-	@docker compose -f docker-compose.app.yml logs -f orchestrator-backend orchestrator-frontend
+	@docker compose -f docker-compose.yml logs -f orchestrator-backend orchestrator-frontend
 
 logs-gateway: ## 查看 Gateway 模块日志
-	@docker compose -f docker-compose.app.yml logs -f gateway
+	@docker compose -f docker-compose.yml logs -f gateway
 
 status: ## 显示所有服务状态
 	@echo "$(GREEN)服务状态:$(NC)"
-	@docker compose -f docker-compose.app.yml --profile full ps
+	@docker compose -f docker-compose.yml --profile full ps
 	@echo ""
 	@echo "$(YELLOW)服务访问地址:$(NC)"
 	@echo "  - Gateway:          http://localhost:8000  (未实现)"
@@ -392,7 +392,7 @@ clean-all: clean ## 清理所有数据（包括 Docker volumes 和数据库）
 	@echo "$(RED)警告: 此操作将删除所有数据！$(NC)"
 	@read -p "确认删除所有数据？(yes/no): " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
-		docker compose -f docker-compose.app.yml --profile full down -v; \
+		docker compose -f docker-compose.yml --profile full down -v; \
 		docker compose -f docker-compose.infra.yml down -v; \
 		rm -rf system/data/*.db; \
 		echo "$(GREEN)所有数据已清理$(NC)"; \
@@ -492,15 +492,15 @@ docs: ## 生成 API 文档
 
 check-frontend: ## 检查所有 frontend 的 Docker 配置是否符合规范
 	@echo "$(GREEN)检查 frontend Docker 配置...$(NC)"
-	@./scripts/setup/standardize-frontend-docker.sh
+	@./scripts/utils/standardize-frontend-docker.sh
 
 fix-frontend: ## 自动修复 frontend Docker 配置问题（创建缺失的 .dockerignore）
 	@echo "$(GREEN)修复 frontend Docker 配置...$(NC)"
-	@./scripts/setup/standardize-frontend-docker.sh --fix
+	@./scripts/utils/standardize-frontend-docker.sh --fix
 
 registry-start: ## 启动本地 Docker Registry（镜像构建必需）
 	@echo "$(GREEN)启动本地 Docker Registry...$(NC)"
-	@./scripts/setup/start-registry.sh
+	@./scripts/registry/start.sh
 
 registry-stop: ## 停止本地 Docker Registry
 	@echo "$(YELLOW)停止本地 Docker Registry...$(NC)"
@@ -519,14 +519,14 @@ registry-status: ## 检查本地 Docker Registry 状态
 
 prod-up-infra: ## 启动基础设施层（Postgres, Redis, MinIO, Meilisearch）
 	@echo "$(GREEN)启动基础设施层...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile infra up -d
+	@docker compose -f docker-compose.yml --profile infra up -d
 	@echo "$(GREEN)等待基础设施就绪...$(NC)"
 	@bash scripts/prod/wait-infra.sh
 	@echo "$(GREEN)基础设施已就绪！$(NC)"
 
 prod-down-infra: ## 停止基础设施层
 	@echo "$(YELLOW)停止基础设施层...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile infra down
+	@docker compose -f docker-compose.yml --profile infra down
 	@echo "$(GREEN)基础设施已停止$(NC)"
 
 prod-restart-infra: ## 重启基础设施层
@@ -535,13 +535,13 @@ prod-restart-infra: ## 重启基础设施层
 
 prod-up-addp: ## 启动所有 ADDP 应用服务（需要先启动 infra）
 	@echo "$(GREEN)启动 ADDP 应用服务...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile addp up -d
+	@docker compose -f docker-compose.yml --profile addp up -d
 	@echo "$(GREEN)ADDP 应用服务已启动$(NC)"
 	@$(MAKE) prod-status
 
 prod-down-addp: ## 停止所有 ADDP 应用服务（保留基础设施）
 	@echo "$(YELLOW)停止 ADDP 应用服务...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile addp down
+	@docker compose -f docker-compose.yml --profile addp down
 	@echo "$(GREEN)ADDP 应用服务已停止（基础设施保持运行）$(NC)"
 
 prod-restart-addp: ## 重启所有 ADDP 应用服务
@@ -550,13 +550,13 @@ prod-restart-addp: ## 重启所有 ADDP 应用服务
 
 prod-up: ## 启动完整平台（基础设施 + ADDP 应用）
 	@echo "$(GREEN)启动完整 ADDP 平台...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile infra --profile addp up -d
+	@docker compose -f docker-compose.yml --profile infra --profile addp up -d
 	@echo "$(GREEN)完整平台已启动$(NC)"
 	@$(MAKE) prod-status
 
 prod-down: ## 停止完整平台
 	@echo "$(YELLOW)停止完整平台...$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile infra --profile addp down
+	@docker compose -f docker-compose.yml --profile infra --profile addp down
 	@echo "$(GREEN)完整平台已停止$(NC)"
 
 prod-restart: ## 重启完整平台
@@ -564,20 +564,20 @@ prod-restart: ## 重启完整平台
 	@$(MAKE) prod-up
 
 prod-logs-infra: ## 查看基础设施日志
-	@docker compose -f docker-compose.prod.yml logs -f postgres redis minio meilisearch
+	@docker compose -f docker-compose.yml logs -f postgres redis minio meilisearch
 
 prod-logs-addp: ## 查看所有 ADDP 应用日志
-	@docker compose -f docker-compose.prod.yml --profile addp logs -f
+	@docker compose -f docker-compose.yml --profile addp logs -f
 
 prod-logs-orchestrator: ## 查看 Orchestrator 日志
-	@docker compose -f docker-compose.prod.yml logs -f orchestrator-backend orchestrator-frontend
+	@docker compose -f docker-compose.yml logs -f orchestrator-backend orchestrator-frontend
 
 prod-logs-develop: ## 查看 Develop 日志
-	@docker compose -f docker-compose.prod.yml logs -f develop-backend develop-frontend
+	@docker compose -f docker-compose.yml logs -f develop-backend develop-frontend
 
 prod-status: ## 显示所有服务状态和访问地址
 	@echo "$(GREEN)生产环境服务状态:$(NC)"
-	@docker compose -f docker-compose.prod.yml --profile infra --profile addp ps
+	@docker compose -f docker-compose.yml --profile infra --profile addp ps
 	@echo ""
 	@echo "$(YELLOW)访问地址:$(NC)"
 	@echo "  Portal (统一门户):      http://localhost:8000"

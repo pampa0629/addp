@@ -28,9 +28,7 @@ scripts/
 │   └── package.sh      # 3) 打包 - docker save/push 到磁盘或镜像仓库
 ├── local/          # 四、本地 Docker 部署
 ├── prod/           # 五、生产服务器部署
-├── setup/          # 环境配置和初始化工具
-├── test/           # 测试脚本
-├── debug/          # 调试和故障诊断工具
+├── registry/       # Docker Registry 管理
 └── utils/          # 通用工具脚本
 ```
 
@@ -357,54 +355,28 @@ docker service scale addp_transfer-worker=3
 
 ## 其他辅助目录
 
-### setup/ - 环境配置和初始化
+### registry/ - Docker Registry 管理
 
 ```bash
-scripts/setup/
-├── check-registry.sh             # 检查 Registry 可用性
-├── configure-docker-registry.sh  # 配置 Docker Registry
-├── pull-base-images.sh           # 拉取基础镜像
-├── standardize-frontend-docker.sh # 标准化前端 Docker 配置
-└── init-minio-mvt.sh             # 初始化 MinIO MVT 存储
+scripts/registry/
+├── init.sh         # 初始化本地 Docker Registry
+├── start.sh        # 启动已存在的 Registry
+├── check.sh        # 检查 Registry 状态和镜像列表
+└── configure.sh    # 配置 Docker daemon 信任 Registry
 ```
 
-**用途**: 环境初始化、Registry 配置、基础镜像准备
+**用途**: 本地镜像仓库管理、离线部署准备
 
-详见: [setup/README.md](setup/README.md)
-
-### test/ - 测试脚本
-
-```bash
-scripts/test/
-├── test-resource-sync.sh   # 测试资源同步
-└── test-tile-api.sh        # 测试瓦片 API
-```
-
-**用途**: 功能测试、API 验证、集成测试
-
-详见: [test/README.md](test/README.md)
-
-### debug/ - 调试和故障诊断
-
-```bash
-scripts/debug/
-└── scan/                   # 扫描相关调试工具
-    ├── debug.sh            # 调试扫描任务
-    ├── fix.sh              # 修复扫描问题
-    └── view-log.sh         # 查看扫描日志
-```
-
-**用途**: 故障排查、问题诊断、快速修复
-
-详见: [debug/README.md](debug/README.md)
+详见: [registry/README.md](registry/README.md)
 
 ### utils/ - 通用工具
 
 ```bash
 scripts/utils/
-├── check/                  # 各种检查工具
-├── go-mod-tidy-all.sh      # 批量清理 Go 依赖
-└── ports-validate.sh       # 端口冲突检查
+├── go-mod-tidy-all.sh               # 批量清理 Go 依赖
+├── ports-validate.sh                # 端口规范验证
+├── test-tile-api.sh                 # MVT 瓦片 API 测试
+└── standardize-frontend-docker.sh   # 前端 Docker 配置标准化
 ```
 
 **用途**: 通用工具函数、批量操作、验证检查

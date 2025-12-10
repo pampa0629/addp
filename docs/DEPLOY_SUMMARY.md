@@ -80,7 +80,7 @@ ssh pampa@192.168.1.182
 cd /opt/addp/business
 cp .env.prod.example .env
 vim .env  # 配置密码
-docker-compose -f docker-compose.prod.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # 4. 构建并部署 ADDP（服务器本地构建）
 cd /opt/addp
@@ -94,7 +94,7 @@ vim .env.prod  # 配置密钥和密码
 ./scripts/build/build-images.sh --registry localhost:5001
 
 # 启动
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+docker compose -f docker-compose.yml --env-file .env.prod up -d
 ```
 
 ---
@@ -113,7 +113,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 ### Business 基础设施
 
-1. **business/docker-compose.prod.yml** - Business 独立部署配置
+1. **business/docker-compose.yml** - Business 独立部署配置
 2. **business/.env.prod.example** - Business 环境变量模板
 3. **business/scripts/deploy-business.sh** - Business 部署脚本（macOS 兼容）
 4. **business/scripts/prepare-for-deploy.sh** - Business 打包脚本
@@ -148,8 +148,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 
 ### docker-compose 修改
 
-1. **docker-compose.prod.yml** - 移除 obsolete `version: '3.8'`
-2. **business/docker-compose.prod.yml** - 移除 obsolete `version: '3.8'`
+1. **docker-compose.yml** - 移除 obsolete `version: '3.8'`
+2. **business/docker-compose.yml** - 移除 obsolete `version: '3.8'`
 
 ---
 
@@ -212,7 +212,7 @@ make dev-start
 
 遇到问题请查看：
 
-1. 服务器日志: `docker-compose -f docker-compose.prod.yml logs -f`
+1. 服务器日志: `docker-compose -f docker-compose.yml logs -f`
 2. 构建日志: `/tmp/build-*.log`（服务器上）
 3. 网络连接: `curl http://Registry:PORT/v2/`
 4. 镜像列表: `docker images | grep addp`
