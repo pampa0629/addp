@@ -195,7 +195,7 @@ minio         (port 9000-9001) - MinIO 对象存储
 meilisearch   (port 7700)  - Meilisearch 全文搜索
 ```
 
-### 应用层 (docker-compose.app.yml)
+### 应用层 (docker-compose.yml)
 
 ```
 后端服务:
@@ -283,13 +283,13 @@ lsof -i :80    # Nginx
 
 ```bash
 # 查看容器日志
-docker compose -f docker-compose.app.yml logs system-backend
+docker compose -f docker-compose.yml logs system-backend
 
 # 查看所有容器状态
 bash scripts/local/status.sh
 
 # 重启特定服务
-docker compose -f docker-compose.app.yml restart system-backend
+docker compose -f docker-compose.yml restart system-backend
 ```
 
 ### 5. 健康检查超时
@@ -304,7 +304,7 @@ docker compose -f docker-compose.app.yml restart system-backend
 bash scripts/local/status.sh
 
 # 查看服务日志确认是否正常启动
-docker compose -f docker-compose.app.yml logs -f system-backend
+docker compose -f docker-compose.yml logs -f system-backend
 ```
 
 ## 数据持久化
@@ -337,16 +337,16 @@ docker volume rm addp-infra_postgres_data
 
 ```bash
 # 所有应用服务
-docker compose -f docker-compose.app.yml logs -f
+docker compose -f docker-compose.yml logs -f
 
 # 特定服务
-docker compose -f docker-compose.app.yml logs -f system-backend
+docker compose -f docker-compose.yml logs -f system-backend
 
 # 多个服务
-docker compose -f docker-compose.app.yml logs -f system-backend gateway
+docker compose -f docker-compose.yml logs -f system-backend gateway
 
 # 最近 100 行
-docker compose -f docker-compose.app.yml logs --tail=100 system-backend
+docker compose -f docker-compose.yml logs --tail=100 system-backend
 ```
 
 ### 进入容器调试
@@ -369,13 +369,13 @@ docker exec -it system-backend sh
 docker compose -f docker-compose.infra.yml up -d
 
 # 仅启动应用层
-docker compose -f docker-compose.app.yml up -d
+docker compose -f docker-compose.yml up -d
 
 # 重启特定服务
-docker compose -f docker-compose.app.yml restart gateway
+docker compose -f docker-compose.yml restart gateway
 
 # 查看特定服务状态
-docker compose -f docker-compose.app.yml ps system-backend
+docker compose -f docker-compose.yml ps system-backend
 ```
 
 ## 性能优化建议
@@ -398,7 +398,7 @@ docker compose -f docker-compose.app.yml ps system-backend
 - [scripts/prod/README.md](../prod/README.md) - 生产部署脚本
 - [CLAUDE.md](../../CLAUDE.md) - 项目整体架构文档
 - [docker-compose.infra.yml](../../docker-compose.infra.yml) - 基础设施层配置
-- [docker-compose.app.yml](../../docker-compose.app.yml) - 应用层配置
+- [docker-compose.yml](../../docker-compose.yml) - 应用层配置
 
 ## 注意事项
 
@@ -411,7 +411,7 @@ docker compose -f docker-compose.app.yml ps system-backend
 ## 故障排查流程
 
 1. **查看状态**: `bash scripts/local/status.sh`
-2. **检查日志**: `docker compose -f docker-compose.app.yml logs [service]`
+2. **检查日志**: `docker compose -f docker-compose.yml logs [service]`
 3. **验证镜像**: `docker images | grep addp`
 4. **检查端口**: `lsof -i :[port]`
 5. **重启服务**: `bash scripts/local/restart.sh`

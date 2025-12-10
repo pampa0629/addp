@@ -240,7 +240,7 @@ watch -n 30 ./scripts/prod/health-check.sh
 
 # 场景 3: 故障排查
 if ! ./scripts/prod/health-check.sh; then
-  docker-compose -f docker-compose.app.yml logs --tail=100
+  docker-compose -f docker-compose.yml logs --tail=100
 fi
 ```
 
@@ -424,7 +424,7 @@ IMAGE_TAG=v1.0.0 ./scripts/prod/start.sh
 **解决方法**:
 ```bash
 # 查看日志
-docker-compose -f docker-compose.app.yml logs system-backend | tail -100
+docker-compose -f docker-compose.yml logs system-backend | tail -100
 
 # 检查基础设施
 docker-compose -f docker-compose.infra.yml ps
@@ -448,7 +448,7 @@ lsof -i :8080
 # 杀死进程或修改端口配置
 kill -9 <PID>
 
-# 或修改 docker-compose.app.yml 中的端口映射
+# 或修改 docker-compose.yml 中的端口映射
 ```
 
 ### 问题 3: 健康检查失败
@@ -467,7 +467,7 @@ docker ps | grep manager-backend
 docker logs <container-id> --tail=100
 
 # 重启服务
-docker-compose -f docker-compose.app.yml restart manager-backend
+docker-compose -f docker-compose.yml restart manager-backend
 
 # 检查配置
 docker exec <container-id> env | grep SYSTEM_SERVICE_URL
@@ -496,13 +496,13 @@ cp .env .env.backup-$(date +%Y%m%d)
 ```bash
 # 所有服务日志
 docker-compose -f docker-compose.infra.yml logs -f
-docker-compose -f docker-compose.app.yml logs -f
+docker-compose -f docker-compose.yml logs -f
 
 # 特定服务日志
-docker-compose -f docker-compose.app.yml logs -f system-backend
+docker-compose -f docker-compose.yml logs -f system-backend
 
 # 最近 100 行
-docker-compose -f docker-compose.app.yml logs --tail=100 manager-backend
+docker-compose -f docker-compose.yml logs --tail=100 manager-backend
 ```
 
 ### 查看状态
@@ -510,7 +510,7 @@ docker-compose -f docker-compose.app.yml logs --tail=100 manager-backend
 ```bash
 # 容器状态
 docker-compose -f docker-compose.infra.yml ps
-docker-compose -f docker-compose.app.yml ps
+docker-compose -f docker-compose.yml ps
 
 # 资源使用
 docker stats
@@ -554,7 +554,7 @@ docker system prune -a --volumes
 3. **监控日志**: 使用 `health-check.sh` 定期检查服务健康
 4. **渐进式更新**: 先在测试环境验证，再部署到生产环境
 5. **使用 Swarm**: 生产环境推荐使用 Docker Swarm 提高可用性
-6. **资源限制**: 在 docker-compose.prod.yml 中配置 CPU 和内存限制
+6. **资源限制**: 在 docker-compose.yml 中配置 CPU 和内存限制
 7. **安全加固**: 修改默认密码、启用 HTTPS、配置防火墙
 
 ---

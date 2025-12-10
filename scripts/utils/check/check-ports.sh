@@ -69,7 +69,7 @@ if [ ${#CONFLICTS[@]} -gt 0 ]; then
   done
 
   echo ""
-  echo "方案 B: 修改 docker-compose.prod.yml 使用不同端口"
+  echo "方案 B: 修改 docker-compose.yml 使用不同端口"
   echo "  例如: 9001:9001 改为 19001:9001"
 
   exit 1

@@ -65,10 +65,10 @@ echo ""
 echo -e "${YELLOW}▶️  Stopping application layer...${NC}"
 
 if [ "$REMOVE_VOLUMES" = true ]; then
-    docker compose -f docker-compose.app.yml down -v
+    docker compose -f docker-compose.yml down -v
     echo -e "${GREEN}✓ Application layer stopped (volumes removed)${NC}"
 else
-    docker compose -f docker-compose.app.yml down
+    docker compose -f docker-compose.yml down
     echo -e "${GREEN}✓ Application layer stopped (volumes preserved)${NC}"
 fi
 

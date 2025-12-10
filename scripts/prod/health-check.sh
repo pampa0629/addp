@@ -8,14 +8,14 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}=== 基础设施层健康检查 ===${NC}"
 
 # PostgreSQL
-if docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U addp > /dev/null 2>&1; then
+if docker compose -f docker-compose.yml exec -T postgres pg_isready -U addp > /dev/null 2>&1; then
   echo -e "${GREEN}✓ PostgreSQL${NC}"
 else
   echo -e "${RED}✗ PostgreSQL${NC}"
 fi
 
 # Redis
-if docker compose -f docker-compose.prod.yml exec -T redis redis-cli --raw incr ping > /dev/null 2>&1; then
+if docker compose -f docker-compose.yml exec -T redis redis-cli --raw incr ping > /dev/null 2>&1; then
   echo -e "${GREEN}✓ Redis${NC}"
 else
   echo -e "${RED}✗ Redis${NC}"

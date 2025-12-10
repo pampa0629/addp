@@ -339,7 +339,7 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 ```
 dist/package-offline-{timestamp}/
 ├── docker-compose.infra.yml       # 基础设施配置
-├── docker-compose.prod.yml        # 应用服务配置
+├── docker-compose.yml        # 应用服务配置
 ├── .env.example                   # 环境变量模板
 ├── scripts/
 │   ├── infra/                     # 基础设施初始化（含 init-db.sql）
@@ -359,7 +359,7 @@ Tarball: dist/addp-deploy-offline-{timestamp}.tar.gz
 ```
 dist/package-registry-{timestamp}/
 ├── docker-compose.infra.yml       # 基础设施配置
-├── docker-compose.prod.yml        # 应用服务配置（Registry URLs 已更新）
+├── docker-compose.yml        # 应用服务配置（Registry URLs 已更新）
 ├── .env.example                   # 环境变量模板
 ├── scripts/
 │   ├── infra/                     # 基础设施初始化
@@ -408,7 +408,7 @@ dist/package-registry-{timestamp}/
 
 # 3. 启动测试
 docker-compose -f docker-compose.infra.yml up -d
-docker-compose -f docker-compose.app.yml up -d
+docker-compose -f docker-compose.yml up -d
 
 # 4. 验证
 curl http://localhost:8080/health

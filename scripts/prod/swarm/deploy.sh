@@ -32,8 +32,8 @@ if [ ! -f ".env" ]; then
     exit 1
 fi
 
-if [ ! -f "docker-compose.prod.yml" ]; then
-    echo "❌ docker-compose.prod.yml 不存在"
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ docker-compose.yml 不存在"
     exit 1
 fi
 
@@ -89,11 +89,11 @@ echo ""
 if [[ $DEPLOY_MODE =~ ^[2]$ ]]; then
     # System Only
     export COMPOSE_PROFILES=""
-    docker stack deploy -c docker-compose.prod.yml addp
+    docker stack deploy -c docker-compose.yml addp
 else
     # Full
     export COMPOSE_PROFILES="full"
-    COMPOSE_PROFILES=full docker stack deploy -c docker-compose.prod.yml addp
+    COMPOSE_PROFILES=full docker stack deploy -c docker-compose.yml addp
 fi
 
 echo ""

@@ -97,14 +97,14 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
         bash "$SCRIPT_DIR/deploy.sh"
     else
         echo "⚠️  未找到 deploy.sh，请手动部署:"
-        echo "    docker stack deploy -c docker-compose.prod.yml addp"
+        echo "    docker stack deploy -c docker-compose.yml addp"
     fi
 else
     echo ""
     echo "初始化完成！稍后可以运行以下命令部署服务:"
     echo "    ./scripts/prod/swarm/deploy.sh"
     echo "    或"
-    echo "    docker stack deploy -c docker-compose.prod.yml addp"
+    echo "    docker stack deploy -c docker-compose.yml addp"
 fi
 
 echo ""

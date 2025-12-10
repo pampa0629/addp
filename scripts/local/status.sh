@@ -46,8 +46,8 @@ echo ""
 echo -e "${CYAN}=== Application Layer ===${NC}"
 echo ""
 
-if docker compose -f docker-compose.app.yml ps --format json 2>/dev/null | grep -q .; then
-    docker compose -f docker-compose.app.yml ps
+if docker compose -f docker-compose.yml ps --format json 2>/dev/null | grep -q .; then
+    docker compose -f docker-compose.yml ps
 else
     echo -e "${YELLOW}No application services running${NC}"
 fi
@@ -62,9 +62,9 @@ echo -e "${CYAN}=== Service URLs ===${NC}"
 echo ""
 
 # Check if key services are running
-SYSTEM_RUNNING=$(docker compose -f docker-compose.app.yml ps system-backend --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-GATEWAY_RUNNING=$(docker compose -f docker-compose.app.yml ps gateway --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
-NGINX_RUNNING=$(docker compose -f docker-compose.app.yml ps nginx --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+SYSTEM_RUNNING=$(docker compose -f docker-compose.yml ps system-backend --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+GATEWAY_RUNNING=$(docker compose -f docker-compose.yml ps gateway --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
+NGINX_RUNNING=$(docker compose -f docker-compose.yml ps nginx --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 POSTGRES_RUNNING=$(docker compose -f docker-compose.infra.yml ps postgres --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 
 if [ "$NGINX_RUNNING" -gt 0 ]; then
@@ -144,8 +144,8 @@ echo ""
 echo -e "  ${GREEN}Start:${NC}   bash scripts/local/start.sh"
 echo -e "  ${GREEN}Stop:${NC}    bash scripts/local/stop.sh"
 echo -e "  ${GREEN}Restart:${NC} bash scripts/local/restart.sh"
-echo -e "  ${GREEN}Logs:${NC}    docker compose -f docker-compose.app.yml logs -f [service]"
+echo -e "  ${GREEN}Logs:${NC}    docker compose -f docker-compose.yml logs -f [service]"
 echo ""
 echo -e "${CYAN}Example:${NC}"
-echo -e "  docker compose -f docker-compose.app.yml logs -f system-backend"
+echo -e "  docker compose -f docker-compose.yml logs -f system-backend"
 echo ""

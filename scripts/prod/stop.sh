@@ -26,10 +26,10 @@ echo ""
 if [ ! -f ".env.prod" ]; then
     echo -e "${YELLOW}Warning: .env.prod not found${NC}"
     echo "Stopping services without env file..."
-    docker compose -f docker-compose.prod.yml down
+    docker compose -f docker-compose.yml down
 else
     echo -e "${YELLOW}Stopping ADDP services...${NC}"
-    docker compose -f docker-compose.prod.yml --env-file .env.prod down
+    docker compose -f docker-compose.yml --env-file .env.prod down
 fi
 
 echo ""

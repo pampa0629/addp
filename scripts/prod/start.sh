@@ -30,7 +30,7 @@ bash scripts/prod/wait-infra.sh
 
 # 第二步：启动 System Backend（其他服务依赖它）
 echo -e "${YELLOW}[2/4] 启动 System Backend...${NC}"
-docker compose -f docker-compose.app.yml up -d system-backend
+docker compose -f docker-compose.yml up -d system-backend
 
 echo -e "${YELLOW}等待 System Backend 就绪...${NC}"
 timeout=60
@@ -40,7 +40,7 @@ until curl -f http://localhost:8080/health > /dev/null 2>&1; do
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
     echo -e "${RED}错误: System Backend 启动超时${NC}"
-    docker compose -f docker-compose.app.yml logs system-backend | tail -30
+    docker compose -f docker-compose.yml logs system-backend | tail -30
     exit 1
   fi
 done
@@ -48,7 +48,7 @@ echo -e "${GREEN}✓ System Backend 已就绪${NC}"
 
 # 第三步：启动其他后端服务
 echo -e "${YELLOW}[3/4] 启动所有业务后端服务...${NC}"
-docker compose -f docker-compose.app.yml up -d \
+docker compose -f docker-compose.yml up -d \
   manager-backend \
   manager-worker \
   meta-backend \
@@ -101,7 +101,7 @@ done
 
 # 第五步：启动前端服务和 Portal
 echo -e "${YELLOW}[5/5] 启动前端服务和 Portal 统一门户...${NC}"
-docker compose -f docker-compose.app.yml up -d \
+docker compose -f docker-compose.yml up -d \
   system-frontend \
   manager-frontend \
   meta-frontend \
@@ -145,7 +145,7 @@ echo -e "${YELLOW}基础设施层:${NC}"
 docker compose -f docker-compose.infra.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 echo ""
 echo -e "${YELLOW}应用服务层:${NC}"
-docker compose -f docker-compose.app.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
+docker compose -f docker-compose.yml ps --format "table {{.Service}}\t{{.State}}\t{{.Health}}\t{{.Ports}}"
 
 echo ""
 echo -e "${YELLOW}API 端点:${NC}"
@@ -172,10 +172,10 @@ echo -e "  - Develop Frontend:     http://localhost:8095"
 echo ""
 echo -e "${YELLOW}常用命令:${NC}"
 echo -e "  查看基础设施日志:   docker compose -f docker-compose.infra.yml logs -f [service-name]"
-echo -e "  查看应用日志:       docker compose -f docker-compose.app.yml logs -f [service-name]"
+echo -e "  查看应用日志:       docker compose -f docker-compose.yml logs -f [service-name]"
 echo -e "  停止基础设施:       docker compose -f docker-compose.infra.yml down"
-echo -e "  停止应用服务:       docker compose -f docker-compose.app.yml down"
-echo -e "  重启服务:           docker compose -f docker-compose.app.yml restart [service-name]"
+echo -e "  停止应用服务:       docker compose -f docker-compose.yml down"
+echo -e "  重启服务:           docker compose -f docker-compose.yml restart [service-name]"
 echo -e "  健康检查:           bash scripts/prod/health-check.sh"
 
 echo ""

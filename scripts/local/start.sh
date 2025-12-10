@@ -117,7 +117,7 @@ wait_for_health() {
 
     echo -e "${RED}⚠️  ${service_name} health check timeout (${timeout}s)${NC}"
     echo -e "${YELLOW}Note: Service may still be starting. Check logs with:${NC}"
-    echo "  docker compose -f docker-compose.app.yml logs ${service_name}"
+    echo "  docker compose -f docker-compose.yml logs ${service_name}"
     return 1
 }
 
@@ -165,27 +165,27 @@ echo -e "${BLUE}🚀 Starting Application Layer${NC}"
 echo -e "${BLUE}========================================${NC}"
 
 echo -e "${YELLOW}▶️  Starting application services...${NC}"
-docker compose -f docker-compose.app.yml up -d
+docker compose -f docker-compose.yml up -d
 
 echo -e "${CYAN}Application services:${NC}"
-docker compose -f docker-compose.app.yml ps
+docker compose -f docker-compose.yml ps
 
 # Wait for key services to be healthy
 echo ""
 echo -e "${YELLOW}⏳ Waiting for key services to be healthy...${NC}"
 
 # Wait for System Backend (critical)
-if docker compose -f docker-compose.app.yml ps system-backend | grep -q "Up"; then
+if docker compose -f docker-compose.yml ps system-backend | grep -q "Up"; then
     wait_for_health "http://localhost:8080/health" "System Backend" 120
 fi
 
 # Wait for Gateway
-if docker compose -f docker-compose.app.yml ps gateway | grep -q "Up"; then
+if docker compose -f docker-compose.yml ps gateway | grep -q "Up"; then
     wait_for_health "http://localhost:8000/health" "Gateway" 60
 fi
 
 # Wait for Nginx
-if docker compose -f docker-compose.app.yml ps nginx | grep -q "Up"; then
+if docker compose -f docker-compose.yml ps nginx | grep -q "Up"; then
     wait_for_health "http://localhost:80/health" "Nginx" 30
 fi
 
@@ -216,7 +216,7 @@ echo -e "${GREEN}Management Commands:${NC}"
 echo -e "  ${CYAN}Status:${NC}   bash scripts/local/status.sh"
 echo -e "  ${CYAN}Stop:${NC}     bash scripts/local/stop.sh"
 echo -e "  ${CYAN}Restart:${NC}  bash scripts/local/restart.sh"
-echo -e "  ${CYAN}Logs:${NC}     docker compose -f docker-compose.app.yml logs -f [service]"
+echo -e "  ${CYAN}Logs:${NC}     docker compose -f docker-compose.yml logs -f [service]"
 echo ""
 
 echo -e "${YELLOW}Note:${NC} Some services may take additional time to fully initialize."

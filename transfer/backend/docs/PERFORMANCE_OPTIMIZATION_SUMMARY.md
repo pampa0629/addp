@@ -265,18 +265,25 @@ cd transfer/backend/scripts
 
 ## 🚀 快速开始
 
-### 一键部署
+### 前置准备
 
 ```bash
+# 1. 启动基础设施
 cd /Users/pampa/code/addp
-./scripts/setup/high-performance-import.sh
-```
+./scripts/infra/up.sh
 
-部署脚本将自动:
-1. ✅ 启动 PostgreSQL/PostGIS (business infrastructure)
-2. ✅ 优化 PostgreSQL 配置（禁用 fsync、增大缓冲区）
-3. ✅ 启动 Transfer backend
-4. ✅ 显示使用指南和 API 示例
+# 2. 启动 Transfer Backend
+cd transfer/backend
+go run cmd/server/main.go
+
+# 3. (可选) 优化 PostgreSQL 配置
+# 编辑 business/docker-compose.yml 中的 PostgreSQL 配置:
+# - shared_buffers = 2GB
+# - work_mem = 256MB
+# - maintenance_work_mem = 1GB
+# - effective_cache_size = 8GB
+# 然后重启: docker-compose -f business/docker-compose.yml restart postgres
+```
 
 ### 创建导入任务
 
