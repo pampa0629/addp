@@ -112,6 +112,17 @@
             </el-menu-item>
           </el-sub-menu>
 
+          <el-sub-menu index="develop">
+            <template #title>
+              <el-icon><Edit /></el-icon>
+              <span>数据开发</span>
+            </template>
+            <el-menu-item index="/develop/sql">
+              <el-icon><Monitor /></el-icon>
+              <span>SQL 工作台</span>
+            </el-menu-item>
+          </el-sub-menu>
+
           <el-sub-menu index="system">
             <template #title>
               <el-icon><Setting /></el-icon>
@@ -189,6 +200,15 @@
                 </div>
               </el-card>
             </el-col>
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('develop')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
+                  <h2>数据开发</h2>
+                  <p>SQL 查询、脚本开发、结果导出</p>
+                </div>
+              </el-card>
+            </el-col>
           </el-row>
         </div>
         <div v-else class="iframe-wrapper">
@@ -218,7 +238,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -349,6 +369,13 @@ const handleMenuSelect = (index) => {
       } else {
         url = `${moduleUrls[module]}/`
       }
+    } else if (module === 'develop') {
+      // Develop 模块的路由: /sql 等 (不需要 /develop 前缀)
+      if (page) {
+        url = `${moduleUrls[module]}/${page}`
+      } else {
+        url = `${moduleUrls[module]}/`
+      }
     } else if (page) {
       // 其他模块保持原有逻辑
       url = `${moduleUrls[module]}/${page}`
@@ -381,6 +408,8 @@ const navigateToModule = (module) => {
     handleMenuSelect('/transfer/tasks')
   } else if (module === 'orchestrator') {
     handleMenuSelect('/orchestrator/orchestrations')
+  } else if (module === 'develop') {
+    handleMenuSelect('/develop/sql')
   }
 }
 

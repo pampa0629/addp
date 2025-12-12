@@ -282,3 +282,42 @@ func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Res
 	return &resource, nil
 }
 
+// ListComputeResources 查询所有具有计算能力的资源
+func (c *SystemClient) ListComputeResources(filters map[string]string) ([]*models.Resource, error) {
+	url := fmt.Sprintf("%s/internal/registry/compute-resources", c.baseURL)
+
+	// 添加查询参数（如果需要）
+	if len(filters) > 0 {
+		queryParams := []string{}
+		for k, v := range filters {
+			queryParams = append(queryParams, fmt.Sprintf("%s=%s", k, v))
+		}
+		url += "?" + strings.Join(queryParams, "&")
+	}
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resources []*models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return resources, nil
+}

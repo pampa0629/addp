@@ -7,151 +7,196 @@
       </el-button>
     </div>
 
-    <el-tabs v-model="activeTab" class="task-tabs">
-      <!-- Transfer 任务 -->
-      <el-tab-pane label="Transfer" name="transfer">
-        <div v-loading="loading" class="task-list">
-          <el-empty v-if="transferTasks.length === 0" description="暂无任务" :image-size="80" />
+    <div class="task-tree-container">
+      <el-tree
+        :data="treeData"
+        :props="treeProps"
+        node-key="id"
+        default-expand-all
+        :expand-on-click-node="false"
+        v-loading="loading"
+      >
+        <template #default="{ node, data }">
           <div
-            v-for="task in transferTasks"
-            :key="task.id"
-            class="task-item"
-            draggable="true"
-            @dragstart="startDrag('transfer', task, $event)"
+            class="tree-node"
+            :class="{'task-node': data.type === 'task', 'module-node': data.type === 'module'}"
+            :draggable="data.type === 'task'"
+            @dragstart="startDrag(data, $event)"
           >
-            <div class="task-header">
-              <el-icon class="drag-icon"><Rank /></el-icon>
-              <span class="task-name">{{ task.name }}</span>
-            </div>
-            <div class="task-meta">
-              <el-tag size="small" :type="getTaskTypeColor(task.type)">
-                {{ task.type }}
-              </el-tag>
-              <el-tag size="small" :type="getStatusColor(task.status)">
-                {{ task.status }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
+            <!-- 模块节点 -->
+            <template v-if="data.type === 'module'">
+              <el-icon class="module-icon"><FolderOpened /></el-icon>
+              <span class="module-name">{{ data.label }}</span>
+              <el-badge :value="data.taskCount" :hidden="!data.taskCount" class="task-count-badge" />
+            </template>
 
-      <!-- Meta 任务 -->
-      <el-tab-pane label="Meta" name="meta">
-        <div v-loading="loading" class="task-list">
-          <el-empty v-if="metaTasks.length === 0" description="暂无任务" :image-size="80" />
-          <div
-            v-for="task in metaTasks"
-            :key="task.id"
-            class="task-item"
-            draggable="true"
-            @dragstart="startDrag('meta', task, $event)"
-          >
-            <div class="task-header">
+            <!-- 任务节点 -->
+            <template v-else-if="data.type === 'task'">
               <el-icon class="drag-icon"><Rank /></el-icon>
-              <span class="task-name">{{ task.name }}</span>
-            </div>
-            <div class="task-meta">
-              <el-tag size="small" type="info">{{ task.schedule_type }}</el-tag>
-              <el-tag size="small" :type="task.enabled ? 'success' : 'info'">
-                {{ task.enabled ? '已启用' : '未启用' }}
-              </el-tag>
-            </div>
+              <span class="task-name">{{ data.label }}</span>
+              <div class="task-tags" @click.stop>
+                <el-tag v-if="data.status" size="small" :type="getStatusColor(data.status)">
+                  {{ data.status }}
+                </el-tag>
+                <el-tag v-if="data.taskType" size="small" :type="getTaskTypeColor(data.taskType)">
+                  {{ data.taskType }}
+                </el-tag>
+              </div>
+            </template>
           </div>
-        </div>
-      </el-tab-pane>
+        </template>
+      </el-tree>
 
-      <!-- Manager 任务 -->
-      <el-tab-pane label="Manager" name="manager">
-        <div class="task-list">
-          <el-empty description="暂无任务" :image-size="80" />
-        </div>
-      </el-tab-pane>
-    </el-tabs>
+      <el-empty v-if="treeData.length === 0 && !loading" description="暂无任务" :image-size="80" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Refresh, Rank } from '@element-plus/icons-vue'
-import modulesApi from '@/api/modules'
+import { Refresh, Rank, FolderOpened } from '@element-plus/icons-vue'
+import computeResourcesAPI from '../api/computeResources'
+import modulesApi from '../api/modules'
 import { ElMessage } from 'element-plus'
 
-const activeTab = ref('transfer')
 const loading = ref(false)
-const transferTasks = ref([])
-const metaTasks = ref([])
+const treeData = ref([])
+const treeProps = {
+  children: 'children',
+  label: 'label'
+}
 
-onMounted(() => {
-  loadTransferTasks()
-  loadMetaTasks()
+onMounted(async () => {
+  await loadAllTasks()
 })
 
-const loadTransferTasks = async () => {
+// 加载所有计算资源及其任务
+async function loadAllTasks() {
   loading.value = true
   try {
-    const data = await modulesApi.listTransferTasks()
-    transferTasks.value = data.items || []
+    // 1. 获取所有计算资源
+    const resources = await computeResourcesAPI.list()
+    console.log('已加载计算资源:', resources)
+
+    // 2. 为每个资源加载任务
+    const treeNodes = []
+    for (const resource of resources) {
+      const moduleNode = await loadResourceTasks(resource)
+      if (moduleNode) {
+        treeNodes.push(moduleNode)
+      }
+    }
+
+    treeData.value = treeNodes
+    console.log('树形数据已构建:', treeData.value)
   } catch (error) {
-    console.error('加载 Transfer 任务失败:', error)
-    ElMessage.error('加载 Transfer 任务失败')
+    console.error('加载任务失败:', error)
+    ElMessage.error('加载任务失败')
   } finally {
     loading.value = false
   }
 }
 
-const loadMetaTasks = async () => {
+// 加载单个资源的任务
+async function loadResourceTasks(resource) {
   try {
-    const data = await modulesApi.listMetaTasks()
-    metaTasks.value = Array.isArray(data) ? data : (data.items || [])
+    const uniqueIdentifier = resource.unique_identifier
+    console.log(`加载资源任务: ${uniqueIdentifier}`)
+
+    // 调用后端 API 获取任务列表
+    const data = await modulesApi.listTasksByIdentifier(uniqueIdentifier)
+    const tasks = data.items || []
+
+    console.log(`资源 ${uniqueIdentifier} 的任务:`, tasks)
+
+    // 构建树节点
+    const children = tasks.map(task => ({
+      id: `${uniqueIdentifier}-task-${task.id}`,
+      label: task.name || `任务 ${task.id}`,
+      type: 'task',
+      uniqueIdentifier,
+      taskId: task.id,
+      taskType: task.type || null,
+      status: task.status || null,
+      enabled: task.enabled,
+      endpoint: task.endpoint || buildEndpointFallback(uniqueIdentifier, task),
+      method: 'POST',
+      parameters: task.parameters || {}
+    }))
+
+    return {
+      id: uniqueIdentifier,
+      label: resource.display_name || resource.name,  // 优先使用中文显示名称
+      type: 'module',
+      uniqueIdentifier,
+      taskCount: children.length,
+      children
+    }
   } catch (error) {
-    console.error('加载 Meta 任务失败:', error)
-    ElMessage.error('加载 Meta 任务失败')
+    console.error(`加载资源 ${resource.unique_identifier} 任务失败:`, error)
+    // 返回空任务的模块节点
+    return {
+      id: resource.unique_identifier,
+      label: resource.display_name || resource.name,  // 优先使用中文显示名称
+      type: 'module',
+      uniqueIdentifier: resource.unique_identifier,
+      taskCount: 0,
+      children: []
+    }
   }
 }
 
-const refreshAll = () => {
-  loadTransferTasks()
-  loadMetaTasks()
+// 回退的 endpoint 构建逻辑（兼容旧格式）
+function buildEndpointFallback(uniqueIdentifier, task) {
+  if (uniqueIdentifier.startsWith('transfer.')) {
+    return `/api/tasks/${task.id}/execute`
+  } else if (uniqueIdentifier.startsWith('meta.')) {
+    return `/api/scan/tasks/${task.id}/run`
+  } else if (uniqueIdentifier.startsWith('manager.')) {
+    return `/api/quick-view/${task.id}/execute`
+  }
+  return ''
 }
 
-const startDrag = (module, task, event) => {
+// 刷新所有任务
+async function refreshAll() {
+  await loadAllTasks()
+  ElMessage.success('任务列表已刷新')
+}
+
+// 拖拽任务到画布
+function startDrag(data, event) {
+  if (data.type !== 'task') return
+
   const nodeData = {
-    module,
-    taskId: task.id,
-    name: task.name,
-    type: task.type || 'scan',
-    endpoint: buildEndpoint(module, task),
-    method: 'POST',
-    parameters: {}
+    uniqueIdentifier: data.uniqueIdentifier,  // 新增：unique_identifier
+    module: data.uniqueIdentifier.split('.')[0],  // 兼容旧字段
+    taskId: data.taskId,
+    name: data.label,
+    type: data.taskType,
+    endpoint: data.endpoint,
+    method: data.method,
+    parameters: data.parameters
   }
 
+  console.log('拖拽任务数据:', nodeData)
   event.dataTransfer.setData('application/json', JSON.stringify(nodeData))
   event.dataTransfer.effectAllowed = 'copy'
 }
 
-const buildEndpoint = (module, task) => {
-  switch (module) {
-    case 'transfer':
-      return `/api/tasks/${task.id}/execute`
-    case 'meta':
-      return `/api/scan/tasks/${task.id}/run`
-    case 'manager':
-      return `/api/cache/tasks/${task.id}/execute`
-    default:
-      return ''
-  }
-}
-
-const getTaskTypeColor = (type) => {
+// 任务类型颜色
+function getTaskTypeColor(type) {
   const colors = {
     import: 'success',
     export: 'warning',
-    sync: 'info'
+    sync: 'info',
+    scan: 'primary'
   }
   return colors[type] || 'info'
 }
 
-const getStatusColor = (status) => {
+// 任务状态颜色
+function getStatusColor(status) {
   const colors = {
     pending: 'info',
     running: 'warning',
@@ -178,6 +223,7 @@ const getStatusColor = (status) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .panel-header h3 {
@@ -186,48 +232,61 @@ const getStatusColor = (status) => {
   font-weight: 500;
 }
 
-.task-tabs {
+.task-tree-container {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.el-tabs__content) {
-  flex: 1;
-  overflow: hidden;
-}
-
-:deep(.el-tab-pane) {
-  height: 100%;
-}
-
-.task-list {
-  height: 100%;
   overflow-y: auto;
   padding: 8px;
 }
 
-.task-item {
-  padding: 12px;
-  margin-bottom: 8px;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  cursor: move;
-  background: white;
-  transition: all 0.3s;
-}
-
-.task-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-color: #409eff;
-  transform: translateX(2px);
-}
-
-.task-header {
+/* 树节点样式 */
+.tree-node {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+/* 模块节点 */
+.module-node {
+  font-weight: 500;
+  color: #303133;
+}
+
+.module-node:hover {
+  background-color: #f5f7fa;
+}
+
+.module-icon {
+  color: #409eff;
+  flex-shrink: 0;
+}
+
+.module-name {
+  flex: 1;
+  font-size: 14px;
+}
+
+.task-count-badge {
+  margin-left: auto;
+}
+
+/* 任务节点 */
+.task-node {
+  cursor: move;
+  padding: 8px;
+  margin: 2px 0;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  background: white;
+}
+
+.task-node:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #409eff;
+  transform: translateX(2px);
 }
 
 .drag-icon {
@@ -237,16 +296,33 @@ const getStatusColor = (status) => {
 
 .task-name {
   flex: 1;
-  font-weight: 500;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-meta {
+.task-tags {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Element Plus Tree 样式覆盖 */
+:deep(.el-tree-node__content) {
+  height: auto !important;
+  padding: 4px 0;
+}
+
+:deep(.el-tree-node__children) {
+  overflow: visible;
+}
+
+:deep(.el-tree-node) {
+  white-space: normal;
+}
+
+:deep(.el-tree-node__expand-icon) {
+  color: #909399;
 }
 </style>

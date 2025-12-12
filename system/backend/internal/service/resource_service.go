@@ -60,6 +60,7 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 
 	resource := &models.Resource{
 		Name:           req.Name,
+		DisplayName:    req.DisplayName, // 中文显示名称
 		ResourceType:   req.ResourceType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
@@ -67,6 +68,11 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		CreatedBy:      &createdBy,
 		TenantID:       user.TenantID, // 继承用户的租户ID
 		IsActive:       true,
+	}
+
+	// 如果未提供 display_name，默认等于 name
+	if resource.DisplayName == "" {
+		resource.DisplayName = resource.Name
 	}
 
 	if err := s.repo.Create(resource); err != nil {
@@ -104,6 +110,7 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 
 	resource := &models.Resource{
 		Name:           req.Name,
+		DisplayName:    req.DisplayName, // 中文显示名称
 		ResourceType:   req.ResourceType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
@@ -111,6 +118,11 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 		TenantID:       tenantPtr,
 		IsActive:       true,
 		CreatedBy:      createdBy,
+	}
+
+	// 如果未提供 display_name，默认等于 name
+	if resource.DisplayName == "" {
+		resource.DisplayName = resource.Name
 	}
 
 	if err := s.repo.Create(resource); err != nil {
@@ -211,6 +223,9 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 
 	if req.Name != nil {
 		resource.Name = *req.Name
+	}
+	if req.DisplayName != nil {
+		resource.DisplayName = *req.DisplayName
 	}
 	if req.ConnectionInfo != nil {
 		// 合并连接信息：如果新值是脱敏占位符，保留原值

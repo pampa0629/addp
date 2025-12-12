@@ -68,8 +68,8 @@ func main() {
 	log.Println("✅ 调度器启动成功")
 	log.Println("✅ 引擎注册表已初始化（从 System 动态加载）")
 
-	// 设置路由
-	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient)
+	// 设置路由（传递 engineRegistry）
+	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

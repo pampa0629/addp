@@ -95,3 +95,42 @@ func (h *SQLHandler) Health(c *gin.Context) {
 		"version": "0.1.0",
 	})
 }
+
+// ListResources 获取可用的数据库资源列表
+// GET /api/develop/resources
+func (h *SQLHandler) ListResources(c *gin.Context) {
+	// 从上下文获取租户信息
+	tenantID, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "租户信息缺失"})
+		return
+	}
+
+	tenantIDUint, ok := tenantID.(uint)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "租户ID类型错误"})
+		return
+	}
+
+	// 提取 JWT token（去除 "Bearer " 前缀）
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少认证令牌"})
+		return
+	}
+
+	// 解析 Bearer token
+	token := authHeader
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token = authHeader[7:]
+	}
+
+	// 调用 Service 层方法
+	resources, err := h.sqlService.ListDatabaseResourcesWithToken(c.Request.Context(), tenantIDUint, token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取资源列表失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resources)
+}

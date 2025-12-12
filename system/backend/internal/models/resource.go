@@ -72,6 +72,7 @@ func (s *ScanConfig) Scan(value interface{}) error {
 type Resource struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	Name           string         `gorm:"not null;index" json:"name"`
+	DisplayName    string         `gorm:"not null;size:255" json:"display_name"` // 中文显示名称
 	ResourceType   string         `gorm:"not null" json:"resource_type"` // database, compute_engine, object_storage
 	ConnectionInfo ConnectionInfo `gorm:"type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"type:text" json:"description"`
@@ -93,6 +94,7 @@ type Resource struct {
 
 type ResourceCreateRequest struct {
 	Name           string         `json:"name" binding:"required"`
+	DisplayName    string         `json:"display_name"` // 中文显示名称（可选，未提供时默认等于 name）
 	ResourceType   string         `json:"resource_type" binding:"required"`
 	ConnectionInfo ConnectionInfo `json:"connection_info" binding:"required"`
 	Description    string         `json:"description"`
@@ -101,6 +103,7 @@ type ResourceCreateRequest struct {
 
 type ResourceUpdateRequest struct {
 	Name           *string         `json:"name"`
+	DisplayName    *string         `json:"display_name"` // 支持更新显示名称
 	ConnectionInfo *ConnectionInfo `json:"connection_info"`
 	Description    *string         `json:"description"`
 	IsActive       *bool           `json:"is_active"`

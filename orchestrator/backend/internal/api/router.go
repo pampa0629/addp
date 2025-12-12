@@ -1,6 +1,9 @@
 package api
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
@@ -13,6 +16,7 @@ func SetupRouter(
 	executor *service.Executor,
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
+	engineRegistry *service.EngineRegistry,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -30,7 +34,10 @@ func SetupRouter(
 		c.Next()
 	})
 
-	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient)
+	// 创建 HTTP 客户端
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+
+	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, httpClient)
 
 	api := router.Group("/api")
 	{
@@ -46,7 +53,10 @@ func SetupRouter(
 		api.GET("/orchestrations/:id/executions", handler.ListExecutions)
 		api.GET("/orch-executions/:id", handler.GetExecution)
 
-		// 模块任务列表 (用于拖拽复用)
+		// 计算资源管理（动态从 System 获取）
+		api.GET("/compute-resources", handler.ListComputeResources)
+
+		// 模块任务列表 (用于拖拽复用，动态调用)
 		api.GET("/tasks/list", handler.ListModuleTasks)
 	}
 

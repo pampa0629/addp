@@ -144,6 +144,7 @@ bash scripts/dev/stop.sh
 |------|------|------|------|
 | `compile.sh` | 编译二进制文件 | Go 源码 | `dist/release-{os}-{arch}/` |
 | `build-images.sh` | 构建 Docker 镜像 | 二进制文件 | Docker 镜像 |
+| `push-images.sh` | 推送镜像到 Registry | Docker 镜像 | 远程 Registry |
 | `package.sh` | 打包部署包 | 镜像 + 配置 | 部署包 tarball |
 
 ### 1. compile.sh - 编译
@@ -184,7 +185,33 @@ IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh
 
 **输出**: Docker 镜像 `{REGISTRY}/addp-{service}:{TAG}`
 
-### 3. package.sh - 打包
+### 3. push-images.sh - 推送镜像
+
+```bash
+# ⚠️ 必须先登录 Registry
+docker login  # Docker Hub
+# 或: docker login harbor.example.com:5001
+
+# 推送所有镜像到 Docker Hub
+bash scripts/build/push-images.sh --registry docker.io/myusername
+
+# 推送指定版本
+bash scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --tag v1.0.0
+
+# 仅推送部分服务
+bash scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --services system-backend,manager-backend,gateway
+
+# 干运行测试（不实际推送）
+bash scripts/build/push-images.sh --registry docker.io/myusername --dry-run
+```
+
+**输出**: 镜像推送到远程 Registry（Docker Hub、Harbor 等）
+
+### 4. package.sh - 打包
 
 ```bash
 # 离线部署包（包含构建脚本，用于服务器上编译）
@@ -204,10 +231,19 @@ bash scripts/build/package.sh --server ubuntu@192.168.1.100
 ### 完整构建流程
 
 ```bash
-# 生产发布示例
+# 生产发布示例（完整流程）
+# 1. 编译多架构二进制
 ./scripts/build/compile.sh --arch both
-IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh --multi-arch --registry hub.docker.com/myorg
-./scripts/build/package.sh --mode registry --registry hub.docker.com/myorg
+
+# 2. 构建多架构镜像
+IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh --multi-arch --registry localhost:5001
+
+# 3. 推送镜像到 Registry
+docker login  # 或: docker login harbor.example.com:5001
+./scripts/build/push-images.sh --registry docker.io/myorg --tag v1.0.0
+
+# 4. 生成部署包
+./scripts/build/package.sh --mode registry --registry docker.io/myorg
 ```
 
 详见: [build/README.md](build/README.md)
@@ -444,16 +480,20 @@ bash scripts/build/compile.sh --arch both
 # 2. 构建多架构镜像
 IMAGE_TAG=v1.0.0 bash scripts/build/build-images.sh \
   --multi-arch \
-  --registry hub.docker.com/myorg
+  --registry localhost:5001
 
-# 3. 推送镜像到 Registry
-docker push hub.docker.com/myorg/addp-system-backend:v1.0.0
-# ... 推送所有镜像
+# 3. 登录并推送镜像到 Registry
+docker login  # Docker Hub
+# 或: docker login harbor.example.com:5001  # Harbor
+
+bash scripts/build/push-images.sh \
+  --registry docker.io/myorg \
+  --tag v1.0.0
 
 # 4. 生成部署包
 bash scripts/build/package.sh \
   --mode registry \
-  --registry hub.docker.com/myorg \
+  --registry docker.io/myorg \
   --server ubuntu@production-server
 
 # 5. 在生产服务器上部署

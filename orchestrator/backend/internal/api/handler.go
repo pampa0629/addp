@@ -1,9 +1,15 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
@@ -12,11 +18,13 @@ import (
 
 // OrchestrationHandler 编排 API 处理器
 type OrchestrationHandler struct {
-	orchRepo     *repository.OrchestrationRepository
-	execRepo     *repository.ExecutionRepository
-	executor     *service.Executor
-	scheduler    *service.Scheduler
-	moduleClient *service.ModuleClient
+	orchRepo       *repository.OrchestrationRepository
+	execRepo       *repository.ExecutionRepository
+	executor       *service.Executor
+	scheduler      *service.Scheduler
+	moduleClient   *service.ModuleClient
+	engineRegistry *service.EngineRegistry
+	httpClient     *http.Client
 }
 
 // NewOrchestrationHandler 创建处理器
@@ -26,13 +34,21 @@ func NewOrchestrationHandler(
 	executor *service.Executor,
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
+	engineRegistry *service.EngineRegistry,
+	httpClient *http.Client,
 ) *OrchestrationHandler {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
 	return &OrchestrationHandler{
-		orchRepo:     orchRepo,
-		execRepo:     execRepo,
-		executor:     executor,
-		scheduler:    scheduler,
-		moduleClient: moduleClient,
+		orchRepo:       orchRepo,
+		execRepo:       execRepo,
+		executor:       executor,
+		scheduler:      scheduler,
+		moduleClient:   moduleClient,
+		engineRegistry: engineRegistry,
+		httpClient:     httpClient,
 	}
 }
 
@@ -225,107 +241,213 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// ListModuleTasks 列出指定模块的任务
-// GET /api/tasks/list?module=transfer|meta|manager&page=1&page_size=100
-func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
-	module := c.Query("module")
-	if module == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 module 参数"})
-		return
-	}
+// ListComputeResources 列出所有具有计算能力的资源（转发到 System）
+// GET /api/compute-resources
+func (h *OrchestrationHandler) ListComputeResources(c *gin.Context) {
+	ctx := c.Request.Context()
 
-	var result interface{}
-	var err error
-
-	switch module {
-	case "transfer":
-		result, err = h.listTransferTasks(c)
-	case "meta":
-		result, err = h.listMetaTasks(c)
-	case "manager":
-		result, err = h.listManagerTasks(c)
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的模块名称"})
-		return
-	}
-
+	// 使用 EngineRegistry 的 ListAllEngines 方法（内部会调用 System API）
+	resources, err := h.engineRegistry.ListAllEngines(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取计算资源失败: %v", err)})
 		return
 	}
 
+	c.JSON(http.StatusOK, resources)
+}
+
+// ListModuleTasks 列出指定资源的任务（动态调用）
+// GET /api/tasks/list?unique_identifier=meta.scanner.default&page=1&page_size=100
+func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
+	uniqueIdentifier := c.Query("unique_identifier")
+	if uniqueIdentifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 unique_identifier 参数"})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// 1. 从 EngineRegistry 获取引擎配置
+	engine, err := h.engineRegistry.GetEngine(ctx, uniqueIdentifier)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到引擎: %v", err)})
+		return
+	}
+
+	// 2. 解析 TaskAPIConfig
+	if engine.TaskAPIConfig == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "引擎未配置 task_api_config"})
+		return
+	}
+
+	var apiConfig commonModels.TaskAPIConfig
+	if err := json.Unmarshal([]byte(*engine.TaskAPIConfig), &apiConfig); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("解析 task_api_config 失败: %v", err)})
+		return
+	}
+
+	// 3. 获取 list endpoint 配置
+	listEndpoint, ok := apiConfig.Endpoints["list"]
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "引擎未配置 list endpoint"})
+		return
+	}
+
+	// 4. 构建目标 URL（支持查询参数模板替换）
+	targetURL := apiConfig.BaseURL + listEndpoint.Path
+
+	// 构建查询参数（从模板中提取 + 从请求中传递）
+	queryParams := make(map[string]string)
+
+	// 从模板中提取查询参数并替换变量
+	if listEndpoint.QueryParams != nil {
+		for key, templateValue := range listEndpoint.QueryParams {
+			// 简单模板替换（支持 {{.TenantID}} 等变量）
+			replacedValue := replaceTemplateVars(templateValue, c)
+			queryParams[key] = replacedValue
+		}
+	}
+
+	// 传递请求中的查询参数（page, page_size 等）
+	for key, values := range c.Request.URL.Query() {
+		if key != "unique_identifier" && len(values) > 0 {
+			queryParams[key] = values[0]
+		}
+	}
+
+	// 构建完整 URL
+	if len(queryParams) > 0 {
+		queryParts := []string{}
+		for key, value := range queryParams {
+			queryParts = append(queryParts, fmt.Sprintf("%s=%s", key, value))
+		}
+		targetURL += "?" + strings.Join(queryParts, "&")
+	}
+
+	// 5. 发送 HTTP 请求
+	req, err := http.NewRequestWithContext(ctx, listEndpoint.Method, targetURL, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建请求失败: %v", err)})
+		return
+	}
+
+	// 传递 Authorization 头（如果存在）
+	if authHeader := c.GetHeader("Authorization"); authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("调用模块 API 失败: %v", err)})
+		return
+	}
+	defer resp.Body.Close()
+
+	// 6. 读取响应
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取响应失败: %v", err)})
+		return
+	}
+
+	// 检查 HTTP 状态码
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":       fmt.Sprintf("模块 API 返回错误，状态码: %d", resp.StatusCode),
+			"target_url":  targetURL,
+			"status_code": resp.StatusCode,
+			"body":        string(body),
+		})
+		return
+	}
+
+	// 7. 解析并标准化响应格式
+	var respData interface{}
+	if err := json.Unmarshal(body, &respData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      fmt.Sprintf("解析响应失败: %v", err),
+			"target_url": targetURL,
+			"body":       string(body),
+		})
+		return
+	}
+
+	// 8. 统一返回格式
+	result := h.standardizeTaskListResponse(respData)
 	c.JSON(http.StatusOK, result)
 }
 
-func (h *OrchestrationHandler) listTransferTasks(c *gin.Context) (interface{}, error) {
-	page := c.DefaultQuery("page", "1")
-	pageSize := c.DefaultQuery("page_size", "100")
-
-	params := map[string]interface{}{}
-	if page != "" {
-		params["page"] = page
-	}
-	if pageSize != "" {
-		params["page_size"] = pageSize
-	}
-	if taskType := c.Query("type"); taskType != "" {
-		params["type"] = taskType
-	}
-	if status := c.Query("status"); status != "" {
-		params["status"] = status
-	}
-
-	result, err := h.moduleClient.Call(c, "transfer", "/api/tasks", "GET", params)
-	if err != nil {
-		return nil, err
-	}
-
-	// 转换格式: {data: [...], total: X} -> {items: [...], total: X}
-	// Transfer API 使用 common.SendPaginatedResponse 返回 {data, total, page, page_size}
-	// 前端期望 {items, total} 格式
-	if resultMap, ok := result.(map[string]interface{}); ok {
-		if data, exists := resultMap["data"]; exists {
-			return map[string]interface{}{
-				"items": data,
-				"total": resultMap["total"],
-			}, nil
+// standardizeTaskListResponse 统一任务列表响应格式
+// 将不同模块的返回格式统一为 {items: [...], total: X}
+func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{}) map[string]interface{} {
+	resultMap, ok := respData.(map[string]interface{})
+	if !ok {
+		// 非对象响应，直接返回空列表
+		return map[string]interface{}{
+			"items": []interface{}{},
+			"total": 0,
 		}
 	}
 
-	return result, nil
-}
-
-func (h *OrchestrationHandler) listMetaTasks(c *gin.Context) (interface{}, error) {
-	result, err := h.moduleClient.Call(c, "meta", "/api/meta/scan/tasks", "GET", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// 转换格式: {data: [...]} -> {items: [...], total: X}
-	// Meta API 返回 {data: [...]} 格式
-	// 前端期望 {items, total} 格式
-	if resultMap, ok := result.(map[string]interface{}); ok {
-		if data, exists := resultMap["data"]; exists {
-			items := data
-			total := 0
-			if arr, ok := data.([]interface{}); ok {
-				total = len(arr)
-			}
-			return map[string]interface{}{
-				"items": items,
-				"total": total,
-			}, nil
+	// 情况 1: 已经是标准格式 {items: [...], total: X}
+	if items, hasItems := resultMap["items"]; hasItems {
+		total := 0
+		if t, ok := resultMap["total"].(float64); ok {
+			total = int(t)
+		} else if t, ok := resultMap["total"].(int); ok {
+			total = t
+		}
+		return map[string]interface{}{
+			"items": items,
+			"total": total,
 		}
 	}
 
-	return result, nil
-}
+	// 情况 2: Transfer 格式 {data: [...], total: X, page: X, page_size: X}
+	if data, hasData := resultMap["data"]; hasData {
+		total := 0
+		if t, ok := resultMap["total"].(float64); ok {
+			total = int(t)
+		} else if t, ok := resultMap["total"].(int); ok {
+			total = t
+		}
+		return map[string]interface{}{
+			"items": data,
+			"total": total,
+		}
+	}
 
-func (h *OrchestrationHandler) listManagerTasks(c *gin.Context) (interface{}, error) {
-	// Manager 模块暂无通用任务列表API,返回空列表
+	// 情况 3: 直接是数组，包装为标准格式
 	return map[string]interface{}{
 		"items": []interface{}{},
 		"total": 0,
-	}, nil
+	}
+}
+
+// replaceTemplateVars 替换模板变量（如 {{.TenantID}}）
+// 支持的变量：
+// - {{.TenantID}} - 从请求中获取租户 ID（优先从 query，其次从 JWT）
+// - {{.UserID}} - 从 JWT 中获取用户 ID
+func replaceTemplateVars(template string, c *gin.Context) string {
+	result := template
+
+	// 替换 {{.TenantID}}
+	if strings.Contains(result, "{{.TenantID}}") {
+		tenantID := c.Query("tenant_id")
+		if tenantID == "" {
+			// TODO: 从 JWT 中提取 tenant_id
+			tenantID = "1" // 默认值
+		}
+		result = strings.ReplaceAll(result, "{{.TenantID}}", tenantID)
+	}
+
+	// 替换 {{.UserID}}
+	if strings.Contains(result, "{{.UserID}}") {
+		// TODO: 从 JWT 中提取 user_id
+		userID := "1" // 默认值
+		result = strings.ReplaceAll(result, "{{.UserID}}", userID)
+	}
+
+	return result
 }
 

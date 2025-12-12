@@ -486,6 +486,58 @@ CREATE TABLE IF NOT EXISTS develop.script_dependencies (
 CREATE INDEX IF NOT EXISTS idx_develop_deps_script ON develop.script_dependencies(script_id);
 CREATE INDEX IF NOT EXISTS idx_develop_deps_depends ON develop.script_dependencies(depends_on_script_id);
 
+-- 空间任务定义表（GIS 工作流任务）
+CREATE TABLE IF NOT EXISTS develop.spatial_tasks (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
+    name VARCHAR(128) NOT NULL,
+    description TEXT,
+    workflow_def JSONB NOT NULL,       -- DAG 定义（算子链）
+    input_schema JSONB,                -- 参数定义（参数化）
+    output_schema JSONB,               -- 输出定义
+    schedule VARCHAR(100),             -- Cron 表达式（可选）
+    status VARCHAR(20) DEFAULT 'active',
+    last_execution_id UUID,
+    last_execution_status VARCHAR(20),
+    last_execution_started_at TIMESTAMP,
+    last_execution_finished_at TIMESTAMP,
+    created_by INTEGER REFERENCES system.users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP,
+    CONSTRAINT unique_spatial_task_name_per_tenant UNIQUE(tenant_id, name, deleted_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spatial_tasks_tenant ON develop.spatial_tasks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_spatial_tasks_status ON develop.spatial_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_spatial_tasks_created_by ON develop.spatial_tasks(created_by);
+
+-- 空间执行结果表（Develop 即时执行结果）
+CREATE TABLE IF NOT EXISTS develop.spatial_execution_results (
+    id SERIAL PRIMARY KEY,
+    execution_id UUID NOT NULL,
+    task_id INTEGER REFERENCES develop.spatial_tasks(id) ON DELETE SET NULL,
+    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
+    geom GEOMETRY(GEOMETRY, 4326),        -- 空间字段
+    properties JSONB,                     -- 属性数据
+    created_by INTEGER REFERENCES system.users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_tenant ON develop.spatial_execution_results(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_execution ON develop.spatial_execution_results(execution_id);
+CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_geom ON develop.spatial_execution_results USING GIST(geom);
+CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_task ON develop.spatial_execution_results(task_id);
+
+-- Develop 模块触发器
+DROP TRIGGER IF EXISTS update_scripts_updated_at ON develop.scripts;
+CREATE TRIGGER update_scripts_updated_at BEFORE UPDATE ON develop.scripts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_spatial_tasks_updated_at ON develop.spatial_tasks;
+CREATE TRIGGER update_spatial_tasks_updated_at BEFORE UPDATE ON develop.spatial_tasks
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Note: Orchestrator schema is initialized separately via scripts/init-orchestrator.sql
 -- This is handled by infra-init-db.sh script
 

@@ -281,7 +281,7 @@ func (s *UnifiedMVTService) persistToMinIO(
 	}
 
 	// 3. 构建 MinIO 对象名
-	objectName := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectName := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 
 	// 4. 上传到 MinIO
 	_, err := s.spatialPreviewService.minioClient.PutObject(

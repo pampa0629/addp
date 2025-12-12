@@ -226,7 +226,7 @@ func (s *SpatialPreviewService) GetTile(ctx context.Context, fingerprint string,
 	}
 	logger.L().Info("✅ MinIO 客户端已初始化")
 
-	objectName := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectName := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 	logger.L().Info("📦 尝试从 MinIO 读取对象",
 		"bucket", s.bucket,
 		"object", objectName)
@@ -308,7 +308,7 @@ func (s *SpatialPreviewService) CheckTileExists(ctx context.Context, fingerprint
 		return false, fmt.Errorf("failed to initialize MinIO client: %w", err)
 	}
 
-	objectName := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectName := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 	_, err := s.minioClient.StatObject(ctx, s.bucket, objectName, minio.StatObjectOptions{})
 	if err != nil {
 		// 对象不存在

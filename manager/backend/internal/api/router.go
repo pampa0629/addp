@@ -151,6 +151,10 @@ func SetupRouter(
 		quickViewHandler := NewQuickViewHandler(quickViewService)
 		quickViewHandler.ListQuickViewTasks(c)
 	})
+	api.GET("/quick-view/list", func(c *gin.Context) {
+		quickViewHandler := NewQuickViewHandler(quickViewService)
+		quickViewHandler.ListQuickViewTasks(c)
+	})
 	api.GET("/quick-view/statistics", func(c *gin.Context) {
 		quickViewHandler := NewQuickViewHandler(quickViewService)
 		quickViewHandler.GetStatistics(c)

@@ -213,17 +213,11 @@ for i in $(seq 1 ${max_wait}); do
   if [ "$i" -eq "$max_wait" ]; then echo -e "\n${RED}✗ PostgreSQL 等待超时${NC}"; exit 1; fi
 done
 
-if [[ "${SKIP_INFRA_DB_INIT:-0}" != "1" ]]; then
-  bash "${SCRIPT_DIR}/init-db.sh"
-else
-  echo -e "${YELLOW}▶ 跳过系统库初始化（SKIP_INFRA_DB_INIT=1）${NC}"
-fi
-
-# Install PostgreSQL extensions (PostGIS + pgvector)
+# Initialize PostgreSQL (pg_hba.conf + extensions + schemas)
 if [[ "${SKIP_POSTGRESQL_INIT:-0}" != "1" ]]; then
   bash "${SCRIPT_DIR}/init-postgresql.sh"
 else
-  echo -e "${YELLOW}▶ 跳过 PostgreSQL 扩展安装（SKIP_POSTGRESQL_INIT=1）${NC}"
+  echo -e "${YELLOW}▶ 跳过 PostgreSQL 初始化（SKIP_POSTGRESQL_INIT=1）${NC}"
 fi
 
 # Redis

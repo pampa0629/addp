@@ -194,10 +194,11 @@ Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
 - **Language**: Go 1.23+
 - **HTTP Framework**: Gin
 - **ORM**: GORM
-- **Databases**: PostgreSQL 15 (all modules with schema isolation: system, manager, metadata, transfer)
+- **Databases**: PostgreSQL 15 (all modules with schema isolation: system, manager, metadata, transfer, orchestrator, develop)
 - **Cache/Queue**: Redis 7
 - **Object Storage**: MinIO (S3-compatible)
 - **Task Queue**: Asynq (Redis-based, for Transfer module), Cron (for Meta module scheduling)
+- **Spatial Computation**: GeoPandas Engine (Python-based spatial workflow execution with in-memory GeoDataFrame processing)
 
 ### Frontend
 
@@ -873,6 +874,7 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 | Orchestrator Frontend| 5177     | 8094        | Standalone access             |
 | Develop Backend      | 8085     | 8085        | Development tools             |
 | Develop Frontend     | 5178     | 8095        | Standalone access             |
+| GeoPandas Engine     | 8090     | 8090        | Spatial computation engine (Python) |
 | PostgreSQL (System)  | 5432     | 5432        | ADDP system metadata          |
 | Redis                | 6379     | 6379        | Cache & queue                 |
 | MinIO System API     | 9000     | 9000        | System file storage           |
@@ -1294,6 +1296,83 @@ This is implemented via **event-driven architecture**:
   - Meta (future): `meta:*` queues
   - Other modules: `{module_name}:*` queues
 - **Worker Configuration**: Runs with Docker Swarm for high availability (2 replicas by default)
+
+### GeoPandas Engine (IMPLEMENTED)
+
+**Purpose**: Python-based spatial computation engine providing GIS workflow execution capabilities
+
+**Architecture**: HTTP Sidecar Pattern (independent Flask microservice)
+
+**Key Features** (IMPLEMENTED):
+
+- **21 Spatial Operators** across 5 categories:
+  - 几何处理 (8): buffer, centroid, convex_hull, simplify, dissolve, envelope, boundary, representative_point
+  - 空间关系 (3): intersection, union, difference
+  - 几何属性 (3): area, length, distance
+  - 格式转换 (2): to_crs, explode
+  - 批处理 (2): clip, spatial_join
+  - 高级算子 (3): voronoi, delaunay_triangulation, minimum_rotated_rectangle
+
+- **Memory-Efficient Workflow Execution**:
+  - GeoDataFrame全程内存传递（避免中间序列化）
+  - DAG拓扑排序（Kahn算法）
+  - 支持 `{"$ref": "taskID"}` 引用上游结果
+  - 最终结果写入 PostGIS GEOMETRY 字段
+
+- **Dual Execution Modes**:
+  - **即时执行**: Develop模块中直接调用工作流API（`POST /api/spatial/workflow`）
+  - **任务保存**: 保存为 GIS 任务（存储到 `develop.spatial_tasks`），供 Orchestrator 编排
+
+- **Engine Registration**:
+  - 仅注册引擎本身到 System（`geopandas.engine.default`）
+  - 不注册具体算子（Transfer模式）
+  - 任务动态发现：`GET /api/spatial/tasks`
+
+**API Endpoints**:
+
+```
+GET  /health                          - 健康检查
+GET  /api/spatial/operators           - 获取算子列表（21个）
+POST /api/spatial/workflow            - 即时执行工作流
+POST /api/spatial/operators/:name/execute - 执行单个算子
+GET  /api/spatial/tasks               - 列出保存的任务
+POST /api/spatial/tasks               - 创建任务
+POST /api/spatial/tasks/:id/execute   - 执行任务
+GET  /api/spatial/executions/:id      - 查询执行状态
+```
+
+**Database**: PostgreSQL `develop` schema
+- `develop.spatial_tasks` - GIS任务定义（workflow_def JSONB, input_schema JSONB, schedule VARCHAR）
+- `develop.spatial_execution_results` - 执行结果（geom GEOMETRY(GEOMETRY, 4326), properties JSONB）
+
+**Orchestrator Integration** (IMPLEMENTED):
+- 支持参数模板化：`{{stepID.field.nestedField}}`
+- 跨步骤数据传递：SQL → GIS → Transfer
+- 示例：`{"poi_location": "{{sql_extract.geojson}}"}`
+
+**Technology Stack**:
+- **Language**: Python 3.11
+- **Framework**: Flask + CORS
+- **Libraries**: GeoPandas 0.14.1, Shapely 2.0.2, NumPy<2.0
+- **Database**: SQLAlchemy 2.0.23 + GeoAlchemy2 0.14.3
+- **Deployment**: Docker + Gunicorn (4 workers, 600s timeout)
+
+**Port**: 8090 (both dev and production)
+
+**Key Files**:
+- [geopandas-engine/workflow_engine.py](geopandas-engine/workflow_engine.py) - DAG执行引擎
+- [geopandas-engine/operators.py](geopandas-engine/operators.py) - 21个空间算子
+- [geopandas-engine/api_server.py](geopandas-engine/api_server.py) - Flask REST API
+- [develop/backend/internal/service/spatial_workflow_service.go](develop/backend/internal/service/spatial_workflow_service.go) - Develop集成
+- [develop/frontend/src/views/SpatialTasks.vue](develop/frontend/src/views/SpatialTasks.vue) - 任务管理UI
+- [orchestrator/backend/internal/service/executor.go](orchestrator/backend/internal/service/executor.go) - 参数模板化实现
+- [orchestrator/docs/PARAMETER_TEMPLATING.md](orchestrator/docs/PARAMETER_TEMPLATING.md) - 参数模板化文档
+
+**Design Principles**:
+- ✅ **Engine-only registration**: 只注册引擎，不注册算子（减少System表膨胀）
+- ✅ **Memory efficiency**: GeoDataFrame内存传递，避免反复序列化
+- ✅ **PostGIS storage**: 结果存储为GEOMETRY类型（支持空间索引和查询）
+- ✅ **Independent implementation**: 完全独立的空间计算引擎，可复用于多场景
 
 ## Inter-Service Communication
 

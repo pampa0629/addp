@@ -5,7 +5,8 @@
 ## 目录
 
 - [compile.sh](#compilesh) - 二进制编译器
-- [build-images.sh](#build-imagessh) - Docker 镜像构建器  
+- [build-images.sh](#build-imagessh) - Docker 镜像构建器
+- [push-images.sh](#push-imagessh) - 镜像推送工具
 - [package.sh](#packagesh) - 部署包生成器
 
 ---
@@ -243,6 +244,321 @@ docker push harbor.example.com:5001/addp-system-backend:v1.2.0
 
 ---
 
+## push-images.sh
+
+**用途**: 推送 Docker 镜像到远程镜像仓库（Docker Hub、Harbor、私有 Registry）
+
+### 使用方法
+
+```bash
+# 推送到 Docker Hub
+./scripts/build/push-images.sh --registry docker.io/myusername
+
+# 推送到阿里云 ACR
+./scripts/build/push-images.sh \
+  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
+
+# 推送到 Harbor
+./scripts/build/push-images.sh --registry harbor.example.com:5001/project
+
+# 指定镜像标签
+./scripts/build/push-images.sh --registry docker.io/myusername --tag v1.0.0
+
+# 仅推送特定服务
+./scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --services system-backend,manager-backend,gateway
+
+# 干运行（不实际推送，仅显示将推送的镜像）
+./scripts/build/push-images.sh --registry docker.io/myusername --dry-run
+```
+
+### 参数说明
+
+| 参数 | 值 | 说明 |
+|------|------|------|
+| `--registry` | URL | **必填**，目标 Registry 地址（如 `docker.io/USERNAME`、`registry.com/namespace`） |
+| `--tag` | 版本号 | 镜像标签（默认：`latest`） |
+| `--services` | 服务列表 | 逗号分隔的服务名（默认：`all`，推送所有 18 个服务） |
+| `--dry-run` | - | 干运行模式，仅显示将推送的镜像，不实际推送 |
+| `--source-registry` | URL | 源 Registry 地址（默认：`localhost:5001`） |
+
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `IMAGE_TAG` | `latest` | 镜像标签 |
+| `SOURCE_REGISTRY` | `localhost:5001` | 源 Registry |
+
+### 镜像命名规则
+
+脚本使用标准 Docker 命名格式：
+
+**格式**: `{REGISTRY}/addp-{service}:{TAG}`
+
+**适用场景**:
+- Docker Hub
+- Harbor
+- 阿里云 ACR（个人版和企业版）
+- 私有 Registry
+
+**示例**:
+```bash
+# Docker Hub
+docker.io/myusername/addp-system-backend:latest
+docker.io/myusername/addp-manager-backend:latest
+
+# 阿里云 ACR
+crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
+crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
+
+# Harbor
+harbor.example.com:5001/project/addp-system-backend:latest
+harbor.example.com:5001/project/addp-manager-backend:latest
+```
+
+**特点**:
+- 每个服务对应一个独立的镜像仓库（repository）
+- 版本通过 tag 管理（`latest`, `v1.0.0` 等）
+- 符合 Docker 标准规范
+
+### 推送的镜像列表
+
+脚本会推送以下 18 个镜像（当使用 `--services all` 或不指定时）：
+
+**后端服务** (7 个):
+- `addp-system-backend`
+- `addp-manager-backend`
+- `addp-meta-backend`
+- `addp-transfer-backend`
+- `addp-orchestrator-backend`
+- `addp-develop-backend`
+- `addp-gateway`
+
+**Worker 服务** (3 个):
+- `addp-meta-worker`
+- `addp-transfer-worker`
+- `addp-manager-worker`
+
+**前端服务** (6 个):
+- `addp-system-frontend`
+- `addp-manager-frontend`
+- `addp-meta-frontend`
+- `addp-transfer-frontend`
+- `addp-orchestrator-frontend`
+- `addp-develop-frontend`
+
+**Portal + Nginx** (2 个):
+- `addp-portal`
+- `addp-nginx`
+
+### 前置条件
+
+1. **必须先构建镜像**（运行 `build-images.sh`）
+2. **必须登录目标 Registry**：
+   ```bash
+   # Docker Hub
+   docker login
+
+   # Harbor 或私有 Registry
+   docker login harbor.example.com:5001
+   ```
+
+### 工作原理
+
+脚本执行以下步骤：
+
+1. **验证参数** - 检查 `--registry` 是否提供
+2. **检查 Docker 状态** - 验证 Docker 是否运行
+3. **检查登录状态** - 提示用户是否已登录 Registry
+4. **遍历服务列表**：
+   - 检查源镜像是否存在（`localhost:5001/addp-{service}:{tag}`）
+   - Tag 镜像到目标 Registry（`{target-registry}/addp-{service}:{tag}`）
+   - 推送镜像到目标 Registry
+   - 记录成功/失败/跳过的服务
+5. **显示推送摘要** - 成功数、失败数、跳过数
+
+### 示例
+
+```bash
+# 场景 1: 推送所有镜像到 Docker Hub
+docker login
+./scripts/build/push-images.sh --registry docker.io/myusername
+
+# 场景 2: 推送到阿里云 ACR
+docker login crpi-xxx.cn-beijing.personal.cr.aliyuncs.com
+./scripts/build/push-images.sh \
+  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
+
+# 场景 3: 推送特定版本到 Docker Hub
+./scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --tag v1.0.0
+
+# 场景 4: 仅推送核心服务
+./scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --services system-backend,manager-backend,meta-backend,gateway
+
+# 场景 5: 推送到私有 Harbor
+docker login harbor.example.com:5001
+./scripts/build/push-images.sh \
+  --registry harbor.example.com:5001/addp \
+  --tag v2.0.0
+
+# 场景 6: 干运行测试（不实际推送）
+./scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --dry-run
+```
+
+### Registry 地址格式
+
+不同 Registry 的地址格式和说明：
+
+| Registry 类型 | 格式示例 | 说明 |
+|--------------|---------|------|
+| **Docker Hub** | `docker.io/USERNAME` | 最常用的公共镜像仓库 |
+| **Harbor** | `harbor.example.com:5001/PROJECT` | 企业级私有镜像仓库 |
+| **私有 Registry** | `registry.company.com:5000` | 自建 Docker Registry |
+| **GitHub Container Registry** | `ghcr.io/USERNAME` | GitHub 提供的容器镜像服务 |
+| **阿里云 ACR 个人版** | `crpi-xxx.cn-region.personal.cr.aliyuncs.com/NAMESPACE` | 个人版限制 300 个仓库，ADDP 18 个服务完全够用 |
+| **阿里云 ACR 企业版** | `registry.cn-hangzhou.aliyuncs.com/NAMESPACE` | 企业版无仓库数量限制 |
+
+**说明**:
+- 所有 Registry 均使用标准 Docker 命名格式：`{REGISTRY}/addp-{service}:{TAG}`
+- 每个服务对应一个独立的镜像仓库（repository）
+- 版本通过 tag 管理（`latest`, `v1.0.0` 等）
+
+### 推送结果示例
+
+```
+========================================
+ADDP Image Pusher
+========================================
+
+Source Registry: localhost:5001
+Target Registry: docker.io/myusername
+Tag: latest
+Services: all
+Dry Run: false
+
+Services to push (18 total):
+  - system-backend
+  - manager-backend
+  - meta-backend
+  ...
+
+========================================
+Pushing Images
+========================================
+
+Processing system-backend...
+  Tagging: localhost:5001/addp-system-backend:latest → docker.io/myusername/addp-system-backend:latest
+  Pushing: docker.io/myusername/addp-system-backend:latest
+✓ Pushed system-backend (245MB)
+
+...
+
+========================================
+Summary
+========================================
+Total services: 18
+Successfully pushed: 18
+Failed: 0
+Skipped (not found): 0
+
+✓ All images pushed successfully!
+
+Next steps:
+1. Verify images in registry: docker.io/myusername
+   Visit: https://hub.docker.com/r/myusername/repositories
+2. Generate deployment package:
+   ./scripts/build/package.sh --mode registry --registry docker.io/myusername
+3. Deploy on server:
+   docker compose -f docker-compose.yml pull
+   bash scripts/prod/start.sh
+```
+
+**阿里云 ACR 推送示例**:
+
+```bash
+# 推送到阿里云 ACR
+./scripts/build/push-images.sh \
+  --registry crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp
+
+# 结果：18 个独立仓库
+# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-system-backend:latest
+# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-manager-backend:latest
+# crpi-xxx.cn-beijing.personal.cr.aliyuncs.com/addp/addp-meta-backend:latest
+# ... (共 18 个仓库)
+```
+
+### 注意事项
+
+1. **登录验证**: 推送前必须登录目标 Registry（`docker login`）
+2. **网络依赖**: 推送所有 18 个镜像需要稳定的网络（总大小约 2-5GB）
+3. **权限要求**: 确保 Docker Hub 或 Registry 账号有推送权限
+4. **命名规范**: 镜像名称保持 `addp-` 前缀不变
+5. **版本管理**: 生产环境建议使用明确的版本标签（如 `v1.0.0`），避免 `latest`
+6. **推送时间**: 首次推送所有镜像可能需要 10-30 分钟（取决于网络速度）
+
+### 故障排查
+
+#### 问题 1: 源镜像不存在
+
+**错误信息**:
+```
+⚠ Warning: Source image not found: localhost:5001/addp-system-backend:latest
+```
+
+**解决方法**:
+```bash
+# 先构建镜像
+./scripts/build/compile.sh
+./scripts/build/build-images.sh
+```
+
+#### 问题 2: 未登录 Registry
+
+**错误信息**:
+```
+denied: requested access to the resource is denied
+```
+
+**解决方法**:
+```bash
+# Docker Hub
+docker login
+
+# Harbor 或私有 Registry
+docker login harbor.example.com:5001
+```
+
+#### 问题 3: 推送超时
+
+**解决方法**:
+```bash
+# 增加 Docker daemon 超时时间（在 Docker Desktop 设置中）
+# 或者仅推送部分服务
+./scripts/build/push-images.sh \
+  --registry docker.io/myusername \
+  --services system-backend,manager-backend
+```
+
+#### 问题 4: Registry 磁盘空间不足
+
+**错误信息**:
+```
+error writing blob: insufficient_storage
+```
+
+**解决方法**:
+- 清理 Registry 中的旧镜像
+- 联系 Registry 管理员增加存储配额
+
+---
+
 ## package.sh
 
 **用途**: 生成部署包，支持离线部署和镜像仓库部署两种模式
@@ -423,25 +739,28 @@ curl http://localhost:8080/health
 # 2. 构建多架构镜像
 IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
   --multi-arch \
-  --registry hub.docker.com/myorg
+  --registry localhost:5001
 
-# 3. 推送镜像到 Registry（手动）
-for service in system-backend manager-backend meta-backend; do
-  docker push hub.docker.com/myorg/addp-${service}:v1.0.0
-done
+# 3. 推送镜像到 Registry（使用 push-images.sh）
+docker login  # Docker Hub
+# 或者: docker login harbor.example.com:5001  # Harbor
+
+./scripts/build/push-images.sh \
+  --registry docker.io/myorg \
+  --tag v1.0.0
 
 # 4. 生成部署包
 ./scripts/build/package.sh \
-  --output ./release-v1.0.0 \
-  --registry hub.docker.com/myorg
+  --mode registry \
+  --registry docker.io/myorg
 
 # 5. 传输到生产服务器
-scp -r ./release-v1.0.0 ubuntu@production-server:/opt/addp/
+scp -r dist/package-registry-*/ ubuntu@production-server:/opt/addp/
 
 # 6. 在生产服务器上部署
 ssh ubuntu@production-server
-cd /opt/addp/release-v1.0.0
-./scripts/prod/start.sh
+cd /opt/addp/package-registry-*/
+bash scripts/prod/start.sh
 ```
 
 ### CI/CD 自动化流程

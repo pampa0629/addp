@@ -32,6 +32,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 迁移现有资源的 display_name
+	if err := repository.MigrateExistingResourcesDisplayName(db); err != nil {
+		logger.L().Error("现有资源 display_name 迁移失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 初始化超级管理员用户
 	if err := repository.InitSuperAdmin(db); err != nil {
 		logger.L().Error("超级管理员用户初始化失败", "error", err)
@@ -41,6 +47,12 @@ func main() {
 	// 初始化默认租户和租户管理员 (仅开发环境且显式启用时)
 	if err := repository.InitDefaultTenant(db); err != nil {
 		logger.L().Error("默认租户初始化失败", "error", err)
+		os.Exit(1)
+	}
+
+	// 初始化内置计算引擎
+	if err := repository.InitBuiltinComputeEngines(db); err != nil {
+		logger.L().Error("内置计算引擎初始化失败", "error", err)
 		os.Exit(1)
 	}
 

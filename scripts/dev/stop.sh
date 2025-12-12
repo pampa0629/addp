@@ -129,6 +129,23 @@ if [ -d ".dev-pids" ]; then
       done
       echo "✓ Orchestrator Backend 已停止 (PID: $ORCHESTRATOR_PID)"
     fi
+    rm -f ".dev-pids/orchestrator-backend.pid"
+  fi
+
+  if [ -f ".dev-pids/develop.pid" ]; then
+    DEVELOP_PID=$(cat .dev-pids/develop.pid)
+    if ps -p $DEVELOP_PID > /dev/null 2>&1; then
+      kill $DEVELOP_PID
+      # 等待进程真正退出
+      for i in {1..10}; do
+        if ! ps -p $DEVELOP_PID > /dev/null 2>&1; then
+          break
+        fi
+        sleep 0.5
+      done
+      echo "✓ Develop Backend 已停止 (PID: $DEVELOP_PID)"
+    fi
+    rm -f ".dev-pids/develop.pid"
   fi
 
   if [ -f ".dev-pids/gateway.pid" ]; then
@@ -198,6 +215,16 @@ if [ -d ".dev-pids" ]; then
       kill $ORCHESTRATOR_FE_PID 2>/dev/null || true
       echo "✓ Orchestrator Frontend 已停止 (PID: $ORCHESTRATOR_FE_PID)"
     fi
+    rm -f ".dev-pids/orchestrator-frontend.pid"
+  fi
+
+  if [ -f ".dev-pids/develop-frontend.pid" ]; then
+    DEVELOP_FE_PID=$(cat .dev-pids/develop-frontend.pid)
+    if ps -p $DEVELOP_FE_PID > /dev/null 2>&1; then
+      kill $DEVELOP_FE_PID 2>/dev/null || true
+      echo "✓ Develop Frontend 已停止 (PID: $DEVELOP_FE_PID)"
+    fi
+    rm -f ".dev-pids/develop-frontend.pid"
   fi
 fi
 
@@ -217,7 +244,7 @@ echo -e "${YELLOW}清理前端缓存...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend" "$ROOT_DIR/orchestrator/frontend"; do
+for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$ROOT_DIR/manager/frontend" "$ROOT_DIR/meta/frontend" "$ROOT_DIR/transfer/frontend" "$ROOT_DIR/orchestrator/frontend" "$ROOT_DIR/develop/frontend"; do
   if [ -d "$frontend_dir" ]; then
     rm -rf "$frontend_dir/node_modules/.vite" "$frontend_dir/.vite" 2>/dev/null || true
   fi
@@ -242,6 +269,7 @@ MODULES=(
   "meta/backend|go run cmd/worker/main.go"
   "manager/backend|go run cmd/worker/main.go"
   "orchestrator/backend|go run cmd/server/main.go"
+  "develop/backend|go run cmd/server/main.go"
   "gateway|go run cmd/gateway/main.go"
 )
 

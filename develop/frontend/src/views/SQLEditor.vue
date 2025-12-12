@@ -133,7 +133,7 @@ const editorRef = ref(null)
 // 加载数据源列表
 const loadResources = async () => {
   try {
-    const response = await client.get('/resources')
+    const response = await client.get('/develop/resources')
     resources.value = response.data.filter(r =>
       ['postgresql', 'mysql'].includes(r.resource_type.toLowerCase())
     )

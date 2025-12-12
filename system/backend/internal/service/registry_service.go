@@ -70,8 +70,15 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	// 4. 幂等更新或创建
 	if existing != nil {
 		// 已存在，更新配置
+		// 如果未提供 display_name，默认等于 name
+		displayName := req.DisplayName
+		if displayName == "" {
+			displayName = req.Name
+		}
+
 		updates := map[string]interface{}{
 			"name":                req.Name,
+			"display_name":        displayName,
 			"resource_type":       req.ResourceType,
 			"description":         req.Description,
 			"is_builtin":          req.IsBuiltin,
@@ -89,8 +96,15 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	// 不存在，创建新记录
+	// 如果未提供 display_name，默认等于 name
+	displayName := req.DisplayName
+	if displayName == "" {
+		displayName = req.Name
+	}
+
 	resource := &localModels.Resource{
 		Name:              req.Name,
+		DisplayName:       displayName,
 		ResourceType:      req.ResourceType,
 		Description:       req.Description,
 		ConnectionInfo:    connectionInfo,
@@ -128,4 +142,22 @@ func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identif
 	}
 
 	return resource, nil
+}
+
+// ListComputeResources 查询所有具有计算能力的资源
+func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localModels.Resource, error) {
+	// 查询条件:
+	// 1. capabilities.compute 不为空（JSONB 查询）
+	// 2. is_active = true
+	filters := map[string]interface{}{
+		"has_compute_capability": true,
+		"is_active":              true,
+	}
+
+	resources, err := s.resourceRepo.FindByFilters(ctx, filters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list compute resources: %w", err)
+	}
+
+	return resources, nil
 }

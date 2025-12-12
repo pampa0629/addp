@@ -151,6 +151,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			registry.POST("/capabilities", registryHandler.RegisterCapability)
 			registry.GET("/capabilities", registryHandler.ListCapabilities)
 			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
+			registry.GET("/compute-resources", registryHandler.ListComputeResources)
 		}
 	}
 

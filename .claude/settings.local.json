@@ -149,7 +149,17 @@
       "Bash(git -C /Users/pampa/code/addp log --oneline --all \"--grep=setup\\|infrastructure\")",
       "Bash(./business/restart.sh:*)",
       "Bash(gofmt:*)",
-      "Bash(go env:*)"
+      "Bash(go env:*)",
+      "Bash(./scripts/build/push-images.sh:*)",
+      "Bash(pkill:*)",
+      "Bash(PGPASSWORD=business_password psql:*)",
+      "Bash(./scripts/dev/start.sh:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjU0NjcyMTEsImlhdCI6MTc2NTQ2NTQxMX0.eVN4Rf9WQOXCC8meT2yn5uEBBfUwymB2LiLDPxMwgGw\")",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8080/internal/resources?tenant_id=1\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(__NEW_LINE__ echo \"=== 测试 Develop 资源列表接口 ===\")",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8085/api/develop/resources\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(pip3 install:*)",
+      "Bash(go test:*)"
     ],
     "deny": [],
     "ask": []

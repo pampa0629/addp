@@ -33,15 +33,24 @@ func main() {
 	// 创建 SystemClient
 	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, "")
 
-	// 创建 Service
+	// 创建 SQL Service
 	sqlService := service.NewSQLExecutionService(cfg, executionRepo, systemClient)
 	defer sqlService.Close()
 
+	// 创建 Spatial Workflow Service
+	geopandasEngineURL := cfg.GeoPandasEngineURL
+	if geopandasEngineURL == "" {
+		geopandasEngineURL = "http://localhost:8090"
+		log.Printf("⚠️  GeoPandas Engine URL not configured, using default: %s", geopandasEngineURL)
+	}
+	spatialWorkflowService := service.NewSpatialWorkflowService(geopandasEngineURL)
+
 	// 创建 Handler
 	sqlHandler := api.NewSQLHandler(sqlService)
+	spatialHandler := api.NewSpatialHandler(db, spatialWorkflowService)
 
 	// 设置路由
-	router := api.SetupRouter(cfg, sqlHandler)
+	router := api.SetupRouter(cfg, sqlHandler, spatialHandler)
 
 	// 启动服务器
 	addr := ":" + cfg.ServerAddr

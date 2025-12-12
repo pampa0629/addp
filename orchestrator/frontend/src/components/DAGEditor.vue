@@ -2,17 +2,19 @@
   <div class="dag-editor">
     <div class="toolbar">
       <div class="toolbar-left">
-        <el-button-group>
-          <el-button @click="addNode('transfer')" type="primary" size="small">
-            <el-icon><Plus /></el-icon> Transfer
-          </el-button>
-          <el-button @click="addNode('meta')" type="success" size="small">
-            <el-icon><Plus /></el-icon> Meta
-          </el-button>
-          <el-button @click="addNode('manager')" type="warning" size="small">
-            <el-icon><Plus /></el-icon> Manager
+        <!-- 动态渲染计算资源按钮 -->
+        <el-button-group v-if="computeResources.length > 0">
+          <el-button
+            v-for="resource in computeResources"
+            :key="resource.unique_identifier"
+            @click="addNode(resource)"
+            :type="getButtonType(resource)"
+            size="small"
+          >
+            <el-icon><Plus /></el-icon> {{ resource.name }}
           </el-button>
         </el-button-group>
+        <el-button v-else size="small" disabled>加载资源中...</el-button>
 
         <el-divider direction="vertical" />
 
@@ -104,6 +106,7 @@ import { onMounted, ref } from 'vue'
 import G6 from '@antv/g6'
 import { ElMessage } from 'element-plus'
 import { Plus, Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
+import computeResourcesAPI from '../api/computeResources'
 
 const props = defineProps({
   initialSteps: {
@@ -121,13 +124,79 @@ const currentNode = ref({})
 const parametersStr = ref('')
 const selectedNode = ref(null)
 const isAddEdgeMode = ref(false)
+const computeResources = ref([])  // 计算资源列表
 
-onMounted(() => {
+onMounted(async () => {
   initGraph()
+  await loadComputeResources()  // 加载计算资源
   if (props.initialSteps.length > 0) {
     loadSteps(props.initialSteps)
   }
 })
+
+// 加载所有计算资源
+async function loadComputeResources() {
+  try {
+    const resources = await computeResourcesAPI.list()
+    computeResources.value = resources || []
+    console.log('已加载计算资源:', computeResources.value)
+  } catch (error) {
+    console.error('加载计算资源失败:', error)
+    ElMessage.error('加载计算资源失败')
+  }
+}
+
+// 根据资源生成按钮类型（颜色）
+function getButtonType(resource) {
+  // 根据 unique_identifier 前缀分配颜色
+  const identifier = resource.unique_identifier || ''
+
+  if (identifier.startsWith('meta.')) return 'success'
+  if (identifier.startsWith('transfer.')) return 'primary'
+  if (identifier.startsWith('manager.')) return 'warning'
+  if (identifier.startsWith('develop.')) return 'info'
+
+  return 'default'
+}
+
+// Hash 字符串生成一致的颜色
+function hashColor(str) {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+
+  const h = hash % 360
+  const s = 70
+  const l = 60
+
+  return `hsl(${h}, ${s}%, ${l}%)`
+}
+
+// 根据 unique_identifier 生成节点颜色
+function generateColor(uniqueIdentifier) {
+  if (!uniqueIdentifier) return '#5B8FF9'
+
+  // 从 unique_identifier 提取模块名（如 "meta.scanner.default" → "meta"）
+  const moduleName = uniqueIdentifier.split('.')[0]
+
+  // 为常见模块使用预定义颜色
+  const predefinedColors = {
+    'meta': '#5AD8A6',
+    'transfer': '#5B8FF9',
+    'manager': '#F6BD16',
+    'develop': '#6DC8EC',
+    'orchestrator': '#9270CA'
+  }
+
+  // 如果是预定义模块，使用预定义颜色
+  if (predefinedColors[moduleName]) {
+    return predefinedColors[moduleName]
+  }
+
+  // 否则，使用 hash 生成一致的颜色
+  return hashColor(uniqueIdentifier)
+}
 
 function initGraph() {
   if (!container.value) {
@@ -308,19 +377,17 @@ function handleDrop(event) {
       console.log('坐标超出范围，使用中心位置:', { x, y })
     }
 
-    // 创建节点
-    const colors = {
-      transfer: '#5B8FF9',
-      meta: '#5AD8A6',
-      manager: '#F6BD16'
-    }
+    // 使用 unique_identifier 生成颜色（而非硬编码 module）
+    const uniqueIdentifier = nodeData.uniqueIdentifier || nodeData.module || 'unknown'
+    const color = generateColor(uniqueIdentifier)
 
-    const id = `${nodeData.module}-${Date.now()}`
+    const id = `${uniqueIdentifier}-${Date.now()}`
 
     const nodeModel = {
       id,
       label: nodeData.name,
-      module: nodeData.module,
+      uniqueIdentifier,  // 新增：存储 unique_identifier
+      module: nodeData.module,  // 保留向后兼容
       taskId: nodeData.taskId,
       name: nodeData.name,
       action: 'execute',
@@ -331,7 +398,7 @@ function handleDrop(event) {
       x,
       y,
       style: {
-        fill: colors[nodeData.module],
+        fill: color,  // 使用动态生成的颜色
         stroke: '#1890FF',
         lineWidth: 2
       }
@@ -355,18 +422,15 @@ function handleDrop(event) {
   }
 }
 
-function addNode(module) {
+function addNode(resource) {
   if (!graph.value) {
     ElMessage.error('画布未初始化')
     return
   }
 
-  const id = `${module}-${Date.now()}`
-  const colors = {
-    transfer: '#5B8FF9',
-    meta: '#5AD8A6',
-    manager: '#F6BD16'
-  }
+  const uniqueIdentifier = resource.unique_identifier || 'unknown'
+  const id = `${uniqueIdentifier}-${Date.now()}`
+  const color = generateColor(uniqueIdentifier)
 
   // 获取画布中心位置
   const width = container.value.offsetWidth || 1200
@@ -376,8 +440,9 @@ function addNode(module) {
 
   const nodeModel = {
     id,
-    label: module.toUpperCase(),
-    module,
+    label: resource.name,
+    uniqueIdentifier,  // 新增：存储 unique_identifier
+    module: resource.unique_identifier ? resource.unique_identifier.split('.')[0] : 'unknown',  // 兼容旧字段
     name: '',
     action: '',
     endpoint: '',
@@ -385,7 +450,7 @@ function addNode(module) {
     parameters: {},
     timeout: 300,
     style: {
-      fill: colors[module],
+      fill: color,
       stroke: '#1890FF',
       lineWidth: 2
     },
@@ -400,7 +465,7 @@ function addNode(module) {
   graph.value.paint()
   graph.value.setItemState(node, 'selected', true)
 
-  ElMessage.success(`已添加 ${module} 节点,点击节点可配置`)
+  ElMessage.success(`已添加 ${resource.name} 节点,点击节点可配置`)
 
   // 延迟打开配置抽屉,确保节点已经渲染
   setTimeout(() => {
@@ -501,15 +566,14 @@ function loadSteps(steps) {
   const edges = []
 
   steps.forEach((step) => {
-    const colors = {
-      transfer: '#5B8FF9',
-      meta: '#5AD8A6',
-      manager: '#F6BD16'
-    }
+    // 使用 uniqueIdentifier 或回退到 module 生成颜色
+    const uniqueIdentifier = step.uniqueIdentifier || step.module || 'unknown'
+    const color = generateColor(uniqueIdentifier)
 
     nodes.push({
       id: step.id,
       label: step.name,
+      uniqueIdentifier: step.uniqueIdentifier,  // 新增字段
       module: step.module,
       action: step.action,
       endpoint: step.endpoint,
@@ -517,7 +581,7 @@ function loadSteps(steps) {
       parameters: step.parameters,
       timeout: step.timeout,
       style: {
-        fill: colors[step.module] || '#5B8FF9'
+        fill: color  // 使用动态生成的颜色
       }
     })
 

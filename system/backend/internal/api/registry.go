@@ -79,3 +79,17 @@ func (h *RegistryHandler) GetCapabilityByIdentifier(c *gin.Context) {
 
 	c.JSON(http.StatusOK, resource)
 }
+
+// ListComputeResources 查询所有具有计算能力的资源
+// GET /internal/registry/compute-resources
+func (h *RegistryHandler) ListComputeResources(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	resources, err := h.registryService.ListComputeResources(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, resources)
+}

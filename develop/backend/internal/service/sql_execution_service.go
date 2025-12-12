@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -293,4 +294,49 @@ func (s *SQLExecutionService) TestConnection(resourceID uint) error {
 	}
 
 	return sqlDB.Ping()
+}
+
+// ListDatabaseResources 获取可用的数据库资源列表（仅 PostgreSQL 和 MySQL）
+func (s *SQLExecutionService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Resource, error) {
+	// 调用 SystemClient 获取租户的所有资源
+	allResources, err := s.systemClient.ListResources("", tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
+	}
+
+	// 过滤出数据库类型的资源
+	var dbResources []commonModels.Resource
+	for _, res := range allResources {
+		resourceType := strings.ToLower(res.ResourceType)
+		if resourceType == "postgresql" || resourceType == "mysql" {
+			dbResources = append(dbResources, res)
+		}
+	}
+
+	log.Printf("✅ Develop: 获取数据库资源列表成功 (tenant_id=%d, total=%d)", tenantID, len(dbResources))
+	return dbResources, nil
+}
+
+// ListDatabaseResourcesWithToken 使用指定的 token 获取数据库资源列表
+func (s *SQLExecutionService) ListDatabaseResourcesWithToken(ctx context.Context, tenantID uint, token string) ([]commonModels.Resource, error) {
+	// 创建临时的 SystemClient（使用传入的 token）
+	systemClient := commonClient.NewSystemClient(s.cfg.SystemServiceURL, token)
+
+	// 调用 SystemClient 获取租户的所有资源
+	allResources, err := systemClient.ListResources("", tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
+	}
+
+	// 过滤出数据库类型的资源
+	var dbResources []commonModels.Resource
+	for _, res := range allResources {
+		resourceType := strings.ToLower(res.ResourceType)
+		if resourceType == "postgresql" || resourceType == "mysql" {
+			dbResources = append(dbResources, res)
+		}
+	}
+
+	log.Printf("✅ Develop: 获取数据库资源列表成功 (tenant_id=%d, total=%d)", tenantID, len(dbResources))
+	return dbResources, nil
 }

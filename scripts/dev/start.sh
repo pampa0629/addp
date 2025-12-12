@@ -42,6 +42,7 @@ MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
 META_FE_PORT=${META_FE_PORT:-5175}
 TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
+DEVELOP_FE_PORT=${DEVELOP_FE_PORT:-5178}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -239,8 +240,32 @@ done
 echo -e "${GREEN}✓ Orchestrator Backend 就绪 (PID: $ORCHESTRATOR_PID)${NC}"
 echo ""
 
+# 6.8 启动 Develop Backend
+echo -e "${YELLOW}Step 6.8/8: 启动 Develop Backend${NC}"
+cd develop/backend
+go mod download >/dev/null 2>> ../../logs/develop-backend-stderr.log || true
+go run cmd/server/main.go > ../../logs/develop-backend.log 2> ../../logs/develop-backend-stderr.log &
+DEVELOP_PID=$!
+cd ../..
+
+# 等待 Develop 就绪
+echo "等待 Develop Backend 就绪..."
+WAIT_COUNT=0
+until curl -f http://localhost:8085/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e "${RED}✗ Develop Backend 启动超时${NC}"
+    echo "查看日志: tail -f logs/develop-backend.log"
+    exit 1
+  fi
+done
+echo -e "${GREEN}✓ Develop Backend 就绪 (PID: $DEVELOP_PID)${NC}"
+echo ""
+
 # 7. 启动 Gateway
-echo -e "${YELLOW}Step 7/7: 启动 Gateway${NC}"
+echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
 cd gateway
 go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
@@ -368,6 +393,16 @@ cd ../..
 wait_for_http "Orchestrator Frontend" "http://localhost:${ORCHESTRATOR_FE_PORT}" "$MAX_WAIT" || exit 1
 echo -e "${GREEN}✓ Orchestrator Frontend 运行中 (PID: $ORCHESTRATOR_FE_PID, Port: ${ORCHESTRATOR_FE_PORT})${NC}"
 
+# Develop Frontend
+echo "启动 Develop Frontend..."
+ensure_node_modules "develop/frontend"
+cd develop/frontend
+npm run dev -- --host 0.0.0.0 --port "${DEVELOP_FE_PORT}" > ../../logs/develop-frontend.log 2>&1 &
+DEVELOP_FE_PID=$!
+cd ../..
+wait_for_http "Develop Frontend" "http://localhost:${DEVELOP_FE_PORT}" "$MAX_WAIT" || exit 1
+echo -e "${GREEN}✓ Develop Frontend 运行中 (PID: $DEVELOP_FE_PID, Port: ${DEVELOP_FE_PORT})${NC}"
+
 # 保存前端 PIDs
 echo $PORTAL_PID > .dev-pids/portal-frontend.pid
 echo $SYSTEM_FE_PID > .dev-pids/system-frontend.pid
@@ -375,6 +410,7 @@ echo $MANAGER_FE_PID > .dev-pids/manager-frontend.pid
 echo $META_FE_PID > .dev-pids/meta-frontend.pid
 echo $TRANSFER_FE_PID > .dev-pids/transfer-frontend.pid
 echo $ORCHESTRATOR_FE_PID > .dev-pids/orchestrator-frontend.pid
+echo $DEVELOP_FE_PID > .dev-pids/develop-frontend.pid
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -389,11 +425,13 @@ echo "  Manager:  http://localhost:8081"
 echo "  Meta:     http://localhost:8082"
 echo "  Transfer: http://localhost:8083"
 echo "  Orchestrator: http://localhost:8084"
+echo "  Develop:  http://localhost:8085"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
 echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
+echo "  Develop FE:   http://localhost:${DEVELOP_FE_PORT}"
 echo ""
 echo "进程 PID:"
 echo "  System:   $SYSTEM_PID"
@@ -402,6 +440,7 @@ echo "  Meta:     $META_PID"
 echo "  Transfer: $TRANSFER_PID"
 echo "  Transfer Worker: $TRANSFER_WORKER_PID"
 echo "  Orchestrator: $ORCHESTRATOR_PID"
+echo "  Develop:  $DEVELOP_PID"
 echo "  Gateway:  $GATEWAY_PID"
 echo ""
 echo "日志文件:"
@@ -413,9 +452,11 @@ echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"
 echo "  Manager Worker: logs/manager-worker.log"
 echo "  Orchestrator: logs/orchestrator-backend.log"
+echo "  Develop:  logs/develop-backend.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
+echo "  Develop FE:  logs/develop-frontend.log"
 echo ""
 echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
 echo ""
@@ -429,4 +470,6 @@ echo $TRANSFER_PID > .dev-pids/transfer.pid
 echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
 echo $META_WORKER_PID > .dev-pids/meta-worker.pid
 echo $MANAGER_WORKER_PID > .dev-pids/manager-worker.pid
+echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
+echo $DEVELOP_PID > .dev-pids/develop.pid
 echo $GATEWAY_PID > .dev-pids/gateway.pid

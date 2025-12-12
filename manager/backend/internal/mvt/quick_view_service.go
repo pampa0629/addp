@@ -324,7 +324,7 @@ func (s *QuickViewService) processTile(
 	startTime := time.Now()
 
 	// 1. 检查瓦片是否已存在于 MinIO
-	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", cfg.Fingerprint, coord.Z, coord.X, coord.Y)
+	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", cfg.Fingerprint, coord.Z, coord.X, coord.Y)
 	_, err := s.minioClient.StatObject(ctx, s.bucket, objectPath, minio.StatObjectOptions{})
 	if err == nil {
 		// 瓦片已存在，跳过生成（用 -1 标记）
@@ -400,7 +400,7 @@ func (s *QuickViewService) putTile(
 	z, x, y int,
 	data []byte,
 ) error {
-	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 
 	_, err := s.minioClient.PutObject(ctx, s.bucket, objectPath, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{
@@ -427,7 +427,7 @@ func (s *QuickViewService) putMetadata(
 	fingerprint string,
 	metadata *QuickViewMetadata,
 ) error {
-	objectPath := fmt.Sprintf("%s/metadata.json", fingerprint)
+	objectPath := fmt.Sprintf("mvt-tiles/%s/metadata.json", fingerprint)
 
 	data, err := json.Marshal(metadata)
 	if err != nil {
@@ -453,7 +453,7 @@ func (s *QuickViewService) GetTile(
 	fingerprint string,
 	z, x, y int,
 ) ([]byte, error) {
-	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 
 	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectPath, minio.GetObjectOptions{})
 	if err != nil {
@@ -476,7 +476,7 @@ type minioUploaderAdapter struct {
 }
 
 func (a *minioUploaderAdapter) PutTile(ctx context.Context, fingerprint string, z, x, y int, data []byte) error {
-	objectPath := fmt.Sprintf("%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
 
 	_, err := a.client.PutObject(ctx, a.bucket, objectPath, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{

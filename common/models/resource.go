@@ -60,7 +60,8 @@ func (s *ScanConfig) Scan(value interface{}) error {
 type Resource struct {
 	ID             uint           `gorm:"column:id" json:"id"`
 	TenantID       uint           `gorm:"column:tenant_id" json:"tenant_id"`
-	Name           string         `gorm:"column:name" json:"name"` // 数据库字段是 name
+	Name           string         `gorm:"column:name" json:"name"` // 数据库字段是 name（英文标识）
+	DisplayName    string         `gorm:"column:display_name;not null;size:255" json:"display_name"` // 中文显示名称
 	ResourceType   string         `gorm:"column:resource_type" json:"resource_type"`
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json" json:"connection_info"`
 	Description    string         `gorm:"column:description" json:"description"`

@@ -27,6 +27,9 @@ type Config struct {
 	EncryptionKey                []byte
 	InternalAPIKey               string
 
+	// GeoPandas Engine 配置
+	GeoPandasEngineURL string
+
 	// SQL 执行配置
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
@@ -67,6 +70,9 @@ func Load() *Config {
 		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
 		EncryptionKey:            encryptionKey,
 		InternalAPIKey:           internalAPIKey,
+
+		// GeoPandas Engine 配置
+		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8090"),
 
 		// SQL 执行配置
 		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30),  // 30秒

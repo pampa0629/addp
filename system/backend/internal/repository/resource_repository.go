@@ -30,7 +30,7 @@ func (r *ResourceRepository) GetByID(id uint) (*models.Resource, error) {
 
 func (r *ResourceRepository) List(offset, limit int, resourceType string) ([]models.Resource, error) {
 	var resources []models.Resource
-	query := r.db
+	query := r.db.Where("is_active = ?", true)
 
 	if resourceType != "" {
 		query = query.Where("resource_type = ?", resourceType)
@@ -43,7 +43,7 @@ func (r *ResourceRepository) List(offset, limit int, resourceType string) ([]mod
 // ListByTenant 查询指定租户的资源列表
 func (r *ResourceRepository) ListByTenant(tenantID uint, offset, limit int, resourceType string) ([]models.Resource, error) {
 	var resources []models.Resource
-	query := r.db.Where("tenant_id = ?", tenantID)
+	query := r.db.Where("tenant_id = ? AND is_active = ?", tenantID, true)
 
 	if resourceType != "" {
 		query = query.Where("resource_type = ?", resourceType)
@@ -76,6 +76,15 @@ func (r *ResourceRepository) FindByFilters(ctx context.Context, filters map[stri
 	query := r.db.WithContext(ctx)
 
 	for key, value := range filters {
+		// 特殊处理：has_compute_capability 过滤
+		if key == "has_compute_capability" {
+			if hasCompute, ok := value.(bool); ok && hasCompute {
+				// PostgreSQL JSONB 查询：capabilities->'compute' 不为空
+				query = query.Where("capabilities IS NOT NULL AND capabilities::jsonb ? 'compute'")
+			}
+			continue
+		}
+
 		query = query.Where(key+" = ?", value)
 	}
 

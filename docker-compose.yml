@@ -443,6 +443,39 @@ services:
       - develop-backend
     restart: unless-stopped
 
+  # ==================== GeoPandas Engine (空间计算引擎) ====================
+
+  geopandas-engine:
+    build:
+      context: ./geopandas-engine
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-geopandas-engine:${IMAGE_TAG:-latest}
+    container_name: geopandas-engine
+    environment:
+      - PORT=8090
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=develop
+    ports:
+      - "8090:8090"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   # ==================== Gateway 服务 ====================
 
   gateway:

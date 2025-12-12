@@ -217,3 +217,85 @@ func InitDefaultTenant(db *gorm.DB) error {
 
 	return nil
 }
+
+// MigrateExistingResourcesDisplayName 迁移现有资源的 display_name
+// 为所有 display_name 为空的资源设置为 name 的值
+func MigrateExistingResourcesDisplayName(db *gorm.DB) error {
+	// 为所有 display_name 为空的资源设置为 name 的值
+	result := db.Exec(`
+		UPDATE system.resources
+		SET display_name = name
+		WHERE display_name = '' OR display_name IS NULL
+	`)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected > 0 {
+		log.Printf("✅ 已为 %d 个现有资源设置 display_name\n", result.RowsAffected)
+	}
+	return nil
+}
+
+// InitBuiltinComputeEngines 初始化内置计算引擎
+func InitBuiltinComputeEngines(db *gorm.DB) error {
+	engines := []models.Resource{
+		{
+			UniqueIdentifier: stringPtr("manager.tile_cache.default"),
+			Name:             "Manager Tile Cache Engine",
+			DisplayName:      "地图瓦片缓存引擎",
+			ResourceType:     "compute_engine",
+			IsBuiltin:        true,
+			IsActive:         true,
+			Capabilities:     stringPtr(`{"compute":[{"type":"tile_cache","features":["mvt","raster"]}]}`),
+			TaskAPIConfig:    stringPtr(`{"base_url":"http://manager-backend:8081","endpoints":{"list":{"method":"GET","path":"/api/tile-cache/tasks"}}}`),
+		},
+		{
+			UniqueIdentifier: stringPtr("meta.scanner.default"),
+			Name:             "Meta Metadata Scanner",
+			DisplayName:      "元数据扫描引擎",
+			ResourceType:     "compute_engine",
+			IsBuiltin:        true,
+			IsActive:         true,
+			Capabilities:     stringPtr(`{"compute":[{"type":"scan","supported_sources":["postgresql","mysql","minio","s3"]}]}`),
+			TaskAPIConfig:    stringPtr(`{"base_url":"http://meta-backend:8082","endpoints":{"list":{"method":"GET","path":"/api/scan/tasks"}}}`),
+		},
+		{
+			UniqueIdentifier: stringPtr("transfer.batch_worker.default"),
+			Name:             "Transfer Batch Worker",
+			DisplayName:      "数据传输批处理引擎",
+			ResourceType:     "compute_engine",
+			IsBuiltin:        true,
+			IsActive:         true,
+			Capabilities:     stringPtr(`{"compute":[{"type":"transfer","features":["batch","streaming","incremental"]}]}`),
+			TaskAPIConfig:    stringPtr(`{"base_url":"http://transfer-backend:8083","endpoints":{"list":{"method":"GET","path":"/api/transfer/tasks"}}}`),
+		},
+	}
+
+	for _, engine := range engines {
+		var existing models.Resource
+		err := db.Where("unique_identifier = ?", engine.UniqueIdentifier).First(&existing).Error
+
+		if err == gorm.ErrRecordNotFound {
+			// 不存在则创建
+			if err := db.Create(&engine).Error; err != nil {
+				log.Printf("❌ 创建内置引擎失败 %s: %v\n", *engine.UniqueIdentifier, err)
+				return err
+			}
+			log.Printf("✅ 已创建内置引擎: %s (%s)\n", engine.DisplayName, *engine.UniqueIdentifier)
+		} else if err != nil {
+			return err
+		} else {
+			// 已存在则跳过
+			log.Printf("ℹ️  内置引擎已存在: %s (%s)\n", engine.DisplayName, *engine.UniqueIdentifier)
+		}
+	}
+
+	return nil
+}
+
+// stringPtr 辅助函数：返回字符串指针
+func stringPtr(s string) *string {
+	return &s
+}
