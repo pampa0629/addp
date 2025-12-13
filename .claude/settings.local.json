@@ -196,7 +196,8 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjU2MjkxNDUsImlhdCI6MTc2NTYyNzM0NX0.vpT5dh3RDNs1BxzWfkVIpR0H_Z13A9sPikd5ku76wtA\")",
       "Bash(git -C /Users/pampa/code/addp status --short geopandas-engine/)",
       "Bash(git rm:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(timeout 10 npm run dev:*)"
     ],
     "deny": [],
     "ask": []

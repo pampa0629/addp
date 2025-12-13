@@ -2,22 +2,7 @@
   <div class="dag-editor">
     <div class="toolbar">
       <div class="toolbar-left">
-        <!-- 动态渲染计算资源按钮 -->
-        <el-button-group v-if="computeResources.length > 0">
-          <el-button
-            v-for="resource in computeResources"
-            :key="resource.unique_identifier"
-            @click="addNode(resource)"
-            :type="getButtonType(resource)"
-            size="small"
-          >
-            <el-icon><Plus /></el-icon> {{ resource.name }}
-          </el-button>
-        </el-button-group>
-        <el-button v-else size="small" disabled>加载资源中...</el-button>
-
-        <el-divider direction="vertical" />
-
+        <!-- 引擎按钮已移除，仅保留任务库拖拽方式 -->
         <el-button
           :type="isAddEdgeMode ? 'primary' : 'default'"
           size="small"
@@ -42,7 +27,7 @@
             <span class="tips-text">
               {{ isAddEdgeMode
                 ? '🔗 连线模式：依次点击两个节点建立连线'
-                : '💡 拖拽任务到画布 | 点击"连线模式"按钮后可建立连线 | 点击节点配置'
+                : '💡 从左侧任务库拖拽任务到画布 | 使用连线模式建立依赖关系 | 双击节点可配置参数'
               }}
             </span>
           </template>
@@ -105,8 +90,7 @@
 import { onMounted, ref } from 'vue'
 import G6 from '@antv/g6'
 import { ElMessage } from 'element-plus'
-import { Plus, Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
-import computeResourcesAPI from '../api/computeResources'
+import { Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
 
 const props = defineProps({
   initialSteps: {
@@ -124,40 +108,13 @@ const currentNode = ref({})
 const parametersStr = ref('')
 const selectedNode = ref(null)
 const isAddEdgeMode = ref(false)
-const computeResources = ref([])  // 计算资源列表
 
 onMounted(async () => {
   initGraph()
-  await loadComputeResources()  // 加载计算资源
   if (props.initialSteps.length > 0) {
     loadSteps(props.initialSteps)
   }
 })
-
-// 加载所有计算资源
-async function loadComputeResources() {
-  try {
-    const resources = await computeResourcesAPI.list()
-    computeResources.value = resources || []
-    console.log('已加载计算资源:', computeResources.value)
-  } catch (error) {
-    console.error('加载计算资源失败:', error)
-    ElMessage.error('加载计算资源失败')
-  }
-}
-
-// 根据资源生成按钮类型（颜色）
-function getButtonType(resource) {
-  // 根据 unique_identifier 前缀分配颜色
-  const identifier = resource.unique_identifier || ''
-
-  if (identifier.startsWith('meta.')) return 'success'
-  if (identifier.startsWith('transfer.')) return 'primary'
-  if (identifier.startsWith('manager.')) return 'warning'
-  if (identifier.startsWith('develop.')) return 'info'
-
-  return 'default'
-}
 
 // Hash 字符串生成一致的颜色
 function hashColor(str) {
