@@ -264,6 +264,7 @@ func registerCapabilities(cfg *config.Config) {
 	req := &commonModels.CapabilityRegistrationRequest{
 		UniqueIdentifier:  "manager.tile_cache.default",
 		Name:              "Manager Tile Cache Engine",
+		DisplayName:       "地图瓦片缓存引擎",
 		ResourceType:      "compute_engine",
 		IsBuiltin:         true,
 		Capabilities:      capabilities,

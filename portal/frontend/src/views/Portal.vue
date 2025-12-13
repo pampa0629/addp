@@ -63,7 +63,7 @@
             </el-menu-item>
             <el-menu-item index="/transfer/local-resources">
               <el-icon><Connection /></el-icon>
-              <span>本地存储引擎</span>
+              <span>本地资源</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -121,6 +121,18 @@
               <el-icon><Monitor /></el-icon>
               <span>SQL 工作台</span>
             </el-menu-item>
+            <el-menu-item index="/develop/gis-workflow">
+              <el-icon><Edit /></el-icon>
+              <span>GIS 工作流编辑器</span>
+            </el-menu-item>
+            <el-menu-item index="/develop/gis-tasks">
+              <el-icon><List /></el-icon>
+              <span>GIS 任务管理</span>
+            </el-menu-item>
+            <el-menu-item index="/develop/gis-executions">
+              <el-icon><Timer /></el-icon>
+              <span>GIS 执行历史</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="system">
@@ -138,7 +150,7 @@
             </el-menu-item>
             <el-menu-item index="/system/resources">
               <el-icon><Connection /></el-icon>
-              <span>存储引擎</span>
+              <span>资源管理</span>
             </el-menu-item>
             <el-menu-item index="/system/developer">
               <el-icon><Monitor /></el-icon>
@@ -150,33 +162,14 @@
 
       <el-main class="main-content">
         <div v-if="currentModule === 'home'" class="home-view">
+          <!-- 第一排: 系统管理、数据传输 -->
           <el-row :gutter="20">
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('system')">
                 <div class="card-content">
                   <el-icon :size="48" color="#409EFF"><Setting /></el-icon>
                   <h2>系统管理</h2>
-                  <p>用户管理、日志查询、存储引擎配置</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="12">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('manager')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#67C23A"><DataAnalysis /></el-icon>
-                  <h2>数据管理</h2>
-                  <p>数据源管理、目录组织、数据预览</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="12">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
-                  <h2>元数据管理</h2>
-                  <p>元数据解析、数据血缘、数据目录</p>
+                  <p>用户管理、日志查询、资源配置</p>
                 </div>
               </el-card>
             </el-col>
@@ -190,22 +183,44 @@
               </el-card>
             </el-col>
           </el-row>
+          <!-- 第二排: 数据管理、元数据管理 -->
           <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('manager')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#67C23A"><DataAnalysis /></el-icon>
+                  <h2>数据管理</h2>
+                  <p>数据源管理、目录组织、数据预览</p>
+                </div>
+              </el-card>
+            </el-col>
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
+                  <h2>元数据管理</h2>
+                  <p>元数据解析、数据血缘、数据目录</p>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <!-- 第三排: 数据开发、编排引擎 -->
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('develop')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
+                  <h2>数据开发</h2>
+                  <p>SQL 查询、GIS 空间计算、脚本开发、结果导出</p>
+                </div>
+              </el-card>
+            </el-col>
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('orchestrator')">
                 <div class="card-content">
                   <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
                   <h2>编排引擎</h2>
                   <p>工作流编排、任务调度、执行管理</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="12">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('develop')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
-                  <h2>数据开发</h2>
-                  <p>SQL 查询、脚本开发、结果导出</p>
                 </div>
               </el-card>
             </el-col>
@@ -334,6 +349,15 @@ const handleMenuSelect = (index) => {
       '': 'orchestrations'
     }
 
+    // Develop 模块的路由映射
+    const developPageMap = {
+      'sql': 'sql',
+      'gis-workflow': 'gis-workflow',
+      'gis-tasks': 'gis-tasks',
+      'gis-executions': 'gis-executions',
+      '': 'sql'
+    }
+
     if (module === 'manager') {
       // Manager 模块的路由: /data-explorer 等 (不需要 /manager 前缀)
       const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
@@ -370,9 +394,10 @@ const handleMenuSelect = (index) => {
         url = `${moduleUrls[module]}/`
       }
     } else if (module === 'develop') {
-      // Develop 模块的路由: /sql 等 (不需要 /develop 前缀)
-      if (page) {
-        url = `${moduleUrls[module]}/${page}`
+      // Develop 模块的路由: /sql, /gis-workflow, /gis-tasks, /gis-executions 等 (不需要 /develop 前缀)
+      const actualPage = developPageMap[page] !== undefined ? developPageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${actualPage}`
       } else {
         url = `${moduleUrls[module]}/`
       }

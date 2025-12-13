@@ -60,7 +60,7 @@
             </el-menu-item>
             <el-menu-item index="/resources" @click="handleMenuClick('system', 'resources')">
               <el-icon><Connection /></el-icon>
-              <span>存储引擎管理</span>
+              <span>资源管理</span>
             </el-menu-item>
             <el-menu-item index="/developer" @click="handleMenuClick('system', 'developer')">
               <el-icon><Monitor /></el-icon>

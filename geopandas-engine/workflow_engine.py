@@ -42,32 +42,55 @@ class GeoPandasWorkflowEngine:
         """
         从工作流定义加载任务
 
+        支持两种格式：
+
+        格式 1（数组格式）:
+            {
+                "tasks": [
+                    {
+                        "id": "t1",
+                        "operator": "buffer",
+                        "params": {"distance": 100},
+                        "depends_on": []
+                    }
+                ]
+            }
+
+        格式 2（Map 格式，更友好）:
+            {
+                "step1": {
+                    "operator": "buffer",
+                    "inputs": {"distance": 100, "geometry": {"$ref": "input.geom"}}
+                },
+                "step2": {
+                    "operator": "centroid",
+                    "inputs": {"input_gdf": {"$ref": "step1"}}
+                }
+            }
+
         Args:
             workflow_def: 工作流定义
-                {
-                    "tasks": [
-                        {
-                            "id": "t1",
-                            "operator": "buffer",
-                            "params": {"distance": 100},
-                            "depends_on": []
-                        },
-                        {
-                            "id": "t2",
-                            "operator": "centroid",
-                            "params": {"input_gdf": {"$ref": "t1"}},
-                            "depends_on": ["t1"]
-                        }
-                    ]
-                }
         """
-        for task in workflow_def.get('tasks', []):
-            self.add_task(
-                task_id=task['id'],
-                operator=task['operator'],
-                params=task.get('params', {}),
-                depends_on=task.get('depends_on', [])
-            )
+        # 格式 1: 数组格式 {"tasks": [...]}
+        if 'tasks' in workflow_def:
+            for task in workflow_def.get('tasks', []):
+                self.add_task(
+                    task_id=task['id'],
+                    operator=task['operator'],
+                    params=task.get('params', {}),
+                    depends_on=task.get('depends_on', [])
+                )
+        # 格式 2: Map 格式 {"step1": {...}, "step2": {...}}
+        else:
+            for task_id, task_def in workflow_def.items():
+                # 将 inputs 转换为 params（保持兼容）
+                params = task_def.get('inputs', task_def.get('params', {}))
+                self.add_task(
+                    task_id=task_id,
+                    operator=task_def['operator'],
+                    params=params,
+                    depends_on=task_def.get('depends_on', [])
+                )
 
     def topological_sort(self) -> List[str]:
         """
@@ -143,18 +166,37 @@ class GeoPandasWorkflowEngine:
 
     def parse_geojson_input(self, geojson_data: Union[Dict, str]) -> gpd.GeoDataFrame:
         """
-        解析 GeoJSON 输入为 GeoDataFrame
+        解析 GeoJSON 或 WKT 输入为 GeoDataFrame
 
         Args:
-            geojson_data: GeoJSON 字符串或字典
+            geojson_data: GeoJSON 字符串/字典 或 WKT 字符串
 
         Returns:
             GeoDataFrame
         """
-        if isinstance(geojson_data, str):
-            geojson_data = json.loads(geojson_data)
+        from shapely import wkt
+        from shapely.geometry import shape
 
-        return gpd.GeoDataFrame.from_features(geojson_data['features'], crs="EPSG:4326")
+        # 情况 1: WKT 字符串 (e.g., "POINT(120 30)")
+        if isinstance(geojson_data, str):
+            # 尝试解析为 WKT
+            try:
+                geom = wkt.loads(geojson_data)
+                return gpd.GeoDataFrame([{}], geometry=[geom], crs="EPSG:4326")
+            except Exception:
+                # 如果不是 WKT，尝试作为 GeoJSON 字符串解析
+                geojson_data = json.loads(geojson_data)
+
+        # 情况 2: GeoJSON 字典 (包含 features)
+        if isinstance(geojson_data, dict):
+            if 'features' in geojson_data:
+                return gpd.GeoDataFrame.from_features(geojson_data['features'], crs="EPSG:4326")
+            # 单个几何对象 (e.g., {"type": "Point", "coordinates": [...]})
+            elif 'type' in geojson_data and 'coordinates' in geojson_data:
+                geom = shape(geojson_data)
+                return gpd.GeoDataFrame([{}], geometry=[geom], crs="EPSG:4326")
+
+        raise ValueError(f"Unsupported geometry input format: {type(geojson_data)}")
 
     def execute_task(self, task_id: str) -> gpd.GeoDataFrame:
         """
@@ -206,8 +248,12 @@ class GeoPandasWorkflowEngine:
         # 如果提供了输入数据，存储到 results 中（key 前缀 "input."）
         if input_data:
             for key, value in input_data.items():
-                if isinstance(value, (dict, str)) and key.endswith('_location'):
-                    # 自动将 GeoJSON 输入转换为 GeoDataFrame
+                # 自动将几何输入转换为 GeoDataFrame
+                # 支持的后缀: _location, _geom, _geometry, _wkt
+                is_geometry_input = any(key.endswith(suffix) for suffix in ['_location', '_geom', '_geometry', '_wkt'])
+
+                if isinstance(value, (dict, str)) and is_geometry_input:
+                    # 自动将 GeoJSON/WKT 输入转换为 GeoDataFrame
                     self.results[f"input.{key}"] = self.parse_geojson_input(value)
                 else:
                     self.results[f"input.{key}"] = value

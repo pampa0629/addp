@@ -44,6 +44,14 @@ services:
       - SUPER_ADMIN_USERNAME=${SUPER_ADMIN_USERNAME:-SuperAdmin}
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-20251001#SuperAdmin}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-superadmin@addp.com}
+      # 内置引擎服务 URL（Docker 环境使用服务名）
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - META_SERVICE_URL=http://meta-backend:8082
+      - TRANSFER_SERVICE_URL=http://transfer-backend:8083
+      - MANAGER_SERVICE_URL=http://manager-backend:8081
+      - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
+      - DEVELOP_SERVICE_URL=http://develop-backend:8085
+      - GEOPANDAS_ENGINE_URL=http://geopandas-engine:8099
       - GIN_MODE=release
     ports:
       - "8080:8080"
@@ -406,6 +414,7 @@ services:
       - PORT=8085
       - ENV=production
       - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - GEOPANDAS_ENGINE_URL=http://geopandas-engine:8099
       - ENABLE_SERVICE_INTEGRATION=true
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -452,7 +461,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-geopandas-engine:${IMAGE_TAG:-latest}
     container_name: geopandas-engine
     environment:
-      - PORT=8090
+      - PORT=8099
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
@@ -462,7 +471,7 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-addp}
       - DB_SCHEMA=develop
     ports:
-      - "8090:8090"
+      - "8099:8099"
     networks:
       - addp-network
     depends_on:
@@ -470,7 +479,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
       interval: 10s
       timeout: 5s
       retries: 30

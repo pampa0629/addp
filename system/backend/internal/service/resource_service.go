@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/addp/common/events"
@@ -16,8 +17,9 @@ import (
 )
 
 var (
-	ErrResourceNotFound  = errors.New("资源不存在")
-	ErrResourceForbidden = errors.New("没有权限访问该资源")
+	ErrResourceNotFound         = errors.New("资源不存在")
+	ErrResourceForbidden        = errors.New("没有权限访问该资源")
+	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
 )
 
 type ResourceService struct {
@@ -47,6 +49,11 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, err
 	}
 
+	// 检查重复资源
+	if err := s.checkDuplicateResource(req, *user.TenantID); err != nil {
+		return nil, err
+	}
+
 	// 验证扫描配置
 	if err := s.validateScanConfig(req.ScanConfig); err != nil {
 		return nil, fmt.Errorf("扫描配置验证失败: %w", err)
@@ -73,6 +80,12 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 	// 如果未提供 display_name，默认等于 name
 	if resource.DisplayName == "" {
 		resource.DisplayName = resource.Name
+	}
+
+	// 自动生成 capabilities（如果请求中未提供）
+	if resource.Capabilities == nil || *resource.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(req.ResourceType)
+		resource.Capabilities = &capabilities
 	}
 
 	if err := s.repo.Create(resource); err != nil {
@@ -123,6 +136,12 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 	// 如果未提供 display_name，默认等于 name
 	if resource.DisplayName == "" {
 		resource.DisplayName = resource.Name
+	}
+
+	// 自动生成 capabilities（如果请求中未提供）
+	if resource.Capabilities == nil || *resource.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(req.ResourceType)
+		resource.Capabilities = &capabilities
 	}
 
 	if err := s.repo.Create(resource); err != nil {
@@ -214,6 +233,14 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 		return nil, err
 	}
 
+	// 检查是否为内置资源（内置资源不允许修改核心配置）
+	if resource.IsBuiltin {
+		// 允许修改描述和显示名称，但不允许修改连接信息、名称等核心配置
+		if req.Name != nil || req.ConnectionInfo != nil {
+			return nil, ErrBuiltinResourceImmutable
+		}
+	}
+
 	// 验证扫描配置
 	if req.ScanConfig != nil {
 		if err := s.validateScanConfig(req.ScanConfig); err != nil {
@@ -280,6 +307,11 @@ func (s *ResourceService) Delete(id uint, currentUserID uint) error {
 
 	if err := s.ensureResourceManagementPermission(currentUser); err != nil {
 		return err
+	}
+
+	// 检查是否为内置资源
+	if resource.IsBuiltin {
+		return ErrBuiltinResourceImmutable
 	}
 
 	if err := s.repo.Delete(id); err != nil {
@@ -506,13 +538,17 @@ func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo)
 	for _, field := range sensitiveFields {
 		if val, exists := connInfo[field]; exists {
 			if strVal, ok := val.(string); ok && strVal != "" {
+				log.Printf("🔐 [DECRYPT] 开始解密字段 '%s' | 密文长度: %d", field, len(strVal))
 				decryptedVal, err := commonutils.Decrypt(strVal, s.encryptionKey)
 				if err != nil {
 					// 如果解密失败，可能是未加密的旧数据，保持原值
 					// 在生产环境中应该记录日志
+					log.Printf("❌ [DECRYPT] 解密字段 '%s' 失败: %v | 密文前30字符: %s...",
+						field, err, strVal[:min(len(strVal), 30)])
 					decrypted[field] = strVal
 					continue
 				}
+				log.Printf("✅ [DECRYPT] 解密字段 '%s' 成功 | 明文长度: %d 字节", field, len(decryptedVal))
 				decrypted[field] = decryptedVal
 			}
 		}
@@ -631,3 +667,59 @@ func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
 
 	return nil
 }
+
+// generateDefaultCapabilities 根据资源类型生成默认 capabilities
+func (s *ResourceService) generateDefaultCapabilities(resourceType string) string {
+	resourceTypeLower := strings.ToLower(resourceType)
+
+	switch resourceTypeLower {
+	case "postgresql", "postgres":
+		return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询"}]}`
+
+	case "mysql":
+		return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询"}]}`
+
+	case "minio":
+		return `{"storage":[{"type":"object_storage","engine":"minio"}]}`
+
+	case "s3":
+		return `{"storage":[{"type":"object_storage","engine":"s3"}]}`
+
+	case "oss":
+		return `{"storage":[{"type":"object_storage","engine":"oss"}]}`
+
+	case "object_storage", "object-storage":
+		return `{"storage":[{"type":"object_storage","engine":"generic"}]}`
+
+	default:
+		// 未知类型，生成通用 storage 能力
+		return `{"storage":[{"type":"generic"}]}`
+	}
+}
+
+// checkDuplicateResource 检查是否存在重复资源
+func (s *ResourceService) checkDuplicateResource(req *models.ResourceCreateRequest, tenantID uint) error {
+	// 检查 1: 同名资源
+	existing, err := s.repo.FindByNameAndTenant(req.Name, tenantID)
+	if err == nil && existing != nil {
+		return fmt.Errorf("资源名称 '%s' 已存在，请使用其他名称", req.Name)
+	}
+
+	// 检查 2: 针对 PostgreSQL，检查连接信息（host+port+database）
+	if strings.ToLower(req.ResourceType) == "postgresql" || strings.ToLower(req.ResourceType) == "postgres" {
+		host, _ := req.ConnectionInfo["host"].(string)
+		portFloat, _ := req.ConnectionInfo["port"].(float64)
+		database, _ := req.ConnectionInfo["database"].(string)
+
+		port := int(portFloat)
+
+		existing, err := s.repo.FindByConnection(tenantID, host, port, database)
+		if err == nil && existing != nil {
+			return fmt.Errorf("数据库连接 %s:%d/%s 已注册（资源名称: %s），不能重复注册",
+				host, port, database, existing.Name)
+		}
+	}
+
+	return nil
+}
+

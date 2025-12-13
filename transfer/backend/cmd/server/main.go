@@ -159,8 +159,9 @@ func registerCapabilities(cfg *config.Config) {
 
 	// 注册请求
 	req := &commonModels.CapabilityRegistrationRequest{
-		UniqueIdentifier:  "transfer.worker.default",
+		UniqueIdentifier:  "transfer.batch_worker.default",
 		Name:              "Transfer Batch Worker",
+		DisplayName:       "数据传输批处理引擎",
 		ResourceType:      "compute_engine",
 		IsBuiltin:         true,
 		Capabilities:      capabilities,

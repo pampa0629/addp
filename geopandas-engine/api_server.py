@@ -370,7 +370,7 @@ def get_execution_status(execution_id):
 
 def register_to_system():
     """
-    启动时自动注册到 System Backend
+    启动时自动注册到 System Backend（单次尝试）
     """
     import requests
 
@@ -380,6 +380,7 @@ def register_to_system():
     registration_data = {
         "unique_identifier": "geopandas.engine.default",
         "name": "GeoPandas 空间计算引擎",
+        "display_name": "geopandas空间计算引擎",
         "resource_type": "compute_engine",
         "is_builtin": True,
         "capabilities": {
@@ -390,40 +391,43 @@ def register_to_system():
             }]
         },
         "task_api_config": {
-            "base_url": "http://geopandas-engine:8090",
+            "base_url": os.getenv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
             "endpoints": {
                 "list": {
                     "method": "GET",
-                    "path": "/api/spatial/tasks",
+                    "path": "/api/develop/spatial/tasks",
                     "query_params": {
-                        "tenant_id": "{{.TenantID}}",
                         "page": "{{.Page}}",
                         "page_size": "{{.PageSize}}"
                     }
                 },
                 "create": {
                     "method": "POST",
-                    "path": "/api/spatial/tasks",
+                    "path": "/api/develop/spatial/tasks",
                     "body_template": {
                         "name": "{{.Name}}",
+                        "description": "{{.Description}}",
                         "workflow_def": "{{.WorkflowDef}}",
-                        "input_schema": "{{.InputSchema}}"
+                        "input_schema": "{{.InputSchema}}",
+                        "output_schema": "{{.OutputSchema}}",
+                        "schedule": "{{.Schedule}}"
                     }
                 },
                 "execute": {
                     "method": "POST",
-                    "path": "/api/spatial/tasks/{{.TaskID}}/execute",
+                    "path": "/api/develop/spatial/tasks/{{.TaskID}}/execute",
                     "body_template": {
                         "inputs": "{{.Inputs}}"
                     }
                 },
                 "status": {
                     "method": "GET",
-                    "path": "/api/spatial/executions/{{.ExecutionID}}",
+                    "path": "/api/develop/spatial/executions/{{.ExecutionID}}",
                     "response_mapping": {
                         "status_field": "status",
+                        "message_field": "error_message",
                         "progress_field": "progress",
-                        "result_field": "result"
+                        "task_id_field": "id"
                     }
                 }
             },
@@ -444,16 +448,44 @@ def register_to_system():
         response = requests.post(
             f"{system_url}/internal/registry/capabilities",
             json=registration_data,
-            headers={"X-Internal-API-Key": internal_api_key}
+            headers={"X-Internal-API-Key": internal_api_key},
+            timeout=10
         )
 
         if response.status_code in [200, 201]:
-            logger.info("Successfully registered to System Backend")
+            logger.info("✅ Successfully registered to System Backend")
+            return True
         else:
-            logger.warning(f"Failed to register to System: {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Failed to register to System: {response.status_code} - {response.text}")
+            return False
 
     except Exception as e:
-        logger.warning(f"Failed to register to System (will retry): {e}")
+        logger.warning(f"⚠️  Failed to register to System: {e}")
+        return False
+
+
+def register_to_system_with_retry():
+    """
+    后台线程定期重试注册（最多5次，间隔10秒）
+    """
+    import threading
+    import time
+
+    max_retries = 5
+    retry_interval = 10
+
+    for attempt in range(1, max_retries + 1):
+        logger.info(f"🔄 Attempting to register to System (attempt {attempt}/{max_retries})")
+
+        if register_to_system():
+            logger.info(f"✅ Registration successful on attempt {attempt}")
+            return
+
+        if attempt < max_retries:
+            logger.info(f"⏳ Waiting {retry_interval}s before retry...")
+            time.sleep(retry_interval)
+
+    logger.error(f"❌ Registration failed after {max_retries} attempts")
 
 
 # ========================================
@@ -461,13 +493,12 @@ def register_to_system():
 # ========================================
 
 if __name__ == '__main__':
-    # 启动时注册到 System
-    # 注意：生产环境应使用后台任务定期重试注册
-    try:
-        register_to_system()
-    except Exception as e:
-        logger.warning(f"Initial registration failed: {e}")
+    # 启动后台线程注册到 System（不阻塞应用启动）
+    import threading
+    registration_thread = threading.Thread(target=register_to_system_with_retry, daemon=True)
+    registration_thread.start()
 
     # 启动 Flask 服务
-    port = int(os.getenv('PORT', 8090))
+    port = int(os.getenv('PORT', 8099))
+    logger.info(f"🚀 Starting GeoPandas Engine on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)

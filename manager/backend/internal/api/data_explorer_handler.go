@@ -48,7 +48,17 @@ func (h *DataExplorerHandler) GetTree(c *gin.Context) {
 
 	tenantID := tenantIDFromContext(c)
 
-	tree, err := h.metadataService.GetLegacyResourceTree(tenantID)
+	// 提取 JWT token 并放入 context
+	ctx := c.Request.Context()
+	if token := c.GetHeader("Authorization"); token != "" {
+		// 移除 "Bearer " 前缀
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		}
+		ctx = context.WithValue(ctx, "jwt_token", token)
+	}
+
+	tree, err := h.metadataService.GetLegacyResourceTree(ctx, tenantID)
 	if err != nil {
 		logger.L().Error("数据探查: 旧接口获取资源树失败", "error", err)
 		commonAPI.InternalServerError(c, err.Error())
@@ -70,14 +80,24 @@ func (h *DataExplorerHandler) GetResourceTree(c *gin.Context) {
 
 	tenantID := tenantIDFromContext(c)
 
-	tree, err := h.metadataService.GetResourceTree(resourceID, tenantID)
+	// 提取 JWT token 并放入 context
+	ctx := c.Request.Context()
+	if token := c.GetHeader("Authorization"); token != "" {
+		// 移除 "Bearer " 前缀
+		if len(token) > 7 && token[:7] == "Bearer " {
+			token = token[7:]
+		}
+		ctx = context.WithValue(ctx, "jwt_token", token)
+	}
+
+	tree, err := h.metadataService.GetResourceTree(ctx, resourceID, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
 			logger.L().Warn("数据探查: 获取资源树被拒绝", "resource_id", resourceID, "tenant_id", tenantIDValue(tenantID))
 			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		logger.L().Error("数据探查: 获取资源树失败bk", "error", err, "resource_id", resourceID)
+		logger.L().Error("数据探查: 获取资源树失败", "error", err, "resource_id", resourceID)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}

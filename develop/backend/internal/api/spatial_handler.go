@@ -4,10 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/addp/develop/internal/models"
-	"github.com/addp/develop/internal/service"
+	"github.com/addp/develop/backend/internal/models"
+	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -15,13 +14,15 @@ import (
 type SpatialHandler struct {
 	db                     *gorm.DB
 	spatialWorkflowService *service.SpatialWorkflowService
+	gisExecutionService    *service.GISExecutionService
 }
 
 // NewSpatialHandler 创建空间工作流处理器
-func NewSpatialHandler(db *gorm.DB, spatialWorkflowService *service.SpatialWorkflowService) *SpatialHandler {
+func NewSpatialHandler(db *gorm.DB, spatialWorkflowService *service.SpatialWorkflowService, gisExecutionService *service.GISExecutionService) *SpatialHandler {
 	return &SpatialHandler{
 		db:                     db,
 		spatialWorkflowService: spatialWorkflowService,
+		gisExecutionService:    gisExecutionService,
 	}
 }
 
@@ -136,11 +137,7 @@ func (h *SpatialHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"status":  "success",
-		"task_id": task.ID,
-		"task":    task,
-	})
+	c.JSON(http.StatusCreated, task)
 }
 
 // ListTasks 获取任务列表
@@ -166,20 +163,29 @@ func (h *SpatialHandler) ListTasks(c *gin.Context) {
 
 	query := h.db.Where("tenant_id = ?", tenantID).Where("deleted_at IS NULL")
 
+	// 任务名称模糊搜索
+	if name := c.Query("name"); name != "" {
+		query = query.Where("name ILIKE ?", "%"+name+"%")
+	}
+
+	// 任务状态精确过滤
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+
 	// 获取总数
 	if err := query.Model(&models.SpatialTask{}).Count(&total).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 获取分页数据
+	// 获取分页数据（按创建时间倒序）
 	if err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&tasks).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "success",
 		"tasks":     tasks,
 		"total":     total,
 		"page":      page,
@@ -208,10 +214,7 @@ func (h *SpatialHandler) GetTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"task":   task,
-	})
+	c.JSON(http.StatusOK, task)
 }
 
 // UpdateTask 更新任务
@@ -284,10 +287,7 @@ func (h *SpatialHandler) UpdateTask(c *gin.Context) {
 	// 重新查询更新后的任务
 	h.db.Where("id = ?", taskID).First(&task)
 
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"task":   task,
-	})
+	c.JSON(http.StatusOK, task)
 }
 
 // DeleteTask 删除任务（软删除）
@@ -313,7 +313,7 @@ func (h *SpatialHandler) DeleteTask(c *gin.Context) {
 	})
 }
 
-// ExecuteTask 执行已保存的任务
+// ExecuteTask 执行已保存的任务（创建执行记录并异步执行）
 // POST /api/spatial/tasks/:id/execute
 func (h *SpatialHandler) ExecuteTask(c *gin.Context) {
 	taskID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -323,64 +323,54 @@ func (h *SpatialHandler) ExecuteTask(c *gin.Context) {
 	}
 
 	tenantID, _ := c.Get("tenant_id")
-
-	// 查找任务
-	var task models.SpatialTask
-	if err := h.db.Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", taskID, tenantID).First(&task).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	// 绑定输入参数
-	var req struct {
-		Inputs map[string]interface{} `json:"inputs"`
-	}
+	var req models.ExecuteTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 构建工作流定义（从任务的 WorkflowDef）
-	workflowDef := make(map[string]interface{})
-	workflowDefBytes, _ := task.WorkflowDef.Value()
-	_ = task.WorkflowDef.Scan(workflowDefBytes)
-
-	// 转换为 map[string]interface{}
-	workflowDef["tasks"] = task.WorkflowDef.Tasks
-
-	// 执行工作流
-	result, err := h.spatialWorkflowService.ExecuteWorkflow(c.Request.Context(), workflowDef, req.Inputs)
+	// 创建执行记录
+	execution, err := h.gisExecutionService.CreateExecution(
+		uint(taskID),
+		req.Inputs,
+		"manual", // 触发类型
+		userID.(uint),
+		tenantID.(uint),
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 更新任务的最后执行信息
-	executionID, _ := uuid.Parse(result.ExecutionID)
-	h.db.Model(&task).Updates(map[string]interface{}{
-		"last_execution_id":         executionID,
-		"last_execution_status":     result.Status,
-		"last_execution_started_at": gorm.Expr("NOW()"),
-	})
+	// 异步执行工作流
+	go h.gisExecutionService.ExecuteAsync(c.Request.Context(), execution.ID, tenantID.(uint))
 
-	c.JSON(http.StatusOK, result)
+	// 立即返回执行ID
+	c.JSON(http.StatusAccepted, gin.H{
+		"execution_id": execution.ID,
+	})
 }
 
 // GetExecutionStatus 查询执行状态
 // GET /api/spatial/executions/:id
 func (h *SpatialHandler) GetExecutionStatus(c *gin.Context) {
-	executionID := c.Param("id")
+	executionID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid execution ID"})
+		return
+	}
 
-	// 查询执行状态
-	status, err := h.spatialWorkflowService.GetTaskStatus(c.Request.Context(), executionID)
+	tenantID, _ := c.Get("tenant_id")
+
+	// 查询执行记录
+	execution, err := h.gisExecutionService.GetExecution(uint(executionID), tenantID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, status)
+	c.JSON(http.StatusOK, execution)
 }

@@ -35,10 +35,16 @@ export function executeWorkflow(workflowDef, inputData = {}) {
  * 获取任务列表
  * @param {number} page - 页码
  * @param {number} pageSize - 每页数量
+ * @param {Object} filters - 过滤条件 { name: string, status: string }
  */
-export function listTasks(page = 1, pageSize = 20) {
+export function listTasks(page = 1, pageSize = 20, filters = {}) {
   return client.get('/develop/spatial/tasks', {
-    params: { page, page_size: pageSize }
+    params: {
+      page,
+      page_size: pageSize,
+      name: filters.name || undefined,
+      status: filters.status || undefined
+    }
   })
 }
 
@@ -90,4 +96,70 @@ export function executeTask(id, inputs = {}) {
  */
 export function getExecutionStatus(executionId) {
   return client.get(`/develop/spatial/executions/${executionId}`)
+}
+
+/**
+ * 获取 GIS 执行列表
+ * @param {number} page - 页码
+ * @param {number} pageSize - 每页数量
+ * @param {object} filters - 筛选条件
+ */
+export function listExecutions(page = 1, pageSize = 20, filters = {}) {
+  return client.get('/develop/gis-executions', {
+    params: {
+      page,
+      page_size: pageSize,
+      ...filters
+    }
+  })
+}
+
+/**
+ * 获取 GIS 执行详情
+ * @param {number} id - 执行ID
+ */
+export function getExecution(id) {
+  return client.get(`/develop/gis-executions/${id}`)
+}
+
+/**
+ * 获取 GIS 执行日志
+ * @param {number} id - 执行ID
+ * @param {boolean} download - 是否下载
+ */
+export function getExecutionLogs(id, download = false) {
+  return client.get(`/develop/gis-executions/${id}/logs`, {
+    params: { download: download ? 'true' : 'false' }
+  })
+}
+
+/**
+ * 重试 GIS 执行
+ * @param {number} id - 执行ID
+ */
+export function retryExecution(id) {
+  return client.post(`/develop/gis-executions/${id}/retry`)
+}
+
+/**
+ * 取消 GIS 执行
+ * @param {number} id - 执行ID
+ */
+export function cancelExecution(id) {
+  return client.post(`/develop/gis-executions/${id}/cancel`)
+}
+
+/**
+ * 删除 GIS 执行记录
+ * @param {number} id - 执行ID
+ */
+export function deleteExecution(id) {
+  return client.delete(`/develop/gis-executions/${id}`)
+}
+
+/**
+ * 获取 GIS 执行统计信息
+ */
+export function getExecutionStatistics() {
+  return client.get('/develop/gis-executions/statistics')
 }

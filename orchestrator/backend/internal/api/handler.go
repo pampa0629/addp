@@ -379,6 +379,7 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 
 // standardizeTaskListResponse 统一任务列表响应格式
 // 将不同模块的返回格式统一为 {items: [...], total: X}
+// 同时确保每个任务都有 display_name 字段（用于前端中文显示）
 func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{}) map[string]interface{} {
 	resultMap, ok := respData.(map[string]interface{})
 	if !ok {
@@ -398,7 +399,7 @@ func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{})
 			total = t
 		}
 		return map[string]interface{}{
-			"items": items,
+			"items": h.ensureDisplayNames(items),
 			"total": total,
 		}
 	}
@@ -412,22 +413,67 @@ func (h *OrchestrationHandler) standardizeTaskListResponse(respData interface{})
 			total = t
 		}
 		return map[string]interface{}{
-			"items": data,
+			"items": h.ensureDisplayNames(data),
 			"total": total,
 		}
 	}
 
-	// 情况 3: 直接是数组，包装为标准格式
+	// 情况 3: Develop 格式 {tasks: [...], total: X, page: X, page_size: X}
+	if tasks, hasTasks := resultMap["tasks"]; hasTasks {
+		total := 0
+		if t, ok := resultMap["total"].(float64); ok {
+			total = int(t)
+		} else if t, ok := resultMap["total"].(int); ok {
+			total = t
+		}
+		return map[string]interface{}{
+			"items": h.ensureDisplayNames(tasks),
+			"total": total,
+		}
+	}
+
+	// 情况 4: 直接是数组，包装为标准格式
 	return map[string]interface{}{
 		"items": []interface{}{},
 		"total": 0,
 	}
 }
 
+// ensureDisplayNames 确保任务列表中每个任务都有 display_name 字段
+// 如果没有 display_name，则使用 name 作为默认值
+func (h *OrchestrationHandler) ensureDisplayNames(items interface{}) []interface{} {
+	itemsArray, ok := items.([]interface{})
+	if !ok {
+		return []interface{}{}
+	}
+
+	result := make([]interface{}, len(itemsArray))
+	for i, item := range itemsArray {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			result[i] = item
+			continue
+		}
+
+		// 如果没有 display_name 字段，使用 name 作为默认值
+		if _, hasDisplayName := itemMap["display_name"]; !hasDisplayName {
+			if name, hasName := itemMap["name"]; hasName {
+				itemMap["display_name"] = name
+			}
+		}
+
+		result[i] = itemMap
+	}
+
+	return result
+}
+
 // replaceTemplateVars 替换模板变量（如 {{.TenantID}}）
 // 支持的变量：
 // - {{.TenantID}} - 从请求中获取租户 ID（优先从 query，其次从 JWT）
 // - {{.UserID}} - 从 JWT 中获取用户 ID
+// - {{.Page}} - 从请求中获取page参数
+// - {{.PageSize}} - 从请求中获取page_size参数
 func replaceTemplateVars(template string, c *gin.Context) string {
 	result := template
 
@@ -446,6 +492,18 @@ func replaceTemplateVars(template string, c *gin.Context) string {
 		// TODO: 从 JWT 中提取 user_id
 		userID := "1" // 默认值
 		result = strings.ReplaceAll(result, "{{.UserID}}", userID)
+	}
+
+	// 替换 {{.Page}}
+	if strings.Contains(result, "{{.Page}}") {
+		page := c.DefaultQuery("page", "1")
+		result = strings.ReplaceAll(result, "{{.Page}}", page)
+	}
+
+	// 替换 {{.PageSize}}
+	if strings.Contains(result, "{{.PageSize}}") {
+		pageSize := c.DefaultQuery("page_size", "20")
+		result = strings.ReplaceAll(result, "{{.PageSize}}", pageSize)
 	}
 
 	return result

@@ -29,9 +29,11 @@ func main() {
 
 	// 创建 Repository
 	executionRepo := repository.NewExecutionRepository(db)
+	gisExecutionRepo := repository.NewGISExecutionRepository(db)
+	spatialTaskRepo := repository.NewSpatialTaskRepository(db)
 
-	// 创建 SystemClient
-	systemClient := commonClient.NewSystemClient(cfg.SystemServiceURL, "")
+	// 创建 SystemClient (使用 Internal API Key 获取未加密的资源配置)
+	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 
 	// 创建 SQL Service
 	sqlService := service.NewSQLExecutionService(cfg, executionRepo, systemClient)
@@ -40,17 +42,21 @@ func main() {
 	// 创建 Spatial Workflow Service
 	geopandasEngineURL := cfg.GeoPandasEngineURL
 	if geopandasEngineURL == "" {
-		geopandasEngineURL = "http://localhost:8090"
+		geopandasEngineURL = "http://localhost:8099"
 		log.Printf("⚠️  GeoPandas Engine URL not configured, using default: %s", geopandasEngineURL)
 	}
 	spatialWorkflowService := service.NewSpatialWorkflowService(geopandasEngineURL)
 
+	// 创建 GIS Execution Service
+	gisExecutionService := service.NewGISExecutionService(gisExecutionRepo, spatialTaskRepo, spatialWorkflowService, db)
+
 	// 创建 Handler
 	sqlHandler := api.NewSQLHandler(sqlService)
-	spatialHandler := api.NewSpatialHandler(db, spatialWorkflowService)
+	spatialHandler := api.NewSpatialHandler(db, spatialWorkflowService, gisExecutionService)
+	gisExecutionHandler := api.NewGISExecutionHandler(gisExecutionService)
 
 	// 设置路由
-	router := api.SetupRouter(cfg, sqlHandler, spatialHandler)
+	router := api.SetupRouter(cfg, sqlHandler, spatialHandler, gisExecutionHandler)
 
 	// 启动服务器
 	addr := ":" + cfg.ServerAddr

@@ -50,12 +50,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 初始化内置计算引擎
-	if err := repository.InitBuiltinComputeEngines(db); err != nil {
-		logger.L().Error("内置计算引擎初始化失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)

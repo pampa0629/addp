@@ -65,17 +65,40 @@ let previewRequestId = 0
 const pendingRouteSelection = ref(null)
 
 const buildSnapshotFromQuery = (query = {}) => {
-  const resourceKey = query.resourceId ?? query.resource_id
+  const resourceKey = query.resourceId ?? query.resource_id ?? query.resource
   const schema = query.schema ?? query.bucket ?? ''
   const objectPath = query.objectPath ?? query.path ?? query.table ?? ''
   if (!resourceKey) return null
+
+  // Try to parse as numeric ID first
   const numericId = Number(resourceKey)
-  if (Number.isNaN(numericId) || numericId <= 0) return null
+  if (!Number.isNaN(numericId) && numericId > 0) {
+    const nodeType = query.nodeType || (objectPath ? 'object' : '')
+    return {
+      resourceId: numericId,
+      schema,
+      path: objectPath,
+      table: objectPath,
+      type: nodeType
+    }
+  }
+
+  // If not numeric, treat as resource name/identifier
+  // Find matching resource by name or unique_identifier
+  const matchingResource = resources.value.find(r =>
+    r.name === resourceKey ||
+    r.unique_identifier === resourceKey ||
+    r.unique_identifier?.endsWith(`.${resourceKey}`)
+  )
+
+  if (!matchingResource) {
+    console.warn(`Resource not found: ${resourceKey}`)
+    return null
+  }
 
   const nodeType = query.nodeType || (objectPath ? 'object' : '')
-
   return {
-    resourceId: numericId,
+    resourceId: matchingResource.id,
     schema,
     path: objectPath,
     table: objectPath,

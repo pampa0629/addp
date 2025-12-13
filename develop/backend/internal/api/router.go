@@ -7,7 +7,7 @@ import (
 )
 
 // SetupRouter 设置路由
-func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *SpatialHandler) *gin.Engine {
+func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *SpatialHandler, gisExecutionHandler *GISExecutionHandler) *gin.Engine {
 	router := gin.Default()
 
 	// 全局中间件
@@ -52,6 +52,18 @@ func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *Spa
 
 			// 执行状态查询
 			spatial.GET("/executions/:id", spatialHandler.GetExecutionStatus)
+		}
+
+		// ==================== GIS 执行历史 API ====================
+		gisExecutions := api.Group("/gis-executions")
+		{
+			gisExecutions.GET("", gisExecutionHandler.ListExecutions)                     // 列表
+			gisExecutions.GET("/:id", gisExecutionHandler.GetExecution)                   // 详情
+			gisExecutions.GET("/:id/logs", gisExecutionHandler.GetExecutionLogs)          // 日志
+			gisExecutions.POST("/:id/retry", gisExecutionHandler.RetryExecution)          // 重试
+			gisExecutions.POST("/:id/cancel", gisExecutionHandler.CancelExecution)        // 取消
+			gisExecutions.DELETE("/:id", gisExecutionHandler.DeleteExecution)             // 删除
+			gisExecutions.GET("/statistics", gisExecutionHandler.GetExecutionStatistics)  // 统计
 		}
 
 		// TODO: Phase 2 - 脚本管理

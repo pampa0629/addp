@@ -238,6 +238,7 @@ func registerCapabilities(cfg *config.Config) {
 	req := &commonModels.CapabilityRegistrationRequest{
 		UniqueIdentifier:  "meta.scanner.default",
 		Name:              "Meta Metadata Scanner",
+		DisplayName:       "元数据扫描引擎",
 		ResourceType:      "compute_engine",
 		IsBuiltin:         true,
 		Capabilities:      capabilities,

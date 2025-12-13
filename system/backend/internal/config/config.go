@@ -38,6 +38,15 @@ type Config struct {
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	// 内置引擎服务 URL（用于 task_api_config.base_url）
+	SystemServiceURL      string
+	MetaServiceURL        string
+	TransferServiceURL    string
+	ManagerServiceURL     string
+	OrchestratorServiceURL string
+	DevelopServiceURL     string
+	GeopandasEngineURL    string
 }
 
 func Load() *Config {
@@ -113,6 +122,15 @@ func Load() *Config {
 		RedisPort:     getEnv("REDIS_PORT", "6379"),
 		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
+
+		// 内置引擎服务 URL
+		SystemServiceURL:      getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		MetaServiceURL:        getEnv("META_SERVICE_URL", "http://localhost:8082"),
+		TransferServiceURL:    getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
+		ManagerServiceURL:     getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
+		OrchestratorServiceURL: getEnv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8084"),
+		DevelopServiceURL:     getEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
+		GeopandasEngineURL:    getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8090"),
 	}
 }
 

@@ -138,6 +138,24 @@ dev-gateway: ## 开发模式运行 Gateway 模块
 	@echo "$(GREEN)启动 Gateway 模块开发环境...$(NC)"
 	@cd gateway && go run cmd/gateway/main.go
 
+dev-geopandas: ## 开发模式运行 GeoPandas Engine (Python)
+	@echo "$(GREEN)启动 GeoPandas Engine 开发环境...$(NC)"
+	@cd geopandas-engine && \
+	if [ ! -d "venv" ]; then \
+		echo "创建 Python 虚拟环境..." && \
+		python3 -m venv venv && \
+		./venv/bin/pip install --quiet -r requirements.txt; \
+	fi && \
+	export PORT=8099 && \
+	export SYSTEM_SERVICE_URL=http://localhost:8080 && \
+	export POSTGRES_HOST=localhost && \
+	export POSTGRES_PORT=5432 && \
+	export POSTGRES_USER=addp && \
+	export POSTGRES_PASSWORD=addp_password && \
+	export POSTGRES_DB=addp && \
+	export DB_SCHEMA=develop && \
+	./venv/bin/python api_server.py
+
 dev-start: ## 开发模式启动所有服务（按正确顺序）
 	@echo "$(GREEN)启动完整开发环境...$(NC)"
 	@bash scripts/dev/start.sh
@@ -155,6 +173,7 @@ dev-health: ## 检查开发模式服务健康状态
 	@curl -sf http://localhost:8080/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
 	@curl -sf http://localhost:8081/health > /dev/null && echo "  $(GREEN)✓ Manager healthy$(NC)" || echo "  $(RED)✗ Manager unhealthy$(NC)"
 	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
+	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ GeoPandas Engine healthy$(NC)" || echo "  $(RED)✗ GeoPandas Engine unhealthy$(NC)"
 	@curl -sf http://localhost:8000/health > /dev/null && echo "  $(GREEN)✓ Gateway healthy$(NC)" || echo "  $(RED)✗ Gateway unhealthy$(NC)"
 
 build: build-release ## 编译所有服务（默认 release 输出到 dist）

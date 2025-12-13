@@ -22,11 +22,11 @@ COPY workflow_engine.py .
 COPY api_server.py .
 
 # Expose Flask port
-EXPOSE 8090
+EXPOSE 8099
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV PORT=8090
+ENV PORT=8099
 
 # Run with Gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:8090", "--workers", "4", "--timeout", "600", "api_server:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8099", "--workers", "4", "--timeout", "600", "api_server:app"]

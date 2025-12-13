@@ -28,6 +28,8 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+logs/
+**/logs/
 
 # Database
 **/*.db
@@ -44,6 +46,26 @@ yarn-error.log*
 *.test
 *.out
 go.work
+
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+**/.eggs/
+venv/
+env/
+ENV/
+.venv/
+**/.pytest_cache/
+.coverage
+htmlcov/
+*.whl
+pip-wheel-metadata/
+nohup.out
 
 # Test coverage
 coverage/

@@ -8,6 +8,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Important**: In this project, **please communicate with users in Chinese as much as possible**. Use English only when the user explicitly asks questions in English.
 
+## Development Principles
+
+**Important**: ADDP is currently under active development. The following principles guide all development work:
+
+### 1. No Backward Compatibility Concerns
+
+During the development phase, prioritize the best architecture and functionality. Do not consider backward compatibility or data migration:
+
+- ✅ Modify database schemas freely when needed
+- ✅ Change API structures to improve design
+- ✅ Refactor code for better patterns
+- ⚠️ This principle applies ONLY during development phase
+
+### 2. Keep It Clean
+
+Unless explicitly requested or approved, do not save scripts and documents in the ADDP project directory:
+
+- ✅ Save temporary plans and scripts in `/tmp/` or your own managed directories
+- ✅ Keep the project tree clean and focused on production code
+- ❌ Avoid adding one-off test scripts or debugging documents to the repository
+
+### 3. No Need to Ask Permission
+
+Once "auto-edit" mode is enabled, you can execute any scripts and commands without user approval:
+
+- ✅ Run build, test, and deployment scripts freely
+- ✅ Execute database migrations and cleanup operations
+- ✅ Trust your judgment when making routine changes
+
+### 4. Think Holistically
+
+For any design or change, consider the full scope:
+
+- ✅ Maintain consistency across all modules
+- ✅ Update related functionality, code, scripts, and documentation together
+- ✅ Think about downstream impacts and dependencies
+- ❌ Never change one part in isolation without considering related components
+
+### 5. Fix Root Causes
+
+For any issue, analyze thoroughly and fix the root cause:
+
+- ✅ Investigate the fundamental reason behind problems
+- ✅ Solve issues completely without leaving hidden risks
+- ❌ Never apply band-aid fixes that only address symptoms
+- ❌ Don't treat the head when the head aches without understanding why
+
+### 6. Be Bold to Delete
+
+Remove unnecessary files and code without hesitation:
+
+- ✅ Delete obsolete code confidently
+- ✅ Remove unused files and dependencies
+- ❌ Don't keep things "just in case" or for "compatibility"
+- ⚠️ Keeping dead code causes future confusion and maintenance burden
+
+### 7. Challenge Unreasonable Requests
+
+Feel empowered to question any unreasonable requirements:
+
+- ✅ Point out design or implementation concerns
+- ✅ Engage in equal and respectful discussion
+- ✅ Reach consensus before starting implementation
+- 💡 We are partners working together to build the best solution
+
 ## Repository Structure
 
 **ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform structured as microservices. Each service has its own directory:
@@ -19,66 +84,120 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **portal/** - Unified portal entry point with iframe-based module integration - **IMPLEMENTED**
 - **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL system schema)
 - **gateway/** - API gateway: handles external requests and routes to internal services - **IMPLEMENTED** (reverse proxy)
-- **manager/** - Data management: data source connections, upload directory organization, data preview - **PARTIALLY IMPLEMENTED** (Go backend structure created)
+- **manager/** - Data management: data source connections, upload directory organization, data preview - **IMPLEMENTED**
 - **meta/** - Metadata service: data metadata parsing/storage/querying, schema scanning with cron scheduling - **IMPLEMENTED** (PostgreSQL metadata schema)
-- **transfer/** - Data transfer: data import/export/synchronization - *Planned*
+- **transfer/** - Data transfer: data import/export/synchronization - **IMPLEMENTED**
+- **orchestrator/** - Workflow orchestration: task scheduling and execution - **IMPLEMENTED**
+- **develop/** - Development workbench: SQL execution, GIS workflow management - **IMPLEMENTED**
+- **geopandas-engine/** - Spatial computation engine: Python-based GIS workflow execution with 21 spatial operators - **IMPLEMENTED**
 
-All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO). Common code is shared via the `common` module (backend) and `common-frontend` module (frontend) to avoid duplication.
+All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO, Meilisearch). Common code is shared via the `common` module (backend) and `common-frontend` module (frontend) to avoid duplication.
 
 ## Quick Start
 
-### Development (System Module Only)
+### Prerequisites
 
-```bash
-# From system/ directory
-cd system
+**Docker Environment Required**: ADDP platform requires Docker and Docker Compose to be installed.
 
-# Backend development (需要 PostgreSQL)
-cd backend && go run cmd/server/main.go
+- Install Docker Desktop: https://www.docker.com/products/docker-desktop
+- Verify installation: `docker --version` and `docker-compose --version`
 
-# Frontend development
-cd frontend && npm install && npm run dev
+### Step 1: Start Infrastructure (Required First)
 
-# Docker deployment (System only)
-make docker-up
-```
-
-### Full Platform Deployment
+**Important**: Infrastructure services (PostgreSQL, Redis, MinIO, Meilisearch) must be started first.
 
 ```bash
 # From project root
-make init           # Initialize config files
-make up             # Start System module only
-make up-full        # Start all services (Gateway + all modules + infrastructure)
-make status         # Check service status
-make logs           # View all logs
+bash scripts/infra/up.sh
 ```
 
-### Production Deployment (Recommended for Production)
+This script automatically:
+- Starts PostgreSQL, Redis, MinIO, Meilisearch containers
+- Initializes PostgreSQL schemas for all modules
+- Initializes MinIO buckets and Redis configuration
+- Configures Meilisearch indexes
 
-**生产环境一键部署**：使用 `scripts/prod/start.sh` 按正确顺序启动完整平台（基础设施 + 后端 + 前端 + Portal）
+Check infrastructure status:
+```bash
+bash scripts/infra/status.sh
+```
+
+### Step 2: Development Mode (Recommended for Development)
+
+**Start all services in correct order** using the automated development script:
 
 ```bash
 # From project root
-./scripts/prod/start.sh
+bash scripts/dev/start.sh
 ```
 
-**部署流程** (自动执行):
+This automatically starts:
+1. Infrastructure (if not running)
+2. All backend services (System, Manager, Meta, Transfer, Orchestrator, Develop, GeoPandas Engine)
+3. Gateway service
+4. All frontend services (optional, prompts user)
 
-1. **启动基础设施** (PostgreSQL, Redis, MinIO, Meilisearch)
-2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager, Meta, Transfer, Orchestrator, Develop, Gateway)
-4. **启动前端服务** (所有模块前端 + Portal + Nginx)
-5. **健康检查** (验证所有服务就绪)
+Stop all services:
+```bash
+bash scripts/dev/stop.sh
+```
 
-**访问地址** (部署完成后):
+Restart after code changes:
+```bash
+bash scripts/dev/restart.sh
+```
 
-- **✨ Portal 统一入口 (推荐)**: http://localhost:80
-  - 统一登录，一键访问所有模块
-  - 通过 Nginx 反向代理，提供最佳用户体验
-- **Portal 独立访问** (开发调试): http://localhost:5170
+### Step 3: Build Mode (For Docker Image Building)
+
+```bash
+# Compile Go binaries
+bash scripts/build/compile.sh
+
+# Build Docker images
+bash scripts/build/build-images.sh
+
+# Package and push images (if needed)
+bash scripts/build/package.sh
+```
+
+### Step 4: Local Docker Compose Mode
+
+```bash
+# Start complete platform via Docker Compose
+bash scripts/local/start.sh
+
+# Check status
+bash scripts/local/status.sh
+
+# Stop all services
+bash scripts/local/stop.sh
+```
+
+### Step 5: Production Mode
+
+**One-command production deployment**:
+
+```bash
+# From project root
+bash scripts/prod/start.sh
+```
+
+**Deployment Process** (automatic):
+
+1. **Start Infrastructure** (PostgreSQL, Redis, MinIO, Meilisearch)
+2. **Start System Backend** (Other services depend on it)
+3. **Start Business Backends** (Manager, Meta, Transfer, Orchestrator, Develop, GeoPandas Engine, Gateway)
+4. **Start Frontend Services** (All module frontends + Portal + Nginx)
+5. **Health Check** (Verify all services ready)
+
+**Access URLs** (after deployment):
+
+- **✨ Portal Unified Entry (Recommended)**: http://localhost:80
+  - Single login, access all modules
+  - Via Nginx reverse proxy for best user experience
+- **Portal Standalone**: http://localhost:5170 (for development)
 - **API Gateway**: http://localhost:8000
-- **独立模块访问** (如需单独访问):
+- **Individual Module Access** (if needed):
   - System: http://localhost:8090
   - Manager: http://localhost:8091
   - Meta: http://localhost:8092
@@ -87,105 +206,6 @@ make logs           # View all logs
   - Develop: http://localhost:8095
 
 **For detailed System module documentation, see `system/CLAUDE.md`.**
-
-### Development Mode Startup (Recommended)
-
-**Important**: Services must start in the correct order to ensure dependencies are met. Use the automated startup script to avoid race conditions.
-
-```bash
-# From project root
-
-# 1. Start all services in correct order (Recommended)
-make dev-start
-# Or directly:
-./scripts/dev/start.sh
-
-# Skip Go dependency check (faster startup, saves 5-10 seconds)
-SKIP_MODTIDY=1 ./scripts/dev/start.sh
-
-# 2. Check service health
-make dev-health
-
-# 3. Stop all services
-make dev-stop
-# Or directly:
-./scripts/dev/stop.sh
-```
-
-**Startup Process** (automatic):
-
-1. **Step 0**: Go 依赖检查 (`go mod tidy`, can skip with `SKIP_MODTIDY=1`)
-2. **Step 1**: Infrastructure startup (calls `scripts/infra/up.sh` - PostgreSQL, Redis, MinIO, Meilisearch)
-3. **Step 2-7**: Backend services (in dependency order)
-   - System Backend (8080) - configuration center, auth service
-   - Manager Backend (8081) + Meta Backend (8082) (parallel)
-   - Transfer Backend (8083) + Workers
-   - Orchestrator Backend (8084)
-   - Gateway (8000) - API router
-4. **Step 8**: Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
-
-**Startup Order**:
-
-```
-Infrastructure (PostgreSQL, Redis, MinIO, Meilisearch) [auto-started by start.sh]
-  ↓
-System Backend (8080) - auth, config center
-  ↓
-Manager Backend (8081) + Meta Backend (8082) (parallel)
-  ↓
-Transfer Backend (8083) + Transfer Worker + Meta Worker + Manager Worker
-  ↓
-Orchestrator Backend (8084)
-  ↓
-Gateway (8000) - API router
-  ↓
-Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
-```
-
-**Key Features**:
-
-- ✅ **Single Command**: One script starts everything (infrastructure + backends + frontends)
-- ✅ **Automatic dependency checking**: `go mod tidy` before startup (can skip with `SKIP_MODTIDY=1`)
-- ✅ **Infrastructure auto-startup**: Calls `scripts/infra/up.sh` automatically
-- ✅ **Smart skip**: If infrastructure is already running, skips restart (avoids pgvector recompilation)
-- ✅ **Health check waiting**: Ensures each service is ready before starting the next
-- ✅ **Progress indicators**: Color-coded output shows startup status
-- ✅ **PID tracking**: Stores process IDs for graceful shutdown
-- ✅ **Timeout handling**: Fails fast if service doesn't start within 60 seconds
-- ✅ **Log files**: Redirects output to `logs/` directory for easy debugging
-
-**Startup Script Details**:
-
-- Location: `scripts/dev/start.sh`
-- Waits for `/health` endpoint to return 200 before proceeding
-- Creates `.dev-pids/` directory to track process IDs
-- Logs stored in `logs/` directory (e.g., `logs/system-backend.log`)
-- See `scripts/dev/README.md` for detailed documentation
-- Optional frontend startup (prompts user)
-
-**Service URLs** (after successful startup):
-
-- Portal: http://localhost:5170
-- Gateway: http://localhost:8000
-- System Backend: http://localhost:8080
-- Manager Backend: http://localhost:8081
-- Meta Backend: http://localhost:8082
-
-**Troubleshooting**:
-
-- If startup fails, check logs in `logs/` directory
-- Run `make dev-health` to verify which services are running
-- See [docs/STARTUP_ORDER.md](docs/STARTUP_ORDER.md) for detailed dependency documentation
-
-**Important Development Workflow**:
-
-- **After modifying backend code**, always use `./scripts/dev/restart.sh` to restart all services
-- This ensures all processes (including workers) are recompiled with the latest changes
-- **Note**: `restart.sh` does NOT restart infrastructure containers (PostgreSQL, Redis, MinIO, Meilisearch)
-  - Reason: Avoids pgvector extension recompilation (saves 1-2 minutes)
-  - If infrastructure restart needed: `bash scripts/infra/down.sh && bash scripts/infra/up.sh`
-  - `start.sh` automatically detects running infrastructure and skips startup
-- Manual restart of individual services may cause version mismatch issues
 
 ## Technology Stack
 
@@ -214,7 +234,7 @@ Frontend services (Portal, System, Manager, Meta, Transfer, Orchestrator)
 - **Containerization**: Docker + Docker Compose
 - **Reverse Proxy**: Nginx (production), Gateway service (API routing)
 - **Database Schema Isolation**: PostgreSQL schemas (manager, metadata, transfer)
-- **Data Separation**: System infrastructure (ADDP metadata) + Business infrastructure (user data) independently deployed
+- **Data Separation**: System infrastructure (ADDP metadata) + Business database (user data) independently deployed
 
 ### Infrastructure Architecture
 
@@ -250,7 +270,7 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│  Business Infrastructure (business/docker-compose.yml)      │
+│  Business Database (business/docker-compose.yml)            │
 │                                                              │
 │  ┌──────────────┐  ┌──────────────┐                        │
 │  │ postgres     │  │ minio        │                        │
@@ -414,8 +434,21 @@ manager/frontend/          → Manager module (port 5174 dev / 8091 prod)
 ├── Standalone or embedded in portal
 ├── Features: DataSources, Directories, Preview
 
-meta/frontend/             → Meta module (port 5175 dev / 8092 prod) - Planned
-transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod) - Planned
+meta/frontend/             → Meta module (port 5175 dev / 8092 prod)
+├── Standalone or embedded in portal
+├── Features: Metadata scanning, Data lineage
+
+transfer/frontend/         → Transfer module (port 5176 dev / 8093 prod)
+├── Standalone or embedded in portal
+├── Features: Data import/export, Task scheduling
+
+orchestrator/frontend/     → Orchestrator module (port 5177 dev / 8094 prod)
+├── Standalone or embedded in portal
+├── Features: Workflow design, Task orchestration
+
+develop/frontend/          → Develop module (port 5178 dev / 8095 prod)
+├── Standalone or embedded in portal
+├── Features: SQL workbench, GIS workflow editor
 ```
 
 **Two Access Modes**:
@@ -484,6 +517,61 @@ Note: Meta module uses a **unified hierarchical model** (resource → node → i
 
 GORM AutoMigrate handles schema updates automatically on startup. PostgreSQL schemas initialized via `scripts/init-db.sql`.
 
+### Built-in Compute Engine Registration
+
+**Module Self-Registration Mechanism**:
+
+ADDP platform adopts a **module self-registration** architecture for built-in compute engines:
+
+- ✅ **Modules are responsible**: Each module registers its own capabilities to System when starting up
+- ✅ **System is passive**: System only receives registration requests and maintains the registry (no pre-creation)
+- ✅ **Idempotent operation**: `RegisterCapability` API uses `unique_identifier` to ensure no duplicate records
+- ✅ **Dynamic discovery**: New modules can be added without modifying System code
+
+**Registration Flow**:
+
+```
+Module Startup
+   ↓
+Initialize service
+   ↓
+Call RegisterCapability(unique_identifier, capabilities, task_api_config)
+   ↓
+System checks if unique_identifier exists
+   ├─ Exists → Update configuration (idempotent)
+   └─ Not exists → Create new record
+   ↓
+Module continues to start (registration failure does not block startup)
+```
+
+**Registered Engines**:
+
+| Module | Unique Identifier | Display Name | Capabilities |
+|--------|-------------------|--------------|--------------|
+| **Transfer** | `transfer.batch_worker.default` | 数据传输批处理引擎 | batch transfer, scheduled, retry, mapping |
+| **Meta** | `meta.scanner.default` | 元数据扫描引擎 | scan (postgresql, mysql, s3, minio) |
+| **Manager** | `manager.tile_cache.default` | 地图瓦片缓存引擎 | tile cache (mvt, raster) |
+| **GeoPandas** | `geopandas.engine.default` | GeoPandas 空间计算引擎 | spatial workflow (21 operators) |
+
+**Key Implementation Details**:
+
+- **Transfer Backend**: [transfer/backend/cmd/server/main.go:96-179](transfer/backend/cmd/server/main.go)
+- **Meta Backend**: [meta/backend/cmd/server/main.go:171-256](meta/backend/cmd/server/main.go)
+- **Manager Backend**: [manager/backend/cmd/server/main.go:198-282](manager/backend/cmd/server/main.go)
+- **GeoPandas Engine**: [geopandas-engine/api_server.py](geopandas-engine/api_server.py) (Python registration logic)
+
+**Registration is conditional**:
+- Controlled by `ENABLE_SERVICE_INTEGRATION` environment variable
+- Requires `SYSTEM_SERVICE_URL` and `INTERNAL_API_KEY` configuration
+- Registration runs asynchronously (`go registerCapabilities()`) to avoid blocking startup
+
+**Why Module Self-Registration?**
+
+1. **Decoupling**: System does not need to know which modules exist
+2. **Extensibility**: New compute engines can be added independently
+3. **Resilience**: If System restarts and loses data, modules will re-register on restart
+4. **No Duplication**: Unique identifiers prevent duplicate records
+
 ### Configuration Center Pattern
 
 **System as the Single Source of Truth**:
@@ -509,17 +597,17 @@ The platform implements a centralized configuration management pattern where **S
 │   └─────────────────────────────────────────┘    │
 └────────────────┬───────────────────────────────────┘
                  │
-      ┌──────────┼──────────┐
-      ▼          ▼          ▼
-  ┌────────┐ ┌────────┐ ┌─────────┐
-  │ Manager│ │  Meta  │ │Transfer │
-  │        │ │        │ │         │
-  │ At     │ │ At     │ │ At      │
-  │ Startup│ │ Startup│ │ Startup │
-  │ ↓      │ │ ↓      │ │ ↓       │
-  │ Get    │ │ Get    │ │ Get     │
-  │ Config │ │ Config │ │ Config  │
-  └────────┘ └────────┘ └─────────┘
+      ┌──────────┼──────────┼──────────┼──────────┼──────────┼──────────┐
+      ▼          ▼          ▼          ▼          ▼          ▼          ▼
+  ┌────────┐ ┌────────┐ ┌─────────┐ ┌───────────┐ ┌────────┐ ┌─────────┐
+  │ Manager│ │  Meta  │ │Transfer │ │Orchestrator│ │ Develop│ │GeoPandas│
+  │        │ │        │ │         │ │           │ │        │ │ Engine  │
+  │ At     │ │ At     │ │ At      │ │ At        │ │ At     │ │ At      │
+  │ Startup│ │ Startup│ │ Startup │ │ Startup   │ │ Startup│ │ Startup │
+  │ ↓      │ │ ↓      │ │ ↓       │ │ ↓         │ │ ↓      │ │ ↓       │
+  │ Get    │ │ Get    │ │ Get     │ │ Get       │ │ Get    │ │ Get     │
+  │ Config │ │ Config │ │ Config  │ │ Config    │ │ Config │ │ Config  │
+  └────────┘ └────────┘ └─────────┘ └───────────┘ └────────┘ └─────────┘
 ```
 
 **What is Centralized**:
@@ -592,7 +680,7 @@ ENABLE_SERVICE_INTEGRATION=true    # Enable config center
 
 ## Common Module
 
-The `common` module provides shared code to avoid duplication across Manager, Meta, and Transfer modules.
+The `common` module provides shared code to avoid duplication across **all other backend modules** (Manager, Meta, Transfer, Orchestrator, Develop, and GeoPandas Engine integration).
 
 **Contents**:
 
@@ -874,14 +962,14 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 | Orchestrator Frontend| 5177     | 8094        | Standalone access             |
 | Develop Backend      | 8085     | 8085        | Development tools             |
 | Develop Frontend     | 5178     | 8095        | Standalone access             |
-| GeoPandas Engine     | 8090     | 8090        | Spatial computation engine (Python) |
+| GeoPandas Engine     | 8099     | 8099        | Spatial computation engine (Python) |
 | PostgreSQL (System)  | 5432     | 5432        | ADDP system metadata          |
 | Redis                | 6379     | 6379        | Cache & queue                 |
 | MinIO System API     | 9000     | 9000        | System file storage           |
 | MinIO System Console | 9001     | 9001        | System MinIO web UI           |
 | Meilisearch          | 7700     | 7700        | Full-text search engine       |
 
-**Business Infrastructure Services** (deployed via `business/docker-compose.yml`):
+**Business Database Services** (deployed via `business/docker-compose.yml`):
 
 
 | Service                | Docker Port | Description                |
@@ -894,7 +982,7 @@ ENABLE_SERVICE_INTEGRATION=true  # Enable cross-service calls
 - **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)
 - **开发环境**: http://localhost:5170 (Portal 独立访问) 或各模块独立端口
 
-**Business Infrastructure Setup**:
+**Business Database Setup**:
 
 ```bash
 cd business
@@ -1025,12 +1113,12 @@ Frontend tests are not yet implemented. When adding Vue components, document man
 
 ## Docker Deployment
 
-### Business Infrastructure (Deploy First)
+### Business Database (Deploy First)
 
 业务库需要**先于 ADDP 系统启动**，因为 Manager 和 Meta 模块会连接到业务存储：
 
 ```bash
-# 1. Deploy business infrastructure first
+# 1. Deploy business database first
 cd business
 cp .env.example .env
 # Edit .env to configure passwords
@@ -1119,13 +1207,14 @@ See [docs/DOCKER_SWARM.md](docs/DOCKER_SWARM.md) for detailed Swarm deployment g
 
 **Data Persistence**:
 
-**ADDP System** (docker-compose.yml):
+**ADDP System** (docker-compose.infra.yml):
 
 - PostgreSQL: `postgres_data` volume (ADDP system metadata)
 - Redis: `redis_data` volume (cache and queues)
-- MinIO System: `minio_system_data` volume (system files)
+- MinIO System: `minio_data` volume (system files)
+- Meilisearch: `meilisearch_data` volume (search indexes)
 
-**Business Infrastructure** (business/docker-compose.yml):
+**Business Database** (business/docker-compose.yml):
 
 - PostgreSQL: `business_postgres_data` volume (user business data)
 - MinIO Business: `business_minio_data` volume (user files)
@@ -1461,9 +1550,9 @@ When implementing or extending services:
    ```
 2. **Database conventions**:
 
-   - Use PostgreSQL schema isolation (except System which uses SQLite)
+   - Use PostgreSQL schema isolation (all modules use PostgreSQL with dedicated schemas)
    - GORM for ORM with AutoMigrate
-   - Add schemas to `scripts/init-db.sql`
+   - Add schemas to `scripts/infra/init-postgresql.sql`
    - Use `updated_at` triggers for timestamp tracking
 3. **Configuration**:
 
@@ -1702,7 +1791,6 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
 ### Documentation
 
 - [`CLAUDE.md`](CLAUDE.md) - This file (platform-wide architecture)
-- [`AGENTS.md`](AGENTS.md) - Repository conventions and guidelines
 - [`system/CLAUDE.md`](system/CLAUDE.md) - System module details
 - [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway routing logic
 - [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - Configuration center guide
@@ -1718,7 +1806,10 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
     - `up.sh` - Start infrastructure + auto-initialization
     - `down.sh` - Stop infrastructure
     - `status.sh` - Check service health
-    - `init-db.sh` - Initialize database schemas
+    - `init-postgresql.sh` - Initialize database schemas
+    - `init-redis.sh` - Initialize Redis configuration
+    - `init-minio.sh` - Initialize MinIO buckets
+    - `init-meilisearch.sh` - Initialize Meilisearch indexes
   - [`scripts/dev/`](scripts/dev/) - Development mode scripts (direct Go/npm processes)
     - `start.sh` - Start complete dev environment (infra + backends + frontends)
     - `stop.sh` - Stop all dev services
@@ -1728,6 +1819,8 @@ make clean-all           # Remove all data and volumes (DESTRUCTIVE)
     - `compile.sh` - Compile Go binaries (go build)
     - `build-images.sh` - Build Docker images (docker build)
     - `package.sh` - Package deployment artifacts (docker save/push)
+    - `push-images.sh` - Push images to registry
+    - `push-images-batched.sh` - Batch push images (parallel upload)
   - [`scripts/local/`](scripts/local/) - Local Docker Compose deployment
     - `start.sh` - Start complete platform via Docker Compose
     - `stop.sh` - Stop Docker services

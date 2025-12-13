@@ -72,7 +72,7 @@ func Load() *Config {
 		InternalAPIKey:           internalAPIKey,
 
 		// GeoPandas Engine 配置
-		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8090"),
+		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8099"),
 
 		// SQL 执行配置
 		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30),  // 30秒

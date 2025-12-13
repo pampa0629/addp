@@ -2,16 +2,18 @@
 set -euo pipefail
 
 # Resolve repository root relative to this script.
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# This script is in scripts/utils/, so we need to go up two levels to reach project root
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 echo "Collecting Go modules under ${REPO_ROOT}"
+echo "项目根目录: ${REPO_ROOT}"
 modules=()
 while IFS= read -r mod_file; do
   modules+=("${mod_file}")
 done < <(find "${REPO_ROOT}" \
   -path "${REPO_ROOT}/.git" -prune -o \
   -path "${REPO_ROOT}/.gomodcache" -prune -o \
-  -path "${REPO_ROOT}/scripts" -prune -o \
+  -path "${REPO_ROOT}/node_modules" -prune -o \
   -path "*/vendor" -prune -o \
   -name go.mod -print | LC_ALL=C sort)
 

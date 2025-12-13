@@ -577,17 +577,17 @@ func (s *MetadataService) ListExplorerResources(tenantID *uint) ([]models.Explor
 }
 
 // GetResourceTree 获取单个资源的 Schema/目录树
-func (s *MetadataService) GetResourceTree(resourceID uint, tenantID *uint) (*models.DataExplorerResource, error) {
+func (s *MetadataService) GetResourceTree(ctx context.Context, resourceID uint, tenantID *uint) (*models.DataExplorerResource, error) {
 	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.buildResourceTree(resource)
+	return s.buildResourceTree(ctx, resource)
 }
 
 // GetLegacyResourceTree 兼容旧接口的全量资源树
-func (s *MetadataService) GetLegacyResourceTree(tenantID *uint) ([]models.DataExplorerResource, error) {
+func (s *MetadataService) GetLegacyResourceTree(ctx context.Context, tenantID *uint) ([]models.DataExplorerResource, error) {
 	resources, err := s.listActiveResources(tenantID)
 	if err != nil {
 		return nil, err
@@ -595,7 +595,7 @@ func (s *MetadataService) GetLegacyResourceTree(tenantID *uint) ([]models.DataEx
 
 	result := make([]models.DataExplorerResource, 0, len(resources))
 	for i := range resources {
-		tree, err := s.buildResourceTree(&resources[i])
+		tree, err := s.buildResourceTree(ctx, &resources[i])
 		if err != nil {
 			return nil, err
 		}
@@ -608,8 +608,19 @@ func (s *MetadataService) GetLegacyResourceTree(tenantID *uint) ([]models.DataEx
 	return result, nil
 }
 
-func (s *MetadataService) buildResourceTree(resource *models.Resource) (*models.DataExplorerResource, error) {
-	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID, s.metaClient)
+func (s *MetadataService) buildResourceTree(ctx context.Context, resource *models.Resource) (*models.DataExplorerResource, error) {
+	// 从 context 中提取 JWT token
+	var metaClientForRequest *commonClient.MetaClient
+	if jwtToken, ok := ctx.Value("jwt_token").(string); ok && jwtToken != "" {
+		// 使用用户的 JWT token 创建临时 MetaClient
+		metaClientForRequest = commonClient.NewMetaClient(s.metaServiceURL, jwtToken)
+	} else {
+		// 降级使用默认的 metaClient（使用内部 API Key）
+		metaClientForRequest = s.metaClient
+	}
+
+	// 使用带 JWT token 的 MetaClient 查询元数据
+	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID, metaClientForRequest)
 	if err != nil {
 		if errors.Is(err, repository.ErrMetadataSchemaMissing) {
 			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "resource_id", resource.ID)

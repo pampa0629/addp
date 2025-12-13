@@ -72,7 +72,21 @@ func (h *SQLHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	if err := h.sqlService.TestConnection(req.ResourceID); err != nil {
+	// 提取 JWT token（去除 "Bearer " 前缀）
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少认证令牌"})
+		return
+	}
+
+	// 解析 Bearer token
+	token := authHeader
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token = authHeader[7:]
+	}
+
+	// 调用 Service 层方法（传递 token）
+	if err := h.sqlService.TestConnectionWithToken(req.ResourceID, token); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"error":   err.Error(),

@@ -512,6 +512,30 @@ CREATE INDEX IF NOT EXISTS idx_spatial_tasks_tenant ON develop.spatial_tasks(ten
 CREATE INDEX IF NOT EXISTS idx_spatial_tasks_status ON develop.spatial_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_spatial_tasks_created_by ON develop.spatial_tasks(created_by);
 
+-- 空间任务执行实例表（GIS 任务执行历史）
+CREATE TABLE IF NOT EXISTS develop.spatial_executions (
+    id SERIAL PRIMARY KEY,
+    task_id INTEGER REFERENCES develop.spatial_tasks(id) ON DELETE SET NULL,
+    task_name VARCHAR(255),                -- 冗余任务名（方便查询）
+    status VARCHAR(20) NOT NULL,           -- pending, running, success, failed, timeout
+    inputs JSONB,                          -- 输入参数
+    result_table VARCHAR(255),             -- 结果表名（spatial_execution_results_<exec_id>）
+    result_count INTEGER,                  -- 结果记录数
+    error_message TEXT,
+    logs TEXT,                             -- 执行日志
+    execution_time_ms INTEGER,             -- 执行时间（毫秒）
+    trigger_type VARCHAR(50),              -- manual, schedule, orchestrator, api
+    trigger_by INTEGER REFERENCES system.users(id),
+    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_spatial_executions_task_id ON develop.spatial_executions(task_id);
+CREATE INDEX IF NOT EXISTS idx_spatial_executions_tenant_id ON develop.spatial_executions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_spatial_executions_status ON develop.spatial_executions(status);
+CREATE INDEX IF NOT EXISTS idx_spatial_executions_started_at ON develop.spatial_executions(started_at DESC);
+
 -- 空间执行结果表（Develop 即时执行结果）
 CREATE TABLE IF NOT EXISTS develop.spatial_execution_results (
     id SERIAL PRIMARY KEY,

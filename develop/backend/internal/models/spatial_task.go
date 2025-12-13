@@ -38,18 +38,23 @@ func (SpatialTask) TableName() string {
 	return "develop.spatial_tasks"
 }
 
-// WorkflowDef 工作流定义
-type WorkflowDef struct {
-	Tasks []WorkflowTask `json:"tasks"`
-}
+// WorkflowDef 工作流定义（支持任意 JSON 结构）
+type WorkflowDef map[string]interface{}
 
 // Value 实现 driver.Valuer 接口
 func (w WorkflowDef) Value() (driver.Value, error) {
+	if w == nil {
+		return nil, nil
+	}
 	return json.Marshal(w)
 }
 
 // Scan 实现 sql.Scanner 接口
 func (w *WorkflowDef) Scan(value interface{}) error {
+	if value == nil {
+		*w = nil
+		return nil
+	}
 	bytes, ok := value.([]byte)
 	if !ok {
 		return nil
@@ -57,7 +62,7 @@ func (w *WorkflowDef) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, w)
 }
 
-// WorkflowTask 工作流任务节点
+// WorkflowTask 工作流任务节点（保留作为参考，但不强制使用）
 type WorkflowTask struct {
 	ID        string                 `json:"id"`
 	Operator  string                 `json:"operator"`
@@ -65,18 +70,23 @@ type WorkflowTask struct {
 	DependsOn []string               `json:"depends_on"`
 }
 
-// InputSchema 输入参数定义
-type InputSchema struct {
-	Fields []InputField `json:"fields"`
-}
+// InputSchema 输入参数定义（支持任意 JSON 结构）
+type InputSchema map[string]interface{}
 
 // Value 实现 driver.Valuer 接口
 func (i InputSchema) Value() (driver.Value, error) {
+	if i == nil {
+		return nil, nil
+	}
 	return json.Marshal(i)
 }
 
 // Scan 实现 sql.Scanner 接口
 func (i *InputSchema) Scan(value interface{}) error {
+	if value == nil {
+		*i = nil
+		return nil
+	}
 	bytes, ok := value.([]byte)
 	if !ok {
 		return nil
@@ -84,7 +94,7 @@ func (i *InputSchema) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, i)
 }
 
-// InputField 输入字段定义
+// InputField 输入字段定义（保留作为参考）
 type InputField struct {
 	Name         string      `json:"name"`
 	Type         string      `json:"type"` // "geojson", "float", "int", "string"

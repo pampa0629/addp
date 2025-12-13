@@ -12,6 +12,12 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    // 设置 token（供路由守卫调用）
+    setToken(token) {
+      this.token = token
+      localStorage.setItem('token', token)
+    },
+
     async login(username, password) {
       const response = await authAPI.login({ username, password })
       this.token = response.data.access_token

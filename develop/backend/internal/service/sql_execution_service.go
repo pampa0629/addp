@@ -196,11 +196,23 @@ func (s *SQLExecutionService) getConnection(resourceID uint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get resource config: %w", err)
 	}
 
+	// 日志：检查接收到的密码
+	if pwd, ok := resource.ConnectionInfo["password"].(string); ok {
+		log.Printf("📥 [DEVELOP] 从 SystemClient 接收到的密码长度: %d | 前20字符: %s...",
+			len(pwd), pwd[:min(len(pwd), 20)])
+	} else {
+		log.Printf("⚠️ [DEVELOP] 接收到的 ConnectionInfo 中没有 password 字段或类型不是 string")
+	}
+
 	// 构建连接字符串
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
+
+	// 日志：脱敏后的连接字符串
+	maskedConnStr := strings.ReplaceAll(connStr, "password=", "password=***MASKED*** ")
+	log.Printf("🔗 [DEVELOP] 构建的连接字符串: %s", maskedConnStr)
 
 	// 创建连接
 	var db *gorm.DB
@@ -294,6 +306,70 @@ func (s *SQLExecutionService) TestConnection(resourceID uint) error {
 	}
 
 	return sqlDB.Ping()
+}
+
+// TestConnectionWithToken 使用指定的 token 测试数据库连接
+func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token string) error {
+	log.Printf("🔍 [TEST] 开始测试连接 resourceID=%d", resourceID)
+
+	// 使用 Internal API Key 获取未加密的资源配置（服务间调用）
+	// 注意：这里忽略了传入的 JWT token，因为内部 API 使用 Internal API Key 认证
+	systemClient := commonClient.NewSystemClientWithInternalKey(s.cfg.SystemServiceURL, s.cfg.InternalAPIKey)
+
+	// 获取资源配置
+	resource, err := systemClient.GetResource(resourceID)
+	if err != nil {
+		log.Printf("❌ [TEST] 获取资源配置失败: %v", err)
+		return fmt.Errorf("failed to get resource config: %w", err)
+	}
+
+	// 日志：检查接收到的密码
+	if pwd, ok := resource.ConnectionInfo["password"].(string); ok {
+		log.Printf("📥 [TEST] 从 SystemClient 接收到的密码长度: %d | 前20字符: %s...",
+			len(pwd), pwd[:min(len(pwd), 20)])
+	} else {
+		log.Printf("⚠️ [TEST] 接收到的 ConnectionInfo 中没有 password 字段或类型不是 string")
+	}
+
+	// 构建连接字符串
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		log.Printf("❌ [TEST] 构建连接字符串失败: %v", err)
+		return fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 日志：脱敏后的连接字符串
+	maskedConnStr := strings.ReplaceAll(connStr, "password=", "password=***MASKED*** ")
+	log.Printf("🔗 [TEST] 构建的连接字符串: %s", maskedConnStr)
+
+	// 创建临时连接（不缓存）
+	var db *gorm.DB
+	switch resource.ResourceType {
+	case "postgresql":
+		db, err = gorm.Open(postgres.Open(connStr), &gorm.Config{})
+	case "mysql":
+		db, err = gorm.Open(mysql.Open(connStr), &gorm.Config{})
+	default:
+		return fmt.Errorf("unsupported database type: %s", resource.ResourceType)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// 测试连接
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close() // 测试完成后关闭连接
+
+	if err := sqlDB.Ping(); err != nil {
+		return fmt.Errorf("database ping failed: %w", err)
+	}
+
+	log.Printf("✅ Database connection test passed for resource %d (%s)", resourceID, resource.ResourceType)
+	return nil
 }
 
 // ListDatabaseResources 获取可用的数据库资源列表（仅 PostgreSQL 和 MySQL）

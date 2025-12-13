@@ -45,20 +45,47 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+// 路由守卫：支持两种运行模式（Portal 嵌入 + 独立访问）
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+  const queryToken = typeof to.query.token === 'string' ? to.query.token : null
 
-  // 检测是否在 iframe 中
-  const isInIframe = window.self !== window.top
+  // 1️⃣ 如果 URL 中有 token（Portal 传递）
+  if (queryToken) {
+    authStore.setToken(queryToken)
 
-  // 如果在 iframe 中,跳过认证检查(开发模式)
-  // 生产环境应该通过 URL 参数或 postMessage 传递 token
-  if (isInIframe) {
-    console.log('Manager Router: In iframe, bypassing auth check')
-    next()
+    try {
+      await authStore.fetchUser()
+    } catch (error) {
+      console.error('获取用户信息失败:', error)
+      authStore.logout()
+      return next({ name: 'Login' })
+    }
+
+    // 去掉 URL 中的 token 参数，避免泄漏及重复处理
+    const { token: _removed, ...restQuery } = to.query
+    next({ path: to.path, query: restQuery, replace: true })
     return
   }
 
+  // 2️⃣ 如果已认证但无用户信息，尝试刷新
+  if (authStore.isAuthenticated && !authStore.user) {
+    try {
+      await authStore.fetchUser()
+    } catch (error) {
+      console.error('刷新用户信息失败:', error)
+      authStore.logout()
+      return next({ name: 'Login' })
+    }
+  }
+
+  // 3️⃣ 检测是否在 iframe 中（跳过登录页检查）
+  const isInIframe = window.self !== window.top
+  if (isInIframe && authStore.isAuthenticated) {
+    return next()
+  }
+
+  // 4️⃣ 正常的路由守卫逻辑
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else {

@@ -148,6 +148,32 @@ if [ -d ".dev-pids" ]; then
     rm -f ".dev-pids/develop.pid"
   fi
 
+  # Stop GeoPandas Engine (Python service)
+  if [ -f ".dev-pids/geopandas-engine.pid" ]; then
+    GEOPANDAS_PID=$(cat .dev-pids/geopandas-engine.pid)
+    if ps -p $GEOPANDAS_PID > /dev/null 2>&1; then
+      echo "停止 GeoPandas Engine (PID: $GEOPANDAS_PID)..."
+      kill $GEOPANDAS_PID
+      # 等待进程真正退出（最多等待10秒）
+      for i in {1..10}; do
+        if ! ps -p $GEOPANDAS_PID > /dev/null 2>&1; then
+          echo "✓ GeoPandas Engine 已停止"
+          break
+        fi
+        sleep 0.5
+      done
+      # 如果还在运行，强制杀掉
+      if ps -p $GEOPANDAS_PID > /dev/null 2>&1; then
+        echo "强制停止 GeoPandas Engine..."
+        kill -9 $GEOPANDAS_PID 2>/dev/null || true
+      fi
+    fi
+    rm -f ".dev-pids/geopandas-engine.pid"
+  fi
+
+  # 清理可能的 Python 进程残留
+  pkill -f "python.*api_server.py" 2>/dev/null || true
+
   if [ -f ".dev-pids/gateway.pid" ]; then
     GATEWAY_PID=$(cat .dev-pids/gateway.pid)
     if ps -p $GATEWAY_PID > /dev/null 2>&1; then

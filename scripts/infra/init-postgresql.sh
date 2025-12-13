@@ -30,6 +30,7 @@ usage() {
   --drop-schema <schema_name>   删除指定 schema 及其所有表
   --drop-all                    删除所有 ADDP schema（慎用！）
   --skip-extensions             跳过扩展安装
+  --skip-pgvector               仅跳过 pgvector 扩展（保留 PostGIS）
   --skip-hba                    跳过 pg_hba.conf 配置
 
 示例:
@@ -59,6 +60,7 @@ CONTAINER_NAME="postgres"
 
 SKIP_EXTENSIONS=false
 SKIP_HBA=false
+SKIP_PGVECTOR="${SKIP_PGVECTOR:-false}"  # 支持通过环境变量跳过 pgvector 编译
 
 # ==================== 参数处理 ====================
 
@@ -105,6 +107,8 @@ elif [[ "${1:-}" == "--drop-all" ]]; then
   exit 0
 elif [[ "${1:-}" == "--skip-extensions" ]]; then
   SKIP_EXTENSIONS=true
+elif [[ "${1:-}" == "--skip-pgvector" ]]; then
+  SKIP_PGVECTOR=true
 elif [[ "${1:-}" == "--skip-hba" ]]; then
   SKIP_HBA=true
 fi
@@ -121,8 +125,8 @@ if ! docker compose version >/dev/null 2>&1; then
   exit 1
 fi
 
-# 确认 PostgreSQL 容器正在运行
-if ! docker ps --filter name="${CONTAINER_NAME}" --filter status=running | grep -q "${CONTAINER_NAME}"; then
+# 确认 PostgreSQL 容器正在运行（精确匹配，避免匹配到 business-postgres）
+if ! docker ps --filter name="^${CONTAINER_NAME}$" --filter status=running --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo -e "${RED}✗ PostgreSQL 容器未运行${NC}"
     echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
     exit 1
@@ -218,51 +222,55 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
 
     # ==================== pgvector Extension ====================
 
-    echo -e "${YELLOW}▶ 安装 pgvector 扩展（向量检索支持）${NC}"
+    if [ "$SKIP_PGVECTOR" = false ]; then
+        echo -e "${YELLOW}▶ 安装 pgvector 扩展（向量检索支持）${NC}"
 
-    PGVECTOR_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "0")
+        PGVECTOR_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "0")
 
-    if [ "${PGVECTOR_CHECK}" = "1" ]; then
-        PGVECTOR_VERSION=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT extversion FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "Unknown")
-        echo -e "  ${GREEN}✓ pgvector 已安装 (${PGVECTOR_VERSION})${NC}"
-    else
-        echo -e "  ${YELLOW}pgvector 未安装，开始安装...${NC}"
+        if [ "${PGVECTOR_CHECK}" = "1" ]; then
+            PGVECTOR_VERSION=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT extversion FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "Unknown")
+            echo -e "  ${GREEN}✓ pgvector 已安装 (${PGVECTOR_VERSION})${NC}"
+        else
+            echo -e "  ${YELLOW}pgvector 未安装，开始安装...${NC}"
 
-        # Check if pgvector packages are installed
-        PGVECTOR_PACKAGE_CHECK=$(docker exec "${CONTAINER_NAME}" sh -c 'dpkg -l | grep pgvector || echo "not-installed"')
+            # Check if pgvector packages are installed
+            PGVECTOR_PACKAGE_CHECK=$(docker exec "${CONTAINER_NAME}" sh -c 'dpkg -l | grep pgvector || echo "not-installed"')
 
-        if echo "${PGVECTOR_PACKAGE_CHECK}" | grep -q "not-installed"; then
-            echo -e "  ${BLUE}编译安装 pgvector (v0.7.0)...${NC}"
-            docker exec "${CONTAINER_NAME}" sh -c '
-                set -e
-                apt-get update -qq
-                apt-get install -y -qq --no-install-recommends \
-                    build-essential \
-                    git \
-                    postgresql-server-dev-15 \
-                    ca-certificates > /dev/null 2>&1
+            if echo "${PGVECTOR_PACKAGE_CHECK}" | grep -q "not-installed"; then
+                echo -e "  ${BLUE}编译安装 pgvector (v0.7.0)...${NC}"
+                docker exec "${CONTAINER_NAME}" sh -c '
+                    set -e
+                    apt-get update -qq
+                    apt-get install -y -qq --no-install-recommends \
+                        build-essential \
+                        git \
+                        postgresql-server-dev-15 \
+                        ca-certificates > /dev/null 2>&1
 
-                cd /tmp
-                rm -rf pgvector || true
-                git clone --branch v0.7.0 https://github.com/pgvector/pgvector.git > /dev/null 2>&1
-                cd pgvector
-                make clean > /dev/null 2>&1 || true
-                make -j$(nproc) > /dev/null 2>&1
-                make install > /dev/null 2>&1
+                    cd /tmp
+                    rm -rf pgvector || true
+                    git clone --branch v0.7.0 https://github.com/pgvector/pgvector.git > /dev/null 2>&1
+                    cd pgvector
+                    make clean > /dev/null 2>&1 || true
+                    make -j$(nproc) > /dev/null 2>&1
+                    make install > /dev/null 2>&1
 
-                cd /tmp
-                rm -rf pgvector
-                apt-get remove -y --purge build-essential git > /dev/null 2>&1
-                apt-get autoremove -y > /dev/null 2>&1
-                apt-get clean > /dev/null 2>&1
-                rm -rf /var/lib/apt/lists/*
-            ' >/dev/null 2>&1
-            echo -e "  ${GREEN}✓ pgvector 包安装完成${NC}"
+                    cd /tmp
+                    rm -rf pgvector
+                    apt-get remove -y --purge build-essential git > /dev/null 2>&1
+                    apt-get autoremove -y > /dev/null 2>&1
+                    apt-get clean > /dev/null 2>&1
+                    rm -rf /var/lib/apt/lists/*
+                ' >/dev/null 2>&1
+                echo -e "  ${GREEN}✓ pgvector 包安装完成${NC}"
+            fi
+
+            # Create extension
+            docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1
+            echo -e "  ${GREEN}✓ pgvector 扩展创建完成${NC}"
         fi
-
-        # Create extension
-        docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1
-        echo -e "  ${GREEN}✓ pgvector 扩展创建完成${NC}"
+    else
+        echo -e "${YELLOW}⚠  跳过 pgvector 扩展安装 (SKIP_PGVECTOR=true)${NC}"
     fi
 
     echo ""

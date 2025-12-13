@@ -112,7 +112,7 @@ async function loadResourceTasks(resource) {
     // 构建树节点
     const children = tasks.map(task => ({
       id: `${uniqueIdentifier}-task-${task.id}`,
-      label: task.name || `任务 ${task.id}`,
+      label: task.display_name || task.name || `任务 ${task.id}`,  // 优先使用中文显示名称
       type: 'task',
       uniqueIdentifier,
       taskId: task.id,

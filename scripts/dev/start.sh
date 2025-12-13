@@ -8,6 +8,7 @@ cd "${ROOT_DIR}"
 
 export PROJECT_ROOT="${ROOT_DIR}"
 mkdir -p logs
+mkdir -p .dev-pids
 
 # 本地 Go 构建缓存，避免写入系统 GOPATH，并优先使用本机 Go 工具链
 export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
@@ -264,9 +265,111 @@ done
 echo -e "${GREEN}✓ Develop Backend 就绪 (PID: $DEVELOP_PID)${NC}"
 echo ""
 
+# ============================================================
+# Step 6.9: Start GeoPandas Engine (Python service)
+# ============================================================
+echo -e "${YELLOW}Step 6.9/8: 启动 GeoPandas Engine...${NC}"
+
+# 检查 Python 3 是否安装
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
+    exit 1
+fi
+
+# 检查 Python 版本（需要 3.11+）
+PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+REQUIRED_VERSION="3.11"
+if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
+    echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
+    exit 1
+fi
+
+# 检查并创建虚拟环境（幂等）
+NEED_INSTALL=false
+if [ ! -d "geopandas-engine/venv" ]; then
+    echo "首次启动，创建 Python 虚拟环境..."
+    cd geopandas-engine
+    python3 -m venv venv
+    NEED_INSTALL=true
+else
+    # 检查关键依赖是否已安装
+    if ! ./geopandas-engine/venv/bin/python -c "import flask" &> /dev/null; then
+        echo "检测到虚拟环境缺少依赖，重新安装..."
+        cd geopandas-engine
+        NEED_INSTALL=true
+    else
+        echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+fi
+
+if [ "$NEED_INSTALL" = true ]; then
+    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
+    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
+    ./venv/bin/pip install --upgrade pip
+    ./venv/bin/pip install -r requirements.txt
+
+    # 检查安装是否成功
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+    else
+        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
+        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 GDAL）${NC}"
+        echo -e "${YELLOW}macOS: brew install gdal${NC}"
+        echo -e "${YELLOW}Ubuntu: sudo apt-get install libgdal-dev${NC}"
+        cd ..
+        exit 1
+    fi
+    cd ..
+fi
+
+# 启动 GeoPandas Engine
+echo "启动 GeoPandas Engine..."
+cd geopandas-engine
+
+# 设置环境变量（注意端口改为 8099）
+export PORT=8099
+export SYSTEM_SERVICE_URL=http://localhost:8080
+export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export POSTGRES_USER=addp
+export POSTGRES_PASSWORD=addp_password
+export POSTGRES_DB=addp
+export DB_SCHEMA=develop
+
+# 直接使用虚拟环境的 Python（无需 activate）
+./venv/bin/python api_server.py > ../logs/geopandas-engine.log 2> ../logs/geopandas-engine-stderr.log &
+GEOPANDAS_PID=$!
+echo $GEOPANDAS_PID > ../.dev-pids/geopandas-engine.pid
+cd ..
+
+echo -e "${GREEN}✓ GeoPandas Engine 已启动 (PID: $GEOPANDAS_PID)${NC}"
+
+# 等待健康检查通过
+echo -n "等待 GeoPandas Engine 就绪..."
+WAIT_COUNT=0
+MAX_WAIT=60
+until curl -f http://localhost:8099/health > /dev/null 2>&1; do
+  echo -n "."
+  sleep 1
+  WAIT_COUNT=$((WAIT_COUNT + 1))
+  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo -e " ${RED}✗${NC}"
+    echo -e "${RED}✗ GeoPandas Engine 启动超时（60秒）${NC}"
+    echo -e "${YELLOW}查看日志: tail -f logs/geopandas-engine.log${NC}"
+    echo -e "${YELLOW}或检查错误: tail -f logs/geopandas-engine-stderr.log${NC}"
+    exit 1
+  fi
+done
+echo -e " ${GREEN}✓${NC}"
+echo -e "${GREEN}✓ GeoPandas Engine 就绪 (http://localhost:8099)${NC}"
+echo ""
+
 # 7. 启动 Gateway
 echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
 cd gateway
+# 重置 PORT 环境变量为 Gateway 的端口
+export PORT=8000
 go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
 GATEWAY_PID=$!
 cd ..

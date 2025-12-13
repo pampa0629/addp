@@ -40,6 +40,8 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.Script{},
 		&models.ScriptVersion{},
 		&models.ScriptDependency{},
+		&models.SpatialTask{},
+		&models.GISExecution{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	}
