@@ -52,6 +52,93 @@ const editorContainer = ref(null)
 let editor = null
 
 onMounted(() => {
+  // 注册 SQL 语言（如果尚未注册）
+  const languages = monaco.languages.getLanguages()
+  if (!languages.find(lang => lang.id === 'sql')) {
+    monaco.languages.register({ id: 'sql' })
+
+    // 配置 SQL 语言特性
+    monaco.languages.setLanguageConfiguration('sql', {
+      comments: {
+        lineComment: '--',
+        blockComment: ['/*', '*/']
+      },
+      brackets: [
+        ['(', ')'],
+        ['[', ']']
+      ],
+      autoClosingPairs: [
+        { open: '(', close: ')' },
+        { open: '[', close: ']' },
+        { open: "'", close: "'" },
+        { open: '"', close: '"' }
+      ]
+    })
+
+    // 设置 SQL 关键字高亮
+    monaco.languages.setMonarchTokensProvider('sql', {
+      keywords: [
+        'SELECT', 'FROM', 'WHERE', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP',
+        'ALTER', 'TABLE', 'INDEX', 'VIEW', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER',
+        'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'BETWEEN', 'LIKE', 'IS', 'NULL',
+        'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'UNION', 'DISTINCT'
+      ],
+      operators: ['=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%'],
+      symbols: /[=><!~?:&|+\-*\/\^%]+/,
+      tokenizer: {
+        root: [
+          [/[a-z_$][\w$]*/, {
+            cases: {
+              '@keywords': 'keyword',
+              '@default': 'identifier'
+            }
+          }],
+          [/[A-Z][\w$]*/, {
+            cases: {
+              '@keywords': 'keyword',
+              '@default': 'type.identifier'
+            }
+          }],
+          { include: '@whitespace' },
+          [/[{}()\[\]]/, '@brackets'],
+          [/@symbols/, {
+            cases: {
+              '@operators': 'operator',
+              '@default': ''
+            }
+          }],
+          [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+          [/\d+/, 'number'],
+          [/[;,.]/, 'delimiter'],
+          [/'([^'\\]|\\.)*$/, 'string.invalid'],
+          [/'/, 'string', '@string'],
+          [/"([^"\\]|\\.)*$/, 'string.invalid'],
+          [/"/, 'string', '@stringDouble']
+        ],
+        whitespace: [
+          [/[ \t\r\n]+/, 'white'],
+          [/--.*$/, 'comment'],
+          [/\/\*/, 'comment', '@comment']
+        ],
+        comment: [
+          [/[^\/*]+/, 'comment'],
+          [/\*\//, 'comment', '@pop'],
+          [/[\/*]/, 'comment']
+        ],
+        string: [
+          [/[^\\']+/, 'string'],
+          [/\\./, 'string.escape'],
+          [/'/, 'string', '@pop']
+        ],
+        stringDouble: [
+          [/[^\\"]+/, 'string'],
+          [/\\./, 'string.escape'],
+          [/"/, 'string', '@pop']
+        ]
+      }
+    })
+  }
+
   // 创建编辑器
   editor = monaco.editor.create(editorContainer.value, {
     value: props.modelValue,
@@ -76,24 +163,6 @@ onMounted(() => {
   // 添加执行快捷键 (Ctrl+Enter 或 Cmd+Enter)
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
     emit('execute')
-  })
-
-  // 配置 SQL 语言特性
-  monaco.languages.setLanguageConfiguration('sql', {
-    comments: {
-      lineComment: '--',
-      blockComment: ['/*', '*/']
-    },
-    brackets: [
-      ['(', ')'],
-      ['[', ']']
-    ],
-    autoClosingPairs: [
-      { open: '(', close: ')' },
-      { open: '[', close: ']' },
-      { open: "'", close: "'" },
-      { open: '"', close: '"' }
-    ]
   })
 })
 

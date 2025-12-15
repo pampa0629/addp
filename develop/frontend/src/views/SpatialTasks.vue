@@ -152,8 +152,8 @@ const loadTasks = async () => {
   loading.value = true
   try {
     const res = await spatialApi.listTasks(currentPage.value, pageSize.value)
-    tasks.value = res.data.tasks || []
-    total.value = res.data.total || 0
+    tasks.value = res.tasks || []
+    total.value = res.total || 0
   } catch (error) {
     ElMessage.error('加载任务列表失败: ' + error.message)
   } finally {
@@ -270,7 +270,7 @@ const confirmExecute = async () => {
   try {
     const inputs = JSON.parse(executeInputs.value)
     const res = await spatialApi.executeTask(currentExecuteTask.value.id, inputs)
-    ElMessage.success('任务执行成功，执行ID: ' + res.data.execution_id)
+    ElMessage.success('任务执行成功，执行ID: ' + res.execution_id)
     executeDialogVisible.value = false
     loadTasks()
   } catch (error) {

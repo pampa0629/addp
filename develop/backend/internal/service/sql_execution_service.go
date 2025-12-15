@@ -354,6 +354,11 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 		log.Printf("⚠️ [TEST] 接收到的 ConnectionInfo 中没有 password 字段或类型不是 string")
 	}
 
+	// 日志：检查端口类型和值（诊断 float64 转换问题）
+	if portVal, ok := resource.ConnectionInfo["port"]; ok {
+		log.Printf("🔌 [TEST] 端口类型: %T, 原始值: %v", portVal, portVal)
+	}
+
 	// 构建连接字符串
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
@@ -361,9 +366,22 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 		return fmt.Errorf("failed to build connection string: %w", err)
 	}
 
-	// 日志：脱敏后的连接字符串
-	maskedConnStr := strings.ReplaceAll(connStr, "password=", "password=***MASKED*** ")
-	log.Printf("🔗 [TEST] 构建的连接字符串: %s", maskedConnStr)
+	// 日志：脱敏后的连接字符串（增强脱敏，处理 MySQL/Doris 格式）
+	maskedConnStr := connStr
+	// PostgreSQL 格式: password=XXX
+	maskedConnStr = strings.ReplaceAll(maskedConnStr, "password=", "password=***MASKED*** ")
+	// MySQL/Doris 格式: user:password@tcp (脱敏密码部分)
+	if strings.Contains(maskedConnStr, "@tcp") {
+		// 替换 :password@ 为 :***@
+		parts := strings.Split(maskedConnStr, "@tcp")
+		if len(parts) == 2 {
+			userPart := parts[0]
+			if colonIdx := strings.LastIndex(userPart, ":"); colonIdx != -1 {
+				maskedConnStr = userPart[:colonIdx+1] + "***MASKED***" + "@tcp" + parts[1]
+			}
+		}
+	}
+	log.Printf("🔗 [TEST] 构建的连接字符串 (masked): %s", maskedConnStr)
 
 	// 创建临时连接（不缓存）
 	var db *gorm.DB
@@ -377,17 +395,20 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 	}
 
 	if err != nil {
+		log.Printf("❌ [TEST] GORM Open 失败: %v | 资源类型: %s", err, resource.ResourceType)
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	// 测试连接
 	sqlDB, err := db.DB()
 	if err != nil {
+		log.Printf("❌ [TEST] 获取底层 sql.DB 失败: %v", err)
 		return err
 	}
 	defer sqlDB.Close() // 测试完成后关闭连接
 
 	if err := sqlDB.Ping(); err != nil {
+		log.Printf("❌ [TEST] Ping 失败: %v", err)
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 

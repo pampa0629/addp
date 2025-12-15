@@ -90,6 +90,10 @@ func BuildConnectionString(resource *Resource) (string, error) {
 			case string:
 				return val
 			case float64:
+				// 对于端口字段，必须转为整数格式（避免 "9030.0"）
+				if key == "port" {
+					return fmt.Sprintf("%d", int(val))
+				}
 				return fmt.Sprintf("%.0f", val)
 			case int:
 				return fmt.Sprintf("%d", val)
@@ -143,7 +147,7 @@ func BuildConnectionString(resource *Resource) (string, error) {
 			return "", fmt.Errorf("missing required MySQL connection info")
 		}
 
-		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&timeout=10s",
 			user, password, host, port, dbname), nil
 
 	case "doris", "Doris":
@@ -166,12 +170,12 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		// 处理空密码的情况
 		if password == "" {
 			// 密码为空时，DSN 格式为: user@tcp(host:port)/database
-			return fmt.Sprintf("%s@tcp(%s:%s)/%s?parseTime=true",
+			return fmt.Sprintf("%s@tcp(%s:%s)/%s?parseTime=true&timeout=10s",
 				user, host, port, dbname), nil
 		}
 
 		// 密码不为空时，DSN 格式为: user:password@tcp(host:port)/database
-		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&timeout=10s",
 			user, password, host, port, dbname), nil
 
 	case "s3", "S3", "minio", "Minio", "oss", "OSS", "object_storage", "object-storage":

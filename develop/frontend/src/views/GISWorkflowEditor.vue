@@ -216,7 +216,7 @@ const loadTask = async () => {
 const loadOperators = async () => {
   try {
     const res = await spatialApi.listOperators()
-    operatorsMap.value = res.data.operators || {}
+    operatorsMap.value = res.operators || {}
   } catch (error) {
     console.error('加载算子列表失败:', error)
   }
@@ -368,11 +368,11 @@ const confirmExecute = async () => {
 
     const res = await spatialApi.executeWorkflow(workflow.value, inputs)
 
-    ElMessage.success('工作流已提交执行，执行ID: ' + res.data.execution_id)
+    ElMessage.success('工作流已提交执行，执行ID: ' + res.execution_id)
     executeDialogVisible.value = false
 
     // 跳转到执行详情页
-    router.push({ name: 'GISExecutionDetail', params: { id: res.data.execution_id } })
+    router.push({ name: 'GISExecutionDetail', params: { id: res.execution_id } })
   } catch (error) {
     ElMessage.error('执行失败: ' + error.message)
   } finally {

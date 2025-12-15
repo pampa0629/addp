@@ -53,7 +53,8 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
           query: { redirect: normalizeRedirect(to.fullPath) }
         })
       }
-      return next()
+      // 🆕 等待完成后继续执行后续检查，不要直接 next()
+      // return next() // ❌ 旧代码：直接放行
     }
 
     // 1️⃣ 处理 Portal iframe 传递的 token
@@ -102,6 +103,12 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
     // 4️⃣ 标准路由守卫 (检查是否需要认证)
     const requiresAuth = to.matched.some(record => record.meta?.requiresAuth !== false)
     const isPublic = to.name === loginRouteName
+
+    // 🆕 已登录用户访问登录页，重定向到首页
+    if (authStore.isAuthenticated && isPublic) {
+      console.log(`[${moduleName} Router] Already authenticated, redirecting from login page`)
+      return next('/')
+    }
 
     if (!authStore.isAuthenticated && requiresAuth && !isPublic) {
       return next({

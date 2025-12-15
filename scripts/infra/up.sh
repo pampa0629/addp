@@ -101,6 +101,9 @@ REDIS_PORT=6379
 MINIO_API_PORT=9000
 MINIO_CONSOLE_PORT=9001
 
+# Track if all services are already running (for idempotency)
+ALL_SERVICES_RUNNING=true
+
 port_used_by_container() {
   local port="$1"; local name="$2"
   local ports
@@ -118,31 +121,35 @@ legacy_override="docker-compose.override.autogen.yml"
 # PostgreSQL（固定 5432）
 if [ "$(check_port "$PG_PORT")" = "busy" ]; then
   if port_used_by_container "$PG_PORT" "postgres"; then
-    echo -e "  ${GREEN}PostgreSQL 端口 ${PG_PORT} 已由 postgres 使用，继续...${NC}"
+    echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 已由 postgres 容器使用${NC}"
   else
     echo -e "  ${RED}✗ PostgreSQL 端口 ${PG_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${PG_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
+    exit 1
   fi
 else
   echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
 fi
 
 # Redis（固定 6379）
 if [ "$(check_port "$REDIS_PORT")" = "busy" ]; then
   if port_used_by_container "$REDIS_PORT" "redis"; then
-    echo -e "  ${GREEN}Redis 端口 ${REDIS_PORT} 已由 redis 使用，继续...${NC}"
+    echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 已由 redis 容器使用${NC}"
   else
     echo -e "  ${RED}✗ Redis 端口 ${REDIS_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${REDIS_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
+    exit 1
   fi
 else
   echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
 fi
 
 # MinIO（固定 9000/9001）
 if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CONSOLE_PORT")" = "busy" ]; then
   if port_used_by_container "$MINIO_API_PORT" "minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "minio"; then
-    echo -e "  ${GREEN}MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 minio 使用，继续...${NC}"
+    echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 minio 容器使用${NC}"
   elif port_used_by_container "$MINIO_API_PORT" "business-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "business-minio"; then
     echo -e "  ${RED}✗ 检测到 business-minio 使用了系统保留端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}${NC}"
     echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9002/9003，然后重启 business。"
@@ -154,6 +161,7 @@ if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CON
   fi
 else
   echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 可用${NC}"
+  ALL_SERVICES_RUNNING=false
 fi
 
 echo -e "${YELLOW}▶ 检查 Docker 镜像...${NC}"
@@ -194,11 +202,15 @@ if echo "$RUNNING_SERVICES" | grep -qE "postgres|redis|minio|meilisearch"; then
 fi
 
 echo ""
-echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio, meilisearch${NC}"
-docker compose -f docker-compose.infra.yml up -d
-
-echo ""
-echo -e "${YELLOW}等待服务就绪...${NC}"
+if [ "$ALL_SERVICES_RUNNING" = "true" ]; then
+  echo -e "${GREEN}✓ 所有基础设施服务已在运行，跳过启动步骤（幂等检查通过）${NC}"
+  echo -e "${YELLOW}▶ 直接进行健康检查...${NC}"
+else
+  echo -e "${YELLOW}▶ 启动基础设施容器: postgres, redis, minio, meilisearch${NC}"
+  docker compose -f docker-compose.infra.yml up -d
+  echo ""
+  echo -e "${YELLOW}等待服务就绪...${NC}"
+fi
 
 max_wait=90
 
