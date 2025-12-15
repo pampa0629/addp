@@ -10,6 +10,7 @@ import (
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -33,6 +34,15 @@ func main() {
 	}
 
 	log.Println("✅ 数据库连接成功")
+
+	// 初始化 Redis 客户端
+	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: cfg.RedisPassword,
+		DB:       0,
+	})
+	log.Printf("✅ Redis 客户端已初始化: %s", redisAddr)
 
 	// 初始化 Repository
 	orchRepo := repository.NewOrchestrationRepository(db)
@@ -68,8 +78,8 @@ func main() {
 	log.Println("✅ 调度器启动成功")
 	log.Println("✅ 引擎注册表已初始化（从 System 动态加载）")
 
-	// 设置路由（传递 engineRegistry）
-	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry)
+	// 设置路由（传递 engineRegistry、systemURL 和 redisClient）
+	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, cfg.SystemServiceURL, redisClient)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

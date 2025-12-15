@@ -1,48 +1,15 @@
 import { defineStore } from 'pinia'
-import { authAPI } from '../api/auth'
+import { createAuthStoreConfig } from '@common-ui'
+import { authAPI as systemAuthAPI } from '../api/auth'
 
-export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    token: localStorage.getItem('token') || null,
-    user: null
-  }),
+// 适配器：System 使用 getMe() 而非 getCurrentUser()
+const authAPI = {
+  login: systemAuthAPI.login,
+  getUser: () => systemAuthAPI.getMe()  // 适配方法名
+}
 
-  getters: {
-    isAuthenticated: (state) => !!state.token
-  },
-
-  actions: {
-    async login(username, password) {
-      try {
-        const response = await authAPI.login(username, password)
-        this.token = response.data.access_token
-        localStorage.setItem('token', this.token)
-        await this.fetchUser()
-      } catch (error) {
-        console.error('Auth Store - 登录失败:', error)
-        throw error  // 重新抛出错误让调用者处理
-      }
-    },
-
-    setToken(token) {
-      this.token = token
-      localStorage.setItem('token', token)
-    },
-
-    async fetchUser() {
-      try {
-        const response = await authAPI.getMe()
-        this.user = response.data
-      } catch (error) {
-        console.error('Auth Store - 获取用户信息失败:', error)
-        throw error
-      }
-    },
-
-    logout() {
-      this.token = null
-      this.user = null
-      localStorage.removeItem('token')
-    }
-  }
+export const useAuthStore = defineStore('system-auth', {
+  ...createAuthStoreConfig('system-auth', authAPI, {
+    persistUser: false  // System 不持久化 user
+  })
 })

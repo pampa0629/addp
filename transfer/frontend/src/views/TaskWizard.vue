@@ -56,36 +56,7 @@
             </el-form-item>
 
             <el-form-item label="定时调度">
-              <div class="schedule-settings">
-                <div class="schedule-presets">
-                  <span class="schedule-presets__label">快捷选择：</span>
-                  <el-button
-                    v-for="preset in presetOptions"
-                    :key="preset.key"
-                    size="small"
-                    @click="applyPresetSchedule(preset.key)"
-                  >
-                    {{ preset.label }}
-                  </el-button>
-                </div>
-                <div class="schedule-actions">
-                  <el-button type="primary" size="small" @click="openScheduleDialog">自定义时间</el-button>
-                  <el-button
-                    v-if="taskForm.schedule"
-                    size="small"
-                    text
-                    @click="clearSchedule"
-                  >
-                    清除调度
-                  </el-button>
-                </div>
-                <div class="schedule-result">
-                  {{ scheduleDescription || '尚未设置，将按需手动执行' }}
-                </div>
-                <div class="hint">
-                  设置后系统会按照上方的文字说明自动运行；清除后仅支持手动触发。
-                </div>
-              </div>
+              <ScheduleConfig v-model="taskForm.schedule" :allow-custom-cron="true" />
             </el-form-item>
           </el-form>
         </div>
@@ -680,7 +651,7 @@
                 <el-descriptions-item label="执行模式">{{ taskForm.mode }}</el-descriptions-item>
                 <el-descriptions-item label="批量大小">{{ taskForm.batch_size }}</el-descriptions-item>
                 <el-descriptions-item label="定时调度" :span="2">
-                  {{ scheduleDescription || '无（手动触发）' }}
+                  {{ taskForm.schedule ? describeCron(taskForm.schedule) : '无（手动触发）' }}
                 </el-descriptions-item>
                 <el-descriptions-item label="源数据源">
                   {{ sourceResourceDisplayName }}
@@ -729,64 +700,6 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="scheduleDialogVisible"
-      title="设置定时调度"
-      width="520px"
-    >
-      <el-form :model="customScheduleForm" label-width="100px">
-        <el-form-item label="执行频率">
-          <el-radio-group v-model="customScheduleForm.mode">
-            <el-radio label="daily">每天</el-radio>
-            <el-radio label="weekly">每周</el-radio>
-            <el-radio label="monthly">每月</el-radio>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item v-if="customScheduleForm.mode === 'weekly'" label="执行日">
-          <el-checkbox-group v-model="customScheduleForm.weekDays">
-            <el-checkbox
-              v-for="day in weeklyOptions"
-              :key="day.value"
-              :label="day.value"
-            >
-              {{ day.label }}
-            </el-checkbox>
-          </el-checkbox-group>
-        </el-form-item>
-
-        <el-form-item v-if="customScheduleForm.mode === 'monthly'" label="日期">
-          <el-input-number
-            v-model="customScheduleForm.dayOfMonth"
-            :min="1"
-            :max="31"
-            controls-position="right"
-          />
-          <span class="schedule-dialog__tip">如遇当月无该日期，将在最后一天执行</span>
-        </el-form-item>
-
-        <el-form-item label="执行时间">
-          <el-time-picker
-            v-model="customScheduleForm.time"
-            placeholder="选择时间"
-            format="HH:mm"
-            value-format="HH:mm"
-          />
-        </el-form-item>
-
-        <el-form-item label="说明">
-          <div class="schedule-dialog__preview">
-            {{ customSchedulePreview }}
-          </div>
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="scheduleDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirmCustomSchedule">确定</el-button>
-      </template>
-    </el-dialog>
-
     <ObjectStoragePathPicker
       v-model:visible="objectStoragePickerVisible"
       :scope="objectStoragePickerScope"
@@ -807,17 +720,8 @@ import { localResourcesAPI } from '@/api/localResources'
 import { systemResourcesAPI } from '@/api/systemResources'
 import FieldMappingEditor from '@/components/FieldMappingEditor.vue'
 import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
-import { StorageEngineForm } from '@common-ui'
+import { StorageEngineForm, ScheduleConfig, describeCron } from '@common-ui'
 import axios from 'axios'
-import {
-  presetOptions,
-  presetOptionMapByKey,
-  weeklyOptions,
-  buildScheduleFromForm,
-  generateScheduleDescription,
-  decodeScheduleToForm,
-  describeCron
-} from '@/utils/schedule'
 
 const router = useRouter()
 const route = useRoute()
@@ -829,15 +733,6 @@ const startImmediately = ref(false)
 const loadingTask = ref(false)
 const isInitializingFromTask = ref(false)  // 防止 watch 在加载任务时重置配置
 
-const scheduleDialogVisible = ref(false)
-const scheduleDescription = ref('')
-
-const customScheduleForm = ref({
-  mode: 'daily',
-  time: '09:00',
-  weekDays: ['1'],
-  dayOfMonth: 1
-})
 
 const basicFormRef = ref(null)
 const taskForm = ref({
@@ -1117,53 +1012,6 @@ const buildOptions = (systemList, localList) => {
   return options
 }
 
-const applyPresetSchedule = (key) => {
-  const option = presetOptionMapByKey[key]
-  if (!option) {
-    return
-  }
-  taskForm.value.schedule = option.cron
-}
-
-const clearSchedule = () => {
-  taskForm.value.schedule = ''
-}
-
-const openScheduleDialog = () => {
-  const parsed = decodeScheduleToForm(taskForm.value.schedule)
-  if (parsed) {
-    customScheduleForm.value = {
-      mode: parsed.mode,
-      time: parsed.time,
-      weekDays: parsed.weekDays,
-      dayOfMonth: parsed.dayOfMonth
-    }
-  } else {
-    customScheduleForm.value = {
-      mode: customScheduleForm.value.mode || 'daily',
-      time: customScheduleForm.value.time || '09:00',
-      weekDays: customScheduleForm.value.weekDays?.length ? customScheduleForm.value.weekDays : ['1'],
-      dayOfMonth: customScheduleForm.value.dayOfMonth || 1
-    }
-  }
-  scheduleDialogVisible.value = true
-}
-
-const handleConfirmCustomSchedule = () => {
-  const result = buildScheduleFromForm(customScheduleForm.value)
-  if (!result) {
-    if (customScheduleForm.value.mode === 'weekly') {
-      ElMessage.warning('请至少选择一个执行日')
-    } else {
-      ElMessage.warning('请选择有效的执行时间')
-    }
-    return
-  }
-  taskForm.value.schedule = result.cron
-  scheduleDialogVisible.value = false
-}
-
-const customSchedulePreview = computed(() => generateScheduleDescription(customScheduleForm.value))
 
 const sourceOptions = computed(() =>
   buildOptions(filteredSourceSystemResources.value, filteredSourceLocalResources.value)
@@ -1209,18 +1057,6 @@ const canOpenObjectStoragePicker = computed(() => {
   const resourceType = currentTargetResourceType.value || (targetConnectorType.value || '').toLowerCase()
   return ['s3', 'minio', 'oss'].includes(resourceType)
 })
-
-watch(
-  () => taskForm.value.schedule,
-  (cron) => {
-    if (!cron) {
-      scheduleDescription.value = ''
-      return
-    }
-    scheduleDescription.value = describeCron(cron)
-  },
-  { immediate: true }
-)
 
 const sourceResourceDisplayName = computed(() => {
   return selectedSourceOption.value?.name || '未选择'
@@ -2950,45 +2786,6 @@ onMounted(async () => {
   min-height: 400px;
 }
 
-.schedule-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.schedule-presets {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.schedule-presets__label {
-  color: #606266;
-  font-size: 13px;
-}
-
-.schedule-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.schedule-result {
-  font-size: 13px;
-  color: #303133;
-}
-
-.schedule-dialog__tip {
-  margin-left: 12px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.schedule-dialog__preview {
-  font-size: 14px;
-  color: #303133;
-}
 
 .step-panel {
   max-width: 800px;

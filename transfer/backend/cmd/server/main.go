@@ -73,7 +73,7 @@ func main() {
 	objectStorageService := service.NewObjectStorageService(localResourceService)
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.SystemServiceURL)
+	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.SystemServiceURL, redisClient)
 
 	// 注册能力到 System 模块
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

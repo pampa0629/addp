@@ -55,6 +55,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.User{},
 		&models.AuditLog{},
 		&models.Resource{},
+		&models.Application{},
+		&models.APIKey{},
 	)
 }
 

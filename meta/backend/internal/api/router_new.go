@@ -9,9 +9,10 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService) *gin.Engine {
+func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -37,8 +38,14 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 
 	// API路由组（需要认证）
 	api := router.Group("/api/meta")
-	api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL)) // JWT 验证
-	api.Use(auth.TenantIsolationMiddleware())                 // 租户隔离
+	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
+	if redisClient != nil {
+		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
+	} else {
+		// Fallback: 无缓存模式
+		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	}
+	api.Use(auth.TenantIsolationMiddleware()) // 租户隔离
 	{
 		// 资源相关
 		api.GET("/resources", handler.GetResources)

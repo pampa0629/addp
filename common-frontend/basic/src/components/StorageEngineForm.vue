@@ -80,6 +80,36 @@
       </el-form-item>
     </template>
 
+    <!-- Apache Doris -->
+    <template v-else-if="formState.resource_type === 'doris'">
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item label="数据库名" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" placeholder="数据库名称" />
+      </el-form-item>
+      <el-form-item label="用户名" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" placeholder="数据库用户名" />
+      </el-form-item>
+      <el-form-item label="密码（可选）" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          placeholder="留空表示无密码（Doris 默认）"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        已存储密码，如无需修改请保持占位符不变。
+      </div>
+      <div v-else class="field-hint">
+        Doris 默认 root 用户无密码，可留空。如已设置密码请填写。
+      </div>
+    </template>
+
     <!-- MinIO / S3 -->
     <template v-else-if="formState.resource_type === 'minio' || formState.resource_type === 's3'">
       <el-form-item label="端点地址" prop="connection_info.endpoint">
@@ -114,6 +144,33 @@
       </el-form-item>
       <div class="field-hint">
         该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。
+      </div>
+    </template>
+
+    <!-- Spark SQL -->
+    <template v-else-if="formState.resource_type === 'spark_sql'">
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" :placeholder="10000" />
+      </el-form-item>
+      <el-form-item label="数据库名" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" placeholder="default" />
+      </el-form-item>
+      <el-form-item label="用户名（可选）">
+        <el-input v-model="formState.connection_info.username" placeholder="留空表示无需认证" />
+      </el-form-item>
+      <el-form-item label="密码（可选）">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          placeholder="留空表示无需认证"
+          show-password
+        />
+      </el-form-item>
+      <div class="field-hint">
+        Spark SQL 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000
       </div>
     </template>
 
@@ -230,7 +287,9 @@ const props = defineProps({
     default: () => ([
       { label: 'PostgreSQL', value: 'postgresql' },
       { label: 'MySQL', value: 'mysql' },
+      { label: 'Apache Doris', value: 'doris' },
       { label: 'MinIO', value: 'minio' },
+      { label: 'Spark SQL', value: 'spark_sql' },
       { label: 'SpatiaLite/SQLite', value: 'spatialite' }
     ])
   },
@@ -279,6 +338,14 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       user: original.user ?? '',
       password: original.password ?? ''
     }
+  } else if (form.resource_type === 'doris') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 9030,
+      database: original.database ?? '',
+      user: original.user ?? 'root',
+      password: original.password ?? ''
+    }
   } else if (form.resource_type === 'minio' || form.resource_type === 's3') {
     form.connection_info = {
       endpoint: original.endpoint ?? 'localhost:9002',
@@ -290,6 +357,14 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
   } else if (form.resource_type === 'spatialite' || form.resource_type === 'sqlite') {
     form.connection_info = {
       file_path: original.file_path ?? ''
+    }
+  } else if (form.resource_type === 'spark_sql') {
+    form.connection_info = {
+      host: original.host ?? 'host.docker.internal',
+      port: original.port ?? 10000,
+      database: original.database ?? 'default',
+      username: original.username ?? '',
+      password: original.password ?? ''
     }
   } else {
     form.connection_info = { ...original }
@@ -453,6 +528,31 @@ const computedRules = computed(() => {
     }
   }
 
+  if (formState.resource_type === 'mysql') {
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.database': rules['connection_info.database'],
+      'connection_info.user': rules['connection_info.user'],
+      'connection_info.password': rules['connection_info.password']
+    }
+  }
+
+  if (formState.resource_type === 'doris') {
+    // Doris 默认 root 用户密码为空，所以密码非必填
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.database': rules['connection_info.database'],
+      'connection_info.user': rules['connection_info.user']
+      // 注意：没有密码验证规则
+    }
+  }
+
   if (formState.resource_type === 'minio' || formState.resource_type === 's3') {
     return {
       resource_type: rules.resource_type,
@@ -468,6 +568,16 @@ const computedRules = computed(() => {
       resource_type: rules.resource_type,
       name: rules.name,
       'connection_info.file_path': rules['connection_info.file_path']
+    }
+  }
+
+  if (formState.resource_type === 'spark_sql') {
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.database': rules['connection_info.database']
     }
   }
 

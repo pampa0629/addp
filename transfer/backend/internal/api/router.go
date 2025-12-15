@@ -1,10 +1,13 @@
 package api
 
 import (
+	"time"
+
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // SetupRouter 设置路由
@@ -14,6 +17,7 @@ func SetupRouter(
 	localResourceService *service.LocalResourceService,
 	objectStorageService *service.ObjectStorageService,
 	systemURL string,
+	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -41,7 +45,13 @@ func SetupRouter(
 
 	// 受保护接口（需要 JWT 认证）
 	protected := api.Group("")
-	protected.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
+	if redisClient != nil {
+		protected.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
+	} else {
+		// Fallback: 无缓存模式
+		protected.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	}
 
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)

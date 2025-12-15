@@ -27,15 +27,10 @@
       </el-form-item>
 
       <el-form-item label="定时调度">
-        <el-input
+        <ScheduleConfig
           v-model="form.cron_expr"
-          placeholder="点击按钮配置定时调度"
-          readonly
-        >
-          <template #append>
-            <el-button @click="scheduleDialogVisible = true">配置</el-button>
-          </template>
-        </el-input>
+          :allow-custom-cron="true"
+        />
       </el-form-item>
     </el-form>
 
@@ -54,11 +49,6 @@
       </div>
     </div>
 
-    <!-- 定时调度对话框 -->
-    <ScheduleBuilderDialog
-      v-model="scheduleDialogVisible"
-      @select="handleScheduleSelect"
-    />
   </div>
 </template>
 
@@ -69,12 +59,11 @@ import { ElMessage } from 'element-plus'
 import DAGEditor from '../components/DAGEditor.vue'
 import TaskPanel from '../components/TaskPanel.vue'
 import orchestrationAPI from '../api/orchestration'
-import { ScheduleBuilderDialog } from '@addp/common-frontend'
+import { ScheduleConfig } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
 const dagEditor = ref(null)
-const scheduleDialogVisible = ref(false)
 
 const isEdit = ref(false)
 const saving = ref(false)
@@ -116,10 +105,6 @@ async function loadOrchestration(id) {
 
 function handleStepsUpdate(steps) {
   form.steps = steps
-}
-
-function handleScheduleSelect(expression) {
-  form.cron_expr = expression
 }
 
 async function handleSave() {

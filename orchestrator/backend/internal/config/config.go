@@ -27,6 +27,11 @@ type Config struct {
 	TransferServiceURL string
 	MetaServiceURL     string
 	ManagerServiceURL  string
+
+	// Redis 配置
+	RedisHost     string
+	RedisPort     string
+	RedisPassword string
 }
 
 // LoadConfig 加载配置
@@ -52,6 +57,10 @@ func LoadConfig() *Config {
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
 		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
+
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 	}
 }
 

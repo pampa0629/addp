@@ -114,111 +114,100 @@ done
 echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
 echo ""
 
-# 3. 启动 Manager Backend
-echo -e "${YELLOW}Step 3/7: 启动 Manager Backend${NC}"
-cd manager/backend
-go run cmd/server/main.go > ../../logs/manager-backend.log 2> ../../logs/manager-backend-stderr.log &
+# 3. 并发启动核心 Backends (Manager, Meta, Transfer)
+echo -e "${YELLOW}Step 3/7: 并发启动核心 Backends (Manager, Meta, Transfer)${NC}"
+
+# 并发启动三个 Backends
+(cd manager/backend && go run cmd/server/main.go > ../../logs/manager-backend.log 2> ../../logs/manager-backend-stderr.log) &
 MANAGER_PID=$!
-cd ../..
+echo "  启动 Manager Backend (PID: $MANAGER_PID)"
 
-# 等待 Manager Backend 就绪
-echo "等待 Manager Backend 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8081/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Manager Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/manager-backend.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
-echo ""
-
-# 4. 启动 Meta Backend
-echo -e "${YELLOW}Step 4/7: 启动 Meta Backend${NC}"
-cd meta/backend
-go run cmd/server/main.go > ../../logs/meta-backend.log 2> ../../logs/meta-backend-stderr.log &
+(cd meta/backend && go run cmd/server/main.go > ../../logs/meta-backend.log 2> ../../logs/meta-backend-stderr.log) &
 META_PID=$!
-cd ../..
+echo "  启动 Meta Backend (PID: $META_PID)"
 
-# 等待 Meta Backend 就绪
-echo "等待 Meta Backend 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8082/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Meta Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/meta-backend.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Meta Backend 就绪 (PID: $META_PID)${NC}"
-echo ""
-
-# 5. 启动 Transfer Backend
-echo -e "${YELLOW}Step 5/7: 启动 Transfer Backend${NC}"
-cd transfer/backend
-go mod download >/dev/null 2>> ../../logs/transfer-backend-stderr.log || true
-go run cmd/server/main.go > ../../logs/transfer-backend.log 2> ../../logs/transfer-backend-stderr.log &
+(cd transfer/backend && go mod download >/dev/null 2>> logs/transfer-backend-stderr.log || true && go run cmd/server/main.go > ../../logs/transfer-backend.log 2> ../../logs/transfer-backend-stderr.log) &
 TRANSFER_PID=$!
-cd ../..
+echo "  启动 Transfer Backend (PID: $TRANSFER_PID)"
 
-# 等待 Transfer Backend 就绪
-echo "等待 Transfer Backend 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8083/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/transfer-backend-stderr.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
+echo ""
+echo "并发等待核心 Backends 就绪..."
+
+# 并发等待所有 Backends 的 health check
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8081/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Manager Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/manager-backend.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
+) &
+MANAGER_WAIT_PID=$!
+
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8082/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Meta Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/meta-backend.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}✓ Meta Backend 就绪 (PID: $META_PID)${NC}"
+) &
+META_WAIT_PID=$!
+
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8083/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Transfer Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/transfer-backend-stderr.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
+) &
+TRANSFER_WAIT_PID=$!
+
+# 等待所有并发的 health check 完成
+wait $MANAGER_WAIT_PID $META_WAIT_PID $TRANSFER_WAIT_PID
+
+echo ""
+echo -e "${GREEN}✓ 核心 Backends 全部就绪${NC}"
 echo ""
 
-# 6. 启动 Transfer Worker
-echo -e "${YELLOW}Step 6/7: 启动 Transfer Worker${NC}"
-cd transfer/backend
-go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true
-go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1 &
-TRANSFER_WORKER_PID=$!
-cd ../..
-echo -e "${GREEN}✓ Transfer Worker 启动中 (PID: $TRANSFER_WORKER_PID)${NC}"
-echo "  注意: Transfer Worker 依赖 Redis，请确保 Redis 已启动"
-echo ""
+# 4. 并发启动 Workers (Manager, Meta, Transfer)
+echo -e "${YELLOW}Step 4/7: 并发启动 Workers (Manager, Meta, Transfer)${NC}"
 
-# 6.5 启动 Meta Worker
-echo -e "${YELLOW}Step 6.5/7: 启动 Meta Worker${NC}"
-cd meta/backend
-go mod download >/dev/null 2>> ../../logs/meta-worker.log || true
-go run cmd/worker/main.go > ../../logs/meta-worker.log 2>&1 &
-META_WORKER_PID=$!
-cd ../..
-echo -e "${GREEN}✓ Meta Worker 启动中 (PID: $META_WORKER_PID)${NC}"
-echo "  注意: Meta Worker 依赖 Redis，请确保 Redis 已启动"
-echo ""
-
-# 6.6 启动 Manager Worker
-echo -e "${YELLOW}Step 6.6/7: 启动 Manager Worker${NC}"
-cd manager/backend
-go mod download >/dev/null 2>> ../../logs/manager-worker.log || true
-go run cmd/worker/main.go > ../../logs/manager-worker.log 2>&1 &
+# 并发启动三个 Workers（不需要等待 health check）
+(cd manager/backend && go mod download >/dev/null 2>> ../../logs/manager-worker.log || true && go run cmd/worker/main.go > ../../logs/manager-worker.log 2>&1) &
 MANAGER_WORKER_PID=$!
-cd ../..
-echo -e "${GREEN}✓ Manager Worker 启动中 (PID: $MANAGER_WORKER_PID)${NC}"
-echo "  注意: Manager Worker 依赖 Redis 和 MinIO，请确保已启动"
+echo "  启动 Manager Worker (PID: $MANAGER_WORKER_PID)"
+
+(cd meta/backend && go mod download >/dev/null 2>> ../../logs/meta-worker.log || true && go run cmd/worker/main.go > ../../logs/meta-worker.log 2>&1) &
+META_WORKER_PID=$!
+echo "  启动 Meta Worker (PID: $META_WORKER_PID)"
+
+(cd transfer/backend && go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true && go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1) &
+TRANSFER_WORKER_PID=$!
+echo "  启动 Transfer Worker (PID: $TRANSFER_WORKER_PID)"
+
+echo -e "${GREEN}✓ Workers 已启动（后台运行）${NC}"
+echo "  注意: Workers 依赖 Redis，请确保 Redis 已启动"
 echo ""
 
-# 6.7 启动 Orchestrator Backend
-echo -e "${YELLOW}Step 6.7/7: 启动 Orchestrator Backend${NC}"
+# 5. 启动 Orchestrator Backend
+echo -e "${YELLOW}Step 5/8: 启动 Orchestrator Backend${NC}"
 cd orchestrator/backend
 go mod download >/dev/null 2>> ../../logs/orchestrator-backend-stderr.log || true
 go run cmd/server/main.go > ../../logs/orchestrator-backend.log 2> ../../logs/orchestrator-backend-stderr.log &
@@ -241,8 +230,8 @@ done
 echo -e "${GREEN}✓ Orchestrator Backend 就绪 (PID: $ORCHESTRATOR_PID)${NC}"
 echo ""
 
-# 6.8 启动 Develop Backend
-echo -e "${YELLOW}Step 6.8/8: 启动 Develop Backend${NC}"
+# 6. 启动 Develop Backend
+echo -e "${YELLOW}Step 6/8: 启动 Develop Backend${NC}"
 cd develop/backend
 go mod download >/dev/null 2>> ../../logs/develop-backend-stderr.log || true
 go run cmd/server/main.go > ../../logs/develop-backend.log 2> ../../logs/develop-backend-stderr.log &
@@ -266,9 +255,9 @@ echo -e "${GREEN}✓ Develop Backend 就绪 (PID: $DEVELOP_PID)${NC}"
 echo ""
 
 # ============================================================
-# Step 6.9: Start GeoPandas Engine (Python service)
+# Step 7: Start GeoPandas Engine (Python service)
 # ============================================================
-echo -e "${YELLOW}Step 6.9/8: 启动 GeoPandas Engine...${NC}"
+echo -e "${YELLOW}Step 7/8: 启动 GeoPandas Engine...${NC}"
 
 # 检查 Python 3 是否安装
 if ! command -v python3 &> /dev/null; then
@@ -436,84 +425,94 @@ ensure_node_modules() {
   fi
 }
 
-# Portal Frontend
-echo "启动 Portal Frontend..."
-ensure_node_modules "portal/frontend"
-cd portal/frontend
-npm run dev -- --host 0.0.0.0 --port "${PORTAL_FE_PORT}" > ../../logs/portal-frontend.log 2>&1 &
-PORTAL_PID=$!
-cd ../..
-wait_for_http "Portal Frontend" "http://localhost:${PORTAL_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Portal Frontend 运行中 (PID: $PORTAL_PID, Port: ${PORTAL_FE_PORT})${NC}"
+# ============================================================
+# 并发启动所有前端服务（Bash 3.2 兼容）
+# ============================================================
+echo -e "${YELLOW}Step 8/8: 并发启动所有前端服务 (Portal + 6 个模块)${NC}"
 
-# System Frontend
-echo "启动 System Frontend..."
-ensure_node_modules "system/frontend"
-cd system/frontend
-npm run dev -- --host 0.0.0.0 --port "${SYSTEM_FE_PORT}" > ../../logs/system-frontend.log 2>&1 &
-SYSTEM_FE_PID=$!
-cd ../..
-wait_for_http "System Frontend" "http://localhost:${SYSTEM_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ System Frontend 运行中 (PID: $SYSTEM_FE_PID, Port: ${SYSTEM_FE_PORT})${NC}"
+# 定义前端配置（格式：名称:端口:目录）
+# 使用普通数组而非关联数组（兼容 Bash 3.2）
+FRONTEND_CONFIGS=(
+  "portal:${PORTAL_FE_PORT}:portal/frontend"
+  "system:${SYSTEM_FE_PORT}:system/frontend"
+  "manager:${MANAGER_FE_PORT}:manager/frontend"
+  "meta:${META_FE_PORT}:meta/frontend"
+  "transfer:${TRANSFER_FE_PORT}:transfer/frontend"
+  "orchestrator:${ORCHESTRATOR_FE_PORT}:orchestrator/frontend"
+  "develop:${DEVELOP_FE_PORT}:develop/frontend"
+)
 
-# Manager Frontend
-echo "启动 Manager Frontend..."
-ensure_node_modules "manager/frontend"
-cd manager/frontend
-npm run dev -- --host 0.0.0.0 --port "${MANAGER_FE_PORT}" > ../../logs/manager-frontend.log 2>&1 &
-MANAGER_FE_PID=$!
-cd ../..
-wait_for_http "Manager Frontend" "http://localhost:${MANAGER_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Manager Frontend 运行中 (PID: $MANAGER_FE_PID, Port: ${MANAGER_FE_PORT})${NC}"
+echo "并发启动所有前端..."
 
-# Meta Frontend
-echo "启动 Meta Frontend..."
-ensure_node_modules "meta/frontend"
-cd meta/frontend
-npm run dev -- --host 0.0.0.0 --port "${META_FE_PORT}" > ../../logs/meta-frontend.log 2>&1 &
-META_FE_PID=$!
-cd ../..
-wait_for_http "Meta Frontend" "http://localhost:${META_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Meta Frontend 运行中 (PID: $META_FE_PID, Port: ${META_FE_PORT})${NC}"
+# 存储 PIDs（使用临时文件）
+FRONTEND_PID_FILE="/tmp/addp-frontend-pids-$$"
+> "$FRONTEND_PID_FILE"  # 清空文件
 
-# Transfer Frontend
-echo "启动 Transfer Frontend..."
-ensure_node_modules "transfer/frontend"
-cd transfer/frontend
-npm run dev -- --host 0.0.0.0 --port "${TRANSFER_FE_PORT}" > ../../logs/transfer-frontend.log 2>&1 &
-TRANSFER_FE_PID=$!
-cd ../..
-wait_for_http "Transfer Frontend" "http://localhost:${TRANSFER_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Transfer Frontend 运行中 (PID: $TRANSFER_FE_PID, Port: ${TRANSFER_FE_PORT})${NC}"
+# 并发启动所有前端
+for config in "${FRONTEND_CONFIGS[@]}"; do
+  IFS=':' read -r name port dir <<< "$config"
 
-# Orchestrator Frontend
-echo "启动 Orchestrator Frontend..."
-ensure_node_modules "orchestrator/frontend"
-cd orchestrator/frontend
-npm run dev -- --host 0.0.0.0 --port "${ORCHESTRATOR_FE_PORT}" > ../../logs/orchestrator-frontend.log 2>&1 &
-ORCHESTRATOR_FE_PID=$!
-cd ../..
-wait_for_http "Orchestrator Frontend" "http://localhost:${ORCHESTRATOR_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Orchestrator Frontend 运行中 (PID: $ORCHESTRATOR_FE_PID, Port: ${ORCHESTRATOR_FE_PORT})${NC}"
+  (
+    ensure_node_modules "$dir"
+    cd "$dir"
+    npm run dev -- --host 0.0.0.0 --port "$port" > "../../logs/${name}-frontend.log" 2>&1
+  ) &
 
-# Develop Frontend
-echo "启动 Develop Frontend..."
-ensure_node_modules "develop/frontend"
-cd develop/frontend
-npm run dev -- --host 0.0.0.0 --port "${DEVELOP_FE_PORT}" > ../../logs/develop-frontend.log 2>&1 &
-DEVELOP_FE_PID=$!
-cd ../..
-wait_for_http "Develop Frontend" "http://localhost:${DEVELOP_FE_PORT}" "$MAX_WAIT" || exit 1
-echo -e "${GREEN}✓ Develop Frontend 运行中 (PID: $DEVELOP_FE_PID, Port: ${DEVELOP_FE_PORT})${NC}"
+  pid=$!
+  echo "${name}:${pid}" >> "$FRONTEND_PID_FILE"
+  echo "  启动 ${name} Frontend (PID: $pid, Port: $port)"
+done
 
-# 保存前端 PIDs
-echo $PORTAL_PID > .dev-pids/portal-frontend.pid
-echo $SYSTEM_FE_PID > .dev-pids/system-frontend.pid
-echo $MANAGER_FE_PID > .dev-pids/manager-frontend.pid
-echo $META_FE_PID > .dev-pids/meta-frontend.pid
-echo $TRANSFER_FE_PID > .dev-pids/transfer-frontend.pid
-echo $ORCHESTRATOR_FE_PID > .dev-pids/orchestrator-frontend.pid
-echo $DEVELOP_FE_PID > .dev-pids/develop-frontend.pid
+echo ""
+echo "并发等待所有前端就绪..."
+
+# 并发等待所有前端的健康检查
+HEALTH_CHECK_PIDS=()
+for config in "${FRONTEND_CONFIGS[@]}"; do
+  IFS=':' read -r name port dir <<< "$config"
+
+  (
+    WAIT_COUNT=0
+    until curl -fsS "http://localhost:${port}" > /dev/null 2>&1; do
+      sleep 1
+      WAIT_COUNT=$((WAIT_COUNT + 1))
+      if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+        echo -e "${RED}✗ ${name} Frontend 启动超时 (Port: ${port})${NC}"
+        echo "查看日志: tail -f logs/${name}-frontend.log"
+        exit 1
+      fi
+    done
+    # 从临时文件中查找 PID
+    pid=$(grep "^${name}:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+    echo -e "${GREEN}✓ ${name} Frontend 就绪 (PID: ${pid}, Port: ${port})${NC}"
+  ) &
+  HEALTH_CHECK_PIDS+=($!)
+done
+
+# 只等待健康检查进程完成（不等待前端 npm 进程）
+for pid in "${HEALTH_CHECK_PIDS[@]}"; do
+  wait "$pid"
+done
+
+echo ""
+echo -e "${GREEN}✓ 所有前端服务已启动${NC}"
+
+# 保存前端 PIDs 到 .dev-pids 目录
+while IFS=: read -r name pid; do
+  echo "$pid" > ".dev-pids/${name}-frontend.pid"
+done < "$FRONTEND_PID_FILE"
+
+# 为了兼容性，设置这些变量（从临时文件读取）
+PORTAL_PID=$(grep "^portal:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+SYSTEM_FE_PID=$(grep "^system:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+MANAGER_FE_PID=$(grep "^manager:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+META_FE_PID=$(grep "^meta:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+TRANSFER_FE_PID=$(grep "^transfer:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+ORCHESTRATOR_FE_PID=$(grep "^orchestrator:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+DEVELOP_FE_PID=$(grep "^develop:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+
+# 清理临时文件
+rm -f "$FRONTEND_PID_FILE"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

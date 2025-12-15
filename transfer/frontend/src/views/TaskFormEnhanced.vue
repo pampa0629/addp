@@ -86,8 +86,7 @@
         </el-form-item>
 
         <el-form-item label="定时调度">
-          <el-input v-model="form.schedule" placeholder="Cron 表达式，如：0 0 2 * * *" />
-          <div class="hint">留空则不启用定时调度，只能手动触发</div>
+          <ScheduleConfig v-model="form.schedule" :allow-custom-cron="true" />
         </el-form-item>
 
         <el-divider>数据源配置</el-divider>
@@ -232,6 +231,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { taskAPI } from '@/api/tasks'
+import { ScheduleConfig } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()

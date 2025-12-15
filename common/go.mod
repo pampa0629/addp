@@ -13,7 +13,8 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/pgvector/pgvector-go v0.1.0
-	github.com/redis/go-redis/v9 v9.16.0
+	github.com/redis/go-redis/v9 v9.17.2
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/twpayne/go-geom v1.5.7
 	github.com/xuri/excelize/v2 v2.10.0
 	gorm.io/driver/postgres v1.6.0

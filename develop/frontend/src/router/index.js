@@ -61,78 +61,31 @@ const router = createRouter({
 })
 
 // 路由守卫：支持两种运行模式（Portal 嵌入 + 独立访问）
-router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore()
-  const queryToken = typeof to.query.token === 'string' ? to.query.token : null
+import { createAuthGuard } from '@common-ui'
 
-  // 0️⃣ 如果正在加载用户信息，直接放行（避免重复处理）
-  if (authStore.isLoadingUser) {
-    console.log('[Router] User is loading, allowing navigation')
-    return next()
+// 路径规范化函数：处理 /develop/ 前缀
+const normalizeRedirect = fullPath => {
+  if (!fullPath) {
+    return '/sql'  // 默认重定向到 SQL 编辑器
   }
 
-  // 1️⃣ 如果 URL 中有 token（Portal 传递）
-  if (queryToken) {
-    console.log('[Router] Found token in URL, processing...')
-    authStore.setToken(queryToken)
-
-    try {
-      await authStore.fetchUser()
-      console.log('[Router] User fetched successfully, user:', authStore.user?.username)
-    } catch (error) {
-      console.error('[Router] 获取用户信息失败:', error)
-      authStore.logout()
-      return next({ name: 'Login' })
-    }
-
-    // 确保用户信息已加载后，再清除 URL token
-    console.log('[Router] Removing token from URL')
-    const { token: _removed, ...restQuery } = to.query
-    next({ path: to.path, query: restQuery, replace: true })
-    return
+  // 处理根路径重定向
+  if (fullPath === '/develop' || fullPath === '/develop/') {
+    return '/sql'
   }
 
-  // 2️⃣ 如果已认证但无用户信息，尝试刷新
-  if (authStore.isAuthenticated && !authStore.user) {
-    console.log('[Router] Authenticated but no user, fetching...')
-    try {
-      await authStore.fetchUser()
-      console.log('[Router] User refreshed successfully')
-    } catch (error) {
-      console.error('[Router] 刷新用户信息失败:', error)
-      authStore.logout()
-      return next({ name: 'Login' })
-    }
+  // 移除模块前缀（如果存在）
+  if (fullPath.startsWith('/develop/')) {
+    return fullPath.replace('/develop', '')
   }
 
-  // 3️⃣ 检测是否在 iframe 中（跳过登录页检查）
-  const isInIframe = window.self !== window.top
-  if (isInIframe && authStore.isAuthenticated) {
-    // 额外检查：如果在 iframe 中但 user 仍未加载，等待
-    if (!authStore.user && !authStore.isLoadingUser) {
-      console.log('[Router] In iframe but no user, fetching...')
-      try {
-        await authStore.fetchUser()
-      } catch (error) {
-        console.error('[Router] Failed to fetch user in iframe:', error)
-        // 在 iframe 中失败时不跳转登录页，避免嵌套登录
-        return next()
-      }
-    }
-    return next()
-  }
+  return fullPath
+}
 
-  // 4️⃣ 正常的路由守卫逻辑
-  if (!to.meta.requiresAuth) {
-    next()
-    return
-  }
-
-  if (authStore.isAuthenticated) {
-    next()
-  } else {
-    next('/login')
-  }
-})
+router.beforeEach(createAuthGuard(useAuthStore, {
+  moduleName: 'Develop',
+  loginRouteName: 'Login',
+  normalizeRedirect
+}))
 
 export default router

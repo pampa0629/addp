@@ -70,6 +70,44 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）
 
+### 认证组件 (Composables)
+
+> 📚 **详细文档**: [AUTH_USAGE_GUIDE.md](./basic/composables/AUTH_USAGE_GUIDE.md)
+
+- **createAuthGuard(authStore, config)** - 创建标准化的 Vue Router 路由守卫
+- **createAuthInterceptor(authStore, moduleName)** - 创建智能等待的 Axios 请求拦截器
+- **createAuthStoreConfig(storeName, authAPI, options)** - 生成标准化的 Pinia auth store 配置
+
+**快速示例**:
+
+```javascript
+// 1. Auth Store (从 120 行 → 10 行)
+import { defineStore } from 'pinia'
+import { createAuthStoreConfig } from '@common-ui'
+import { authAPI } from '../api/auth'
+
+export const useAuthStore = defineStore('manager-auth', {
+  ...createAuthStoreConfig('manager-auth', authAPI, {
+    persistUser: false
+  })
+})
+
+// 2. Router Guard (从 100 行 → 10 行)
+import { createAuthGuard } from '@common-ui'
+router.beforeEach(createAuthGuard(useAuthStore(), {
+  moduleName: 'Manager',
+  loginRouteName: 'Login'
+}))
+
+// 3. Axios Interceptor (从 20 行 → 3 行)
+import { createAuthInterceptor } from '@common-ui'
+client.interceptors.request.use(
+  createAuthInterceptor(useAuthStore(), 'Manager')
+)
+```
+
+**收益**: 每个模块的认证代码从 ~240 行减少到 ~23 行 (**-90%**) 🎉
+
 ### 地图组件
 
 - **MapContainer** - 地图容器组件

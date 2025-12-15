@@ -4,7 +4,7 @@
   <div v-else id="app">
     <div class="container">
       <header class="header">
-        <h1>🤖 AI 启动系统</h1>
+        <h1>🤖 AI自举系统</h1>
         <p class="subtitle">描述你的需求，AI 即刻为你构建</p>
       </header>
 

@@ -371,7 +371,10 @@ const handleFilterChange = () => {
 
 const resourceTypeMap = {
   'postgresql': 'PostgreSQL',
+  'mysql': 'MySQL',
+  'doris': 'Apache Doris',
   'minio': 'MinIO',
+  'spark_sql': 'Spark SQL',
   'database': '数据库',
   'compute_engine': '计算引擎'
 }
@@ -383,7 +386,10 @@ const getResourceTypeLabel = (type) => {
 const getResourceTypeColor = (type) => {
   const colorMap = {
     'postgresql': 'primary',
+    'mysql': 'success',
+    'doris': 'warning',
     'minio': 'warning',
+    'spark_sql': 'danger',
     'database': 'success',
     'compute_engine': 'info'
   }

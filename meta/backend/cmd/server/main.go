@@ -151,7 +151,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService)
+	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService, redisClient)
 
 	// 注册能力到 System 模块（在服务启动后）
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
@@ -214,7 +214,7 @@ func registerCapabilities(cfg *config.Config) {
 			},
 			"list": {
 				Method: "GET",
-				Path:   "/api/meta/scan-tasks",
+				Path:   "/api/meta/scan/tasks",
 				QueryParams: map[string]string{
 					"tenant_id": "{{.TenantID}}",
 				},

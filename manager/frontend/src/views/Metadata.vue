@@ -173,16 +173,13 @@
                 <template #default="{ row }">
                   <div class="task-name">
                     <div class="task-name__title">{{ row.name }}</div>
-                    <div class="task-name__meta">
-                      <el-tag size="small" effect="plain">{{ scheduleTypeLabel(row.schedule_type) }}</el-tag>
-                    </div>
                     <div v-if="row.description" class="task-name__desc">{{ row.description }}</div>
                   </div>
                 </template>
               </el-table-column>
               <el-table-column label="调度" min-width="240">
                 <template #default="{ row }">
-                  {{ formatSchedule(row) }}
+                  {{ row.cron_expression ? describeCron(row.cron_expression) : '手动触发' }}
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="120">
@@ -435,48 +432,11 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="调度类型" prop="scheduleType">
-          <el-select v-model="taskForm.scheduleType" placeholder="选择调度类型">
-            <el-option label="手动触发" value="manual" />
-            <el-option label="每天" value="daily" />
-            <el-option label="每周" value="weekly" />
-            <el-option label="每月" value="monthly" />
-            <el-option label="Cron 表达式" value="cron" />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          label="执行时间"
-          v-if="['daily', 'weekly', 'monthly'].includes(taskForm.scheduleType)"
-        >
-          <el-time-picker
-            v-model="taskForm.scheduleTime"
-            format="HH:mm"
-            value-format="HH:mm"
-            placeholder="选择时间"
+        <el-form-item label="定时调度">
+          <ScheduleConfig
+            v-model="taskForm.cronExpression"
+            :allow-custom-cron="true"
           />
-        </el-form-item>
-        <el-form-item label="执行星期" v-if="taskForm.scheduleType === 'weekly'">
-          <el-select v-model="taskForm.scheduleValue" multiple placeholder="选择星期">
-            <el-option
-              v-for="item in weekdayOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="执行日期" v-if="taskForm.scheduleType === 'monthly'">
-          <el-select v-model="taskForm.scheduleValue" multiple placeholder="选择日期">
-            <el-option
-              v-for="day in monthDayOptions"
-              :key="day"
-              :label="`${day}日`"
-              :value="day"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="Cron 表达式" v-if="taskForm.scheduleType === 'cron'">
-          <el-input v-model="taskForm.cronExpression" placeholder="如 0 0 * * *" />
         </el-form-item>
         <el-form-item label="是否启用">
           <el-switch v-model="taskForm.enabled" />
@@ -536,6 +496,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { managerAPI } from '../api/manager'
+import { ScheduleConfig, describeCron } from '@common-ui'
 
 const dataSources = ref([])
 const selectedDataSourceId = ref(null)
@@ -573,9 +534,6 @@ const editingTaskId = ref(null)
 const taskForm = reactive({
   name: '',
   description: '',
-  scheduleType: 'daily',
-  scheduleTime: '00:00',
-  scheduleValue: [],
   cronExpression: '',
   enabled: true,
   schemaInput: '',
@@ -610,18 +568,6 @@ const runDisplayName = (run) => {
   }
   return '即时扫描'
 }
-
-const weekdayOptions = [
-  { label: '周日', value: 0 },
-  { label: '周一', value: 1 },
-  { label: '周二', value: 2 },
-  { label: '周三', value: 3 },
-  { label: '周四', value: 4 },
-  { label: '周五', value: 5 },
-  { label: '周六', value: 6 }
-]
-
-const monthDayOptions = Array.from({ length: 31 }, (_, index) => index + 1)
 
 const scanDepthOptions = [
   { label: '基础 (basic)', value: 'basic' },
@@ -831,25 +777,13 @@ const resetTaskForm = () => {
 
 const populateTaskForm = (task) => {
   const params = task.parameters || {}
-  const config = task.schedule_config || {}
   taskForm.name = task.name || ''
   taskForm.description = task.description || ''
-  taskForm.scheduleType = task.schedule_type || 'manual'
-  taskForm.scheduleTime = config.time || '00:00'
-  taskForm.scheduleValue = normalizeScheduleValue(config.value)
   taskForm.cronExpression = task.cron_expression || ''
   taskForm.enabled = !!task.enabled
   taskForm.schemaInput = Array.isArray(params.schema_names) ? params.schema_names.join(', ') : ''
   taskForm.objectPathInput = Array.isArray(params.object_paths) ? params.object_paths.join(', ') : ''
   taskForm.scanDepth = typeof params.scan_depth === 'string' ? params.scan_depth : 'deep'
-
-  if (!['daily', 'weekly', 'monthly'].includes(taskForm.scheduleType)) {
-    taskForm.scheduleTime = '00:00'
-    taskForm.scheduleValue = []
-  }
-  if (taskForm.scheduleType === 'cron' && !taskForm.cronExpression) {
-    taskForm.cronExpression = task.cron_expression || ''
-  }
 }
 
 const handleTaskDialogClose = () => {
@@ -862,23 +796,6 @@ const handleTaskDialogClose = () => {
 const submitTaskForm = () => {
   taskFormRef.value?.validate(async (valid) => {
     if (!valid) return
-
-    if (taskForm.scheduleType === 'cron' && !taskForm.cronExpression.trim()) {
-      ElMessage.error('请输入 Cron 表达式')
-      return
-    }
-    if (['daily', 'weekly', 'monthly'].includes(taskForm.scheduleType) && !taskForm.scheduleTime) {
-      ElMessage.error('请选择执行时间')
-      return
-    }
-    if (taskForm.scheduleType === 'weekly' && taskForm.scheduleValue.length === 0) {
-      ElMessage.error('请至少选择一个执行星期')
-      return
-    }
-    if (taskForm.scheduleType === 'monthly' && taskForm.scheduleValue.length === 0) {
-      ElMessage.error('请至少选择一个执行日期')
-      return
-    }
 
     const payload = buildTaskPayloadFromForm()
     savingTask.value = true
@@ -904,13 +821,6 @@ const submitTaskForm = () => {
   })
 }
 
-const normalizeScheduleValue = (value) => {
-  if (!Array.isArray(value)) return []
-  return value
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item))
-}
-
 const normalizeListInput = (value) => {
   if (!value) return []
   return value
@@ -922,27 +832,21 @@ const normalizeListInput = (value) => {
 const buildTaskPayloadFromForm = () => {
   const schemaNames = normalizeListInput(taskForm.schemaInput)
   const objectPaths = normalizeListInput(taskForm.objectPathInput)
-  const scheduleValue = normalizeScheduleValue(taskForm.scheduleValue)
 
-  const payload = {
+  return {
     name: taskForm.name,
     description: taskForm.description,
     schema_names: schemaNames,
     object_paths: objectPaths,
     scan_depth: taskForm.scanDepth || 'deep',
-    schedule_type: taskForm.scheduleType,
-    schedule_time: ['daily', 'weekly', 'monthly'].includes(taskForm.scheduleType) ? (taskForm.scheduleTime || '00:00') : '',
-    schedule_value: ['weekly', 'monthly'].includes(taskForm.scheduleType) ? scheduleValue : [],
-    cron_expression: taskForm.scheduleType === 'cron' ? taskForm.cronExpression : '',
+    schedule_type: taskForm.cronExpression ? 'cron' : 'manual',
+    cron_expression: taskForm.cronExpression || '',
     enabled: taskForm.enabled
   }
-
-  return payload
 }
 
 const buildTaskPayloadFromTask = (task, overrides = {}) => {
   const params = task.parameters || {}
-  const config = task.schedule_config || {}
 
   return {
     name: overrides.name ?? task.name,
@@ -950,9 +854,9 @@ const buildTaskPayloadFromTask = (task, overrides = {}) => {
     schema_names: Array.isArray(params.schema_names) ? params.schema_names : [],
     object_paths: Array.isArray(params.object_paths) ? params.object_paths : [],
     scan_depth: typeof params.scan_depth === 'string' ? params.scan_depth : 'deep',
-    schedule_type: overrides.schedule_type ?? task.schedule_type,
-    schedule_time: overrides.schedule_time ?? (config.time || ''),
-    schedule_value: overrides.schedule_value ?? normalizeScheduleValue(config.value),
+    schedule_type: overrides.cron_expression !== undefined
+      ? (overrides.cron_expression ? 'cron' : 'manual')
+      : (task.cron_expression ? 'cron' : 'manual'),
     cron_expression: overrides.cron_expression ?? (task.cron_expression || ''),
     enabled: overrides.enabled ?? task.enabled
   }
@@ -1028,51 +932,6 @@ const handleManualScan = async () => {
     ElMessage.error('提交即时扫描失败: ' + (error.response?.data?.error || error.message))
   } finally {
     manualScanning.value = false
-  }
-}
-
-const formatSchedule = (task) => {
-  const type = task.schedule_type
-  const config = task.schedule_config || {}
-  const time = config.time || '00:00'
-  const values = normalizeScheduleValue(config.value)
-
-  switch (type) {
-    case 'manual':
-      return '手动触发'
-    case 'daily':
-      return `每天 ${time}`
-    case 'weekly': {
-      const labels = values
-        .map((val) => weekdayOptions.find((item) => item.value === val)?.label)
-        .filter(Boolean)
-      return `每周 ${labels.length ? labels.join('、') : '（未设置）'} ${time}`
-    }
-    case 'monthly': {
-      const labels = values.map((val) => `${val}日`)
-      return `每月 ${labels.length ? labels.join('、') : '（未设置）'} ${time}`
-    }
-    case 'cron':
-      return task.cron_expression ? `Cron: ${task.cron_expression}` : 'Cron 调度'
-    default:
-      return type || '-'
-  }
-}
-
-const scheduleTypeLabel = (type) => {
-  switch (type) {
-    case 'manual':
-      return '手动'
-    case 'daily':
-      return '每天'
-    case 'weekly':
-      return '每周'
-    case 'monthly':
-      return '每月'
-    case 'cron':
-      return 'Cron'
-    default:
-      return type || '-'
   }
 }
 

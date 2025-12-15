@@ -1,39 +1,9 @@
 import { defineStore } from 'pinia'
+import { createAuthStoreConfig } from '@common-ui'
 import { authAPI } from '../api/auth'
 
-export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    token: localStorage.getItem('token') || null,
-    user: null
-  }),
-
-  getters: {
-    isAuthenticated: (state) => !!state.token
-  },
-
-  actions: {
-    // 设置 token（供路由守卫调用）
-    setToken(token) {
-      this.token = token
-      localStorage.setItem('token', token)
-    },
-
-    async login(username, password) {
-      const response = await authAPI.login({ username, password })
-      this.token = response.data.access_token
-      localStorage.setItem('token', this.token)
-      await this.fetchUser()
-    },
-
-    async fetchUser() {
-      const response = await authAPI.getCurrentUser(this.token)
-      this.user = response.data
-    },
-
-    logout() {
-      this.token = null
-      this.user = null
-      localStorage.removeItem('token')
-    }
-  }
+export const useAuthStore = defineStore('manager-auth', {
+  ...createAuthStoreConfig('manager-auth', authAPI, {
+    persistUser: false  // Manager 不持久化 user
+  })
 })

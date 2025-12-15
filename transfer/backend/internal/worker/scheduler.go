@@ -6,14 +6,14 @@ import (
 	"log"
 	"time"
 
+	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
-	"github.com/robfig/cron/v3"
 )
 
-// Scheduler 定时调度器
+// Scheduler 定时调度器（使用公共调度模块）
 type Scheduler struct {
-	cron          *cron.Cron
+	scheduler     commonScheduler.Scheduler // 公共调度器
 	taskRepo      *repository.TaskRepository
 	taskQueue     *TaskQueue
 	executionRepo *repository.ExecutionRepository
@@ -21,8 +21,17 @@ type Scheduler struct {
 
 // NewScheduler 创建定时调度器
 func NewScheduler(taskRepo *repository.TaskRepository, executionRepo *repository.ExecutionRepository, taskQueue *TaskQueue) *Scheduler {
+	// 创建公共调度器（启用秒级精度）
+	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
+		Name:          "transfer",
+		EnableSeconds: true, // ⚠️ Transfer 需要秒级精度
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create scheduler: %v", err))
+	}
+
 	return &Scheduler{
-		cron:          cron.New(cron.WithSeconds()), // 支持秒级调度
+		scheduler:     scheduler,
 		taskRepo:      taskRepo,
 		executionRepo: executionRepo,
 		taskQueue:     taskQueue,
@@ -45,17 +54,19 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		}
 	}
 
-	// 启动 Cron
-	s.cron.Start()
-	log.Printf("✅ 定时调度器已启动，已注册 %d 个定时任务", len(tasks))
+	// 启动调度器
+	if err := s.scheduler.Start(ctx); err != nil {
+		return err
+	}
 
+	log.Printf("✅ 定时调度器已启动，已注册 %d 个定时任务", len(tasks))
 	return nil
 }
 
 // Stop 停止调度器
 func (s *Scheduler) Stop() {
-	ctx := s.cron.Stop()
-	<-ctx.Done()
+	ctx := context.Background()
+	s.scheduler.Stop(ctx)
 	log.Println("🛑 定时调度器已停止")
 }
 
@@ -84,17 +95,21 @@ func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, erro
 
 // registerTask 注册单个定时任务
 func (s *Scheduler) registerTask(ctx context.Context, task models.Task) error {
-	// 解析 Cron 表达式
-	_, err := s.cron.AddFunc(task.Schedule, func() {
-		s.executeScheduledTask(context.Background(), task)
-	})
-
-	if err != nil {
+	handler := s.createHandler(task)
+	if err := s.scheduler.Schedule(ctx, fmt.Sprintf("%d", task.ID), task.Schedule, handler); err != nil {
 		return fmt.Errorf("无效的 Cron 表达式: %w", err)
 	}
 
 	log.Printf("📅 已注册定时任务 - TaskID: %d, Name: %s, Schedule: %s", task.ID, task.Name, task.Schedule)
 	return nil
+}
+
+// createHandler 创建任务处理器
+func (s *Scheduler) createHandler(task models.Task) commonScheduler.TaskHandler {
+	return func(ctx context.Context, taskID string) error {
+		s.executeScheduledTask(ctx, task)
+		return nil
+	}
 }
 
 // executeScheduledTask 执行定时任务
@@ -160,9 +175,9 @@ func (s *Scheduler) AddTask(ctx context.Context, task models.Task) error {
 
 // RemoveTask 移除定时任务
 func (s *Scheduler) RemoveTask(taskID uint) {
-	// Cron 库不支持按 ID 删除，需要重启调度器
-	// 实际使用时可以维护一个 map[taskID]cron.EntryID 来管理
-	log.Printf("⚠️  移除定时任务 - TaskID: %d (需要重启调度器)", taskID)
+	ctx := context.Background()
+	s.scheduler.Unschedule(ctx, fmt.Sprintf("%d", taskID))
+	log.Printf("✅ 已移除定时任务 - TaskID: %d", taskID)
 }
 
 // Reload 重新加载所有定时任务
@@ -170,10 +185,17 @@ func (s *Scheduler) Reload(ctx context.Context) error {
 	log.Println("🔄 重新加载定时任务...")
 
 	// 停止现有调度
-	s.cron.Stop()
+	s.Stop()
 
-	// 创建新的 Cron 实例
-	s.cron = cron.New(cron.WithSeconds())
+	// 重新创建调度器
+	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
+		Name:          "transfer",
+		EnableSeconds: true,
+	})
+	if err != nil {
+		return fmt.Errorf("创建调度器失败: %w", err)
+	}
+	s.scheduler = scheduler
 
 	// 重新启动
 	return s.Start(ctx)

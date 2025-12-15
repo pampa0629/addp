@@ -279,11 +279,17 @@ const moduleUrls = {
 }
 
 onMounted(async () => {
-  if (authStore.isAuthenticated && !authStore.user) {
+  // 方案三改进：主动验证 token 有效性（即使已有缓存的 user 信息）
+  if (authStore.isAuthenticated) {
     try {
       await authStore.fetchUser()
+      console.log('Portal: Token validated successfully')
     } catch (error) {
-      console.error('Failed to fetch user:', error)
+      console.error('Portal: Token validation failed, logging out:', error)
+      // Token 已过期或无效，清理状态并跳转登录
+      authStore.logout()
+      ElMessage.warning('登录已过期，请重新登录')
+      router.push('/login')
     }
   }
 })

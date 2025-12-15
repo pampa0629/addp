@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
@@ -50,6 +54,13 @@ func main() {
 	// 创建 GIS Execution Service
 	gisExecutionService := service.NewGISExecutionService(gisExecutionRepo, spatialTaskRepo, spatialWorkflowService, db)
 
+	// 创建并启动 Spatial Scheduler
+	spatialScheduler := service.NewSpatialScheduler(spatialTaskRepo, gisExecutionService, db)
+	ctx := context.Background()
+	if err := spatialScheduler.Start(ctx); err != nil {
+		log.Fatalf("Failed to start spatial scheduler: %v", err)
+	}
+
 	// 创建 Handler
 	sqlHandler := api.NewSQLHandler(sqlService)
 	spatialHandler := api.NewSpatialHandler(db, spatialWorkflowService, gisExecutionService)
@@ -58,10 +69,28 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(cfg, sqlHandler, spatialHandler, gisExecutionHandler)
 
-	// 启动服务器
+	// 设置优雅关闭
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	// 启动服务器（非阻塞）
 	addr := ":" + cfg.ServerAddr
 	log.Printf("✅ Develop Service is running on %s", addr)
-	if err := router.Run(addr); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+
+	go func() {
+		if err := router.Run(addr); err != nil {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// 等待终止信号
+	<-sigCh
+	log.Println("🛑 Shutting down Develop Service...")
+
+	// 停止调度器
+	if err := spatialScheduler.Stop(ctx); err != nil {
+		log.Printf("Failed to stop spatial scheduler: %v", err)
 	}
+
+	log.Println("👋 Develop Service stopped")
 }

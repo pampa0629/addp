@@ -20,6 +20,64 @@ CREATE EXTENSION IF NOT EXISTS postgis_topology;
 -- ==================== System 模块 ====================
 CREATE SCHEMA IF NOT EXISTS system;
 
+-- 应用管理表（Application Management）
+CREATE TABLE IF NOT EXISTS system.applications (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+
+    -- 所属租户
+    tenant_id INTEGER NOT NULL,
+
+    -- 权限配置
+    allowed_services TEXT[],                    -- 允许访问的服务列表
+    rate_limit_per_minute INTEGER DEFAULT 60,   -- 限流配置（每分钟请求数）
+
+    -- 状态
+    status VARCHAR(50) DEFAULT 'active',        -- active/suspended/revoked
+
+    -- 审计
+    created_by INTEGER,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    deleted_at TIMESTAMP,
+
+    UNIQUE(tenant_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_applications_tenant ON system.applications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON system.applications(status);
+
+-- API Key 管理表
+CREATE TABLE IF NOT EXISTS system.api_keys (
+    id SERIAL PRIMARY KEY,
+    application_id INTEGER NOT NULL REFERENCES system.applications(id) ON DELETE CASCADE,
+
+    -- API Key（只存储 hash）
+    key_prefix VARCHAR(20) NOT NULL,            -- "addp_live_" 前缀（明文存储，用于识别）
+    key_hash VARCHAR(64) NOT NULL,              -- SHA256 hash（用于验证）
+
+    -- 元数据
+    name VARCHAR(255),                          -- Key 名称（便于识别多个 Key）
+    last_used_at TIMESTAMP,                     -- 最后使用时间
+
+    -- 生命周期
+    expires_at TIMESTAMP,                       -- 过期时间
+    status VARCHAR(50) DEFAULT 'active',        -- active/revoked
+
+    -- 审计
+    created_by INTEGER,
+    created_at TIMESTAMP DEFAULT NOW(),
+    revoked_at TIMESTAMP,
+    revoked_by INTEGER,
+
+    UNIQUE(key_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_application ON system.api_keys(application_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON system.api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_status ON system.api_keys(status);
+
 -- ==================== Manager 模块 ====================
 CREATE SCHEMA IF NOT EXISTS manager;
 
@@ -355,6 +413,11 @@ DROP TRIGGER IF EXISTS update_quick_view_updated_at ON manager.quick_view;
 CREATE TRIGGER update_quick_view_updated_at BEFORE UPDATE ON manager.quick_view
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- System 模块触发器
+DROP TRIGGER IF EXISTS update_applications_updated_at ON system.applications;
+CREATE TRIGGER update_applications_updated_at BEFORE UPDATE ON system.applications
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Meta 模块触发器
 DROP TRIGGER IF EXISTS update_meta_node_updated_at ON metadata.meta_node;
 CREATE TRIGGER update_meta_node_updated_at BEFORE UPDATE ON metadata.meta_node
@@ -567,5 +630,49 @@ CREATE TRIGGER update_spatial_tasks_updated_at BEFORE UPDATE ON develop.spatial_
 
 -- ==================== Orchestrator 模块 ====================
 CREATE SCHEMA IF NOT EXISTS orchestrator;
+
+-- ==================== Gateway 模块 ====================
+CREATE SCHEMA IF NOT EXISTS gateway;
+
+-- API 访问日志表
+CREATE TABLE IF NOT EXISTS gateway.api_access_logs (
+    id BIGSERIAL PRIMARY KEY,
+
+    -- API Key 信息
+    application_id INTEGER,                    -- 关联 system.applications
+    api_key_prefix VARCHAR(20),                -- Key 前缀（用于识别）
+
+    -- 请求信息
+    service_name VARCHAR(255),                 -- 目标服务（system, manager, meta等）
+    request_method VARCHAR(10),                -- GET, POST, PUT, DELETE
+    request_path TEXT,                         -- 请求路径
+    request_params JSONB,                      -- 请求参数（query + body）
+
+    -- 响应信息
+    response_status INTEGER,                   -- HTTP 状态码
+    response_time_ms INTEGER,                  -- 响应时间（毫秒）
+
+    -- 性能指标
+    cache_hit BOOLEAN DEFAULT FALSE,           -- 是否缓存命中
+    rate_limited BOOLEAN DEFAULT FALSE,        -- 是否被限流
+
+    -- 时间戳
+    accessed_at TIMESTAMP DEFAULT NOW(),
+
+    -- 索引优化
+    CONSTRAINT chk_response_status CHECK (response_status >= 100 AND response_status < 600)
+);
+
+-- 索引：按应用查询
+CREATE INDEX IF NOT EXISTS idx_access_logs_application ON gateway.api_access_logs(application_id, accessed_at DESC);
+
+-- 索引：按时间查询（用于清理和统计）
+CREATE INDEX IF NOT EXISTS idx_access_logs_accessed_at ON gateway.api_access_logs(accessed_at DESC);
+
+-- 索引：按服务查询
+CREATE INDEX IF NOT EXISTS idx_access_logs_service ON gateway.api_access_logs(service_name, accessed_at DESC);
+
+-- 索引：限流统计
+CREATE INDEX IF NOT EXISTS idx_access_logs_rate_limited ON gateway.api_access_logs(rate_limited, accessed_at DESC) WHERE rate_limited = TRUE;
 
 COMMIT;

@@ -24,6 +24,7 @@ type SQLExecutionService struct {
 	executionRepo    *repository.ExecutionRepository
 	systemClient     *commonClient.SystemClient
 	connectionPools  map[uint]*gorm.DB // resourceID -> *gorm.DB
+	sparkExecutor    *SparkSQLExecutor // Spark SQL执行器
 	mu               sync.RWMutex
 	poolTTL          time.Duration
 }
@@ -34,11 +35,15 @@ func NewSQLExecutionService(
 	executionRepo *repository.ExecutionRepository,
 	systemClient *commonClient.SystemClient,
 ) *SQLExecutionService {
+	// 创建Spark SQL执行器
+	sparkExecutor := NewSparkSQLExecutor(cfg, systemClient)
+
 	return &SQLExecutionService{
 		cfg:             cfg,
 		executionRepo:   executionRepo,
 		systemClient:    systemClient,
 		connectionPools: make(map[uint]*gorm.DB),
+		sparkExecutor:   sparkExecutor,
 		poolTTL:         30 * time.Minute, // 连接池30分钟TTL
 	}
 }
@@ -51,6 +56,12 @@ func (s *SQLExecutionService) Execute(
 	timeout int,
 ) (*models.ExecutionResponse, error) {
 	startTime := time.Now()
+
+	// 获取资源配置，判断资源类型
+	resource, err := s.systemClient.GetResource(resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resource config: %w", err)
+	}
 
 	// 创建执行记录
 	execution := &models.Execution{
@@ -77,8 +88,20 @@ func (s *SQLExecutionService) Execute(
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	// 执行SQL
-	result, err := s.executeSQL(execCtx, resourceID, sqlContent)
+	// 根据资源类型路由到不同的执行器
+	var result *models.ExecutionResponse
+	resourceType := strings.ToLower(resource.ResourceType)
+
+	if resourceType == "spark_sql" {
+		// 使用Spark SQL执行器
+		log.Printf("🔥 [DEVELOP] 使用 Spark SQL 执行器 (resource_id=%d)", resourceID)
+		result, err = s.sparkExecutor.Execute(execCtx, resourceID, sqlContent)
+	} else {
+		// 使用传统GORM执行器（PostgreSQL/MySQL）
+		log.Printf("🗄️ [DEVELOP] 使用 GORM 执行器 (resource_id=%d, type=%s)", resourceID, resourceType)
+		result, err = s.executeSQL(execCtx, resourceID, sqlContent)
+	}
+
 	executionTime := int(time.Since(startTime).Milliseconds())
 
 	// 更新执行记录
@@ -219,7 +242,7 @@ func (s *SQLExecutionService) getConnection(resourceID uint) (*gorm.DB, error) {
 	switch resource.ResourceType {
 	case "postgresql":
 		db, err = gorm.Open(postgres.Open(connStr), &gorm.Config{})
-	case "mysql":
+	case "mysql", "doris":
 		db, err = gorm.Open(mysql.Open(connStr), &gorm.Config{})
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", resource.ResourceType)
@@ -347,7 +370,7 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 	switch resource.ResourceType {
 	case "postgresql":
 		db, err = gorm.Open(postgres.Open(connStr), &gorm.Config{})
-	case "mysql":
+	case "mysql", "doris":
 		db, err = gorm.Open(mysql.Open(connStr), &gorm.Config{})
 	default:
 		return fmt.Errorf("unsupported database type: %s", resource.ResourceType)
@@ -372,7 +395,7 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 	return nil
 }
 
-// ListDatabaseResources 获取可用的数据库资源列表（仅 PostgreSQL 和 MySQL）
+// ListDatabaseResources 获取可用的数据库资源列表（PostgreSQL、MySQL、Spark SQL）
 func (s *SQLExecutionService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Resource, error) {
 	// 调用 SystemClient 获取租户的所有资源
 	allResources, err := s.systemClient.ListResources("", tenantID)
@@ -380,11 +403,11 @@ func (s *SQLExecutionService) ListDatabaseResources(ctx context.Context, tenantI
 		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
 	}
 
-	// 过滤出数据库类型的资源
+	// 过滤出数据库类型的资源（包括 Doris 和 Spark SQL）
 	var dbResources []commonModels.Resource
 	for _, res := range allResources {
 		resourceType := strings.ToLower(res.ResourceType)
-		if resourceType == "postgresql" || resourceType == "mysql" {
+		if resourceType == "postgresql" || resourceType == "mysql" || resourceType == "doris" || resourceType == "spark_sql" {
 			dbResources = append(dbResources, res)
 		}
 	}
@@ -404,11 +427,11 @@ func (s *SQLExecutionService) ListDatabaseResourcesWithToken(ctx context.Context
 		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
 	}
 
-	// 过滤出数据库类型的资源
+	// 过滤出数据库类型的资源（包括 Doris 和 Spark SQL）
 	var dbResources []commonModels.Resource
 	for _, res := range allResources {
 		resourceType := strings.ToLower(res.ResourceType)
-		if resourceType == "postgresql" || resourceType == "mysql" {
+		if resourceType == "postgresql" || resourceType == "mysql" || resourceType == "doris" || resourceType == "spark_sql" {
 			dbResources = append(dbResources, res)
 		}
 	}

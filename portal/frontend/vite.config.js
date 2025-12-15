@@ -7,6 +7,12 @@ const OUT_BASE = process.env.OUT_DIR
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
+    }
+  },
   server: {
     port: 5170,
     strictPort: true, // 端口被占用时报错，不自动切换

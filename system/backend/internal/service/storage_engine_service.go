@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/addp/system/internal/models"
-	_ "github.com/lib/pq" // PostgreSQL driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"               // PostgreSQL driver
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -25,6 +26,8 @@ func (s *StorageEngineService) TestConnection(resource *models.Resource) error {
 	switch resource.ResourceType {
 	case "postgresql":
 		return s.testPostgreSQLConnection(resource.ConnectionInfo)
+	case "mysql", "doris":
+		return s.testMySQLConnection(resource.ConnectionInfo)
 	case "minio", "s3":
 		return s.testMinIOConnection(resource.ConnectionInfo)
 	default:
@@ -101,6 +104,91 @@ func (s *StorageEngineService) testPostgreSQLConnection(connInfo models.Connecti
 	// 执行简单查询验证
 	var version string
 	err = db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
+	if err != nil {
+		return fmt.Errorf("failed to query version: %w", err)
+	}
+
+	return nil
+}
+
+// testMySQLConnection 测试 MySQL/Doris 连接
+func (s *StorageEngineService) testMySQLConnection(connInfo models.ConnectionInfo) error {
+	normalizeHost := func(host string) string {
+		if host == "localhost" || host == "127.0.0.1" {
+			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+				return alias
+			}
+			return "127.0.0.1"
+		}
+		return host
+	}
+
+	// 构建连接参数
+	host, _ := connInfo["host"].(string)
+	host = normalizeHost(host)
+
+	var portFloat float64
+	switch v := connInfo["port"].(type) {
+	case float64:
+		portFloat = v
+	case int:
+		portFloat = float64(v)
+	case string:
+		if parsed, err := strconv.Atoi(v); err == nil {
+			portFloat = float64(parsed)
+		}
+	}
+
+	database, _ := connInfo["database"].(string)
+
+	// 支持两种字段名：username 和 user
+	user, _ := connInfo["user"].(string)
+	if user == "" {
+		user, _ = connInfo["username"].(string)
+	}
+
+	password, _ := connInfo["password"].(string)
+
+	// 验证必填字段
+	if host == "" || user == "" || database == "" {
+		return fmt.Errorf("missing required fields: host, user, database")
+	}
+
+	if portFloat == 0 {
+		portFloat = 3306 // MySQL/Doris 默认端口
+	}
+
+	// 构建 DSN: 处理空密码的情况
+	var dsn string
+	if password == "" {
+		// 密码为空时，DSN 格式为: user@tcp(host:port)/database
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+			user, host, int(portFloat), database)
+	} else {
+		// 密码不为空时，DSN 格式为: user:password@tcp(host:port)/database
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+			user, password, host, int(portFloat), database)
+	}
+
+	// 连接数据库
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open connection: %w", err)
+	}
+	defer db.Close()
+
+	// 设置连接超时
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 测试连接
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// 执行简单查询验证
+	var version string
+	err = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
 	if err != nil {
 		return fmt.Errorf("failed to query version: %w", err)
 	}
@@ -201,6 +289,15 @@ func (s *StorageEngineService) GetConnectionInfo(resource *models.Resource) map[
 		result["port"] = resource.ConnectionInfo["port"]
 		result["database"] = resource.ConnectionInfo["database"]
 		result["user"] = resource.ConnectionInfo["user"]
+		result["password"] = "******" // 隐藏密码
+	case "mysql", "doris":
+		result["host"] = resource.ConnectionInfo["host"]
+		result["port"] = resource.ConnectionInfo["port"]
+		result["database"] = resource.ConnectionInfo["database"]
+		result["user"] = resource.ConnectionInfo["user"]
+		if result["user"] == nil || result["user"] == "" {
+			result["user"] = resource.ConnectionInfo["username"]
+		}
 		result["password"] = "******" // 隐藏密码
 	case "minio", "s3":
 		result["endpoint"] = resource.ConnectionInfo["endpoint"]

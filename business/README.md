@@ -22,10 +22,37 @@ cp .env.example .env
 # 编辑 .env 修改密码
 
 # 2. 启动服务
-./start.sh
+bash scripts/start.sh
 
 # 3. 验证服务
 docker-compose ps
+```
+
+## 目录结构
+
+```
+business/
+├── docker-compose.yml              # Docker Compose 配置
+├── .env / .env.example             # 环境变量
+├── README.md                       # 本文档
+│
+├── scripts/                        # 管理脚本
+│   ├── start.sh                    # 启动服务
+│   ├── stop.sh                     # 停止服务
+│   └── restart.sh                  # 重启服务
+│
+├── postgres/                       # PostgreSQL 配置
+│   ├── init.sql                    # 数据库初始化脚本
+│   └── pg_hba.conf                 # 访问控制配置
+│
+├── doris/                          # Apache Doris 配置
+│   └── init.sh                     # Doris 集群初始化
+│
+├── spark/                          # Apache Spark 配置
+│   ├── spark-defaults.conf         # Spark 默认配置
+│   └── init-test-data.sh           # Spark 测试数据初始化
+│
+└── minio/                          # MinIO 配置（预留）
 ```
 
 ## 架构说明
@@ -50,30 +77,38 @@ docker-compose ps
 
 ## 脚本说明
 
-### start.sh - 启动服务
+### scripts/start.sh - 启动服务
 
 ```bash
-./start.sh
+bash scripts/start.sh
 ```
 
 **功能**：检查配置、检测架构、启动服务、验证健康状态、安装 PostGIS
 **特性**：幂等执行（可重复运行）
 
-### stop.sh - 停止服务
+### scripts/stop.sh - 停止服务
 
 ```bash
-./stop.sh
+bash scripts/stop.sh
 ```
 
 停止所有业务库服务。
 
-### restart.sh - 重启服务
+### scripts/restart.sh - 重启服务
 
 ```bash
-./restart.sh
+bash scripts/restart.sh
 ```
 
 检测架构、清理旧镜像、重启服务（幂等）。
+
+### spark/init-test-data.sh - Spark 测试数据
+
+```bash
+bash spark/init-test-data.sh
+```
+
+初始化 Spark SQL 测试数据（中国城市 POI 数据）。
 
 ## 常用操作
 
@@ -113,7 +148,7 @@ ssh user@server
 cd /opt/addp-business
 cp .env.example .env
 vim .env  # ⚠️ 修改密码（必须！）
-./start.sh
+bash scripts/start.sh
 ```
 
 ### 2. 安全加固（必须！）
@@ -136,15 +171,15 @@ lsof -nP -i :5433           # 查看占用
 ### 架构不匹配
 
 ```bash
-./restart.sh  # 自动检测并使用正确架构
+bash scripts/restart.sh  # 自动检测并使用正确架构
 ```
 
 ### 数据恢复
 
 ```bash
-./stop.sh
+bash scripts/stop.sh
 docker volume rm business_postgres_data
-./start.sh
+bash scripts/start.sh
 docker exec -i business-postgres psql -U business business < backup.sql
 ```
 

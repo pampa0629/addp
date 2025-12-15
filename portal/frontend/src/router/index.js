@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { createAuthGuard } from '@common-ui'
 import { useAuthStore } from '../store/auth'
 
 const routes = [
@@ -25,14 +26,11 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
-  const authStore = useAuthStore()
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    next('/login')
-  } else {
-    next()
-  }
-})
+// 路由守卫:使用统一的 createAuthGuard
+router.beforeEach(createAuthGuard(useAuthStore, {
+  moduleName: 'Portal',
+  loginRouteName: 'Login'
+}))
 
 const DEFAULT_TITLE = '门户-addp'
 

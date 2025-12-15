@@ -71,3 +71,42 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, user)
 }
+
+// Refresh 刷新 JWT Token
+// 接受即将过期或已过期的 token，返回新的 token
+func (h *AuthHandler) Refresh(c *gin.Context) {
+	// 从 Authorization header 提取 token
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "缺少 Authorization 头"})
+		return
+	}
+
+	// 期望格式: "Bearer <token>"
+	const bearerPrefix = "Bearer "
+	if len(authHeader) < len(bearerPrefix) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的 Authorization 格式"})
+		return
+	}
+
+	tokenString := authHeader[len(bearerPrefix):]
+
+	// 解析 token (允许过期)
+	claims, err := utils.ParseTokenAllowExpired(tokenString, h.cfg.JWTSecret)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的 token: " + err.Error()})
+		return
+	}
+
+	// 生成新的 token (使用相同的用户信息)
+	newToken, err := utils.GenerateToken(claims.UserID, claims.Username, claims.TenantID, h.cfg.JWTSecret, h.cfg.TokenExpireMinutes)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成新 token 失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.LoginResponse{
+		AccessToken: newToken,
+		TokenType:   "Bearer",
+	})
+}

@@ -86,7 +86,6 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 			"task_api_config":     taskAPIConfigJSON,
 			"health_check_config": healthCheckConfigJSON,
 			"is_active":           true,  // 注册时总是激活
-			"deleted_at":          nil,    // 恢复软删除的记录
 		}
 
 		if err := s.resourceRepo.UpdateByID(ctx, existing.ID, updates); err != nil {

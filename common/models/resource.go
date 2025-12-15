@@ -146,6 +146,34 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
 			user, password, host, port, dbname), nil
 
+	case "doris", "Doris":
+		// Doris 兼容 MySQL 协议，完全复用 MySQL 连接逻辑
+		host := normalizeHost(getString("host"))
+		port := getString("port")
+		// 兼容两种字段名：username 和 user
+		user := getString("username")
+		if user == "" {
+			user = getString("user")
+		}
+		password := getString("password")
+		dbname := getString("database")
+
+		// Doris 默认 root 用户密码为空，所以不强制要求 password
+		if host == "" || port == "" || user == "" {
+			return "", fmt.Errorf("missing required Doris connection info (host, port, user)")
+		}
+
+		// 处理空密码的情况
+		if password == "" {
+			// 密码为空时，DSN 格式为: user@tcp(host:port)/database
+			return fmt.Sprintf("%s@tcp(%s:%s)/%s?parseTime=true",
+				user, host, port, dbname), nil
+		}
+
+		// 密码不为空时，DSN 格式为: user:password@tcp(host:port)/database
+		return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+			user, password, host, port, dbname), nil
+
 	case "s3", "S3", "minio", "Minio", "oss", "OSS", "object_storage", "object-storage":
 		bytes, err := json.Marshal(connInfo)
 		if err != nil {

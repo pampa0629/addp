@@ -53,66 +53,13 @@ const router = createRouter({
 })
 
 // 路由守卫：检查登录状态
-router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore()
-  const queryToken = typeof to.query.token === 'string' ? to.query.token : null
+import { createAuthGuard } from '@common-ui'
 
-  if (queryToken) {
-    authStore.setToken(queryToken)
-
-    try {
-      await authStore.fetchUser()
-    } catch (error) {
-      console.error('获取用户信息失败:', error)
-      authStore.logout()
-      return next({
-        name: 'Login',
-        query: { redirect: normalizeRedirect(to.fullPath) }
-      })
-    }
-
-    // 去掉 URL 中的 token 参数，避免泄漏及重复处理
-    const { token: _removed, ...restQuery } = to.query
-    next({ path: to.path, query: restQuery, replace: true })
-    return
-  }
-
-  if (authStore.isAuthenticated && !authStore.user) {
-    try {
-      await authStore.fetchUser()
-    } catch (error) {
-      console.error('刷新用户信息失败:', error)
-      authStore.logout()
-      return next({
-        name: 'Login',
-        query: { redirect: normalizeRedirect(to.fullPath) }
-      })
-    }
-  }
-
-  const requiresAuth = !!to.meta?.requiresAuth
-  const isPublic = !!to.meta?.public
-
-  // 检测是否在 iframe 中
-  const isInIframe = window.self !== window.top
-  if (isInIframe && authStore.isAuthenticated) {
-    return next()
-  }
-
-  if (!authStore.isAuthenticated && requiresAuth && !isPublic) {
-    return next({
-      name: 'Login',
-      query: { redirect: normalizeRedirect(to.fullPath) }
-    })
-  }
-
-  if (authStore.isAuthenticated && to.path === '/login') {
-    // 已登录，访问登录页，重定向到首页
-    return next({ name: 'MetadataScan' })
-  }
-
-  next()
-})
+router.beforeEach(createAuthGuard(useAuthStore, {
+  moduleName: 'Meta',
+  loginRouteName: 'Login',
+  normalizeRedirect  // 传入自定义规范化函数
+}))
 
 const DEFAULT_TITLE = '元数据-addp'
 

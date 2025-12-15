@@ -161,59 +161,14 @@
     <el-dialog
       v-model="scheduleDialogVisible"
       title="定时扫描设置"
-      width="460px"
+      width="600px"
       @close="resetScheduleForm"
     >
-      <el-form :model="scheduleForm" label-width="100px">
-        <el-form-item label="执行频率">
-          <el-radio-group v-model="scheduleForm.scheduleType">
-            <el-radio-button label="daily">每天</el-radio-button>
-            <el-radio-button label="weekly">每周</el-radio-button>
-            <el-radio-button label="monthly">每月</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="执行时间">
-          <el-time-picker
-            v-model="scheduleForm.scheduleTime"
-            format="HH:mm"
-            value-format="HH:mm"
-            placeholder="选择时间"
-          />
-        </el-form-item>
-        <el-form-item label="执行星期" v-if="scheduleForm.scheduleType === 'weekly'">
-          <el-select
-            v-model="scheduleForm.weekdays"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            placeholder="选择星期"
-          >
-            <el-option
-              v-for="item in weekdayOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="执行日期" v-if="scheduleForm.scheduleType === 'monthly'">
-          <el-select
-            v-model="scheduleForm.monthDays"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            placeholder="选择日期"
-          >
-            <el-option
-              v-for="day in monthDayOptions"
-              :key="day"
-              :label="`${day}日`"
-              :value="day"
-            />
-          </el-select>
-        </el-form-item>
+      <ScheduleConfig v-model="scheduleCron" />
+
+      <el-form label-width="100px" style="margin-top: 20px">
         <el-form-item label="是否启用">
-          <el-switch v-model="scheduleForm.enabled" />
+          <el-switch v-model="scheduleEnabled" />
         </el-form-item>
         <div class="schedule-hint">
           提交后会为当前存储引擎创建（或更新）一个定时扫描任务，按设定频率自动执行。
@@ -233,6 +188,7 @@
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
+import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
@@ -261,13 +217,8 @@ const scanResult = ref(null)
 const allScanTasks = ref([])
 const scheduleDialogVisible = ref(false)
 const savingSchedule = ref(false)
-const scheduleForm = reactive({
-  scheduleType: 'daily',
-  scheduleTime: '02:00',
-  weekdays: [1],
-  monthDays: [1],
-  enabled: true
-})
+const scheduleCron = ref('') // Cron 表达式
+const scheduleEnabled = ref(true) // 是否启用
 
 const leftPanelWidth = ref(560)
 const isResizing = ref(false)
@@ -275,18 +226,6 @@ const minLeftPanelWidth = 440
 const minRightPanelWidth = 240
 let resizeStartX = 0
 let resizeStartWidth = leftPanelWidth.value
-
-const weekdayOptions = [
-  { label: '周日', value: 0 },
-  { label: '周一', value: 1 },
-  { label: '周二', value: 2 },
-  { label: '周三', value: 3 },
-  { label: '周四', value: 4 },
-  { label: '周五', value: 5 },
-  { label: '周六', value: 6 }
-]
-
-const monthDayOptions = Array.from({ length: 31 }, (_, index) => index + 1)
 
 const resourcePlanMap = computed(() => {
   const map = {}
@@ -451,11 +390,8 @@ const loadScanTasks = async () => {
 }
 
 const resetScheduleForm = () => {
-  scheduleForm.scheduleType = 'daily'
-  scheduleForm.scheduleTime = '02:00'
-  scheduleForm.weekdays = [1]
-  scheduleForm.monthDays = [1]
-  scheduleForm.enabled = true
+  scheduleCron.value = ''
+  scheduleEnabled.value = true
 }
 
 const deriveAutoTaskSchemas = () => {
@@ -486,24 +422,8 @@ const prefillScheduleForm = task => {
     resetScheduleForm()
     return
   }
-  const type = ['daily', 'weekly', 'monthly'].includes(task.schedule_type) ? task.schedule_type : 'daily'
-  const config = task.schedule_config || {}
-  const values = normalizeScheduleValue(config.value)
-
-  scheduleForm.scheduleType = type
-  scheduleForm.scheduleTime = config.time || '02:00'
-  scheduleForm.enabled = !!task.enabled
-
-  if (type === 'weekly') {
-    scheduleForm.weekdays = values.length ? values : [1]
-    scheduleForm.monthDays = [1]
-  } else if (type === 'monthly') {
-    scheduleForm.monthDays = values.length ? values : [1]
-    scheduleForm.weekdays = [1]
-  } else {
-    scheduleForm.weekdays = [1]
-    scheduleForm.monthDays = [1]
-  }
+  scheduleCron.value = task.cron_expression || ''
+  scheduleEnabled.value = !!task.enabled
 }
 
 // 一键自动扫描
@@ -600,71 +520,38 @@ const submitScheduleForm = async () => {
     return
   }
 
-  const type = scheduleForm.scheduleType
-  if (!scheduleForm.scheduleTime) {
-    ElMessage.error('请选择执行时间')
+  if (!scheduleCron.value) {
+    ElMessage.error('请配置调度计划')
     return
-  }
-  if (type === 'weekly' && (!scheduleForm.weekdays || !scheduleForm.weekdays.length)) {
-    ElMessage.error('请至少选择一个执行星期')
-    return
-  }
-  if (type === 'monthly' && (!scheduleForm.monthDays || !scheduleForm.monthDays.length)) {
-    ElMessage.error('请至少选择一个执行日期')
-    return
-  }
-
-  const scheduleValue =
-    type === 'weekly'
-      ? normalizeScheduleValue(scheduleForm.weekdays)
-      : type === 'monthly'
-        ? normalizeScheduleValue(scheduleForm.monthDays)
-        : []
-
-  const overrides = {
-    schedule_type: type,
-    schedule_time: scheduleForm.scheduleTime,
-    schedule_value: scheduleValue,
-    cron_expression: '',
-    enabled: scheduleForm.enabled
   }
 
   savingSchedule.value = true
   try {
     const existing = autoScheduleTask.value
+
+    // 统一使用 cron 类型，直接传递 Cron 表达式
+    const payload = {
+      name: existing?.name || getAutoScheduleTaskName(),
+      description: ensureAutoScheduleDescription(existing?.description || ''),
+      schema_names: existing?.parameters?.schema_names || deriveAutoTaskSchemas(),
+      object_paths: existing?.parameters?.object_paths || [],
+      scan_depth: existing?.parameters?.scan_depth || 'deep',
+      schedule_type: 'cron',  // 统一使用 cron 类型
+      schedule_time: '',
+      schedule_value: [],
+      cron_expression: scheduleCron.value,  // 直接使用 ScheduleConfig 生成的 Cron 表达式
+      enabled: scheduleEnabled.value
+    }
+
     if (existing) {
-      const payload = buildTaskPayloadFromTask(existing, overrides)
-      payload.name = existing.name || getAutoScheduleTaskName()
-      payload.description = ensureAutoScheduleDescription(existing.description)
-      if (!payload.schema_names || !payload.schema_names.length) {
-        payload.schema_names = deriveAutoTaskSchemas()
-      }
-      if (!Array.isArray(payload.object_paths)) {
-        payload.object_paths = []
-      }
-      if (!payload.scan_depth) {
-        payload.scan_depth = 'deep'
-      }
       await metaApi.updateScanTask(selectedResource.value.id, existing.id, payload)
     } else {
-      const payload = {
-        name: getAutoScheduleTaskName(),
-        description: ensureAutoScheduleDescription(''),
-        schema_names: deriveAutoTaskSchemas(),
-        object_paths: [],
-        scan_depth: 'deep',
-        schedule_type: overrides.schedule_type,
-        schedule_time: overrides.schedule_time,
-        schedule_value: overrides.schedule_value,
-        cron_expression: '',
-        enabled: overrides.enabled
-      }
       await metaApi.createScanTask(selectedResource.value.id, payload)
     }
 
     ElMessage.success('定时扫描设置已保存')
     scheduleDialogVisible.value = false
-  await loadScanTasks()
+    await loadScanTasks()
   } catch (error) {
     ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
   } finally {
@@ -700,53 +587,11 @@ const closeScanDialog = () => {
   scanResult.value = null
 }
 
-function normalizeScheduleValue(value) {
-  if (!Array.isArray(value)) return []
-  return value
-    .map(item => Number(item))
-    .filter(item => Number.isFinite(item))
-}
-
-const buildTaskPayloadFromTask = (task, overrides = {}) => {
-  const params = task.parameters || {}
-  const config = task.schedule_config || {}
-  return {
-    name: overrides.name ?? task.name,
-    description: overrides.description ?? task.description ?? '',
-    schema_names: Array.isArray(params.schema_names) ? params.schema_names : [],
-    object_paths: Array.isArray(params.object_paths) ? params.object_paths : [],
-    scan_depth: typeof params.scan_depth === 'string' ? params.scan_depth : 'deep',
-    schedule_type: overrides.schedule_type ?? task.schedule_type,
-    schedule_time: overrides.schedule_time ?? (config.time || ''),
-    schedule_value: overrides.schedule_value ?? normalizeScheduleValue(config.value),
-    cron_expression: (overrides.cron_expression ?? task.cron_expression) || '',
-    enabled: overrides.enabled ?? task.enabled
-  }
-}
-
 function formatScheduleDescription(task) {
-  const config = task.schedule_config || {}
-  const time = config.time || '02:00'
-  const values = normalizeScheduleValue(config.value)
-  switch (task.schedule_type) {
-    case 'daily':
-      return `每天 ${time}`
-    case 'weekly': {
-      const labels = values
-        .map(val => weekdayOptions.find(item => item.value === val)?.label)
-        .filter(Boolean)
-      return labels.length ? `每周 ${labels.join('、')} ${time}` : `每周（未设置星期） ${time}`
-    }
-    case 'monthly': {
-      const labels = values.map(val => `${val}日`)
-      return labels.length ? `每月 ${labels.join('、')} ${time}` : `每月（未设置日期） ${time}`
-    }
-    case 'cron':
-      return task.cron_expression ? `Cron: ${task.cron_expression}` : 'Cron 调度（未配置表达式）'
-    case 'manual':
-    default:
-      return '手动触发'
+  if (!task.cron_expression) {
+    return '手动触发'
   }
+  return describeCron(task.cron_expression)
 }
 
 function formatDateTime(datetime) {
@@ -759,17 +604,6 @@ watch(selectedResource, () => {
   scheduleDialogVisible.value = false
   resetScheduleForm()
 })
-
-watch(
-  () => scheduleForm.scheduleType,
-  type => {
-    if (type === 'weekly' && (!scheduleForm.weekdays || scheduleForm.weekdays.length === 0)) {
-      scheduleForm.weekdays = [1]
-    } else if (type === 'monthly' && (!scheduleForm.monthDays || scheduleForm.monthDays.length === 0)) {
-      scheduleForm.monthDays = [1]
-    }
-  }
-)
 
 onMounted(() => {
   loadResources()

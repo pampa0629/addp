@@ -57,69 +57,13 @@ const router = createRouter({
 })
 
 // 路由守卫：支持两种运行模式
-router.beforeEach(async (to, from, next) => {
-  const authStore = useAuthStore()
-  const queryToken = typeof to.query.token === 'string' ? to.query.token : null
+import { createAuthGuard } from '@common-ui'
 
-  // 1️⃣ 如果 URL 中有 token（Portal 传递）
-  if (queryToken) {
-    authStore.setToken(queryToken)
-
-    try {
-      await authStore.fetchUser()
-    } catch (error) {
-      console.error('获取用户信息失败:', error)
-      authStore.logout()
-      return next({
-        name: 'Login',
-        query: { redirect: normalizeRedirect(to.fullPath) }
-      })
-    }
-
-    // 去掉 URL 中的 token 参数，避免泄漏及重复处理
-    const { token: _removed, ...restQuery } = to.query
-    next({ path: to.path, query: restQuery, replace: true })
-    return
-  }
-
-  // 2️⃣ 如果已认证但无用户信息，尝试刷新
-  if (authStore.isAuthenticated && !authStore.user) {
-    try {
-      await authStore.fetchUser()
-    } catch (error) {
-      console.error('刷新用户信息失败:', error)
-      authStore.logout()
-      return next({
-        name: 'Login',
-        query: { redirect: normalizeRedirect(to.fullPath) }
-      })
-    }
-  }
-
-  const requiresAuth = !!to.meta?.requiresAuth
-  const isPublic = !!to.meta?.public
-
-  // 3️⃣ 检测 iframe 环境（Portal 嵌入模式）
-  const isInIframe = window.self !== window.top
-  if (isInIframe && authStore.isAuthenticated) {
-    return next()
-  }
-
-  // 4️⃣ 独立运行时的认证检查
-  if (!authStore.isAuthenticated && requiresAuth && !isPublic) {
-    return next({
-      name: 'Login',
-      query: { redirect: normalizeRedirect(to.fullPath) }
-    })
-  }
-
-  // 5️⃣ 已登录但访问登录页，重定向到首页
-  if (authStore.isAuthenticated && to.path === '/login') {
-    return next({ name: 'OrchestrationList' })
-  }
-
-  next()
-})
+router.beforeEach(createAuthGuard(useAuthStore, {
+  moduleName: 'Orchestrator',
+  loginRouteName: 'Login',
+  normalizeRedirect  // 传入自定义规范化函数
+}))
 
 const DEFAULT_TITLE = '编排引擎'
 

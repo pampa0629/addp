@@ -135,7 +135,7 @@ const loadResources = async () => {
   try {
     const response = await client.get('/develop/resources')
     resources.value = response.data.filter(r =>
-      ['postgresql', 'mysql'].includes(r.resource_type.toLowerCase())
+      ['postgresql', 'mysql', 'doris'].includes(r.resource_type.toLowerCase())
     )
 
     // 默认选择第一个

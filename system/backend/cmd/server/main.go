@@ -19,6 +19,13 @@ func main() {
 	// 加载配置
 	cfg := config.Load()
 
+	// 临时调试：输出配置值
+	logger.L().Info("[DEBUG] PostgreSQL 配置",
+		"host", cfg.PostgresHost,
+		"port", cfg.PostgresPort,
+		"user", cfg.PostgresUser,
+		"db", cfg.PostgresDB)
+
 	// 初始化数据库
 	db, err := repository.InitDB(cfg.DatabaseURL)
 	if err != nil {

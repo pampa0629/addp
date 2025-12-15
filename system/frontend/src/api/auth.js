@@ -11,5 +11,12 @@ export const authAPI = {
 
   getMe: () => {
     return client.get('/users/me')
+  },
+
+  // createAuthStoreConfig 需要的方法
+  getUser: (token) => {
+    return client.get('/users/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
   }
 }

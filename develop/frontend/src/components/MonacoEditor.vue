@@ -4,7 +4,28 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as monaco from 'monaco-editor'
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
+
+// 配置 Monaco Editor worker 路径
+if (typeof window !== 'undefined') {
+  window.MonacoEnvironment = {
+    getWorkerUrl: function (moduleId, label) {
+      if (label === 'json') {
+        return new URL('monaco-editor/esm/vs/language/json/json.worker.js', import.meta.url).href
+      }
+      if (label === 'css' || label === 'scss' || label === 'less') {
+        return new URL('monaco-editor/esm/vs/language/css/css.worker.js', import.meta.url).href
+      }
+      if (label === 'html' || label === 'handlebars' || label === 'razor') {
+        return new URL('monaco-editor/esm/vs/language/html/html.worker.js', import.meta.url).href
+      }
+      if (label === 'typescript' || label === 'javascript') {
+        return new URL('monaco-editor/esm/vs/language/typescript/ts.worker.js', import.meta.url).href
+      }
+      return new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url).href
+    }
+  }
+}
 
 const props = defineProps({
   modelValue: {

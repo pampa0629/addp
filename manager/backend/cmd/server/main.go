@@ -144,7 +144,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient)
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient, redisClient)
 
 	// 注册能力到 System 模块（在服务启动后）
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {

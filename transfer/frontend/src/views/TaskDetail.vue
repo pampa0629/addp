@@ -134,7 +134,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
-import { describeCron } from '@/utils/schedule'
+import { describeCron } from '@common-ui'
 import { systemResourcesAPI } from '@/api/systemResources'
 
 const route = useRoute()

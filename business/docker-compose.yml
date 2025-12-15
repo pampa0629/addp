@@ -4,6 +4,9 @@
 # 包含服务:
 # - postgres: 业务数据库（PostGIS 支持空间数据）
 # - minio: 业务对象存储（用户文件）
+# - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
+# - doris-be: Apache Doris Backend（存储与计算节点）
+# - doris-init: Doris 集群自动初始化服务
 #
 # 使用方法:
 #   docker-compose up -d    # 启动
@@ -20,7 +23,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-business}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-postgresql.sql:/docker-entrypoint-initdb.d/init-postgresql.sql:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:
@@ -53,9 +56,130 @@ services:
       - business-network
     restart: unless-stopped
 
+  # Apache Doris FE (Frontend)
+  doris-fe:
+    image: apache/doris:doris-all-in-one-2.1.0
+    container_name: business-doris-fe
+    environment:
+      - FE_SERVERS=fe1:business-doris-fe:9010
+      - FE_ID=1
+    ports:
+      - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
+      - "${DORIS_FE_HTTP_PORT:-8030}:8030"  # HTTP API
+    volumes:
+      - doris_fe_data:/opt/apache-doris/fe/doris-meta
+      - doris_fe_log:/opt/apache-doris/fe/log
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  # 注意: doris-all-in-one 镜像包含 FE+BE，无需单独的 BE 和 init 容器
+
+  # Apache Spark Master + Thrift Server
+  spark-master:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-master
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=0.0.0.0
+      - SPARK_MASTER_PORT=7077
+    ports:
+      - "7077:7077"   # Spark 集群通信
+      - "8088:8080"   # Spark Master Web UI (避免与 System 8080 冲突)
+      - "10000:10000" # Thrift Server (SQL 接口)
+    volumes:
+      - ./spark:/opt/spark/conf
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-master.sh &&
+        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --packages org.apache.sedona:sedona-spark-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2 --conf spark.sql.extensions=org.apache.sedona.sql.SedonaSqlExtensions --conf spark.serializer=org.apache.spark.serializer.KryoSerializer --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator &&
+        tail -f /dev/null
+      "
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080 > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Spark Worker 1
+  spark-worker-1:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-worker-1
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /dev/null
+      "
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - business-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # Spark Worker 2 (可选，通过 --profile full 启用)
+  spark-worker-2:
+    image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
+    container_name: business-spark-worker-2
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /dev/null
+      "
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    networks:
+      - business-network
+    restart: unless-stopped
+    profiles:
+      - full  # 默认不启动，通过 docker-compose --profile full up 启用
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
 volumes:
   postgres_data:
   minio_data:
+  doris_fe_data:
+    driver: local
+  doris_fe_log:
+    driver: local
 
 networks:
   business-network:

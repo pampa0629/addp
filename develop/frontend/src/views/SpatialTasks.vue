@@ -20,7 +20,11 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="schedule" label="调度" width="150" show-overflow-tooltip />
+        <el-table-column label="调度" width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.schedule ? describeCron(row.schedule) : '手动触发' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="last_execution_status" label="最后执行" width="100">
           <template #default="{ row }">
             <el-tag v-if="row.last_execution_status" :type="getExecutionStatusType(row.last_execution_status)">
@@ -76,8 +80,11 @@
             JSON 格式的工作流定义
           </div>
         </el-form-item>
-        <el-form-item label="调度表达式">
-          <el-input v-model="taskForm.schedule" placeholder="Cron 表达式，如: 0 2 * * *" />
+        <el-form-item label="调度配置">
+          <ScheduleConfig v-model="taskForm.schedule" :allow-custom-cron="true" />
+          <div style="color: #909399; font-size: 12px; margin-top: 5px">
+            配置定时执行任务的时间和频率
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -116,6 +123,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ScheduleConfig, describeCron } from '@common-ui'
 import * as spatialApi from '@/api/spatial'
 
 const loading = ref(false)

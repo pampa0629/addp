@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>1-10 月产值饼图</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", sans-serif; margin: 0; padding: 24px; color: #222; background: #f7f9fc; }
+      h1 { font-size: 18px; margin: 0 0 12px; }
+      #toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+      button { padding: 6px 10px; border: 1px solid #cfd6e4; border-radius: 6px; background: #fff; cursor: pointer; }
+      button:hover { background: #f0f4ff; }
+      #chart-wrap { overflow: auto; border: 1px solid #dfe6f3; padding: 12px; border-radius: 10px; background: #fff; box-shadow: inset 0 0 0 1px #f0f4ff; }
+      canvas { display: block; max-width: 100%; }
+      small { color: #666; }
+    </style>
+  </head>
+  <body>
+    <h1>1-10 月产值饼图</h1>
+    <div id="toolbar">
+      <button id="btnReload">重新加载数据</button>
+      <button id="btnRegen">随机生成新数据</button>
+      <small>数据来源：后端 CSV (/api/data)，Canvas 绘制饼图</small>
+    </div>
+    <div id="chart-wrap">
+      <canvas id="chart" width="800" height="420"></canvas>
+    </div>
+
+    <script>
+      async function fetchData() {
+        const res = await fetch('api/data', { cache: 'no-store' });
+        if (!res.ok) throw new Error('加载数据失败');
+        const json = await res.json();
+        return json.items.sort((a, b) => a.month - b.month);
+      }
+
+      function drawPieChart(canvas, data) {
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width, H = canvas.height;
+
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, W, H);
+
+        const centerX = W * 0.37;
+        const centerY = H * 0.55;
+        const radius = Math.min(W, H) * 0.32;
+
+        const palette = ['#2e7dd7', '#4da5f7', '#f4c430', '#f2766b', '#7bc5a6', '#8a6ddc', '#f19f65', '#5ec0d4', '#c95d88', '#4a94d4'];
+        const total = data.reduce((sum, d) => sum + d.value, 0);
+
+        ctx.fillStyle = '#111';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        ctx.fillText('1-10 月产值（饼图）', 24, 32);
+        ctx.fillStyle = '#666';
+        ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        ctx.fillText('数值范围随机 1-10，点击按钮可重新生成并绘制', 24, 52);
+
+        if (!total) {
+          ctx.fillStyle = '#c00';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+          ctx.fillText('暂无可用数据', W / 2, H / 2);
+          return;
+        }
+
+        let startAngle = -Math.PI / 2;
+        data.forEach((d, idx) => {
+          const sliceAngle = (d.value / total) * Math.PI * 2;
+          const endAngle = startAngle + sliceAngle;
+          const color = palette[idx % palette.length];
+
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+          ctx.closePath();
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          const midAngle = startAngle + sliceAngle / 2;
+          const labelRadius = radius * 0.65;
+          const lx = centerX + Math.cos(midAngle) * labelRadius;
+          const ly = centerY + Math.sin(midAngle) * labelRadius;
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+          const percent = ((d.value / total) * 100).toFixed(0);
+          ctx.fillText(`${d.value} (${percent}%)`, lx, ly);
+
+          startAngle = endAngle;
+        });
+
+        // Legend
+        const legendX = W * 0.65;
+        let legendY = 110;
+        ctx.font = '13px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        data.forEach((d, idx) => {
+          const color = palette[idx % palette.length];
+          ctx.fillStyle = color;
+          ctx.fillRect(legendX, legendY - 9, 14, 14);
+          ctx.fillStyle = '#333';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${d.month}月 · ${d.value}`, legendX + 22, legendY - 2);
+          legendY += 22;
+        });
+      }
+
+      async function loadAndRender() {
+        const canvas = document.getElementById('chart');
+        try {
+          const data = await fetchData();
+          drawPieChart(canvas, data);
+        } catch (e) {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#c00';
+          ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+          ctx.fillText('加载失败：' + (e && e.message ? e.message : e), 10, 24);
+        }
+      }
+
+      document.getElementById('btnReload').addEventListener('click', loadAndRender);
+      document.getElementById('btnRegen').addEventListener('click', async () => {
+        await fetch('api/regenerate', { method: 'GET', cache: 'no-store' });
+        await loadAndRender();
+      });
+
+      // Initial render
+      loadAndRender();
+    </script>
+  </body>
+</html>
+

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/cors"
@@ -8,6 +10,7 @@ import (
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func SetupRouter(
@@ -21,6 +24,7 @@ func SetupRouter(
 	resourceRepo *repository.ResourceRepository,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
+	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -45,7 +49,13 @@ func SetupRouter(
 
 	// API 路由组
 	api := router.Group("/api")
-	api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
+	if redisClient != nil {
+		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
+	} else {
+		// Fallback: 无缓存模式
+		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	}
 	{
 		configGroup := api.Group("/config")
 		{

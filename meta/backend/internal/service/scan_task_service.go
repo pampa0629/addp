@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,9 +13,9 @@ import (
 
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/meta/internal/models"
 	"github.com/redis/go-redis/v9"
-	"github.com/robfig/cron/v3"
 	"gorm.io/gorm"
 )
 
@@ -36,13 +35,15 @@ type ScanTaskService struct {
 	taskQueue       TaskQueue // 任务队列（可选,用于异步执行）
 
 	// 本地队列（当 taskQueue 为 nil 时使用）
-	queue        chan uint
-	workers      int
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
-	cron         *cron.Cron
-	parser       cron.Parser
-	taskEntryIDs map[uint]cron.EntryID
+	queue   chan uint
+	workers int
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
+
+	// 公共调度器
+	scheduler    commonScheduler.Scheduler
+	exprBuilder  *commonScheduler.ExpressionBuilder
+	taskEntryIDs map[uint]string // 任务 ID 映射（改为 string）
 	cronMu       sync.RWMutex
 }
 
@@ -70,6 +71,14 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceServic
 		dedupService = NewScanDedupService(redisClient)
 	}
 
+	// 创建公共调度器
+	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
+		Name: "meta-scanner",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create scheduler: %v", err))
+	}
+
 	return &ScanTaskService{
 		db:              db,
 		scanService:     scanService,
@@ -79,9 +88,9 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceServic
 		queue:           make(chan uint, 128),
 		workers:         2,
 		stopCh:          make(chan struct{}),
-		cron:            cron.New(),
-		parser:          cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow),
-		taskEntryIDs:    make(map[uint]cron.EntryID),
+		scheduler:       scheduler,
+		exprBuilder:     commonScheduler.NewExpressionBuilder(),
+		taskEntryIDs:    make(map[uint]string),
 	}
 }
 
@@ -113,7 +122,7 @@ func (s *ScanTaskService) Start(ctx context.Context) error {
 		s.log.Warn("加载定时任务失败", "error", err)
 	}
 
-	s.cron.Start()
+	s.scheduler.Start(ctx)
 	return nil
 }
 
@@ -121,7 +130,7 @@ func (s *ScanTaskService) Start(ctx context.Context) error {
 func (s *ScanTaskService) Stop(ctx context.Context) {
 	s.log.Info("停止扫描任务服务")
 	close(s.stopCh)
-	s.cron.Stop()
+	s.scheduler.Stop(ctx)
 	s.wg.Wait()
 	close(s.queue)
 }
@@ -198,31 +207,36 @@ func (s *ScanTaskService) scheduleTask(task *models.ScanTask) error {
 	s.cronMu.Lock()
 	defer s.cronMu.Unlock()
 
-	// 如果已有旧的 Entry，先移除
-	if entryID, ok := s.taskEntryIDs[task.ID]; ok {
-		s.cron.Remove(entryID)
-		delete(s.taskEntryIDs, task.ID)
-	}
+	ctx := context.Background()
+	taskID := fmt.Sprintf("%d", task.ID)
 
-	entryID, err := s.cron.AddFunc(task.CronExpression, func() {
+	// 创建任务处理器
+	handler := func(ctx context.Context, id string) error {
 		if err := s.triggerScheduledTask(task.ID); err != nil {
 			s.log.Error("定时任务触发失败", "task_id", task.ID, "error", err)
+			return err
 		}
-	})
-	if err != nil {
+		return nil
+	}
+
+	// 调度任务（如果已存在会自动更新）
+	if err := s.scheduler.Schedule(ctx, taskID, task.CronExpression, handler); err != nil {
 		return err
 	}
-	s.taskEntryIDs[task.ID] = entryID
+
+	s.taskEntryIDs[task.ID] = taskID
 	return nil
 }
 
 func (s *ScanTaskService) unscheduleTask(taskID uint) {
 	s.cronMu.Lock()
 	defer s.cronMu.Unlock()
-	if entryID, ok := s.taskEntryIDs[taskID]; ok {
-		s.cron.Remove(entryID)
-		delete(s.taskEntryIDs, taskID)
-	}
+
+	ctx := context.Background()
+	taskIDStr := fmt.Sprintf("%d", taskID)
+
+	s.scheduler.Unschedule(ctx, taskIDStr)
+	delete(s.taskEntryIDs, taskID)
 }
 
 func (s *ScanTaskService) enqueueRun(runID uint) {
@@ -876,109 +890,35 @@ func (s *ScanTaskService) nextTimeFromSpec(spec string, from time.Time) *time.Ti
 	if spec == "" {
 		return nil
 	}
-	sched, err := s.parser.Parse(spec)
+	next, err := s.exprBuilder.NextRunTime(spec, from)
 	if err != nil {
 		s.log.Warn("解析 Cron 表达式失败", "spec", spec, "error", err)
 		return nil
 	}
-	next := sched.Next(from)
 	return &next
 }
 
 func (s *ScanTaskService) buildCronExpression(req *models.ScanTaskUpsertRequest) (string, models.JSONMap, error) {
-	config := models.JSONMap{
-		"type":  req.ScheduleType,
-		"time":  req.ScheduleTime,
-		"value": req.ScheduleValue,
+	// 使用公共 ExpressionBuilder
+	scheduleConfig := commonScheduler.ScheduleConfig{
+		Type:  req.ScheduleType,
+		Time:  req.ScheduleTime,
+		Value: req.ScheduleValue,
+		Expr:  req.CronExpression,
 	}
 
-	switch strings.ToLower(req.ScheduleType) {
-	case "manual":
-		return "", config, nil
-	case "daily":
-		hour, minute, err := parseTimeOfDay(req.ScheduleTime)
-		if err != nil {
-			return "", nil, err
-		}
-		return fmt.Sprintf("%d %d * * *", minute, hour), config, nil
-	case "weekly":
-		hour, minute, err := parseTimeOfDay(req.ScheduleTime)
-		if err != nil {
-			return "", nil, err
-		}
-		field, err := formatCronList(req.ScheduleValue, 0, 6, []int{0})
-		if err != nil {
-			return "", nil, err
-		}
-		return fmt.Sprintf("%d %d * * %s", minute, hour, field), config, nil
-	case "monthly":
-		hour, minute, err := parseTimeOfDay(req.ScheduleTime)
-		if err != nil {
-			return "", nil, err
-		}
-		field, err := formatCronList(req.ScheduleValue, 1, 31, []int{1})
-		if err != nil {
-			return "", nil, err
-		}
-		return fmt.Sprintf("%d %d %s * *", minute, hour, field), config, nil
-	case "cron":
-		if req.CronExpression == "" {
-			return "", nil, errors.New("cron_expression 不能为空")
-		}
-		config["cron_expression"] = req.CronExpression
-		return req.CronExpression, config, nil
-	default:
-		return "", nil, fmt.Errorf("不支持的 schedule_type: %s", req.ScheduleType)
-	}
-}
-
-func parseTimeOfDay(value string) (int, int, error) {
-	if strings.TrimSpace(value) == "" {
-		return 0, 0, nil
-	}
-	parts := strings.Split(value, ":")
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("时间格式非法，应为 HH:MM，当前为: %s", value)
-	}
-	hour, err := strconv.Atoi(parts[0])
-	if err != nil || hour < 0 || hour > 23 {
-		return 0, 0, fmt.Errorf("小时格式非法: %s", parts[0])
-	}
-	minute, err := strconv.Atoi(parts[1])
-	if err != nil || minute < 0 || minute > 59 {
-		return 0, 0, fmt.Errorf("分钟格式非法: %s", parts[1])
-	}
-	return hour, minute, nil
-}
-
-func formatCronList(values []int, min, max int, defaults []int) (string, error) {
-	if len(values) == 0 {
-		values = defaults
+	cronExpr, config, err := s.exprBuilder.BuildFromScheduleConfig(scheduleConfig)
+	if err != nil {
+		return "", nil, err
 	}
 
-	valid := make([]int, 0, len(values))
-	seen := make(map[int]bool)
-	for _, v := range values {
-		if v < min || v > max {
-			return "", fmt.Errorf("数值 %d 超出范围 [%d-%d]", v, min, max)
-		}
-		if !seen[v] {
-			valid = append(valid, v)
-			seen[v] = true
-		}
+	// 转换为 models.JSONMap 类型
+	jsonConfig := models.JSONMap{}
+	for k, v := range config {
+		jsonConfig[k] = v
 	}
 
-	if len(valid) == 0 {
-		valid = defaults
-	}
-
-	sort.Ints(valid)
-
-	parts := make([]string, len(valid))
-	for i, v := range valid {
-		parts[i] = strconv.Itoa(v)
-	}
-	return strings.Join(parts, ","), nil
+	return cronExpr, jsonConfig, nil
 }
 
 // runProgressReporter 实现 ScanProgressReporter，将回调写入数据库
@@ -1214,7 +1154,7 @@ func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels
 			return "", errors.New("Cron 类型必须提供 cron_expression")
 		}
 		// 验证 Cron 表达式
-		if _, err := s.parser.Parse(config.CronExpression); err != nil {
+		if err := s.exprBuilder.Validate(config.CronExpression); err != nil {
 			return "", fmt.Errorf("无效的 Cron 表达式: %w", err)
 		}
 		return config.CronExpression, nil

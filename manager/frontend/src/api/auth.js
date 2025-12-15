@@ -7,15 +7,17 @@ const authClient = axios.create({
 })
 
 export const authAPI = {
-  login(credentials) {
-    return authClient.post('/auth/login', credentials)
+  login(username, password) {
+    // 适配 createAuthStoreConfig 的 login(username, password) 调用方式
+    return authClient.post('/auth/login', { username, password })
   },
 
   register(userData) {
     return authClient.post('/auth/register', userData)
   },
 
-  getCurrentUser(token) {
+  getUser(token) {
+    // createAuthStoreConfig 需要的方法名是 getUser 而不是 getCurrentUser
     return authClient.get('/users/me', {
       headers: { Authorization: `Bearer ${token}` }
     })

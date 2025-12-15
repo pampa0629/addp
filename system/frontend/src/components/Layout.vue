@@ -62,6 +62,10 @@
               <el-icon><Connection /></el-icon>
               <span>资源管理</span>
             </el-menu-item>
+            <el-menu-item index="/applications" @click="handleMenuClick('system', 'applications')">
+              <el-icon><Key /></el-icon>
+              <span>应用管理</span>
+            </el-menu-item>
             <el-menu-item index="/developer" @click="handleMenuClick('system', 'developer')">
               <el-icon><Monitor /></el-icon>
               <span>开发中心</span>
@@ -91,7 +95,8 @@ import {
   Connection,
   DataAnalysis,
   HomeFilled,
-  Monitor
+  Monitor,
+  Key
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 

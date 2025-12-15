@@ -47,6 +47,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	logRepo := repository.NewLogRepository(db)
 	resourceRepo := repository.NewResourceRepository(db)
 	tenantRepo := repository.NewTenantRepository(db)
+	appRepo := repository.NewApplicationRepository(db)
 
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
@@ -54,6 +55,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
 	registryService := service.NewRegistryService(resourceRepo)
+	appService := service.NewApplicationService(appRepo)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService, userRepo))
@@ -78,6 +80,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			authHandler := NewAuthHandler(userService, cfg)
 			auth.POST("/login", authHandler.Login)
 			auth.POST("/register", authHandler.Register)
+			auth.POST("/refresh", authHandler.Refresh) // Token 刷新端点
 		}
 
 		// 需要认证的路由
@@ -128,6 +131,20 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				tenants.PUT("/:id", tenantHandler.Update)
 				tenants.DELETE("/:id", tenantHandler.Delete)
 			}
+
+			// 应用管理
+			applications := protected.Group("/applications")
+			{
+				appHandler := NewApplicationHandler(appService)
+				applications.POST("", appHandler.CreateApplication)
+				applications.GET("", appHandler.ListApplications)
+				applications.GET("/:id", appHandler.GetApplication)
+				applications.PUT("/:id", appHandler.UpdateApplication)
+				applications.DELETE("/:id", appHandler.DeleteApplication)
+				applications.POST("/:id/keys", appHandler.GenerateAPIKey)
+				applications.GET("/:id/keys", appHandler.ListAPIKeys)
+				applications.DELETE("/:id/keys/:key_id", appHandler.RevokeAPIKey)
+			}
 		}
 	}
 
@@ -153,6 +170,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
 			registry.GET("/compute-resources", registryHandler.ListComputeResources)
 		}
+
+		// API Key 验证 API（供 Gateway 调用）
+		internalHandler := NewInternalHandler(appService)
+		internal.GET("/api-keys/validate", internalHandler.ValidateAPIKey)
+		internal.GET("/api-keys/bulk", internalHandler.BulkGetAPIKeys)
 	}
 
 	return router

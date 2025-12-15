@@ -14,8 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/meilisearch/meilisearch-go v0.26.0
 	github.com/minio/minio-go/v7 v7.0.64
-	github.com/redis/go-redis/v9 v9.16.0
-	github.com/robfig/cron/v3 v3.0.1
+	github.com/redis/go-redis/v9 v9.17.2
 	github.com/xuri/excelize/v2 v2.10.0
 	gorm.io/gorm v1.31.0
 )
@@ -65,6 +64,7 @@ require (
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
