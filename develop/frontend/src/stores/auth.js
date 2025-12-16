@@ -1,19 +1,17 @@
 import { defineStore } from 'pinia'
 import { createAuthStoreConfig } from '@common-ui'
-import { login as loginAPI, getCurrentUser } from '../api/auth'
+import { authAPI } from '../api/auth'
 
-// 适配器：Develop 使用独立函数导出
-const authAPI = {
-  login: (username, password) => loginAPI(username, password),
-  getUser: () => getCurrentUser()
-}
+const baseConfig = createAuthStoreConfig('develop-auth', authAPI, {
+  persistUser: true  // 启用用户信息持久化
+})
 
 export const useAuthStore = defineStore('develop-auth', {
-  ...createAuthStoreConfig('develop-auth', authAPI, {
-    persistUser: false  // Develop 不持久化 user
-  }),
+  ...baseConfig,
 
   getters: {
+    // 继承基础 getters
+    ...baseConfig.getters,
     // 扩展：保留 username getter
     username: (state) => state.user?.username || ''
   }

@@ -185,8 +185,8 @@ const loadExecutions = async () => {
       pageSize.value,
       filters.value
     )
-    executions.value = res.data.executions || []
-    total.value = res.data.total || 0
+    executions.value = res.executions || []
+    total.value = res.total || 0
 
     // 自动刷新：如果有运行中的执行
     checkAutoRefresh()
@@ -201,7 +201,7 @@ const loadExecutions = async () => {
 const loadTasks = async () => {
   try {
     const res = await spatialApi.listTasks(1, 100)
-    tasks.value = res.data.tasks || []
+    tasks.value = res.tasks || []
   } catch (error) {
     console.error('加载任务列表失败:', error)
   }
@@ -267,7 +267,7 @@ const viewResult = (execution) => {
 const retry = async (execution) => {
   try {
     const res = await spatialApi.retryExecution(execution.id)
-    ElMessage.success('重试已提交，执行ID: ' + res.data.execution_id)
+    ElMessage.success('重试已提交，执行ID: ' + res.execution_id)
     loadExecutions()
   } catch (error) {
     ElMessage.error('重试失败: ' + error.message)

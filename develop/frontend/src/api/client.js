@@ -21,13 +21,37 @@ client.interceptors.response.__axiosInstance = client
 // 添加 Token 刷新拦截器
 const [onFulfilled, onRejected] = createRefreshInterceptor(() => useAuthStore(), {
   moduleName: 'Develop',
-  systemBaseURL: 'http://localhost:8080',
+  systemBaseURL: import.meta.env.DEV
+    ? 'http://localhost:8080'
+    : `${window.location.protocol}//${window.location.hostname}:8080`,
   onRefreshFailed: () => {
     localStorage.removeItem('token')
     window.location.href = '/login'
   }
 })
 
-client.interceptors.response.use(onFulfilled, onRejected)
+// 响应拦截器：提取 response.data 并增强错误日志
+client.interceptors.response.use(
+  response => {
+    const processedResponse = onFulfilled(response)
+    return processedResponse.data  // 提取 data
+  },
+  async error => {
+    try {
+      const recovered = await onRejected(error)
+      return recovered.data
+    } catch (finalError) {
+      // 详细的 401 错误日志
+      if (finalError.response?.status === 401) {
+        console.error('[Develop Client] 401 错误详情:', {
+          url: finalError.config?.url,
+          method: finalError.config?.method,
+          response: finalError.response?.data
+        })
+      }
+      return Promise.reject(finalError)
+    }
+  }
+)
 
 export default client

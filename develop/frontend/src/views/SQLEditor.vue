@@ -134,7 +134,7 @@ const editorRef = ref(null)
 const loadResources = async () => {
   try {
     const response = await client.get('/develop/resources')
-    resources.value = response.data.filter(r =>
+    resources.value = response.filter(r =>
       ['postgresql', 'mysql', 'doris'].includes(r.resource_type.toLowerCase())
     )
 
@@ -190,11 +190,11 @@ const executeSQL = async () => {
 
     executionResult.value = {
       success: true,
-      columns: response.data.columns || [],
-      rows: response.data.rows || [],
-      rows_count: response.data.rows_count,
-      rows_affected: response.data.rows_affected,
-      execution_time_ms: response.data.execution_time_ms
+      columns: response.columns || [],
+      rows: response.rows || [],
+      rows_count: response.rows_count,
+      rows_affected: response.rows_affected,
+      execution_time_ms: response.execution_time_ms
     }
 
     ElMessage.success('执行成功')

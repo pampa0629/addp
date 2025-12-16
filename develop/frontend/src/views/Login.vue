@@ -52,11 +52,12 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 const formRef = ref(null)
 const loading = ref(false)
@@ -82,12 +83,43 @@ const handleLogin = async () => {
     error.value = ''
 
     try {
+      console.log('[Login] Starting login process...')
       await authStore.login(form.value.username, form.value.password)
+      console.log('[Login] Login successful, token saved')
+      console.log('[Login] Auth state:', {
+        isAuthenticated: authStore.isAuthenticated,
+        hasUser: !!authStore.user,
+        username: authStore.user?.username
+      })
+
       ElMessage.success('登录成功')
-      router.push('/')
+
+      // 🆕 优先跳转到 redirect 参数指定的页面
+      const redirect = route.query.redirect || '/sql'
+      console.log('[Login] Redirecting to:', redirect)
+      console.log('[Login] ⏸️  等待 5 秒后跳转，方便查看日志...')
+
+      // 延迟 5 秒后跳转，方便复制日志
+      await new Promise(resolve => setTimeout(resolve, 5000))
+      console.log('[Login] 开始跳转...')
+
+      // 使用 window.location.href 强制刷新并导航
+      window.location.href = redirect
     } catch (err) {
-      error.value = err.response?.data?.error || '登录失败，请检查用户名和密码'
-      console.error('登录失败:', err)
+      console.error('[Login] Login or redirect failed:', err)
+
+      // 区分登录失败和跳转失败
+      if (err.response) {
+        // API 请求失败
+        error.value = err.response?.data?.error || '登录失败，请检查用户名和密码'
+      } else if (err.name === 'NavigationDuplicated') {
+        // 路由跳转重复（可忽略）
+        console.warn('[Login] Navigation duplicated, already at target page')
+      } else {
+        // 其他错误（可能是路由守卫拒绝）
+        error.value = '登录后跳转失败，请刷新页面重试'
+        console.error('[Login] Unexpected error:', err)
+      }
     } finally {
       loading.value = false
     }

@@ -252,9 +252,9 @@ const viewResult = () => {
 const retry = async () => {
   try {
     const res = await spatialApi.retryExecution(route.params.id)
-    ElMessage.success('重试已提交，执行ID: ' + res.data.execution_id)
+    ElMessage.success('重试已提交，执行ID: ' + res.execution_id)
     // 跳转到新的执行详情页
-    router.push({ name: 'GISExecutionDetail', params: { id: res.data.execution_id } })
+    router.push({ name: 'GISExecutionDetail', params: { id: res.execution_id } })
   } catch (error) {
     ElMessage.error('重试失败: ' + error.message)
   }

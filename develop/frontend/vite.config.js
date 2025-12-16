@@ -1,34 +1,48 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [
-    vue()
+    vue(),
+    monacoEditorPlugin({
+      languages: ['sql', 'json', 'javascript', 'typescript', 'html', 'css']
+    })
   ],
+
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
     }
   },
+
   optimizeDeps: {
+    exclude: ['monaco-editor'],
     include: [
-      'vue',
-      'vue-router',
-      'pinia',
-      'element-plus',
-      '@element-plus/icons-vue',
-      'axios',
-      'monaco-editor',
-      'monaco-editor/esm/vs/editor/editor.api',
+      '@antv/g6',
       'sql-formatter',
-      '@antv/g6'
+      '@element-plus/icons-vue'
     ]
   },
+
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'monaco': ['monaco-editor'],
+          'graph': ['@antv/g6'],
+          'element-plus': ['element-plus', '@element-plus/icons-vue']
+        }
+      }
+    }
+  },
+
   server: {
     port: 5178,
     strictPort: true,
+    host: '0.0.0.0',
     fs: {
       allow: ['..']
     },
@@ -39,5 +53,6 @@ export default defineConfig({
       }
     }
   },
+
   base: process.env.NODE_ENV === 'development' ? '/' : '/develop/'
 })
