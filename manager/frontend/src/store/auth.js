@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
-import { createAuthStoreConfig } from '@common-ui'
+import { createAuthStore } from '@common-ui'
 import { authAPI } from '../api/auth'
 
-export const useAuthStore = defineStore('manager-auth', {
-  ...createAuthStoreConfig('manager-auth', authAPI, {
-    persistUser: false  // Manager 不持久化 user
+export const useAuthStore = defineStore('manager-auth',
+  createAuthStore('manager-auth', authAPI, {
+    persistUser: true  // 持久化用户信息，刷新后快速恢复
   })
-})
+)

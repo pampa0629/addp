@@ -404,8 +404,8 @@ const loadResources = async () => {
   loading.value = true
   try {
     const response = await resourcesAPI.list(currentPage.value, pageSize.value)
-    resources.value = response.data || []
-    total.value = (response.data || []).length
+    resources.value = response || []
+    total.value = (response || []).length
   } catch (error) {
     ElMessage.error('加载资源列表失败')
     console.error(error)
@@ -490,18 +490,18 @@ const testBeforeCreate = async () => {
     // 如果是编辑模式，使用已保存资源的ID进行测试（会使用数据库中的真实密钥）
     if (isEdit.value && editId.value) {
       const response = await resourcesAPI.testExistingConnection(editId.value)
-      if (response.data.success) {
+      if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
-        ElMessage.error(`连接测试失败: ${response.data.error || response.data.message}`)
+        ElMessage.error(`连接测试失败: ${response.error || response.message}`)
       }
     } else {
       // 新增模式，使用表单数据测试
       const response = await resourcesAPI.testConnection(form.value)
-      if (response.data.success) {
+      if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
-        ElMessage.error(`连接测试失败: ${response.data.error || response.data.message}`)
+        ElMessage.error(`连接测试失败: ${response.error || response.message}`)
       }
     }
   } catch (error) {
@@ -514,10 +514,10 @@ const testBeforeCreate = async () => {
 const testConnection = async (row) => {
   try {
     const response = await resourcesAPI.testExistingConnection(row.id)
-    if (response.data.success) {
+    if (response.success) {
       ElMessage.success('连接测试成功！')
     } else {
-      ElMessage.error(`连接测试失败: ${response.data.error || response.data.message}`)
+      ElMessage.error(`连接测试失败: ${response.error || response.message}`)
     }
   } catch (error) {
     ElMessage.error(`连接测试失败: ${error.response?.data?.error || error.message}`)

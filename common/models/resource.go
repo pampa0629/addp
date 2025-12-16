@@ -109,6 +109,9 @@ func BuildConnectionString(resource *Resource) (string, error) {
 			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
 				return alias
 			}
+			// 默认将 localhost 转换为 127.0.0.1 以强制使用 TCP 连接
+			// (避免 macOS 上尝试使用 Unix socket)
+			return "127.0.0.1"
 		}
 		return host
 	}

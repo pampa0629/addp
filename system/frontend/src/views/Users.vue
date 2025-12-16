@@ -334,8 +334,8 @@ const loadUsers = async () => {
   loading.value = true
   try {
     const response = await usersAPI.list(currentPage.value, pageSize.value)
-    users.value = response.data
-    total.value = response.data.length
+    users.value = response
+    total.value = response.length
   } catch (error) {
     ElMessage.error('加载用户列表失败')
     console.error(error)

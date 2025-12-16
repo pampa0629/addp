@@ -149,8 +149,8 @@ const fetchTenants = async () => {
       page: currentPage.value,
       page_size: pageSize.value
     })
-    tenants.value = response.data
-    total.value = response.data.length
+    tenants.value = response
+    total.value = response.length
   } catch (error) {
     ElMessage.error('获取租户列表失败')
   } finally {

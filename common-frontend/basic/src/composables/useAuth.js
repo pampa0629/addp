@@ -7,6 +7,8 @@
  * - iframe 检测和 query token 处理
  */
 
+import axios from 'axios'
+
 /**
  * 标准路由守卫工厂函数
  *
@@ -451,4 +453,160 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
   }
 
   return [onFulfilled, onRejected]
+}
+
+/**
+ * 创建认证 Store 工厂函数
+ *
+ * 安全地创建认证 store，避免 getter 覆盖 bug
+ *
+ * @param {string} storeName - Store 名称
+ * @param {Object} authAPI - 认证 API 对象
+ * @param {Object} options - 配置选项
+ * @param {boolean} options.persistUser - 是否持久化用户信息
+ * @param {Object} options.extraGetters - 额外的 getters
+ * @returns {Object} Store 配置对象
+ */
+export function createAuthStore(storeName, authAPI, options = {}) {
+  const { persistUser = true, extraGetters = {} } = options
+
+  const baseConfig = createAuthStoreConfig(storeName, authAPI, { persistUser })
+
+  return {
+    ...baseConfig,
+    getters: {
+      ...baseConfig.getters,
+      ...extraGetters
+    }
+  }
+}
+
+/**
+ * 创建认证 API 工厂函数
+ *
+ * @param {Object} client - Axios 客户端实例
+ * @param {Object} options - 配置选项
+ * @param {boolean} options.includeRegister - 是否包含注册功能
+ * @returns {Object} 认证 API 对象
+ */
+export function createAuthAPI(client, options = {}) {
+  const { includeRegister = false } = options
+
+  const baseAPI = {
+    login: (username, password) => {
+      return client.post('/auth/login', { username, password })
+    },
+
+    getCurrentUser: () => {
+      return client.get('/users/me')
+    },
+
+    // 供 createAuthStoreConfig 使用
+    getUser: (token) => {
+      return client.get('/users/me', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+    }
+  }
+
+  // 如果需要注册功能，添加 register 方法
+  if (includeRegister) {
+    baseAPI.register = (data) => {
+      return client.post('/auth/register', data)
+    }
+  }
+
+  return baseAPI
+}
+
+/**
+ * 创建 API 客户端工厂函数
+ *
+ * @param {Function} getAuthStore - 获取 auth store 的函数
+ * @param {Object} options - 配置选项
+ * @returns {Object} 配置好的 Axios 客户端
+ */
+export function createAPIClient(getAuthStore, options = {}) {
+  const {
+    moduleName,
+    baseURL = '/api',
+    timeout = 30000,
+    extractData = true,
+    enableRefresh = true,
+    systemBaseURL = import.meta.env?.DEV
+      ? 'http://localhost:8080'
+      : `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080`,
+    onRefreshFailed = () => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('token')
+      }
+      if (typeof window !== 'undefined') {
+        // 开发环境: 直接跳转 /login (Vue Router 会处理)
+        // 生产环境: 跳转 /{module}/login (iframe 嵌入模式)
+        const isDev = import.meta.env?.DEV
+        const loginPath = isDev ? '/login' : `/${moduleName?.toLowerCase() || ''}/login`.replace('//', '/')
+        window.location.href = loginPath
+      }
+    }
+  } = options
+
+  if (!moduleName) {
+    throw new Error('moduleName is required for createAPIClient')
+  }
+
+  const client = axios.create({
+    baseURL,
+    timeout
+  })
+
+  // 1. 请求拦截器 - 添加 JWT token
+  client.interceptors.request.use(
+    createAuthInterceptor(getAuthStore, moduleName),
+    (error) => Promise.reject(error)
+  )
+
+  // 2. 保存 axios 实例引用 (供刷新后重试使用)
+  client.interceptors.response.__axiosInstance = client
+
+  if (enableRefresh) {
+    // 3. 添加 Token 刷新拦截器
+    const [refreshOnFulfilled, refreshOnRejected] = createRefreshInterceptor(getAuthStore, {
+      moduleName,
+      systemBaseURL,
+      onRefreshFailed
+    })
+
+    // 4. 响应拦截器
+    client.interceptors.response.use(
+      (response) => {
+        const processedResponse = refreshOnFulfilled(response)
+        return extractData ? processedResponse.data : processedResponse
+      },
+      async (error) => {
+        try {
+          const recovered = await refreshOnRejected(error)
+          return extractData ? recovered.data : recovered
+        } catch (finalError) {
+          // 401 错误日志
+          if (finalError.response?.status === 401) {
+            console.error(`[${moduleName} Client] 401 错误:`, {
+              url: finalError.config?.url,
+              method: finalError.config?.method
+            })
+          }
+          return Promise.reject(finalError)
+        }
+      }
+    )
+  } else {
+    // 不启用刷新时，只提取 data
+    if (extractData) {
+      client.interceptors.response.use(
+        (response) => response.data,
+        (error) => Promise.reject(error)
+      )
+    }
+  }
+
+  return client
 }

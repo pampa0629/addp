@@ -83,27 +83,11 @@ const handleLogin = async () => {
     error.value = ''
 
     try {
-      console.log('[Login] Starting login process...')
       await authStore.login(form.value.username, form.value.password)
-      console.log('[Login] Login successful, token saved')
-      console.log('[Login] Auth state:', {
-        isAuthenticated: authStore.isAuthenticated,
-        hasUser: !!authStore.user,
-        username: authStore.user?.username
-      })
-
       ElMessage.success('登录成功')
 
-      // 🆕 优先跳转到 redirect 参数指定的页面
+      // 优先跳转到 redirect 参数指定的页面
       const redirect = route.query.redirect || '/sql'
-      console.log('[Login] Redirecting to:', redirect)
-      console.log('[Login] ⏸️  等待 5 秒后跳转，方便查看日志...')
-
-      // 延迟 5 秒后跳转，方便复制日志
-      await new Promise(resolve => setTimeout(resolve, 5000))
-      console.log('[Login] 开始跳转...')
-
-      // 使用 window.location.href 强制刷新并导航
       window.location.href = redirect
     } catch (err) {
       console.error('[Login] Login or redirect failed:', err)

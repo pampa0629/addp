@@ -15,5 +15,13 @@ export * from './utils/index'
 // Types
 export * from './types/index'
 
-// Composables
-export { createAuthGuard, createAuthInterceptor, createAuthStoreConfig, createRefreshInterceptor } from './composables/useAuth'
+// Composables - Authentication
+export {
+  createAuthGuard,
+  createAuthInterceptor,
+  createAuthStoreConfig,
+  createRefreshInterceptor,
+  createAuthAPI,
+  createAPIClient,
+  createAuthStore
+} from './composables/useAuth'

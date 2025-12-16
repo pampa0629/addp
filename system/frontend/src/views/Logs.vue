@@ -52,8 +52,8 @@ const loadLogs = async () => {
   loading.value = true
   try {
     const response = await logsAPI.list(currentPage.value, pageSize.value)
-    logs.value = response.data
-    total.value = response.data.length
+    logs.value = response
+    total.value = response.length
   } catch (error) {
     ElMessage.error('加载日志列表失败')
     console.error(error)

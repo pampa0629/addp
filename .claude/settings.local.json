@@ -103,7 +103,8 @@
       "Bash(bash scripts/infra/up.sh:*)",
       "Bash(timeout 120 tail:*)",
       "Bash(timeout 60 tail:*)",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjU4MTc1ODksImlhdCI6MTc2NTgxNTc4OX0.0YY3kGStfm2G45q9BIuiwZXy-8MY1Zt16fMWkxceEuI\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjU4MTc1ODksImlhdCI6MTc2NTgxNTc4OX0.0YY3kGStfm2G45q9BIuiwZXy-8MY1Zt16fMWkxceEuI\")",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

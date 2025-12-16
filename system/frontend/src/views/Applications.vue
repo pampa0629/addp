@@ -293,7 +293,7 @@ const loadApplications = async () => {
   loading.value = true
   try {
     const response = await applicationsAPI.list()
-    applications.value = response.data.applications || []
+    applications.value = response.applications || []
   } catch (error) {
     ElMessage.error('加载应用列表失败: ' + (error.response?.data?.error || error.message))
   } finally {
@@ -383,7 +383,7 @@ const loadApiKeys = async (appId) => {
   keysLoading.value = true
   try {
     const response = await applicationsAPI.listKeys(appId)
-    apiKeys.value = response.data.keys || []
+    apiKeys.value = response.keys || []
   } catch (error) {
     ElMessage.error('加载 API Keys 失败: ' + (error.response?.data?.error || error.message))
   } finally {
@@ -407,7 +407,7 @@ const handleGenerateKey = async () => {
     if (valid) {
       try {
         const response = await applicationsAPI.generateKey(currentApp.value.id, keyFormData.value)
-        generatedApiKey.value = response.data.plain_text_key
+        generatedApiKey.value = response.plain_text_key
         generateKeyDialogVisible.value = false
         showKeyDialogVisible.value = true
         await loadApiKeys(currentApp.value.id)
