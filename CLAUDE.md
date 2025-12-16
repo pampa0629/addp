@@ -112,7 +112,7 @@ bash scripts/infra/up.sh
 ```
 
 This script automatically:
-- Starts PostgreSQL, Redis, MinIO, Meilisearch containers
+- Starts PostgreSQL (addp-postgres), Redis (addp-redis), MinIO (addp-minio), Meilisearch (addp-meilisearch) containers
 - Initializes PostgreSQL schemas for all modules
 - Initializes MinIO buckets and Redis configuration
 - Configures Meilisearch indexes
@@ -220,6 +220,60 @@ bash scripts/prod/start.sh
 - **Task Queue**: Asynq (Redis-based, for Transfer module), Cron (for Meta module scheduling)
 - **Spatial Computation**: GeoPandas Engine (Python-based spatial workflow execution with in-memory GeoDataFrame processing)
 
+### Go Dependency Version Standards
+
+To ensure consistency across all modules, ADDP platform uses the following unified Go dependency versions (last updated: 2025-12-15):
+
+#### Core Framework
+- **Gin Framework**: `github.com/gin-gonic/gin@v1.11.0`
+- **GORM**: `gorm.io/gorm@v1.31.1`
+- **PostgreSQL Driver**: `gorm.io/driver/postgres@v1.6.0`
+- **PostgreSQL Client**: `github.com/lib/pq@v1.10.9`
+- **PostgreSQL Connection Pool**: `github.com/jackc/pgx/v5@v5.7.2`
+
+#### Authentication & Encryption
+- **JWT**: `github.com/golang-jwt/jwt/v5@v5.3.0`
+- **Cryptography**: `golang.org/x/crypto@v0.43.0`
+
+#### Database Drivers
+- **MySQL**: `github.com/go-sql-driver/mysql@v1.9.3`
+
+#### Cache & Queue
+- **Redis Client**: `github.com/redis/go-redis/v9@v9.17.2`
+- **Async Task Queue**: `github.com/hibiken/asynq@v0.25.1`
+
+#### Object Storage
+- **MinIO**: `github.com/minio/minio-go/v7@v7.0.95`
+- **AWS SDK**: `github.com/aws/aws-sdk-go@v1.45.0`
+
+#### Full-Text Search
+- **Meilisearch**: `github.com/meilisearch/meilisearch-go@v0.26.0`
+
+#### Geospatial & Spatial Data
+- **Geometry Processing**: `github.com/twpayne/go-geom@v1.6.1`
+- **Shapefile**: `github.com/jonas-p/go-shp@v0.1.1`
+- **Vector Database**: `github.com/pgvector/pgvector-go@v0.1.0`
+
+#### Excel & Document Processing
+- **Excel**: `github.com/xuri/excelize/v2@v2.10.0`
+
+#### Utilities
+- **UUID**: `github.com/google/uuid@v1.6.0`
+- **Environment Variables**: `github.com/joho/godotenv@v1.5.1`
+- **Cron Scheduling**: `github.com/robfig/cron/v3@v3.0.1`
+
+#### Module-Specific Dependencies
+- **CORS Middleware** (Meta): `github.com/gin-contrib/cors@v1.5.0`
+- **Hive Client** (Develop): `github.com/beltran/gohive@v1.6.0`
+- **SQLite Driver** (Manager): `gorm.io/driver/sqlite@v1.6.0`
+- **MySQL Driver** (Develop): `gorm.io/driver/mysql@v1.6.0`
+- **Testing Framework** (Transfer): `github.com/stretchr/testify@v1.11.1`
+
+**Important Notes**:
+- When developing new modules, strictly follow the versions above
+- Before upgrading dependencies, upgrade them uniformly across all modules
+- Version numbers and last update time are recorded at the top of this document
+
 ### Frontend
 
 - **Framework**: Vue 3 + Composition API
@@ -291,8 +345,8 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 
 **业务库** (business/docker-compose.yml，独立部署):
 
-- `postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
-- `minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
+- `business-postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
+- `business-minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
 
 **分离优势**:
 

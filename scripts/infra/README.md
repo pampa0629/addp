@@ -506,17 +506,16 @@ docker compose -f docker-compose.infra.yml down -v
 
 **Docker Compose 项目名**: `addp-infra`
 
-所有基础设施容器使用简洁命名(由 Docker Compose 项目名自动管理):
-- `postgres` - PostgreSQL 容器
-- `redis` - Redis 容器
-- `minio` - MinIO 容器
-- `meilisearch` - Meilisearch 容器
+所有基础设施容器使用统一的 `addp-` 前缀:
+- `addp-postgres` - PostgreSQL 容器
+- `addp-redis` - Redis 容器
+- `addp-minio` - MinIO 容器
+- `addp-meilisearch` - Meilisearch 容器
 
-**实际容器名**: 由于 Docker Compose 项目名为 `addp-infra`,容器的完整名称会自动添加项目前缀,如 `addp-infra-postgres-1`
-
-**好处**:
-- ✅ 简洁命名: 容器名直接反映服务类型
-- ✅ 项目隔离: Docker Compose 自动添加项目前缀避免冲突
+**命名优势**:
+- ✅ 清晰标识: 一眼看出容器属于 ADDP 系统基础设施
+- ✅ 避免冲突: 与其他项目(如 business-postgres)明确区分
+- ✅ 批量操作: `docker ps --filter "name=addp-"` 精确过滤
 - ✅ 便于管理: `docker compose -f docker-compose.infra.yml ps` 查看所有服务
 
 ## 故障排查

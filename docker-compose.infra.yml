@@ -13,7 +13,7 @@ services:
 
   postgres:
     image: ${POSTGRES_IMAGE:-postgis/postgis:15-3.4}
-    container_name: postgres
+    container_name: addp-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -34,7 +34,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: addp-redis
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
@@ -51,7 +51,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: minio
+    container_name: addp-minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -72,7 +72,7 @@ services:
 
   meilisearch:
     image: getmeili/meilisearch:v1.7
-    container_name: meilisearch
+    container_name: addp-meilisearch
     environment:
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=${MEILISEARCH_MASTER_KEY}

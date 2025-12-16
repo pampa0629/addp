@@ -7,7 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.2
 	github.com/joho/godotenv v1.5.1
 	github.com/jonas-p/go-shp v0.1.1
 	github.com/lib/pq v1.10.9
@@ -15,10 +15,10 @@ require (
 	github.com/pgvector/pgvector-go v0.1.0
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/twpayne/go-geom v1.5.7
+	github.com/twpayne/go-geom v1.6.1
 	github.com/xuri/excelize/v2 v2.10.0
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/gorm v1.31.0
+	gorm.io/gorm v1.31.1
 )
 
 require (

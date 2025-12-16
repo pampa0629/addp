@@ -125,7 +125,7 @@ echo -e "${CYAN}=== Resource Usage (Top 5 by Memory) ===${NC}"
 echo ""
 
 # Get all ADDP containers
-CONTAINER_IDS=$(docker ps --filter "name=addp" --filter "name=postgres" --filter "name=redis" --filter "name=minio" --filter "name=meilisearch" --filter "name=gateway" --filter "name=nginx" --filter "name=system" --filter "name=manager" --filter "name=meta" --filter "name=transfer" --filter "name=orchestrator" --filter "name=develop" --filter "name=portal" --format "{{.ID}}" 2>/dev/null)
+CONTAINER_IDS=$(docker ps --filter "name=addp-" --filter "name=business-" --format "{{.ID}}" 2>/dev/null)
 
 if [ -n "$CONTAINER_IDS" ]; then
     docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" $CONTAINER_IDS | head -6

@@ -532,7 +532,7 @@ services:
 
   nginx:
     image: ${REGISTRY:-localhost:5001}/addp-nginx:${IMAGE_TAG:-latest}
-    container_name: nginx
+    container_name: addp-nginx
     ports:
       - "${NGINX_PORT:-80}:80"
     networks:
