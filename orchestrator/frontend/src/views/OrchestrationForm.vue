@@ -28,7 +28,7 @@
 
       <el-form-item label="定时调度">
         <ScheduleConfig
-          v-model="form.cron_expr"
+          v-model="form.schedule"
           :allow-custom-cron="true"
         />
       </el-form-item>
@@ -72,7 +72,7 @@ const form = reactive({
   name: '',
   description: '',
   enabled: false,
-  cron_expr: '',
+  schedule: '',
   steps: []
 })
 

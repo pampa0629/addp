@@ -69,8 +69,8 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 	}
 
 	// 如果启用且有 Cron 表达式，调度任务
-	if req.Enabled && req.CronExpr != "" {
-		if err := h.scheduler.Schedule(req.ID, req.CronExpr); err != nil {
+	if req.Enabled && req.Schedule != "" {
+		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "调度失败: " + err.Error()})
 			return
 		}
@@ -141,8 +141,8 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 
 	// 重新调度
 	h.scheduler.Unschedule(req.ID)
-	if req.Enabled && req.CronExpr != "" {
-		if err := h.scheduler.Schedule(req.ID, req.CronExpr); err != nil {
+	if req.Enabled && req.Schedule != "" {
+		if err := h.scheduler.Schedule(req.ID, req.Schedule); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "调度失败: " + err.Error()})
 			return
 		}

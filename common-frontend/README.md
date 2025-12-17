@@ -70,6 +70,47 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）
 
+### 定时调度组件
+
+> 📚 **详细文档**: [ScheduleConfig.md](./basic/docs/ScheduleConfig.md)
+
+- **ScheduleConfig** - 定时调度配置组件，用于配置 Cron 表达式
+  - 11 种快捷预设（每天、每周、每月等）
+  - 4 种调度模式（每天/每周/每月/自定义 Cron）
+  - 实时中文预览
+  - 格式验证
+  - 支持自定义预设列表
+  - 支持禁用、只读、紧凑等模式
+
+- **ScheduleDisplay** - 表格单元格渲染组件，用于显示调度信息
+  - 简洁的图标 + 文字展示
+  - 自动调用 `describeCron` 转换为中文描述
+  - 支持自定义空值文本
+
+**使用示例**:
+
+```vue
+<!-- ScheduleConfig: 表单嵌入模式 -->
+<template>
+  <el-form-item label="定时调度">
+    <ScheduleConfig
+      v-model="form.schedule"
+      :allow-custom-cron="true"
+      :show-presets="true"
+    />
+  </el-form-item>
+</template>
+
+<!-- ScheduleDisplay: 表格渲染 -->
+<template>
+  <el-table-column label="调度配置">
+    <template #default="{ row }">
+      <ScheduleDisplay :cron="row.schedule" />
+    </template>
+  </el-table-column>
+</template>
+```
+
 ### 认证组件 (Composables)
 
 > 📚 **详细文档**: [AUTH_USAGE_GUIDE.md](./basic/composables/AUTH_USAGE_GUIDE.md)

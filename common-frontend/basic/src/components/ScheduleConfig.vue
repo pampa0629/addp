@@ -1,27 +1,37 @@
 <template>
-  <div class="schedule-config">
-    <!-- 快捷选择 -->
-    <div class="schedule-presets">
+  <div
+    class="schedule-config"
+    :class="{
+      'compact': compactMode,
+      'readonly': readonly,
+      'disabled': disabled
+    }"
+  >
+    <!-- 快捷选择和操作按钮 -->
+    <div v-if="showPresets" class="schedule-presets">
       <span class="schedule-presets__label">快捷选择:</span>
       <el-button
-        v-for="preset in presetOptions"
+        v-for="preset in effectivePresets"
         :key="preset.key"
         size="small"
+        :disabled="disabled || readonly"
         @click="handlePresetClick(preset.key)"
       >
         {{ preset.label }}
       </el-button>
-    </div>
-
-    <!-- 操作按钮 -->
-    <div class="schedule-actions">
-      <el-button type="primary" size="small" @click="openDialog">
+      <el-button
+        type="primary"
+        size="small"
+        :disabled="disabled || readonly"
+        @click="openDialog"
+      >
         自定义时间
       </el-button>
       <el-button
         v-if="modelValue"
         size="small"
         text
+        :disabled="disabled || readonly"
         @click="clearSchedule"
       >
         清除调度
@@ -46,7 +56,7 @@
     >
       <el-form :model="customForm" label-width="100px">
         <el-form-item label="调度类型">
-          <el-radio-group v-model="customForm.mode">
+          <el-radio-group v-model="customForm.mode" :disabled="disabled">
             <el-radio label="daily">每天</el-radio>
             <el-radio label="weekly">每周</el-radio>
             <el-radio label="monthly">每月</el-radio>
@@ -56,7 +66,7 @@
 
         <!-- 每周选择 -->
         <el-form-item v-if="customForm.mode === 'weekly'" label="执行日">
-          <el-checkbox-group v-model="customForm.weekDays">
+          <el-checkbox-group v-model="customForm.weekDays" :disabled="disabled">
             <el-checkbox
               v-for="day in weeklyOptions"
               :key="day.value"
@@ -74,6 +84,7 @@
             :min="1"
             :max="31"
             controls-position="right"
+            :disabled="disabled"
           />
           <span class="schedule-dialog__tip">如遇当月无该日期,将在最后一天执行</span>
         </el-form-item>
@@ -85,6 +96,7 @@
             placeholder="选择时间"
             format="HH:mm"
             value-format="HH:mm"
+            :disabled="disabled"
           />
         </el-form-item>
 
@@ -93,6 +105,7 @@
           <el-input
             v-model="customForm.cronExpr"
             placeholder="如: */5 * * * * (每5分钟)"
+            :disabled="disabled"
           />
           <div class="schedule-dialog__tip">
             支持标准 5 字段 Cron 表达式
@@ -117,7 +130,7 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleConfirm">确定</el-button>
+        <el-button type="primary" :disabled="disabled" @click="handleConfirm">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -143,6 +156,26 @@ const props = defineProps({
     default: ''
   },
   allowCustomCron: {
+    type: Boolean,
+    default: false
+  },
+  showPresets: {
+    type: Boolean,
+    default: true
+  },
+  presetList: {
+    type: Array,
+    default: null
+  },
+  compactMode: {
+    type: Boolean,
+    default: false
+  },
+  disabled: {
+    type: Boolean,
+    default: false
+  },
+  readonly: {
     type: Boolean,
     default: false
   }
@@ -174,6 +207,11 @@ const customPreview = computed(() => {
     return describeCron(customForm.value.cronExpr)
   }
   return generateScheduleDescription(customForm.value)
+})
+
+// 有效的预设列表（支持自定义）
+const effectivePresets = computed(() => {
+  return props.presetList || presetOptions
 })
 
 // 点击预设选项
@@ -257,6 +295,28 @@ const handleConfirm = () => {
   gap: 8px;
 }
 
+/* 紧凑模式 */
+.schedule-config.compact {
+  gap: 6px;
+}
+
+.schedule-config.compact .schedule-presets {
+  gap: 6px;
+}
+
+/* 禁用状态 */
+.schedule-config.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* 只读状态 */
+.schedule-config.readonly .schedule-result {
+  background-color: #f5f7fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
 .schedule-presets {
   display: flex;
   align-items: center;
@@ -267,12 +327,6 @@ const handleConfirm = () => {
 .schedule-presets__label {
   color: #606266;
   font-size: 13px;
-}
-
-.schedule-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .schedule-result {

@@ -258,7 +258,8 @@ const loadResources = async () => {
   loadingResources.value = true
   try {
     const res = await metaApi.getResources()
-    // client.js 的响应拦截器已经返回 response.data，所以这里直接是 res.data
+    // createAPIClient 提取了 axios 的 response.data（后端响应体 {"data": [...]}）
+    // 需要再提取业务数据的 .data 字段才能得到数组
     resources.value = res.data || []
     if (!selectedResource.value && resources.value.length) {
       selectedResource.value = resources.value[0]
@@ -422,7 +423,7 @@ const prefillScheduleForm = task => {
     resetScheduleForm()
     return
   }
-  scheduleCron.value = task.cron_expression || ''
+  scheduleCron.value = task.schedule || ''
   scheduleEnabled.value = !!task.enabled
 }
 
@@ -539,7 +540,7 @@ const submitScheduleForm = async () => {
       schedule_type: 'cron',  // 统一使用 cron 类型
       schedule_time: '',
       schedule_value: [],
-      cron_expression: scheduleCron.value,  // 直接使用 ScheduleConfig 生成的 Cron 表达式
+      schedule: scheduleCron.value,  // 直接使用 ScheduleConfig 生成的 Cron 表达式
       enabled: scheduleEnabled.value
     }
 
@@ -588,10 +589,10 @@ const closeScanDialog = () => {
 }
 
 function formatScheduleDescription(task) {
-  if (!task.cron_expression) {
+  if (!task.schedule) {
     return '手动触发'
   }
-  return describeCron(task.cron_expression)
+  return describeCron(task.schedule)
 }
 
 function formatDateTime(datetime) {

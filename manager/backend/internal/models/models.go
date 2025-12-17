@@ -267,7 +267,7 @@ type MetaScanTask struct {
 	Name           string     `json:"name"`
 	Description    string     `json:"description,omitempty"`
 	ScheduleType   string     `json:"schedule_type"`
-	CronExpression string     `json:"cron_expression,omitempty"`
+	Schedule       string     `json:"schedule,omitempty"`
 	Enabled        bool       `json:"enabled"`
 	Parameters     JSONMap    `json:"parameters,omitempty"`
 	ScheduleConfig JSONMap    `json:"schedule_config,omitempty"`
@@ -290,7 +290,7 @@ type MetaScanTaskRequest struct {
 	ScheduleType   string   `json:"schedule_type" binding:"required"`
 	ScheduleTime   string   `json:"schedule_time"`
 	ScheduleValue  []int    `json:"schedule_value"`
-	CronExpression string   `json:"cron_expression"`
+	Schedule       string   `json:"schedule"`
 	Enabled        bool     `json:"enabled"`
 }
 

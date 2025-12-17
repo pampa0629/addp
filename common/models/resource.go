@@ -31,7 +31,7 @@ type ScanConfig struct {
 	ImmediateDepth string   `json:"immediate_depth,omitempty"` // 立即扫描深度：basic（基础）或 deep（深度）
 	ScheduledScan  bool     `json:"scheduled_scan"`            // 启用定时扫描（深度固定为 deep）
 	ScheduleType   string   `json:"schedule_type"`             // daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
-	CronExpression string   `json:"cron_expression,omitempty"` // Cron 表达式（schedule_type=cron 时使用）
+	Schedule       string   `json:"schedule,omitempty"`        // Cron 表达式（schedule_type=cron 时使用）
 	ScheduleTime   string   `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
 	ScheduleValue  []int    `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
 	ScanDepth      string   `json:"scan_depth"`                // 兼容旧版字段：basic（或已废弃的 shallow）, deep

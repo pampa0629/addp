@@ -4,17 +4,13 @@
  * 统一各模块的调度配置逻辑
  */
 
-// 预设选项（扩充到 11 个）
+// 预设选项
 const presetOptions = [
   { key: 'every-minute', label: '每分钟', cron: '* * * * *', description: '每分钟执行一次' },
-  { key: 'every-5min', label: '每5分钟', cron: '*/5 * * * *', description: '每 5 分钟执行一次' },
   { key: 'every-15min', label: '每15分钟', cron: '*/15 * * * *', description: '每 15 分钟执行一次' },
   { key: 'every-30min', label: '每30分钟', cron: '*/30 * * * *', description: '每 30 分钟执行一次' },
   { key: 'hourly', label: '每小时', cron: '0 * * * *', description: '每小时整点执行' },
-  { key: 'every-2hour', label: '每2小时', cron: '0 */2 * * *', description: '每 2 小时执行一次' },
   { key: 'daily-midnight', label: '每天凌晨', cron: '0 0 * * *', description: '每天 00:00 执行' },
-  { key: 'daily-9am', label: '每天上午9点', cron: '0 9 * * *', description: '每天 09:00 执行' },
-  { key: 'daily-noon', label: '每天中午12点', cron: '0 12 * * *', description: '每天 12:00 执行' },
   { key: 'weekly-monday', label: '每周一零点', cron: '0 0 * * 1', description: '每周一 00:00 执行' },
   { key: 'monthly-first', label: '每月1号零点', cron: '0 0 1 * *', description: '每月 1 号 00:00 执行' }
 ]

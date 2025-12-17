@@ -16,7 +16,14 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="cron_expr" label="Cron 表达式" width="150"></el-table-column>
+      <el-table-column label="定时调度" width="200">
+        <template #default="scope">
+          <el-tag v-if="scope.row.schedule" type="success" size="small">
+            {{ describeCron(scope.row.schedule) }}
+          </el-tag>
+          <el-tag v-else type="info" size="small">手动触发</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="步骤数" width="100">
         <template #default="scope">
           {{ scope.row.steps?.length || 0 }}
@@ -39,6 +46,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import orchestrationAPI from '../api/orchestration'
+import { describeCron } from '@common-ui'
 
 const router = useRouter()
 const orchestrations = ref([])

@@ -179,7 +179,7 @@
               </el-table-column>
               <el-table-column label="调度" min-width="240">
                 <template #default="{ row }">
-                  {{ row.cron_expression ? describeCron(row.cron_expression) : '手动触发' }}
+                  {{ row.schedule ? describeCron(row.schedule) : '手动触发' }}
                 </template>
               </el-table-column>
               <el-table-column label="状态" width="120">
@@ -434,7 +434,7 @@
         </el-form-item>
         <el-form-item label="定时调度">
           <ScheduleConfig
-            v-model="taskForm.cronExpression"
+            v-model="taskForm.schedule"
             :allow-custom-cron="true"
           />
         </el-form-item>
@@ -534,7 +534,7 @@ const editingTaskId = ref(null)
 const taskForm = reactive({
   name: '',
   description: '',
-  cronExpression: '',
+  schedule: '',
   enabled: true,
   schemaInput: '',
   objectPathInput: '',
@@ -767,7 +767,7 @@ const resetTaskForm = () => {
     scheduleType: 'daily',
     scheduleTime: '00:00',
     scheduleValue: [],
-    cronExpression: '',
+    schedule: '',
     enabled: true,
     schemaInput: '',
     objectPathInput: '',
@@ -779,7 +779,7 @@ const populateTaskForm = (task) => {
   const params = task.parameters || {}
   taskForm.name = task.name || ''
   taskForm.description = task.description || ''
-  taskForm.cronExpression = task.cron_expression || ''
+  taskForm.schedule = task.schedule || ''
   taskForm.enabled = !!task.enabled
   taskForm.schemaInput = Array.isArray(params.schema_names) ? params.schema_names.join(', ') : ''
   taskForm.objectPathInput = Array.isArray(params.object_paths) ? params.object_paths.join(', ') : ''
@@ -839,8 +839,8 @@ const buildTaskPayloadFromForm = () => {
     schema_names: schemaNames,
     object_paths: objectPaths,
     scan_depth: taskForm.scanDepth || 'deep',
-    schedule_type: taskForm.cronExpression ? 'cron' : 'manual',
-    cron_expression: taskForm.cronExpression || '',
+    schedule_type: taskForm.schedule ? 'cron' : 'manual',
+    schedule: taskForm.schedule || '',
     enabled: taskForm.enabled
   }
 }
@@ -854,10 +854,10 @@ const buildTaskPayloadFromTask = (task, overrides = {}) => {
     schema_names: Array.isArray(params.schema_names) ? params.schema_names : [],
     object_paths: Array.isArray(params.object_paths) ? params.object_paths : [],
     scan_depth: typeof params.scan_depth === 'string' ? params.scan_depth : 'deep',
-    schedule_type: overrides.cron_expression !== undefined
-      ? (overrides.cron_expression ? 'cron' : 'manual')
-      : (task.cron_expression ? 'cron' : 'manual'),
-    cron_expression: overrides.cron_expression ?? (task.cron_expression || ''),
+    schedule_type: overrides.schedule !== undefined
+      ? (overrides.schedule ? 'cron' : 'manual')
+      : (task.schedule ? 'cron' : 'manual'),
+    schedule: overrides.schedule ?? (task.schedule || ''),
     enabled: overrides.enabled ?? task.enabled
   }
 }

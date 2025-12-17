@@ -79,7 +79,7 @@ type ScanTaskUpsertRequest struct {
 	ScheduleType   string   `json:"schedule_type" binding:"required"` // manual/daily/weekly/monthly/cron
 	ScheduleTime   string   `json:"schedule_time"`                    // HH:MM
 	ScheduleValue  []int    `json:"schedule_value"`                   // weekly: weekday(0-6), monthly: day(1-31)
-	CronExpression string   `json:"cron_expression"`                  // schedule_type=cron 时必填
+	Schedule       string   `json:"schedule"`                         // schedule_type=cron 时必填
 	Enabled        bool     `json:"enabled"`
 }
 

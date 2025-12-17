@@ -21,7 +21,7 @@ type ScanTask struct {
 	Name           string         `gorm:"size:128;not null" json:"name"`
 	Description    string         `gorm:"size:512" json:"description,omitempty"`
 	ScheduleType   string         `gorm:"size:32;not null" json:"schedule_type"` // manual/daily/weekly/monthly/cron
-	CronExpression string         `gorm:"size:128" json:"cron_expression,omitempty"`
+	Schedule       string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
 	Enabled        bool           `gorm:"default:false" json:"enabled"`
 	Parameters     JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"`      // 扫描目标配置
 	ScheduleConfig JSONMap        `gorm:"type:jsonb" json:"schedule_config,omitempty"` // 原始调度配置（便于前端回显）

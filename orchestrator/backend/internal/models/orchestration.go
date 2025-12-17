@@ -16,7 +16,7 @@ type Orchestration struct {
 	Description string         `gorm:"size:512" json:"description"`
 	Steps       Steps          `gorm:"type:jsonb;not null" json:"steps"`
 	Enabled     bool           `gorm:"default:false" json:"enabled"`
-	CronExpr    string         `gorm:"size:128" json:"cron_expr,omitempty"`
+	Schedule    string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`

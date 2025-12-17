@@ -186,7 +186,7 @@ func (s *ScanTaskService) bootstrapSchedules() error {
 
 	for i := range tasks {
 		task := tasks[i]
-		if task.CronExpression == "" {
+		if task.Schedule == "" {
 			continue
 		}
 		if err := s.scheduleTask(&task); err != nil {
@@ -200,7 +200,7 @@ func (s *ScanTaskService) scheduleTask(task *models.ScanTask) error {
 	if task == nil {
 		return errors.New("nil task")
 	}
-	if task.CronExpression == "" || !task.Enabled {
+	if task.Schedule == "" || !task.Enabled {
 		return nil
 	}
 
@@ -220,7 +220,7 @@ func (s *ScanTaskService) scheduleTask(task *models.ScanTask) error {
 	}
 
 	// 调度任务（如果已存在会自动更新）
-	if err := s.scheduler.Schedule(ctx, taskID, task.CronExpression, handler); err != nil {
+	if err := s.scheduler.Schedule(ctx, taskID, task.Schedule, handler); err != nil {
 		return err
 	}
 
@@ -653,7 +653,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		Name:           req.Name,
 		Description:    req.Description,
 		ScheduleType:   req.ScheduleType,
-		CronExpression: cronExpr,
+		Schedule:       cronExpr,
 		Enabled:        req.Enabled,
 		Parameters:     params,
 		ScheduleConfig: scheduleConfig,
@@ -673,7 +673,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		return nil, err
 	}
 
-	if task.CronExpression != "" && task.Enabled {
+	if task.Schedule != "" && task.Enabled {
 		if err := s.scheduleTask(task); err != nil {
 			s.log.Warn("任务调度失败", "task_id", task.ID, "error", err)
 		}
@@ -704,7 +704,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 	task.Description = req.Description
 	task.ResourceID = req.ResourceID
 	task.ScheduleType = req.ScheduleType
-	task.CronExpression = cronExpr
+	task.Schedule = cronExpr
 	task.Enabled = req.Enabled
 	task.Parameters = params
 	task.ScheduleConfig = scheduleConfig
@@ -722,7 +722,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 		return nil, err
 	}
 
-	if task.CronExpression != "" && task.Enabled {
+	if task.Schedule != "" && task.Enabled {
 		if err := s.scheduleTask(task); err != nil {
 			s.log.Warn("更新后任务调度失败", "task_id", task.ID, "error", err)
 		}
@@ -831,7 +831,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 	setRunName(s.db, run, storageType, triggerTypeScheduled, s.log)
 
 	now := time.Now()
-	next := s.nextTimeFromSpec(task.CronExpression, now)
+	next := s.nextTimeFromSpec(task.Schedule, now)
 	taskUpdate := map[string]interface{}{
 		"last_run_at": now,
 		"updated_at":  now,
@@ -880,10 +880,10 @@ func (s *ScanTaskService) computeNextRunTime(taskID *uint) *time.Time {
 		return nil
 	}
 	var task models.ScanTask
-	if err := s.db.Select("cron_expression").First(&task, *taskID).Error; err != nil {
+	if err := s.db.Select("schedule").First(&task, *taskID).Error; err != nil {
 		return nil
 	}
-	return s.nextTimeFromSpec(task.CronExpression, time.Now())
+	return s.nextTimeFromSpec(task.Schedule, time.Now())
 }
 
 func (s *ScanTaskService) nextTimeFromSpec(spec string, from time.Time) *time.Time {
@@ -904,7 +904,7 @@ func (s *ScanTaskService) buildCronExpression(req *models.ScanTaskUpsertRequest)
 		Type:  req.ScheduleType,
 		Time:  req.ScheduleTime,
 		Value: req.ScheduleValue,
-		Expr:  req.CronExpression,
+		Expr:  req.Schedule,
 	}
 
 	cronExpr, config, err := s.exprBuilder.BuildFromScheduleConfig(scheduleConfig)
@@ -1051,7 +1051,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 			Name:           taskName,
 			Description:    "由存储引擎注册时自动创建",
 			ScheduleType:   scanConfig.ScheduleType,
-			CronExpression: cronExpr,
+			Schedule:       cronExpr,
 			Enabled:        true,
 			Parameters:     parameters,
 		}
@@ -1080,7 +1080,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	updates := map[string]interface{}{
 		"name":            taskName,
 		"schedule_type":   scanConfig.ScheduleType,
-		"cron_expression": cronExpr,
+		"schedule":        cronExpr,
 		"enabled":         scanConfig.Enabled,
 		"parameters":      parameters,
 		"updated_at":      time.Now(),
@@ -1095,7 +1095,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	updatedTask := existingTask
 	updatedTask.Name = taskName
 	updatedTask.ScheduleType = scanConfig.ScheduleType
-	updatedTask.CronExpression = cronExpr
+	updatedTask.Schedule = cronExpr
 	updatedTask.Enabled = scanConfig.Enabled
 	updatedTask.Parameters = parameters
 
@@ -1150,14 +1150,14 @@ func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels
 		return "", nil // 手动触发，不需要 Cron 表达式
 
 	case "cron":
-		if config.CronExpression == "" {
-			return "", errors.New("Cron 类型必须提供 cron_expression")
+		if config.Schedule == "" {
+			return "", errors.New("Cron 类型必须提供 schedule")
 		}
 		// 验证 Cron 表达式
-		if err := s.exprBuilder.Validate(config.CronExpression); err != nil {
+		if err := s.exprBuilder.Validate(config.Schedule); err != nil {
 			return "", fmt.Errorf("无效的 Cron 表达式: %w", err)
 		}
-		return config.CronExpression, nil
+		return config.Schedule, nil
 
 	case "daily":
 		// 每日执行：从 schedule_time 解析 HH:mm

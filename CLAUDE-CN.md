@@ -8,17 +8,65 @@
 
 **Important**: In this project, **please communicate with users in Chinese as much as possible**. Use English only when the user explicitly asks questions in English.
 
+## 📚 文档导航地图 (供 Claude Code 使用)
+
+**当遇到以下问题时,请主动读取相应文档**:
+
+
+| 问题场景             | 需要读取的文档             | 关键字触发                 |
+| -------------------- | -------------------------- | -------------------------- |
+| 开发原则和代码规范   | docs/addp开发原则.md       | 原则、规范、DRY、向后兼容  |
+| 环境配置、端口、密钥 | docs/addp配置介绍.md       | 配置、端口、环境变量、.env |
+| Go/前端依赖版本      | docs/技术栈规约.md         | 依赖、版本、升级、库       |
+| Common 模块使用      | docs/共享模块介绍.md       | common、共享代码、复用     |
+| 创建新模块           | docs/新模块开发指南.md     | 新模块、脚手架、模板       |
+| 部署和启动           | docs/addp部署和开发步骤.md | 部署、启动、docker、脚本   |
+| System 模块详情      | system/CLAUDE.md           | 认证、用户、租户、日志     |
+| Gateway 路由         | gateway/ARCHITECTURE.md    | 路由、转发、API网关        |
+
+**重要**:
+
+- 遇到相关问题时,先读取对应文档
+- 多个场景可能需要读取多个文档
+- 外链文档包含详细信息,主文档只提供概览
+
 ## 开发原则
-详细内容需要时，请阅读 docs/addp开发原则.md 。
+
 **重要**: ADDP 当前处于活跃开发阶段。以下原则指导所有开发工作:
+
 ### 1. 无需考虑向后兼容性
+
+开发阶段优先最佳架构,可自由修改数据库Schema和API结构
+
 ### 2. 保持简洁
+
+临时脚本和文档保存到 /tmp/,保持项目树整洁
+
 ### 3. 无需征得同意
+
+auto-edit 模式下可自由执行脚本,无需每次询问用户
+
 ### 4. 全面考虑
+
+任何修改都要考虑全局影响,同步更新相关模块
+
 ### 5. 彻底解决根本原因
+
+深入分析问题根源,完整解决而非临时修补
+
 ### 6. 敢于删除
+
+删除过时代码和文件,不保留"以防万一"的内容
+
 ### 7. 敢于质疑
+
+对不合理的需求提出质疑,平等讨论达成共识
+
 ### 8. DRY (Don't Repeat Yourself / 不要重复自己)
+
+将重复代码提取到 common/ 或 common-frontend/ 模块
+
+详细说明: docs/addp开发原则.md
 
 ## 仓库结构
 
@@ -28,20 +76,43 @@
 - **common-frontend/** - 前端共享库: Vue 3 组件、工具和类型定义,供前端复用
   - **basic/** - 基础 UI 组件,无地图依赖 (StorageEngineForm、ImagePreview、格式化器)
   - **map/** - 地图相关组件,需要 OpenLayers 和高德地图 (GeoJsonPreview、ShapefilePreview、TablePreview)
-- **portal/** - 统一门户入口,基于 iframe 的模块集成 - 
-- **system/** - 核心系统模块: 用户认证、日志、资源管理 -  (PostgreSQL system schema)
+- **portal/** - 统一门户入口,基于 iframe 的模块集成 - **IMPLEMENTED**
+- **system/** - 核心系统模块: 用户认证、日志、资源管理 - **IMPLEMENTED** (PostgreSQL system schema)
 - **gateway/** - API 网关: 处理外部请求并路由到内部服务 -  (反向代理)
-- **manager/** - 数据管理: 数据源连接、上传目录组织、数据预览 
+- **manager/** - 数据管理: 数据源连接、上传目录组织、数据预览
 - **meta/** - 元数据服务: 数据元数据解析/存储/查询,使用 cron 调度的模式扫描 -  (PostgreSQL metadata schema)
-- **transfer/** - 数据传输: 数据导入/导出/同步 
-- **orchestrator/** - 工作流编排: 任务调度和执行 
-- **develop/** - 开发工作台: SQL 执行、GIS 工作流管理 
-- **geopandas-engine/** - 空间计算引擎: 基于 Python 的 GIS 工作流执行,提供 N个空间算子
+- **transfer/** - 数据传输: 数据导入/导出/同步
+- **orchestrator/** - 工作流编排: 任务调度和执行
+- **develop/** - 开发工作台: SQL 执行、GIS 工作流管理
+- **geopandas-engine/** - 空间计算引擎: 基于 Python 的 GIS 工作流执行,提供 21个空间算子 - **IMPLEMENTED**
 
 所有服务遵循相同的架构模式,使用共享的基础设施 (PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
+## 快速开始
+
+### 基础启动 (3步)
+
+1. **启动基础设施**: `bash scripts/infra/up.sh`
+2. **启动开发环境**: `bash scripts/dev/start.sh`
+3. **访问应用**:
+   - Portal 统一入口: http://localhost:5170
+   - API Gateway: http://localhost:8000
+   - System Backend: http://localhost:8080
+
+详细步骤: docs/addp部署和开发步骤.md
+
 ## 各模块端口
-需要时请阅读 docs/addp配置介绍.md 
+
+**核心端口** (高频使用):
+
+- **Portal**: 5170 (dev) / 80 (prod via Nginx)
+- **Gateway**: 8000
+- **System Backend**: 8080
+- **PostgreSQL**: 5432(系统)
+- **Redis**: 6379
+- **MinIO**: 9000-9001 (系统) / 9002-9003 (业务)
+
+完整端口列表: docs/addp配置介绍.md
 
 ## 技术栈
 
@@ -57,9 +128,9 @@
 - **空间计算**: GeoPandas Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
 ### Go 依赖版本规范
+
 为确保所有模块依赖版本一致，ADDP 平台使用以下统一的 Go 依赖版本（最后更新: 2025-12-15）。
 需要涉及技术栈详细信息时，请访问 docs/技术栈规约.md 文档。
-
 
 ### 基础设施
 
@@ -82,10 +153,12 @@ ADDP 采用**系统与业务数据分离**的架构设计:
 - **meilisearch**: 全文检索引擎 (元数据资产搜索、文件索引)
 
 **业务库** (business/docker-compose.yml,独立部署):
+
 - `business-postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
 - `business-minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
 
 ### 基于模块的资源隔离
+
 ADDP 采用**模块化资源隔离**策略,确保各模块资源独立管理:
 **PostgreSQL Schema 隔离**:按照模块名隔离
 **MinIO Bucket 隔离** :按照模块名隔离
@@ -93,11 +166,12 @@ ADDP 采用**模块化资源隔离**策略,确保各模块资源独立管理:
 **Asynq Queue 命名规范**:{module}:{priority}
 **Meilisearch Index 命名规范**:{module}:{resource_type}
 
-
 ## 核心架构模式
 
 ### 分层后端架构 (在 system/backend/ 中)
+
 Go 后端遵循清晰的分层方法:
+
 ```
 cmd/server/main.go          → 应用入口
 internal/api/               → HTTP 处理器 + 路由
@@ -107,6 +181,7 @@ internal/models/            → 数据库模型 + DTO
 internal/middleware/        → 认证、日志中间件
 pkg/utils/                  → 共享工具 (JWT、加密)
 ```
+
 **数据流**: API Handler → Service → Repository → Database
 
 ### 前端架构 (Portal + 微服务模式)
@@ -157,23 +232,30 @@ system/frontend/           → System 模块 (port 5173 dev / 8090 prod)
 - Portal 和模块可以独立认证
 - 在生产环境,所有请求通过 Gateway (8000) 路由
 
+### 认证流程
 
-### 测试登录：使用租户管理员登录
-curl -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "123456"}'
+JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 token → 请求携带 token → 后端验证 token
+
+### 测试账户
+
+**租户管理员**: `admin` / `123456` (管理默认租户的用户、资源、数据)
+**超级管理员**: `SuperAdmin` / `20251001#SuperAdmin` (系统级管理、租户管理)
+
+详细说明和启用方式: system/CLAUDE.md
 
 ### 配置中心模式
+
 需要详细内容时，请阅读 docs/addp配置介绍.md
 
 ### 共享模块
+
 `common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPandas Engine 集成)。
 `common-frontend` 模块提供共享的 Vue 3 组件、工具和类型定义,供跨模块的前端复用。
 对于 ## Common 模块 和 common-frontend 模块的详细介绍，需要时请阅读： docs/共享模块介绍.md
 
-### 新模块开发 
-需要开发新模块时，请阅读： docs/新模块开发指南.md
+### 新模块开发
 
+需要开发新模块时，请阅读： docs/新模块开发指南.md
 
 ## 重要文件位置
 
@@ -192,9 +274,10 @@ curl -X POST http://localhost:8080/api/auth/login \
 - [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common 模块使用
 - [`common-frontend/README.md`](common-frontend/README.md) - Common 前端组件指南
 - [`common-frontend/ARCHITECTURE.md`](common-frontend/ARCHITECTURE.md) - Common 前端架构
-- 各模块目录下的 DATA_STRUCTURES.md 
+- 各模块目录下的 DATA_STRUCTURES.md
 
 ### 构建和部署
+
 需要时，请阅读 docs/addp部署和开发步骤.md
 
 ### 关键源文件
@@ -207,5 +290,6 @@ curl -X POST http://localhost:8080/api/auth/login \
 - Common frontend map: [common-frontend/map/src/index.js](common-frontend/map/src/index.js)
 
 ## 故障排除
+
 **JWT token 问题**: 确保 `.env` 中的 `JWT_SECRET` 在服务间匹配 (System 和 Gateway 需要相同的密钥)
 **跨服务调用失败**: 验证 `ENABLE_SERVICE_INTEGRATION=true` 且 docker-compose.yml 中的服务 URL 正确

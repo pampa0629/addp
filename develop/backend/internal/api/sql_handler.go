@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/addp/develop/backend/internal/models"
@@ -63,14 +64,19 @@ func (h *SQLHandler) Execute(c *gin.Context) {
 // TestConnection 测试数据库连接
 // GET /api/develop/test/:resource_id
 func (h *SQLHandler) TestConnection(c *gin.Context) {
+	log.Println("🎯 [HANDLER] TestConnection 被调用")
+
 	var req struct {
 		ResourceID uint `uri:"resource_id" binding:"required"`
 	}
 
 	if err := c.ShouldBindUri(&req); err != nil {
+		log.Printf("❌ [HANDLER] 绑定 URI 失败: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "资源ID无效"})
 		return
 	}
+
+	log.Printf("✅ [HANDLER] 解析到资源 ID: %d", req.ResourceID)
 
 	// 提取 JWT token（去除 "Bearer " 前缀）
 	authHeader := c.GetHeader("Authorization")

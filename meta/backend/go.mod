@@ -16,7 +16,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.95
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/xuri/excelize/v2 v2.10.0
-	gorm.io/gorm v1.31.1
+	gorm.io/gorm v1.25.12
 )
 
 replace github.com/addp/common => ../../common
@@ -67,6 +67,7 @@ require (
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/tiendc/go-deepcopy v1.7.1 // indirect

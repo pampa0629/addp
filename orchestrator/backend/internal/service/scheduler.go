@@ -50,9 +50,9 @@ func (s *Scheduler) Start() error {
 	}
 
 	for _, orch := range orchestrations {
-		if orch.CronExpr != "" {
+		if orch.Schedule != "" {
 			handler := s.createHandler(orch.ID)
-			if err := s.scheduler.Schedule(ctx, fmt.Sprintf("%d", orch.ID), orch.CronExpr, handler); err != nil {
+			if err := s.scheduler.Schedule(ctx, fmt.Sprintf("%d", orch.ID), orch.Schedule, handler); err != nil {
 				// 记录错误但继续启动其他任务
 				fmt.Printf("Failed to schedule orchestration %d: %v\n", orch.ID, err)
 			}

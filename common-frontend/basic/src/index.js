@@ -6,6 +6,7 @@ export { default as ExtractedMetadata } from './components/ExtractedMetadata.vue
 
 // Schedule Components
 export { default as ScheduleConfig } from './components/ScheduleConfig.vue'
+export { default as ScheduleDisplay } from './components/ScheduleDisplay.vue'
 
 // Utils
 export { formatBytes, formatDate, safeStringify } from './utils/formatters'

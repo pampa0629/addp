@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/addp/develop/backend/internal/repository"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -384,32 +386,67 @@ func (s *SQLExecutionService) TestConnectionWithToken(resourceID uint, token str
 	log.Printf("🔗 [TEST] 构建的连接字符串 (masked): %s", maskedConnStr)
 
 	// 创建临时连接（不缓存）
-	var db *gorm.DB
+	// 注意：Doris 与 GORM 兼容性有问题，使用 database/sql 直接连接
 	switch resource.ResourceType {
 	case "postgresql":
-		db, err = gorm.Open(postgres.Open(connStr), &gorm.Config{})
+		db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
+		if err != nil {
+			log.Printf("❌ [TEST] GORM Open 失败: %v | 资源类型: %s", err, resource.ResourceType)
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+
+		// 测试 PostgreSQL 连接
+		sqlDB, err := db.DB()
+		if err != nil {
+			log.Printf("❌ [TEST] 获取底层 sql.DB 失败: %v", err)
+			return err
+		}
+		defer sqlDB.Close()
+
+		if err := sqlDB.Ping(); err != nil {
+			log.Printf("❌ [TEST] Ping 失败: %v", err)
+			return fmt.Errorf("database ping failed: %w", err)
+		}
+
 	case "mysql", "doris":
-		db, err = gorm.Open(mysql.Open(connStr), &gorm.Config{})
+		// Doris 不完全兼容 GORM，直接使用 database/sql
+		log.Printf("🔌 [TEST] 准备打开 MySQL 连接...")
+		sqlDB, err := sql.Open("mysql", connStr)
+		if err != nil {
+			log.Printf("❌ [TEST] sql.Open 失败: %v | 资源类型: %s", err, resource.ResourceType)
+			return fmt.Errorf("failed to connect to database: %w", err)
+		}
+		defer sqlDB.Close()
+
+		// 设置连接参数
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
+		sqlDB.SetConnMaxLifetime(10 * time.Second)
+
+		// 设置连接超时
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// 测试连接
+		log.Printf("🔌 [TEST] 开始 Ping...")
+		if err := sqlDB.PingContext(ctx); err != nil {
+			log.Printf("❌ [TEST] Ping 失败: %v (类型: %T)", err, err)
+			return fmt.Errorf("database ping failed: %w", err)
+		}
+
+		log.Printf("✅ [TEST] Ping 成功!")
+
+		// 执行简单查询验证
+		var version string
+		err = sqlDB.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
+		if err != nil {
+			log.Printf("❌ [TEST] 查询版本失败: %v", err)
+			return fmt.Errorf("failed to query version: %w", err)
+		}
+		log.Printf("✅ [TEST] 数据库版本: %s", version)
+
 	default:
 		return fmt.Errorf("unsupported database type: %s", resource.ResourceType)
-	}
-
-	if err != nil {
-		log.Printf("❌ [TEST] GORM Open 失败: %v | 资源类型: %s", err, resource.ResourceType)
-		return fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	// 测试连接
-	sqlDB, err := db.DB()
-	if err != nil {
-		log.Printf("❌ [TEST] 获取底层 sql.DB 失败: %v", err)
-		return err
-	}
-	defer sqlDB.Close() // 测试完成后关闭连接
-
-	if err := sqlDB.Ping(); err != nil {
-		log.Printf("❌ [TEST] Ping 失败: %v", err)
-		return fmt.Errorf("database ping failed: %w", err)
 	}
 
 	log.Printf("✅ Database connection test passed for resource %d (%s)", resourceID, resource.ResourceType)

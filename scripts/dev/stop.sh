@@ -91,7 +91,17 @@ stop_services_concurrent() {
   pkill -9 -f "vite" 2>/dev/null || true
   pkill -9 -f "python.*api_server.py" 2>/dev/null || true
 
-  # Phase 6: 等待端口释放（避免 restart 时端口冲突）
+  # Phase 6: 按端口清理残留进程（处理手动启动的进程）
+  echo -e "${YELLOW}检查端口占用...${NC}"
+  for port in 8080 8081 8082 8083 8084 8085 8099 5170 5173 5174 5175 5176 5177 5178; do
+    pid=$(lsof -ti :$port 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      echo "  发现端口 $port 被占用 (PID: $pid)，强制清理..."
+      kill -9 $pid 2>/dev/null || true
+    fi
+  done
+
+  # Phase 7: 等待端口释放（避免 restart 时端口冲突）
   echo -e "${YELLOW}等待端口释放...${NC}"
   sleep 2
 
@@ -115,6 +125,18 @@ for frontend_dir in "$ROOT_DIR/portal/frontend" "$ROOT_DIR/system/frontend" "$RO
   fi
 done
 echo "✓ 前端缓存已清理"
+
+# 清理 go run 的临时文件（避免旧二进制被使用）
+echo ""
+echo -e "${YELLOW}清理 go run 临时文件...${NC}"
+# 清理 go run 的两级缓存:
+# 1. 临时目录缓存
+rm -rf /tmp/go-build* 2>/dev/null || true
+rm -rf /var/folders/*/T/go-build* 2>/dev/null || true
+# 2. 用户级缓存（~/Library/Caches/go-build 中的二进制）
+# 注意：不清理编译缓存本身，只清理 go run 生成的可执行文件
+find "$HOME/Library/Caches/go-build" -name "main" -type f -mtime -1 -delete 2>/dev/null || true
+echo "✓ go run 临时文件已清理"
 
 # 清理 PID 文件
 if [ -d ".dev-pids" ]; then
