@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	commonAuth "github.com/addp/common/middleware/auth"
 	metaErrors "github.com/addp/meta/internal/errors"
-	"github.com/addp/meta/internal/middleware"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
@@ -41,7 +41,7 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 // GET /api/meta/metadata/object
 // Query params: resource_id, object_key
 func (h *Handler) GetObjectMetadata(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -68,7 +68,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 // GetResources 获取资源列表及统计
 // GET /api/meta/resources
 func (h *Handler) GetResources(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resources, err := h.resourceService.GetResourcesWithStats(tenantID)
 	if err != nil {
@@ -82,7 +82,7 @@ func (h *Handler) GetResources(c *gin.Context) {
 // GetSchemas 获取资源的Schema列表
 // GET /api/meta/schemas/:resource_id
 func (h *Handler) GetSchemas(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Param("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -103,7 +103,7 @@ func (h *Handler) GetSchemas(c *gin.Context) {
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
 // GET /api/meta/schemas/:resource_id/available
 func (h *Handler) ListAvailableSchemas(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Param("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -134,7 +134,7 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 
 // ListObjectStorageNodes 分级列出对象存储节点
 func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Param("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -166,7 +166,7 @@ func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 // AutoScan 自动扫描所有未扫描的资源
 // POST /api/meta/scan/auto
 func (h *Handler) AutoScan(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	result, err := h.scanService.AutoScanUnscanned(tenantID)
 	if err != nil {
@@ -184,8 +184,8 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
-	userID := middleware.GetUserID(c)
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	var req models.ScanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -215,7 +215,7 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 	runIDStr := c.Param("run_id")
 	runID, err := strconv.ParseUint(runIDStr, 10, 32)
 	if err != nil {
@@ -247,7 +247,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	var (
 		taskID     *uint
@@ -362,8 +362,8 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
-	userID := middleware.GetUserID(c)
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	var req models.ScanTaskUpsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -387,8 +387,8 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
-	userID := middleware.GetUserID(c)
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	taskIDStr := c.Param("task_id")
 	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
@@ -419,7 +419,7 @@ func (h *Handler) DeleteScanTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	taskIDStr := c.Param("task_id")
 	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
@@ -443,8 +443,8 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
-	userID := middleware.GetUserID(c)
+	tenantID := commonAuth.GetTenantID(c)
+	userID := commonAuth.GetUserID(c)
 
 	taskIDStr := c.Param("task_id")
 	taskID, err := strconv.ParseUint(taskIDStr, 10, 32)
@@ -469,7 +469,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 		return
 	}
 
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	tasks, err := h.taskService.ListTasks(tenantID)
 	if err != nil {
@@ -483,7 +483,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 // ScanResource 扫描指定资源
 // POST /api/meta/scan/resource
 func (h *Handler) ScanResource(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	var req models.ScanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -515,7 +515,7 @@ func (h *Handler) ScanResource(c *gin.Context) {
 // Query params: resource_id, object_key
 // Body: 对象的二进制内容
 func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -571,7 +571,7 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 // GetTables 获取资源的表列表（用于Transfer模块字段选择）
 // GET /api/metadata/tables?resource_id=1
 func (h *Handler) GetTables(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	if resourceIDStr == "" {
@@ -618,7 +618,7 @@ func (h *Handler) GetTables(c *gin.Context) {
 // GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
 // GET /api/metadata/fields?resource_id=1&table_name=users
 func (h *Handler) GetTableFields(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	tableName := c.Query("table_name")
@@ -705,7 +705,7 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 // GetMetadataTree 获取资源的完整元数据树
 // GET /api/meta/resources/:resource_id/tree
 func (h *Handler) GetMetadataTree(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Param("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -726,7 +726,7 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 // GetMetaNodeByID 获取单个节点详情
 // GET /api/meta/nodes/:node_id
 func (h *Handler) GetMetaNodeByID(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	nodeIDStr := c.Param("node_id")
 	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
@@ -747,7 +747,7 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 // GetNodeChildren 获取节点的子节点
 // GET /api/meta/nodes/:node_id/children
 func (h *Handler) GetNodeChildren(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	nodeIDStr := c.Param("node_id")
 	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
@@ -768,7 +768,7 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 // GetNodeItems 获取节点下的项目
 // GET /api/meta/nodes/:node_id/items
 func (h *Handler) GetNodeItems(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	nodeIDStr := c.Param("node_id")
 	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
@@ -789,7 +789,7 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 // QueryNodeByPath 按路径查询节点
 // GET /api/meta/nodes/by-path?resource_id=X&path=Y
 func (h *Handler) QueryNodeByPath(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -816,7 +816,7 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 // QueryItemByPath 按路径查询项目（对象存储）
 // GET /api/meta/items/by-path?resource_id=X&bucket=Y&path=Z
 func (h *Handler) QueryItemByPath(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
@@ -845,7 +845,7 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 // GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
 // GET /api/meta/metadata/tables/spatial?resource_id=X&schema=Y&table=Z
 func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
-	tenantID := middleware.GetTenantID(c)
+	tenantID := commonAuth.GetTenantID(c)
 
 	resourceIDStr := c.Query("resource_id")
 	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)

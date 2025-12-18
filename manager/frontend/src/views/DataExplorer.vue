@@ -373,7 +373,7 @@ const loadResources = async () => {
   loadingResources.value = true
   try {
     const response = await dataExplorerAPI.getResources()
-    const list = normalizeResourceList(response.data?.data || [])
+    const list = normalizeResourceList(response || [])
 
     useLegacyEndpoint.value = false
     resources.value = list
@@ -421,7 +421,7 @@ const loadModernTrees = async (resourceIds) => {
   try {
     const results = await Promise.allSettled(
       targetIds.map((id) =>
-        dataExplorerAPI.getTree(id).then((response) => response.data?.data ?? null)
+        dataExplorerAPI.getTree(id).then((response) => response.data ?? null)
       )
     )
 
@@ -473,7 +473,7 @@ const loadLegacyTree = async (
   loadingTree.value = true
   try {
     const response = await dataExplorerAPI.getLegacyTree()
-    const legacyResources = normalizeResourceList(response.data?.data || [])
+    const legacyResources = normalizeResourceList(response || [])
 
     resources.value = legacyResources
 
@@ -529,7 +529,7 @@ const loadPreview = async () => {
       return
     }
 
-    previewData.value = normalizePreviewPayload(response.data, selectedNode.value)
+    previewData.value = normalizePreviewPayload(response, selectedNode.value)
   } catch (error) {
     // 忽略请求取消错误（用户快速点击时的正常行为）
     if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {

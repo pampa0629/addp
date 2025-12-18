@@ -321,3 +321,77 @@ func (c *SystemClient) ListComputeResources(filters map[string]string) ([]*model
 
 	return resources, nil
 }
+
+// ================ 能力过滤相关方法（新增） ================
+
+// ListResourcesByCapability 通用方法：按能力过滤资源
+func (c *SystemClient) ListResourcesByCapability(tenantID uint, storageTypes, computeTypes []string) ([]models.Resource, error) {
+	// 只能使用内部 API
+	if c.internalKey == "" {
+		return nil, fmt.Errorf("capability filtering requires internal API key")
+	}
+
+	url := fmt.Sprintf("%s/internal/resources", c.baseURL)
+
+	// 构建查询参数
+	queryParams := []string{}
+	if tenantID > 0 {
+		queryParams = append(queryParams, fmt.Sprintf("tenant_id=%d", tenantID))
+	}
+	if len(storageTypes) > 0 {
+		queryParams = append(queryParams, "storage_type="+strings.Join(storageTypes, ","))
+	}
+	if len(computeTypes) > 0 {
+		queryParams = append(queryParams, "compute_type="+strings.Join(computeTypes, ","))
+	}
+
+	if len(queryParams) > 0 {
+		url += "?" + strings.Join(queryParams, "&")
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resources []models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return resources, nil
+}
+
+// ListRelationalDatabases 快捷方法：获取所有关系型数据库
+func (c *SystemClient) ListRelationalDatabases(tenantID uint) ([]models.Resource, error) {
+	return c.ListResourcesByCapability(tenantID, []string{"relational_db"}, nil)
+}
+
+// ListObjectStorages 快捷方法：获取所有对象存储
+func (c *SystemClient) ListObjectStorages(tenantID uint) ([]models.Resource, error) {
+	return c.ListResourcesByCapability(tenantID, []string{"object_storage"}, nil)
+}
+
+// ListScannableResources 快捷方法：获取所有可扫描的资源（元数据模块使用）
+func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Resource, error) {
+	return c.ListResourcesByCapability(tenantID, []string{"relational_db", "object_storage", "generic"}, nil)
+}
+
+// ListSQLQueryEngines 快捷方法：获取所有支持 SQL 查询的引擎（开发模块使用）
+func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Resource, error) {
+	return c.ListResourcesByCapability(tenantID, nil, []string{"sql_query"})
+}

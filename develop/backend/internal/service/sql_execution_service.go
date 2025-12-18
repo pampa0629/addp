@@ -14,6 +14,7 @@ import (
 	"github.com/addp/develop/backend/internal/repository"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/utils"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -461,11 +462,10 @@ func (s *SQLExecutionService) ListDatabaseResources(ctx context.Context, tenantI
 		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
 	}
 
-	// 过滤出数据库类型的资源（包括 Doris 和 Spark SQL）
+	// 过滤出支持 SQL 开发模式的资源（使用 dev_modes 机制）
 	var dbResources []commonModels.Resource
 	for _, res := range allResources {
-		resourceType := strings.ToLower(res.ResourceType)
-		if resourceType == "postgresql" || resourceType == "mysql" || resourceType == "doris" || resourceType == "spark_sql" {
+		if utils.SupportsDevMode(&res, "sql") {
 			dbResources = append(dbResources, res)
 		}
 	}
@@ -485,11 +485,10 @@ func (s *SQLExecutionService) ListDatabaseResourcesWithToken(ctx context.Context
 		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
 	}
 
-	// 过滤出数据库类型的资源（包括 Doris 和 Spark SQL）
+	// 过滤出支持 SQL 开发模式的资源（使用 dev_modes 机制）
 	var dbResources []commonModels.Resource
 	for _, res := range allResources {
-		resourceType := strings.ToLower(res.ResourceType)
-		if resourceType == "postgresql" || resourceType == "mysql" || resourceType == "doris" || resourceType == "spark_sql" {
+		if utils.SupportsDevMode(&res, "sql") {
 			dbResources = append(dbResources, res)
 		}
 	}

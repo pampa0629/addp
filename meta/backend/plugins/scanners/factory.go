@@ -17,6 +17,9 @@ func NewScanner(dbType, connStr string) (format.Scanner, error) {
 		return NewPostgresScanner(connStr)
 	case "mysql":
 		return NewMySQLScanner(connStr)
+	case "doris":
+		// Doris 不完全支持 prepared statement，使用专门的 Scanner
+		return NewDorisScanner(connStr)
 	case "s3", "minio", "oss", "object_storage", "object-storage":
 		return NewS3Scanner(connStr)
 	default:

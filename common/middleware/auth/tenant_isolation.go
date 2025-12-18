@@ -58,6 +58,36 @@ func GetTenantID(c *gin.Context) uint {
 	return tenantID
 }
 
+// GetUserID 从 Gin Context 中获取用户 ID
+func GetUserID(c *gin.Context) uint {
+	userIDRaw, exists := c.Get(ContextUserIDKey)
+	if !exists {
+		return 0
+	}
+
+	userID, ok := userIDRaw.(uint)
+	if !ok {
+		return 0
+	}
+
+	return userID
+}
+
+// GetUsername 从 Gin Context 中获取用户名
+func GetUsername(c *gin.Context) string {
+	usernameRaw, exists := c.Get(ContextUsernameKey)
+	if !exists {
+		return ""
+	}
+
+	username, ok := usernameRaw.(string)
+	if !ok {
+		return ""
+	}
+
+	return username
+}
+
 // IsTenantIsolationEnabled 检查是否启用租户隔离
 func IsTenantIsolationEnabled(c *gin.Context) bool {
 	enabled, exists := c.Get(ContextTenantIsolationEnabledKey)

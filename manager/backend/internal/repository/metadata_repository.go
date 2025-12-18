@@ -13,6 +13,7 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
+	_ "github.com/go-sql-driver/mysql"
 	pq "github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -759,3 +760,154 @@ func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
 	}
 }
 
+// QueryMySQLTablePreview 查询 MySQL/Doris 表预览数据
+func (r *MetadataRepository) QueryMySQLTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	// 处理 tableName 可能包含 schema 前缀的情况
+	if strings.Contains(tableName, ".") {
+		parts := strings.Split(tableName, ".")
+		tableName = parts[len(parts)-1]
+	}
+
+	decryptedConnInfo, err := r.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		return nil, nil, 0, nil, fmt.Errorf("解密连接信息失败: %w", err)
+	}
+
+	host, _ := decryptedConnInfo["host"].(string)
+	if host == "localhost" || host == "127.0.0.1" {
+		if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+			host = alias
+		} else {
+			host = "127.0.0.1"
+		}
+	}
+
+	database, _ := decryptedConnInfo["database"].(string)
+	password, _ := decryptedConnInfo["password"].(string)
+
+	username, ok := decryptedConnInfo["username"].(string)
+	if !ok {
+		username, _ = decryptedConnInfo["user"].(string)
+	}
+
+	var port string
+	if portNum, ok := decryptedConnInfo["port"].(float64); ok {
+		port = fmt.Sprintf("%.0f", portNum)
+	} else {
+		port, _ = decryptedConnInfo["port"].(string)
+	}
+
+	// MySQL DSN format: user:password@tcp(host:port)/database
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", username, password, host, port, database)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, nil, 0, nil, err
+	}
+	defer db.Close()
+
+	// 获取列信息
+	// Doris 不支持对 information_schema 使用 prepare statement, 需要使用字符串拼接
+	var columnsQuery string
+	var colsRows *sql.Rows
+
+	// 检测是否为 Doris (通过 resource.ResourceType)
+	isDoris := false
+	if resource != nil && strings.ToLower(resource.ResourceType) == "doris" {
+		isDoris = true
+	}
+
+	if isDoris {
+		// Doris: 使用字符串拼接 (不支持 prepare statement for information_schema)
+		columnsQuery = fmt.Sprintf("SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s' ORDER BY ORDINAL_POSITION",
+			strings.ReplaceAll(schemaName, "'", "''"),
+			strings.ReplaceAll(tableName, "'", "''"))
+		colsRows, err = db.Query(columnsQuery)
+	} else {
+		// MySQL: 使用 prepare statement
+		columnsQuery = `SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION`
+		colsRows, err = db.Query(columnsQuery, schemaName, tableName)
+	}
+
+	if err != nil {
+		return nil, nil, 0, nil, fmt.Errorf("failed to query columns: %w", err)
+	}
+
+	var columns []string
+	for colsRows.Next() {
+		var col, dataType string
+		if err := colsRows.Scan(&col, &dataType); err != nil {
+			colsRows.Close()
+			return nil, nil, 0, nil, err
+		}
+		columns = append(columns, col)
+	}
+	colsRows.Close()
+
+	// 查询总行数
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`%s`", schemaName, tableName)
+	var totalCount int64
+	if err := db.QueryRow(countQuery).Scan(&totalCount); err != nil {
+		return columns, nil, 0, nil, fmt.Errorf("failed to count rows: %w", err)
+	}
+	if totalCount > int64(maxRows) {
+		totalCount = int64(maxRows)
+	}
+
+	offset := (page - 1) * pageSize
+	if offset >= int(totalCount) {
+		return columns, []map[string]interface{}{}, int(totalCount), []string{}, nil
+	}
+
+	limit := pageSize
+	if offset+limit > int(totalCount) {
+		limit = int(totalCount) - offset
+	}
+
+	// 查询数据
+	dataQuery := fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT %d OFFSET %d", schemaName, tableName, limit, offset)
+	dataRows, err := db.Query(dataQuery)
+	if err != nil {
+		return columns, nil, 0, nil, fmt.Errorf("failed to query data: %w", err)
+	}
+	defer dataRows.Close()
+
+	queryColumns, err := dataRows.Columns()
+	if err != nil {
+		return columns, nil, 0, nil, err
+	}
+
+	var rows []map[string]interface{}
+	for dataRows.Next() {
+		values := make([]interface{}, len(queryColumns))
+		valuePtrs := make([]interface{}, len(queryColumns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := dataRows.Scan(valuePtrs...); err != nil {
+			return columns, nil, 0, nil, err
+		}
+
+		row := make(map[string]interface{})
+		for i, col := range queryColumns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				row[col] = string(b)
+			} else {
+				row[col] = val
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	// MySQL/Doris 通常不存储空间数据类型，返回空的 geometryColumns
+	return columns, rows, int(totalCount), []string{}, nil
+}

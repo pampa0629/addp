@@ -13,7 +13,12 @@ func init() {
 		return service.NewPostgresPreviewProvider(repo), nil
 	})
 
-	// 2. Shapefile 预览
+	// 2. MySQL/Doris 表预览
+	service.RegisterPreviewProvider("mysql-table", func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
+		return service.NewMySQLPreviewProvider(repo), nil
+	})
+
+	// 3. Shapefile 预览
 	service.RegisterPreviewProvider("shapefile", func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
 		return service.NewShapefilePreviewProvider(), nil
 	})

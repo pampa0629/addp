@@ -17,6 +17,7 @@ type ComputeCapability struct {
 	Type             string   `json:"type"`                         // scan, transfer.batch, cache.tile, transform, etc.
 	SupportedSources []string `json:"supported_sources,omitempty"`  // postgresql, mysql, s3, minio, etc.
 	Features         []string `json:"features,omitempty"`           // incremental, scheduled, parallel, async, retry, etc.
+	DevModes         []string `json:"dev_modes,omitempty"`          // 支持的开发方式: sql, workflow, form, script
 }
 
 // TaskAPIConfig 任务 API 配置（用于动态调用）

@@ -355,6 +355,93 @@ func (s *ResourceService) ListInternal(resourceType string, tenantID uint) ([]mo
 	return resources, nil
 }
 
+// ListInternalWithCapability 按能力过滤资源（用于内部服务调用）
+func (s *ResourceService) ListInternalWithCapability(tenantID uint, filter commonutils.CapabilityFilter) ([]models.Resource, error) {
+	// 1. 先获取所有资源（可以按租户过滤）
+	allResources, err := s.ListInternal("", tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 空过滤器返回所有资源
+	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
+		return allResources, nil
+	}
+
+	// 3. 逐个资源进行能力匹配
+	var filtered []models.Resource
+	for _, resource := range allResources {
+		if s.matchesCapabilityFilter(&resource, filter) {
+			filtered = append(filtered, resource)
+		}
+	}
+
+	return filtered, nil
+}
+
+// matchesCapabilityFilter 检查资源是否匹配能力过滤器
+func (s *ResourceService) matchesCapabilityFilter(resource *models.Resource, filter commonutils.CapabilityFilter) bool {
+	// 解析 capabilities
+	cap, err := commonutils.ParseCapabilities(resource.Capabilities)
+	if err != nil || cap == nil {
+		return false
+	}
+
+	// 检查存储能力匹配
+	matchesStorage := false
+	if len(filter.StorageTypes) > 0 {
+		for _, storage := range cap.Storage {
+			for _, targetType := range filter.StorageTypes {
+				if storage.Type == targetType {
+					matchesStorage = true
+					break
+				}
+			}
+			if matchesStorage {
+				break
+			}
+		}
+	} else {
+		matchesStorage = true // 空过滤器匹配所有
+	}
+
+	// 检查计算能力匹配
+	matchesCompute := false
+	if len(filter.ComputeTypes) > 0 {
+		for _, compute := range cap.Compute {
+			for _, targetType := range filter.ComputeTypes {
+				if compute.Type == targetType {
+					matchesCompute = true
+					break
+				}
+			}
+			if matchesCompute {
+				break
+			}
+		}
+	} else {
+		matchesCompute = true // 空过滤器匹配所有
+	}
+
+	// 根据 RequireBoth 标志决定逻辑
+	if filter.RequireBoth {
+		// AND 逻辑：必须同时满足
+		return matchesStorage && matchesCompute
+	}
+
+	// OR 逻辑：满足任一即可
+	if len(filter.StorageTypes) > 0 && len(filter.ComputeTypes) > 0 {
+		return matchesStorage || matchesCompute
+	}
+
+	// 只有一种过滤条件
+	if len(filter.StorageTypes) > 0 {
+		return matchesStorage
+	}
+
+	return matchesCompute
+}
+
 // GetByIDInternal 内部服务直接访问资源详情（返回解密信息）
 func (s *ResourceService) GetByIDInternal(id uint) (*models.Resource, error) {
 	resource, err := s.repo.GetByID(id)
@@ -673,12 +760,20 @@ func (s *ResourceService) generateDefaultCapabilities(resourceType string) strin
 	resourceTypeLower := strings.ToLower(resourceType)
 
 	switch resourceTypeLower {
+	// 标准库引擎 - 数据库类型
 	case "postgresql", "postgres":
-		return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询"}]}`
+		return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
 
 	case "mysql":
-		return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询"}]}`
+		return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
 
+	case "doris":
+		return `{"storage":[{"type":"relational_db","engine":"doris","supports_query":true}],"compute":[{"type":"sql_query","description":"OLAP分析查询","dev_modes":["sql"]}]}`
+
+	case "spark_sql":
+		return `{"compute":[{"type":"sql_query","description":"Spark SQL查询","dev_modes":["sql"],"features":["distributed","big_data"]}]}`
+
+	// 标准库引擎 - 对象存储类型
 	case "minio":
 		return `{"storage":[{"type":"object_storage","engine":"minio"}]}`
 
@@ -690,6 +785,22 @@ func (s *ResourceService) generateDefaultCapabilities(resourceType string) strin
 
 	case "object_storage", "object-storage":
 		return `{"storage":[{"type":"object_storage","engine":"generic"}]}`
+
+	// API引擎 - 内置模块
+	case "api.meta":
+		return `{"compute":[{"type":"scan","dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"]}]}`
+
+	case "api.transfer":
+		return `{"compute":[{"type":"transfer.batch","dev_modes":["workflow","form"],"features":["incremental","scheduled","parallel"]}]}`
+
+	case "api.manager":
+		return `{"compute":[{"type":"tile_cache","dev_modes":["workflow","form"],"supported_formats":["mvt","pbf"],"features":["pre_cache","on_demand"]}]}`
+
+	case "api.geopandas":
+		return `{"compute":[{"type":"spatial","dev_modes":["workflow"],"supported_formats":["geojson","wkt","shapely"],"features":["dag","memory_efficient","batch"]}]}`
+
+	case "api.spark_sedona":
+		return `{"compute":[{"type":"spatial","dev_modes":["workflow"],"engine":"sedona","scale":"distributed","features":["big_data","distributed"]}]}`
 
 	default:
 		// 未知类型，生成通用 storage 能力

@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/models"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -240,8 +241,9 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 				if !res.IsActive {
 					continue
 				}
-				switch strings.ToLower(res.ResourceType) {
-				case "postgresql", "postgres", "mysql", "object_storage", "object-storage", "s3", "minio", "oss":
+
+				// 使用 capability 过滤：只要有 storage 能力就纳入元数据管理
+				if utils.HasStorageCapability(&res) {
 					if tenantID > 0 && res.TenantID != tenantID {
 						continue
 					}
@@ -249,6 +251,7 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 					resources = append(resources, &resourceCopy)
 				}
 			}
+			s.log.Info("最终资源列表", "tenant_id", tenantID, "count", len(resources))
 			return resources, nil
 		}
 
@@ -276,8 +279,8 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 		if tenantID > 0 && resource.TenantID != tenantID {
 			continue
 		}
-		switch strings.ToLower(resource.ResourceType) {
-		case "postgresql", "postgres", "mysql", "object_storage", "object-storage", "s3", "minio", "oss":
+		// 使用 capability 过滤：只要有 storage 能力就纳入元数据管理
+		if utils.HasStorageCapability(resource) {
 			resourceCopy := *resource
 			resources = append(resources, &resourceCopy)
 		}

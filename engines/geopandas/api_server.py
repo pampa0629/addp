@@ -378,14 +378,15 @@ def register_to_system():
     internal_api_key = os.getenv('INTERNAL_API_KEY', '')
 
     registration_data = {
-        "unique_identifier": "geopandas.engine.default",
-        "name": "GeoPandas 空间计算引擎",
-        "display_name": "geopandas空间计算引擎",
-        "resource_type": "compute_engine",
+        "unique_identifier": "api.geopandas",
+        "name": "geopandas_engine",
+        "display_name": "GeoPandas空间计算引擎",
+        "resource_type": "api.geopandas",
         "is_builtin": True,
         "capabilities": {
             "compute": [{
-                "type": "spatial.workflow",
+                "type": "spatial",
+                "dev_modes": ["workflow"],
                 "supported_formats": ["geojson", "wkt", "shapely"],
                 "features": ["dag", "memory_efficient", "batch"]
             }]

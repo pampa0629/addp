@@ -24,6 +24,7 @@ func SetupRouter(
 	resourceRepo *repository.ResourceRepository,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
+	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
@@ -47,6 +48,10 @@ func SetupRouter(
 		})
 	})
 
+	// 创建算子Handler (需要在API路由组之前创建,以便在API中使用)
+	operatorService := service.NewOperatorService(cacheManager)
+	operatorHandler := NewOperatorHandler(operatorService)
+
 	// API 路由组
 	api := router.Group("/api")
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
@@ -57,6 +62,13 @@ func SetupRouter(
 		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	}
 	{
+		// 算子API (统一算子接口)
+		operators := api.Group("/operators")
+		{
+			operators.GET("", operatorHandler.ListOperators)              // 获取算子列表
+			operators.POST("/:name/execute", operatorHandler.ExecuteOperator) // 执行算子
+		}
+
 		configGroup := api.Group("/config")
 		{
 			configHandler := NewConfigHandler(cfg)

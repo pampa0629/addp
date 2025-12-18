@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
+	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -245,6 +247,10 @@ func (h *ResourceHandler) ListInternal(c *gin.Context) {
 	resourceType := c.Query("resource_type")
 	tenantID := c.Query("tenant_id") // 可选，按租户过滤
 
+	// 新增：能力过滤参数
+	storageType := c.Query("storage_type") // 可选：如 "relational_db,object_storage"
+	computeType := c.Query("compute_type") // 可选：如 "sql_query,scan"
+
 	// 内部调用返回所有资源（或按 tenant_id 过滤）
 	var tenantIDUint uint
 	if tenantID != "" {
@@ -254,7 +260,24 @@ func (h *ResourceHandler) ListInternal(c *gin.Context) {
 		}
 	}
 
-	// 调用服务层的内部列表方法（不做租户隔离检查）
+	// 如果指定了 capability 过滤条件，使用新的过滤方法
+	if storageType != "" || computeType != "" {
+		filter := commonutils.CapabilityFilter{
+			StorageTypes: parseCommaSeparated(storageType),
+			ComputeTypes: parseCommaSeparated(computeType),
+		}
+
+		resources, err := h.resourceService.ListInternalWithCapability(tenantIDUint, filter)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, resources)
+		return
+	}
+
+	// 保持原有逻辑（向后兼容）
 	resources, err := h.resourceService.ListInternal(resourceType, tenantIDUint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -262,6 +285,24 @@ func (h *ResourceHandler) ListInternal(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resources)
+}
+
+// parseCommaSeparated 解析逗号分隔的字符串
+func parseCommaSeparated(s string) []string {
+	if s == "" {
+		return nil
+	}
+
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
 }
 
 // GetByIDInternal 内部资源详情查询（无需用户认证，用于服务间调用）

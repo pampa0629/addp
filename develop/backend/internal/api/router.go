@@ -1,8 +1,9 @@
 package api
 
 import (
+	commonAuth "github.com/addp/common/middleware/auth"
+	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/develop/backend/internal/config"
-	"github.com/addp/develop/backend/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -11,7 +12,7 @@ func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *Spa
 	router := gin.Default()
 
 	// 全局中间件
-	router.Use(middleware.CORS())
+	router.Use(commonCors.CORS())
 
 	// 健康检查（无需认证）
 	router.GET("/health", sqlHandler.Health)
@@ -19,7 +20,7 @@ func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *Spa
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/develop")
-	api.Use(middleware.AuthMiddleware(cfg.SystemServiceURL))
+	api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	{
 		// 资源列表（数据库连接）
 		api.GET("/resources", sqlHandler.ListResources)
@@ -33,6 +34,9 @@ func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *Spa
 		// ==================== 空间工作流 API ====================
 		spatial := api.Group("/spatial")
 		{
+			// 空间引擎列表（供前端引擎选择器使用）
+			spatial.GET("/engines", spatialHandler.ListSpatialEngines)
+
 			// 算子列表（供前端使用）
 			spatial.GET("/operators", spatialHandler.ListOperators)
 

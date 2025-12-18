@@ -33,61 +33,71 @@ stop_services_concurrent() {
   fi
 
   if [ ${#all_pids[@]} -eq 0 ]; then
-    echo -e "${GREEN}✓ 没有运行中的服务${NC}"
-    return 0
-  fi
+    echo -e "${YELLOW}⚠️  未找到 PID 文件,将执行兜底清理${NC}"
+  else
+    echo ""
+    echo "发现 ${#all_pids[@]} 个进程，发送 TERM 信号..."
 
-  echo ""
-  echo "发现 ${#all_pids[@]} 个进程，发送 TERM 信号..."
+    # Phase 2: 并发发送 TERM 信号（不等待）
+    for pid in "${all_pids[@]}"; do
+      kill "$pid" 2>/dev/null || true
+    done
 
-  # Phase 2: 并发发送 TERM 信号（不等待）
-  for pid in "${all_pids[@]}"; do
-    kill "$pid" 2>/dev/null || true
-  done
+    # Phase 3: 统一等待（最多 10 次重试，共 5 秒）
+    echo -e "${YELLOW}等待进程优雅退出（最多 5 秒）...${NC}"
+    for i in {1..10}; do
+      local remaining=0
+      for pid in "${all_pids[@]}"; do
+        if ps -p "$pid" > /dev/null 2>&1; then
+          ((remaining++))
+        fi
+      done
 
-  # Phase 3: 统一等待（最多 10 次重试，共 5 秒）
-  echo -e "${YELLOW}等待进程优雅退出（最多 5 秒）...${NC}"
-  for i in {1..10}; do
-    local remaining=0
+      if [ $remaining -eq 0 ]; then
+        echo ""
+        echo -e "${GREEN}✓ 所有服务已停止（优雅退出）${NC}"
+        break
+      fi
+
+      echo -n "."
+      sleep 0.5
+    done
+
+    echo ""
+
+    # Phase 4: 强制杀死残留进程
+    local remaining_count=0
     for pid in "${all_pids[@]}"; do
       if ps -p "$pid" > /dev/null 2>&1; then
-        ((remaining++))
+        ((remaining_count++))
       fi
     done
 
-    if [ $remaining -eq 0 ]; then
-      echo ""
-      echo -e "${GREEN}✓ 所有服务已停止（优雅退出）${NC}"
-      return 0
+    if [ $remaining_count -gt 0 ]; then
+      echo -e "${YELLOW}⚠️  强制停止 ${remaining_count} 个残留进程...${NC}"
+      for pid in "${all_pids[@]}"; do
+        if ps -p "$pid" > /dev/null 2>&1; then
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+      done
     fi
-
-    echo -n "."
-    sleep 0.5
-  done
-
-  echo ""
-
-  # Phase 4: 强制杀死残留进程
-  local remaining_count=0
-  for pid in "${all_pids[@]}"; do
-    if ps -p "$pid" > /dev/null 2>&1; then
-      ((remaining_count++))
-    fi
-  done
-
-  if [ $remaining_count -gt 0 ]; then
-    echo -e "${YELLOW}⚠️  强制停止 ${remaining_count} 个残留进程...${NC}"
-    for pid in "${all_pids[@]}"; do
-      if ps -p "$pid" > /dev/null 2>&1; then
-        kill -9 "$pid" 2>/dev/null || true
-      fi
-    done
   fi
 
   # Phase 5: 兜底清理 pkill（清理可能的残留进程）
+  # 清理 go run 进程
   pkill -9 -f "go run cmd/server/main.go" 2>/dev/null || true
   pkill -9 -f "go run cmd/worker/main.go" 2>/dev/null || true
   pkill -9 -f "go run cmd/gateway/main.go" 2>/dev/null || true
+  # 清理二进制进程（新方式）
+  pkill -9 -f "addp-system" 2>/dev/null || true
+  pkill -9 -f "addp-manager" 2>/dev/null || true
+  pkill -9 -f "addp-meta" 2>/dev/null || true
+  pkill -9 -f "addp-transfer" 2>/dev/null || true
+  pkill -9 -f "addp-orchestrator" 2>/dev/null || true
+  pkill -9 -f "addp-develop" 2>/dev/null || true
+  pkill -9 -f "addp-gateway" 2>/dev/null || true
+  pkill -9 -f "addp-.*-worker" 2>/dev/null || true
+  # 清理前端和 Python 进程
   pkill -9 -f "vite" 2>/dev/null || true
   pkill -9 -f "python.*api_server.py" 2>/dev/null || true
 
@@ -137,6 +147,9 @@ rm -rf /var/folders/*/T/go-build* 2>/dev/null || true
 # 注意：不清理编译缓存本身，只清理 go run 生成的可执行文件
 find "$HOME/Library/Caches/go-build" -name "main" -type f -mtime -1 -delete 2>/dev/null || true
 echo "✓ go run 临时文件已清理"
+
+# 保留开发二进制文件（加速重启）
+# 如需清理二进制，请手动删除: rm -rf .dev-bins
 
 # 清理 PID 文件
 if [ -d ".dev-pids" ]; then

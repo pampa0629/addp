@@ -61,22 +61,25 @@ services:
     image: apache/doris:doris-all-in-one-2.1.0
     container_name: business-doris-fe
     environment:
-      - FE_SERVERS=fe1:business-doris-fe:9010
+      - FE_SERVERS=fe1:127.0.0.1:9010
       - FE_ID=1
+      - BUILD_TYPE=production
     ports:
       - "${DORIS_FE_PORT:-9030}:9030"       # MySQL 协议
       - "${DORIS_FE_HTTP_PORT:-8030}:8030"  # HTTP API
+      - "9050:9050"                          # BE heartbeat 端口
     volumes:
       - doris_fe_data:/opt/apache-doris/fe/doris-meta
       - doris_fe_log:/opt/apache-doris/fe/log
+      - doris_be_data:/opt/apache-doris/be/storage
     networks:
       - business-network
     healthcheck:
       test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot --connect-timeout=5 -e 'SHOW FRONTENDS;' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
     restart: unless-stopped
 
   # 注意: doris-all-in-one 镜像包含 FE+BE，无需单独的 BE 和 init 容器
@@ -179,6 +182,8 @@ volumes:
   doris_fe_data:
     driver: local
   doris_fe_log:
+    driver: local
+  doris_be_data:
     driver: local
 
 networks:

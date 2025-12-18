@@ -9,11 +9,140 @@ cd "${ROOT_DIR}"
 export PROJECT_ROOT="${ROOT_DIR}"
 mkdir -p logs
 mkdir -p .dev-pids
+mkdir -p .dev-bins
 
 # 本地 Go 构建缓存，避免写入系统 GOPATH，并优先使用本机 Go 工具链
 export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
 export GOPATH="${PROJECT_ROOT}/.gopath"
 export GOTOOLCHAIN="local"
+
+# 颜色定义（提前定义，供检查函数使用）
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# ============================================================
+# 服务运行状态检查函数
+# ============================================================
+
+# 检查服务是否已在运行
+# 参数: $1=服务名称 $2=端口号（可选，不传则只检查PID）
+# 返回: 0=未运行(可以启动), 1=已运行(跳过启动)
+check_service_running() {
+    local service_name=$1
+    local port=$2
+    local pidfile=".dev-pids/${service_name}.pid"
+
+    # 检查 PID 文件
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile" 2>/dev/null)
+        if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+            echo -e "${YELLOW}⚠️  ${service_name} 已在运行 (PID: $pid)，跳过启动${NC}"
+            return 1
+        fi
+    fi
+
+    # 检查端口占用（如果提供了端口参数）
+    if [ -n "$port" ]; then
+        if lsof -ti :$port > /dev/null 2>&1; then
+            local occupying_pid=$(lsof -ti :$port)
+            echo -e "${RED}✗ 端口 $port 已被占用 (PID: $occupying_pid)${NC}"
+            echo -e "${RED}✗ 无法启动 ${service_name}，请先停止占用端口的进程${NC}"
+            echo -e "${YELLOW}提示: 运行 'bash scripts/dev/stop.sh' 停止所有服务${NC}"
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# ============================================================
+# 编译函数: 快速编译服务为指定名称的二进制
+# ============================================================
+
+# 编译 Server 二进制
+# 参数: $1=服务名称 $2=源码路径
+build_service() {
+    local name=$1
+    local src_dir=$2
+    local output_dir=".dev-bins"
+
+    local binary_name="addp-${name}"
+    local binary_path="${output_dir}/${binary_name}"
+
+    # 检查是否需要重新编译（增量编译）
+    if [[ -f "$binary_path" ]]; then
+        local src_newer=$(find "$src_dir" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $src_newer -eq 0 ]]; then
+            echo "  ✓ ${binary_name} 已是最新"
+            return 0
+        fi
+    fi
+
+    echo "  🔨 编译 ${binary_name}..."
+
+    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/server/main.go) || {
+        echo "  ✗ 编译失败: ${name}"
+        return 1
+    }
+
+    echo "  ✓ ${binary_name} 编译完成"
+}
+
+# 编译 Worker 二进制
+# 参数: $1=服务名称 $2=源码路径
+build_worker() {
+    local name=$1
+    local src_dir=$2
+    local output_dir=".dev-bins"
+
+    local binary_name="addp-${name}-worker"
+    local binary_path="${output_dir}/${binary_name}"
+
+    # 检查是否需要重新编译（增量编译）
+    if [[ -f "$binary_path" ]]; then
+        local src_newer=$(find "$src_dir" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $src_newer -eq 0 ]]; then
+            echo "  ✓ ${binary_name} 已是最新"
+            return 0
+        fi
+    fi
+
+    echo "  🔨 编译 ${binary_name}..."
+
+    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+        echo "  ✗ 编译失败: ${name} worker"
+        return 1
+    }
+
+    echo "  ✓ ${binary_name} 编译完成"
+}
+
+# 编译 Gateway 二进制
+build_gateway() {
+    local output_dir=".dev-bins"
+    local binary_name="addp-gateway"
+    local binary_path="${output_dir}/${binary_name}"
+
+    # 检查是否需要重新编译（增量编译）
+    if [[ -f "$binary_path" ]]; then
+        local src_newer=$(find "gateway" -type f -name "*.go" -newer "$binary_path" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ $src_newer -eq 0 ]]; then
+            echo "  ✓ ${binary_name} 已是最新"
+            return 0
+        fi
+    fi
+
+    echo "  🔨 编译 ${binary_name}..."
+
+    (cd gateway && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/gateway/main.go) || {
+        echo "  ✗ 编译失败: gateway"
+        return 1
+    }
+
+    echo "  ✓ ${binary_name} 编译完成"
+}
 
 # Honor GOPROXY from environment/.env to avoid module i/o timeouts
 if [ -n "${GOPROXY}" ]; then
@@ -31,12 +160,7 @@ fi
 echo "🚀 启动 ADDP 开发环境"
 echo ""
 
-# 颜色定义
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
+# 端口配置
 PORTAL_FE_PORT=${PORTAL_FE_PORT:-5170}
 SYSTEM_FE_PORT=${SYSTEM_FE_PORT:-5173}
 MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
@@ -92,48 +216,152 @@ echo ""
 
 # 2. 启动 System Backend
 echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
-cd system/backend
-go run cmd/server/main.go > ../../logs/system-backend.log 2> ../../logs/system-backend-stderr.log &
-SYSTEM_PID=$!
-cd ../..
 
-# 等待 System Backend 就绪
-echo "等待 System Backend 就绪..."
-MAX_WAIT=60
-WAIT_COUNT=0
-until curl -f http://localhost:8080/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ System Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/system-backend.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
+# 检查服务是否已在运行
+if check_service_running "system" "8080"; then
+  build_service "system" "system/backend"
+  .dev-bins/addp-system > logs/system-backend.log 2> logs/system-backend-stderr.log &
+  SYSTEM_PID=$!
+  echo $SYSTEM_PID > .dev-pids/system.pid
+
+  # 等待 System Backend 就绪
+  echo "等待 System Backend 就绪..."
+  MAX_WAIT=60
+  WAIT_COUNT=0
+  until curl -f http://localhost:8080/health > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ System Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/system-backend.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
+else
+  # 服务已运行，从 PID 文件读取 PID
+  SYSTEM_PID=$(cat .dev-pids/system.pid 2>/dev/null)
+  echo -e "${GREEN}✓ System Backend 已在运行 (PID: $SYSTEM_PID)${NC}"
+fi
 echo ""
 
-# 3. 并发启动核心 Backends (Manager, Meta, Transfer)
-echo -e "${YELLOW}Step 3/7: 并发启动核心 Backends (Manager, Meta, Transfer)${NC}"
+# 3. 并行启动所有后端服务 + Workers (System 已就绪)
+echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
 
-# 并发启动三个 Backends
-(cd manager/backend && go run cmd/server/main.go > ../../logs/manager-backend.log 2> ../../logs/manager-backend-stderr.log) &
-MANAGER_PID=$!
-echo "  启动 Manager Backend (PID: $MANAGER_PID)"
+# ============================================================
+# Phase 1: 并行编译所有 Go 服务
+# ============================================================
+echo "  [1/3] 并行编译 Backends + Workers..."
 
-(cd meta/backend && go run cmd/server/main.go > ../../logs/meta-backend.log 2> ../../logs/meta-backend-stderr.log) &
-META_PID=$!
-echo "  启动 Meta Backend (PID: $META_PID)"
+# 并行编译 6 个 Backend 服务
+build_service "manager" "manager/backend" &
+BUILD_PID_MANAGER=$!
+build_service "meta" "meta/backend" &
+BUILD_PID_META=$!
+build_service "transfer" "transfer/backend" &
+BUILD_PID_TRANSFER=$!
+build_service "orchestrator" "orchestrator/backend" &
+BUILD_PID_ORCHESTRATOR=$!
+build_service "develop" "develop/backend" &
+BUILD_PID_DEVELOP=$!
 
-(cd transfer/backend && go mod download >/dev/null 2>> logs/transfer-backend-stderr.log || true && go run cmd/server/main.go > ../../logs/transfer-backend.log 2> ../../logs/transfer-backend-stderr.log) &
-TRANSFER_PID=$!
-echo "  启动 Transfer Backend (PID: $TRANSFER_PID)"
+# 并行编译 3 个 Worker
+build_worker "manager" "manager/backend" &
+BUILD_PID_MANAGER_WORKER=$!
+build_worker "meta" "meta/backend" &
+BUILD_PID_META_WORKER=$!
+build_worker "transfer" "transfer/backend" &
+BUILD_PID_TRANSFER_WORKER=$!
 
-echo ""
-echo "并发等待核心 Backends 就绪..."
+# 等待所有编译完成
+wait $BUILD_PID_MANAGER $BUILD_PID_META $BUILD_PID_TRANSFER $BUILD_PID_ORCHESTRATOR $BUILD_PID_DEVELOP $BUILD_PID_MANAGER_WORKER $BUILD_PID_META_WORKER $BUILD_PID_TRANSFER_WORKER
 
-# 并发等待所有 Backends 的 health check
+echo "  ${GREEN}✓ 所有服务编译完成${NC}"
+
+# ============================================================
+# Phase 2: 并行启动所有 Backend 服务
+# ============================================================
+echo "  [2/3] 并行启动 Backends..."
+
+# 启动 Manager Backend（带检查）
+if check_service_running "manager" "8081"; then
+  .dev-bins/addp-manager > logs/manager-backend.log 2> logs/manager-backend-stderr.log &
+  MANAGER_PID=$!
+  echo $MANAGER_PID > .dev-pids/manager.pid
+else
+  MANAGER_PID=$(cat .dev-pids/manager.pid 2>/dev/null)
+fi
+
+# 启动 Meta Backend（带检查）
+if check_service_running "meta" "8082"; then
+  .dev-bins/addp-meta > logs/meta-backend.log 2> logs/meta-backend-stderr.log &
+  META_PID=$!
+  echo $META_PID > .dev-pids/meta.pid
+else
+  META_PID=$(cat .dev-pids/meta.pid 2>/dev/null)
+fi
+
+# 启动 Transfer Backend（带检查）
+if check_service_running "transfer" "8083"; then
+  .dev-bins/addp-transfer > logs/transfer-backend.log 2> logs/transfer-backend-stderr.log &
+  TRANSFER_PID=$!
+  echo $TRANSFER_PID > .dev-pids/transfer.pid
+else
+  TRANSFER_PID=$(cat .dev-pids/transfer.pid 2>/dev/null)
+fi
+
+# 启动 Orchestrator Backend（带检查）
+if check_service_running "orchestrator" "8084"; then
+  .dev-bins/addp-orchestrator > logs/orchestrator-backend.log 2> logs/orchestrator-backend-stderr.log &
+  ORCHESTRATOR_PID=$!
+  echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
+else
+  ORCHESTRATOR_PID=$(cat .dev-pids/orchestrator.pid 2>/dev/null)
+fi
+
+# 启动 Develop Backend（带检查）
+if check_service_running "develop" "8085"; then
+  .dev-bins/addp-develop > logs/develop-backend.log 2> logs/develop-backend-stderr.log &
+  DEVELOP_PID=$!
+  echo $DEVELOP_PID > .dev-pids/develop.pid
+else
+  DEVELOP_PID=$(cat .dev-pids/develop.pid 2>/dev/null)
+fi
+
+# 并行启动 3 个 Workers
+if check_service_running "manager-worker" ""; then
+  .dev-bins/addp-manager-worker > logs/manager-worker.log 2>&1 &
+  MANAGER_WORKER_PID=$!
+  echo $MANAGER_WORKER_PID > .dev-pids/manager-worker.pid
+else
+  MANAGER_WORKER_PID=$(cat .dev-pids/manager-worker.pid 2>/dev/null)
+fi
+
+if check_service_running "meta-worker" ""; then
+  .dev-bins/addp-meta-worker > logs/meta-worker.log 2>&1 &
+  META_WORKER_PID=$!
+  echo $META_WORKER_PID > .dev-pids/meta-worker.pid
+else
+  META_WORKER_PID=$(cat .dev-pids/meta-worker.pid 2>/dev/null)
+fi
+
+if check_service_running "transfer-worker" ""; then
+  .dev-bins/addp-transfer-worker > logs/transfer-worker.log 2>&1 &
+  TRANSFER_WORKER_PID=$!
+  echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
+else
+  TRANSFER_WORKER_PID=$(cat .dev-pids/transfer-worker.pid 2>/dev/null)
+fi
+
+echo "  ${GREEN}✓ 所有服务已启动，等待健康检查...${NC}"
+
+# ============================================================
+# Phase 3: 并行等待所有 Backends 健康检查
+# ============================================================
+echo "  [3/3] 并行健康检查..."
+
+# 并发等待 Manager Backend
 (
   WAIT_COUNT=0
   until curl -f http://localhost:8081/health > /dev/null 2>&1; do
@@ -145,10 +373,10 @@ echo "并发等待核心 Backends 就绪..."
       exit 1
     fi
   done
-  echo -e "${GREEN}✓ Manager Backend 就绪 (PID: $MANAGER_PID)${NC}"
 ) &
 MANAGER_WAIT_PID=$!
 
+# 并发等待 Meta Backend
 (
   WAIT_COUNT=0
   until curl -f http://localhost:8082/health > /dev/null 2>&1; do
@@ -160,10 +388,10 @@ MANAGER_WAIT_PID=$!
       exit 1
     fi
   done
-  echo -e "${GREEN}✓ Meta Backend 就绪 (PID: $META_PID)${NC}"
 ) &
 META_WAIT_PID=$!
 
+# 并发等待 Transfer Backend
 (
   WAIT_COUNT=0
   until curl -f http://localhost:8083/health > /dev/null 2>&1; do
@@ -175,89 +403,58 @@ META_WAIT_PID=$!
       exit 1
     fi
   done
-  echo -e "${GREEN}✓ Transfer Backend 就绪 (PID: $TRANSFER_PID)${NC}"
 ) &
 TRANSFER_WAIT_PID=$!
 
+# 并发等待 Orchestrator Backend
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8084/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/orchestrator-backend-stderr.log"
+      exit 1
+    fi
+  done
+) &
+ORCHESTRATOR_WAIT_PID=$!
+
+# 并发等待 Develop Backend
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8085/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Develop Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/develop-backend.log"
+      exit 1
+    fi
+  done
+) &
+DEVELOP_WAIT_PID=$!
+
 # 等待所有并发的 health check 完成
-wait $MANAGER_WAIT_PID $META_WAIT_PID $TRANSFER_WAIT_PID
+wait $MANAGER_WAIT_PID $META_WAIT_PID $TRANSFER_WAIT_PID $ORCHESTRATOR_WAIT_PID $DEVELOP_WAIT_PID
 
 echo ""
-echo -e "${GREEN}✓ 核心 Backends 全部就绪${NC}"
-echo ""
-
-# 4. 并发启动 Workers (Manager, Meta, Transfer)
-echo -e "${YELLOW}Step 4/7: 并发启动 Workers (Manager, Meta, Transfer)${NC}"
-
-# 并发启动三个 Workers（不需要等待 health check）
-(cd manager/backend && go mod download >/dev/null 2>> ../../logs/manager-worker.log || true && go run cmd/worker/main.go > ../../logs/manager-worker.log 2>&1) &
-MANAGER_WORKER_PID=$!
-echo "  启动 Manager Worker (PID: $MANAGER_WORKER_PID)"
-
-(cd meta/backend && go mod download >/dev/null 2>> ../../logs/meta-worker.log || true && go run cmd/worker/main.go > ../../logs/meta-worker.log 2>&1) &
-META_WORKER_PID=$!
-echo "  启动 Meta Worker (PID: $META_WORKER_PID)"
-
-(cd transfer/backend && go mod download >/dev/null 2>> ../../logs/transfer-worker.log || true && go run cmd/worker/main.go > ../../logs/transfer-worker.log 2>&1) &
-TRANSFER_WORKER_PID=$!
-echo "  启动 Transfer Worker (PID: $TRANSFER_WORKER_PID)"
-
-echo -e "${GREEN}✓ Workers 已启动（后台运行）${NC}"
-echo "  注意: Workers 依赖 Redis，请确保 Redis 已启动"
-echo ""
-
-# 5. 启动 Orchestrator Backend
-echo -e "${YELLOW}Step 5/8: 启动 Orchestrator Backend${NC}"
-cd orchestrator/backend
-go mod download >/dev/null 2>> ../../logs/orchestrator-backend-stderr.log || true
-go run cmd/server/main.go > ../../logs/orchestrator-backend.log 2> ../../logs/orchestrator-backend-stderr.log &
-ORCHESTRATOR_PID=$!
-cd ../..
-
-# 等待 Orchestrator 就绪
-echo "等待 Orchestrator Backend 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8084/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Orchestrator Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/orchestrator-backend-stderr.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Orchestrator Backend 就绪 (PID: $ORCHESTRATOR_PID)${NC}"
-echo ""
-
-# 6. 启动 Develop Backend
-echo -e "${YELLOW}Step 6/8: 启动 Develop Backend${NC}"
-cd develop/backend
-go mod download >/dev/null 2>> ../../logs/develop-backend-stderr.log || true
-go run cmd/server/main.go > ../../logs/develop-backend.log 2> ../../logs/develop-backend-stderr.log &
-DEVELOP_PID=$!
-cd ../..
-
-# 等待 Develop 就绪
-echo "等待 Develop Backend 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8085/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Develop Backend 启动超时${NC}"
-    echo "查看日志: tail -f logs/develop-backend.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Develop Backend 就绪 (PID: $DEVELOP_PID)${NC}"
+echo -e "${GREEN}✓ 所有 Backends + Workers 全部就绪${NC}"
+echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:8081)"
+echo "  Meta Backend:       PID $META_PID (http://localhost:8082)"
+echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:8083)"
+echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:8084)"
+echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:8085)"
+echo "  Manager Worker:     PID $MANAGER_WORKER_PID"
+echo "  Meta Worker:        PID $META_WORKER_PID"
+echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
 echo ""
 
 # ============================================================
-# Step 7: Start GeoPandas Engine (Python service)
+# Step 4: Start GeoPandas Engine (Python service)
 # ============================================================
-echo -e "${YELLOW}Step 7/8: 启动 GeoPandas Engine...${NC}"
+echo -e "${YELLOW}Step 4/5: 启动 GeoPandas Engine...${NC}"
 
 # 检查 Python 3 是否安装
 if ! command -v python3 &> /dev/null; then
@@ -275,16 +472,16 @@ fi
 
 # 检查并创建虚拟环境（幂等）
 NEED_INSTALL=false
-if [ ! -d "geopandas-engine/venv" ]; then
+if [ ! -d "engines/geopandas/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
-    cd geopandas-engine
+    cd engines/geopandas
     python3 -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./geopandas-engine/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/geopandas/venv/bin/python -c "import flask" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd geopandas-engine
+        cd engines/geopandas
         NEED_INSTALL=true
     else
         echo "虚拟环境已存在且依赖完整，跳过安装"
@@ -312,75 +509,86 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 GeoPandas Engine
-echo "启动 GeoPandas Engine..."
-cd geopandas-engine
+if check_service_running "geopandas-engine" "8099"; then
+  echo "启动 GeoPandas Engine..."
+  cd engines/geopandas
 
-# 设置环境变量（注意端口改为 8099）
-export PORT=8099
-export SYSTEM_SERVICE_URL=http://localhost:8080
-export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
-export POSTGRES_HOST=localhost
-export POSTGRES_PORT=5432
-export POSTGRES_USER=addp
-export POSTGRES_PASSWORD=addp_password
-export POSTGRES_DB=addp
-export DB_SCHEMA=develop
+  # 设置环境变量（注意端口改为 8099）
+  export PORT=8099
+  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export POSTGRES_HOST=localhost
+  export POSTGRES_PORT=5432
+  export POSTGRES_USER=addp
+  export POSTGRES_PASSWORD=addp_password
+  export POSTGRES_DB=addp
+  export DB_SCHEMA=develop
 
-# 直接使用虚拟环境的 Python（无需 activate）
-./venv/bin/python api_server.py > ../logs/geopandas-engine.log 2> ../logs/geopandas-engine-stderr.log &
-GEOPANDAS_PID=$!
-echo $GEOPANDAS_PID > ../.dev-pids/geopandas-engine.pid
-cd ..
+  # 直接使用虚拟环境的 Python（无需 activate）
+  ./venv/bin/python api_server.py > ../../logs/geopandas-engine.log 2> ../../logs/geopandas-engine-stderr.log &
+  GEOPANDAS_PID=$!
+  echo $GEOPANDAS_PID > ../../.dev-pids/geopandas-engine.pid
+  cd ../..
 
-echo -e "${GREEN}✓ GeoPandas Engine 已启动 (PID: $GEOPANDAS_PID)${NC}"
+  echo -e "${GREEN}✓ GeoPandas Engine 已启动 (PID: $GEOPANDAS_PID)${NC}"
 
-# 等待健康检查通过
-echo -n "等待 GeoPandas Engine 就绪..."
-WAIT_COUNT=0
-MAX_WAIT=60
-until curl -f http://localhost:8099/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e " ${RED}✗${NC}"
-    echo -e "${RED}✗ GeoPandas Engine 启动超时（60秒）${NC}"
-    echo -e "${YELLOW}查看日志: tail -f logs/geopandas-engine.log${NC}"
-    echo -e "${YELLOW}或检查错误: tail -f logs/geopandas-engine-stderr.log${NC}"
-    exit 1
-  fi
-done
-echo -e " ${GREEN}✓${NC}"
-echo -e "${GREEN}✓ GeoPandas Engine 就绪 (http://localhost:8099)${NC}"
+  # 等待健康检查通过
+  echo -n "等待 GeoPandas Engine 就绪..."
+  WAIT_COUNT=0
+  MAX_WAIT=60
+  until curl -f http://localhost:8099/health > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ GeoPandas Engine 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/geopandas-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/geopandas-engine-stderr.log${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+  echo -e "${GREEN}✓ GeoPandas Engine 就绪 (http://localhost:8099)${NC}"
+else
+  GEOPANDAS_PID=$(cat .dev-pids/geopandas-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ GeoPandas Engine 已在运行 (PID: $GEOPANDAS_PID)${NC}"
+fi
 echo ""
 
-# 7. 启动 Gateway
-echo -e "${YELLOW}Step 7/8: 启动 Gateway${NC}"
-cd gateway
-# 重置 PORT 环境变量为 Gateway 的端口
-export PORT=8000
-go run cmd/gateway/main.go > ../logs/gateway.log 2> ../logs/gateway-stderr.log &
-GATEWAY_PID=$!
-cd ..
+# 5. 启动 Gateway
+echo -e "${YELLOW}Step 5/5: 启动 Gateway${NC}"
 
-# 等待 Gateway 就绪
-echo "等待 Gateway 就绪..."
-WAIT_COUNT=0
-until curl -f http://localhost:8000/health > /dev/null 2>&1; do
-  echo -n "."
-  sleep 1
-  WAIT_COUNT=$((WAIT_COUNT + 1))
-  if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
-    echo -e "${RED}✗ Gateway 启动超时${NC}"
-    echo "查看日志: tail -f logs/gateway.log"
-    exit 1
-  fi
-done
-echo -e "${GREEN}✓ Gateway 就绪 (PID: $GATEWAY_PID)${NC}"
+if check_service_running "gateway" "8000"; then
+  build_gateway
+  # 重置 PORT 环境变量为 Gateway 的端口
+  export PORT=8000
+  .dev-bins/addp-gateway > logs/gateway.log 2> logs/gateway-stderr.log &
+  GATEWAY_PID=$!
+  echo $GATEWAY_PID > .dev-pids/gateway.pid
+
+  # 等待 Gateway 就绪
+  echo "等待 Gateway 就绪..."
+  WAIT_COUNT=0
+  until curl -f http://localhost:8000/health > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Gateway 启动超时${NC}"
+      echo "查看日志: tail -f logs/gateway.log"
+      exit 1
+    fi
+  done
+  echo -e "${GREEN}✓ Gateway 就绪 (PID: $GATEWAY_PID)${NC}"
+else
+  GATEWAY_PID=$(cat .dev-pids/gateway.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Gateway 已在运行 (PID: $GATEWAY_PID)${NC}"
+fi
 echo ""
 
-# 8. 启动前端服务
-echo -e "${YELLOW}Step 8: 启动前端服务${NC}"
+# 6. 启动前端服务（保持原有并行逻辑）
+echo -e "${YELLOW}Step 6/6: 启动前端服务${NC}"
 
 # 创建 PID 目录
 mkdir -p .dev-pids
@@ -452,15 +660,24 @@ FRONTEND_PID_FILE="/tmp/addp-frontend-pids-$$"
 for config in "${FRONTEND_CONFIGS[@]}"; do
   IFS=':' read -r name port dir <<< "$config"
 
-  (
-    ensure_node_modules "$dir"
-    cd "$dir"
-    npm run dev -- --host 0.0.0.0 --port "$port" > "../../logs/${name}-frontend.log" 2>&1
-  ) &
+  # 检查前端服务是否已在运行
+  if check_service_running "${name}-frontend" "$port"; then
+    (
+      ensure_node_modules "$dir"
+      cd "$dir"
+      npm run dev -- --host 0.0.0.0 --port "$port" > "../../logs/${name}-frontend.log" 2>&1
+    ) &
 
-  pid=$!
-  echo "${name}:${pid}" >> "$FRONTEND_PID_FILE"
-  echo "  启动 ${name} Frontend (PID: $pid, Port: $port)"
+    pid=$!
+    echo "${name}:${pid}" >> "$FRONTEND_PID_FILE"
+    echo "  启动 ${name} Frontend (PID: $pid, Port: $port)"
+  else
+    # 服务已运行，从 PID 文件读取
+    existing_pid=$(cat ".dev-pids/${name}-frontend.pid" 2>/dev/null)
+    if [ -n "$existing_pid" ]; then
+      echo "${name}:${existing_pid}" >> "$FRONTEND_PID_FILE"
+    fi
+  fi
 done
 
 echo ""
@@ -516,7 +733,7 @@ rm -f "$FRONTEND_PID_FILE"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}✓ 所有后端服务启动完成！${NC}"
+echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "服务地址:"
@@ -535,15 +752,20 @@ echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
 echo "  Develop FE:   http://localhost:${DEVELOP_FE_PORT}"
 echo ""
-echo "进程 PID:"
-echo "  System:   $SYSTEM_PID"
-echo "  Manager:  $MANAGER_PID"
-echo "  Meta:     $META_PID"
-echo "  Transfer: $TRANSFER_PID"
-echo "  Transfer Worker: $TRANSFER_WORKER_PID"
-echo "  Orchestrator: $ORCHESTRATOR_PID"
-echo "  Develop:  $DEVELOP_PID"
-echo "  Gateway:  $GATEWAY_PID"
+echo "后端服务 PID:"
+echo "  System Backend:       $SYSTEM_PID"
+echo "  Manager Backend:      $MANAGER_PID"
+echo "  Meta Backend:         $META_PID"
+echo "  Transfer Backend:     $TRANSFER_PID"
+echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
+echo "  Develop Backend:      $DEVELOP_PID"
+echo "  GeoPandas Engine:     $GEOPANDAS_PID"
+echo "  Gateway:              $GATEWAY_PID"
+echo ""
+echo "Workers PID:"
+echo "  Manager Worker:       $MANAGER_WORKER_PID"
+echo "  Meta Worker:          $META_WORKER_PID"
+echo "  Transfer Worker:      $TRANSFER_WORKER_PID"
 echo ""
 echo "日志文件:"
 echo "  System:   logs/system-backend.log"
@@ -562,16 +784,3 @@ echo "  Develop FE:  logs/develop-frontend.log"
 echo ""
 echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
 echo ""
-
-# 保存 PIDs 到文件以便停止时使用
-mkdir -p .dev-pids
-echo $SYSTEM_PID > .dev-pids/system.pid
-echo $MANAGER_PID > .dev-pids/manager.pid
-echo $META_PID > .dev-pids/meta.pid
-echo $TRANSFER_PID > .dev-pids/transfer.pid
-echo $TRANSFER_WORKER_PID > .dev-pids/transfer-worker.pid
-echo $META_WORKER_PID > .dev-pids/meta-worker.pid
-echo $MANAGER_WORKER_PID > .dev-pids/manager-worker.pid
-echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
-echo $DEVELOP_PID > .dev-pids/develop.pid
-echo $GATEWAY_PID > .dev-pids/gateway.pid

@@ -6,22 +6,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/utils"
 	"github.com/google/uuid"
 )
 
 // SpatialWorkflowService 空间工作流服务
 type SpatialWorkflowService struct {
 	geopandasEngineURL string
+	systemClient       *commonClient.SystemClient
 	httpClient         *http.Client
 }
 
 // NewSpatialWorkflowService 创建空间工作流服务
-func NewSpatialWorkflowService(geopandasEngineURL string) *SpatialWorkflowService {
+func NewSpatialWorkflowService(geopandasEngineURL string, systemClient *commonClient.SystemClient) *SpatialWorkflowService {
 	return &SpatialWorkflowService{
 		geopandasEngineURL: geopandasEngineURL,
+		systemClient:       systemClient,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute, // 空间计算可能需要较长时间
 		},
@@ -219,3 +225,20 @@ func (s *SpatialWorkflowService) GetTaskStatus(ctx context.Context, executionID 
 
 	return response, nil
 }
+
+// ListSpatialEngines 获取支持workflow开发模式的空间引擎列表
+// 用于工作流画布的引擎选择功能
+func (s *SpatialWorkflowService) ListSpatialEngines(ctx context.Context, tenantID uint) ([]commonModels.Resource, error) {
+	// 从System获取所有资源
+	allResources, err := s.systemClient.ListResources("", tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
+	}
+
+	// 过滤出支持 workflow 开发模式的资源
+	workflowEngines := utils.FilterResourcesByDevMode(allResources, "workflow")
+
+	log.Printf("✅ Develop: 获取空间引擎列表成功 (tenant_id=%d, total=%d)", tenantID, len(workflowEngines))
+	return workflowEngines, nil
+}
+

@@ -134,6 +134,14 @@ const editorRef = ref(null)
 const loadResources = async () => {
   try {
     const response = await client.get('/develop/resources')
+
+    // 添加 null 安全检查
+    if (!response || !Array.isArray(response)) {
+      console.warn('Develop: 获取到的数据源列表为空或格式不正确:', response)
+      resources.value = []
+      return
+    }
+
     resources.value = response.filter(r =>
       ['postgresql', 'mysql', 'doris'].includes(r.resource_type.toLowerCase())
     )
@@ -143,7 +151,9 @@ const loadResources = async () => {
       selectedResourceId.value = resources.value[0].id
     }
   } catch (error) {
+    console.error('Develop: 加载数据源失败:', error)
     ElMessage.error('加载数据源失败: ' + (error.response?.data?.error || error.message))
+    resources.value = []
   }
 }
 

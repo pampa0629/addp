@@ -4,6 +4,14 @@
 import client from './client'
 
 /**
+ * 获取支持空间工作流的引擎列表
+ * @returns {Promise} 返回支持workflow开发模式的引擎列表
+ */
+export function listSpatialEngines() {
+  return client.get('/develop/spatial/engines')
+}
+
+/**
  * 获取所有空间算子列表
  */
 export function listOperators() {

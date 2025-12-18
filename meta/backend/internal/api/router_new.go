@@ -31,6 +31,10 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 	// 创建Handler
 	handler := NewHandler(resourceService, scanService, taskService)
 
+	// 创建算子Handler
+	operatorService := service.NewOperatorService(taskService)
+	operatorHandler := NewOperatorHandler(operatorService)
+
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "healthy"})
@@ -47,6 +51,10 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 	}
 	api.Use(auth.TenantIsolationMiddleware()) // 租户隔离
 	{
+		// 算子API (统一算子接口)
+		api.GET("/operators", operatorHandler.ListOperators)
+		api.POST("/operators/:name/execute", operatorHandler.ExecuteOperator)
+
 		// 资源相关
 		api.GET("/resources", handler.GetResources)
 

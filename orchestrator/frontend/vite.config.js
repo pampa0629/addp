@@ -12,6 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5177,
+    strictPort: true, // 端口被占用时报错，不自动切换
     host: '0.0.0.0',
     proxy: {
       '/api': {

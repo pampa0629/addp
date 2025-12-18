@@ -589,7 +589,7 @@ main() {
         "transfer-backend:transfer/backend"
         "orchestrator-backend:orchestrator/backend"
         "develop-backend:develop/backend"
-        "geopandas-engine:geopandas-engine"
+        "geopandas-engine:engines/geopandas"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
         "manager-worker:manager/backend"

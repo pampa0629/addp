@@ -1,109 +1,145 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 Claude Code (claude.ai/code) 提供在本仓库中工作时的指导说明。
 
-## Communication Language / 交流语言
+## 交流语言
 
-**Important**: In this project, **please communicate with users in Chinese as much as possible**. Use English only when the user explicitly asks questions in English.
+**重要**: 在本项目中,**请使用中文与用户交流**。除非用户明确使用英文提问,否则默认使用中文回复。
 
-**重要**: 在此项目中,**请尽可能使用中文与用户交流**。除非用户明确使用英文提问,否则默认使用中文回复。
+## 📚 文档导航地图(给 Claude Code 使用)
 
-## 📚 Documentation Navigation Map (For Claude Code)
-
-**When encountering the following scenarios, proactively read the corresponding documentation**:
+**遇到以下场景时,主动阅读对应文档**:
 
 
-| Scenario                        | Required Documentation         | Trigger Keywords                           |
-| ------------------------------- | ------------------------------ | ------------------------------------------ |
-| Development principles & coding standards | docs/addp开发原则.md           | principles, standards, DRY, backward compatibility |
-| Environment config, ports, keys | docs/addp配置介绍.md           | config, ports, environment variables, .env |
-| Go/Frontend dependency versions | docs/技术栈规约.md             | dependencies, versions, upgrades, libraries |
-| Common module usage             | docs/共享模块介绍.md           | common, shared code, reuse                 |
-| Creating new modules            | docs/新模块开发指南.md         | new module, scaffolding, templates         |
-| Deployment and startup          | docs/addp部署和开发步骤.md     | deployment, startup, docker, scripts       |
-| System module details           | system/CLAUDE.md               | authentication, users, tenants, logs       |
-| Gateway routing                 | gateway/ARCHITECTURE.md        | routing, forwarding, API gateway           |
+| 场景                 | 必读文档                   | 触发关键词                 |
+| -------------------- | -------------------------- | -------------------------- |
+| 开发原则与编码规范   | docs/addp开发原则.md       | 原则、规范、DRY、向后兼容  |
+| 环境配置、端口、密钥 | docs/addp配置介绍.md       | 配置、端口、环境变量、.env |
+| Go/前端依赖版本      | docs/技术栈规约.md         | 依赖、版本、升级、库       |
+| 共享模块使用         | docs/共享模块介绍.md       | common、共享代码、复用     |
+| 创建新模块           | docs/新模块开发指南.md     | 新模块、脚手架、模板       |
+| 部署和启动           | docs/addp部署和开发步骤.md | 部署、启动、docker、脚本   |
+| System 模块详情      | system/CLAUDE.md           | 认证、用户、租户、日志     |
+| Gateway 路由         | gateway/ARCHITECTURE.md    | 路由、转发、API网关        |
 
-**Important**:
+**重要**:
 
-- When encountering related issues, read the corresponding documentation first
-- Multiple scenarios may require reading multiple documents
-- External link documents contain detailed information, main document provides overview only
+- 遇到相关问题时,优先阅读对应文档
+- 多个场景可能需要阅读多份文档
+- 外链文档包含详细信息,主文档仅提供概览
 
-## Development Principles
+## 开发原则
 
-**Important**: ADDP is currently under active development. The following principles guide all development work:
+**重要**: ADDP 目前处于积极开发阶段。以下原则指导所有开发工作:
 
-### 1. No Backward Compatibility Concerns
+### 1. 无需考虑向后兼容
 
-During development phase, prioritize best architecture. Freely modify database schemas and API structures.
+开发阶段优先考虑最佳架构。可自由修改数据库schema和API结构。
 
-### 2. Keep It Clean
+### 2. 保持整洁
 
-Save temporary scripts and documents to /tmp/, keep project tree clean.
+临时脚本和文档保存到 /tmp/,保持项目树整洁。
 
-### 3. No Need to Ask Permission
+### 3. 无需请求权限
 
-In auto-edit mode, freely execute scripts without asking user each time.
+在自动编辑模式下,自由执行脚本,无需每次询问用户。
 
-### 4. Think Holistically
+### 4. 全局思考
 
-Any modification must consider global impact, synchronously update related modules.
+任何修改都要考虑全局影响,同步更新相关模块。
 
-### 5. Fix Root Causes
+### 5. 修复根本原因
 
-Deeply analyze root causes, solve completely rather than apply temporary patches.
+深入分析根本原因,彻底解决而不是打补丁。
 
-### 6. Be Bold to Delete
+### 6. 大胆删除
 
-Delete obsolete code and files, don't keep "just in case" content.
+删除过时的代码和文件,不要保留"以防万一"的内容。
 
-### 7. Challenge Unreasonable Requests
+### 7. 挑战不合理的需求
 
-Question unreasonable requirements, discuss equally to reach consensus.
+质疑不合理的需求,平等讨论达成共识。
 
-### 8. DRY (Don't Repeat Yourself / 不要重复自己)
+### 8. DRY (不要重复自己)
 
-Extract repeated code to common/ or common-frontend/ modules.
+将重复代码提取到 common/ 或 common-frontend/ 模块。
 
-Detailed explanation: docs/addp开发原则.md
+详细说明: docs/addp开发原则.md
 
-## Repository Structure
+## 仓库结构
 
-**ADDP (All Domain Data Platform / 全域数据平台)** is an enterprise data platform with microservices architecture. Each service has its own directory:
+**ADDP (全域数据平台)** 是一个采用微服务架构的企业数据平台。每个服务都有自己的目录:
 
-- **common/** - Backend shared library: common client code, models, config loader, and utilities used by all backend services
-- **common-frontend/** - Frontend shared library: Vue 3 components, utilities, and type definitions for frontend reuse
-  - **basic/** - Basic UI components without map dependencies (StorageEngineForm, ImagePreview, formatters)
-  - **map/** - Map-related components requiring OpenLayers and Gaode Map (GeoJsonPreview, ShapefilePreview, TablePreview)
-- **portal/** - Unified portal entry point with iframe-based module integration - **IMPLEMENTED**
-- **system/** - Core system module: user authentication, logging, resource management - **IMPLEMENTED** (PostgreSQL system schema)
-- **gateway/** - API gateway: handles external requests and routes to internal services - **IMPLEMENTED** (reverse proxy)
-- **manager/** - Data management: data source connections, upload directory organization, data preview - **IMPLEMENTED**
-- **meta/** - Metadata service: data metadata parsing/storage/querying, cron-scheduled scanning - **IMPLEMENTED** (PostgreSQL metadata schema)
-- **transfer/** - Data transfer: data import/export/synchronization - **IMPLEMENTED**
-- **orchestrator/** - Workflow orchestration: task scheduling and execution - **IMPLEMENTED**
-- **develop/** - Development workbench: SQL execution, GIS workflow management - **IMPLEMENTED**
-- **geopandas-engine/** - Spatial computation engine: Python-based GIS workflow execution, providing 21 spatial operators - **IMPLEMENTED**
+- **common/** - 后端共享库:所有后端服务使用的通用客户端代码、模型、配置加载器和工具
+- **common-frontend/** - 前端共享库:Vue 3 组件、工具和类型定义,供前端复用
+  - **basic/** - 基础 UI 组件,无地图依赖(StorageEngineForm、ImagePreview、formatters)
+  - **map/** - 地图相关组件,需要 OpenLayers 和高德地图(GeoJsonPreview、ShapefilePreview、TablePreview)
+- **portal/** - 统一门户入口,基于 iframe 的模块集成 - **已实现**
+- **system/** - 核心系统模块:用户认证、日志、资源管理 - **已实现** (PostgreSQL system schema)
+- **gateway/** - API 网关:处理外部请求并路由到内部服务 - **已实现** (反向代理)
+- **manager/** - 数据管理:数据源连接、上传目录组织、数据预览 - **已实现**
+- **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 - **已实现** (PostgreSQL metadata schema)
+- **transfer/** - 数据传输:数据导入/导出/同步 - **已实现**
+- **orchestrator/** - 工作流编排:任务调度和执行 - **已实现**
+- **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 - **已实现**
+- **geopandas-engine/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
 
-All services follow the same architectural pattern and use shared infrastructure (PostgreSQL, Redis, MinIO, Meilisearch). Common code is shared via the `common` module (backend) and `common-frontend` module (frontend) to avoid duplication.
+所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
-## Quick Start
+## 快速启动
 
-### Basic Startup (3 Steps)
+### 基础启动（3步）
 
-1. **Start infrastructure**: `bash scripts/infra/up.sh`
-2. **Start development environment**: `bash scripts/dev/start.sh`
-3. **Access application**:
-   - Portal unified entry: http://localhost:5170
+1. **启动基础设施**: `bash scripts/infra/up.sh`
+2. **启动开发环境**: `bash scripts/dev/start.sh`（并行启动优化，25-39 秒）
+3. **访问应用**:
+   - Portal 统一入口: http://localhost:5170
    - API Gateway: http://localhost:8000
    - System Backend: http://localhost:8080
 
-Detailed steps: docs/addp部署和开发步骤.md
+详细步骤: [docs/addp部署和开发步骤.md](docs/addp部署和开发步骤.md)
 
-## Module Ports
+### 开发工作流（重要）
 
-**Core Ports** (High-frequency usage):
+**如果你修改了某个模块的代码，使用选择性重启快速验证**：
+
+```bash
+# 场景 1: 修改了 Manager 模块
+bash scripts/dev/restart.sh -manager
+
+# 场景 2: 修改了 Meta 和 Transfer 模块
+bash scripts/dev/restart.sh -meta -transfer
+
+# 场景 3: 修改了 System 模块
+bash scripts/dev/restart.sh -system
+
+# 场景 4: 修改了多个模块或不确定影响范围
+bash scripts/dev/restart.sh -all
+
+# 场景 5: 只重启服务，不重新编译（最快）
+bash scripts/dev/restart.sh
+```
+
+**支持的模块选项**：
+
+- `-system` - System 模块
+- `-manager` - Manager 模块
+- `-meta` - Meta 模块
+- `-transfer` - Transfer 模块
+- `-orchestrator` - Orchestrator 模块
+- `-develop` - Develop 模块
+- `-gateway` - Gateway 模块
+- `-all` - 所有模块
+
+**性能参考**：
+
+- 选择性重启单个模块：**10-20 秒**
+- 快速重启（无编译）：**15-25 秒**
+- 完整启动（全编译）：**25-39 秒**
+
+## 模块端口
+
+**核心端口**(高频使用):
 
 - **Portal**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
@@ -112,184 +148,188 @@ Detailed steps: docs/addp部署和开发步骤.md
 - **Redis**: 6379
 - **MinIO**: 9000-9001 (system) / 9002-9003 (business)
 
-Complete port list: docs/addp配置介绍.md
+完整端口列表: docs/addp配置介绍.md
 
-## Technology Stack
+## 技术栈
 
-### Backend
+### 后端
 
-- **Language**: Go 1.23+
-- **HTTP Framework**: Gin
+- **语言**: Go 1.23+
+- **HTTP 框架**: Gin
 - **ORM**: GORM
-- **Database**: PostgreSQL 15 (all modules use schema isolation: system, manager, metadata, transfer, orchestrator, develop)
-- **Cache/Queue**: Redis 7
-- **Object Storage**: MinIO (S3-compatible)
-- **Task Queue**: Asynq (Redis-based, for Transfer module), Cron (for Meta module scheduling)
-- **Spatial Computation**: GeoPandas Engine (Python-based spatial workflow execution engine with in-memory GeoDataFrame processing)
+- **数据库**: PostgreSQL 15 (所有模块使用 schema 隔离: system、manager、metadata、transfer、orchestrator、develop)
+- **缓存/队列**: Redis 7
+- **对象存储**: MinIO (S3 兼容)
+- **任务队列**: Asynq (基于 Redis,用于 Transfer 模块)、Cron (用于 Meta 模块调度)
+- **空间计算**: GeoPandas Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
-### Go Dependency Version Standards
+### Go 依赖版本规范
 
-To ensure dependency version consistency across all modules, ADDP platform uses unified Go dependency versions (last updated: 2025-12-15).
-When detailed technical stack information is needed, please refer to docs/技术栈规约.md document.
+为确保所有模块的依赖版本一致性,ADDP 平台使用统一的 Go 依赖版本(最后更新: 2025-12-15)。
+需要详细技术栈信息时,请参考 docs/技术栈规约.md 文档。
 
-### Infrastructure
+### 基础设施
 
-- **Containerization**: Docker + Docker Compose
-- **Reverse Proxy**: Nginx (production), Gateway service (API routing)
-- **Database Schema Isolation**: PostgreSQL schemas (manager, metadata, transfer)
-- **Data Separation**: System infrastructure (ADDP metadata) + Business database (user data) independently deployed
+- **容器化**: Docker + Docker Compose
+- **反向代理**: Nginx (生产环境)、Gateway 服务 (API 路由)
+- **数据库 Schema 隔离**: PostgreSQL schemas (manager、metadata、transfer)
+- **数据分离**: 系统基础设施 (ADDP 元数据) + 业务数据库 (用户数据) 独立部署
 
-### Infrastructure Architecture
+### 基础设施架构
 
-ADDP adopts **system and business data separation** architecture design:
+ADDP 采用 **系统与业务数据分离** 架构设计:
 
-**System Infrastructure** (docker-compose.infra.yml):
+**系统基础设施** (docker-compose.infra.yml):
 
-- **Docker Compose Project Name**: `addp-infra`
-- **Container Naming**: Simple names (postgres, redis, minio, meilisearch), managed by project name for isolation
-- **postgres**: Stores ADDP system metadata (users, resource configs, metadata indexes, task definitions, etc.)
-- **redis**: Cache and task queue (Asynq)
-- **minio**: Stores system files (user avatars, system configs, modular buckets)
-- **meilisearch**: Full-text search engine (metadata asset search, file indexing)
+- **Docker Compose 项目名**: `addp-infra`
+- **容器命名**: 简单名称 (postgres、redis、minio、meilisearch),通过项目名管理隔离
+- **postgres**: 存储 ADDP 系统元数据 (用户、资源配置、元数据索引、任务定义等)
+- **redis**: 缓存和任务队列 (Asynq)
+- **minio**: 存储系统文件 (用户头像、系统配置、模块化 buckets)
+- **meilisearch**: 全文搜索引擎 (元数据资产搜索、文件索引)
 
-**Business Database** (business/docker-compose.yml, independently deployed):
+**业务数据库** (business/docker-compose.yml, 独立部署):
 
-- `business-postgres`: Stores actual business data managed by users through ADDP (user-uploaded PostgreSQL data, etc.)
-- `business-minio`: Stores user-uploaded business files (Shapefile, GeoJSON, images, videos, etc.)
+- `business-postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
+- `business-minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
 
-### Module-Based Resource Isolation
+### 基于模块的资源隔离
 
-ADDP adopts **modular resource isolation** strategy to ensure independent module resource management:
-**PostgreSQL Schema Isolation**: Isolated by module name
-**MinIO Bucket Isolation**: Isolated by module name
-**Redis Key Naming Convention**: {module}:{middleware}:{function}:{id}
-**Asynq Queue Naming Convention**: {module}:{priority}
-**Meilisearch Index Naming Convention**: {module}:{resource_type}
+ADDP 采用 **模块化资源隔离** 策略,确保模块资源独立管理:
+**PostgreSQL Schema 隔离**: 按模块名隔离
+**MinIO Bucket 隔离**: 按模块名隔离
+**Redis Key 命名规范**: {module}:{middleware}:{function}:{id}
+**Asynq Queue 命名规范**: {module}:{priority}
+**Meilisearch Index 命名规范**: {module}:{resource_type}
 
-## Key Architectural Patterns
+## 关键架构模式
 
-### Layered Backend Architecture (in system/backend/)
+### 分层后端架构 (在 system/backend/)
 
-Go backend follows clean layered approach:
-
-```
-cmd/server/main.go          → Application entry point
-internal/api/               → HTTP handlers + routing
-internal/service/           → Business logic layer
-internal/repository/        → Data access layer (GORM)
-internal/models/            → Database models + DTOs
-internal/middleware/        → Auth, logging middleware
-pkg/utils/                  → Shared utilities (JWT, encryption)
-```
-
-**Data Flow**: API Handler → Service → Repository → Database
-
-### Frontend Architecture (Portal + Microservice Pattern)
-
-**Unified Portal + Independent Module Frontends**:
-
-Platform uses **portal-based architecture** providing unified entry point:
+Go 后端遵循清晰的分层方法:
 
 ```
-portal/frontend/           → Unified Portal Entry (port 5170 dev / 8000 prod)
+cmd/server/main.go          → 应用入口
+internal/api/               → HTTP handlers + 路由
+internal/service/           → 业务逻辑层
+internal/repository/        → 数据访问层 (GORM)
+internal/models/            → 数据库模型 + DTOs
+internal/middleware/        → 认证、日志中间件
+pkg/utils/                  → 共享工具 (JWT、加密)
+```
+
+**数据流**: API Handler → Service → Repository → Database
+
+### 前端架构 (Portal + 微服务模式)
+
+**统一门户 + 独立模块前端**:
+
+平台使用 **基于门户的架构** 提供统一入口:
+
+```
+portal/frontend/           → 统一门户入口 (端口 5170 dev / 8000 prod)
 ├── src/
 │   ├── views/
-│   │   ├── Portal.vue    → Main portal page with module cards
-│   │   └── Login.vue     → Centralized login
-│   ├── api/auth.js       → Authentication via System backend
-│   └── router/           → Portal routes
+│   │   ├── Portal.vue    → 主门户页面,包含模块卡片
+│   │   └── Login.vue     → 集中登录
+│   ├── api/auth.js       → 通过 System 后端认证
+│   └── router/           → Portal 路由
 │
-│   Portal embeds module frontends via iframe:
-│   - Left sidebar: Unified navigation for all modules
-│   - Main area: iframe dynamically loads module frontends
+│   Portal 通过 iframe 嵌入模块前端:
+│   - 左侧边栏: 所有模块的统一导航
+│   - 主区域: iframe 动态加载模块前端
 
-system/frontend/           → System module (port 5173 dev / 8090 prod)
-├── Standalone or embedded in portal
-├── Features: Users, Logs, Resources
-Other modules similar to system.
+system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
+├── 可独立运行或嵌入 portal
+├── 功能: 用户、日志、资源
+其他模块类似 system。
 ```
 
-**Two Access Modes**:
+**两种访问模式**:
 
-1. **Unified Portal Mode** (Recommended for users):
+1. **统一门户模式** (推荐给用户):
 
-   - Single entry: http://localhost:5170 (dev) or http://localhost:8000 (prod)
-   - Integrated navigation with all modules
-   - Module frontends load in portal's iframe
-   - One login for all modules
-2. **Standalone Module Mode** (For independent deployment):
+   - 单一入口: http://localhost:5170 (dev) 或 http://localhost:8000 (prod)
+   - 集成所有模块的导航
+   - 模块前端加载在 portal 的 iframe 中
+   - 一次登录访问所有模块
+2. **独立模块模式** (用于独立部署):
 
-   - Direct access to each module frontend
+   - 直接访问各模块前端
    - System: http://localhost:5173, Manager: http://localhost:5174
-   - Each module has its own login
-   - Suitable for deploying single module independently
+   - 每个模块有自己的登录
+   - 适合独立部署单个模块
 
-**Key Frontend Principles**:
+**前端关键原则**:
 
-- Portal provides unified user experience and consistent navigation
-- Module frontends remain independent, can be deployed standalone
-- All frontends share JWT auth pattern (token stored in localStorage)
-- Portal and modules can authenticate independently
-- In production, all requests route through Gateway (8000)
+- Portal 提供统一的用户体验和一致的导航
+- 模块前端保持独立,可单独部署
+- 所有前端共享 JWT 认证模式 (token 存储在 localStorage)
+- Portal 和模块可独立认证
+- 生产环境中,所有请求通过 Gateway (8000) 路由
 
-### Authentication Flow
+### 认证流程
 
-JWT authentication pattern: User login → Backend validates → Returns JWT → Frontend stores token → Requests carry token → Backend validates token
+JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 token → 请求携带 token → 后端验证 token
 
-### Test Accounts
+### 测试账号
 
-**Tenant Admin**: `admin` / `123456` (Manages users, resources, data of default tenant)
-**Super Admin**: `SuperAdmin` / `20251001#SuperAdmin` (System-level management, tenant management)
+**租户管理员**: `admin` / `123456` (管理默认租户的用户、资源、数据)
+**超级管理员**: `SuperAdmin` / `20251001#SuperAdmin` (系统级管理、租户管理)
 
-Detailed explanation and enabling method: system/CLAUDE.md
+详细说明和启用方法: system/CLAUDE.md
 
-### Configuration Center Pattern
+### 配置中心模式
 
-When detailed content is needed, please read docs/addp配置介绍.md
+需要详细内容时,请阅读 docs/addp配置介绍.md
 
-### Shared Modules
+### 共享模块
 
-The `common` module provides shared code to avoid duplication across **all other backend modules** (Manager, Meta, Transfer, Orchestrator, Develop, and GeoPandas Engine integration).
-The `common-frontend` module provides shared Vue 3 components, utilities, and type definitions for cross-module frontend reuse.
-For detailed introduction of Common module and common-frontend module, please read when needed: docs/共享模块介绍.md
+`common` 模块为**所有其他后端模块** (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPandas Engine 集成) 提供共享代码,避免重复。
+`common-frontend` 模块提供共享的 Vue 3 组件、工具和类型定义,供跨模块前端复用。
+关于 Common 模块和 common-frontend 模块的详细介绍,需要时请阅读: docs/共享模块介绍.md
 
-### New Module Development
+### 新模块开发
 
-When developing new modules, please read: docs/新模块开发指南.md
+开发新模块时,请阅读: docs/新模块开发指南.md
 
-## Important File Locations
+## 重要文件位置
 
-### Configuration
+### 配置文件
 
-- [`.env`](.env) - Root environment variables (shared config)
-- [`.env.example`](.env.example) - Template with all available options
-- [`docker-compose.yml`](docker-compose.yml) - Service definitions and networking
+- [`.env`](.env) - 根环境变量 (共享配置)
+- [`.env.example`](.env.example) - 包含所有可用选项的模板
+- [`docker-compose.yml`](docker-compose.yml) - 服务定义和网络配置
 
-### Documentation
+### 文档
 
-- [`CLAUDE.md`](CLAUDE.md) - This file (platform-wide architecture)
-- [`system/CLAUDE.md`](system/CLAUDE.md) - System module details
-- [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway routing logic
-- [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - Configuration center guide
-- [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common module usage
-- [`common-frontend/README.md`](common-frontend/README.md) - Common frontend components guide
-- [`common-frontend/ARCHITECTURE.md`](common-frontend/ARCHITECTURE.md) - Common frontend architecture
-- DATA_STRUCTURES.md in each module directory
+- [`CLAUDE.md`](CLAUDE.md) - 本文件 (平台级架构)
+- [`system/CLAUDE.md`](system/CLAUDE.md) - System 模块详情
+- [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway 路由逻辑
+- [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - 配置中心指南
+- [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common 模块使用
+- [`common-frontend/README.md`](common-frontend/README.md) - Common 前端组件指南
+- [`common-frontend/ARCHITECTURE.md`](common-frontend/ARCHITECTURE.md) - Common 前端架构
+- 各模块目录中的 DATA_STRUCTURES.md
 
-### Build and Deployment
+### 构建和部署
 
-When needed, please read docs/addp部署和开发步骤.md
+需要时请阅读 docs/addp部署和开发步骤.md
 
-### Key Source Files
+### 关键源文件
 
-- System authentication: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)
-- Manager preview: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
-- Meta scanning: [meta/backend/internal/service/scan_service.go](meta/backend/internal/service/scan_service.go)
-- Common client: [common/client/system.go](common/client/system.go)
-- Common frontend basic: [common-frontend/basic/src/index.js](common-frontend/basic/src/index.js)
-- Common frontend map: [common-frontend/map/src/index.js](common-frontend/map/src/index.js)
+- System 认证: [system/backend/internal/middleware/auth.go](system/backend/internal/middleware/auth.go)
+- Manager 预览: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
+- Meta 扫描: [meta/backend/internal/service/scan_service.go](meta/backend/internal/service/scan_service.go)
+- Common 客户端: [common/client/system.go](common/client/system.go)
+- Common 前端基础: [common-frontend/basic/src/index.js](common-frontend/basic/src/index.js)
+- Common 前端地图: [common-frontend/map/src/index.js](common-frontend/map/src/index.js)
 
-## Troubleshooting
+## 故障排查
 
-**JWT token issues**: Ensure `JWT_SECRET` in `.env` matches across services (System and Gateway need same secret)
-**Cross-service call failures**: Verify `ENABLE_SERVICE_INTEGRATION=true` and service URLs are correct in docker-compose.yml
+**JWT token 问题**: 确保 `.env` 中的 `JWT_SECRET` 在各服务间匹配 (System 和 Gateway 等所有模块，均需要相同的密钥)
+**跨服务调用失败**: 验证 `ENABLE_SERVICE_INTEGRATION=true` 且 docker-compose.yml 中的服务 URL 正确
+
+更多故障排查，可翻阅 [docs/常见故障排查.md](docs/常见故障排查.md) 文档。
+
+**开发状态，故障修改后，请使用 `./scripts/dev/restart.sh -<模块名>` 重启对应服务来验证确认结果，没有经过这一步，不要告知我已经改好了。**

@@ -49,7 +49,7 @@ func main() {
 		geopandasEngineURL = "http://localhost:8099"
 		log.Printf("⚠️  GeoPandas Engine URL not configured, using default: %s", geopandasEngineURL)
 	}
-	spatialWorkflowService := service.NewSpatialWorkflowService(geopandasEngineURL)
+	spatialWorkflowService := service.NewSpatialWorkflowService(geopandasEngineURL, systemClient)
 
 	// 创建 GIS Execution Service
 	gisExecutionService := service.NewGISExecutionService(gisExecutionRepo, spatialTaskRepo, spatialWorkflowService, db)

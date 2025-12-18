@@ -98,6 +98,26 @@ func (h *SpatialHandler) ListOperators(c *gin.Context) {
 	})
 }
 
+// ListSpatialEngines 获取支持workflow开发模式的空间引擎列表
+// GET /api/spatial/engines
+func (h *SpatialHandler) ListSpatialEngines(c *gin.Context) {
+	tenantID, _ := c.Get("tenant_id")
+
+	// 调用service获取空间引擎列表
+	engines, err := h.spatialWorkflowService.ListSpatialEngines(c.Request.Context(), tenantID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"engines": engines,
+		"count":   len(engines),
+	})
+}
+
+
 // CreateTask 创建 GIS 任务（保存工作流为任务）
 // POST /api/spatial/tasks
 func (h *SpatialHandler) CreateTask(c *gin.Context) {

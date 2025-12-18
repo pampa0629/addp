@@ -548,12 +548,50 @@ def get_operator(operator_name: str):
 
 
 def list_operators():
-    """列出所有算子"""
-    return {
-        name: {
-            'params': meta['params'],
-            'category': meta['category'],
-            'description': meta['description']
-        }
-        for name, meta in OPERATORS.items()
+    """列出所有算子 - 返回符合统一标准的算子元数据列表"""
+    operators_list = []
+
+    # Python类型到标准类型的映射
+    type_mapping = {
+        'float': 'float',
+        'int': 'integer',
+        'bool': 'boolean',
+        'str': 'string',
+        'geodataframe': 'object',
+        'list[float]': 'array',
+        'list[str]': 'array',
     }
+
+    for name, meta in OPERATORS.items():
+        # 转换参数格式
+        parameters = []
+        for param_name, param_type in meta['params'].items():
+            param_meta = {
+                "name": param_name,
+                "type": type_mapping.get(param_type, 'string'),
+                "required": True if param_name == "input_gdf" else False,
+                "description": f"{param_name}参数"
+            }
+
+            # 数组类型需要指定item_type
+            if param_type in ['list[float]', 'list[str]']:
+                param_meta["item_type"] = "float" if param_type == 'list[float]' else "string"
+
+            parameters.append(param_meta)
+
+        # 构建标准化的算子元数据
+        operator = {
+            "id": name,
+            "name": name,
+            "display_name": meta['description'],
+            "type": "spatial",
+            "category": meta['category'],
+            "description": meta['description'],
+            "module": "geopandas",
+            "parameters": parameters,
+            "inputs": ["geodataframe"],
+            "outputs": ["geodataframe"]
+        }
+        operators_list.append(operator)
+
+    return operators_list

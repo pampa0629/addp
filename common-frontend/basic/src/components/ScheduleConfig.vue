@@ -9,12 +9,14 @@
   >
     <!-- 快捷选择和操作按钮 -->
     <div v-if="showPresets" class="schedule-presets">
-      <span class="schedule-presets__label">快捷选择:</span>
+      <span class="schedule-presets__label">定时调度</span>
+      <span class="schedule-presets__sublabel">快捷选择:</span>
       <el-button
         v-for="preset in effectivePresets"
         :key="preset.key"
         size="small"
         :disabled="disabled || readonly"
+        :title="preset.description"
         @click="handlePresetClick(preset.key)"
       >
         {{ preset.label }}
@@ -23,6 +25,7 @@
         type="primary"
         size="small"
         :disabled="disabled || readonly"
+        title="设置每天、每周或每月的自定义执行时间"
         @click="openDialog"
       >
         自定义时间
@@ -32,20 +35,11 @@
         size="small"
         text
         :disabled="disabled || readonly"
+        title="清除当前调度配置,改为手动触发"
         @click="clearSchedule"
       >
         清除调度
       </el-button>
-    </div>
-
-    <!-- 当前配置描述 -->
-    <div class="schedule-result">
-      {{ description || '尚未设置,将按需手动执行' }}
-    </div>
-
-    <!-- 提示信息 -->
-    <div class="hint">
-      设置后系统会按照上方的文字说明自动运行;清除后仅支持手动触发。
     </div>
 
     <!-- 自定义配置对话框 -->
@@ -325,19 +319,15 @@ const handleConfirm = () => {
 }
 
 .schedule-presets__label {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.schedule-presets__sublabel {
   color: #606266;
   font-size: 13px;
-}
-
-.schedule-result {
-  font-size: 13px;
-  color: #303133;
-}
-
-.hint {
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.6;
+  margin-left: 8px;
 }
 
 .schedule-dialog__tip {

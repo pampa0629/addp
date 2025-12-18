@@ -70,9 +70,10 @@ func main() {
 	_ = resourceCacheService // TODO: 集成到 metadataService 中使用
 
 	// 初始化缓存管理器和扫描事件处理器（用于 Meta 扫描完成后自动刷新缓存）
+	var cacheManager *service.CacheManager
 	var scanEventHandler *service.ScanEventHandler
 	if redisClient != nil {
-		cacheManager := service.NewCacheManager(metadataRepo, redisClient)
+		cacheManager = service.NewCacheManager(metadataRepo, redisClient)
 		scanEventHandler = service.NewScanEventHandler(cacheManager, redisClient)
 		logger.L().Info("扫描事件订阅已启动，将自动清理扫描完成的资源缓存")
 	}
@@ -144,7 +145,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient, redisClient)
+	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient, cacheManager, redisClient)
 
 	// 注册能力到 System 模块（在服务启动后）
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {

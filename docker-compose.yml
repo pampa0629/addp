@@ -456,7 +456,7 @@ services:
 
   geopandas-engine:
     build:
-      context: ./geopandas-engine
+      context: ./engines/geopandas
       dockerfile: Dockerfile
     image: ${REGISTRY:-localhost:5001}/addp-geopandas-engine:${IMAGE_TAG:-latest}
     container_name: geopandas-engine
