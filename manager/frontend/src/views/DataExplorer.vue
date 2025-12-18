@@ -373,7 +373,7 @@ const loadResources = async () => {
   loadingResources.value = true
   try {
     const response = await dataExplorerAPI.getResources()
-    const list = normalizeResourceList(response || [])
+    const list = normalizeResourceList(response.data || [])
 
     useLegacyEndpoint.value = false
     resources.value = list
@@ -473,7 +473,7 @@ const loadLegacyTree = async (
   loadingTree.value = true
   try {
     const response = await dataExplorerAPI.getLegacyTree()
-    const legacyResources = normalizeResourceList(response || [])
+    const legacyResources = normalizeResourceList(response.data || [])
 
     resources.value = legacyResources
 
