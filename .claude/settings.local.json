@@ -203,7 +203,8 @@
       "Bash(xargs kill -9)",
       "Bash(tree:*)",
       "Bash(npm install)",
-      "Bash(timeout 10 npm run dev:*)"
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(bash scripts/start.sh:*)"
     ],
     "deny": [],
     "ask": []
