@@ -224,6 +224,28 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 	})
 }
 
+// ListAllExecutions 列出所有执行记录
+func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
+	// TODO: 从 JWT 中提取 tenant_id
+	tenantID := uint(1)
+
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	execs, total, err := h.execRepo.ListAll(tenantID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":  execs,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
 // GetExecution 获取执行详情
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)

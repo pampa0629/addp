@@ -168,6 +168,7 @@ META_FE_PORT=${META_FE_PORT:-5175}
 TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 DEVELOP_FE_PORT=${DEVELOP_FE_PORT:-5178}
+SERVICE_FE_PORT=${SERVICE_FE_PORT:-5180}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -254,7 +255,7 @@ echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
 # ============================================================
 echo "  [1/3] 并行编译 Backends + Workers..."
 
-# 并行编译 6 个 Backend 服务
+# 并行编译 7 个 Backend 服务
 build_service "manager" "manager/backend" &
 BUILD_PID_MANAGER=$!
 build_service "meta" "meta/backend" &
@@ -265,6 +266,8 @@ build_service "orchestrator" "orchestrator/backend" &
 BUILD_PID_ORCHESTRATOR=$!
 build_service "develop" "develop/backend" &
 BUILD_PID_DEVELOP=$!
+build_service "service" "service/backend" &
+BUILD_PID_SERVICE=$!
 
 # 并行编译 3 个 Worker
 build_worker "manager" "manager/backend" &
@@ -275,7 +278,7 @@ build_worker "transfer" "transfer/backend" &
 BUILD_PID_TRANSFER_WORKER=$!
 
 # 等待所有编译完成
-wait $BUILD_PID_MANAGER $BUILD_PID_META $BUILD_PID_TRANSFER $BUILD_PID_ORCHESTRATOR $BUILD_PID_DEVELOP $BUILD_PID_MANAGER_WORKER $BUILD_PID_META_WORKER $BUILD_PID_TRANSFER_WORKER
+wait $BUILD_PID_MANAGER $BUILD_PID_META $BUILD_PID_TRANSFER $BUILD_PID_ORCHESTRATOR $BUILD_PID_DEVELOP $BUILD_PID_SERVICE $BUILD_PID_MANAGER_WORKER $BUILD_PID_META_WORKER $BUILD_PID_TRANSFER_WORKER
 
 echo "  ${GREEN}✓ 所有服务编译完成${NC}"
 
@@ -321,12 +324,21 @@ else
 fi
 
 # 启动 Develop Backend（带检查）
-if check_service_running "develop" "8085"; then
+if check_service_running "develop" "8084"; then
   .dev-bins/addp-develop > logs/develop-backend.log 2> logs/develop-backend-stderr.log &
   DEVELOP_PID=$!
   echo $DEVELOP_PID > .dev-pids/develop.pid
 else
   DEVELOP_PID=$(cat .dev-pids/develop.pid 2>/dev/null)
+fi
+
+# 启动 Service Backend（带检查）
+if check_service_running "service" "8086"; then
+  .dev-bins/addp-service > logs/service-backend.log 2> logs/service-backend-stderr.log &
+  SERVICE_PID=$!
+  echo $SERVICE_PID > .dev-pids/service.pid
+else
+  SERVICE_PID=$(cat .dev-pids/service.pid 2>/dev/null)
 fi
 
 # 并行启动 3 个 Workers
@@ -424,7 +436,7 @@ ORCHESTRATOR_WAIT_PID=$!
 # 并发等待 Develop Backend
 (
   WAIT_COUNT=0
-  until curl -f http://localhost:8085/health > /dev/null 2>&1; do
+  until curl -f http://localhost:8084/health > /dev/null 2>&1; do
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -436,8 +448,23 @@ ORCHESTRATOR_WAIT_PID=$!
 ) &
 DEVELOP_WAIT_PID=$!
 
+# 并发等待 Service Backend
+(
+  WAIT_COUNT=0
+  until curl -f http://localhost:8086/health > /dev/null 2>&1; do
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e "${RED}✗ Service Backend 启动超时${NC}"
+      echo "查看日志: tail -f logs/service-backend.log"
+      exit 1
+    fi
+  done
+) &
+SERVICE_WAIT_PID=$!
+
 # 等待所有并发的 health check 完成
-wait $MANAGER_WAIT_PID $META_WAIT_PID $TRANSFER_WAIT_PID $ORCHESTRATOR_WAIT_PID $DEVELOP_WAIT_PID
+wait $MANAGER_WAIT_PID $META_WAIT_PID $TRANSFER_WAIT_PID $ORCHESTRATOR_WAIT_PID $DEVELOP_WAIT_PID $SERVICE_WAIT_PID
 
 echo ""
 echo -e "${GREEN}✓ 所有 Backends + Workers 全部就绪${NC}"
@@ -445,7 +472,8 @@ echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:8081)"
 echo "  Meta Backend:       PID $META_PID (http://localhost:8082)"
 echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:8083)"
 echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:8084)"
-echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:8085)"
+echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:8084)"
+echo "  Service Backend:    PID $SERVICE_PID (http://localhost:8086)"
 echo "  Manager Worker:     PID $MANAGER_WORKER_PID"
 echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
@@ -648,6 +676,7 @@ FRONTEND_CONFIGS=(
   "transfer:${TRANSFER_FE_PORT}:transfer/frontend"
   "orchestrator:${ORCHESTRATOR_FE_PORT}:orchestrator/frontend"
   "develop:${DEVELOP_FE_PORT}:develop/frontend"
+  "service:${SERVICE_FE_PORT}:service/frontend"
 )
 
 echo "并发启动所有前端..."
@@ -751,6 +780,7 @@ echo "  Meta FE:      http://localhost:${META_FE_PORT}"
 echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
 echo "  Develop FE:   http://localhost:${DEVELOP_FE_PORT}"
+echo "  Service FE:   http://localhost:${SERVICE_FE_PORT}"
 echo ""
 echo "后端服务 PID:"
 echo "  System Backend:       $SYSTEM_PID"
@@ -781,6 +811,7 @@ echo "  Gateway:  logs/gateway.log"
 echo "  Meta FE:  logs/meta-frontend.log"
 echo "  Transfer FE:  logs/transfer-frontend.log"
 echo "  Develop FE:  logs/develop-frontend.log"
+echo "  Service FE:  logs/service-frontend.log"
 echo ""
 echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
 echo ""

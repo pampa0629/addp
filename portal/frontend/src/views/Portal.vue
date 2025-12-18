@@ -121,17 +121,36 @@
               <el-icon><Monitor /></el-icon>
               <span>SQL 工作台</span>
             </el-menu-item>
-            <el-menu-item index="/develop/gis-workflow">
-              <el-icon><Edit /></el-icon>
-              <span>GIS 工作流编辑器</span>
+            <el-menu-item index="/develop/workflow">
+              <el-icon><Connection /></el-icon>
+              <span>工作流编辑器</span>
             </el-menu-item>
-            <el-menu-item index="/develop/gis-tasks">
+            <el-menu-item index="/develop/tasks">
               <el-icon><List /></el-icon>
-              <span>GIS 任务管理</span>
+              <span>任务管理</span>
             </el-menu-item>
-            <el-menu-item index="/develop/gis-executions">
+            <el-menu-item index="/develop/executions">
               <el-icon><Timer /></el-icon>
-              <span>GIS 执行历史</span>
+              <span>执行监控</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="service">
+            <template #title>
+              <el-icon><Link /></el-icon>
+              <span>数据服务</span>
+            </template>
+            <el-menu-item index="/service/services">
+              <el-icon><List /></el-icon>
+              <span>服务管理</span>
+            </el-menu-item>
+            <el-menu-item index="/service/catalog">
+              <el-icon><Box /></el-icon>
+              <span>服务目录</span>
+            </el-menu-item>
+            <el-menu-item index="/service/query">
+              <el-icon><Search /></el-icon>
+              <span>数据查询</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -144,13 +163,17 @@
               <el-icon><User /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
-            <el-menu-item index="/system/logs">
-              <el-icon><Document /></el-icon>
-              <span>日志管理</span>
-            </el-menu-item>
             <el-menu-item index="/system/resources">
               <el-icon><Connection /></el-icon>
               <span>资源管理</span>
+            </el-menu-item>
+            <el-menu-item index="/system/applications">
+              <el-icon><Key /></el-icon>
+              <span>应用管理</span>
+            </el-menu-item>
+            <el-menu-item index="/system/logs">
+              <el-icon><Document /></el-icon>
+              <span>日志审计</span>
             </el-menu-item>
             <el-menu-item index="/system/developer">
               <el-icon><Monitor /></el-icon>
@@ -225,6 +248,18 @@
               </el-card>
             </el-col>
           </el-row>
+          <!-- 第四排: 数据服务 -->
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('service')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#1890FF"><Link /></el-icon>
+                  <h2>数据服务</h2>
+                  <p>外部服务注册、OGC 服务、数据查询服务</p>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
         </div>
         <div v-else class="iframe-wrapper">
           <div class="iframe-container">
@@ -253,7 +288,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit, Key } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -275,7 +310,8 @@ const moduleUrls = {
   meta: isDevelopment ? `${protocol}//${hostname}:5175` : `${protocol}//${hostname}/meta`,
   transfer: isDevelopment ? `${protocol}//${hostname}:5176` : `${protocol}//${hostname}/transfer`,
   orchestrator: isDevelopment ? `${protocol}//${hostname}:5177` : `${protocol}//${hostname}/orchestrator`,
-  develop: isDevelopment ? `${protocol}//${hostname}:5178` : `${protocol}//${hostname}/develop`
+  develop: isDevelopment ? `${protocol}//${hostname}:5178` : `${protocol}//${hostname}/develop`,
+  service: isDevelopment ? `${protocol}//${hostname}:5180` : `${protocol}//${hostname}/service`
 }
 
 onMounted(async () => {
@@ -407,6 +443,20 @@ const handleMenuSelect = (index) => {
       } else {
         url = `${moduleUrls[module]}/`
       }
+    } else if (module === 'service') {
+      // Service 模块的路由: /services, /catalog, /query 等 (不需要 /service 前缀)
+      const servicePageMap = {
+        'services': 'services',
+        'catalog': 'catalog',
+        'query': 'query',
+        '': 'services'
+      }
+      const actualPage = servicePageMap[page] !== undefined ? servicePageMap[page] : page
+      if (actualPage) {
+        url = `${moduleUrls[module]}/${actualPage}`
+      } else {
+        url = `${moduleUrls[module]}/`
+      }
     } else if (page) {
       // 其他模块保持原有逻辑
       url = `${moduleUrls[module]}/${page}`
@@ -441,6 +491,8 @@ const navigateToModule = (module) => {
     handleMenuSelect('/orchestrator/orchestrations')
   } else if (module === 'develop') {
     handleMenuSelect('/develop/sql')
+  } else if (module === 'service') {
+    handleMenuSelect('/service/services')
   }
 }
 

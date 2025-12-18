@@ -62,16 +62,17 @@ type Step struct {
 
 // Execution 执行实例
 type Execution struct {
-	ID              uint        `gorm:"primaryKey" json:"id"`
-	OrchestrationID uint        `gorm:"index;not null" json:"orchestration_id"`
-	TenantID        uint        `gorm:"index;not null" json:"tenant_id"`
-	Status          string      `gorm:"size:32;not null" json:"status"` // "running"/"completed"/"failed"
-	CurrentStep     string      `gorm:"size:64" json:"current_step"`
-	StepResults     StepResults `gorm:"type:jsonb" json:"step_results"`
-	ErrorMessage    string      `gorm:"type:text" json:"error_message,omitempty"`
-	StartedAt       *time.Time  `json:"started_at,omitempty"`
-	CompletedAt     *time.Time  `json:"completed_at,omitempty"`
-	CreatedAt       time.Time   `json:"created_at"`
+	ID              uint           `gorm:"primaryKey" json:"id"`
+	OrchestrationID uint           `gorm:"index;not null" json:"orchestration_id"`
+	TenantID        uint           `gorm:"index;not null" json:"tenant_id"`
+	Status          string         `gorm:"size:32;not null" json:"status"` // "running"/"completed"/"failed"
+	CurrentStep     string         `gorm:"size:64" json:"current_step"`
+	StepResults     StepResults    `gorm:"type:jsonb" json:"step_results"`
+	ErrorMessage    string         `gorm:"type:text" json:"error_message,omitempty"`
+	StartedAt       *time.Time     `json:"started_at,omitempty"`
+	CompletedAt     *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
+	Orchestration   *Orchestration `gorm:"foreignKey:OrchestrationID" json:"orchestration,omitempty"`
 }
 
 func (Execution) TableName() string {

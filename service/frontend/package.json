@@ -1,0 +1,25 @@
+{
+  "name": "service-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@addp/common-frontend": "file:../../common-frontend",
+    "@element-plus/icons-vue": "^2.3.2",
+    "axios": "^1.6.5",
+    "element-plus": "^2.5.6",
+    "ol": "^9.2.4",
+    "pinia": "^2.3.1",
+    "vue": "^3.4.15",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "vite": "^5.0.12"
+  }
+}

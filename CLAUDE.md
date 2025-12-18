@@ -82,6 +82,7 @@
 - **transfer/** - 数据传输:数据导入/导出/同步 - **已实现**
 - **orchestrator/** - 工作流编排:任务调度和执行 - **已实现**
 - **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 - **已实现**
+- **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 - **已实现** (PostgreSQL service schema)
 - **geopandas-engine/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
@@ -131,11 +132,9 @@ bash scripts/dev/restart.sh
 - `-gateway` - Gateway 模块
 - `-all` - 所有模块
 
-**性能参考**：
+**当前处于开发阶段，优先采用 ./scripts/dev/ 下的脚本，有明确要求时再使用容器方式。
 
-- 选择性重启单个模块：**10-20 秒**
-- 快速重启（无编译）：**15-25 秒**
-- 完整启动（全编译）：**25-39 秒**
+- **
 
 ## 模块端口
 
@@ -282,6 +281,10 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 ### 配置中心模式
 
 需要详细内容时,请阅读 docs/addp配置介绍.md
+
+端口分配
+
+需要了解端口分配时，请阅读 docs/PORTS分配.md 
 
 ### 共享模块
 

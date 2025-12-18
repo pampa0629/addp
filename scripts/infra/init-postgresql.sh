@@ -6,7 +6,7 @@
 # 功能:
 # 1. 配置 pg_hba.conf (允许外部连接，解决 DBeaver 等客户端连接问题)
 # 2. 安装扩展 (PostGIS 空间数据支持, pgvector 向量检索支持)
-# 3. 创建 schema 和表结构 (system, manager, metadata, transfer, orchestrator, develop)
+# 3. 创建 schema 和表结构 (system, manager, metadata, transfer, orchestrator, develop, service)
 #
 # 调用: 由 scripts/infra/up.sh 自动调用
 
@@ -89,14 +89,14 @@ elif [[ "${1:-}" == "--drop-schema" ]]; then
   exit 0
 elif [[ "${1:-}" == "--drop-all" ]]; then
   echo -e "${RED}⚠️  警告：即将删除所有 ADDP schema 及其数据！${NC}"
-  echo -e "${YELLOW}  包括: system, manager, metadata, transfer, orchestrator, develop${NC}"
+  echo -e "${YELLOW}  包括: system, manager, metadata, transfer, orchestrator, develop, service${NC}"
   read -p "确认删除所有数据？(yes/no): " confirm
   if [[ "$confirm" != "yes" ]]; then
     echo -e "${YELLOW}✗ 操作已取消${NC}"
     exit 0
   fi
   echo -e "${YELLOW}▶ 删除所有 ADDP schemas...${NC}"
-  for schema in system manager metadata transfer orchestrator develop; do
+  for schema in system manager metadata transfer orchestrator develop service; do
     echo -e "${BLUE}  ▸ 删除 schema: ${schema}${NC}"
     docker compose -f docker-compose.infra.yml exec -T postgres env PGPASSWORD="${DB_PASSWORD}" \
       psql -U "${DB_USER}" -d "${DB_NAME}" \
@@ -327,7 +327,7 @@ echo -e "${GREEN}ADDP 系统数据库现已支持:${NC}"
 echo -e "  ✓ ${GREEN}外部客户端连接${NC} (DBeaver, pgAdmin, DataGrip)"
 echo -e "  ✓ ${GREEN}空间数据操作${NC} (PostGIS + Topology)"
 echo -e "  ✓ ${GREEN}向量嵌入与相似度搜索${NC} (pgvector)"
-echo -e "  ✓ ${GREEN}完整的模块 Schema${NC} (system, manager, metadata, transfer, orchestrator, develop)"
+echo -e "  ✓ ${GREEN}完整的模块 Schema${NC} (system, manager, metadata, transfer, orchestrator, develop, service)"
 echo ""
 echo -e "${YELLOW}连接信息:${NC}"
 echo -e "  Host: localhost"

@@ -64,6 +64,7 @@ func SetupRouter(
 		// 执行管理
 		api.POST("/orchestrations/:id/execute", handler.Execute)
 		api.GET("/orchestrations/:id/executions", handler.ListExecutions)
+		api.GET("/executions", handler.ListAllExecutions)
 		api.GET("/orch-executions/:id", handler.GetExecution)
 
 		// 计算资源管理（动态从 System 获取）

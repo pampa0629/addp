@@ -195,6 +195,7 @@ SERVICES=(
     "transfer-worker:transfer/backend"
     "orchestrator-backend:orchestrator/backend"
     "develop-backend:develop/backend"
+    "service-backend:service/backend"
     "gateway:gateway"
 )
 failed=()

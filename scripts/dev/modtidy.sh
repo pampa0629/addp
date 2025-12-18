@@ -26,6 +26,7 @@ GO_MODULES=(
     "transfer/backend"
     "orchestrator/backend"
     "develop/backend"
+    "service/backend"
     "gateway"
 )
 

@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
@@ -24,50 +24,84 @@ func main() {
 	log.Printf("🚀 Starting Develop Service on %s", cfg.ServerAddr)
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
+	log.Printf("🔗 GeoPandas Engine: %s", cfg.GeoPandasEngineURL)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		log.Fatalf("❌ Failed to initialize database: %v", err)
 	}
+	log.Printf("✅ Database initialized successfully")
 
-	// 创建 Repository
-	executionRepo := repository.NewExecutionRepository(db)
-	gisExecutionRepo := repository.NewGISExecutionRepository(db)
-	spatialTaskRepo := repository.NewSpatialTaskRepository(db)
+	// ========== Repository 层 ==========
+	devItemRepo := repository.NewDevItemRepository(db)
+	devExecutionRepo := repository.NewDevExecutionRepository(db)
+	log.Printf("✅ Repository 层初始化完成")
 
-	// 创建 SystemClient (使用 Internal API Key 获取未加密的资源配置)
+	// ========== 创建 System Client ==========
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+	log.Printf("✅ System Client 创建成功")
 
-	// 创建 SQL Service
-	sqlService := service.NewSQLExecutionService(cfg, executionRepo, systemClient)
-	defer sqlService.Close()
+	// ========== Service 层 ==========
+	// 1. 工作流引擎服务
+	workflowEngine := service.NewWorkflowEngineService(cfg.GeoPandasEngineURL, systemClient)
+	log.Printf("✅ WorkflowEngineService 初始化完成")
 
-	// 创建 Spatial Workflow Service
-	geopandasEngineURL := cfg.GeoPandasEngineURL
-	if geopandasEngineURL == "" {
-		geopandasEngineURL = "http://localhost:8099"
-		log.Printf("⚠️  GeoPandas Engine URL not configured, using default: %s", geopandasEngineURL)
-	}
-	spatialWorkflowService := service.NewSpatialWorkflowService(geopandasEngineURL, systemClient)
+	// 2. SQL引擎服务
+	sqlEngine := service.NewSQLEngineService(cfg, systemClient)
+	log.Printf("✅ SQLEngineService 初始化完成")
 
-	// 创建 GIS Execution Service
-	gisExecutionService := service.NewGISExecutionService(gisExecutionRepo, spatialTaskRepo, spatialWorkflowService, db)
+	// 3. DevItem业务逻辑服务
+	devItemService := service.NewDevItemService(devItemRepo)
+	log.Printf("✅ DevItemService 初始化完成")
 
-	// 创建并启动 Spatial Scheduler
-	spatialScheduler := service.NewSpatialScheduler(spatialTaskRepo, gisExecutionService, db)
-	ctx := context.Background()
-	if err := spatialScheduler.Start(ctx); err != nil {
-		log.Fatalf("Failed to start spatial scheduler: %v", err)
-	}
+	// 4. DevExecutor 统一执行器
+	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine)
+	log.Printf("✅ DevExecutor 初始化完成")
 
-	// 创建 Handler
-	sqlHandler := api.NewSQLHandler(sqlService)
-	spatialHandler := api.NewSpatialHandler(db, spatialWorkflowService, gisExecutionService)
-	gisExecutionHandler := api.NewGISExecutionHandler(gisExecutionService)
+	// 5. 算子发现服务
+	operatorDiscovery := service.NewOperatorDiscoveryService(
+		cfg.GeoPandasEngineURL,
+		cfg.MetaServiceURL,
+		cfg.TransferServiceURL,
+		cfg.ManagerServiceURL,
+	)
+	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
-	// 设置路由
-	router := api.SetupRouter(cfg, sqlHandler, spatialHandler, gisExecutionHandler)
+	// ========== Handler 层 ==========
+	devItemHandler := api.NewDevItemHandler(devItemService)
+	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
+	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
+	resourceHandler := api.NewResourceHandler(systemClient)
+	sqlHandler := api.NewSQLHandler(sqlEngine, devItemService)
+	log.Printf("✅ Handler 层初始化完成")
+
+	// ========== 设置路由 ==========
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, resourceHandler, sqlHandler, devItemService)
+	log.Printf("✅ 路由设置完成")
+
+	// ========== 引擎注册（启动时自动注册到 System）==========
+	engineRegistry := service.NewEngineRegistryService(
+		cfg.SystemServiceURL,
+		cfg.InternalAPIKey,
+		"http://localhost:"+cfg.ServerAddr,
+	)
+
+	// 后台异步注册（不阻塞启动，支持重试）
+	go func() {
+		time.Sleep(2 * time.Second) // 等待服务完全启动
+		maxRetries := 5
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := engineRegistry.RegisterEngine(); err != nil {
+				log.Printf("⚠️  Registration attempt %d/%d failed: %v", attempt, maxRetries, err)
+				time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+				continue
+			}
+			log.Printf("✅ Develop engine registered successfully")
+			return
+		}
+		log.Printf("❌ Engine registration failed after %d attempts", maxRetries)
+	}()
 
 	// 设置优雅关闭
 	sigCh := make(chan os.Signal, 1)
@@ -75,11 +109,12 @@ func main() {
 
 	// 启动服务器（非阻塞）
 	addr := ":" + cfg.ServerAddr
-	log.Printf("✅ Develop Service is running on %s", addr)
+	log.Printf("🎉 Develop Service is running on %s", addr)
+	log.Printf("📋 API文档: http://localhost%s/health", addr)
 
 	go func() {
 		if err := router.Run(addr); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Fatalf("❌ Failed to start server: %v", err)
 		}
 	}()
 
@@ -87,9 +122,9 @@ func main() {
 	<-sigCh
 	log.Println("🛑 Shutting down Develop Service...")
 
-	// 停止调度器
-	if err := spatialScheduler.Stop(ctx); err != nil {
-		log.Printf("Failed to stop spatial scheduler: %v", err)
+	// 优雅关闭
+	if err := sqlEngine.Close(); err != nil {
+		log.Printf("⚠️ Error closing SQL engine: %v", err)
 	}
 
 	log.Println("👋 Develop Service stopped")

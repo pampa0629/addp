@@ -38,27 +38,28 @@
         >
           <el-menu-item index="/sql">
             <el-icon><Document /></el-icon>
-            <span>SQL 工作台</span>
+            <span>SQL 编辑器</span>
           </el-menu-item>
 
-          <el-sub-menu index="gis">
-            <template #title>
-              <el-icon><MapLocation /></el-icon>
-              <span>GIS 空间计算</span>
-            </template>
-            <el-menu-item index="/gis-workflow">
-              <el-icon><Edit /></el-icon>
-              <span>工作流编辑器</span>
-            </el-menu-item>
-            <el-menu-item index="/gis-tasks">
-              <el-icon><List /></el-icon>
-              <span>任务管理</span>
-            </el-menu-item>
-            <el-menu-item index="/gis-executions">
-              <el-icon><Tickets /></el-icon>
-              <span>执行历史</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <el-menu-item index="/sql-tasks">
+            <el-icon><FolderOpened /></el-icon>
+            <span>SQL 任务</span>
+          </el-menu-item>
+
+          <el-menu-item index="/workflow">
+            <el-icon><Connection /></el-icon>
+            <span>工作流编辑器</span>
+          </el-menu-item>
+
+          <el-menu-item index="/tasks">
+            <el-icon><List /></el-icon>
+            <span>任务管理</span>
+          </el-menu-item>
+
+          <el-menu-item index="/executions">
+            <el-icon><Monitor /></el-icon>
+            <span>执行监控</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -78,10 +79,10 @@ import {
   ArrowDown,
   SwitchButton,
   Document,
-  MapLocation,
-  Edit,
+  FolderOpened,
+  Connection,
   List,
-  Tickets
+  Monitor
 } from '@element-plus/icons-vue'
 
 const router = useRouter()

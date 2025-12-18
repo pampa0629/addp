@@ -16,6 +16,12 @@ export default defineConfig({
   server: {
     port: 5170,
     strictPort: true, // 端口被占用时报错，不自动切换
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5170,
+      clientPort: 5170
+    },
     proxy: {
       '/api/meta': {
         target: 'http://localhost:8082',

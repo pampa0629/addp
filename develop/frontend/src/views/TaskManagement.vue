@@ -1,0 +1,621 @@
+<template>
+  <div class="task-management-page">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h2>任务管理</h2>
+        <el-button type="primary" @click="handleCreate">
+          <el-icon><Plus /></el-icon>
+          新建任务
+        </el-button>
+        <el-button @click="handleRefresh">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
+      <div class="toolbar-right">
+        <!-- 筛选器 -->
+        <el-input
+          v-model="filters.keyword"
+          placeholder="搜索任务名称"
+          clearable
+          style="width: 200px; margin-right: 10px;"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-select
+          v-model="filters.dev_type"
+          placeholder="任务类型"
+          clearable
+          style="width: 120px; margin-right: 10px;"
+        >
+          <el-option label="SQL" value="sql" />
+          <el-option label="工作流" value="workflow" />
+          <el-option label="脚本" value="script" />
+        </el-select>
+        <el-select
+          v-model="filters.status"
+          placeholder="状态"
+          clearable
+          style="width: 120px;"
+        >
+          <el-option label="活跃" value="active" />
+          <el-option label="停用" value="inactive" />
+          <el-option label="归档" value="archived" />
+        </el-select>
+      </div>
+    </div>
+
+    <!-- 任务列表 -->
+    <div class="content-area">
+      <el-table
+        v-loading="loading"
+        :data="tasks"
+        stripe
+        style="width: 100%"
+        height="100%"
+      >
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="name" label="任务名称" min-width="150" show-overflow-tooltip />
+        <el-table-column label="类型" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getTypeColor(row.dev_type)">
+              {{ getTypeLabel(row.dev_type) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="关联资源" width="150">
+          <template #default="{ row }">
+            {{ getResourceName(row.resource_id) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getStatusColor(row.status)">
+              {{ getStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="最后执行" width="180">
+          <template #default="{ row }">
+            <div v-if="row.last_executed_at">
+              <div>{{ formatTime(row.last_executed_at) }}</div>
+              <el-tag
+                v-if="row.last_execution_status"
+                :type="getExecutionStatusColor(row.last_execution_status)"
+                size="small"
+                style="margin-top: 4px;"
+              >
+                {{ row.last_execution_status }}
+              </el-tag>
+            </div>
+            <span v-else class="text-muted">未执行</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" width="160">
+          <template #default="{ row }">
+            {{ formatTime(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="260" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              @click="handleExecute(row)"
+            >
+              <el-icon><VideoPlay /></el-icon>
+              执行
+            </el-button>
+            <el-button
+              type="default"
+              size="small"
+              @click="handleEdit(row)"
+            >
+              <el-icon><Edit /></el-icon>
+              编辑
+            </el-button>
+            <el-button
+              type="info"
+              size="small"
+              @click="handleView(row)"
+            >
+              <el-icon><View /></el-icon>
+              详情
+            </el-button>
+            <el-button
+              type="danger"
+              size="small"
+              @click="handleDelete(row)"
+            >
+              <el-icon><Delete /></el-icon>
+              删除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 分页 -->
+      <div class="pagination">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.page_size"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handlePageSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
+    </div>
+
+    <!-- 创建/编辑对话框 -->
+    <el-dialog
+      v-model="dialogVisible"
+      :title="dialogMode === 'create' ? '新建任务' : '编辑任务'"
+      width="600px"
+    >
+      <el-form :model="formData" label-width="100px">
+        <el-form-item label="任务名称" required>
+          <el-input v-model="formData.name" placeholder="请输入任务名称" />
+        </el-form-item>
+        <el-form-item label="显示名称">
+          <el-input v-model="formData.display_name" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="任务类型" required>
+          <el-select v-model="formData.dev_type" style="width: 100%;">
+            <el-option label="SQL 查询" value="sql" />
+            <el-option label="工作流" value="workflow" />
+            <el-option label="脚本" value="script" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联资源">
+          <el-select
+            v-model="formData.resource_id"
+            style="width: 100%;"
+            clearable
+            placeholder="选择关联资源"
+          >
+            <el-option
+              v-for="res in resources"
+              :key="res.id"
+              :label="res.name"
+              :value="res.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input
+            v-model="formData.description"
+            type="textarea"
+            :rows="3"
+            placeholder="任务描述"
+          />
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-tag
+            v-for="tag in formData.tags"
+            :key="tag"
+            closable
+            @close="removeTag(tag)"
+            style="margin-right: 8px;"
+          >
+            {{ tag }}
+          </el-tag>
+          <el-input
+            v-if="tagInputVisible"
+            ref="tagInputRef"
+            v-model="tagInputValue"
+            size="small"
+            style="width: 100px;"
+            @blur="handleTagInputConfirm"
+            @keyup.enter="handleTagInputConfirm"
+          />
+          <el-button
+            v-else
+            size="small"
+            @click="showTagInput"
+          >
+            + 添加标签
+          </el-button>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleSave">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 执行对话框 -->
+    <el-dialog
+      v-model="executeDialogVisible"
+      title="执行任务"
+      width="500px"
+    >
+      <el-form label-width="100px">
+        <el-form-item label="任务名称">
+          <el-input :value="currentTask?.name" disabled />
+        </el-form-item>
+        <el-form-item label="任务类型">
+          <el-tag :type="getTypeColor(currentTask?.dev_type)">
+            {{ getTypeLabel(currentTask?.dev_type) }}
+          </el-tag>
+        </el-form-item>
+        <el-form-item label="执行参数">
+          <el-input
+            v-model="executeInputs"
+            type="textarea"
+            :rows="5"
+            placeholder='{"key": "value"}'
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="executeDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="confirmExecute"
+          :loading="executing"
+        >
+          执行
+        </el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Plus,
+  Refresh,
+  Search,
+  VideoPlay,
+  Edit,
+  View,
+  Delete
+} from '@element-plus/icons-vue'
+import {
+  listDevItems,
+  createDevItem,
+  updateDevItem,
+  deleteDevItem,
+  executeDevItem,
+  listResources
+} from '@/api/devItem'
+
+const router = useRouter()
+
+// 状态管理
+const loading = ref(false)
+const tasks = ref([])
+const resources = ref([])
+
+// 筛选器
+const filters = reactive({
+  keyword: '',
+  dev_type: '',
+  status: '',
+  resource_id: null,
+  tag: ''
+})
+
+// 分页
+const pagination = reactive({
+  page: 1,
+  page_size: 20,
+  total: 0
+})
+
+// 对话框状态
+const dialogVisible = ref(false)
+const dialogMode = ref('create') // 'create' | 'edit'
+const formData = reactive({
+  name: '',
+  display_name: '',
+  dev_type: 'sql',
+  resource_id: null,
+  description: '',
+  tags: [],
+  content: {}
+})
+
+// 标签输入
+const tagInputVisible = ref(false)
+const tagInputValue = ref('')
+const tagInputRef = ref(null)
+
+// 执行对话框
+const executeDialogVisible = ref(false)
+const currentTask = ref(null)
+const executeInputs = ref('{}')
+const executing = ref(false)
+
+// 加载任务列表
+const loadTasks = async () => {
+  loading.value = true
+  try {
+    const params = {
+      page: pagination.page,
+      page_size: pagination.page_size,
+      ...filters
+    }
+    const data = await listDevItems(params)
+    tasks.value = data.items || []
+    pagination.total = data.total || 0
+  } catch (error) {
+    console.error('加载任务失败:', error)
+    ElMessage.error('加载失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    loading.value = false
+  }
+}
+
+// 加载资源列表
+const loadResources = async () => {
+  try {
+    const data = await listResources()
+    resources.value = data || []
+  } catch (error) {
+    console.error('加载资源失败:', error)
+  }
+}
+
+// 工具函数
+const getTypeLabel = (type) => {
+  const labels = { sql: 'SQL', workflow: '工作流', script: '脚本' }
+  return labels[type] || type
+}
+
+const getTypeColor = (type) => {
+  const colors = { sql: 'primary', workflow: 'success', script: 'warning' }
+  return colors[type] || 'info'
+}
+
+const getStatusLabel = (status) => {
+  const labels = { active: '活跃', inactive: '停用', archived: '归档' }
+  return labels[status] || status
+}
+
+const getStatusColor = (status) => {
+  const colors = { active: 'success', inactive: 'warning', archived: 'info' }
+  return colors[status] || 'info'
+}
+
+const getExecutionStatusColor = (status) => {
+  const colors = {
+    success: 'success',
+    failed: 'danger',
+    running: 'primary',
+    timeout: 'warning',
+    cancelled: 'info'
+  }
+  return colors[status] || 'info'
+}
+
+const getResourceName = (resourceId) => {
+  if (!resourceId) return '-'
+  const resource = resources.value.find(r => r.id === resourceId)
+  return resource?.name || `ID: ${resourceId}`
+}
+
+const formatTime = (time) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN')
+}
+
+// 操作函数
+const handleCreate = () => {
+  dialogMode.value = 'create'
+  Object.assign(formData, {
+    name: '',
+    display_name: '',
+    dev_type: 'sql',
+    resource_id: null,
+    description: '',
+    tags: [],
+    content: {}
+  })
+  dialogVisible.value = true
+}
+
+const handleEdit = (row) => {
+  dialogMode.value = 'edit'
+  Object.assign(formData, {
+    id: row.id,
+    name: row.name,
+    display_name: row.display_name,
+    dev_type: row.dev_type,
+    resource_id: row.resource_id,
+    description: row.description,
+    tags: row.tags || [],
+    content: row.content || {}
+  })
+  dialogVisible.value = true
+}
+
+const handleView = (row) => {
+  // 根据类型跳转到对应编辑器
+  if (row.dev_type === 'sql') {
+    router.push('/sql')
+  } else if (row.dev_type === 'workflow') {
+    router.push('/workflow')
+  } else {
+    ElMessage.info('该类型暂不支持查看详情')
+  }
+}
+
+const handleExecute = (row) => {
+  currentTask.value = row
+  executeInputs.value = '{}'
+  executeDialogVisible.value = true
+}
+
+const confirmExecute = async () => {
+  if (!currentTask.value) return
+
+  try {
+    executing.value = true
+    let inputs = {}
+    try {
+      inputs = JSON.parse(executeInputs.value)
+    } catch {
+      ElMessage.warning('执行参数必须是有效的 JSON')
+      return
+    }
+
+    await executeDevItem(currentTask.value.id, inputs)
+    ElMessage.success('任务已提交执行')
+    executeDialogVisible.value = false
+    loadTasks() // 刷新列表
+  } catch (error) {
+    console.error('执行任务失败:', error)
+    ElMessage.error('执行失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    executing.value = false
+  }
+}
+
+const handleDelete = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除任务 "${row.name}" 吗？`,
+      '确认删除',
+      { type: 'warning' }
+    )
+    await deleteDevItem(row.id)
+    ElMessage.success('删除成功')
+    loadTasks()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除任务失败:', error)
+      ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+const handleSave = async () => {
+  if (!formData.name) {
+    ElMessage.warning('请输入任务名称')
+    return
+  }
+
+  try {
+    if (dialogMode.value === 'create') {
+      await createDevItem(formData)
+      ElMessage.success('创建成功')
+    } else {
+      await updateDevItem(formData.id, formData)
+      ElMessage.success('更新成功')
+    }
+    dialogVisible.value = false
+    loadTasks()
+  } catch (error) {
+    console.error('保存任务失败:', error)
+    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
+const handleRefresh = () => {
+  loadTasks()
+}
+
+const handlePageChange = () => {
+  loadTasks()
+}
+
+const handlePageSizeChange = () => {
+  pagination.page = 1
+  loadTasks()
+}
+
+// 标签操作
+const showTagInput = () => {
+  tagInputVisible.value = true
+  nextTick(() => {
+    tagInputRef.value?.focus()
+  })
+}
+
+const handleTagInputConfirm = () => {
+  if (tagInputValue.value) {
+    if (!formData.tags.includes(tagInputValue.value)) {
+      formData.tags.push(tagInputValue.value)
+    }
+  }
+  tagInputVisible.value = false
+  tagInputValue.value = ''
+}
+
+const removeTag = (tag) => {
+  formData.tags.splice(formData.tags.indexOf(tag), 1)
+}
+
+// 监听筛选器变化
+watch([filters], () => {
+  pagination.page = 1
+  loadTasks()
+}, { deep: true })
+
+// 初始化
+onMounted(() => {
+  loadTasks()
+  loadResources()
+})
+</script>
+
+<style scoped>
+.task-management-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f5f7fa;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #303133;
+  font-weight: 500;
+  margin-right: 20px;
+}
+
+.content-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.text-muted {
+  color: #909399;
+  font-style: italic;
+}
+</style>

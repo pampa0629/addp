@@ -70,6 +70,7 @@ BUCKETS=(
   "transfer:Transfer 模块（传输临时文件）"
   "orchestrator:Orchestrator 模块（编排文件）"
   "develop:Develop 模块（查询结果导出）"
+  "service:Service 模块（服务注册文件）"
 )
 
 for bucket_info in "${BUCKETS[@]}"; do
@@ -116,4 +117,5 @@ echo "  - meta          (私有)  : 元数据文件"
 echo "  - transfer      (私有)  : 传输临时文件"
 echo "  - orchestrator  (私有)  : 编排文件"
 echo "  - develop       (私有)  : 查询结果导出"
+echo "  - service       (私有)  : 服务注册文件"
 echo ""

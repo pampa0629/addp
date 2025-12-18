@@ -43,6 +43,15 @@
         </el-button>
 
         <el-button
+          type="primary"
+          @click="showSaveDialog = true"
+          :disabled="!selectedResourceId || !sqlContent"
+        >
+          <el-icon><FolderAdd /></el-icon>
+          保存为任务
+        </el-button>
+
+        <el-button
           type="success"
           @click="executeSQL"
           :loading="executing"
@@ -101,6 +110,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 保存任务对话框 -->
+    <SaveSQLDialog
+      v-model="showSaveDialog"
+      :resource-id="selectedResourceId"
+      :sql="sqlContent"
+      @saved="handleSaveTask"
+    />
   </div>
 </template>
 
@@ -113,12 +130,14 @@ import {
   VideoPlay,
   Edit,
   List,
-  Close
+  Close,
+  FolderAdd
 } from '@element-plus/icons-vue'
 import { format } from 'sql-formatter'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import SQLResult from '../components/SQLResult.vue'
-import { executeSQL as executeAPI, testConnection } from '../api/sql.js'
+import SaveSQLDialog from '../components/SaveSQLDialog.vue'
+import { executeSQL as executeAPI, testConnection, saveSQLTask } from '../api/sql.js'
 import client from '../api/client.js'
 
 // 状态
@@ -129,6 +148,7 @@ const executionResult = ref(null)
 const executing = ref(false)
 const testingConnection = ref(false)
 const editorRef = ref(null)
+const showSaveDialog = ref(false)
 
 // 加载数据源列表
 const loadResources = async () => {
@@ -248,6 +268,18 @@ const onResourceChange = () => {
   executionResult.value = null
 }
 
+// 保存任务
+const handleSaveTask = async (taskData) => {
+  try {
+    await saveSQLTask(taskData)
+    ElMessage.success('SQL 任务保存成功')
+    showSaveDialog.value = false
+  } catch (error) {
+    console.error('保存 SQL 任务失败:', error)
+    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
 // 页面加载
 onMounted(() => {
   loadResources()
@@ -259,7 +291,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1e1e1e;
+  background: #f5f7fa;
 }
 
 .toolbar {
@@ -267,8 +299,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background: #252526;
-  border-bottom: 1px solid #3e3e42;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
 }
 
 .toolbar-left,
@@ -281,7 +313,7 @@ onMounted(() => {
 .toolbar h2 {
   margin: 0;
   font-size: 18px;
-  color: #fff;
+  color: #303133;
   font-weight: 500;
 }
 
@@ -304,9 +336,9 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #2d2d30;
-  border-bottom: 1px solid #3e3e42;
-  color: #fff;
+  background: #fafafa;
+  border-bottom: 1px solid #e4e7ed;
+  color: #303133;
 }
 
 .panel-title {
@@ -319,7 +351,7 @@ onMounted(() => {
 
 .hint {
   font-size: 12px;
-  color: #858585;
+  color: #909399;
 }
 
 .editor-content,
@@ -330,11 +362,11 @@ onMounted(() => {
 
 .divider {
   width: 1px;
-  background: #3e3e42;
+  background: #e4e7ed;
   cursor: col-resize;
 }
 
 .divider:hover {
-  background: #007acc;
+  background: #409eff;
 }
 </style>

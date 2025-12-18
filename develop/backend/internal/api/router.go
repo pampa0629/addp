@@ -1,81 +1,107 @@
 package api
 
 import (
+	"net/http"
+
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/develop/backend/internal/config"
+	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-// SetupRouter 设置路由
-func SetupRouter(cfg *config.Config, sqlHandler *SQLHandler, spatialHandler *SpatialHandler, gisExecutionHandler *GISExecutionHandler) *gin.Engine {
+// SetupRouter 设置路由（Phase 3 完整版本）
+func SetupRouter(
+	cfg *config.Config,
+	devItemHandler *DevItemHandler,
+	devExecutionHandler *DevExecutionHandler,
+	operatorHandler *OperatorHandler,
+	resourceHandler *ResourceHandler,
+	sqlHandler *SQLHandler,
+	devItemService interface{}, // 添加 devItemService 参数
+) *gin.Engine {
 	router := gin.Default()
 
 	// 全局中间件
 	router.Use(commonCors.CORS())
 
 	// 健康检查（无需认证）
-	router.GET("/health", sqlHandler.Health)
-	router.GET("/api/develop/health", sqlHandler.Health)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "develop",
+			"message": "Develop 数据开发模块运行正常",
+			"phase":   "3",
+		})
+	})
+
+	router.GET("/api/develop/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "develop",
+			"message": "Develop 数据开发模块运行正常",
+			"phase":   "3",
+		})
+	})
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/develop")
 	api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemServiceURL))
 	{
-		// 资源列表（数据库连接）
-		api.GET("/resources", sqlHandler.ListResources)
+		// ========== 任务列表 API（供 Orchestrator 使用）==========
+		taskListHandler := NewTaskListHandler(devItemService.(*service.DevItemService))
+		api.GET("/tasks/list", taskListHandler.ListTasks)
 
-		// SQL 执行
-		api.POST("/execute", sqlHandler.Execute)
-
-		// 连接测试
-		api.GET("/test/:resource_id", sqlHandler.TestConnection)
-
-		// ==================== 空间工作流 API ====================
-		spatial := api.Group("/spatial")
+		// ========== 开发项管理 ==========
+		items := api.Group("/items")
 		{
-			// 空间引擎列表（供前端引擎选择器使用）
-			spatial.GET("/engines", spatialHandler.ListSpatialEngines)
-
-			// 算子列表（供前端使用）
-			spatial.GET("/operators", spatialHandler.ListOperators)
-
-			// 即时执行工作流
-			spatial.POST("/workflow/execute", spatialHandler.ExecuteWorkflow)
-
-			// 执行单个算子
-			spatial.POST("/operators/:name/execute", spatialHandler.ExecuteOperator)
-
-			// 任务管理
-			spatial.GET("/tasks", spatialHandler.ListTasks)
-			spatial.POST("/tasks", spatialHandler.CreateTask)
-			spatial.GET("/tasks/:id", spatialHandler.GetTask)
-			spatial.PUT("/tasks/:id", spatialHandler.UpdateTask)
-			spatial.DELETE("/tasks/:id", spatialHandler.DeleteTask)
-			spatial.POST("/tasks/:id/execute", spatialHandler.ExecuteTask)
-
-			// 执行状态查询
-			spatial.GET("/executions/:id", spatialHandler.GetExecutionStatus)
+			items.POST("", devItemHandler.CreateDevItem)                  // 创建开发项
+			items.GET("", devItemHandler.ListDevItems)                    // 查询开发项列表
+			items.GET("/statistics", devItemHandler.GetDevItemStatistics) // 获取统计信息
+			items.GET("/:id", devItemHandler.GetDevItem)                  // 获取开发项详情
+			items.PUT("/:id", devItemHandler.UpdateDevItem)               // 更新开发项
+			items.DELETE("/:id", devItemHandler.DeleteDevItem)            // 删除开发项
+			items.POST("/:id/execute", devExecutionHandler.ExecuteDevItem) // 执行开发项
 		}
 
-		// ==================== GIS 执行历史 API ====================
-		gisExecutions := api.Group("/gis-executions")
+		// ========== 执行管理 ==========
+		executions := api.Group("/executions")
 		{
-			gisExecutions.GET("", gisExecutionHandler.ListExecutions)                     // 列表
-			gisExecutions.GET("/:id", gisExecutionHandler.GetExecution)                   // 详情
-			gisExecutions.GET("/:id/logs", gisExecutionHandler.GetExecutionLogs)          // 日志
-			gisExecutions.POST("/:id/retry", gisExecutionHandler.RetryExecution)          // 重试
-			gisExecutions.POST("/:id/cancel", gisExecutionHandler.CancelExecution)        // 取消
-			gisExecutions.DELETE("/:id", gisExecutionHandler.DeleteExecution)             // 删除
-			gisExecutions.GET("/statistics", gisExecutionHandler.GetExecutionStatistics)  // 统计
+			executions.POST("", devExecutionHandler.ExecuteContent)                 // 执行临时内容
+			executions.GET("", devExecutionHandler.ListExecutions)                  // 查询执行列表
+			executions.GET("/statistics", devExecutionHandler.GetExecutionStatistics) // 获取执行统计
+			executions.GET("/:id", devExecutionHandler.GetExecution)                // 获取执行详情
+			executions.GET("/:id/logs", devExecutionHandler.GetExecutionLogs)       // 获取执行日志
+			executions.POST("/:id/cancel", devExecutionHandler.CancelExecution)     // 取消执行
+			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)       // 重试执行
 		}
 
-		// TODO: Phase 2 - 脚本管理
-		// api.GET("/scripts", scriptHandler.List)
-		// api.POST("/scripts", scriptHandler.Create)
-		// api.GET("/scripts/:id", scriptHandler.Get)
-		// api.PUT("/scripts/:id", scriptHandler.Update)
-		// api.DELETE("/scripts/:id", scriptHandler.Delete)
+		// ========== 算子发现 ==========
+		operators := api.Group("/operators")
+		{
+			operators.GET("", operatorHandler.ListAllOperators)                          // 获取所有算子
+			operators.POST("/refresh", operatorHandler.RefreshCache)                     // 刷新缓存
+			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                   // 获取缓存信息
+			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)     // 按模块获取算子
+			operators.GET("/:name", operatorHandler.GetOperatorDetail)                   // 获取算子详情
+		}
+
+		// ========== 资源管理 ==========
+		api.GET("/resources", resourceHandler.ListResources)
+
+		// ========== SQL 开发 ==========
+		api.GET("/test/:id", sqlHandler.TestConnection) // 测试数据源连接
+		api.POST("/execute", sqlHandler.ExecuteSQL)     // 执行 SQL
+
+		// SQL 任务管理
+		sqlTasks := api.Group("/sql/tasks")
+		{
+			sqlTasks.POST("", sqlHandler.SaveSQLTask)       // 保存 SQL 任务
+			sqlTasks.GET("", sqlHandler.ListSQLTasks)       // 获取 SQL 任务列表
+			sqlTasks.GET("/:id", sqlHandler.GetSQLTask)     // 获取 SQL 任务详情
+			sqlTasks.PUT("/:id", sqlHandler.UpdateSQLTask)  // 更新 SQL 任务
+			sqlTasks.DELETE("/:id", sqlHandler.DeleteSQLTask) // 删除 SQL 任务
+		}
 	}
 
 	return router

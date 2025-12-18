@@ -91,6 +91,26 @@ func (r *ExecutionRepository) List(orchID uint, limit, offset int) ([]models.Exe
 	return execs, total, err
 }
 
+// ListAll 列出所有执行记录（支持租户过滤）
+func (r *ExecutionRepository) ListAll(tenantID uint, limit, offset int) ([]models.Execution, int64, error) {
+	var execs []models.Execution
+	var total int64
+
+	query := r.db.Joins("JOIN orchestrations ON executions.orchestration_id = orchestrations.id").
+		Where("orchestrations.tenant_id = ?", tenantID)
+
+	if err := query.Model(&models.Execution{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	err := query.Order("executions.created_at DESC").
+		Preload("Orchestration").
+		Limit(limit).
+		Offset(offset).
+		Find(&execs).Error
+	return execs, total, err
+}
+
 // Update 更新执行
 func (r *ExecutionRepository) Update(exec *models.Execution) error {
 	return r.db.Save(exec).Error

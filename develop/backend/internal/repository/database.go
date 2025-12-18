@@ -35,18 +35,19 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// AutoMigrate - 确保表结构最新
+	// 注意: dev_items 和 dev_executions 已通过迁移脚本创建，无需 AutoMigrate
 	if err := db.AutoMigrate(
-		&models.Execution{},
 		&models.Script{},
 		&models.ScriptVersion{},
 		&models.ScriptDependency{},
-		&models.SpatialTask{},
-		&models.GISExecution{},
+		// Phase 1: dev_items 和 dev_executions 由 SQL 迁移脚本管理
+		// &models.DevItem{},
+		// &models.DevExecution{},
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	}
 
-	log.Println("✅ Database connected and migrated successfully")
+	log.Println("✅ Database connected successfully (Phase 1: 使用 SQL 迁移脚本)")
 
 	return db, nil
 }

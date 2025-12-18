@@ -43,6 +43,12 @@ export default defineConfig({
     port: 5178,
     strictPort: true,
     host: '0.0.0.0',
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5178,
+      clientPort: 5178
+    },
     fs: {
       allow: ['..']
     },

@@ -1,4 +1,3 @@
-
 ## Common 模块
 
 `common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPandas Engine 集成)。
@@ -261,43 +260,8 @@ BUSINESS_MINIO_SECRET_KEY=minioadmin
 ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 ```
 
-### 端口分配
+推荐访问**:
 
-**ADDP 系统服务**:
-
-| 服务              | 开发端口 | Docker 端口 | 说明                   |
-| -------------------- | -------- | ----------- | ----------------------------- |
-| **Nginx Gateway**    | **80**   | **80**      | **统一入口 (推荐)** |
-| **Portal Frontend**  | **5170** | **5170**    | **Portal UI (通过 Nginx)**     |
-| Gateway              | 8000     | 8000        | API Gateway (后端路由) |
-| System Backend       | 8080     | 8080        | 认证、用户、日志             |
-| System Frontend      | 5173     | 8090        | 独立访问             |
-| Manager Backend      | 8081     | 8081        | 数据源、文件           |
-| Manager Frontend     | 5174     | 8091        | 独立访问             |
-| Meta Backend         | 8082     | 8082        | 元数据、血缘             |
-| Meta Frontend        | 5175     | 8092        | 独立访问             |
-| Transfer Backend     | 8083     | 8083        | 导入/导出任务           |
-| Transfer Frontend    | 5176     | 8093        | 独立访问             |
-| Orchestrator Backend | 8084     | 8084        | 工作流编排        |
-| Orchestrator Frontend| 5177     | 8094        | 独立访问             |
-| Develop Backend      | 8085     | 8085        | 开发工具             |
-| Develop Frontend     | 5178     | 8095        | 独立访问             |
-| GeoPandas Engine     | 8099     | 8099        | 空间计算引擎 (Python) |
-| PostgreSQL (System)  | 5432     | 5432        | ADDP 系统元数据          |
-| Redis                | 6379     | 6379        | 缓存和队列                 |
-| MinIO System API     | 9000     | 9000        | 系统文件存储           |
-| MinIO System Console | 9001     | 9001        | 系统 MinIO Web UI           |
-| Meilisearch          | 7700     | 7700        | 全文检索引擎       |
-
-**业务库服务** (通过 `business/docker-compose.yml` 部署):
-
-| 服务                | Docker 端口 | 说明                |
-| ---------------------- | ----------- | -------------------------- |
-| PostgreSQL (Business)  | 5433        | 用户业务数据存储 |
-| MinIO Business API     | 9002        | 用户文件存储          |
-| MinIO Business Console | 9003        | 业务 MinIO Web UI      |
-
-**推荐访问**:
 - **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)
 - **开发环境**: http://localhost:5170 (Portal 独立访问) 或各模块独立端口
 
@@ -592,24 +556,25 @@ go test -v -run TestFunctionName ./internal/service/
 **关键功能** (已实现):
 
 - **21 个空间算子**,分为 5 类:
+
   - 几何处理 (8): buffer, centroid, convex_hull, simplify, dissolve, envelope, boundary, representative_point
   - 空间关系 (3): intersection, union, difference
   - 几何属性 (3): area, length, distance
   - 格式转换 (2): to_crs, explode
   - 批处理 (2): clip, spatial_join
   - 高级算子 (3): voronoi, delaunay_triangulation, minimum_rotated_rectangle
-
 - **内存高效的工作流执行**:
+
   - GeoDataFrame 全程内存传递(避免中间序列化)
   - DAG 拓扑排序(Kahn 算法)
   - 支持 `{"$ref": "taskID"}` 引用上游结果
   - 最终结果写入 PostGIS GEOMETRY 字段
-
 - **双执行模式**:
+
   - **即时执行**: Develop 模块中直接调用工作流 API (`POST /api/spatial/workflow`)
   - **任务保存**: 保存为 GIS 任务(存储到 `develop.spatial_tasks`),供 Orchestrator 编排
-
 - **引擎注册**:
+
   - 仅注册引擎本身到 System (`geopandas.engine.default`)
   - 不注册具体算子 (Transfer 模式)
   - 任务动态发现: `GET /api/spatial/tasks`
@@ -628,15 +593,18 @@ GET  /api/spatial/executions/:id      - 查询执行状态
 ```
 
 **数据库**: PostgreSQL `develop` schema
+
 - `develop.spatial_tasks` - GIS任务定义(workflow_def JSONB, input_schema JSONB, schedule VARCHAR)
 - `develop.spatial_execution_results` - 执行结果(geom GEOMETRY(GEOMETRY, 4326), properties JSONB)
 
 **Orchestrator 集成** (已实现):
+
 - 支持参数模板化: `{{stepID.field.nestedField}}`
 - 跨步骤数据传递: SQL → GIS → Transfer
 - 示例: `{"poi_location": "{{sql_extract.geojson}}"}`
 
 **技术栈**:
+
 - **语言**: Python 3.11
 - **框架**: Flask + CORS
 - **库**: GeoPandas 0.14.1, Shapely 2.0.2, NumPy<2.0
@@ -646,6 +614,7 @@ GET  /api/spatial/executions/:id      - 查询执行状态
 **端口**: 8090 (开发和生产)
 
 **关键文件**:
+
 - [geopandas-engine/workflow_engine.py](geopandas-engine/workflow_engine.py) - DAG执行引擎
 - [geopandas-engine/operators.py](geopandas-engine/operators.py) - 21个空间算子
 - [geopandas-engine/api_server.py](geopandas-engine/api_server.py) - Flask REST API
@@ -655,6 +624,7 @@ GET  /api/spatial/executions/:id      - 查询执行状态
 - [orchestrator/docs/PARAMETER_TEMPLATING.md](orchestrator/docs/PARAMETER_TEMPLATING.md) - 参数模板化文档
 
 **设计原则**:
+
 - ✅ **仅引擎注册**: 只注册引擎,不注册算子(减少System表膨胀)
 - ✅ **内存效率**: GeoDataFrame内存传递,避免反复序列化
 - ✅ **PostGIS存储**: 结果存储为GEOMETRY类型(支持空间索引和查询)

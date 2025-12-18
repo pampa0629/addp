@@ -30,6 +30,11 @@ type Config struct {
 	// GeoPandas Engine 配置
 	GeoPandasEngineURL string
 
+	// 其他模块服务配置（用于算子发现）
+	MetaServiceURL     string
+	TransferServiceURL string
+	ManagerServiceURL  string
+
 	// SQL 执行配置
 	DefaultQueryTimeout int // 默认查询超时(秒)
 	MaxQueryTimeout     int // 最大查询超时(秒)
@@ -73,6 +78,11 @@ func Load() *Config {
 
 		// GeoPandas Engine 配置
 		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8099"),
+
+		// 其他模块服务配置
+		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
+		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
+		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
 
 		// SQL 执行配置
 		DefaultQueryTimeout: getEnvAsInt("DEFAULT_QUERY_TIMEOUT", 30),  // 30秒

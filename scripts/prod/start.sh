@@ -57,6 +57,7 @@ docker compose -f docker-compose.yml up -d \
   transfer-worker \
   orchestrator-backend \
   develop-backend \
+  service-backend \
   gateway
 
 # 第四步：等待所有后端服务就绪
@@ -70,6 +71,7 @@ services=(
   "transfer-backend:8083"
   "orchestrator-backend:8084"
   "develop-backend:8085"
+  "service-backend:8086"
   "gateway:8000"
 )
 

@@ -28,3 +28,44 @@ export const testConnection = (resourceId) => {
 export const getHealth = () => {
   return client.get('/develop/health')
 }
+
+/**
+ * 保存 SQL 为任务
+ * @param {object} taskData - 任务数据
+ */
+export const saveSQLTask = (taskData) => {
+  return client.post('/develop/sql/tasks', taskData)
+}
+
+/**
+ * 更新 SQL 任务
+ * @param {number} id - 任务ID
+ * @param {object} taskData - 任务数据
+ */
+export const updateSQLTask = (id, taskData) => {
+  return client.put(`/develop/sql/tasks/${id}`, taskData)
+}
+
+/**
+ * 获取 SQL 任务列表
+ * @param {object} params - 查询参数
+ */
+export const listSQLTasks = (params = {}) => {
+  return client.get('/develop/sql/tasks', { params })
+}
+
+/**
+ * 获取 SQL 任务详情
+ * @param {number} id - 任务ID
+ */
+export const getSQLTask = (id) => {
+  return client.get(`/develop/sql/tasks/${id}`)
+}
+
+/**
+ * 删除 SQL 任务
+ * @param {number} id - 任务ID
+ */
+export const deleteSQLTask = (id) => {
+  return client.delete(`/develop/sql/tasks/${id}`)
+}

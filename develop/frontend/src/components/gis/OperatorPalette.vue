@@ -86,7 +86,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import * as spatialApi from '@/api/spatial'
+import * as operatorApi from '@/api/operator'
 
 // Props
 const emit = defineEmits(['operator-click', 'operator-drag'])
@@ -95,7 +95,7 @@ const emit = defineEmits(['operator-click', 'operator-drag'])
 const loading = ref(false)
 const loadError = ref('')
 const searchQuery = ref('')
-const operators = ref({}) // 从后端获取的算子列表 {operatorName: {params, category, description}}
+const operators = ref([]) // 从后端获取的算子列表 (数组格式,符合 common 标准)
 const activeCategories = ref(['几何处理', '空间关系']) // 默认展开的分类
 
 // 分类映射 (category → icon + 中文名)
@@ -113,10 +113,13 @@ const loadOperators = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await spatialApi.listOperators()
-    operators.value = res.data.operators || {}
+    const res = await operatorApi.listAllOperators()
+    // API client 已自动提取 response.data,所以 res 就是后端返回的数据对象
+    // 后端返回格式: {status, operators: [], count}
+    operators.value = res.operators || []
   } catch (error) {
-    loadError.value = '加载算子列表失败: ' + error.message
+    console.error('[OperatorPalette] 加载失败:', error)
+    loadError.value = '加载算子列表失败: ' + (error.response?.data?.error || error.message)
     ElMessage.error(loadError.value)
   } finally {
     loading.value = false
@@ -127,10 +130,11 @@ const loadOperators = async () => {
 const categorizedOperators = computed(() => {
   const categories = {}
 
-  // 按分类组织算子
-  Object.entries(operators.value).forEach(([name, info]) => {
-    const categoryKey = info.category || 'other'
-    const categoryInfo = categoryMapping[categoryKey] || { name: '其他', icon: '📝' }
+  // 按分类组织算子 (operators.value 现在是数组)
+  operators.value.forEach((op) => {
+    // 使用中文 category 作为分类键
+    const categoryName = op.category || '其他'
+    const categoryInfo = Object.values(categoryMapping).find(c => c.name === categoryName) || { name: categoryName, icon: '📝' }
 
     if (!categories[categoryInfo.name]) {
       categories[categoryInfo.name] = {
@@ -140,11 +144,21 @@ const categorizedOperators = computed(() => {
       }
     }
 
+    // 将 parameters 数组转换为 params 对象 (用于兼容前端组件)
+    const params = {}
+    if (op.parameters && Array.isArray(op.parameters)) {
+      op.parameters.forEach(param => {
+        params[param.name] = param.description || `${param.name}参数`
+      })
+    }
+
     categories[categoryInfo.name].operators.push({
-      name,
-      description: info.description || '',
-      params: info.params || {},
-      category: categoryInfo.name
+      name: op.name,
+      displayName: op.display_name || op.name,
+      description: op.description || '',
+      params: params,
+      category: categoryInfo.name,
+      parameters: op.parameters || []  // 保留原始参数定义
     })
   })
 

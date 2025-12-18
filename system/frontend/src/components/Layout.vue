@@ -54,10 +54,6 @@
               <el-icon><User /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
-            <el-menu-item index="/logs" @click="handleMenuClick('system', 'logs')">
-              <el-icon><Document /></el-icon>
-              <span>日志管理</span>
-            </el-menu-item>
             <el-menu-item index="/resources" @click="handleMenuClick('system', 'resources')">
               <el-icon><Connection /></el-icon>
               <span>资源管理</span>
@@ -65,6 +61,10 @@
             <el-menu-item index="/applications" @click="handleMenuClick('system', 'applications')">
               <el-icon><Key /></el-icon>
               <span>应用管理</span>
+            </el-menu-item>
+            <el-menu-item index="/logs" @click="handleMenuClick('system', 'logs')">
+              <el-icon><Document /></el-icon>
+              <span>日志审计</span>
             </el-menu-item>
             <el-menu-item index="/developer" @click="handleMenuClick('system', 'developer')">
               <el-icon><Monitor /></el-icon>

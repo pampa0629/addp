@@ -20,36 +20,37 @@ const routes = [
         path: 'sql',
         name: 'SQLEditor',
         component: () => import('../views/SQLEditor.vue'),
-        meta: { requiresAuth: true, title: 'SQL 工作台' }
+        meta: { requiresAuth: true, title: 'SQL 编辑器' }
       },
       {
-        path: 'gis-workflow',
-        name: 'GISWorkflowEditor',
-        component: () => import('../views/GISWorkflowEditor.vue'),
-        meta: { requiresAuth: true, title: 'GIS 工作流编辑器' }
+        path: 'sql-tasks',
+        name: 'SQLTasks',
+        component: () => import('../views/SQLTasks.vue'),
+        meta: { requiresAuth: true, title: 'SQL 任务' }
       },
       {
-        path: 'gis-tasks',
-        name: 'GISTasks',
-        component: () => import('../views/GISTasks.vue'),
-        meta: { requiresAuth: true, title: 'GIS 任务管理' }
+        path: 'workflow',
+        name: 'WorkflowEditor',
+        component: () => import('../views/WorkflowEditor.vue'),
+        meta: { requiresAuth: true, title: '工作流编辑器' }
       },
       {
-        path: 'gis-executions',
-        name: 'GISExecutions',
-        component: () => import('../views/GISExecutions.vue'),
-        meta: { requiresAuth: true, title: '执行历史' }
+        path: 'tasks',
+        name: 'TaskManagement',
+        component: () => import('../views/TaskManagement.vue'),
+        meta: { requiresAuth: true, title: '任务管理' }
       },
       {
-        path: 'gis-executions/:id',
-        name: 'GISExecutionDetail',
-        component: () => import('../views/GISExecutionDetail.vue'),
+        path: 'executions',
+        name: 'ExecutionMonitor',
+        component: () => import('../views/ExecutionMonitor.vue'),
+        meta: { requiresAuth: true, title: '执行监控' }
+      },
+      {
+        path: 'executions/:id',
+        name: 'ExecutionDetail',
+        component: () => import('../views/ExecutionDetail.vue'),
         meta: { requiresAuth: true, title: '执行详情' }
-      },
-      // 保留旧路由以兼容
-      {
-        path: 'spatial',
-        redirect: '/gis-tasks'
       }
     ]
   }

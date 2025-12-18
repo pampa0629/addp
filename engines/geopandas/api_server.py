@@ -45,11 +45,11 @@ def health_check():
 # 算子列表（供前端使用）
 # ========================================
 
-@app.route('/api/spatial/operators', methods=['GET'])
+@app.route('/api/operators', methods=['GET'])
 def get_operators():
     """
-    获取所有空间算子列表
-    供 Develop Frontend 使用
+    获取所有空间算子列表 (Common 模块标准接口)
+    供 Develop Backend OperatorDiscoveryService 使用
     """
     try:
         operators = list_operators()

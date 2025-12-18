@@ -139,6 +139,7 @@ if [ "$SKIP_PUSH" = false ]; then
         "transfer-worker"
         "orchestrator-backend"
         "develop-backend"
+        "service-backend"
         "gateway"
         "portal-frontend"
         "system-frontend"

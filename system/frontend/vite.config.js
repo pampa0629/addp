@@ -23,6 +23,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true, // 端口被占用时报错，不自动切换
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost',
+      port: 5173,
+      clientPort: 5173
+    },
     fs: {
       allow: [
         resolve(__dirname, '..'),

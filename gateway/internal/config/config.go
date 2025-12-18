@@ -10,6 +10,7 @@ type Config struct {
 	MetaServiceURL     string
 	TransferServiceURL string
 	DevelopServiceURL  string
+	ServiceServiceURL  string
 
 	// Database
 	DBHost     string
@@ -42,7 +43,8 @@ func Load() *Config {
 		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
-		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
+		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8084"),
+		ServiceServiceURL:  getEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
 
 		// Database (defaults to system PostgreSQL)
 		DBHost:     getEnv("DB_HOST", "localhost"),

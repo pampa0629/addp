@@ -12,6 +12,7 @@
     "@antv/g6": "^4.8.24",
     "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.6.2",
+    "dayjs": "^1.11.10",
     "element-plus": "^2.11.4",
     "monaco-editor": "^0.45.0",
     "pinia": "^2.1.7",

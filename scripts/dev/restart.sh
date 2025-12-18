@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-gateway]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,不重新编译"
@@ -14,6 +14,7 @@ show_usage() {
   echo "  -transfer    强制重新编译 Transfer 模块"
   echo "  -orchestrator 强制重新编译 Orchestrator 模块"
   echo "  -develop     强制重新编译 Develop 模块"
+  echo "  -service     强制重新编译 Service 模块"
   echo "  -gateway     强制重新编译 Gateway 模块"
   echo ""
   echo "注意:"
@@ -47,7 +48,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-gateway)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;

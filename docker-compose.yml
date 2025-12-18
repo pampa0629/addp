@@ -452,6 +452,43 @@ services:
       - develop-backend
     restart: unless-stopped
 
+  # ==================== Service 模块 (数据服务和 OGC 标准) ====================
+
+  service-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-service-backend:${IMAGE_TAG:-latest}
+    container_name: service-backend
+    environment:
+      - PORT=8086
+      - ENV=production
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - MANAGER_SERVICE_URL=http://manager-backend:8081
+      - META_SERVICE_URL=http://meta-backend:8082
+      - ENABLE_SERVICE_INTEGRATION=true
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=service
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - GIN_MODE=release
+    ports:
+      - "8086:8086"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   # ==================== GeoPandas Engine (空间计算引擎) ====================
 
   geopandas-engine:
@@ -498,6 +535,7 @@ services:
       - TRANSFER_SERVICE_URL=http://transfer-backend:8083
       - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
       - DEVELOP_SERVICE_URL=http://develop-backend:8085
+      - SERVICE_SERVICE_URL=http://service-backend:8086
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:
