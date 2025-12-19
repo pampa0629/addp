@@ -7,4 +7,4 @@ export const listAllOperators = () => client.get('/develop/operators')
 export const listOperatorsByModule = (module) => client.get(`/develop/operators/modules/${module}`)
 
 // 获取算子详情
-export const getOperatorDetail = (module, name) => client.get(`/develop/operators/${module}/${name}`)
+export const getOperatorDetail = (name) => client.get(`/develop/operators/${name}`)

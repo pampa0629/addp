@@ -1,5 +1,5 @@
 <template>
-  <div class="gis-dag-canvas">
+  <div class="workflow-dag-canvas">
     <div class="toolbar">
       <div class="toolbar-left">
         <el-button
@@ -34,7 +34,7 @@
       </div>
     </div>
 
-    <div id="gis-dag-container" ref="container" @dragover.prevent @drop="handleDrop"></div>
+    <div id="workflow-dag-container" ref="container" @dragover.prevent @drop="handleDrop"></div>
   </div>
 </template>
 
@@ -58,6 +58,7 @@ const graph = ref(null)
 const selectedNode = ref(null)
 const isAddEdgeMode = ref(false)
 const nodeCounter = ref(0) // 节点计数器，用于生成唯一ID
+const edgeSourceNode = ref(null) // 连线模式下的源节点
 
 onMounted(() => {
   initGraph()
@@ -88,7 +89,7 @@ function initGraph() {
     height,
     modes: {
       default: ['drag-canvas', 'drag-node', 'click-select'],
-      addEdge: ['drag-canvas', 'click-select', 'create-edge']
+      addEdge: ['drag-canvas']
     },
     nodeStateStyles: {
       selected: {
@@ -116,7 +117,7 @@ function initGraph() {
         [0, 0.5]     // 左
       ],
       style: {
-        fill: '#6DC8EC',  // GIS 专属浅蓝色
+        fill: '#6DC8EC',  // 工作流专属浅蓝色
         stroke: '#5DADE2',
         lineWidth: 2,
         radius: 4
@@ -143,10 +144,15 @@ function initGraph() {
       style: {
         stroke: '#A3B1BF',
         lineWidth: 2,
+        radius: 10,
         endArrow: {
-          path: 'M 0,0 L 8,4 L 8,-4 Z',
-          fill: '#A3B1BF'
+          path: G6.Arrow.triangle(10, 12, 0),
+          fill: '#A3B1BF',
+          d: 0
         }
+      },
+      labelCfg: {
+        autoRotate: true
       }
     }
   })
@@ -166,21 +172,93 @@ function initGraph() {
     }
   })
 
-  // 边创建后的处理
-  graph.value.on('aftercreateedge', (e) => {
-    const edge = e.edge
-    const source = edge.getSource()
-    const target = edge.getTarget()
+  // 节点点击事件 - 用于连线模式
+  graph.value.on('node:click', (e) => {
+    if (!isAddEdgeMode.value) return
 
-    // 检查是否会形成环
-    if (hasLoop(source.getID(), target.getID())) {
-      graph.value.removeItem(edge)
-      ElMessage.warning('不能创建环形依赖')
-      return
+    const clickedNode = e.item
+    const model = clickedNode.getModel()
+
+    if (!edgeSourceNode.value) {
+      // 第一次点击，选择源节点
+      edgeSourceNode.value = model.id
+      // 高亮源节点
+      graph.value.setItemState(clickedNode, 'selected', true)
+      ElMessage.info(`已选择源节点: ${model.label}，请点击目标节点`)
+    } else {
+      // 第二次点击，创建边
+      const sourceId = edgeSourceNode.value
+      const targetId = model.id
+
+      // 不能连接自己
+      if (sourceId === targetId) {
+        ElMessage.warning('不能连接到自己')
+        // 清除源节点高亮
+        const sourceNode = graph.value.findById(sourceId)
+        if (sourceNode) {
+          graph.value.setItemState(sourceNode, 'selected', false)
+        }
+        edgeSourceNode.value = null
+        return
+      }
+
+      // 检查是否已存在该边
+      const edges = graph.value.getEdges()
+      const edgeExists = edges.some(edge => {
+        const edgeModel = edge.getModel()
+        return edgeModel.source === sourceId && edgeModel.target === targetId
+      })
+
+      if (edgeExists) {
+        ElMessage.warning('该连接已存在')
+        // 清除源节点高亮
+        const sourceNode = graph.value.findById(sourceId)
+        if (sourceNode) {
+          graph.value.setItemState(sourceNode, 'selected', false)
+        }
+        edgeSourceNode.value = null
+        return
+      }
+
+      // 检查是否会形成环
+      if (hasLoop(sourceId, targetId)) {
+        ElMessage.warning('不能创建环形依赖')
+        // 清除源节点高亮
+        const sourceNode = graph.value.findById(sourceId)
+        if (sourceNode) {
+          graph.value.setItemState(sourceNode, 'selected', false)
+        }
+        edgeSourceNode.value = null
+        return
+      }
+
+      // 创建边
+      graph.value.addItem('edge', {
+        source: sourceId,
+        target: targetId,
+        type: 'polyline',
+        style: {
+          stroke: '#A3B1BF',
+          lineWidth: 2,
+          radius: 10,
+          endArrow: {
+            path: G6.Arrow.triangle(10, 12, 0),
+            fill: '#A3B1BF',
+            d: 0
+          }
+        }
+      })
+
+      // 清除源节点高亮
+      const sourceNode = graph.value.findById(sourceId)
+      if (sourceNode) {
+        graph.value.setItemState(sourceNode, 'selected', false)
+      }
+
+      edgeSourceNode.value = null
+      ElMessage.success('已建立依赖关系')
+      emitWorkflow()
     }
-
-    ElMessage.success('已建立依赖关系')
-    emitWorkflow()
   })
 
   // 节点/边删除后
@@ -208,8 +286,13 @@ function hasLoop(sourceId, targetId) {
     visited.add(current)
 
     edges.forEach(edge => {
-      if (edge.getSource().getID() === current) {
-        stack.push(edge.getTarget().getID())
+      // 获取边的模型数据，其中包含 source 和 target 的 ID
+      const model = edge.getModel()
+      const edgeSourceId = model.source
+      const edgeTargetId = model.target
+
+      if (edgeSourceId === current) {
+        stack.push(edgeTargetId)
       }
     })
   }
@@ -273,10 +356,21 @@ function handleNodeDoubleClick(e) {
 // 切换连线模式
 function toggleAddEdgeMode() {
   isAddEdgeMode.value = !isAddEdgeMode.value
+
   if (isAddEdgeMode.value) {
     graph.value.setMode('addEdge')
+    ElMessage.info('已进入连线模式，请依次点击两个节点')
   } else {
     graph.value.setMode('default')
+
+    // 退出连线模式时，清除源节点选择和高亮
+    if (edgeSourceNode.value) {
+      const sourceNode = graph.value.findById(edgeSourceNode.value)
+      if (sourceNode) {
+        graph.value.setItemState(sourceNode, 'selected', false)
+      }
+      edgeSourceNode.value = null
+    }
   }
 }
 
@@ -338,7 +432,18 @@ function loadWorkflow(workflow) {
       task.depends_on.forEach(sourceId => {
         edges.push({
           source: sourceId,
-          target: targetId
+          target: targetId,
+          type: 'polyline',
+          style: {
+            stroke: '#A3B1BF',
+            lineWidth: 2,
+            radius: 10,
+            endArrow: {
+              path: G6.Arrow.triangle(10, 12, 0),
+              fill: '#A3B1BF',
+              d: 0
+            }
+          }
         })
       })
     }
@@ -358,8 +463,11 @@ function emitWorkflow() {
   // 构建 depends_on 关系
   const dependsMap = {}
   edges.forEach(edge => {
-    const sourceId = edge.getSource().getID()
-    const targetId = edge.getTarget().getID()
+    // 获取边的模型数据，其中包含 source 和 target 的 ID
+    const model = edge.getModel()
+    const sourceId = model.source
+    const targetId = model.target
+
     if (!dependsMap[targetId]) {
       dependsMap[targetId] = []
     }
@@ -401,8 +509,11 @@ defineExpose({
 
     const dependsMap = {}
     edges.forEach(edge => {
-      const sourceId = edge.getSource().getID()
-      const targetId = edge.getTarget().getID()
+      // 获取边的模型数据，其中包含 source 和 target 的 ID
+      const model = edge.getModel()
+      const sourceId = model.source
+      const targetId = model.target
+
       if (!dependsMap[targetId]) {
         dependsMap[targetId] = []
       }
@@ -425,7 +536,7 @@ defineExpose({
 </script>
 
 <style scoped>
-.gis-dag-canvas {
+.workflow-dag-canvas {
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -457,7 +568,7 @@ defineExpose({
   font-size: 13px;
 }
 
-#gis-dag-container {
+#workflow-dag-container {
   flex: 1;
   background: #fff;
   overflow: hidden;

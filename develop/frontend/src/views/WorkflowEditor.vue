@@ -50,7 +50,7 @@
 
       <!-- 中间: DAG 画布 -->
       <div class="canvas-panel">
-        <GISDAGCanvas
+        <WorkflowDAGCanvas
           ref="canvasRef"
           :initial-workflow="workflowData"
           @update:workflow="handleWorkflowUpdate"
@@ -160,9 +160,9 @@ import {
   Download,
   Upload
 } from '@element-plus/icons-vue'
-import OperatorPalette from '@/components/gis/OperatorPalette.vue'
-import GISDAGCanvas from '@/components/gis/GISDAGCanvas.vue'
-import OperatorParamsPanel from '@/components/gis/OperatorParamsPanel.vue'
+import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
+import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
+import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
 import { createDevItem, executeDevItem } from '@/api/devItem'
 import { getOperatorDetail } from '@/api/operator'
 
@@ -203,15 +203,16 @@ const handleWorkflowUpdate = (workflow) => {
   console.log('工作流已更新:', workflow)
 }
 
-// 节点点击处理（双击节点配置参数）
+// 节点点击处理(双击节点配置参数)
 const handleNodeClick = async (node) => {
   try {
     console.log('节点被点击:', node)
 
     // 获取算子的完整参数定义
-    const operator = await getOperatorDetail('geopandas', node.operator)
+    const response = await getOperatorDetail(node.operator)
+    const operator = response.operator  // 从响应中提取 operator 对象
 
-    // 转换参数定义为对象格式（用于 OperatorParamsPanel）
+    // 转换参数定义为对象格式(用于 OperatorParamsPanel)
     const paramDefs = {}
     if (operator.parameters && Array.isArray(operator.parameters)) {
       operator.parameters.forEach(param => {

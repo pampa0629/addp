@@ -98,7 +98,7 @@ func Load() *Config {
 		DatabaseURL:             "", // PostgreSQL 不使用此字段
 		JWTSecret:               jwtSecret,
 		EncryptionKey:           encryptionKey,
-		TokenExpireMinutes:      30,
+		TokenExpireMinutes:      getEnvAsInt("JWT_EXPIRE_MINUTES", 180),
 		ProjectName:             getEnv("PROJECT_NAME", "全域数据平台"),
 		AllowPublicRegistration: getEnvAsBool("ALLOW_PUBLIC_REGISTRATION", false),
 

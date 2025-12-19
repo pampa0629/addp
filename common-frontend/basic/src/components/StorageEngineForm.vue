@@ -153,7 +153,7 @@
         <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
       </el-form-item>
       <el-form-item label="端口" prop="connection_info.port">
-        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" :placeholder="10000" />
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" placeholder="10000" />
       </el-form-item>
       <el-form-item label="数据库名" prop="connection_info.database">
         <el-input v-model="formState.connection_info.database" placeholder="default" />

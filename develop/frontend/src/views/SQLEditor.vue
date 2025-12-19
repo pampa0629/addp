@@ -163,7 +163,7 @@ const loadResources = async () => {
     }
 
     resources.value = response.filter(r =>
-      ['postgresql', 'mysql', 'doris'].includes(r.resource_type.toLowerCase())
+      ['postgresql', 'mysql', 'doris', 'spark_sql'].includes(r.resource_type.toLowerCase())
     )
 
     // 默认选择第一个

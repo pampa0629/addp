@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/utils"
+	"github.com/beltran/gohive"
 	_ "github.com/go-sql-driver/mysql"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -67,7 +69,18 @@ func (s *SQLEngineService) ExecuteSQL(
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	// 获取数据库连接
+	// 获取资源配置
+	resource, err := s.systemClient.GetResource(resourceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get resource config: %w", err)
+	}
+
+	// Spark SQL 特殊处理
+	if strings.ToLower(resource.ResourceType) == "spark_sql" {
+		return s.executeSparkSQL(execCtx, resource, sqlContent)
+	}
+
+	// 获取数据库连接（PostgreSQL、MySQL、Doris）
 	db, err := s.getConnection(resourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
@@ -192,6 +205,9 @@ func (s *SQLEngineService) getConnection(resourceID uint) (*gorm.DB, error) {
 		db, err = gorm.Open(postgres.Open(connStr), &gorm.Config{})
 	case "mysql", "doris":
 		db, err = gorm.Open(mysql.Open(connStr), &gorm.Config{})
+	case "spark_sql":
+		// Spark SQL 不支持 GORM，需要使用原生 database/sql
+		return nil, fmt.Errorf("Spark SQL does not support connection pooling via GORM, please use direct SQL execution")
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", resource.ResourceType)
 	}
@@ -285,6 +301,10 @@ func (s *SQLEngineService) TestConnection(resourceID uint) error {
 		}
 		log.Printf("✅ [SQL Engine] 数据库版本: %s", version)
 
+	case "spark_sql":
+		// Spark SQL Thrift Server 连接测试
+		return s.testSparkSQLConnection(resource)
+
 	default:
 		return fmt.Errorf("unsupported database type: %s", resource.ResourceType)
 	}
@@ -345,4 +365,171 @@ func maskConnectionString(connStr string) string {
 		}
 	}
 	return masked
+}
+
+// executeSparkSQL 执行 Spark SQL 查询
+func (s *SQLEngineService) executeSparkSQL(
+	ctx context.Context,
+	resource *commonModels.Resource,
+	sqlContent string,
+) (*SQLResult, error) {
+	// 解析连接信息
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 解析连接字符串 (格式: host:port:database)
+	parts := strings.Split(connStr, ":")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid Spark SQL connection string format: %s", connStr)
+	}
+
+	host := parts[0]
+	portStr := parts[1]
+	database := parts[2]
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid port number: %s", portStr)
+	}
+
+	// 获取认证信息
+	connInfo := resource.ConnectionInfo
+	user, _ := connInfo["user"].(string)
+	password, _ := connInfo["password"].(string)
+
+	// 配置连接
+	configuration := gohive.NewConnectConfiguration()
+	if user != "" {
+		configuration.Username = user
+		if password != "" {
+			configuration.Password = password
+		}
+	}
+
+	// 设置超时
+	configuration.ConnectTimeout = 10 * time.Second
+	configuration.SocketTimeout = 10 * time.Second
+
+	// 连接到 Spark SQL Thrift Server
+	connection, err := gohive.Connect(host, port, "NONE", configuration)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Spark SQL: %w", err)
+	}
+	defer connection.Close()
+
+	// 创建 cursor
+	cursor := connection.Cursor()
+
+	// 切换到指定数据库
+	if database != "default" && database != "" {
+		cursor.Exec(ctx, fmt.Sprintf("USE %s", database))
+		if cursor.Err != nil {
+			return nil, fmt.Errorf("failed to use database '%s': %w", database, cursor.Err)
+		}
+	}
+
+	// 执行查询
+	cursor.Exec(ctx, sqlContent)
+	if cursor.Err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", cursor.Err)
+	}
+
+	// 获取结果
+	var results []map[string]interface{}
+	var columns []string
+
+	for cursor.HasMore(ctx) {
+		row := cursor.RowMap(ctx)
+		if cursor.Err != nil {
+			return nil, fmt.Errorf("failed to fetch row: %w", cursor.Err)
+		}
+
+		// 从第一行提取列名
+		if len(columns) == 0 && len(row) > 0 {
+			for colName := range row {
+				columns = append(columns, colName)
+			}
+		}
+
+		results = append(results, row)
+	}
+
+	log.Printf("✅ [SQL Engine] Spark SQL 查询成功，返回 %d 行", len(results))
+
+	return &SQLResult{
+		Columns:      columns,
+		Rows:         results,
+		RowsAffected: int64(len(results)),
+	}, nil
+}
+
+// testSparkSQLConnection 测试 Spark SQL Thrift Server 连接
+func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Resource) error {
+	// 解析连接信息
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 解析连接字符串 (格式: host:port:database)
+	parts := strings.Split(connStr, ":")
+	if len(parts) != 3 {
+		return fmt.Errorf("invalid Spark SQL connection string format: %s", connStr)
+	}
+
+	host := parts[0]
+	portStr := parts[1]
+	database := parts[2]
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("invalid port number: %s", portStr)
+	}
+
+	// 获取认证信息
+	connInfo := resource.ConnectionInfo
+	user, _ := connInfo["user"].(string)
+	password, _ := connInfo["password"].(string)
+
+	// 配置连接
+	configuration := gohive.NewConnectConfiguration()
+	if user != "" {
+		configuration.Username = user
+		if password != "" {
+			configuration.Password = password
+		}
+	}
+
+	// 设置超时
+	configuration.ConnectTimeout = 10 * time.Second
+	configuration.SocketTimeout = 10 * time.Second
+
+	// 连接到 Spark SQL Thrift Server
+	connection, err := gohive.Connect(host, port, "NONE", configuration)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
+	}
+	defer connection.Close()
+
+	// 创建 cursor
+	cursor := connection.Cursor()
+
+	// 切换到指定数据库
+	if database != "default" && database != "" {
+		cursor.Exec(context.Background(), fmt.Sprintf("USE %s", database))
+		if cursor.Err != nil {
+			return fmt.Errorf("failed to use database '%s': %w", database, cursor.Err)
+		}
+	}
+
+	// 执行简单查询验证
+	cursor.Exec(context.Background(), "SELECT 1")
+	if cursor.Err != nil {
+		return fmt.Errorf("failed to execute test query: %w", cursor.Err)
+	}
+
+	log.Printf("✅ [SQL Engine] Spark SQL 连接测试成功")
+	return nil
 }

@@ -4,7 +4,10 @@
       <template #header>
         <div class="card-header">
           <span>资源管理</span>
-          <el-button type="primary" :icon="Plus" @click="showAddDialog">新建资源</el-button>
+          <div class="header-buttons">
+            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">注册标准库</el-button>
+            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">注册API引擎</el-button>
+          </div>
         </div>
       </template>
 
@@ -422,6 +425,24 @@ const showAddDialog = () => {
   typeSelectionVisible.value = true
 }
 
+// 直接打开存储资源表单
+const showAddStorageDialog = () => {
+  isEdit.value = false
+  editId.value = null
+  selectedResourceCategory.value = 'storage'
+  resetForm()
+  dialogVisible.value = true
+}
+
+// 直接打开计算引擎表单
+const showAddComputeDialog = () => {
+  isEdit.value = false
+  editId.value = null
+  selectedResourceCategory.value = 'compute'
+  resetForm()
+  dialogVisible.value = true
+}
+
 const confirmResourceType = (category) => {
   selectedResourceCategory.value = category
   typeSelectionVisible.value = false
@@ -654,6 +675,11 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 10px;
 }
 
 /* 过滤栏样式 */

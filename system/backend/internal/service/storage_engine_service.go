@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/addp/system/internal/models"
+	"github.com/beltran/gohive"
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
 	_ "github.com/lib/pq"               // PostgreSQL driver
 	"github.com/minio/minio-go/v7"
@@ -30,6 +31,8 @@ func (s *StorageEngineService) TestConnection(resource *models.Resource) error {
 		return s.testMySQLConnection(resource.ConnectionInfo)
 	case "minio", "s3":
 		return s.testMinIOConnection(resource.ConnectionInfo)
+	case "spark_sql":
+		return s.testSparkSQLConnection(resource.ConnectionInfo)
 	default:
 		return fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
 	}
@@ -278,6 +281,94 @@ func (s *StorageEngineService) testMinIOConnection(connInfo models.ConnectionInf
 	return nil
 }
 
+// testSparkSQLConnection 测试 Spark SQL Thrift Server 连接
+func (s *StorageEngineService) testSparkSQLConnection(connInfo models.ConnectionInfo) error {
+	normalizeHost := func(host string) string {
+		if host == "localhost" || host == "127.0.0.1" {
+			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
+				return alias
+			}
+			return "127.0.0.1"
+		}
+		return host
+	}
+
+	// 获取连接参数
+	host, _ := connInfo["host"].(string)
+	host = normalizeHost(host)
+
+	var portFloat float64
+	switch v := connInfo["port"].(type) {
+	case float64:
+		portFloat = v
+	case int:
+		portFloat = float64(v)
+	case string:
+		if parsed, err := strconv.Atoi(v); err == nil {
+			portFloat = float64(parsed)
+		}
+	}
+
+	database, _ := connInfo["database"].(string)
+	user, _ := connInfo["user"].(string)
+	password, _ := connInfo["password"].(string)
+
+	// 验证必填字段
+	if host == "" {
+		return fmt.Errorf("missing required field: host")
+	}
+
+	if portFloat == 0 {
+		portFloat = 10000 // Spark SQL Thrift Server 默认端口
+	}
+
+	// 如果数据库名为空，使用 "default"
+	if database == "" {
+		database = "default"
+	}
+
+	// 配置连接
+	configuration := gohive.NewConnectConfiguration()
+
+	// 如果提供了用户名和密码，使用 PLAIN 认证
+	if user != "" {
+		configuration.Username = user
+		if password != "" {
+			configuration.Password = password
+		}
+	}
+
+	// 设置超时
+	configuration.ConnectTimeout = 10 * time.Second
+	configuration.SocketTimeout = 10 * time.Second
+
+	// 连接到 Spark SQL Thrift Server
+	connection, err := gohive.Connect(host, int(portFloat), "NONE", configuration)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
+	}
+	defer connection.Close()
+
+	// 创建 cursor
+	cursor := connection.Cursor()
+
+	// 切换到指定数据库
+	if database != "default" {
+		cursor.Exec(context.Background(), fmt.Sprintf("USE %s", database))
+		if cursor.Err != nil {
+			return fmt.Errorf("failed to use database '%s': %w", database, cursor.Err)
+		}
+	}
+
+	// 执行简单查询验证连接
+	cursor.Exec(context.Background(), "SELECT 1")
+	if cursor.Err != nil {
+		return fmt.Errorf("failed to execute test query: %w", cursor.Err)
+	}
+
+	return nil
+}
+
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）
 func (s *StorageEngineService) GetConnectionInfo(resource *models.Resource) map[string]interface{} {
 	result := make(map[string]interface{})
@@ -298,6 +389,12 @@ func (s *StorageEngineService) GetConnectionInfo(resource *models.Resource) map[
 		if result["user"] == nil || result["user"] == "" {
 			result["user"] = resource.ConnectionInfo["username"]
 		}
+		result["password"] = "******" // 隐藏密码
+	case "spark_sql":
+		result["host"] = resource.ConnectionInfo["host"]
+		result["port"] = resource.ConnectionInfo["port"]
+		result["database"] = resource.ConnectionInfo["database"]
+		result["user"] = resource.ConnectionInfo["user"]
 		result["password"] = "******" // 隐藏密码
 	case "minio", "s3":
 		result["endpoint"] = resource.ConnectionInfo["endpoint"]

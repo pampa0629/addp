@@ -204,7 +204,10 @@
       "Bash(tree:*)",
       "Bash(npm install)",
       "Bash(timeout 10 npm run dev:*)",
-      "Bash(bash scripts/start.sh:*)"
+      "Bash(bash scripts/start.sh:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjYwNzU0MjUsImlhdCI6MTc2NjA3MzYyNX0.OgsqEaCZHwOFFn6ZgeTk_cYavURZem0mfJK54NFLIcE\")",
+      "Bash(go test:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
