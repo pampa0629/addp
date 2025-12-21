@@ -123,6 +123,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElLoading } from 'element-plus'
 import {
   Connection,
@@ -138,9 +139,14 @@ import MonacoEditor from '../components/MonacoEditor.vue'
 import SQLResult from '../components/SQLResult.vue'
 import SaveSQLDialog from '../components/SaveSQLDialog.vue'
 import { executeSQL as executeAPI, testConnection, saveSQLTask } from '../api/sql.js'
+import { getDevItem } from '../api/devItem.js'
 import client from '../api/client.js'
 
+const route = useRoute()
+
 // 状态
+const currentTaskId = ref(null)
+const currentTaskName = ref('')
 const selectedResourceId = ref(null)
 const resources = ref([])
 const sqlContent = ref('SELECT * FROM users LIMIT 10;')
@@ -280,9 +286,43 @@ const handleSaveTask = async (taskData) => {
   }
 }
 
+// 加载已有任务
+const loadTask = async (taskId) => {
+  try {
+    const task = await getDevItem(taskId)
+
+    // 设置当前任务信息
+    currentTaskId.value = task.id
+    currentTaskName.value = task.name
+
+    // 加载 SQL 内容
+    if (task.content && task.content.sql) {
+      sqlContent.value = task.content.sql
+
+      // 如果有关联资源,也设置资源ID
+      if (task.resource_id) {
+        selectedResourceId.value = task.resource_id
+      }
+
+      ElMessage.success(`已加载 SQL 任务: ${task.name}`)
+    } else {
+      ElMessage.warning('该任务没有 SQL 内容')
+    }
+  } catch (error) {
+    console.error('加载任务失败:', error)
+    ElMessage.error('加载任务失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
 // 页面加载
-onMounted(() => {
-  loadResources()
+onMounted(async () => {
+  await loadResources()
+
+  // 检查是否有任务 ID
+  const taskId = route.query.taskId
+  if (taskId) {
+    await loadTask(taskId)
+  }
 })
 </script>
 

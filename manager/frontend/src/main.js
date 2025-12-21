@@ -5,7 +5,12 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'ol/ol.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+// 按需引入实际使用的图标
+import {
+  ArrowDown, ArrowLeft, ArrowRight, Clock, Collection, Document, Download,
+  Folder, Loading, Refresh, RefreshRight, Search, SwitchButton, User,
+  VideoPlay, WarningFilled, ZoomIn, ZoomOut
+} from '@element-plus/icons-vue'
 import App from './App.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
 import TablePreview from '@/components/previews/TablePreview.vue'
@@ -26,8 +31,13 @@ const { createApp, h, resolveComponent } = Vue
 
 const app = createApp(App)
 
-// 注册所有图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+// 只注册实际使用的图标
+const icons = {
+  ArrowDown, ArrowLeft, ArrowRight, Clock, Collection, Document, Download,
+  Folder, Loading, Refresh, RefreshRight, Search, SwitchButton, User,
+  VideoPlay, WarningFilled, ZoomIn, ZoomOut
+}
+for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 

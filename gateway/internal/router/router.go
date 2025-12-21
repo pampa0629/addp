@@ -61,6 +61,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				"transfer": cfg.TransferServiceURL,
 				"develop":  cfg.DevelopServiceURL,
 				"service":  cfg.ServiceServiceURL,
+				"copilot":  cfg.CopilotServiceURL,
 			},
 		})
 	})
@@ -72,6 +73,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	transferProxy := proxy.NewServiceProxy(cfg.TransferServiceURL)
 	developProxy := proxy.NewServiceProxy(cfg.DevelopServiceURL)
 	serviceProxy := proxy.NewServiceProxy(cfg.ServiceServiceURL)
+	copilotProxy := proxy.NewServiceProxy(cfg.CopilotServiceURL)
 
 	// 公开路由（无需鉴权）- 主要是认证相关接口
 	public := router.Group("/api")
@@ -117,6 +119,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/develop/*path", developProxy.Handle)
 		api.Any("/scripts/*path", developProxy.Handle)
 		api.Any("/spatial/*path", developProxy.Handle)
+
+		// Copilot 模块路由（AI 辅助）
+		api.Any("/copilot/*path", copilotProxy.Handle)
 
 		// Service 模块路由（数据服务、OGC 服务、外部服务注册）
 		api.Any("/service/*path", serviceProxy.Handle)

@@ -49,7 +49,7 @@ const props = defineProps({
 
 const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
 
-const showMap = ref(true)
+const showMap = ref(false)  // 默认不显示地图,避免初始渲染延迟
 const baseMapType = ref('')
 
 const objectData = computed(() => props.data?.object || {})

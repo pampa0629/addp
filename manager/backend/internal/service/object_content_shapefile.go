@@ -146,7 +146,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 
 	truncated := totalFeatures > len(features)
 	metadata := map[string]interface{}{
-		"geometry_type":         int(reader.GeometryType),
+		"geometry_type":         mapShapeTypeToString(reader.GeometryType),
 		"feature_count":         totalFeatures,
 		"preview_feature_count": len(features),
 		"fields":                fieldsMeta,
@@ -515,4 +515,39 @@ func pointsToCoordinates(points []shp.Point) [][]float64 {
 		coords = append(coords, []float64{p.X, p.Y})
 	}
 	return coords
+}
+
+func mapShapeTypeToString(shapeType shp.ShapeType) string {
+	switch shapeType {
+	case shp.NULL:
+		return "Null"
+	case shp.POINT:
+		return "Point"
+	case shp.POLYLINE:
+		return "Polyline"
+	case shp.POLYGON:
+		return "Polygon"
+	case shp.MULTIPOINT:
+		return "MultiPoint"
+	case shp.POINTZ:
+		return "PointZ"
+	case shp.POLYLINEZ:
+		return "PolylineZ"
+	case shp.POLYGONZ:
+		return "PolygonZ"
+	case shp.MULTIPOINTZ:
+		return "MultiPointZ"
+	case shp.POINTM:
+		return "PointM"
+	case shp.POLYLINEM:
+		return "PolylineM"
+	case shp.POLYGONM:
+		return "PolygonM"
+	case shp.MULTIPOINTM:
+		return "MultiPointM"
+	case shp.MULTIPATCH:
+		return "MultiPatch"
+	default:
+		return fmt.Sprintf("Unknown(%d)", shapeType)
+	}
 }

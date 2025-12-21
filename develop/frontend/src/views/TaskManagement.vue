@@ -439,11 +439,11 @@ const handleEdit = (row) => {
 }
 
 const handleView = (row) => {
-  // 根据类型跳转到对应编辑器
+  // 根据类型跳转到对应编辑器,传递任务 ID
   if (row.dev_type === 'sql') {
-    router.push('/sql')
+    router.push({ path: '/sql', query: { taskId: row.id } })
   } else if (row.dev_type === 'workflow') {
-    router.push('/workflow')
+    router.push({ path: '/workflow', query: { taskId: row.id } })
   } else {
     ElMessage.info('该类型暂不支持查看详情')
   }

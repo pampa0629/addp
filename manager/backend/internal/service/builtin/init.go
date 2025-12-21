@@ -18,11 +18,6 @@ func init() {
 		return service.NewMySQLPreviewProvider(repo), nil
 	})
 
-	// 3. Shapefile 预览
-	service.RegisterPreviewProvider("shapefile", func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
-		return service.NewShapefilePreviewProvider(), nil
-	})
-
 	// 3. CSV 预览
 	service.RegisterPreviewProvider("csv", func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
 		return service.NewCSVPreviewProvider(), nil

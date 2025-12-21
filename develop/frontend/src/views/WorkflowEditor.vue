@@ -1,5 +1,37 @@
 <template>
   <div class="workflow-editor-page">
+    <!-- AI 助手面板 -->
+    <div class="ai-assistant-panel">
+      <div class="ai-header">
+        <span class="ai-icon">🤖</span>
+        <span class="ai-title">AI 工作流助手</span>
+      </div>
+      <div class="ai-input-group">
+        <el-input
+          v-model="aiQuery"
+          type="textarea"
+          :rows="2"
+          placeholder="描述你的 GIS 工作流需求，例如：读取 Shapefile 后进行 100 米缓冲区分析，然后导出为 GeoJSON"
+          :disabled="generating"
+        />
+        <el-button type="primary" @click="generateWorkflow" :loading="generating" size="small">
+          生成工作流
+        </el-button>
+      </div>
+      <div v-if="generatedWorkflow" class="workflow-preview">
+        <div class="preview-header">生成的工作流（{{ generatedWorkflow.tasks.length }} 步）</div>
+        <div class="preview-tasks">
+          <div v-for="task in generatedWorkflow.tasks" :key="task.id" class="task-item">
+            {{ task.id }}: {{ task.operator }}
+          </div>
+        </div>
+        <div class="preview-actions">
+          <el-button size="small" type="primary" @click="loadToCanvas">加载到画布</el-button>
+          <el-button size="small" @click="generatedWorkflow = null">取消</el-button>
+        </div>
+      </div>
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -150,8 +182,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   DocumentAdd,
@@ -164,14 +196,25 @@ import {
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
 import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
-import { createDevItem, executeDevItem } from '@/api/devItem'
+import { createDevItem, executeDevItem, getDevItem } from '@/api/devItem'
 import { getOperatorDetail } from '@/api/operator'
+import { generateWorkflowFromNL } from '@/api/copilot'
 
 const router = useRouter()
+const route = useRoute()
+
+// AI 助手状态
+const aiQuery = ref('')
+const generating = ref(false)
+const generatedWorkflow = ref(null)
 
 // 画布引用
 const canvasRef = ref(null)
 const fileInputRef = ref(null)
+
+// 当前任务信息
+const currentTaskId = ref(null)
+const currentTaskName = ref('')
 
 // 工作流数据
 const workflowData = ref({
@@ -393,6 +436,38 @@ const handleImport = () => {
   fileInputRef.value?.click()
 }
 
+// AI 工作流生成
+const generateWorkflow = async () => {
+  if (!aiQuery.value.trim()) {
+    ElMessage.warning('请描述你的工作流需求')
+    return
+  }
+
+  generating.value = true
+  try {
+    const result = await generateWorkflowFromNL({
+      query: aiQuery.value,
+      tenant_id: 1, // TODO: 从 store 获取
+      user_id: 1
+    })
+
+    generatedWorkflow.value = result.workflow
+    ElMessage.success('工作流生成成功')
+  } catch (error) {
+    ElMessage.error('生成失败: ' + (error.message || '未知错误'))
+  } finally {
+    generating.value = false
+  }
+}
+
+const loadToCanvas = () => {
+  if (generatedWorkflow.value) {
+    workflowData.value = generatedWorkflow.value
+    generatedWorkflow.value = null
+    ElMessage.success('已加载到画布')
+  }
+}
+
 const handleFileChange = async (event) => {
   const file = event.target.files[0]
   if (!file) return
@@ -416,6 +491,36 @@ const handleFileChange = async (event) => {
     event.target.value = ''
   }
 }
+
+// 加载已有任务
+const loadTask = async (taskId) => {
+  try {
+    const task = await getDevItem(taskId)
+
+    // 设置当前任务信息
+    currentTaskId.value = task.id
+    currentTaskName.value = task.name
+
+    // 加载工作流内容
+    if (task.content && task.content.tasks) {
+      workflowData.value = task.content
+      ElMessage.success(`已加载工作流: ${task.name}`)
+    } else {
+      ElMessage.warning('该任务没有工作流内容')
+    }
+  } catch (error) {
+    console.error('加载任务失败:', error)
+    ElMessage.error('加载任务失败: ' + (error.response?.data?.error || error.message))
+  }
+}
+
+// 组件挂载时检查是否有任务 ID
+onMounted(() => {
+  const taskId = route.query.taskId
+  if (taskId) {
+    loadTask(taskId)
+  }
+})
 </script>
 
 <style scoped>
@@ -424,6 +529,63 @@ const handleFileChange = async (event) => {
   flex-direction: column;
   height: 100vh;
   background: #f5f7fa;
+}
+
+.ai-assistant-panel {
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  flex-shrink: 0;
+}
+
+.ai-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.ai-icon {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.ai-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.ai-input-group :deep(.el-textarea__inner) {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.workflow-preview {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.preview-header {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.preview-tasks {
+  max-height: 100px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.task-item {
+  padding: 4px 0;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .toolbar {

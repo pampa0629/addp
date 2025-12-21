@@ -236,7 +236,14 @@
       "Bash(git status:*)",
       "Bash(npm run build:*)",
       "Bash(npm run:*)",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjYyNTg2MTYsImlhdCI6MTc2NjI0NzgxNn0.0H7F5yBfBMJ9PHQlbOh-JPOjROkVYaYOtHo8uIMGv2w\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjYyNTg2MTYsImlhdCI6MTc2NjI0NzgxNn0.0H7F5yBfBMJ9PHQlbOh-JPOjROkVYaYOtHo8uIMGv2w\")",
+      "Bash(xargs basename:*)",
+      "Bash(/tmp/production_data_discovery.sh:*)",
+      "Bash(for module in system meta transfer orchestrator develop service)",
+      "Bash(do echo \"检查 $module 模块使用的图标...\" grep -rh \"<el-icon>\" \"/Users/pampa/code/addp/$module/frontend/src\" --include=\"*.vue\" -A 1)",
+      "Bash(python3 -m pip:*)",
+      "Bash(pip3 install:*)",
+      "Bash(timeout 5 python3:*)"
     ],
     "deny": [],
     "ask": []

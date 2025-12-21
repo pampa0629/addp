@@ -61,6 +61,10 @@
         <span>地图预览</span>
         <el-switch v-model="showMap" size="small" />
       </div>
+      <div class="toggle-wrapper">
+        <span>JSON 数据</span>
+        <el-switch v-model="showJson" size="small" />
+      </div>
       <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
         <el-option
           v-for="item in baseMapOptions"
@@ -78,7 +82,7 @@
       height="360px"
     />
 
-    <pre v-if="hasGeoJSON" class="json-content" :class="{ collapsed: showMap }">
+    <pre v-if="hasGeoJSON && showJson" class="json-content" :class="{ collapsed: showMap }">
 {{ formattedJson }}
     </pre>
   </div>
@@ -172,10 +176,19 @@ const geoFeatures = computed(() => {
   return []
 })
 
-const formattedJson = computed(() => safeStringify(geojsonData.value))
+const formattedJson = computed(() => {
+  const json = safeStringify(geojsonData.value)
+  // 限制显示的字符数,避免渲染过大的 JSON
+  const MAX_LENGTH = 50000  // 50KB
+  if (json.length > MAX_LENGTH) {
+    return json.substring(0, MAX_LENGTH) + '\n\n... (内容过长,已截断)'
+  }
+  return json
+})
 
 const { baseMapOptions, defaultBaseMapType, loadMapConfig } = useMapConfig()
-const showMap = ref(hasGeoJSON.value)
+const showMap = ref(false)  // 默认不显示地图,由用户手动开启
+const showJson = ref(false)  // 默认不显示 JSON,由用户手动开启
 const baseMapType = ref('')
 
 watch(

@@ -1,34 +1,36 @@
 <template>
   <div class="table-preview">
-    <!-- 地图预览 (统一使用 MVT 瓦片) -->
-    <template v-if="hasGeometry && showMap">
+    <!-- 地图预览控制和地图区域 -->
+    <template v-if="hasGeometry">
       <div class="map-controls">
         <div class="toggle-wrapper">
           <span>地图预览</span>
           <el-switch v-model="showMap" size="small" />
         </div>
-        <el-select v-model="baseMapType" size="small" class="base-map-select">
-          <el-option
-            v-for="item in baseMapOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
+        <template v-if="showMap">
+          <el-select v-model="baseMapType" size="small" class="base-map-select">
+            <el-option
+              v-for="item in baseMapOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
 
-        <!-- Pre-Cache Button -->
-        <el-button
-          type="primary"
-          size="small"
-          :loading="quickViewLoading"
-          @click="handleQuickView"
-        >
-          {{ quickViewStatus === 'completed' ? '预缓存已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用预缓存' }}
-        </el-button>
+          <!-- Pre-Cache Button -->
+          <el-button
+            type="primary"
+            size="small"
+            :loading="quickViewLoading"
+            @click="handleQuickView"
+          >
+            {{ quickViewStatus === 'completed' ? '预缓存已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用预缓存' }}
+          </el-button>
+        </template>
       </div>
 
       <!-- 统一使用 MVT 瓦片预览（所有空间表）-->
-      <div class="map-container" :style="{ height: mapHeight + 'px' }">
+      <div v-if="showMap" class="map-container" :style="{ height: mapHeight + 'px' }">
         <VectorTilePreview
           ref="mapRef"
           :resource-id="resourceId"
@@ -38,7 +40,7 @@
         />
       </div>
 
-      <div class="map-splitter" @mousedown="startMapResize"></div>
+      <div v-if="showMap" class="map-splitter" @mousedown="startMapResize"></div>
     </template>
 
     <!-- 表格区域（保持原有分页逻辑）-->
@@ -105,7 +107,7 @@ const { size: mapHeight, startResize: startMapResize } = useResizable(260, 140, 
 
 const tableRef = ref(null)
 const mapRef = ref(null)
-const showMap = ref(true)
+const showMap = ref(false)  // 默认不显示地图,避免初始渲染延迟
 const baseMapType = ref('')
 const currentRowKey = ref('')
 const currentPage = ref(1)

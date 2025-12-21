@@ -11,6 +11,7 @@ type Config struct {
 	TransferServiceURL string
 	DevelopServiceURL  string
 	ServiceServiceURL  string
+	CopilotServiceURL  string
 
 	// Database
 	DBHost     string
@@ -45,6 +46,7 @@ func Load() *Config {
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
 		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8084"),
 		ServiceServiceURL:  getEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
+		CopilotServiceURL:  getEnv("COPILOT_SERVICE_URL", "http://localhost:8087"),
 
 		// Database (defaults to system PostgreSQL)
 		DBHost:     getEnv("DB_HOST", "localhost"),
