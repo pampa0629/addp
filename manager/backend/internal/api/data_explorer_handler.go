@@ -165,17 +165,8 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 
 	tenantID := tenantIDFromContext(c)
 
-	// 将JWT token放入context，供Meta客户端使用
-	ctx := c.Request.Context()
-	if token := c.GetHeader("Authorization"); token != "" {
-		// 移除 "Bearer " 前缀
-		if len(token) > 7 && token[:7] == "Bearer " {
-			token = token[7:]
-		}
-		ctx = context.WithValue(ctx, "jwt_token", token)
-	}
-
-	preview, err := h.metadataService.PreviewTableWithContext(ctx, resourceID, schemaName, tableName, page, pageSize, tenantID)
+	// 直接传递 gin.Context,以便 Preview 方法可以访问 Authorization header
+	preview, err := h.metadataService.PreviewTableWithContext(c, resourceID, schemaName, tableName, page, pageSize, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
 			logger.L().Warn("数据探查: 预览被拒绝", "resource_id", resourceID, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))

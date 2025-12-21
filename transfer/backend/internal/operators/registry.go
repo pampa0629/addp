@@ -84,7 +84,14 @@ var TransferOperators = []models.OperatorMetadata{
 			},
 		},
 		Inputs:  []string{"source_resource", "target_resource"},
-		Outputs: []string{"execution_result"},
+		OutputPorts: []models.OutputPortMetadata{
+		{
+			Name:        "default",
+			Type:        "execution_result",
+			Description: "算子输出",
+			IsDefault:   true,
+		},
+	},
 	},
 	{
 		ID:          "stream_transfer",
@@ -115,6 +122,13 @@ var TransferOperators = []models.OperatorMetadata{
 			},
 		},
 		Inputs:  []string{"source_resource", "target_resource"},
-		Outputs: []string{"execution_result"},
+		OutputPorts: []models.OutputPortMetadata{
+		{
+			Name:        "default",
+			Type:        "execution_result",
+			Description: "算子输出",
+			IsDefault:   true,
+		},
+	},
 	},
 }

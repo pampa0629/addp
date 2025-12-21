@@ -1022,7 +1022,14 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	}
 
 	scanConfig := resource.ScanConfig
-	tenantID := resource.TenantID
+
+	// 处理 TenantID（可能为 nil，SuperAdmin 创建的资源）
+	var tenantID uint
+	if resource.TenantID != nil {
+		tenantID = *resource.TenantID
+	} else {
+		tenantID = 0 // SuperAdmin 的资源，使用 0
+	}
 
 	// 查找是否已有该资源的自动扫描任务
 	var existingTask models.ScanTask
@@ -1150,14 +1157,14 @@ func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels
 		return "", nil // 手动触发，不需要 Cron 表达式
 
 	case "cron":
-		if config.Schedule == "" {
-			return "", errors.New("Cron 类型必须提供 schedule")
+		if config.CronExpression == "" {
+			return "", errors.New("Cron 类型必须提供 cron_expression")
 		}
 		// 验证 Cron 表达式
-		if err := s.exprBuilder.Validate(config.Schedule); err != nil {
+		if err := s.exprBuilder.Validate(config.CronExpression); err != nil {
 			return "", fmt.Errorf("无效的 Cron 表达式: %w", err)
 		}
-		return config.Schedule, nil
+		return config.CronExpression, nil
 
 	case "daily":
 		// 每日执行：从 schedule_time 解析 HH:mm

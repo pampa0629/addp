@@ -112,7 +112,7 @@ func (s *ScanServiceNew) verifyResourceAccess(resourceID, tenantID uint, token s
 	}
 
 	// 非超级管理员（tenant_id > 0）必须验证租户匹配
-	if tenantID > 0 && resource.TenantID != tenantID {
+	if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 		s.log.Warn("跨租户访问被拒绝",
 			"resource_id", resourceID,
 			"resource_tenant_id", resource.TenantID,
@@ -816,12 +816,8 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 	)
 	s.log.Info("开始扫描资源", startFields...)
 
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
+	// 重构后：直接传入Resource对象，由插件系统管理连接
+	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
@@ -1020,18 +1016,13 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 	}
 	s.log.Info("开始扫描指定 Schema 列表", startFields...)
 
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	s.log.Info("🔑 连接字符串已构建",
+	// 重构后：不再手动构建连接字符串，由插件系统管理
+	s.log.Info("🔧 准备创建Scanner",
 		"resource_id", resourceID,
 		"resource_type", resource.ResourceType,
-		"conn_str_length", len(connStr),
 	)
 
-	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
+	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		s.log.Error("❌ 创建Scanner失败",
 			"resource_id", resourceID,
@@ -1145,12 +1136,8 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 		scanDepth = "deep"
 	}
 
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
+	// 重构后：直接传入Resource对象，由插件系统管理连接
+	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
 	}
@@ -3131,12 +3118,8 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 		return nil, err
 	}
 
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
+	// 重构后：直接传入Resource对象，由插件系统管理连接
+	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}
@@ -3167,12 +3150,8 @@ func (s *ScanServiceNew) ListObjectStorageNodes(resourceID, tenantID uint, path,
 		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
 	}
 
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	scan, err := plugins.NewScanner(resource.ResourceType, connStr)
+	// 重构后：直接传入Resource对象，由插件系统管理连接
+	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}

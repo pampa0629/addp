@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/addp/common/dbbridge"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 	"github.com/addp/system/internal/api"
@@ -57,6 +63,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 初始化 GeoPandas 计算引擎资源
+	if err := repository.InitGeoPandasEngine(db); err != nil {
+		logger.L().Error("GeoPandas 引擎初始化失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -65,10 +77,39 @@ func main() {
 	// 创建路由
 	router := api.SetupRouter(db, cfg)
 
-	// 启动服务器
-	logger.L().Info("系统服务启动", "addr", cfg.ServerAddr)
-	if err := router.Run(cfg.ServerAddr); err != nil {
-		logger.L().Error("服务器启动失败", "error", err)
-		os.Exit(1)
+	// 创建 HTTP 服务器
+	srv := &http.Server{
+		Addr:    cfg.ServerAddr,
+		Handler: router,
 	}
+
+	// 在 goroutine 中启动服务器
+	go func() {
+		logger.L().Info("系统服务启动", "addr", cfg.ServerAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.L().Error("服务器启动失败", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// 等待中断信号以优雅关闭服务器
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.L().Info("正在关闭 System 服务器...")
+
+	// 关闭所有数据库连接池
+	dbbridge.CloseAllPools()
+	logger.L().Info("已关闭所有数据库连接池")
+
+	// 关闭 HTTP 服务器，设置 5 秒超时
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.L().Error("服务器强制关闭", "error", err)
+	}
+
+	logger.L().Info("System 服务器已关闭")
 }

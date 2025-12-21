@@ -56,6 +56,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
 	registryService := service.NewRegistryService(resourceRepo)
 	appService := service.NewApplicationService(appRepo)
+	taskProviderService := service.NewTaskProviderService(db)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService, userRepo))
@@ -119,6 +120,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				resources.DELETE("/:id", resourceHandler.Delete)
 				resources.POST("/:id/test", resourceHandler.TestConnection)                    // 测试已有资源连接
 				resources.POST("/test-connection", resourceHandler.TestConnectionBeforeCreate) // 创建前测试连接
+				resources.GET("/:id/schemas", resourceHandler.ListSchemas)                     // 列出schemas
+				resources.GET("/:id/tables", resourceHandler.ListTables)                       // 列出表
 			}
 
 			// 租户管理
@@ -170,6 +173,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
 			registry.GET("/compute-resources", registryHandler.ListComputeResources)
 		}
+
+		// 任务提供者注册 API（供模块启动时自注册使用）
+		taskProviderHandler := NewTaskProviderHandler(taskProviderService)
+		internal.POST("/task-providers/register", taskProviderHandler.RegisterOrUpdate)
+		internal.GET("/task-providers", taskProviderHandler.List)
+		internal.GET("/task-providers/:module_name", taskProviderHandler.Get)
 
 		// API Key 验证 API（供 Gateway 调用）
 		internalHandler := NewInternalHandler(appService)

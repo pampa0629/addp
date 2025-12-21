@@ -12,6 +12,7 @@ gunicorn==21.2.0
 
 # Database connectivity
 psycopg2-binary==2.9.9
+pymysql==1.1.0
 sqlalchemy==2.0.23
 geoalchemy2==0.14.3
 

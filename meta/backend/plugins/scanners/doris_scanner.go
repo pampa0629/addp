@@ -1,200 +1,118 @@
 package scanners
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
-	"strings"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/format"
-	_ "github.com/go-sql-driver/mysql"
+	commonModels "github.com/addp/common/models"
+	"gorm.io/gorm"
 )
 
 // DorisScanner 执行 Doris 元数据扫描
-// Doris 不完全支持 MySQL 的 prepared statements，需要使用普通查询
+// 重构后：作为插件系统的薄适配层，委托给插件的元数据查询能力
 type DorisScanner struct {
-	db *sql.DB
+	resource *commonModels.Resource // 资源信息
+	db       *gorm.DB               // 从插件获取的连接池
 }
 
-// NewDorisScanner 根据连接串创建 Doris 扫描器
-func NewDorisScanner(connStr string) (*DorisScanner, error) {
-	// Doris 不支持 prepared statements，需要在连接字符串中禁用
-	// interpolateParams=true 会让驱动在客户端进行参数插值，而不是使用服务端的 prepared statement
-	if !strings.Contains(connStr, "interpolateParams") {
-		if strings.Contains(connStr, "?") {
-			connStr += "&interpolateParams=true"
-		} else {
-			connStr += "?interpolateParams=true"
-		}
-	}
-
-	db, err := sql.Open("mysql", connStr)
+// NewDorisScanner 根据资源信息创建 Doris 扫描器
+// 重构后：不再接受连接字符串，而是接受Resource对象
+func NewDorisScanner(resource *commonModels.Resource) (*DorisScanner, error) {
+	// 从插件系统获取连接池
+	db, err := dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to doris: %w", err)
+		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping doris: %w", err)
-	}
-
-	return &DorisScanner{db: db}, nil
+	return &DorisScanner{
+		resource: resource,
+		db:       db,
+	}, nil
 }
 
 // ListSchemas 列出可用数据库
+// 重构后：委托给插件系统的 ListSchemas 方法
 func (s *DorisScanner) ListSchemas() ([]format.SchemaInfo, error) {
-	query := `
-		SELECT
-			SCHEMA_NAME AS name,
-			0 AS table_count,
-			0 AS total_size
-		FROM information_schema.SCHEMATA
-		WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys', '__internal_schema')
-		ORDER BY SCHEMA_NAME
-	`
-
-	rows, err := s.db.Query(query)
+	// 调用插件系统的元数据查询
+	pluginSchemas, err := dbbridge.ListSchemas(context.Background(), s.resource, s.db)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query schemas: %w", err)
+		return nil, fmt.Errorf("failed to list schemas: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.SchemaInfo 格式
 	var schemas []format.SchemaInfo
-	for rows.Next() {
-		var schema format.SchemaInfo
-		if err := rows.Scan(&schema.Name, &schema.TableCount, &schema.TotalSizeBytes); err != nil {
-			continue
-		}
-
-		// 获取表数量（使用字符串拼接而不是 prepared statement）
-		tableCountQuery := fmt.Sprintf(`
-			SELECT COUNT(*)
-			FROM information_schema.TABLES
-			WHERE TABLE_SCHEMA = '%s'
-		`, schema.Name)
-		s.db.QueryRow(tableCountQuery).Scan(&schema.TableCount)
-
-		schemas = append(schemas, schema)
+	for _, ps := range pluginSchemas {
+		schemas = append(schemas, format.SchemaInfo{
+			Name:           ps.Name,
+			TableCount:     ps.TableCount,
+			TotalSizeBytes: 0, // plugin 层不提供此字段，设为 0
+		})
 	}
 
 	return schemas, nil
 }
 
 // ScanTables 扫描指定数据库的表
-// 注意：Doris 中 Database 就是 Schema，需要切换到指定数据库
+// 重构后：委托给插件系统的 ListTables 方法
 func (s *DorisScanner) ScanTables(schemaName string) ([]format.TableInfo, error) {
-	// 切换到指定数据库
-	if _, err := s.db.Exec(fmt.Sprintf("USE `%s`", schemaName)); err != nil {
-		return nil, fmt.Errorf("failed to switch to database %s: %w", schemaName, err)
-	}
-
-	// 查询当前数据库的表
-	query := fmt.Sprintf(`
-		SELECT
-			TABLE_NAME AS table_name,
-			TABLE_TYPE AS table_type,
-			IFNULL(TABLE_COMMENT, '') AS table_comment,
-			0 AS row_count,
-			0 AS size_bytes
-		FROM information_schema.TABLES
-		WHERE TABLE_SCHEMA = '%s'
-		ORDER BY TABLE_NAME
-	`, schemaName)
-
-	rows, err := s.db.Query(query)
+	// 调用插件系统的元数据查询
+	pluginTables, err := dbbridge.ListTables(context.Background(), s.resource, s.db, schemaName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables: %w", err)
+		return nil, fmt.Errorf("failed to scan tables: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.TableInfo 格式
 	var tables []format.TableInfo
-	for rows.Next() {
-		var table format.TableInfo
-		if err := rows.Scan(
-			&table.Name,
-			&table.Type,
-			&table.Comment,
-			&table.RowCount,
-			&table.SizeBytes,
-		); err != nil {
-			continue
-		}
-		tables = append(tables, table)
+	for _, pt := range pluginTables {
+		tables = append(tables, format.TableInfo{
+			Name:      pt.TableName,
+			Type:      "BASE TABLE", // 插件层不区分类型，默认为 BASE TABLE
+			Comment:   "",           // 插件层暂不提供表注释
+			RowCount:  pt.RowCount,
+			SizeBytes: pt.SizeBytes,
+		})
 	}
 
 	return tables, nil
 }
 
 // ScanFields 扫描指定表的字段
-// 注意：Doris 中 Database 就是 Schema，需要切换到指定数据库
+// 重构后：委托给插件系统的 ListColumns 方法
 func (s *DorisScanner) ScanFields(schemaName, tableName string) ([]format.FieldInfo, error) {
-	// 切换到指定数据库
-	if _, err := s.db.Exec(fmt.Sprintf("USE `%s`", schemaName)); err != nil {
-		return nil, fmt.Errorf("failed to switch to database %s: %w", schemaName, err)
-	}
-
-	// 查询字段信息
-	query := fmt.Sprintf(`
-		SELECT
-			COLUMN_NAME AS field_name,
-			ORDINAL_POSITION AS position,
-			DATA_TYPE AS data_type,
-			COLUMN_TYPE AS column_type,
-			CASE WHEN IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS is_nullable,
-			IFNULL(COLUMN_DEFAULT, '') AS column_default,
-			IFNULL(COLUMN_COMMENT, '') AS field_comment,
-			CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END AS is_primary_key,
-			CASE WHEN COLUMN_KEY = 'UNI' THEN 1 ELSE 0 END AS is_unique_key,
-			IFNULL(CHARACTER_SET_NAME, '') AS character_set,
-			IFNULL(COLLATION_NAME, '') AS collation,
-			IFNULL(NUMERIC_PRECISION, 0) AS numeric_precision,
-			IFNULL(NUMERIC_SCALE, 0) AS numeric_scale
-		FROM information_schema.COLUMNS
-		WHERE TABLE_SCHEMA = '%s'
-		  AND TABLE_NAME = '%s'
-		ORDER BY ORDINAL_POSITION
-	`, schemaName, tableName)
-
-	rows, err := s.db.Query(query)
+	// 调用插件系统的元数据查询
+	pluginColumns, err := dbbridge.ListColumns(context.Background(), s.resource, s.db, schemaName, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query fields: %w", err)
+		return nil, fmt.Errorf("failed to scan fields: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.FieldInfo 格式
 	var fields []format.FieldInfo
-	for rows.Next() {
-		var field format.FieldInfo
-		var isNullable, isPrimaryKey, isUniqueKey int
-		if err := rows.Scan(
-			&field.Name,
-			&field.OrdinalPosition,
-			&field.DataType,
-			&field.ColumnType,
-			&isNullable,
-			&field.DefaultValue,
-			&field.Comment,
-			&isPrimaryKey,
-			&isUniqueKey,
-			&field.CharacterSet,
-			&field.Collation,
-			&field.NumericPrecision,
-			&field.NumericScale,
-		); err != nil {
-			continue
-		}
-
-		field.IsNullable = isNullable == 1
-		field.IsPrimaryKey = isPrimaryKey == 1
-		field.IsUniqueKey = isUniqueKey == 1
-
-		fields = append(fields, field)
+	for i, pc := range pluginColumns {
+		fields = append(fields, format.FieldInfo{
+			Name:             pc.ColumnName,
+			OrdinalPosition:  i + 1, // 插件层暂不提供序号，使用索引+1
+			DataType:         pc.DataType,
+			ColumnType:       pc.DataType, // 使用原始类型
+			IsNullable:       pc.IsNullable,
+			DefaultValue:     "",     // 插件层暂不提供默认值
+			Comment:          pc.Comment,
+			IsPrimaryKey:     pc.IsPrimaryKey,
+			IsUniqueKey:      false,  // 插件层暂不提供唯一键信息
+			CharacterSet:     "",     // 插件层暂不提供字符集
+			Collation:        "",     // 插件层暂不提供排序规则
+			NumericPrecision: 0,      // 插件层暂不提供精度
+			NumericScale:     0,      // 插件层暂不提供标度
+		})
 	}
 
 	return fields, nil
 }
 
 // Close 关闭数据库连接
+// 重构后：不需要关闭，由插件系统的 PoolManager 统一管理
 func (s *DorisScanner) Close() error {
-	if s.db != nil {
-		return s.db.Close()
-	}
+	// 连接池由 PoolManager 管理，Scanner 不负责关闭
 	return nil
 }

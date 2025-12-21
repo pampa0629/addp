@@ -244,7 +244,7 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 
 				// 使用 capability 过滤：只要有 storage 能力就纳入元数据管理
 				if utils.HasStorageCapability(&res) {
-					if tenantID > 0 && res.TenantID != tenantID {
+					if tenantID > 0 && (res.TenantID == nil || *res.TenantID != tenantID) {
 						continue
 					}
 					resourceCopy := res
@@ -276,7 +276,7 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 		if resource == nil || !resource.IsActive {
 			continue
 		}
-		if tenantID > 0 && resource.TenantID != tenantID {
+		if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 			continue
 		}
 		// 使用 capability 过滤：只要有 storage 能力就纳入元数据管理
@@ -301,7 +301,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 
 	// 如果缓存命中且未过期，返回缓存数据
 	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
-		if tenantID == 0 || entry.resource.TenantID == tenantID {
+		if tenantID == 0 || (entry.resource.TenantID != nil && *entry.resource.TenantID == tenantID) {
 			resourceCopy := *entry.resource
 			fields := append(connectionLogFields(&resourceCopy),
 				"requested_tenant_id", tenantID,
@@ -320,7 +320,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 		if err != nil {
 			return nil, fmt.Errorf("failed to get resource from System API: %w", err)
 		}
-		if tenantID > 0 && resource.TenantID != tenantID {
+		if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 			return nil, fmt.Errorf("resource not found or access denied")
 		}
 		s.cacheResource(resource)
@@ -340,7 +340,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 		return nil, fmt.Errorf("failed to get resource from System API: %w", err)
 	}
 
-	if tenantID > 0 && resource.TenantID != tenantID {
+	if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 		return nil, fmt.Errorf("resource not found or access denied")
 	}
 
@@ -599,9 +599,11 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 	}
 
 	// 创建扫描运行（使用系统用户 ID=1，租户 ID 从资源获取）
-	tenantID := resource.TenantID
-	if tenantID == 0 {
+	var tenantID uint
+	if resource.TenantID == nil || *resource.TenantID == 0 {
 		tenantID = 1 // 默认租户
+	} else {
+		tenantID = *resource.TenantID
 	}
 
 	// 使用系统内部 token 创建扫描任务

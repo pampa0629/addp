@@ -5,6 +5,7 @@ import (
 
 	"github.com/addp/common/database/plugin"
 	"github.com/addp/common/models"
+	"gorm.io/gorm"
 
 	// 导入所有数据库插件，触发 init() 注册
 	_ "github.com/addp/common/database/plugins/doris"
@@ -89,4 +90,93 @@ type PluginInfo struct {
 	DefaultPort     int      `json:"default_port"`
 	RequiredFields  []string `json:"required_fields"`
 	SensitiveFields []string `json:"sensitive_fields"`
+}
+
+// === 连接池管理方法（供Develop模块使用）===
+
+// GetOrCreatePool 获取或创建连接池
+// 这是推荐的获取连接池的方式，会自动管理连接池的生命周期
+func GetOrCreatePool(resource *models.Resource, config *plugin.PoolConfig) (*gorm.DB, error) {
+	pluginResource := &plugin.Resource{
+		ID:             resource.ID,
+		ResourceType:   resource.ResourceType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}
+	return plugin.GetOrCreatePoolFromFactory(pluginResource, config)
+}
+
+// DefaultPoolConfig 返回默认连接池配置
+func DefaultPoolConfig() *plugin.PoolConfig {
+	return plugin.DefaultPoolConfig()
+}
+
+// ClosePool 关闭指定资源的连接池
+// 通常在资源被删除或更新时调用
+func ClosePool(resourceID uint) error {
+	return plugin.ClosePool(resourceID)
+}
+
+// CloseAllPools 关闭所有连接池
+// 在应用关闭时调用，确保优雅关闭
+func CloseAllPools() {
+	plugin.CloseAllPools()
+}
+
+// GetPoolStats 获取所有连接池的统计信息
+func GetPoolStats() map[uint]plugin.PoolStats {
+	return plugin.GetPoolStats()
+}
+
+// === 元数据查询方法（供Meta模块使用）===
+
+// ListSchemas 列出所有Schema/Database
+func ListSchemas(ctx context.Context, resource *models.Resource, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	pluginResource := &plugin.Resource{
+		ID:             resource.ID,
+		ResourceType:   resource.ResourceType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}
+	return plugin.ListSchemas(ctx, pluginResource, db)
+}
+
+// ListTables 列出指定Schema下的所有表
+func ListTables(ctx context.Context, resource *models.Resource, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	pluginResource := &plugin.Resource{
+		ID:             resource.ID,
+		ResourceType:   resource.ResourceType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}
+	return plugin.ListTables(ctx, pluginResource, db, schema)
+}
+
+// ListColumns 列出指定表的所有列
+func ListColumns(ctx context.Context, resource *models.Resource, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	pluginResource := &plugin.Resource{
+		ID:             resource.ID,
+		ResourceType:   resource.ResourceType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}
+	return plugin.ListColumns(ctx, pluginResource, db, schema, table)
+}
+
+// GetTableRowCount 获取表的行数
+func GetTableRowCount(ctx context.Context, resource *models.Resource, db *gorm.DB, schema, table string) (int64, error) {
+	pluginResource := &plugin.Resource{
+		ID:             resource.ID,
+		ResourceType:   resource.ResourceType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}
+	return plugin.GetTableRowCount(ctx, pluginResource, db, schema, table)
+}
+
+// === 辅助方法 ===
+
+// SupportsConnectionPool 检查指定类型是否支持连接池
+func SupportsConnectionPool(resourceType string) bool {
+	return plugin.SupportsConnectionPool(resourceType)
+}
+
+// SupportsMetadataQuery 检查指定类型是否支持元数据查询
+func SupportsMetadataQuery(resourceType string) bool {
+	return plugin.SupportsMetadataQuery(resourceType)
 }

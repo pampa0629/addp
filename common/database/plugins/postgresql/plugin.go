@@ -8,6 +8,8 @@ import (
 
 	"github.com/addp/common/database/plugin"
 	_ "github.com/lib/pq"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 // PostgreSQLPlugin PostgreSQL 数据库插件
@@ -129,4 +131,198 @@ func (p *PostgreSQLPlugin) SupportsTransactions() bool {
 // DefaultDialect 实现 SQLDatabasePlugin 接口
 func (p *PostgreSQLPlugin) DefaultDialect() string {
 	return "postgres"
+}
+
+// === ConnectionPoolPlugin 接口实现 ===
+
+// CreateConnectionPool 创建GORM连接池
+func (p *PostgreSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
+	// 构建连接字符串
+	connStr, err := p.BuildConnectionString(connInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 创建GORM连接
+	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{
+		// 禁用自动ping，我们手动控制
+		DisableAutomaticPing: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
+	}
+
+	// 获取底层的 *sql.DB 并配置连接池
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// 配置连接池参数
+	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+
+	return db, nil
+}
+
+// GetDialect 获取数据库方言
+func (p *PostgreSQLPlugin) GetDialect() string {
+	return "postgres"
+}
+
+// === MetadataPlugin 接口实现 ===
+
+// ListSchemas 列出所有Schema
+func (p *PostgreSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	var schemas []plugin.SchemaInfo
+
+	query := `
+		SELECT
+			schema_name as name,
+			(SELECT COUNT(*)
+			 FROM information_schema.tables
+			 WHERE table_schema = s.schema_name
+			   AND table_type = 'BASE TABLE') as table_count
+		FROM information_schema.schemata s
+		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+		ORDER BY schema_name
+	`
+
+	err := db.WithContext(ctx).Raw(query).Scan(&schemas).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list schemas: %w", err)
+	}
+
+	return schemas, nil
+}
+
+// ListTables 列出指定Schema下的所有表
+func (p *PostgreSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	var tables []plugin.TableInfo
+
+	query := `
+		SELECT
+			table_schema as schema,
+			table_name,
+			COALESCE(pg_total_relation_size(quote_ident(table_schema)||'.'||quote_ident(table_name)), 0) as size_bytes
+		FROM information_schema.tables
+		WHERE table_schema = $1
+		  AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+
+	// 获取每个表的行数（使用统计估算，避免慢查询）
+	for i := range tables {
+		var rowCount sql.NullInt64
+		countQuery := `
+			SELECT reltuples::bigint
+			FROM pg_class
+			WHERE oid = $1::regclass
+		`
+		fullTableName := fmt.Sprintf("%s.%s", schema, tables[i].TableName)
+		err := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&rowCount).Error
+		if err == nil && rowCount.Valid {
+			tables[i].RowCount = rowCount.Int64
+		}
+	}
+
+	return tables, nil
+}
+
+// ListColumns 列出指定表的所有列
+func (p *PostgreSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	var columns []plugin.ColumnInfo
+
+	query := `
+		SELECT
+			c.column_name,
+			c.data_type,
+			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END as is_nullable,
+			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END as is_primary_key,
+			COALESCE(
+				col_description(
+					(quote_ident(c.table_schema)||'.'||quote_ident(c.table_name))::regclass,
+					c.ordinal_position
+				),
+				''
+			) as comment
+		FROM information_schema.columns c
+		LEFT JOIN (
+			SELECT kcu.column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+			WHERE tc.table_schema = $1
+			  AND tc.table_name = $2
+			  AND tc.constraint_type = 'PRIMARY KEY'
+		) pk ON c.column_name = pk.column_name
+		WHERE c.table_schema = $1
+		  AND c.table_name = $2
+		ORDER BY c.ordinal_position
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list columns: %w", err)
+	}
+
+	// 填充标准化类型
+	for i := range columns {
+		columns[i].StdType = mapPostgreSQLType(columns[i].DataType)
+	}
+
+	return columns, nil
+}
+
+// GetTableRowCount 获取表的行数
+func (p *PostgreSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+	var count int64
+
+	// 使用统计估算（快速）
+	query := `
+		SELECT reltuples::bigint
+		FROM pg_class
+		WHERE oid = $1::regclass
+	`
+	fullTableName := fmt.Sprintf("%s.%s", schema, table)
+
+	err := db.WithContext(ctx).Raw(query, fullTableName).Scan(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to get row count: %w", err)
+	}
+
+	return count, nil
+}
+
+// mapPostgreSQLType 将PostgreSQL原生类型映射为标准类型
+func mapPostgreSQLType(pgType string) string {
+	switch pgType {
+	case "integer", "int", "int4", "smallint", "int2", "bigint", "int8":
+		return "integer"
+	case "numeric", "decimal", "double precision", "float8", "real", "float4", "money":
+		return "number"
+	case "character varying", "varchar", "character", "char", "text":
+		return "string"
+	case "boolean", "bool":
+		return "boolean"
+	case "timestamp", "timestamp with time zone", "timestamp without time zone", "date", "time", "time with time zone", "time without time zone":
+		return "datetime"
+	case "json", "jsonb":
+		return "json"
+	case "uuid":
+		return "string"
+	case "bytea":
+		return "binary"
+	case "array", "ARRAY":
+		return "array"
+	default:
+		return "string"
+	}
 }

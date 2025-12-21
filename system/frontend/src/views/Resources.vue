@@ -299,9 +299,9 @@ const filteredResources = computed(() => {
       (selectedCategories.value.includes('compute') && hasCompute)
 
     // 内置维度过滤
-    const matchesBuiltin =
-      (selectedCategories.value.includes('builtin') && isBuiltin) ||
-      (!isBuiltin) // 用户资源始终显示（不受"内置"过滤影响）
+    // - 如果勾选了"内置",则内置资源和用户资源都显示
+    // - 如果未勾选"内置",则只显示用户资源(is_builtin=false)
+    const matchesBuiltin = selectedCategories.value.includes('builtin') || !isBuiltin
 
     return matchesCapability && matchesBuiltin
   })

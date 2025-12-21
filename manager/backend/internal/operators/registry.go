@@ -51,6 +51,13 @@ var ManagerOperators = []models.OperatorMetadata{
 			},
 		},
 		Inputs:  []string{"spatial_layer"},
-		Outputs: []string{"tile_cache"},
+		OutputPorts: []models.OutputPortMetadata{
+		{
+			Name:        "default",
+			Type:        "tile_cache",
+			Description: "算子输出",
+			IsDefault:   true,
+		},
+	},
 	},
 }

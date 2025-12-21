@@ -7,11 +7,10 @@ import (
 	"log"
 	"net/http"
 	"time"
-
-	commonModels "github.com/addp/common/models"
 )
 
-// EngineRegistryService 引擎注册服务
+// EngineRegistryService 任务提供者注册服务
+// 将 Develop 模块注册到 System 的 task_providers 表
 type EngineRegistryService struct {
 	systemURL      string
 	internalAPIKey string
@@ -27,99 +26,70 @@ func NewEngineRegistryService(systemURL, internalAPIKey, developURL string) *Eng
 	}
 }
 
-// RegisterEngine 注册 Develop 引擎（单一引擎，支持 sql 和 workflow）
+// TaskProviderRegistration 任务提供者注册请求
+type TaskProviderRegistration struct {
+	ModuleName          string                 `json:"module_name"`
+	DisplayName         string                 `json:"display_name"`
+	Description         string                 `json:"description"`
+	BaseURL             string                 `json:"base_url"`
+	TaskListEndpoint    string                 `json:"task_list_endpoint"`
+	TaskDetailEndpoint  string                 `json:"task_detail_endpoint"`
+	TaskExecuteEndpoint string                 `json:"task_execute_endpoint"`
+	TaskStatusEndpoint  string                 `json:"task_status_endpoint"`
+	Capabilities        map[string]interface{} `json:"capabilities,omitempty"`
+	CreateTaskURL       string                 `json:"create_task_url,omitempty"`
+	EditTaskURL         string                 `json:"edit_task_url,omitempty"`
+	IsEnabled           bool                   `json:"is_enabled"`
+}
+
+// RegisterEngine 注册 Develop 模块为任务提供者
 func (s *EngineRegistryService) RegisterEngine() error {
-	registration := commonModels.CapabilityRegistrationRequest{
-		UniqueIdentifier: "develop.default",
-		Name:             "develop_engine",
-		DisplayName:      "开发任务",
-		ResourceType:     "compute_engine",
-		IsBuiltin:        true,
-		Description:      "开发工作台任务执行引擎，支持 SQL 查询和空间工作流",
-		Capabilities: &commonModels.Capability{
-			Compute: []commonModels.ComputeCapability{
+	// 构造注册请求（注册到 task_providers 表）
+	registration := TaskProviderRegistration{
+		ModuleName:  "develop",
+		DisplayName: "开发工作台",
+		Description: "SQL 查询和空间工作流开发任务",
+
+		// API 端点配置
+		BaseURL:             s.developURL,
+		TaskListEndpoint:    "/api/develop/items",
+		TaskDetailEndpoint:  "/api/develop/items/:id",
+		TaskExecuteEndpoint: "/api/develop/items/:id/execute",
+		TaskStatusEndpoint:  "/api/develop/executions/:id",
+
+		// 能力描述（供 Orchestrator 查询）
+		Capabilities: map[string]interface{}{
+			"task_types": []map[string]string{
 				{
-					Type:     "sql",
-					DevModes: []string{"sql"},
-					Features: []string{"async", "timeout", "result_preview", "multi_database"},
-					SupportedSources: []string{"postgresql", "mysql", "doris", "clickhouse"},
+					"type":         "sql",
+					"display_name": "SQL 任务",
 				},
 				{
-					Type:     "workflow",
-					DevModes: []string{"workflow"},
-					Features: []string{"dag", "async", "spatial_operators", "memory_efficient"},
-					SupportedSources: []string{"geojson", "shapefile", "postgis", "file"},
+					"type":         "workflow",
+					"display_name": "工作流任务",
 				},
 			},
 		},
-		TaskAPIConfig: &commonModels.TaskAPIConfig{
-			BaseURL: s.developURL,
-			Endpoints: map[string]commonModels.APIEndpoint{
-				// Create: 验证任务是否存在（GET /api/develop/items/{task_id}）
-				"create": {
-					Method: "GET",
-					Path:   "/api/develop/items/{{.TaskID}}",
-					ResponseMapping: &commonModels.ResponseMapping{
-						TaskIDField: "id",
-					},
-				},
-				// Execute: 执行任务（POST /api/develop/items/{task_id}/execute）
-				"execute": {
-					Method: "POST",
-					Path:   "/api/develop/items/{{.TaskID}}/execute",
-					ResponseMapping: &commonModels.ResponseMapping{
-						TaskIDField: "execution_id",
-					},
-				},
-				// Status: 查询执行状态（GET /api/develop/executions/{execution_id}）
-				"status": {
-					Method: "GET",
-					Path:   "/api/develop/executions/{{.ExecutionID}}",
-					ResponseMapping: &commonModels.ResponseMapping{
-						StatusField:   "status",
-						MessageField:  "error_message",
-						ProgressField: "progress",
-					},
-				},
-				// List: 任务列表（GET /api/develop/tasks/list）
-				"list": {
-					Method: "GET",
-					Path:   "/api/develop/tasks/list",
-					QueryParams: map[string]string{
-						"unique_identifier": "{{.UniqueIdentifier}}",
-						"page":              "{{.Page}}",
-						"page_size":         "{{.PageSize}}",
-					},
-					ResponseMapping: &commonModels.ResponseMapping{
-						DataField: "items",
-					},
-				},
-			},
-			Timeout: map[string]int{
-				"create":  10,
-				"execute": 600, // 统一超时 600s
-				"status":  10,
-				"list":    30,
-			},
-		},
-		HealthCheckConfig: &commonModels.HealthCheckConfig{
-			Endpoint: "/health",
-			Timeout:  5,
-			Interval: 60,
-		},
+
+		// 前端集成 URL（可选）
+		CreateTaskURL: "http://localhost:5177/#/workflow/new",
+		EditTaskURL:   "http://localhost:5177/#/workflow/:id",
+
+		IsEnabled: true,
 	}
 
 	return s.sendRegistration(&registration)
 }
 
-// sendRegistration 发送注册请求到 System
-func (s *EngineRegistryService) sendRegistration(req *commonModels.CapabilityRegistrationRequest) error {
+// sendRegistration 发送注册请求到 System task_providers API
+func (s *EngineRegistryService) sendRegistration(req *TaskProviderRegistration) error {
 	bodyJSON, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal registration: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", s.systemURL+"/internal/registry/capabilities", bytes.NewReader(bodyJSON))
+	// 注册到 task_providers Internal API（使用 Internal API Key 认证）
+	httpReq, err := http.NewRequest("POST", s.systemURL+"/internal/task-providers/register", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -135,9 +105,12 @@ func (s *EngineRegistryService) sendRegistration(req *commonModels.CapabilityReg
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("registration failed with status %d", resp.StatusCode)
+		// 读取响应 body 以获取详细错误信息
+		var errBody map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&errBody)
+		return fmt.Errorf("registration failed with status %d: %v", resp.StatusCode, errBody)
 	}
 
-	log.Printf("✅ Develop engine registered successfully (unique_identifier: develop.default)")
+	log.Printf("✅ Develop 模块已成功注册到 task_providers (module_name: develop)")
 	return nil
 }

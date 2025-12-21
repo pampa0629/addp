@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"github.com/addp/common/format"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/plugins/scanners"
 )
 
@@ -28,8 +29,9 @@ type (
 
 // NewScanner 创建扫描器的便捷函数
 // 重新导出 scanners.NewScanner，方便调用
-func NewScanner(dbType, connStr string) (Scanner, error) {
-	return scanners.NewScanner(dbType, connStr)
+// 重构后：接受Resource对象而不是连接字符串
+func NewScanner(resource *commonModels.Resource) (Scanner, error) {
+	return scanners.NewScanner(resource)
 }
 
 // GetExtractor 获取元数据提取器的便捷函数

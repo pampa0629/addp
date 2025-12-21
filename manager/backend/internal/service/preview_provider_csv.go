@@ -55,6 +55,16 @@ func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
+	// 如果 connection_info 中没有指定 bucket,使用 schema 参数作为 bucket
+	if bucket == "" {
+		bucket = req.Schema
+	}
+
+	// 验证 bucket 不为空
+	if bucket == "" {
+		return nil, fmt.Errorf("bucket name is required")
+	}
+
 	// Build full object path
 	fullPath := req.Table
 	if req.Schema != "" && req.Schema != bucket {
@@ -140,6 +150,14 @@ func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (
 		Total:    int(totalCount),
 		Page:     req.Page,
 		PageSize: pageSize,
+		Object: &models.ObjectPreview{
+			Bucket:      bucket,
+			Path:        req.Table,
+			ContentType: "text/csv",
+			Content: &models.ObjectPreviewContent{
+				Kind: "csv",
+			},
+		},
 	}, nil
 }
 
@@ -152,7 +170,9 @@ func (p *csvPreviewProvider) createMinioClient(resource *models.Resource) (*mini
 	useSSL, _ := connInfo["use_ssl"].(bool)
 	bucket, _ := connInfo["bucket"].(string)
 
-	if endpoint == "" || accessKey == "" || secretKey == "" || bucket == "" {
+	// endpoint, accessKey, secretKey 是必需的
+	// bucket 可以为空(从 schema 参数获取)
+	if endpoint == "" || accessKey == "" || secretKey == "" {
 		return nil, "", fmt.Errorf("missing required connection info")
 	}
 

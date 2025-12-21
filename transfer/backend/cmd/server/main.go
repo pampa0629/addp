@@ -3,11 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonModels "github.com/addp/common/models"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
@@ -75,9 +74,35 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.SystemServiceURL, redisClient)
 
-	// 注册能力到 System 模块
+	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
+	// 构造 Transfer 服务的外部访问 URL（供 Orchestrator 调用）
+	transferServiceURL := fmt.Sprintf("http://transfer-backend:%s", cfg.Port)
+	if os.Getenv("TRANSFER_SERVICE_URL") != "" {
+		transferServiceURL = os.Getenv("TRANSFER_SERVICE_URL")
+	}
+
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		go registerCapabilities(cfg)
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemServiceURL,
+			cfg.InternalAPIKey,
+			transferServiceURL,
+		)
+
+		// 后台异步注册（不阻塞启动，支持重试）
+		go func() {
+			time.Sleep(2 * time.Second) // 等待服务完全启动
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					log.Printf("⚠️  任务提供者注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
+					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+					continue
+				}
+				log.Printf("✅ Transfer 模块已注册到 task_providers")
+				return
+			}
+			log.Printf("❌ 任务提供者注册失败（已达最大重试次数：%d）", maxRetries)
+		}()
 	}
 
 	// 启动服务器
@@ -90,91 +115,6 @@ func main() {
 
 	if err := router.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
-	}
-}
-
-// registerCapabilities 注册 Transfer 模块的能力到 System
-func registerCapabilities(cfg *config.Config) {
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-
-	// 构建能力声明
-	capabilities := &commonModels.Capability{
-		Compute: []commonModels.ComputeCapability{
-			{
-				Type:             "transfer.batch",
-				SupportedSources: []string{"postgresql", "mysql", "s3", "minio"},
-				Features:         []string{"async", "scheduled", "retry", "mapping"},
-			},
-		},
-	}
-
-	// 构建任务 API 配置
-	baseURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-	taskAPIConfig := &commonModels.TaskAPIConfig{
-		BaseURL: baseURL,
-		Endpoints: map[string]commonModels.APIEndpoint{
-			"create": {
-				Method: "POST",
-				Path:   "/api/tasks",
-				BodyTemplate: map[string]interface{}{
-					"name":          "{{.Name}}",
-					"source_id":     "{{.SourceID}}",
-					"target_id":     "{{.TargetID}}",
-					"schedule_type": "{{.ScheduleType}}",
-					"parameters":    "{{.Parameters}}",
-				},
-			},
-			"execute": {
-				Method: "POST",
-				Path:   "/api/tasks/{{.TaskID}}/execute",
-			},
-			"status": {
-				Method: "GET",
-				Path:   "/api/executions/{{.ExecutionID}}",
-				ResponseMapping: &commonModels.ResponseMapping{
-					StatusField:   "status",
-					MessageField:  "error_message",
-					ProgressField: "progress",
-					TaskIDField:   "id",
-				},
-			},
-			"list": {
-				Method: "GET",
-				Path:   "/api/tasks",
-			},
-		},
-		Timeout: map[string]int{
-			"create":  30,
-			"execute": 600,
-			"status":  10,
-		},
-	}
-
-	// 健康检查配置
-	healthCheckConfig := &commonModels.HealthCheckConfig{
-		Endpoint: "/health",
-		Timeout:  5,
-		Interval: 60,
-	}
-
-	// 注册请求
-	req := &commonModels.CapabilityRegistrationRequest{
-		UniqueIdentifier:  "transfer.batch_worker.default",
-		Name:              "Transfer Batch Worker",
-		DisplayName:       "数据传输批处理引擎",
-		ResourceType:      "compute_engine",
-		IsBuiltin:         true,
-		Capabilities:      capabilities,
-		TaskAPIConfig:     taskAPIConfig,
-		HealthCheckConfig: healthCheckConfig,
-		Description:       "内置批量传输引擎，支持 PostgreSQL、MySQL、S3、MinIO 等数据源",
-	}
-
-	// 发送注册请求（失败不阻塞启动）
-	if err := systemClient.RegisterCapability(req); err != nil {
-		log.Printf("⚠️  能力注册失败（不影响服务运行）: %v", err)
-	} else {
-		log.Printf("✅ Transfer 模块能力已注册到 System: %s", req.UniqueIdentifier)
 	}
 }
 

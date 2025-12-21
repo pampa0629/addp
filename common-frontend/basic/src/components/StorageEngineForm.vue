@@ -618,6 +618,11 @@ defineExpose({
 watch(
   () => formState.connection_info.password,
   (value) => {
+    // 跳过从 props 同步时的处理,避免循环
+    if (syncingFromProps) {
+      return
+    }
+
     const metaFlag = formState.connection_info?._has_password === true
     if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
       formState.connection_info.password = ''
@@ -634,9 +639,6 @@ watch(
     hasStoredPassword.value = hasValue
     if (!hasValue) {
       delete formState.connection_info._has_password
-      if (formState.connection_info.password !== '') {
-        formState.connection_info.password = ''
-      }
     }
   }
 )
@@ -644,6 +646,11 @@ watch(
 watch(
   () => formState.connection_info.secret_key,
   (value) => {
+    // 跳过从 props 同步时的处理,避免循环
+    if (syncingFromProps) {
+      return
+    }
+
     const metaFlag = formState.connection_info?._has_secret_key === true
     if (!metaFlag && value === SENSITIVE_PLACEHOLDER) {
       formState.connection_info.secret_key = ''
@@ -660,9 +667,6 @@ watch(
     hasStoredSecretKey.value = hasValue
     if (!hasValue) {
       delete formState.connection_info._has_secret_key
-      if (formState.connection_info.secret_key !== '') {
-        formState.connection_info.secret_key = ''
-      }
     }
   }
 )

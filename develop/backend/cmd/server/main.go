@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
@@ -80,11 +82,17 @@ func main() {
 	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, resourceHandler, sqlHandler, devItemService)
 	log.Printf("✅ 路由设置完成")
 
-	// ========== 引擎注册（启动时自动注册到 System）==========
+	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
+	// 构造 Develop 服务的外部访问 URL（供 Orchestrator 调用）
+	developServiceURL := fmt.Sprintf("http://develop-backend:%s", cfg.ServerAddr)
+	if os.Getenv("DEVELOP_SERVICE_URL") != "" {
+		developServiceURL = os.Getenv("DEVELOP_SERVICE_URL")
+	}
+
 	engineRegistry := service.NewEngineRegistryService(
 		cfg.SystemServiceURL,
 		cfg.InternalAPIKey,
-		"http://localhost:"+cfg.ServerAddr,
+		developServiceURL,
 	)
 
 	// 后台异步注册（不阻塞启动，支持重试）
@@ -122,10 +130,9 @@ func main() {
 	<-sigCh
 	log.Println("🛑 Shutting down Develop Service...")
 
-	// 优雅关闭
-	if err := sqlEngine.Close(); err != nil {
-		log.Printf("⚠️ Error closing SQL engine: %v", err)
-	}
+	// 优雅关闭：关闭所有数据库连接池
+	dbbridge.CloseAllPools()
+	log.Println("✅ All database connection pools closed")
 
 	log.Println("👋 Develop Service stopped")
 }

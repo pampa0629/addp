@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
@@ -18,13 +17,14 @@ import (
 
 // OrchestrationHandler 编排 API 处理器
 type OrchestrationHandler struct {
-	orchRepo       *repository.OrchestrationRepository
-	execRepo       *repository.ExecutionRepository
-	executor       *service.Executor
-	scheduler      *service.Scheduler
-	moduleClient   *service.ModuleClient
-	engineRegistry *service.EngineRegistry
-	httpClient     *http.Client
+	orchRepo              *repository.OrchestrationRepository
+	execRepo              *repository.ExecutionRepository
+	executor              *service.Executor
+	scheduler             *service.Scheduler
+	moduleClient          *service.ModuleClient
+	engineRegistry        *service.EngineRegistry
+	taskProviderRegistry  *service.TaskProviderRegistry
+	httpClient            *http.Client
 }
 
 // NewOrchestrationHandler 创建处理器
@@ -35,6 +35,7 @@ func NewOrchestrationHandler(
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
 	engineRegistry *service.EngineRegistry,
+	taskProviderRegistry *service.TaskProviderRegistry,
 	httpClient *http.Client,
 ) *OrchestrationHandler {
 	if httpClient == nil {
@@ -42,12 +43,13 @@ func NewOrchestrationHandler(
 	}
 
 	return &OrchestrationHandler{
-		orchRepo:       orchRepo,
-		execRepo:       execRepo,
-		executor:       executor,
-		scheduler:      scheduler,
-		moduleClient:   moduleClient,
-		engineRegistry: engineRegistry,
+		orchRepo:             orchRepo,
+		execRepo:             execRepo,
+		executor:             executor,
+		scheduler:            scheduler,
+		moduleClient:         moduleClient,
+		engineRegistry:       engineRegistry,
+		taskProviderRegistry: taskProviderRegistry,
 		httpClient:     httpClient,
 	}
 }
@@ -263,78 +265,79 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// ListComputeResources 列出所有具有计算能力的资源（转发到 System）
+// ListComputeResources 列出所有任务提供者（从 System 的 task_providers 表获取）
 // GET /api/compute-resources
 func (h *OrchestrationHandler) ListComputeResources(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// 使用 EngineRegistry 的 ListAllEngines 方法（内部会调用 System API）
-	resources, err := h.engineRegistry.ListAllEngines(ctx)
+	// 使用 TaskProviderRegistry 获取所有任务提供者
+	providers, err := h.taskProviderRegistry.ListAllProviders(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取计算资源失败: %v", err)})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取任务提供者失败: %v", err)})
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, providers)
 }
 
-// ListModuleTasks 列出指定资源的任务（动态调用）
-// GET /api/tasks/list?unique_identifier=meta.scanner.default&page=1&page_size=100
+// ListModuleTasks 列出指定模块的任务（动态调用）
+// GET /api/tasks/list?module_name=transfer&page=1&page_size=100
+// GET /api/tasks/list?module=transfer (向后兼容)
 func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
-	uniqueIdentifier := c.Query("unique_identifier")
-	if uniqueIdentifier == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 unique_identifier 参数"})
+	// 支持 module_name 和 module 参数(向后兼容)
+	moduleName := c.Query("module_name")
+	if moduleName == "" {
+		moduleName = c.Query("module")
+	}
+
+	// 也支持 unique_identifier 参数,从中提取 module_name
+	if moduleName == "" {
+		uniqueIdentifier := c.Query("unique_identifier")
+		if uniqueIdentifier != "" {
+			// unique_identifier 格式: "meta.scanner.default" -> 提取第一部分 "meta"
+			parts := strings.Split(uniqueIdentifier, ".")
+			if len(parts) > 0 {
+				moduleName = parts[0]
+			}
+		}
+	}
+
+	if moduleName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 module_name 或 module 参数"})
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	// 1. 从 EngineRegistry 获取引擎配置
-	engine, err := h.engineRegistry.GetEngine(ctx, uniqueIdentifier)
+	// 1. 从 TaskProviderRegistry 获取任务提供者配置
+	provider, err := h.taskProviderRegistry.GetProvider(ctx, moduleName)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到引擎: %v", err)})
+		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("未找到任务提供者 %s: %v", moduleName, err)})
 		return
 	}
 
-	// 2. 解析 TaskAPIConfig
-	if engine.TaskAPIConfig == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "引擎未配置 task_api_config"})
+	// 2. 构建目标 URL
+	if provider.BaseURL == "" || provider.TaskListEndpoint == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务提供者未配置完整的 API 信息"})
 		return
 	}
 
-	var apiConfig commonModels.TaskAPIConfig
-	if err := json.Unmarshal([]byte(*engine.TaskAPIConfig), &apiConfig); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("解析 task_api_config 失败: %v", err)})
-		return
-	}
+	targetURL := provider.BaseURL + provider.TaskListEndpoint
 
-	// 3. 获取 list endpoint 配置
-	listEndpoint, ok := apiConfig.Endpoints["list"]
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "引擎未配置 list endpoint"})
-		return
-	}
-
-	// 4. 构建目标 URL（支持查询参数模板替换）
-	targetURL := apiConfig.BaseURL + listEndpoint.Path
-
-	// 构建查询参数（从模板中提取 + 从请求中传递）
+	// 3. 传递请求中的查询参数（page, page_size 等）
 	queryParams := make(map[string]string)
-
-	// 从模板中提取查询参数并替换变量
-	if listEndpoint.QueryParams != nil {
-		for key, templateValue := range listEndpoint.QueryParams {
-			// 简单模板替换（支持 {{.TenantID}} 等变量）
-			replacedValue := replaceTemplateVars(templateValue, c)
-			queryParams[key] = replacedValue
-		}
-	}
-
-	// 传递请求中的查询参数（page, page_size 等）
 	for key, values := range c.Request.URL.Query() {
-		if key != "unique_identifier" && len(values) > 0 {
+		if key != "unique_identifier" && key != "module_name" && key != "module" && len(values) > 0 {
 			queryParams[key] = values[0]
 		}
+	}
+
+	// 设置默认分页参数（如果不存在）
+	if _, hasPage := queryParams["page"]; !hasPage {
+		queryParams["page"] = "1"
+	}
+	if _, hasPageSize := queryParams["page_size"]; !hasPageSize {
+		queryParams["page_size"] = "100"
 	}
 
 	// 构建完整 URL
@@ -346,8 +349,8 @@ func (h *OrchestrationHandler) ListModuleTasks(c *gin.Context) {
 		targetURL += "?" + strings.Join(queryParts, "&")
 	}
 
-	// 5. 发送 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, listEndpoint.Method, targetURL, nil)
+	// 4. 发送 HTTP 请求（默认使用 GET 方法）
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建请求失败: %v", err)})
 		return

@@ -34,11 +34,11 @@
 
 ### 1. 无需考虑向后兼容
 
-开发阶段优先考虑最佳架构。可自由修改数据库schema和API结构。
+开发阶段优先考虑最佳架构。可自由修改数据库schema和API结构；且无需考虑数据迁移和兼容问题。
 
 ### 2. 保持整洁
 
-临时脚本和文档保存到 /tmp/,保持项目树整洁。
+临时脚本和文档保存到 /tmp/,保持项目树整洁。你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块目录下。
 
 ### 3. 无需请求权限
 
@@ -83,9 +83,11 @@
 - **orchestrator/** - 工作流编排:任务调度和执行 - **已实现**
 - **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 - **已实现**
 - **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 - **已实现** (PostgreSQL service schema)
-- **geopandas-engine/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
+- **engines/geopandas/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
+
+关于 Common 模块和 common-frontend 模块的详细介绍,需要时请阅读: docs/共享模块介绍.md
 
 ## 快速启动
 
@@ -132,9 +134,7 @@ bash scripts/dev/restart.sh
 - `-gateway` - Gateway 模块
 - `-all` - 所有模块
 
-**当前处于开发阶段，优先采用 ./scripts/dev/ 下的脚本，有明确要求时再使用容器方式。
-
-- **
+**当前处于开发阶段，优先采用 ./scripts/dev/ 下的脚本，有明确要求时再使用容器方式。**
 
 ## 模块端口
 
@@ -147,7 +147,7 @@ bash scripts/dev/restart.sh
 - **Redis**: 6379
 - **MinIO**: 9000-9001 (system) / 9002-9003 (business)
 
-完整端口列表: docs/addp配置介绍.md
+完整端口列表: docs/addp端口分配.md
 
 ## 技术栈
 
@@ -284,13 +284,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 端口分配
 
-需要了解端口分配时，请阅读 docs/PORTS分配.md 
-
-### 共享模块
-
-`common` 模块为**所有其他后端模块** (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPandas Engine 集成) 提供共享代码,避免重复。
-`common-frontend` 模块提供共享的 Vue 3 组件、工具和类型定义,供跨模块前端复用。
-关于 Common 模块和 common-frontend 模块的详细介绍,需要时请阅读: docs/共享模块介绍.md
+需要了解端口分配时，请阅读 docs/PORTS分配.md
 
 ### 新模块开发
 

@@ -17,6 +17,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"github.com/gin-gonic/gin"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
@@ -56,18 +57,20 @@ func mergeJSONMaps(maps ...models.JSONMap) models.JSONMap {
 }
 
 type objectStoragePreviewProvider struct {
-	metadataRepo *repository.MetadataRepository
-	metaClient   *commonClient.MetaClient
-	content      *ObjectContentRegistry
-	priority     int
+	metadataRepo   *repository.MetadataRepository
+	metaClient     *commonClient.MetaClient
+	metaServiceURL string
+	content        *ObjectContentRegistry
+	priority       int
 }
 
-func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, content *ObjectContentRegistry) PreviewProvider {
+func NewObjectStoragePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) PreviewProvider {
 	return &objectStoragePreviewProvider{
-		metadataRepo: metadataRepo,
-		metaClient:   metaClient,
-		content:      content,
-		priority:     95,
+		metadataRepo:   metadataRepo,
+		metaClient:     metaClient,
+		metaServiceURL: metaServiceURL,
+		content:        content,
+		priority:       95,
 	}
 }
 
@@ -95,6 +98,17 @@ func isObjectStorageType(resourceType string) bool {
 	default:
 		return false
 	}
+}
+
+// isMetaNotFoundError 检查错误是否为 Meta API 的 404 错误
+func isMetaNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "404") ||
+		strings.Contains(errMsg, "not found") ||
+		strings.Contains(errMsg, "record not found")
 }
 
 func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
@@ -133,25 +147,48 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		objectPath = strings.TrimPrefix(objectPath, bucket+"/")
 	}
 
+	// 从 Gin context 的 Authorization header 中提取 JWT token,创建临时的 Meta Client 用于用户认证
+	metaClient := p.metaClient
+	if ginCtx, ok := ctx.(*gin.Context); ok {
+		if authHeader := ginCtx.GetHeader("Authorization"); authHeader != "" {
+			// Authorization header 格式: "Bearer <token>"
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && parts[1] != "" {
+				// 使用用户的 JWT token 创建临时客户端
+				metaClient = commonClient.NewMetaClient(p.metaServiceURL, parts[1])
+				fmt.Printf("[DEBUG] 创建用户 Meta Client, token 前缀: %s..., URL: %s\n", parts[1][:20], p.metaServiceURL)
+			} else {
+				fmt.Printf("[DEBUG] Authorization header 格式不正确: %s\n", authHeader)
+			}
+		} else {
+			fmt.Printf("[DEBUG] 没有 Authorization header,使用默认 metaClient\n")
+		}
+	} else {
+		fmt.Printf("[DEBUG] context 不是 *gin.Context 类型\n")
+	}
+
 	var item *models.MetaItemLite
 	var node *models.MetaNodeLite
 
 	if objectPath != "" {
-		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath, p.metaClient); err == nil {
+		if fetchedItem, err := p.metadataRepo.GetObjectMetadataItem(resource.ID, bucket, objectPath, metaClient); err == nil {
 			item = fetchedItem
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
+			// 只有在非"记录不存在"错误时才返回错误
 			return nil, err
 		}
 
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, p.metaClient); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, metaClient); err == nil {
 			node = fetchedNode
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
+			// 只有在非"记录不存在"错误时才返回错误
 			return nil, err
 		}
 	} else {
-		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, p.metaClient); err == nil {
+		if fetchedNode, err := p.metadataRepo.GetObjectMetadataNode(resource.ID, bucket, objectPath, metaClient); err == nil {
 			node = fetchedNode
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) && !isMetaNotFoundError(err) {
+			// 只有在非"记录不存在"错误时才返回错误
 			return nil, err
 		}
 	}

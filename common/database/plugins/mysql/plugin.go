@@ -8,6 +8,8 @@ import (
 
 	"github.com/addp/common/database/plugin"
 	_ "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 // MySQLPlugin MySQL 数据库插件
@@ -120,4 +122,166 @@ func (p *MySQLPlugin) SupportsTransactions() bool {
 
 func (p *MySQLPlugin) DefaultDialect() string {
 	return "mysql"
+}
+
+// === ConnectionPoolPlugin 接口实现 ===
+
+// CreateConnectionPool 创建GORM连接池
+func (p *MySQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
+	// 构建连接字符串
+	connStr, err := p.BuildConnectionString(connInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 创建GORM连接
+	db, err := gorm.Open(mysql.Open(connStr), &gorm.Config{
+		// 禁用自动ping，我们手动控制
+		DisableAutomaticPing: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
+	}
+
+	// 获取底层的 *sql.DB 并配置连接池
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// 配置连接池参数
+	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+
+	return db, nil
+}
+
+// GetDialect 获取数据库方言
+func (p *MySQLPlugin) GetDialect() string {
+	return "mysql"
+}
+
+// === MetadataPlugin 接口实现 ===
+
+// ListSchemas 列出所有Schema（MySQL中对应Database）
+func (p *MySQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	var schemas []plugin.SchemaInfo
+
+	query := `
+		SELECT
+			schema_name as name,
+			(SELECT COUNT(*)
+			 FROM information_schema.tables
+			 WHERE table_schema = s.schema_name
+			   AND table_type = 'BASE TABLE') as table_count
+		FROM information_schema.schemata s
+		WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+		ORDER BY schema_name
+	`
+
+	err := db.WithContext(ctx).Raw(query).Scan(&schemas).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list schemas: %w", err)
+	}
+
+	return schemas, nil
+}
+
+// ListTables 列出指定Schema下的所有表
+func (p *MySQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	var tables []plugin.TableInfo
+
+	query := `
+		SELECT
+			table_schema as schema,
+			table_name,
+			COALESCE(table_rows, 0) as row_count,
+			COALESCE(data_length + index_length, 0) as size_bytes
+		FROM information_schema.tables
+		WHERE table_schema = ?
+		  AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+
+	return tables, nil
+}
+
+// ListColumns 列出指定表的所有列
+func (p *MySQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	var columns []plugin.ColumnInfo
+
+	query := `
+		SELECT
+			column_name,
+			data_type,
+			IF(is_nullable = 'YES', true, false) as is_nullable,
+			IF(column_key = 'PRI', true, false) as is_primary_key,
+			COALESCE(column_comment, '') as comment
+		FROM information_schema.columns
+		WHERE table_schema = ?
+		  AND table_name = ?
+		ORDER BY ordinal_position
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list columns: %w", err)
+	}
+
+	// 填充标准化类型
+	for i := range columns {
+		columns[i].StdType = mapMySQLType(columns[i].DataType)
+	}
+
+	return columns, nil
+}
+
+// GetTableRowCount 获取表的行数
+func (p *MySQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+	var count int64
+
+	// 使用information_schema中的统计数据（快速但可能不精确）
+	query := `
+		SELECT COALESCE(table_rows, 0)
+		FROM information_schema.tables
+		WHERE table_schema = ?
+		  AND table_name = ?
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to get row count: %w", err)
+	}
+
+	return count, nil
+}
+
+// mapMySQLType 将MySQL原生类型映射为标准类型
+func mapMySQLType(mysqlType string) string {
+	switch mysqlType {
+	case "tinyint", "smallint", "mediumint", "int", "integer", "bigint":
+		return "integer"
+	case "float", "double", "decimal", "numeric":
+		return "number"
+	case "char", "varchar", "text", "tinytext", "mediumtext", "longtext":
+		return "string"
+	case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
+		return "binary"
+	case "date", "datetime", "timestamp", "time", "year":
+		return "datetime"
+	case "json":
+		return "json"
+	case "enum", "set":
+		return "string"
+	case "bit":
+		return "boolean"
+	default:
+		return "string"
+	}
 }

@@ -2,6 +2,9 @@ package plugin
 
 import (
 	"context"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 // ConnectionInfo 连接信息类型（独立定义，避免循环依赖）
@@ -80,4 +83,100 @@ type ObjectStoragePlugin interface {
 
 	// SupportsSSL 是否支持 SSL 连接
 	SupportsSSL() bool
+}
+
+// PoolConfig 连接池配置
+type PoolConfig struct {
+	MaxOpenConns    int           // 最大打开连接数，默认10
+	MaxIdleConns    int           // 最大空闲连接数，默认5
+	ConnMaxLifetime time.Duration // 连接最大生命周期，默认1小时
+}
+
+// DefaultPoolConfig 返回默认连接池配置
+func DefaultPoolConfig() *PoolConfig {
+	return &PoolConfig{
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: time.Hour,
+	}
+}
+
+// ConnectionPoolPlugin SQL数据库插件，支持连接池管理
+// 关系型数据库应该实现此接口以提供连接池能力
+type ConnectionPoolPlugin interface {
+	DatabasePlugin
+
+	// CreateConnectionPool 创建GORM连接池
+	// 参数:
+	//   - connInfo: 连接信息
+	//   - poolConfig: 连接池配置
+	// 返回: GORM数据库实例，已配置连接池参数
+	CreateConnectionPool(connInfo ConnectionInfo, poolConfig *PoolConfig) (*gorm.DB, error)
+
+	// GetDialect 获取数据库方言（用于GORM）
+	// 返回值: "postgres", "mysql", "sqlite" 等
+	GetDialect() string
+}
+
+// SchemaInfo Schema/Database 信息
+type SchemaInfo struct {
+	Name       string // Schema 或 Database 名称
+	TableCount int    // 包含的表数量
+}
+
+// TableInfo 表信息
+type TableInfo struct {
+	Schema    string // 所属 Schema
+	TableName string // 表名
+	RowCount  int64  // 行数（估算值）
+	SizeBytes int64  // 表大小（字节）
+}
+
+// ColumnInfo 列信息
+type ColumnInfo struct {
+	ColumnName   string // 列名
+	DataType     string // 原生数据类型（如 varchar, int4）
+	StdType      string // 标准化类型（如 string, integer）
+	IsNullable   bool   // 是否可为空
+	IsPrimaryKey bool   // 是否主键
+	Comment      string // 列注释
+}
+
+// MetadataPlugin 元数据查询插件
+// 支持查询数据库的元数据信息（Schema、表、列）
+type MetadataPlugin interface {
+	ConnectionPoolPlugin
+
+	// ListSchemas 列出所有Schema（PostgreSQL）或Database（MySQL）
+	// 参数:
+	//   - ctx: 上下文
+	//   - db: GORM数据库实例
+	// 返回: Schema列表
+	ListSchemas(ctx context.Context, db *gorm.DB) ([]SchemaInfo, error)
+
+	// ListTables 列出指定Schema下的所有表
+	// 参数:
+	//   - ctx: 上下文
+	//   - db: GORM数据库实例
+	//   - schema: Schema名称
+	// 返回: 表列表
+	ListTables(ctx context.Context, db *gorm.DB, schema string) ([]TableInfo, error)
+
+	// ListColumns 列出指定表的所有列
+	// 参数:
+	//   - ctx: 上下文
+	//   - db: GORM数据库实例
+	//   - schema: Schema名称
+	//   - table: 表名
+	// 返回: 列列表
+	ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]ColumnInfo, error)
+
+	// GetTableRowCount 获取表的行数（精确或估算）
+	// 参数:
+	//   - ctx: 上下文
+	//   - db: GORM数据库实例
+	//   - schema: Schema名称
+	//   - table: 表名
+	// 返回: 行数
+	GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
 }

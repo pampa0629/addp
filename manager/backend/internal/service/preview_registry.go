@@ -115,7 +115,7 @@ func sanitizeResourceType(resourceType string) string {
 }
 
 // ProviderFactory 预览插件工厂函数类型
-type ProviderFactory func(*repository.MetadataRepository, *commonClient.MetaClient, *ObjectContentRegistry) (PreviewProvider, error)
+type ProviderFactory func(*repository.MetadataRepository, *commonClient.MetaClient, string, *ObjectContentRegistry) (PreviewProvider, error)
 
 // 全局预览插件工厂注册表
 var (
@@ -154,7 +154,7 @@ func ListPreviewProviderFactories() []string {
 }
 
 // RegisterBuiltinProviders 将所有全局注册的插件工厂实例化并注册到指定注册表
-func RegisterBuiltinProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *ObjectContentRegistry) error {
+func RegisterBuiltinProviders(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *ObjectContentRegistry) error {
 	globalFactoryMu.RLock()
 	factories := make(map[string]ProviderFactory, len(globalProviderFactories))
 	for name, factory := range globalProviderFactories {
@@ -163,7 +163,7 @@ func RegisterBuiltinProviders(registry *PreviewRegistry, metadataRepo *repositor
 	globalFactoryMu.RUnlock()
 
 	for _, factory := range factories {
-		provider, err := factory(metadataRepo, metaClient, contentRegistry)
+		provider, err := factory(metadataRepo, metaClient, metaServiceURL, contentRegistry)
 		if err != nil {
 			return err
 		}

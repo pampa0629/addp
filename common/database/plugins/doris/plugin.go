@@ -8,6 +8,8 @@ import (
 
 	"github.com/addp/common/database/plugin"
 	_ "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 // DorisPlugin Apache Doris 数据库插件
@@ -71,15 +73,22 @@ func (p *DorisPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (str
 		return "", fmt.Errorf("missing required Doris connection info (host, user)")
 	}
 
+	// DEBUG: 打印密码信息
+	fmt.Printf("[DEBUG] Doris BuildConnectionString - password: '%s', length: %d\n", password, len(password))
+
 	// Doris DSN 格式同 MySQL
 	// 处理空密码的情况（Doris 默认 root 用户密码为空）
 	if password == "" {
-		return fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-			user, host, port, database), nil
+		dsn := fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+			user, host, port, database)
+		fmt.Printf("[DEBUG] Doris DSN (empty password): %s\n", dsn)
+		return dsn, nil
 	}
 
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-		user, password, host, port, database), nil
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+		user, password, host, port, database)
+	fmt.Printf("[DEBUG] Doris DSN (with password): %s:***@tcp(%s:%d)/%s\n", user, host, port, database)
+	return dsn, nil
 }
 
 func (p *DorisPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
@@ -122,4 +131,171 @@ func (p *DorisPlugin) SupportsTransactions() bool {
 
 func (p *DorisPlugin) DefaultDialect() string {
 	return "mysql" // Doris 兼容 MySQL 协议
+}
+
+// === ConnectionPoolPlugin 接口实现 ===
+
+// CreateConnectionPool 创建GORM连接池
+func (p *DorisPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
+	// 构建连接字符串
+	connStr, err := p.BuildConnectionString(connInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 创建GORM连接（使用MySQL驱动，因为Doris兼容MySQL协议）
+	db, err := gorm.Open(mysql.Open(connStr), &gorm.Config{
+		DisableAutomaticPing: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
+	}
+
+	// 获取底层的 *sql.DB 并配置连接池
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// 配置连接池参数
+	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+
+	return db, nil
+}
+
+// GetDialect 获取数据库方言
+func (p *DorisPlugin) GetDialect() string {
+	return "mysql" // Doris 兼容 MySQL 协议
+}
+
+// === MetadataPlugin 接口实现 ===
+
+// ListSchemas 列出所有Schema（Doris中对应Database）
+func (p *DorisPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	var schemas []plugin.SchemaInfo
+
+	// Doris使用与MySQL相同的information_schema
+	query := `
+		SELECT
+			schema_name as name,
+			(SELECT COUNT(*)
+			 FROM information_schema.tables
+			 WHERE table_schema = s.schema_name
+			   AND table_type = 'BASE TABLE') as table_count
+		FROM information_schema.schemata s
+		WHERE schema_name NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys', '__internal_schema')
+		ORDER BY schema_name
+	`
+
+	err := db.WithContext(ctx).Raw(query).Scan(&schemas).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list schemas: %w", err)
+	}
+
+	return schemas, nil
+}
+
+// ListTables 列出指定Schema下的所有表
+func (p *DorisPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	var tables []plugin.TableInfo
+
+	// Doris的information_schema与MySQL基本兼容
+	query := `
+		SELECT
+			table_schema as schema,
+			table_name,
+			COALESCE(table_rows, 0) as row_count,
+			COALESCE(data_length + index_length, 0) as size_bytes
+		FROM information_schema.tables
+		WHERE table_schema = ?
+		  AND table_type = 'BASE TABLE'
+		ORDER BY table_name
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema).Scan(&tables).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+
+	return tables, nil
+}
+
+// ListColumns 列出指定表的所有列
+func (p *DorisPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	var columns []plugin.ColumnInfo
+
+	// Doris的列信息查询与MySQL兼容
+	query := `
+		SELECT
+			column_name,
+			data_type,
+			IF(is_nullable = 'YES', true, false) as is_nullable,
+			IF(column_key = 'PRI', true, false) as is_primary_key,
+			COALESCE(column_comment, '') as comment
+		FROM information_schema.columns
+		WHERE table_schema = ?
+		  AND table_name = ?
+		ORDER BY ordinal_position
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list columns: %w", err)
+	}
+
+	// 填充标准化类型
+	for i := range columns {
+		columns[i].StdType = mapDorisType(columns[i].DataType)
+	}
+
+	return columns, nil
+}
+
+// GetTableRowCount 获取表的行数
+func (p *DorisPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+	var count int64
+
+	// 使用information_schema中的统计数据（快速但可能不精确）
+	query := `
+		SELECT COALESCE(table_rows, 0)
+		FROM information_schema.tables
+		WHERE table_schema = ?
+		  AND table_name = ?
+	`
+
+	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to get row count: %w", err)
+	}
+
+	return count, nil
+}
+
+// mapDorisType 将Doris原生类型映射为标准类型
+// Doris支持MySQL的所有类型，并额外支持一些特殊类型
+func mapDorisType(dorisType string) string {
+	switch dorisType {
+	case "tinyint", "smallint", "int", "integer", "bigint", "largeint":
+		return "integer"
+	case "float", "double", "decimal", "decimalv3":
+		return "number"
+	case "char", "varchar", "string", "text":
+		return "string"
+	case "boolean":
+		return "boolean"
+	case "date", "datetime", "datev2", "datetimev2", "timestamp":
+		return "datetime"
+	case "json", "jsonb":
+		return "json"
+	case "array":
+		return "array"
+	case "map", "struct":
+		return "json"
+	case "hll", "bitmap":
+		return "binary"
+	default:
+		return "string"
+	}
 }

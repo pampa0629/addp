@@ -19,7 +19,7 @@ class GeoPandasWorkflowEngine:
 
     def __init__(self):
         self.tasks = {}              # {task_id: TaskDef}
-        self.results = {}            # {task_id: GeoDataFrame}  # 内存缓存
+        self.results = {}            # {task_id: {port_name: GeoDataFrame}}  # 内存缓存(端口结构)
         self.task_order = []         # 拓扑排序后的任务执行顺序
 
     def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str] = None):
@@ -133,7 +133,11 @@ class GeoPandasWorkflowEngine:
 
     def resolve_references(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        解析参数中的引用（如 {"$ref": "task1"}）
+        解析参数中的引用（支持端口选择）
+
+        格式:
+        - {"$ref": "task_id"} → 使用 default 端口
+        - {"$ref": "task_id", "port": "large"} → 使用指定端口
 
         Args:
             params: 参数字典
@@ -144,11 +148,22 @@ class GeoPandasWorkflowEngine:
         resolved = {}
         for key, value in params.items():
             if isinstance(value, dict) and "$ref" in value:
-                # 从内存缓存获取上游结果（GeoDataFrame）
+                # 从内存缓存获取上游结果
                 ref_task_id = value["$ref"]
+                port_name = value.get("port", "default")  # 默认使用 default 端口
+
                 if ref_task_id not in self.results:
                     raise ValueError(f"Referenced task {ref_task_id} not found in results")
-                resolved[key] = self.results[ref_task_id]
+
+                task_outputs = self.results[ref_task_id]
+                if port_name not in task_outputs:
+                    available_ports = list(task_outputs.keys())
+                    raise ValueError(
+                        f"Task '{ref_task_id}' does not have port '{port_name}'. "
+                        f"Available ports: {available_ports}"
+                    )
+
+                resolved[key] = task_outputs[port_name]
             elif isinstance(value, list):
                 # 递归处理列表
                 resolved[key] = [
@@ -198,15 +213,15 @@ class GeoPandasWorkflowEngine:
 
         raise ValueError(f"Unsupported geometry input format: {type(geojson_data)}")
 
-    def execute_task(self, task_id: str) -> gpd.GeoDataFrame:
+    def execute_task(self, task_id: str) -> Dict[str, gpd.GeoDataFrame]:
         """
-        执行单个任务
+        执行单个任务，返回端口输出字典
 
         Args:
             task_id: 任务ID
 
         Returns:
-            GeoDataFrame 执行结果
+            Dict[port_name, GeoDataFrame] 端口输出字典
         """
         task = self.tasks[task_id]
         operator_name = task['operator']
@@ -223,10 +238,19 @@ class GeoPandasWorkflowEngine:
         # 获取算子函数
         operator_func = get_operator(operator_name)
 
-        # 执行算子（返回 GeoDataFrame，不序列化）
+        # 执行算子
         result = operator_func(**resolved_params)
 
-        return result
+        # 自动适配单输出/多输出
+        if isinstance(result, dict):
+            # 多输出: {"large": gdf1, "small": gdf2}
+            return result
+        elif isinstance(result, gpd.GeoDataFrame):
+            # 单输出: 自动包装为 {"default": gdf}
+            return {"default": result}
+        else:
+            raise ValueError(f"Unsupported operator return type: {type(result)}. Expected GeoDataFrame or Dict[str, GeoDataFrame]")
+
 
     def run(self, input_data: Dict[str, Any] = None) -> gpd.GeoDataFrame:
         """
@@ -237,7 +261,7 @@ class GeoPandasWorkflowEngine:
                 例如：{"poi_location": {...}, "buffer_distance": 100}
 
         Returns:
-            最终结果 GeoDataFrame
+            最终结果 GeoDataFrame (默认端口或唯一端口的输出)
 
         Raises:
             ValueError: 如果工作流定义错误或执行失败
@@ -245,7 +269,7 @@ class GeoPandasWorkflowEngine:
         # 拓扑排序
         self.task_order = self.topological_sort()
 
-        # 如果提供了输入数据，存储到 results 中（key 前缀 "input."）
+        # 如果提供了输入数据，存储到 results 中（key 前缀 "input."，包装为端口格式）
         if input_data:
             for key, value in input_data.items():
                 # 自动将几何输入转换为 GeoDataFrame
@@ -253,32 +277,47 @@ class GeoPandasWorkflowEngine:
                 is_geometry_input = any(key.endswith(suffix) for suffix in ['_location', '_geom', '_geometry', '_wkt'])
 
                 if isinstance(value, (dict, str)) and is_geometry_input:
-                    # 自动将 GeoJSON/WKT 输入转换为 GeoDataFrame
-                    self.results[f"input.{key}"] = self.parse_geojson_input(value)
+                    # 包装为端口格式
+                    self.results[f"input.{key}"] = {"default": self.parse_geojson_input(value)}
                 else:
-                    self.results[f"input.{key}"] = value
+                    self.results[f"input.{key}"] = {"default": value}
 
         # 逐步执行
         for task_id in self.task_order:
             try:
-                result = self.execute_task(task_id)
+                port_outputs = self.execute_task(task_id)
 
-                # 内存缓存（GeoDataFrame 对象，不序列化）
-                self.results[task_id] = result
+                # 内存缓存（端口字典格式）
+                self.results[task_id] = port_outputs
 
             except Exception as e:
                 raise ValueError(f"任务 {task_id} 执行失败: {str(e)}")
 
         # 返回最后一个任务的结果
         final_task_id = self.task_order[-1]
-        return self.results[final_task_id]
+        final_outputs = self.results[final_task_id]
 
-    def get_result_geojson(self, task_id: str = None) -> str:
+        # 如果只有一个端口，返回该端口
+        if len(final_outputs) == 1:
+            return list(final_outputs.values())[0]
+        # 如果有 default 端口，返回 default
+        elif "default" in final_outputs:
+            return final_outputs["default"]
+        else:
+            # 多个端口且无 default，报错提示
+            raise ValueError(
+                f"Final task '{final_task_id}' has multiple output ports without 'default'. "
+                f"Available ports: {list(final_outputs.keys())}. "
+                f"Please specify which port to return."
+            )
+
+    def get_result_geojson(self, task_id: str = None, port: str = None) -> str:
         """
         获取结果的 GeoJSON 字符串
 
         Args:
             task_id: 任务ID（可选，默认返回最后一个任务结果）
+            port: 端口名称（可选，默认使用 default 或唯一端口）
 
         Returns:
             GeoJSON 字符串
@@ -289,21 +328,39 @@ class GeoPandasWorkflowEngine:
         if task_id not in self.results:
             raise ValueError(f"Task {task_id} not found in results")
 
-        gdf = self.results[task_id]
+        port_outputs = self.results[task_id]
+
+        # 确定使用哪个端口
+        if port:
+            if port not in port_outputs:
+                raise ValueError(f"Task '{task_id}' does not have port '{port}'. Available: {list(port_outputs.keys())}")
+            gdf = port_outputs[port]
+        elif len(port_outputs) == 1:
+            gdf = list(port_outputs.values())[0]
+        elif "default" in port_outputs:
+            gdf = port_outputs["default"]
+        else:
+            raise ValueError(f"Task '{task_id}' has multiple ports. Please specify 'port' parameter. Available: {list(port_outputs.keys())}")
+
         return gdf.to_json()
 
-    def get_all_results_geojson(self) -> Dict[str, str]:
+    def get_all_results_geojson(self) -> Dict[str, Dict[str, str]]:
         """
-        获取所有任务结果的 GeoJSON
+        获取所有任务结果的 GeoJSON（按端口）
 
         Returns:
-            {task_id: geojson_string} 字典
+            {task_id: {port_name: geojson_string}} 嵌套字典
         """
-        return {
-            task_id: gdf.to_json()
-            for task_id, gdf in self.results.items()
-            if isinstance(gdf, gpd.GeoDataFrame) and not task_id.startswith('input.')
-        }
+        results = {}
+        for task_id, port_outputs in self.results.items():
+            if task_id.startswith('input.'):
+                continue
+            results[task_id] = {
+                port_name: gdf.to_json()
+                for port_name, gdf in port_outputs.items()
+                if isinstance(gdf, gpd.GeoDataFrame)
+            }
+        return results
 
     def clear(self):
         """清空工作流状态"""

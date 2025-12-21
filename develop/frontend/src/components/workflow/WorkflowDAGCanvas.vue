@@ -25,7 +25,7 @@
           <template #title>
             <span class="tips-text">
               {{ isAddEdgeMode
-                ? '🔗 连线模式：依次点击两个节点建立连线'
+                ? '🔗 连线模式：点击源节点的输出端口（底部圆点），再点击目标节点'
                 : '💡 从左侧拖拽算子到画布 | 点击"连线模式"建立连线 | 双击节点配置参数'
               }}
             </span>
@@ -83,6 +83,120 @@ function initGraph() {
   const width = container.value.offsetWidth || 1200
   const height = container.value.offsetHeight || 600
 
+  // 注册自定义节点类型（支持多端口）
+  G6.registerNode('workflow-node', {
+    draw(cfg, group) {
+      const outputPorts = cfg.outputPorts || [{ name: 'default', description: '默认输出' }]
+      const nodeWidth = 140
+      const nodeHeight = Math.max(60, 40 + outputPorts.length * 20)
+
+      // 主矩形
+      const rect = group.addShape('rect', {
+        attrs: {
+          x: -nodeWidth / 2,
+          y: -nodeHeight / 2,
+          width: nodeWidth,
+          height: nodeHeight,
+          radius: 4,
+          fill: '#6DC8EC',
+          stroke: '#5DADE2',
+          lineWidth: 2
+        },
+        name: 'main-rect'
+      })
+
+      // 节点标签
+      group.addShape('text', {
+        attrs: {
+          text: cfg.label,
+          x: 0,
+          y: -nodeHeight / 2 + 20,
+          textAlign: 'center',
+          textBaseline: 'middle',
+          fill: '#fff',
+          fontSize: 13,
+          fontWeight: 500
+        },
+        name: 'node-label'
+      })
+
+      // 输入端口 (顶部中心)
+      group.addShape('circle', {
+        attrs: {
+          x: 0,
+          y: -nodeHeight / 2,
+          r: 6,
+          fill: '#fff',
+          stroke: '#52C41A',
+          lineWidth: 2,
+          cursor: 'pointer'
+        },
+        name: 'input-port',
+        portType: 'input',
+        portName: 'input'
+      })
+
+      // 输出端口 (底部，根据数量排列)
+      outputPorts.forEach((port, index) => {
+        const portCount = outputPorts.length
+        const spacing = nodeWidth / (portCount + 1)
+        const xOffset = -nodeWidth / 2 + spacing * (index + 1)
+
+        // 端口圆点
+        const portCircle = group.addShape('circle', {
+          attrs: {
+            x: xOffset,
+            y: nodeHeight / 2,
+            r: 7,
+            fill: '#fff',
+            stroke: port.is_default ? '#5DADE2' : '#F59E0B',
+            lineWidth: 2,
+            cursor: 'pointer'
+          },
+          name: `output-port-${port.name}`,
+          portType: 'output',
+          portName: port.name,
+          portDescription: port.description
+        })
+
+        // 端口标签 (仅非 default 端口显示)
+        if (!port.is_default && portCount > 1) {
+          group.addShape('text', {
+            attrs: {
+              text: port.name,
+              x: xOffset,
+              y: nodeHeight / 2 + 16,
+              textAlign: 'center',
+              textBaseline: 'top',
+              fill: '#666',
+              fontSize: 10
+            },
+            name: `port-label-${port.name}`
+          })
+        }
+      })
+
+      return rect
+    },
+
+    // 更新节点
+    update(cfg, node) {
+      const group = node.getContainer()
+      const shape = group.get('children')[0]
+      if (cfg.style) {
+        shape.attr(cfg.style)
+      }
+    },
+
+    // 获取锚点
+    getAnchorPoints() {
+      return [
+        [0.5, 0],   // 顶部输入
+        [0.5, 1]    // 底部输出（默认）
+      ]
+    }
+  }, 'single-node')
+
   graph.value = new G6.Graph({
     container: container.value,
     width,
@@ -108,36 +222,8 @@ function initGraph() {
       }
     },
     defaultNode: {
-      type: 'rect',
-      size: [120, 50],
-      anchorPoints: [
-        [0.5, 0],    // 上
-        [1, 0.5],    // 右
-        [0.5, 1],    // 下
-        [0, 0.5]     // 左
-      ],
-      style: {
-        fill: '#6DC8EC',  // 工作流专属浅蓝色
-        stroke: '#5DADE2',
-        lineWidth: 2,
-        radius: 4
-      },
-      labelCfg: {
-        style: {
-          fill: '#fff',
-          fontSize: 13
-        }
-      },
-      linkPoints: {
-        top: true,
-        right: true,
-        bottom: true,
-        left: true,
-        size: 10,
-        lineWidth: 2,
-        fill: '#fff',
-        stroke: '#5DADE2'
-      }
+      type: 'workflow-node',  // 使用自定义节点类型
+      size: [140, 60]
     },
     defaultEdge: {
       type: 'polyline',
@@ -172,22 +258,42 @@ function initGraph() {
     }
   })
 
-  // 节点点击事件 - 用于连线模式
+  // 新增：监听端口点击事件
+  const edgeSourcePort = ref(null) // 源端口信息
+
   graph.value.on('node:click', (e) => {
     if (!isAddEdgeMode.value) return
 
     const clickedNode = e.item
     const model = clickedNode.getModel()
+    const shape = e.shape
+
+    // 检查是否点击了端口
+    let clickedPort = null
+    let portType = null
+
+    if (shape && shape.cfg) {
+      if (shape.cfg.portType) {
+        clickedPort = shape.cfg.portName
+        portType = shape.cfg.portType
+      }
+    }
 
     if (!edgeSourceNode.value) {
-      // 第一次点击，选择源节点
-      edgeSourceNode.value = model.id
-      // 高亮源节点
-      graph.value.setItemState(clickedNode, 'selected', true)
-      ElMessage.info(`已选择源节点: ${model.label}，请点击目标节点`)
+      // 第一次点击，选择源节点的输出端口
+      if (portType === 'output') {
+        edgeSourceNode.value = model.id
+        edgeSourcePort.value = clickedPort
+        // 高亮源节点和端口
+        graph.value.setItemState(clickedNode, 'selected', true)
+        ElMessage.info(`已选择输出端口: ${model.label}.${clickedPort}，请点击目标节点`)
+      } else {
+        ElMessage.warning('请先点击源节点的输出端口（底部圆点）')
+      }
     } else {
       // 第二次点击，创建边
       const sourceId = edgeSourceNode.value
+      const sourcePort = edgeSourcePort.value
       const targetId = model.id
 
       // 不能连接自己
@@ -199,65 +305,94 @@ function initGraph() {
           graph.value.setItemState(sourceNode, 'selected', false)
         }
         edgeSourceNode.value = null
+        edgeSourcePort.value = null
         return
       }
 
-      // 检查是否已存在该边
-      const edges = graph.value.getEdges()
-      const edgeExists = edges.some(edge => {
-        const edgeModel = edge.getModel()
-        return edgeModel.source === sourceId && edgeModel.target === targetId
-      })
+      // 检查目标是否为输入端口或节点本身
+      if (portType === 'input' || !portType) {
+        // 检查是否已存在该边
+        const edges = graph.value.getEdges()
+        const edgeExists = edges.some(edge => {
+          const edgeModel = edge.getModel()
+          return edgeModel.source === sourceId && edgeModel.target === targetId
+        })
 
-      if (edgeExists) {
-        ElMessage.warning('该连接已存在')
-        // 清除源节点高亮
-        const sourceNode = graph.value.findById(sourceId)
-        if (sourceNode) {
-          graph.value.setItemState(sourceNode, 'selected', false)
-        }
-        edgeSourceNode.value = null
-        return
-      }
-
-      // 检查是否会形成环
-      if (hasLoop(sourceId, targetId)) {
-        ElMessage.warning('不能创建环形依赖')
-        // 清除源节点高亮
-        const sourceNode = graph.value.findById(sourceId)
-        if (sourceNode) {
-          graph.value.setItemState(sourceNode, 'selected', false)
-        }
-        edgeSourceNode.value = null
-        return
-      }
-
-      // 创建边
-      graph.value.addItem('edge', {
-        source: sourceId,
-        target: targetId,
-        type: 'polyline',
-        style: {
-          stroke: '#A3B1BF',
-          lineWidth: 2,
-          radius: 10,
-          endArrow: {
-            path: G6.Arrow.triangle(10, 12, 0),
-            fill: '#A3B1BF',
-            d: 0
+        if (edgeExists) {
+          ElMessage.warning('该连接已存在')
+          const sourceNode = graph.value.findById(sourceId)
+          if (sourceNode) {
+            graph.value.setItemState(sourceNode, 'selected', false)
           }
+          edgeSourceNode.value = null
+          edgeSourcePort.value = null
+          return
         }
-      })
 
-      // 清除源节点高亮
-      const sourceNode = graph.value.findById(sourceId)
-      if (sourceNode) {
-        graph.value.setItemState(sourceNode, 'selected', false)
+        // 检查是否会形成环
+        if (hasLoop(sourceId, targetId)) {
+          ElMessage.warning('不能创建环形依赖')
+          const sourceNode = graph.value.findById(sourceId)
+          if (sourceNode) {
+            graph.value.setItemState(sourceNode, 'selected', false)
+          }
+          edgeSourceNode.value = null
+          edgeSourcePort.value = null
+          return
+        }
+
+        // 创建边（包含端口信息）
+        const edgeLabel = sourcePort !== 'default' ? sourcePort : ''
+        graph.value.addItem('edge', {
+          source: sourceId,
+          target: targetId,
+          sourcePort: sourcePort,  // 源端口名称
+          targetPort: 'input',     // 目标端口名称
+          type: 'polyline',
+          label: edgeLabel,  // 显示端口名（非 default 时）
+          style: {
+            stroke: '#A3B1BF',
+            lineWidth: 2,
+            radius: 10,
+            endArrow: {
+              path: G6.Arrow.triangle(10, 12, 0),
+              fill: '#A3B1BF',
+              d: 0
+            }
+          }
+        })
+
+        // 清除源节点高亮
+        const sourceNode = graph.value.findById(sourceId)
+        if (sourceNode) {
+          graph.value.setItemState(sourceNode, 'selected', false)
+        }
+
+        const sourceNodeModel = sourceNode.getModel()
+        ElMessage.success(`已连接: ${sourceNodeModel.label}.${sourcePort} → ${model.label}`)
+
+        edgeSourceNode.value = null
+        edgeSourcePort.value = null
+        emitWorkflow()
+      } else {
+        ElMessage.warning('请点击目标节点的输入端口（顶部圆点）或节点本身')
       }
+    }
+  })
 
-      edgeSourceNode.value = null
-      ElMessage.success('已建立依赖关系')
-      emitWorkflow()
+  // 端口悬停提示
+  graph.value.on('node:mouseenter', (e) => {
+    const shape = e.shape
+    if (shape && shape.cfg && shape.cfg.portType) {
+      const portName = shape.cfg.portName
+      const portDesc = shape.cfg.portDescription || portName
+      const portType = shape.cfg.portType === 'input' ? '输入端口' : '输出端口'
+
+      // 使用 G6 的 tooltip 插件或自定义提示
+      // 这里简化处理，实际可以使用更复杂的 tooltip
+      if (portName !== 'input') {  // input 端口不显示提示
+        console.log(`${portType}: ${portName} - ${portDesc}`)
+      }
     }
   })
 
@@ -324,7 +459,15 @@ function handleDrop(event) {
   nodeCounter.value++
   const nodeId = `${operatorData.name}_${nodeCounter.value}`
 
-  // 添加节点
+  // 获取输出端口信息
+  const outputPorts = operatorData.output_ports || [{
+    name: 'default',
+    type: 'geodataframe',
+    description: '默认输出',
+    is_default: true
+  }]
+
+  // 添加节点（包含端口信息）
   graph.value.addItem('node', {
     id: nodeId,
     label: operatorData.name,
@@ -332,7 +475,8 @@ function handleDrop(event) {
     y: point.y,
     operator: operatorData.name,
     params: {},
-    depends_on: []
+    depends_on: [],
+    outputPorts: outputPorts  // 存储端口信息
   })
 
   emitWorkflow()
@@ -359,7 +503,7 @@ function toggleAddEdgeMode() {
 
   if (isAddEdgeMode.value) {
     graph.value.setMode('addEdge')
-    ElMessage.info('已进入连线模式，请依次点击两个节点')
+    ElMessage.info('已进入连线模式，请点击源节点的输出端口')
   } else {
     graph.value.setMode('default')
 
@@ -370,6 +514,7 @@ function toggleAddEdgeMode() {
         graph.value.setItemState(sourceNode, 'selected', false)
       }
       edgeSourceNode.value = null
+      edgeSourcePort.value = null
     }
   }
 }
@@ -460,28 +605,54 @@ function emitWorkflow() {
   const nodes = graph.value.getNodes()
   const edges = graph.value.getEdges()
 
-  // 构建 depends_on 关系
-  const dependsMap = {}
+  // 构建端口引用映射
+  const edgePortMap = {}  // {targetId: [{sourceId, sourcePort, targetPort}]}
   edges.forEach(edge => {
-    // 获取边的模型数据，其中包含 source 和 target 的 ID
     const model = edge.getModel()
     const sourceId = model.source
     const targetId = model.target
+    const sourcePort = model.sourcePort || 'default'
+    const targetPort = model.targetPort || 'input'
 
-    if (!dependsMap[targetId]) {
-      dependsMap[targetId] = []
+    if (!edgePortMap[targetId]) {
+      edgePortMap[targetId] = []
     }
-    dependsMap[targetId].push(sourceId)
+    edgePortMap[targetId].push({
+      sourceId,
+      sourcePort,
+      targetPort
+    })
   })
 
   // 构建 tasks 数组
   const tasks = nodes.map(node => {
     const model = node.getModel()
+    const params = { ...(model.params || {}) }
+
+    // 处理输入边，将其转换为参数引用
+    const inEdges = edgePortMap[model.id] || []
+    inEdges.forEach(edgeInfo => {
+      // 构建引用对象
+      const ref = { "$ref": edgeInfo.sourceId }
+
+      // 如果不是 default 端口，添加 port 字段
+      if (edgeInfo.sourcePort !== 'default') {
+        ref.port = edgeInfo.sourcePort
+      }
+
+      // 默认将引用赋值给 input_gdf 参数
+      // TODO: 未来可以根据算子元数据的参数定义来动态确定参数名
+      params.input_gdf = ref
+    })
+
+    // 构建 depends_on 列表
+    const depends_on = inEdges.map(e => e.sourceId)
+
     return {
       id: model.id,
       operator: model.operator,
-      params: model.params || {},
-      depends_on: dependsMap[model.id] || []
+      params: params,
+      depends_on: depends_on
     }
   })
 

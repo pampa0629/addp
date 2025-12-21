@@ -934,8 +934,8 @@ func convertResource(src *commonModels.Resource) *models.Resource {
 	}
 
 	var tenantIDPtr *uint
-	if src.TenantID != 0 {
-		tenantID := src.TenantID
+	if src.TenantID != nil && *src.TenantID != 0 {
+		tenantID := *src.TenantID
 		tenantIDPtr = &tenantID
 	}
 

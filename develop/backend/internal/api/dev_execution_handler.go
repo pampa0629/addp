@@ -249,3 +249,48 @@ func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 		"logs":         []string{"日志功能开发中..."},
 	})
 }
+
+// ExecuteWithParams 参数化执行开发项（供 Orchestrator 调用）
+// @Summary 参数化执行开发项
+// @Tags Execution
+// @Accept json
+// @Produce json
+// @Param id path int true "开发项ID"
+// @Param body body map[string]interface{} true "执行参数"
+// @Success 200 {object} map[string]string
+// @Router /api/develop/items/{id}/execute-with-params [post]
+func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	tenantID := c.GetUint("tenant_id")
+	userID := c.GetUint("user_id")
+
+	// 解析参数
+	var params map[string]interface{}
+	if err := c.ShouldBindJSON(&params); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid parameters: " + err.Error()})
+		return
+	}
+
+	// 参数化执行
+	executionID, err := h.devExecutor.ExecuteWithParams(
+		c.Request.Context(),
+		uint(id),
+		params,
+		tenantID,
+		userID,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"execution_id": executionID,
+		"message":      "参数化执行已启动",
+	})
+}

@@ -151,7 +151,7 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 
 	// 如果缓存命中且未过期，返回缓存数据
 	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
-		if tenantID == 0 || entry.resource.TenantID == tenantID {
+		if tenantID == 0 || (entry.resource.TenantID != nil && *entry.resource.TenantID == tenantID) {
 			resourceCopy := *entry.resource
 			s.logger.Debug("资源连接信息命中缓存",
 				"resource_id", resourceID,
@@ -167,7 +167,7 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 		return nil, err
 	}
 
-	if resource.TenantID != 0 && resource.TenantID != tenantID {
+	if resource.TenantID != nil && *resource.TenantID != 0 && *resource.TenantID != tenantID {
 		return nil, ErrResourceAccessDenied
 	}
 

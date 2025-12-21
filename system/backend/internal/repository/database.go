@@ -57,6 +57,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Resource{},
 		&models.Application{},
 		&models.APIKey{},
+		&models.TaskProvider{},
 	)
 }
 
@@ -237,5 +238,74 @@ func MigrateExistingResourcesDisplayName(db *gorm.DB) error {
 	if result.RowsAffected > 0 {
 		log.Printf("✅ 已为 %d 个现有资源设置 display_name\n", result.RowsAffected)
 	}
+	return nil
+}
+
+// InitGeoPandasEngine 初始化 GeoPandas 计算引擎资源
+// GeoPandas 作为内置计算引擎，只提供 API 地址，不暴露算子到 capabilities
+// Develop 模块通过调用 GeoPandas API 动态获取算子列表
+func InitGeoPandasEngine(db *gorm.DB) error {
+	// 从环境变量读取 GeoPandas 配置
+	apiURL := getEnv("GEOPANDAS_ENGINE_URL", "http://geopandas-engine:8099")
+
+	// 定义 unique_identifier
+	uniqueIdentifier := "geopandas.default"
+
+	// 检查 GeoPandas 资源是否已存在
+	var resource models.Resource
+	result := db.Where("unique_identifier = ?", uniqueIdentifier).First(&resource)
+
+	if result.Error == gorm.ErrRecordNotFound {
+		// 创建 GeoPandas 资源
+		// 注意：按照架构要求，不在 capabilities 中暴露算子
+		// Develop 模块将调用 API 动态获取算子列表
+		// 但需要声明基本的计算能力，以便前端过滤器识别
+		capabilitiesJSON := `{"compute":[{"type":"spatial","dev_modes":["workflow"],"description":"空间计算引擎","features":["geopandas","dag","memory_efficient"]}]}`
+		resource = models.Resource{
+			Name:             "geopandas_default",
+			DisplayName:      "GeoPandas 计算引擎",
+			ResourceType:     "geopandas",
+			Description:      "基于 Python 的空间数据处理引擎，提供 GeoDataFrame 计算能力",
+			IsActive:         true,
+			IsBuiltin:        true,
+			UniqueIdentifier: &uniqueIdentifier,
+			ConnectionInfo: models.ConnectionInfo{
+				"api_url": apiURL,
+				"type":    "compute_engine",
+			},
+			// Capabilities 声明基本计算能力（用于前端过滤）
+			// 具体算子列表通过调用 {api_url}/api/spatial/operators 动态获取
+			Capabilities: &capabilitiesJSON,
+		}
+
+		if err := db.Create(&resource).Error; err != nil {
+			log.Printf("❌ GeoPandas 引擎注册失败: %v\n", err)
+			return err
+		}
+
+		log.Printf("✅ GeoPandas 引擎已注册: %s (API: %s)\n", uniqueIdentifier, apiURL)
+		return nil
+	}
+
+	if result.Error != nil {
+		log.Printf("❌ 查询 GeoPandas 引擎失败: %v\n", result.Error)
+		return result.Error
+	}
+
+	// 如果资源已存在，更新 API 地址和 capabilities（保持幂等性）
+	resource.ConnectionInfo["api_url"] = apiURL
+
+	// 确保 capabilities 已设置（兼容旧数据）
+	if resource.Capabilities == nil || *resource.Capabilities == "" {
+		capabilitiesJSON := `{"compute":[{"type":"spatial","dev_modes":["workflow"],"description":"空间计算引擎","features":["geopandas","dag","memory_efficient"]}]}`
+		resource.Capabilities = &capabilitiesJSON
+	}
+
+	if err := db.Save(&resource).Error; err != nil {
+		log.Printf("❌ 更新 GeoPandas 引擎失败: %v\n", err)
+		return err
+	}
+
+	log.Printf("ℹ️  GeoPandas 引擎已存在并更新: %s (API: %s)\n", uniqueIdentifier, apiURL)
 	return nil
 }

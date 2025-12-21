@@ -395,3 +395,259 @@ func (e *DevExecutor) GetStatistics(tenantID uint, devItemID *uint, startDate, e
 	}
 	return stats, nil
 }
+
+// ==================== 参数化执行功能（供 Orchestrator 调用）====================
+
+// ExecuteWithParams 执行带参数的 DevItem（Orchestrator 调用此方法）
+// 支持模板参数替换，实现工作流的动态参数化
+func (e *DevExecutor) ExecuteWithParams(
+	ctx context.Context,
+	itemID uint,
+	params map[string]interface{},
+	tenantID uint,
+	userID uint,
+) (string, error) {
+	// 1. 获取 DevItem 模板
+	devItem, err := e.devItemRepo.FindByID(itemID, tenantID)
+	if err != nil {
+		return "", fmt.Errorf("开发项不存在")
+	}
+
+	// 验证状态
+	if devItem.Status != "active" {
+		return "", fmt.Errorf("开发项状态为 %s，无法执行", devItem.Status)
+	}
+
+	// 2. 解析 content
+	var contentMap map[string]interface{}
+	if devItem.Content != nil {
+		contentMap = devItem.Content
+	} else {
+		contentMap = make(map[string]interface{})
+	}
+
+	// 3. 获取默认参数（如果有）
+	var defaultParams map[string]interface{}
+	if dp, ok := contentMap["default_parameters"].(map[string]interface{}); ok {
+		defaultParams = dp
+	} else {
+		defaultParams = make(map[string]interface{})
+	}
+
+	// 4. 合并参数（传入参数覆盖默认参数）
+	mergedParams := deepMerge(defaultParams, params)
+
+	// 5. 验证参数（根据 parameter_schema）
+	if schema, ok := contentMap["parameter_schema"].(map[string]interface{}); ok {
+		if err := validateParameters(schema, mergedParams); err != nil {
+			return "", fmt.Errorf("parameter validation failed: %w", err)
+		}
+	}
+
+	// 6. 模板替换 - 将 content 中的 {{...}} 替换为实际值
+	resolvedContent := resolveTemplates(contentMap, mergedParams)
+
+	// 7. 创建临时 DevItem（使用解析后的内容）
+	tempItem := &models.DevItem{
+		ID:         devItem.ID,
+		DevType:    devItem.DevType,
+		Content:    resolvedContent.(map[string]interface{}),
+		ResourceID: devItem.ResourceID,
+		Timeout:    devItem.Timeout,
+		Status:     devItem.Status,
+	}
+
+	// 8. 执行任务（复用现有的执行逻辑）
+	executionID, err := e.ExecuteDevItem(ctx, tempItem.ID, tenantID, userID, "orchestrator")
+	if err != nil {
+		return "", err
+	}
+
+	log.Printf("🚀 [DevExecutor] 参数化执行成功 execution_id=%s item_id=%d", executionID, itemID)
+	return executionID, nil
+}
+
+// resolveTemplates 递归解析模板变量 {{path.to.value}}
+func resolveTemplates(data interface{}, params map[string]interface{}) interface{} {
+	switch v := data.(type) {
+	case string:
+		// 匹配 {{...}} 模板
+		if len(v) > 4 && v[:2] == "{{" && v[len(v)-2:] == "}}" {
+			path := v[2 : len(v)-2]
+			return getNestedValue(params, path)
+		}
+		return v
+
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for key, val := range v {
+			result[key] = resolveTemplates(val, params)
+		}
+		return result
+
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = resolveTemplates(val, params)
+		}
+		return result
+
+	default:
+		return v
+	}
+}
+
+// getNestedValue 根据路径获取嵌套值（如 "input.resource_id"）
+func getNestedValue(data map[string]interface{}, path string) interface{} {
+	// 分割路径
+	parts := splitPath(path)
+	current := data
+
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			// 最后一个部分，返回值
+			return current[part]
+		}
+
+		// 中间部分，继续向下导航
+		if next, ok := current[part].(map[string]interface{}); ok {
+			current = next
+		} else {
+			return nil
+		}
+	}
+	return nil
+}
+
+// splitPath 分割路径字符串（支持 "." 分隔符）
+func splitPath(path string) []string {
+	var parts []string
+	var current string
+
+	for _, char := range path {
+		if char == '.' {
+			if current != "" {
+				parts = append(parts, current)
+				current = ""
+			}
+		} else {
+			current += string(char)
+		}
+	}
+
+	if current != "" {
+		parts = append(parts, current)
+	}
+
+	return parts
+}
+
+// deepMerge 深度合并两个 map（后者覆盖前者）
+func deepMerge(base, override map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// 复制 base
+	for k, v := range base {
+		result[k] = v
+	}
+
+	// 覆盖 override
+	for k, v := range override {
+		if vm, ok := v.(map[string]interface{}); ok {
+			// 如果是 map，尝试递归合并
+			if bv, exists := result[k]; exists {
+				if bvm, ok := bv.(map[string]interface{}); ok {
+					result[k] = deepMerge(bvm, vm)
+					continue
+				}
+			}
+		}
+		// 否则直接覆盖
+		result[k] = v
+	}
+
+	return result
+}
+
+// validateParameters 验证参数是否符合 schema
+func validateParameters(schema map[string]interface{}, params map[string]interface{}) error {
+	// 遍历 schema 中的每个字段
+	for fieldName, fieldSchemaInterface := range schema {
+		fieldSchema, ok := fieldSchemaInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// 检查必填字段
+		if required, ok := fieldSchema["required"].(bool); ok && required {
+			if _, exists := params[fieldName]; !exists {
+				return fmt.Errorf("required parameter missing: %s", fieldName)
+			}
+		}
+
+		// 检查类型（简单类型验证）
+		if params[fieldName] != nil {
+			expectedType, ok := fieldSchema["type"].(string)
+			if ok {
+				actualValue := params[fieldName]
+				if !validateType(actualValue, expectedType) {
+					return fmt.Errorf("parameter %s has wrong type: expected %s", fieldName, expectedType)
+				}
+			}
+		}
+
+		// 检查枚举值
+		if enumValues, ok := fieldSchema["enum"].([]interface{}); ok && len(enumValues) > 0 {
+			if paramValue := params[fieldName]; paramValue != nil {
+				found := false
+				for _, enumVal := range enumValues {
+					if paramValue == enumVal {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("parameter %s must be one of: %v", fieldName, enumValues)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateType 验证值是否符合指定类型
+func validateType(value interface{}, expectedType string) bool {
+	switch expectedType {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "number", "int":
+		switch value.(type) {
+		case int, int32, int64, float32, float64:
+			return true
+		default:
+			return false
+		}
+	case "bool", "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "object":
+		_, ok := value.(map[string]interface{})
+		return ok
+	case "array":
+		_, ok := value.([]interface{})
+		return ok
+	case "DataLocation":
+		// DataLocation 应该是一个 map
+		if m, ok := value.(map[string]interface{}); ok {
+			// 简单验证是否包含必要字段
+			_, hasSourceType := m["source_type"]
+			return hasSourceType
+		}
+		return false
+	default:
+		// 未知类型，默认通过
+		return true
+	}
+}

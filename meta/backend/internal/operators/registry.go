@@ -41,7 +41,14 @@ var MetaOperators = []models.OperatorMetadata{
 			},
 		},
 		Inputs:  []string{"resource"},
-		Outputs: []string{"metadata"},
+		OutputPorts: []models.OutputPortMetadata{
+		{
+			Name:        "default",
+			Type:        "metadata",
+			Description: "算子输出",
+			IsDefault:   true,
+		},
+	},
 	},
 	{
 		ID:          "scan_deep",
@@ -74,6 +81,13 @@ var MetaOperators = []models.OperatorMetadata{
 			},
 		},
 		Inputs:  []string{"resource"},
-		Outputs: []string{"metadata"},
+		OutputPorts: []models.OutputPortMetadata{
+		{
+			Name:        "default",
+			Type:        "metadata",
+			Description: "算子输出",
+			IsDefault:   true,
+		},
+	},
 	},
 }

@@ -80,7 +80,8 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 		CreatedBy:      resource.CreatedBy,
 	}
 	if resource.TenantID != nil {
-		commonResource.TenantID = *resource.TenantID
+		tenantID := *resource.TenantID
+		commonResource.TenantID = &tenantID
 	}
 
 	// 6. 构建数据库连接

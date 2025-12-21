@@ -1,175 +1,129 @@
 package scanners
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/format"
-	_ "github.com/lib/pq"
+	commonModels "github.com/addp/common/models"
+	"gorm.io/gorm"
 )
 
 // PostgresScanner 执行 PostgreSQL 元数据扫描
+// 重构后：作为插件系统的薄适配层，委托给插件的元数据查询能力
 type PostgresScanner struct {
-	db *sql.DB
+	resource *commonModels.Resource // 资源信息
+	db       *gorm.DB               // 从插件获取的连接池
 }
 
-// NewPostgresScanner 根据连接串创建 PostgreSQL 扫描器
-func NewPostgresScanner(connStr string) (*PostgresScanner, error) {
-	db, err := sql.Open("postgres", connStr)
+// NewPostgresScanner 根据资源信息创建 PostgreSQL 扫描器
+// 重构后：不再接受连接字符串，而是接受Resource对象
+func NewPostgresScanner(resource *commonModels.Resource) (*PostgresScanner, error) {
+	// 从插件系统获取连接池
+	db, err := dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
 
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping postgres: %w", err)
-	}
-
-	return &PostgresScanner{db: db}, nil
+	return &PostgresScanner{
+		resource: resource,
+		db:       db,
+	}, nil
 }
 
 // ListSchemas 列出可用 Schema
+// 重构后：委托给插件系统的 ListSchemas 方法
 func (s *PostgresScanner) ListSchemas() ([]format.SchemaInfo, error) {
-	query := `
-		SELECT
-			schema_name,
-			(SELECT COUNT(*) FROM information_schema.tables t WHERE t.table_schema = schema_name) AS table_count
-		FROM information_schema.schemata
-		WHERE schema_name NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
-		ORDER BY schema_name
-	`
-
-	rows, err := s.db.Query(query)
+	// 调用插件系统的元数据查询
+	pluginSchemas, err := dbbridge.ListSchemas(context.Background(), s.resource, s.db)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query schemas: %w", err)
+		return nil, fmt.Errorf("failed to list schemas: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.SchemaInfo 格式
 	var schemas []format.SchemaInfo
-	for rows.Next() {
-		var schema format.SchemaInfo
-		if err := rows.Scan(&schema.Name, &schema.TableCount); err != nil {
-			return nil, err
-		}
-		schemas = append(schemas, schema)
+	for _, ps := range pluginSchemas {
+		schemas = append(schemas, format.SchemaInfo{
+			Name:           ps.Name,
+			TableCount:     ps.TableCount,
+			TotalSizeBytes: 0, // plugin 层不提供此字段，设为 0
+		})
 	}
 
-	return schemas, rows.Err()
+	return schemas, nil
 }
 
 // ScanTables 扫描指定 Schema 的表
+// 重构后：委托给插件系统的 ListTables 方法
 func (s *PostgresScanner) ScanTables(schemaName string) ([]format.TableInfo, error) {
-	query := `
-		SELECT
-			t.table_name,
-			t.table_type,
-			COALESCE(pg_catalog.obj_description(pgc.oid, 'pg_class'), '') AS table_comment,
-			COALESCE(pgc.reltuples::bigint, 0) AS row_count,
-			COALESCE(pg_total_relation_size(pgc.oid), 0) AS size_bytes
-		FROM information_schema.tables t
-		LEFT JOIN pg_catalog.pg_namespace pgn ON pgn.nspname = t.table_schema
-		LEFT JOIN pg_catalog.pg_class pgc ON pgc.relname = t.table_name AND pgc.relnamespace = pgn.oid
-		WHERE t.table_schema = $1
-		ORDER BY t.table_name
-	`
-
-	rows, err := s.db.Query(query, schemaName)
+	// 调用插件系统的元数据查询
+	pluginTables, err := dbbridge.ListTables(context.Background(), s.resource, s.db, schemaName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tables: %w", err)
+		return nil, fmt.Errorf("failed to scan tables: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.TableInfo 格式
 	var tables []format.TableInfo
-	for rows.Next() {
-		var table format.TableInfo
-		if err := rows.Scan(&table.Name, &table.Type, &table.Comment, &table.RowCount, &table.SizeBytes); err != nil {
-			return nil, err
-		}
-		tables = append(tables, table)
+	for _, pt := range pluginTables {
+		tables = append(tables, format.TableInfo{
+			Name:      pt.TableName,
+			Type:      "BASE TABLE", // 插件层不区分类型，默认为 BASE TABLE
+			Comment:   "",           // 插件层暂不提供表注释
+			RowCount:  pt.RowCount,
+			SizeBytes: pt.SizeBytes,
+		})
 	}
 
-	return tables, rows.Err()
+	return tables, nil
 }
 
 // ScanFields 扫描指定表的字段
+// 重构后：委托给插件系统的 ListColumns 方法
 func (s *PostgresScanner) ScanFields(schemaName, tableName string) ([]format.FieldInfo, error) {
-	query := `
-		SELECT
-			c.column_name,
-			c.ordinal_position,
-			c.data_type,
-			c.udt_name,
-			CASE WHEN c.is_nullable = 'YES' THEN true ELSE false END,
-			COALESCE(c.column_default, ''),
-			COALESCE(pg_catalog.col_description(pgc.oid, c.ordinal_position::int), ''),
-			CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END,
-			CASE WHEN uq.column_name IS NOT NULL THEN true ELSE false END,
-			COALESCE(c.character_set_name, ''),
-			COALESCE(c.collation_name, ''),
-			COALESCE(c.numeric_precision, 0),
-			COALESCE(c.numeric_scale, 0)
-		FROM information_schema.columns c
-		LEFT JOIN pg_catalog.pg_namespace pgn ON pgn.nspname = c.table_schema
-		LEFT JOIN pg_catalog.pg_class pgc ON pgc.relname = c.table_name AND pgc.relnamespace = pgn.oid
-		LEFT JOIN (
-			SELECT ku.column_name
-			FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
-			WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'PRIMARY KEY'
-		) pk ON pk.column_name = c.column_name
-		LEFT JOIN (
-			SELECT ku.column_name
-			FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage ku ON tc.constraint_name = ku.constraint_name
-			WHERE tc.table_schema = $1 AND tc.table_name = $2 AND tc.constraint_type = 'UNIQUE'
-		) uq ON uq.column_name = c.column_name
-		WHERE c.table_schema = $1 AND c.table_name = $2
-		ORDER BY c.ordinal_position
-	`
-
-	rows, err := s.db.Query(query, schemaName, tableName)
+	// 调用插件系统的元数据查询
+	pluginColumns, err := dbbridge.ListColumns(context.Background(), s.resource, s.db, schemaName, tableName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query fields: %w", err)
+		return nil, fmt.Errorf("failed to scan fields: %w", err)
 	}
-	defer rows.Close()
 
+	// 转换为 format.FieldInfo 格式
 	var fields []format.FieldInfo
-	for rows.Next() {
-		var field format.FieldInfo
-		var udtName sql.NullString
-		if err := rows.Scan(
-			&field.Name,
-			&field.OrdinalPosition,
-			&field.DataType,
-			&udtName,
-			&field.IsNullable,
-			&field.DefaultValue,
-			&field.Comment,
-			&field.IsPrimaryKey,
-			&field.IsUniqueKey,
-			&field.CharacterSet,
-			&field.Collation,
-			&field.NumericPrecision,
-			&field.NumericScale,
-		); err != nil {
-			return nil, err
-		}
-		if udtName.Valid {
-			field.ColumnType = udtName.String
-		} else {
-			field.ColumnType = field.DataType
-		}
-		fields = append(fields, field)
+	for i, pc := range pluginColumns {
+		fields = append(fields, format.FieldInfo{
+			Name:             pc.ColumnName,
+			OrdinalPosition:  i + 1, // 插件层暂不提供序号，使用索引+1
+			DataType:         pc.DataType,
+			ColumnType:       pc.DataType, // 使用原始类型
+			IsNullable:       pc.IsNullable,
+			DefaultValue:     "",     // 插件层暂不提供默认值
+			Comment:          pc.Comment,
+			IsPrimaryKey:     pc.IsPrimaryKey,
+			IsUniqueKey:      false,  // 插件层暂不提供唯一键信息
+			CharacterSet:     "",     // 插件层暂不提供字符集
+			Collation:        "",     // 插件层暂不提供排序规则
+			NumericPrecision: 0,      // 插件层暂不提供精度
+			NumericScale:     0,      // 插件层暂不提供标度
+		})
 	}
 
-	return fields, rows.Err()
+	return fields, nil
 }
 
 // GetDB 返回底层的数据库连接（用于空间元数据扫描等高级功能）
+// 重构后：返回 GORM 的底层 *sql.DB
 func (s *PostgresScanner) GetDB() *sql.DB {
-	return s.db
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return nil
+	}
+	return sqlDB
 }
 
 // Close 关闭数据库连接
+// 重构后：不需要关闭，由插件系统的 PoolManager 统一管理
 func (s *PostgresScanner) Close() error {
-	return s.db.Close()
+	// 连接池由 PoolManager 管理，Scanner 不负责关闭
+	return nil
 }

@@ -19,6 +19,7 @@ func SetupRouter(
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
 	engineRegistry *service.EngineRegistry,
+	taskProviderRegistry *service.TaskProviderRegistry,
 	systemURL string,
 	redisClient *redis.Client,
 ) *gin.Engine {
@@ -41,7 +42,7 @@ func SetupRouter(
 	// 创建 HTTP 客户端
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, httpClient)
+	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, httpClient)
 
 	api := router.Group("/api")
 

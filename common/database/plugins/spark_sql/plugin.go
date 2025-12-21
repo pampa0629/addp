@@ -2,12 +2,15 @@ package spark_sql
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/addp/common/database/plugin"
 	"github.com/beltran/gohive"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
 // SparkSQLPlugin Spark SQL Thrift Server 插件
@@ -164,4 +167,232 @@ func ParseConnectionString(connStr string) (host string, port int, database stri
 	}
 
 	return host, port, database, nil
+}
+
+// === ConnectionPoolPlugin 接口实现 ===
+
+// CreateConnectionPool 创建GORM连接池
+// 注意：SparkSQL使用Thrift协议，这里创建一个兼容的连接池
+func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
+	// 解析连接参数
+	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
+	port := plugin.GetInt(connInfo, "port")
+	if port == 0 {
+		port = p.DefaultPort()
+	}
+
+	database := plugin.GetString(connInfo, "database")
+	if database == "" {
+		database = "default"
+	}
+
+	user := plugin.GetString(connInfo, "user")
+	password := plugin.GetString(connInfo, "password")
+
+	if host == "" {
+		return nil, fmt.Errorf("missing required field: host")
+	}
+
+	// SparkSQL通过Thrift协议，我们使用MySQL兼容模式
+	// 构建DSN: user:password@tcp(host:port)/database
+	var dsn string
+	if user != "" && password != "" {
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", user, password, host, port, database)
+	} else if user != "" {
+		dsn = fmt.Sprintf("%s@tcp(%s:%d)/%s", user, host, port, database)
+	} else {
+		dsn = fmt.Sprintf("tcp(%s:%d)/%s", host, port, database)
+	}
+
+	// 创建GORM连接（使用MySQL驱动，因为SparkSQL兼容MySQL协议）
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		DisableAutomaticPing: false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gorm connection: %w", err)
+	}
+
+	// 获取底层的 *sql.DB 并配置连接池
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+	}
+
+	// 配置连接池参数
+	sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
+
+	return db, nil
+}
+
+// GetDialect 获取数据库方言
+func (p *SparkSQLPlugin) GetDialect() string {
+	return "mysql" // SparkSQL使用MySQL兼容协议
+}
+
+// === MetadataPlugin 接口实现 ===
+
+// ListSchemas 列出所有Schema（Spark SQL中对应Database）
+func (p *SparkSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+	var schemas []plugin.SchemaInfo
+
+	// Spark SQL使用 SHOW DATABASES 命令
+	rows, err := db.WithContext(ctx).Raw("SHOW DATABASES").Rows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dbName string
+		if err := rows.Scan(&dbName); err != nil {
+			continue
+		}
+
+		// 获取每个数据库的表数量
+		var tableCount int
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.information_schema.tables WHERE table_schema = ?", dbName)
+		db.WithContext(ctx).Raw(countQuery, dbName).Scan(&tableCount)
+
+		schemas = append(schemas, plugin.SchemaInfo{
+			Name:       dbName,
+			TableCount: tableCount,
+		})
+	}
+
+	return schemas, nil
+}
+
+// ListTables 列出指定Schema下的所有表
+func (p *SparkSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+	var tables []plugin.TableInfo
+
+	// 切换到指定数据库
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+		return nil, fmt.Errorf("failed to use database: %w", err)
+	}
+
+	// 使用 SHOW TABLES 命令
+	rows, err := db.WithContext(ctx).Raw("SHOW TABLES").Rows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tables: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			continue
+		}
+
+		// 获取表信息
+		tableInfo := plugin.TableInfo{
+			Schema:    schema,
+			TableName: tableName,
+			RowCount:  0,
+			SizeBytes: 0,
+		}
+
+		// 尝试获取行数（使用DESCRIBE EXTENDED可能会更准确）
+		var count sql.NullInt64
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s LIMIT 1", schema, tableName)
+		db.WithContext(ctx).Raw(countQuery).Scan(&count)
+		if count.Valid {
+			tableInfo.RowCount = count.Int64
+		}
+
+		tables = append(tables, tableInfo)
+	}
+
+	return tables, nil
+}
+
+// ListColumns 列出指定表的所有列
+func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+	var columns []plugin.ColumnInfo
+
+	// 切换到指定数据库
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+		return nil, fmt.Errorf("failed to use database: %w", err)
+	}
+
+	// 使用 DESCRIBE 命令
+	query := fmt.Sprintf("DESCRIBE %s", table)
+	rows, err := db.WithContext(ctx).Raw(query).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe table: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var colName, dataType, comment sql.NullString
+		if err := rows.Scan(&colName, &dataType, &comment); err != nil {
+			continue
+		}
+
+		if !colName.Valid || !dataType.Valid {
+			continue
+		}
+
+		column := plugin.ColumnInfo{
+			ColumnName:   colName.String,
+			DataType:     dataType.String,
+			StdType:      mapSparkSQLType(dataType.String),
+			IsNullable:   true, // Spark SQL默认允许NULL
+			IsPrimaryKey: false,
+			Comment:      "",
+		}
+
+		if comment.Valid {
+			column.Comment = comment.String
+		}
+
+		columns = append(columns, column)
+	}
+
+	return columns, nil
+}
+
+// GetTableRowCount 获取表的行数
+func (p *SparkSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
+	var count int64
+
+	// 切换到指定数据库
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+		return 0, fmt.Errorf("failed to use database: %w", err)
+	}
+
+	// 执行COUNT查询
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to get row count: %w", err)
+	}
+
+	return count, nil
+}
+
+// mapSparkSQLType 将Spark SQL原生类型映射为标准类型
+func mapSparkSQLType(sparkType string) string {
+	switch sparkType {
+	case "tinyint", "smallint", "int", "integer", "bigint":
+		return "integer"
+	case "float", "double", "decimal":
+		return "number"
+	case "string", "varchar", "char":
+		return "string"
+	case "boolean":
+		return "boolean"
+	case "date", "timestamp":
+		return "datetime"
+	case "binary":
+		return "binary"
+	case "array":
+		return "array"
+	case "map", "struct":
+		return "json"
+	default:
+		return "string"
+	}
 }

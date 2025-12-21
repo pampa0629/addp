@@ -20,7 +20,7 @@ require (
 	golang.org/x/sync v0.17.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/driver/sqlite v1.5.7
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.30.0
 )
 
 replace github.com/addp/common => ../../common

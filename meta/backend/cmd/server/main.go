@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
@@ -153,9 +152,37 @@ func main() {
 	// 设置路由（使用新的简化路由）
 	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService, redisClient)
 
-	// 注册能力到 System 模块（在服务启动后）
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
-		go registerCapabilities(cfg)
+	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
+	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）
+	metaServiceURL := fmt.Sprintf("http://meta-backend:%s", cfg.ServerPort)
+	if os.Getenv("META_SERVICE_URL") != "" {
+		metaServiceURL = os.Getenv("META_SERVICE_URL")
+	}
+
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemServiceURL,
+			cfg.InternalAPIKey,
+			metaServiceURL,
+		)
+
+		// 后台异步注册（不阻塞启动，支持重试）
+		go func() {
+			time.Sleep(2 * time.Second) // 等待服务完全启动
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					logger.L().Warn("任务提供者注册失败",
+						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
+						"error", err)
+					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+					continue
+				}
+				logger.L().Info("✅ Meta 模块已注册到 task_providers")
+				return
+			}
+			logger.L().Error("任务提供者注册失败（已达最大重试次数）", "max_retries", maxRetries)
+		}()
 	}
 
 	// 启动服务器
@@ -165,92 +192,5 @@ func main() {
 	if err := router.Run(addr); err != nil {
 		logger.L().Error("HTTP 服务启动失败", "error", err)
 		os.Exit(1)
-	}
-}
-
-// registerCapabilities 注册 Meta 模块的能力到 System
-func registerCapabilities(cfg *config.Config) {
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-
-	// 构建能力声明
-	capabilities := &commonModels.Capability{
-		Compute: []commonModels.ComputeCapability{
-			{
-				Type:             "scan",
-				SupportedSources: []string{"postgresql", "mysql", "s3", "minio"},
-				Features:         []string{"incremental", "scheduled", "parallel", "deep"},
-			},
-		},
-	}
-
-	// 构建任务 API 配置
-	baseURL := fmt.Sprintf("http://localhost:%s", cfg.ServerPort)
-	taskAPIConfig := &commonModels.TaskAPIConfig{
-		BaseURL: baseURL,
-		Endpoints: map[string]commonModels.APIEndpoint{
-			"create": {
-				Method: "POST",
-				Path:   "/api/meta/scan-tasks",
-				BodyTemplate: map[string]interface{}{
-					"tenant_id":   "{{.TenantID}}",
-					"resource_id": "{{.ResourceID}}",
-					"name":        "{{.Name}}",
-					"parameters":  "{{.Parameters}}",
-				},
-			},
-			"execute": {
-				Method: "POST",
-				Path:   "/api/meta/scan-tasks/{{.TaskID}}/run",
-			},
-			"status": {
-				Method: "GET",
-				Path:   "/api/meta/scan/runs/{{.RunID}}",
-				ResponseMapping: &commonModels.ResponseMapping{
-					StatusField:   "status",
-					MessageField:  "error_message",
-					ProgressField: "progress_percent",
-					TaskIDField:   "id",
-				},
-			},
-			"list": {
-				Method: "GET",
-				Path:   "/api/meta/scan/tasks",
-				QueryParams: map[string]string{
-					"tenant_id": "{{.TenantID}}",
-				},
-			},
-		},
-		Timeout: map[string]int{
-			"create":  30,
-			"execute": 300,
-			"status":  10,
-		},
-	}
-
-	// 健康检查配置
-	healthCheckConfig := &commonModels.HealthCheckConfig{
-		Endpoint: "/health",
-		Timeout:  5,
-		Interval: 60,
-	}
-
-	// 注册请求
-	req := &commonModels.CapabilityRegistrationRequest{
-		UniqueIdentifier:  "meta.scanner.default",
-		Name:              "Meta Metadata Scanner",
-		DisplayName:       "元数据扫描引擎",
-		ResourceType:      "compute_engine",
-		IsBuiltin:         true,
-		Capabilities:      capabilities,
-		TaskAPIConfig:     taskAPIConfig,
-		HealthCheckConfig: healthCheckConfig,
-		Description:       "内置元数据扫描引擎，支持 PostgreSQL、MySQL、S3、MinIO 等数据源",
-	}
-
-	// 发送注册请求（失败不阻塞启动）
-	if err := systemClient.RegisterCapability(req); err != nil {
-		logger.L().Warn("能力注册失败（不影响服务运行）", "error", err)
-	} else {
-		logger.L().Info("Meta 模块能力已注册到 System", "unique_identifier", req.UniqueIdentifier)
 	}
 }

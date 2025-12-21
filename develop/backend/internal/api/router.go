@@ -62,6 +62,7 @@ func SetupRouter(
 			items.PUT("/:id", devItemHandler.UpdateDevItem)               // 更新开发项
 			items.DELETE("/:id", devItemHandler.DeleteDevItem)            // 删除开发项
 			items.POST("/:id/execute", devExecutionHandler.ExecuteDevItem) // 执行开发项
+		items.POST("/:id/execute-with-params", devExecutionHandler.ExecuteWithParams) // 参数化执行开发项（供 Orchestrator 调用）
 		}
 
 		// ========== 执行管理 ==========
@@ -87,7 +88,12 @@ func SetupRouter(
 		}
 
 		// ========== 资源管理 ==========
-		api.GET("/resources", resourceHandler.ListResources)
+		resources := api.Group("/resources")
+		{
+			resources.GET("", resourceHandler.ListResources)           // 获取资源列表
+			resources.GET("/:id/schemas", resourceHandler.ListSchemas) // 获取 schemas 列表
+			resources.GET("/:id/tables", resourceHandler.ListTables)   // 获取表列表
+		}
 
 		// ========== SQL 开发 ==========
 		api.GET("/test/:id", sqlHandler.TestConnection) // 测试数据源连接

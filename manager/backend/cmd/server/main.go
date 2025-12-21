@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
@@ -105,13 +105,13 @@ func main() {
 	previewRegistry := service.NewPreviewRegistry()
 
 	// 注册内置预览插件（通过 init() 自动注册到全局注册表）
-	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, metaClient, contentRegistry); err != nil {
+	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, metaClient, cfg.MetaServiceURL, contentRegistry); err != nil {
 		logger.L().Error("注册内置预览插件失败", "error", err)
 		os.Exit(1)
 	}
 
 	// 加载外部插件（从配置目录）
-	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.PreviewPluginDir)
+	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, cfg.PreviewPluginDir)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services
@@ -147,9 +147,37 @@ func main() {
 
 	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient, cacheManager, redisClient)
 
-	// 注册能力到 System 模块（在服务启动后）
-	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
-		go registerCapabilities(cfg)
+	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
+	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）
+	managerServiceURL := fmt.Sprintf("http://manager-backend:%s", cfg.Port)
+	if os.Getenv("MANAGER_SERVICE_URL") != "" {
+		managerServiceURL = os.Getenv("MANAGER_SERVICE_URL")
+	}
+
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		taskProviderRegistry := service.NewTaskProviderRegistryService(
+			cfg.SystemServiceURL,
+			cfg.InternalAPIKey,
+			managerServiceURL,
+		)
+
+		// 后台异步注册（不阻塞启动，支持重试）
+		go func() {
+			time.Sleep(2 * time.Second) // 等待服务完全启动
+			maxRetries := 5
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := taskProviderRegistry.Register(); err != nil {
+					logger.L().Warn("任务提供者注册失败",
+						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
+						"error", err)
+					time.Sleep(time.Duration(attempt*2) * time.Second) // 指数退避
+					continue
+				}
+				logger.L().Info("✅ Manager 模块已注册到 task_providers")
+				return
+			}
+			logger.L().Error("任务提供者注册失败（已达最大重试次数）", "max_retries", maxRetries)
+		}()
 	}
 
 	// ✅ 注册优雅关闭处理器（关闭所有数据库连接池）
@@ -196,88 +224,3 @@ func buildContentDirSpec(dirs []string) string {
 	return strings.Join(contentDirs, ",")
 }
 
-// registerCapabilities 注册 Manager 模块的能力到 System
-func registerCapabilities(cfg *config.Config) {
-	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-
-	// 构建能力声明
-	capabilities := &commonModels.Capability{
-		Compute: []commonModels.ComputeCapability{
-			{
-				Type:             "cache.tile",
-				SupportedSources: []string{"postgresql", "geojson", "shapefile"},
-				Features:         []string{"async", "zoom_range", "bbox_filter", "mvt"},
-			},
-		},
-	}
-
-	// 构建任务 API 配置
-	baseURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-	taskAPIConfig := &commonModels.TaskAPIConfig{
-		BaseURL: baseURL,
-		Endpoints: map[string]commonModels.APIEndpoint{
-			"create": {
-				Method: "POST",
-				Path:   "/api/quick-view",
-				BodyTemplate: map[string]interface{}{
-					"tenant_id":  "{{.TenantID}}",
-					"table_name": "{{.TableName}}",
-					"min_zoom":   "{{.MinZoom}}",
-					"max_zoom":   "{{.MaxZoom}}",
-				},
-			},
-			"status": {
-				Method: "GET",
-				Path:   "/api/quick-view/status",
-				QueryParams: map[string]string{
-					"table_name": "{{.TableName}}",
-				},
-				ResponseMapping: &commonModels.ResponseMapping{
-					StatusField:   "status",
-					MessageField:  "error_message",
-					ProgressField: "progress",
-					TaskIDField:   "id",
-				},
-			},
-			"list": {
-				Method: "GET",
-				Path:   "/api/quick-view/list",
-				QueryParams: map[string]string{
-					"tenant_id": "{{.TenantID}}",
-				},
-			},
-		},
-		Timeout: map[string]int{
-			"create": 30,
-			"status": 10,
-			"list":   10,
-		},
-	}
-
-	// 健康检查配置
-	healthCheckConfig := &commonModels.HealthCheckConfig{
-		Endpoint: "/health",
-		Timeout:  5,
-		Interval: 60,
-	}
-
-	// 注册请求
-	req := &commonModels.CapabilityRegistrationRequest{
-		UniqueIdentifier:  "manager.tile_cache.default",
-		Name:              "Manager Tile Cache Engine",
-		DisplayName:       "地图瓦片缓存引擎",
-		ResourceType:      "compute_engine",
-		IsBuiltin:         true,
-		Capabilities:      capabilities,
-		TaskAPIConfig:     taskAPIConfig,
-		HealthCheckConfig: healthCheckConfig,
-		Description:       "内置 MVT 瓦片缓存引擎，支持空间数据快速预览",
-	}
-
-	// 发送注册请求（失败不阻塞启动）
-	if err := systemClient.RegisterCapability(req); err != nil {
-		logger.L().Warn("能力注册失败（不影响服务运行）", "error", err)
-	} else {
-		logger.L().Info("Manager 模块能力已注册到 System", "unique_identifier", req.UniqueIdentifier)
-	}
-}

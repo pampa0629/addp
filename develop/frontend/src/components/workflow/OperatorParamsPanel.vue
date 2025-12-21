@@ -22,7 +22,7 @@
           <h4 class="section-title">参数配置</h4>
 
           <el-alert
-            v-if="!paramDefinitions || Object.keys(paramDefinitions).length === 0"
+            v-if="effectiveParameters.length === 0"
             type="info"
             :closable="false"
             show-icon
@@ -32,16 +32,16 @@
 
           <div v-else>
             <el-form-item
-              v-for="(desc, paramName) in paramDefinitions"
-              :key="paramName"
-              :label="paramName"
-              :required="isRequired(desc)"
+              v-for="param in effectiveParameters"
+              :key="param.name"
+              :label="param.name"
+              :required="param.required"
             >
               <template #label>
                 <div class="param-label">
-                  <span>{{ paramName }}</span>
-                  <el-tooltip v-if="desc" placement="top">
-                    <template #content>{{ desc }}</template>
+                  <span>{{ param.name }}</span>
+                  <el-tooltip v-if="param.description" placement="top">
+                    <template #content>{{ param.description }}</template>
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </div>
@@ -49,11 +49,22 @@
 
               <!-- 根据参数类型渲染不同的输入组件 -->
               <component
-                :is="getInputComponent(desc)"
-                v-model="formData[paramName]"
-                v-bind="getInputProps(desc)"
-                :placeholder="getPlaceholder(paramName, desc)"
-              />
+                :is="getComponentByType(param)"
+                v-model="formData[param.name]"
+                v-bind="getComponentProps(param)"
+                :placeholder="getPlaceholder(param)"
+                @change="onParamChange(param.name)"
+              >
+                <!-- 渲染 enum 下拉选项 -->
+                <template v-if="param.enum && param.enum.length > 0">
+                  <el-option
+                    v-for="option in param.enum"
+                    :key="option"
+                    :label="option"
+                    :value="option"
+                  />
+                </template>
+              </component>
             </el-form-item>
           </div>
         </section>
@@ -72,6 +83,9 @@
 import { ref, watch, computed } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import ResourceSelect from './ResourceSelect.vue'
+import SchemaSelect from './SchemaSelect.vue'
+import TableSelect from './TableSelect.vue'
 
 const props = defineProps({
   nodeId: {
@@ -86,6 +100,10 @@ const props = defineProps({
     type: Object,
     default: () => ({})
   },
+  parameters: {
+    type: Array,
+    default: () => []
+  },
   initialParams: {
     type: Object,
     default: () => ({})
@@ -96,100 +114,129 @@ const emit = defineEmits(['save'])
 
 const formData = ref({})
 
-// 监听 initialParams 变化，初始化表单
+// 使用结构化参数定义(优先)或回退到旧格式
+const effectiveParameters = computed(() => {
+  if (props.parameters && props.parameters.length > 0) {
+    return props.parameters
+  }
+
+  // 向后兼容:将旧的 paramDefinitions 转换为参数数组
+  return Object.entries(props.paramDefinitions).map(([name, desc]) => ({
+    name,
+    type: 'string',
+    description: desc,
+    required: false
+  }))
+})
+
+// 构建参数依赖关系映射
+const dependencyMap = computed(() => {
+  const deps = {}
+  effectiveParameters.value.forEach(param => {
+    if (param.depends_on) {
+      if (!deps[param.depends_on]) {
+        deps[param.depends_on] = []
+      }
+      deps[param.depends_on].push(param.name)
+    }
+  })
+  return deps
+})
+
+// 监听 initialParams 变化,初始化表单
 watch(() => props.initialParams, (newParams) => {
   formData.value = { ...newParams }
 }, { immediate: true, deep: true })
 
-// 监听 operator 变化，重置表单
+// 监听 operator 变化,重置表单
 watch(() => props.operator, () => {
   formData.value = { ...props.initialParams }
 }, { deep: true })
 
-// 判断参数是否必填
-const isRequired = (desc) => {
-  if (!desc) return false
-  // 简单判断：描述中包含 "required" 或 "*" 表示必填
-  return desc.toLowerCase().includes('required') || desc.includes('*')
-}
+// 根据参数元数据选择组件类型
+const getComponentByType = (param) => {
+  // 1. 优先检查 ui_type (自定义 UI 组件)
+  if (param.ui_type === 'resource_select') return ResourceSelect
+  if (param.ui_type === 'schema_select') return SchemaSelect
+  if (param.ui_type === 'table_select') return TableSelect
 
-// 根据参数描述推断输入组件类型
-const getInputComponent = (desc) => {
-  if (!desc) return 'el-input'
+  // 2. 检查 enum (下拉选择)
+  if (param.enum && param.enum.length > 0) return 'el-select'
 
-  const descLower = desc.toLowerCase()
-
-  // 数字类型
-  if (descLower.includes('float') || descLower.includes('number') || descLower.includes('距离') || descLower.includes('半径')) {
+  // 3. 根据 type 选择基础组件
+  if (param.type === 'integer' || param.type === 'float' || param.type === 'number') {
     return 'el-input-number'
   }
+  if (param.type === 'boolean') return 'el-switch'
 
-  // 整数类型
-  if (descLower.includes('int') || descLower.includes('count') || descLower.includes('个数')) {
-    return 'el-input-number'
-  }
-
-  // 布尔类型
-  if (descLower.includes('bool') || descLower.includes('是否')) {
-    return 'el-switch'
-  }
-
-  // 选项类型
-  if (descLower.includes('select') || descLower.includes('选择')) {
-    return 'el-select'
-  }
-
-  // 多行文本
-  if (descLower.includes('text') || descLower.includes('多行')) {
-    return 'el-input'
-  }
-
-  // 默认单行文本
+  // 4. 默认文本输入
   return 'el-input'
 }
 
-// 根据参数描述获取输入组件的 props
-const getInputProps = (desc) => {
-  if (!desc) return {}
-
-  const descLower = desc.toLowerCase()
+// 获取组件的 props
+const getComponentProps = (param) => {
   const props = {}
 
-  // el-input-number 专用 props
-  if (descLower.includes('float') || descLower.includes('number')) {
-    props.step = 0.01
-    props.precision = 2
-    props.min = 0
-  } else if (descLower.includes('int')) {
-    props.step = 1
-    props.min = 0
+  // 自定义组件的专用 props
+  if (param.ui_type === 'resource_select') {
+    props.resourceTypes = param.resource_types || []
+  } else if (param.ui_type === 'schema_select') {
+    props.resourceId = formData.value[param.depends_on] || null
+  } else if (param.ui_type === 'table_select') {
+    // table_select 依赖两个参数: resource_id 和 schema
+    // 找到 schema 参数的 depends_on (通常是 resource_id)
+    const schemaParam = effectiveParameters.value.find(p => p.name === param.depends_on)
+    if (schemaParam && schemaParam.depends_on) {
+      props.resourceId = formData.value[schemaParam.depends_on] || null
+    }
+    props.schema = formData.value[param.depends_on] || null
   }
 
-  // el-input 专用 props
-  if (descLower.includes('text') || descLower.includes('多行')) {
-    props.type = 'textarea'
-    props.rows = 3
+  // enum 类型的下拉选择
+  if (param.enum && param.enum.length > 0) {
+    // el-select 会在模板中自动渲染 options
   }
+
+  // el-input-number 的 props
+  if (param.type === 'integer') {
+    props.step = 1
+    props.precision = 0
+  } else if (param.type === 'float' || param.type === 'number') {
+    props.step = 0.01
+    props.precision = 2
+  }
+
+  // 数值范围
+  if (param.min !== undefined) props.min = param.min
+  if (param.max !== undefined) props.max = param.max
 
   return props
 }
 
 // 获取 placeholder
-const getPlaceholder = (paramName, desc) => {
-  if (desc && desc.includes('例如:')) {
-    const match = desc.match(/例如[：:]\s*(.+)/)
-    if (match) return match[1]
+const getPlaceholder = (param) => {
+  if (param.default !== undefined && param.default !== null) {
+    return `默认: ${param.default}`
   }
+  return `请输入 ${param.name}`
+}
 
-  return `请输入 ${paramName}`
+// 参数变更处理(级联清空逻辑)
+const onParamChange = (paramName) => {
+  // 清空所有依赖此参数的子参数
+  if (dependencyMap.value[paramName]) {
+    dependencyMap.value[paramName].forEach(depParam => {
+      formData.value[depParam] = null
+    })
+  }
 }
 
 // 保存参数
 const saveParams = () => {
-  // 简单验证：检查必填参数
-  for (const [paramName, desc] of Object.entries(props.paramDefinitions)) {
-    if (isRequired(desc) && !formData.value[paramName]) {
-      ElMessage.warning(`请填写必填参数: ${paramName}`)
+  // 验证必填参数
+  for (const param of effectiveParameters.value) {
+    if (param.required && !formData.value[param.name]) {
+      ElMessage.warning(`请填写必填参数: ${param.name}`)
       return
     }
   }

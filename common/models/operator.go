@@ -1,17 +1,25 @@
 package models
 
+// OutputPortMetadata 输出端口元数据
+type OutputPortMetadata struct {
+	Name        string `json:"name"`                  // 端口名称 (如 "default", "large", "small")
+	Type        string `json:"type"`                  // 数据类型 (geodataframe, string, array等)
+	Description string `json:"description"`           // 端口语义说明
+	IsDefault   bool   `json:"is_default"`            // 是否为默认端口 (单输出时为true)
+}
+
 // OperatorMetadata 算子元数据
 type OperatorMetadata struct {
-	ID          string              `json:"id"`           // 算子唯一标识 (如 "scan_deep")
-	Name        string              `json:"name"`         // 算子名称 (同ID)
-	DisplayName string              `json:"display_name"` // 中文显示名 (如 "深度扫描")
-	Type        string              `json:"type"`         // 算子类型 (scan/transfer/spatial等)
-	Category    string              `json:"category"`     // 分类 (元数据管理/数据传输/空间计算)
-	Description string              `json:"description"`  // 功能描述
-	Parameters  []ParameterMetadata `json:"parameters"`   // 参数定义
-	Inputs      []string            `json:"inputs"`       // 输入类型列表
-	Outputs     []string            `json:"outputs"`      // 输出类型列表
-	Module      string              `json:"module"`       // 所属模块 (meta/transfer/manager/geopandas)
+	ID          string               `json:"id"`           // 算子唯一标识 (如 "scan_deep")
+	Name        string               `json:"name"`         // 算子名称 (同ID)
+	DisplayName string               `json:"display_name"` // 中文显示名 (如 "深度扫描")
+	Type        string               `json:"type"`         // 算子类型 (scan/transfer/spatial等)
+	Category    string               `json:"category"`     // 分类 (元数据管理/数据传输/空间计算)
+	Description string               `json:"description"`  // 功能描述
+	Parameters  []ParameterMetadata  `json:"parameters"`   // 参数定义
+	Inputs      []string             `json:"inputs"`       // 输入类型列表
+	OutputPorts []OutputPortMetadata `json:"output_ports"` // 输出端口定义 (替代 Outputs)
+	Module      string               `json:"module"`       // 所属模块 (meta/transfer/manager/geopandas)
 }
 
 // ParameterMetadata 参数元数据

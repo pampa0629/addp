@@ -1,6 +1,6 @@
 """
 空间算子实现
-使用 GeoPandas 和 Shapely 实现 21 个空间算子
+使用 GeoPandas 和 Shapely 实现空间算子 + I/O 算子
 """
 
 import geopandas as gpd
@@ -8,6 +8,197 @@ from shapely.geometry import shape, mapping, Point, LineString, Polygon
 from shapely.ops import unary_union
 from typing import Dict, Any, List, Union
 import json
+import requests
+import os
+from sqlalchemy import create_engine
+
+
+# ========================================
+# I/O 算子 (2个) - 数据加载和保存
+# ========================================
+
+def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
+    """
+    通用数据加载算子
+
+    接收 DataLocation 信息，根据类型加载数据：
+    - source_type: "table" | "file" | "geojson" | "reference"
+    - resource_id: 存储引擎资源 ID
+    - 其他参数: table/path、schema/format 等
+
+    注意：此算子不直接执行 SQL，而是根据 DataLocation 信息
+    通过 System API 获取资源连接信息后加载数据
+    """
+    source_type = params.get('source_type')
+    resource_id = params.get('resource_id')
+
+    if source_type == 'table':
+        # 1. 从 System API 获取资源连接信息
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+
+        if response.status_code != 200:
+            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+
+        resource = response.json()
+
+        # 2. 根据资源类型构建连接字符串
+        resource_type = resource['resource_type']
+        conn_info = resource['connection_info']
+
+        table = params.get('table')
+        schema = params.get('schema', 'public')
+
+        # 3. 根据不同数据库类型加载
+        if resource_type in ['postgresql', 'PostgreSQL']:
+            conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            engine = create_engine(conn_str)
+
+            # 读取空间数据（假设几何列名为 geom）
+            sql = f'SELECT * FROM {schema}.{table}'
+            gdf = gpd.read_postgis(sql, engine, geom_col='geom')
+
+        elif resource_type in ['mysql', 'MySQL', 'doris', 'Doris']:
+            password = conn_info.get('password', '')
+            if password:
+                conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            else:
+                conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+
+            engine = create_engine(conn_str)
+
+            # MySQL/Doris 空间数据读取
+            sql = f'SELECT * FROM {table}'
+            gdf = gpd.read_postgis(sql, engine, geom_col='geom')
+
+        else:
+            raise ValueError(f"Unsupported resource type for table: {resource_type}")
+
+        return gdf
+
+    elif source_type == 'file':
+        # 从对象存储加载文件
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+
+        if response.status_code != 200:
+            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+
+        resource = response.json()
+
+        path = params.get('path')
+        format_type = params.get('format', 'geojson')
+
+        # TODO: 实现从 MinIO/S3 下载文件逻辑
+        # local_file = download_from_minio(resource, path)
+
+        # 临时实现：假设文件已在本地
+        if format_type in ['geojson', 'shapefile']:
+            gdf = gpd.read_file(path)
+        else:
+            raise ValueError(f"Unsupported format: {format_type}")
+
+        return gdf
+
+    elif source_type == 'geojson':
+        # 直接解析 GeoJSON 对象
+        geojson_obj = params.get('geojson')
+        gdf = gpd.GeoDataFrame.from_features(geojson_obj['features'])
+        return gdf
+
+    elif source_type == 'reference':
+        # 引用其他任务的输出（已在内存中的 GeoDataFrame）
+        # 这种情况下不需要加载，直接返回引用
+        raise NotImplementedError("Reference type should be handled by workflow engine")
+
+    else:
+        raise ValueError(f"Unsupported source_type: {source_type}")
+
+
+def save(data: gpd.GeoDataFrame, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    通用数据保存算子
+
+    根据目标类型保存数据：
+    - target_type: "table" | "file"
+    - resource_id: 存储引擎资源 ID
+    """
+    target_type = params.get('target_type')
+    resource_id = params.get('resource_id')
+
+    if target_type == 'table':
+        # 1. 从 System API 获取资源连接信息
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+
+        if response.status_code != 200:
+            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+
+        resource = response.json()
+
+        # 2. 构建连接
+        resource_type = resource['resource_type']
+        conn_info = resource['connection_info']
+
+        table = params.get('table')
+        schema = params.get('schema', 'public')
+        mode = params.get('mode', 'overwrite')
+
+        # 3. 根据数据库类型保存
+        if resource_type in ['postgresql', 'PostgreSQL']:
+            conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            engine = create_engine(conn_str)
+
+            if_exists = 'replace' if mode == 'overwrite' else 'append'
+            data.to_postgis(table, engine, schema=schema, if_exists=if_exists, index=False)
+
+        elif resource_type in ['mysql', 'MySQL', 'doris', 'Doris']:
+            password = conn_info.get('password', '')
+            if password:
+                conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            else:
+                conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+
+            engine = create_engine(conn_str)
+
+            if_exists = 'replace' if mode == 'overwrite' else 'append'
+            data.to_sql(table, engine, if_exists=if_exists, index=False)
+
+        else:
+            raise ValueError(f"Unsupported resource type for table: {resource_type}")
+
+        return {
+            "output_type": "table",
+            "output_table": f"{schema}.{table}",
+            "resource_id": resource_id,
+            "row_count": len(data)
+        }
+
+    elif target_type == 'file':
+        # TODO: 实现保存到对象存储逻辑
+        path = params.get('path')
+        format_type = params.get('format', 'geojson')
+
+        # 临时实现：保存到本地文件
+        if format_type == 'geojson':
+            data.to_file(path, driver='GeoJSON')
+        elif format_type == 'shapefile':
+            data.to_file(path, driver='ESRI Shapefile')
+        else:
+            raise ValueError(f"Unsupported format: {format_type}")
+
+        return {
+            "output_type": "file",
+            "output_file": path,
+            "format": format_type
+        }
+
+    else:
+        # 标量或其他类型
+        return {
+            "output_type": "scalar",
+            "value": str(data)
+        }
 
 
 # ========================================
@@ -395,6 +586,32 @@ def voronoi(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     return result
 
 
+def split_by_area(input_gdf: gpd.GeoDataFrame, threshold: float) -> Dict[str, gpd.GeoDataFrame]:
+    """
+    按面积阈值分割数据（多输出算子示例）
+
+    Args:
+        input_gdf: 输入 GeoDataFrame
+        threshold: 面积阈值（平方单位，取决于 CRS）
+
+    Returns:
+        Dict[str, GeoDataFrame]: 包含两个输出端口
+            - "large": 面积大于阈值的要素
+            - "small": 面积小于等于阈值的要素
+    """
+    result = input_gdf.copy()
+    result['area'] = result['geometry'].area
+
+    large = result[result['area'] > threshold].copy()
+    small = result[result['area'] <= threshold].copy()
+
+    # 返回命名输出端口
+    return {
+        "large": large,
+        "small": small
+    }
+
+
 # ========================================
 # 算子注册表（供 API 使用）
 # ========================================
@@ -536,6 +753,106 @@ OPERATORS = {
         'params': {},
         'category': '高级算子',
         'description': '泰森多边形'
+    },
+    'split_by_area': {
+        'function': split_by_area,
+        'params': {'threshold': 'float'},
+        'category': '高级算子',
+        'description': '按面积分割',
+        'output_ports': [
+            {'name': 'large', 'type': 'geodataframe', 'description': '面积大于阈值的要素', 'is_default': False},
+            {'name': 'small', 'type': 'geodataframe', 'description': '面积小于等于阈值的要素', 'is_default': False}
+        ]
+    },
+
+    # I/O 算子 (2个)
+    'load': {
+        'function': load,
+        'params': {
+            'source_type': 'str',
+            'resource_id': 'int',
+            'table': 'str',
+            'schema': 'str',
+            'path': 'str',
+            'format': 'str',
+            'geojson': 'dict'
+        },
+        'category': 'I/O',
+        'description': '数据加载',
+        'param_schema': [
+            {
+                'name': 'source_type',
+                'type': 'string',
+                'required': True,
+                'description': '数据来源类型',
+                'enum': ['table', 'file', 'geojson'],
+                'default': 'table'
+            },
+            {
+                'name': 'resource_id',
+                'type': 'integer',
+                'required': True,
+                'description': '存储引擎资源ID',
+                'depends_on': 'source_type',
+                'ui_type': 'resource_select',  # 自定义UI类型,前端渲染为下拉列表
+                'resource_types': ['postgresql', 'mysql', 'doris']  # 限定资源类型
+            },
+            {
+                'name': 'schema',
+                'type': 'string',
+                'required': False,
+                'description': '数据库schema',
+                'default': 'public',
+                'depends_on': 'resource_id',
+                'ui_type': 'schema_select'  # 自定义UI类型
+            },
+            {
+                'name': 'table',
+                'type': 'string',
+                'required': True,
+                'description': '表名',
+                'depends_on': 'schema',
+                'ui_type': 'table_select'  # 自定义UI类型
+            },
+            {
+                'name': 'path',
+                'type': 'string',
+                'required': False,
+                'description': '文件路径 (source_type=file时使用)',
+                'depends_on': 'source_type'
+            },
+            {
+                'name': 'format',
+                'type': 'string',
+                'required': False,
+                'description': '文件格式',
+                'enum': ['geojson', 'shapefile'],
+                'default': 'geojson',
+                'depends_on': 'source_type'
+            },
+            {
+                'name': 'geojson',
+                'type': 'object',
+                'required': False,
+                'description': 'GeoJSON对象 (source_type=geojson时使用)',
+                'depends_on': 'source_type'
+            }
+        ]
+    },
+    'save': {
+        'function': save,
+        'params': {
+            'data': 'geodataframe',
+            'target_type': 'str',
+            'resource_id': 'int',
+            'table': 'str',
+            'schema': 'str',
+            'mode': 'str',
+            'path': 'str',
+            'format': 'str'
+        },
+        'category': 'I/O',
+        'description': '数据保存'
     }
 }
 
@@ -563,21 +880,39 @@ def list_operators():
     }
 
     for name, meta in OPERATORS.items():
-        # 转换参数格式
-        parameters = []
-        for param_name, param_type in meta['params'].items():
-            param_meta = {
-                "name": param_name,
-                "type": type_mapping.get(param_type, 'string'),
-                "required": True if param_name == "input_gdf" else False,
-                "description": f"{param_name}参数"
-            }
+        # 优先使用新的 param_schema,否则使用旧的 params 转换
+        if 'param_schema' in meta:
+            # 使用新的结构化参数定义
+            parameters = meta['param_schema']
+        else:
+            # 转换旧的参数格式(向后兼容)
+            parameters = []
+            for param_name, param_type in meta['params'].items():
+                param_meta = {
+                    "name": param_name,
+                    "type": type_mapping.get(param_type, 'string'),
+                    "required": True if param_name == "input_gdf" else False,
+                    "description": f"{param_name}参数"
+                }
 
-            # 数组类型需要指定item_type
-            if param_type in ['list[float]', 'list[str]']:
-                param_meta["item_type"] = "float" if param_type == 'list[float]' else "string"
+                # 数组类型需要指定item_type
+                if param_type in ['list[float]', 'list[str]']:
+                    param_meta["item_type"] = "float" if param_type == 'list[float]' else "string"
 
-            parameters.append(param_meta)
+                parameters.append(param_meta)
+
+        # 处理输出端口
+        if 'output_ports' in meta:
+            # 多输出算子：使用自定义端口定义
+            output_ports = meta['output_ports']
+        else:
+            # 单输出算子：自动生成 default 端口
+            output_ports = [{
+                "name": "default",
+                "type": "geodataframe",
+                "description": f"{meta['description']}结果",
+                "is_default": True
+            }]
 
         # 构建标准化的算子元数据
         operator = {
@@ -590,7 +925,7 @@ def list_operators():
             "module": "geopandas",
             "parameters": parameters,
             "inputs": ["geodataframe"],
-            "outputs": ["geodataframe"]
+            "output_ports": output_ports  # 使用 output_ports 替代 outputs
         }
         operators_list.append(operator)
 

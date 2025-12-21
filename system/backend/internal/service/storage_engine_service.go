@@ -2,18 +2,10 @@ package service
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
-	"os"
-	"strconv"
-	"time"
 
+	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/system/internal/models"
-	"github.com/beltran/gohive"
-	_ "github.com/go-sql-driver/mysql" // MySQL driver
-	_ "github.com/lib/pq"               // PostgreSQL driver
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type StorageEngineService struct{}
@@ -23,350 +15,9 @@ func NewStorageEngineService() *StorageEngineService {
 }
 
 // TestConnection 测试存储引擎连接
+// 使用插件系统统一处理所有数据库类型的连接测试
 func (s *StorageEngineService) TestConnection(resource *models.Resource) error {
-	switch resource.ResourceType {
-	case "postgresql":
-		return s.testPostgreSQLConnection(resource.ConnectionInfo)
-	case "mysql", "doris":
-		return s.testMySQLConnection(resource.ConnectionInfo)
-	case "minio", "s3":
-		return s.testMinIOConnection(resource.ConnectionInfo)
-	case "spark_sql":
-		return s.testSparkSQLConnection(resource.ConnectionInfo)
-	default:
-		return fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
-	}
-}
-
-// testPostgreSQLConnection 测试 PostgreSQL 连接
-func (s *StorageEngineService) testPostgreSQLConnection(connInfo models.ConnectionInfo) error {
-	normalizeHost := func(host string) string {
-		if host == "localhost" || host == "127.0.0.1" {
-			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
-				return alias
-			}
-			return "127.0.0.1"
-		}
-		return host
-	}
-
-	// 构建连接字符串
-	host, _ := connInfo["host"].(string)
-	host = normalizeHost(host)
-
-	var portFloat float64
-	switch v := connInfo["port"].(type) {
-	case float64:
-		portFloat = v
-	case int:
-		portFloat = float64(v)
-	case string:
-		if parsed, err := strconv.Atoi(v); err == nil {
-			portFloat = float64(parsed)
-		}
-	}
-
-	database, _ := connInfo["database"].(string)
-	user, _ := connInfo["user"].(string)
-	password, _ := connInfo["password"].(string)
-	sslMode, _ := connInfo["sslmode"].(string)
-
-	if sslMode == "" {
-		sslMode = "disable"
-	}
-
-	// 验证必填字段
-	if host == "" || user == "" || database == "" {
-		return fmt.Errorf("missing required fields: host, user, database")
-	}
-
-	if portFloat == 0 {
-		portFloat = 5432
-	}
-
-	// 构建 DSN
-	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, int(portFloat), user, password, database, sslMode)
-
-	// 连接数据库
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open connection: %w", err)
-	}
-	defer db.Close()
-
-	// 设置连接超时
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// 测试连接
-	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// 执行简单查询验证
-	var version string
-	err = db.QueryRowContext(ctx, "SELECT version()").Scan(&version)
-	if err != nil {
-		return fmt.Errorf("failed to query version: %w", err)
-	}
-
-	return nil
-}
-
-// testMySQLConnection 测试 MySQL/Doris 连接
-func (s *StorageEngineService) testMySQLConnection(connInfo models.ConnectionInfo) error {
-	normalizeHost := func(host string) string {
-		if host == "localhost" || host == "127.0.0.1" {
-			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
-				return alias
-			}
-			return "127.0.0.1"
-		}
-		return host
-	}
-
-	// 构建连接参数
-	host, _ := connInfo["host"].(string)
-	host = normalizeHost(host)
-
-	var portFloat float64
-	switch v := connInfo["port"].(type) {
-	case float64:
-		portFloat = v
-	case int:
-		portFloat = float64(v)
-	case string:
-		if parsed, err := strconv.Atoi(v); err == nil {
-			portFloat = float64(parsed)
-		}
-	}
-
-	database, _ := connInfo["database"].(string)
-
-	// 支持两种字段名：username 和 user
-	user, _ := connInfo["user"].(string)
-	if user == "" {
-		user, _ = connInfo["username"].(string)
-	}
-
-	password, _ := connInfo["password"].(string)
-
-	// 验证必填字段
-	if host == "" || user == "" || database == "" {
-		return fmt.Errorf("missing required fields: host, user, database")
-	}
-
-	if portFloat == 0 {
-		portFloat = 3306 // MySQL/Doris 默认端口
-	}
-
-	// 构建 DSN: 处理空密码的情况
-	var dsn string
-	if password == "" {
-		// 密码为空时，DSN 格式为: user@tcp(host:port)/database
-		dsn = fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-			user, host, int(portFloat), database)
-	} else {
-		// 密码不为空时，DSN 格式为: user:password@tcp(host:port)/database
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-			user, password, host, int(portFloat), database)
-	}
-
-	// 连接数据库
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open connection: %w", err)
-	}
-	defer db.Close()
-
-	// 设置连接超时
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// 测试连接
-	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	// 执行简单查询验证
-	var version string
-	err = db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
-	if err != nil {
-		return fmt.Errorf("failed to query version: %w", err)
-	}
-
-	return nil
-}
-
-// testMinIOConnection 测试 MinIO/S3 连接
-func (s *StorageEngineService) testMinIOConnection(connInfo models.ConnectionInfo) error {
-	// 规范化 endpoint 中的 localhost（Docker 环境需要转换）
-	normalizeEndpoint := func(endpoint string) string {
-		// 检查 endpoint 是否以 localhost 或 127.0.0.1 开头
-		if len(endpoint) > 0 {
-			// 提取主机名部分（可能包含端口）
-			hostPart := endpoint
-			portPart := ""
-			if idx := len(endpoint) - 1; idx >= 0 {
-				for i := len(endpoint) - 1; i >= 0; i-- {
-					if endpoint[i] == ':' {
-						hostPart = endpoint[:i]
-						portPart = endpoint[i:] // 包含冒号
-						break
-					}
-				}
-			}
-
-			// 如果是 localhost 或 127.0.0.1，使用环境变量指定的别名
-			if hostPart == "localhost" || hostPart == "127.0.0.1" {
-				if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
-					return alias + portPart
-				}
-			}
-		}
-		return endpoint
-	}
-
-	// 获取连接参数
-	endpoint, _ := connInfo["endpoint"].(string)
-	endpoint = normalizeEndpoint(endpoint)
-
-	accessKey, _ := connInfo["access_key"].(string)
-	secretKey, _ := connInfo["secret_key"].(string)
-	useSSL := false
-	if ssl, ok := connInfo["use_ssl"].(bool); ok {
-		useSSL = ssl
-	}
-	bucket, _ := connInfo["bucket"].(string)
-
-	// 验证必填字段
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
-	}
-
-	// 初始化 MinIO 客户端
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create minio client: %w", err)
-	}
-
-	// 设置超时
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// 测试连接 - 列出存储桶
-	buckets, err := client.ListBuckets(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list buckets: %w", err)
-	}
-
-	// 如果指定了 bucket，检查是否存在
-	if bucket != "" {
-		found := false
-		for _, b := range buckets {
-			if b.Name == bucket {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return fmt.Errorf("bucket '%s' not found", bucket)
-		}
-	}
-
-	return nil
-}
-
-// testSparkSQLConnection 测试 Spark SQL Thrift Server 连接
-func (s *StorageEngineService) testSparkSQLConnection(connInfo models.ConnectionInfo) error {
-	normalizeHost := func(host string) string {
-		if host == "localhost" || host == "127.0.0.1" {
-			if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
-				return alias
-			}
-			return "127.0.0.1"
-		}
-		return host
-	}
-
-	// 获取连接参数
-	host, _ := connInfo["host"].(string)
-	host = normalizeHost(host)
-
-	var portFloat float64
-	switch v := connInfo["port"].(type) {
-	case float64:
-		portFloat = v
-	case int:
-		portFloat = float64(v)
-	case string:
-		if parsed, err := strconv.Atoi(v); err == nil {
-			portFloat = float64(parsed)
-		}
-	}
-
-	database, _ := connInfo["database"].(string)
-	user, _ := connInfo["user"].(string)
-	password, _ := connInfo["password"].(string)
-
-	// 验证必填字段
-	if host == "" {
-		return fmt.Errorf("missing required field: host")
-	}
-
-	if portFloat == 0 {
-		portFloat = 10000 // Spark SQL Thrift Server 默认端口
-	}
-
-	// 如果数据库名为空，使用 "default"
-	if database == "" {
-		database = "default"
-	}
-
-	// 配置连接
-	configuration := gohive.NewConnectConfiguration()
-
-	// 如果提供了用户名和密码，使用 PLAIN 认证
-	if user != "" {
-		configuration.Username = user
-		if password != "" {
-			configuration.Password = password
-		}
-	}
-
-	// 设置超时
-	configuration.ConnectTimeout = 10 * time.Second
-	configuration.SocketTimeout = 10 * time.Second
-
-	// 连接到 Spark SQL Thrift Server
-	connection, err := gohive.Connect(host, int(portFloat), "NONE", configuration)
-	if err != nil {
-		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
-	}
-	defer connection.Close()
-
-	// 创建 cursor
-	cursor := connection.Cursor()
-
-	// 切换到指定数据库
-	if database != "default" {
-		cursor.Exec(context.Background(), fmt.Sprintf("USE %s", database))
-		if cursor.Err != nil {
-			return fmt.Errorf("failed to use database '%s': %w", database, cursor.Err)
-		}
-	}
-
-	// 执行简单查询验证连接
-	cursor.Exec(context.Background(), "SELECT 1")
-	if cursor.Err != nil {
-		return fmt.Errorf("failed to execute test query: %w", cursor.Err)
-	}
-
-	return nil
+	return dbbridge.TestConnection(context.Background(), resource)
 }
 
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）
@@ -374,46 +25,68 @@ func (s *StorageEngineService) GetConnectionInfo(resource *models.Resource) map[
 	result := make(map[string]interface{})
 	result["type"] = resource.ResourceType
 
-	switch resource.ResourceType {
-	case "postgresql":
-		result["host"] = resource.ConnectionInfo["host"]
-		result["port"] = resource.ConnectionInfo["port"]
-		result["database"] = resource.ConnectionInfo["database"]
-		result["user"] = resource.ConnectionInfo["user"]
-		result["password"] = "******" // 隐藏密码
-	case "mysql", "doris":
-		result["host"] = resource.ConnectionInfo["host"]
-		result["port"] = resource.ConnectionInfo["port"]
-		result["database"] = resource.ConnectionInfo["database"]
-		result["user"] = resource.ConnectionInfo["user"]
-		if result["user"] == nil || result["user"] == "" {
-			result["user"] = resource.ConnectionInfo["username"]
+	// 从插件系统获取敏感字段列表
+	sensitiveFields, err := dbbridge.GetSensitiveFields(resource.ResourceType)
+	if err != nil {
+		// 降级：使用默认敏感字段列表
+		sensitiveFields = []string{"password", "secret_key", "access_key", "token"}
+	}
+
+	// 创建敏感字段的快速查找map
+	sensitiveMap := make(map[string]bool)
+	for _, field := range sensitiveFields {
+		sensitiveMap[field] = true
+	}
+
+	// 遍历所有连接信息字段
+	for key, value := range resource.ConnectionInfo {
+		if sensitiveMap[key] {
+			// 敏感字段：access_key部分隐藏，其他完全隐藏
+			if key == "access_key" {
+				result[key] = maskString(value)
+			} else {
+				result[key] = "******"
+			}
+		} else {
+			// 非敏感字段：直接返回
+			result[key] = value
 		}
-		result["password"] = "******" // 隐藏密码
-	case "spark_sql":
-		result["host"] = resource.ConnectionInfo["host"]
-		result["port"] = resource.ConnectionInfo["port"]
-		result["database"] = resource.ConnectionInfo["database"]
-		result["user"] = resource.ConnectionInfo["user"]
-		result["password"] = "******" // 隐藏密码
-	case "minio", "s3":
-		result["endpoint"] = resource.ConnectionInfo["endpoint"]
-		result["bucket"] = resource.ConnectionInfo["bucket"]
-		result["access_key"] = maskString(resource.ConnectionInfo["access_key"])
-		result["secret_key"] = "******" // 隐藏密钥
-		result["use_ssl"] = resource.ConnectionInfo["use_ssl"]
 	}
 
 	return result
 }
 
-// maskString 部分隐藏字符串
+// maskString 部分隐藏字符串（仅用于access_key等需要部分显示的字段）
 func maskString(value interface{}) string {
 	if str, ok := value.(string); ok {
-		if len(str) <= 4 {
+		if len(str) <= 8 {
 			return "****"
 		}
 		return str[:4] + "****" + str[len(str)-4:]
 	}
 	return "****"
+}
+
+// ListSchemas 列出指定资源的所有Schema/Database
+func (s *StorageEngineService) ListSchemas(resource *models.Resource) ([]plugin.SchemaInfo, error) {
+	// 获取或创建连接池
+	db, err := dbbridge.GetOrCreatePool(resource, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 使用 dbbridge 列出 schemas
+	return dbbridge.ListSchemas(context.Background(), resource, db)
+}
+
+// ListTables 列出指定资源和Schema下的所有表
+func (s *StorageEngineService) ListTables(resource *models.Resource, schema string) ([]plugin.TableInfo, error) {
+	// 获取或创建连接池
+	db, err := dbbridge.GetOrCreatePool(resource, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 使用 dbbridge 列出表
+	return dbbridge.ListTables(context.Background(), resource, db, schema)
 }

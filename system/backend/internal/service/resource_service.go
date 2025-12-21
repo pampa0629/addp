@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
 	commonutils "github.com/addp/common/utils"
 	"github.com/addp/system/internal/models"
@@ -683,10 +684,12 @@ func (s *ResourceService) authorizeResourceAccess(resource *models.Resource, use
 		return nil
 	}
 
+	// 检查用户和资源是否都有租户ID
 	if user.TenantID == nil || resource.TenantID == nil {
 		return ErrResourceForbidden
 	}
 
+	// 比较租户ID
 	if *user.TenantID != *resource.TenantID {
 		return ErrResourceForbidden
 	}
@@ -757,35 +760,15 @@ func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
 
 // generateDefaultCapabilities 根据资源类型生成默认 capabilities
 func (s *ResourceService) generateDefaultCapabilities(resourceType string) string {
+	// 尝试从插件系统获取能力描述
+	capabilities, err := dbbridge.GenerateCapabilities(resourceType)
+	if err == nil {
+		return capabilities
+	}
+
+	// 降级：对于API引擎等非数据库类型，使用硬编码
 	resourceTypeLower := strings.ToLower(resourceType)
-
 	switch resourceTypeLower {
-	// 标准库引擎 - 数据库类型
-	case "postgresql", "postgres":
-		return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
-
-	case "mysql":
-		return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
-
-	case "doris":
-		return `{"storage":[{"type":"relational_db","engine":"doris","supports_query":true}],"compute":[{"type":"sql_query","description":"OLAP分析查询","dev_modes":["sql"]}]}`
-
-	case "spark_sql":
-		return `{"compute":[{"type":"sql_query","description":"Spark SQL查询","dev_modes":["sql"],"features":["distributed","big_data"]}]}`
-
-	// 标准库引擎 - 对象存储类型
-	case "minio":
-		return `{"storage":[{"type":"object_storage","engine":"minio"}]}`
-
-	case "s3":
-		return `{"storage":[{"type":"object_storage","engine":"s3"}]}`
-
-	case "oss":
-		return `{"storage":[{"type":"object_storage","engine":"oss"}]}`
-
-	case "object_storage", "object-storage":
-		return `{"storage":[{"type":"object_storage","engine":"generic"}]}`
-
 	// API引擎 - 内置模块
 	case "api.meta":
 		return `{"compute":[{"type":"scan","dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"]}]}`

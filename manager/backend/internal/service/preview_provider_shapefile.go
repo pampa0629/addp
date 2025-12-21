@@ -55,6 +55,16 @@ func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
+	// 如果 connection_info 中没有指定 bucket,使用 schema 参数作为 bucket
+	if bucket == "" {
+		bucket = req.Schema
+	}
+
+	// 验证 bucket 不为空
+	if bucket == "" {
+		return nil, fmt.Errorf("bucket name is required")
+	}
+
 	tempFile, err := p.downloadShapefile(ctx, minioClient, bucket, req.Schema, req.Table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download shapefile: %w", err)
@@ -130,6 +140,14 @@ func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 		Page:            req.Page,
 		PageSize:        pageSize,
 		GeometryColumns: []string{"geometry"},
+		Object: &models.ObjectPreview{
+			Bucket:      bucket,
+			Path:        req.Table,
+			ContentType: "application/x-esri-shapefile",
+			Content: &models.ObjectPreviewContent{
+				Kind: "shapefile",
+			},
+		},
 	}, nil
 }
 
@@ -142,7 +160,9 @@ func (p *shapefilePreviewProvider) createMinioClient(resource *models.Resource) 
 	useSSL, _ := connInfo["use_ssl"].(bool)
 	bucket, _ := connInfo["bucket"].(string)
 
-	if endpoint == "" || accessKey == "" || secretKey == "" || bucket == "" {
+	// endpoint, accessKey, secretKey 是必需的
+	// bucket 可以为空(从 schema 参数获取)
+	if endpoint == "" || accessKey == "" || secretKey == "" {
 		return nil, "", fmt.Errorf("missing required connection info")
 	}
 
@@ -158,9 +178,18 @@ func (p *shapefilePreviewProvider) createMinioClient(resource *models.Resource) 
 }
 
 func (p *shapefilePreviewProvider) downloadShapefile(ctx context.Context, client *minio.Client, bucket, schema, table string) (string, error) {
+	// 处理路径:table 可能是 ".shp", ".dbf", ".shx" 等任何 shapefile 组件
+	// 我们需要提取基础路径并确保下载所有组件
 	fullPath := table
 	if schema != "" && schema != bucket {
 		fullPath = filepath.Join(schema, table)
+	}
+
+	// 如果 fullPath 以 .dbf, .shx, .prj 等结尾,去掉扩展名得到基础路径
+	ext := filepath.Ext(fullPath)
+	basePath := fullPath
+	if ext != "" {
+		basePath = fullPath[:len(fullPath)-len(ext)]
 	}
 
 	tempDir, err := os.MkdirTemp("", "shapefile-preview-*")
@@ -168,8 +197,10 @@ func (p *shapefilePreviewProvider) downloadShapefile(ctx context.Context, client
 		return "", err
 	}
 
-	shpFile := filepath.Join(tempDir, filepath.Base(fullPath))
-	object, err := client.GetObject(ctx, bucket, fullPath, minio.GetObjectOptions{})
+	// 下载 .shp 主文件
+	shpPath := basePath + ".shp"
+	shpFile := filepath.Join(tempDir, filepath.Base(shpPath))
+	object, err := client.GetObject(ctx, bucket, shpPath, minio.GetObjectOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -185,13 +216,13 @@ func (p *shapefilePreviewProvider) downloadShapefile(ctx context.Context, client
 		return "", err
 	}
 
-	basePath := fullPath[:len(fullPath)-4]
 	localBasePath := shpFile[:len(shpFile)-4]
 
+	// 下载其他必需的组件文件
 	extensions := []string{".shx", ".dbf", ".prj", ".cpg"}
-	for _, ext := range extensions {
-		remotePath := basePath + ext
-		localPath := localBasePath + ext
+	for _, extension := range extensions {
+		remotePath := basePath + extension
+		localPath := localBasePath + extension
 		_ = p.downloadFile(ctx, client, bucket, remotePath, localPath)
 	}
 

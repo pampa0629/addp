@@ -12,20 +12,20 @@ import (
 	"github.com/addp/manager/internal/repository"
 )
 
-var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, *ObjectContentRegistry) (PreviewProvider, error){
-	"postgresql-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ *ObjectContentRegistry) (PreviewProvider, error) {
+var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, string, *ObjectContentRegistry) (PreviewProvider, error){
+	"postgresql-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewPostgresPreviewProvider(repo), nil
 	},
-	"shapefile": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *ObjectContentRegistry) (PreviewProvider, error) {
+	"shapefile": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewShapefilePreviewProvider(), nil
 	},
-	"csv": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ *ObjectContentRegistry) (PreviewProvider, error) {
+	"csv": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewCSVPreviewProvider(), nil
 	},
-	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, content *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewObjectStoragePreviewProvider(repo, metaClient, content), nil
+	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	},
-	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ *ObjectContentRegistry) (PreviewProvider, error) {
+	"schema-node": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewSchemaPreviewProvider(repo, metaClient), nil
 	},
 }
@@ -40,14 +40,14 @@ var builtinProviderFactories = map[string]builtinProviderFactory{
 	},
 }
 
-func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *ObjectContentRegistry, dirSpec string) {
+func LoadPreviewPlugins(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *ObjectContentRegistry, metaServiceURL string, dirSpec string) {
 	if registry == nil || metadataRepo == nil {
 		return
 	}
 
 	dirs := splitDirectories(dirSpec)
 	for _, dir := range dirs {
-		loadPluginsFromDir(registry, metadataRepo, metaClient, contentRegistry, dir)
+		loadPluginsFromDir(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, dir)
 	}
 }
 
@@ -67,7 +67,7 @@ func splitDirectories(spec string) []string {
 	return paths
 }
 
-func loadPluginsFromDir(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *ObjectContentRegistry, dir string) {
+func loadPluginsFromDir(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *ObjectContentRegistry, dir string) {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		logger.L().Warn("数据预览: 插件目录不可用", "dir", dir, "error", err)
@@ -88,11 +88,11 @@ func loadPluginsFromDir(registry *PreviewRegistry, metadataRepo *repository.Meta
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		loadPluginFromFile(registry, metadataRepo, metaClient, contentRegistry, path)
+		loadPluginFromFile(registry, metadataRepo, metaClient, metaServiceURL, contentRegistry, path)
 	}
 }
 
-func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, contentRegistry *ObjectContentRegistry, path string) {
+func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, contentRegistry *ObjectContentRegistry, path string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		logger.L().Warn("数据预览: 读取插件配置失败", "path", path, "error", err)
@@ -116,7 +116,7 @@ func loadPluginFromFile(registry *PreviewRegistry, metadataRepo *repository.Meta
 	case "builtin":
 		factoryWithContent, ok := builtinProviderFactoriesWithContent[strings.TrimSpace(cfg.Builtin)]
 		if ok {
-			p, err := factoryWithContent(metadataRepo, metaClient, contentRegistry)
+			p, err := factoryWithContent(metadataRepo, metaClient, metaServiceURL, contentRegistry)
 			if err != nil {
 				logger.L().Warn("数据预览: 内置插件初始化失败", "config", path, "builtin", cfg.Builtin, "error", err)
 				return

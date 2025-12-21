@@ -177,9 +177,10 @@ func Load() *Config {
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
 	// MinIO 配置（用于 MVT 瓦片存储）
-	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_ENDPOINT", "localhost:9002")
-	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin"))
-	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin"))
+	// 注意：Manager 模块使用系统 infra MinIO (9000)，不是业务 MinIO (9002)
+	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", "localhost:9000"))
+	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
+	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// MVT 预缓存配置

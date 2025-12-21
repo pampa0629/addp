@@ -395,3 +395,154 @@ func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Resource,
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Resource, error) {
 	return c.ListResourcesByCapability(tenantID, nil, []string{"sql_query"})
 }
+
+// ================ TaskProvider 相关方法（新增） ================
+
+// ListTaskProviders 查询所有启用的任务提供者
+func (c *SystemClient) ListTaskProviders() ([]*models.TaskProvider, error) {
+	url := fmt.Sprintf("%s/internal/task-providers", c.baseURL)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var providers []*models.TaskProvider
+	if err := json.NewDecoder(resp.Body).Decode(&providers); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return providers, nil
+}
+
+// GetTaskProvider 根据 module_name 查询任务提供者
+func (c *SystemClient) GetTaskProvider(moduleName string) (*models.TaskProvider, error) {
+	url := fmt.Sprintf("%s/internal/task-providers/%s", c.baseURL, moduleName)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var provider models.TaskProvider
+	if err := json.NewDecoder(resp.Body).Decode(&provider); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &provider, nil
+}
+
+// ================ 数据库元数据相关方法（新增） ================
+
+// SchemaInfo 表示数据库Schema信息
+type SchemaInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// TableInfo 表示数据库表信息
+type TableInfo struct {
+	Name        string `json:"name"`
+	Schema      string `json:"schema"`
+	Type        string `json:"type,omitempty"`        // TABLE, VIEW等
+	Description string `json:"description,omitempty"`
+}
+
+// ListSchemas 列出指定资源的所有Schema/Database
+func (c *SystemClient) ListSchemas(resourceID uint) ([]SchemaInfo, error) {
+	url := fmt.Sprintf("%s/api/resources/%d/schemas", c.baseURL, resourceID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Status  string       `json:"status"`
+		Schemas []SchemaInfo `json:"schemas"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Schemas, nil
+}
+
+// ListTables 列出指定资源和Schema下的所有表
+func (c *SystemClient) ListTables(resourceID uint, schema string) ([]TableInfo, error) {
+	url := fmt.Sprintf("%s/api/resources/%d/tables", c.baseURL, resourceID)
+	if schema != "" {
+		url += "?schema=" + schema
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Status string      `json:"status"`
+		Tables []TableInfo `json:"tables"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Tables, nil
+}

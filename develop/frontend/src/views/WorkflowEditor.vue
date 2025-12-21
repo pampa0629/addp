@@ -69,6 +69,7 @@
               :node-id="selectedNode.id"
               :operator="selectedNode.operator"
               :param-definitions="selectedNode.paramDefs"
+              :parameters="selectedNode.parameters"
               :initial-params="selectedNode.params"
               @save="handleParamsSave"
             />
@@ -212,7 +213,7 @@ const handleNodeClick = async (node) => {
     const response = await getOperatorDetail(node.operator)
     const operator = response.operator  // 从响应中提取 operator 对象
 
-    // 转换参数定义为对象格式(用于 OperatorParamsPanel)
+    // 转换参数定义为对象格式(用于向后兼容)
     const paramDefs = {}
     if (operator.parameters && Array.isArray(operator.parameters)) {
       operator.parameters.forEach(param => {
@@ -224,7 +225,8 @@ const handleNodeClick = async (node) => {
       id: node.id,
       operator: node.operator,
       params: node.params || {},
-      paramDefs: paramDefs
+      paramDefs: paramDefs,
+      parameters: operator.parameters || []  // 传递完整的参数数组
     }
   } catch (error) {
     console.error('加载算子详情失败:', error)

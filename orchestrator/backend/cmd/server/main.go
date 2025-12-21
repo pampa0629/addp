@@ -55,6 +55,13 @@ func main() {
 		5*time.Minute, // 缓存 TTL
 	)
 
+	// 初始化 TaskProviderRegistry（从 System 动态加载任务提供者）
+	taskProviderRegistry := service.NewTaskProviderRegistry(
+		cfg.SystemServiceURL,
+		cfg.InternalAPIKey,
+		5*time.Minute, // 缓存 TTL
+	)
+
 	// 初始化 TaskClient（通用任务客户端）
 	taskClient := service.NewTaskClient(30 * time.Second)
 
@@ -77,9 +84,10 @@ func main() {
 
 	log.Println("✅ 调度器启动成功")
 	log.Println("✅ 引擎注册表已初始化（从 System 动态加载）")
+	log.Println("✅ 任务提供者注册表已初始化（从 System 动态加载）")
 
-	// 设置路由（传递 engineRegistry、systemURL 和 redisClient）
-	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, cfg.SystemServiceURL, redisClient)
+	// 设置路由（传递 engineRegistry、taskProviderRegistry、systemURL 和 redisClient）
+	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, cfg.SystemServiceURL, redisClient)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

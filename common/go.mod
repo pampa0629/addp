@@ -20,8 +20,9 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/twpayne/go-geom v1.6.1
 	github.com/xuri/excelize/v2 v2.10.0
+	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0
-	gorm.io/gorm v1.25.12
+	gorm.io/gorm v1.30.0
 )
 
 require (

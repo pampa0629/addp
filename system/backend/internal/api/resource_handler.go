@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -190,6 +191,13 @@ func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
 		return
 	}
 
+	// DEBUG: 打印接收到的连接信息
+	if password, ok := req.ConnectionInfo["password"].(string); ok {
+		fmt.Printf("[DEBUG] TestConnection received password: '%s', length: %d\n", password, len(password))
+	} else {
+		fmt.Printf("[DEBUG] TestConnection password field type: %T, value: %v\n", req.ConnectionInfo["password"], req.ConnectionInfo["password"])
+	}
+
 	// 构建临时资源对象用于测试
 	resource := &models.Resource{
 		ResourceType:   req.ResourceType,
@@ -320,4 +328,87 @@ func (h *ResourceHandler) GetByIDInternal(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resource)
+}
+
+// ListSchemas 列出指定资源的所有Schema/Database
+// @Summary 列出Schema列表
+// @Tags Resources
+// @Produce json
+// @Param id path int true "资源ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/resources/:id/schemas [get]
+func (h *ResourceHandler) ListSchemas(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
+		return
+	}
+
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	// 获取资源(验证权限)
+	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+
+	// 调用 StorageEngineService 列出 schemas
+	schemas, err := h.storageEngineService.ListSchemas(resource)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"schemas": schemas,
+	})
+}
+
+// ListTables 列出指定资源和Schema下的所有表
+// @Summary 列出表列表
+// @Tags Resources
+// @Produce json
+// @Param id path int true "资源ID"
+// @Param schema query string false "Schema名称(默认public)"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/resources/:id/tables [get]
+func (h *ResourceHandler) ListTables(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
+		return
+	}
+
+	schema := c.DefaultQuery("schema", "public")
+
+	currentUserID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	// 获取资源(验证权限)
+	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
+	if err != nil {
+		h.respondWithResourceError(c, err)
+		return
+	}
+
+	// 调用 StorageEngineService 列出表
+	tables, err := h.storageEngineService.ListTables(resource, schema)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"tables": tables,
+	})
 }
