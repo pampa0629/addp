@@ -27,6 +27,7 @@ func main() {
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
 	log.Printf("🔗 GeoPandas Engine: %s", cfg.GeoPandasEngineURL)
+	log.Printf("🔗 Spark Sedona Engine: %s", cfg.SparkEngineURL)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -64,6 +65,7 @@ func main() {
 	// 5. 算子发现服务
 	operatorDiscovery := service.NewOperatorDiscoveryService(
 		cfg.GeoPandasEngineURL,
+		cfg.SparkEngineURL, // 新增: Spark Engine
 		cfg.MetaServiceURL,
 		cfg.TransferServiceURL,
 		cfg.ManagerServiceURL,

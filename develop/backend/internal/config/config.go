@@ -30,6 +30,9 @@ type Config struct {
 	// GeoPandas Engine 配置
 	GeoPandasEngineURL string
 
+	// Spark Sedona Engine 配置
+	SparkEngineURL string
+
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
 	TransferServiceURL string
@@ -78,6 +81,9 @@ func Load() *Config {
 
 		// GeoPandas Engine 配置
 		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8099"),
+
+		// Spark Sedona Engine 配置
+		SparkEngineURL: getEnv("SPARK_ENGINE_URL", "http://localhost:8098"),
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),

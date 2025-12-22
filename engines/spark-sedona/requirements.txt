@@ -1,0 +1,26 @@
+# Spark Engine Dependencies
+# 核心依赖
+pyspark==3.5.0
+apache-sedona==1.5.1
+
+# Web框架
+Flask==3.0.0
+flask-cors==4.0.0
+
+# HTTP客户端
+requests==2.31.0
+
+# 数据处理
+pandas==2.1.4
+geopandas==0.14.1
+
+# 数据库连接
+psycopg2-binary==2.9.9
+pymysql==1.1.0
+sqlalchemy==2.0.23
+
+# S3/MinIO支持 (已通过Spark配置)
+# boto3==1.29.7
+
+# 工具
+python-dotenv==1.0.0

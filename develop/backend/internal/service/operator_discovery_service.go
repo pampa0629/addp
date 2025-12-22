@@ -14,9 +14,10 @@ import (
 )
 
 // OperatorDiscoveryService 跨模块算子发现服务
-// 负责从各个模块（Meta、Transfer、Manager、GeoPandas）获取算子列表并合并缓存
+// 负责从各个模块（Meta、Transfer、Manager、GeoPandas、Spark）获取算子列表并合并缓存
 type OperatorDiscoveryService struct {
 	geopandasEngineURL string
+	sparkEngineURL     string // 新增: Spark Sedona Engine URL
 	metaServiceURL     string
 	transferServiceURL string
 	managerServiceURL  string
@@ -32,12 +33,14 @@ type OperatorDiscoveryService struct {
 // NewOperatorDiscoveryService 创建算子发现服务
 func NewOperatorDiscoveryService(
 	geopandasEngineURL string,
+	sparkEngineURL string, // 新增: Spark Engine URL
 	metaServiceURL string,
 	transferServiceURL string,
 	managerServiceURL string,
 ) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
 		geopandasEngineURL: geopandasEngineURL,
+		sparkEngineURL:     sparkEngineURL,
 		metaServiceURL:     metaServiceURL,
 		transferServiceURL: transferServiceURL,
 		managerServiceURL:  managerServiceURL,
@@ -64,8 +67,8 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 
 	// 并发获取各模块的算子
 	var wg sync.WaitGroup
-	results := make(chan []commonModels.OperatorMetadata, 4)
-	errors := make(chan error, 4)
+	results := make(chan []commonModels.OperatorMetadata, 5) // 增加到5个模块
+	errors := make(chan error, 5)
 
 	// GeoPandas Engine
 	wg.Add(1)
@@ -74,6 +77,19 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 		operators, err := s.fetchOperatorsFromModule(ctx, "geopandas", s.geopandasEngineURL)
 		if err != nil {
 			log.Printf("⚠️ [OperatorDiscovery] GeoPandas Engine 获取失败: %v", err)
+			errors <- err
+		} else {
+			results <- operators
+		}
+	}()
+
+	// Spark Sedona Engine (新增)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		operators, err := s.fetchOperatorsFromModule(ctx, "spark", s.sparkEngineURL)
+		if err != nil {
+			log.Printf("⚠️ [OperatorDiscovery] Spark Sedona Engine 获取失败: %v", err)
 			errors <- err
 		} else {
 			results <- operators
@@ -158,6 +174,8 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 	switch module {
 	case "geopandas":
 		url = s.geopandasEngineURL
+	case "spark": // 新增
+		url = s.sparkEngineURL
 	case "meta":
 		url = s.metaServiceURL
 	case "transfer":
