@@ -284,7 +284,8 @@ const fetchResults = async () => {
       page_size: pageSize.value
     }
     const response = await searchAPI.fullText(params)
-    const payload = response.data?.data || {}
+    // API client 已经自动提取了第一层 data，所以这里直接用 response.data
+    const payload = response.data || {}
     results.value = Array.isArray(payload.results) ? payload.results : []
     total.value = Number(payload.total || 0)
     page.value = Number(payload.page || page.value || 1)

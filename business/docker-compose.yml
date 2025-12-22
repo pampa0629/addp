@@ -102,7 +102,7 @@ services:
     command: >
       bash -c "
         /opt/spark/sbin/start-master.sh &&
-        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 --packages org.apache.sedona:sedona-spark-3.5_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.5.1-28.2 --conf spark.sql.extensions=org.apache.sedona.sql.SedonaSqlExtensions --conf spark.serializer=org.apache.spark.serializer.KryoSerializer --conf spark.kryo.registrator=org.apache.sedona.core.serde.SedonaKryoRegistrator &&
+        /opt/spark/sbin/start-thriftserver.sh --master spark://spark-master:7077 &&
         tail -f /dev/null
       "
     networks:

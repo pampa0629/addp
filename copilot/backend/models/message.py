@@ -3,7 +3,7 @@
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, mapped_column
 from sqlalchemy.sql import func
 from database import Base
 
@@ -17,7 +17,7 @@ class Message(Base):
     conversation_id = Column(Integer, ForeignKey('copilot.conversations.id', ondelete='CASCADE'), nullable=False, index=True)
     role = Column(String(20), nullable=False)  # 'user', 'assistant', 'system'
     content = Column(Text, nullable=False)
-    extra_data = Column(JSONB)  # 附加信息（生成的 SQL、选中的数据源等）
+    extra_data = mapped_column('metadata', JSONB)  # 映射到数据库的 metadata 列
     token_count = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

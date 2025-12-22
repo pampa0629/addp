@@ -44,6 +44,20 @@ func SetupRouter(
 		})
 	})
 
+	// 公开 API 路由组（无需认证）- 用于算子发现等公开信息
+	publicAPI := router.Group("/api/develop")
+	{
+		// ========== 算子发现（公开）==========
+		operators := publicAPI.Group("/operators")
+		{
+			operators.GET("", operatorHandler.ListAllOperators)                          // 获取所有算子
+			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                   // 获取缓存信息
+			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)     // 按模块获取算子
+			operators.GET("/:name", operatorHandler.GetOperatorDetail)                   // 获取算子详情
+			operators.POST("/refresh", operatorHandler.RefreshCache)                     // 刷新缓存（内部使用）
+		}
+	}
+
 	// API 路由组（需要认证）
 	api := router.Group("/api/develop")
 	api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemServiceURL))
@@ -75,16 +89,6 @@ func SetupRouter(
 			executions.GET("/:id/logs", devExecutionHandler.GetExecutionLogs)       // 获取执行日志
 			executions.POST("/:id/cancel", devExecutionHandler.CancelExecution)     // 取消执行
 			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)       // 重试执行
-		}
-
-		// ========== 算子发现 ==========
-		operators := api.Group("/operators")
-		{
-			operators.GET("", operatorHandler.ListAllOperators)                          // 获取所有算子
-			operators.POST("/refresh", operatorHandler.RefreshCache)                     // 刷新缓存
-			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                   // 获取缓存信息
-			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)     // 按模块获取算子
-			operators.GET("/:name", operatorHandler.GetOperatorDetail)                   // 获取算子详情
 		}
 
 		// ========== 资源管理 ==========

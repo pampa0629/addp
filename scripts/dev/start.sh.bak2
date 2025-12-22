@@ -806,13 +806,7 @@ NEED_INSTALL=false
 if [ ! -d "engines/geopandas/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
     cd engines/geopandas
-    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
-    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
+    python3 -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
@@ -914,21 +908,14 @@ fi
 # ============================================================
 # Step 5: Start Copilot Backend (Python/FastAPI service)
 # ============================================================
-if [ "$START_COPILOT_BACKEND" = true ]; then
-  echo -e "${YELLOW}Step 5/6: 启动 Copilot Backend...${NC}"
+echo -e "${YELLOW}Step 5/6: 启动 Copilot Backend...${NC}"
 
-  # 检查并创建虚拟环境（幂等）
-  NEED_INSTALL=false
-  if [ ! -d "copilot/backend/venv" ]; then
+# 检查并创建虚拟环境（幂等）
+NEED_INSTALL=false
+if [ ! -d "copilot/backend/venv" ]; then
     echo "首次启动 Copilot，创建 Python 虚拟环境..."
     cd copilot/backend
-    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
-    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
+    python3 -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
@@ -1007,22 +994,17 @@ if check_service_running "copilot-backend" "8087"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-    echo -e "${GREEN}✓ Copilot Backend 就绪 (http://localhost:8087)${NC}"
+  echo -e "${GREEN}✓ Copilot Backend 就绪 (http://localhost:8087)${NC}"
 else
   COPILOT_PID=$(cat .dev-pids/copilot-backend.pid 2>/dev/null)
   echo -e "${GREEN}✓ Copilot Backend 已在运行 (PID: $COPILOT_PID)${NC}"
 fi
-  echo ""
-else
-  echo -e "${YELLOW}Step 5/6: 跳过 Copilot Backend${NC}"
-  echo ""
-fi
+echo ""
 
 # 6. 启动 Gateway
-if [ "$START_GATEWAY" = true ]; then
-  echo -e "${YELLOW}Step 6/7: 启动 Gateway${NC}"
+echo -e "${YELLOW}Step 6/7: 启动 Gateway${NC}"
 
-  if check_service_running "gateway" "8000"; then
+if check_service_running "gateway" "8000"; then
   build_gateway
   # 重置 PORT 环境变量为 Gateway 的端口
   export PORT=8000
@@ -1048,11 +1030,7 @@ else
   GATEWAY_PID=$(cat .dev-pids/gateway.pid 2>/dev/null)
   echo -e "${GREEN}✓ Gateway 已在运行 (PID: $GATEWAY_PID)${NC}"
 fi
-  echo ""
-else
-  echo -e "${YELLOW}Step 6/7: 跳过 Gateway${NC}"
-  echo ""
-fi
+echo ""
 
 # 7. 启动前端服务（保持原有并行逻辑）
 echo -e "${YELLOW}Step 7/7: 启动前端服务${NC}"
@@ -1103,51 +1081,26 @@ ensure_node_modules() {
 # ============================================================
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
-# 检查是否有任何前端需要启动
-if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ]; then
-  echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
+echo -e "${YELLOW}Step 8/8: 并发启动所有前端服务 (Portal + 6 个模块)${NC}"
 
-  # 动态构建前端配置（格式：名称:端口:目录）
-  # 使用普通数组而非关联数组（兼容 Bash 3.2）
-  FRONTEND_CONFIGS=()
+# 定义前端配置（格式：名称:端口:目录）
+# 使用普通数组而非关联数组（兼容 Bash 3.2）
+FRONTEND_CONFIGS=(
+  "portal:${PORTAL_FE_PORT}:portal/frontend"
+  "system:${SYSTEM_FE_PORT}:system/frontend"
+  "manager:${MANAGER_FE_PORT}:manager/frontend"
+  "meta:${META_FE_PORT}:meta/frontend"
+  "transfer:${TRANSFER_FE_PORT}:transfer/frontend"
+  "orchestrator:${ORCHESTRATOR_FE_PORT}:orchestrator/frontend"
+  "develop:${DEVELOP_FE_PORT}:develop/frontend"
+  "service:${SERVICE_FE_PORT}:service/frontend"
+)
 
-  if [ "$START_PORTAL" = true ]; then
-    FRONTEND_CONFIGS+=("portal:${PORTAL_FE_PORT}:portal/frontend")
-  fi
+echo "并发启动所有前端..."
 
-  if [ "$START_SYSTEM_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("system:${SYSTEM_FE_PORT}:system/frontend")
-  fi
-
-  if [ "$START_MANAGER_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("manager:${MANAGER_FE_PORT}:manager/frontend")
-  fi
-
-  if [ "$START_META_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("meta:${META_FE_PORT}:meta/frontend")
-  fi
-
-  if [ "$START_TRANSFER_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("transfer:${TRANSFER_FE_PORT}:transfer/frontend")
-  fi
-
-  if [ "$START_ORCHESTRATOR_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("orchestrator:${ORCHESTRATOR_FE_PORT}:orchestrator/frontend")
-  fi
-
-  if [ "$START_DEVELOP_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("develop:${DEVELOP_FE_PORT}:develop/frontend")
-  fi
-
-  if [ "$START_SERVICE_FRONTEND" = true ]; then
-    FRONTEND_CONFIGS+=("service:${SERVICE_FE_PORT}:service/frontend")
-  fi
-
-  echo "并发启动所有前端..."
-
-  # 存储 PIDs（使用临时文件）
-  FRONTEND_PID_FILE="/tmp/addp-frontend-pids-$$"
-  > "$FRONTEND_PID_FILE"  # 清空文件
+# 存储 PIDs（使用临时文件）
+FRONTEND_PID_FILE="/tmp/addp-frontend-pids-$$"
+> "$FRONTEND_PID_FILE"  # 清空文件
 
 # 并发启动所有前端
 for config in "${FRONTEND_CONFIGS[@]}"; do
@@ -1177,7 +1130,6 @@ echo ""
 echo "并发等待所有前端就绪..."
 
 # 并发等待所有前端的健康检查
-MAX_WAIT=60
 HEALTH_CHECK_PIDS=()
 for config in "${FRONTEND_CONFIGS[@]}"; do
   IFS=':' read -r name port dir <<< "$config"
@@ -1287,13 +1239,3 @@ echo "  Service FE:  logs/service-frontend.log"
 echo ""
 echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
 echo ""
-else
-  echo -e "${YELLOW}Step 8/8: 跳过前端服务启动${NC}"
-  echo ""
-  echo -e "${GREEN}========================================${NC}"
-  echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
-  echo -e "${GREEN}========================================${NC}"
-  echo ""
-  echo "停止所有服务: make dev-stop 或 ./scripts/dev/stop.sh"
-  echo ""
-fi

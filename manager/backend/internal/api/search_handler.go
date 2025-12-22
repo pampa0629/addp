@@ -61,6 +61,15 @@ func (h *SearchHandler) FullTextSearch(c *gin.Context) {
 		}
 	}
 
+	// 调试日志
+	logger.L().Info("全文搜索返回",
+		"query", query,
+		"total", result.Total,
+		"results_count", len(result.Hits),
+		"page", result.Page,
+		"page_size", result.PageSize,
+	)
+
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 

@@ -17,6 +17,7 @@ class WorkflowGenerationRequest(BaseModel):
     conversation_id: Optional[int] = None
     tenant_id: int
     user_id: int
+    use_two_stage: bool = True  # 新增：是否使用两阶段模式（默认 True）
 
 
 class WorkflowGenerationResponse(BaseModel):
@@ -33,20 +34,34 @@ async def generate_workflow(request: WorkflowGenerationRequest):
 
     根据用户的自然语言描述生成 GIS 工作流 DAG
     """
+    print(f"\n{'='*80}")
+    print(f"[API] 收到工作流生成请求")
+    print(f"[API] 用户查询: {request.query}")
+    print(f"[API] 租户 ID: {request.tenant_id}")
+    print(f"[API] 用户 ID: {request.user_id}")
+    print(f"[API] 对话 ID: {request.conversation_id}")
+    print(f"{'='*80}\n")
+
     try:
         # 1. 获取对话记忆（如果有）
         memory = None
         if request.conversation_id:
+            print(f"[API] 加载对话历史: {request.conversation_id}")
             memory = await memory_service.get_memory(request.conversation_id)
+            print(f"[API] 对话历史加载完成")
 
         # 2. 调用工作流 Agent 生成
+        print(f"[API] 调用 Workflow Agent...")
         result = await workflow_agent.generate(
             query=request.query,
             memory=memory,
-            tenant_id=request.tenant_id
+            tenant_id=request.tenant_id,
+            use_two_stage=request.use_two_stage  # 新增：传递两阶段模式参数
         )
+        print(f"[API] ✅ Workflow Agent 返回结果")
 
         # 3. 保存对话历史
+        print(f"[API] 保存对话历史...")
         conversation_id = await memory_service.save_message(
             conversation_id=request.conversation_id,
             tenant_id=request.tenant_id,
@@ -56,14 +71,20 @@ async def generate_workflow(request: WorkflowGenerationRequest):
             metadata={"workflow": result["workflow"]},
             context_type='workflow'
         )
+        print(f"[API] 对话历史已保存: {conversation_id}")
 
-        return WorkflowGenerationResponse(
+        response = WorkflowGenerationResponse(
             workflow=result["workflow"],
             explanation=result.get("explanation", "工作流生成成功"),
             conversation_id=conversation_id
         )
+        print(f"[API] ✅ 请求处理完成\n")
+        return response
 
     except Exception as e:
+        print(f"[API] ❌ 工作流生成失败: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"工作流生成失败: {str(e)}")
 
 

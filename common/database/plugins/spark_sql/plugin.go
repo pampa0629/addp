@@ -92,6 +92,9 @@ func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Con
 		return fmt.Errorf("missing required field: host")
 	}
 
+	fmt.Printf("[Spark SQL Plugin] 开始测试连接: host=%s, port=%d, database=%s, user=%s\n",
+		host, port, database, user)
+
 	// 配置连接
 	configuration := gohive.NewConnectConfiguration()
 	if user != "" {
@@ -101,34 +104,44 @@ func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Con
 		}
 	}
 
-	// 设置超时
-	configuration.ConnectTimeout = 10 * time.Second
-	configuration.SocketTimeout = 10 * time.Second
+	// 设置超时 - 增加到 30 秒
+	configuration.ConnectTimeout = 30 * time.Second
+	configuration.SocketTimeout = 30 * time.Second
+
+	fmt.Printf("[Spark SQL Plugin] 开始连接到 Thrift Server...\n")
 
 	// 连接到 Spark SQL Thrift Server
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {
+		fmt.Printf("[Spark SQL Plugin] 连接失败: %v\n", err)
 		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
 	}
 	defer connection.Close()
+
+	fmt.Printf("[Spark SQL Plugin] 连接成功,创建 cursor...\n")
 
 	// 创建 cursor
 	cursor := connection.Cursor()
 
 	// 切换到指定数据库
 	if database != "default" {
+		fmt.Printf("[Spark SQL Plugin] 切换到数据库: %s\n", database)
 		cursor.Exec(ctx, fmt.Sprintf("USE %s", database))
 		if cursor.Err != nil {
+			fmt.Printf("[Spark SQL Plugin] 切换数据库失败: %v\n", cursor.Err)
 			return fmt.Errorf("failed to use database '%s': %w", database, cursor.Err)
 		}
 	}
 
 	// 执行简单查询验证
+	fmt.Printf("[Spark SQL Plugin] 执行测试查询: SELECT 1\n")
 	cursor.Exec(ctx, "SELECT 1")
 	if cursor.Err != nil {
+		fmt.Printf("[Spark SQL Plugin] 查询失败: %v\n", cursor.Err)
 		return fmt.Errorf("failed to execute test query: %w", cursor.Err)
 	}
 
+	fmt.Printf("[Spark SQL Plugin] 测试连接成功!\n")
 	return nil
 }
 

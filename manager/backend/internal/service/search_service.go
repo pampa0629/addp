@@ -320,12 +320,6 @@ func (s *FullTextSearchService) SearchDocuments(
 
 	for _, hit := range resp.Hits {
 		doc := mapMeilisearchHit(hit)
-
-		// 租户过滤
-		if tenantID != nil && doc.ResourceID == 0 {
-			continue
-		}
-
 		result.Hits = append(result.Hits, doc)
 	}
 

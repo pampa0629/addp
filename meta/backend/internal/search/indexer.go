@@ -133,11 +133,21 @@ func (i *Indexer) Enabled() bool {
 
 // ensureIndexes 确保 Meilisearch 索引存在并配置正确
 func (i *Indexer) ensureIndexes() error {
+	// 确保资产索引存在并设置主键
+	_, err := i.client.CreateIndex(&meilisearch.IndexConfig{
+		Uid:        i.assetIndex,
+		PrimaryKey: "id",
+	})
+	// 忽略索引已存在的错误
+	if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
+		return fmt.Errorf("failed to create asset index: %w", err)
+	}
+
 	// 配置资产索引
 	assetIndex := i.client.Index(i.assetIndex)
 
 	// 设置可搜索字段
-	_, err := assetIndex.UpdateSearchableAttributes(&[]string{
+	_, err = assetIndex.UpdateSearchableAttributes(&[]string{
 		"name",
 		"full_name",
 		"description",
@@ -175,6 +185,16 @@ func (i *Indexer) ensureIndexes() error {
 
 	// 配置文档索引
 	if i.documentIndex != "" {
+		// 确保文档索引存在并设置主键
+		_, err := i.client.CreateIndex(&meilisearch.IndexConfig{
+			Uid:        i.documentIndex,
+			PrimaryKey: "id",
+		})
+		// 忽略索引已存在的错误
+		if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
+			return fmt.Errorf("failed to create document index: %w", err)
+		}
+
 		docIndex := i.client.Index(i.documentIndex)
 
 		_, err = docIndex.UpdateSearchableAttributes(&[]string{

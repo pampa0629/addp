@@ -101,10 +101,12 @@ stop_services_concurrent() {
   # 清理前端和 Python 进程
   pkill -9 -f "vite" 2>/dev/null || true
   pkill -9 -f "python.*api_server.py" 2>/dev/null || true
+  pkill -9 -f "python.*main.py.*copilot" 2>/dev/null || true
+  pkill -9 -f "uvicorn main:app.*8087" 2>/dev/null || true
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"
-  for port in 8080 8081 8082 8083 8084 8085 8086 8099 5170 5173 5174 5175 5176 5177 5178; do
+  for port in 8080 8081 8082 8083 8084 8085 8086 8087 8099 5170 5173 5174 5175 5176 5177 5178; do
     pid=$(lsof -ti :$port 2>/dev/null || true)
     if [ -n "$pid" ]; then
       echo "  发现端口 $port 被占用 (PID: $pid)，强制清理..."

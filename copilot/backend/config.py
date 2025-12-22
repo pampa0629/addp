@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
 
+    # 开发环境选项
+    disable_ssl_verify: bool = False  # 禁用 SSL 验证（仅用于开发环境）
+
     # 加密密钥
     encryption_key: str = "default-encryption-key-change-in-production"
 

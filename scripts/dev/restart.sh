@@ -3,11 +3,11 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-copilot]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,不重新编译"
-  echo "  -all         强制重新编译所有 Go 模块"
+  echo "  -all         强制重新编译所有 Go 模块 + 重启 Python 服务"
   echo "  -system      强制重新编译 System 模块"
   echo "  -manager     强制重新编译 Manager 模块"
   echo "  -meta        强制重新编译 Meta 模块"
@@ -16,14 +16,16 @@ show_usage() {
   echo "  -develop     强制重新编译 Develop 模块"
   echo "  -service     强制重新编译 Service 模块"
   echo "  -gateway     强制重新编译 Gateway 模块"
+  echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo ""
   echo "注意:"
-  echo "  - GeoPandas Engine (Python) 和前端服务会自动重启"
+  echo "  - GeoPandas Engine 和 Copilot (Python) 会自动重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
   echo "  $0                    # 只重启,不编译 (快速)"
   echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
+  echo "  $0 -copilot           # 重启 Copilot Backend"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -48,7 +50,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-copilot)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -106,6 +108,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     # Touch 指定模块的源文件
     if [ "$module" = "gateway" ]; then
       find gateway -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
+    elif [ "$module" = "copilot" ]; then
+      # Copilot 是 Python 服务，不需要编译，只需清理虚拟环境
+      echo "  标记 Copilot Backend 需要重启（无需编译）"
     else
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     fi
@@ -113,6 +118,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     # 删除指定模块的二进制
     if [ "$module" = "gateway" ]; then
       rm -f .dev-bins/addp-gateway 2>/dev/null || true
+    elif [ "$module" = "copilot" ]; then
+      # Python 服务无二进制文件
+      :
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
       rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
@@ -121,6 +129,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     # 清理指定模块的构建缓存
     if [ "$module" = "gateway" ]; then
       (cd gateway && go clean -cache 2>/dev/null) || true
+    elif [ "$module" = "copilot" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
     else
       (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
     fi

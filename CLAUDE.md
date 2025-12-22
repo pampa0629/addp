@@ -105,6 +105,26 @@
 
 详细步骤: [docs/addp部署和开发步骤.md](docs/addp部署和开发步骤.md)
 
+### 模块选择启动（推荐用于开发）
+
+**只启动需要的模块,加快开发速度,节省资源**:
+
+```bash
+# 只启动 System 模块 (5-8秒,节省85%资源)
+bash scripts/dev/start.sh -system
+
+# 启动 Manager 模块 + 依赖 (10-15秒)
+bash scripts/dev/start.sh -manager
+
+# 启动 Develop 模块 + GeoPandas (12-18秒)
+bash scripts/dev/start.sh -develop
+
+# 查看所有选项
+bash scripts/dev/start.sh -h
+```
+
+**详细指南**: [docs/模块选择启动指南.md](docs/模块选择启动指南.md)
+
 ### 开发工作流（重要）
 
 **如果你修改了某个模块的代码，使用选择性重启快速验证**：
@@ -134,6 +154,7 @@ bash scripts/dev/restart.sh
 - `-transfer` - Transfer 模块
 - `-orchestrator` - Orchestrator 模块
 - `-develop` - Develop 模块
+- `-service` - Service 模块
 - `-gateway` - Gateway 模块
 - `-all` - 所有模块
 
