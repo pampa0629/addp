@@ -557,7 +557,7 @@ function loadWorkflow(workflow) {
       y: 100 + Math.floor(index / 3) * 120,
       operator: task.operator,
       params: task.params || {},
-      depends_on: task.depends_on || []
+      dependencies: task.dependencies || []  // 使用 dependencies 字段
     })
 
     // 更新计数器
@@ -573,8 +573,9 @@ function loadWorkflow(workflow) {
   // 创建边
   workflow.tasks.forEach(task => {
     const targetId = task.id
-    if (task.depends_on && task.depends_on.length > 0) {
-      task.depends_on.forEach(sourceId => {
+    // 使用 dependencies 字段
+    if (task.dependencies && task.dependencies.length > 0) {
+      task.dependencies.forEach(sourceId => {
         edges.push({
           source: sourceId,
           target: targetId,

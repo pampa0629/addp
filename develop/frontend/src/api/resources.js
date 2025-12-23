@@ -28,3 +28,19 @@ export const listTables = (resourceId, schema) => {
     params: { schema }
   })
 }
+
+/**
+ * 获取工作流引擎列表
+ * @returns {Promise}
+ */
+export const getWorkflowEngines = () => {
+  return client.get('/develop/workflow-engines')
+}
+
+/**
+ * 获取 Spark 运行时列表
+ * @returns {Promise}
+ */
+export const getSparkRuntimes = () => {
+  return client.get('/develop/spark-runtimes')
+}

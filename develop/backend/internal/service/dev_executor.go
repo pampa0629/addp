@@ -220,18 +220,31 @@ func (e *DevExecutor) executeAsync(recordID uint, executionID string, devItem *m
 		executionID, status, executionTime)
 }
 
-// executeWorkflow 执行工作流
+// executeWorkflow 执行工作流（支持 JSONB 配置）
 func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string) {
 	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "执行工作流")
 
+	// 验证执行配置
+	if devItem.ExecutionConfig == nil || *devItem.ExecutionConfig == "" {
+		return nil, "工作流缺少执行配置，请配置工作流引擎"
+	}
+
 	// 解析工作流定义
-	workflowDef, ok := devItem.Content["workflow_def"].(map[string]interface{})
+	workflowDef, ok := devItem.Content["workflow_definition"].(map[string]interface{})
 	if !ok {
-		return nil, "无效的工作流定义"
+		// 向后兼容：尝试旧的字段名
+		workflowDef, ok = devItem.Content["workflow_def"].(map[string]interface{})
+		if !ok {
+			return nil, "无效的工作流定义"
+		}
 	}
 
 	// 解析输入数据（可选）
-	inputData, _ := devItem.Content["input_data"].(map[string]interface{})
+	inputData, _ := devItem.Content["inputs"].(map[string]interface{})
+	if inputData == nil {
+		// 向后兼容：尝试旧的字段名
+		inputData, _ = devItem.Content["input_data"].(map[string]interface{})
+	}
 
 	// 设置超时
 	timeout := devItem.Timeout
@@ -241,8 +254,8 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	// 调用工作流引擎
-	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, workflowDef, inputData)
+	// 调用工作流引擎（传递 JSONB 配置字符串）
+	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, workflowDef, inputData, *devItem.ExecutionConfig)
 	if err != nil {
 		return nil, fmt.Sprintf("工作流执行失败: %v", err)
 	}

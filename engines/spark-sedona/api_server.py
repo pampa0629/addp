@@ -271,10 +271,10 @@ def register_to_system():
     internal_api_key = os.getenv('INTERNAL_API_KEY', '')
 
     registration_data = {
-        "unique_identifier": "api.spark",
+        "unique_identifier": "api.spark_sedona",
         "name": "spark_sedona_engine",
         "display_name": "Spark Sedona 空间计算引擎",
-        "resource_type": "api.spark",
+        "resource_type": "api.spark_sedona",
         "is_builtin": True,
         "capabilities": {
             "compute": [{

@@ -83,12 +83,19 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import * as operatorApi from '@/api/operator'
 
 // Props
+const props = defineProps({
+  engineType: {
+    type: String,
+    default: null, // 引擎类型: 'api.geopandas', 'api.spark_sedona', 或 null (全部)
+  }
+})
+
 const emit = defineEmits(['operator-click', 'operator-drag'])
 
 // Data
@@ -96,16 +103,34 @@ const loading = ref(false)
 const loadError = ref('')
 const searchQuery = ref('')
 const operators = ref([]) // 从后端获取的算子列表 (数组格式,符合 common 标准)
-const activeCategories = ref(['几何处理', '空间关系']) // 默认展开的分类
+// 默认展开所有分类，让用户能看到所有算子
+const activeCategories = ref([
+  // GeoPandas 引擎分类
+  '数据I/O', '几何处理', '空间关系', '几何属性',
+  '格式转换', '数据操作', '属性计算', '数据筛选',
+  // Spark Sedona 引擎分类
+  'I/O', '空间分析', '数据转换', '聚合分析', 'SQL查询'
+])
 
-// 分类映射 (category → icon + 中文名)
-const categoryMapping = {
-  geometry_processing: { name: '几何处理', icon: '📐' },
-  spatial_relationships: { name: '空间关系', icon: '🔗' },
-  geometry_attributes: { name: '几何属性', icon: '📏' },
-  format_conversion: { name: '格式转换', icon: '🔄' },
-  batch_operations: { name: '批处理', icon: '📦' },
-  advanced_operations: { name: '高级算子', icon: '⚡' }
+// 分类映射：后端的分类名称已经是中文，直接使用即可
+// 这里只是为每个分类添加图标
+const categoryIcons = {
+  // GeoPandas 引擎分类
+  '数据I/O': '💾',
+  '几何处理': '📐',
+  '空间关系': '🔗',
+  '几何属性': '📏',
+  '格式转换': '🔄',
+  '数据操作': '🛠️',
+  '属性计算': '🧮',
+  '数据筛选': '🔍',
+
+  // Spark Sedona 引擎分类
+  'I/O': '💾',
+  '空间分析': '🗺️',
+  '数据转换': '🔄',
+  '聚合分析': '📊',
+  'SQL查询': '🔎'
 }
 
 // 加载算子列表
@@ -113,7 +138,14 @@ const loadOperators = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await operatorApi.listAllOperators()
+    let res
+    if (props.engineType) {
+      // 按引擎类型加载
+      res = await operatorApi.listOperatorsByEngineType(props.engineType)
+    } else {
+      // 加载所有算子
+      res = await operatorApi.listAllOperators()
+    }
     // API client 已自动提取 response.data,所以 res 就是后端返回的数据对象
     // 后端返回格式: {status, operators: [], count}
     operators.value = res.operators || []
@@ -126,20 +158,25 @@ const loadOperators = async () => {
   }
 }
 
+// 监听引擎类型变化，自动重新加载算子
+watch(() => props.engineType, () => {
+  loadOperators()
+})
+
 // 分类后的算子列表
 const categorizedOperators = computed(() => {
   const categories = {}
 
   // 按分类组织算子 (operators.value 现在是数组)
   operators.value.forEach((op) => {
-    // 使用中文 category 作为分类键
+    // 后端已经返回中文分类名，直接使用
     const categoryName = op.category || '其他'
-    const categoryInfo = Object.values(categoryMapping).find(c => c.name === categoryName) || { name: categoryName, icon: '📝' }
+    const categoryIcon = categoryIcons[categoryName] || '📝'
 
-    if (!categories[categoryInfo.name]) {
-      categories[categoryInfo.name] = {
-        name: categoryInfo.name,
-        icon: categoryInfo.icon,
+    if (!categories[categoryName]) {
+      categories[categoryName] = {
+        name: categoryName,
+        icon: categoryIcon,
         operators: []
       }
     }
@@ -152,24 +189,28 @@ const categorizedOperators = computed(() => {
       })
     }
 
-    categories[categoryInfo.name].operators.push({
+    categories[categoryName].operators.push({
       name: op.name,
       displayName: op.display_name || op.name,
       description: op.description || '',
       params: params,
-      category: categoryInfo.name,
+      category: categoryName,
       parameters: op.parameters || []  // 保留原始参数定义
     })
   })
 
-  // 转换为数组并按预定义顺序排序
-  const categoryOrder = Object.values(categoryMapping).map(c => c.name)
-  return categoryOrder
-    .filter(name => categories[name])
-    .map(name => categories[name])
-    .concat(
-      Object.values(categories).filter(c => !categoryOrder.includes(c.name))
-    )
+  // 返回所有分类，按名称排序
+  return Object.values(categories).sort((a, b) => {
+    // 定义分类顺序权重（可选）
+    const order = ['I/O', '数据I/O', '空间分析', '几何处理', '空间关系', '几何属性',
+                   '数据转换', '数据操作', '数据筛选', '聚合分析', 'SQL查询', '格式转换', '属性计算']
+    const aIndex = order.indexOf(a.name)
+    const bIndex = order.indexOf(b.name)
+    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex
+    if (aIndex !== -1) return -1
+    if (bIndex !== -1) return 1
+    return a.name.localeCompare(b.name)
+  })
 })
 
 // 过滤后的分类列表 (基于搜索)

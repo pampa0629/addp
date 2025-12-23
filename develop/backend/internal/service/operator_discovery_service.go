@@ -189,6 +189,24 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 	return s.fetchOperatorsFromModule(ctx, module, url)
 }
 
+// GetOperatorsByEngineType 根据引擎类型过滤算子
+// 支持的引擎类型: geopandas, spark_sedona
+func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorMetadata, error) {
+	// 映射引擎类型到模块
+	moduleMapping := map[string]string{
+		"api.geopandas":    "geopandas",
+		"api.spark_sedona": "spark",
+	}
+
+	module, ok := moduleMapping[engineType]
+	if !ok {
+		return nil, fmt.Errorf("不支持的引擎类型: %s", engineType)
+	}
+
+	// 获取指定模块的算子
+	return s.GetOperatorsByModule(ctx, module)
+}
+
 // GetOperatorDetail 获取算子详情（从缓存中查找）
 func (s *OperatorDiscoveryService) GetOperatorDetail(ctx context.Context, operatorName string) (*commonModels.OperatorMetadata, error) {
 	// 先获取所有算子（会使用缓存）

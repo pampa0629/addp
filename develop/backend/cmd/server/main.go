@@ -46,8 +46,8 @@ func main() {
 	log.Printf("✅ System Client 创建成功")
 
 	// ========== Service 层 ==========
-	// 1. 工作流引擎服务
-	workflowEngine := service.NewWorkflowEngineService(cfg.GeoPandasEngineURL, systemClient)
+	// 1. 工作流引擎服务（重构后不再需要 GeoPandasEngineURL，改为从 System 动态获取）
+	workflowEngine := service.NewWorkflowEngineService(systemClient)
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
 	// 2. SQL引擎服务

@@ -394,6 +394,18 @@ check_service_changed() {
             fi
             ;;
 
+        geopandas-engine|spark-sedona-engine|copilot-backend)
+            # Python service: compare source file time (Dockerfile + Python source files)
+            comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
+                -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
+                xargs stat -f "%m" 2>/dev/null | sort -rn | head -1)
+
+            if [ -z "$comparison_time" ] || [ "$comparison_time" = "0" ]; then
+                echo -e "${YELLOW}Cannot determine source modification time, rebuilding...${NC}"
+                return 1
+            fi
+            ;;
+
         *)
             echo -e "${YELLOW}Unknown service type, rebuilding...${NC}"
             return 1
@@ -454,6 +466,17 @@ build_service() {
             if [ ! -f "$binary_path" ]; then
                 echo -e "${RED}Error: Worker binary not found at ${binary_path}${NC}"
                 echo -e "${YELLOW}Hint: Run ./scripts/build/compile.sh --arch ${arch} first${NC}"
+                return 1
+            fi
+            ;;
+
+        geopandas-engine|spark-sedona-engine|copilot-backend)
+            # Python Engine: Python service built from source (GeoPandas, Spark Sedona, or Copilot)
+            build_context="${service_dir}"
+            dockerfile_path="${service_dir}/Dockerfile"
+
+            if [ ! -f "${service_dir}/Dockerfile" ]; then
+                echo -e "${RED}Error: Dockerfile not found in ${service_dir}${NC}"
                 return 1
             fi
             ;;
@@ -590,7 +613,9 @@ main() {
         "orchestrator-backend:orchestrator/backend"
         "develop-backend:develop/backend"
         "service-backend:service/backend"
+        "copilot-backend:copilot"
         "geopandas-engine:engines/geopandas"
+        "spark-sedona-engine:engines/spark-sedona"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
         "manager-worker:manager/backend"

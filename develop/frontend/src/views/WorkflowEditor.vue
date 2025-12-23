@@ -18,29 +18,83 @@
           生成工作流
         </el-button>
       </div>
-      <div v-if="generatedWorkflow" class="workflow-preview">
-        <div class="preview-header">生成的工作流（{{ generatedWorkflow.tasks.length }} 步）</div>
-        <div class="preview-tasks">
-          <div v-for="task in generatedWorkflow.tasks" :key="task.id" class="task-item">
-            {{ task.id }}: {{ task.operator }}
-          </div>
-        </div>
-        <div class="preview-actions">
-          <el-button size="small" type="primary" @click="loadToCanvas">加载到画布</el-button>
-          <el-button size="small" @click="generatedWorkflow = null">取消</el-button>
-        </div>
-      </div>
     </div>
 
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
         <h2>工作流编辑器</h2>
-        <el-button type="primary" @click="handleSave">
+
+        <!-- 引擎选择区域 -->
+        <div class="engine-selector">
+          <!-- 1️⃣ 工作流引擎选择（必选） -->
+          <div class="engine-select-group">
+            <label>工作流引擎:</label>
+            <el-select
+              v-model="workflowEngineId"
+              placeholder="选择工作流引擎"
+              style="width: 280px"
+              @change="handleEngineChange"
+            >
+              <el-option
+                v-for="engine in workflowEngines"
+                :key="engine.id"
+                :label="engine.display_name"
+                :value="engine.id"
+              >
+                <div style="display: flex; justify-content: space-between; align-items: center">
+                  <span>{{ engine.display_name }}</span>
+                  <el-tag size="small" type="success" style="margin-left: 8px">
+                    {{ getEngineTag(engine) }}
+                  </el-tag>
+                </div>
+              </el-option>
+            </el-select>
+          </div>
+
+          <!-- 2️⃣ Spark 运行时选择（仅 Spark Sedona 引擎需要） -->
+          <div v-if="needsSparkRuntime()" class="spark-runtime-select-group">
+            <label>Spark 运行时:</label>
+            <el-select
+              v-model="sparkRuntimeId"
+              placeholder="选择 Spark 集群"
+              style="width: 280px"
+              :disabled="sparkRuntimes.length === 0"
+            >
+              <el-option
+                v-for="runtime in sparkRuntimes"
+                :key="runtime.id"
+                :label="formatRuntimeLabel(runtime)"
+                :value="runtime.id"
+              >
+                <div>
+                  <div>{{ runtime.display_name }}</div>
+                  <div style="font-size: 12px; color: #8492a6">
+                    {{ runtime.connection_info?.spark_master || '未配置' }}
+                  </div>
+                </div>
+              </el-option>
+            </el-select>
+
+            <!-- 无可用运行时提示 -->
+            <el-alert
+              v-if="sparkRuntimes.length === 0"
+              type="warning"
+              :closable="false"
+              style="margin-top: 8px"
+            >
+              未找到可用的 Spark 运行时，请先在系统模块注册 Spark 集群
+            </el-alert>
+          </div>
+        </div>
+      </div>
+
+      <div class="toolbar-right">
+        <el-button type="primary" @click="handleSave" :disabled="!canSave()">
           <el-icon><DocumentAdd /></el-icon>
           保存
         </el-button>
-        <el-button type="success" @click="handleExecute" :disabled="!hasValidWorkflow">
+        <el-button type="success" @click="handleExecute" :disabled="!canExecute()">
           <el-icon><VideoPlay /></el-icon>
           执行
         </el-button>
@@ -48,12 +102,14 @@
           <el-icon><CopyDocument /></el-icon>
           另存为
         </el-button>
+        <el-button type="info" @click="handleViewJSON">
+          <el-icon><Document /></el-icon>
+          查看 JSON
+        </el-button>
         <el-button type="warning" @click="handleClear">
           <el-icon><Delete /></el-icon>
           清空
         </el-button>
-      </div>
-      <div class="toolbar-right">
         <el-button @click="handleExport">
           <el-icon><Download /></el-icon>
           导出
@@ -74,6 +130,7 @@
         </div>
         <div class="panel-body">
           <OperatorPalette
+            :engine-type="null"
             @operator-drag="handleOperatorDrag"
             @operator-click="handleOperatorClick"
           />
@@ -170,6 +227,21 @@
       </template>
     </el-dialog>
 
+    <!-- JSON 查看对话框 -->
+    <el-dialog
+      v-model="jsonDialogVisible"
+      title="工作流 JSON"
+      width="60%"
+    >
+      <div class="json-viewer">
+        <pre>{{ workflowJSON }}</pre>
+      </div>
+      <template #footer>
+        <el-button @click="jsonDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="copyJSON">复制到剪贴板</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 导入文件输入 -->
     <input
       ref="fileInputRef"
@@ -191,7 +263,8 @@ import {
   CopyDocument,
   Delete,
   Download,
-  Upload
+  Upload,
+  Document
 } from '@element-plus/icons-vue'
 import OperatorPalette from '@/components/workflow/OperatorPalette.vue'
 import WorkflowDAGCanvas from '@/components/workflow/WorkflowDAGCanvas.vue'
@@ -199,9 +272,18 @@ import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
 import { createDevItem, executeDevItem, getDevItem } from '@/api/devItem'
 import { getOperatorDetail } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
+import { getWorkflowEngines, getSparkRuntimes } from '@/api/resources'
 
 const router = useRouter()
 const route = useRoute()
+
+// 引擎选择状态
+const workflowEngines = ref([])       // 工作流引擎列表
+const workflowEngineId = ref(null)    // 选中的工作流引擎 ID
+const selectedEngine = ref(null)      // 选中的工作流引擎对象
+
+const sparkRuntimes = ref([])         // Spark 运行时列表
+const sparkRuntimeId = ref(null)      // 选中的 Spark 运行时 ID
 
 // AI 助手状态
 const aiQuery = ref('')
@@ -226,6 +308,8 @@ const selectedNode = ref(null)
 
 // 对话框状态
 const saveDialogVisible = ref(false)
+const jsonDialogVisible = ref(false)
+const workflowJSON = ref('')
 const saveForm = reactive({
   name: '',
   display_name: '',
@@ -294,10 +378,134 @@ const handleParamsSave = (data) => {
   }
 }
 
+// ========== 引擎选择相关方法 ==========
+
+// 加载工作流引擎列表
+const loadWorkflowEngines = async () => {
+  try {
+    const response = await getWorkflowEngines()
+    workflowEngines.value = response.data || response
+
+    if (workflowEngines.value.length === 0) {
+      ElMessage.warning('暂无可用的工作流引擎')
+    }
+  } catch (error) {
+    console.error('加载工作流引擎失败:', error)
+    ElMessage.error('加载工作流引擎失败')
+  }
+}
+
+// 加载 Spark 运行时列表
+const loadSparkRuntimes = async () => {
+  try {
+    const response = await getSparkRuntimes()
+    sparkRuntimes.value = response.data || response
+  } catch (error) {
+    console.error('加载 Spark 运行时失败:', error)
+    ElMessage.error('加载 Spark 运行时失败')
+  }
+}
+
+// 选择默认引擎（优先 GeoPandas）
+const selectDefaultEngine = () => {
+  if (workflowEngines.value.length === 0) return
+
+  const geopandas = workflowEngines.value.find(
+    e => e.resource_type === 'api.geopandas'
+  )
+
+  if (geopandas) {
+    workflowEngineId.value = geopandas.id
+    selectedEngine.value = geopandas
+  } else {
+    workflowEngineId.value = workflowEngines.value[0].id
+    selectedEngine.value = workflowEngines.value[0]
+  }
+}
+
+// 引擎切换处理
+const handleEngineChange = async (engineId) => {
+  selectedEngine.value = workflowEngines.value.find(e => e.id === engineId)
+
+  // 如果切换到 Spark Sedona 引擎，加载 Spark 运行时列表
+  if (needsSparkRuntime()) {
+    await loadSparkRuntimes()
+
+    // 自动选择第一个运行时
+    if (sparkRuntimes.value.length > 0) {
+      sparkRuntimeId.value = sparkRuntimes.value[0].id
+    }
+  } else {
+    // 切换到 GeoPandas，清空 Spark 运行时选择
+    sparkRuntimeId.value = null
+  }
+}
+
+// 判断是否需要选择 Spark 运行时
+const needsSparkRuntime = () => {
+  return selectedEngine.value?.resource_type === 'api.spark_sedona'
+}
+
+// 获取引擎标签
+const getEngineTag = (engine) => {
+  if (engine.resource_type === 'api.geopandas') {
+    return 'GeoPandas'
+  } else if (engine.resource_type === 'api.spark_sedona') {
+    return 'Spark Sedona'
+  }
+  return engine.resource_type
+}
+
+// 格式化运行时标签
+const formatRuntimeLabel = (runtime) => {
+  // 根据资源类型显示不同的连接信息
+  let connInfo = '未配置'
+
+  if (runtime.connection_info) {
+    if (runtime.resource_type === 'spark_sql') {
+      // Spark SQL 数据源：显示 host:port/database
+      const { host, port, database } = runtime.connection_info
+      if (host && port) {
+        connInfo = `${host}:${port}${database ? '/' + database : ''}`
+      }
+    } else if (runtime.connection_info.spark_master) {
+      // Spark 运行时：显示 spark_master
+      connInfo = runtime.connection_info.spark_master
+    }
+  }
+
+  return `${runtime.display_name} (${connInfo})`
+}
+
+// 是否可以保存
+const canSave = () => {
+  // 必须选择工作流引擎
+  if (!workflowEngineId.value) return false
+
+  // 如果是 Spark Sedona，必须选择运行时
+  if (needsSparkRuntime() && !sparkRuntimeId.value) return false
+
+  // 必须有工作流内容
+  if (!hasValidWorkflow.value) return false
+
+  return true
+}
+
+// 是否可以执行
+const canExecute = () => {
+  return canSave()
+}
+
 // 保存工作流
 const handleSave = () => {
-  if (!hasValidWorkflow.value) {
-    ElMessage.warning('工作流为空，请先添加任务节点')
+  if (!canSave()) {
+    if (!workflowEngineId.value) {
+      ElMessage.warning('请选择工作流引擎')
+    } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
+      ElMessage.warning('请选择 Spark 运行时')
+    } else if (!hasValidWorkflow.value) {
+      ElMessage.warning('工作流为空，请先添加任务节点')
+    }
     return
   }
   saveDialogVisible.value = true
@@ -312,12 +520,30 @@ const confirmSave = async () => {
   try {
     const workflow = canvasRef.value?.getWorkflow()
 
+    // 构造执行配置（JSONB格式）
+    const executionConfig = {
+      type: 'workflow',
+      engine_id: workflowEngineId.value,
+      engine_type: selectedEngine.value.resource_type,
+    }
+
+    // 如果是 Spark Sedona，添加 engine_specific 配置
+    if (needsSparkRuntime()) {
+      executionConfig.engine_specific = {
+        spark_cluster_id: sparkRuntimeId.value
+      }
+    }
+
     await createDevItem({
       name: saveForm.name,
       display_name: saveForm.display_name,
       dev_type: 'workflow',
       description: saveForm.description,
-      content: workflow
+      execution_config: JSON.stringify(executionConfig),  // 序列化为 JSON 字符串
+      content: {
+        workflow_definition: workflow,
+        inputs: {}
+      }
     })
 
     ElMessage.success('保存成功')
@@ -342,8 +568,14 @@ const handleSaveAs = () => {
 
 // 执行工作流
 const handleExecute = () => {
-  if (!hasValidWorkflow.value) {
-    ElMessage.warning('工作流为空，无法执行')
+  if (!canExecute()) {
+    if (!workflowEngineId.value) {
+      ElMessage.warning('请选择工作流引擎')
+    } else if (needsSparkRuntime() && !sparkRuntimeId.value) {
+      ElMessage.warning('请选择 Spark 运行时')
+    } else if (!hasValidWorkflow.value) {
+      ElMessage.warning('工作流为空，无法执行')
+    }
     return
   }
   executeInputs.value = '{}'
@@ -364,11 +596,29 @@ const confirmExecute = async () => {
 
     const workflow = canvasRef.value?.getWorkflow()
 
+    // 构造执行配置（JSONB格式）
+    const executionConfig = {
+      type: 'workflow',
+      engine_id: workflowEngineId.value,
+      engine_type: selectedEngine.value.resource_type,
+    }
+
+    // 如果是 Spark Sedona，添加 engine_specific 配置
+    if (needsSparkRuntime()) {
+      executionConfig.engine_specific = {
+        spark_cluster_id: sparkRuntimeId.value
+      }
+    }
+
     // 创建临时任务并执行
     const tempTask = await createDevItem({
       name: `临时工作流_${Date.now()}`,
       dev_type: 'workflow',
-      content: workflow
+      execution_config: JSON.stringify(executionConfig),
+      content: {
+        workflow_definition: workflow,
+        inputs: inputs
+      }
     })
 
     await executeDevItem(tempTask.id, inputs)
@@ -402,6 +652,28 @@ const handleClear = async () => {
     ElMessage.success('画布已清空')
   } catch (error) {
     // 用户取消
+  }
+}
+
+// 查看 JSON
+const handleViewJSON = () => {
+  if (!hasValidWorkflow.value) {
+    ElMessage.warning('工作流为空')
+    return
+  }
+
+  const workflow = canvasRef.value?.getWorkflow()
+  workflowJSON.value = JSON.stringify(workflow, null, 2)
+  jsonDialogVisible.value = true
+}
+
+// 复制 JSON 到剪贴板
+const copyJSON = async () => {
+  try {
+    await navigator.clipboard.writeText(workflowJSON.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch (error) {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 
@@ -451,10 +723,25 @@ const generateWorkflow = async () => {
       user_id: 1
     })
 
-    generatedWorkflow.value = result.workflow
-    ElMessage.success('工作流生成成功')
+    // 直接加载到画布，不显示预览
+    workflowData.value = result.workflow
+    ElMessage.success(`工作流生成成功，包含 ${result.workflow.tasks.length} 个步骤`)
   } catch (error) {
-    ElMessage.error('生成失败: ' + (error.message || '未知错误'))
+    console.error('工作流生成失败:', error)
+
+    // 提取后端返回的错误消息
+    let errorMsg = '未知错误'
+    if (error.response?.data?.detail) {
+      errorMsg = error.response.data.detail
+    } else if (error.message) {
+      errorMsg = error.message
+    }
+
+    ElMessage.error({
+      message: errorMsg,
+      duration: 5000,
+      showClose: true
+    })
   } finally {
     generating.value = false
   }
@@ -501,9 +788,40 @@ const loadTask = async (taskId) => {
     currentTaskId.value = task.id
     currentTaskName.value = task.name
 
-    // 加载工作流内容
-    if (task.content && task.content.tasks) {
-      workflowData.value = task.content
+    // 解析执行配置
+    if (task.execution_config) {
+      try {
+        const config = JSON.parse(task.execution_config)
+
+        // 恢复工作流引擎选择
+        workflowEngineId.value = config.engine_id
+        selectedEngine.value = workflowEngines.value.find(
+          e => e.id === config.engine_id
+        )
+
+        // 如果需要 Spark 运行时，加载列表并恢复选择
+        if (needsSparkRuntime() && config.engine_specific) {
+          await loadSparkRuntimes()
+          sparkRuntimeId.value = config.engine_specific.spark_cluster_id
+        }
+      } catch (error) {
+        console.error('解析执行配置失败:', error)
+        ElMessage.warning('工作流配置已损坏，请重新配置')
+      }
+    }
+
+    // 加载工作流内容（支持新旧字段名）
+    if (task.content) {
+      if (task.content.workflow_definition) {
+        // 新格式
+        workflowData.value = task.content.workflow_definition
+      } else if (task.content.tasks) {
+        // 旧格式（向后兼容）
+        workflowData.value = task.content
+      } else {
+        ElMessage.warning('该任务没有工作流内容')
+        return
+      }
       ElMessage.success(`已加载工作流: ${task.name}`)
     } else {
       ElMessage.warning('该任务没有工作流内容')
@@ -515,10 +833,17 @@ const loadTask = async (taskId) => {
 }
 
 // 组件挂载时检查是否有任务 ID
-onMounted(() => {
+onMounted(async () => {
+  // 加载工作流引擎列表
+  await loadWorkflowEngines()
+
   const taskId = route.query.taskId
   if (taskId) {
-    loadTask(taskId)
+    // 如果是编辑模式，加载开发项
+    await loadTask(taskId)
+  } else {
+    // 新建模式：选择默认引擎
+    selectDefaultEngine()
   }
 })
 </script>
@@ -591,7 +916,7 @@ onMounted(() => {
 .toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid #e4e7ed;
@@ -601,16 +926,42 @@ onMounted(() => {
 .toolbar-left,
 .toolbar-right {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
 }
 
-.toolbar h2 {
+.toolbar-left {
+  flex-direction: column;
+}
+
+.toolbar-left h2 {
   margin: 0;
   font-size: 18px;
   color: #303133;
   font-weight: 500;
-  margin-right: 20px;
+}
+
+.engine-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.engine-select-group,
+.spark-runtime-select-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.engine-select-group label,
+.spark-runtime-select-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
+  min-width: 100px;
+  white-space: nowrap;
 }
 
 .editor-content {
@@ -663,5 +1014,21 @@ onMounted(() => {
 
 .params-container {
   height: 100%;
+}
+
+.json-viewer {
+  max-height: 500px;
+  overflow: auto;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.json-viewer pre {
+  margin: 0;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #303133;
 }
 </style>

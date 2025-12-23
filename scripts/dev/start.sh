@@ -15,6 +15,8 @@ show_usage() {
   echo "  -develop      只启动 Develop 模块 (依赖: System + GeoPandas Engine)"
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
+  echo "  -geopandas    只启动 GeoPandas Engine"
+  echo "  -spark-sedona 只启动 Spark Sedona Engine"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -portal       启动 Portal (依赖: 所有模块)"
   echo ""
@@ -28,6 +30,8 @@ show_usage() {
   echo "  $0 -system        # 只启动 System"
   echo "  $0 -manager       # 启动 Manager + System"
   echo "  $0 -develop       # 启动 Develop + System + GeoPandas"
+  echo "  $0 -geopandas     # 只启动 GeoPandas Engine"
+  echo "  $0 -spark-sedona  # 启动 Spark Sedona Engine"
   exit 1
 }
 
@@ -66,11 +70,8 @@ export GOMODCACHE="${PROJECT_ROOT}/.gomodcache"
 export GOPATH="${PROJECT_ROOT}/.gopath"
 export GOTOOLCHAIN="local"
 
-# 颜色定义（提前定义，供检查函数使用）
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
+# 加载颜色定义（提前加载，供检查函数使用）
+source "${SCRIPT_DIR}/../common/colors.sh"
 
 # ============================================================
 # 模块选择逻辑
@@ -85,7 +86,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-geopandas|-spark-sedona|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -118,6 +119,7 @@ START_COPILOT_BACKEND=false
 START_GATEWAY=false
 START_PORTAL=false
 START_GEOPANDAS=false
+START_SPARK_SEDONA=false
 
 # 根据选择的模块设置启动标志
 if [ "$START_ALL" = true ]; then
@@ -143,6 +145,7 @@ if [ "$START_ALL" = true ]; then
   START_GATEWAY=true
   START_PORTAL=true
   START_GEOPANDAS=true
+  START_SPARK_SEDONA=true
 else
   # 根据选择的模块设置依赖
   case $SELECTED_MODULE in
@@ -183,6 +186,7 @@ else
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
       START_GEOPANDAS=true
+      START_SPARK_SEDONA=true
       ;;
     service)
       START_SYSTEM_BACKEND=true
@@ -198,6 +202,12 @@ else
       START_GEOPANDAS=true
       START_COPILOT_BACKEND=true
       ;;
+    geopandas)
+      START_GEOPANDAS=true
+      ;;
+    spark-sedona)
+      START_SPARK_SEDONA=true
+      ;;
     gateway)
       START_SYSTEM_BACKEND=true
       START_MANAGER_BACKEND=true
@@ -211,6 +221,7 @@ else
       START_SERVICE_BACKEND=true
       START_COPILOT_BACKEND=true
       START_GEOPANDAS=true
+      START_SPARK_SEDONA=true
       START_GATEWAY=true
       ;;
     portal)
@@ -235,6 +246,7 @@ else
       START_GATEWAY=true
       START_PORTAL=true
       START_GEOPANDAS=true
+      START_SPARK_SEDONA=true
       ;;
   esac
 fi
@@ -912,6 +924,139 @@ else
 fi
 
 # ============================================================
+# Step 4.5: Start Spark Sedona Engine (Python service)
+# ============================================================
+if [ "$START_SPARK_SEDONA" = true ]; then
+  echo -e "${YELLOW}Step 4.5/5: 启动 Spark Sedona Engine...${NC}"
+
+  # 检查 Python 3 是否安装
+  if ! command -v python3 &> /dev/null; then
+      echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
+      exit 1
+  fi
+
+  # 检查 Python 版本（需要 3.11+）
+  PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+  REQUIRED_VERSION="3.11"
+  if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
+      echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
+      exit 1
+  fi
+
+# 检查并创建虚拟环境（幂等）
+NEED_INSTALL=false
+if [ ! -d "engines/spark-sedona/venv" ]; then
+    echo "首次启动，创建 Python 虚拟环境..."
+    cd engines/spark-sedona
+    # 优先使用兼容性好的 Python 版本（避免新版本兼容性问题）
+    # 优先级: 3.12 > 3.13 > 3.11 > 系统默认
+    if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.12 --version)"
+        /opt/homebrew/bin/python3.12 -m venv venv
+    elif command -v /opt/homebrew/bin/python3.13 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.13 --version)"
+        /opt/homebrew/bin/python3.13 -m venv venv
+    elif command -v /opt/homebrew/bin/python3.11 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.11 --version)"
+        /opt/homebrew/bin/python3.11 -m venv venv
+    elif command -v /opt/homebrew/bin/python3 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
+        /opt/homebrew/bin/python3 -m venv venv
+    else
+        python3 -m venv venv
+    fi
+    NEED_INSTALL=true
+else
+    # 检查关键依赖是否已安装
+    if ! ./engines/spark-sedona/venv/bin/python -c "import pyspark" &> /dev/null; then
+        echo "检测到虚拟环境缺少依赖，重新安装..."
+        cd engines/spark-sedona
+        NEED_INSTALL=true
+    else
+        echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+fi
+
+if [ "$NEED_INSTALL" = true ]; then
+    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
+    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
+
+    # 构建 pip 安装命令（支持镜像源配置）
+    PIP_CMD="./venv/bin/pip install"
+    if [ -n "$PIP_INDEX_URL" ]; then
+        echo "  使用镜像源: $PIP_INDEX_URL"
+        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+        if [ -n "$PIP_TRUSTED_HOST" ]; then
+            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+        fi
+    else
+        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
+    fi
+
+    # 升级 pip 并安装依赖
+    $PIP_CMD --upgrade pip
+    $PIP_CMD -r requirements.txt
+
+    # 检查安装是否成功
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+    else
+        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
+        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 PySpark）${NC}"
+        cd ../..
+        exit 1
+    fi
+    cd ../..
+fi
+
+# 启动 Spark Sedona Engine
+if check_service_running "spark-sedona-engine" "8098"; then
+  echo "启动 Spark Sedona Engine..."
+  cd engines/spark-sedona
+
+  # 设置环境变量（注意端口改为 8098）
+  export PORT=8098
+  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export DEVELOP_SERVICE_URL=http://localhost:8085
+  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+
+  # 直接使用虚拟环境的 Python（无需 activate）
+  ./venv/bin/python api_server.py > ../../logs/spark-sedona-engine.log 2> ../../logs/spark-sedona-engine-stderr.log &
+  SPARK_SEDONA_PID=$!
+  echo $SPARK_SEDONA_PID > ../../.dev-pids/spark-sedona-engine.pid
+  cd ../..
+
+  echo -e "${GREEN}✓ Spark Sedona Engine 已启动 (PID: $SPARK_SEDONA_PID)${NC}"
+
+  # 等待健康检查通过
+  echo -n "等待 Spark Sedona Engine 就绪..."
+  WAIT_COUNT=0
+  MAX_WAIT=60
+  until curl -f http://localhost:8098/health > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ Spark Sedona Engine 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/spark-sedona-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/spark-sedona-engine-stderr.log${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+  echo -e "${GREEN}✓ Spark Sedona Engine 就绪 (http://localhost:8098)${NC}"
+else
+  SPARK_SEDONA_PID=$(cat .dev-pids/spark-sedona-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Spark Sedona Engine 已在运行 (PID: $SPARK_SEDONA_PID)${NC}"
+fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 4.5/5: 跳过 Spark Sedona Engine${NC}"
+  echo ""
+fi
+
+# ============================================================
 # Step 5: Start Copilot Backend (Python/FastAPI service)
 # ============================================================
 if [ "$START_COPILOT_BACKEND" = true ]; then
@@ -1241,6 +1386,8 @@ echo "  Orchestrator: http://localhost:8084"
 echo "  Develop:  http://localhost:8085"
 echo "  Service:  http://localhost:8086"
 echo "  Copilot:  http://localhost:8087"
+echo "  Spark Sedona Engine: http://localhost:8098"
+echo "  GeoPandas Engine:    http://localhost:8099"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
@@ -1258,6 +1405,7 @@ echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
 echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
 echo "  GeoPandas Engine:     $GEOPANDAS_PID"
+echo "  Spark Sedona Engine:  $SPARK_SEDONA_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
@@ -1276,6 +1424,7 @@ echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
 echo "  GeoPandas Engine: logs/geopandas-engine.log"
+echo "  Spark Sedona Engine: logs/spark-sedona-engine.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"

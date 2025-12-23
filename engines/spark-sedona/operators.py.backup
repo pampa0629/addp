@@ -675,3 +675,153 @@ def list_operators() -> List[str]:
         算子名称列表
     """
     return list(_OPERATOR_REGISTRY.keys())
+
+# ========================================
+# 算子元数据字典
+# ========================================
+
+OPERATORS = {
+    # I/O 算子
+    'load': {
+        'function': load,
+        'category': '数据I/O',
+        'description': '数据加载',
+        'brief_description': '从数据库、文件、湖仓加载数据,支持PostgreSQL/MinIO/Iceberg等多种数据源',
+        'detailed_description': {
+            'overview': '数据加载算子支持从多种数据源加载空间数据,包括关系数据库(PostgreSQL/MySQL/Doris)、对象存储(MinIO S3)、数据湖(Iceberg/Delta/Hudi)等。自动处理几何列转换和坐标系识别。',
+            'parameters': [
+                {
+                    'name': 'resource_id',
+                    'type': 'integer',
+                    'required': True,
+                    'description': 'Spark资源ID,需在System模块中预先配置',
+                    'notes': '资源配置包含Spark集群连接信息和数据源连接信息'
+                },
+                {
+                    'name': 'source_type',
+                    'type': 'enum',
+                    'required': True,
+                    'description': '数据源类型: table/file/sql/catalog',
+                    'notes': 'table从数据库表加载,file从文件加载,sql执行SQL查询,catalog从数据湖加载'
+                },
+                {
+                    'name': 'schema',
+                    'type': 'string',
+                    'required': False,
+                    'description': '数据库schema,默认public',
+                    'notes': '仅source_type=table时有效'
+                },
+                {
+                    'name': 'table',
+                    'type': 'string',
+                    'required': True,
+                    'description': '表名',
+                    'notes': '仅source_type=table时有效'
+                },
+                {
+                    'name': 'geom_column',
+                    'type': 'string',
+                    'required': False,
+                    'description': '几何列名,默认geom',
+                    'notes': 'PostGIS的geometry/geography类型会自动转换为Sedona Geometry'
+                }
+            ],
+            'use_cases': [
+                '从PostgreSQL加载POI数据: 加载城市兴趣点表,包含10万条记录,自动识别geometry列',
+                '从MinIO读取GeoParquet: 读取省界行政区划GeoParquet文件,支持分区读取优化性能',
+                '使用SQL加载特定数据: 执行WHERE条件筛选,只加载高度>100米的建筑物',
+                '从Iceberg数据湖加载: 加载湖仓中的历史轨迹数据,支持时间旅行查询'
+            ],
+            'notes': [
+                'resource_id需要在System模块预先配置Spark集群和数据源连接信息',
+                'PostGIS几何列会自动使用ST_GeomFromWKB转换为Sedona Geometry类型',
+                '大表建议使用SQL方式加载并添加WHERE条件,避免加载全表',
+                '支持分区读取,可指定分区列(partitionColumn)优化查询性能',
+                'GeoParquet格式性能最优,推荐用于大规模空间数据存储'
+            ],
+            'input': '无输入(数据源算子)',
+            'output': 'DataFrame(包含几何列和属性列)',
+            'workflow_example': {
+                'id': 'load_poi',
+                'operator': 'load',
+                'params': {
+                    'resource_id': 34,
+                    'source_type': 'table',
+                    'schema': 'public',
+                    'table': 'poi',
+                    'geom_column': 'geom'
+                },
+                'depends_on': []
+            }
+        }
+    },
+    
+    # 空间算子
+    'st_buffer': {
+        'function': st_buffer,
+        'category': '空间分析',
+        'description': '缓冲区分析',
+        'brief_description': '在几何对象周围创建指定距离的缓冲区,常用于影响范围分析和空间查询',
+        'detailed_description': {
+            'overview': '缓冲区算子使用Apache Sedona的ST_Buffer函数在输入几何对象周围创建指定距离的区域。支持点、线、面三种几何类型,常用于影响范围分析、服务区计算等场景。缓冲距离单位与坐标系一致,地理坐标系需先转换为投影坐标系。',
+            'parameters': [
+                {
+                    'name': 'input_df',
+                    'type': 'dataframe',
+                    'required': True,
+                    'description': '输入DataFrame,必须包含有效的几何列',
+                    'notes': '几何列必须是Sedona Geometry类型,从PostgreSQL加载时使用ST_GeomFromWKB自动转换'
+                },
+                {
+                    'name': 'geom_column',
+                    'type': 'string',
+                    'required': False,
+                    'description': '几何列名,默认为geom',
+                    'notes': '如果数据来自多表连接,需要显式指定列名避免歧义'
+                },
+                {
+                    'name': 'distance',
+                    'type': 'float',
+                    'required': True,
+                    'description': '缓冲距离,单位与坐标系一致',
+                    'notes': '投影坐标系(如EPSG:32650)单位为米;地理坐标系(EPSG:4326)单位为度,1度≈111公里,建议先用st_transform转投影坐标系'
+                },
+                {
+                    'name': 'output_column',
+                    'type': 'string',
+                    'required': False,
+                    'description': '输出几何列名,默认为buffer_geom',
+                    'notes': '建议使用有意义的列名,如buffer_500m表示500米缓冲区'
+                }
+            ],
+            'use_cases': [
+                '河流污染影响范围分析: 河流中心线缓冲500米,统计影响范围内的建筑物数量和人口',
+                '学校服务范围计算: 学校点位缓冲1000米,分析覆盖的居民区和适龄儿童分布',
+                '道路噪音影响评估: 高速公路线缓冲200米,评估噪音影响区域面积和受影响居民数量',
+                '自然保护区核心区划定: 保护区边界内缩100米(负距离),划定严格保护的核心区范围',
+                '通信基站覆盖分析: 基站点位缓冲2000米,计算信号覆盖范围和重叠区域'
+            ],
+            'notes': [
+                '地理坐标系(EPSG:4326)单位为度,缓冲1度≈111公里,必须先用st_transform转投影坐标系',
+                '大数据集(>100万条)建议先用filter过滤再缓冲,或使用cache缓存中间结果',
+                'Sedona使用JTS库计算缓冲区,默认精度足够大多数应用',
+                '缓冲区算子生成新几何列,原几何列保留,如需替换可使用drop_column删除原列'
+            ],
+            'input': 'DataFrame(包含Geometry列,支持点/线/面)',
+            'output': 'DataFrame(保留原属性列,新增buffer_geom列,类型为Polygon或MultiPolygon)',
+            'workflow_example': {
+                'id': 'buffer_rivers',
+                'operator': 'st_buffer',
+                'params': {
+                    'input_df': {'$ref': 'load_rivers'},
+                    'geom_column': 'geom',
+                    'distance': 500,
+                    'output_column': 'buffer_500m'
+                },
+                'depends_on': ['load_rivers']
+            }
+        }
+    },
+    
+    # TODO: 添加其他算子的元数据...
+}

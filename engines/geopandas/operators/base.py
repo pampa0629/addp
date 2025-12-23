@@ -1,0 +1,126 @@
+"""
+算子基础模块
+
+提供 Pydantic 模型、枚举类型和辅助函数，用于算子元数据管理和注册。
+"""
+
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional, Callable
+from enum import Enum
+
+
+class OperatorCategory(str, Enum):
+    """算子分类枚举"""
+    DATA_IO = "数据I/O"
+    GEOMETRIC = "几何处理"
+    SPATIAL_RELATION = "空间关系"
+    PROPERTIES = "几何属性"
+    FORMAT_CONVERSION = "格式转换"
+    DATA_OPERATION = "数据操作"
+    ATTRIBUTE_CALCULATION = "属性计算"
+    FILTER_OPERATION = "数据筛选"
+
+
+class OperatorParam(BaseModel):
+    """算子参数定义模型"""
+    name: str = Field(description="参数名称")
+    type: str = Field(description="参数类型：input/output/param")
+    data_type: str = Field(description="数据类型：GeoDataFrame/str/float/int 等")
+    required: bool = Field(default=True, description="是否必填")
+    description: str = Field(description="参数说明")
+    notes: Optional[str] = Field(None, description="注意事项")
+
+
+class OutputPort(BaseModel):
+    """输出端口定义模型"""
+    name: str = Field(description="端口名称")
+    type: str = Field(description="输出类型：geodataframe/string/number")
+    description: str = Field(description="端口描述")
+    is_default: bool = Field(default=True, description="是否为默认端口")
+
+
+class OperatorMetadata(BaseModel):
+    """
+    算子元数据模型
+
+    使用 Pydantic 提供类型安全和自动验证
+    """
+    name: str = Field(description="算子唯一标识符")
+    category: OperatorCategory = Field(description="算子分类")
+    description: str = Field(description="算子简要描述")
+    brief_description: str = Field(description="简短说明（一句话）")
+
+    # 详细元数据
+    overview: str = Field(description="功能概述（50-100字）")
+    params: List[OperatorParam] = Field(description="参数列表")
+    use_cases: List[str] = Field(description="真实使用场景（4-5个）")
+    notes: List[str] = Field(description="常见问题和优化建议（4-5个）")
+    workflow_example: Dict[str, Any] = Field(description="DAG 示例")
+
+    # 可选字段
+    output_ports: Optional[List[OutputPort]] = Field(None, description="多输出端口定义")
+
+    # 运行时绑定（不参与序列化）
+    function: Optional[Callable] = Field(None, exclude=True, description="实际执行函数")
+
+    def to_legacy_dict(self) -> dict:
+        """
+        转换为兼容旧格式的字典
+
+        确保向后兼容，保持 API 接口不变
+        """
+        # 转换参数格式为旧的 param_schema
+        param_schema = []
+        for param in self.params:
+            param_dict = {
+                "name": param.name,
+                "type": param.data_type,
+                "required": param.required,
+                "description": param.description
+            }
+            if param.notes:
+                param_dict["notes"] = param.notes
+            param_schema.append(param_dict)
+
+        # 构建基础字典
+        legacy_dict = {
+            'function': self.function,
+            'param_schema': param_schema,
+            'category': self.category.value,
+            'description': self.description,
+            'brief_description': self.brief_description,
+            'detailed_description': {
+                'overview': self.overview,
+                'parameters': param_schema,
+                'use_cases': self.use_cases,
+                'notes': self.notes,
+                'workflow_example': self.workflow_example
+            }
+        }
+
+        # 添加可选的 output_ports
+        if self.output_ports:
+            legacy_dict['output_ports'] = [port.model_dump() for port in self.output_ports]
+
+        return legacy_dict
+
+
+def register_operator(metadata: OperatorMetadata, func: Callable) -> tuple[str, dict]:
+    """
+    注册算子的辅助函数
+
+    将 Pydantic 元数据模型和实现函数绑定，并转换为兼容格式
+
+    Args:
+        metadata: 算子元数据（Pydantic 模型）
+        func: 算子实现函数
+
+    Returns:
+        (算子名称, 兼容旧格式的字典)
+
+    Example:
+        >>> BUFFER_METADATA = OperatorMetadata(name="buffer", ...)
+        >>> OPERATORS = dict([register_operator(BUFFER_METADATA, buffer)])
+    """
+    metadata.function = func
+    return metadata.name, metadata.to_legacy_dict()

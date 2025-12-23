@@ -110,3 +110,47 @@ func (h *ResourceHandler) ListTables(c *gin.Context) {
 		"tables": tables,
 	})
 }
+
+// ListWorkflowEngines 获取工作流引擎列表
+// @Summary 获取支持 workflow 的计算引擎列表
+// @Tags Resources
+// @Produce json
+// @Success 200 {array} models.Resource
+// @Router /api/develop/workflow-engines [get]
+func (h *ResourceHandler) ListWorkflowEngines(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+
+	// 从 System 模块获取所有工作流引擎
+	engines, err := h.systemClient.ListWorkflowEngines(tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取工作流引擎失败",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, engines)
+}
+
+// ListSparkRuntimes 获取 Spark 运行时列表
+// @Summary 获取所有 Spark SQL 运行时列表
+// @Tags Resources
+// @Produce json
+// @Success 200 {array} models.Resource
+// @Router /api/develop/spark-runtimes [get]
+func (h *ResourceHandler) ListSparkRuntimes(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+
+	// 从 System 模块获取所有 Spark 运行时
+	runtimes, err := h.systemClient.ListSparkRuntimes(tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取 Spark 运行时失败",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, runtimes)
+}

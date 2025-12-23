@@ -63,12 +63,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 初始化 GeoPandas 计算引擎资源
-	if err := repository.InitGeoPandasEngine(db); err != nil {
-		logger.L().Error("GeoPandas 引擎初始化失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)

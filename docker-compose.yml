@@ -489,6 +489,45 @@ services:
       retries: 30
       start_period: 60s
 
+  # ==================== Copilot 模块 (AI 助手) ====================
+
+  copilot-backend:
+    build:
+      context: ./copilot
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-copilot-backend:${IMAGE_TAG:-latest}
+    container_name: copilot-backend
+    environment:
+      - PORT=8087
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=copilot
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # LLM 配置
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8087:8087"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   # ==================== GeoPandas Engine (空间计算引擎) ====================
 
   geopandas-engine:
@@ -522,6 +561,38 @@ services:
       retries: 30
       start_period: 60s
 
+  spark-sedona-engine:
+    build:
+      context: ./engines/spark-sedona
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-spark-sedona-engine:${IMAGE_TAG:-latest}
+    container_name: spark-sedona-engine
+    environment:
+      - PORT=8098
+      - SYSTEM_BACKEND_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=develop
+      - SPARK_MODE=local
+    ports:
+      - "8098:8098"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8098/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   # ==================== Gateway 服务 ====================
 
   gateway:
@@ -536,6 +607,7 @@ services:
       - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
       - DEVELOP_SERVICE_URL=http://develop-backend:8085
       - SERVICE_SERVICE_URL=http://service-backend:8086
+      - COPILOT_SERVICE_URL=http://copilot-backend:8087
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:

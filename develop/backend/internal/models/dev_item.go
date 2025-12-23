@@ -20,7 +20,10 @@ type DevItem struct {
 	// 内容存储（根据类型解析）
 	Content DevItemContent `gorm:"type:jsonb;not null" json:"content"`
 
-	// 执行配置
+	// 执行配置（JSONB 字段，统一的执行配置）
+	ExecutionConfig *string `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
+
+	// 保留旧字段用于兼容（已废弃）
 	ResourceID  *uint  `gorm:"index:idx_dev_items_resource" json:"resource_id,omitempty"`
 	Schedule    string `gorm:"size:100" json:"schedule,omitempty"`     // Cron 表达式
 	IsScheduled bool   `gorm:"default:false" json:"is_scheduled"`
@@ -75,30 +78,32 @@ func (c *DevItemContent) Scan(value interface{}) error {
 
 // CreateDevItemRequest 创建开发项请求
 type CreateDevItemRequest struct {
-	Name        string                 `json:"name" binding:"required"`
-	DisplayName string                 `json:"display_name"`
-	DevType     string                 `json:"dev_type" binding:"required,oneof=sql workflow script"`
-	Content     map[string]interface{} `json:"content" binding:"required"`
-	ResourceID  *uint                  `json:"resource_id"`
-	Schedule    string                 `json:"schedule"`
-	IsScheduled bool                   `json:"is_scheduled"`
-	Timeout     int                    `json:"timeout"`
-	Description string                 `json:"description"`
-	Tags        []string               `json:"tags"`
+	Name            string                 `json:"name" binding:"required"`
+	DisplayName     string                 `json:"display_name"`
+	DevType         string                 `json:"dev_type" binding:"required,oneof=sql workflow script"`
+	Content         map[string]interface{} `json:"content" binding:"required"`
+	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
+	ResourceID      *uint                  `json:"resource_id"`      // 已废弃，保留兼容
+	Schedule        string                 `json:"schedule"`
+	IsScheduled     bool                   `json:"is_scheduled"`
+	Timeout         int                    `json:"timeout"`
+	Description     string                 `json:"description"`
+	Tags            []string               `json:"tags"`
 }
 
 // UpdateDevItemRequest 更新开发项请求
 type UpdateDevItemRequest struct {
-	Name        string                 `json:"name"`
-	DisplayName string                 `json:"display_name"`
-	Content     map[string]interface{} `json:"content"`
-	ResourceID  *uint                  `json:"resource_id"`
-	Schedule    string                 `json:"schedule"`
-	IsScheduled bool                   `json:"is_scheduled"`
-	Timeout     int                    `json:"timeout"`
-	Description string                 `json:"description"`
-	Tags        []string               `json:"tags"`
-	Status      string                 `json:"status" binding:"omitempty,oneof=active inactive archived"`
+	Name            string                 `json:"name"`
+	DisplayName     string                 `json:"display_name"`
+	Content         map[string]interface{} `json:"content"`
+	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
+	ResourceID      *uint                  `json:"resource_id"`      // 已废弃，保留兼容
+	Schedule        string                 `json:"schedule"`
+	IsScheduled     bool                   `json:"is_scheduled"`
+	Timeout         int                    `json:"timeout"`
+	Description     string                 `json:"description"`
+	Tags            []string               `json:"tags"`
+	Status          string                 `json:"status" binding:"omitempty,oneof=active inactive archived"`
 }
 
 // ListDevItemsRequest 查询开发项列表请求

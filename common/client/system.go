@@ -546,3 +546,91 @@ func (c *SystemClient) ListTables(resourceID uint, schema string) ([]TableInfo, 
 
 	return result.Tables, nil
 }
+
+// ================ 工作流引擎相关方法（新增） ================
+
+// ListWorkflowEngines 获取支持 workflow 的计算引擎
+func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Resource, error) {
+	endpoint := fmt.Sprintf("%s/internal/resources?tenant_id=%d", c.baseURL, tenantID)
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resources []models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// 过滤出工作流引擎（使用 common/utils 的 SupportsDevMode 函数）
+	filtered := make([]models.Resource, 0)
+	for _, r := range resources {
+		// 需要在这里导入 utils 包并使用 SupportsDevMode(&r, "workflow")
+		// 但为了避免循环导入，直接在这里实现过滤逻辑
+		if r.IsActive && r.Capabilities != nil && *r.Capabilities != "" {
+			// 简单的 JSON 字符串匹配（临时方案，更好的做法是导入 utils）
+			if strings.Contains(*r.Capabilities, "\"workflow\"") {
+				filtered = append(filtered, r)
+			}
+		}
+	}
+	return filtered, nil
+}
+
+// ListSparkRuntimes 获取所有 Spark SQL 运行时
+func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Resource, error) {
+	endpoint := fmt.Sprintf("%s/internal/resources?tenant_id=%d&resource_type=spark_sql", c.baseURL, tenantID)
+
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("system api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var resources []models.Resource
+	if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	// 过滤出活跃的 Spark 运行时
+	filtered := make([]models.Resource, 0)
+	for _, r := range resources {
+		if r.IsActive {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered, nil
+}
+
+// GetResourceByID 根据 ID 获取资源详情（简化别名）
+func (c *SystemClient) GetResourceByID(resourceID uint) (*models.Resource, error) {
+	return c.GetResource(resourceID)
+}

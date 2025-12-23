@@ -68,6 +68,8 @@ check_images() {
         "${REGISTRY}/addp-transfer-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-orchestrator-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-develop-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-copilot-backend:${IMAGE_TAG}"
+        "${REGISTRY}/addp-geopandas-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
         "${REGISTRY}/addp-portal:${IMAGE_TAG}"
         "${REGISTRY}/addp-nginx:${IMAGE_TAG}"
@@ -189,6 +191,11 @@ if docker compose -f docker-compose.yml ps nginx | grep -q "Up"; then
     wait_for_health "http://localhost:80/health" "Nginx" 30
 fi
 
+# Wait for GeoPandas Engine
+if docker compose -f docker-compose.yml ps geopandas-engine | grep -q "Up"; then
+    wait_for_health "http://localhost:8099/health" "GeoPandas Engine" 60
+fi
+
 # =============================================================================
 # Summary
 # =============================================================================
@@ -210,6 +217,10 @@ echo -e "  ${CYAN}PostgreSQL:${NC}           localhost:5433"
 echo -e "  ${CYAN}Redis:${NC}                localhost:6379"
 echo -e "  ${CYAN}MinIO Console:${NC}        http://localhost:9001"
 echo -e "  ${CYAN}Meilisearch:${NC}          http://localhost:7700"
+echo ""
+
+echo -e "${GREEN}Engines:${NC}"
+echo -e "  ${CYAN}GeoPandas Engine:${NC}     http://localhost:8099"
 echo ""
 
 echo -e "${GREEN}Management Commands:${NC}"

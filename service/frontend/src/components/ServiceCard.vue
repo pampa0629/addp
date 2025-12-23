@@ -30,7 +30,7 @@
         <span>{{ formatDate(service.last_checked_at) }}</span>
       </div>
       <div v-if="service.layers && service.layers.length > 0" class="footer-item">
-        <el-icon><Layers /></el-icon>
+        <el-icon><Grid /></el-icon>
         <span>{{ service.layers.length }} 图层</span>
       </div>
     </div>
@@ -38,7 +38,7 @@
 </template>
 
 <script setup>
-import { Link, Clock } from '@element-plus/icons-vue'
+import { Link, Clock, Grid } from '@element-plus/icons-vue'
 
 const props = defineProps({
   service: {

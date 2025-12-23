@@ -81,11 +81,25 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         print(f"[API] ✅ 请求处理完成\n")
         return response
 
+    except ValueError as e:
+        # 验证失败（如空工作流）返回 422
+        error_msg = str(e)
+        print(f"[API] ⚠️  工作流生成验证失败: {error_msg}")
+
+        # 提供更友好的错误消息
+        if "invalid" in error_msg.lower():
+            detail = "无法根据您的描述生成有效的工作流。请提供更详细的需求描述，例如：'加载数据，计算缓冲区，然后保存结果'。"
+        else:
+            detail = f"工作流生成失败: {error_msg}"
+
+        raise HTTPException(status_code=422, detail=detail)
+
     except Exception as e:
+        # 其他异常返回 500
         print(f"[API] ❌ 工作流生成失败: {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"工作流生成失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"服务内部错误: {str(e)}")
 
 
 @router.get("/workflow/conversations/{conversation_id}")

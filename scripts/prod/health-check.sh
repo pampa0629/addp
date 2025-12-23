@@ -50,6 +50,13 @@ for service in system:8080 manager:8081 meta:8082 transfer:8083 orchestrator:808
   fi
 done
 
+# GeoPandas Engine
+if curl -f http://localhost:8099/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ geopandas-engine${NC}"
+else
+  echo -e "${RED}✗ geopandas-engine${NC}"
+fi
+
 # Gateway
 if curl -f http://localhost:8000/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ gateway${NC}"

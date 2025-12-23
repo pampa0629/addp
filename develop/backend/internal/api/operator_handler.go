@@ -63,6 +63,30 @@ func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 	})
 }
 
+// ListOperatorsByEngineType 获取指定引擎类型的算子
+// @Summary 根据引擎类型获取算子列表
+// @Tags Operator
+// @Produce json
+// @Param engineType path string true "引擎类型" Enums(api.geopandas, api.spark_sedona)
+// @Success 200 {object} map[string]interface{}
+// @Router /api/develop/operators/engine-types/{engineType} [get]
+func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
+	engineType := c.Param("engineType")
+
+	operators, err := h.operatorDiscovery.GetOperatorsByEngineType(c.Request.Context(), engineType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":      "success",
+		"engine_type": engineType,
+		"operators":   operators,
+		"count":       len(operators),
+	})
+}
+
 // GetOperatorDetail 获取算子详情
 // @Summary 获取算子详情
 // @Tags Operator

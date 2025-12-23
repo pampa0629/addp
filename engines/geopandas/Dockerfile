@@ -1,8 +1,11 @@
 # GeoPandas Engine Dockerfile
-FROM python:3.11
+FROM python:3.11-slim
 
-# Install system dependencies for GeoPandas
+# Install system dependencies for GeoPandas (including build tools)
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    gcc \
     libgeos-dev \
     libproj-dev \
     gdal-bin \
@@ -17,7 +20,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY operators.py .
+COPY operators/ ./operators/
 COPY workflow_engine.py .
 COPY api_server.py .
 

@@ -13,8 +13,18 @@ class Settings(BaseSettings):
     port: int = 8087
     debug: bool = False
 
-    # 数据库配置
-    database_url: str = "postgresql://addp:addp_password@localhost:5432/addp"
+    # 数据库配置（支持环境变量）
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "addp"
+    postgres_password: str = "addp_password"
+    postgres_db: str = "addp"
+    db_schema: str = "copilot"
+
+    @property
+    def database_url(self) -> str:
+        """动态构建数据库连接字符串"""
+        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     # 外部服务 URL
     system_service_url: str = "http://localhost:8080"

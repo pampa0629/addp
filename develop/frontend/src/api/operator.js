@@ -6,5 +6,8 @@ export const listAllOperators = () => client.get('/develop/operators')
 // 按模块获取算子
 export const listOperatorsByModule = (module) => client.get(`/develop/operators/modules/${module}`)
 
+// 按引擎类型获取算子 (新增)
+export const listOperatorsByEngineType = (engineType) => client.get(`/develop/operators/engine-types/${engineType}`)
+
 // 获取算子详情
 export const getOperatorDetail = (name) => client.get(`/develop/operators/${name}`)

@@ -50,11 +50,12 @@ func SetupRouter(
 		// ========== 算子发现（公开）==========
 		operators := publicAPI.Group("/operators")
 		{
-			operators.GET("", operatorHandler.ListAllOperators)                          // 获取所有算子
-			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                   // 获取缓存信息
-			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)     // 按模块获取算子
-			operators.GET("/:name", operatorHandler.GetOperatorDetail)                   // 获取算子详情
-			operators.POST("/refresh", operatorHandler.RefreshCache)                     // 刷新缓存（内部使用）
+			operators.GET("", operatorHandler.ListAllOperators)                                 // 获取所有算子
+			operators.GET("/cache/info", operatorHandler.GetCacheInfo)                          // 获取缓存信息
+			operators.GET("/modules/:module", operatorHandler.ListOperatorsByModule)            // 按模块获取算子
+			operators.GET("/engine-types/:engineType", operatorHandler.ListOperatorsByEngineType) // 按引擎类型获取算子（新增）
+			operators.GET("/:name", operatorHandler.GetOperatorDetail)                          // 获取算子详情
+			operators.POST("/refresh", operatorHandler.RefreshCache)                            // 刷新缓存（内部使用）
 		}
 	}
 
@@ -98,6 +99,10 @@ func SetupRouter(
 			resources.GET("/:id/schemas", resourceHandler.ListSchemas) // 获取 schemas 列表
 			resources.GET("/:id/tables", resourceHandler.ListTables)   // 获取表列表
 		}
+
+		// ========== 工作流引擎管理 ==========
+		api.GET("/workflow-engines", resourceHandler.ListWorkflowEngines) // 获取工作流引擎列表
+		api.GET("/spark-runtimes", resourceHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
 
 		// ========== SQL 开发 ==========
 		api.GET("/test/:id", sqlHandler.TestConnection) // 测试数据源连接
