@@ -21,7 +21,8 @@ class MetadataMatcherService:
     def __init__(self):
         self.meta_api_url = settings.meta_service_url
         self.system_api_url = settings.system_service_url
-        self.client = httpx.AsyncClient(timeout=30.0)
+        # 禁用系统代理，直接访问本地服务
+        self.client = httpx.AsyncClient(timeout=30.0, trust_env=False)
         self.score_threshold = settings.copilot_score_threshold  # 0.15
         self.max_candidates = settings.copilot_max_candidates  # 10
 

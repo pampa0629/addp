@@ -35,6 +35,16 @@ if [ -d "engines/geopandas/venv" ]; then
   echo "✓ GeoPandas Engine venv 已清理"
   ((cleaned_py++))
 fi
+if [ -d "engines/spark-sedona/venv" ]; then
+  rm -rf engines/spark-sedona/venv
+  echo "✓ Spark Sedona Engine venv 已清理"
+  ((cleaned_py++))
+fi
+if [ -d "engines/jupyter/venv" ]; then
+  rm -rf engines/jupyter/venv
+  echo "✓ Jupyter Engine venv 已清理"
+  ((cleaned_py++))
+fi
 if [ -d "copilot/backend/venv" ]; then
   rm -rf copilot/backend/venv
   echo "✓ Copilot Backend venv 已清理"

@@ -745,6 +745,7 @@ defineExpose({
   background: #fff;
   overflow: hidden;
   position: relative;
+  z-index: 1;
 }
 
 :deep(.g6-tooltip) {

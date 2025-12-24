@@ -212,7 +212,8 @@ class WorkflowGenerationAgent:
         for op_name in operator_names:
             try:
                 print(f"[Workflow Agent] 正在获取算子 '{op_name}' 的详细信息...")
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                # 禁用系统代理，直接访问本地服务
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                     response = await client.get(
                         f"{self.develop_api_url}/api/develop/operators/{op_name}",
                         headers=headers
@@ -443,7 +444,8 @@ class WorkflowGenerationAgent:
         print(f"[Workflow Agent] Develop API URL: {self.develop_api_url}/api/develop/operators")
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            # 禁用系统代理，直接访问本地服务
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 response = await client.get(f"{self.develop_api_url}/api/develop/operators")
                 response.raise_for_status()
                 data = response.json()

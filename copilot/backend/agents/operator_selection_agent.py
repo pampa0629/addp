@@ -110,7 +110,8 @@ class OperatorSelectionAgent:
             if settings.internal_api_key:
                 headers["X-Internal-API-Key"] = settings.internal_api_key
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            # 禁用系统代理，直接访问本地服务
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 resp = await client.get(
                     f"{self.develop_api_url}/api/develop/operators",
                     headers=headers

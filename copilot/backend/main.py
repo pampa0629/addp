@@ -39,8 +39,8 @@ app.add_middleware(
 
 # 注册路由
 from api import workflow_router, sql_router
-app.include_router(workflow_router, prefix="/api/copilot", tags=["Workflow Agent"])
-app.include_router(sql_router, prefix="/api/copilot", tags=["SQL Agent"])
+app.include_router(workflow_router, prefix="/copilot", tags=["Workflow Agent"])
+app.include_router(sql_router, prefix="/copilot", tags=["SQL Agent"])
 
 
 @app.get("/health")

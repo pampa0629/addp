@@ -267,8 +267,9 @@ class OllamaAdapter(BaseLLMAdapter):
         import httpx
         self.model = model
         self.base_url = base_url
-        self.client = httpx.Client(base_url=base_url, timeout=60.0)
-        self.async_client = httpx.AsyncClient(base_url=base_url, timeout=60.0)
+        # 禁用系统代理，直接访问本地服务
+        self.client = httpx.Client(base_url=base_url, timeout=60.0, trust_env=False)
+        self.async_client = httpx.AsyncClient(base_url=base_url, timeout=60.0, trust_env=False)
         print(f"[Ollama Adapter] 初始化完成 - Model: {model}, Base URL: {base_url}")
 
     def _convert_messages(self, messages: List[dict]) -> List[dict]:

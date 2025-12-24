@@ -38,7 +38,12 @@
         >
           <el-menu-item index="/sql">
             <el-icon><Document /></el-icon>
-            <span>SQL 编辑器</span>
+            <span>SQL 工作台</span>
+          </el-menu-item>
+
+          <el-menu-item index="/notebook">
+            <el-icon><Notebook /></el-icon>
+            <span>Notebook 开发</span>
           </el-menu-item>
 
           <el-menu-item index="/sql-tasks">
@@ -79,6 +84,7 @@ import {
   ArrowDown,
   SwitchButton,
   Document,
+  Notebook,
   FolderOpened,
   Connection,
   List,

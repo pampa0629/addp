@@ -14,8 +14,9 @@ from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
 
 # 配置日志
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)

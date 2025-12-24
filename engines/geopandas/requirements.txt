@@ -2,6 +2,7 @@
 
 # Core spatial computation (with NumPy 1.x compatibility)
 numpy<2.0
+pandas>=2.0,<3.0
 geopandas==0.14.1
 shapely==2.0.2
 

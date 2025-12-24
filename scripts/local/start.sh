@@ -70,6 +70,8 @@ check_images() {
         "${REGISTRY}/addp-develop-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-copilot-backend:${IMAGE_TAG}"
         "${REGISTRY}/addp-geopandas-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-spark-sedona-engine:${IMAGE_TAG}"
+        "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
         "${REGISTRY}/addp-portal:${IMAGE_TAG}"
         "${REGISTRY}/addp-nginx:${IMAGE_TAG}"

@@ -30,6 +30,9 @@ type Config struct {
 	// GeoPandas Engine 配置
 	GeoPandasEngineURL string
 
+	// Jupyter Engine 配置
+	JupyterEngineURL string
+
 	// Spark Sedona Engine 配置
 	SparkEngineURL string
 
@@ -81,6 +84,9 @@ func Load() *Config {
 
 		// GeoPandas Engine 配置
 		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8099"),
+
+		// Jupyter Engine 配置
+		JupyterEngineURL: getEnv("JUPYTER_ENGINE_URL", "http://localhost:8097"),
 
 		// Spark Sedona Engine 配置
 		SparkEngineURL: getEnv("SPARK_ENGINE_URL", "http://localhost:8098"),

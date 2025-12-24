@@ -122,7 +122,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/spatial/*path", developProxy.Handle)
 
 		// Copilot 模块路由（AI 辅助）
-		api.Any("/copilot/*path", copilotProxy.Handle)
+		api.Any("/copilot/*path", copilotProxy.HandleWithPathRewrite("/api"))
 
 		// Service 模块路由（数据服务、OGC 服务、外部服务注册）
 		api.Any("/service/*path", serviceProxy.Handle)

@@ -27,6 +27,7 @@ func main() {
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
 	log.Printf("🔗 GeoPandas Engine: %s", cfg.GeoPandasEngineURL)
+	log.Printf("🔗 Jupyter Engine: %s", cfg.JupyterEngineURL)
 	log.Printf("🔗 Spark Sedona Engine: %s", cfg.SparkEngineURL)
 
 	// 初始化数据库
@@ -54,12 +55,16 @@ func main() {
 	sqlEngine := service.NewSQLEngineService(cfg, systemClient)
 	log.Printf("✅ SQLEngineService 初始化完成")
 
-	// 3. DevItem业务逻辑服务
+	// 3. Jupyter引擎服务
+	jupyterService := service.NewJupyterService(cfg)
+	log.Printf("✅ JupyterService 初始化完成")
+
+	// 4. DevItem业务逻辑服务
 	devItemService := service.NewDevItemService(devItemRepo)
 	log.Printf("✅ DevItemService 初始化完成")
 
-	// 4. DevExecutor 统一执行器
-	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine)
+	// 5. DevExecutor 统一执行器
+	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine, jupyterService)
 	log.Printf("✅ DevExecutor 初始化完成")
 
 	// 5. 算子发现服务
@@ -78,10 +83,11 @@ func main() {
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	resourceHandler := api.NewResourceHandler(systemClient)
 	sqlHandler := api.NewSQLHandler(sqlEngine, devItemService)
+	notebookHandler := api.NewNotebookHandler(jupyterService)
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, resourceHandler, sqlHandler, devItemService)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, resourceHandler, sqlHandler, notebookHandler, devItemService)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

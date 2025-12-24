@@ -18,6 +18,7 @@ func SetupRouter(
 	operatorHandler *OperatorHandler,
 	resourceHandler *ResourceHandler,
 	sqlHandler *SQLHandler,
+	notebookHandler *NotebookHandler,
 	devItemService interface{}, // 添加 devItemService 参数
 ) *gin.Engine {
 	router := gin.Default()
@@ -116,6 +117,15 @@ func SetupRouter(
 			sqlTasks.GET("/:id", sqlHandler.GetSQLTask)     // 获取 SQL 任务详情
 			sqlTasks.PUT("/:id", sqlHandler.UpdateSQLTask)  // 更新 SQL 任务
 			sqlTasks.DELETE("/:id", sqlHandler.DeleteSQLTask) // 删除 SQL 任务
+		}
+
+		// ========== Notebook 开发 ==========
+		notebooks := api.Group("/notebooks")
+		{
+			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL)   // 获取 Jupyter Lab URL
+			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)     // 执行 Notebook
+			notebooks.GET("/kernels", notebookHandler.ListKernels)          // 列出可用 Kernel
+			notebooks.GET("/health", notebookHandler.HealthCheck)           // 健康检查
 		}
 	}
 

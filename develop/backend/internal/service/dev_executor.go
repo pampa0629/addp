@@ -19,6 +19,7 @@ type DevExecutor struct {
 	devExecutionRepo  *repository.DevExecutionRepository
 	workflowEngine    *WorkflowEngineService
 	sqlEngine         *SQLEngineService
+	jupyterService    *JupyterService
 }
 
 // NewDevExecutor 创建开发项执行器
@@ -27,12 +28,14 @@ func NewDevExecutor(
 	devExecutionRepo *repository.DevExecutionRepository,
 	workflowEngine *WorkflowEngineService,
 	sqlEngine *SQLEngineService,
+	jupyterService *JupyterService,
 ) *DevExecutor {
 	return &DevExecutor{
 		devItemRepo:      devItemRepo,
 		devExecutionRepo: devExecutionRepo,
 		workflowEngine:   workflowEngine,
 		sqlEngine:        sqlEngine,
+		jupyterService:   jupyterService,
 	}
 }
 
@@ -98,7 +101,7 @@ func (e *DevExecutor) ExecuteContent(
 	timeout int,
 ) (string, error) {
 	// 验证 dev_type
-	if devType != "sql" && devType != "workflow" && devType != "script" {
+	if devType != "sql" && devType != "workflow" && devType != "script" && devType != "notebook" {
 		return "", fmt.Errorf("无效的 dev_type: %s", devType)
 	}
 
@@ -161,6 +164,8 @@ func (e *DevExecutor) executeAsync(recordID uint, executionID string, devItem *m
 		result, errorMessage, rowsAffected = e.executeSQL(ctx, devItem, executionID)
 	case "script":
 		result, errorMessage = e.executeScript(ctx, devItem, executionID)
+	case "notebook":
+		result, errorMessage = e.executeNotebook(ctx, devItem, executionID)
 	default:
 		errorMessage = fmt.Sprintf("不支持的类型: %s", devItem.DevType)
 	}
@@ -319,6 +324,59 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, e
 func (e *DevExecutor) executeScript(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string) {
 	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "脚本执行")
 	return nil, "脚本执行功能尚未实现"
+}
+
+// executeNotebook 执行 Jupyter Notebook
+func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string) {
+	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "执行 Notebook")
+
+	// 解析 Notebook 路径
+	inputPath, ok := devItem.Content["input_path"].(string)
+	if !ok {
+		return nil, "无效的 Notebook 输入路径"
+	}
+
+	outputPath, ok := devItem.Content["output_path"].(string)
+	if !ok {
+		return nil, "无效的 Notebook 输出路径"
+	}
+
+	// 解析参数（可选）
+	parameters, _ := devItem.Content["parameters"].(map[string]interface{})
+	if parameters == nil {
+		parameters = make(map[string]interface{})
+	}
+
+	// 设置超时
+	timeout := devItem.Timeout
+	if timeout <= 0 {
+		timeout = 300 // 默认5分钟
+	}
+	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	// 调用 Jupyter Engine 执行
+	resp, err := e.jupyterService.ExecuteNotebook(execCtx, inputPath, outputPath, parameters, timeout)
+	if err != nil {
+		errorMsg := fmt.Sprintf("Notebook 执行失败: %v", err)
+		if resp != nil && resp.ErrorMessage != "" {
+			errorMsg = resp.ErrorMessage
+		}
+		return nil, errorMsg
+	}
+
+	_ = e.devExecutionRepo.UpdateProgress(executionID, 90, "Notebook 执行成功")
+
+	// 构造结果
+	result := models.ExecutionResult{
+		"status":                resp.Status,
+		"execution_time_seconds": resp.ExecutionTimeSeconds,
+		"output_path":           resp.OutputPath,
+		"output_count":          resp.OutputCount,
+		"outputs":               resp.Outputs,
+	}
+
+	return result, ""
 }
 
 // GetExecution 获取执行详情

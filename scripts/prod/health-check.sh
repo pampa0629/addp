@@ -39,7 +39,7 @@ echo ""
 echo -e "${YELLOW}=== 应用服务层健康检查 ===${NC}"
 
 # 检查各个后端服务
-for service in system:8080 manager:8081 meta:8082 transfer:8083 orchestrator:8084 develop:8085 service:8086; do
+for service in system:8080 manager:8081 meta:8082 transfer:8083 orchestrator:8084 develop:8085 service:8086 copilot:8087; do
   name=$(echo $service | cut -d: -f1)
   port=$(echo $service | cut -d: -f2)
 
@@ -49,6 +49,20 @@ for service in system:8080 manager:8081 meta:8082 transfer:8083 orchestrator:808
     echo -e "${RED}✗ ${name}-backend${NC}"
   fi
 done
+
+# Jupyter Engine
+if curl -f http://localhost:8097/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ jupyter-engine${NC}"
+else
+  echo -e "${RED}✗ jupyter-engine${NC}"
+fi
+
+# Spark Sedona Engine
+if curl -f http://localhost:8098/health > /dev/null 2>&1; then
+  echo -e "${GREEN}✓ spark-sedona-engine${NC}"
+else
+  echo -e "${RED}✗ spark-sedona-engine${NC}"
+fi
 
 # GeoPandas Engine
 if curl -f http://localhost:8099/health > /dev/null 2>&1; then

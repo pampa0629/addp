@@ -121,6 +121,10 @@
               <el-icon><Monitor /></el-icon>
               <span>SQL 工作台</span>
             </el-menu-item>
+            <el-menu-item index="/develop/notebook">
+              <el-icon><Notebook /></el-icon>
+              <span>Notebook 脚本开发</span>
+            </el-menu-item>
             <el-menu-item index="/develop/workflow">
               <el-icon><Connection /></el-icon>
               <span>工作流编辑器</span>
@@ -288,7 +292,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit, Key } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit, Key, Notebook } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -394,6 +398,7 @@ const handleMenuSelect = (index) => {
     // Develop 模块的路由映射
     const developPageMap = {
       'sql': 'sql',
+      'notebook': 'notebook',
       'gis-workflow': 'gis-workflow',
       'gis-tasks': 'gis-tasks',
       'gis-executions': 'gis-executions',

@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-geopandas] [-copilot] [-spark-sedona]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-geopandas] [-copilot] [-spark-sedona] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,不重新编译"
@@ -19,9 +19,10 @@ show_usage() {
   echo "  -geopandas   重启 GeoPandas Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -spark-sedona 重启 Spark Sedona Engine (Python 服务)"
+  echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo ""
   echo "注意:"
-  echo "  - GeoPandas Engine、Spark Sedona Engine 和 Copilot (Python) 会自动重启"
+  echo "  - GeoPandas Engine、Spark Sedona Engine、Jupyter Engine 和 Copilot (Python) 会自动重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
@@ -30,6 +31,7 @@ show_usage() {
   echo "  $0 -geopandas         # 重启 GeoPandas Engine"
   echo "  $0 -copilot           # 重启 Copilot Backend"
   echo "  $0 -spark-sedona      # 重启 Spark Sedona Engine"
+  echo "  $0 -jupyter           # 重启 Jupyter Engine"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -54,7 +56,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-geopandas|-copilot|-spark-sedona)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-geopandas|-copilot|-spark-sedona|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -118,6 +120,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "spark-sedona" ]; then
       # Spark Sedona Engine 是 Python 服务，不需要编译
       echo "  标记 Spark Sedona Engine 需要重启（无需编译）"
+    elif [ "$module" = "jupyter" ]; then
+      # Jupyter Engine 是 Python 服务，不需要编译
+      echo "  标记 Jupyter Engine 需要重启（无需编译）"
     else
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     fi
@@ -129,6 +134,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "spark-sedona" ]; then
+      # Python 服务无二进制文件
+      :
+    elif [ "$module" = "jupyter" ]; then
       # Python 服务无二进制文件
       :
     else
@@ -143,6 +151,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "spark-sedona" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
+    elif [ "$module" = "jupyter" ]; then
       # Python 服务无需清理 Go 缓存
       :
     else

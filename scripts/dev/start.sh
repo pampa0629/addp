@@ -17,6 +17,7 @@ show_usage() {
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
   echo "  -geopandas    只启动 GeoPandas Engine"
   echo "  -spark-sedona 只启动 Spark Sedona Engine"
+  echo "  -jupyter      只启动 Jupyter Engine"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -portal       启动 Portal (依赖: 所有模块)"
   echo ""
@@ -32,6 +33,7 @@ show_usage() {
   echo "  $0 -develop       # 启动 Develop + System + GeoPandas"
   echo "  $0 -geopandas     # 只启动 GeoPandas Engine"
   echo "  $0 -spark-sedona  # 启动 Spark Sedona Engine"
+  echo "  $0 -jupyter       # 只启动 Jupyter Engine"
   exit 1
 }
 
@@ -86,7 +88,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-geopandas|-spark-sedona|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-geopandas|-spark-sedona|-jupyter|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -120,6 +122,7 @@ START_GATEWAY=false
 START_PORTAL=false
 START_GEOPANDAS=false
 START_SPARK_SEDONA=false
+START_JUPYTER=false
 
 # 根据选择的模块设置启动标志
 if [ "$START_ALL" = true ]; then
@@ -146,6 +149,7 @@ if [ "$START_ALL" = true ]; then
   START_PORTAL=true
   START_GEOPANDAS=true
   START_SPARK_SEDONA=true
+  START_JUPYTER=true
 else
   # 根据选择的模块设置依赖
   case $SELECTED_MODULE in
@@ -187,6 +191,7 @@ else
       START_DEVELOP_FRONTEND=true
       START_GEOPANDAS=true
       START_SPARK_SEDONA=true
+      START_JUPYTER=true
       ;;
     service)
       START_SYSTEM_BACKEND=true
@@ -200,6 +205,7 @@ else
       START_META_BACKEND=true
       START_DEVELOP_BACKEND=true
       START_GEOPANDAS=true
+      START_JUPYTER=true
       START_COPILOT_BACKEND=true
       ;;
     geopandas)
@@ -207,6 +213,9 @@ else
       ;;
     spark-sedona)
       START_SPARK_SEDONA=true
+      ;;
+    jupyter)
+      START_JUPYTER=true
       ;;
     gateway)
       START_SYSTEM_BACKEND=true
@@ -222,6 +231,7 @@ else
       START_COPILOT_BACKEND=true
       START_GEOPANDAS=true
       START_SPARK_SEDONA=true
+      START_JUPYTER=true
       START_GATEWAY=true
       ;;
     portal)
@@ -247,6 +257,7 @@ else
       START_PORTAL=true
       START_GEOPANDAS=true
       START_SPARK_SEDONA=true
+      START_JUPYTER=true
       ;;
   esac
 fi
@@ -1057,6 +1068,181 @@ else
 fi
 
 # ============================================================
+# Step 4.6: Start Jupyter Engine (Python service)
+# ============================================================
+if [ "$START_JUPYTER" = true ]; then
+  echo -e "${YELLOW}Step 4.6/5: 启动 Jupyter Engine...${NC}"
+
+  # 检查 Python 3 是否安装
+  if ! command -v python3 &> /dev/null; then
+      echo -e "${RED}✗ Python 3 未安装，请先安装 Python 3.11+${NC}"
+      exit 1
+  fi
+
+  # 检查 Python 版本（需要 3.11+）
+  PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+  REQUIRED_VERSION="3.11"
+  if [ "$(printf '%s\n' "$REQUIRED_VERSION" "$PYTHON_VERSION" | sort -V | head -n1)" != "$REQUIRED_VERSION" ]; then
+      echo -e "${RED}✗ Python 版本过低 ($PYTHON_VERSION)，需要 3.11+${NC}"
+      exit 1
+  fi
+
+# 检查并创建虚拟环境（幂等）
+NEED_INSTALL=false
+if [ ! -d "engines/jupyter/venv" ]; then
+    echo "首次启动，创建 Python 虚拟环境..."
+    cd engines/jupyter
+    # 优先使用兼容性好的 Python 版本（避免新版本兼容性问题）
+    # 优先级: 3.12 > 3.13 > 3.11 > 系统默认
+    if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.12 --version)"
+        /opt/homebrew/bin/python3.12 -m venv venv
+    elif command -v /opt/homebrew/bin/python3.13 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.13 --version)"
+        /opt/homebrew/bin/python3.13 -m venv venv
+    elif command -v /opt/homebrew/bin/python3.11 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3.11 --version)"
+        /opt/homebrew/bin/python3.11 -m venv venv
+    elif command -v /opt/homebrew/bin/python3 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
+        /opt/homebrew/bin/python3 -m venv venv
+    else
+        python3 -m venv venv
+    fi
+    NEED_INSTALL=true
+else
+    # 检查关键依赖是否已安装
+    if ! ./engines/jupyter/venv/bin/python -c "import flask" &> /dev/null; then
+        echo "检测到虚拟环境缺少依赖，重新安装..."
+        cd engines/jupyter
+        NEED_INSTALL=true
+    else
+        echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+fi
+
+if [ "$NEED_INSTALL" = true ]; then
+    # 使用 pip 安装依赖（更稳定，避免 uv 虚拟环境识别问题）
+    echo "使用 pip 安装依赖（首次安装可能需要 1-2 分钟）..."
+
+    # 构建 pip 安装命令（支持镜像源配置）
+    PIP_CMD="./venv/bin/pip install"
+    if [ -n "$PIP_INDEX_URL" ]; then
+        echo "  使用镜像源: $PIP_INDEX_URL"
+        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+        if [ -n "$PIP_TRUSTED_HOST" ]; then
+            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+        fi
+    else
+        echo "  使用官方源（国外可能较慢，建议在 .env 中配置 PIP_INDEX_URL）"
+    fi
+
+    # 升级 pip 并安装依赖
+    $PIP_CMD --upgrade pip
+    $PIP_CMD -r requirements.txt
+
+    # 检查安装是否成功
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+    else
+        echo -e "${RED}✗ Python 依赖安装失败，请检查错误信息${NC}"
+        echo -e "${YELLOW}提示：某些依赖可能需要系统库支持（如 JupyterLab）${NC}"
+        cd ../..
+        exit 1
+    fi
+    cd ../..
+fi
+
+# 启动 Jupyter Engine
+if check_service_running "jupyter-engine" "8088"; then
+  echo "启动 Jupyter Engine（双服务模式：Jupyter Lab + API Server）..."
+  cd engines/jupyter
+
+  # 设置环境变量
+  export API_PORT=8097
+  export JUPYTER_PORT=8088
+  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+
+  # 启动 API Server（后台）
+  ./venv/bin/python api_server.py > ../../logs/jupyter-api-server.log 2> ../../logs/jupyter-api-server-stderr.log &
+  API_SERVER_PID=$!
+  echo $API_SERVER_PID > ../../.dev-pids/jupyter-api-server.pid
+
+  # 启动 Jupyter Lab（后台）
+  ./venv/bin/jupyter lab \
+    --ip=0.0.0.0 \
+    --port=8088 \
+    --no-browser \
+    --ServerApp.token='' \
+    --ServerApp.password='' \
+    --ServerApp.allow_origin='*' \
+    --ServerApp.disable_check_xsrf=True \
+    --LabApp.tornado_settings="{'headers': {'Content-Security-Policy': \"frame-ancestors 'self' http://localhost:5170 http://localhost:5178\"}}" \
+    > ../../logs/jupyter-lab.log 2> ../../logs/jupyter-lab-stderr.log &
+  JUPYTER_LAB_PID=$!
+  echo $JUPYTER_LAB_PID > ../../.dev-pids/jupyter-lab.pid
+
+  cd ../..
+
+  echo -e "${GREEN}✓ Jupyter Engine 已启动:${NC}"
+  echo -e "  - API Server (PID: $API_SERVER_PID, Port: 8097)"
+  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID, Port: 8088)"
+
+  # 等待 API Server 健康检查通过
+  echo -n "等待 API Server 就绪..."
+  WAIT_COUNT=0
+  MAX_WAIT=60
+  until curl -f http://localhost:8097/health > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ API Server 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/jupyter-api-server.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/jupyter-api-server-stderr.log${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+
+  # 等待 Jupyter Lab 就绪
+  echo -n "等待 Jupyter Lab 就绪..."
+  WAIT_COUNT=0
+  MAX_WAIT=60
+  until curl -f http://localhost:8088/lab > /dev/null 2>&1; do
+    echo -n "."
+    sleep 1
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${YELLOW}⚠${NC}"
+      echo -e "${YELLOW}⚠ Jupyter Lab 启动超时（60秒），但会继续启动${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/jupyter-lab.log${NC}"
+      break
+    fi
+  done
+  if [ $WAIT_COUNT -lt $MAX_WAIT ]; then
+    echo -e " ${GREEN}✓${NC}"
+  fi
+
+  echo -e "${GREEN}✓ Jupyter Engine 就绪:${NC}"
+  echo -e "  - API Server: http://localhost:8097"
+  echo -e "  - Jupyter Lab: http://localhost:8088/lab"
+else
+  API_SERVER_PID=$(cat .dev-pids/jupyter-api-server.pid 2>/dev/null)
+  JUPYTER_LAB_PID=$(cat .dev-pids/jupyter-lab.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Jupyter Engine 已在运行:${NC}"
+  echo -e "  - API Server (PID: $API_SERVER_PID)"
+  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID)"
+fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 4.6/5: 跳过 Jupyter Engine${NC}"
+  echo ""
+fi
+
+# ============================================================
 # Step 5: Start Copilot Backend (Python/FastAPI service)
 # ============================================================
 if [ "$START_COPILOT_BACKEND" = true ]; then
@@ -1386,6 +1572,7 @@ echo "  Orchestrator: http://localhost:8084"
 echo "  Develop:  http://localhost:8085"
 echo "  Service:  http://localhost:8086"
 echo "  Copilot:  http://localhost:8087"
+echo "  Jupyter Engine:      http://localhost:8097 (API) / http://localhost:8088 (Lab UI)"
 echo "  Spark Sedona Engine: http://localhost:8098"
 echo "  GeoPandas Engine:    http://localhost:8099"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
@@ -1406,6 +1593,7 @@ echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
 echo "  GeoPandas Engine:     $GEOPANDAS_PID"
 echo "  Spark Sedona Engine:  $SPARK_SEDONA_PID"
+echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
@@ -1425,6 +1613,7 @@ echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
 echo "  GeoPandas Engine: logs/geopandas-engine.log"
 echo "  Spark Sedona Engine: logs/spark-sedona-engine.log"
+echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Worker: logs/transfer-worker.log"
 echo "  Meta Worker: logs/meta-worker.log"

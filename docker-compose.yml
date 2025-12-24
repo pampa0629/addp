@@ -415,6 +415,7 @@ services:
       - ENV=production
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - GEOPANDAS_ENGINE_URL=http://geopandas-engine:8099
+      - JUPYTER_ENGINE_URL=http://jupyter-engine:8097
       - ENABLE_SERVICE_INTEGRATION=true
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -528,6 +529,46 @@ services:
       retries: 30
       start_period: 60s
 
+  # ==================== Jupyter Engine (Notebook 开发引擎) ====================
+
+  jupyter-engine:
+    build:
+      context: ./engines/jupyter
+      dockerfile: Dockerfile
+    image: ${REGISTRY:-localhost:5001}/addp-jupyter-engine:${IMAGE_TAG:-latest}
+    container_name: jupyter-engine
+    environment:
+      - JUPYTER_PORT=8088
+      - API_PORT=8097
+      - JUPYTER_ENABLE_LAB=yes
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    ports:
+      - "8088:8088"  # Jupyter Lab UI
+      - "8097:8097"  # Flask API for notebook execution
+    volumes:
+      # 挂载到 MinIO 的 notebooks 目录（通过共享卷）
+      - jupyter-notebooks:/workspace/notebooks
+      - ./logs:/app/logs
+    networks:
+      - addp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8097/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
   # ==================== GeoPandas Engine (空间计算引擎) ====================
 
   geopandas-engine:
@@ -540,6 +581,7 @@ services:
       - PORT=8099
       - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -548,6 +590,8 @@ services:
       - DB_SCHEMA=develop
     ports:
       - "8099:8099"
+    volumes:
+      - ./logs:/app/logs
     networks:
       - addp-network
     depends_on:
@@ -569,8 +613,9 @@ services:
     container_name: spark-sedona-engine
     environment:
       - PORT=8098
-      - SYSTEM_BACKEND_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8080
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - POSTGRES_USER=${POSTGRES_USER:-addp}
@@ -580,6 +625,8 @@ services:
       - SPARK_MODE=local
     ports:
       - "8098:8098"
+    volumes:
+      - ./logs:/app/logs
     networks:
       - addp-network
     depends_on:
@@ -657,6 +704,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+volumes:
+  jupyter-notebooks:
+    driver: local
 
 networks:
   addp-network:

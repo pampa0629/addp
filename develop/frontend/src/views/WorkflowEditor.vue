@@ -978,11 +978,15 @@ onMounted(async () => {
   background: #fff;
   border-right: 1px solid #e4e7ed;
   flex-shrink: 0;
+  position: relative;
+  z-index: 10;
 }
 
 .right-panel {
   border-right: none;
   border-left: 1px solid #e4e7ed;
+  position: relative;
+  z-index: 10;
 }
 
 .canvas-panel {
@@ -991,6 +995,8 @@ onMounted(async () => {
   flex-direction: column;
   overflow: hidden;
   background: #f5f7fa;
+  position: relative;
+  z-index: 1;
 }
 
 .panel-header {

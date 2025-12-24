@@ -60,6 +60,7 @@ docker compose -f docker-compose.yml up -d \
   service-backend \
   geopandas-engine \
   spark-sedona-engine \
+  jupyter-engine \
   gateway
 
 # 第四步：等待所有后端服务就绪
@@ -74,8 +75,9 @@ services=(
   "orchestrator-backend:8084"
   "develop-backend:8085"
   "service-backend:8086"
-  "geopandas-engine:8099"
+  "jupyter-engine:8097"
   "spark-sedona-engine:8098"
+  "geopandas-engine:8099"
   "gateway:8000"
 )
 

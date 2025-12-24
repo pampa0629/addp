@@ -291,7 +291,14 @@
       "Bash(do echo \"检查 $file...\")",
       "Bash(venv/bin/pip install:*)",
       "Bash(if ! grep -q \"NO_COLOR\" /Users/pampa/code/addp/.env.local)",
-      "Bash(then)"
+      "Bash(then)",
+      "Bash(printf:*)",
+      "Bash(sudo pfctl:*)",
+      "Bash(scutil:*)",
+      "Bash(grep端口)",
+      "Bash(open \"http://localhost:5176/notebook\")",
+      "Bash(open \"http://localhost:5178/notebook\")",
+      "Bash(xargs cat:*)"
     ],
     "deny": [],
     "ask": []

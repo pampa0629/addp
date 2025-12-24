@@ -23,6 +23,12 @@ const routes = [
         meta: { requiresAuth: true, title: 'SQL 编辑器' }
       },
       {
+        path: 'notebook',
+        name: 'NotebookEditor',
+        component: () => import('../views/NotebookEditor.vue'),
+        meta: { requiresAuth: true, title: 'Notebook 开发' }
+      },
+      {
         path: 'sql-tasks',
         name: 'SQLTasks',
         component: () => import('../views/SQLTasks.vue'),

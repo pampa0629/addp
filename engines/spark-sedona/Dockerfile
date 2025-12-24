@@ -50,5 +50,5 @@ ENV PORT=8098
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8098/health')"
 
-# 使用 Flask 开发服务器运行（生产环境可使用 Gunicorn）
-CMD ["python", "api_server.py"]
+# 使用 Gunicorn 运行（生产级）
+CMD ["gunicorn", "--bind", "0.0.0.0:8098", "api_server:app", "--workers", "4", "--timeout", "300"]

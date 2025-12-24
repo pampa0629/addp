@@ -394,7 +394,7 @@ check_service_changed() {
             fi
             ;;
 
-        geopandas-engine|spark-sedona-engine|copilot-backend)
+        geopandas-engine|spark-sedona-engine|jupyter-engine|copilot-backend)
             # Python service: compare source file time (Dockerfile + Python source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.py" -o -name "requirements.txt" -o -name "Dockerfile" ')' \
                 -not -path "*/venv/*" -not -path "*/__pycache__/*" 2>/dev/null | \
@@ -470,8 +470,8 @@ build_service() {
             fi
             ;;
 
-        geopandas-engine|spark-sedona-engine|copilot-backend)
-            # Python Engine: Python service built from source (GeoPandas, Spark Sedona, or Copilot)
+        geopandas-engine|spark-sedona-engine|jupyter-engine|copilot-backend)
+            # Python Engine: Python service built from source (GeoPandas, Spark Sedona, Jupyter, or Copilot)
             build_context="${service_dir}"
             dockerfile_path="${service_dir}/Dockerfile"
 
@@ -616,6 +616,7 @@ main() {
         "copilot-backend:copilot"
         "geopandas-engine:engines/geopandas"
         "spark-sedona-engine:engines/spark-sedona"
+        "jupyter-engine:engines/jupyter"
         "transfer-worker:transfer/backend"
         "meta-worker:meta/backend"
         "manager-worker:manager/backend"
