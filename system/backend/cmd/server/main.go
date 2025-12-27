@@ -14,7 +14,9 @@ import (
 	"github.com/addp/system/internal/api"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/repository"
+	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -84,6 +86,31 @@ func main() {
 			logger.L().Error("服务器启动失败", "error", err)
 			os.Exit(1)
 		}
+	}()
+
+	// 启动健康检查（在后台goroutine中）
+	go func() {
+		// 等待1秒确保服务完全启动
+		time.Sleep(1 * time.Second)
+
+		// 初始化 Redis 客户端（用于 ResourceService）
+		var redisClient *redis.Client
+		if cfg.RedisHost != "" {
+			redisClient = redis.NewClient(&redis.Options{
+				Addr:     cfg.RedisHost + ":" + cfg.RedisPort,
+				Password: cfg.RedisPassword,
+				DB:       cfg.RedisDB,
+			})
+		}
+
+		// 创建 ResourceService
+		userRepo := repository.NewUserRepository(db)
+		resourceRepo := repository.NewResourceRepository(db)
+		resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
+
+		// 创建并运行健康检查器
+		healthChecker := service.NewHealthChecker(resourceService)
+		healthChecker.CheckAllResourcesOnStartup()
 	}()
 
 	// 等待中断信号以优雅关闭服务器

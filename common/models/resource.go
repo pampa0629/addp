@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 )
 
 // ConnectionInfo 定义连接信息类型，支持 GORM JSONB 序列化
@@ -94,6 +95,11 @@ type Resource struct {
 	Capabilities      *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"`           // 能力声明（JSONB）
 	TaskAPIConfig     *string `gorm:"column:task_api_config;type:jsonb" json:"task_api_config,omitempty"`     // 任务 API 配置（JSONB，仅计算引擎）
 	HealthCheckConfig *string `gorm:"column:health_check_config;type:jsonb" json:"health_check_config,omitempty"` // 健康检查配置（JSONB）
+
+	// 连接状态缓存（优化扫描性能）
+	ConnectionStatus string     `gorm:"column:connection_status;size:20;default:'unknown';index" json:"connection_status"` // online/offline/unknown/checking
+	LastCheckAt      *time.Time `gorm:"column:last_check_at" json:"last_check_at,omitempty"`                               // 上次检测时间
+	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）
 }
 
 // BuildConnectionString 根据资源信息构建连接字符串

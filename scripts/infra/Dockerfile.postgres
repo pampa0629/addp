@@ -1,0 +1,48 @@
+# ADDP Infrastructure PostgreSQL with pgvector
+# 支持多架构：x86_64 和 ARM64
+#
+# 构建参数：
+#   - POSTGRES_BASE_IMAGE: 基础镜像（根据架构自动选择）
+#
+# 功能：
+#   - PostGIS 15 + PostgreSQL 15
+#   - pgvector v0.8.0（向量检索扩展）
+
+# 使用构建参数指定基础镜像
+ARG POSTGRES_BASE_IMAGE=postgis/postgis:15-3.4
+FROM ${POSTGRES_BASE_IMAGE}
+
+# 标签信息
+LABEL maintainer="ADDP Team"
+LABEL description="PostgreSQL 15 with PostGIS and pgvector for ADDP Infrastructure"
+LABEL pgvector.version="0.8.0"
+
+# 安装构建依赖和 pgvector
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    postgresql-server-dev-15 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 下载并安装 pgvector v0.8.0
+RUN cd /tmp && \
+    git clone --branch v0.8.0 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make clean && \
+    make OPTFLAGS="" && \
+    make install && \
+    cd / && \
+    rm -rf /tmp/pgvector
+
+# 清理构建依赖（可选，减小镜像大小）
+# 注意：保留 postgresql-server-dev-15 可能对某些操作有帮助
+RUN apt-get remove -y build-essential git && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 暴露 PostgreSQL 默认端口
+EXPOSE 5432
+
+# 使用基础镜像的入口点
+# ENTRYPOINT 和 CMD 由基础镜像提供

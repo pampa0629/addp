@@ -273,9 +273,9 @@ func (p *PostgreSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema,
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	// 填充标准化类型
+	// 填充标准化类型（使用通用映射工具）
 	for i := range columns {
-		columns[i].StdType = mapPostgreSQLType(columns[i].DataType)
+		columns[i].StdType = plugin.MapToStandardType(columns[i].DataType)
 	}
 
 	return columns, nil
@@ -299,30 +299,4 @@ func (p *PostgreSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, sc
 	}
 
 	return count, nil
-}
-
-// mapPostgreSQLType 将PostgreSQL原生类型映射为标准类型
-func mapPostgreSQLType(pgType string) string {
-	switch pgType {
-	case "integer", "int", "int4", "smallint", "int2", "bigint", "int8":
-		return "integer"
-	case "numeric", "decimal", "double precision", "float8", "real", "float4", "money":
-		return "number"
-	case "character varying", "varchar", "character", "char", "text":
-		return "string"
-	case "boolean", "bool":
-		return "boolean"
-	case "timestamp", "timestamp with time zone", "timestamp without time zone", "date", "time", "time with time zone", "time without time zone":
-		return "datetime"
-	case "json", "jsonb":
-		return "json"
-	case "uuid":
-		return "string"
-	case "bytea":
-		return "binary"
-	case "array", "ARRAY":
-		return "array"
-	default:
-		return "string"
-	}
 }

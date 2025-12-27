@@ -163,6 +163,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		internal.GET("/resources", resourceHandler.ListInternal)
 		internal.GET("/resources/:id", resourceHandler.GetByIDInternal)
 		internal.POST("/resources", resourceHandler.CreateInternal)
+		internal.PUT("/resources/:id/connection-status", resourceHandler.UpdateConnectionStatusInternal)
+		internal.POST("/resources/:id/check-connection", resourceHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
 
 		// 能力注册 API
 		registry := internal.Group("/registry")

@@ -25,7 +25,7 @@ if [ -f ./.env ]; then
 fi
 
 # MinIO 连接配置（系统 MinIO）
-MINIO_ENDPOINT="${MINIO_API_PORT:-9000}"
+MINIO_ENDPOINT="${MINIO_API_PORT:-19000}"
 MINIO_ACCESS_KEY="${MINIO_ROOT_USER:-minioadmin}"
 MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD:-minioadmin}"
 

@@ -7,8 +7,10 @@ import (
 	"github.com/addp/common/database/plugin"
 
 	// 导入所有插件以触发 init() 注册
+	_ "github.com/addp/common/database/plugins/clickhouse"
 	_ "github.com/addp/common/database/plugins/doris"
 	_ "github.com/addp/common/database/plugins/minio"
+	_ "github.com/addp/common/database/plugins/mongodb"
 	_ "github.com/addp/common/database/plugins/mysql"
 	_ "github.com/addp/common/database/plugins/postgresql"
 	_ "github.com/addp/common/database/plugins/s3"
@@ -17,8 +19,10 @@ import (
 
 func TestAllPluginsRegistered(t *testing.T) {
 	expectedTypes := []string{
+		"clickhouse",
 		"doris",
 		"minio",
+		"mongodb",
 		"mysql",
 		"postgresql",
 		"s3",
@@ -46,8 +50,8 @@ func TestAllPluginsRegistered(t *testing.T) {
 func TestGetAllPlugins(t *testing.T) {
 	plugins := plugin.GetAll()
 
-	if len(plugins) != 6 {
-		t.Errorf("Expected 6 plugins, got %d", len(plugins))
+	if len(plugins) != 8 {
+		t.Errorf("Expected 8 plugins, got %d", len(plugins))
 	}
 
 	// 验证每个插件的基本信息
@@ -59,6 +63,8 @@ func TestGetAllPlugins(t *testing.T) {
 		{"mysql", "MySQL"},
 		{"doris", "Apache Doris"},
 		{"spark_sql", "Spark SQL"},
+		{"clickhouse", "ClickHouse"},
+		{"mongodb", "MongoDB"},
 		{"minio", "MinIO"},
 		{"s3", "Amazon S3"},
 	}
@@ -85,6 +91,8 @@ func TestPluginCapabilities(t *testing.T) {
 		{"postgresql", "relational_db"},
 		{"mysql", "relational_db"},
 		{"doris", "relational_db"},
+		{"clickhouse", "relational_db"},
+		{"mongodb", "nosql_db"},
 		{"spark_sql", "compute_engine"},
 		{"minio", "object_storage"},
 		{"s3", "object_storage"},
@@ -118,6 +126,8 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"postgresql", 5432},
 		{"mysql", 3306},
 		{"doris", 9030},
+		{"clickhouse", 9000},
+		{"mongodb", 27017},
 		{"spark_sql", 10000},
 		{"minio", 9000},
 		{"s3", 443},
@@ -145,6 +155,8 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"postgresql", "host"},
 		{"mysql", "user"},
 		{"doris", "database"},
+		{"clickhouse", "host"},
+		{"mongodb", "host"},
 		{"spark_sql", "host"},
 		{"minio", "endpoint"},
 		{"s3", "access_key"},

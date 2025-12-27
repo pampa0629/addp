@@ -147,7 +147,9 @@ func (h *ResourceHandler) respondWithResourceError(c *gin.Context, err error) {
 	}
 }
 
-// TestConnection 测试存储引擎连接
+// TestConnection 测试存储引擎连接（用户手动触发，同步返回结果）
+// POST /api/resources/:id/test-connection
+// 测试完成后同步更新连接状态缓存
 func (h *ResourceHandler) TestConnection(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -169,6 +171,9 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 
 	// 测试连接
 	if err := h.storageEngineService.TestConnection(resource); err != nil {
+		// 更新为offline
+		h.resourceService.UpdateConnectionStatus(uint(id), "offline", err.Error())
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "连接失败",
@@ -176,6 +181,9 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 		})
 		return
 	}
+
+	// 更新为online
+	h.resourceService.UpdateConnectionStatus(uint(id), "online", "连接正常")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -410,5 +418,63 @@ func (h *ResourceHandler) ListTables(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"tables": tables,
+	})
+}
+
+// TriggerConnectionCheckInternal 触发连接检测（内部API，异步）
+// POST /api/internal/resources/:id/check-connection
+// 用于其他模块在连接失败时通知System刷新状态
+// 立即返回202 Accepted，实际检测在后台执行
+func (h *ResourceHandler) TriggerConnectionCheckInternal(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
+		return
+	}
+
+	// 异步检测，立即返回
+	if err := h.resourceService.AsyncCheckConnection(uint(id)); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "连接检测已启动，稍后刷新获取最新状态",
+	})
+}
+
+// UpdateConnectionStatusRequest 更新连接状态请求
+type UpdateConnectionStatusRequest struct {
+	ConnectionStatus string `json:"connection_status" binding:"required,oneof=online offline unknown checking"`
+	CheckMessage     string `json:"check_message"`
+}
+
+// UpdateConnectionStatusInternal 内部API：更新资源连接状态
+// PUT /api/internal/resources/:id/connection-status
+// 用于Meta模块在后台检测后更新资源连接状态缓存
+// 注意：此方法已废弃，建议使用TriggerConnectionCheckInternal让System自己检测
+// 保留是为了向后兼容
+func (h *ResourceHandler) UpdateConnectionStatusInternal(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
+		return
+	}
+
+	var req UpdateConnectionStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 更新连接状态
+	if err := h.resourceService.UpdateConnectionStatus(uint(id), req.ConnectionStatus, req.CheckMessage); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "连接状态已更新",
 	})
 }

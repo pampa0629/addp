@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -261,24 +262,502 @@ func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *
 		return nil, nil, err
 	}
 
-	// 解析元数据（简化版，实际需要根据不同服务类型解析 XML/JSON）
-	metadata := models.JSONB{
-		"capabilities_url": capabilitiesURL,
-		"raw_response":     string(body[:min(1000, len(body))]), // 保存前 1000 字符作为预览
-		"fetched_at":       time.Now().Format(time.RFC3339),
+	// 根据服务类型解析元数据
+	var metadata models.JSONB
+	var layers []models.ServiceLayer
+
+	switch service.ServiceType {
+	case "wms":
+		metadata, layers, err = s.parseWMSCapabilities(body, service.ID)
+	case "wfs":
+		metadata, layers, err = s.parseWFSCapabilities(body, service.ID)
+	case "wmts":
+		metadata, layers, err = s.parseWMTSCapabilities(body, service.ID)
+	case "ogc_api":
+		metadata, layers, err = s.parseOGCAPICollections(body, service.ID)
+	default:
+		// 默认行为：保存原始响应
+		metadata = models.JSONB{
+			"capabilities_url": capabilitiesURL,
+			"raw_response":     string(body[:min(1000, len(body))]),
+			"fetched_at":       time.Now().Format(time.RFC3339),
+		}
+		layers = []models.ServiceLayer{}
 	}
 
-	// 返回空图层列表（实际需要解析 Capabilities 文档提取图层）
-	layers := []models.ServiceLayer{}
-
-	// TODO: 实现完整的 Capabilities 解析逻辑
-	// - WMS: 解析 <Layer> 元素
-	// - WFS: 解析 <FeatureType> 元素
-	// - WMTS: 解析 <Layer> 元素
-	// - OGC API: 解析 /collections 端点
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse capabilities: %w", err)
+	}
 
 	return metadata, layers, nil
 }
+
+// parseWMSCapabilities 解析 WMS GetCapabilities XML 响应
+func (s *ExternalServiceService) parseWMSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+	var capabilities WMSCapabilities
+	if err := xml.Unmarshal(body, &capabilities); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse WMS XML: %w", err)
+	}
+
+	// 构建元数据
+	metadata := models.JSONB{
+		"service_title":       capabilities.Service.Title,
+		"service_abstract":    capabilities.Service.Abstract,
+		"version":             capabilities.Version,
+		"online_resource":     capabilities.Service.OnlineResource.Href,
+		"contact_organization": capabilities.Service.ContactInformation.Organization,
+		"fetched_at":          time.Now().Format(time.RFC3339),
+	}
+
+	// 提取图层列表（递归处理嵌套图层）
+	var layers []models.ServiceLayer
+	extractWMSLayers(&layers, capabilities.Capability.Layer, serviceID, "")
+
+	return metadata, layers, nil
+}
+
+// extractWMSLayers 递归提取 WMS 图层
+func extractWMSLayers(layers *[]models.ServiceLayer, layer WMSLayer, serviceID uint, parentName string) {
+	layerName := layer.Name
+	if layerName == "" {
+		// 如果是容器图层（没有 Name），使用 Title
+		layerName = layer.Title
+	}
+
+	// 构建完整图层名称（考虑层级关系）
+	fullName := layerName
+	if parentName != "" {
+		fullName = parentName + "/" + layerName
+	}
+
+	// 只有具有 Name 的图层才可以被请求
+	if layer.Name != "" {
+		// 提取 BBox（使用 EX_GeographicBoundingBox 或第一个 BoundingBox）
+		var bbox models.JSONB
+		if layer.EXGeographicBoundingBox != nil {
+			bbox = models.JSONB{
+				"west":  layer.EXGeographicBoundingBox.WestLongitude,
+				"east":  layer.EXGeographicBoundingBox.EastLongitude,
+				"south": layer.EXGeographicBoundingBox.SouthLatitude,
+				"north": layer.EXGeographicBoundingBox.NorthLatitude,
+			}
+		} else if len(layer.BoundingBox) > 0 {
+			bb := layer.BoundingBox[0]
+			bbox = models.JSONB{
+				"minx": bb.Minx,
+				"miny": bb.Miny,
+				"maxx": bb.Maxx,
+				"maxy": bb.Maxy,
+				"crs":  bb.CRS,
+			}
+		}
+
+		// 提取 CRS 列表
+		var crs string
+		if len(layer.CRS) > 0 {
+			crs = layer.CRS[0] // 默认使用第一个 CRS
+		}
+
+		// 提取样式信息
+		stylesJSON := models.JSONB{}
+		if len(layer.Style) > 0 {
+			var styles []map[string]string
+			for _, style := range layer.Style {
+				styles = append(styles, map[string]string{
+					"name":  style.Name,
+					"title": style.Title,
+				})
+			}
+			stylesJSON["styles"] = styles
+		}
+
+		*layers = append(*layers, models.ServiceLayer{
+			ServiceID:   serviceID,
+			LayerName:   layer.Name,
+			DisplayName: layer.Title,
+			GeometryType: "raster", // WMS 图层通常是栅格
+			CRS:         crs,
+			BBox:        bbox,
+			Metadata: models.JSONB{
+				"abstract":    layer.Abstract,
+				"queryable":   layer.Queryable,
+				"opaque":      layer.Opaque,
+				"styles":      stylesJSON,
+				"min_scale":   layer.MinScaleDenominator,
+				"max_scale":   layer.MaxScaleDenominator,
+			},
+			Enabled: true,
+		})
+	}
+
+	// 递归处理子图层
+	for _, subLayer := range layer.Layers {
+		extractWMSLayers(layers, subLayer, serviceID, fullName)
+	}
+}
+
+// parseWFSCapabilities 解析 WFS GetCapabilities XML 响应
+func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+	var capabilities WFSCapabilities
+	if err := xml.Unmarshal(body, &capabilities); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse WFS XML: %w", err)
+	}
+
+	// 构建元数据
+	metadata := models.JSONB{
+		"service_title":    capabilities.ServiceIdentification.Title,
+		"service_abstract": capabilities.ServiceIdentification.Abstract,
+		"version":          capabilities.Version,
+		"provider_name":    capabilities.ServiceProvider.ProviderName,
+		"fetched_at":       time.Now().Format(time.RFC3339),
+	}
+
+	// 提取要素类型列表
+	var layers []models.ServiceLayer
+	for _, ft := range capabilities.FeatureTypeList.FeatureTypes {
+		// 提取 BBox
+		var bbox models.JSONB
+		if ft.WGS84BoundingBox != nil {
+			// 解析坐标字符串 "minx miny" 和 "maxx maxy"
+			lowerCorner := strings.Fields(ft.WGS84BoundingBox.LowerCorner)
+			upperCorner := strings.Fields(ft.WGS84BoundingBox.UpperCorner)
+			if len(lowerCorner) == 2 && len(upperCorner) == 2 {
+				bbox = models.JSONB{
+					"west":  lowerCorner[0],
+					"south": lowerCorner[1],
+					"east":  upperCorner[0],
+					"north": upperCorner[1],
+				}
+			}
+		}
+
+		// 提取默认 CRS
+		var crs string
+		if ft.DefaultCRS != "" {
+			crs = ft.DefaultCRS
+		} else if len(ft.OtherCRS) > 0 {
+			crs = ft.OtherCRS[0]
+		}
+
+		// 提取输出格式
+		outputFormats := ft.OutputFormats
+		if len(outputFormats) == 0 {
+			outputFormats = []string{"application/gml+xml"} // WFS 默认格式
+		}
+
+		layers = append(layers, models.ServiceLayer{
+			ServiceID:    serviceID,
+			LayerName:    ft.Name,
+			DisplayName:  ft.Title,
+			GeometryType: "vector", // WFS 图层是矢量数据
+			CRS:          crs,
+			BBox:         bbox,
+			Metadata: models.JSONB{
+				"abstract":       ft.Abstract,
+				"keywords":       ft.Keywords,
+				"output_formats": outputFormats,
+				"other_crs":      ft.OtherCRS,
+			},
+			Enabled: true,
+		})
+	}
+
+	return metadata, layers, nil
+}
+
+// parseWMTSCapabilities 解析 WMTS GetCapabilities XML 响应
+func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+	var capabilities WMTSCapabilities
+	if err := xml.Unmarshal(body, &capabilities); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse WMTS XML: %w", err)
+	}
+
+	// 构建元数据
+	metadata := models.JSONB{
+		"service_title":    capabilities.ServiceIdentification.Title,
+		"service_abstract": capabilities.ServiceIdentification.Abstract,
+		"version":          capabilities.Version,
+		"fetched_at":       time.Now().Format(time.RFC3339),
+	}
+
+	// 提取图层列表
+	var layers []models.ServiceLayer
+	for _, layer := range capabilities.Contents.Layers {
+		// 提取 BBox
+		var bbox models.JSONB
+		if layer.WGS84BoundingBox != nil {
+			lowerCorner := strings.Fields(layer.WGS84BoundingBox.LowerCorner)
+			upperCorner := strings.Fields(layer.WGS84BoundingBox.UpperCorner)
+			if len(lowerCorner) == 2 && len(upperCorner) == 2 {
+				bbox = models.JSONB{
+					"west":  lowerCorner[0],
+					"south": lowerCorner[1],
+					"east":  upperCorner[0],
+					"north": upperCorner[1],
+				}
+			}
+		}
+
+		// 提取样式和TileMatrixSet
+		var styles []string
+		for _, style := range layer.Styles {
+			styles = append(styles, style.Identifier)
+		}
+
+		var tileMatrixSets []string
+		for _, tms := range layer.TileMatrixSetLinks {
+			tileMatrixSets = append(tileMatrixSets, tms.TileMatrixSet)
+		}
+
+		layers = append(layers, models.ServiceLayer{
+			ServiceID:    serviceID,
+			LayerName:    layer.Identifier,
+			DisplayName:  layer.Title,
+			GeometryType: "tile", // WMTS 是切片图层
+			CRS:          "", // WMTS 使用 TileMatrixSet，不直接用 CRS
+			BBox:         bbox,
+			Metadata: models.JSONB{
+				"abstract":          layer.Abstract,
+				"formats":           layer.Formats,
+				"styles":            styles,
+				"tile_matrix_sets":  tileMatrixSets,
+			},
+			Enabled: true,
+		})
+	}
+
+	return metadata, layers, nil
+}
+
+// parseOGCAPICollections 解析 OGC API Features collections JSON 响应
+func (s *ExternalServiceService) parseOGCAPICollections(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+	var collections OGCAPICollections
+	if err := json.Unmarshal(body, &collections); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse OGC API JSON: %w", err)
+	}
+
+	// 构建元数据
+	metadata := models.JSONB{
+		"title":       collections.Title,
+		"description": collections.Description,
+		"fetched_at":  time.Now().Format(time.RFC3339),
+	}
+
+	// 提取集合列表
+	var layers []models.ServiceLayer
+	for _, coll := range collections.Collections {
+		// 提取 BBox
+		var bbox models.JSONB
+		if len(coll.Extent.Spatial.BBox) > 0 && len(coll.Extent.Spatial.BBox[0]) >= 4 {
+			bbox = models.JSONB{
+				"west":  coll.Extent.Spatial.BBox[0][0],
+				"south": coll.Extent.Spatial.BBox[0][1],
+				"east":  coll.Extent.Spatial.BBox[0][2],
+				"north": coll.Extent.Spatial.BBox[0][3],
+			}
+		}
+
+		// 提取 CRS
+		var crs string
+		if len(coll.CRS) > 0 {
+			crs = coll.CRS[0]
+		}
+
+		// 提取 links
+		var itemsLink string
+		for _, link := range coll.Links {
+			if link.Rel == "items" {
+				itemsLink = link.Href
+				break
+			}
+		}
+
+		layers = append(layers, models.ServiceLayer{
+			ServiceID:    serviceID,
+			LayerName:    coll.ID,
+			DisplayName:  coll.Title,
+			GeometryType: "vector", // OGC API Features 是矢量数据
+			CRS:          crs,
+			BBox:         bbox,
+			Metadata: models.JSONB{
+				"description": coll.Description,
+				"items_link":  itemsLink,
+				"item_type":   coll.ItemType,
+			},
+			Enabled: true,
+		})
+	}
+
+	return metadata, layers, nil
+}
+
+// WMS Capabilities XML 结构定义（支持 WMS 1.3.0）
+type WMSCapabilities struct {
+	XMLName    xml.Name      `xml:"WMS_Capabilities"`
+	Version    string        `xml:"version,attr"`
+	Service    WMSService    `xml:"Service"`
+	Capability WMSCapability `xml:"Capability"`
+}
+
+type WMSService struct {
+	Name               string                    `xml:"Name"`
+	Title              string                    `xml:"Title"`
+	Abstract           string                    `xml:"Abstract"`
+	OnlineResource     WMSOnlineResource         `xml:"OnlineResource"`
+	ContactInformation WMSContactInformation     `xml:"ContactInformation"`
+}
+
+type WMSOnlineResource struct {
+	Href string `xml:"href,attr"`
+}
+
+type WMSContactInformation struct {
+	Organization string `xml:"ContactPersonPrimary>ContactOrganization"`
+}
+
+type WMSCapability struct {
+	Layer WMSLayer `xml:"Layer"`
+}
+
+type WMSLayer struct {
+	Name                   string                  `xml:"Name"`
+	Title                  string                  `xml:"Title"`
+	Abstract               string                  `xml:"Abstract"`
+	CRS                    []string                `xml:"CRS"`
+	EXGeographicBoundingBox *WMSGeographicBBox     `xml:"EX_GeographicBoundingBox"`
+	BoundingBox            []WMSBoundingBox        `xml:"BoundingBox"`
+	Style                  []WMSStyle              `xml:"Style"`
+	Queryable              int                     `xml:"queryable,attr"`
+	Opaque                 int                     `xml:"opaque,attr"`
+	MinScaleDenominator    float64                 `xml:"MinScaleDenominator"`
+	MaxScaleDenominator    float64                 `xml:"MaxScaleDenominator"`
+	Layers                 []WMSLayer              `xml:"Layer"` // 嵌套子图层
+}
+
+type WMSGeographicBBox struct {
+	WestLongitude float64 `xml:"westBoundLongitude"`
+	EastLongitude float64 `xml:"eastBoundLongitude"`
+	SouthLatitude float64 `xml:"southBoundLatitude"`
+	NorthLatitude float64 `xml:"northBoundLatitude"`
+}
+
+type WMSBoundingBox struct {
+	CRS  string  `xml:"CRS,attr"`
+	Minx float64 `xml:"minx,attr"`
+	Miny float64 `xml:"miny,attr"`
+	Maxx float64 `xml:"maxx,attr"`
+	Maxy float64 `xml:"maxy,attr"`
+}
+
+type WMSStyle struct {
+	Name  string `xml:"Name"`
+	Title string `xml:"Title"`
+}
+
+// WFS Capabilities XML 结构定义（支持 WFS 2.0.0）
+type WFSCapabilities struct {
+	XMLName               xml.Name                  `xml:"WFS_Capabilities"`
+	Version               string                    `xml:"version,attr"`
+	ServiceIdentification WFSServiceIdentification  `xml:"ServiceIdentification"`
+	ServiceProvider       WFSServiceProvider        `xml:"ServiceProvider"`
+	FeatureTypeList       WFSFeatureTypeList        `xml:"FeatureTypeList"`
+}
+
+type WFSServiceIdentification struct {
+	Title    string `xml:"Title"`
+	Abstract string `xml:"Abstract"`
+}
+
+type WFSServiceProvider struct {
+	ProviderName string `xml:"ProviderName"`
+}
+
+type WFSFeatureTypeList struct {
+	FeatureTypes []WFSFeatureType `xml:"FeatureType"`
+}
+
+type WFSFeatureType struct {
+	Name              string               `xml:"Name"`
+	Title             string               `xml:"Title"`
+	Abstract          string               `xml:"Abstract"`
+	Keywords          []string             `xml:"Keywords>Keyword"`
+	DefaultCRS        string               `xml:"DefaultCRS"`
+	OtherCRS          []string             `xml:"OtherCRS"`
+	WGS84BoundingBox  *WFSBoundingBox      `xml:"WGS84BoundingBox"`
+	OutputFormats     []string             `xml:"OutputFormats>Format"`
+}
+
+type WFSBoundingBox struct {
+	LowerCorner string `xml:"LowerCorner"` // "minx miny"
+	UpperCorner string `xml:"UpperCorner"` // "maxx maxy"
+}
+
+// WMTS Capabilities XML 结构定义（支持 WMTS 1.0.0）
+type WMTSCapabilities struct {
+	XMLName               xml.Name                   `xml:"Capabilities"`
+	Version               string                     `xml:"version,attr"`
+	ServiceIdentification WMTSServiceIdentification  `xml:"ServiceIdentification"`
+	Contents              WMTSContents               `xml:"Contents"`
+}
+
+type WMTSServiceIdentification struct {
+	Title    string `xml:"Title"`
+	Abstract string `xml:"Abstract"`
+}
+
+type WMTSContents struct {
+	Layers []WMTSLayer `xml:"Layer"`
+}
+
+type WMTSLayer struct {
+	Identifier        string                  `xml:"Identifier"`
+	Title             string                  `xml:"Title"`
+	Abstract          string                  `xml:"Abstract"`
+	WGS84BoundingBox  *WFSBoundingBox         `xml:"WGS84BoundingBox"` // 复用 WFS 的结构
+	Formats           []string                `xml:"Format"`
+	Styles            []WMTSStyle             `xml:"Style"`
+	TileMatrixSetLinks []WMTSTileMatrixSetLink `xml:"TileMatrixSetLink"`
+}
+
+type WMTSStyle struct {
+	Identifier string `xml:"Identifier"`
+	Title      string `xml:"Title"`
+}
+
+type WMTSTileMatrixSetLink struct {
+	TileMatrixSet string `xml:"TileMatrixSet"`
+}
+
+// OGC API Features JSON 结构定义
+type OGCAPICollections struct {
+	Title       string             `json:"title"`
+	Description string             `json:"description"`
+	Collections []OGCAPICollection `json:"collections"`
+}
+
+type OGCAPICollection struct {
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Extent      OGCAPIExtent    `json:"extent"`
+	Links       []OGCAPILink    `json:"links"`
+	CRS         []string        `json:"crs"`
+	ItemType    string          `json:"itemType"`
+}
+
+type OGCAPIExtent struct {
+	Spatial OGCAPISpatialExtent `json:"spatial"`
+}
+
+type OGCAPISpatialExtent struct {
+	BBox [][]float64 `json:"bbox"` // [[minx, miny, maxx, maxy]]
+}
+
+type OGCAPILink struct {
+	Rel  string `json:"rel"`
+	Href string `json:"href"`
+}
+
 
 // addAuthHeaders 添加认证头
 func (s *ExternalServiceService) addAuthHeaders(req *http.Request, service *models.ExternalService) error {

@@ -96,10 +96,11 @@ check_port() {
 echo -e "${YELLOW}▶ 端口占用检查（固定端口，不自动改）${NC}"
 
 # default desired ports
-PG_PORT=5432
-REDIS_PORT=6379
-MINIO_API_PORT=9000
-MINIO_CONSOLE_PORT=9001
+PG_PORT=15432
+REDIS_PORT=16379
+MINIO_API_PORT=19000
+MINIO_CONSOLE_PORT=19001
+MEILISEARCH_PORT=17700
 
 # Track if all services are already running (for idempotency)
 ALL_SERVICES_RUNNING=true
@@ -255,7 +256,7 @@ done
 # MinIO
 printf "%s" "- MinIO      "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+  if curl -sf http://localhost:19000/minio/health/live >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -273,7 +274,7 @@ fi
 # Meilisearch
 printf "%s" "- Meilisearch "
 for i in $(seq 1 ${max_wait}); do
-  if curl -sf http://localhost:7700/health >/dev/null 2>&1; then
+  if curl -sf http://localhost:17700/health >/dev/null 2>&1; then
     echo -e "${GREEN}✓${NC}"
     break
   fi
@@ -292,10 +293,10 @@ echo ""
 echo -e "${GREEN}基础设施就绪！${NC}"
 echo ""
 echo "访问地址与默认凭据："
-echo "  - PostgreSQL:  localhost:5432  user=addp  password=addp_password  db=addp"
-echo "  - Redis:       localhost:6379  password=addp_redis"
-echo "  - MinIO API:   http://localhost:9000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
-echo "  - MinIO Console:http://localhost:9001"
-echo "  - Meilisearch: http://localhost:7700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
+echo "  - PostgreSQL:  localhost:15432  user=addp  password=addp_password  db=addp"
+echo "  - Redis:       localhost:16379  password=addp_redis"
+echo "  - MinIO API:   http://localhost:19000  user=${MINIO_ROOT_USER:-minioadmin}  password=${MINIO_ROOT_PASSWORD:-minioadmin}"
+echo "  - MinIO Console:http://localhost:19001"
+echo "  - Meilisearch: http://localhost:17700  master_key=${MEILISEARCH_MASTER_KEY:-未设置}"
 echo ""
 echo -e "${YELLOW}提示：修改默认密码可通过根目录 .env 覆盖相应变量。${NC}"

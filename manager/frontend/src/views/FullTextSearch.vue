@@ -104,6 +104,9 @@
               <el-tag v-if="item.document_type" type="success" size="small">
                 {{ item.document_type }}
               </el-tag>
+              <el-tag v-if="isVectorMatch(item)" type="warning" size="small" effect="dark">
+                🔍 向量匹配
+              </el-tag>
             </div>
             <div class="result-actions">
               <el-button
@@ -122,6 +125,11 @@
             <span v-if="item.relative_path">路径：{{ item.relative_path }}</span>
             <span v-if="item.last_modified">更新：{{ formatDate(item.last_modified) }}</span>
             <span v-if="item.file_size">大小：{{ formatSize(item.file_size) }}</span>
+            <span v-if="item.score !== undefined && item.score > 0" class="vector-score">
+              <el-tag type="warning" size="small" effect="plain">
+                向量相似度：{{ formatScore(item.score) }}
+              </el-tag>
+            </span>
           </div>
 
           <div v-if="getSnippet(item)" class="result-snippet" v-html="getSnippet(item)" />
@@ -377,6 +385,18 @@ const formatSize = (bytes) => {
   return `${size.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
+const formatScore = (score) => {
+  if (score === undefined || score === null) return ''
+  // 将分数转换为百分比显示（0-1 -> 0-100%）
+  const percentage = (score * 100).toFixed(1)
+  return `${percentage}%`
+}
+
+const isVectorMatch = (item = {}) => {
+  // 检查是否有向量相似度分数
+  return item.score !== undefined && item.score > 0
+}
+
 const navigateToDocument = (item = {}) => {
   if (!item.resource_id) {
     ElMessage.warning('缺少资源信息，无法定位文档')
@@ -575,6 +595,16 @@ const navigateToDocument = (item = {}) => {
   gap: 16px;
   font-size: 13px;
   color: #606266;
+}
+
+.vector-score {
+  display: inline-flex;
+  align-items: center;
+}
+
+.vector-score :deep(.el-tag) {
+  font-weight: 600;
+  border: 1px solid #f0ad4e;
 }
 
 .result-snippet {

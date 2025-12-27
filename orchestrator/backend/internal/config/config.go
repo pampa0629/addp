@@ -44,11 +44,11 @@ func LoadConfig() *Config {
 	return &Config{
 		ServerPort: getEnv("ORCHESTRATOR_PORT", "8084"),
 
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "addp"),
-		DBPassword: getEnv("DB_PASSWORD", "addp_password"),
-		DBName:     getEnv("DB_NAME", "addp"),
+		DBHost:     getEnv("POSTGRES_HOST", "localhost"),
+		DBPort:     getEnv("POSTGRES_PORT", "5432"),
+		DBUser:     getEnv("POSTGRES_USER", "addp"),
+		DBPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
+		DBName:     getEnv("POSTGRES_DB", "addp"),
 		DBSchema:   "orchestrator",
 
 		SystemServiceURL: getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),

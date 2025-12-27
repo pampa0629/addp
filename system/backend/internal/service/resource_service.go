@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/events"
@@ -815,5 +816,90 @@ func (s *ResourceService) checkDuplicateResource(req *models.ResourceCreateReque
 	}
 
 	return nil
+}
+
+// CheckAndUpdateConnectionStatus 检测并更新资源连接状态（同步）
+// 返回true表示在线，false表示离线
+// 用于启动时的健康检查和用户手动测试连接
+func (s *ResourceService) CheckAndUpdateConnectionStatus(resourceID uint) bool {
+	// 1. 获取资源
+	resource, err := s.repo.GetByID(resourceID)
+	if err != nil {
+		s.updateConnectionStatus(resourceID, "unknown", fmt.Sprintf("获取资源失败: %v", err))
+		return false
+	}
+
+	// 2. 跳过API类型资源（api.xxx）的连接检测
+	// API类型资源需要通过health_check_config配置的健康检查端点来检测
+	if strings.HasPrefix(resource.ResourceType, "api.") {
+		s.updateConnectionStatus(resourceID, "unknown", "API类型资源不支持自动连接检测")
+		return false
+	}
+
+	// 3. 解密连接信息
+	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	if err != nil {
+		s.updateConnectionStatus(resourceID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
+		return false
+	}
+	resource.ConnectionInfo = decryptedConnInfo
+
+	// 4. 测试连接
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	err = dbbridge.TestConnection(ctx, resource)
+
+	// 5. 更新状态
+	if err != nil {
+		s.updateConnectionStatus(resourceID, "offline", err.Error())
+		return false
+	}
+
+	s.updateConnectionStatus(resourceID, "online", "连接正常")
+	return true
+}
+
+// AsyncCheckConnection 异步检测资源连接状态（用于被动触发）
+// 立即返回，不阻塞调用方
+// 用于其他模块在连接失败时通知System刷新状态
+func (s *ResourceService) AsyncCheckConnection(resourceID uint) error {
+	// 验证资源存在
+	if _, err := s.repo.GetByID(resourceID); err != nil {
+		return fmt.Errorf("资源不存在: %w", err)
+	}
+
+	// 后台异步检测
+	go func() {
+		s.CheckAndUpdateConnectionStatus(resourceID)
+	}()
+
+	return nil
+}
+
+// updateConnectionStatus 内部方法：更新连接状态
+func (s *ResourceService) updateConnectionStatus(resourceID uint, status, message string) error {
+	// 获取资源
+	resource, err := s.repo.GetByID(resourceID)
+	if err != nil {
+		return err
+	}
+
+	// 更新状态字段
+	now := time.Now()
+	resource.ConnectionStatus = status
+	resource.LastCheckAt = &now
+	resource.CheckMessage = message
+
+	// 保存更新
+	return s.repo.Update(resource)
+}
+
+// UpdateConnectionStatus 更新资源连接状态（用于缓存优化）
+// 由Meta模块在后台检测后调用，更新资源的连接状态缓存
+// 注意：此方法已废弃，建议使用AsyncCheckConnection触发System自己检测
+// 保留是为了向后兼容
+func (s *ResourceService) UpdateConnectionStatus(resourceID uint, status string, message string) error {
+	return s.updateConnectionStatus(resourceID, status, message)
 }
 

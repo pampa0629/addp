@@ -21,6 +21,10 @@ func NewScanner(resource *commonModels.Resource) (format.Scanner, error) {
 		return NewMySQLScanner(resource)
 	case "doris":
 		return NewDorisScanner(resource)
+	case "clickhouse":
+		return NewClickHouseScanner(resource)
+	case "mongodb":
+		return NewMongoDBScanner(resource)
 	case "s3", "minio", "oss", "object_storage", "object-storage":
 		// S3Scanner 仍然需要连接字符串，暂时保持原样
 		// TODO: 未来也可以迁移到插件系统

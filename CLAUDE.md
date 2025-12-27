@@ -11,18 +11,18 @@
 **遇到以下场景时,主动阅读对应文档**:
 
 
-| 场景                 | 必读文档                   | 触发关键词                 |
-| -------------------- | -------------------------- | -------------------------- |
-| 开发原则与编码规范   | docs/addp开发原则.md       | 原则、规范、DRY、向后兼容  |
-| 环境配置、密钥      | docs/addp配置介绍.md       | 配置、环境变量、.env |
-| 端口               | docs/addp端口分配.md       | 端口|
-| Go/前端依赖版本      | docs/技术栈规约.md         | 依赖、版本、升级、库       |
-| 共享模块使用         | docs/共享模块介绍.md       | common、共享代码、复用     |
-| 创建新模块           | docs/新模块开发指南.md     | 新模块、脚手架、模板       |
-| 故障和问题修复        | docs/addp常见故障排查.md   | 出错、修复、问题   |
-| Gateway 路由         | gateway/ARCHITECTURE.md    | 路由、转发、API网关        |
-| System 模块详情      | system/CLAUDE.md           | 认证、用户、租户、日志     |
-| Gateway 路由         | gateway/ARCHITECTURE.md    | 路由、转发、API网关        |
+| 场景                 | 必读文档                      | 触发关键词                        |
+| -------------------- | ----------------------------- | --------------------------------- |
+| 开发原则与编码规范   | docs/addp开发原则.md          | 原则、规范、DRY、向后兼容         |
+| 环境配置、密钥      | docs/addp配置介绍.md          | 配置、环境变量、.env              |
+| 端口               | docs/addp端口分配.md          | 端口                              |
+| Go/前端依赖版本      | docs/技术栈规约.md            | 依赖、版本、升级、库              |
+| 共享模块使用         | docs/共享模块介绍.md          | common、共享代码、复用            |
+| 创建新模块           | docs/新模块开发指南.md        | 新模块、脚手架、模板              |
+| 新增存储引擎/数据库  | docs/addp新增存储引擎指南.md  | 新数据库、存储引擎、插件、MongoDB |
+| 故障和问题修复        | docs/addp常见故障排查.md      | 出错、修复、问题                  |
+| Gateway 路由         | gateway/ARCHITECTURE.md       | 路由、转发、API网关               |
+| System 模块详情      | system/CLAUDE.md              | 认证、用户、租户、日志            |
 
 
 **重要**:
@@ -167,9 +167,9 @@ bash scripts/dev/restart.sh
 - **Portal**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
 - **System Backend**: 8080
-- **PostgreSQL**: 5432 (system)
-- **Redis**: 6379
-- **MinIO**: 9000-9001 (system) / 9002-9003 (business)
+- **PostgreSQL**: 15432 (system)
+- **Redis**: 16379
+- **MinIO**: 19000-19001 (system) / 9002-9003 (business)
 
 完整端口列表: docs/addp端口分配.md
 
@@ -346,6 +346,14 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 - Common 前端基础: [common-frontend/basic/src/index.js](common-frontend/basic/src/index.js)
 - Common 前端地图: [common-frontend/map/src/index.js](common-frontend/map/src/index.js)
 
+## 数据库插件系统
+
+ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 种**数据库/存储引擎（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark SQL、MinIO、S3）。
+
+**相关文档**：
+- **架构说明**：[docs/数据库插件系统.md](docs/数据库插件系统.md) - 了解插件系统的整体架构和设计
+- **新增指南**：[docs/addp新增存储引擎指南.md](docs/addp新增存储引擎指南.md) - 如何添加新的数据库/存储引擎类型
+
 ## 故障排查
 
 **JWT token 问题**: 确保 `.env` 中的 `JWT_SECRET` 在各服务间匹配 (System 和 Gateway 等所有模块，均需要相同的密钥)
@@ -353,5 +361,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 更多故障排查，可翻阅 [docs/常见故障排查.md](docs/常见故障排查.md) 文档。
 如果一个问题需要反复修改才能改好，或者以后可能反复遇到，你就应主动向用户提出把问题根源和修复思路记录到[docs/常见故障排查.md]中。
+
+各模块的日志都统一输出到 addp/logs目录下，按照模块和前后端区分不同的日志文件。
 
 **开发状态，故障修改后，请使用 `./scripts/dev/restart.sh -<模块名>` 重启对应服务来验证确认结果，没有经过这一步，不要告知我已经改好了。**

@@ -22,14 +22,14 @@ else
 fi
 
 # MinIO
-if curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; then
+if curl -f http://localhost:19000/minio/health/live > /dev/null 2>&1; then
   echo -e "${GREEN}✓ MinIO${NC}"
 else
   echo -e "${RED}✗ MinIO${NC}"
 fi
 
 # Meilisearch
-if curl -f http://localhost:7700/health > /dev/null 2>&1; then
+if curl -f http://localhost:17700/health > /dev/null 2>&1; then
   echo -e "${GREEN}✓ Meilisearch${NC}"
 else
   echo -e "${RED}✗ Meilisearch${NC}"

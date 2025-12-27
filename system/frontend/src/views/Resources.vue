@@ -74,6 +74,22 @@
         </el-table-column>
 
         <el-table-column prop="description" label="描述" min-width="200" />
+
+        <!-- 连接状态列 -->
+        <el-table-column label="连接状态" width="120">
+          <template #default="{ row }">
+            <el-tooltip
+              :content="getConnectionTooltip(row)"
+              placement="top"
+              :disabled="!row.connection_status"
+            >
+              <el-tag :type="getConnectionStatusType(row.connection_status)">
+                {{ getConnectionStatusLabel(row.connection_status) }}
+              </el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'">
@@ -401,6 +417,45 @@ const getResourceTypeColor = (type) => {
 
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleString('zh-CN')
+}
+
+// 获取连接状态标签
+const getConnectionStatusLabel = (status) => {
+  const labelMap = {
+    'online': '在线',
+    'offline': '离线',
+    'unknown': '未知',
+    'checking': '检测中'
+  }
+  return labelMap[status] || '未检测'
+}
+
+// 获取连接状态标签类型（颜色）
+const getConnectionStatusType = (status) => {
+  const typeMap = {
+    'online': 'success',
+    'offline': 'danger',
+    'unknown': 'info',
+    'checking': 'primary'
+  }
+  return typeMap[status] || 'info'
+}
+
+// 获取连接状态提示信息
+const getConnectionTooltip = (row) => {
+  if (!row.connection_status) return '未检测'
+
+  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}\n`
+
+  if (row.last_check_at) {
+    tooltip += `检测时间: ${formatDate(row.last_check_at)}\n`
+  }
+
+  if (row.check_message) {
+    tooltip += `详情: ${row.check_message}`
+  }
+
+  return tooltip
 }
 
 const loadResources = async () => {

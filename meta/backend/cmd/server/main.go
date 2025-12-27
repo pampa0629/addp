@@ -28,6 +28,11 @@ func main() {
 	// 加载配置
 	cfg := config.LoadConfig()
 
+	// 立即检查向量化配置（在InitLogger之前）
+	fmt.Printf("🔍 [EARLY CHECK] Embedding BaseURL: %s (len=%d)\n", cfg.EmbeddingService.BaseURL, len(cfg.EmbeddingService.BaseURL))
+	fmt.Printf("🔍 [EARLY CHECK] API Key length: %d\n", len(cfg.EmbeddingService.APIKey))
+	fmt.Printf("🔍 [EARLY CHECK] Vector DB: %s:%s/%s\n", cfg.VectorDB.Host, cfg.VectorDB.Port, cfg.VectorDB.Schema)
+
 	// 重新初始化日志（支持动态级别/格式，并写入日志文件）
 	commonConfig.InitLogger("meta-backend.log", &commonConfig.LoggerOptions{
 		Level:     cfg.LogLevel,
@@ -97,11 +102,15 @@ func main() {
 	}
 
 	var pgVectorStore *vectorstore.PgVectorStore
-	if strings.TrimSpace(cfg.EmbeddingService.BaseURL) != "" {
+	baseURL := strings.TrimSpace(cfg.EmbeddingService.BaseURL)
+	fmt.Printf("🔍 [VECTOR INIT] BaseURL check: %s (empty=%v)\n", baseURL, baseURL == "")
+	if baseURL != "" {
+		fmt.Printf("🔄 [VECTOR INIT] Starting vector store init...\n")
 		store, err := vectorstore.NewPgVectorStore(context.Background(), cfg.VectorDB)
 		if err != nil {
-			logger.L().Warn("向量存储初始化失败，将禁用文档向量化", "error", err)
+			fmt.Printf("❌ [VECTOR INIT] Vector store failed: %v\n", err)
 		} else {
+			fmt.Printf("✅ [VECTOR INIT] Vector store success!\n")
 			models := map[embedding.Modality]string{
 				embedding.ModalityText:     cfg.EmbeddingService.TextModel,
 				embedding.ModalityDocument: cfg.EmbeddingService.TextModel,
@@ -109,6 +118,7 @@ func main() {
 				embedding.ModalityAudio:    cfg.EmbeddingService.AudioModel,
 				embedding.ModalityVideo:    cfg.EmbeddingService.VideoModel,
 			}
+			fmt.Printf("🔄 [VECTOR INIT] Starting embedding client init...\n")
 			client, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
 				BaseURL: cfg.EmbeddingService.BaseURL,
 				APIKey:  cfg.EmbeddingService.APIKey,
@@ -116,16 +126,18 @@ func main() {
 				Models:  models,
 			})
 			if err != nil {
-				logger.L().Warn("向量化服务客户端初始化失败，将禁用文档向量化", "error", err)
+				fmt.Printf("❌ [VECTOR INIT] Embedding client failed: %v\n", err)
 				store.Close()
 			} else {
+				fmt.Printf("✅ [VECTOR INIT] Embedding client success!\n")
 				scanService.EnableDocumentVectorization(store, client, cfg.EmbeddingService.Timeout)
 				pgVectorStore = store
-				logger.L().Info("文档向量化已启用", "vector_schema", cfg.VectorDB.Schema, "vector_table", cfg.VectorDB.Table)
+				fmt.Printf("🎉 [VECTOR INIT] Document vectorization ENABLED! Schema=%s Table=%s Dim=%d\n",
+					cfg.VectorDB.Schema, cfg.VectorDB.Table, cfg.VectorDB.Dimension)
 			}
 		}
 	} else {
-		logger.L().Info("未配置向量化服务，文档向量化保持禁用状态")
+		fmt.Printf("⚠️ [VECTOR INIT] BaseURL is empty, vectorization disabled\n")
 	}
 
 	if pgVectorStore != nil {

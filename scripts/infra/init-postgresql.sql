@@ -13,9 +13,10 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
 -- ==================== pgvector 扩展 ====================
--- Note: pgvector 扩展由 infra-init-pgvector.sh 脚本安装
--- (需要从源码编译,不在包仓库中)
+-- pgvector 扩展已通过自定义 Docker 镜像预装 (Dockerfile.postgres)
+-- (从源码编译 v0.8.0,支持向量检索和相似度搜索)
 -- 用于多模态向量检索、相似度搜索、最近邻查询等场景
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ==================== System 模块 ====================
 CREATE SCHEMA IF NOT EXISTS system;

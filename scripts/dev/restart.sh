@@ -6,7 +6,7 @@ show_usage() {
   echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-geopandas] [-copilot] [-spark-sedona] [-jupyter]"
   echo ""
   echo "选项:"
-  echo "  无参数        只重启服务,不重新编译"
+  echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
   echo "  -all         强制重新编译所有 Go 模块 + 重启 Python 服务"
   echo "  -system      强制重新编译 System 模块"
   echo "  -manager     强制重新编译 Manager 模块"
@@ -21,17 +21,20 @@ show_usage() {
   echo "  -spark-sedona 重启 Spark Sedona Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo ""
+  echo "智能检测说明:"
+  echo "  - 无参数时会自动检测 common 模块是否有变化"
+  echo "  - 如果检测到 common 变化,会自动重新编译所有依赖的 Go 模块"
+  echo "  - 指定 Go 模块参数时,不执行智能检测,直接按参数编译"
+  echo "  - 只指定 Python 服务参数时,仍会执行智能检测"
+  echo ""
   echo "注意:"
   echo "  - GeoPandas Engine、Spark Sedona Engine、Jupyter Engine 和 Copilot (Python) 会自动重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
-  echo "  $0                    # 只重启,不编译 (快速)"
+  echo "  $0                    # 智能检测 + 重启 (推荐)"
   echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
-  echo "  $0 -geopandas         # 重启 GeoPandas Engine"
-  echo "  $0 -copilot           # 重启 Copilot Backend"
-  echo "  $0 -spark-sedona      # 重启 Spark Sedona Engine"
-  echo "  $0 -jupyter           # 重启 Jupyter Engine"
+  echo "  $0 -geopandas         # 智能检测 + 重启 GeoPandas Engine"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -66,6 +69,55 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# ============================================================
+# 智能检测 Common 依赖
+# ============================================================
+
+# 检查是否有 Go 模块参数（排除 Python 服务参数）
+has_go_module_params() {
+    for module in "${FORCE_BUILD_MODULES[@]}"; do
+        # Python 服务列表
+        if [[ "$module" != "geopandas" &&
+              "$module" != "copilot" &&
+              "$module" != "spark-sedona" &&
+              "$module" != "jupyter" ]]; then
+            return 0  # 有 Go 模块参数
+        fi
+    done
+    return 1  # 只有 Python 服务参数或无参数
+}
+
+# 在用户未指定 Go 模块编译选项时，自动检测 common 变化
+if [ "$FORCE_BUILD_ALL" = false ] && ! has_go_module_params; then
+    echo "🔍 检测 common 模块依赖..."
+
+    # 加载检测函数
+    source "${SCRIPT_DIR}/../utils/detect-common.sh"
+
+    # 执行智能检测
+    AFFECTED_MODULES=$(detect_common_affected_modules)
+
+    if [ -n "$AFFECTED_MODULES" ]; then
+        echo "📦 检测到 common 模块已更新，以下模块需要重新编译:"
+        echo "   ${AFFECTED_MODULES}"
+        echo ""
+
+        # 自动标记受影响的模块需要重新编译
+        for module in $AFFECTED_MODULES; do
+            FORCE_BUILD_MODULES+=("$module")
+        done
+
+        echo "✅ 已自动标记 ${#FORCE_BUILD_MODULES[@]} 个模块需要重新编译"
+    else
+        echo "✅ common 模块无变化，使用增量编译"
+    fi
+    echo ""
+fi
+
+# ============================================================
+# 显示编译计划
+# ============================================================
 
 # 显示编译计划
 if [ "$FORCE_BUILD_ALL" = true ]; then

@@ -3,7 +3,7 @@
 # 业务库启动脚本
 #
 # 功能: 检查配置、检测架构、启动服务、验证健康、安装 PostGIS
-# 服务: PostgreSQL (必选), MinIO (必选), Doris (可选), Spark (可选)
+# 服务: PostgreSQL (必选), MinIO (必选), ClickHouse (可选), MongoDB (可选), Doris (可选), Spark (可选)
 # 特性: 幂等执行（可重复运行，已运行的服务会跳过）
 #
 # 使用方法:
@@ -11,10 +11,12 @@
 #   bash scripts/start.sh -all               # 启动所有服务
 #   bash scripts/start.sh -postgres          # 只启动 PostgreSQL
 #   bash scripts/start.sh -minio             # 只启动 MinIO
+#   bash scripts/start.sh -clickhouse        # 只启动 ClickHouse
+#   bash scripts/start.sh -mongodb           # 只启动 MongoDB
 #   bash scripts/start.sh -doris             # 只启动 Doris
 #   bash scripts/start.sh -spark             # 只启动 Spark
 #   bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO
-#   bash scripts/start.sh -doris -spark      # 启动 Doris + Spark
+#   bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB
 
 set -e
 
@@ -32,6 +34,8 @@ NC='\033[0m'
 # 解析启动参数
 ENABLE_PG=false
 ENABLE_MINIO=false
+ENABLE_CLICKHOUSE=false
+ENABLE_MONGODB=false
 ENABLE_DORIS=false
 ENABLE_SPARK=false
 HAS_ARGS=false
@@ -42,6 +46,8 @@ for arg in "$@"; do
         -all)
             ENABLE_PG=true
             ENABLE_MINIO=true
+            ENABLE_CLICKHOUSE=true
+            ENABLE_MONGODB=true
             ENABLE_DORIS=true
             ENABLE_SPARK=true
             ;;
@@ -51,6 +57,12 @@ for arg in "$@"; do
         -minio)
             ENABLE_MINIO=true
             ;;
+        -clickhouse)
+            ENABLE_CLICKHOUSE=true
+            ;;
+        -mongodb)
+            ENABLE_MONGODB=true
+            ;;
         -doris)
             ENABLE_DORIS=true
             ;;
@@ -59,14 +71,16 @@ for arg in "$@"; do
             ;;
         -h|--help)
             echo "使用方法:"
-            echo "  bash scripts/start.sh                    # 默认启动 PostgreSQL + MinIO"
-            echo "  bash scripts/start.sh -all               # 启动所有服务"
-            echo "  bash scripts/start.sh -postgres          # 只启动 PostgreSQL"
-            echo "  bash scripts/start.sh -minio             # 只启动 MinIO"
-            echo "  bash scripts/start.sh -doris             # 只启动 Doris"
-            echo "  bash scripts/start.sh -spark             # 只启动 Spark"
-            echo "  bash scripts/start.sh -postgres -minio   # 启动 PostgreSQL + MinIO"
-            echo "  bash scripts/start.sh -doris -spark      # 启动 Doris + Spark"
+            echo "  bash scripts/start.sh                       # 默认启动 PostgreSQL + MinIO"
+            echo "  bash scripts/start.sh -all                  # 启动所有服务"
+            echo "  bash scripts/start.sh -postgres             # 只启动 PostgreSQL"
+            echo "  bash scripts/start.sh -minio                # 只启动 MinIO"
+            echo "  bash scripts/start.sh -clickhouse           # 只启动 ClickHouse"
+            echo "  bash scripts/start.sh -mongodb              # 只启动 MongoDB"
+            echo "  bash scripts/start.sh -doris                # 只启动 Doris"
+            echo "  bash scripts/start.sh -spark                # 只启动 Spark"
+            echo "  bash scripts/start.sh -postgres -minio      # 启动 PostgreSQL + MinIO"
+            echo "  bash scripts/start.sh -clickhouse -mongodb  # 启动 ClickHouse + MongoDB"
             exit 0
             ;;
         *)
@@ -97,6 +111,16 @@ if [ "$ENABLE_MINIO" = true ]; then
     echo -e "  MinIO: ✓"
 else
     echo -e "  MinIO: ✗ (使用 -minio 启用)"
+fi
+if [ "$ENABLE_CLICKHOUSE" = true ]; then
+    echo -e "  ClickHouse: ✓"
+else
+    echo -e "  ClickHouse: ✗ (使用 -clickhouse 启用)"
+fi
+if [ "$ENABLE_MONGODB" = true ]; then
+    echo -e "  MongoDB: ✓"
+else
+    echo -e "  MongoDB: ✗ (使用 -mongodb 启用)"
 fi
 if [ "$ENABLE_DORIS" = true ]; then
     echo -e "  Doris: ✓"
@@ -151,6 +175,9 @@ echo ""
 PG_PORT=${POSTGRES_PORT:-5433}
 MINIO_API=${MINIO_API_PORT:-9002}
 MINIO_CONSOLE=${MINIO_CONSOLE_PORT:-9003}
+CLICKHOUSE_PORT=${CLICKHOUSE_PORT:-9000}
+CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT:-8123}
+MONGO_PORT=${MONGO_PORT:-27017}
 DORIS_FE_PORT=${DORIS_FE_PORT:-9030}
 DORIS_FE_HTTP_PORT=${DORIS_FE_HTTP_PORT:-8030}
 SPARK_MASTER_PORT=${SPARK_MASTER_PORT:-7077}
@@ -170,6 +197,8 @@ echo -e "${YELLOW}检查端口...${NC}"
 PORTS_TO_CHECK=""
 [ "$ENABLE_PG" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $PG_PORT"
 [ "$ENABLE_MINIO" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MINIO_API $MINIO_CONSOLE"
+[ "$ENABLE_CLICKHOUSE" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $CLICKHOUSE_PORT $CLICKHOUSE_HTTP_PORT"
+[ "$ENABLE_MONGODB" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $MONGO_PORT"
 [ "$ENABLE_DORIS" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $DORIS_FE_PORT $DORIS_FE_HTTP_PORT"
 [ "$ENABLE_SPARK" = true ] && PORTS_TO_CHECK="$PORTS_TO_CHECK $SPARK_MASTER_PORT $SPARK_MASTER_UI $SPARK_THRIFT_PORT"
 
@@ -177,6 +206,8 @@ for port in $PORTS_TO_CHECK; do
     if lsof -nP -i ":${port}" >/dev/null 2>&1; then
         if check_port_used_by_self $port "business-postgres" || \
            check_port_used_by_self $port "business-minio" || \
+           check_port_used_by_self $port "business-clickhouse" || \
+           check_port_used_by_self $port "business-mongodb" || \
            check_port_used_by_self $port "business-doris-fe" || \
            check_port_used_by_self $port "business-spark-master"; then
             echo -e "${GREEN}✓ 端口 ${port} 已被业务库容器使用${NC}"
@@ -207,6 +238,26 @@ if [ "$ENABLE_MINIO" = true ]; then
     else
         docker-compose up -d minio
         echo -e "${GREEN}✓ MinIO 已启动${NC}"
+    fi
+fi
+
+# ClickHouse
+if [ "$ENABLE_CLICKHOUSE" = true ]; then
+    if docker ps --filter "name=business-clickhouse" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ ClickHouse 已运行，跳过启动${NC}"
+    else
+        docker-compose up -d clickhouse
+        echo -e "${GREEN}✓ ClickHouse 已启动${NC}"
+    fi
+fi
+
+# MongoDB
+if [ "$ENABLE_MONGODB" = true ]; then
+    if docker ps --filter "name=business-mongodb" --format '{{.Status}}' | grep -q "Up"; then
+        echo -e "${GREEN}✓ MongoDB 已运行，跳过启动${NC}"
+    else
+        docker-compose up -d mongodb
+        echo -e "${GREEN}✓ MongoDB 已启动${NC}"
     fi
 fi
 
@@ -255,6 +306,26 @@ if [ "$ENABLE_MINIO" = true ]; then
     for i in {1..30}; do
         if curl -sf http://localhost:${MINIO_API}/minio/health/live >/dev/null 2>&1; then
             echo -e "${GREEN}✓ MinIO 就绪${NC}"
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$ENABLE_CLICKHOUSE" = true ]; then
+    for i in {1..30}; do
+        if docker exec business-clickhouse clickhouse-client --query 'SELECT 1' >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ ClickHouse 就绪${NC}"
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$ENABLE_MONGODB" = true ]; then
+    for i in {1..30}; do
+        if docker exec business-mongodb mongosh --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ MongoDB 就绪${NC}"
             break
         fi
         sleep 1
@@ -320,6 +391,13 @@ fi
 if [ "$ENABLE_MINIO" = true ]; then
     echo -e "MinIO API: http://localhost:${MINIO_API}"
     echo -e "MinIO Console: http://localhost:${MINIO_CONSOLE}"
+fi
+if [ "$ENABLE_CLICKHOUSE" = true ]; then
+    echo -e "ClickHouse (Native): localhost:${CLICKHOUSE_PORT}"
+    echo -e "ClickHouse (HTTP): http://localhost:${CLICKHOUSE_HTTP_PORT}"
+fi
+if [ "$ENABLE_MONGODB" = true ]; then
+    echo -e "MongoDB: localhost:${MONGO_PORT}"
 fi
 if [ "$ENABLE_DORIS" = true ]; then
     echo -e "Doris FE (MySQL): localhost:${DORIS_FE_PORT}"

@@ -5,8 +5,9 @@
 # - postgres: 业务数据库（PostGIS 支持空间数据）
 # - minio: 业务对象存储（用户文件）
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
-# - doris-be: Apache Doris Backend（存储与计算节点）
-# - doris-init: Doris 集群自动初始化服务
+# - clickhouse: ClickHouse（高性能列式存储 OLAP）
+# - mongodb: MongoDB（文档型 NoSQL 数据库）
+# - spark-master/workers: Spark SQL 分布式计算引擎
 #
 # 使用方法:
 #   docker-compose up -d    # 启动
@@ -83,6 +84,61 @@ services:
     restart: unless-stopped
 
   # 注意: doris-all-in-one 镜像包含 FE+BE，无需单独的 BE 和 init 容器
+
+  # ClickHouse (高性能列式存储 OLAP 引擎)
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: business-clickhouse
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-business}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "${CLICKHOUSE_PORT:-9000}:9000"       # Native 协议
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"  # HTTP 接口
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_log:/var/log/clickhouse-server
+      - ./clickhouse/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # MongoDB (文档型 NoSQL 数据库)
+  mongodb:
+    image: mongo:7.0
+    container_name: business-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-admin_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-business}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./mongodb/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    command: --wiredTigerCacheSizeGB 1
 
   # Apache Spark Master + Thrift Server
   spark-master:
@@ -184,6 +240,14 @@ volumes:
   doris_fe_log:
     driver: local
   doris_be_data:
+    driver: local
+  clickhouse_data:
+    driver: local
+  clickhouse_log:
+    driver: local
+  mongodb_data:
+    driver: local
+  mongodb_config:
     driver: local
 
 networks:

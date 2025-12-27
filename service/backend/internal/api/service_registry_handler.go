@@ -99,7 +99,7 @@ func (h *ServiceRegistryHandler) ListServices(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"services":  dtos,
+		"data":      dtos,
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
@@ -281,7 +281,7 @@ func (h *ServiceRegistryHandler) SearchServices(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"services":  dtos,
+		"data":      dtos,
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,

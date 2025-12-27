@@ -49,11 +49,11 @@ func Load() *Config {
 		CopilotServiceURL:  getEnv("COPILOT_SERVICE_URL", "http://localhost:8087"),
 
 		// Database (defaults to system PostgreSQL)
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "addp"),
-		DBPassword: getEnv("DB_PASSWORD", "addp_password"),
-		DBName:     getEnv("DB_NAME", "addp"),
+		DBHost:     getEnv("POSTGRES_HOST", "localhost"),
+		DBPort:     getEnv("POSTGRES_PORT", "5432"),
+		DBUser:     getEnv("POSTGRES_USER", "addp"),
+		DBPassword: getEnv("POSTGRES_PASSWORD", "addp_password"),
+		DBName:     getEnv("POSTGRES_DB", "addp"),
 		DBSchema:   getEnv("DB_SCHEMA", "gateway"),
 
 		// Redis (defaults to system Redis)

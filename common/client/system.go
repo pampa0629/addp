@@ -634,3 +634,43 @@ func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Resource, erro
 func (c *SystemClient) GetResourceByID(resourceID uint) (*models.Resource, error) {
 	return c.GetResource(resourceID)
 }
+
+// DoRequest 发送通用HTTP请求（支持GET, POST, PUT, DELETE等）
+// 用于调用各种System内部API
+func (c *SystemClient) DoRequest(method, url string, payload interface{}, result interface{}) error {
+	var bodyReader io.Reader
+	if payload != nil {
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("failed to marshal payload: %w", err)
+		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("request returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return nil
+}

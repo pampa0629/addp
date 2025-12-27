@@ -4,11 +4,11 @@
 
 ## System (ADDP 基础设施)
 
-- PostgreSQL: `5432`
-- Redis: `6379`
-- MinIO API: `9000`
-- MinIO Console: `9001`
-- Meilisearch: `7700`
+- PostgreSQL: `15432`
+- Redis: `16379`
+- MinIO API: `19000`
+- MinIO Console: `19001`
+- Meilisearch: `17700`
 
 来源：`docker-compose.infra.yml`。脚本固定使用这些端口，不会自动改动；若被其他进程占用，`scripts/infra/up.sh` 会给出提示，可能导致启动失败。请使用 `lsof -nP -i :<port>` 查占用并释放，或手动调整 compose 端口映射。
 
@@ -28,14 +28,14 @@ BUSINESS_MINIO_CONSOLE_PORT=9003
 
 ## Reserved Policy（保留规则）
 
-- **System MinIO 使用 9000/9001**，Business 侧不得占用这两个端口。
+- **System MinIO 使用 19000/19001**，Business 侧不得占用这两个端口。
 - **Business MinIO 使用 9002/9003**，System 侧不得占用这两个端口。
-- System PostgreSQL 使用 5432；Business PostgreSQL 使用 5433。
+- System PostgreSQL 使用 15432；Business PostgreSQL 使用 5433。
 
 脚本约束：
 
-- `scripts/infra/up.sh`：若检测到 `business-minio` 占用了 9000/9001，将报错并退出，提示修改 `business/.env`。
-- `business/scripts/start.sh`：若配置了 9000/9001，将报错并退出，提示改为 9002/9003；对 5433 端口仅警告不改动。
+- `scripts/infra/up.sh`：若检测到 `business-minio` 占用了 19000/19001，将报错并退出，提示修改 `business/.env`。
+- `business/scripts/start.sh`：若配置了 19000/19001，将报错并退出，提示改为 9002/9003；对 5433 端口仅警告不改动。
 
 ## 快速校验
 
@@ -47,7 +47,7 @@ make ports-validate
 
 输出会显示 business/.env 的端口配置、System 默认端口以及当前运行容器的实际映射，帮助定位问题。
 
-如果本地已有其他服务占用 9000/9001，可改用 `9100/9101` 或其他未占用端口。
+如果本地已有其他服务占用 19000/19001，可改用其他未占用端口。
 
 ## 使用建议
 
@@ -87,8 +87,8 @@ make ports-validate
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
 | GeoPandas Engine      | 8099     | 8099        | 空间计算引擎 (Python)      |
-| PostgreSQL (System)   | 5432     | 5432        | ADDP 系统元数据            |
-| Redis                 | 6379     | 6379        | 缓存和队列                 |
-| MinIO System API      | 9000     | 9000        | 系统文件存储               |
-| MinIO System Console  | 9001     | 9001        | 系统 MinIO Web UI          |
-| Meilisearch           | 7700     | 7700        | 全文检索引擎               |
+| PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
+| Redis                 | 16379    | 16379       | 缓存和队列                 |
+| MinIO System API      | 19000    | 19000       | 系统文件存储               |
+| MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
+| Meilisearch           | 17700    | 17700       | 全文检索引擎               |

@@ -7,7 +7,7 @@ set -e
 
 # 加载颜色定义
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../common/colors.sh"
+source "${SCRIPT_DIR}/../utils/colors.sh"
 
 # Project root directory
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -33,10 +33,10 @@ get_port() {
   docker compose port "$svc" "$p" 2>/dev/null | sed 's/.*://'
 }
 
-PG_PORT=$(get_port postgres 5432 || echo 5432)
-REDIS_PORT=$(get_port redis 6379 || echo 6379)
-MINIO_API_PORT=$(get_port minio 9000 || echo 9000)
-MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 9001)
+PG_PORT=$(get_port postgres 5432 || echo 15432)
+REDIS_PORT=$(get_port redis 6379 || echo 16379)
+MINIO_API_PORT=$(get_port minio 9000 || echo 19000)
+MINIO_CONSOLE_PORT=$(get_port minio 9001 || echo 19001)
 
 # Postgres
 printf "%s" "- PostgreSQL (localhost:${PG_PORT}):  "
@@ -63,7 +63,7 @@ else
 fi
 
 # Meilisearch
-MEILI_PORT=7700
+MEILI_PORT=$(get_port meilisearch 7700 || echo 17700)
 printf "%s" "- Meilisearch (localhost:${MEILI_PORT}):  "
 if curl -sf "http://localhost:${MEILI_PORT}/health" >/dev/null 2>&1; then
   echo -e "${GREEN}Healthy${NC}"

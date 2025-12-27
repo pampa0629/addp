@@ -31,6 +31,19 @@
                 <el-tag>{{ row.resource_type }}</el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="连接" width="60" align="center">
+              <template #default="{ row }">
+                <el-tooltip
+                  :content="getConnectionTooltip(row)"
+                  placement="top"
+                  :disabled="!row.connection_status"
+                >
+                  <el-icon :size="18" :color="getConnectionIconColor(row.connection_status)">
+                    <component :is="getConnectionIcon(row.connection_status)" />
+                  </el-icon>
+                </el-tooltip>
+              </template>
+            </el-table-column>
             <el-table-column label="Schema统计" width="120">
               <template #default="{ row }">
                 <div>总数: {{ row.total_schemas || 0 }}</div>
@@ -187,7 +200,7 @@
 <script setup>
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled } from '@element-plus/icons-vue'
 import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
 
@@ -348,30 +361,69 @@ const loadSchemas = async () => {
   if (!selectedResource.value) return
 
   loadingSchemas.value = true
-  try {
-    // 先获取数据库中实际存在的schemas
-    const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
-    const availableSchemas = availableRes.data || []
+  let availableSchemas = []
+  let connectionError = null
 
+  try {
+    // 检查资源连接状态，如果已知离线，直接跳过实际连接
+    if (selectedResource.value.connection_status === 'offline') {
+      connectionError = new Error(`资源离线: ${selectedResource.value.check_message || '连接失败'}`)
+      console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
+    } else {
+      // 资源在线或状态未知，尝试获取实际Schema列表
+      try {
+        const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
+        availableSchemas = availableRes.data || []
+      } catch (error) {
+        // 捕获连接错误，但不阻止后续加载
+        connectionError = error
+        console.warn('获取可用Schema失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
+      }
+    }
+  } catch (error) {
+    // 不应该到这里，但保险起见
+    connectionError = error
+  }
+
+  try {
     // 再获取已扫描的schema状态信息
     const scannedRes = await metaApi.getSchemas(selectedResource.value.id)
     const scannedSchemas = scannedRes.data || []
 
-    // 合并两个列表：available schemas作为基础，补充扫描状态信息
-    schemas.value = availableSchemas.map(available => {
-      const scanned = scannedSchemas.find(s => s.schema_name === available.name)
-      return {
-        ...available,
-        id: scanned?.id,
-        schema_name: available.name,  // 保持兼容
-        scan_status: scanned?.scan_status || '未扫描',
-        table_count: scanned?.table_count || 0,
-        last_scan_at: scanned?.last_scan_at || '',
-        total_size_bytes: scanned?.total_size_bytes || 0
-      }
-    })
+    if (connectionError && scannedSchemas.length === 0) {
+      // 如果连接失败且没有已扫描的schema，显示空列表
+      // 用户已经能从左侧图标看到资源离线状态，无需重复提示
+      schemas.value = []
+    } else if (connectionError) {
+      // 连接失败但有历史扫描数据，使用历史数据并标记状态
+      schemas.value = scannedSchemas.map(scanned => ({
+        id: scanned.id,
+        name: scanned.schema_name,
+        schema_name: scanned.schema_name,
+        scan_status: '连接失败 - ' + scanned.scan_status,
+        table_count: scanned.table_count || 0,
+        last_scan_at: scanned.last_scan_at || '',
+        total_size_bytes: scanned.total_size_bytes || 0
+      }))
+      // 已通过左侧连接状态图标显示，无需额外提示
+    } else {
+      // 正常情况：合并两个列表
+      schemas.value = availableSchemas.map(available => {
+        const scanned = scannedSchemas.find(s => s.schema_name === available.name)
+        return {
+          ...available,
+          id: scanned?.id,
+          schema_name: available.name,  // 保持兼容
+          scan_status: scanned?.scan_status || '未扫描',
+          table_count: scanned?.table_count || 0,
+          last_scan_at: scanned?.last_scan_at || '',
+          total_size_bytes: scanned?.total_size_bytes || 0
+        }
+      })
+    }
   } catch (error) {
     ElMessage.error('加载Schema列表失败: ' + (error.response?.data?.error || error.message))
+    schemas.value = []
   } finally {
     loadingSchemas.value = false
   }
@@ -388,6 +440,53 @@ const loadScanTasks = async () => {
   } catch (error) {
     ElMessage.error('加载扫描任务失败: ' + (error.response?.data?.error || error.message))
   }
+}
+
+// 连接状态辅助函数
+const getConnectionIcon = (status) => {
+  const iconMap = {
+    'online': CircleCheck,
+    'offline': CircleClose,
+    'unknown': QuestionFilled,
+    'checking': Warning
+  }
+  return iconMap[status] || QuestionFilled
+}
+
+const getConnectionIconColor = (status) => {
+  const colorMap = {
+    'online': '#67C23A',
+    'offline': '#F56C6C',
+    'unknown': '#909399',
+    'checking': '#E6A23C'
+  }
+  return colorMap[status] || '#909399'
+}
+
+const getConnectionStatusLabel = (status) => {
+  const labelMap = {
+    'online': '在线',
+    'offline': '离线',
+    'unknown': '未知',
+    'checking': '检测中'
+  }
+  return labelMap[status] || '未检测'
+}
+
+const getConnectionTooltip = (row) => {
+  if (!row.connection_status) return '未检测'
+
+  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}`
+
+  if (row.last_check_at) {
+    tooltip += `\n检测时间: ${row.last_check_at}`
+  }
+
+  if (row.check_message) {
+    tooltip += `\n详情: ${row.check_message}`
+  }
+
+  return tooltip
 }
 
 const resetScheduleForm = () => {

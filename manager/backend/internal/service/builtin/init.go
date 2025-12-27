@@ -18,17 +18,27 @@ func init() {
 		return service.NewMySQLPreviewProvider(repo), nil
 	})
 
-	// 3. CSV 预览
+	// 3. ClickHouse 表预览
+	service.RegisterPreviewProvider("clickhouse-table", func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
+		return service.NewClickHousePreviewProvider(repo), nil
+	})
+
+	// 4. MongoDB 表预览
+	service.RegisterPreviewProvider("mongodb-table", func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
+		return service.NewMongoDBPreviewProvider(), nil
+	})
+
+	// 5. CSV 预览
 	service.RegisterPreviewProvider("csv", func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
 		return service.NewCSVPreviewProvider(), nil
 	})
 
-	// 4. 对象存储预览
+	// 6. 对象存储预览
 	service.RegisterPreviewProvider("object-storage", func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *service.ObjectContentRegistry) (service.PreviewProvider, error) {
 		return service.NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
 	})
 
-	// 5. Schema 节点预览
+	// 7. Schema 节点预览
 	service.RegisterPreviewProvider("schema-node", func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, _ *service.ObjectContentRegistry) (service.PreviewProvider, error) {
 		return service.NewSchemaPreviewProvider(repo, metaClient), nil
 	})

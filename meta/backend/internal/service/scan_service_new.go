@@ -3113,23 +3113,40 @@ func (s *ScanServiceNew) GetSchemasByResource(resourceID, tenantID uint) ([]*mod
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
 func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token string) ([]*models.SchemaInfo, error) {
+	// 1. 获取资源（从System读取，包含connection_status）
 	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
 	if err != nil {
 		return nil, err
 	}
 
-	// 重构后：直接传入Resource对象，由插件系统管理连接
+	// 2. 尝试实际连接（快速超时3秒）
 	scan, err := plugins.NewScanner(resource)
 	if err != nil {
+		// 连接失败：触发System刷新状态（异步，不阻塞）
+		s.resourceService.TriggerConnectionCheck(resourceID)
+
+		// 返回失败，附带缓存的状态信息
+		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
+			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
+		}
 		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}
 	defer scan.Close()
 
+	// 3. 获取Schema列表
 	schemasInfo, err := scan.ListSchemas()
 	if err != nil {
+		// 连接成功但查询失败，也触发刷新
+		s.resourceService.TriggerConnectionCheck(resourceID)
 		return nil, err
 	}
 
+	// 4. 成功：如果之前是offline，触发刷新状态为online
+	if resource.ConnectionStatus == "offline" {
+		s.resourceService.TriggerConnectionCheck(resourceID)
+	}
+
+	// 转换并返回
 	var result []*models.SchemaInfo
 	for _, info := range schemasInfo {
 		result = append(result, &models.SchemaInfo{
@@ -3624,3 +3641,4 @@ func convertToMetaItemLite(item models.MetaItem) models.MetaItemLite {
 		Attributes:      item.Attributes,
 	}
 }
+

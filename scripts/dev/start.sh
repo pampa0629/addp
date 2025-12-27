@@ -73,7 +73,7 @@ export GOPATH="${PROJECT_ROOT}/.gopath"
 export GOTOOLCHAIN="local"
 
 # 加载颜色定义（提前加载，供检查函数使用）
-source "${SCRIPT_DIR}/../common/colors.sh"
+source "${SCRIPT_DIR}/../utils/colors.sh"
 
 # ============================================================
 # 模块选择逻辑
@@ -892,7 +892,7 @@ if check_service_running "geopandas-engine" "8099"; then
   export SYSTEM_SERVICE_URL=http://localhost:8080
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export POSTGRES_HOST=localhost
-  export POSTGRES_PORT=5432
+  export POSTGRES_PORT=15432
   export POSTGRES_USER=addp
   export POSTGRES_PASSWORD=addp_password
   export POSTGRES_DB=addp
@@ -1311,7 +1311,7 @@ if check_service_running "copilot-backend" "8087"; then
   export SYSTEM_SERVICE_URL=http://localhost:8080
   export META_SERVICE_URL=http://localhost:8082
   export DEVELOP_SERVICE_URL=http://localhost:8085
-  export DATABASE_URL=postgresql://addp:addp_password@localhost:5432/addp
+  export DATABASE_URL=postgresql://addp:addp_password@localhost:15432/addp
 
   # 直接使用虚拟环境的 Python
   ./venv/bin/python main.py > ../../logs/copilot-backend.log 2> ../../logs/copilot-backend-stderr.log &

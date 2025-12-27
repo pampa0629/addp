@@ -22,6 +22,10 @@ type Config struct {
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	// 定时任务配置
+	HealthCheckCron     string // 健康检查 Cron 表达式
+	MetadataRefreshCron string // 元数据刷新 Cron 表达式
 }
 
 func Load() *Config {
@@ -60,6 +64,10 @@ func Load() *Config {
 	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
+
+	// 定时任务配置
+	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")       // 默认每小时
+	cfg.MetadataRefreshCron = commonConfig.GetEnv("SERVICE_METADATA_REFRESH_CRON", "0 2 * * *") // 默认每天凌晨2点
 
 	return cfg
 }

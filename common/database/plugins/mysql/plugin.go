@@ -234,9 +234,9 @@ func (p *MySQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	// 填充标准化类型
+	// 填充标准化类型（使用通用映射工具）
 	for i := range columns {
-		columns[i].StdType = mapMySQLType(columns[i].DataType)
+		columns[i].StdType = plugin.MapToStandardType(columns[i].DataType)
 	}
 
 	return columns, nil
@@ -260,28 +260,4 @@ func (p *MySQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	}
 
 	return count, nil
-}
-
-// mapMySQLType 将MySQL原生类型映射为标准类型
-func mapMySQLType(mysqlType string) string {
-	switch mysqlType {
-	case "tinyint", "smallint", "mediumint", "int", "integer", "bigint":
-		return "integer"
-	case "float", "double", "decimal", "numeric":
-		return "number"
-	case "char", "varchar", "text", "tinytext", "mediumtext", "longtext":
-		return "string"
-	case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
-		return "binary"
-	case "date", "datetime", "timestamp", "time", "year":
-		return "datetime"
-	case "json":
-		return "json"
-	case "enum", "set":
-		return "string"
-	case "bit":
-		return "boolean"
-	default:
-		return "string"
-	}
 }

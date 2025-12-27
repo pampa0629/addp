@@ -1,0 +1,6 @@
+flask==3.0.0
+pillow==10.1.0
+numpy<2
+torch>=2.2.0
+torchvision>=0.17.0
+cn_clip

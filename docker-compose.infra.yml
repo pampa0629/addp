@@ -12,7 +12,12 @@ services:
   # ==================== 基础设施服务 ====================
 
   postgres:
-    image: ${POSTGRES_IMAGE:-postgis/postgis:15-3.4}
+    build:
+      context: ./scripts/infra
+      dockerfile: Dockerfile.postgres
+      args:
+        POSTGRES_BASE_IMAGE: ${POSTGRES_IMAGE:-postgis/postgis:15-3.4}
+    image: addp-postgres-pgvector:latest
     container_name: addp-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -22,7 +27,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-15432}:5432"
     networks:
       - addp-network
     restart: unless-stopped
@@ -39,7 +44,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-16379}:6379"
     networks:
       - addp-network
     restart: unless-stopped
@@ -59,8 +64,8 @@ services:
     volumes:
       - minio_data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
     networks:
       - addp-network
     restart: unless-stopped
@@ -80,7 +85,7 @@ services:
     volumes:
       - meilisearch_data:/meili_data
     ports:
-      - "7700:7700"
+      - "${MEILISEARCH_PORT:-17700}:7700"
     networks:
       - addp-network
     restart: unless-stopped

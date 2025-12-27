@@ -73,22 +73,15 @@ func (p *DorisPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (str
 		return "", fmt.Errorf("missing required Doris connection info (host, user)")
 	}
 
-	// DEBUG: 打印密码信息
-	fmt.Printf("[DEBUG] Doris BuildConnectionString - password: '%s', length: %d\n", password, len(password))
-
 	// Doris DSN 格式同 MySQL
 	// 处理空密码的情况（Doris 默认 root 用户密码为空）
 	if password == "" {
-		dsn := fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-			user, host, port, database)
-		fmt.Printf("[DEBUG] Doris DSN (empty password): %s\n", dsn)
-		return dsn, nil
+		return fmt.Sprintf("%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+			user, host, port, database), nil
 	}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
-		user, password, host, port, database)
-	fmt.Printf("[DEBUG] Doris DSN (with password): %s:***@tcp(%s:%d)/%s\n", user, host, port, database)
-	return dsn, nil
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=10s",
+		user, password, host, port, database), nil
 }
 
 func (p *DorisPlugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
@@ -245,9 +238,9 @@ func (p *DorisPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	// 填充标准化类型
+	// 填充标准化类型（使用通用映射工具）
 	for i := range columns {
-		columns[i].StdType = mapDorisType(columns[i].DataType)
+		columns[i].StdType = plugin.MapToStandardType(columns[i].DataType)
 	}
 
 	return columns, nil
@@ -271,31 +264,4 @@ func (p *DorisPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	}
 
 	return count, nil
-}
-
-// mapDorisType 将Doris原生类型映射为标准类型
-// Doris支持MySQL的所有类型，并额外支持一些特殊类型
-func mapDorisType(dorisType string) string {
-	switch dorisType {
-	case "tinyint", "smallint", "int", "integer", "bigint", "largeint":
-		return "integer"
-	case "float", "double", "decimal", "decimalv3":
-		return "number"
-	case "char", "varchar", "string", "text":
-		return "string"
-	case "boolean":
-		return "boolean"
-	case "date", "datetime", "datev2", "datetimev2", "timestamp":
-		return "datetime"
-	case "json", "jsonb":
-		return "json"
-	case "array":
-		return "array"
-	case "map", "struct":
-		return "json"
-	case "hll", "bitmap":
-		return "binary"
-	default:
-		return "string"
-	}
 }

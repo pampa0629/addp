@@ -24,7 +24,7 @@ if [ -f ./.env ]; then
   set +a
 fi
 
-MEILI_URL="${MEILISEARCH_URL_LOCAL:-http://localhost:7700}"
+MEILI_URL="${MEILISEARCH_URL_LOCAL:-http://localhost:17700}"
 MEILI_KEY="${MEILISEARCH_MASTER_KEY}"
 
 if [ -z "${MEILI_KEY}" ]; then

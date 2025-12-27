@@ -28,7 +28,7 @@ echo "✓ Redis 已就绪"
 
 echo "等待 MinIO 就绪..."
 counter=0
-until curl -f http://localhost:9000/minio/health/live > /dev/null 2>&1; do
+until curl -f http://localhost:19000/minio/health/live > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
@@ -40,7 +40,7 @@ echo "✓ MinIO 已就绪"
 
 echo "等待 Meilisearch 就绪..."
 counter=0
-until curl -f http://localhost:7700/health > /dev/null 2>&1; do
+until curl -f http://localhost:17700/health > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then

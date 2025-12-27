@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
+	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/service/internal/api"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/repository"
@@ -67,11 +72,76 @@ func main() {
 	// 设置路由
 	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler)
 
-	// 启动服务
-	addr := ":" + cfg.Port
-	logger.L().Info("Service 模块启动", "addr", addr, "schema", cfg.DBSchema)
-	if err := router.Run(addr); err != nil {
-		logger.L().Error("Service 模块启动失败", "error", err)
+	// 初始化调度器
+	ctx := context.Background()
+	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
+		Name: "service-scheduler",
+	})
+	if err != nil {
+		logger.L().Error("调度器初始化失败", "error", err)
 		os.Exit(1)
 	}
+
+	// 启动调度器
+	if err := scheduler.Start(ctx); err != nil {
+		logger.L().Error("调度器启动失败", "error", err)
+		os.Exit(1)
+	}
+	logger.L().Info("调度器已启动")
+
+	// 注册定时任务
+	// 1. 每小时自动健康检查所有活跃服务
+	healthCheckHandler := func(ctx context.Context, taskID string) error {
+		logger.L().Info("开始执行定时健康检查")
+		// 获取所有租户的活跃服务并进行健康检查
+		// 注意：这里简化处理，实际应该遍历所有租户
+		// TODO: 完善租户遍历逻辑
+		return nil
+	}
+	if err := scheduler.Schedule(ctx, "health-check", cfg.HealthCheckCron, healthCheckHandler); err != nil {
+		logger.L().Warn("健康检查任务调度失败", "error", err)
+	} else {
+		logger.L().Info("健康检查任务已调度", "cron", cfg.HealthCheckCron)
+	}
+
+	// 2. 每天凌晨刷新所有服务元数据
+	metadataRefreshHandler := func(ctx context.Context, taskID string) error {
+		logger.L().Info("开始执行定时元数据刷新")
+		// TODO: 实现元数据刷新逻辑
+		return nil
+	}
+	if err := scheduler.Schedule(ctx, "metadata-refresh", cfg.MetadataRefreshCron, metadataRefreshHandler); err != nil {
+		logger.L().Warn("元数据刷新任务调度失败", "error", err)
+	} else {
+		logger.L().Info("元数据刷新任务已调度", "cron", cfg.MetadataRefreshCron)
+	}
+
+	// 启动 HTTP 服务（在 goroutine 中运行）
+	addr := ":" + cfg.Port
+	logger.L().Info("Service 模块启动", "addr", addr, "schema", cfg.DBSchema)
+
+	go func() {
+		if err := router.Run(addr); err != nil {
+			logger.L().Error("Service 模块启动失败", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// 等待中断信号以优雅关闭
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	<-sigCh
+
+	logger.L().Info("收到关闭信号，开始优雅关闭...")
+
+	// 停止调度器（等待正在执行的任务完成）
+	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := scheduler.Stop(stopCtx); err != nil {
+		logger.L().Error("调度器关闭失败", "error", err)
+	} else {
+		logger.L().Info("调度器已停止")
+	}
+
+	logger.L().Info("Service 模块已优雅关闭")
 }

@@ -268,8 +268,8 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 - `develop` - Develop 模块（查询结果导出）
 
 **访问地址**:
-- API: http://localhost:9000
-- Console: http://localhost:9001
+- API: http://localhost:19000
+- Console: http://localhost:19001
 
 **使用示例**:
 ```bash
@@ -308,7 +308,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
 - `manager:files` - Manager 模块文件索引（目录文件）
 - `develop:results` - Develop 模块查询结果索引
 
-**访问地址**: http://localhost:7700
+**访问地址**: http://localhost:17700
 
 **使用示例**:
 ```bash
@@ -436,12 +436,12 @@ REDIS_PASSWORD=addp_redis                # ⚠️ 生产环境必须修改
 # MinIO（必填）
 MINIO_ROOT_USER=minioadmin
 MINIO_ROOT_PASSWORD=minioadmin           # ⚠️ 生产环境必须修改
-MINIO_API_PORT=9000
-MINIO_CONSOLE_PORT=9001
+MINIO_API_PORT=19000
+MINIO_CONSOLE_PORT=19001
 
 # Meilisearch（必填）
 MEILISEARCH_MASTER_KEY=your-master-key   # ⚠️ 生产环境必须修改
-MEILISEARCH_URL_LOCAL=http://localhost:7700
+MEILISEARCH_URL_LOCAL=http://localhost:17700
 
 # PostgreSQL 镜像（可选,默认 x86_64）
 POSTGRES_IMAGE=postgis/postgis:15-3.4
@@ -479,11 +479,11 @@ docker compose -f docker-compose.infra.yml down -v
 ### 端口冲突检查
 
 `up.sh` 启动前会自动检查以下端口:
-- 5432 (PostgreSQL)
-- 6379 (Redis)
-- 9000 (MinIO API)
-- 9001 (MinIO Console)
-- 7700 (Meilisearch)
+- 15432 (PostgreSQL)
+- 16379 (Redis)
+- 19000 (MinIO API)
+- 19001 (MinIO Console)
+- 17700 (Meilisearch)
 
 如果端口被占用,脚本会报错并提示处理方法。
 
@@ -553,7 +553,7 @@ docker compose -f docker-compose.infra.yml exec redis redis-cli -a 'addp_redis' 
 docker ps | grep minio
 
 # 访问控制台
-open http://localhost:9001
+open http://localhost:19001
 
 # 查看日志
 docker logs minio
@@ -566,7 +566,7 @@ docker logs minio
 docker ps | grep meilisearch
 
 # 测试连接
-curl http://localhost:7700/health
+curl http://localhost:17700/health
 
 # 查看日志
 docker logs meilisearch
@@ -576,16 +576,16 @@ docker logs meilisearch
 
 ```bash
 # 查看端口占用情况（macOS/Linux）
-lsof -i :5432
-lsof -i :6379
-lsof -i :9000
+lsof -i :15432
+lsof -i :16379
+lsof -i :19000
 
 # 杀掉占用端口的进程
 kill -9 <PID>
 
 # 或在 .env 中修改端口
-MINIO_API_PORT=9010
-MINIO_CONSOLE_PORT=9011
+MINIO_API_PORT=19010
+MINIO_CONSOLE_PORT=19011
 ```
 
 ## 相关文档

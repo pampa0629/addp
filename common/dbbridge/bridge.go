@@ -8,8 +8,10 @@ import (
 	"gorm.io/gorm"
 
 	// 导入所有数据库插件，触发 init() 注册
+	_ "github.com/addp/common/database/plugins/clickhouse"
 	_ "github.com/addp/common/database/plugins/doris"
 	_ "github.com/addp/common/database/plugins/minio"
+	_ "github.com/addp/common/database/plugins/mongodb"
 	_ "github.com/addp/common/database/plugins/mysql"
 	_ "github.com/addp/common/database/plugins/postgresql"
 	_ "github.com/addp/common/database/plugins/s3"

@@ -7,14 +7,21 @@
 **包含服务**：
 - **PostgreSQL (PostGIS)**：业务数据库，端口 5433
 - **MinIO**：业务对象存储，端口 9002-9003
+- **ClickHouse** 🆕：高性能列式存储 OLAP，端口 9000, 8123
+- **MongoDB** 🆕：文档型 NoSQL 数据库，端口 27017
+- **Apache Doris**：实时分析数据库，端口 9030, 8030
+- **Apache Spark**：分布式计算引擎，端口 7077, 8088, 10000
 
 **关键特性**：
 - ✅ 独立部署，无依赖
 - ✅ CPU 架构自适应（ARM64/AMD64）
 - ✅ PostGIS 空间数据支持
 - ✅ 幂等启动脚本
+- ✅ 模块化启动（按需启动服务）
 
 ## 快速开始
+
+### 默认启动（PostgreSQL + MinIO）
 
 ```bash
 # 1. 配置环境变量
@@ -26,6 +33,25 @@ bash scripts/start.sh
 
 # 3. 验证服务
 docker-compose ps
+```
+
+### 按需启动特定服务
+
+```bash
+# 启动所有服务
+bash scripts/start.sh -all
+
+# 只启动 ClickHouse
+bash scripts/start.sh -clickhouse
+
+# 只启动 MongoDB
+bash scripts/start.sh -mongodb
+
+# 启动 ClickHouse + MongoDB
+bash scripts/start.sh -clickhouse -mongodb
+
+# 启动 PostgreSQL + MinIO + ClickHouse
+bash scripts/start.sh -postgres -minio -clickhouse
 ```
 
 ## 目录结构
@@ -45,6 +71,12 @@ business/
 │   ├── init.sql                    # 数据库初始化脚本
 │   └── pg_hba.conf                 # 访问控制配置
 │
+├── clickhouse/                     # ClickHouse 配置
+│   └── init.sh                     # ClickHouse 初始化脚本
+│
+├── mongodb/                        # MongoDB 配置
+│   └── init.sh                     # MongoDB 初始化脚本
+│
 ├── doris/                          # Apache Doris 配置
 │   └── init.sh                     # Doris 集群初始化
 │
@@ -63,6 +95,8 @@ business/
 |------|------------|----------------|
 | PostgreSQL | 端口 5432 | 端口 5433 |
 | MinIO | 端口 9000-9001 | 端口 9002-9003 |
+| ClickHouse | - | 端口 9000, 8123 |
+| MongoDB | - | 端口 27017 |
 | 用途 | ADDP 元数据（用户、资源配置、任务定义） | 用户业务数据（上传的数据、文件） |
 | 示例数据 | 用户账号、资源配置表 | Shapefile 空间数据表、用户上传文件 |
 
@@ -115,8 +149,12 @@ bash spark/init-test-data.sh
 ### 查看日志
 
 ```bash
-docker-compose logs -f postgres  # PostgreSQL 日志
-docker-compose logs -f minio     # MinIO 日志
+docker-compose logs -f postgres    # PostgreSQL 日志
+docker-compose logs -f minio       # MinIO 日志
+docker-compose logs -f clickhouse  # ClickHouse 日志
+docker-compose logs -f mongodb     # MongoDB 日志
+docker-compose logs -f doris-fe    # Doris 日志
+docker-compose logs -f spark-master  # Spark 日志
 ```
 
 ### 数据备份
@@ -187,6 +225,10 @@ docker exec -i business-postgres psql -U business business < backup.sql
 
 - **PostgreSQL**: 15.x + PostGIS 3.4.x
 - **MinIO**: latest
+- **ClickHouse**: 23.8
+- **MongoDB**: 7.0
+- **Apache Doris**: 2.1.0 (all-in-one)
+- **Apache Spark**: 3.5.0
 - **网络**: business-network (bridge)
 - **持久化**: Docker volumes
 - **架构**: ARM64, AMD64

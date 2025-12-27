@@ -458,6 +458,12 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 			lastScanAt = ts.Format("2006-01-02 15:04:05")
 		}
 
+		// 填充连接状态信息
+		lastCheckAt := ""
+		if res.LastCheckAt != nil {
+			lastCheckAt = res.LastCheckAt.Format("2006-01-02 15:04:05")
+		}
+
 		result = append(result, &models.ResourceWithStats{
 			ResourceID:       res.ID,
 			ResourceName:     res.Name,
@@ -466,6 +472,9 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 			ScannedSchemas:   scannedSchemas,
 			UnscannedSchemas: totalSchemas - scannedSchemas,
 			LastScanAt:       lastScanAt,
+			ConnectionStatus: res.ConnectionStatus,
+			LastCheckAt:      lastCheckAt,
+			CheckMessage:     res.CheckMessage,
 		})
 	}
 
@@ -618,6 +627,62 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 		"run_id", run.ID,
 		"scan_depth", scanDepth,
 		"tenant_id", tenantID)
+
+	return nil
+}
+
+// TriggerConnectionCheck 触发System检测连接状态
+// 仅在连接失败时调用，通知System刷新状态
+// 异步触发，不阻塞调用方
+func (s *ResourceService) TriggerConnectionCheck(resourceID uint) {
+	s.ensureInternalClient()
+	if s.internalClient == nil {
+		s.log.Warn("Internal client不可用，无法触发连接检测", "resource_id", resourceID)
+		return
+	}
+
+	url := fmt.Sprintf("%s/internal/resources/%d/check-connection", s.systemURL, resourceID)
+
+	// 异步发送请求，不阻塞
+	go func() {
+		err := s.internalClient.DoRequest("POST", url, nil, nil)
+		if err != nil {
+			s.log.Debug("触发连接检测失败（非致命）", "resource_id", resourceID, "error", err)
+		} else {
+			s.log.Debug("已触发System刷新连接状态", "resource_id", resourceID)
+		}
+	}()
+}
+
+// UpdateConnectionStatus 更新资源连接状态（调用System内部API）
+// 用于Meta模块在检测连接状态后更新缓存
+// 注意：此方法已废弃，建议使用TriggerConnectionCheck让System自己检测
+// 保留是为了向后兼容
+func (s *ResourceService) UpdateConnectionStatus(resourceID uint, status, message string) error {
+	s.ensureInternalClient()
+	if s.internalClient == nil {
+		return fmt.Errorf("internal client not available")
+	}
+
+	url := fmt.Sprintf("%s/internal/resources/%d/connection-status", s.systemURL, resourceID)
+	payload := map[string]string{
+		"connection_status": status,
+		"check_message":     message,
+	}
+
+	if err := s.internalClient.DoRequest("PUT", url, payload, nil); err != nil {
+		return fmt.Errorf("failed to update connection status: %w", err)
+	}
+
+	// 更新本地缓存
+	s.cacheMu.Lock()
+	if entry, exists := s.resourceCache[resourceID]; exists {
+		now := time.Now()
+		entry.resource.ConnectionStatus = status
+		entry.resource.LastCheckAt = &now
+		entry.resource.CheckMessage = message
+	}
+	s.cacheMu.Unlock()
 
 	return nil
 }

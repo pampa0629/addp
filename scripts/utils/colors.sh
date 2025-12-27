@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # colors.sh - 统一的颜色输出工具
-# 使用方法: source scripts/common/colors.sh
+# 使用方法: source scripts/utils/colors.sh
 #
 # 环境变量控制:
 #   NO_COLOR=1     强制禁用颜色

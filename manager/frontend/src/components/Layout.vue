@@ -62,6 +62,14 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
+import {
+  DataAnalysis,
+  User,
+  ArrowDown,
+  SwitchButton,
+  Search,
+  Document
+} from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -29,6 +29,10 @@ type ResourceWithStats struct {
 	ScannedSchemas   int    `json:"scanned_schemas"`
 	UnscannedSchemas int    `json:"unscanned_schemas"`
 	LastScanAt       string `json:"last_scan_at,omitempty"`
+	// 连接状态相关字段
+	ConnectionStatus string `json:"connection_status,omitempty"` // online/offline/unknown/checking
+	LastCheckAt      string `json:"last_check_at,omitempty"`     // 最后检测时间
+	CheckMessage     string `json:"check_message,omitempty"`     // 状态详情
 }
 
 // SchemaWithStatus Schema及其状态

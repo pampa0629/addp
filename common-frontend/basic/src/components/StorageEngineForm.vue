@@ -110,6 +110,66 @@
       </div>
     </template>
 
+    <!-- ClickHouse -->
+    <template v-else-if="formState.resource_type === 'clickhouse'">
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item label="数据库名" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" placeholder="default" />
+      </el-form-item>
+      <el-form-item label="用户名" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" placeholder="default" />
+      </el-form-item>
+      <el-form-item label="密码（可选）" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          placeholder="留空表示无密码"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        已存储密码，如无需修改请保持占位符不变。
+      </div>
+      <div v-else class="field-hint">
+        ClickHouse 默认 default 用户无密码。默认端口: 9000 (Native), 8123 (HTTP)
+      </div>
+    </template>
+
+    <!-- MongoDB -->
+    <template v-else-if="formState.resource_type === 'mongodb'">
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item label="数据库名" prop="connection_info.database">
+        <el-input v-model="formState.connection_info.database" placeholder="admin" />
+      </el-form-item>
+      <el-form-item label="用户名（可选）">
+        <el-input v-model="formState.connection_info.user" placeholder="留空表示无需认证" />
+      </el-form-item>
+      <el-form-item label="密码（可选）" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          placeholder="留空表示无需认证"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        已存储密码，如无需修改请保持占位符不变。
+      </div>
+      <div v-else class="field-hint">
+        MongoDB 默认端口: 27017。如果启用了认证，请填写用户名和密码。
+      </div>
+    </template>
+
     <!-- MinIO / S3 -->
     <template v-else-if="formState.resource_type === 'minio' || formState.resource_type === 's3'">
       <el-form-item label="端点地址" prop="connection_info.endpoint">
@@ -288,6 +348,8 @@ const props = defineProps({
       { label: 'PostgreSQL', value: 'postgresql' },
       { label: 'MySQL', value: 'mysql' },
       { label: 'Apache Doris', value: 'doris' },
+      { label: 'ClickHouse', value: 'clickhouse' },
+      { label: 'MongoDB', value: 'mongodb' },
       { label: 'MinIO', value: 'minio' },
       { label: 'Spark SQL', value: 'spark_sql' },
       { label: 'SpatiaLite/SQLite', value: 'spatialite' }
@@ -344,6 +406,22 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       port: original.port ?? 9030,
       database: original.database ?? '',
       user: original.user ?? 'root',
+      password: original.password ?? ''
+    }
+  } else if (form.resource_type === 'clickhouse') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 9000,
+      database: original.database ?? 'default',
+      user: original.user ?? 'default',
+      password: original.password ?? ''
+    }
+  } else if (form.resource_type === 'mongodb') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 27017,
+      database: original.database ?? 'admin',
+      user: original.user ?? '',
       password: original.password ?? ''
     }
   } else if (form.resource_type === 'minio' || form.resource_type === 's3') {
@@ -550,6 +628,31 @@ const computedRules = computed(() => {
       'connection_info.database': rules['connection_info.database'],
       'connection_info.user': rules['connection_info.user']
       // 注意：没有密码验证规则
+    }
+  }
+
+  if (formState.resource_type === 'clickhouse') {
+    // ClickHouse 默认 default 用户密码为空，所以密码非必填
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.database': rules['connection_info.database'],
+      'connection_info.user': rules['connection_info.user']
+      // 注意：没有密码验证规则
+    }
+  }
+
+  if (formState.resource_type === 'mongodb') {
+    // MongoDB 用户名和密码可选（无认证模式）
+    return {
+      resource_type: rules.resource_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.database': rules['connection_info.database']
+      // 注意：user 和 password 都不是必填
     }
   }
 

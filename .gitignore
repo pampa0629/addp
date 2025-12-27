@@ -112,3 +112,4 @@ addp-deploy-*.tar.gz
 
 # Build artifacts (unified - all binaries in dist/)
 dist/
+labs/vector/clip-service/clip_cn_vit-b-16.pt
