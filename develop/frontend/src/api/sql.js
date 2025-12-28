@@ -8,7 +8,7 @@ import client from './client'
  */
 export const executeSQL = (resourceId, sql, timeout = 30000) => {
   return client.post('/develop/execute', {
-    resource_id: resourceId,
+    engine_id: resourceId,
     sql: sql,
     timeout: timeout
   })

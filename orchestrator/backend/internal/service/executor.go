@@ -238,7 +238,7 @@ func (e *Executor) executeWithModuleClient(ctx context.Context, step *models.Ste
 }
 
 // pollTaskStatusDynamic 轮询任务状态（新架构）
-func (e *Executor) pollTaskStatusDynamic(ctx context.Context, engine *commonModels.Resource, taskID string) (map[string]interface{}, error) {
+func (e *Executor) pollTaskStatusDynamic(ctx context.Context, engine *commonModels.Engine, taskID string) (map[string]interface{}, error) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

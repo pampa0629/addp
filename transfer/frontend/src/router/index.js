@@ -75,9 +75,9 @@ const routes = [
     meta: { requiresAuth: true, title: '监控面板-数据传输' }
   },
   {
-    path: '/local-resources',
-    name: 'LocalResources',
-    component: () => import('@/views/LocalResources.vue'),
+    path: '/local-engines',
+    name: 'LocalEngines',
+    component: () => import('@/views/LocalEngines.vue'),
     meta: { requiresAuth: true, title: '本地存储引擎-数据传输' }
   }
 ]

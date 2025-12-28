@@ -32,9 +32,9 @@ const routes = [
         meta: { requiresAuth: true, title: '系统管理-addp' }
       },
       {
-        path: 'resources',
-        name: 'Resources',
-        component: () => import('../views/Resources.vue'),
+        path: 'engines',
+        name: 'Engines',
+        component: () => import('../views/Engines.vue'),
         meta: { requiresAuth: true, title: '系统管理-addp' }
       },
       {

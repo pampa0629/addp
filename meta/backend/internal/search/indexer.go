@@ -41,7 +41,7 @@ type FieldRecord struct {
 type AssetRecord struct {
 	AssetID         string                 `json:"asset_id"`
 	TenantID        uint                   `json:"tenant_id"`
-	ResourceID      uint                   `json:"resource_id"`
+	EngineID        uint                   `json:"engine_id"`
 	ResourceName    string                 `json:"resource_name,omitempty"`
 	ResourceType    string                 `json:"resource_type,omitempty"`
 	AssetType       string                 `json:"asset_type"`
@@ -68,7 +68,7 @@ type DocumentRecord struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id"`
 	TenantID       uint                   `json:"tenant_id"`
-	ResourceID     uint                   `json:"resource_id"`
+	EngineID       uint                   `json:"engine_id"`
 	ResourceName   string                 `json:"resource_name,omitempty"`
 	ResourceType   string                 `json:"resource_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
@@ -162,7 +162,7 @@ func (i *Indexer) ensureIndexes() error {
 	// 设置可过滤字段
 	_, err = assetIndex.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
-		"resource_id",
+		"engine_id",
 		"resource_type",
 		"asset_type",
 		"schema",
@@ -211,7 +211,7 @@ func (i *Indexer) ensureIndexes() error {
 
 		_, err = docIndex.UpdateFilterableAttributes(&[]string{
 			"tenant_id",
-			"resource_id",
+			"engine_id",
 			"resource_type",
 			"document_type",
 			"bucket",
@@ -242,7 +242,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"id":                 record.AssetID, // Meilisearch 主键
 		"asset_id":           record.AssetID,
 		"tenant_id":          record.TenantID,
-		"resource_id":        record.ResourceID,
+		"engine_id":        record.EngineID,
 		"resource_name":      record.ResourceName,
 		"resource_type":      record.ResourceType,
 		"asset_type":         record.AssetType,
@@ -292,7 +292,7 @@ func (i *Indexer) IndexDocument(ctx context.Context, record *DocumentRecord) err
 		"document_id":     record.DocumentID,
 		"asset_id":        record.AssetID,
 		"tenant_id":       record.TenantID,
-		"resource_id":     record.ResourceID,
+		"engine_id":     record.EngineID,
 		"resource_name":   record.ResourceName,
 		"resource_type":   record.ResourceType,
 		"bucket":          record.Bucket,
@@ -351,7 +351,7 @@ func (i *Indexer) DeleteDocument(ctx context.Context, documentID string) error {
 }
 
 // DeleteObjects 删除指定 Bucket/路径下的对象索引
-func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, bucket, relativePath string) error {
+func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bucket, relativePath string) error {
 	if !i.Enabled() {
 		return nil
 	}
@@ -359,7 +359,7 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, 
 	// 构建过滤条件
 	filters := []string{
 		fmt.Sprintf("tenant_id = %d", tenantID),
-		fmt.Sprintf("resource_id = %d", resourceID),
+		fmt.Sprintf("engine_id = %d", engineID),
 		fmt.Sprintf("asset_type = 'object'"),
 	}
 
@@ -383,7 +383,7 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, resourceID uint, 
 
 	i.log.Info("对象资产已删除",
 		"tenant_id", tenantID,
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"bucket", bucket,
 		"path", relativePath,
 		"task_uid", task.TaskUID,
@@ -410,14 +410,14 @@ func escapeFilterValue(value string) string {
 }
 
 // DeleteTables 删除某租户资源下指定 Schema 的表索引
-func (i *Indexer) DeleteTables(ctx context.Context, tenantID, resourceID uint, schemaName string) error {
+func (i *Indexer) DeleteTables(ctx context.Context, tenantID, engineID uint, schemaName string) error {
 	if !i.Enabled() || i.assetIndex == "" {
 		return nil
 	}
 
 	filters := []string{
 		fmt.Sprintf("tenant_id = %d", tenantID),
-		fmt.Sprintf("resource_id = %d", resourceID),
+		fmt.Sprintf("engine_id = %d", engineID),
 		fmt.Sprintf("asset_type = 'table'"),
 	}
 
@@ -435,7 +435,7 @@ func (i *Indexer) DeleteTables(ctx context.Context, tenantID, resourceID uint, s
 
 	i.log.Info("表资产已删除",
 		"tenant_id", tenantID,
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"schema", schemaName,
 		"task_uid", task.TaskUID,
 	)

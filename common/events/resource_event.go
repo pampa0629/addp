@@ -23,9 +23,9 @@ const (
 
 // ResourceChangeEvent 资源变更事件
 type ResourceChangeEvent struct {
-	ResourceID uint      `json:"resource_id"`
-	Action     string    `json:"action"` // create, update, delete
-	Timestamp  time.Time `json:"timestamp"`
+	EngineID  uint      `json:"engine_id"`
+	Action    string    `json:"action"` // create, update, delete
+	Timestamp time.Time `json:"timestamp"`
 }
 
 // ResourceEventPublisher 资源事件发布器
@@ -46,18 +46,18 @@ func NewResourceEventPublisher(redisClient *redis.Client, logger *slog.Logger) *
 }
 
 // PublishResourceChange 发布资源变更事件
-func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, resourceID uint, action string) error {
+func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, engineID uint, action string) error {
 	if p.redis == nil {
 		p.logger.Warn("Redis client not configured, skipping event publish",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"action", action)
 		return nil // 不阻塞业务逻辑
 	}
 
 	event := ResourceChangeEvent{
-		ResourceID: resourceID,
-		Action:     action,
-		Timestamp:  time.Now(),
+		EngineID:  engineID,
+		Action:    action,
+		Timestamp: time.Now(),
 	}
 
 	data, err := json.Marshal(event)
@@ -72,7 +72,7 @@ func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, reso
 
 	if err := p.redis.Publish(ctx, channel, data).Err(); err != nil {
 		p.logger.Error("failed to publish resource event",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"action", action,
 			"channel", channel,
 			"error", err)
@@ -80,7 +80,7 @@ func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, reso
 	}
 
 	p.logger.Info("resource event published",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"action", action,
 		"channel", channel)
 	return nil
@@ -171,13 +171,13 @@ func (s *ResourceEventSubscriber) handleMessage(msg *redis.Message) {
 	}
 
 	s.logger.Debug("received resource event",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"action", event.Action,
 		"channel", msg.Channel)
 
 	if err := s.handler(event); err != nil {
 		s.logger.Error("failed to handle resource event",
-			"resource_id", event.ResourceID,
+			"engine_id", event.EngineID,
 			"action", event.Action,
 			"error", err)
 		// 不重试，避免阻塞后续消息

@@ -6,8 +6,8 @@
       </template>
 
       <el-form :model="queryForm" label-width="120px">
-        <el-form-item label="资源ID">
-          <el-input-number v-model="queryForm.resource_id" :min="1" placeholder="请输入资源ID" />
+        <el-form-item label="引擎ID">
+          <el-input-number v-model="queryForm.resource_id" :min="1" placeholder="请输入引擎ID" />
         </el-form-item>
 
         <el-form-item label="Schema">
@@ -117,7 +117,7 @@ import dataAPI from '../api/data'
 
 const querying = ref(false)
 const queryForm = ref({
-  resource_id: null,
+  engine_id: null,
   schema: 'public',
   table: '',
   columns: '',
@@ -133,7 +133,7 @@ const queryResult = ref(null)
 
 const handleQuery = async () => {
   if (!queryForm.value.resource_id || !queryForm.value.table) {
-    ElMessage.warning('请输入资源ID和表名')
+    ElMessage.warning('请输入引擎ID和表名')
     return
   }
 
@@ -141,7 +141,7 @@ const handleQuery = async () => {
     querying.value = true
 
     const requestData = {
-      resource_id: queryForm.value.resource_id,
+      engine_id: queryForm.value.resource_id,
       schema: queryForm.value.schema,
       table: queryForm.value.table,
       page: queryForm.value.page,
@@ -177,7 +177,7 @@ const handleQuery = async () => {
 
 const handleReset = () => {
   queryForm.value = {
-    resource_id: null,
+    engine_id: null,
     schema: 'public',
     table: '',
     columns: '',

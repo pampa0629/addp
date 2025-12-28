@@ -13,13 +13,13 @@ import (
 // MySQLScanner 执行 MySQL 元数据扫描
 // 重构后：作为插件系统的薄适配层，委托给插件的元数据查询能力
 type MySQLScanner struct {
-	resource *commonModels.Resource // 资源信息
+	resource *commonModels.Engine // 资源信息
 	db       *gorm.DB               // 从插件获取的连接池
 }
 
 // NewMySQLScanner 根据资源信息创建 MySQL 扫描器
 // 重构后：不再接受连接字符串，而是接受Resource对象
-func NewMySQLScanner(resource *commonModels.Resource) (*MySQLScanner, error) {
+func NewMySQLScanner(resource *commonModels.Engine) (*MySQLScanner, error) {
 	// 从插件系统获取连接池
 	db, err := dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
 	if err != nil {

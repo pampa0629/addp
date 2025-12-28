@@ -111,7 +111,7 @@ func (p *commandPreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	if len(p.resourceSet) > 0 {
-		if _, ok := p.resourceSet[sanitizeResourceType(req.Resource.ResourceType)]; !ok {
+		if _, ok := p.resourceSet[sanitizeResourceType(req.Resource.EngineType)]; !ok {
 			return false
 		}
 	}
@@ -141,7 +141,7 @@ func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		"resource": map[string]interface{}{
 			"id":              req.Resource.ID,
 			"name":            req.Resource.Name,
-			"resource_type":   req.Resource.ResourceType,
+			"resource_type":   req.Resource.EngineType,
 			"connection_info": decrypted,
 			"description":     req.Resource.Description,
 		},

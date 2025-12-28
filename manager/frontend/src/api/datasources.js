@@ -31,7 +31,7 @@ export const datasourceAPI = {
     return client.post(`/datasources/${id}/test`)
   },
 
-  // 同步数据源（从 System 模块的 resources 同步）
+  // 同步数据源（从 System 模块的 engines 同步）
   sync() {
     return client.post('/datasources/sync')
   }

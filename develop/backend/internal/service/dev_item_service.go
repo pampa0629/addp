@@ -59,7 +59,7 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 		DisplayName: req.DisplayName,
 		DevType:     req.DevType,
 		Content:     req.Content,
-		ResourceID:  req.ResourceID,
+		EngineID:  req.EngineID,
 		Schedule:    req.Schedule,
 		IsScheduled: req.IsScheduled,
 		Timeout:     req.Timeout,
@@ -111,8 +111,8 @@ func (s *DevItemService) UpdateDevItem(id uint, req *models.UpdateDevItemRequest
 	if req.Content != nil && len(req.Content) > 0 {
 		item.Content = req.Content
 	}
-	if req.ResourceID != nil {
-		item.ResourceID = req.ResourceID
+	if req.EngineID != nil {
+		item.EngineID = req.EngineID
 	}
 	if req.Schedule != "" {
 		item.Schedule = req.Schedule
@@ -233,8 +233,8 @@ func (s *DevItemService) CountByType(tenantID uint) (map[string]int64, error) {
 }
 
 // FindByResourceID 查找使用指定资源的所有开发项
-func (s *DevItemService) FindByResourceID(resourceID uint, tenantID uint) ([]models.DevItem, error) {
-	items, err := s.devItemRepo.FindByResourceID(resourceID, tenantID)
+func (s *DevItemService) FindByResourceID(engineID uint, tenantID uint) ([]models.DevItem, error) {
+	items, err := s.devItemRepo.FindByResourceID(engineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find by resource id: %w", err)
 	}

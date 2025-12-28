@@ -26,12 +26,12 @@ func NewSQLHandler(sqlEngine *service.SQLEngineService, devItemService *service.
 
 // TestConnectionRequest 测试连接请求
 type TestConnectionRequest struct {
-	ResourceID uint `json:"resource_id" binding:"required"`
+	ResourceID uint `json:"engine_id" binding:"required"`
 }
 
 // ExecuteSQLRequest 执行 SQL 请求
 type ExecuteSQLRequest struct {
-	ResourceID uint   `json:"resource_id" binding:"required"`
+	ResourceID uint   `json:"engine_id" binding:"required"`
 	SQL        string `json:"sql" binding:"required"`
 	Timeout    int    `json:"timeout"` // 超时时间（秒）
 }
@@ -49,7 +49,7 @@ type ExecuteSQLResponse struct {
 type SaveSQLTaskRequest struct {
 	Name        string   `json:"name" binding:"required"`
 	DisplayName string   `json:"display_name"`
-	ResourceID  uint     `json:"resource_id" binding:"required"`
+	ResourceID  uint     `json:"engine_id" binding:"required"`
 	SQL         string   `json:"sql" binding:"required"`
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`
@@ -68,14 +68,14 @@ type SaveSQLTaskRequest struct {
 // @Router /api/develop/test/{id} [get]
 func (h *SQLHandler) TestConnection(c *gin.Context) {
 	idStr := c.Param("id")
-	resourceID, err := strconv.ParseUint(idStr, 10, 32)
+	engineID, err := strconv.ParseUint(idStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
 		return
 	}
 
 	// 测试连接
-	if err := h.sqlEngine.TestConnection(uint(resourceID)); err != nil {
+	if err := h.sqlEngine.TestConnection(uint(engineID)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "连接测试失败",
 			"details": err.Error(),
@@ -126,7 +126,7 @@ func (h *SQLHandler) ExecuteSQL(c *gin.Context) {
 	// 执行 SQL
 	if isQuery {
 		// 查询语句
-		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.ResourceID, sql, timeout)
+		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.EngineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "SQL 执行失败",
@@ -143,7 +143,7 @@ func (h *SQLHandler) ExecuteSQL(c *gin.Context) {
 		})
 	} else {
 		// DML 语句 (INSERT/UPDATE/DELETE)
-		rowsAffected, err := h.sqlEngine.ExecuteDML(c.Request.Context(), req.ResourceID, sql, timeout)
+		rowsAffected, err := h.sqlEngine.ExecuteDML(c.Request.Context(), req.EngineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "SQL 执行失败",
@@ -186,9 +186,9 @@ func (h *SQLHandler) SaveSQLTask(c *gin.Context) {
 		DevType:     "sql",
 		Content: map[string]interface{}{
 			"sql":         req.SQL,
-			"resource_id": req.ResourceID,
+			"engine_id": req.EngineID,
 		},
-		ResourceID:  &req.ResourceID,
+		EngineID:  &req.EngineID,
 		Schedule:    req.Schedule,
 		IsScheduled: req.IsScheduled,
 		Timeout:     req.Timeout,
@@ -246,9 +246,9 @@ func (h *SQLHandler) UpdateSQLTask(c *gin.Context) {
 		DisplayName: req.DisplayName,
 		Content: map[string]interface{}{
 			"sql":         req.SQL,
-			"resource_id": req.ResourceID,
+			"engine_id": req.EngineID,
 		},
-		ResourceID:  &req.ResourceID,
+		EngineID:  &req.EngineID,
 		Schedule:    req.Schedule,
 		IsScheduled: req.IsScheduled,
 		Timeout:     req.Timeout,

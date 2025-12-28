@@ -55,12 +55,12 @@ func isSensitiveKey(key string) bool {
 		strings.Contains(key, "key")
 }
 
-func connectionLogFields(resource *commonModels.Resource) []any {
+func connectionLogFields(resource *commonModels.Engine) []any {
 	fields := []any{
-		"resource_id", resource.ID,
+		"engine_id", resource.ID,
 		"tenant_id", resource.TenantID,
 		"resource_name", resource.Name,
-		"resource_type", strings.ToLower(resource.ResourceType),
+		"resource_type", strings.ToLower(resource.EngineType),
 	}
 
 	if sanitized := sanitizeConnectionInfo(resource.ConnectionInfo); sanitized != nil {

@@ -27,7 +27,7 @@ func GenerateItemFingerprint(resID uint, identifier string) string {
 // GenerateObjectFingerprint 为对象存储生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.resources 表）
+//   - resID: 资源ID（来自 system.engines 表）
 //   - bucket: 存储桶名称
 //   - objectPath: 对象路径（相对于bucket根目录）
 //
@@ -42,7 +42,7 @@ func GenerateObjectFingerprint(resID uint, bucket, objectPath string) string {
 // GenerateTableFingerprint 为关系数据库表生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.resources 表）
+//   - resID: 资源ID（来自 system.engines 表）
 //   - schema: 模式名称（如 "public", "metadata"）
 //   - tableName: 表名称
 //
@@ -59,7 +59,7 @@ func GenerateTableFingerprint(resID uint, schema, tableName string) string {
 // GenerateFileFingerprint 为文件系统文件生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.resources 表）
+//   - resID: 资源ID（来自 system.engines 表）
 //   - filePath: 文件路径（绝对路径）
 //
 // 示例:

@@ -23,7 +23,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listSchemas } from '@/api/resources'
+import { listSchemas } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({

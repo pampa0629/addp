@@ -68,11 +68,11 @@ func main() {
 	// 初始化 Service 层（传入 taskQueue 和 redisClient）
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue) // engine 传 nil（暂不执行任务）
 	executionService := service.NewExecutionService(db)
-	localResourceService := service.NewLocalResourceService(db, cfg, redisClient)
-	objectStorageService := service.NewObjectStorageService(localResourceService)
+	localEngineService := service.NewLocalEngineService(db, cfg, redisClient)
+	objectStorageService := service.NewObjectStorageService(localEngineService)
 
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localResourceService, objectStorageService, cfg.SystemServiceURL, redisClient)
+	router := api.SetupRouter(taskService, executionService, localEngineService, objectStorageService, cfg.SystemServiceURL, redisClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Transfer 服务的外部访问 URL（供 Orchestrator 调用）
@@ -136,7 +136,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 		&models.Task{},
 		&models.TaskExecution{},
 		&models.DataMapping{},
-		&models.LocalResource{},
+		&models.LocalEngine{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)
 	if err != nil {

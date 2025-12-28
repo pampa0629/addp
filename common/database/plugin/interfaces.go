@@ -10,12 +10,15 @@ import (
 // ConnectionInfo 连接信息类型（独立定义，避免循环依赖）
 type ConnectionInfo map[string]interface{}
 
-// Resource 资源结构（最小化定义，避免循环依赖）
-type Resource struct {
+// Engine 引擎结构（最小化定义，避免循环依赖）
+type Engine struct {
 	ID             uint
-	ResourceType   string
+	EngineType     string
 	ConnectionInfo ConnectionInfo
 }
+
+// Resource 是 Engine 的别名，保持向后兼容
+type Resource = Engine
 
 // DatabasePlugin 数据库插件基础接口
 // 所有数据库类型插件必须实现此接口

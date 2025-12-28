@@ -75,12 +75,12 @@ async function loadAllTasks() {
   loading.value = true
   try {
     // 1. 获取所有计算资源
-    const resources = await computeResourcesAPI.list()
-    console.log('已加载计算资源:', resources)
+    const engines = await computeResourcesAPI.list()
+    console.log('已加载计算资源:', engines)
 
     // 2. 为每个资源加载任务
     const treeNodes = []
-    for (const resource of resources) {
+    for (const engine of engines) {
       const moduleNode = await loadResourceTasks(resource)
       if (moduleNode) {
         treeNodes.push(moduleNode)

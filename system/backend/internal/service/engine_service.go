@@ -24,15 +24,15 @@ var (
 	ErrBuiltinResourceImmutable = errors.New("内置资源不可删除或修改")
 )
 
-type ResourceService struct {
-	repo           *repository.ResourceRepository
+type EngineService struct {
+	repo           *repository.EngineRepository
 	userRepo       *repository.UserRepository
 	encryptionKey  []byte
 	eventPublisher *events.ResourceEventPublisher
 }
 
-func NewResourceService(repo *repository.ResourceRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *ResourceService {
-	return &ResourceService{
+func NewEngineService(repo *repository.EngineRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
+	return &EngineService{
 		repo:           repo,
 		userRepo:       userRepo,
 		encryptionKey:  encryptionKey,
@@ -40,7 +40,7 @@ func NewResourceService(repo *repository.ResourceRepository, userRepo *repositor
 	}
 }
 
-func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy uint) (*models.Resource, error) {
+func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) (*models.Engine, error) {
 	// 获取创建者信息以确定租户
 	user, err := s.userRepo.GetByID(createdBy)
 	if err != nil {
@@ -67,10 +67,10 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 		return nil, fmt.Errorf("加密连接信息失败: %w", err)
 	}
 
-	resource := &models.Resource{
+	engine := &models.Engine{
 		Name:           req.Name,
 		DisplayName:    req.DisplayName, // 中文显示名称
-		ResourceType:   req.ResourceType,
+		EngineType:   req.EngineType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		ScanConfig:     req.ScanConfig, // 保存扫描配置
@@ -80,30 +80,30 @@ func (s *ResourceService) Create(req *models.ResourceCreateRequest, createdBy ui
 	}
 
 	// 如果未提供 display_name，默认等于 name
-	if resource.DisplayName == "" {
-		resource.DisplayName = resource.Name
+	if engine.DisplayName == "" {
+		engine.DisplayName = engine.Name
 	}
 
 	// 自动生成 capabilities（如果请求中未提供）
-	if resource.Capabilities == nil || *resource.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(req.ResourceType)
-		resource.Capabilities = &capabilities
+	if engine.Capabilities == nil || *engine.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(req.EngineType)
+		engine.Capabilities = &capabilities
 	}
 
-	if err := s.repo.Create(resource); err != nil {
+	if err := s.repo.Create(engine); err != nil {
 		return nil, err
 	}
 
 	// 发布资源创建事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionCreate)
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionCreate)
 	}
 
-	return s.sanitizeResource(resource), nil
+	return s.sanitizeResource(engine), nil
 }
 
 // CreateInternal 供内部服务调用创建资源
-func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tenantID uint, createdBy *uint) (*models.Resource, error) {
+func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID uint, createdBy *uint) (*models.Engine, error) {
 	if req == nil {
 		return nil, errors.New("无效的请求数据")
 	}
@@ -123,10 +123,10 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 		tenantPtr = &tenantID
 	}
 
-	resource := &models.Resource{
+	engine := &models.Engine{
 		Name:           req.Name,
 		DisplayName:    req.DisplayName, // 中文显示名称
-		ResourceType:   req.ResourceType,
+		EngineType:   req.EngineType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		ScanConfig:     req.ScanConfig, // 保存扫描配置
@@ -136,35 +136,35 @@ func (s *ResourceService) CreateInternal(req *models.ResourceCreateRequest, tena
 	}
 
 	// 如果未提供 display_name，默认等于 name
-	if resource.DisplayName == "" {
-		resource.DisplayName = resource.Name
+	if engine.DisplayName == "" {
+		engine.DisplayName = engine.Name
 	}
 
 	// 自动生成 capabilities（如果请求中未提供）
-	if resource.Capabilities == nil || *resource.Capabilities == "" {
-		capabilities := s.generateDefaultCapabilities(req.ResourceType)
-		resource.Capabilities = &capabilities
+	if engine.Capabilities == nil || *engine.Capabilities == "" {
+		capabilities := s.generateDefaultCapabilities(req.EngineType)
+		engine.Capabilities = &capabilities
 	}
 
-	if err := s.repo.Create(resource); err != nil {
+	if err := s.repo.Create(engine); err != nil {
 		return nil, err
 	}
 
 	// 发布资源创建事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionCreate)
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionCreate)
 	}
 
-	return s.sanitizeResource(resource), nil
+	return s.sanitizeResource(engine), nil
 }
 
-func (s *ResourceService) GetByID(id uint, currentUserID uint) (*models.Resource, error) {
+func (s *EngineService) GetByID(id uint, currentUserID uint) (*models.Engine, error) {
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := s.repo.GetByID(id)
+	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrResourceNotFound
@@ -172,14 +172,14 @@ func (s *ResourceService) GetByID(id uint, currentUserID uint) (*models.Resource
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
 		return nil, err
 	}
 
-	return s.sanitizeResource(resource), nil
+	return s.sanitizeResource(engine), nil
 }
 
-func (s *ResourceService) List(page, pageSize int, resourceType string, currentUserID uint) ([]models.Resource, error) {
+func (s *EngineService) List(page, pageSize int, engineType string, currentUserID uint) ([]models.Engine, error) {
 	offset := (page - 1) * pageSize
 
 	// 获取当前用户信息
@@ -188,16 +188,16 @@ func (s *ResourceService) List(page, pageSize int, resourceType string, currentU
 		return nil, err
 	}
 
-	var resources []models.Resource
+	var engines []models.Engine
 
 	// SuperAdmin可以查看所有资源
 	if currentUser.UserType == models.UserTypeSuperAdmin {
-		resources, err = s.repo.List(offset, pageSize, resourceType)
+		engines, err = s.repo.List(offset, pageSize, engineType)
 	} else {
 		if currentUser.TenantID == nil {
 			return nil, errors.New("当前用户未关联租户，无法访问资源")
 		}
-		resources, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, resourceType)
+		engines, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, engineType)
 	}
 
 	if err != nil {
@@ -205,21 +205,21 @@ func (s *ResourceService) List(page, pageSize int, resourceType string, currentU
 	}
 
 	// 脱敏敏感字段
-	sanitized := make([]models.Resource, 0, len(resources))
-	for i := range resources {
-		sanitized = append(sanitized, *s.sanitizeResource(&resources[i]))
+	sanitized := make([]models.Engine, 0, len(engines))
+	for i := range engines {
+		sanitized = append(sanitized, *s.sanitizeResource(&engines[i]))
 	}
 
 	return sanitized, nil
 }
 
-func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, currentUserID uint) (*models.Resource, error) {
+func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, currentUserID uint) (*models.Engine, error) {
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := s.repo.GetByID(id)
+	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrResourceNotFound
@@ -227,7 +227,7 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
 		return nil, err
 	}
 
@@ -236,7 +236,7 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 	}
 
 	// 检查是否为内置资源（内置资源不允许修改核心配置）
-	if resource.IsBuiltin {
+	if engine.IsBuiltin {
 		// 允许修改描述和显示名称，但不允许修改连接信息、名称等核心配置
 		if req.Name != nil || req.ConnectionInfo != nil {
 			return nil, ErrBuiltinResourceImmutable
@@ -251,51 +251,51 @@ func (s *ResourceService) Update(id uint, req *models.ResourceUpdateRequest, cur
 	}
 
 	if req.Name != nil {
-		resource.Name = *req.Name
+		engine.Name = *req.Name
 	}
 	if req.DisplayName != nil {
-		resource.DisplayName = *req.DisplayName
+		engine.DisplayName = *req.DisplayName
 	}
 	if req.ConnectionInfo != nil {
 		// 合并连接信息：如果新值是脱敏占位符，保留原值
-		mergedConnInfo := s.mergeConnectionInfo(resource.ConnectionInfo, *req.ConnectionInfo)
+		mergedConnInfo := s.mergeConnectionInfo(engine.ConnectionInfo, *req.ConnectionInfo)
 
 		// 加密敏感字段
 		encryptedConnInfo, err := s.encryptSensitiveFields(mergedConnInfo)
 		if err != nil {
 			return nil, fmt.Errorf("加密连接信息失败: %w", err)
 		}
-		resource.ConnectionInfo = encryptedConnInfo
+		engine.ConnectionInfo = encryptedConnInfo
 	}
 	if req.Description != nil {
-		resource.Description = *req.Description
+		engine.Description = *req.Description
 	}
 	if req.IsActive != nil {
-		resource.IsActive = *req.IsActive
+		engine.IsActive = *req.IsActive
 	}
 	if req.ScanConfig != nil {
-		resource.ScanConfig = req.ScanConfig
+		engine.ScanConfig = req.ScanConfig
 	}
 
-	if err := s.repo.Update(resource); err != nil {
+	if err := s.repo.Update(engine); err != nil {
 		return nil, err
 	}
 
 	// 发布资源更新事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), resource.ID, events.ActionUpdate)
+		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionUpdate)
 	}
 
-	return s.sanitizeResource(resource), nil
+	return s.sanitizeResource(engine), nil
 }
 
-func (s *ResourceService) Delete(id uint, currentUserID uint) error {
+func (s *EngineService) Delete(id uint, currentUserID uint) error {
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
 		return err
 	}
 
-	resource, err := s.repo.GetByID(id)
+	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrResourceNotFound
@@ -303,7 +303,7 @@ func (s *ResourceService) Delete(id uint, currentUserID uint) error {
 		return err
 	}
 
-	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
 		return err
 	}
 
@@ -312,7 +312,7 @@ func (s *ResourceService) Delete(id uint, currentUserID uint) error {
 	}
 
 	// 检查是否为内置资源
-	if resource.IsBuiltin {
+	if engine.IsBuiltin {
 		return ErrBuiltinResourceImmutable
 	}
 
@@ -329,16 +329,16 @@ func (s *ResourceService) Delete(id uint, currentUserID uint) error {
 }
 
 // ListInternal 内部服务调用的资源列表查询（不做租户权限检查）
-func (s *ResourceService) ListInternal(resourceType string, tenantID uint) ([]models.Resource, error) {
-	var resources []models.Resource
+func (s *EngineService) ListInternal(engineType string, tenantID uint) ([]models.Engine, error) {
+	var engines []models.Engine
 	var err error
 
 	if tenantID > 0 {
 		// 按租户过滤
-		resources, err = s.repo.ListByTenant(tenantID, 0, 9999, resourceType)
+		engines, err = s.repo.ListByTenant(tenantID, 0, 9999, engineType)
 	} else {
 		// 返回所有资源
-		resources, err = s.repo.List(0, 9999, resourceType)
+		engines, err = s.repo.List(0, 9999, engineType)
 	}
 
 	if err != nil {
@@ -346,19 +346,19 @@ func (s *ResourceService) ListInternal(resourceType string, tenantID uint) ([]mo
 	}
 
 	// 解密所有资源的敏感字段
-	for i := range resources {
-		decryptedConnInfo, err := s.decryptSensitiveFields(resources[i].ConnectionInfo)
+	for i := range engines {
+		decryptedConnInfo, err := s.decryptSensitiveFields(engines[i].ConnectionInfo)
 		if err != nil {
-			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", resources[i].ID, err)
+			return nil, fmt.Errorf("解密资源 %d 连接信息失败: %w", engines[i].ID, err)
 		}
-		resources[i].ConnectionInfo = decryptedConnInfo
+		engines[i].ConnectionInfo = decryptedConnInfo
 	}
 
-	return resources, nil
+	return engines, nil
 }
 
 // ListInternalWithCapability 按能力过滤资源（用于内部服务调用）
-func (s *ResourceService) ListInternalWithCapability(tenantID uint, filter commonutils.CapabilityFilter) ([]models.Resource, error) {
+func (s *EngineService) ListInternalWithCapability(tenantID uint, filter commonutils.CapabilityFilter) ([]models.Engine, error) {
 	// 1. 先获取所有资源（可以按租户过滤）
 	allResources, err := s.ListInternal("", tenantID)
 	if err != nil {
@@ -371,10 +371,10 @@ func (s *ResourceService) ListInternalWithCapability(tenantID uint, filter commo
 	}
 
 	// 3. 逐个资源进行能力匹配
-	var filtered []models.Resource
-	for _, resource := range allResources {
-		if s.matchesCapabilityFilter(&resource, filter) {
-			filtered = append(filtered, resource)
+	var filtered []models.Engine
+	for _, engine := range allResources {
+		if s.matchesCapabilityFilter(&engine, filter) {
+			filtered = append(filtered, engine)
 		}
 	}
 
@@ -382,9 +382,9 @@ func (s *ResourceService) ListInternalWithCapability(tenantID uint, filter commo
 }
 
 // matchesCapabilityFilter 检查资源是否匹配能力过滤器
-func (s *ResourceService) matchesCapabilityFilter(resource *models.Resource, filter commonutils.CapabilityFilter) bool {
+func (s *EngineService) matchesCapabilityFilter(engine *models.Engine, filter commonutils.CapabilityFilter) bool {
 	// 解析 capabilities
-	cap, err := commonutils.ParseCapabilities(resource.Capabilities)
+	cap, err := commonutils.ParseCapabilities(engine.Capabilities)
 	if err != nil || cap == nil {
 		return false
 	}
@@ -445,8 +445,8 @@ func (s *ResourceService) matchesCapabilityFilter(resource *models.Resource, fil
 }
 
 // GetByIDInternal 内部服务直接访问资源详情（返回解密信息）
-func (s *ResourceService) GetByIDInternal(id uint) (*models.Resource, error) {
-	resource, err := s.repo.GetByID(id)
+func (s *EngineService) GetByIDInternal(id uint) (*models.Engine, error) {
+	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrResourceNotFound
@@ -454,24 +454,24 @@ func (s *ResourceService) GetByIDInternal(id uint) (*models.Resource, error) {
 		return nil, err
 	}
 
-	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
 
-	resourceCopy := *resource
-	resourceCopy.ConnectionInfo = decryptedConnInfo
-	return &resourceCopy, nil
+	engineCopy := *engine
+	engineCopy.ConnectionInfo = decryptedConnInfo
+	return &engineCopy, nil
 }
 
 // GetForConnection 返回带解密信息的资源，用于当前用户执行连接测试
-func (s *ResourceService) GetForConnection(id uint, currentUserID uint) (*models.Resource, error) {
+func (s *EngineService) GetForConnection(id uint, currentUserID uint) (*models.Engine, error) {
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
 		return nil, err
 	}
 
-	resource, err := s.repo.GetByID(id)
+	engine, err := s.repo.GetByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrResourceNotFound
@@ -479,7 +479,7 @@ func (s *ResourceService) GetForConnection(id uint, currentUserID uint) (*models
 		return nil, err
 	}
 
-	if err := s.authorizeResourceAccess(resource, currentUser); err != nil {
+	if err := s.authorizeResourceAccess(engine, currentUser); err != nil {
 		return nil, err
 	}
 
@@ -487,18 +487,18 @@ func (s *ResourceService) GetForConnection(id uint, currentUserID uint) (*models
 		return nil, err
 	}
 
-	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("解密连接信息失败: %w", err)
 	}
 
-	resourceCopy := *resource
-	resourceCopy.ConnectionInfo = decryptedConnInfo
-	return &resourceCopy, nil
+	engineCopy := *engine
+	engineCopy.ConnectionInfo = decryptedConnInfo
+	return &engineCopy, nil
 }
 
 // mergeConnectionInfo 合并连接信息，识别前端掩码占位并保留原始敏感值
-func (s *ResourceService) mergeConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
+func (s *EngineService) mergeConnectionInfo(original, updated models.ConnectionInfo) models.ConnectionInfo {
 	merged := make(models.ConnectionInfo)
 
 	// 先复制原始字段，并对敏感字段做解密，得到可操作的明文值
@@ -548,7 +548,7 @@ func (s *ResourceService) mergeConnectionInfo(original, updated models.Connectio
 }
 
 // isMaskedPlaceholder 判断用户输入是否为掩码占位，而非真实敏感值
-func (s *ResourceService) isMaskedPlaceholder(value string, originalPlain string) bool {
+func (s *EngineService) isMaskedPlaceholder(value string, originalPlain string) bool {
 	if value == "" || originalPlain == "" {
 		return false
 	}
@@ -590,7 +590,7 @@ func maskWithAsterisks(plain string) string {
 }
 
 // encryptSensitiveFields 加密连接信息中的敏感字段
-func (s *ResourceService) encryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+func (s *EngineService) encryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	encrypted := make(models.ConnectionInfo)
 	for k, v := range connInfo {
 		encrypted[k] = v
@@ -615,7 +615,7 @@ func (s *ResourceService) encryptSensitiveFields(connInfo models.ConnectionInfo)
 }
 
 // decryptSensitiveFields 解密连接信息中的敏感字段
-func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
+func (s *EngineService) decryptSensitiveFields(connInfo models.ConnectionInfo) (models.ConnectionInfo, error) {
 	decrypted := make(models.ConnectionInfo)
 	for k, v := range connInfo {
 		decrypted[k] = v
@@ -646,7 +646,7 @@ func (s *ResourceService) decryptSensitiveFields(connInfo models.ConnectionInfo)
 	return decrypted, nil
 }
 
-func (s *ResourceService) maskSensitiveFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
+func (s *EngineService) maskSensitiveFields(connInfo models.ConnectionInfo) models.ConnectionInfo {
 	if connInfo == nil {
 		return nil
 	}
@@ -662,17 +662,17 @@ func (s *ResourceService) maskSensitiveFields(connInfo models.ConnectionInfo) mo
 	return masked
 }
 
-func (s *ResourceService) sanitizeResource(resource *models.Resource) *models.Resource {
-	if resource == nil {
+func (s *EngineService) sanitizeResource(engine *models.Engine) *models.Engine {
+	if engine == nil {
 		return nil
 	}
 
-	copyResource := *resource
-	copyResource.ConnectionInfo = s.maskSensitiveFields(resource.ConnectionInfo)
+	copyResource := *engine
+	copyResource.ConnectionInfo = s.maskSensitiveFields(engine.ConnectionInfo)
 	return &copyResource
 }
 
-func (s *ResourceService) getCurrentUser(userID uint) (*models.User, error) {
+func (s *EngineService) getCurrentUser(userID uint) (*models.User, error) {
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return nil, errors.New("当前用户不存在")
@@ -680,25 +680,25 @@ func (s *ResourceService) getCurrentUser(userID uint) (*models.User, error) {
 	return user, nil
 }
 
-func (s *ResourceService) authorizeResourceAccess(resource *models.Resource, user *models.User) error {
+func (s *EngineService) authorizeResourceAccess(engine *models.Engine, user *models.User) error {
 	if user.UserType == models.UserTypeSuperAdmin {
 		return nil
 	}
 
 	// 检查用户和资源是否都有租户ID
-	if user.TenantID == nil || resource.TenantID == nil {
+	if user.TenantID == nil || engine.TenantID == nil {
 		return ErrResourceForbidden
 	}
 
 	// 比较租户ID
-	if *user.TenantID != *resource.TenantID {
+	if *user.TenantID != *engine.TenantID {
 		return ErrResourceForbidden
 	}
 
 	return nil
 }
 
-func (s *ResourceService) isSensitiveField(field string) bool {
+func (s *EngineService) isSensitiveField(field string) bool {
 	switch field {
 	case "password", "access_key", "secret_key", "token", "api_key":
 		return true
@@ -707,7 +707,7 @@ func (s *ResourceService) isSensitiveField(field string) bool {
 	}
 }
 
-func (s *ResourceService) ensureResourceManagementPermission(user *models.User) error {
+func (s *EngineService) ensureResourceManagementPermission(user *models.User) error {
 	if user.UserType == models.UserTypeSuperAdmin || user.UserType == models.UserTypeTenantAdmin {
 		return nil
 	}
@@ -715,7 +715,7 @@ func (s *ResourceService) ensureResourceManagementPermission(user *models.User) 
 }
 
 // validateScanConfig 验证扫描配置的有效性
-func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
+func (s *EngineService) validateScanConfig(config *models.ScanConfig) error {
 	if config == nil {
 		return nil
 	}
@@ -760,16 +760,16 @@ func (s *ResourceService) validateScanConfig(config *models.ScanConfig) error {
 }
 
 // generateDefaultCapabilities 根据资源类型生成默认 capabilities
-func (s *ResourceService) generateDefaultCapabilities(resourceType string) string {
+func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	// 尝试从插件系统获取能力描述
-	capabilities, err := dbbridge.GenerateCapabilities(resourceType)
+	capabilities, err := dbbridge.GenerateCapabilities(engineType)
 	if err == nil {
 		return capabilities
 	}
 
 	// 降级：对于API引擎等非数据库类型，使用硬编码
-	resourceTypeLower := strings.ToLower(resourceType)
-	switch resourceTypeLower {
+	engineTypeLower := strings.ToLower(engineType)
+	switch engineTypeLower {
 	// API引擎 - 内置模块
 	case "api.meta":
 		return `{"compute":[{"type":"scan","dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"]}]}`
@@ -793,7 +793,7 @@ func (s *ResourceService) generateDefaultCapabilities(resourceType string) strin
 }
 
 // checkDuplicateResource 检查是否存在重复资源
-func (s *ResourceService) checkDuplicateResource(req *models.ResourceCreateRequest, tenantID uint) error {
+func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, tenantID uint) error {
 	// 检查 1: 同名资源
 	existing, err := s.repo.FindByNameAndTenant(req.Name, tenantID)
 	if err == nil && existing != nil {
@@ -801,7 +801,7 @@ func (s *ResourceService) checkDuplicateResource(req *models.ResourceCreateReque
 	}
 
 	// 检查 2: 针对 PostgreSQL，检查连接信息（host+port+database）
-	if strings.ToLower(req.ResourceType) == "postgresql" || strings.ToLower(req.ResourceType) == "postgres" {
+	if strings.ToLower(req.EngineType) == "postgresql" || strings.ToLower(req.EngineType) == "postgres" {
 		host, _ := req.ConnectionInfo["host"].(string)
 		portFloat, _ := req.ConnectionInfo["port"].(float64)
 		database, _ := req.ConnectionInfo["database"].(string)
@@ -821,85 +821,85 @@ func (s *ResourceService) checkDuplicateResource(req *models.ResourceCreateReque
 // CheckAndUpdateConnectionStatus 检测并更新资源连接状态（同步）
 // 返回true表示在线，false表示离线
 // 用于启动时的健康检查和用户手动测试连接
-func (s *ResourceService) CheckAndUpdateConnectionStatus(resourceID uint) bool {
+func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	// 1. 获取资源
-	resource, err := s.repo.GetByID(resourceID)
+	engine, err := s.repo.GetByID(engineID)
 	if err != nil {
-		s.updateConnectionStatus(resourceID, "unknown", fmt.Sprintf("获取资源失败: %v", err))
+		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("获取资源失败: %v", err))
 		return false
 	}
 
 	// 2. 跳过API类型资源（api.xxx）的连接检测
 	// API类型资源需要通过health_check_config配置的健康检查端点来检测
-	if strings.HasPrefix(resource.ResourceType, "api.") {
-		s.updateConnectionStatus(resourceID, "unknown", "API类型资源不支持自动连接检测")
+	if strings.HasPrefix(engine.EngineType, "api.") {
+		s.updateConnectionStatus(engineID, "unknown", "API类型资源不支持自动连接检测")
 		return false
 	}
 
 	// 3. 解密连接信息
-	decryptedConnInfo, err := s.decryptSensitiveFields(resource.ConnectionInfo)
+	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
 	if err != nil {
-		s.updateConnectionStatus(resourceID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
+		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
 		return false
 	}
-	resource.ConnectionInfo = decryptedConnInfo
+	engine.ConnectionInfo = decryptedConnInfo
 
 	// 4. 测试连接
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	err = dbbridge.TestConnection(ctx, resource)
+	err = dbbridge.TestConnection(ctx, engine)
 
 	// 5. 更新状态
 	if err != nil {
-		s.updateConnectionStatus(resourceID, "offline", err.Error())
+		s.updateConnectionStatus(engineID, "offline", err.Error())
 		return false
 	}
 
-	s.updateConnectionStatus(resourceID, "online", "连接正常")
+	s.updateConnectionStatus(engineID, "online", "连接正常")
 	return true
 }
 
 // AsyncCheckConnection 异步检测资源连接状态（用于被动触发）
 // 立即返回，不阻塞调用方
 // 用于其他模块在连接失败时通知System刷新状态
-func (s *ResourceService) AsyncCheckConnection(resourceID uint) error {
+func (s *EngineService) AsyncCheckConnection(engineID uint) error {
 	// 验证资源存在
-	if _, err := s.repo.GetByID(resourceID); err != nil {
+	if _, err := s.repo.GetByID(engineID); err != nil {
 		return fmt.Errorf("资源不存在: %w", err)
 	}
 
 	// 后台异步检测
 	go func() {
-		s.CheckAndUpdateConnectionStatus(resourceID)
+		s.CheckAndUpdateConnectionStatus(engineID)
 	}()
 
 	return nil
 }
 
 // updateConnectionStatus 内部方法：更新连接状态
-func (s *ResourceService) updateConnectionStatus(resourceID uint, status, message string) error {
+func (s *EngineService) updateConnectionStatus(engineID uint, status, message string) error {
 	// 获取资源
-	resource, err := s.repo.GetByID(resourceID)
+	engine, err := s.repo.GetByID(engineID)
 	if err != nil {
 		return err
 	}
 
 	// 更新状态字段
 	now := time.Now()
-	resource.ConnectionStatus = status
-	resource.LastCheckAt = &now
-	resource.CheckMessage = message
+	engine.ConnectionStatus = status
+	engine.LastCheckAt = &now
+	engine.CheckMessage = message
 
 	// 保存更新
-	return s.repo.Update(resource)
+	return s.repo.Update(engine)
 }
 
 // UpdateConnectionStatus 更新资源连接状态（用于缓存优化）
 // 由Meta模块在后台检测后调用，更新资源的连接状态缓存
 // 注意：此方法已废弃，建议使用AsyncCheckConnection触发System自己检测
 // 保留是为了向后兼容
-func (s *ResourceService) UpdateConnectionStatus(resourceID uint, status string, message string) error {
-	return s.updateConnectionStatus(resourceID, status, message)
+func (s *EngineService) UpdateConnectionStatus(engineID uint, status string, message string) error {
+	return s.updateConnectionStatus(engineID, status, message)
 }
 

@@ -380,7 +380,7 @@ const fallbackDownloadUrl = computed(() => {
   if (!path || !resourceId.value) {
     return ''
   }
-  return `/api/preview/download?resource_id=${resourceId.value}&path=${encodeURIComponent(path)}`
+  return `/api/preview/download?engine_id=${resourceId.value}&path=${encodeURIComponent(path)}`
 })
 
 const downloadInfo = computed(() => {

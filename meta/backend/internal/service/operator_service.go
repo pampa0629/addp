@@ -58,7 +58,7 @@ func (s *OperatorService) executeScanOperator(
 ) (*models.OperatorExecuteResponse, error) {
 
 	// 解析参数
-	resourceID, ok := params["resource_id"].(float64)
+	engineID, ok := params["engine_id"].(float64)
 	if !ok {
 		return nil, fmt.Errorf("参数 resource_id 必须为数字")
 	}
@@ -89,7 +89,7 @@ func (s *OperatorService) executeScanOperator(
 
 	// 创建扫描任务
 	scanReq := &metaModels.ScanRequest{
-		ResourceID:  uint(resourceID),
+		EngineID:  uint(engineID),
 		SchemaNames: schemaNames,
 		ObjectPaths: objectPaths,
 		ScanDepth:   scanDepth,

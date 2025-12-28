@@ -19,45 +19,45 @@ import (
 )
 
 // BuildConnectionString 使用插件系统构建连接字符串
-func BuildConnectionString(resource *models.Resource) (string, error) {
+func BuildConnectionString(engine *models.Engine) (string, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
 	return plugin.BuildConnectionString(pluginResource)
 }
 
 // TestConnection 使用插件系统测试连接
-func TestConnection(ctx context.Context, resource *models.Resource) error {
+func TestConnection(ctx context.Context, engine *models.Engine) error {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
 	return plugin.TestConnection(ctx, pluginResource)
 }
 
 // GenerateCapabilities 使用插件系统生成能力描述
-func GenerateCapabilities(resourceType string) (string, error) {
-	return plugin.GenerateCapabilities(resourceType)
+func GenerateCapabilities(engineType string) (string, error) {
+	return plugin.GenerateCapabilities(engineType)
 }
 
 // GetSensitiveFields 获取敏感字段列表
-func GetSensitiveFields(resourceType string) ([]string, error) {
-	return plugin.GetSensitiveFields(resourceType)
+func GetSensitiveFields(engineType string) ([]string, error) {
+	return plugin.GetSensitiveFields(engineType)
 }
 
 // GetRequiredFields 获取必填字段列表
-func GetRequiredFields(resourceType string) ([]string, error) {
-	return plugin.GetRequiredFields(resourceType)
+func GetRequiredFields(engineType string) ([]string, error) {
+	return plugin.GetRequiredFields(engineType)
 }
 
 // GetDefaultPort 获取默认端口
-func GetDefaultPort(resourceType string) (int, error) {
-	return plugin.GetDefaultPort(resourceType)
+func GetDefaultPort(engineType string) (int, error) {
+	return plugin.GetDefaultPort(engineType)
 }
 
 // ListAllTypes 列出所有已注册的数据库类型
@@ -98,11 +98,11 @@ type PluginInfo struct {
 
 // GetOrCreatePool 获取或创建连接池
 // 这是推荐的获取连接池的方式，会自动管理连接池的生命周期
-func GetOrCreatePool(resource *models.Resource, config *plugin.PoolConfig) (*gorm.DB, error) {
+func GetOrCreatePool(engine *models.Engine, config *plugin.PoolConfig) (*gorm.DB, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.GetOrCreatePoolFromFactory(pluginResource, config)
 }
@@ -114,8 +114,8 @@ func DefaultPoolConfig() *plugin.PoolConfig {
 
 // ClosePool 关闭指定资源的连接池
 // 通常在资源被删除或更新时调用
-func ClosePool(resourceID uint) error {
-	return plugin.ClosePool(resourceID)
+func ClosePool(engineID uint) error {
+	return plugin.ClosePool(engineID)
 }
 
 // CloseAllPools 关闭所有连接池
@@ -132,41 +132,41 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 // === 元数据查询方法（供Meta模块使用）===
 
 // ListSchemas 列出所有Schema/Database
-func ListSchemas(ctx context.Context, resource *models.Resource, db *gorm.DB) ([]plugin.SchemaInfo, error) {
+func ListSchemas(ctx context.Context, engine *models.Engine, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListSchemas(ctx, pluginResource, db)
 }
 
 // ListTables 列出指定Schema下的所有表
-func ListTables(ctx context.Context, resource *models.Resource, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
+func ListTables(ctx context.Context, engine *models.Engine, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListTables(ctx, pluginResource, db, schema)
 }
 
 // ListColumns 列出指定表的所有列
-func ListColumns(ctx context.Context, resource *models.Resource, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
+func ListColumns(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.ListColumns(ctx, pluginResource, db, schema, table)
 }
 
 // GetTableRowCount 获取表的行数
-func GetTableRowCount(ctx context.Context, resource *models.Resource, db *gorm.DB, schema, table string) (int64, error) {
+func GetTableRowCount(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) (int64, error) {
 	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		ID:             engine.ID,
+		EngineType:   engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 	return plugin.GetTableRowCount(ctx, pluginResource, db, schema, table)
 }
@@ -174,11 +174,11 @@ func GetTableRowCount(ctx context.Context, resource *models.Resource, db *gorm.D
 // === 辅助方法 ===
 
 // SupportsConnectionPool 检查指定类型是否支持连接池
-func SupportsConnectionPool(resourceType string) bool {
-	return plugin.SupportsConnectionPool(resourceType)
+func SupportsConnectionPool(engineType string) bool {
+	return plugin.SupportsConnectionPool(engineType)
 }
 
 // SupportsMetadataQuery 检查指定类型是否支持元数据查询
-func SupportsMetadataQuery(resourceType string) bool {
-	return plugin.SupportsMetadataQuery(resourceType)
+func SupportsMetadataQuery(engineType string) bool {
+	return plugin.SupportsMetadataQuery(engineType)
 }

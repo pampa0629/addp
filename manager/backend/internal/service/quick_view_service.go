@@ -52,7 +52,7 @@ type TriggerQuickViewParams struct {
 // TriggerQuickView 触发快显缓存生成
 func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQuickViewParams) error {
 	// 1. 检查是否已在生成中（并发控制）
-	isGenerating, err := s.repo.IsGenerating(params.TenantID, params.ResourceID, params.SchemaName, params.TableName)
+	isGenerating, err := s.repo.IsGenerating(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		return fmt.Errorf("failed to check generating status: %w", err)
 	}
@@ -63,13 +63,13 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 
 	// 2. 从Meta获取空间元数据（通过SystemClient或直接查询meta数据库）
 	// 这里需要调用Meta的API或直接查询meta_item表
-	spatialMeta, err := s.getSpatialMetadataFromMeta(ctx, params.TenantID, params.ResourceID, params.SchemaName, params.TableName)
+	spatialMeta, err := s.getSpatialMetadataFromMeta(ctx, params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		return fmt.Errorf("failed to get spatial metadata: %w", err)
 	}
 
 	// 2.5 获取表记录数（从 pg_stat_user_tables，高性能）
-	recordCount, err := s.getTableRecordCount(ctx, params.ResourceID, params.SchemaName, params.TableName)
+	recordCount, err := s.getTableRecordCount(ctx, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		logger.L().Warn("⚠️  Failed to get record count, will use default MaxZoom",
 			"error", err)
@@ -78,7 +78,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	spatialMeta.RecordCount = recordCount
 
 	// 3. 计算fingerprint（使用 resource_id + schema + table 的组合）
-	fingerprint := calculateFingerprint(params.ResourceID, params.SchemaName, params.TableName)
+	fingerprint := calculateFingerprint(params.EngineID, params.SchemaName, params.TableName)
 
 	// 5. 验证必需参数（前端必须提供用户确认的值）
 	if params.MinZoom == nil {
@@ -99,7 +99,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	// 7. 创建或更新快显记录
 	qv := models.QuickView{
 		TenantID:            params.TenantID,
-		ResourceID:          params.ResourceID,
+		EngineID:          params.EngineID,
 		SchemaName:          params.SchemaName,
 		Table:               params.TableName,
 		Status:              "generating",
@@ -113,10 +113,10 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	}
 
 	// 检查是否已存在记录
-	exists, _ := s.repo.Exists(params.TenantID, params.ResourceID, params.SchemaName, params.TableName)
+	exists, _ := s.repo.Exists(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if exists {
 		// 更新现有记录
-		existingQV, err := s.repo.GetByTable(params.TenantID, params.ResourceID, params.SchemaName, params.TableName)
+		existingQV, err := s.repo.GetByTable(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 		if err != nil {
 			return fmt.Errorf("failed to get existing quick view: %w", err)
 		}
@@ -134,7 +134,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	// 8. 入队任务
 	payload := worker.QuickViewTaskPayload{
 		TenantID:        params.TenantID,
-		ResourceID:      params.ResourceID,
+		EngineID:      params.EngineID,
 		SchemaName:      params.SchemaName,
 		TableName:       params.TableName,
 		GeomColumn:      spatialMeta.GeomColumn,
@@ -162,7 +162,7 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	}
 
 	logger.L().Info("Quick view task enqueued",
-		"resource_id", params.ResourceID,
+		"engine_id", params.EngineID,
 		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
 		"min_zoom", minZoom,
 		"max_zoom", params.MaxZoom)
@@ -183,7 +183,7 @@ type SpatialMetadataResult struct {
 // getSpatialMetadataFromMeta 从Meta模块获取空间元数据
 func (s *QuickViewService) getSpatialMetadataFromMeta(
 	ctx context.Context,
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	schema, table string,
 ) (*SpatialMetadataResult, error) {
 	if s.metaClient == nil {
@@ -191,7 +191,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 	}
 
 	// 通过 Meta API 查询空间元数据
-	spatialMeta, err := s.metaClient.GetTableSpatialMetadata(resourceID, schema, table)
+	spatialMeta, err := s.metaClient.GetTableSpatialMetadata(engineID, schema, table)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get spatial metadata from Meta API: %w", err)
 	}
@@ -219,7 +219,7 @@ func (s *QuickViewService) getTableRecordCount(
 		return 0, fmt.Errorf("system client not initialized")
 	}
 
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get resource: %w", err)
 	}
@@ -261,17 +261,17 @@ func (s *QuickViewService) getTableRecordCount(
 // GetStatus 获取快显状态
 func (s *QuickViewService) GetStatus(
 	ctx context.Context,
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	schema, table string,
 ) (*models.QuickView, error) {
-	qv, err := s.repo.GetByTable(tenantID, resourceID, schema, table)
+	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// 返回默认状态
-			fingerprint := calculateFingerprint(resourceID, schema, table)
+			fingerprint := calculateFingerprint(engineID, schema, table)
 			return &models.QuickView{
 				TenantID:    tenantID,
-				ResourceID:  resourceID,
+				EngineID:  engineID,
 				SchemaName:  schema,
 				Table:       table,
 				Status:      "none",
@@ -304,11 +304,11 @@ func (s *QuickViewService) GetStatistics(
 // ClearQuickView 清除快显缓存
 func (s *QuickViewService) ClearQuickView(
 	ctx context.Context,
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	schema, table string,
 ) error {
 	// 1. 获取快显记录
-	qv, err := s.repo.GetByTable(tenantID, resourceID, schema, table)
+	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil // 记录不存在，无需清除
@@ -325,7 +325,7 @@ func (s *QuickViewService) ClearQuickView(
 	}
 
 	logger.L().Info("Quick view cleared",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"table", fmt.Sprintf("%s.%s", schema, table),
 		"fingerprint", qv.Fingerprint)
 
@@ -335,15 +335,15 @@ func (s *QuickViewService) ClearQuickView(
 // IncrementCachedTiles 增加缓存瓦片数（用于按需生成时更新统计）
 func (s *QuickViewService) IncrementCachedTiles(
 	ctx context.Context,
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	schema, table string,
 	avgTimeMs, avgSizeKB float64,
 ) error {
-	return s.repo.IncrementCachedTiles(tenantID, resourceID, schema, table, avgTimeMs, avgSizeKB)
+	return s.repo.IncrementCachedTiles(tenantID, engineID, schema, table, avgTimeMs, avgSizeKB)
 }
 
 // calculateFingerprint 计算表的指纹（用于 MinIO 路径）
-// 使用 common 模块的统一算法：SHA256(resourceID:schema.table)
-func calculateFingerprint(resourceID uint, schema, table string) string {
-	return commonModels.GenerateTableFingerprint(resourceID, schema, table)
+// 使用 common 模块的统一算法：SHA256(engineID:schema.table)
+func calculateFingerprint(engineID uint, schema, table string) string {
+	return commonModels.GenerateTableFingerprint(engineID, schema, table)
 }

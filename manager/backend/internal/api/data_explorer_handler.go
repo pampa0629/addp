@@ -31,15 +31,15 @@ func (h *DataExplorerHandler) ListResources(c *gin.Context) {
 
 	tenantID := tenantIDFromContext(c)
 
-	resources, err := h.metadataService.ListExplorerResources(tenantID)
+	engines, err := h.metadataService.ListExplorerEngines(tenantID)
 	if err != nil {
 		logger.L().Error("数据探查: 获取存储引擎列表失败", "error", err)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	logger.L().Info("数据探查: 获取存储引擎列表成功", "resource_total", len(resources))
-	c.JSON(http.StatusOK, gin.H{"data": resources})
+	logger.L().Info("数据探查: 获取存储引擎列表成功", "resource_total", len(engines))
+	c.JSON(http.StatusOK, gin.H{"data": engines})
 }
 
 // GetTree 兼容旧接口，返回所有资源的树
@@ -71,12 +71,12 @@ func (h *DataExplorerHandler) GetTree(c *gin.Context) {
 
 // GetResourceTree 返回指定资源的 schema/表树
 func (h *DataExplorerHandler) GetResourceTree(c *gin.Context) {
-	resourceID, ok := commonAPI.ParseUintParam(c, "id")
+	engineID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
 	}
 
-	logger.L().Info("数据探查: 开始刷新资源树", "resource_id", resourceID)
+	logger.L().Info("数据探查: 开始刷新资源树", "engine_id", engineID)
 
 	tenantID := tenantIDFromContext(c)
 
@@ -90,25 +90,25 @@ func (h *DataExplorerHandler) GetResourceTree(c *gin.Context) {
 		ctx = context.WithValue(ctx, "jwt_token", token)
 	}
 
-	tree, err := h.metadataService.GetResourceTree(ctx, resourceID, tenantID)
+	tree, err := h.metadataService.GetResourceTree(ctx, engineID, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 获取资源树被拒绝", "resource_id", resourceID, "tenant_id", tenantIDValue(tenantID))
+			logger.L().Warn("数据探查: 获取资源树被拒绝", "engine_id", engineID, "tenant_id", tenantIDValue(tenantID))
 			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		logger.L().Error("数据探查: 获取资源树失败", "error", err, "resource_id", resourceID)
+		logger.L().Error("数据探查: 获取资源树失败", "error", err, "engine_id", engineID)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	logger.L().Info("数据探查: 刷新资源树成功", "resource_id", resourceID)
+	logger.L().Info("数据探查: 刷新资源树成功", "engine_id", engineID)
 	c.JSON(http.StatusOK, gin.H{"data": tree})
 }
 
 // RefreshNode 触发 Meta 服务刷新指定节点
 func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
-	resourceID, ok := commonAPI.ParseUintParam(c, "id")
+	engineID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -121,9 +121,9 @@ func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 	authHeader := c.GetHeader("Authorization")
 
-	if err := h.metadataService.RefreshExplorerNode(c.Request.Context(), resourceID, tenantID, &req, authHeader); err != nil {
+	if err := h.metadataService.RefreshExplorerNode(c.Request.Context(), engineID, tenantID, &req, authHeader); err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 节点刷新被拒绝", "resource_id", resourceID, "tenant_id", tenantIDValue(tenantID))
+			logger.L().Warn("数据探查: 节点刷新被拒绝", "engine_id", engineID, "tenant_id", tenantIDValue(tenantID))
 			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
@@ -131,7 +131,7 @@ func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
 			commonAPI.BadRequestError(c, err.Error())
 			return
 		}
-		logger.L().Error("数据探查: 节点刷新失败", "error", err, "resource_id", resourceID)
+		logger.L().Error("数据探查: 节点刷新失败", "error", err, "engine_id", engineID)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
@@ -144,32 +144,32 @@ func (h *DataExplorerHandler) RefreshNode(c *gin.Context) {
 // 1. table 有值: 预览具体的表或对象
 // 2. table 为空: 预览 schema/bucket 节点，显示统计信息和子节点列表
 func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
-	resourceIDStr := c.Query("resource_id")
+	resourceIDStr := c.Query("engine_id")
 	schemaName := c.Query("schema")
 	tableName := c.Query("table")
 
 	// resource_id 和 schema 是必需的，table 可以为空（用于查看 schema/bucket 信息）
-	if resourceIDStr == "" || schemaName == "" {
+	if engineIDStr == "" || schemaName == "" {
 		commonAPI.BadRequestError(c, "missing required parameters")
 		return
 	}
 
-	resourceID64, err := strconv.ParseUint(resourceIDStr, 10, 64)
+	resourceID64, err := strconv.ParseUint(engineIDStr, 10, 64)
 	if err != nil {
 		commonAPI.BadRequestError(c, "Invalid resource_id")
 		return
 	}
-	resourceID := uint(resourceID64)
+	engineID := uint(engineID64)
 
 	page, pageSize := commonAPI.GetPaginationParams(c)
 
 	tenantID := tenantIDFromContext(c)
 
 	// 直接传递 gin.Context,以便 Preview 方法可以访问 Authorization header
-	preview, err := h.metadataService.PreviewTableWithContext(c, resourceID, schemaName, tableName, page, pageSize, tenantID)
+	preview, err := h.metadataService.PreviewTableWithContext(c, engineID, schemaName, tableName, page, pageSize, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrResourceAccessDenied) {
-			logger.L().Warn("数据探查: 预览被拒绝", "resource_id", resourceID, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))
+			logger.L().Warn("数据探查: 预览被拒绝", "engine_id", engineID, "schema", schemaName, "table", tableName, "tenant_id", tenantIDValue(tenantID))
 			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
@@ -180,7 +180,7 @@ func (h *DataExplorerHandler) PreviewTable(c *gin.Context) {
 	// Debug: 如果是对象预览，打印attributes信息
 	if preview != nil && preview.Object != nil {
 		logger.L().Info("数据探查: 预览对象",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"schema", schemaName,
 			"table", tableName,
 			"has_attributes", len(preview.Object.Attributes) > 0,
@@ -238,18 +238,18 @@ func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
 		return
 	}
 
-	resourceIDStr := c.Query("resource_id")
-	if resourceIDStr == "" {
+	resourceIDStr := c.Query("engine_id")
+	if engineIDStr == "" {
 		commonAPI.BadRequestError(c, "missing resource_id")
 		return
 	}
 
-	resourceID64, err := strconv.ParseUint(resourceIDStr, 10, 64)
+	resourceID64, err := strconv.ParseUint(engineIDStr, 10, 64)
 	if err != nil {
 		commonAPI.BadRequestError(c, "Invalid resource_id")
 		return
 	}
-	resourceID := uint(resourceID64)
+	engineID := uint(engineID64)
 
 	tenantID := tenantIDFromContext(c)
 
@@ -259,7 +259,7 @@ func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
 	// 调用service获取视频流
 	videoReader, contentLength, contentRange, contentType, err := h.metadataService.StreamVideo(
 		c.Request.Context(),
-		resourceID,
+		engineID,
 		objectKey,
 		rangeHeader,
 		tenantID,
@@ -269,7 +269,7 @@ func (h *DataExplorerHandler) VideoStream(c *gin.Context) {
 			commonAPI.ForbiddenError(c, "resource not accessible")
 			return
 		}
-		logger.L().Error("视频流传输失败", "error", err, "resource_id", resourceID, "object_key", objectKey)
+		logger.L().Error("视频流传输失败", "error", err, "engine_id", engineID, "object_key", objectKey)
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}

@@ -3,10 +3,10 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>资源管理</span>
+          <span>引擎管理</span>
           <div class="header-buttons">
-            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">注册标准库</el-button>
-            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">注册API引擎</el-button>
+            <el-button type="primary" :icon="Plus" @click="showAddStorageDialog">注册标准引擎</el-button>
+            <el-button type="success" :icon="Plus" @click="showAddComputeDialog">注册扩展引擎</el-button>
           </div>
         </div>
       </template>
@@ -17,11 +17,13 @@
         <el-checkbox-group v-model="selectedCategories" @change="handleFilterChange">
           <el-checkbox label="storage">存储</el-checkbox>
           <el-checkbox label="compute">计算</el-checkbox>
+          <el-checkbox label="standard">标准引擎</el-checkbox>
+          <el-checkbox label="extension">扩展引擎</el-checkbox>
           <el-checkbox label="builtin">内置</el-checkbox>
         </el-checkbox-group>
       </div>
 
-      <el-table :data="filteredResources" v-loading="loading" stripe :row-class-name="tableRowClassName">
+      <el-table :data="filteredEngines" v-loading="loading" stripe :row-class-name="tableRowClassName">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="名称" min-width="150" />
 
@@ -40,20 +42,30 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="资源标识" width="120">
+        <el-table-column label="引擎标识" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.is_builtin" type="info" size="small" effect="plain">
               🔵 内置
             </el-tag>
             <el-tag v-else type="success" size="small" effect="light">
-              用户资源
+              用户引擎
             </el-tag>
           </template>
         </el-table-column>
+
+        <!-- 引擎分类列 -->
+        <el-table-column label="引擎分类" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.engine_category === 'standard' ? 'success' : 'warning'">
+              {{ row.engine_category === 'standard' ? '标准引擎' : '扩展引擎' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column prop="resource_type" label="类型" width="150">
           <template #default="{ row }">
-            <el-tag :type="getResourceTypeColor(row.resource_type)">
-              {{ getResourceTypeLabel(row.resource_type) }}
+            <el-tag :type="getEngineTypeColor(row.engine_type)">
+              {{ getEngineTypeLabel(row.engine_type) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -110,7 +122,7 @@
               type="primary"
               :icon="Edit"
               :disabled="row.is_builtin"
-              @click="editResource(row)"
+              @click="editEngine(row)"
             >
               编辑
             </el-button>
@@ -119,7 +131,7 @@
               type="danger"
               :icon="Delete"
               :disabled="row.is_builtin"
-              @click="deleteResource(row)"
+              @click="deleteEngine(row)"
             >
               删除
             </el-button>
@@ -141,20 +153,20 @@
         :total="total"
         layout="total, prev, pager, next"
         style="margin-top: 20px; justify-content: flex-end"
-        @current-change="loadResources"
+        @current-change="loadEngines"
       />
     </el-card>
 
-    <!-- 资源类型选择对话框 -->
+    <!-- 引擎类型选择对话框 -->
     <el-dialog
       v-model="typeSelectionVisible"
-      title="选择资源类型"
+      title="选择引擎类型"
       width="500px"
     >
       <div class="resource-type-selection">
-        <el-card class="type-card" shadow="hover" @click="confirmResourceType('storage')">
+        <el-card class="type-card" shadow="hover" @click="confirmEngineType('storage')">
           <div class="type-icon">📦</div>
-          <h3>存储资源</h3>
+          <h3>存储引擎</h3>
           <p>数据库、对象存储等数据存储服务</p>
           <ul>
             <li>PostgreSQL</li>
@@ -164,7 +176,7 @@
           </ul>
         </el-card>
 
-        <el-card class="type-card" shadow="hover" @click="confirmResourceType('compute')">
+        <el-card class="type-card" shadow="hover" @click="confirmEngineType('compute')">
           <div class="type-icon">🔧</div>
           <h3>计算引擎</h3>
           <p>提供计算能力的服务</p>
@@ -184,7 +196,7 @@
       width="600px"
       @close="resetForm"
     >
-      <!-- 存储资源表单 -->
+      <!-- 存储引擎表单 -->
       <StorageEngineForm
         v-if="!isComputeEngineForm"
         ref="storageFormRef"
@@ -214,27 +226,27 @@
       </template>
     </el-dialog>
 
-    <!-- 内置资源详情弹窗 -->
+    <!-- 内置引擎详情弹窗 -->
     <el-dialog
       v-model="builtinDetailsVisible"
-      title="内置资源详情"
+      title="内置引擎详情"
       width="600px"
     >
-      <el-descriptions :column="1" border v-if="selectedBuiltinResource">
+      <el-descriptions :column="1" border v-if="selectedBuiltinEngine">
         <el-descriptions-item label="唯一标识">
-          {{ selectedBuiltinResource.unique_identifier || 'N/A' }}
+          {{ selectedBuiltinEngine.unique_identifier || 'N/A' }}
         </el-descriptions-item>
         <el-descriptions-item label="显示名称">
-          {{ selectedBuiltinResource.display_name || 'N/A' }}
+          {{ selectedBuiltinEngine.display_name || 'N/A' }}
         </el-descriptions-item>
-        <el-descriptions-item label="资源类型">
-          {{ selectedBuiltinResource.resource_type }}
+        <el-descriptions-item label="引擎类型">
+          {{ selectedBuiltinEngine.engine_type }}
         </el-descriptions-item>
         <el-descriptions-item label="能力声明">
-          <pre style="margin: 0; white-space: pre-wrap; font-size: 12px;">{{ formatJSON(selectedBuiltinResource.capabilities) }}</pre>
+          <pre style="margin: 0; white-space: pre-wrap; font-size: 12px;">{{ formatJSON(selectedBuiltinEngine.capabilities) }}</pre>
         </el-descriptions-item>
         <el-descriptions-item label="描述">
-          {{ selectedBuiltinResource.description || '无' }}
+          {{ selectedBuiltinEngine.description || '无' }}
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -245,23 +257,23 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { resourcesAPI } from '../api/resources'
+import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm, ResourceForm } from '@common-ui'
 
-const resources = ref([])
+const engines = ref([])
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
 
 // 能力过滤
-const selectedCategories = ref(['storage', 'compute']) // 默认选中存储和计算，不选中内置
+const selectedCategories = ref(['storage', 'compute', 'standard', 'extension']) // 默认选中所有，不选中内置
 
-// 资源类型选择对话框
+// 引擎类型选择对话框
 const typeSelectionVisible = ref(false)
-const selectedResourceCategory = ref('')
+const selectedEngineCategory = ref('')
 
 // 资源表单对话框
 const dialogVisible = ref(false)
@@ -272,12 +284,12 @@ const submitting = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
 
-// 内置资源详情弹窗相关
+// 内置引擎详情弹窗相关
 const builtinDetailsVisible = ref(false)
-const selectedBuiltinResource = ref(null)
+const selectedBuiltinEngine = ref(null)
 
 const form = ref({
-  resource_type: '',
+  engine_type: '',
   name: '',
   description: '',
   is_active: true,
@@ -285,48 +297,73 @@ const form = ref({
 })
 
 const dialogTitle = computed(() => {
-  if (isEdit.value) return '编辑资源'
-  if (selectedResourceCategory.value === 'storage') return '新建存储资源'
-  if (selectedResourceCategory.value === 'compute') return '新建计算引擎'
-  return '新建资源'
+  if (isEdit.value) return '编辑引擎'
+  if (selectedEngineCategory.value === 'storage') return '新建存储引擎'
+  if (selectedEngineCategory.value === 'compute') return '新建计算引擎'
+  return '新建引擎'
 })
 
 // 是否使用计算引擎表单
 const isComputeEngineForm = computed(() => {
-  return selectedResourceCategory.value === 'compute' ||
-         (isEdit.value && form.value.resource_type === 'compute_engine')
+  return selectedEngineCategory.value === 'compute' ||
+         (isEdit.value && form.value.engine_type === 'compute_engine')
 })
 
-// 过滤后的资源列表
-const filteredResources = computed(() => {
+// 过滤后的引擎列表
+const filteredEngines = computed(() => {
   if (selectedCategories.value.length === 0) {
     return [] // 全不选则隐藏所有
   }
 
-  return resources.value.filter(resource => {
-    const caps = parseCapabilitiesJSON(resource.capabilities)
+  return engines.value.filter(engine => {
+    const caps = parseCapabilitiesJSON(engine.capabilities)
     const hasStorage = caps.storage?.length > 0
     const hasCompute = caps.compute?.length > 0
-    const isBuiltin = resource.is_builtin
+    const isBuiltin = engine.is_builtin
+    const engineCategory = engine.engine_category
 
     // 能力维度过滤（storage / compute）
     const matchesCapability =
       (selectedCategories.value.includes('storage') && hasStorage) ||
       (selectedCategories.value.includes('compute') && hasCompute)
 
+    // 引擎分类维度过滤（standard / extension）
+    const matchesEngineCategory =
+      (selectedCategories.value.includes('standard') && engineCategory === 'standard') ||
+      (selectedCategories.value.includes('extension') && engineCategory === 'extension')
+
     // 内置维度过滤
-    // - 如果勾选了"内置",则内置资源和用户资源都显示
-    // - 如果未勾选"内置",则只显示用户资源(is_builtin=false)
+    // - 如果勾选了"内置",则内置引擎和用户引擎都显示
+    // - 如果未勾选"内置",则只显示用户引擎(is_builtin=false)
     const matchesBuiltin = selectedCategories.value.includes('builtin') || !isBuiltin
 
-    return matchesCapability && matchesBuiltin
+    // 组合过滤逻辑
+    // - 如果选择了能力过滤（storage/compute），必须匹配能力
+    // - 如果选择了分类过滤（standard/extension），必须匹配分类
+    // - 如果两者都没选，显示空
+    // - 如果两者都选了，需要同时满足
+    const hasCapabilityFilter = selectedCategories.value.includes('storage') || selectedCategories.value.includes('compute')
+    const hasCategoryFilter = selectedCategories.value.includes('standard') || selectedCategories.value.includes('extension')
+
+    let matches = true
+    if (hasCapabilityFilter && hasCategoryFilter) {
+      matches = matchesCapability && matchesEngineCategory
+    } else if (hasCapabilityFilter) {
+      matches = matchesCapability
+    } else if (hasCategoryFilter) {
+      matches = matchesEngineCategory
+    } else {
+      matches = false // 如果只选了"内置"但没选其他，不显示任何引擎
+    }
+
+    return matches && matchesBuiltin
   })
 })
 
 // 获取类型标签（[存储] [计算]）
-const getTypeLabels = (resource) => {
+const getTypeLabels = (engine) => {
   const labels = []
-  const caps = parseCapabilitiesJSON(resource.capabilities)
+  const caps = parseCapabilitiesJSON(engine.capabilities)
 
   if (caps.storage?.length > 0) labels.push('存储')
   if (caps.compute?.length > 0) labels.push('计算')
@@ -388,7 +425,7 @@ const handleFilterChange = () => {
   // 过滤变化时自动重新渲染（computed 会自动处理）
 }
 
-const resourceTypeMap = {
+const engineTypeMap = {
   'postgresql': 'PostgreSQL',
   'mysql': 'MySQL',
   'doris': 'Apache Doris',
@@ -398,11 +435,11 @@ const resourceTypeMap = {
   'compute_engine': '计算引擎'
 }
 
-const getResourceTypeLabel = (type) => {
-  return resourceTypeMap[type] || type
+const getEngineTypeLabel = (type) => {
+  return engineTypeMap[type] || type
 }
 
-const getResourceTypeColor = (type) => {
+const getEngineTypeColor = (type) => {
   const colorMap = {
     'postgresql': 'primary',
     'mysql': 'success',
@@ -458,14 +495,14 @@ const getConnectionTooltip = (row) => {
   return tooltip
 }
 
-const loadResources = async () => {
+const loadEngines = async () => {
   loading.value = true
   try {
-    const response = await resourcesAPI.list(currentPage.value, pageSize.value)
-    resources.value = response || []
+    const response = await enginesAPI.list(currentPage.value, pageSize.value)
+    engines.value = response || []
     total.value = (response || []).length
   } catch (error) {
-    ElMessage.error('加载资源列表失败')
+    ElMessage.error('加载引擎列表失败')
     console.error(error)
   } finally {
     loading.value = false
@@ -475,16 +512,16 @@ const loadResources = async () => {
 const showAddDialog = () => {
   isEdit.value = false
   editId.value = null
-  selectedResourceCategory.value = ''
+  selectedEngineCategory.value = ''
   resetForm()
   typeSelectionVisible.value = true
 }
 
-// 直接打开存储资源表单
+// 直接打开存储引擎表单
 const showAddStorageDialog = () => {
   isEdit.value = false
   editId.value = null
-  selectedResourceCategory.value = 'storage'
+  selectedEngineCategory.value = 'storage'
   resetForm()
   dialogVisible.value = true
 }
@@ -493,24 +530,24 @@ const showAddStorageDialog = () => {
 const showAddComputeDialog = () => {
   isEdit.value = false
   editId.value = null
-  selectedResourceCategory.value = 'compute'
+  selectedEngineCategory.value = 'compute'
   resetForm()
   dialogVisible.value = true
 }
 
-const confirmResourceType = (category) => {
-  selectedResourceCategory.value = category
+const confirmEngineType = (category) => {
+  selectedEngineCategory.value = category
   typeSelectionVisible.value = false
   dialogVisible.value = true
 }
 
-const editResource = (row) => {
+const editEngine = (row) => {
   isEdit.value = true
   editId.value = row.id
 
-  // 根据资源类型设置分类（用于表单选择）
-  if (row.resource_type === 'compute_engine') {
-    selectedResourceCategory.value = 'compute'
+  // 根据引擎类型设置分类（用于表单选择）
+  if (row.engine_type === 'compute_engine') {
+    selectedEngineCategory.value = 'compute'
 
     // 计算引擎使用完整字段
     form.value = {
@@ -518,7 +555,7 @@ const editResource = (row) => {
       name: row.name || '',
       display_name: row.display_name || '',
       description: row.description || '',
-      resource_type: row.resource_type,
+      engine_type: row.engine_type,
       capabilities: typeof row.capabilities === 'string'
         ? row.capabilities
         : JSON.stringify(row.capabilities || {}, null, 2),
@@ -531,11 +568,11 @@ const editResource = (row) => {
       is_active: row.is_active
     }
   } else {
-    selectedResourceCategory.value = 'storage'
+    selectedEngineCategory.value = 'storage'
 
-    // 存储资源使用原有字段
+    // 存储引擎使用原有字段
     form.value = {
-      resource_type: row.resource_type,
+      engine_type: row.engine_type,
       name: row.name,
       description: row.description,
       is_active: row.is_active,
@@ -565,7 +602,7 @@ const testBeforeCreate = async () => {
   try {
     // 如果是编辑模式，使用已保存资源的ID进行测试（会使用数据库中的真实密钥）
     if (isEdit.value && editId.value) {
-      const response = await resourcesAPI.testExistingConnection(editId.value)
+      const response = await enginesAPI.testExistingConnection(editId.value)
       if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
@@ -573,7 +610,7 @@ const testBeforeCreate = async () => {
       }
     } else {
       // 新增模式，使用表单数据测试
-      const response = await resourcesAPI.testConnection(form.value)
+      const response = await enginesAPI.testConnection(form.value)
       if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
@@ -589,7 +626,7 @@ const testBeforeCreate = async () => {
 
 const testConnection = async (row) => {
   try {
-    const response = await resourcesAPI.testExistingConnection(row.id)
+    const response = await enginesAPI.testExistingConnection(row.id)
     if (response.success) {
       ElMessage.success('连接测试成功！')
     } else {
@@ -628,14 +665,14 @@ const submitForm = async () => {
     }
 
     if (isEdit.value) {
-      await resourcesAPI.update(editId.value, submitData)
+      await enginesAPI.update(editId.value, submitData)
       ElMessage.success('更新成功')
     } else {
-      await resourcesAPI.create(submitData)
+      await enginesAPI.create(submitData)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
-    loadResources()
+    loadEngines()
   } catch (error) {
     ElMessage.error(error.response?.data?.error || '操作失败')
   } finally {
@@ -643,15 +680,15 @@ const submitForm = async () => {
   }
 }
 
-const deleteResource = (row) => {
+const deleteEngine = (row) => {
   // 前端二次检查（尽管按钮已禁用）
   if (row.is_builtin) {
-    ElMessage.warning('内置资源不可删除')
+    ElMessage.warning('内置引擎不可删除')
     return
   }
 
   ElMessageBox.confirm(
-    `确定要删除资源 "${row.name}" 吗？此操作不可恢复。`,
+    `确定要删除引擎 "${row.name}" 吗？此操作不可恢复。`,
     '确认删除',
     {
       confirmButtonText: '确定',
@@ -660,9 +697,9 @@ const deleteResource = (row) => {
     }
   ).then(async () => {
     try {
-      await resourcesAPI.delete(row.id)
+      await enginesAPI.delete(row.id)
       ElMessage.success('删除成功')
-      loadResources()
+      loadEngines()
     } catch (error) {
       const errorMsg = error.response?.data?.error || '删除失败'
       ElMessage.error(errorMsg)
@@ -670,9 +707,9 @@ const deleteResource = (row) => {
   }).catch(() => {})
 }
 
-// 查看内置资源详情
+// 查看内置引擎详情
 const viewBuiltinDetails = (row) => {
-  selectedBuiltinResource.value = row
+  selectedBuiltinEngine.value = row
   builtinDetailsVisible.value = true
 }
 
@@ -699,7 +736,7 @@ const resetForm = () => {
       name: '',
       display_name: '',
       description: '',
-      resource_type: 'compute_engine',
+      engine_type: 'compute_engine',
       capabilities: '',
       task_api_config: '',
       health_check_config: '',
@@ -707,9 +744,9 @@ const resetForm = () => {
     }
     resourceFormRef.value?.reset()
   } else {
-    // 存储资源表单重置
+    // 存储引擎表单重置
     form.value = {
-      resource_type: '',
+      engine_type: '',
       name: '',
       description: '',
       is_active: true,
@@ -720,7 +757,7 @@ const resetForm = () => {
 }
 
 onMounted(() => {
-  loadResources()
+  loadEngines()
 })
 </script>
 
@@ -752,7 +789,7 @@ onMounted(() => {
   color: #606266;
 }
 
-/* 内置资源行样式 */
+/* 内置引擎行样式 */
 :deep(.builtin-resource-row) {
   background-color: #f5f7fa;
 }
@@ -761,7 +798,7 @@ onMounted(() => {
   background-color: #ebeef5 !important;
 }
 
-/* 资源类型选择对话框样式 */
+/* 引擎类型选择对话框样式 */
 .resource-type-selection {
   display: grid;
   grid-template-columns: 1fr 1fr;

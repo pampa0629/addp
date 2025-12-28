@@ -46,23 +46,23 @@ func NewScanEventHandler(cacheManager *CacheManager, redisClient *redis.Client) 
 // handleScanCompleted 处理扫描完成事件
 func (h *ScanEventHandler) handleScanCompleted(event events.ScanCompletedEvent) error {
 	h.log.Info("收到扫描完成事件",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"tenant_id", event.TenantID,
 		"scan_type", event.ScanType,
 		"items_count", event.ScannedItemsCount)
 
 	// 清理资源相关缓存
 	ctx := context.Background()
-	if err := h.cacheManager.ClearResourceCache(ctx, event.ResourceID); err != nil {
+	if err := h.cacheManager.ClearResourceCache(ctx, event.EngineID); err != nil {
 		h.log.Error("清理资源缓存失败",
-			"resource_id", event.ResourceID,
+			"engine_id", event.EngineID,
 			"tenant_id", event.TenantID,
 			"error", err)
 		return err
 	}
 
 	h.log.Info("扫描完成事件处理完成",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"tenant_id", event.TenantID)
 
 	return nil

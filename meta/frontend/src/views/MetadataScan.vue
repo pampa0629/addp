@@ -13,12 +13,12 @@
               class="auto-scan-button"
             >
               <el-icon><Search /></el-icon>
-              一键扫描未扫描资源
+              一键扫描未扫描引擎
             </el-button>
           </div>
           <el-table
             ref="resourceTableRef"
-            :data="resources"
+            :data="engines"
             v-loading="loadingResources"
             highlight-current-row
             @row-click="handleSelectResource"
@@ -206,8 +206,8 @@ import metaApi from '../api/meta'
 
 const AUTO_SCHEDULE_DESC_MARK = '[PortalAutoSchedule]'
 
-// 资源列表
-const resources = ref([])
+// 引擎列表
+const engines = ref([])
 const resourceTableRef = ref(null)
 const loadingResources = ref(false)
 const selectedResource = ref(null)
@@ -266,21 +266,21 @@ const autoScheduleTask = computed(() => {
   )
 })
 
-// 加载资源列表
-const loadResources = async () => {
+// 加载引擎列表
+const loadEngines = async () => {
   loadingResources.value = true
   try {
     const res = await metaApi.getResources()
     // createAPIClient 提取了 axios 的 response.data（后端响应体 {"data": [...]}）
     // 需要再提取业务数据的 .data 字段才能得到数组
-    resources.value = res.data || []
-    if (!selectedResource.value && resources.value.length) {
-      selectedResource.value = resources.value[0]
+    engines.value = res.data || []
+    if (!selectedResource.value && engines.value.length) {
+      selectedResource.value = engines.value[0]
       await nextTick()
       resourceTableRef.value?.setCurrentRow(selectedResource.value)
       await Promise.all([loadSchemas(), loadScanTasks()])
     }
-    if (!resources.value.length) {
+    if (!engines.value.length) {
       selectedResource.value = null
       await nextTick()
       resourceTableRef.value?.setCurrentRow(null)
@@ -290,13 +290,13 @@ const loadResources = async () => {
     }
     enforceBounds()
   } catch (error) {
-    ElMessage.error('加载资源列表失败: ' + (error.response?.data?.error || error.message))
+    ElMessage.error('加载引擎列表失败: ' + (error.response?.data?.error || error.message))
   } finally {
     loadingResources.value = false
   }
 }
 
-// 选择资源
+// 选择引擎
 const handleSelectResource = async (row) => {
   selectedResource.value = row
   await nextTick()
@@ -365,12 +365,12 @@ const loadSchemas = async () => {
   let connectionError = null
 
   try {
-    // 检查资源连接状态，如果已知离线，直接跳过实际连接
+    // 检查引擎连接状态，如果已知离线，直接跳过实际连接
     if (selectedResource.value.connection_status === 'offline') {
-      connectionError = new Error(`资源离线: ${selectedResource.value.check_message || '连接失败'}`)
+      connectionError = new Error(`引擎离线: ${selectedResource.value.check_message || '连接失败'}`)
       console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
     } else {
-      // 资源在线或状态未知，尝试获取实际Schema列表
+      // 引擎在线或状态未知，尝试获取实际Schema列表
       try {
         const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
         availableSchemas = availableRes.data || []
@@ -392,7 +392,7 @@ const loadSchemas = async () => {
 
     if (connectionError && scannedSchemas.length === 0) {
       // 如果连接失败且没有已扫描的schema，显示空列表
-      // 用户已经能从左侧图标看到资源离线状态，无需重复提示
+      // 用户已经能从左侧图标看到引擎离线状态，无需重复提示
       schemas.value = []
     } else if (connectionError) {
       // 连接失败但有历史扫描数据，使用历史数据并标记状态
@@ -530,7 +530,7 @@ const prefillScheduleForm = task => {
 const handleAutoScan = async () => {
   try {
     await ElMessageBox.confirm(
-      '将自动扫描所有未扫描的资源，这可能需要一些时间。是否继续？',
+      '将自动扫描所有未扫描的引擎，这可能需要一些时间。是否继续？',
       '确认自动扫描',
       { type: 'warning' }
     )
@@ -555,8 +555,8 @@ const handleAutoScan = async () => {
     scanResult.value = res.data
     ElMessage.success('自动扫描完成')
 
-    // 刷新资源列表
-    await loadResources()
+    // 刷新引擎列表
+    await loadEngines()
     if (selectedResource.value) {
       await loadSchemas()
     }
@@ -604,7 +604,7 @@ const handleBatchScan = async () => {
 
     // 刷新Schema列表
     await loadSchemas()
-    await loadResources()
+    await loadEngines()
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('批量扫描失败: ' + (error.response?.data?.error || error.message))
@@ -671,7 +671,7 @@ const handleScanSchema = async (schema) => {
 
     // 刷新列表
     await loadSchemas()
-    await loadResources()
+    await loadEngines()
   } catch (error) {
     ElMessage.error('扫描失败: ' + (error.response?.data?.error || error.message))
   } finally {
@@ -706,7 +706,7 @@ watch(selectedResource, () => {
 })
 
 onMounted(() => {
-  loadResources()
+  loadEngines()
   window.addEventListener('resize', enforceBounds)
 })
 

@@ -135,7 +135,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { describeCron } from '@common-ui'
-import { systemResourcesAPI } from '@/api/systemResources'
+import { systemEnginesAPI } from '@/api/systemResources'
 
 const route = useRoute()
 const router = useRouter()
@@ -206,7 +206,7 @@ const loadTask = async () => {
 
 const loadSystemResources = async () => {
   try {
-    const data = await systemResourcesAPI.list()
+    const data = await systemEnginesAPI.list()
     systemResources.value = Array.isArray(data) ? data : []
   } catch (error) {
     console.error('加载系统资源失败:', error)
@@ -430,8 +430,8 @@ const mergeTaskConnectorConfig = (base, extra, resourceType) => {
     'bucket',
     'connection_info',
     'scope',
-    'system_resource_id',
-    'local_resource_id',
+    'system_engine_id',
+    'local_engine_id',
     'local_resource_name',
     'resource_type'
   ])
@@ -473,7 +473,7 @@ const sanitizeConnectorForWorker = (connector) => {
     if (value === undefined) {
       return
     }
-    if (['scope', 'system_resource_id', 'local_resource_id', 'local_resource_name', 'resource_type'].includes(key)) {
+    if (['scope', 'system_engine_id', 'local_engine_id', 'local_resource_name', 'resource_type'].includes(key)) {
       return
     }
     sanitized[key] = value
@@ -523,7 +523,7 @@ const resolveConnectorConfigForWorker = (key) => {
   const fallbackId = key === 'source' ? toNumber(task.value?.source_id) : toNumber(task.value?.target_id)
 
   let resource = null
-  const embeddedId = toNumber(rawConfig.system_resource_id || rawConfig.resource_id)
+  const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.resource_id)
   if (embeddedId !== null) {
     resource = systemResourceMap.value.get(embeddedId) || null
   }
@@ -836,8 +836,8 @@ const inferScope = (config, fallbackId) => {
   const raw = toLower(config.scope)
   if (raw) return raw
   if (fallbackId !== undefined && fallbackId !== null) return 'system'
-  if (config.system_resource_id !== undefined && config.system_resource_id !== null) return 'system'
-  if (config.local_resource_id !== undefined && config.local_resource_id !== null) return 'local'
+  if (config.system_engine_id !== undefined && config.system_engine_id !== null) return 'system'
+  if (config.local_engine_id !== undefined && config.local_engine_id !== null) return 'local'
   if (config.connection_info) return 'local'
   return ''
 }
@@ -857,7 +857,7 @@ const buildConnectorDetails = (role) => {
   addItem(items, '范围', formatScopeLabel(scope))
 
   if (scope === 'system') {
-    const resourceId = fallbackId ?? config.system_resource_id
+    const resourceId = fallbackId ?? config.system_engine_id
     const resource = resourceId !== undefined && resourceId !== null
       ? systemResourceMap.value.get(Number(resourceId))
       : null
@@ -869,7 +869,7 @@ const buildConnectorDetails = (role) => {
     addItem(items, '数据源', labelParts.length ? labelParts.join(' / ') : '未配置')
     addItem(items, '连接类型', getConnectorTypeLabel(resourceType))
   } else if (scope === 'local') {
-    const resourceId = config.local_resource_id
+    const resourceId = config.local_engine_id
     const resourceName = config.local_resource_name
     const labelParts = []
     if (resourceName) labelParts.push(resourceName)
@@ -937,7 +937,7 @@ const buildConnectorDetails = (role) => {
   const connection =
     config.connection_info ||
     (scope === 'system'
-      ? (systemResourceMap.value.get(Number(config.system_resource_id ?? fallbackId))?.connection_info || {})
+      ? (systemResourceMap.value.get(Number(config.system_engine_id ?? fallbackId))?.connection_info || {})
       : {})
   if (connection.host) {
     const host = connection.port ? `${connection.host}:${connection.port}` : connection.host

@@ -81,30 +81,30 @@ export default {
 
   // ===== 新的元数据扫描API（对应router_new.go） =====
 
-  // 获取资源列表（从System模块）
+  // 获取引擎列表（从System模块）
   getResources() {
-    return client.get('/meta/resources')
+    return client.get('/meta/engines')
   },
 
-  // 获取指定资源的Schema列表
+  // 获取指定引擎的Schema列表
   getSchemas(resourceId) {
     return client.get(`/meta/schemas/${resourceId}`)
   },
 
-  // 获取指定资源的可用Schema列表（未扫描的）
+  // 获取指定引擎的可用Schema列表（未扫描的）
   listAvailableSchemas(resourceId) {
     return client.get(`/meta/schemas/${resourceId}/available`)
   },
 
-  // 自动扫描所有未扫描的资源
+  // 自动扫描所有未扫描的引擎
   autoScan() {
     return client.post('/meta/scan/auto')
   },
 
-  // 扫描指定资源的指定Schema
+  // 扫描指定引擎的指定Schema
   scanResource(resourceId, schemaNames) {
     return client.post('/meta/scan/resource', {
-      resource_id: resourceId,
+      engine_id: resourceId,
       schema_names: schemaNames
     })
   },
@@ -136,7 +136,7 @@ export default {
     return client
       .post('/meta/scan/tasks', {
         ...payload,
-        resource_id: resourceId
+        engine_id: resourceId
       })
       .then(res => res?.data ?? res)
   },
@@ -145,7 +145,7 @@ export default {
     return client
       .put(`/meta/scan/tasks/${taskId}`, {
         ...payload,
-        resource_id: resourceId
+        engine_id: resourceId
       })
       .then(res => res?.data ?? res)
   }

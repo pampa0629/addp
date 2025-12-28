@@ -12,7 +12,7 @@ type Script struct {
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	Description string         `gorm:"type:text" json:"description,omitempty"`
 	SQLContent  string         `gorm:"type:text;not null" json:"sql_content"`
-	ResourceID  uint           `gorm:"not null;index" json:"resource_id"` // 目标数据源ID
+	ResourceID  uint           `gorm:"not null;index" json:"engine_id"` // 目标数据源ID
 	Version     int            `gorm:"default:1" json:"version"`
 	Status      string         `gorm:"size:20;default:'draft';index" json:"status"` // draft, published, archived
 	CreatedBy   uint           `gorm:"not null;index" json:"created_by"`

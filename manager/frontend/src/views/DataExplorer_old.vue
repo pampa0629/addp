@@ -786,8 +786,8 @@ const loadTree = async () => {
   loadingTree.value = true
   try {
     const response = await dataExplorerAPI.getTree()
-    const resources = response.data?.data || []
-    treeData.value = resources.map((res) => transformResource(res))
+    const engines = response.data?.data || []
+    treeData.value = engines.map((res) => transformResource(res))
     selectedNode.value = null
     previewMode.value = 'table'
     objectPreview.value = null
@@ -811,7 +811,7 @@ const loadPreview = async () => {
   loadingPreview.value = true
   try {
     const params = {
-      resource_id: selectedNode.value.resourceId,
+      engine_id: selectedNode.value.resourceId,
       schema: selectedNode.value.schema,
       table: selectedNode.value.path ?? selectedNode.value.table ?? '',
       page: currentPage.value,

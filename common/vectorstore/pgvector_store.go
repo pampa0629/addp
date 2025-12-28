@@ -23,18 +23,18 @@ var (
 )
 
 type Record struct {
-	ID         string
-	ObjectID   string
-	AssetID    string
-	TenantID   *uint
-	ResourceID *uint
-	Modality   embedding.Modality
-	Model      string
-	Vector     []float32
-	Metadata   map[string]any
-	Dimension  int
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID        string
+	ObjectID  string
+	AssetID   string
+	TenantID  *uint
+	EngineID  *uint
+	Modality  embedding.Modality
+	Model     string
+	Vector    []float32
+	Metadata  map[string]any
+	Dimension int
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type QueryOptions struct {
@@ -42,7 +42,7 @@ type QueryOptions struct {
 	Modalities  []embedding.Modality
 	Model       string
 	TenantID    *uint
-	ResourceID  *uint
+	EngineID    *uint
 	TopK        int
 	MaxDistance float64
 	IncludeVec  bool
@@ -129,7 +129,7 @@ func (s *PgVectorStore) initSchema(ctx context.Context) error {
     object_id TEXT NOT NULL,
     asset_id TEXT,
     tenant_id BIGINT,
-    resource_id BIGINT,
+    engine_id BIGINT,
     modality TEXT NOT NULL,
     model TEXT NOT NULL,
     embedding vector(%d) NOT NULL,
@@ -183,7 +183,7 @@ func (s *PgVectorStore) Upsert(ctx context.Context, record Record) (*Record, err
 	}
 
 	tableIdent := pgx.Identifier{s.cfg.Schema, s.cfg.Table}
-	sql := fmt.Sprintf(`INSERT INTO %s (id, object_id, asset_id, tenant_id, resource_id, modality, model, embedding, dimension, metadata, created_at, updated_at)
+	sql := fmt.Sprintf(`INSERT INTO %s (id, object_id, asset_id, tenant_id, engine_id, modality, model, embedding, dimension, metadata, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
 ON CONFLICT (object_id, modality, model) DO UPDATE
 SET embedding = EXCLUDED.embedding,
@@ -191,7 +191,7 @@ SET embedding = EXCLUDED.embedding,
     metadata = EXCLUDED.metadata,
     asset_id = EXCLUDED.asset_id,
     tenant_id = EXCLUDED.tenant_id,
-    resource_id = EXCLUDED.resource_id,
+    engine_id = EXCLUDED.engine_id,
     updated_at = EXCLUDED.updated_at
 RETURNING id, created_at, updated_at`, tableIdent.Sanitize())
 
@@ -202,7 +202,7 @@ RETURNING id, created_at, updated_at`, tableIdent.Sanitize())
 		record.ObjectID,
 		nullString(record.AssetID),
 		toNullableInt(record.TenantID),
-		toNullableInt(record.ResourceID),
+		toNullableInt(record.EngineID),
 		string(record.Modality),
 		record.Model,
 		vectorParam,
@@ -276,13 +276,13 @@ func (s *PgVectorStore) QuerySimilar(ctx context.Context, vector []float32, opts
 		args = append(args, *opts.TenantID)
 		argIndex++
 	}
-	if opts.ResourceID != nil {
-		whereClauses = append(whereClauses, fmt.Sprintf("resource_id = $%d", argIndex))
-		args = append(args, *opts.ResourceID)
+	if opts.EngineID != nil {
+		whereClauses = append(whereClauses, fmt.Sprintf("engine_id = $%d", argIndex))
+		args = append(args, *opts.EngineID)
 		argIndex++
 	}
 
-	query := fmt.Sprintf(`SELECT id, object_id, asset_id, tenant_id, resource_id, modality, model, metadata, dimension,
+	query := fmt.Sprintf(`SELECT id, object_id, asset_id, tenant_id, engine_id, modality, model, metadata, dimension,
        embedding <=> $1::vector AS distance,
        created_at, updated_at
 FROM %s
@@ -301,21 +301,21 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 	results := make([]SearchResult, 0)
 	for rows.Next() {
 		var (
-			id         string
-			objectID   string
-			assetID    *string
-			tenantID   *int64
-			resourceID *int64
-			modality   string
-			model      string
-			metadata   []byte
-			dimension  int
-			distance   float64
-			createdAt  time.Time
-			updatedAt  time.Time
+			id        string
+			objectID  string
+			assetID   *string
+			tenantID  *int64
+			engineID  *int64
+			modality  string
+			model     string
+			metadata  []byte
+			dimension int
+			distance  float64
+			createdAt time.Time
+			updatedAt time.Time
 		)
 
-		if err := rows.Scan(&id, &objectID, &assetID, &tenantID, &resourceID, &modality, &model, &metadata, &dimension, &distance, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &objectID, &assetID, &tenantID, &engineID, &modality, &model, &metadata, &dimension, &distance, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("vectorstore: query scan: %w", err)
 		}
 
@@ -337,9 +337,9 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 			val := uint(*tenantID)
 			rec.TenantID = &val
 		}
-		if resourceID != nil {
-			val := uint(*resourceID)
-			rec.ResourceID = &val
+		if engineID != nil {
+			val := uint(*engineID)
+			rec.EngineID = &val
 		}
 		if opts.IncludeMeta && len(metadata) > 0 {
 			var meta map[string]any

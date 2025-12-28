@@ -72,7 +72,7 @@ func (e *DevExecutor) ExecuteDevItem(
 		TriggeredBy: &userID,
 		Status:      "pending",
 		Progress:    0,
-		ResourceID:  devItem.ResourceID,
+		EngineID:  devItem.EngineID,
 		StartedAt:   &startTime,
 		CreatedAt:   time.Now(),
 	}
@@ -118,7 +118,7 @@ func (e *DevExecutor) ExecuteContent(
 		TriggeredBy: &userID,
 		Status:      "pending",
 		Progress:    0,
-		ResourceID:  resourceID,
+		EngineID:    resourceID,
 		StartedAt:   &startTime,
 		CreatedAt:   time.Now(),
 	}
@@ -131,10 +131,10 @@ func (e *DevExecutor) ExecuteContent(
 
 	// 构造临时 DevItem
 	tempItem := &models.DevItem{
-		DevType:    devType,
-		Content:    content,
-		ResourceID: resourceID,
-		Timeout:    timeout,
+		DevType:  devType,
+		Content:  content,
+		EngineID: resourceID,
+		Timeout:  timeout,
 	}
 
 	// 异步执行任务
@@ -283,7 +283,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, e
 	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "执行SQL")
 
 	// 验证资源ID
-	if devItem.ResourceID == nil {
+	if devItem.EngineID == nil {
 		return nil, "SQL执行需要指定资源", nil
 	}
 
@@ -302,7 +302,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, e
 	defer cancel()
 
 	// 调用SQL引擎
-	sqlResult, err := e.sqlEngine.ExecuteSQL(execCtx, *devItem.ResourceID, sqlContent, timeout)
+	sqlResult, err := e.sqlEngine.ExecuteSQL(execCtx, *devItem.EngineID, sqlContent, timeout)
 	if err != nil {
 		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
 	}
@@ -523,7 +523,7 @@ func (e *DevExecutor) ExecuteWithParams(
 		ID:         devItem.ID,
 		DevType:    devItem.DevType,
 		Content:    resolvedContent.(map[string]interface{}),
-		ResourceID: devItem.ResourceID,
+		EngineID: devItem.EngineID,
 		Timeout:    devItem.Timeout,
 		Status:     devItem.Status,
 	}

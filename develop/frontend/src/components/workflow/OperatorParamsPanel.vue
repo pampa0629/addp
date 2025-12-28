@@ -179,7 +179,7 @@ const getComponentProps = (param) => {
 
   // 自定义组件的专用 props
   if (param.ui_type === 'resource_select') {
-    props.resourceTypes = param.resource_types || []
+    props.engineTypes = param.resource_types || []
   } else if (param.ui_type === 'schema_select') {
     props.resourceId = formData.value[param.depends_on] || null
   } else if (param.ui_type === 'table_select') {

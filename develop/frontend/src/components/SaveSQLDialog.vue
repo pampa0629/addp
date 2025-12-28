@@ -200,7 +200,7 @@ const handleSave = async () => {
     const taskData = {
       name: formData.value.name,
       display_name: formData.value.display_name || formData.value.name,
-      resource_id: props.resourceId,
+      engine_id: props.resourceId,
       sql: props.sql,
       description: formData.value.description,
       tags: formData.value.tags,

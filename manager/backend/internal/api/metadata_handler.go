@@ -23,7 +23,7 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 }
 
 // ScanResource 扫描资源元数据
-// POST /api/resources/:id/scan
+// POST /api/engines/:id/scan
 func (h *MetadataHandler) ScanResource(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -42,7 +42,7 @@ func (h *MetadataHandler) ScanResource(c *gin.Context) {
 }
 
 // GetTables 获取资源的表列表
-// GET /api/resources/:id/tables?managed=true/false
+// GET /api/engines/:id/tables?managed=true/false
 func (h *MetadataHandler) GetTables(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -71,7 +71,7 @@ func (h *MetadataHandler) GetTables(c *gin.Context) {
 
 // ListScanTasks 列出指定资源下的扫描任务
 func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -81,7 +81,7 @@ func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 		return
 	}
 
-	tasks, err := h.metadataService.ListScanTasks(c.Request.Context(), resourceID, authHeader)
+	tasks, err := h.metadataService.ListScanTasks(c.Request.Context(), engineID, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -92,7 +92,7 @@ func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 
 // CreateScanTask 创建新的扫描任务
 func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -108,7 +108,7 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.metadataService.CreateScanTask(c.Request.Context(), resourceID, &req, authHeader)
+	task, err := h.metadataService.CreateScanTask(c.Request.Context(), engineID, &req, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -119,7 +119,7 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 
 // UpdateScanTask 更新扫描任务
 func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -140,7 +140,7 @@ func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	task, err := h.metadataService.UpdateScanTask(c.Request.Context(), resourceID, taskID, &req, authHeader)
+	task, err := h.metadataService.UpdateScanTask(c.Request.Context(), engineID, taskID, &req, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -202,7 +202,7 @@ func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 
 // ListScanRuns 列出资源的扫描运行记录
 func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -249,7 +249,7 @@ func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 	status := c.Query("status")
 	storageType := c.Query("storage_type")
 
-	runs, total, err := h.metadataService.ListScanRuns(c.Request.Context(), resourceID, taskID, status, storageType, limit, offset, authHeader)
+	runs, total, err := h.metadataService.ListScanRuns(c.Request.Context(), engineID, taskID, status, storageType, limit, offset, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -263,7 +263,7 @@ func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 
 // GetScanRun 获取单个运行详情
 func (h *MetadataHandler) GetScanRun(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -278,7 +278,7 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 		return
 	}
 
-	run, err := h.metadataService.GetScanRun(c.Request.Context(), resourceID, runID, authHeader)
+	run, err := h.metadataService.GetScanRun(c.Request.Context(), engineID, runID, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -289,7 +289,7 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 
 // CreateManualScanRun 发起一次即时扫描
 func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
-	resourceID, ok := parseUintParam(c, "id")
+	engineID, ok := parseUintParam(c, "id")
 	if !ok {
 		return
 	}
@@ -307,7 +307,7 @@ func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 		}
 	}
 
-	run, err := h.metadataService.CreateManualScanRun(c.Request.Context(), resourceID, &req, authHeader)
+	run, err := h.metadataService.CreateManualScanRun(c.Request.Context(), engineID, &req, authHeader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

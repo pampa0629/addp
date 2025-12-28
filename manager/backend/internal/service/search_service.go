@@ -45,9 +45,9 @@ type FullTextDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id"`
 	Score          float64                `json:"score"`
-	ResourceID     uint                   `json:"resource_id"`
+	ResourceID     uint                   `json:"engine_id"`
 	ResourceName   string                 `json:"resource_name,omitempty"`
-	ResourceType   string                 `json:"resource_type,omitempty"`
+	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
 	RelativePath   string                 `json:"relative_path,omitempty"`
@@ -74,7 +74,7 @@ type VectorDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id,omitempty"`
 	TenantID       uint                   `json:"tenant_id,omitempty"`
-	ResourceID     uint                   `json:"resource_id,omitempty"`
+	ResourceID     uint                   `json:"engine_id,omitempty"`
 	Score          float64                `json:"score"`
 	Distance       float64                `json:"distance"`
 	Model          string                 `json:"model"`
@@ -82,7 +82,7 @@ type VectorDocument struct {
 	Title          string                 `json:"title,omitempty"`
 	FileName       string                 `json:"file_name,omitempty"`
 	ResourceName   string                 `json:"resource_name,omitempty"`
-	ResourceType   string                 `json:"resource_type,omitempty"`
+	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	RelativePath   string                 `json:"relative_path,omitempty"`
 	ContentPreview string                 `json:"content_preview,omitempty"`
@@ -228,7 +228,7 @@ func (s *FullTextSearchService) initIndexes() error {
 	// 设置可过滤字段
 	_, err = docIndex.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
-		"resource_id",
+		"engine_id",
 		"resource_type",
 		"document_type",
 		"bucket",
@@ -489,14 +489,14 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 			if item.Record.TenantID != nil {
 				doc.TenantID = *item.Record.TenantID
 			}
-			if item.Record.ResourceID != nil {
-				doc.ResourceID = *item.Record.ResourceID
+			if item.Record.EngineID != nil {
+				doc.EngineID = *item.Record.EngineID
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				assignString(meta, "title", &doc.Title)
 				assignString(meta, "file_name", &doc.FileName)
 				assignString(meta, "resource_name", &doc.ResourceName)
-				assignString(meta, "resource_type", &doc.ResourceType)
+				assignString(meta, "resource_type", &doc.EngineType)
 				assignString(meta, "bucket", &doc.Bucket)
 				assignString(meta, "relative_path", &doc.RelativePath)
 				assignString(meta, "content_preview", &doc.ContentPreview)
@@ -690,13 +690,13 @@ func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
 	contentType := getStringFromMeta(meta, "content_type")
 
 	doc := FullTextDocument{
-		DocumentID:     v.DocumentID,
-		AssetID:        v.AssetID,
-		Score:          v.Score,
-		ResourceID:     v.ResourceID,
-		ResourceName:   v.ResourceName,
-		ResourceType:   v.ResourceType,
-		Bucket:         bucket,
+		DocumentID:   v.DocumentID,
+		AssetID:      v.AssetID,
+		Score:        v.Score,
+		EngineID:   v.EngineID,
+		ResourceName: v.ResourceName,
+		EngineType:   v.EngineType,
+		Bucket:       bucket,
 		RelativePath:   relativePath,
 		FileName:       fileName,
 		DocumentType:   v.Modality,
@@ -730,14 +730,14 @@ func mapMeilisearchHit(hit interface{}) FullTextDocument {
 	if val, ok := hitMap["asset_id"].(string); ok {
 		doc.AssetID = val
 	}
-	if val, ok := hitMap["resource_id"].(float64); ok {
-		doc.ResourceID = uint(val)
+	if val, ok := hitMap["engine_id"].(float64); ok {
+		doc.EngineID = uint(val)
 	}
 	if val, ok := hitMap["resource_name"].(string); ok {
 		doc.ResourceName = val
 	}
 	if val, ok := hitMap["resource_type"].(string); ok {
-		doc.ResourceType = val
+		doc.EngineType = val
 	}
 	if val, ok := hitMap["bucket"].(string); ok {
 		doc.Bucket = val

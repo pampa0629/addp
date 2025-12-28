@@ -152,7 +152,7 @@ const loadDirectories = async (prefix = '') => {
   try {
     const payload = {
       scope: props.scope,
-      resource_id: props.resourceId,
+      engine_id: props.resourceId,
       prefix: normalizeDirectory(prefix)
     }
     const result = await objectStorageAPI.browse(payload)

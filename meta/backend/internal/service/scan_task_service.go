@@ -284,19 +284,19 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 		return nil, errors.New("请求不能为空")
 	}
 
-	if req.ResourceID == 0 {
+	if req.EngineID == 0 {
 		return nil, errors.New("resource_id 不能为空")
 	}
 
 	// 尝试验证资源可访问性（主要用于快速失败）
-	resource, err := s.resourceService.GetResourceByID(req.ResourceID, tenantID, token)
+	resource, err := s.resourceService.GetResourceByID(req.EngineID, tenantID, token)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
 
 	// Redis 去重检查（手动触发）
 	if s.dedupService != nil {
-		taskKey := s.dedupService.GenerateTaskKey(tenantID, req.ResourceID, models.TriggerTypeManual)
+		taskKey := s.dedupService.GenerateTaskKey(tenantID, req.EngineID, models.TriggerTypeManual)
 		if s.dedupService.CheckTaskExists(ctx, taskKey) {
 			return nil, fmt.Errorf("该资源正在扫描中，请稍后再试")
 		}
@@ -317,8 +317,8 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 
 	run := &models.ScanTaskRun{
 		TenantID:        tenantID,
-		ResourceID:      req.ResourceID,
-		StorageType:     normalizeStorageType(resource.ResourceType),
+		EngineID:      req.EngineID,
+		StorageType:     normalizeStorageType(resource.EngineType),
 		TriggerType:     triggerTypeManual,
 		Status:          runStatusPending,
 		Parameters:      params,
@@ -351,20 +351,20 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 	// 任务完成后清理去重标记和更新扫描时间
 	defer func() {
 		if s.dedupService != nil {
-			taskKey := s.dedupService.GenerateTaskKey(run.TenantID, run.ResourceID, run.TriggerType)
+			taskKey := s.dedupService.GenerateTaskKey(run.TenantID, run.EngineID, run.TriggerType)
 			if err := s.dedupService.ClearTask(context.Background(), taskKey); err != nil {
 				s.log.Warn("清除任务标记失败", "run_id", runID, "error", err)
 			}
 
 			// 更新最后扫描时间
-			if err := s.dedupService.UpdateLastScanTime(context.Background(), run.ResourceID); err != nil {
+			if err := s.dedupService.UpdateLastScanTime(context.Background(), run.EngineID); err != nil {
 				s.log.Warn("更新最后扫描时间失败", "run_id", runID, "error", err)
 			}
 		}
 	}()
 
 	if strings.TrimSpace(run.StorageType) == "" {
-		storageType := s.lookupStorageType(run.ResourceID, run.TenantID)
+		storageType := s.lookupStorageType(run.EngineID, run.TenantID)
 		update := map[string]interface{}{
 			"storage_type": storageType,
 		}
@@ -415,7 +415,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 		scanDepth = "deep"
 	}
 
-	resp, err := s.scanService.ScanResourceWithDepth(run.ResourceID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
+	resp, err := s.scanService.ScanResourceWithDepth(run.EngineID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
 	completeTime := time.Now()
 
 	if err != nil {
@@ -506,8 +506,8 @@ func (s *ScanTaskService) ListRuns(tenantID uint, opts *ListRunsOptions) ([]mode
 	if opts.TaskID != nil && *opts.TaskID > 0 {
 		query = query.Where("r.task_id = ?", *opts.TaskID)
 	}
-	if opts.ResourceID != nil && *opts.ResourceID > 0 {
-		query = query.Where("r.resource_id = ?", *opts.ResourceID)
+	if opts.EngineID != nil && *opts.EngineID > 0 {
+		query = query.Where("r.resource_id = ?", *opts.EngineID)
 	}
 	if opts.Status != "" {
 		query = query.Where("r.status = ?", opts.Status)
@@ -552,16 +552,16 @@ func (s *ScanTaskService) ListRuns(tenantID uint, opts *ListRunsOptions) ([]mode
 		return []models.ScanTaskRunView{}, total, nil
 	}
 
-	resourceCache := make(map[uint]*commonModels.Resource)
+	resourceCache := make(map[uint]*commonModels.Engine)
 	views := make([]models.ScanTaskRunView, 0, len(records))
 
 	for _, record := range records {
 		run := record.ScanTaskRun
-		res := s.ensureResourceCached(resourceCache, run.ResourceID, run.TenantID)
+		res := s.ensureResourceCached(resourceCache, run.EngineID, run.TenantID)
 
 		// 若存储类型缺失，则尝试补齐
 		if strings.TrimSpace(run.StorageType) == "" && res != nil {
-			run.StorageType = normalizeStorageType(res.ResourceType)
+			run.StorageType = normalizeStorageType(res.EngineType)
 			if err := s.db.Model(&models.ScanTaskRun{}).
 				Where("id = ?", run.ID).
 				Updates(map[string]any{
@@ -591,10 +591,10 @@ func (s *ScanTaskService) ListRuns(tenantID uint, opts *ListRunsOptions) ([]mode
 
 		if res != nil {
 			view.ResourceName = res.Name
-			view.ResourceType = res.ResourceType
+			view.ResourceType = res.EngineType
 			// 再次兜底存储类型
 			if strings.TrimSpace(view.StorageType) == "" {
-				view.StorageType = normalizeStorageType(res.ResourceType)
+				view.StorageType = normalizeStorageType(res.EngineType)
 			}
 		}
 
@@ -629,7 +629,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 	if req == nil {
 		return nil, errors.New("请求不能为空")
 	}
-	if req.ResourceID == 0 {
+	if req.EngineID == 0 {
 		return nil, errors.New("resource_id 不能为空")
 	}
 	if req.Name == "" {
@@ -649,7 +649,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 
 	task := &models.ScanTask{
 		TenantID:       tenantID,
-		ResourceID:     req.ResourceID,
+		EngineID:     req.EngineID,
 		Name:           req.Name,
 		Description:    req.Description,
 		ScheduleType:   req.ScheduleType,
@@ -702,7 +702,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 
 	task.Name = req.Name
 	task.Description = req.Description
-	task.ResourceID = req.ResourceID
+	task.EngineID = req.EngineID
 	task.ScheduleType = req.ScheduleType
 	task.Schedule = cronExpr
 	task.Enabled = req.Enabled
@@ -749,12 +749,12 @@ func (s *ScanTaskService) TriggerTaskNow(ctx context.Context, tenantID, taskID, 
 		return nil, err
 	}
 
-	storageType := s.lookupStorageType(task.ResourceID, task.TenantID)
+	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 
 	run := &models.ScanTaskRun{
 		TaskID:          uintPtr(task.ID),
 		TenantID:        task.TenantID,
-		ResourceID:      task.ResourceID,
+		EngineID:      task.EngineID,
 		StorageType:     storageType,
 		TriggerType:     triggerTypeManual,
 		Status:          runStatusPending,
@@ -786,14 +786,14 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 
 	// Redis 去重检查（定时触发）
 	if s.dedupService != nil {
-		taskKey := s.dedupService.GenerateTaskKey(task.TenantID, task.ResourceID, models.TriggerTypeScheduled)
+		taskKey := s.dedupService.GenerateTaskKey(task.TenantID, task.EngineID, models.TriggerTypeScheduled)
 		if s.dedupService.CheckTaskExists(ctx, taskKey) {
 			s.log.Info("该资源正在扫描中，跳过本次定时触发", "task_id", taskID)
 			return nil
 		}
 
 		// 时间戳检查：定时扫描至少间隔 6 小时
-		lastScan, err := s.dedupService.GetLastScanTime(ctx, task.ResourceID)
+		lastScan, err := s.dedupService.GetLastScanTime(ctx, task.EngineID)
 		if err == nil && lastScan != nil {
 			if time.Since(*lastScan) < 6*time.Hour {
 				s.log.Info("距离上次扫描不足 6 小时，跳过本次定时触发",
@@ -810,12 +810,12 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 		}
 	}
 
-	storageType := s.lookupStorageType(task.ResourceID, task.TenantID)
+	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 
 	run := &models.ScanTaskRun{
 		TaskID:          uintPtr(taskID),
 		TenantID:        task.TenantID,
-		ResourceID:      task.ResourceID,
+		EngineID:      task.EngineID,
 		StorageType:     storageType,
 		TriggerType:     triggerTypeScheduled,
 		Status:          runStatusPending,
@@ -847,7 +847,7 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 	return nil
 }
 
-func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Resource, resourceID, tenantID uint) *commonModels.Resource {
+func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Engine, engineID, tenantID uint) *commonModels.Engine {
 	if cache == nil {
 		return nil
 	}
@@ -855,9 +855,9 @@ func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Reso
 		return res
 	}
 
-	res, err := s.resourceService.GetResourceByID(resourceID, tenantID, "")
+	res, err := s.resourceService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
-		s.log.Warn("获取资源信息失败", "resource_id", resourceID, "tenant_id", tenantID, "error", err)
+		s.log.Warn("获取资源信息失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
 		cache[resourceID] = nil
 		return nil
 	}
@@ -866,13 +866,13 @@ func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Reso
 	return res
 }
 
-func (s *ScanTaskService) lookupStorageType(resourceID, tenantID uint) string {
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, "")
+func (s *ScanTaskService) lookupStorageType(engineID, tenantID uint) string {
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
-		s.log.Warn("获取资源存储类型失败", "resource_id", resourceID, "tenant_id", tenantID, "error", err)
+		s.log.Warn("获取资源存储类型失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
 		return "unknown"
 	}
-	return normalizeStorageType(resource.ResourceType)
+	return normalizeStorageType(resource.EngineType)
 }
 
 func (s *ScanTaskService) computeNextRunTime(taskID *uint) *time.Time {
@@ -1016,7 +1016,7 @@ func cloneJSONMap(m models.JSONMap) models.JSONMap {
 }
 
 // CreateOrUpdateTaskFromScanConfig 根据资源的扫描配置创建或更新自动扫描任务
-func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModels.Resource) error {
+func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModels.Engine) error {
 	if resource == nil || resource.ScanConfig == nil || !resource.ScanConfig.Enabled {
 		return nil
 	}
@@ -1054,7 +1054,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		task := &models.ScanTask{
 			TenantID:       tenantID,
-			ResourceID:     resource.ID,
+			EngineID:     resource.ID,
 			Name:           taskName,
 			Description:    "由存储引擎注册时自动创建",
 			ScheduleType:   scanConfig.ScheduleType,
@@ -1074,7 +1074,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 
 		s.log.Info("自动扫描任务已创建",
 			"task_id", task.ID,
-			"resource_id", resource.ID,
+			"engine_id", resource.ID,
 			"resource_name", resource.Name,
 			"schedule_type", scanConfig.ScheduleType)
 
@@ -1112,7 +1112,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 
 	s.log.Info("自动扫描任务已更新",
 		"task_id", existingTask.ID,
-		"resource_id", resource.ID,
+		"engine_id", resource.ID,
 		"resource_name", resource.Name,
 		"schedule_type", scanConfig.ScheduleType)
 
@@ -1120,9 +1120,9 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 }
 
 // DeleteTaskByResourceID 删除指定资源关联的所有自动扫描任务
-func (s *ScanTaskService) DeleteTaskByResourceID(resourceID uint) error {
+func (s *ScanTaskService) DeleteTaskByResourceID(engineID uint) error {
 	var tasks []models.ScanTask
-	if err := s.db.Where("resource_id = ? AND name LIKE ?", resourceID, "自动扫描%").Find(&tasks).Error; err != nil {
+	if err := s.db.Where("resource_id = ? AND name LIKE ?", engineID, "自动扫描%").Find(&tasks).Error; err != nil {
 		return fmt.Errorf("查询资源关联任务失败: %w", err)
 	}
 
@@ -1140,7 +1140,7 @@ func (s *ScanTaskService) DeleteTaskByResourceID(resourceID uint) error {
 			continue
 		}
 
-		s.log.Info("自动扫描任务已删除", "task_id", task.ID, "resource_id", resourceID)
+		s.log.Info("自动扫描任务已删除", "task_id", task.ID, "engine_id", engineID)
 	}
 
 	return nil

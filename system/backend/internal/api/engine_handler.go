@@ -13,39 +13,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ResourceHandler struct {
-	resourceService      *service.ResourceService
+type EngineHandler struct {
+	engineService        *service.EngineService
 	storageEngineService *service.StorageEngineService
 }
 
-func NewResourceHandler(resourceService *service.ResourceService) *ResourceHandler {
-	return &ResourceHandler{
-		resourceService:      resourceService,
+func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
+	return &EngineHandler{
+		engineService:        engineService,
 		storageEngineService: service.NewStorageEngineService(),
 	}
 }
 
-func (h *ResourceHandler) Create(c *gin.Context) {
-	var req models.ResourceCreateRequest
+func (h *EngineHandler) Create(c *gin.Context) {
+	var req models.EngineCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	userID := c.GetUint("user_id")
-	resource, err := h.resourceService.Create(&req, userID)
+	engine, err := h.engineService.Create(&req, userID)
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusCreated, resource)
+	c.JSON(http.StatusCreated, engine)
 }
 
-func (h *ResourceHandler) List(c *gin.Context) {
+func (h *EngineHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	resourceType := c.Query("resource_type")
+	engineType := c.Query("engine_type")
 
 	// 获取当前用户ID
 	userID, exists := c.Get("user_id")
@@ -54,16 +54,16 @@ func (h *ResourceHandler) List(c *gin.Context) {
 		return
 	}
 
-	resources, err := h.resourceService.List(page, pageSize, resourceType, userID.(uint))
+	engines, err := h.engineService.List(page, pageSize, engineType, userID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }
 
-func (h *ResourceHandler) GetByID(c *gin.Context) {
+func (h *EngineHandler) GetByID(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -76,23 +76,23 @@ func (h *ResourceHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.GetByID(uint(id), userID.(uint))
+	engine, err := h.engineService.GetByID(uint(id), userID.(uint))
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, resource)
+	c.JSON(http.StatusOK, engine)
 }
 
-func (h *ResourceHandler) Update(c *gin.Context) {
+func (h *EngineHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
 		return
 	}
 
-	var req models.ResourceUpdateRequest
+	var req models.EngineUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -104,16 +104,16 @@ func (h *ResourceHandler) Update(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.Update(uint(id), &req, currentUserID.(uint))
+	engine, err := h.engineService.Update(uint(id), &req, currentUserID.(uint))
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, resource)
+	c.JSON(http.StatusOK, engine)
 }
 
-func (h *ResourceHandler) Delete(c *gin.Context) {
+func (h *EngineHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -126,7 +126,7 @@ func (h *ResourceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.resourceService.Delete(uint(id), currentUserID.(uint)); err != nil {
+	if err := h.engineService.Delete(uint(id), currentUserID.(uint)); err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
@@ -134,7 +134,7 @@ func (h *ResourceHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
-func (h *ResourceHandler) respondWithResourceError(c *gin.Context, err error) {
+func (h *EngineHandler) respondWithResourceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrResourceNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -148,9 +148,9 @@ func (h *ResourceHandler) respondWithResourceError(c *gin.Context, err error) {
 }
 
 // TestConnection 测试存储引擎连接（用户手动触发，同步返回结果）
-// POST /api/resources/:id/test-connection
+// POST /api/engines/:id/test-connection
 // 测试完成后同步更新连接状态缓存
-func (h *ResourceHandler) TestConnection(c *gin.Context) {
+func (h *EngineHandler) TestConnection(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -163,16 +163,16 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 		return
 	}
 
-	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
+	engine, err := h.engineService.GetForConnection(uint(id), currentUserID.(uint))
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
 	// 测试连接
-	if err := h.storageEngineService.TestConnection(resource); err != nil {
+	if err := h.storageEngineService.TestConnection(engine); err != nil {
 		// 更新为offline
-		h.resourceService.UpdateConnectionStatus(uint(id), "offline", err.Error())
+		h.engineService.UpdateConnectionStatus(uint(id), "offline", err.Error())
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -183,7 +183,7 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 	}
 
 	// 更新为online
-	h.resourceService.UpdateConnectionStatus(uint(id), "online", "连接正常")
+	h.engineService.UpdateConnectionStatus(uint(id), "online", "连接正常")
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -192,8 +192,8 @@ func (h *ResourceHandler) TestConnection(c *gin.Context) {
 }
 
 // TestConnectionBeforeCreate 创建前测试连接
-func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
-	var req models.ResourceCreateRequest
+func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
+	var req models.EngineCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -207,13 +207,13 @@ func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
 	}
 
 	// 构建临时资源对象用于测试
-	resource := &models.Resource{
-		ResourceType:   req.ResourceType,
+	engine := &models.Engine{
+		EngineType:     req.EngineType,
 		ConnectionInfo: req.ConnectionInfo,
 	}
 
 	// 测试连接
-	if err := h.storageEngineService.TestConnection(resource); err != nil {
+	if err := h.storageEngineService.TestConnection(engine); err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "连接失败",
@@ -229,13 +229,13 @@ func (h *ResourceHandler) TestConnectionBeforeCreate(c *gin.Context) {
 }
 
 type internalResourceCreateRequest struct {
-	models.ResourceCreateRequest
+	models.EngineCreateRequest
 	TenantID  *uint `json:"tenant_id"`
 	CreatedBy *uint `json:"created_by"`
 }
 
 // CreateInternal 内部服务创建资源
-func (h *ResourceHandler) CreateInternal(c *gin.Context) {
+func (h *EngineHandler) CreateInternal(c *gin.Context) {
 	var req internalResourceCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -247,20 +247,20 @@ func (h *ResourceHandler) CreateInternal(c *gin.Context) {
 		tenantID = *req.TenantID
 	}
 
-	resource, err := h.resourceService.CreateInternal(&req.ResourceCreateRequest, tenantID, req.CreatedBy)
+	engine, err := h.engineService.CreateInternal(&req.EngineCreateRequest, tenantID, req.CreatedBy)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusCreated, resource)
+	c.JSON(http.StatusCreated, engine)
 }
 
 // ============ 内部 API（服务间调用）============
 
 // ListInternal 内部资源列表查询（无需用户认证，用于服务间调用）
-func (h *ResourceHandler) ListInternal(c *gin.Context) {
-	resourceType := c.Query("resource_type")
+func (h *EngineHandler) ListInternal(c *gin.Context) {
+	engineType := c.Query("engine_type")
 	tenantID := c.Query("tenant_id") // 可选，按租户过滤
 
 	// 新增：能力过滤参数
@@ -283,24 +283,24 @@ func (h *ResourceHandler) ListInternal(c *gin.Context) {
 			ComputeTypes: parseCommaSeparated(computeType),
 		}
 
-		resources, err := h.resourceService.ListInternalWithCapability(tenantIDUint, filter)
+		engines, err := h.engineService.ListInternalWithCapability(tenantIDUint, filter)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		c.JSON(http.StatusOK, resources)
+		c.JSON(http.StatusOK, engines)
 		return
 	}
 
 	// 保持原有逻辑（向后兼容）
-	resources, err := h.resourceService.ListInternal(resourceType, tenantIDUint)
+	engines, err := h.engineService.ListInternal(engineType, tenantIDUint)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }
 
 // parseCommaSeparated 解析逗号分隔的字符串
@@ -322,20 +322,20 @@ func parseCommaSeparated(s string) []string {
 }
 
 // GetByIDInternal 内部资源详情查询（无需用户认证，用于服务间调用）
-func (h *ResourceHandler) GetByIDInternal(c *gin.Context) {
+func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
 		return
 	}
 
-	resource, err := h.resourceService.GetByIDInternal(uint(id))
+	engine, err := h.engineService.GetByIDInternal(uint(id))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "资源不存在"})
 		return
 	}
 
-	c.JSON(http.StatusOK, resource)
+	c.JSON(http.StatusOK, engine)
 }
 
 // ListSchemas 列出指定资源的所有Schema/Database
@@ -344,8 +344,8 @@ func (h *ResourceHandler) GetByIDInternal(c *gin.Context) {
 // @Produce json
 // @Param id path int true "资源ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/resources/:id/schemas [get]
-func (h *ResourceHandler) ListSchemas(c *gin.Context) {
+// @Router /api/engines/:id/schemas [get]
+func (h *EngineHandler) ListSchemas(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -359,14 +359,14 @@ func (h *ResourceHandler) ListSchemas(c *gin.Context) {
 	}
 
 	// 获取资源(验证权限)
-	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
+	engine, err := h.engineService.GetForConnection(uint(id), currentUserID.(uint))
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
 	// 调用 StorageEngineService 列出 schemas
-	schemas, err := h.storageEngineService.ListSchemas(resource)
+	schemas, err := h.storageEngineService.ListSchemas(engine)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -385,8 +385,8 @@ func (h *ResourceHandler) ListSchemas(c *gin.Context) {
 // @Param id path int true "资源ID"
 // @Param schema query string false "Schema名称(默认public)"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/resources/:id/tables [get]
-func (h *ResourceHandler) ListTables(c *gin.Context) {
+// @Router /api/engines/:id/tables [get]
+func (h *EngineHandler) ListTables(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -402,14 +402,14 @@ func (h *ResourceHandler) ListTables(c *gin.Context) {
 	}
 
 	// 获取资源(验证权限)
-	resource, err := h.resourceService.GetForConnection(uint(id), currentUserID.(uint))
+	engine, err := h.engineService.GetForConnection(uint(id), currentUserID.(uint))
 	if err != nil {
 		h.respondWithResourceError(c, err)
 		return
 	}
 
 	// 调用 StorageEngineService 列出表
-	tables, err := h.storageEngineService.ListTables(resource, schema)
+	tables, err := h.storageEngineService.ListTables(engine, schema)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -422,10 +422,10 @@ func (h *ResourceHandler) ListTables(c *gin.Context) {
 }
 
 // TriggerConnectionCheckInternal 触发连接检测（内部API，异步）
-// POST /api/internal/resources/:id/check-connection
+// POST /api/internal/engines/:id/check-connection
 // 用于其他模块在连接失败时通知System刷新状态
 // 立即返回202 Accepted，实际检测在后台执行
-func (h *ResourceHandler) TriggerConnectionCheckInternal(c *gin.Context) {
+func (h *EngineHandler) TriggerConnectionCheckInternal(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -433,7 +433,7 @@ func (h *ResourceHandler) TriggerConnectionCheckInternal(c *gin.Context) {
 	}
 
 	// 异步检测，立即返回
-	if err := h.resourceService.AsyncCheckConnection(uint(id)); err != nil {
+	if err := h.engineService.AsyncCheckConnection(uint(id)); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -450,11 +450,11 @@ type UpdateConnectionStatusRequest struct {
 }
 
 // UpdateConnectionStatusInternal 内部API：更新资源连接状态
-// PUT /api/internal/resources/:id/connection-status
+// PUT /api/internal/engines/:id/connection-status
 // 用于Meta模块在后台检测后更新资源连接状态缓存
 // 注意：此方法已废弃，建议使用TriggerConnectionCheckInternal让System自己检测
 // 保留是为了向后兼容
-func (h *ResourceHandler) UpdateConnectionStatusInternal(c *gin.Context) {
+func (h *EngineHandler) UpdateConnectionStatusInternal(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的资源ID"})
@@ -468,7 +468,7 @@ func (h *ResourceHandler) UpdateConnectionStatusInternal(c *gin.Context) {
 	}
 
 	// 更新连接状态
-	if err := h.resourceService.UpdateConnectionStatus(uint(id), req.ConnectionStatus, req.CheckMessage); err != nil {
+	if err := h.engineService.UpdateConnectionStatus(uint(id), req.ConnectionStatus, req.CheckMessage); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

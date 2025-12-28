@@ -17,7 +17,7 @@ const (
 type ScanTask struct {
 	ID             uint           `gorm:"primaryKey" json:"id"`
 	TenantID       uint           `gorm:"index;not null" json:"tenant_id"`
-	ResourceID     uint           `gorm:"index;not null" json:"resource_id"`
+	ResourceID     uint           `gorm:"index;not null" json:"engine_id"`
 	Name           string         `gorm:"size:128;not null" json:"name"`
 	Description    string         `gorm:"size:512" json:"description,omitempty"`
 	ScheduleType   string         `gorm:"size:32;not null" json:"schedule_type"` // manual/daily/weekly/monthly/cron
@@ -43,7 +43,7 @@ type ScanTaskRun struct {
 	ID              uint       `gorm:"primaryKey" json:"id"`
 	TaskID          *uint      `gorm:"index" json:"task_id,omitempty"`
 	TenantID        uint       `gorm:"index;not null" json:"tenant_id"`
-	ResourceID      uint       `gorm:"index;not null" json:"resource_id"`
+	ResourceID      uint       `gorm:"index;not null" json:"engine_id"`
 	Name            string     `gorm:"size:180" json:"name"`
 	StorageType     string     `gorm:"size:64" json:"storage_type"`
 	TriggerType     string     `gorm:"size:32;not null" json:"trigger_type"` // manual/scheduled/system

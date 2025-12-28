@@ -116,7 +116,7 @@ func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	if !isObjectStorageType(req.Resource.ResourceType) {
+	if !isObjectStorageType(req.Resource.EngineType) {
 		return false
 	}
 
@@ -231,7 +231,7 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 			Bucket:     bucket,
 			Path:       displayPath,
 			NodeType:   nodeType,
-			ResourceID: resource.ID,
+			EngineID: resource.ID,
 		},
 		GeometryColumns: []string{},
 	}
@@ -455,7 +455,7 @@ func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
 
 	// 调用Meta提取
 	extracted, err := metaClient.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
-		ResourceID: resourceID,
+		EngineID: engineID,
 		ObjectKey:  objectKey,
 		ObjectData: objReader,
 	})

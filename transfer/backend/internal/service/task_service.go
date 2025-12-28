@@ -888,20 +888,20 @@ func (s *TaskService) updateExecutionError(task *models.Task, executionID uint, 
 }
 
 // GetResourceConfig 从 System 模块获取资源配置
-func (s *TaskService) GetResourceConfig(ctx context.Context, resourceID uint) (*commonModels.Resource, error) {
+func (s *TaskService) GetResourceConfig(ctx context.Context, engineID uint) (*commonModels.Engine, error) {
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available (integration disabled)")
 	}
 
-	s.logger.Info("fetching resource config from System", "resource_id", resourceID)
+	s.logger.Info("fetching resource config from System", "engine_id", engineID)
 
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		s.logger.Error("failed to get resource from System", "resource_id", resourceID, "error", err)
-		return nil, fmt.Errorf("failed to get resource %d from System: %w", resourceID, err)
+		s.logger.Error("failed to get resource from System", "engine_id", engineID, "error", err)
+		return nil, fmt.Errorf("failed to get resource %d from System: %w", engineID, err)
 	}
 
-	s.logger.Info("resource config fetched successfully", "resource_id", resourceID, "type", resource.ResourceType)
+	s.logger.Info("resource config fetched successfully", "engine_id", engineID, "type", resource.EngineType)
 	return resource, nil
 }
 
@@ -909,14 +909,14 @@ func (s *TaskService) GetResourceConfig(ctx context.Context, resourceID uint) (*
 func (s *TaskService) resolveConnectorConfig(
 	taskConfig models.JSONMap,
 	configKey string, // "source" 或 "target"
-	resourceID *uint,
+	engineID *uint,
 ) (map[string]interface{}, error) {
 	// 情况1：如果提供了 resource_id，从 System 获取资源配置
-	if resourceID != nil && *resourceID > 0 {
-		resource, err := s.GetResourceConfig(context.Background(), *resourceID)
+	if engineID != nil && *engineID > 0 {
+		resource, err := s.GetResourceConfig(context.Background(), *engineID)
 		if err != nil {
 			s.logger.Warn("failed to get resource from System, falling back to task config",
-				"resource_id", *resourceID, "error", err)
+				"engine_id", *engineID, "error", err)
 			// 如果获取失败，尝试从 task.config 中读取
 		} else {
 			// 成功获取资源配置，转换为连接器配置
@@ -927,7 +927,7 @@ func (s *TaskService) resolveConnectorConfig(
 
 			// 合并 task.config 中的额外配置（如 query, table 等）
 			if taskConnectorConfig, ok := taskConfig[configKey].(map[string]interface{}); ok {
-				s.logger.Info("merging task config", "configKey", configKey, "resource_type", resource.ResourceType)
+				s.logger.Info("merging task config", "configKey", configKey, "resource_type", resource.EngineType)
 				for k, v := range taskConnectorConfig {
 					// 不覆盖资源配置中的连接信息
 					if k != "host" && k != "port" && k != "user" && k != "password" &&
@@ -935,13 +935,13 @@ func (s *TaskService) resolveConnectorConfig(
 						k != "access_key" && k != "secret_key" && k != "bucket" {
 
 						// 特殊处理：将 path/scope 映射到 file_name/prefix（用于 S3 Writer）
-						if k == "path" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+						if k == "path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
 							s.logger.Info("mapping path to file_name", "value", v)
 							connectorConfig["file_name"] = v
-						} else if k == "scope" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+						} else if k == "scope" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
 							s.logger.Debug("ignoring scope for S3/MinIO target", "value", v)
 							// scope对于对象存储不是目录，忽略
-						} else if k == "format" && (resource.ResourceType == "minio" || resource.ResourceType == "s3") {
+						} else if k == "format" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
 							// 将 format 映射到 file_type（S3Writer 期望的字段名）
 							s.logger.Info("mapping format to file_type", "value", v)
 							connectorConfig["file_type"] = v
@@ -968,16 +968,16 @@ func (s *TaskService) resolveConnectorConfig(
 }
 
 // resourceToConnectorConfig 将 Resource 转换为连接器配置
-func (s *TaskService) resourceToConnectorConfig(resource *commonModels.Resource) (map[string]interface{}, error) {
+func (s *TaskService) resourceToConnectorConfig(resource *commonModels.Engine) (map[string]interface{}, error) {
 	connInfo := resource.ConnectionInfo
 	connectorConfig := make(map[string]interface{})
 
 	// 根据资源类型转换配置
-	switch resource.ResourceType {
+	switch resource.EngineType {
 	case "postgresql", "mysql":
 		// JDBC 连接器配置
 		connectorConfig["type"] = "jdbc"
-		connectorConfig["driver"] = resource.ResourceType
+		connectorConfig["driver"] = resource.EngineType
 		if host, ok := connInfo["host"].(string); ok {
 			connectorConfig["host"] = host
 		}
@@ -1024,12 +1024,12 @@ func (s *TaskService) resourceToConnectorConfig(resource *commonModels.Resource)
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
+		return nil, fmt.Errorf("unsupported resource type: %s", resource.EngineType)
 	}
 
 	s.logger.Info("converted resource to connector config",
-		"resource_id", resource.ID,
-		"resource_type", resource.ResourceType,
+		"engine_id", resource.ID,
+		"resource_type", resource.EngineType,
 		"connector_type", connectorConfig["type"])
 
 	return connectorConfig, nil

@@ -19,7 +19,7 @@ type TileGenerator struct {
 
 // ResourceService 资源服务接口（避免循环依赖）
 type ResourceService interface {
-	GetResource(resourceID, tenantID uint) (*commonModels.Resource, error)
+	GetEngine(engineID, tenantID uint) (*commonModels.Engine, error)
 }
 
 // NewTileGenerator 创建瓦片生成器
@@ -31,7 +31,7 @@ func NewTileGenerator(resourceService ResourceService) *TileGenerator {
 
 // TileGenerationParams 瓦片生成参数
 type TileGenerationParams struct {
-	ResourceID   uint
+	EngineID     uint
 	TenantID     uint
 	Schema       string
 	Table        string
@@ -48,7 +48,7 @@ func (g *TileGenerator) GenerateTile(
 	params TileGenerationParams,
 ) ([]byte, error) {
 	// 1. 获取资源连接信息
-	resource, err := g.resourceService.GetResource(params.ResourceID, params.TenantID)
+	resource, err := g.resourceService.GetEngine(params.EngineID, params.TenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource: %w", err)
 	}
@@ -80,7 +80,7 @@ func (g *TileGenerator) GenerateTile(
 
 	// 5. 详细日志：记录瓦片请求和 SQL
 	logger.L().Info("📍 开始生成 MVT 瓦片",
-		"resource_id", params.ResourceID,
+		"engine_id", params.EngineID,
 		"tenant_id", params.TenantID,
 		"z", params.Z, "x", params.X, "y", params.Y,
 		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
@@ -141,11 +141,11 @@ func (g *TileGenerator) buildMVTQuery(
 // GetSpatialExtent 获取空间表的范围（WGS84）
 func (g *TileGenerator) GetSpatialExtent(
 	ctx context.Context,
-	resourceID, tenantID uint,
+	engineID, tenantID uint,
 	schema, table, geomColumn string,
 ) ([]float64, error) {
 	// 1. 获取资源连接信息
-	resource, err := g.resourceService.GetResource(resourceID, tenantID)
+	resource, err := g.resourceService.GetEngine(engineID, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource: %w", err)
 	}

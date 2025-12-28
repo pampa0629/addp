@@ -18,7 +18,7 @@ func (s *QuickViewService) GenerateMixed(
 	startTime := time.Now()
 
 	logger.L().Info("开始生成快显缓存（混合入队模式）",
-		"resource_id", cfg.ResourceID,
+		"engine_id", cfg.EngineID,
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 		"min_zoom", cfg.MinZoom,
 		"max_zoom", cfg.MaxZoom,
@@ -265,7 +265,7 @@ func (s *QuickViewService) GenerateMixed(
 
 	// 9. 保存元数据到 MinIO
 	metadata := &QuickViewMetadata{
-		ResourceID:       cfg.ResourceID,
+		EngineID:       cfg.EngineID,
 		Fingerprint:      cfg.Fingerprint,
 		TableName:        cfg.Table,
 		Schema:           cfg.Schema,

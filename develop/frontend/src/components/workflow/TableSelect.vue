@@ -26,7 +26,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { listTables } from '@/api/resources'
+import { listTables } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({

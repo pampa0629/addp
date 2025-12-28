@@ -19,4 +19,4 @@ export const deleteDevItem = (id) => client.delete(`/develop/items/${id}`)
 export const executeDevItem = (id, inputs) => client.post(`/develop/items/${id}/execute`, inputs)
 
 // 获取可用资源列表
-export const listResources = (params) => client.get('/develop/resources', { params })
+export const listEngines = (params) => client.get('/develop/engines', { params })

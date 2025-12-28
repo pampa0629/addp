@@ -117,7 +117,7 @@ type FileMetadataExtractor interface {
 
 // ExtractInput 元数据提取输入
 type ExtractInput struct {
-	ResourceID   uint              // 数据源ID (来自 system.resources)
+	EngineID     uint              // 存储引擎ID (来自 system.engines)
 	ObjectKey    string            // 对象键/文件路径
 	ContentType  string            // 内容类型 (MIME type)
 	Size         int64             // 文件大小（字节）

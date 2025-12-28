@@ -64,7 +64,7 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 	}
 
 	// 2. 查询工作流引擎
-	engine, err := s.systemClient.GetResourceByID(config.EngineID)
+	engine, err := s.systemClient.GetEngineByID(config.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
@@ -90,7 +90,7 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 // executeViaGeoPandas 通过 GeoPandas 引擎执行（自带运行时）
 func (s *WorkflowEngineService) executeViaGeoPandas(
 	ctx context.Context,
-	engine *commonModels.Resource,
+	engine *commonModels.Engine,
 	workflowDef map[string]interface{},
 	inputData map[string]interface{},
 ) (*WorkflowResponse, error) {
@@ -151,13 +151,13 @@ func (s *WorkflowEngineService) executeViaGeoPandas(
 // executeViaSparkSedona 通过 Spark Sedona 引擎执行（PySpark 脚本生成）
 func (s *WorkflowEngineService) executeViaSparkSedona(
 	ctx context.Context,
-	engine *commonModels.Resource,
+	engine *commonModels.Engine,
 	sparkClusterID uint,
 	workflowDef map[string]interface{},
 	inputData map[string]interface{},
 ) (*WorkflowResponse, error) {
 	// 1. 查询 Spark 运行时详情
-	sparkRuntime, err := s.systemClient.GetResourceByID(sparkClusterID)
+	sparkRuntime, err := s.systemClient.GetEngineByID(sparkClusterID)
 	if err != nil {
 		return nil, fmt.Errorf("查询 Spark 运行时失败: %w", err)
 	}
@@ -350,15 +350,15 @@ func (s *WorkflowEngineService) GetTaskStatus(ctx context.Context, geopandasEngi
 
 // ListWorkflowEngines 获取支持workflow开发模式的工作流引擎列表
 // 用于工作流画布的引擎选择功能
-func (s *WorkflowEngineService) ListWorkflowEngines(ctx context.Context, tenantID uint) ([]commonModels.Resource, error) {
+func (s *WorkflowEngineService) ListWorkflowEngines(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
 	// 从System获取所有资源
-	allResources, err := s.systemClient.ListResources("", tenantID)
+	allEngines, err := s.systemClient.ListEngines("", tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
+		return nil, fmt.Errorf("failed to fetch engines from system: %w", err)
 	}
 
-	// 过滤出支持 workflow 开发模式的资源
-	workflowEngines := utils.FilterResourcesByDevMode(allResources, "workflow")
+	// 过滤出支持 workflow 开发模式的引擎
+	workflowEngines := utils.FilterEnginesByDevMode(allEngines, "workflow")
 
 	log.Printf("✅ Develop: 获取工作流引擎列表成功 (tenant_id=%d, total=%d)", tenantID, len(workflowEngines))
 	return workflowEngines, nil

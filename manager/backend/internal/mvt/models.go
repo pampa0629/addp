@@ -22,7 +22,7 @@ type ZoomLevelStats struct {
 
 // QuickViewMetadata 快显元数据（存储在 MinIO）
 type QuickViewMetadata struct {
-	ResourceID       uint                      `json:"resource_id"`
+	EngineID         uint                      `json:"engine_id"`
 	Fingerprint      string                    `json:"fingerprint"`
 	TableName        string                    `json:"table_name"`
 	Schema           string                    `json:"schema"`

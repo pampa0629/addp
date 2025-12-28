@@ -279,7 +279,7 @@ const videoSrc = computed(() => {
   if (!resourceId.value || !objectKey.value) return ''
 
   const params = new URLSearchParams()
-  params.set('resource_id', String(resourceId.value))
+  params.set('engine_id', String(resourceId.value))
   params.set('object_key', objectKey.value)
 
   const token = localStorage.getItem('token')

@@ -76,24 +76,25 @@ func (s *ScanConfig) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, s)
 }
 
-// Resource 资源信息（对应 system.resources 表）
-type Resource struct {
+// Engine 引擎信息（对应 system.engines 表）
+type Engine struct {
 	ID             uint           `gorm:"column:id" json:"id"`
-	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"` // 租户ID，SuperAdmin创建的资源为null
+	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"` // 租户ID，SuperAdmin创建的引擎为null
 	Name           string         `gorm:"column:name;not null;index" json:"name"` // 数据库字段是 name（英文标识）
 	DisplayName    string         `gorm:"column:display_name;not null;size:255" json:"display_name"` // 中文显示名称
-	ResourceType   string         `gorm:"column:resource_type;not null" json:"resource_type"`
+	EngineType     string         `gorm:"column:engine_type;not null" json:"engine_type"` // 引擎类型（postgresql, mysql, minio, compute_engine等）
+	EngineCategory string         `gorm:"column:engine_category;not null;default:'standard'" json:"engine_category"` // 引擎分类：standard（标准引擎）或 extension（扩展引擎）
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
 	ScanConfig     *ScanConfig    `gorm:"column:scan_config;type:json" json:"scan_config,omitempty"` // 元数据扫描配置（可选）
 	IsActive       bool           `gorm:"column:is_active;default:true" json:"is_active"`
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
-	// 能力注册字段（用于计算引擎）
-	UniqueIdentifier  *string `gorm:"column:unique_identifier;size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "meta.scanner.default"）
+	// 扩展引擎字段
+	UniqueIdentifier  *string `gorm:"column:unique_identifier;size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "api.geopandas"）
 	IsBuiltin         bool    `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`           // 是否为内置引擎（内置引擎不可删除）
 	Capabilities      *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"`           // 能力声明（JSONB）
-	TaskAPIConfig     *string `gorm:"column:task_api_config;type:jsonb" json:"task_api_config,omitempty"`     // 任务 API 配置（JSONB，仅计算引擎）
+	TaskAPIConfig     *string `gorm:"column:task_api_config;type:jsonb" json:"task_api_config,omitempty"`     // 任务 API 配置（JSONB，仅扩展引擎）
 	HealthCheckConfig *string `gorm:"column:health_check_config;type:jsonb" json:"health_check_config,omitempty"` // 健康检查配置（JSONB）
 
 	// 连接状态缓存（优化扫描性能）
@@ -102,9 +103,9 @@ type Resource struct {
 	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）
 }
 
-// BuildConnectionString 根据资源信息构建连接字符串
-func BuildConnectionString(resource *Resource) (string, error) {
-	connInfo := resource.ConnectionInfo
+// BuildConnectionString 根据引擎信息构建连接字符串
+func BuildConnectionString(engine *Engine) (string, error) {
+	connInfo := engine.ConnectionInfo
 
 	// 辅助函数:从interface{}转换为字符串
 	getString := func(key string) string {
@@ -139,7 +140,7 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		return host
 	}
 
-	switch resource.ResourceType {
+	switch engine.EngineType {
 	case "postgresql", "PostgreSQL":
 		host := normalizeHost(getString("host"))
 		port := getString("port")
@@ -211,6 +212,6 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		}
 		return string(bytes), nil
 	default:
-		return "", fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
+		return "", fmt.Errorf("unsupported engine type: %s", engine.EngineType)
 	}
 }

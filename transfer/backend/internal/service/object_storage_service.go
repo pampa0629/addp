@@ -38,12 +38,12 @@ type ObjectStorageBrowseResult struct {
 
 // ObjectStorageService 提供对象存储的辅助能力
 type ObjectStorageService struct {
-	localResourceService *LocalResourceService
+	localResourceService *LocalEngineService
 	logger               *slog.Logger
 }
 
 // NewObjectStorageService 构造函数
-func NewObjectStorageService(localResourceService *LocalResourceService) *ObjectStorageService {
+func NewObjectStorageService(localResourceService *LocalEngineService) *ObjectStorageService {
 	return &ObjectStorageService{
 		localResourceService: localResourceService,
 		logger:               commonLogger.With("component", "object_storage_service"),
@@ -51,8 +51,8 @@ func NewObjectStorageService(localResourceService *LocalResourceService) *Object
 }
 
 // ListDirectories 列出指定前缀下的子目录
-func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uint, scope string, resourceID uint, prefix string) (*ObjectStorageBrowseResult, error) {
-	connInfo, bucket, err := s.resolveConnectionInfo(scope, resourceID, tenantID)
+func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageBrowseResult, error) {
+	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,25 +139,25 @@ func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uin
 	}, nil
 }
 
-func (s *ObjectStorageService) resolveConnectionInfo(scope string, resourceID, tenantID uint) (map[string]interface{}, string, error) {
+func (s *ObjectStorageService) resolveConnectionInfo(scope string, engineID, tenantID uint) (map[string]interface{}, string, error) {
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	switch scope {
 	case "local":
-		resource, err := s.localResourceService.Get(resourceID, tenantID)
+		resource, err := s.localResourceService.Get(engineID, tenantID)
 		if err != nil {
 			return nil, "", err
 		}
-		if !isObjectStorageType(resource.ResourceType) {
+		if !isObjectStorageType(resource.EngineType) {
 			return nil, "", ErrObjectStorageNotSupported
 		}
 		return map[string]interface{}(resource.ConnectionInfo), getStringFromConn(map[string]interface{}(resource.ConnectionInfo), "bucket"), nil
 
 	case "system":
-		systemRes, err := s.localResourceService.GetSystemResource(resourceID, tenantID)
+		systemRes, err := s.localResourceService.GetSystemResource(engineID, tenantID)
 		if err != nil {
 			return nil, "", err
 		}
-		if !isObjectStorageType(systemRes.ResourceType) {
+		if !isObjectStorageType(systemRes.EngineType) {
 			return nil, "", ErrObjectStorageNotSupported
 		}
 		return map[string]interface{}(systemRes.ConnectionInfo), getStringFromConn(map[string]interface{}(systemRes.ConnectionInfo), "bucket"), nil

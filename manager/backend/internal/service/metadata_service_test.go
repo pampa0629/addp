@@ -22,7 +22,7 @@ func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
 	}
 
 	createTable := `
-	CREATE TABLE system.resources (
+	CREATE TABLE system.engines (
 		id INTEGER PRIMARY KEY,
 		name TEXT,
 		resource_type TEXT,
@@ -33,7 +33,7 @@ func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
 		is_active BOOLEAN
 	);`
 	if err := db.Exec(createTable).Error; err != nil {
-		t.Fatalf("failed to create resources table: %v", err)
+		t.Fatalf("failed to create engines table: %v", err)
 	}
 
 	seed := []struct {
@@ -51,7 +51,7 @@ func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
 
 	for _, item := range seed {
 		if err := db.Exec(
-			`INSERT INTO system.resources (id, name, resource_type, connection_info, tenant_id, is_active) 
+			`INSERT INTO system.engines (id, name, resource_type, connection_info, tenant_id, is_active) 
 			 VALUES (?, ?, ?, '{}', ?, ?)`,
 			item.id, item.name, item.resType, item.tenantID, item.isActive,
 		).Error; err != nil {

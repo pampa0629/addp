@@ -45,16 +45,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	// 初始化 repositories
 	userRepo := repository.NewUserRepository(db)
 	logRepo := repository.NewLogRepository(db)
-	resourceRepo := repository.NewResourceRepository(db)
+	engineRepo := repository.NewEngineRepository(db)
 	tenantRepo := repository.NewTenantRepository(db)
 	appRepo := repository.NewApplicationRepository(db)
 
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
 	logService := service.NewLogService(logRepo, userRepo)
-	resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
+	engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, redisClient)
 	tenantService := service.NewTenantService(tenantRepo, userRepo, db)
-	registryService := service.NewRegistryService(resourceRepo)
+	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
 
@@ -109,20 +109,21 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				logs.GET("/:id", logHandler.GetByID)
 			}
 
-			// 资源管理
-			resources := protected.Group("/resources")
+			// 引擎管理
+			engines := protected.Group("/engines")
 			{
-				resourceHandler := NewResourceHandler(resourceService)
-				resources.POST("", resourceHandler.Create)
-				resources.GET("", resourceHandler.List)
-				resources.GET("/:id", resourceHandler.GetByID)
-				resources.PUT("/:id", resourceHandler.Update)
-				resources.DELETE("/:id", resourceHandler.Delete)
-				resources.POST("/:id/test", resourceHandler.TestConnection)                    // 测试已有资源连接
-				resources.POST("/test-connection", resourceHandler.TestConnectionBeforeCreate) // 创建前测试连接
-				resources.GET("/:id/schemas", resourceHandler.ListSchemas)                     // 列出schemas
-				resources.GET("/:id/tables", resourceHandler.ListTables)                       // 列出表
+				engineHandler := NewEngineHandler(engineService)
+				engines.POST("", engineHandler.Create)
+				engines.GET("", engineHandler.List)
+				engines.GET("/:id", engineHandler.GetByID)
+				engines.PUT("/:id", engineHandler.Update)
+				engines.DELETE("/:id", engineHandler.Delete)
+				engines.POST("/:id/test", engineHandler.TestConnection)                    // 测试已有引擎连接
+				engines.POST("/test-connection", engineHandler.TestConnectionBeforeCreate) // 创建前测试连接
+				engines.GET("/:id/schemas", engineHandler.ListSchemas)                     // 列出schemas
+				engines.GET("/:id/tables", engineHandler.ListTables)                       // 列出表
 			}
+
 
 			// 租户管理
 			tenants := protected.Group("/tenants")
@@ -158,13 +159,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		configHandler := NewConfigHandler(cfg)
 		internal.GET("/config", configHandler.GetSharedConfig)
 
-		// 服务间调用的资源API
-		resourceHandler := NewResourceHandler(resourceService)
-		internal.GET("/resources", resourceHandler.ListInternal)
-		internal.GET("/resources/:id", resourceHandler.GetByIDInternal)
-		internal.POST("/resources", resourceHandler.CreateInternal)
-		internal.PUT("/resources/:id/connection-status", resourceHandler.UpdateConnectionStatusInternal)
-		internal.POST("/resources/:id/check-connection", resourceHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
+		// 服务间调用的引擎API
+		engineHandler := NewEngineHandler(engineService)
+		internal.GET("/engines", engineHandler.ListInternal)
+		internal.GET("/engines/:id", engineHandler.GetByIDInternal)
+		internal.POST("/engines", engineHandler.CreateInternal)
+		internal.PUT("/engines/:id/connection-status", engineHandler.UpdateConnectionStatusInternal)
+		internal.POST("/engines/:id/check-connection", engineHandler.TriggerConnectionCheckInternal) // 触发异步连接检测
+
 
 		// 能力注册 API
 		registry := internal.Group("/registry")

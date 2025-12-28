@@ -36,7 +36,7 @@ func (p *csvPreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	if !isObjectStorageType(req.Resource.ResourceType) {
+	if !isObjectStorageType(req.Resource.EngineType) {
 		return false
 	}
 

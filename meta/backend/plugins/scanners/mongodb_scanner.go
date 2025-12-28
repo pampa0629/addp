@@ -18,7 +18,7 @@ import (
 // MongoDBScanner 执行 MongoDB 元数据扫描
 // 使用原生 mongo-driver 进行元数据查询
 type MongoDBScanner struct {
-	resource *commonModels.Resource
+	resource *commonModels.Engine
 	client   *mongo.Client
 	// defaultDB 是连接字符串中指定的默认数据库
 	defaultDB string
@@ -32,11 +32,11 @@ const (
 )
 
 // NewMongoDBScanner 根据资源信息创建 MongoDB 扫描器
-func NewMongoDBScanner(resource *commonModels.Resource) (*MongoDBScanner, error) {
+func NewMongoDBScanner(resource *commonModels.Engine) (*MongoDBScanner, error) {
 	// 从插件系统构建连接字符串
 	pluginResource := &plugin.Resource{
 		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
+		EngineType:   resource.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
 	}
 	connStr, err := plugin.BuildConnectionString(pluginResource)

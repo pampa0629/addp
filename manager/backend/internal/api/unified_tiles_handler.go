@@ -11,7 +11,7 @@ import (
 )
 
 // UnifiedTilesHandler 统一的 MVT 瓦片处理器
-// RESTful API: GET /api/resources/{resource_id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
+// RESTful API: GET /api/engines/{resource_id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
 type UnifiedTilesHandler struct {
 	service *service.UnifiedMVTService
 }
@@ -24,7 +24,7 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 }
 
 // GetTile 获取 MVT 瓦片
-// GET /api/resources/:id/spatial/tiles/:schema/:table/:z/:x/:y.mvt
+// GET /api/engines/:id/spatial/tiles/:schema/:table/:z/:x/:y.mvt
 // Query params (optional):
 //   - geom: 几何列名（默认 "geom"）
 //   - srid: 空间参考系（默认 4326）
@@ -34,7 +34,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 
 	// 1. 解析路径参数
 	resourceIDStr := c.Param("id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
 		return
@@ -118,7 +118,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	response, err := h.service.GetTile(
 		c.Request.Context(),
 		tenantID,
-		uint(resourceID),
+		uint(engineID),
 		schema,
 		table,
 		geomCol,
@@ -128,7 +128,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	)
 	if err != nil {
 		fmt.Printf("ERROR: GetTile failed: %v\n", err)
-		fmt.Printf("ERROR: Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n", resourceID, schema, table, z, x, y)
+		fmt.Printf("ERROR: Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n", engineID, schema, table, z, x, y)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

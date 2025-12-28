@@ -38,13 +38,13 @@ systemClient.interceptors.response.use(
 )
 
 export default {
-  // 获取资源列表
-  getResources(params) {
-    return systemClient.get('/api/resources', { params })
+  // 获取引擎列表
+  getEngines(params) {
+    return systemClient.get('/api/engines', { params })
   },
 
-  // 获取单个资源
-  getResource(id) {
-    return systemClient.get(`/api/resources/${id}`)
+  // 获取单个引擎
+  getEngine(id) {
+    return systemClient.get(`/api/engines/${id}`)
   }
 }

@@ -45,7 +45,7 @@ type SQLResult struct {
 // ExecuteSQL 执行SQL语句（查询）
 func (s *SQLEngineService) ExecuteSQL(
 	ctx context.Context,
-	resourceID uint,
+	engineID uint,
 	sqlContent string,
 	timeout int,
 ) (*SQLResult, error) {
@@ -61,18 +61,18 @@ func (s *SQLEngineService) ExecuteSQL(
 	defer cancel()
 
 	// 获取资源配置
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource config: %w", err)
 	}
 
 	// Spark SQL 特殊处理
-	if strings.ToLower(resource.ResourceType) == "spark_sql" {
+	if strings.ToLower(resource.EngineType) == "spark_sql" {
 		return s.executeSparkSQL(execCtx, resource, sqlContent)
 	}
 
 	// 获取数据库连接（PostgreSQL、MySQL、Doris）
-	db, err := s.getConnection(resourceID)
+	db, err := s.getConnection(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -133,7 +133,7 @@ func (s *SQLEngineService) ExecuteSQL(
 // ExecuteDML 执行DML语句 (INSERT/UPDATE/DELETE)
 func (s *SQLEngineService) ExecuteDML(
 	ctx context.Context,
-	resourceID uint,
+	engineID uint,
 	sqlContent string,
 	timeout int,
 ) (int64, error) {
@@ -149,7 +149,7 @@ func (s *SQLEngineService) ExecuteDML(
 	defer cancel()
 
 	// 获取连接
-	db, err := s.getConnection(resourceID)
+	db, err := s.getConnection(engineID)
 	if err != nil {
 		return 0, err
 	}
@@ -164,15 +164,15 @@ func (s *SQLEngineService) ExecuteDML(
 }
 
 // getConnection 从插件系统获取或创建数据库连接
-func (s *SQLEngineService) getConnection(resourceID uint) (*gorm.DB, error) {
+func (s *SQLEngineService) getConnection(engineID uint) (*gorm.DB, error) {
 	// 获取资源配置
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource config: %w", err)
 	}
 
 	// Spark SQL 特殊处理：不支持GORM连接池
-	if strings.ToLower(resource.ResourceType) == "spark_sql" {
+	if strings.ToLower(resource.EngineType) == "spark_sql" {
 		return nil, fmt.Errorf("Spark SQL does not support connection pooling via GORM, please use direct SQL execution")
 	}
 
@@ -182,45 +182,45 @@ func (s *SQLEngineService) getConnection(resourceID uint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
 
-	log.Printf("✅ [SQL Engine] 获取连接池成功 resource_id=%d type=%s", resourceID, resource.ResourceType)
+	log.Printf("✅ [SQL Engine] 获取连接池成功 resource_id=%d type=%s", engineID, resource.EngineType)
 
 	return db, nil
 }
 
 // TestConnection 测试数据库连接
-func (s *SQLEngineService) TestConnection(resourceID uint) error {
+func (s *SQLEngineService) TestConnection(engineID uint) error {
 	// 获取资源配置
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return fmt.Errorf("failed to get resource config: %w", err)
 	}
 
 	// Spark SQL 特殊处理
-	if strings.ToLower(resource.ResourceType) == "spark_sql" {
+	if strings.ToLower(resource.EngineType) == "spark_sql" {
 		return s.testSparkSQLConnection(resource)
 	}
 
 	// 使用插件系统测试连接
-	log.Printf("🔌 [SQL Engine] 测试连接 resource_id=%d type=%s", resourceID, resource.ResourceType)
+	log.Printf("🔌 [SQL Engine] 测试连接 resource_id=%d type=%s", engineID, resource.EngineType)
 
 	if err := dbbridge.TestConnection(context.Background(), resource); err != nil {
 		return fmt.Errorf("connection test failed: %w", err)
 	}
 
-	log.Printf("✅ [SQL Engine] 连接测试成功 resource_id=%d type=%s", resourceID, resource.ResourceType)
+	log.Printf("✅ [SQL Engine] 连接测试成功 resource_id=%d type=%s", engineID, resource.EngineType)
 	return nil
 }
 
 // ListDatabaseResources 获取可用的数据库资源列表
-func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Resource, error) {
+func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID uint) ([]commonModels.Engine, error) {
 	// 调用 SystemClient 获取租户的所有资源
-	allResources, err := s.systemClient.ListResources("", tenantID)
+	allResources, err := s.systemClient.ListEngines("", tenantID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch resources from system: %w", err)
+		return nil, fmt.Errorf("failed to fetch engines from system: %w", err)
 	}
 
 	// 过滤出支持 SQL 开发模式的资源
-	var dbResources []commonModels.Resource
+	var dbResources []commonModels.Engine
 	for _, res := range allResources {
 		if utils.SupportsDevMode(&res, "sql") {
 			dbResources = append(dbResources, res)
@@ -235,7 +235,7 @@ func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID u
 // executeSparkSQL 执行 Spark SQL 查询
 func (s *SQLEngineService) executeSparkSQL(
 	ctx context.Context,
-	resource *commonModels.Resource,
+	resource *commonModels.Engine,
 	sqlContent string,
 ) (*SQLResult, error) {
 	// 解析连接信息
@@ -331,7 +331,7 @@ func (s *SQLEngineService) executeSparkSQL(
 }
 
 // testSparkSQLConnection 测试 Spark SQL Thrift Server 连接
-func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Resource) error {
+func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Engine) error {
 	// 解析连接信息
 	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {

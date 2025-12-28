@@ -41,7 +41,7 @@ func (p *mongodbPreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 MongoDB
-	resourceType := sanitizeResourceType(req.Resource.ResourceType)
+	resourceType := sanitizeResourceType(req.Resource.EngineType)
 	return resourceType == "mongodb"
 }
 
@@ -49,7 +49,7 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	// 转换Resource类型到plugin models
 	pluginResource := &plugin.Resource{
 		ID:             req.Resource.ID,
-		ResourceType:   req.Resource.ResourceType,
+		EngineType:   req.Resource.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(req.Resource.ConnectionInfo),
 	}
 
@@ -135,10 +135,10 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 			Total:        0,
 			Page:         req.Page,
 			PageSize:     req.PageSize,
-			ResourceID:   req.Resource.ID,
+			EngineID:   req.Resource.ID,
 			Schema:       req.Schema,
 			Table:        req.Table,
-			ResourceType: req.Resource.ResourceType,
+			EngineType: req.Resource.EngineType,
 		}, nil
 	}
 
@@ -184,10 +184,10 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		Total:        int(totalCount),
 		Page:         req.Page,
 		PageSize:     req.PageSize,
-		ResourceID:   req.Resource.ID,
+		EngineID:   req.Resource.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		ResourceType: req.Resource.ResourceType,
+		EngineType: req.Resource.EngineType,
 	}, nil
 }
 

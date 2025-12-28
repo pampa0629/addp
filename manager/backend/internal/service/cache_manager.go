@@ -28,33 +28,33 @@ func NewCacheManager(metadataRepo *repository.MetadataRepository, redisClient *r
 }
 
 // ClearResourceCache 清理指定资源的所有缓存
-func (m *CacheManager) ClearResourceCache(ctx context.Context, resourceID uint) error {
-	m.log.Info("开始清理资源缓存", "resource_id", resourceID)
+func (m *CacheManager) ClearResourceCache(ctx context.Context, engineID uint) error {
+	m.log.Info("开始清理资源缓存", "engine_id", engineID)
 
 	// 1. 清理数据探查缓存（内存缓存，如果 MetadataRepository 有缓存的话）
 	if m.metadataRepo != nil {
 		// MetadataRepository 目前可能没有内存缓存，这里为未来扩展预留
-		m.log.Debug("清理数据探查内存缓存", "resource_id", resourceID)
+		m.log.Debug("清理数据探查内存缓存", "engine_id", engineID)
 	}
 
 	// 2. 清理 MVT 瓦片缓存（Redis）
 	if m.redisClient != nil {
-		if err := m.clearMVTCache(ctx, resourceID); err != nil {
+		if err := m.clearMVTCache(ctx, engineID); err != nil {
 			m.log.Error("清理 MVT 缓存失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"error", err)
 			// 不中断，继续清理其他缓存
 		}
 	}
 
-	m.log.Info("资源缓存清理完成", "resource_id", resourceID)
+	m.log.Info("资源缓存清理完成", "engine_id", engineID)
 	return nil
 }
 
 // clearMVTCache 清理 MVT 瓦片缓存
-func (m *CacheManager) clearMVTCache(ctx context.Context, resourceID uint) error {
+func (m *CacheManager) clearMVTCache(ctx context.Context, engineID uint) error {
 	// MVT 缓存 key 模式：manager:cache:mvt:*:resource:{resource_id}:*
-	pattern := fmt.Sprintf("manager:cache:mvt:*:resource:%d:*", resourceID)
+	pattern := fmt.Sprintf("manager:cache:mvt:*:resource:%d:*", engineID)
 
 	m.log.Debug("扫描 MVT 缓存键", "pattern", pattern)
 
@@ -87,7 +87,7 @@ func (m *CacheManager) clearMVTCache(ctx context.Context, resourceID uint) error
 	}
 
 	m.log.Info("MVT 缓存清理完成",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"deleted_keys", deletedCount)
 
 	return nil

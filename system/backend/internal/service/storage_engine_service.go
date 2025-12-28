@@ -16,17 +16,17 @@ func NewStorageEngineService() *StorageEngineService {
 
 // TestConnection 测试存储引擎连接
 // 使用插件系统统一处理所有数据库类型的连接测试
-func (s *StorageEngineService) TestConnection(resource *models.Resource) error {
+func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
 	return dbbridge.TestConnection(context.Background(), resource)
 }
 
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）
-func (s *StorageEngineService) GetConnectionInfo(resource *models.Resource) map[string]interface{} {
+func (s *StorageEngineService) GetConnectionInfo(resource *models.Engine) map[string]interface{} {
 	result := make(map[string]interface{})
-	result["type"] = resource.ResourceType
+	result["type"] = resource.EngineType
 
 	// 从插件系统获取敏感字段列表
-	sensitiveFields, err := dbbridge.GetSensitiveFields(resource.ResourceType)
+	sensitiveFields, err := dbbridge.GetSensitiveFields(resource.EngineType)
 	if err != nil {
 		// 降级：使用默认敏感字段列表
 		sensitiveFields = []string{"password", "secret_key", "access_key", "token"}
@@ -68,7 +68,7 @@ func maskString(value interface{}) string {
 }
 
 // ListSchemas 列出指定资源的所有Schema/Database
-func (s *StorageEngineService) ListSchemas(resource *models.Resource) ([]plugin.SchemaInfo, error) {
+func (s *StorageEngineService) ListSchemas(resource *models.Engine) ([]plugin.SchemaInfo, error) {
 	// 获取或创建连接池
 	db, err := dbbridge.GetOrCreatePool(resource, nil)
 	if err != nil {
@@ -80,7 +80,7 @@ func (s *StorageEngineService) ListSchemas(resource *models.Resource) ([]plugin.
 }
 
 // ListTables 列出指定资源和Schema下的所有表
-func (s *StorageEngineService) ListTables(resource *models.Resource, schema string) ([]plugin.TableInfo, error) {
+func (s *StorageEngineService) ListTables(resource *models.Engine, schema string) ([]plugin.TableInfo, error) {
 	// 获取或创建连接池
 	db, err := dbbridge.GetOrCreatePool(resource, nil)
 	if err != nil {

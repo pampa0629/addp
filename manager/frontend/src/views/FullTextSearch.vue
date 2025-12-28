@@ -86,7 +86,7 @@
       </template>
 
       <template v-else-if="results.length === 0">
-        <el-empty description="未找到匹配的文档或资源">
+        <el-empty description="未找到匹配的文档或引擎">
           <el-button type="primary" @click="resetSearch">重新搜索</el-button>
         </el-empty>
       </template>
@@ -120,7 +120,7 @@
           </div>
 
           <div class="result-meta">
-            <span>资源：{{ formatResource(item) }}</span>
+            <span>引擎：{{ formatResource(item) }}</span>
             <span v-if="item.schema">桶/Schema：{{ item.schema }}</span>
             <span v-if="item.relative_path">路径：{{ item.relative_path }}</span>
             <span v-if="item.last_modified">更新：{{ formatDate(item.last_modified) }}</span>
@@ -359,9 +359,9 @@ const formatResource = (item = {}) => {
     return name
   }
   if (id) {
-    return `资源 ${id}`
+    return `引擎 ${id}`
   }
-  return '未知资源'
+  return '未知引擎'
 }
 
 const formatDate = (value) => {
@@ -399,7 +399,7 @@ const isVectorMatch = (item = {}) => {
 
 const navigateToDocument = (item = {}) => {
   if (!item.resource_id) {
-    ElMessage.warning('缺少资源信息，无法定位文档')
+    ElMessage.warning('缺少引擎信息，无法定位文档')
     return
   }
   const schema = item.schema || item.bucket || ''

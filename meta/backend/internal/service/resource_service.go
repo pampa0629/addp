@@ -21,11 +21,11 @@ import (
 
 // resourceCacheEntry 缓存条目，包含资源和过期时间
 type resourceCacheEntry struct {
-	resource  *commonModels.Resource
+	resource  *commonModels.Engine
 	expiresAt time.Time
 }
 
-// ResourceService 资源服务 - 直接读取 system.resources
+// ResourceService 资源服务 - 直接读取 system.engines
 type ResourceService struct {
 	db              *gorm.DB
 	systemURL       string
@@ -40,8 +40,8 @@ type ResourceService struct {
 
 // ScanTaskServiceInterface 扫描任务服务接口（避免循环依赖）
 type ScanTaskServiceInterface interface {
-	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Resource) error
-	DeleteTaskByResourceID(resourceID uint) error
+	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Engine) error
+	DeleteTaskByResourceID(engineID uint) error
 	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*models.ScanTaskRun, error)
 }
 
@@ -114,21 +114,21 @@ func (s *ResourceService) PreloadResources() error {
 		return fmt.Errorf("internal client not configured")
 	}
 
-	resources, err := s.internalClient.ListResources("", 0)
+	engines, err := s.internalClient.ListEngines("", 0)
 	if err != nil {
-		return fmt.Errorf("failed to preload resources from System: %w", err)
+		return fmt.Errorf("failed to preload engines from System: %w", err)
 	}
 
-	cache := make(map[uint]*resourceCacheEntry, len(resources))
+	cache := make(map[uint]*resourceCacheEntry, len(engines))
 	expiresAt := time.Now().Add(s.cacheTTL)
-	for i := range resources {
-		res := resources[i]
+	for i := range engines {
+		res := engines[i]
 		if !res.IsActive {
 			continue
 		}
-		resourceCopy := res
-		cache[resourceCopy.ID] = &resourceCacheEntry{
-			resource:  &resourceCopy,
+		engineCopy := res
+		cache[engineCopy.ID] = &resourceCacheEntry{
+			resource:  &engineCopy,
 			expiresAt: expiresAt,
 		}
 	}
@@ -137,7 +137,7 @@ func (s *ResourceService) PreloadResources() error {
 	s.resourceCache = cache
 	s.cacheMu.Unlock()
 
-	s.log.Info("资源缓存预加载完成", "active_resources", len(cache), "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
+	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
 	return nil
 }
 
@@ -171,7 +171,7 @@ func containsMaskedSensitive(info commonModels.ConnectionInfo) bool {
 	return false
 }
 
-func (s *ResourceService) cacheResource(resource *commonModels.Resource) {
+func (s *ResourceService) cacheResource(resource *commonModels.Engine) {
 	if resource == nil {
 		return
 	}
@@ -193,14 +193,14 @@ func (s *ResourceService) ClearCache() {
 }
 
 // ClearResourceCache 清除指定资源的缓存
-func (s *ResourceService) ClearResourceCache(resourceID uint) {
+func (s *ResourceService) ClearResourceCache(engineID uint) {
 	s.cacheMu.Lock()
-	delete(s.resourceCache, resourceID)
+	delete(s.resourceCache, engineID)
 	s.cacheMu.Unlock()
-	s.log.Info("资源缓存已清除", "resource_id", resourceID)
+	s.log.Info("资源缓存已清除", "engine_id", engineID)
 }
 
-func (s *ResourceService) snapshotCache() map[uint]*commonModels.Resource {
+func (s *ResourceService) snapshotCache() map[uint]*commonModels.Engine {
 	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
 
@@ -209,7 +209,7 @@ func (s *ResourceService) snapshotCache() map[uint]*commonModels.Resource {
 	}
 
 	now := time.Now()
-	result := make(map[uint]*commonModels.Resource, len(s.resourceCache))
+	result := make(map[uint]*commonModels.Engine, len(s.resourceCache))
 	for id, entry := range s.resourceCache {
 		if entry == nil || entry.resource == nil {
 			continue
@@ -225,17 +225,17 @@ func (s *ResourceService) snapshotCache() map[uint]*commonModels.Resource {
 }
 
 // GetResourcesByTenant 获取租户的所有数据库类型资源
-func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.Resource, error) {
+func (s *ResourceService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
 	if s.internalClient != nil {
-		systemResources, err := s.internalClient.ListResources("", tenantID)
+		systemResources, err := s.internalClient.ListEngines("", tenantID)
 		if err == nil {
 			s.log.Info("从 System API 获取资源列表成功",
 				"tenant_id", tenantID,
 				"resource_total", len(systemResources),
 			)
-			var resources []*commonModels.Resource
+			var engines []*commonModels.Engine
 			for i := range systemResources {
 				res := systemResources[i]
 				if !res.IsActive {
@@ -248,11 +248,11 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 						continue
 					}
 					resourceCopy := res
-					resources = append(resources, &resourceCopy)
+					engines = append(engines, &resourceCopy)
 				}
 			}
-			s.log.Info("最终资源列表", "tenant_id", tenantID, "count", len(resources))
-			return resources, nil
+			s.log.Info("最终引擎列表", "tenant_id", tenantID, "count", len(engines))
+			return engines, nil
 		}
 
 		s.log.Warn("从 System API 获取资源失败，回退至本地缓存", "error", err, "tenant_id", tenantID)
@@ -268,10 +268,10 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 
 	if len(cached) == 0 {
 		s.log.Info("当前没有可用的资源", "tenant_id", tenantID)
-		return []*commonModels.Resource{}, nil // 返回空列表而不是错误
+		return []*commonModels.Engine{}, nil // 返回空列表而不是错误
 	}
 
-	var resources []*commonModels.Resource
+	var engines []*commonModels.Engine
 	for _, resource := range cached {
 		if resource == nil || !resource.IsActive {
 			continue
@@ -282,21 +282,21 @@ func (s *ResourceService) GetResourcesByTenant(tenantID uint) ([]*commonModels.R
 		// 使用 capability 过滤：只要有 storage 能力就纳入元数据管理
 		if utils.HasStorageCapability(resource) {
 			resourceCopy := *resource
-			resources = append(resources, &resourceCopy)
+			engines = append(engines, &resourceCopy)
 		}
 	}
 
-	return resources, nil
+	return engines, nil
 }
 
 // GetResourceByID 根据ID获取资源（从System API获取，密码已解密）
 // token: 用户的JWT token，用于认证System API调用
-func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token string) (*commonModels.Resource, error) {
+func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string) (*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
 	// 检查缓存
 	s.cacheMu.RLock()
-	entry, ok := s.resourceCache[resourceID]
+	entry, ok := s.resourceCache[engineID]
 	s.cacheMu.RUnlock()
 
 	// 如果缓存命中且未过期，返回缓存数据
@@ -316,7 +316,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 	// 缓存未命中或已过期，从 System API 获取
 
 	if s.internalClient != nil {
-		resource, err := s.internalClient.GetResource(resourceID)
+		resource, err := s.internalClient.GetEngine(engineID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get resource from System API: %w", err)
 		}
@@ -335,7 +335,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 	// 使用用户token创建SystemClient（无内部密钥时降级使用用户接口，敏感字段将被脱敏）
 	systemClient := commonClient.NewSystemClient(s.systemURL, token)
 
-	resource, err := systemClient.GetResource(resourceID)
+	resource, err := systemClient.GetEngine(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource from System API: %w", err)
 	}
@@ -348,7 +348,7 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 	// 如果检测到敏感字段被掩码，尝试使用内部客户端重新获取一次。
 	s.ensureInternalClient()
 	if s.internalClient != nil && containsMaskedSensitive(resource.ConnectionInfo) {
-		if internalRes, err := s.internalClient.GetResource(resourceID); err == nil {
+		if internalRes, err := s.internalClient.GetEngine(engineID); err == nil {
 			resource = internalRes
 			s.log.Info("检测到敏感字段被掩码，使用内部 API 重新获取资源连接信息",
 				append(connectionLogFields(resource),
@@ -370,25 +370,25 @@ func (s *ResourceService) GetResourceByID(resourceID, tenantID uint, token strin
 
 // GetResource 实现 mvt.ResourceService 接口
 // 用于 MVT 生成器获取资源连接信息
-func (s *ResourceService) GetResource(resourceID, tenantID uint) (*commonModels.Resource, error) {
+func (s *ResourceService) GetResource(engineID, tenantID uint) (*commonModels.Engine, error) {
 	// 直接调用 GetResourceByID，使用空 token（因为是内部调用）
-	return s.GetResourceByID(resourceID, tenantID, "")
+	return s.GetResourceByID(engineID, tenantID, "")
 }
 
 // GetResourcesWithStats 获取资源及其扫描统计
-func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
-	resources, err := s.GetResourcesByTenant(tenantID)
+func (s *ResourceService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
+	engines, err := s.GetEnginesByTenant(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(resources) == 0 {
+	if len(engines) == 0 {
 		return []*models.ResourceWithStats{}, nil
 	}
 
-	resourceIDs := make([]uint, 0, len(resources))
-	for _, res := range resources {
-		resourceIDs = append(resourceIDs, res.ID)
+	engineIDs := make([]uint, 0, len(engines))
+	for _, res := range engines {
+		engineIDs = append(engineIDs, res.ID)
 	}
 
 	totalCount := make(map[uint]int64)
@@ -401,7 +401,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 	}
 	var totals []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
+		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
 		Where("parent_node_id IS NULL").
 		Select("res_id, COUNT(*) AS count").
 		Group("res_id").
@@ -414,7 +414,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 
 	var scanned []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
+		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
 		Where("parent_node_id IS NULL AND scan_status = ?", "已扫描").
 		Select("res_id, COUNT(*) AS count").
 		Group("res_id").
@@ -431,7 +431,7 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 	}
 	var lastScans []lastScanRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, resourceIDs).
+		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
 		Where("last_scan_at IS NOT NULL").
 		Select("res_id, MAX(last_scan_at) AS last_scan_at").
 		Group("res_id").
@@ -442,8 +442,8 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 		lastScanByRes[row.ResID] = row.LastScanAt
 	}
 
-	result := make([]*models.ResourceWithStats, 0, len(resources))
-	for _, res := range resources {
+	result := make([]*models.ResourceWithStats, 0, len(engines))
+	for _, res := range engines {
 		totalSchemas := 0
 		scannedSchemas := 0
 		lastScanAt := ""
@@ -465,9 +465,9 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 		}
 
 		result = append(result, &models.ResourceWithStats{
-			ResourceID:       res.ID,
+			EngineID:       res.ID,
 			ResourceName:     res.Name,
-			ResourceType:     res.ResourceType,
+			ResourceType:     res.EngineType,
 			TotalSchemas:     totalSchemas,
 			ScannedSchemas:   scannedSchemas,
 			UnscannedSchemas: totalSchemas - scannedSchemas,
@@ -484,22 +484,22 @@ func (s *ResourceService) GetResourcesWithStats(tenantID uint) ([]*models.Resour
 // handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
 func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
 	s.log.Info("收到资源变更事件",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"action", event.Action,
 		"timestamp", event.Timestamp)
 
 	switch event.Action {
 	case events.ActionCreate, events.ActionUpdate:
 		// 资源创建或更新：检查 ScanConfig
-		s.ClearResourceCache(event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
 
 		// 如果配置了 taskService，尝试处理扫描配置
 		if s.taskService != nil && s.internalClient != nil {
 			// 获取资源详情（包含 ScanConfig）
-			resource, err := s.internalClient.GetResource(event.ResourceID)
+			resource, err := s.internalClient.GetEngine(event.EngineID)
 			if err != nil {
 				s.log.Error("获取资源详情失败，跳过扫描配置处理",
-					"resource_id", event.ResourceID,
+					"engine_id", event.EngineID,
 					"error", err)
 				return nil // 不阻塞事件处理
 			}
@@ -508,14 +508,14 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 			if resource.ScanConfig != nil && (resource.ScanConfig.ImmediateScan || resource.ScanConfig.ScheduledScan) {
 				// 1. 处理立即扫描
 				if resource.ScanConfig.ImmediateScan {
-					s.log.Info("检测到立即扫描配置，准备触发扫描", "resource_id", event.ResourceID)
+					s.log.Info("检测到立即扫描配置，准备触发扫描", "engine_id", event.EngineID)
 					go func() {
 						if err := s.triggerImmediateScan(resource); err != nil {
 							s.log.Error("立即扫描失败",
-								"resource_id", event.ResourceID,
+								"engine_id", event.EngineID,
 								"error", err)
 						} else {
-							s.log.Info("立即扫描已触发", "resource_id", event.ResourceID)
+							s.log.Info("立即扫描已触发", "engine_id", event.EngineID)
 						}
 					}()
 				}
@@ -523,51 +523,51 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 				// 2. 处理定时扫描
 				if resource.ScanConfig.ScheduledScan {
 					s.log.Info("检测到定时扫描配置，准备创建定时任务",
-						"resource_id", event.ResourceID,
+						"engine_id", event.EngineID,
 						"schedule_type", resource.ScanConfig.ScheduleType)
 					if err := s.taskService.CreateOrUpdateTaskFromScanConfig(resource); err != nil {
 						s.log.Error("创建定时扫描任务失败",
-							"resource_id", event.ResourceID,
+							"engine_id", event.EngineID,
 							"error", err)
 						return err
 					}
-					s.log.Info("定时扫描任务已创建", "resource_id", event.ResourceID)
+					s.log.Info("定时扫描任务已创建", "engine_id", event.EngineID)
 				}
 			} else {
 				// 如果扫描配置被禁用或删除，删除对应的自动任务
-				if err := s.taskService.DeleteTaskByResourceID(event.ResourceID); err != nil {
+				if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
 					s.log.Warn("删除自动扫描任务失败",
-						"resource_id", event.ResourceID,
+						"engine_id", event.EngineID,
 						"error", err)
 				} else {
-					s.log.Info("扫描配置已禁用，自动任务已删除", "resource_id", event.ResourceID)
+					s.log.Info("扫描配置已禁用，自动任务已删除", "engine_id", event.EngineID)
 				}
 			}
 		}
 
 		if event.Action == events.ActionCreate {
-			s.log.Debug("资源已创建", "resource_id", event.ResourceID)
+			s.log.Debug("资源已创建", "engine_id", event.EngineID)
 		} else {
-			s.log.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+			s.log.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
 		}
 
 	case events.ActionDelete:
 		// 资源删除：清除缓存并删除扫描任务
-		s.ClearResourceCache(event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
 
 		if s.taskService != nil {
-			if err := s.taskService.DeleteTaskByResourceID(event.ResourceID); err != nil {
+			if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
 				s.log.Warn("删除资源关联的扫描任务失败",
-					"resource_id", event.ResourceID,
+					"engine_id", event.EngineID,
 					"error", err)
 			} else {
-				s.log.Info("资源已删除，关联任务已清理", "resource_id", event.ResourceID)
+				s.log.Info("资源已删除，关联任务已清理", "engine_id", event.EngineID)
 			}
 		}
 		// TODO: 可以考虑删除相关的元数据（meta_node, meta_item）
 
 	default:
-		s.log.Warn("未知的资源变更动作", "action", event.Action, "resource_id", event.ResourceID)
+		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
 	}
 
 	return nil
@@ -582,7 +582,7 @@ func (s *ResourceService) Stop() {
 }
 
 // triggerImmediateScan 立即触发扫描（用于 immediate 类型的 ScanConfig）
-func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) error {
+func (s *ResourceService) triggerImmediateScan(resource *commonModels.Engine) error {
 	if s.taskService == nil {
 		return fmt.Errorf("扫描任务服务未初始化")
 	}
@@ -602,7 +602,7 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 
 	// 构建扫描请求（不再使用 SchemaNames 和 ObjectPaths，系统自动过滤）
 	req := &models.ScanRequest{
-		ResourceID: resource.ID,
+		EngineID: resource.ID,
 		ScanDepth:  scanDepth,
 		ScanType:   "auto", // 标记为自动扫描
 	}
@@ -623,7 +623,7 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 	}
 
 	s.log.Info("立即扫描任务已创建",
-		"resource_id", resource.ID,
+		"engine_id", resource.ID,
 		"run_id", run.ID,
 		"scan_depth", scanDepth,
 		"tenant_id", tenantID)
@@ -634,22 +634,22 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Resource) 
 // TriggerConnectionCheck 触发System检测连接状态
 // 仅在连接失败时调用，通知System刷新状态
 // 异步触发，不阻塞调用方
-func (s *ResourceService) TriggerConnectionCheck(resourceID uint) {
+func (s *ResourceService) TriggerConnectionCheck(engineID uint) {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
-		s.log.Warn("Internal client不可用，无法触发连接检测", "resource_id", resourceID)
+		s.log.Warn("Internal client不可用，无法触发连接检测", "engine_id", engineID)
 		return
 	}
 
-	url := fmt.Sprintf("%s/internal/resources/%d/check-connection", s.systemURL, resourceID)
+	url := fmt.Sprintf("%s/internal/engines/%d/check-connection", s.systemURL, engineID)
 
 	// 异步发送请求，不阻塞
 	go func() {
 		err := s.internalClient.DoRequest("POST", url, nil, nil)
 		if err != nil {
-			s.log.Debug("触发连接检测失败（非致命）", "resource_id", resourceID, "error", err)
+			s.log.Debug("触发连接检测失败（非致命）", "engine_id", engineID, "error", err)
 		} else {
-			s.log.Debug("已触发System刷新连接状态", "resource_id", resourceID)
+			s.log.Debug("已触发System刷新连接状态", "engine_id", engineID)
 		}
 	}()
 }
@@ -658,13 +658,13 @@ func (s *ResourceService) TriggerConnectionCheck(resourceID uint) {
 // 用于Meta模块在检测连接状态后更新缓存
 // 注意：此方法已废弃，建议使用TriggerConnectionCheck让System自己检测
 // 保留是为了向后兼容
-func (s *ResourceService) UpdateConnectionStatus(resourceID uint, status, message string) error {
+func (s *ResourceService) UpdateConnectionStatus(engineID uint, status, message string) error {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
 		return fmt.Errorf("internal client not available")
 	}
 
-	url := fmt.Sprintf("%s/internal/resources/%d/connection-status", s.systemURL, resourceID)
+	url := fmt.Sprintf("%s/internal/engines/%d/connection-status", s.systemURL, engineID)
 	payload := map[string]string{
 		"connection_status": status,
 		"check_message":     message,

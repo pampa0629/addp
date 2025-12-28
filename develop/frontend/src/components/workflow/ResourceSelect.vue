@@ -7,14 +7,14 @@
     :loading="loading"
   >
     <el-option
-      v-for="resource in filteredResources"
-      :key="resource.id"
-      :label="`${resource.name} (${resource.resource_type})`"
-      :value="resource.id"
+      v-for="engine in filteredEngines"
+      :key="engine.id"
+      `:label="`${engine.name} (${engine.engine_type})`"
+      :value="engine.id"
     >
       <div class="resource-option">
-        <span class="resource-name">{{ resource.name }}</span>
-        <el-tag size="small" type="info">{{ resource.resource_type }}</el-tag>
+        <span class="resource-name">{{ engine.name }}</span>
+        <el-tag size="small" type="info">{{ engine.engine_type }}</el-tag>
       </div>
     </el-option>
   </el-select>
@@ -22,7 +22,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { listResources } from '@/api/resources'
+import { listEngines } from '@/api/engines'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -30,7 +30,7 @@ const props = defineProps({
     type: [Number, String],
     default: null
   },
-  resourceTypes: {
+  engineTypes: {
     type: Array,
     default: () => []
   }
@@ -38,29 +38,29 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'change'])
 
-const resources = ref([])
+const engines = ref([])
 const loading = ref(false)
 
 // 根据 resourceTypes 过滤资源
-const filteredResources = computed(() => {
-  if (!props.resourceTypes || props.resourceTypes.length === 0) {
-    return resources.value
+const filteredEngines = computed(() => {
+  if (!props.engineTypes || props.engineTypes.length === 0) {
+    return engines.value
   }
-  return resources.value.filter(r =>
-    props.resourceTypes.includes(r.resource_type)
+  return engines.value.filter(r =>
+    props.engineTypes.includes(r.resource_type)
   )
 })
 
-// 加载资源列表
-const loadResources = async () => {
+// 加载引擎列表
+const loadEngines = async () => {
   loading.value = true
   try {
-    const data = await listResources()
-    resources.value = Array.isArray(data) ? data : []
+    const data = await listEngines()
+    engines.value = Array.isArray(data) ? data : []
   } catch (error) {
-    console.error('获取资源列表失败:', error)
+    console.error('获取引擎列表失败:', error)
     ElMessage.error('获取存储引擎列表失败')
-    resources.value = []
+    engines.value = []
   } finally {
     loading.value = false
   }
@@ -73,7 +73,7 @@ const handleChange = (value) => {
 }
 
 onMounted(() => {
-  loadResources()
+  loadEngines()
 })
 </script>
 

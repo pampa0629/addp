@@ -7,20 +7,20 @@
 
         <!-- 数据源选择 -->
         <el-select
-          v-model="selectedResourceId"
+          v-model="selectedEngineId"
           placeholder="选择数据源"
           style="width: 280px; margin-left: 20px;"
-          @change="onResourceChange"
+          @change="onEngineChange"
         >
           <el-option
-            v-for="resource in resources"
-            :key="resource.id"
-            :label="`${resource.name} (${resource.resource_type})`"
-            :value="resource.id"
+            v-for="engine in engines"
+            :key="engine.id"
+            `:label="`${engine.name} (${engine.engine_type})`"
+            :value="engine.id"
           >
-            <span style="float: left">{{ resource.name }}</span>
+            <span style="float: left">{{ engine.name }}</span>
             <span style="float: right; color: #8492a6; font-size: 13px">
-              {{ resource.resource_type }}
+              {{ engine.engine_type }}
             </span>
           </el-option>
         </el-select>
@@ -29,7 +29,7 @@
           type="primary"
           :loading="testingConnection"
           @click="handleTestConnection"
-          :disabled="!selectedResourceId"
+          :disabled="!selectedEngineId"
         >
           <el-icon><Connection /></el-icon>
           测试连接
@@ -45,7 +45,7 @@
         <el-button
           type="primary"
           @click="showSaveDialog = true"
-          :disabled="!selectedResourceId || !sqlContent"
+          :disabled="!selectedEngineId || !sqlContent"
         >
           <el-icon><FolderAdd /></el-icon>
           保存为任务
@@ -55,7 +55,7 @@
           type="success"
           @click="executeSQL"
           :loading="executing"
-          :disabled="!selectedResourceId || !sqlContent"
+          :disabled="!selectedEngineId || !sqlContent"
         >
           <el-icon><VideoPlay /></el-icon>
           执行 (Ctrl+Enter)
@@ -114,7 +114,7 @@
     <!-- 保存任务对话框 -->
     <SaveSQLDialog
       v-model="showSaveDialog"
-      :resource-id="selectedResourceId"
+      :resource-id="selectedEngineId"
       :sql="sqlContent"
       @saved="handleSaveTask"
     />
@@ -147,8 +147,8 @@ const route = useRoute()
 // 状态
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
-const selectedResourceId = ref(null)
-const resources = ref([])
+const selectedEngineId = ref(null)
+const engines = ref([])
 const sqlContent = ref('SELECT * FROM users LIMIT 10;')
 const executionResult = ref(null)
 const executing = ref(false)
@@ -157,39 +157,39 @@ const editorRef = ref(null)
 const showSaveDialog = ref(false)
 
 // 加载数据源列表
-const loadResources = async () => {
+const loadEngines = async () => {
   try {
-    const response = await client.get('/develop/resources')
+    const response = await client.get('/develop/engines')
 
     // 添加 null 安全检查
     if (!response || !Array.isArray(response)) {
       console.warn('Develop: 获取到的数据源列表为空或格式不正确:', response)
-      resources.value = []
+      engines.value = []
       return
     }
 
-    resources.value = response.filter(r =>
+    engines.value = response.filter(r =>
       ['postgresql', 'mysql', 'doris', 'spark_sql'].includes(r.resource_type.toLowerCase())
     )
 
     // 默认选择第一个
-    if (resources.value.length > 0 && !selectedResourceId.value) {
-      selectedResourceId.value = resources.value[0].id
+    if (engines.value.length > 0 && !selectedEngineId.value) {
+      selectedEngineId.value = engines.value[0].id
     }
   } catch (error) {
     console.error('Develop: 加载数据源失败:', error)
     ElMessage.error('加载数据源失败: ' + (error.response?.data?.error || error.message))
-    resources.value = []
+    engines.value = []
   }
 }
 
 // 测试连接
 const handleTestConnection = async () => {
-  if (!selectedResourceId.value) return
+  if (!selectedEngineId.value) return
 
   testingConnection.value = true
   try {
-    await testConnection(selectedResourceId.value)
+    await testConnection(selectedEngineId.value)
     ElMessage.success('连接测试成功')
   } catch (error) {
     ElMessage.error('连接失败: ' + (error.response?.data?.error || error.message))
@@ -200,7 +200,7 @@ const handleTestConnection = async () => {
 
 // 执行 SQL
 const executeSQL = async () => {
-  if (!selectedResourceId.value) {
+  if (!selectedEngineId.value) {
     ElMessage.warning('请先选择数据源')
     return
   }
@@ -219,7 +219,7 @@ const executeSQL = async () => {
 
   try {
     const response = await executeAPI(
-      selectedResourceId.value,
+      selectedEngineId.value,
       sqlContent.value.trim(),
       120000 // 2分钟超时
     )
@@ -270,7 +270,7 @@ const clearResult = () => {
 }
 
 // 数据源切换
-const onResourceChange = () => {
+const onEngineChange = () => {
   executionResult.value = null
 }
 
@@ -301,7 +301,7 @@ const loadTask = async (taskId) => {
 
       // 如果有关联资源,也设置资源ID
       if (task.resource_id) {
-        selectedResourceId.value = task.resource_id
+        selectedEngineId.value = task.resource_id
       }
 
       ElMessage.success(`已加载 SQL 任务: ${task.name}`)
@@ -316,7 +316,7 @@ const loadTask = async (taskId) => {
 
 // 页面加载
 onMounted(async () => {
-  await loadResources()
+  await loadEngines()
 
   // 检查是否有任务 ID
   const taskId = route.query.taskId

@@ -138,8 +138,8 @@ export const inferScope = (config, fallbackId) => {
   const raw = toLower(config.scope)
   if (raw) return raw
   if (fallbackId !== undefined && fallbackId !== null) return 'system'
-  if (config.system_resource_id !== undefined && config.system_resource_id !== null) return 'system'
-  if (config.local_resource_id !== undefined && config.local_resource_id !== null) return 'local'
+  if (config.system_engine_id !== undefined && config.system_engine_id !== null) return 'system'
+  if (config.local_engine_id !== undefined && config.local_engine_id !== null) return 'local'
   if (config.connection_info) return 'local'
   return ''
 }
@@ -159,7 +159,7 @@ export const buildConnectorDetails = (task, role, systemResourceMap) => {
   addItem(items, '范围', formatScopeLabel(scope))
 
   if (scope === 'system') {
-    const resourceId = fallbackId ?? config.system_resource_id
+    const resourceId = fallbackId ?? config.system_engine_id
     const resource = resourceId !== undefined && resourceId !== null
       ? systemResourceMap.get(Number(resourceId))
       : null
@@ -171,7 +171,7 @@ export const buildConnectorDetails = (task, role, systemResourceMap) => {
     addItem(items, '数据源', labelParts.length ? labelParts.join(' / ') : '未配置')
     addItem(items, '连接类型', getConnectorTypeLabel(resourceType))
   } else if (scope === 'local') {
-    const resourceId = config.local_resource_id
+    const resourceId = config.local_engine_id
     const resourceName = config.local_resource_name
     const labelParts = []
     if (resourceName) labelParts.push(resourceName)
@@ -239,7 +239,7 @@ export const buildConnectorDetails = (task, role, systemResourceMap) => {
   const connection =
     config.connection_info ||
     (scope === 'system'
-      ? (systemResourceMap.get(Number(config.system_resource_id ?? fallbackId))?.connection_info || {})
+      ? (systemResourceMap.get(Number(config.system_engine_id ?? fallbackId))?.connection_info || {})
       : {})
   if (connection.host) {
     const host = connection.port ? `${connection.host}:${connection.port}` : connection.host

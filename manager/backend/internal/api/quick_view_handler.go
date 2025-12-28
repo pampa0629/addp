@@ -31,10 +31,10 @@ type TriggerQuickViewRequest struct {
 }
 
 // TriggerQuickView 触发快显缓存生成
-// POST /api/resources/:id/spatial/:schema/:table/quick-view
+// POST /api/engines/:id/spatial/:schema/:table/quick-view
 func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 1. 解析路径参数
-	resourceID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
 		return
@@ -66,7 +66,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 4. 调用服务层
 	params := service.TriggerQuickViewParams{
 		TenantID:    tenantID,
-		ResourceID:  uint(resourceID),
+		EngineID:  uint(engineID),
 		SchemaName:  schema,
 		TableName:   table,
 		MinZoom:     req.MinZoom,
@@ -88,10 +88,10 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 }
 
 // GetQuickViewStatus 获取快显状态
-// GET /api/resources/:id/spatial/:schema/:table/quick-view/status
+// GET /api/engines/:id/spatial/:schema/:table/quick-view/status
 func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	// 1. 解析路径参数
-	resourceID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
 		return
@@ -109,7 +109,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	}
 
 	// 3. 查询状态
-	qv, err := h.service.GetStatus(c.Request.Context(), tenantID, uint(resourceID), schema, table)
+	qv, err := h.service.GetStatus(c.Request.Context(), tenantID, uint(engineID), schema, table)
 	if err != nil {
 		logger.L().Error("Failed to get quick view status", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -120,10 +120,10 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 }
 
 // ClearQuickView 清除快显缓存
-// DELETE /api/resources/:id/spatial/:schema/:table/quick-view
+// DELETE /api/engines/:id/spatial/:schema/:table/quick-view
 func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	// 1. 解析路径参数
-	resourceID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
 		return
@@ -141,7 +141,7 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	}
 
 	// 3. 清除缓存
-	if err := h.service.ClearQuickView(c.Request.Context(), tenantID, uint(resourceID), schema, table); err != nil {
+	if err := h.service.ClearQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
 		logger.L().Error("Failed to clear quick view", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -159,13 +159,13 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	status := c.Query("status")
-	resourceIDStr := c.Query("resource_id")
+	resourceIDStr := c.Query("engine_id")
 
-	var resourceID uint
-	if resourceIDStr != "" {
-		rid, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	var engineID uint
+	if engineIDStr != "" {
+		rid, err := strconv.ParseUint(engineIDStr, 10, 32)
 		if err == nil {
-			resourceID = uint(rid)
+			engineID = uint(rid)
 		}
 	}
 
@@ -180,7 +180,7 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	// 3. 查询任务列表
 	params := repository.ListParams{
 		Status:     status,
-		ResourceID: resourceID,
+		EngineID: engineID,
 		Page:       page,
 		PageSize:   pageSize,
 	}

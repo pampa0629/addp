@@ -21,7 +21,7 @@ const (
 
 // ScanCompletedEvent 扫描完成事件
 type ScanCompletedEvent struct {
-	ResourceID        uint      `json:"resource_id"`
+	EngineID          uint      `json:"engine_id"`
 	TenantID          uint      `json:"tenant_id"`
 	ScanType          string    `json:"scan_type"`           // database or object_storage
 	ScannedNodes      []string  `json:"scanned_nodes"`       // schemas or prefixes that were scanned
@@ -50,7 +50,7 @@ func NewScanEventPublisher(redisClient *redis.Client, logger *slog.Logger) *Scan
 func (p *ScanEventPublisher) PublishScanCompleted(ctx context.Context, event ScanCompletedEvent) error {
 	if p.redis == nil {
 		p.logger.Warn("Redis client not configured, skipping scan event publish",
-			"resource_id", event.ResourceID,
+			"engine_id", event.EngineID,
 			"scan_type", event.ScanType)
 		return nil // 不阻塞业务逻辑
 	}
@@ -67,7 +67,7 @@ func (p *ScanEventPublisher) PublishScanCompleted(ctx context.Context, event Sca
 
 	if err := p.redis.Publish(ctx, ChannelScanCompleted, data).Err(); err != nil {
 		p.logger.Error("failed to publish scan completed event",
-			"resource_id", event.ResourceID,
+			"engine_id", event.EngineID,
 			"tenant_id", event.TenantID,
 			"scan_type", event.ScanType,
 			"error", err)
@@ -75,7 +75,7 @@ func (p *ScanEventPublisher) PublishScanCompleted(ctx context.Context, event Sca
 	}
 
 	p.logger.Info("scan completed event published",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"tenant_id", event.TenantID,
 		"scan_type", event.ScanType,
 		"items_count", event.ScannedItemsCount)
@@ -147,7 +147,7 @@ func (s *ScanEventSubscriber) Start() {
 			// 调用处理器
 			if err := s.handler(event); err != nil {
 				s.logger.Error("failed to handle scan event",
-					"resource_id", event.ResourceID,
+					"engine_id", event.EngineID,
 					"tenant_id", event.TenantID,
 					"scan_type", event.ScanType,
 					"error", err)

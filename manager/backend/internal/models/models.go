@@ -8,11 +8,11 @@ import (
 	commonModels "github.com/addp/common/models"
 )
 
-// Resource 直接映射到 system.resources 表
-type Resource struct {
+// Engine 直接映射到 system.engines 表
+type Engine struct {
 	ID             uint           `json:"id" gorm:"primaryKey"`
 	Name           string         `json:"name"`
-	ResourceType   string         `json:"resource_type"` // postgresql, minio
+	EngineType     string         `json:"engine_type"` // postgresql, minio
 	ConnectionInfo ConnectionInfo `json:"connection_info" gorm:"type:jsonb"`
 	Description    string         `json:"description"`
 	CreatedBy      *uint          `json:"created_by"`
@@ -22,10 +22,13 @@ type Resource struct {
 	UpdatedAt      time.Time      `json:"updated_at"`
 }
 
-// TableName 指定表名为 system.resources
-func (Resource) TableName() string {
-	return "system.resources"
+// TableName 指定表名为 system.engines
+func (Engine) TableName() string {
+	return "system.engines"
 }
+
+// Resource 是 Engine 的别名，保持向后兼容
+type Resource = Engine
 
 // Directory 目录结构
 type Directory struct {
@@ -80,7 +83,7 @@ type ResourceListResponse struct {
 // ManagedTable 纳入管理的数据库表
 type ManagedTable struct {
 	ID          uint            `json:"id" gorm:"primaryKey"`
-	ResourceID  uint            `json:"resource_id" gorm:"index"` // system.resources 的 ID
+	EngineID    uint            `json:"engine_id" gorm:"index"` // system.engines 的 ID
 	SchemaName  string          `json:"schema_name"`              // schema/database名称
 	TableName   string          `json:"table_name" gorm:"index"`
 	FullName    string          `json:"full_name"`                             // schema.table 完整名称
@@ -111,7 +114,7 @@ type TableColumn struct {
 // ManagedFile 纳入管理的对象存储文件/目录
 type ManagedFile struct {
 	ID           uint            `json:"id" gorm:"primaryKey"`
-	ResourceID   uint            `json:"resource_id" gorm:"index"`              // system.resources 的 ID
+	EngineID     uint            `json:"engine_id" gorm:"index"`              // system.engines 的 ID
 	Bucket       string          `json:"bucket"`                                // bucket名称
 	Path         string          `json:"path" gorm:"index"`                     // 完整路径
 	FileName     string          `json:"file_name"`                             // 文件名
@@ -141,17 +144,17 @@ type MetadataScanResult struct {
 
 // DataExplorerResource 数据探查资源树节点
 type DataExplorerResource struct {
-	ID           uint                 `json:"id"`
-	Name         string               `json:"name"`
-	ResourceType string               `json:"resource_type"`
-	Schemas      []DataExplorerSchema `json:"schemas"`
+	ID         uint                 `json:"id"`
+	Name       string               `json:"name"`
+	EngineType string               `json:"engine_type"`
+	Schemas    []DataExplorerSchema `json:"schemas"`
 }
 
 type ExplorerResource struct {
-	ID           uint   `json:"id"`
-	Name         string `json:"name"`
-	ResourceType string `json:"resource_type"`
-	Description  string `json:"description,omitempty"`
+	ID          uint   `json:"id"`
+	Name        string `json:"name"`
+	EngineType  string `json:"engine_type"`
+	Description string `json:"description,omitempty"`
 }
 
 type DataExplorerSchema struct {
@@ -174,8 +177,7 @@ type DataExplorerTable struct {
 
 type MetaNodeLite struct {
 	ID             uint       `json:"id" gorm:"column:id"`
-	ResourceID     uint       `json:"resource_id" gorm:"column:resource_id"`
-	ResID          uint       `json:"res_id" gorm:"column:res_id"`
+	EngineID       uint       `json:"engine_id" gorm:"column:engine_id"`
 	ParentNodeID   *uint      `json:"parent_node_id" gorm:"column:parent_node_id"`
 	NodeType       string     `json:"node_type" gorm:"column:node_type"`
 	Name           string     `json:"name" gorm:"column:name"`
@@ -190,8 +192,7 @@ type MetaNodeLite struct {
 
 type MetaItemLite struct {
 	ID              uint       `json:"id" gorm:"column:id"`
-	ResourceID      uint       `json:"resource_id" gorm:"column:resource_id"`
-	ResID           uint       `json:"res_id" gorm:"column:res_id"`
+	EngineID        uint       `json:"engine_id" gorm:"column:engine_id"`
 	NodeID          uint       `json:"node_id" gorm:"column:node_id"`
 	ItemType        string     `json:"item_type" gorm:"column:item_type"`
 	Name            string     `json:"name" gorm:"column:name"`
@@ -214,10 +215,10 @@ type TablePreview struct {
 	GeometryColumns []string                 `json:"geometry_columns"`
 	Object          *ObjectPreview           `json:"object,omitempty"`
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
-	ResourceID   uint   `json:"resourceId,omitempty"`   // Resource ID for MVT API
-	Schema       string `json:"schema,omitempty"`       // Schema name for MVT API
-	Table        string `json:"table,omitempty"`        // Table name for MVT API
-	ResourceType string `json:"resourceType,omitempty"` // Resource type (e.g., "postgresql")
+	EngineID   uint   `json:"resourceId,omitempty"` // Resource ID for MVT API
+	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
+	Table      string `json:"table,omitempty"`      // Table name for MVT API
+	EngineType string `json:"engineType,omitempty"` // Engine type (e.g., "postgresql")
 }
 
 type ObjectPreview struct {
@@ -230,7 +231,7 @@ type ObjectPreview struct {
 	ContentType       string                 `json:"content_type,omitempty"`
 	Metadata          map[string]string      `json:"metadata,omitempty"`
 	Attributes        JSONMap                `json:"attributes,omitempty"`
-	ResourceID        uint                   `json:"resource_id,omitempty"`
+	EngineID          uint                   `json:"engine_id,omitempty"`
 	ObjectKey         string                 `json:"object_key,omitempty"`
 	Children          []ObjectPreviewChild   `json:"children,omitempty"`
 	Content           *ObjectPreviewContent  `json:"content,omitempty"`
@@ -263,7 +264,7 @@ type ObjectPreviewContent struct {
 type MetaScanTask struct {
 	ID             uint       `json:"id"`
 	TenantID       uint       `json:"tenant_id"`
-	ResourceID     uint       `json:"resource_id"`
+	EngineID       uint       `json:"engine_id"`
 	Name           string     `json:"name"`
 	Description    string     `json:"description,omitempty"`
 	ScheduleType   string     `json:"schedule_type"`
@@ -283,7 +284,7 @@ type MetaScanTask struct {
 type MetaScanTaskRequest struct {
 	Name           string   `json:"name" binding:"required"`
 	Description    string   `json:"description"`
-	ResourceID     uint     `json:"resource_id"`
+	EngineID       uint     `json:"engine_id"`
 	SchemaNames    []string `json:"schema_names"`
 	ObjectPaths    []string `json:"object_paths"`
 	ScanDepth      string   `json:"scan_depth"`
@@ -299,7 +300,7 @@ type MetaScanTaskRun struct {
 	ID              uint       `json:"id"`
 	TaskID          *uint      `json:"task_id,omitempty"`
 	TenantID        uint       `json:"tenant_id"`
-	ResourceID      uint       `json:"resource_id"`
+	EngineID        uint       `json:"engine_id"`
 	Name            string     `json:"name"`
 	StorageType     string     `json:"storage_type"`
 	TaskName        string     `json:"task_name"`

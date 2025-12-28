@@ -78,7 +78,7 @@
   - **basic/** - 基础 UI 组件,无地图依赖(StorageEngineForm、ImagePreview、formatters)
   - **map/** - 地图相关组件,需要 OpenLayers 和高德地图(GeoJsonPreview、ShapefilePreview、TablePreview)
 - **portal/** - 统一门户入口,基于 iframe 的模块集成 - **已实现**
-- **system/** - 核心系统模块:用户认证、日志、资源管理 - **已实现** (PostgreSQL system schema)
+- **system/** - 核心系统模块:用户认证、日志、引擎管理 - **已实现** (PostgreSQL system schema)
 - **gateway/** - API 网关:处理外部请求并路由到内部服务 - **已实现** (反向代理)
 - **manager/** - 数据管理:数据源连接、上传目录组织、数据预览 - **已实现**
 - **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 - **已实现** (PostgreSQL metadata schema)
@@ -206,7 +206,7 @@ ADDP 采用 **系统与业务数据分离** 架构设计:
 
 - **Docker Compose 项目名**: `addp-infra`
 - **容器命名**: 简单名称 (postgres、redis、minio、meilisearch),通过项目名管理隔离
-- **postgres**: 存储 ADDP 系统元数据 (用户、资源配置、元数据索引、任务定义等)
+- **postgres**: 存储 ADDP 系统元数据 (用户、引擎配置、元数据索引、任务定义等)
 - **redis**: 缓存和任务队列 (Asynq)
 - **minio**: 存储系统文件 (用户头像、系统配置、模块化 buckets)
 - **meilisearch**: 全文搜索引擎 (元数据资产搜索、文件索引)
@@ -264,7 +264,7 @@ portal/frontend/           → 统一门户入口 (端口 5170 dev / 8000 prod)
 
 system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
 ├── 可独立运行或嵌入 portal
-├── 功能: 用户、日志、资源
+├── 功能: 用户、日志、引擎
 其他模块类似 system。
 ```
 
@@ -297,7 +297,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 ### 测试账号
 
-**租户管理员**: `admin` / `123456` (管理默认租户的用户、资源、数据)
+**租户管理员**: `admin` / `123456` (管理默认租户的用户、引擎、数据)
 **超级管理员**: `SuperAdmin` / `20251001#SuperAdmin` (系统级管理、租户管理)
 
 详细说明和启用方法: system/CLAUDE.md

@@ -41,7 +41,7 @@ func isUndefinedTableError(err error) bool {
 }
 
 // ScanDatabaseTables 扫描数据库中的所有表（轻量级元数据）
-func (r *MetadataRepository) ScanDatabaseTables(resourceID uint, connInfo models.ConnectionInfo) ([]models.ManagedTable, error) {
+func (r *MetadataRepository) ScanDatabaseTables(engineID uint, connInfo models.ConnectionInfo) ([]models.ManagedTable, error) {
 	resourceType, ok := connInfo["resource_type"].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing resource_type in connection info")
@@ -122,7 +122,7 @@ func (r *MetadataRepository) ScanDatabaseTables(resourceID uint, connInfo models
 		fullName := fmt.Sprintf("%s.%s", schemaName, tableName)
 
 		table := models.ManagedTable{
-			ResourceID:  resourceID,
+			EngineID:  engineID,
 			SchemaName:  schemaName,
 			TableName:   tableName,
 			FullName:    fullName,
@@ -150,8 +150,8 @@ func (r *MetadataRepository) ScanDatabaseTables(resourceID uint, connInfo models
 func (r *MetadataRepository) SaveOrUpdateTables(tables []models.ManagedTable) error {
 	for _, table := range tables {
 		var existing models.ManagedTable
-		err := r.db.Where("resource_id = ? AND schema_name = ? AND table_name = ?",
-			table.ResourceID, table.SchemaName, table.TableName).First(&existing).Error
+		err := r.db.Where("engine_id = ? AND schema_name = ? AND table_name = ?",
+			table.EngineID, table.SchemaName, table.TableName).First(&existing).Error
 
 		if err == gorm.ErrRecordNotFound {
 			// 新表，创建记录
@@ -177,9 +177,9 @@ func (r *MetadataRepository) SaveOrUpdateTables(tables []models.ManagedTable) er
 }
 
 // GetManagedTables 获取已纳管的表列表
-func (r *MetadataRepository) GetManagedTables(resourceID uint, isManaged *bool) ([]models.ManagedTable, error) {
+func (r *MetadataRepository) GetManagedTables(engineID uint, isManaged *bool) ([]models.ManagedTable, error) {
 	var tables []models.ManagedTable
-	query := r.db.Where("resource_id = ?", resourceID)
+	query := r.db.Where("engine_id = ?", engineID)
 
 	if isManaged != nil {
 		query = query.Where("is_managed = ?", *isManaged)
@@ -377,8 +377,8 @@ func (r *MetadataRepository) UnmarkTableAsManaged(tableID uint) error {
 }
 
 // ListScannedNodesAndItems 获取指定资源的顶层节点、子节点和条目
-func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
-	if resourceID == 0 {
+func (r *MetadataRepository) ListScannedNodesAndItems(engineID uint, metaClient *commonClient.MetaClient) ([]models.MetaNodeLite, []models.MetaNodeLite, []models.MetaItemLite, error) {
+	if engineID == 0 {
 		return nil, nil, nil, fmt.Errorf("resourceID is required")
 	}
 
@@ -387,7 +387,7 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint, metaClien
 	}
 
 	// 通过 Meta API 获取元数据树
-	tree, err := metaClient.GetMetadataTree(resourceID)
+	tree, err := metaClient.GetMetadataTree(engineID)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get metadata tree from Meta API: %w", err)
 	}
@@ -412,13 +412,13 @@ func (r *MetadataRepository) ListScannedNodesAndItems(resourceID uint, metaClien
 }
 
 // GetObjectMetadataItem 获取对象存储路径对应的元数据项记录
-func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, objectPath string, metaClient *commonClient.MetaClient) (*models.MetaItemLite, error) {
+func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, objectPath string, metaClient *commonClient.MetaClient) (*models.MetaItemLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	// 通过 Meta API 查询对象元数据
-	item, err := metaClient.GetItemByPath(resourceID, bucketName, objectPath)
+	item, err := metaClient.GetItemByPath(engineID, bucketName, objectPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get item metadata from Meta API: %w", err)
 	}
@@ -428,7 +428,7 @@ func (r *MetadataRepository) GetObjectMetadataItem(resourceID uint, bucketName, 
 }
 
 // GetObjectMetadataNode 获取对象存储节点（bucket/prefix）的元数据
-func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, relativePath string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, relativePath string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
@@ -440,7 +440,7 @@ func (r *MetadataRepository) GetObjectMetadataNode(resourceID uint, bucketName, 
 	}
 
 	// 通过 Meta API 查询节点
-	node, err := metaClient.GetNodeByPath(resourceID, nodePath)
+	node, err := metaClient.GetNodeByPath(engineID, nodePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node metadata from Meta API: %w", err)
 	}
@@ -668,13 +668,13 @@ func (r *MetadataRepository) DecryptConnectionInfo(connInfo models.ConnectionInf
 }
 
 // GetNodeByName 根据资源ID和节点名称获取节点信息
-func (r *MetadataRepository) GetNodeByName(resourceID uint, nodeName string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
+func (r *MetadataRepository) GetNodeByName(engineID uint, nodeName string, metaClient *commonClient.MetaClient) (*models.MetaNodeLite, error) {
 	if metaClient == nil {
 		return nil, fmt.Errorf("meta client not initialized, cannot query metadata")
 	}
 
 	// 通过 Meta API 按名称查询节点
-	node, err := metaClient.GetNodeByPath(resourceID, nodeName)
+	node, err := metaClient.GetNodeByPath(engineID, nodeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node by name from Meta API: %w", err)
 	}
@@ -727,8 +727,7 @@ func (r *MetadataRepository) GetNodeItems(nodeID uint, metaClient *commonClient.
 func convertMetaNodeToLite(node commonModels.MetaNode) models.MetaNodeLite {
 	return models.MetaNodeLite{
 		ID:             node.ID,
-		ResourceID:     node.ResID,
-		ResID:          node.ResID,
+		EngineID:       node.EngineID,
 		ParentNodeID:   node.ParentNodeID,
 		NodeType:       node.NodeType,
 		Name:           node.Name,
@@ -746,8 +745,7 @@ func convertMetaNodeToLite(node commonModels.MetaNode) models.MetaNodeLite {
 func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
 	return models.MetaItemLite{
 		ID:              item.ID,
-		ResourceID:      item.ResID,
-		ResID:           item.ResID,
+		EngineID:        item.EngineID,
 		NodeID:          item.NodeID,
 		ItemType:        item.ItemType,
 		Name:            item.Name,
@@ -818,9 +816,9 @@ func (r *MetadataRepository) QueryMySQLTablePreview(resource *models.Resource, s
 	var columnsQuery string
 	var colsRows *sql.Rows
 
-	// 检测是否为 Doris (通过 resource.ResourceType)
+	// 检测是否为 Doris (通过 resource.EngineType)
 	isDoris := false
-	if resource != nil && strings.ToLower(resource.ResourceType) == "doris" {
+	if resource != nil && strings.ToLower(resource.EngineType) == "doris" {
 		isDoris = true
 	}
 

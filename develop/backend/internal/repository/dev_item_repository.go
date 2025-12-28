@@ -65,8 +65,8 @@ func (r *DevItemRepository) List(req *models.ListDevItemsRequest, tenantID uint)
 	}
 
 	// 资源ID过滤
-	if req.ResourceID != nil {
-		query = query.Where("resource_id = ?", *req.ResourceID)
+	if req.EngineID != nil {
+		query = query.Where("engine_id = ?", *req.EngineID)
 	}
 
 	// 标签过滤 (PostgreSQL array contains)
@@ -172,9 +172,9 @@ func (r *DevItemRepository) CountByType(tenantID uint) (map[string]int64, error)
 }
 
 // FindByResourceID 查找使用指定资源的所有开发项
-func (r *DevItemRepository) FindByResourceID(resourceID uint, tenantID uint) ([]models.DevItem, error) {
+func (r *DevItemRepository) FindByResourceID(engineID uint, tenantID uint) ([]models.DevItem, error) {
 	var items []models.DevItem
-	if err := r.db.Where("resource_id = ? AND tenant_id = ?", resourceID, tenantID).
+	if err := r.db.Where("engine_id = ? AND tenant_id = ?", engineID, tenantID).
 		Find(&items).Error; err != nil {
 		return nil, err
 	}

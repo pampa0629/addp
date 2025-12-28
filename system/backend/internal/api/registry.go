@@ -53,13 +53,13 @@ func (h *RegistryHandler) ListCapabilities(c *gin.Context) {
 		filters["is_active"] = isActive == "true"
 	}
 
-	resources, err := h.registryService.ListCapabilities(c.Request.Context(), filters)
+	engines, err := h.registryService.ListCapabilities(c.Request.Context(), filters)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }
 
 // GetCapabilityByIdentifier 根据 unique_identifier 查询能力

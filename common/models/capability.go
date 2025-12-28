@@ -57,7 +57,7 @@ type CapabilityRegistrationRequest struct {
 	UniqueIdentifier  string             `json:"unique_identifier" binding:"required"` // 唯一标识符（如 "meta.scanner.default"）
 	Name              string             `json:"name" binding:"required"`              // 显示名称（英文标识）
 	DisplayName       string             `json:"display_name"`                         // 中文显示名称（可选，未提供时默认等于 name）
-	ResourceType      string             `json:"resource_type" binding:"required"`     // database, compute_engine, object_storage
+	EngineType        string             `json:"engine_type" binding:"required"`       // database, compute_engine, object_storage
 	IsBuiltin         bool               `json:"is_builtin"`                           // 是否为内置引擎
 	Capabilities      *Capability        `json:"capabilities,omitempty"`               // 能力声明
 	TaskAPIConfig     *TaskAPIConfig     `json:"task_api_config,omitempty"`            // 任务 API 配置（仅计算引擎）

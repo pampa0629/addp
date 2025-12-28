@@ -105,7 +105,7 @@ type Task struct {
 	Description             string          `gorm:"type:text" json:"description"`
 	Type                    TaskType        `gorm:"type:varchar(50);not null" json:"type"`
 	Mode                    TaskMode        `gorm:"type:varchar(20);default:'batch'" json:"mode"`
-	SourceID                *uint           `gorm:"index" json:"source_id,omitempty"`  // 源数据源 ID（关联 system.resources）
+	SourceID                *uint           `gorm:"index" json:"source_id,omitempty"`  // 源数据源 ID（关联 system.engines）
 	TargetID                *uint           `gorm:"index" json:"target_id,omitempty"`  // 目标数据源 ID
 	Config                  JSONMap         `gorm:"type:jsonb;not null" json:"config"` // 任务配置
 	Schedule                string          `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式

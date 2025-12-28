@@ -20,8 +20,8 @@ func NewScanDedupService(redis *redis.Client) *ScanDedupService {
 
 // GenerateTaskKey 生成任务唯一标识
 // 格式: meta:cache:scan_task:{tenant_id}:{resource_id}:{scan_type}
-func (s *ScanDedupService) GenerateTaskKey(tenantID, resourceID uint, scanType string) string {
-	return fmt.Sprintf("meta:cache:scan_task:%d:%d:%s", tenantID, resourceID, scanType)
+func (s *ScanDedupService) GenerateTaskKey(tenantID, engineID uint, scanType string) string {
+	return fmt.Sprintf("meta:cache:scan_task:%d:%d:%s", tenantID, engineID, scanType)
 }
 
 // CheckTaskExists 检查任务是否正在执行
@@ -45,8 +45,8 @@ func (s *ScanDedupService) ClearTask(ctx context.Context, taskKey string) error 
 }
 
 // GetLastScanTime 获取上次扫描时间
-func (s *ScanDedupService) GetLastScanTime(ctx context.Context, resourceID uint) (*time.Time, error) {
-	key := fmt.Sprintf("meta:cache:scan_last_time:%d", resourceID)
+func (s *ScanDedupService) GetLastScanTime(ctx context.Context, engineID uint) (*time.Time, error) {
+	key := fmt.Sprintf("meta:cache:scan_last_time:%d", engineID)
 	val, err := s.redis.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return nil, nil
@@ -63,7 +63,7 @@ func (s *ScanDedupService) GetLastScanTime(ctx context.Context, resourceID uint)
 }
 
 // UpdateLastScanTime 更新上次扫描时间
-func (s *ScanDedupService) UpdateLastScanTime(ctx context.Context, resourceID uint) error {
-	key := fmt.Sprintf("meta:cache:scan_last_time:%d", resourceID)
+func (s *ScanDedupService) UpdateLastScanTime(ctx context.Context, engineID uint) error {
+	key := fmt.Sprintf("meta:cache:scan_last_time:%d", engineID)
 	return s.redis.Set(ctx, key, time.Now().Format(time.RFC3339), 0).Err()
 }

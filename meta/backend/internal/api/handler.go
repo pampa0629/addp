@@ -43,8 +43,8 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 func (h *Handler) GetObjectMetadata(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -56,7 +56,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 		return
 	}
 
-	item, err := h.scanService.GetObjectMetadata(tenantID, uint(resourceID), objectKey)
+	item, err := h.scanService.GetObjectMetadata(tenantID, uint(engineID), objectKey)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -66,32 +66,32 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 }
 
 // GetResources 获取资源列表及统计
-// GET /api/meta/resources
-func (h *Handler) GetResources(c *gin.Context) {
+// GET /api/meta/engines
+func (h *Handler) GetEngines(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resources, err := h.resourceService.GetResourcesWithStats(tenantID)
+	engines, err := h.resourceService.GetEnginesWithStats(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": resources})
+	c.JSON(http.StatusOK, gin.H{"data": engines})
 }
 
 // GetSchemas 获取资源的Schema列表
-// GET /api/meta/schemas/:resource_id
+// GET /api/meta/schemas/:engine_id
 func (h *Handler) GetSchemas(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Param("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Param("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
 	}
 
-	schemas, err := h.scanService.GetSchemasByResource(uint(resourceID), tenantID)
+	schemas, err := h.scanService.GetSchemasByResource(uint(engineID), tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -101,12 +101,12 @@ func (h *Handler) GetSchemas(c *gin.Context) {
 }
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
-// GET /api/meta/schemas/:resource_id/available
+// GET /api/meta/schemas/:engine_id/available
 func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Param("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Param("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -123,7 +123,7 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 		token = token[7:]
 	}
 
-	schemas, err := h.scanService.ListAvailableSchemas(uint(resourceID), tenantID, token)
+	schemas, err := h.scanService.ListAvailableSchemas(uint(engineID), tenantID, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -136,8 +136,8 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Param("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Param("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -154,7 +154,7 @@ func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 		token = token[7:]
 	}
 
-	nodes, err := h.scanService.ListObjectStorageNodes(uint(resourceID), tenantID, path, token)
+	nodes, err := h.scanService.ListObjectStorageNodes(uint(engineID), tenantID, path, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -265,14 +265,14 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		*taskID = uint(val)
 	}
 
-	if resourceIDStr := c.Query("resource_id"); resourceIDStr != "" {
-		val, parseErr := strconv.ParseUint(resourceIDStr, 10, 32)
+	if engineIDStr := c.Query("engine_id"); engineIDStr != "" {
+		val, parseErr := strconv.ParseUint(engineIDStr, 10, 32)
 		if parseErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 			return
 		}
 		resourceID = new(uint)
-		*resourceID = uint(val)
+		*engineID = uint(val)
 	}
 
 	status := c.Query("status")
@@ -333,7 +333,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 
 	options := &service.ListRunsOptions{
 		TaskID:        taskID,
-		ResourceID:    resourceID,
+		EngineID:    engineID,
 		Status:        strings.TrimSpace(status),
 		TriggerType:   strings.TrimSpace(triggerType),
 		StorageType:   strings.TrimSpace(storageType),
@@ -501,7 +501,7 @@ func (h *Handler) ScanResource(c *gin.Context) {
 		token = token[7:]
 	}
 
-	result, err := h.scanService.ScanResource(req.ResourceID, tenantID, req.SchemaNames, req.ObjectPaths, token)
+	result, err := h.scanService.ScanResource(req.EngineID, tenantID, req.SchemaNames, req.ObjectPaths, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -517,8 +517,8 @@ func (h *Handler) ScanResource(c *gin.Context) {
 func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -545,7 +545,7 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 	defer c.Request.Body.Close()
 
 	// 调用扫描服务提取元数据
-	metadata, err := h.scanService.ExtractObjectMetadataOnDemand(tenantID, uint(resourceID), objectKey, token, objectReader)
+	metadata, err := h.scanService.ExtractObjectMetadataOnDemand(tenantID, uint(engineID), objectKey, token, objectReader)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -573,20 +573,20 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 func (h *Handler) GetTables(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	if resourceIDStr == "" {
+	resourceIDStr := c.Query("engine_id")
+	if engineIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id"})
 		return
 	}
 
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
 	}
 
 	// 获取该资源下的所有表
-	tables, err := h.scanService.GetTablesByResource(uint(resourceID), tenantID)
+	tables, err := h.scanService.GetTablesByResource(uint(engineID), tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -620,11 +620,11 @@ func (h *Handler) GetTables(c *gin.Context) {
 func (h *Handler) GetTableFields(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
+	resourceIDStr := c.Query("engine_id")
 	tableName := c.Query("table_name")
 	includeDetails := c.Query("include_details")
 
-	if resourceIDStr == "" {
+	if engineIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing resource_id"})
 		return
 	}
@@ -633,7 +633,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -641,7 +641,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 
 	// 获取表字段信息
 	if includeDetails == "true" || includeDetails == "1" {
-		fields, err := h.scanService.GetTableFieldDetails(uint(resourceID), tableName, tenantID)
+		fields, err := h.scanService.GetTableFieldDetails(uint(engineID), tableName, tenantID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -650,7 +650,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	names, err := h.scanService.GetTableFields(uint(resourceID), tableName, tenantID)
+	names, err := h.scanService.GetTableFields(uint(engineID), tableName, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -660,10 +660,10 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 }
 
 // ClearResourceCache 清除资源缓存
-// DELETE /api/meta/cache/resources/:resource_id
+// DELETE /api/meta/cache/engines/:engine_id
 func (h *Handler) ClearResourceCache(c *gin.Context) {
-	resourceIDStr := c.Param("resource_id")
-	if resourceIDStr == "all" {
+	resourceIDStr := c.Param("engine_id")
+	if engineIDStr == "all" {
 		// 清除所有缓存
 		h.resourceService.ClearCache()
 		c.JSON(http.StatusOK, gin.H{
@@ -672,15 +672,15 @@ func (h *Handler) ClearResourceCache(c *gin.Context) {
 		return
 	}
 
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
 	}
 
-	h.resourceService.ClearResourceCache(uint(resourceID))
+	h.resourceService.ClearResourceCache(uint(engineID))
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("已清除资源 %d 的缓存", resourceID),
+		"message": fmt.Sprintf("已清除资源 %d 的缓存", engineID),
 	})
 }
 
@@ -703,18 +703,18 @@ func (h *Handler) RefreshResourceCache(c *gin.Context) {
 // ========== 新增：用于 Manager 模块的元数据查询接口 ==========
 
 // GetMetadataTree 获取资源的完整元数据树
-// GET /api/meta/resources/:resource_id/tree
+// GET /api/meta/engines/:engine_id/tree
 func (h *Handler) GetMetadataTree(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Param("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Param("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
 	}
 
-	tree, err := h.scanService.GetMetadataTree(tenantID, uint(resourceID))
+	tree, err := h.scanService.GetMetadataTree(tenantID, uint(engineID))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -791,8 +791,8 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 func (h *Handler) QueryNodeByPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -804,7 +804,7 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 		return
 	}
 
-	node, err := h.scanService.GetNodeByPath(tenantID, uint(resourceID), path)
+	node, err := h.scanService.GetNodeByPath(tenantID, uint(engineID), path)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -818,8 +818,8 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 func (h *Handler) QueryItemByPath(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -833,7 +833,7 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 
 	path := c.Query("path")
 
-	item, err := h.scanService.GetItemByPath(tenantID, uint(resourceID), bucket, path)
+	item, err := h.scanService.GetItemByPath(tenantID, uint(engineID), bucket, path)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -847,8 +847,8 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
-	resourceIDStr := c.Query("resource_id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	resourceIDStr := c.Query("engine_id")
+	resourceID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource_id"})
 		return
@@ -866,7 +866,7 @@ func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
 		return
 	}
 
-	spatialMeta, err := h.scanService.GetTableSpatialMetadata(tenantID, uint(resourceID), schema, table)
+	spatialMeta, err := h.scanService.GetTableSpatialMetadata(tenantID, uint(engineID), schema, table)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return

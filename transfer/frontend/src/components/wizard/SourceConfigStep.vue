@@ -30,7 +30,7 @@
           <div class="hint">
             <p>
               从系统管理 — 存储引擎中配置(全局可用)
-              <el-link type="primary" @click="$emit('open-system-resources')">去配置</el-link>
+              <el-link type="primary" @click="$emit('open-system-engines')">去配置</el-link>
             </p>
             <p>
               在数据传输模块配置(只有数据传输可用)
@@ -100,7 +100,7 @@ const emit = defineEmits([
   'update:connectorType',
   'update:selectedValue',
   'type-change',
-  'open-system-resources',
+  'open-system-engines',
   'open-local-resource'
 ])
 

@@ -272,7 +272,7 @@ import OperatorParamsPanel from '@/components/workflow/OperatorParamsPanel.vue'
 import { createDevItem, executeDevItem, getDevItem } from '@/api/devItem'
 import { getOperatorDetail } from '@/api/operator'
 import { generateWorkflowFromNL } from '@/api/copilot'
-import { getWorkflowEngines, getSparkRuntimes } from '@/api/resources'
+import { getWorkflowEngines, getSparkRuntimes } from '@/api/engines'
 
 const router = useRouter()
 const route = useRoute()

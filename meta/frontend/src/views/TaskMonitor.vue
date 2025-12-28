@@ -14,7 +14,7 @@
         <el-form-item label="资源">
           <el-select v-model="filters.resourceId" placeholder="全部" clearable style="width: 220px">
             <el-option
-              v-for="resource in resources"
+              v-for="engine in engines"
               :key="resource.id"
               :label="resource.name"
               :value="resource.id"
@@ -141,7 +141,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import metaApi from '../api/meta'
 
-const resources = ref([])
+const engines = ref([])
 const taskRuns = ref([])
 const loading = ref(false)
 const page = ref(1)
@@ -196,7 +196,7 @@ const storageTypeOptions = computed(() => {
     })
   }
 
-  resources.value.forEach(res => addOption(res.resource_type))
+  engines.value.forEach(res => addOption(res.resource_type))
   taskRuns.value.forEach(run => {
     if (run.storage_type) {
       addOption(run.storage_type)
@@ -208,10 +208,10 @@ const storageTypeOptions = computed(() => {
   return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
 })
 
-const loadResources = async () => {
+const loadEngines = async () => {
   try {
     const res = await metaApi.getResources()
-    resources.value = res.data || []
+    engines.value = res.data || []
   } catch (error) {
     ElMessage.error('加载资源列表失败: ' + (error.response?.data?.error || error.message))
   }
@@ -223,7 +223,7 @@ const loadTaskRuns = async () => {
     const params = {
       page: page.value,
       page_size: pageSize,
-      resource_id: filters.resourceId || undefined,
+      engine_id: filters.resourceId || undefined,
       status: filters.status || undefined,
       trigger_type: filters.triggerType || undefined,
       storage_type: filters.storageType || undefined,
@@ -260,7 +260,7 @@ const handlePageChange = newPage => {
 }
 
 const refresh = () => {
-  loadResources()
+  loadEngines()
   loadTaskRuns()
 }
 

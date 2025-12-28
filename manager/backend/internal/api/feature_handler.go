@@ -27,11 +27,11 @@ func NewFeatureHandler(resourceRepo *repository.ResourceRepository, metadataRepo
 }
 
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
-// GET /api/resources/:id/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
+// GET /api/engines/:id/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
 func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	// 1. 解析路径参数
 	resourceIDStr := c.Param("id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
 		return
@@ -57,23 +57,23 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	primaryKey := c.DefaultQuery("primary_key", "id")
 
 	// 3. 获取资源信息
-	resource, err := h.resourceRepo.GetByID(uint(resourceID))
+	resource, err := h.resourceRepo.GetByID(uint(engineID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		return
 	}
 
 	// 4. 验证资源类型（只支持 PostgreSQL）
-	if resource.ResourceType != "postgresql" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql resources are supported"})
+	if resource.EngineType != "postgresql" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "only postgresql engines are supported"})
 		return
 	}
 
-	// 5. 转换 Resource 类型为 common.Resource
-	commonResource := &commonModels.Resource{
+	// 5. 转换 Resource 类型为 common.Engine
+	commonResource := &commonModels.Engine{
 		ID:             resource.ID,
 		Name:           resource.Name,
-		ResourceType:   resource.ResourceType,
+		EngineType:     resource.EngineType,
 		ConnectionInfo: commonModels.ConnectionInfo(resource.ConnectionInfo),
 		Description:    resource.Description,
 		IsActive:       resource.IsActive,

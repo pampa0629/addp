@@ -30,7 +30,7 @@ type (
 // NewScanner 创建扫描器的便捷函数
 // 重新导出 scanners.NewScanner，方便调用
 // 重构后：接受Resource对象而不是连接字符串
-func NewScanner(resource *commonModels.Resource) (Scanner, error) {
+func NewScanner(resource *commonModels.Engine) (Scanner, error) {
 	return scanners.NewScanner(resource)
 }
 

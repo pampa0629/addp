@@ -127,7 +127,7 @@
             </el-tab-pane>
 
             <!-- 资源管理接口 -->
-            <el-tab-pane label="资源管理" name="resources">
+            <el-tab-pane label="引擎管理" name="engines">
               <div class="api-section" v-for="api in resourceApis" :key="api.path">
                 <el-descriptions :title="api.name" :column="1" border>
                   <el-descriptions-item label="请求方法">
@@ -360,17 +360,17 @@ user_id: 用户 ID（可选，用于过滤特定用户的日志）`,
   }
 ]
 
-// 资源管理接口
+// 引擎管理接口
 const resourceApis = [
   {
-    name: '创建资源',
+    name: '创建引擎',
     method: 'POST',
-    path: '/api/resources',
-    description: '创建新的资源配置',
+    path: '/api/engines',
+    description: '创建新的引擎配置',
     auth: true,
     request: `{
   "name": "MySQL主库",
-  "resource_type": "database",
+  "engine_type": "mysql",
   "connection_info": {
     "host": "localhost",
     "port": 3306,
@@ -382,7 +382,7 @@ const resourceApis = [
     response: `{
   "id": 1,
   "name": "MySQL主库",
-  "resource_type": "database",
+  "engine_type": "mysql",
   "connection_info": {
     "host": "localhost",
     "port": 3306,
@@ -397,19 +397,19 @@ const resourceApis = [
 }`
   },
   {
-    name: '获取资源列表',
+    name: '获取引擎列表',
     method: 'GET',
-    path: '/api/resources',
-    description: '获取资源列表，支持分页和类型过滤',
+    path: '/api/engines',
+    description: '获取引擎列表，支持分页和类型过滤',
     auth: true,
     query: `page: 页码，默认 1
 page_size: 每页数量，默认 10
-resource_type: 资源类型（可选，如 database、compute_engine）`,
+engine_type: 引擎类型（可选，如 postgresql、mysql、minio）`,
     response: `[
   {
     "id": 1,
     "name": "MySQL主库",
-    "resource_type": "database",
+    "engine_type": "mysql",
     "connection_info": {...},
     "description": "生产环境MySQL数据库",
     "created_by": 1,
@@ -419,15 +419,15 @@ resource_type: 资源类型（可选，如 database、compute_engine）`,
 ]`
   },
   {
-    name: '获取指定资源',
+    name: '获取指定引擎',
     method: 'GET',
-    path: '/api/resources/:id',
-    description: '根据资源 ID 获取资源详细信息',
+    path: '/api/engines/:id',
+    description: '根据引擎 ID 获取引擎详细信息',
     auth: true,
     response: `{
   "id": 1,
   "name": "MySQL主库",
-  "resource_type": "database",
+  "engine_type": "mysql",
   "connection_info": {...},
   "description": "生产环境MySQL数据库",
   "created_by": 1,
@@ -436,10 +436,10 @@ resource_type: 资源类型（可选，如 database、compute_engine）`,
 }`
   },
   {
-    name: '更新资源',
+    name: '更新引擎',
     method: 'PUT',
-    path: '/api/resources/:id',
-    description: '更新指定资源的配置',
+    path: '/api/engines/:id',
+    description: '更新指定引擎的配置',
     auth: true,
     request: `{
   "name": "MySQL主库-更新",
@@ -453,17 +453,17 @@ resource_type: 资源类型（可选，如 database、compute_engine）`,
     response: `{
   "id": 1,
   "name": "MySQL主库-更新",
-  "resource_type": "database",
+  "engine_type": "mysql",
   "connection_info": {...},
   "description": "更新后的描述",
   "is_active": true
 }`
   },
   {
-    name: '删除资源',
+    name: '删除引擎',
     method: 'DELETE',
-    path: '/api/resources/:id',
-    description: '删除指定资源',
+    path: '/api/engines/:id',
+    description: '删除指定引擎',
     auth: true,
     response: `{
   "message": "删除成功"

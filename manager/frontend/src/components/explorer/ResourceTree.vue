@@ -4,15 +4,15 @@
       <div class="tree-header">
         <div class="header-info">
           <span class="header-title">存储引擎</span>
-          <span class="resource-count" v-if="resources.length">
-            共 {{ resources.length }} 个
+          <span class="resource-count" v-if="engines.length">
+            共 {{ engines.length }} 个
           </span>
         </div>
         <div class="header-actions">
           <el-button
             size="small"
-            :loading="loading || loadingResources"
-            :disabled="loadingResources"
+            :loading="loading || loadingEngines"
+            :disabled="loadingEngines"
             @click="emitRefresh"
           >
             <el-icon><Refresh /></el-icon>
@@ -23,7 +23,7 @@
 
     <div class="tree-container" v-loading="loading">
       <el-empty
-        v-if="!resources.length && !loadingResources"
+        v-if="!engines.length && !loadingEngines"
         description="暂无存储引擎"
         class="empty-placeholder"
       />
@@ -78,7 +78,7 @@ import { computed, ref, watch, onMounted, nextTick } from 'vue'
 import { Refresh, Folder, Collection, Document, Loading } from '@element-plus/icons-vue'
 
 const props = defineProps({
-  resources: {
+  engines: {
     type: Array,
     default: () => []
   },
@@ -90,7 +90,7 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  loadingResources: {
+  loadingEngines: {
     type: Boolean,
     default: false
   },
@@ -249,7 +249,7 @@ const isNodeRefreshing = (data) => refreshSet.value.has(data?.id)
 
 const isNodeRefreshDisabled = (data) => {
   if (!data) return true
-  return props.loading || props.loadingResources || isNodeRefreshing(data)
+  return props.loading || props.loadingEngines || isNodeRefreshing(data)
 }
 
 const handleNodeExpand = (data) => {

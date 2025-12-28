@@ -4,17 +4,17 @@ import client from './client'
 let previewAbortController = null
 
 export const dataExplorerAPI = {
-  getResources() {
-    return client.get('/data-explorer/resources')
+  getEngines() {
+    return client.get('/data-explorer/engines')
   },
-  getTree(resourceId) {
-    return client.get(`/data-explorer/resources/${resourceId}/tree`)
+  getTree(engineId) {
+    return client.get(`/data-explorer/engines/${engineId}/tree`)
   },
   getLegacyTree() {
     return client.get('/data-explorer/tree')
   },
-  refreshNode(resourceId, payload) {
-    return client.post(`/data-explorer/resources/${resourceId}/refresh`, payload)
+  refreshNode(engineId, payload) {
+    return client.post(`/data-explorer/engines/${engineId}/refresh`, payload)
   },
   getPreview(params) {
     // 取消之前未完成的预览请求
@@ -32,8 +32,8 @@ export const dataExplorerAPI = {
     })
   },
   // 获取要素的几何中心点（用于表格行定位到地图）
-  getFeatureCentroid(resourceId, schema, table, featureId, geom = 'geom', primaryKey = 'id') {
-    return client.get(`/resources/${resourceId}/features/${featureId}/centroid`, {
+  getFeatureCentroid(engineId, schema, table, featureId, geom = 'geom', primaryKey = 'id') {
+    return client.get(`/engines/${engineId}/features/${featureId}/centroid`, {
       params: { schema, table, geom, primary_key: primaryKey }
     })
   }

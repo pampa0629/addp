@@ -49,7 +49,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 		return nil, fmt.Errorf("failed to get node info: %w", err)
 	}
 
-	isObjectStorage := isObjectStorageType(req.Resource.ResourceType)
+	isObjectStorage := isObjectStorageType(req.Resource.EngineType)
 
 	nodeType := "schema"
 	if isObjectStorage {
@@ -112,7 +112,7 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 		},
 	}
 	if req != nil && req.Resource != nil {
-		preview.Object.ResourceID = req.Resource.ID
+		preview.Object.EngineID = req.Resource.ID
 	}
 
 	return preview, nil

@@ -75,7 +75,7 @@ if (typeof window !== 'undefined') {
 const menuItems = [
   { index: '/tasks', label: '传输任务', icon: List },
   { index: '/executions', label: '执行记录', icon: Timer },
-  { index: '/local-resources', label: '本地存储引擎', icon: Connection }
+  { index: '/local-engines', label: '本地存储引擎', icon: Connection }
 ]
 
 const activeMenu = computed(() => {

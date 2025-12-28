@@ -47,7 +47,7 @@ type ExtractObjectMetadataResponse struct {
 // ExtractObjectMetadata 调用Meta模块提取对象元数据
 func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/api/meta/metadata/extract?resource_id=%d&object_key=%s",
-		c.baseURL, req.ResourceID, req.ObjectKey)
+		c.baseURL, req.EngineID, req.ObjectKey)
 
 	httpReq, err := http.NewRequest("POST", url, req.ObjectData)
 	if err != nil {
@@ -85,9 +85,9 @@ func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (m
 }
 
 // GetObjectMetadata 获取已存储的对象元数据
-func (c *MetaClient) GetObjectMetadata(resourceID uint, objectKey string) (map[string]interface{}, error) {
+func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[string]interface{}, error) {
 	url := fmt.Sprintf("%s/api/meta/metadata/object?resource_id=%d&object_key=%s",
-		c.baseURL, resourceID, objectKey)
+		c.baseURL, engineID, objectKey)
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -135,9 +135,9 @@ func (c *MetaClient) GetObjectMetadata(resourceID uint, objectKey string) (map[s
 }
 
 // TryExtractMetadata 尝试提取元数据：先查询已有的，如果没有则提取新的
-func (c *MetaClient) TryExtractMetadata(resourceID uint, objectKey string, objectDataProvider func() (io.Reader, error)) (map[string]interface{}, error) {
+func (c *MetaClient) TryExtractMetadata(engineID uint, objectKey string, objectDataProvider func() (io.Reader, error)) (map[string]interface{}, error) {
 	// 1. 先查询已有的元数据
-	existing, err := c.GetObjectMetadata(resourceID, objectKey)
+	existing, err := c.GetObjectMetadata(engineID, objectKey)
 	if err != nil {
 		// 查询失败，记录日志但继续尝试提取
 		fmt.Printf("Failed to get existing metadata: %v\n", err)
@@ -160,7 +160,7 @@ func (c *MetaClient) TryExtractMetadata(resourceID uint, objectKey string, objec
 
 	// 3. 调用Meta提取
 	extracted, err := c.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
-		ResourceID: resourceID,
+		EngineID: engineID,
 		ObjectKey:  objectKey,
 		ObjectData: objectData,
 	})

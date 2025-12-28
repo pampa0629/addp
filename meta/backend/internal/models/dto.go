@@ -2,11 +2,11 @@ package models
 
 // ScanRequest 扫描请求
 type ScanRequest struct {
-	ResourceID  uint     `json:"resource_id" binding:"required"` // 资源ID
-	SchemaNames []string `json:"schema_names"`                   // 要扫描的Schema列表（空则全部）
-	ObjectPaths []string `json:"object_paths"`                   // 对象存储选择的路径
-	ScanDepth   string   `json:"scan_depth"`                     // basic/deep/full
-	ScanType    string   `json:"scan_type"`                      // manual/auto/scheduled
+	EngineID    uint     `json:"engine_id" binding:"required"` // 资源ID
+	SchemaNames []string `json:"schema_names"`                 // 要扫描的Schema列表（空则全部）
+	ObjectPaths []string `json:"object_paths"`                 // 对象存储选择的路径
+	ScanDepth   string   `json:"scan_depth"`                   // basic/deep/full
+	ScanType    string   `json:"scan_type"`                    // manual/auto/scheduled
 }
 
 // ScanResponse 扫描响应
@@ -22,7 +22,7 @@ type ScanResponse struct {
 
 // ResourceWithStats 资源及其扫描统计
 type ResourceWithStats struct {
-	ResourceID       uint   `json:"id"`   // 前端期待 id
+	EngineID         uint   `json:"id"`   // 前端期待 id
 	ResourceName     string `json:"name"` // 前端期待 name
 	ResourceType     string `json:"resource_type"`
 	TotalSchemas     int    `json:"total_schemas"`
@@ -76,7 +76,7 @@ type ObjectNode struct {
 type ScanTaskUpsertRequest struct {
 	Name           string   `json:"name" binding:"required"`
 	Description    string   `json:"description"`
-	ResourceID     uint     `json:"resource_id" binding:"required"`
+	ResourceID     uint     `json:"engine_id" binding:"required"`
 	SchemaNames    []string `json:"schema_names"`
 	ObjectPaths    []string `json:"object_paths"`
 	ScanDepth      string   `json:"scan_depth"`

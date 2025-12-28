@@ -33,7 +33,7 @@ func NewTaskClient(timeout time.Duration) *TaskClient {
 
 // CreateTask 创建任务
 // params 包含模板变量,如: {"TenantID": 1, "ResourceID": 5, "ScanConfig": {...}}
-func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Resource, params map[string]interface{}) (string, error) {
+func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Engine, params map[string]interface{}) (string, error) {
 	// 解析 TaskAPIConfig
 	var apiConfig commonModels.TaskAPIConfig
 	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {
@@ -103,7 +103,7 @@ func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Resour
 }
 
 // ExecuteTask 执行任务
-func (c *TaskClient) ExecuteTask(ctx context.Context, engine *commonModels.Resource, taskID string, params map[string]interface{}) (string, error) {
+func (c *TaskClient) ExecuteTask(ctx context.Context, engine *commonModels.Engine, taskID string, params map[string]interface{}) (string, error) {
 	// 解析 TaskAPIConfig
 	var apiConfig commonModels.TaskAPIConfig
 	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {
@@ -190,7 +190,7 @@ func (c *TaskClient) ExecuteTask(ctx context.Context, engine *commonModels.Resou
 }
 
 // GetTaskStatus 获取任务状态
-func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *commonModels.Resource, taskID string) (*TaskStatus, error) {
+func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *commonModels.Engine, taskID string) (*TaskStatus, error) {
 	// 解析 TaskAPIConfig
 	var apiConfig commonModels.TaskAPIConfig
 	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {

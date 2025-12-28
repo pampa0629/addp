@@ -36,7 +36,7 @@ func (p *postgresPreviewProvider) Supports(req *PreviewRequest) bool {
 		return false
 	}
 
-	return sanitizeResourceType(req.Resource.ResourceType) == "postgresql"
+	return sanitizeResourceType(req.Resource.EngineType) == "postgresql"
 }
 
 func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -65,9 +65,9 @@ func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewReque
 		PageSize:        req.PageSize,
 		GeometryColumns: geometryColumns,
 		// Populate MVT preview metadata for frontend decision-making
-		ResourceID:   req.Resource.ID,
+		EngineID:   req.Resource.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		ResourceType: req.Resource.ResourceType,
+		EngineType: req.Resource.EngineType,
 	}, nil
 }

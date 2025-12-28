@@ -47,7 +47,7 @@ type TileConfigResponse struct {
 }
 
 // GetTileConfig 获取指定表的瓦片配置
-// GET /api/resources/:id/spatial/:schema/:table/tile-config
+// GET /api/engines/:id/spatial/:schema/:table/tile-config
 //
 // 返回值：
 // - min_zoom: 根据数据范围计算的最小 zoom 层级
@@ -57,7 +57,7 @@ type TileConfigResponse struct {
 func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	// 1. 解析参数
 	resourceIDStr := c.Param("id")
-	resourceID, err := strconv.ParseUint(resourceIDStr, 10, 32)
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
 		return
@@ -87,7 +87,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	qv, err := h.quickViewService.GetStatus(
 		c.Request.Context(),
 		tenantID,
-		uint(resourceID),
+		uint(engineID),
 		schema,
 		table,
 	)
@@ -95,7 +95,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	if err != nil {
 		logger.L().Error("Failed to get quick view status for tile config",
 			"error", err,
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"schema", schema,
 			"table", table)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get tile config"})
@@ -120,7 +120,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 			"table", table)
 	} else {
 		// 没有快显记录或 extent 为空，从数据库动态查询
-		queriedExtent, geomCol, err := h.queryExtentFromDB(uint(resourceID), schema, table)
+		queriedExtent, geomCol, err := h.queryExtentFromDB(uint(engineID), schema, table)
 		if err != nil {
 			logger.L().Warn("Failed to query extent from database",
 				"error", err,
@@ -168,7 +168,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 			"table", table)
 	} else if len(extent) == 4 {
 		// 动态计算 maxZoom（基于记录数和数据范围）
-		recordCount, err := h.getTableRecordCount(uint(resourceID), schema, table)
+		recordCount, err := h.getTableRecordCount(uint(engineID), schema, table)
 		if err != nil {
 			logger.L().Warn("Failed to get record count, using default maxZoom",
 				"error", err,
@@ -207,7 +207,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	}
 
 	logger.L().Info("Tile config returned",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"schema", schema,
 		"table", table,
 		"min_zoom", minZoom,
@@ -217,9 +217,9 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 }
 
 // getTableRecordCount 获取表的记录数
-func (h *TileConfigHandler) getTableRecordCount(resourceID uint, schema, table string) (int64, error) {
+func (h *TileConfigHandler) getTableRecordCount(engineID uint, schema, table string) (int64, error) {
 	// 1. 获取资源连接信息
-	resource, err := h.systemClient.GetResource(resourceID)
+	resource, err := h.systemClient.GetEngine(engineID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get resource: %w", err)
 	}
@@ -256,9 +256,9 @@ func (h *TileConfigHandler) getTableRecordCount(resourceID uint, schema, table s
 // queryExtentFromDB 从数据库查询表的地理范围
 // 优先级: PostGIS geometry_columns + ST_EstimatedExtent (极快，基于统计信息)
 // 返回: extent (4个坐标, WGS84), geometry_column_name, error
-func (h *TileConfigHandler) queryExtentFromDB(resourceID uint, schema, table string) ([]float64, string, error) {
+func (h *TileConfigHandler) queryExtentFromDB(engineID uint, schema, table string) ([]float64, string, error) {
 	// 1. 获取资源连接信息
-	resource, err := h.systemClient.GetResource(resourceID)
+	resource, err := h.systemClient.GetEngine(engineID)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get resource: %w", err)
 	}

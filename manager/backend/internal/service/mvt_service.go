@@ -19,7 +19,7 @@ type MVTService struct {
 	metadataRepo *repository.MetadataRepository
 	resourceRepo *repository.ResourceRepository
 
-	// ✅ 连接池管理 (按 resourceID 缓存)
+	// ✅ 连接池管理 (按 engineID 缓存)
 	dbPools   map[uint]*sql.DB
 	poolMutex sync.RWMutex
 }
@@ -33,7 +33,7 @@ func NewMVTService(meta *repository.MetadataRepository, res *repository.Resource
 }
 
 // getOrCreateDBPool 获取或创建数据库连接池 (线程安全)
-func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*sql.DB, error) {
+func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql.DB, error) {
 	// 1. 先尝试读锁获取已有连接池
 	s.poolMutex.RLock()
 	if pool, exists := s.dbPools[resourceID]; exists {
@@ -42,7 +42,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*s
 		if err := pool.PingContext(ctx); err == nil {
 			return pool, nil
 		} else {
-			logger.L().Warn("数据库连接池失效，准备重建", "resource_id", resourceID, "error", err)
+			logger.L().Warn("数据库连接池失效，准备重建", "engine_id", engineID, "error", err)
 		}
 	} else {
 		s.poolMutex.RUnlock()
@@ -59,11 +59,11 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*s
 		}
 		// 关闭失效连接池
 		pool.Close()
-		delete(s.dbPools, resourceID)
+		delete(s.dbPools, engineID)
 	}
 
 	// 3. 获取资源配置
-	res, err := s.resourceRepo.GetByID(resourceID)
+	res, err := s.resourceRepo.GetByID(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get resource failed: %w", err)
 	}
@@ -101,7 +101,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*s
 	// 9. 缓存连接池
 	s.dbPools[resourceID] = db
 	logger.L().Info("✅ 创建数据库连接池",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"max_open_conns", 25,
 		"max_idle_conns", 5)
 
@@ -165,7 +165,7 @@ func (s *MVTService) GetTile(
 	srid int,
 ) ([]byte, error) {
 	// 1. 验证租户权限
-	res, err := s.resourceRepo.GetByID(resourceID)
+	res, err := s.resourceRepo.GetByID(engineID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (s *MVTService) GetTile(
 	}
 
 	// 2. ✅ 获取连接池 (复用已有连接)
-	db, err := s.getOrCreateDBPool(ctx, resourceID)
+	db, err := s.getOrCreateDBPool(ctx, engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get db pool failed: %w", err)
 	}
@@ -215,7 +215,7 @@ func (s *MVTService) GetTile(
 	if scanErr != nil {
 		logger.L().Error("MVT query failed",
 			"error", scanErr,
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"schema", schema,
 			"table", table,
 			"z", z, "x", x, "y", y)
@@ -288,9 +288,9 @@ func (s *MVTService) Close() error {
 	defer s.poolMutex.Unlock()
 
 	var errs []error
-	for resourceID, pool := range s.dbPools {
+	for engineID, pool := range s.dbPools {
 		if err := pool.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close pool for resource %d: %w", resourceID, err))
+			errs = append(errs, fmt.Errorf("close pool for resource %d: %w", engineID, err))
 		}
 	}
 

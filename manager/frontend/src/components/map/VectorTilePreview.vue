@@ -58,7 +58,7 @@ async function fetchTileConfig() {
   isLoadingConfig.value = true
 
   try {
-    const url = `/resources/${props.resourceId}/spatial/${props.schema}/${props.table}/tile-config`
+    const url = `/engines/${props.engineId}/spatial/${props.schema}/${props.table}/tile-config`
     console.log('Fetching tile config from:', url)
     const response = await client.get(url)
     tileConfig.value = response.data
@@ -74,7 +74,7 @@ async function fetchTileConfig() {
 
 const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
-  let path = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
+  let path = `${base}/engines/${props.engineId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
 
   // 只传递非默认的几何列名
   if (props.geom && props.geom !== 'geom') {
@@ -322,7 +322,7 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => [props.resourceId, props.schema, props.table, props.geom], async () => {
+watch(() => [props.engineId, props.schema, props.table, props.geom], async () => {
   if (!map) return
 
   // 重置配置状态，允许重新加载

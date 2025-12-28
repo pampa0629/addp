@@ -54,7 +54,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Tenant{},
 		&models.User{},
 		&models.AuditLog{},
-		&models.Resource{},
+		&models.Engine{},
 		&models.Application{},
 		&models.APIKey{},
 		&models.TaskProvider{},
@@ -221,12 +221,12 @@ func InitDefaultTenant(db *gorm.DB) error {
 	return nil
 }
 
-// MigrateExistingResourcesDisplayName 迁移现有资源的 display_name
-// 为所有 display_name 为空的资源设置为 name 的值
-func MigrateExistingResourcesDisplayName(db *gorm.DB) error {
-	// 为所有 display_name 为空的资源设置为 name 的值
+// MigrateExistingEnginesDisplayName 迁移现有引擎的 display_name
+// 为所有 display_name 为空的引擎设置为 name 的值
+func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
+	// 为所有 display_name 为空的引擎设置为 name 的值
 	result := db.Exec(`
-		UPDATE system.resources
+		UPDATE system.engines
 		SET display_name = name
 		WHERE display_name = '' OR display_name IS NULL
 	`)
@@ -236,7 +236,7 @@ func MigrateExistingResourcesDisplayName(db *gorm.DB) error {
 	}
 
 	if result.RowsAffected > 0 {
-		log.Printf("✅ 已为 %d 个现有资源设置 display_name\n", result.RowsAffected)
+		log.Printf("✅ 已为 %d 个现有引擎设置 display_name\n", result.RowsAffected)
 	}
 	return nil
 }

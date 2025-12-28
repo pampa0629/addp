@@ -29,7 +29,7 @@ type DevExecution struct {
 	ExecutionTimeMs *int64       `json:"execution_time_ms,omitempty"` // 执行时间（毫秒）
 
 	// 资源使用
-	ResourceID       *uint  `json:"resource_id,omitempty"`
+	EngineID         *uint  `json:"engine_id,omitempty"`
 	RowsAffected     *int64 `json:"rows_affected,omitempty"`
 	ResultSizeBytes  *int64 `json:"result_size_bytes,omitempty"`
 
@@ -73,7 +73,7 @@ type CreateExecutionRequest struct {
 	DevItemID   *uint                  `json:"dev_item_id"`
 	DevType     string                 `json:"dev_type" binding:"required,oneof=sql workflow script"`
 	TriggerType string                 `json:"trigger_type" binding:"required,oneof=manual schedule orchestrator api"`
-	ResourceID  *uint                  `json:"resource_id"`
+	ResourceID  *uint                  `json:"engine_id"`
 	Content     map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
 }
 

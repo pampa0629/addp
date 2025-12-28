@@ -19,7 +19,7 @@ var MetaOperators = []models.OperatorMetadata{
 		Module:      "meta",
 		Parameters: []models.ParameterMetadata{
 			{
-				Name:        "resource_id",
+				Name:        "engine_id",
 				Type:        "integer",
 				Required:    true,
 				Description: "要扫描的资源ID",
@@ -60,7 +60,7 @@ var MetaOperators = []models.OperatorMetadata{
 		Module:      "meta",
 		Parameters: []models.ParameterMetadata{
 			{
-				Name:        "resource_id",
+				Name:        "engine_id",
 				Type:        "integer",
 				Required:    true,
 				Description: "要扫描的资源ID",

@@ -100,12 +100,12 @@ func (s *ScanServiceNew) DisableDocumentVectorization() {
 
 // verifyResourceAccess 验证租户是否有权限访问资源
 // 返回 nil 表示有权限，返回错误表示无权限或资源不存在
-func (s *ScanServiceNew) verifyResourceAccess(resourceID, tenantID uint, token string) error {
+func (s *ScanServiceNew) verifyResourceAccess(engineID, tenantID uint, token string) error {
 	// 通过 ResourceService 获取资源（内部已包含租户校验）
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		s.log.Warn("资源访问验证失败",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"tenant_id", tenantID,
 			"error", err)
 		return metaErrors.ErrResourceAccessDenied
@@ -114,7 +114,7 @@ func (s *ScanServiceNew) verifyResourceAccess(resourceID, tenantID uint, token s
 	// 非超级管理员（tenant_id > 0）必须验证租户匹配
 	if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 		s.log.Warn("跨租户访问被拒绝",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"resource_tenant_id", resource.TenantID,
 			"request_tenant_id", tenantID)
 		return metaErrors.ErrResourceAccessDenied
@@ -124,7 +124,7 @@ func (s *ScanServiceNew) verifyResourceAccess(resourceID, tenantID uint, token s
 }
 
 // publishScanCompletedEvent 发布扫描完成事件（异步）
-func (s *ScanServiceNew) publishScanCompletedEvent(resourceID, tenantID uint, summary models.JSONMap) {
+func (s *ScanServiceNew) publishScanCompletedEvent(engineID, tenantID uint, summary models.JSONMap) {
 	if s.scanEventPublisher == nil {
 		return // 未配置事件发布器，跳过
 	}
@@ -148,7 +148,7 @@ func (s *ScanServiceNew) publishScanCompletedEvent(resourceID, tenantID uint, su
 		}
 
 		event := events.ScanCompletedEvent{
-			ResourceID:        resourceID,
+			EngineID:        engineID,
 			TenantID:          tenantID,
 			ScanType:          scanType,
 			ScannedNodes:      scannedNodes,
@@ -161,7 +161,7 @@ func (s *ScanServiceNew) publishScanCompletedEvent(resourceID, tenantID uint, su
 
 		if err := s.scanEventPublisher.PublishScanCompleted(ctx, event); err != nil {
 			s.log.Error("发布扫描完成事件失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"error", err)
 		}
@@ -204,7 +204,7 @@ type nodeAggregate struct {
 	totalSize int64
 }
 
-func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.MetaNode, nodeType, name, fullName string, attrs models.JSONMap) (*models.MetaNode, error) {
+func (s *ScanServiceNew) upsertNode(tenantID, engineID uint, parent *models.MetaNode, nodeType, name, fullName string, attrs models.JSONMap) (*models.MetaNode, error) {
 	var parentID *uint
 	depth := 1
 	if parent != nil {
@@ -212,7 +212,7 @@ func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.Me
 		depth = parent.Depth + 1
 	}
 
-	query := s.db.Unscoped().Where("res_id = ? AND tenant_id = ? AND node_type = ? AND name = ?", resourceID, tenantID, nodeType, name)
+	query := s.db.Unscoped().Where("res_id = ? AND tenant_id = ? AND node_type = ? AND name = ?", engineID, tenantID, nodeType, name)
 	if parentID == nil {
 		query = query.Where("parent_node_id IS NULL")
 	} else {
@@ -224,7 +224,7 @@ func (s *ScanServiceNew) upsertNode(tenantID, resourceID uint, parent *models.Me
 	if err == gorm.ErrRecordNotFound {
 		node = models.MetaNode{
 			TenantID:     tenantID,
-			ResID:        resourceID,
+			ResID:        engineID,
 			ParentNodeID: parentID,
 			NodeType:     nodeType,
 			Name:         name,
@@ -339,7 +339,7 @@ func (s *ScanServiceNew) hardDeleteDescendantNodes(node *models.MetaNode) error 
 }
 
 func (s *ScanServiceNew) upsertItem(
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	node *models.MetaNode,
 	itemType, name, fullName string,
 	attrs models.JSONMap,
@@ -347,13 +347,13 @@ func (s *ScanServiceNew) upsertItem(
 	lastModified *time.Time,
 	schemaVersion int,
 ) (*models.MetaItem, error) {
-	return s.upsertItemSelective(tenantID, resourceID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, objectSize, lastModified, schemaVersion)
+	return s.upsertItemSelective(tenantID, engineID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, objectSize, lastModified, schemaVersion)
 }
 
 // upsertItemSelective 选择性更新item
 // 当attrs为nil时，不更新attributes字段（用于basic扫描保留deep扫描的元数据）
 func (s *ScanServiceNew) upsertItemSelective(
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	node *models.MetaNode,
 	itemType, name, fullName string,
 	attrs models.JSONMap,
@@ -375,13 +375,13 @@ func (s *ScanServiceNew) upsertItemSelective(
 			// 注意：path可能已经包含bucket前缀（历史设计）
 			// GenerateObjectFingerprint会再添加bucket，形成"bucket/bucket/path"
 			// 为了兼容性，保持这种方式
-			fingerprint = commonModels.GenerateObjectFingerprint(resourceID, bucket, path)
+			fingerprint = commonModels.GenerateObjectFingerprint(engineID, bucket, path)
 		} else if schema, ok := attrs["schema_name"].(string); ok {
 			// 关系数据库：使用 schema.table
-			fingerprint = commonModels.GenerateTableFingerprint(resourceID, schema, name)
+			fingerprint = commonModels.GenerateTableFingerprint(engineID, schema, name)
 		} else {
 			// 其他类型：使用 fullName
-			fingerprint = commonModels.GenerateItemFingerprint(resourceID, fullName)
+			fingerprint = commonModels.GenerateItemFingerprint(engineID, fullName)
 		}
 	} else {
 		// 无attributes，使用fullName作为标识
@@ -405,7 +405,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		// 创建新记录
 		item = models.MetaItem{
 			TenantID:          tenantID,
-			ResID:             resourceID,
+			ResID:             engineID,
 			NodeID:            node.ID,
 			ItemType:          itemType,
 			Name:              name,
@@ -515,7 +515,7 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 	}
 
 	// 获取所有数据库资源
-	resources, err := s.resourceService.GetResourcesByTenant(tenantID)
+	engines, err := s.resourceService.GetEnginesByTenant(tenantID)
 	if err != nil {
 		s.updateScanLogFailed(scanLog, err.Error())
 		return nil, err
@@ -527,11 +527,11 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 	scannedResourceIDs := []uint{}
 
 	// 对每个资源进行扫描
-	for _, resource := range resources {
+	for _, engine := range engines {
 		schemas, tables, fields, err := s.scanResource(resource, tenantID, scanLog.ID)
 		if err != nil {
 			s.log.Warn("资源扫描失败",
-				"resource_id", resource.ID,
+				"engine_id", resource.ID,
 				"resource_name", resource.Name,
 				"tenant_id", tenantID,
 				"scan_log_id", scanLog.ID,
@@ -548,7 +548,7 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 	// 更新扫描日志
 	completedAt := time.Now()
-	scanLog.ResourceID = 0 // 多资源扫描，不关联特定资源
+	scanLog.EngineID = 0 // 多资源扫描，不关联特定资源
 	scanLog.Status = "success"
 	scanLog.SchemasScanned = totalSchemas
 	scanLog.TablesScanned = totalTables
@@ -559,7 +559,7 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 	return &models.ScanResponse{
 		Status:         "success",
-		Message:        fmt.Sprintf("Successfully scanned %d resources", len(scannedResourceIDs)),
+		Message:        fmt.Sprintf("Successfully scanned %d engines", len(scannedResourceIDs)),
 		SchemasScanned: totalSchemas,
 		TablesScanned:  totalTables,
 		FieldsScanned:  totalFields,
@@ -569,28 +569,28 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 }
 
 // ScanResource 扫描指定资源
-func (s *ScanServiceNew) ScanResource(resourceID, tenantID uint, schemaNames, objectPaths []string, token string) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, "deep", nil)
+func (s *ScanServiceNew) ScanResource(engineID, tenantID uint, schemaNames, objectPaths []string, token string) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(engineID, tenantID, schemaNames, objectPaths, token, "deep", nil)
 }
 
 // ScanResourceWithProgress 扫描指定资源，并通过 reporter 汇报进度
-func (s *ScanServiceNew) ScanResourceWithProgress(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, "deep", reporter)
+func (s *ScanServiceNew) ScanResourceWithProgress(engineID, tenantID uint, schemaNames, objectPaths []string, token string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(engineID, tenantID, schemaNames, objectPaths, token, "deep", reporter)
 }
 
 // ScanResourceWithDepth 扫描指定资源，支持指定扫描深度
-func (s *ScanServiceNew) ScanResourceWithDepth(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
-	return s.scanResourceInternal(resourceID, tenantID, schemaNames, objectPaths, token, scanDepth, reporter)
+func (s *ScanServiceNew) ScanResourceWithDepth(engineID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+	return s.scanResourceInternal(engineID, tenantID, schemaNames, objectPaths, token, scanDepth, reporter)
 }
 
-func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
+func (s *ScanServiceNew) scanResourceInternal(engineID, tenantID uint, schemaNames, objectPaths []string, token string, scanDepth string, reporter ScanProgressReporter) (*models.ScanResponse, error) {
 	startTime := time.Now()
 
 	// 获取资源
 	if reporter != nil {
 		reporter.Message("正在加载资源连接信息")
 	}
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +623,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	// 创建扫描日志
 	schemasJSON, _ := json.Marshal(schemaNames)
 	scanLog := &models.ScanLog{
-		ResourceID:    resourceID,
+		EngineID:    engineID,
 		TenantID:      tenantID,
 		ScanType:      "manual",
 		ScanDepth:     scanDepth,
@@ -648,7 +648,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	}
 	s.log.Info("开始扫描资源", startFields...)
 
-	resourceType := strings.ToLower(resource.ResourceType)
+	resourceType := strings.ToLower(resource.EngineType)
 
 	schemas, tables, fields := 0, 0, 0
 
@@ -706,7 +706,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 		// 创建扫描运行记录
 		run, err := s.createImmediateRunRecord(resource, tenantID, schemaNames, objectPaths, startTime)
 		if err != nil {
-			s.log.Warn("创建扫描运行记录失败", "resource_id", resource.ID, "error", err)
+			s.log.Warn("创建扫描运行记录失败", "engine_id", resource.ID, "error", err)
 		} else {
 			resultSummary := models.JSONMap{
 				"schemas_scanned": schemas,
@@ -730,7 +730,7 @@ func (s *ScanServiceNew) scanResourceInternal(resourceID, tenantID uint, schemaN
 	}, nil
 }
 
-func (s *ScanServiceNew) createImmediateRunRecord(resource *commonModels.Resource, tenantID uint, schemaNames, objectPaths []string, startTime time.Time) (*models.ScanTaskRun, error) {
+func (s *ScanServiceNew) createImmediateRunRecord(resource *commonModels.Engine, tenantID uint, schemaNames, objectPaths []string, startTime time.Time) (*models.ScanTaskRun, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource is required to create immediate run")
 	}
@@ -748,8 +748,8 @@ func (s *ScanServiceNew) createImmediateRunRecord(resource *commonModels.Resourc
 
 	run := &models.ScanTaskRun{
 		TenantID:        tenantID,
-		ResourceID:      resource.ID,
-		StorageType:     normalizeStorageType(resource.ResourceType),
+		EngineID:      resource.ID,
+		StorageType:     normalizeStorageType(resource.EngineType),
 		TriggerType:     triggerTypeManual,
 		Status:          runStatusRunning,
 		Parameters:      params,
@@ -803,11 +803,11 @@ func (s *ScanServiceNew) completeImmediateRun(run *models.ScanTaskRun, summary m
 	}
 
 	// 发布扫描完成事件（异步，不阻塞主流程）
-	s.publishScanCompletedEvent(run.ResourceID, run.TenantID, summary)
+	s.publishScanCompletedEvent(run.EngineID, run.TenantID, summary)
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema
-func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID uint, scanLogID uint) (int, int, int, error) {
+func (s *ScanServiceNew) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -823,7 +823,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 	}
 	defer scan.Close()
 
-	if objectScanner, ok := scan.(plugins.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.ResourceType)) {
+	if objectScanner, ok := scan.(plugins.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.EngineType)) {
 		buckets := objectScanner.AllowedBuckets()
 		if len(buckets) == 0 {
 			s.log.Info("对象存储资源未配置可扫描桶，跳过扫描", cloneLogFields(startFields, "allowed_bucket_count", 0)...)
@@ -844,15 +844,15 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 			var node models.MetaNode
 			err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
-				tenantID, resourceID, "bucket", bucket).First(&node).Error
+				tenantID, engineID, "bucket", bucket).First(&node).Error
 
 			// 无论 bucket 是否已存在,都进行扫描以确保元数据同步
 			// 这样可以触发对象的增量更新和过期对象的清理
 			if err == gorm.ErrRecordNotFound || err == nil {
-				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, []string{bucket}, "deep", nil)
+				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, engineID, objectScanner, []string{bucket}, "deep", nil)
 				if err != nil {
 					s.log.Warn("对象存储桶扫描失败",
-						"resource_id", resourceID,
+						"engine_id", engineID,
 						"tenant_id", tenantID,
 						"bucket", bucket,
 						"error", err,
@@ -863,7 +863,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 				totalObjects += objects
 			} else {
 				s.log.Warn("查询对象存储节点失败",
-					"resource_id", resourceID,
+					"engine_id", engineID,
 					"tenant_id", tenantID,
 					"bucket", bucket,
 					"error", err,
@@ -874,13 +874,13 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 		// 软删除那些不再存在的 bucket
 		var existingBuckets []models.MetaNode
 		if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ?",
-			tenantID, resourceID, "bucket").Find(&existingBuckets).Error; err != nil {
+			tenantID, engineID, "bucket").Find(&existingBuckets).Error; err != nil {
 			s.log.Warn("查询已存在 bucket 节点失败", "error", err)
 		} else {
 			for _, bucketNode := range existingBuckets {
 				if !scannedBuckets[bucketNode.Name] {
 					s.log.Info("Bucket 已不存在，标记删除",
-						"resource_id", resourceID,
+						"engine_id", engineID,
 						"bucket", bucketNode.Name,
 					)
 					if err := s.db.Delete(&bucketNode).Error; err != nil {
@@ -927,15 +927,15 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 
 		var node models.MetaNode
 		err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
-			tenantID, resourceID, "schema", schemaInfo.Name).First(&node).Error
+			tenantID, engineID, "schema", schemaInfo.Name).First(&node).Error
 
 		// 无论 schema 是否已存在,都进行扫描以确保元数据同步
 		// 这样可以触发表的增量更新和过期表的清理
 		if err == gorm.ErrRecordNotFound || err == nil {
-			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaInfo.Name, "deep")
+			schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, engineID, schemaInfo.Name, "deep")
 			if err != nil {
 				s.log.Warn("Schema 扫描失败",
-					"resource_id", resourceID,
+					"engine_id", engineID,
 					"tenant_id", tenantID,
 					"schema", schemaInfo.Name,
 					"error", err,
@@ -947,7 +947,7 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 			totalFields += fields
 		} else {
 			s.log.Warn("查询 Schema 节点失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"schema", schemaInfo.Name,
 				"error", err,
@@ -958,18 +958,18 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 	// 软删除那些不再存在的 schema
 	var existingSchemas []models.MetaNode
 	if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ?",
-		tenantID, resourceID, "schema").Find(&existingSchemas).Error; err != nil {
+		tenantID, engineID, "schema").Find(&existingSchemas).Error; err != nil {
 		s.log.Warn("查询已存在 schema 节点失败", "error", err)
 	} else {
 		s.log.Info("开始检查需要清理的 schema",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"existing_count", len(existingSchemas),
 			"scanned_count", len(scannedSchemas),
 		)
 		for _, schemaNode := range existingSchemas {
 			if !scannedSchemas[schemaNode.Name] {
 				s.log.Info("Schema 已不存在，标记删除",
-					"resource_id", resourceID,
+					"engine_id", engineID,
 					"schema", schemaNode.Name,
 				)
 				if err := s.db.Delete(&schemaNode).Error; err != nil {
@@ -1000,11 +1000,11 @@ func (s *ScanServiceNew) scanResource(resource *commonModels.Resource, tenantID 
 }
 
 // scanResourceSchemas 扫描资源的指定Schema列表
-func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string) (int, int, int, error) {
+func (s *ScanServiceNew) scanResourceSchemas(resource *commonModels.Engine, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string) (int, int, int, error) {
 	return s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLogID, scanDepth, nil)
 }
 
-func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.Resource, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.Engine, tenantID uint, schemaNames []string, scanLogID uint, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
@@ -1018,15 +1018,15 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 
 	// 重构后：不再手动构建连接字符串，由插件系统管理
 	s.log.Info("🔧 准备创建Scanner",
-		"resource_id", resourceID,
-		"resource_type", resource.ResourceType,
+		"engine_id", engineID,
+		"resource_type", resource.EngineType,
 	)
 
 	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		s.log.Error("❌ 创建Scanner失败",
-			"resource_id", resourceID,
-			"resource_type", resource.ResourceType,
+			"engine_id", engineID,
+			"resource_type", resource.EngineType,
 			"error", err,
 		)
 		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
@@ -1034,8 +1034,8 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 	defer scan.Close()
 
 	s.log.Info("✅ Scanner创建成功",
-		"resource_id", resourceID,
-		"resource_type", resource.ResourceType,
+		"engine_id", engineID,
+		"resource_type", resource.EngineType,
 	)
 
 	// 如果未指定Schema，则扫描所有Schema（自动过滤系统schema）
@@ -1088,10 +1088,10 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
 		}
 
-		schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, resourceID, schemaName, scanDepth)
+		schemas, tables, fields, err := s.scanDatabaseSchema(resource, scan, tenantID, engineID, schemaName, scanDepth)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"schema", schemaName,
 				"error", err,
@@ -1124,11 +1124,11 @@ func (s *ScanServiceNew) scanResourceSchemasWithReporter(resource *commonModels.
 }
 
 // scanSingleSchema 扫描单个Schema（表+字段）
-func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
+func (s *ScanServiceNew) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
 	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
 }
 
-func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonModels.Resource, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
+func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
 	resourceID := resource.ID
 
 	// 标准化 scanDepth
@@ -1145,7 +1145,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 
 	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.EngineType)
 	}
 
 	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
@@ -1161,7 +1161,7 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, scanDepth, reporter)
+	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, engineID, objectScanner, paths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -1169,9 +1169,9 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 	return buckets, objects, 0, nil
 }
 
-func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource, tenantID, resourceID uint, objectScanner plugins.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
+func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Engine, tenantID, engineID uint, objectScanner plugins.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
 	s.log.Info("🔍 进入scanObjectStoragePaths函数",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"tenant_id", tenantID,
 		"paths_count", len(paths),
 		"scanDepth", scanDepth)
@@ -1193,7 +1193,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 
 		// 深度扫描时才启用详细元数据提取
 		if strings.EqualFold(scanDepth, "deep") {
-			s3Scanner.SetResourceID(resourceID)
+			s3Scanner.SetResourceID(engineID)
 		} else {
 			// 使用0关闭提取，避免浅度扫描额外读取对象内容
 			s3Scanner.SetResourceID(0)
@@ -1225,7 +1225,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 		metas, err := objectScanner.ScanPath(rawPath)
 		if err != nil {
 			s.log.Warn("对象存储路径扫描失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"path", rawPath,
 				"error", err,
@@ -1247,7 +1247,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
 			attrs := models.JSONMap{"bucket": bucketName}
-			bucketNode, err = s.upsertNode(tenantID, resourceID, nil, "bucket", bucketName, bucketName, attrs)
+			bucketNode, err = s.upsertNode(tenantID, engineID, nil, "bucket", bucketName, bucketName, attrs)
 			if err != nil {
 				return totalBuckets, totalObjects, err
 			}
@@ -1289,10 +1289,10 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 			"fullBucket", fullBucket,
 			"metasCount", len(metas),
 			"scanDepth", scanDepth)
-		objects, err := s.persistObjectMetas(resource, tenantID, resourceID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints)
+		objects, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints)
 		if err != nil {
 			s.log.Error("对象存储元数据持久化失败",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"bucket", bucketName,
 				"error", err,
@@ -1319,7 +1319,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 
 			// 查询该 bucket 下的所有对象
 			if err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ?",
-				tenantID, resourceID, "object").
+				tenantID, engineID, "object").
 				Where("attributes->>'bucket' = ?", bucketName).
 				Find(&existingItems).Error; err != nil {
 				s.log.Warn("查询已存在对象元数据失败",
@@ -1376,11 +1376,11 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 				var totalSize int64
 				s.db.Model(&models.MetaItem{}).
 					Where("tenant_id = ? AND res_id = ? AND attributes->>'bucket' = ?",
-						tenantID, resourceID, bucketName).
+						tenantID, engineID, bucketName).
 					Count(&itemCount)
 				s.db.Model(&models.MetaItem{}).
 					Where("tenant_id = ? AND res_id = ? AND attributes->>'bucket' = ?",
-						tenantID, resourceID, bucketName).
+						tenantID, engineID, bucketName).
 					Select("COALESCE(SUM(size_bytes), 0)").
 					Scan(&totalSize)
 
@@ -1405,7 +1405,7 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Resource,
 	return totalBuckets, totalObjects, nil
 }
 
-func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, tenantID, resourceID uint, bucketNode *models.MetaNode, metas []plugins.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
+func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, metas []plugins.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
 	objects := 0
 
 	// 重要：在循环外部只处理一次scanPathPrefix，建立基础父节点
@@ -1425,7 +1425,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 				"bucket": bucketNode.Name,
 				"path":   pathSoFar,
 			}
-			childNode, err := s.upsertNode(tenantID, resourceID, currentParent, "prefix", segment, fullName, attrs)
+			childNode, err := s.upsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
 			if err != nil {
 				return objects, err
 			}
@@ -1520,7 +1520,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 					"bucket": meta.Bucket,
 					"path":   strings.Join(segmentsToProcess[:idx+1], "/"),
 				}
-				childNode, err := s.upsertNode(tenantID, resourceID, currentParent, "prefix", segment, fullName, attrs)
+				childNode, err := s.upsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
 				if err != nil {
 					return objects, err
 				}
@@ -1559,7 +1559,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 		// 注意：meta.Path已经包含bucket前缀（如"addp/2024东北高斯三维.mov"）
 		// GenerateObjectFingerprint会再添加bucket，结果是"addp/addp/2024东北高斯三维.mov"
 		// 这是历史设计，为了保持兼容性，我们继续使用这种方式
-		fingerprint := commonModels.GenerateObjectFingerprint(resourceID, meta.Bucket, meta.Path)
+		fingerprint := commonModels.GenerateObjectFingerprint(engineID, meta.Bucket, meta.Path)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
 		}
@@ -1599,7 +1599,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 		if strings.EqualFold(scanDepth, "deep") {
 			// 深度扫描：提取详细元数据（用于文件预览/搜索）
 			// 传递meta.Path用于正确的fingerprint生成
-			enhancedAttrs = s.extractEnhancedMetadataWithCache(resourceID, meta, attrs, meta.Path)
+			enhancedAttrs = s.extractEnhancedMetadataWithCache(engineID, meta, attrs, meta.Path)
 		} else if itemExists {
 			// 浅层扫描 + 记录已存在：保留原有attributes，只更新基础字段
 			// 但仍需要更新node_id（文件可能移动到了不同的目录）
@@ -1640,14 +1640,14 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 			"currentParent_name", currentParent.Name,
 			"objectName", objectName)
 
-		item, err := s.upsertItem(tenantID, resourceID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1)
+		item, err := s.upsertItem(tenantID, engineID, currentParent, "object", objectName, fullName, enhancedAttrs, nil, &sizeVal, &objectSizeVal, meta.LastModified, 1)
 		if err != nil {
 			return objects, err
 		}
 
 		// 只在deep扫描时索引（basic扫描的数据不完整）
 		if scanDepth == "deep" {
-			s.indexObjectAsset(resource, tenantID, resourceID, meta, trimmed, fullName, item)
+			s.indexObjectAsset(resource, tenantID, engineID, meta, trimmed, fullName, item)
 		}
 
 		objects++
@@ -1667,7 +1667,7 @@ func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Resource, ten
 	return objects, nil
 }
 
-func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenantID uint, schemaName string, tableInfo plugins.TableInfo, fields []plugins.FieldInfo, item *models.MetaItem) {
+func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugins.TableInfo, fields []plugins.FieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -1695,9 +1695,9 @@ func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenant
 	record := &search.AssetRecord{
 		AssetID:      item.Fingerprint,
 		TenantID:     tenantID,
-		ResourceID:   resource.ID,
+		EngineID:   resource.ID,
 		ResourceName: resource.Name,
-		ResourceType: resource.ResourceType,
+		ResourceType: resource.EngineType,
 		AssetType:    "table",
 		Name:         item.Name,
 		FullName:     item.FullName,
@@ -1716,7 +1716,7 @@ func (s *ScanServiceNew) indexTableAsset(resource *commonModels.Resource, tenant
 	}
 }
 
-func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenantID, resourceID uint, meta plugins.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
+func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta plugins.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -1746,9 +1746,9 @@ func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenan
 	record := &search.AssetRecord{
 		AssetID:         item.Fingerprint,
 		TenantID:        tenantID,
-		ResourceID:      resourceID,
+		EngineID:      engineID,
 		ResourceName:    resource.Name,
-		ResourceType:    resource.ResourceType,
+		ResourceType:    resource.EngineType,
 		AssetType:       "object",
 		Name:            item.Name,
 		FullName:        fullName,
@@ -1780,9 +1780,9 @@ func (s *ScanServiceNew) indexObjectAsset(resource *commonModels.Resource, tenan
 		DocumentID:     item.Fingerprint,
 		AssetID:        item.Fingerprint,
 		TenantID:       tenantID,
-		ResourceID:     resourceID,
+		EngineID:     engineID,
 		ResourceName:   resource.Name,
-		ResourceType:   resource.ResourceType,
+		ResourceType:   resource.EngineType,
 		Bucket:         meta.Bucket,
 		RelativePath:   relativePath,
 		FileName:       item.Name,
@@ -1891,9 +1891,9 @@ func (s *ScanServiceNew) upsertDocumentEmbedding(docRecord *search.DocumentRecor
 		tenantID := docRecord.TenantID
 		record.TenantID = &tenantID
 	}
-	if docRecord.ResourceID != 0 {
-		resourceID := docRecord.ResourceID
-		record.ResourceID = &resourceID
+	if docRecord.EngineID != 0 {
+		resourceID := docRecord.EngineID
+		record.EngineID = &resourceID
 	}
 
 	dbCtx, cancelDB := context.WithTimeout(context.Background(), 10*time.Second)
@@ -2003,7 +2003,7 @@ func (s *ScanServiceNew) generateImageEmbedding(ctx context.Context, docRecord *
 		objectPath = docRecord.FilePath
 	}
 
-	data, contentType, err := s.fetchObjectContent(ctx, docRecord.ResourceID, docRecord.TenantID, docRecord.Bucket, objectPath, maxImageEmbeddingBytes)
+	data, contentType, err := s.fetchObjectContent(ctx, docRecord.EngineID, docRecord.TenantID, docRecord.Bucket, objectPath, maxImageEmbeddingBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2046,7 +2046,7 @@ func (s *ScanServiceNew) generateVideoEmbedding(ctx context.Context, docRecord *
 		objectPath = docRecord.FilePath
 	}
 
-	data, contentType, err := s.fetchObjectContent(ctx, docRecord.ResourceID, docRecord.TenantID, docRecord.Bucket, objectPath, maxVideoEmbeddingBytes)
+	data, contentType, err := s.fetchObjectContent(ctx, docRecord.EngineID, docRecord.TenantID, docRecord.Bucket, objectPath, maxVideoEmbeddingBytes)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2084,7 +2084,7 @@ func (s *ScanServiceNew) buildVectorMetadata(docRecord *search.DocumentRecord, m
 		"file_name":     docRecord.FileName,
 		"bucket":        docRecord.Bucket,
 		"relative_path": docRecord.RelativePath,
-		"resource_id":   docRecord.ResourceID,
+		"engine_id":   docRecord.EngineID,
 		"resource_name": docRecord.ResourceName,
 		"resource_type": docRecord.ResourceType,
 		"document_type": docRecord.DocumentType,
@@ -2113,8 +2113,8 @@ func (s *ScanServiceNew) buildVectorMetadata(docRecord *search.DocumentRecord, m
 	return meta
 }
 
-func (s *ScanServiceNew) fetchObjectContent(ctx context.Context, resourceID, tenantID uint, bucket, objectPath string, maxSize int64) ([]byte, string, error) {
-	client, err := s.getObjectClient(resourceID, tenantID)
+func (s *ScanServiceNew) fetchObjectContent(ctx context.Context, engineID, tenantID uint, bucket, objectPath string, maxSize int64) ([]byte, string, error) {
+	client, err := s.getObjectClient(engineID, tenantID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -2151,7 +2151,7 @@ func (s *ScanServiceNew) fetchObjectContent(ctx context.Context, resourceID, ten
 	return data, stat.ContentType, nil
 }
 
-func (s *ScanServiceNew) getObjectClient(resourceID, tenantID uint) (*minio.Client, error) {
+func (s *ScanServiceNew) getObjectClient(engineID, tenantID uint) (*minio.Client, error) {
 	s.objectClientMu.Lock()
 	client, ok := s.objectClients[resourceID]
 	s.objectClientMu.Unlock()
@@ -2159,7 +2159,7 @@ func (s *ScanServiceNew) getObjectClient(resourceID, tenantID uint) (*minio.Clie
 		return client, nil
 	}
 
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, "")
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
 		return nil, fmt.Errorf("load resource connection info failed: %w", err)
 	}
@@ -2278,20 +2278,20 @@ func normalizeMimeType(primary, secondary, fileName, fallback string) string {
 	return fallback
 }
 
-func (s *ScanServiceNew) deleteTablesFromIndex(tenantID, resourceID uint, schemaName string) {
+func (s *ScanServiceNew) deleteTablesFromIndex(tenantID, engineID uint, schemaName string) {
 	if s.indexer == nil || !s.indexer.Enabled() || schemaName == "" {
 		return
 	}
-	if err := s.indexer.DeleteTables(context.Background(), tenantID, resourceID, schemaName); err != nil {
-		s.log.Warn("删除表索引失败", "schema", schemaName, "resource_id", resourceID, "error", err)
+	if err := s.indexer.DeleteTables(context.Background(), tenantID, engineID, schemaName); err != nil {
+		s.log.Warn("删除表索引失败", "schema", schemaName, "engine_id", engineID, "error", err)
 	}
 }
 
-func (s *ScanServiceNew) deleteObjectsFromIndex(tenantID, resourceID uint, bucketName, relativePath string) {
+func (s *ScanServiceNew) deleteObjectsFromIndex(tenantID, engineID uint, bucketName, relativePath string) {
 	if s.indexer == nil || !s.indexer.Enabled() || bucketName == "" {
 		return
 	}
-	if err := s.indexer.DeleteObjects(context.Background(), tenantID, resourceID, bucketName, relativePath); err != nil {
+	if err := s.indexer.DeleteObjects(context.Background(), tenantID, engineID, bucketName, relativePath); err != nil {
 		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", relativePath, "error", err)
 	}
 }
@@ -2457,7 +2457,7 @@ func extractTimePtr(value interface{}) *time.Time {
 }
 
 // extractEnhancedMetadata 使用插件提取增强的元数据
-func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
+func (s *ScanServiceNew) extractEnhancedMetadata(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
 	// 如果S3Scanner已经提取了元数据，直接使用
 	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
 		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
@@ -2504,10 +2504,10 @@ func (s *ScanServiceNew) extractEnhancedMetadata(resourceID uint, meta plugins.O
 // extractEnhancedMetadataWithCache 带缓存检查的元数据提取
 // 如果文件未修改（基于last_modified时间），跳过重新提取
 // fullPath: 文件在bucket中的完整路径（用于fingerprint生成）
-func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
+func (s *ScanServiceNew) extractEnhancedMetadataWithCache(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
 	// 生成fingerprint以查找已有记录 - 使用传入的fullPath确保一致性
 	bucket, _ := baseAttrs["bucket"].(string)
-	fingerprint := commonModels.GenerateObjectFingerprint(resourceID, bucket, fullPath)
+	fingerprint := commonModels.GenerateObjectFingerprint(engineID, bucket, fullPath)
 
 	// 查找已有的meta_item记录
 	var existingItem models.MetaItem
@@ -2539,12 +2539,12 @@ func (s *ScanServiceNew) extractEnhancedMetadataWithCache(resourceID uint, meta 
 	}
 
 	// 文件是新的或已更新，执行完整的元数据提取
-	return s.extractEnhancedMetadata(resourceID, meta, baseAttrs)
+	return s.extractEnhancedMetadata(engineID, meta, baseAttrs)
 }
 
 // GetObjectMetadata 获取指定对象的元数据
 // 用于Manager模块预览时查询已扫描的元数据
-func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey string) (*models.MetaItem, error) {
+func (s *ScanServiceNew) GetObjectMetadata(tenantID, engineID uint, objectKey string) (*models.MetaItem, error) {
 	// 解析对象路径
 	bucket, relativePath := splitObjectPath(objectKey)
 	if bucket == "" {
@@ -2554,7 +2554,7 @@ func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey 
 	// 查找bucket节点
 	var bucketNode models.MetaNode
 	err := s.db.Where("tenant_id = ? AND res_id = ? AND node_type = ? AND name = ?",
-		tenantID, resourceID, "bucket", bucket).First(&bucketNode).Error
+		tenantID, engineID, "bucket", bucket).First(&bucketNode).Error
 	if err != nil {
 		return nil, fmt.Errorf("bucket not found: %w", err)
 	}
@@ -2581,7 +2581,7 @@ func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey 
 
 			var prefixNode models.MetaNode
 			err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id = ? AND node_type = ? AND name = ?",
-				tenantID, resourceID, currentParent.ID, "prefix", segment).First(&prefixNode).Error
+				tenantID, engineID, currentParent.ID, "prefix", segment).First(&prefixNode).Error
 			if err != nil {
 				return nil, fmt.Errorf("prefix not found: %s", segment)
 			}
@@ -2590,11 +2590,11 @@ func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey 
 
 		// 在最终的prefix节点下查找对象
 		err = s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-			tenantID, resourceID, currentParent.ID, "object", objectName).First(&item).Error
+			tenantID, engineID, currentParent.ID, "object", objectName).First(&item).Error
 	} else {
 		// 直接在bucket下查找对象
 		err = s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-			tenantID, resourceID, bucketNode.ID, "object", objectName).First(&item).Error
+			tenantID, engineID, bucketNode.ID, "object", objectName).First(&item).Error
 	}
 
 	if err != nil {
@@ -2606,7 +2606,7 @@ func (s *ScanServiceNew) GetObjectMetadata(tenantID, resourceID uint, objectKey 
 
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据
 // 当Manager预览时发现元数据未提取，可以调用此方法触发实时提取
-func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint, objectKey string, token string, objectReader io.Reader) (*plugins.Metadata, error) {
+func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*plugins.Metadata, error) {
 	// 检测内容类型
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
@@ -2620,7 +2620,7 @@ func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint
 	}
 
 	// 获取对象的基本信息
-	item, err := s.GetObjectMetadata(tenantID, resourceID, objectKey)
+	item, err := s.GetObjectMetadata(tenantID, engineID, objectKey)
 	if err != nil {
 		// 如果元数据不存在，使用默认值
 		s.log.Warn("对象元数据不存在，使用默认值", "object_key", objectKey, "error", err)
@@ -2628,7 +2628,7 @@ func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, resourceID uint
 
 	// 构建提取输入
 	input := plugins.ExtractInput{
-		ResourceID:  resourceID,
+		EngineID:  engineID,
 		ObjectKey:   objectKey,
 		ContentType: contentType,
 		Reader:      objectReader,
@@ -2777,9 +2777,9 @@ func splitObjectPath(path string) (string, string) {
 	return bucket, parts[1]
 }
 
-func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {
+func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {
 	clean := sanitizeObjectPath(relativePath)
-	s.deleteObjectsFromIndex(tenantID, resourceID, bucketName, clean)
+	s.deleteObjectsFromIndex(tenantID, engineID, bucketName, clean)
 	if clean == "" {
 		if err := s.hardDeleteDescendantNodes(bucketNode); err != nil {
 			return err
@@ -2789,7 +2789,7 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 
 	var targetNodes []models.MetaNode
 	if err := s.db.
-		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("tenant_id = ? AND res_id = ?", tenantID, engineID).
 		Where("node_type = ?", "prefix").
 		Where("(attributes ->> 'bucket') = ?", bucketName).
 		Where("(attributes ->> 'path') = ? OR (attributes ->> 'path') LIKE ?", clean, clean+"/%").
@@ -2813,7 +2813,7 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 	}
 
 	if err := s.db.Unscoped().
-		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("tenant_id = ? AND res_id = ?", tenantID, engineID).
 		Where("(attributes ->> 'bucket') = ?", bucketName).
 		Where("(attributes ->> 'relative_path') = ? OR (attributes ->> 'relative_path') LIKE ?", clean, clean+"/%").
 		Delete(&models.MetaItem{}).Error; err != nil {
@@ -2823,8 +2823,8 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, resourceID uint,
 	return nil
 }
 
-func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, scan plugins.Scanner, tenantID, resourceID uint, schemaName string, scanDepth string) (int, int, int, error) {
-	schemaNode, err := s.upsertNode(tenantID, resourceID, nil, "schema", schemaName, "", nil)
+func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Engine, scan plugins.Scanner, tenantID, engineID uint, schemaName string, scanDepth string) (int, int, int, error) {
+	schemaNode, err := s.upsertNode(tenantID, engineID, nil, "schema", schemaName, "", nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -2839,9 +2839,9 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 	// 增量更新逻辑：查询已存在的表items，建立 tableName -> item 映射
 	var existingItems []models.MetaItem
 	if err := s.db.Where("tenant_id = ? AND res_id = ? AND node_id = ? AND item_type = ?",
-		tenantID, resourceID, schemaNode.ID, "table").Find(&existingItems).Error; err != nil {
+		tenantID, engineID, schemaNode.ID, "table").Find(&existingItems).Error; err != nil {
 		s.log.Warn("查询已存在表元数据失败",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"tenant_id", tenantID,
 			"schema", schemaName,
 			"error", err,
@@ -2855,7 +2855,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 
 	s.log.Info("开始扫描 Schema",
 		"tenant_id", tenantID,
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"schema", schemaName,
 		"scan_depth", scanDepth,
 		"existing_tables", len(existingTableMap),
@@ -2863,7 +2863,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 
 	s.log.Info("🔍 即将调用 scan.ScanTables",
 		"schema", schemaName,
-		"resource_id", resourceID,
+		"engine_id", engineID,
 	)
 
 	tables, err := scan.ScanTables(schemaName)
@@ -2883,7 +2883,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 	if len(tables) == 0 {
 		s.log.Warn("⚠️  ScanTables 返回空数组",
 			"schema", schemaName,
-			"resource_id", resourceID,
+			"engine_id", engineID,
 		)
 	}
 
@@ -2944,7 +2944,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			fields, err = scan.ScanFields(schemaName, tableInfo.Name)
 			if err != nil {
 				s.log.Warn("❌ 字段扫描失败，跳过此表",
-					"resource_id", resourceID,
+					"engine_id", engineID,
 					"tenant_id", tenantID,
 					"schema", schemaName,
 					"table", tableInfo.Name,
@@ -2966,7 +2966,7 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 			}
 
 			// 扫描空间元数据（仅 PostgreSQL）
-			if resource.ResourceType == "postgresql" {
+			if resource.EngineType == "postgresql" {
 				// 尝试从 scanner 中获取数据库连接
 				type dbGetter interface {
 					GetDB() *sql.DB
@@ -3017,10 +3017,10 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 		sizeBytes := tableInfo.SizeBytes
 
 		fullName := composeNodeFullName(tableInfo.Name, schemaNode, ".")
-		item, err := s.upsertItem(tenantID, resourceID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
+		item, err := s.upsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
 		if err != nil {
 			s.log.Error("❌ 表元数据持久化失败，跳过此表",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"tenant_id", tenantID,
 				"schema", schemaName,
 				"table", tableInfo.Name,
@@ -3059,13 +3059,13 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 				)
 			}
 			// 从索引中删除
-			s.deleteTablesFromIndex(tenantID, resourceID, schemaName)
+			s.deleteTablesFromIndex(tenantID, engineID, schemaName)
 		}
 	}
 
 	s.log.Info("Schema 扫描完成",
 		"tenant_id", tenantID,
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"schema", schemaName,
 		"tables", totalTables,
 		"fields", totalFields,
@@ -3080,9 +3080,9 @@ func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Resource, sca
 }
 
 // GetSchemasByResource 获取资源的所有Schema
-func (s *ScanServiceNew) GetSchemasByResource(resourceID, tenantID uint) ([]*models.SchemaWithStatus, error) {
+func (s *ScanServiceNew) GetSchemasByResource(engineID, tenantID uint) ([]*models.SchemaWithStatus, error) {
 	var nodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, resourceID).
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, engineID).
 		Order("name").
 		Find(&nodes).Error; err != nil {
 		return nil, err
@@ -3112,9 +3112,9 @@ func (s *ScanServiceNew) GetSchemasByResource(resourceID, tenantID uint) ([]*mod
 }
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
-func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token string) ([]*models.SchemaInfo, error) {
+func (s *ScanServiceNew) ListAvailableSchemas(engineID, tenantID uint, token string) ([]*models.SchemaInfo, error) {
 	// 1. 获取资源（从System读取，包含connection_status）
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		return nil, err
 	}
@@ -3123,7 +3123,7 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 	scan, err := plugins.NewScanner(resource)
 	if err != nil {
 		// 连接失败：触发System刷新状态（异步，不阻塞）
-		s.resourceService.TriggerConnectionCheck(resourceID)
+		s.resourceService.TriggerConnectionCheck(engineID)
 
 		// 返回失败，附带缓存的状态信息
 		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
@@ -3137,13 +3137,13 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 	schemasInfo, err := scan.ListSchemas()
 	if err != nil {
 		// 连接成功但查询失败，也触发刷新
-		s.resourceService.TriggerConnectionCheck(resourceID)
+		s.resourceService.TriggerConnectionCheck(engineID)
 		return nil, err
 	}
 
 	// 4. 成功：如果之前是offline，触发刷新状态为online
 	if resource.ConnectionStatus == "offline" {
-		s.resourceService.TriggerConnectionCheck(resourceID)
+		s.resourceService.TriggerConnectionCheck(engineID)
 	}
 
 	// 转换并返回
@@ -3157,14 +3157,14 @@ func (s *ScanServiceNew) ListAvailableSchemas(resourceID, tenantID uint, token s
 	return result, nil
 }
 
-func (s *ScanServiceNew) ListObjectStorageNodes(resourceID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
-	resource, err := s.resourceService.GetResourceByID(resourceID, tenantID, token)
+func (s *ScanServiceNew) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
+	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, token)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isObjectStorageType(strings.ToLower(resource.ResourceType)) {
-		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+	if !isObjectStorageType(strings.ToLower(resource.EngineType)) {
+		return nil, fmt.Errorf("resource %s is not object storage", resource.EngineType)
 	}
 
 	// 重构后：直接传入Resource对象，由插件系统管理连接
@@ -3176,7 +3176,7 @@ func (s *ScanServiceNew) ListObjectStorageNodes(resourceID, tenantID uint, path,
 
 	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
 	if !ok {
-		return nil, fmt.Errorf("resource %s is not object storage", resource.ResourceType)
+		return nil, fmt.Errorf("resource %s is not object storage", resource.EngineType)
 	}
 
 	nodes, err := objectScanner.ListNodes(path)
@@ -3217,14 +3217,14 @@ func (s *ScanServiceNew) updateScanLogFailed(scanLog *models.ScanLog, errorMsg s
 
 // GetTablesByResource 获取资源下所有的表（用于Transfer模块）
 // 返回所有已扫描的表的元数据项
-func (s *ScanServiceNew) GetTablesByResource(resourceID, tenantID uint) ([]models.MetaItem, error) {
+func (s *ScanServiceNew) GetTablesByResource(engineID, tenantID uint) ([]models.MetaItem, error) {
 	// 查询该资源下的所有 meta_item（表）
 	var items []models.MetaItem
 
 	// 先获取该资源下的所有节点ID（schemas/prefixes）
 	var nodeIDs []uint
 	err := s.db.Model(&models.MetaNode{}).
-		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("tenant_id = ? AND res_id = ?", tenantID, engineID).
 		Pluck("id", &nodeIDs).Error
 	if err != nil {
 		return nil, err
@@ -3261,8 +3261,8 @@ type TableFieldInfo struct {
 }
 
 // GetTableFields 获取表的字段名列表（用于Transfer模块字段映射）
-func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenantID uint) ([]string, error) {
-	fieldInfos, err := s.GetTableFieldDetails(resourceID, tableName, tenantID)
+func (s *ScanServiceNew) GetTableFields(engineID uint, tableName string, tenantID uint) ([]string, error) {
+	fieldInfos, err := s.GetTableFieldDetails(engineID, tableName, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -3277,11 +3277,11 @@ func (s *ScanServiceNew) GetTableFields(resourceID uint, tableName string, tenan
 }
 
 // GetTableFieldDetails 获取表字段详细信息（支持空间字段识别）
-func (s *ScanServiceNew) GetTableFieldDetails(resourceID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
+func (s *ScanServiceNew) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
 	// 1. 先获取该资源下的所有节点ID（schema nodes）
 	var nodeIDs []uint
 	err := s.db.Model(&models.MetaNode{}).
-		Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+		Where("tenant_id = ? AND res_id = ?", tenantID, engineID).
 		Pluck("id", &nodeIDs).Error
 	if err != nil {
 		return nil, err
@@ -3377,24 +3377,24 @@ func toBool(value interface{}) bool {
 // ========== 新增：用于 Manager 模块的元数据查询接口 ==========
 
 // GetMetadataTree 获取资源的完整元数据树（顶层节点+子节点+项）
-func (s *ScanServiceNew) GetMetadataTree(tenantID, resourceID uint) (*models.MetadataTreeResponse, error) {
+func (s *ScanServiceNew) GetMetadataTree(tenantID, engineID uint) (*models.MetadataTreeResponse, error) {
 	// 查询顶层节点
 	var topNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, resourceID).
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NULL", tenantID, engineID).
 		Find(&topNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query top nodes: %w", err)
 	}
 
 	// 查询子节点
 	var childNodes []models.MetaNode
-	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NOT NULL", tenantID, resourceID).
+	if err := s.db.Where("tenant_id = ? AND res_id = ? AND parent_node_id IS NOT NULL", tenantID, engineID).
 		Find(&childNodes).Error; err != nil {
 		return nil, fmt.Errorf("failed to query child nodes: %w", err)
 	}
 
 	// 查询所有项
 	var items []models.MetaItem
-	if err := s.db.Where("tenant_id = ? AND res_id = ?", tenantID, resourceID).
+	if err := s.db.Where("tenant_id = ? AND res_id = ?", tenantID, engineID).
 		Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("failed to query items: %w", err)
 	}
@@ -3423,11 +3423,11 @@ func (s *ScanServiceNew) GetMetadataTree(tenantID, resourceID uint) (*models.Met
 }
 
 // GetNodeByPath 按路径查询节点（支持 Schema/Bucket/Prefix）
-func (s *ScanServiceNew) GetNodeByPath(tenantID, resourceID uint, nodePath string) (*models.MetaNodeLite, error) {
+func (s *ScanServiceNew) GetNodeByPath(tenantID, engineID uint, nodePath string) (*models.MetaNodeLite, error) {
 	var node models.MetaNode
 
 	// 尝试按 full_name 查询
-	err := s.db.Where("tenant_id = ? AND res_id = ? AND full_name = ?", tenantID, resourceID, nodePath).
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND full_name = ?", tenantID, engineID, nodePath).
 		First(&node).Error
 	if err == nil {
 		result := convertToMetaNodeLite(node)
@@ -3435,7 +3435,7 @@ func (s *ScanServiceNew) GetNodeByPath(tenantID, resourceID uint, nodePath strin
 	}
 
 	// 尝试按 name 查询顶层节点
-	err = s.db.Where("tenant_id = ? AND res_id = ? AND name = ? AND parent_node_id IS NULL", tenantID, resourceID, nodePath).
+	err = s.db.Where("tenant_id = ? AND res_id = ? AND name = ? AND parent_node_id IS NULL", tenantID, engineID, nodePath).
 		First(&node).Error
 	if err != nil {
 		return nil, fmt.Errorf("node not found: %w", err)
@@ -3446,7 +3446,7 @@ func (s *ScanServiceNew) GetNodeByPath(tenantID, resourceID uint, nodePath strin
 }
 
 // GetItemByPath 按路径查询项目（对象存储）
-func (s *ScanServiceNew) GetItemByPath(tenantID, resourceID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
+func (s *ScanServiceNew) GetItemByPath(tenantID, engineID uint, bucketName, objectPath string) (*models.MetaItemLite, error) {
 	var item models.MetaItem
 
 	// 构建完整路径
@@ -3456,7 +3456,7 @@ func (s *ScanServiceNew) GetItemByPath(tenantID, resourceID uint, bucketName, ob
 	}
 
 	// 尝试多种路径匹配方式
-	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ?", tenantID, resourceID, "object").
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ?", tenantID, engineID, "object").
 		Where("(attributes->>'bucket' = ? AND (attributes->>'path' = ? OR attributes->>'relative_path' = ? OR full_name = ?))",
 			bucketName, fullPath, objectPath, fullPath).
 		First(&item).Error
@@ -3518,11 +3518,11 @@ func (s *ScanServiceNew) GetNodeItems(tenantID, nodeID uint) ([]models.MetaItemL
 }
 
 // GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
-func (s *ScanServiceNew) GetTableSpatialMetadata(tenantID, resourceID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
+func (s *ScanServiceNew) GetTableSpatialMetadata(tenantID, engineID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
 	var item models.MetaItem
 
 	// 查询表元数据
-	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ? AND name = ?", tenantID, resourceID, "table", table).
+	err := s.db.Where("tenant_id = ? AND res_id = ? AND item_type = ? AND name = ?", tenantID, engineID, "table", table).
 		Where("attributes->>'schema' = ?", schema).
 		First(&item).Error
 

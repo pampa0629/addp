@@ -41,7 +41,7 @@ func NewTaskQueue(redisAddr, redisPassword string) *TaskQueue {
 // QuickViewTaskPayload 快显任务载荷
 type QuickViewTaskPayload struct {
 	TenantID          uint    `json:"tenant_id"`
-	ResourceID        uint    `json:"resource_id"`
+	ResourceID        uint    `json:"engine_id"`
 	SchemaName        string  `json:"schema_name"`
 	TableName         string  `json:"table_name"`
 	GeomColumn        string  `json:"geom_column"`
@@ -78,7 +78,7 @@ func (q *TaskQueue) EnqueueQuickViewTaskWithOptions(ctx context.Context, payload
 	}
 
 	log.Printf("✅ QuickView task enqueued: id=%s queue=%s resource_id=%d table=%s.%s",
-		info.ID, info.Queue, payload.ResourceID, payload.SchemaName, payload.TableName)
+		info.ID, info.Queue, payload.EngineID, payload.SchemaName, payload.TableName)
 	return nil
 }
 

@@ -42,7 +42,7 @@ func (r *PreviewRequest) Mode() string {
 		return PreviewModeNode
 	}
 
-	if r.Resource != nil && isObjectStorageType(r.Resource.ResourceType) {
+	if r.Resource != nil && isObjectStorageType(r.Resource.EngineType) {
 		return PreviewModeObject
 	}
 

@@ -80,36 +80,36 @@ func SetupRouter(
 		{
 			handler := NewDataExplorerHandler(metadataService)
 			explorer.GET("/tree", handler.GetTree)
-			explorer.GET("/resources", handler.ListResources)
-			explorer.GET("/resources/:id/tree", handler.GetResourceTree)
-			explorer.POST("/resources/:id/refresh", handler.RefreshNode)
+			explorer.GET("/engines", handler.ListResources)
+			explorer.GET("/engines/:id/tree", handler.GetResourceTree)
+			explorer.POST("/engines/:id/refresh", handler.RefreshNode)
 			explorer.GET("/preview", handler.PreviewTable)
 			explorer.GET("/video-stream", handler.VideoStream)
 		}
 
 		// 资源管理
-		resources := api.Group("/resources")
+		engines := api.Group("/engines")
 		{
 			resourceHandler := NewResourceHandler(resourceService)
-			resources.GET("", resourceHandler.List)
-			resources.GET("/:id", resourceHandler.GetByID)
+			engines.GET("", resourceHandler.List)
+			engines.GET("/:id", resourceHandler.GetByID)
 
 			// 元数据扫描和管理
 			metadataHandler := NewMetadataHandler(metadataService)
-			resources.POST("/:id/scan", metadataHandler.ScanResource)
-			resources.GET("/:id/scan-tasks", metadataHandler.ListScanTasks)
-			resources.POST("/:id/scan-tasks", metadataHandler.CreateScanTask)
-			resources.PUT("/:id/scan-tasks/:task_id", metadataHandler.UpdateScanTask)
-			resources.DELETE("/:id/scan-tasks/:task_id", metadataHandler.DeleteScanTask)
-			resources.POST("/:id/scan-tasks/:task_id/trigger", metadataHandler.TriggerScanTask)
-			resources.GET("/:id/scan-runs", metadataHandler.ListScanRuns)
-			resources.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
-			resources.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
-			resources.GET("/:id/tables", metadataHandler.GetTables)
+			engines.POST("/:id/scan", metadataHandler.ScanResource)
+			engines.GET("/:id/scan-tasks", metadataHandler.ListScanTasks)
+			engines.POST("/:id/scan-tasks", metadataHandler.CreateScanTask)
+			engines.PUT("/:id/scan-tasks/:task_id", metadataHandler.UpdateScanTask)
+			engines.DELETE("/:id/scan-tasks/:task_id", metadataHandler.DeleteScanTask)
+			engines.POST("/:id/scan-tasks/:task_id/trigger", metadataHandler.TriggerScanTask)
+			engines.GET("/:id/scan-runs", metadataHandler.ListScanRuns)
+			engines.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
+			engines.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
+			engines.GET("/:id/tables", metadataHandler.GetTables)
 
 			// 要素查询（用于表格与地图关联）
 			featureHandler := NewFeatureHandler(resourceRepo, metadataRepo)
-			resources.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
+			engines.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
 		}
 
 		// 表管理
@@ -132,12 +132,12 @@ func SetupRouter(
 		// 瓦片配置 API（获取 MinZoom/MaxZoom）
 		// 注意：必须在 tiles 路由之前注册，避免路由冲突
 		tileConfigHandler := NewTileConfigHandler(quickViewService, systemClient, cfg)
-		resources.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
+		engines.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
 
 		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
-		// GET /api/resources/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
+		// GET /api/engines/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
 		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
-		resources.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y", func(c *gin.Context) {
+		engines.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y", func(c *gin.Context) {
 			unifiedTilesHandler := NewUnifiedTilesHandler(unifiedMVTService)
 			unifiedTilesHandler.GetTile(c)
 		})
@@ -147,14 +147,14 @@ func SetupRouter(
 		quickViewHandler := NewQuickViewHandler(quickViewService)
 
 		// 新路由：pre-cache（推荐）
-		resources.POST("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.TriggerQuickView)
-		resources.GET("/:id/spatial/:schema/:table/pre-cache/status", quickViewHandler.GetQuickViewStatus)
-		resources.DELETE("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.ClearQuickView)
+		engines.POST("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.TriggerQuickView)
+		engines.GET("/:id/spatial/:schema/:table/pre-cache/status", quickViewHandler.GetQuickViewStatus)
+		engines.DELETE("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.ClearQuickView)
 
 		// 旧路由：quick-view（别名，向后兼容）
-		resources.POST("/:id/spatial/:schema/:table/quick-view", quickViewHandler.TriggerQuickView)
-		resources.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
-		resources.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
+		engines.POST("/:id/spatial/:schema/:table/quick-view", quickViewHandler.TriggerQuickView)
+		engines.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
+		engines.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
 	}
 
 	// Pre-Cache 任务列表和统计（全局）

@@ -293,7 +293,7 @@ const buildPdfUrl = () => {
   const path = object.path
   const resourceId = props.data?.resourceId || object.resource_id
   if (path && resourceId) {
-    return `/api/preview/download?resource_id=${resourceId}&path=${encodeURIComponent(path)}`
+    return `/api/preview/download?engine_id=${resourceId}&path=${encodeURIComponent(path)}`
   }
 
   return null

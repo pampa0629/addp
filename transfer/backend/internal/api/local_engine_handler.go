@@ -10,27 +10,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// LocalResourceHandler 提供本地存储引擎管理 API
-type LocalResourceHandler struct {
-    service *service.LocalResourceService
+// LocalEngineHandler 提供本地引擎管理 API
+type LocalEngineHandler struct {
+    service *service.LocalEngineService
 }
 
-// NewLocalResourceHandler 构造函数
-func NewLocalResourceHandler(service *service.LocalResourceService) *LocalResourceHandler {
-	return &LocalResourceHandler{service: service}
+// NewLocalEngineHandler 构造函数
+func NewLocalEngineHandler(service *service.LocalEngineService) *LocalEngineHandler {
+	return &LocalEngineHandler{service: service}
 }
 
-// LocalResourceRequest 创建或更新请求体
-type LocalResourceRequest struct {
+// LocalEngineRequest 创建或更新请求体
+type LocalEngineRequest struct {
 	Name           string         `json:"name" binding:"required"`
-	ResourceType   string         `json:"resource_type" binding:"required"`
+	EngineType   string         `json:"engine_type" binding:"required"`
 	Description    string         `json:"description"`
 	IsActive       bool           `json:"is_active"`
 	ConnectionInfo models.JSONMap `json:"connection_info" binding:"required"`
 }
 
-// LocalResourceUpdateRequest 更新请求
-type LocalResourceUpdateRequest struct {
+// LocalEngineUpdateRequest 更新请求
+type LocalEngineUpdateRequest struct {
 	Name           *string         `json:"name"`
 	Description    *string         `json:"description"`
 	IsActive       *bool           `json:"is_active"`
@@ -119,25 +119,25 @@ func cloneJSONMap(source models.JSONMap) models.JSONMap {
 }
 
 // List 返回当前租户的资源列表
-func (h *LocalResourceHandler) List(c *gin.Context) {
+func (h *LocalEngineHandler) List(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
-	resourceType := c.Query("resource_type")
+	engineType := c.Query("engine_type")
 
-	resources, err := h.service.List(tenantID, resourceType)
+	engines, err := h.service.List(tenantID, engineType)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }
 
-// ListSystemResources 返回 System 模块的存储引擎
-func (h *LocalResourceHandler) ListSystemResources(c *gin.Context) {
+// ListSystemEngines 返回 System 模块的存储引擎
+func (h *LocalEngineHandler) ListSystemEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
-	resourceType := c.Query("resource_type")
+	engineType := c.Query("engine_type")
 
-	resources, err := h.service.ListSystemResources(resourceType, tenantID)
+	engines, err := h.service.ListSystemEngines(engineType, tenantID)
 	if err != nil {
 		if errors.Is(err, service.ErrSystemIntegrationDisabled) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "system integration not available"})
@@ -147,12 +147,12 @@ func (h *LocalResourceHandler) ListSystemResources(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }
 
 // Create 新建资源
-func (h *LocalResourceHandler) Create(c *gin.Context) {
-	var req LocalResourceRequest
+func (h *LocalEngineHandler) Create(c *gin.Context) {
+	var req LocalEngineRequest
 	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
@@ -160,10 +160,10 @@ func (h *LocalResourceHandler) Create(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	resource := &models.LocalResource{
+	resource := &models.LocalEngine{
 		TenantID:       tenantID,
 		Name:           req.Name,
-		ResourceType:   req.ResourceType,
+		EngineType:   req.EngineType,
 		Description:    req.Description,
 		IsActive:       req.IsActive,
 		ConnectionInfo: req.ConnectionInfo,
@@ -179,13 +179,13 @@ func (h *LocalResourceHandler) Create(c *gin.Context) {
 }
 
 // Update 更新资源
-func (h *LocalResourceHandler) Update(c *gin.Context) {
+func (h *LocalEngineHandler) Update(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
 	}
 
-	var req LocalResourceUpdateRequest
+	var req LocalEngineUpdateRequest
 	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
@@ -220,7 +220,7 @@ func (h *LocalResourceHandler) Update(c *gin.Context) {
 }
 
 // Delete 删除资源
-func (h *LocalResourceHandler) Delete(c *gin.Context) {
+func (h *LocalEngineHandler) Delete(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
@@ -237,13 +237,13 @@ func (h *LocalResourceHandler) Delete(c *gin.Context) {
 }
 
 // TestBeforeCreate 创建前测试连接
-func (h *LocalResourceHandler) TestBeforeCreate(c *gin.Context) {
-	var req LocalResourceRequest
+func (h *LocalEngineHandler) TestBeforeCreate(c *gin.Context) {
+	var req LocalEngineRequest
 	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
 
-	if err := h.service.TestConnectionBeforeCreate(req.ResourceType, req.ConnectionInfo); err != nil {
+	if err := h.service.TestConnectionBeforeCreate(req.EngineType, req.ConnectionInfo); err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -252,7 +252,7 @@ func (h *LocalResourceHandler) TestBeforeCreate(c *gin.Context) {
 }
 
 // TestExisting 测试已有资源
-func (h *LocalResourceHandler) TestExisting(c *gin.Context) {
+func (h *LocalEngineHandler) TestExisting(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
@@ -269,7 +269,7 @@ func (h *LocalResourceHandler) TestExisting(c *gin.Context) {
 }
 
 // Sync 推送到 System
-func (h *LocalResourceHandler) Sync(c *gin.Context) {
+func (h *LocalEngineHandler) Sync(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
@@ -293,7 +293,7 @@ func (h *LocalResourceHandler) Sync(c *gin.Context) {
 }
 
 // ListTables 列出本地资源下的表（针对文件型或直连数据源）
-func (h *LocalResourceHandler) ListTables(c *gin.Context) {
+func (h *LocalEngineHandler) ListTables(c *gin.Context) {
     id, ok := commonAPI.ParseUintParam(c, "id")
     if !ok { return }
 
@@ -307,7 +307,7 @@ func (h *LocalResourceHandler) ListTables(c *gin.Context) {
 }
 
 // ListFields 列出指定表的字段（含类型信息）
-func (h *LocalResourceHandler) ListFields(c *gin.Context) {
+func (h *LocalEngineHandler) ListFields(c *gin.Context) {
     id, ok := commonAPI.ParseUintParam(c, "id")
     if !ok { return }
 

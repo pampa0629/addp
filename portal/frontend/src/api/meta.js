@@ -3,7 +3,7 @@ import client from './client'
 const unwrap = (promise, defaultValue) =>
   promise.then(res => res.data?.data ?? defaultValue)
 
-export const getResources = () => unwrap(client.get('/meta/resources'), [])
+export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
 export const getSchemas = resourceId =>
   unwrap(client.get(`/meta/schemas/${resourceId}`), [])

@@ -14,7 +14,7 @@ import (
 // EngineRegistry 引擎注册表（从 System 动态加载计算引擎配置）
 type EngineRegistry struct {
 	systemClient *commonClient.SystemClient
-	engines      map[string]*commonModels.Resource // key: unique_identifier
+	engines      map[string]*commonModels.Engine // key: unique_identifier
 	mu           sync.RWMutex
 	cacheTTL     time.Duration
 	lastRefresh  time.Time
@@ -28,13 +28,13 @@ func NewEngineRegistry(systemURL, internalAPIKey string, cacheTTL time.Duration)
 
 	return &EngineRegistry{
 		systemClient: commonClient.NewSystemClientWithInternalKey(systemURL, internalAPIKey),
-		engines:      make(map[string]*commonModels.Resource),
+		engines:      make(map[string]*commonModels.Engine),
 		cacheTTL:     cacheTTL,
 	}
 }
 
 // GetEngine 根据 unique_identifier 获取引擎配置
-func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*commonModels.Resource, error) {
+func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*commonModels.Engine, error) {
 	// 先检查缓存
 	r.mu.RLock()
 	if engine, ok := r.engines[identifier]; ok && time.Since(r.lastRefresh) < r.cacheTTL {
@@ -59,7 +59,7 @@ func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*com
 
 // GetEnginesByCapability 根据能力类型获取所有匹配的引擎
 // 例如: capabilityType = "scan" 返回所有支持扫描的引擎
-func (r *EngineRegistry) GetEnginesByCapability(ctx context.Context, capabilityType string) ([]*commonModels.Resource, error) {
+func (r *EngineRegistry) GetEnginesByCapability(ctx context.Context, capabilityType string) ([]*commonModels.Engine, error) {
 	// 检查缓存是否有效
 	r.mu.RLock()
 	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
@@ -76,7 +76,7 @@ func (r *EngineRegistry) GetEnginesByCapability(ctx context.Context, capabilityT
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var matchedEngines []*commonModels.Resource
+	var matchedEngines []*commonModels.Engine
 	for _, engine := range r.engines {
 		if engine.Capabilities == nil {
 			continue
@@ -118,7 +118,7 @@ func (r *EngineRegistry) RefreshCache(ctx context.Context) error {
 	defer r.mu.Unlock()
 
 	// 清空现有缓存
-	r.engines = make(map[string]*commonModels.Resource)
+	r.engines = make(map[string]*commonModels.Engine)
 
 	// 重新填充
 	for _, engine := range engines {
@@ -132,7 +132,7 @@ func (r *EngineRegistry) RefreshCache(ctx context.Context) error {
 }
 
 // ListAllEngines 列出所有已注册的引擎
-func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*commonModels.Resource, error) {
+func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*commonModels.Engine, error) {
 	// 检查缓存是否有效
 	r.mu.RLock()
 	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
@@ -148,7 +148,7 @@ func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*commonModels.Re
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	engines := make([]*commonModels.Resource, 0, len(r.engines))
+	engines := make([]*commonModels.Engine, 0, len(r.engines))
 	for _, engine := range r.engines {
 		engines = append(engines, engine)
 	}

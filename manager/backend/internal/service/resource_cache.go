@@ -16,7 +16,7 @@ import (
 
 // resourceCacheEntry 缓存条目，包含资源和过期时间
 type resourceCacheEntry struct {
-	resource  *commonModels.Resource
+	resource  *commonModels.Engine
 	expiresAt time.Time
 }
 
@@ -77,7 +77,7 @@ func NewResourceCacheService(systemURL, internalKey string, redisClient *redis.C
 }
 
 // GetResource 获取资源（带缓存）
-func (s *ResourceCacheService) GetResource(resourceID uint) (*commonModels.Resource, error) {
+func (s *ResourceCacheService) GetResource(engineID uint) (*commonModels.Engine, error) {
 	if s.internalClient == nil {
 		return nil, fmt.Errorf("internal client not configured")
 	}
@@ -91,14 +91,14 @@ func (s *ResourceCacheService) GetResource(resourceID uint) (*commonModels.Resou
 	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
 		resourceCopy := *entry.resource
 		s.log.Debug("资源连接信息命中缓存",
-			"resource_id", resourceID,
+			"engine_id", engineID,
 			"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
 		)
 		return &resourceCopy, nil
 	}
 
 	// 缓存未命中或已过期，从 System API 获取
-	resource, err := s.internalClient.GetResource(resourceID)
+	resource, err := s.internalClient.GetEngine(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource from System API: %w", err)
 	}
@@ -106,15 +106,15 @@ func (s *ResourceCacheService) GetResource(resourceID uint) (*commonModels.Resou
 	// 更新缓存
 	s.cacheResource(resource)
 	s.log.Info("通过内部 API 获取资源连接信息成功",
-		"resource_id", resourceID,
-		"resource_type", resource.ResourceType,
+		"engine_id", engineID,
+		"resource_type", resource.EngineType,
 	)
 
 	return resource, nil
 }
 
 // cacheResource 缓存资源
-func (s *ResourceCacheService) cacheResource(resource *commonModels.Resource) {
+func (s *ResourceCacheService) cacheResource(resource *commonModels.Engine) {
 	if resource == nil {
 		return
 	}
@@ -136,37 +136,37 @@ func (s *ResourceCacheService) ClearCache() {
 }
 
 // ClearResourceCache 清除指定资源的缓存
-func (s *ResourceCacheService) ClearResourceCache(resourceID uint) {
+func (s *ResourceCacheService) ClearResourceCache(engineID uint) {
 	s.cacheMu.Lock()
-	delete(s.resourceCache, resourceID)
+	delete(s.resourceCache, engineID)
 	s.cacheMu.Unlock()
-	s.log.Info("资源缓存已清除", "resource_id", resourceID)
+	s.log.Info("资源缓存已清除", "engine_id", engineID)
 }
 
 // handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
 func (s *ResourceCacheService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
 	s.log.Info("收到资源变更事件",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"action", event.Action,
 		"timestamp", event.Timestamp)
 
 	switch event.Action {
 	case events.ActionCreate:
 		// 资源创建：不需要特殊处理，等待下次访问时自动加载
-		s.log.Debug("资源已创建，等待首次访问时加载", "resource_id", event.ResourceID)
+		s.log.Debug("资源已创建，等待首次访问时加载", "engine_id", event.EngineID)
 
 	case events.ActionUpdate:
 		// 资源更新：清除缓存，强制下次访问时重新获取
-		s.ClearResourceCache(event.ResourceID)
-		s.log.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
+		s.log.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
 
 	case events.ActionDelete:
 		// 资源删除：清除缓存
-		s.ClearResourceCache(event.ResourceID)
-		s.log.Info("资源已删除，缓存已清除", "resource_id", event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
+		s.log.Info("资源已删除，缓存已清除", "engine_id", event.EngineID)
 
 	default:
-		s.log.Warn("未知的资源变更动作", "action", event.Action, "resource_id", event.ResourceID)
+		s.log.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
 	}
 
 	return nil

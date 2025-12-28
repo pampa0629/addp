@@ -81,25 +81,25 @@
                 placeholder="选择数据源"
                 style="width: 100%"
                 filterable
-                :loading="loadingSystemResources || loadingLocalResources"
+                :loading="loadingSystemEngines || loadingLocalEngines"
               >
                 <el-option
                   v-for="option in sourceOptions"
                   :key="option.value"
-                  :label="`${option.name} (${option.resource_type})`"
+                  :label="`${option.name} (${option.engine_type})`"
                   :value="option.value"
                 />
               </el-select>
               <div class="hint">
                 <p>
                   从系统管理 — 存储引擎中配置（全局可用）
-                  <el-link type="primary" @click="openSystemResources">去配置</el-link>
+                  <el-link type="primary" @click="openSystemEngines">去配置</el-link>
                 </p>
                 <p>
                   在数据传输模块配置（只有数据传输可用）
-                  <el-link type="primary" @click="openLocalResourceDialog('source')">去配置</el-link>
+                  <el-link type="primary" @click="openLocalEngineDialog('source')">去配置</el-link>
                   <template v-if="selectedSourceLocalResource">
-                    <el-link type="primary" @click="openLocalResourceDialog('source', selectedSourceLocalResource)">编辑当前</el-link>
+                    <el-link type="primary" @click="openLocalEngineDialog('source', selectedSourceLocalResource)">编辑当前</el-link>
                     <el-link
                       type="success"
                       :loading="syncingLocalResource"
@@ -360,25 +360,25 @@
                 placeholder="选择目标数据源"
                 style="width: 100%"
                 filterable
-                :loading="loadingSystemResources || loadingLocalResources"
+                :loading="loadingSystemEngines || loadingLocalEngines"
               >
                 <el-option
                   v-for="option in targetOptions"
                   :key="option.value"
-                  :label="`${option.name} (${option.resource_type})`"
+                  :label="`${option.name} (${option.engine_type})`"
                   :value="option.value"
                 />
               </el-select>
               <div class="hint">
                 <p>
                   从系统管理 — 存储引擎中配置（全局可用）
-                  <el-link type="primary" @click="openSystemResources">去配置</el-link>
+                  <el-link type="primary" @click="openSystemEngines">去配置</el-link>
                 </p>
                 <p>
                   在数据传输模块配置（只有数据传输可用）
-                  <el-link type="primary" @click="openLocalResourceDialog('target')">去配置</el-link>
+                  <el-link type="primary" @click="openLocalEngineDialog('target')">去配置</el-link>
                   <template v-if="selectedTargetLocalResource">
-                    <el-link type="primary" @click="openLocalResourceDialog('target', selectedTargetLocalResource)">编辑当前</el-link>
+                    <el-link type="primary" @click="openLocalEngineDialog('target', selectedTargetLocalResource)">编辑当前</el-link>
                     <el-link
                       type="success"
                       :loading="syncingLocalResource"
@@ -637,7 +637,7 @@
             :source-field-details="sourceFieldDetails"
             :target-field-details="targetFieldDetails"
             v-model:mappings="fieldMappings"
-            :auto-create-mode="targetConnectorType === 's3' || (!targetIsSystem && selectedTargetLocalResource && ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.resource_type || '').toLowerCase()))"
+            :auto-create-mode="targetConnectorType === 's3' || (!targetIsSystem && selectedTargetLocalResource && ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.engine_type || '').toLowerCase()))"
             @fetch-fields="handleFetchFields"
           />
         </div>
@@ -716,8 +716,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { localResourcesAPI } from '@/api/localResources'
-import { systemResourcesAPI } from '@/api/systemResources'
+import { localEnginesAPI } from '@/api/localResources'
+import { systemEnginesAPI } from "../api/systemEngines"'
 import FieldMappingEditor from '@/components/FieldMappingEditor.vue'
 import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
 import { StorageEngineForm, ScheduleConfig, describeCron } from '@common-ui'
@@ -754,8 +754,8 @@ const targetConfig = ref({})
 
 const systemResources = ref([])
 const localResources = ref([])
-const loadingSystemResources = ref(false)
-const loadingLocalResources = ref(false)
+const loadingSystemEngines = ref(false)
+const loadingLocalEngines = ref(false)
 
 const selectedSourceValue = ref(null)
 const selectedTargetValue = ref(null)
@@ -765,7 +765,7 @@ const localResourceDialogMode = ref('create')
 const localResourceDialogScope = ref('source')
 const localResourceFormRef = ref(null)
 const localResourceForm = ref({
-  resource_type: 'postgresql',
+  engine_type: 'postgresql',
   name: '',
   description: '',
   is_active: true,
@@ -975,16 +975,16 @@ const matchesConnectorType = (resourceType, connectorType) => {
 }
 
 const filteredSourceSystemResources = computed(() =>
-  systemResources.value.filter(r => matchesConnectorType(r.resource_type, sourceConnectorType.value))
+  systemResources.value.filter(r => matchesConnectorType(r.engine_type, sourceConnectorType.value))
 )
 const filteredSourceLocalResources = computed(() =>
-  localResources.value.filter(r => matchesConnectorType(r.resource_type, sourceConnectorType.value))
+  localResources.value.filter(r => matchesConnectorType(r.engine_type, sourceConnectorType.value))
 )
 const filteredTargetSystemResources = computed(() =>
-  systemResources.value.filter(r => matchesConnectorType(r.resource_type, targetConnectorType.value))
+  systemResources.value.filter(r => matchesConnectorType(r.engine_type, targetConnectorType.value))
 )
 const filteredTargetLocalResources = computed(() =>
-  localResources.value.filter(r => matchesConnectorType(r.resource_type, targetConnectorType.value))
+  localResources.value.filter(r => matchesConnectorType(r.engine_type, targetConnectorType.value))
 )
 
 const buildOptions = (systemList, localList) => {
@@ -996,7 +996,7 @@ const buildOptions = (systemList, localList) => {
       originLabel: '系统管理',
       resource: res,
       name: res.name,
-      resource_type: res.resource_type
+      engine_type: res.engine_type
     })
   })
   localList.forEach(res => {
@@ -1006,7 +1006,7 @@ const buildOptions = (systemList, localList) => {
       originLabel: '数据传输',
       resource: res,
       name: res.name,
-      resource_type: res.resource_type
+      engine_type: res.engine_type
     })
   })
   return options
@@ -1040,8 +1040,8 @@ const selectedTargetLocalResource = computed(() =>
 
 const currentTargetResourceType = computed(() => {
   const option = selectedTargetOption.value
-  if (option?.resource?.resource_type) {
-    return (option.resource.resource_type || '').toLowerCase()
+  if (option?.resource?.engine_type) {
+    return (option.resource.engine_type || '').toLowerCase()
   }
   return ''
 })
@@ -1071,7 +1071,7 @@ const targetIsSystem = computed(() => selectedTargetOption.value?.origin === 'sy
 
 const resetLocalResourceForm = () => {
   localResourceForm.value = {
-    resource_type: 'postgresql',
+    engine_type: 'postgresql',
     name: '',
     description: '',
     is_active: true,
@@ -1083,9 +1083,9 @@ const resetLocalResourceForm = () => {
 }
 
 const loadSystemResources = async () => {
-  loadingSystemResources.value = true
+  loadingSystemEngines.value = true
   try {
-    const data = await systemResourcesAPI.list()
+    const data = await systemEnginesAPI.list()
     systemResources.value = data || []
   } catch (error) {
     console.error('加载 System 资源失败:', error)
@@ -1098,27 +1098,27 @@ const loadSystemResources = async () => {
       )
     }
   } finally {
-    loadingSystemResources.value = false
+    loadingSystemEngines.value = false
   }
 }
 
 const loadLocalResources = async () => {
-  loadingLocalResources.value = true
+  loadingLocalEngines.value = true
   try {
-    const data = await localResourcesAPI.list()
+    const data = await localEnginesAPI.list()
     localResources.value = data || []
   } catch (error) {
     console.error('加载本地存储引擎失败:', error)
     ElMessage.error(error.response?.data?.error || '加载本地存储引擎失败')
   } finally {
-    loadingLocalResources.value = false
+    loadingLocalEngines.value = false
   }
 }
 
-const openSystemResources = () => {
+const openSystemEngines = () => {
   const baseUrl = (import.meta.env.VITE_SYSTEM_URL || 'http://localhost:5173').replace(/\/$/, '')
   const token = localStorage.getItem('token')
-  const url = `${baseUrl}/resources${token ? `?token=${encodeURIComponent(token)}` : ''}`
+  const url = `${baseUrl}/engines${token ? `?token=${encodeURIComponent(token)}` : ''}`
   window.open(url, '_blank', 'noopener,noreferrer')
 }
 
@@ -1137,11 +1137,11 @@ const removeConnectionFields = (config) => {
     'secret_key',
     'bucket',
     'use_ssl',
-    'resource_type',
+    'engine_type',
     'connection_info',
-    'local_resource_id',
+    'local_engine_id',
     'local_resource_name',
-    'system_resource_id'
+    'system_engine_id'
   ]
   keys.forEach((key) => {
     if (key in config) {
@@ -1561,7 +1561,7 @@ watch(selectedTargetOption, (option) => {
     taskForm.value.target_id = null
   }
 
-  const type = (option?.resource?.resource_type || '').toLowerCase()
+  const type = (option?.resource?.engine_type || '').toLowerCase()
   if (option?.origin === 'local' && ['s3', 'minio', 'oss'].includes(type)) {
     targetConfig.value = {
       ...targetConfig.value,
@@ -1586,7 +1586,7 @@ watch(sourceConnectorType, (newType) => {
   if (loadingTask.value) {
     return
   }
-  if (selectedSourceOption.value && !matchesConnectorType(selectedSourceOption.value.resource.resource_type, newType)) {
+  if (selectedSourceOption.value && !matchesConnectorType(selectedSourceOption.value.resource.engine_type, newType)) {
     selectedSourceValue.value = null
   }
   sourceConfig.value = {}
@@ -1605,7 +1605,7 @@ watch(targetConnectorType, (newType, oldType) => {
     return
   }
 
-  if (selectedTargetOption.value && !matchesConnectorType(selectedTargetOption.value.resource.resource_type, newType)) {
+  if (selectedTargetOption.value && !matchesConnectorType(selectedTargetOption.value.resource.engine_type, newType)) {
     selectedTargetValue.value = null
   }
   targetConfig.value = {}
@@ -1703,13 +1703,13 @@ const handleObjectStorageDirectorySelected = (directory) => {
   objectStoragePickerInitialPrefix.value = normalizedDir
 }
 
-const openLocalResourceDialog = (scope, resource = null) => {
+const openLocalEngineDialog = (scope, resource = null) => {
   localResourceDialogScope.value = scope
   if (resource) {
     localResourceDialogMode.value = 'edit'
     editingLocalResourceId.value = resource.id
     localResourceForm.value = {
-      resource_type: resource.resource_type,
+      engine_type: resource.engine_type,
       name: resource.name,
       description: resource.description,
       is_active: resource.is_active,
@@ -1742,7 +1742,7 @@ const handleTestLocalResource = async () => {
 
   testingLocalResource.value = true
   try {
-    const result = await localResourcesAPI.testConnection(localResourceForm.value)
+    const result = await localEnginesAPI.testConnection(localResourceForm.value)
     if (result.success) {
       ElMessage.success('连接测试成功')
     } else {
@@ -1766,7 +1766,7 @@ const handleSaveLocalResource = async () => {
   try {
     let saved
     if (editingLocalResourceId.value) {
-      saved = await localResourcesAPI.update(editingLocalResourceId.value, {
+      saved = await localEnginesAPI.update(editingLocalResourceId.value, {
         name: localResourceForm.value.name,
         description: localResourceForm.value.description,
         is_active: localResourceForm.value.is_active,
@@ -1774,7 +1774,7 @@ const handleSaveLocalResource = async () => {
       })
       ElMessage.success('存储引擎已更新')
     } else {
-      saved = await localResourcesAPI.create(localResourceForm.value)
+      saved = await localEnginesAPI.create(localResourceForm.value)
       ElMessage.success('存储引擎创建成功')
     }
 
@@ -1814,7 +1814,7 @@ const handleSyncLocalResource = async (scope) => {
 
   syncingLocalResource.value = true
   try {
-    await localResourcesAPI.syncToSystem(resource.id)
+    await localEnginesAPI.syncToSystem(resource.id)
     ElMessage.success('已同步到 System 模块')
     await loadSystemResources()
   } catch (error) {
@@ -1857,15 +1857,15 @@ const loadTaskForEdit = async () => {
     const rawTargetConfig = { ...(taskConfig.target || {}) }
 
     const sourceScope = (rawSourceConfig.scope || '').toLowerCase()
-    const sourceSystemId = normalizeId(taskData.source_id ?? rawSourceConfig.system_resource_id)
-    const sourceLocalId = normalizeId(rawSourceConfig.local_resource_id)
+    const sourceSystemId = normalizeId(taskData.source_id ?? rawSourceConfig.system_engine_id)
+    const sourceLocalId = normalizeId(rawSourceConfig.local_engine_id)
 
     if (sourceScope === 'system' || sourceSystemId) {
       const systemResource = systemResources.value.find(res => res.id === sourceSystemId) || null
       if (sourceSystemId && !systemResource) {
         ElMessage.warning('未找到源数据源，请重新选择')
       }
-      const resolvedType = normalizeConnectorType(systemResource?.resource_type, rawSourceConfig)
+      const resolvedType = normalizeConnectorType(systemResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
@@ -1875,13 +1875,13 @@ const loadTaskForEdit = async () => {
       if (sourceLocalId && !localResource) {
         ElMessage.warning('未找到本地源存储引擎，请重新选择')
       }
-      const resolvedType = normalizeConnectorType(localResource?.resource_type, rawSourceConfig)
+      const resolvedType = normalizeConnectorType(localResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceLocalId ? `local:${sourceLocalId}` : null
       taskForm.value.source_id = null
     } else {
-      const resolvedType = normalizeConnectorType(rawSourceConfig.resource_type, rawSourceConfig)
+      const resolvedType = normalizeConnectorType(rawSourceConfig.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
@@ -1889,15 +1889,15 @@ const loadTaskForEdit = async () => {
     }
 
     const targetScope = (rawTargetConfig.scope || '').toLowerCase()
-    const targetSystemId = normalizeId(taskData.target_id ?? rawTargetConfig.system_resource_id)
-    const targetLocalId = normalizeId(rawTargetConfig.local_resource_id)
+    const targetSystemId = normalizeId(taskData.target_id ?? rawTargetConfig.system_engine_id)
+    const targetLocalId = normalizeId(rawTargetConfig.local_engine_id)
 
     if (targetScope === 'system' || targetSystemId) {
       const systemResource = systemResources.value.find(res => res.id === targetSystemId) || null
       if (targetSystemId && !systemResource) {
         ElMessage.warning('未找到目标数据源，请重新选择')
       }
-      const resolvedTypeRaw = normalizeConnectorType(systemResource?.resource_type, rawTargetConfig)
+      const resolvedTypeRaw = normalizeConnectorType(systemResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
@@ -1908,14 +1908,14 @@ const loadTaskForEdit = async () => {
       if (targetLocalId && !localResource) {
         ElMessage.warning('未找到本地目标存储引擎，请重新选择')
       }
-      const resolvedTypeRaw = normalizeConnectorType(localResource?.resource_type, rawTargetConfig)
+      const resolvedTypeRaw = normalizeConnectorType(localResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
       selectedTargetValue.value = targetLocalId ? `local:${targetLocalId}` : null
       taskForm.value.target_id = null
     } else {
-      const resolvedTypeRaw = normalizeConnectorType(rawTargetConfig.resource_type, rawTargetConfig)
+      const resolvedTypeRaw = normalizeConnectorType(rawTargetConfig.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
@@ -2007,7 +2007,7 @@ const handleLoadSourceTables = async () => {
       }
       const token = localStorage.getItem('token')
       const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
-        params: { resource_id: taskForm.value.source_id },
+        params: { engine_id: taskForm.value.source_id },
         headers: { Authorization: `Bearer ${token}` }
       })
       if (response.data && Array.isArray(response.data)) {
@@ -2018,7 +2018,7 @@ const handleLoadSourceTables = async () => {
       }
     } else {
       // 本地资源：统一调用后端列出表（支持 postgresql/mysql/spatialite/sqlite）
-      const res = await localResourcesAPI.listTables(selectedSourceLocalResource.value.id)
+      const res = await localEnginesAPI.listTables(selectedSourceLocalResource.value.id)
       if (Array.isArray(res)) {
         availableSourceTables.value = res
       } else if (Array.isArray(res?.data)) {
@@ -2055,7 +2055,7 @@ const handleLoadTargetTables = async () => {
   try {
     const token = localStorage.getItem('token')
     const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
-      params: { resource_id: taskForm.value.target_id },
+      params: { engine_id: taskForm.value.target_id },
       headers: { Authorization: `Bearer ${token}` }
     })
 
@@ -2125,7 +2125,7 @@ const handleFetchFields = async (type) => {
       const token = localStorage.getItem('token')
       const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
         params: {
-          resource_id: resourceId,
+          engine_id: resourceId,
           table_name: tableName,
           include_details: true
         },
@@ -2202,7 +2202,7 @@ const handleFetchFields = async (type) => {
 
       console.log(`调用本地资源字段扫描: resourceId=${localResource.id}, table=${tableName}, type=${connectorType}`)
 
-      const res = await localResourcesAPI.listFields(localResource.id, tableName)
+      const res = await localEnginesAPI.listFields(localResource.id, tableName)
       const data = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])
 
       if (data && Array.isArray(data) && data.length > 0) {
@@ -2358,7 +2358,7 @@ const autoFetchAndMapFields = async () => {
         connectorType: targetConnectorType.value,
         resourceId: taskForm.value.target_id,
         localResource: selectedTargetLocalResource.value?.id,
-        localResourceType: selectedTargetLocalResource.value?.resource_type,
+        localResourceType: selectedTargetLocalResource.value?.engine_type,
         table: targetConfig.value.table,
         sourceFieldsCount: sourceFields.value.length
       })
@@ -2397,7 +2397,7 @@ const autoFetchAndMapFields = async () => {
       } else if (targetConnectorType.value === 's3' ||
                  (!targetIsSystem.value &&
                   selectedTargetLocalResource.value &&
-                  ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value.resource_type || '').toLowerCase()))) {
+                  ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value.engine_type || '').toLowerCase()))) {
         // 对象存储目标: 使用源字段作为目标字段
         console.log('对象存储目标,使用源字段作为目标字段')
         targetFields.value = [...sourceFields.value]
@@ -2410,7 +2410,7 @@ const autoFetchAndMapFields = async () => {
         console.log('未知目标类型或缺少必要参数:', {
           isSystem: targetIsSystem.value,
           type: targetConnectorType.value,
-          localResource: selectedTargetLocalResource.value?.resource_type
+          localResource: selectedTargetLocalResource.value?.engine_type
         })
         ElMessage.warning('无法识别目标类型,请检查目标数据源配置')
       }
@@ -2498,7 +2498,7 @@ const performAutoMatch = () => {
   const targetIsObjectStorage =
     (targetIsSystem.value && targetConnectorType.value === 's3') ||
     (!targetIsSystem.value &&
-      ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value?.resource_type || '').toLowerCase()))
+      ['s3', 'minio', 'oss'].includes((selectedTargetLocalResource.value?.engine_type || '').toLowerCase()))
 
   if (targetIsObjectStorage) {
     sourceFields.value.forEach(sourceField => {
@@ -2550,7 +2550,7 @@ const performAutoMatch = () => {
 const buildConnectorConfigFromResource = (resource) => {
   if (!resource) return {}
   const conn = resource.connection_info || {}
-  const type = (resource.resource_type || '').toLowerCase()
+  const type = (resource.engine_type || '').toLowerCase()
 
   if (['postgresql', 'mysql'].includes(type)) {
     const portValue = conn.port
@@ -2582,13 +2582,13 @@ const buildConnectorConfigFromResource = (resource) => {
     return {
       type: 'spatialite',
       file_path: conn.file_path || '',
-      resource_type: resource.resource_type,
+      engine_type: resource.engine_type,
       connection_info: conn
     }
   }
 
   return {
-    resource_type: resource.resource_type,
+    engine_type: resource.engine_type,
     connection_info: conn
   }
 }
@@ -2640,9 +2640,9 @@ const handleSubmit = async () => {
     if (selectedSourceOption.value?.origin === 'system') {
       config.source.scope = 'system'
       if (taskForm.value.source_id) {
-        config.source.system_resource_id = taskForm.value.source_id
+        config.source.system_engine_id = taskForm.value.source_id
       }
-      delete config.source.local_resource_id
+      delete config.source.local_engine_id
       delete config.source.local_resource_name
       removeConnectionFields(config.source)
     } else if (selectedSourceLocalResource.value) {
@@ -2652,7 +2652,7 @@ const handleSubmit = async () => {
         ...buildConnectorConfigFromResource(localResource),
         ...config.source,
         scope: 'local',
-        local_resource_id: localResource.id,
+        local_engine_id: localResource.id,
         local_resource_name: localResource.name
       }
     } else {
@@ -2664,9 +2664,9 @@ const handleSubmit = async () => {
     if (selectedTargetOption.value?.origin === 'system') {
       config.target.scope = 'system'
       if (taskForm.value.target_id) {
-        config.target.system_resource_id = taskForm.value.target_id
+        config.target.system_engine_id = taskForm.value.target_id
       }
-      delete config.target.local_resource_id
+      delete config.target.local_engine_id
       delete config.target.local_resource_name
       removeConnectionFields(config.target)
     } else if (selectedTargetLocalResource.value) {
@@ -2676,7 +2676,7 @@ const handleSubmit = async () => {
         ...buildConnectorConfigFromResource(localResource),
         ...config.target,
         scope: 'local',
-        local_resource_id: localResource.id,
+        local_engine_id: localResource.id,
         local_resource_name: localResource.name
       }
     } else {

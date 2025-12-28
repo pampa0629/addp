@@ -14,12 +14,12 @@ import (
 // ClickHouseScanner 执行 ClickHouse 元数据扫描
 // 通过 dbbridge 委托给 ClickHouse 插件的元数据查询能力
 type ClickHouseScanner struct {
-	resource *commonModels.Resource // 资源信息
+	resource *commonModels.Engine // 资源信息
 	db       *gorm.DB               // 从插件获取的连接池
 }
 
 // NewClickHouseScanner 根据资源信息创建 ClickHouse 扫描器
-func NewClickHouseScanner(resource *commonModels.Resource) (*ClickHouseScanner, error) {
+func NewClickHouseScanner(resource *commonModels.Engine) (*ClickHouseScanner, error) {
 	// 从插件系统获取连接池
 	db, err := dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
 	if err != nil {

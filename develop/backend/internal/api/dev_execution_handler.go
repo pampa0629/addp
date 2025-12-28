@@ -77,7 +77,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 		c.Request.Context(),
 		req.DevType,
 		req.Content,
-		req.ResourceID,
+		req.EngineID,
 		tenantID,
 		userID,
 		timeout,

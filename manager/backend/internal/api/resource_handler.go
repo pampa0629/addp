@@ -19,22 +19,22 @@ func NewResourceHandler(resourceService *service.ResourceService) *ResourceHandl
 }
 
 // List 获取资源列表
-// GET /api/resources?page=1&page_size=10&resource_type=postgresql
+// GET /api/engines?page=1&page_size=10&resource_type=postgresql
 func (h *ResourceHandler) List(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
 	resourceType := c.Query("resource_type")
 
-	resources, total, err := h.resourceService.List(page, pageSize, resourceType)
+	engines, total, err := h.resourceService.List(page, pageSize, resourceType)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
 
-	commonAPI.SendPaginatedResponse(c, resources, int64(total), page, pageSize)
+	commonAPI.SendPaginatedResponse(c, engines, int64(total), page, pageSize)
 }
 
 // GetByID 获取单个资源
-// GET /api/resources/:id
+// GET /api/engines/:id
 func (h *ResourceHandler) GetByID(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {

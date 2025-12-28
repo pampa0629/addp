@@ -6,8 +6,8 @@ type DataLocation struct {
 	// 数据源类型
 	SourceType string `json:"source_type"` // "table"|"file"|"geojson"|"reference"
 
-	// 存储引擎资源 ID（除了 geojson 和 reference）
-	ResourceID *uint `json:"resource_id,omitempty"`
+	// 存储引擎 ID（除了 geojson 和 reference）
+	EngineID *uint `json:"engine_id,omitempty"`
 
 	// 类型特定参数（灵活扩展）
 	Params map[string]interface{} `json:"params"`
@@ -23,13 +23,13 @@ type DataLocation struct {
 }
 
 // NewTableLocation 创建表类型的数据位置
-func NewTableLocation(resourceID uint, table string, schema string) *DataLocation {
+func NewTableLocation(engineID uint, table string, schema string) *DataLocation {
 	if schema == "" {
 		schema = "public"
 	}
 	return &DataLocation{
 		SourceType: "table",
-		ResourceID: &resourceID,
+		EngineID:   &engineID,
 		Params: map[string]interface{}{
 			"table":  table,
 			"schema": schema,
@@ -38,10 +38,10 @@ func NewTableLocation(resourceID uint, table string, schema string) *DataLocatio
 }
 
 // NewFileLocation 创建文件类型的数据位置
-func NewFileLocation(resourceID uint, path string, format string) *DataLocation {
+func NewFileLocation(engineID uint, path string, format string) *DataLocation {
 	return &DataLocation{
 		SourceType: "file",
-		ResourceID: &resourceID,
+		EngineID:   &engineID,
 		Params: map[string]interface{}{
 			"path":   path,
 			"format": format,
@@ -121,18 +121,18 @@ func (d *DataLocation) Validate() error {
 
 	switch d.SourceType {
 	case "table":
-		// 表类型必须有 resource_id 和 table
-		if d.ResourceID == nil {
-			return ErrInvalidDataLocation("resource_id is required for table source")
+		// 表类型必须有 engine_id 和 table
+		if d.EngineID == nil {
+			return ErrInvalidDataLocation("engine_id is required for table source")
 		}
 		if d.GetStringParam("table") == "" {
 			return ErrInvalidDataLocation("table name is required for table source")
 		}
 
 	case "file":
-		// 文件类型必须有 resource_id 和 path
-		if d.ResourceID == nil {
-			return ErrInvalidDataLocation("resource_id is required for file source")
+		// 文件类型必须有 engine_id 和 path
+		if d.EngineID == nil {
+			return ErrInvalidDataLocation("engine_id is required for file source")
 		}
 		if d.GetStringParam("path") == "" {
 			return ErrInvalidDataLocation("path is required for file source")

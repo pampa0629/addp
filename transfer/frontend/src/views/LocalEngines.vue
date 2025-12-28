@@ -2,10 +2,10 @@
   <el-card>
     <template #header>
       <div class="card-header">
-        <span>本地存储引擎管理</span>
+        <span>本地引擎管理</span>
         <div class="header-actions">
           <el-button type="info" :icon="RefreshRight" @click="loadResources">刷新</el-button>
-          <el-button type="primary" :icon="Plus" @click="showAddDialog">新增存储引擎</el-button>
+          <el-button type="primary" :icon="Plus" @click="showAddDialog">新增引擎</el-button>
         </div>
       </div>
     </template>
@@ -20,13 +20,13 @@
       <p>如需在多个模块间共享存储引擎，请前往 <strong>System 模块</strong> 的"存储引擎管理"页面进行配置。</p>
     </el-alert>
 
-    <el-table :data="resources" v-loading="loading" stripe>
+    <el-table :data="engines" v-loading="loading" stripe>
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="名称" min-width="150" />
-      <el-table-column prop="resource_type" label="类型" width="150">
+      <el-table-column prop="engine_type" label="类型" width="150">
         <template #default="{ row }">
-          <el-tag :type="getResourceTypeColor(row.resource_type)">
-            {{ getResourceTypeLabel(row.resource_type) }}
+          <el-tag :type="getResourceTypeColor(row.engine_type)">
+            {{ getResourceTypeLabel(row.engine_type) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -87,12 +87,12 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { localResourcesAPI } from '../api/localResources'
+import { localEnginesAPI } from "../api/localEngines"'
 import { Plus, Edit, Delete, Upload, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm } from '@common-ui'
 
-const resources = ref([])
+const engines = ref([])
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(10)
@@ -106,7 +106,7 @@ const isEdit = ref(false)
 const editId = ref(null)
 
 const form = ref({
-  resource_type: '',
+  engine_type: '',
   name: '',
   description: '',
   is_active: true,
@@ -115,7 +115,7 @@ const form = ref({
 
 const SENSITIVE_PLACEHOLDER = '********'
 
-const dialogTitle = computed(() => isEdit.value ? '编辑本地存储引擎' : '新增本地存储引擎')
+const dialogTitle = computed(() => isEdit.value ? '编辑本地引擎' : '新增本地引擎')
 
 const resourceTypeMap = {
   'postgresql': 'PostgreSQL',
@@ -152,11 +152,11 @@ const formatDate = (dateString) => {
 const loadResources = async () => {
   loading.value = true
   try {
-    const list = await localResourcesAPI.list()
-    resources.value = Array.isArray(list) ? list : []
-    total.value = resources.value.length
+    const list = await localEnginesAPI.list()
+    engines.value = Array.isArray(list) ? list : []
+    total.value = engines.value.length
   } catch (error) {
-    ElMessage.error('加载资源列表失败：' + (error.response?.data?.error || error.message))
+    ElMessage.error('加载引擎列表失败：' + (error.response?.data?.error || error.message))
     console.error(error)
   } finally {
     loading.value = false
@@ -174,7 +174,7 @@ const editResource = (row) => {
   isEdit.value = true
   editId.value = row.id
   form.value = {
-    resource_type: row.resource_type,
+    engine_type: row.engine_type,
     name: row.name,
     description: row.description,
     is_active: row.is_active,
@@ -194,7 +194,7 @@ const testBeforeCreate = async () => {
   try {
     // 如果是编辑模式，使用已保存资源的ID进行测试（会使用数据库中的真实密钥）
     if (isEdit.value && editId.value) {
-      const response = await localResourcesAPI.testExisting(editId.value)
+      const response = await localEnginesAPI.testExisting(editId.value)
       if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
@@ -202,7 +202,7 @@ const testBeforeCreate = async () => {
       }
     } else {
       // 新增模式，使用表单数据测试
-      const response = await localResourcesAPI.testConnection(buildRequestPayload(form.value))
+      const response = await localEnginesAPI.testConnection(buildRequestPayload(form.value))
       if (response.success) {
         ElMessage.success('连接测试成功！')
       } else {
@@ -218,7 +218,7 @@ const testBeforeCreate = async () => {
 
 const testConnection = async (row) => {
   try {
-    const response = await localResourcesAPI.testExisting(row.id)
+    const response = await localEnginesAPI.testExisting(row.id)
     if (response.success) {
       ElMessage.success('连接测试成功！')
     } else {
@@ -237,10 +237,10 @@ const submitForm = async () => {
   try {
     const payload = buildRequestPayload(form.value)
     if (isEdit.value) {
-      await localResourcesAPI.update(editId.value, payload)
+      await localEnginesAPI.update(editId.value, payload)
       ElMessage.success('更新成功')
     } else {
-      await localResourcesAPI.create(payload)
+      await localEnginesAPI.create(payload)
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -254,7 +254,7 @@ const submitForm = async () => {
 
 const syncToSystem = async (row) => {
   ElMessageBox.confirm(
-    `确定要将存储引擎 "${row.name}" 推送到 System 模块吗？推送后该资源将可被所有模块使用。`,
+    `确定要将引擎 "${row.name}" 推送到 System 模块吗？推送后该资源将可被所有模块使用。`,
     '确认推送',
     {
       confirmButtonText: '确定',
@@ -263,7 +263,7 @@ const syncToSystem = async (row) => {
     }
   ).then(async () => {
     try {
-      await localResourcesAPI.syncToSystem(row.id)
+      await localEnginesAPI.syncToSystem(row.id)
       ElMessage.success('推送成功！该资源已在 System 模块中创建')
     } catch (error) {
       ElMessage.error(`推送失败: ${error.response?.data?.error || error.message}`)
@@ -272,13 +272,13 @@ const syncToSystem = async (row) => {
 }
 
 const deleteResource = (row) => {
-  ElMessageBox.confirm(`确定要删除存储引擎 "${row.name}" 吗？`, '确认删除', {
+  ElMessageBox.confirm(`确定要删除引擎 "${row.name}" 吗？`, '确认删除', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
   }).then(async () => {
     try {
-      await localResourcesAPI.delete(row.id)
+      await localEnginesAPI.delete(row.id)
       ElMessage.success('删除成功')
       loadResources()
     } catch (error) {
@@ -289,7 +289,7 @@ const deleteResource = (row) => {
 
 const resetForm = () => {
   form.value = {
-    resource_type: '',
+    engine_type: '',
     name: '',
     description: '',
     is_active: true,
@@ -301,7 +301,7 @@ const resetForm = () => {
 const buildRequestPayload = (data) => {
   const connectionInfo = sanitizeConnectionInfoForSubmit(data.connection_info)
   return {
-    resource_type: data.resource_type,
+    engine_type: data.engine_type,
     name: data.name,
     description: data.description,
     is_active: data.is_active,

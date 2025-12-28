@@ -6,7 +6,7 @@ import "time"
 type MetaNode struct {
 	ID             uint                   `json:"id"`
 	TenantID       uint                   `json:"tenant_id"`
-	ResID          uint                   `json:"res_id"`
+	EngineID       uint                   `json:"engine_id"`
 	ParentNodeID   *uint                  `json:"parent_node_id,omitempty"`
 	NodeType       string                 `json:"node_type"`
 	Name           string                 `json:"name"`
@@ -24,7 +24,7 @@ type MetaNode struct {
 type MetaItem struct {
 	ID              uint                   `json:"id"`
 	TenantID        uint                   `json:"tenant_id"`
-	ResID           uint                   `json:"res_id"`
+	EngineID        uint                   `json:"engine_id"`
 	NodeID          uint                   `json:"node_id"`
 	ItemType        string                 `json:"item_type"`
 	Name            string                 `json:"name"`

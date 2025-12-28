@@ -129,19 +129,19 @@ func (s *MetadataService) callMeta(ctx context.Context, method, path string, que
 }
 
 // ScanResource 扫描资源的元数据（轻量级）
-func (s *MetadataService) ScanResource(resourceID uint) (*models.MetadataScanResult, error) {
+func (s *MetadataService) ScanResource(engineID uint) (*models.MetadataScanResult, error) {
 	// 获取资源信息（优先从 System 服务获取解密后的连接信息）
-	resource, err := s.getResource(resourceID)
+	resource, err := s.getResource(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource: %w", err)
 	}
 
 	var result models.MetadataScanResult
 
-	switch resource.ResourceType {
+	switch resource.EngineType {
 	case "postgresql":
 		// 扫描数据库表
-		tables, err := s.metadataRepo.ScanDatabaseTables(resourceID, resource.ConnectionInfo)
+		tables, err := s.metadataRepo.ScanDatabaseTables(engineID, resource.ConnectionInfo)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan database tables: %w", err)
 		}
@@ -152,7 +152,7 @@ func (s *MetadataService) ScanResource(resourceID uint) (*models.MetadataScanRes
 		}
 
 		// 获取更新后的列表
-		allTables, err := s.metadataRepo.GetManagedTables(resourceID, nil)
+		allTables, err := s.metadataRepo.GetManagedTables(engineID, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tables: %w", err)
 		}
@@ -177,14 +177,14 @@ func (s *MetadataService) ScanResource(resourceID uint) (*models.MetadataScanRes
 		return nil, fmt.Errorf("minio scanning not yet implemented")
 
 	default:
-		return nil, fmt.Errorf("unsupported resource type: %s", resource.ResourceType)
+		return nil, fmt.Errorf("unsupported resource type: %s", resource.EngineType)
 	}
 
 	return &result, nil
 }
 
 // RefreshExplorerNode 触发 Meta 服务对指定节点进行重新扫描
-func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID uint, tenantID *uint, req *ExplorerNodeRefreshRequest, authHeader string) error {
+func (s *MetadataService) RefreshExplorerNode(ctx context.Context, engineID uint, tenantID *uint, req *ExplorerNodeRefreshRequest, authHeader string) error {
 	if req == nil {
 		return errors.New("refresh request payload is required")
 	}
@@ -195,7 +195,7 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 		return fmt.Errorf("missing authorization header")
 	}
 
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	resource, err := s.getResourceForTenant(engineID, tenantID)
 	if err != nil {
 		return err
 	}
@@ -205,7 +205,7 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 		nodeType = "resource"
 	}
 
-	resourceType := strings.ToLower(resource.ResourceType)
+	resourceType := strings.ToLower(resource.EngineType)
 
 	// 点击目录时使用shallow扫描（只列文件名，不做元数据提取）
 	// 点击文件时使用deep扫描（提取详细元数据）
@@ -215,7 +215,7 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 	}
 
 	payload := map[string]interface{}{
-		"resource_id": resourceID,
+		"engine_id": engineID,
 		"scan_depth":  scanDepth,
 		"scan_type":   "manual",
 	}
@@ -264,8 +264,8 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 	}
 
 	logger.L().Info("数据探查: 触发节点刷新",
-		"resource_id", resourceID,
-		"resource_type", resource.ResourceType,
+		"engine_id", engineID,
+		"resource_type", resource.EngineType,
 		"node_type", nodeType,
 		"schema", req.Schema,
 		"path", req.Path,
@@ -303,14 +303,14 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, resourceID ui
 	}
 
 	logger.L().Info("数据探查: 节点刷新完成",
-		"resource_id", resourceID,
+		"engine_id", engineID,
 		"node_type", nodeType,
 	)
 
 	return nil
 }
 
-func (s *MetadataService) ListScanTasks(ctx context.Context, resourceID uint, authHeader string) ([]models.MetaScanTask, error) {
+func (s *MetadataService) ListScanTasks(ctx context.Context, engineID uint, authHeader string) ([]models.MetaScanTask, error) {
 	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/tasks", nil, nil, authHeader)
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func (s *MetadataService) ListScanTasks(ctx context.Context, resourceID uint, au
 
 	tasks := make([]models.MetaScanTask, 0, len(resp.Data))
 	for _, task := range resp.Data {
-		if task.ResourceID == resourceID {
+		if task.EngineID == engineID {
 			tasks = append(tasks, task)
 		}
 	}
@@ -335,12 +335,12 @@ func (s *MetadataService) ListScanTasks(ctx context.Context, resourceID uint, au
 	return tasks, nil
 }
 
-func (s *MetadataService) CreateScanTask(ctx context.Context, resourceID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
+func (s *MetadataService) CreateScanTask(ctx context.Context, engineID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
 	if req == nil {
 		return nil, errors.New("scan task request cannot be nil")
 	}
 	payload := *req
-	payload.ResourceID = resourceID
+	payload.EngineID = engineID
 
 	body, err := s.callMeta(ctx, http.MethodPost, "/api/meta/scan/tasks", nil, payload, authHeader)
 	if err != nil {
@@ -359,12 +359,12 @@ func (s *MetadataService) CreateScanTask(ctx context.Context, resourceID uint, r
 	return &resp.Data, nil
 }
 
-func (s *MetadataService) UpdateScanTask(ctx context.Context, resourceID, taskID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
+func (s *MetadataService) UpdateScanTask(ctx context.Context, engineID, taskID uint, req *models.MetaScanTaskRequest, authHeader string) (*models.MetaScanTask, error) {
 	if req == nil {
 		return nil, errors.New("scan task request cannot be nil")
 	}
 	payload := *req
-	payload.ResourceID = resourceID
+	payload.EngineID = engineID
 
 	path := fmt.Sprintf("/api/meta/scan/tasks/%d", taskID)
 	body, err := s.callMeta(ctx, http.MethodPut, path, nil, payload, authHeader)
@@ -409,7 +409,7 @@ func (s *MetadataService) TriggerScanTask(ctx context.Context, taskID uint, auth
 	return &resp.Data, nil
 }
 
-func (s *MetadataService) ListScanRuns(ctx context.Context, resourceID uint, taskID *uint, status, storageType string, limit, offset int, authHeader string) ([]models.MetaScanTaskRun, int64, error) {
+func (s *MetadataService) ListScanRuns(ctx context.Context, engineID uint, taskID *uint, status, storageType string, limit, offset int, authHeader string) ([]models.MetaScanTaskRun, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -449,7 +449,7 @@ func (s *MetadataService) ListScanRuns(ctx context.Context, resourceID uint, tas
 
 	runs := make([]models.MetaScanTaskRun, 0, len(resp.Data))
 	for _, run := range resp.Data {
-		if run.ResourceID == resourceID {
+		if run.EngineID == engineID {
 			runs = append(runs, run)
 		}
 	}
@@ -457,7 +457,7 @@ func (s *MetadataService) ListScanRuns(ctx context.Context, resourceID uint, tas
 	return runs, int64(len(runs)), nil
 }
 
-func (s *MetadataService) GetScanRun(ctx context.Context, resourceID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
+func (s *MetadataService) GetScanRun(ctx context.Context, engineID, runID uint, authHeader string) (*models.MetaScanTaskRun, error) {
 	path := fmt.Sprintf("/api/meta/scan/runs/%d", runID)
 	body, err := s.callMeta(ctx, http.MethodGet, path, nil, nil, authHeader)
 	if err != nil {
@@ -476,16 +476,16 @@ func (s *MetadataService) GetScanRun(ctx context.Context, resourceID, runID uint
 	if resp.Data.ID == 0 {
 		return nil, fmt.Errorf("scan run not found")
 	}
-	if resp.Data.ResourceID != resourceID {
+	if resp.Data.EngineID != engineID {
 		return nil, fmt.Errorf("scan run not found for resource")
 	}
 
 	return &resp.Data, nil
 }
 
-func (s *MetadataService) CreateManualScanRun(ctx context.Context, resourceID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
+func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint, req *models.MetaManualScanRequest, authHeader string) (*models.MetaScanTaskRun, error) {
 	payload := map[string]interface{}{
-		"resource_id": resourceID,
+		"engine_id": engineID,
 	}
 
 	if req != nil {
@@ -528,8 +528,8 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, resourceID ui
 }
 
 // GetTables 获取资源的表列表
-func (s *MetadataService) GetTables(resourceID uint, isManaged *bool) ([]models.ManagedTable, error) {
-	return s.metadataRepo.GetManagedTables(resourceID, isManaged)
+func (s *MetadataService) GetTables(engineID uint, isManaged *bool) ([]models.ManagedTable, error) {
+	return s.metadataRepo.GetManagedTables(engineID, isManaged)
 }
 
 // ManageTable 纳管表（提取详细元数据）
@@ -541,7 +541,7 @@ func (s *MetadataService) ManageTable(tableID uint) error {
 	}
 
 	// 获取资源连接信息
-	resource, err := s.getResource(table.ResourceID)
+	resource, err := s.getResource(table.EngineID)
 	if err != nil {
 		return fmt.Errorf("failed to get resource: %w", err)
 	}
@@ -556,18 +556,18 @@ func (s *MetadataService) UnmanageTable(tableID uint) error {
 }
 
 // ListExplorerResources 返回可用于数据探查的存储引擎列表
-func (s *MetadataService) ListExplorerResources(tenantID *uint) ([]models.ExplorerResource, error) {
-	resources, err := s.listActiveResources(tenantID)
+func (s *MetadataService) ListExplorerEngines(tenantID *uint) ([]models.ExplorerResource, error) {
+	engines, err := s.listActiveEngines(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]models.ExplorerResource, 0, len(resources))
-	for _, res := range resources {
+	result := make([]models.ExplorerResource, 0, len(engines))
+	for _, res := range engines {
 		result = append(result, models.ExplorerResource{
 			ID:           res.ID,
 			Name:         res.Name,
-			ResourceType: res.ResourceType,
+			EngineType: res.EngineType,
 			Description:  res.Description,
 		})
 	}
@@ -577,8 +577,8 @@ func (s *MetadataService) ListExplorerResources(tenantID *uint) ([]models.Explor
 }
 
 // GetResourceTree 获取单个资源的 Schema/目录树
-func (s *MetadataService) GetResourceTree(ctx context.Context, resourceID uint, tenantID *uint) (*models.DataExplorerResource, error) {
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+func (s *MetadataService) GetResourceTree(ctx context.Context, engineID uint, tenantID *uint) (*models.DataExplorerResource, error) {
+	resource, err := s.getResourceForTenant(engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -588,14 +588,14 @@ func (s *MetadataService) GetResourceTree(ctx context.Context, resourceID uint, 
 
 // GetLegacyResourceTree 兼容旧接口的全量资源树
 func (s *MetadataService) GetLegacyResourceTree(ctx context.Context, tenantID *uint) ([]models.DataExplorerResource, error) {
-	resources, err := s.listActiveResources(tenantID)
+	engines, err := s.listActiveEngines(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]models.DataExplorerResource, 0, len(resources))
-	for i := range resources {
-		tree, err := s.buildResourceTree(ctx, &resources[i])
+	result := make([]models.DataExplorerResource, 0, len(engines))
+	for i := range engines {
+		tree, err := s.buildResourceTree(ctx, &engines[i])
 		if err != nil {
 			return nil, err
 		}
@@ -623,11 +623,11 @@ func (s *MetadataService) buildResourceTree(ctx context.Context, resource *model
 	topNodes, childNodes, items, err := s.metadataRepo.ListScannedNodesAndItems(resource.ID, metaClientForRequest)
 	if err != nil {
 		if errors.Is(err, repository.ErrMetadataSchemaMissing) {
-			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "resource_id", resource.ID)
+			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "engine_id", resource.ID)
 			return &models.DataExplorerResource{
 				ID:           resource.ID,
 				Name:         resource.Name,
-				ResourceType: resource.ResourceType,
+				EngineType: resource.EngineType,
 				Schemas:      []models.DataExplorerSchema{},
 			}, nil
 		}
@@ -649,7 +649,7 @@ func (s *MetadataService) buildResourceTree(ctx context.Context, resource *model
 		itemsByNode[item.NodeID] = append(itemsByNode[item.NodeID], item)
 	}
 
-	resourceType := strings.ToLower(resource.ResourceType)
+	resourceType := strings.ToLower(resource.EngineType)
 	var schemasForResource []models.DataExplorerSchema
 
 	if isObjectStorageType(resourceType) {
@@ -705,7 +705,7 @@ func (s *MetadataService) buildResourceTree(ctx context.Context, resource *model
 	return &models.DataExplorerResource{
 		ID:           resource.ID,
 		Name:         resource.Name,
-		ResourceType: resource.ResourceType,
+		EngineType: resource.EngineType,
 		Schemas:      schemasForResource,
 	}, nil
 }
@@ -816,18 +816,18 @@ func normalizeObjectPathCandidate(value string) string {
 	return trimmed
 }
 
-func (s *MetadataService) listActiveResources(tenantID *uint) ([]models.Resource, error) {
+func (s *MetadataService) listActiveEngines(tenantID *uint) ([]models.Resource, error) {
 	var tenantFilter uint
 	if tenantID != nil {
 		tenantFilter = *tenantID
 	}
 
 	if s.systemClient != nil {
-		sysResources, err := s.systemClient.ListResources("", tenantFilter)
+		sysResources, err := s.systemClient.ListEngines("", tenantFilter)
 		if err != nil {
 			logger.L().Warn("数据探查: System API 获取资源列表失败，回退数据库查询", "error", err)
 		} else {
-			resources := make([]models.Resource, 0, len(sysResources))
+			engines := make([]models.Resource, 0, len(sysResources))
 			for i := range sysResources {
 				res := sysResources[i]
 				if !res.IsActive {
@@ -840,30 +840,30 @@ func (s *MetadataService) listActiveResources(tenantID *uint) ([]models.Resource
 				if !resourceAccessible(converted, tenantID) {
 					continue
 				}
-				resources = append(resources, *converted)
+				engines = append(engines, *converted)
 			}
-			logger.L().Info("数据探查: System API 获取资源列表成功", "resource_total", len(resources))
-			return resources, nil
+			logger.L().Info("数据探查: System API 获取引擎列表成功", "resource_total", len(engines))
+			return engines, nil
 		}
 	}
 
-	resources, err := s.resourceRepo.ListAllActive(tenantID)
+	engines, err := s.resourceRepo.ListAllActive(tenantID)
 	if err != nil {
-		logger.L().Error("数据探查: 数据库获取资源列表失败", "error", err)
+		logger.L().Error("数据探查: 数据库获取引擎列表失败", "error", err)
 		return nil, err
 	}
-	logger.L().Info("数据探查: 数据库获取资源列表成功", "resource_total", len(resources))
-	return resources, nil
+	logger.L().Info("数据探查: 数据库获取引擎列表成功", "resource_total", len(engines))
+	return engines, nil
 }
 
 // PreviewTable 获取表数据预览
 // 当 tableName 为空时，返回 schema/bucket 的统计信息和子节点列表
-func (s *MetadataService) PreviewTable(resourceID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
-	return s.PreviewTableWithContext(context.Background(), resourceID, schemaName, tableName, page, pageSize, tenantID)
+func (s *MetadataService) PreviewTable(engineID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
+	return s.PreviewTableWithContext(context.Background(), engineID, schemaName, tableName, page, pageSize, tenantID)
 }
 
-func (s *MetadataService) PreviewTableWithContext(ctx context.Context, resourceID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+func (s *MetadataService) PreviewTableWithContext(ctx context.Context, engineID uint, schemaName, tableName string, page, pageSize int, tenantID *uint) (*models.TablePreview, error) {
+	resource, err := s.getResourceForTenant(engineID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -908,17 +908,17 @@ func resourceAccessible(resource *models.Resource, tenantID *uint) bool {
 }
 
 // getResource 优先通过 System 服务获取解密后的资源信息，失败时回退到本地数据库
-func (s *MetadataService) getResource(resourceID uint) (*models.Resource, error) {
+func (s *MetadataService) getResource(engineID uint) (*models.Resource, error) {
 	if s.systemClient != nil {
-		if sysResource, err := s.systemClient.GetResource(resourceID); err == nil {
+		if sysResource, err := s.systemClient.GetEngine(engineID); err == nil {
 			return convertResource(sysResource), nil
 		}
 	}
-	return s.resourceRepo.GetByID(resourceID)
+	return s.resourceRepo.GetByID(engineID)
 }
 
-func (s *MetadataService) getResourceForTenant(resourceID uint, tenantID *uint) (*models.Resource, error) {
-	resource, err := s.getResource(resourceID)
+func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Resource, error) {
+	resource, err := s.getResource(engineID)
 	if err != nil {
 		return nil, err
 	}
@@ -928,7 +928,7 @@ func (s *MetadataService) getResourceForTenant(resourceID uint, tenantID *uint) 
 	return resource, nil
 }
 
-func convertResource(src *commonModels.Resource) *models.Resource {
+func convertResource(src *commonModels.Engine) *models.Resource {
 	if src == nil {
 		return nil
 	}
@@ -947,7 +947,7 @@ func convertResource(src *commonModels.Resource) *models.Resource {
 	return &models.Resource{
 		ID:             src.ID,
 		Name:           src.Name,
-		ResourceType:   src.ResourceType,
+		EngineType:   src.EngineType,
 		ConnectionInfo: connInfo,
 		Description:    src.Description,
 		CreatedBy:      src.CreatedBy,
@@ -966,15 +966,15 @@ func (s *MetadataService) StreamVideo(
 	tenantID *uint,
 ) (io.ReadCloser, int64, string, string, error) {
 	// 获取resource信息
-	resource, err := s.getResourceForTenant(resourceID, tenantID)
+	resource, err := s.getResourceForTenant(engineID, tenantID)
 	if err != nil {
 		return nil, 0, "", "", ErrResourceAccessDenied
 	}
 
 	// 检查是否为对象存储类型
-	resourceType := strings.ToLower(resource.ResourceType)
+	resourceType := strings.ToLower(resource.EngineType)
 	if resourceType != "minio" && resourceType != "s3" && resourceType != "oss" {
-		return nil, 0, "", "", fmt.Errorf("resource type %s does not support video streaming", resource.ResourceType)
+		return nil, 0, "", "", fmt.Errorf("resource type %s does not support video streaming", resource.EngineType)
 	}
 
 	// 创建MinIO client

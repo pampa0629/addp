@@ -13,7 +13,7 @@ export const managerAPI = {
     return client.get(`/datasources/${id}`)
   },
 
-  // 同步数据源（从 System 模块的 resources 同步）
+  // 同步数据源（从 System 模块的 engines 同步）
   syncDataSources() {
     return client.post('/datasources/sync')
   },

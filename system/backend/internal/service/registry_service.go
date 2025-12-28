@@ -12,11 +12,11 @@ import (
 
 // RegistryService 能力注册服务
 type RegistryService struct {
-	resourceRepo *repository.ResourceRepository
+	resourceRepo *repository.EngineRepository
 }
 
 // NewRegistryService 创建能力注册服务
-func NewRegistryService(resourceRepo *repository.ResourceRepository) *RegistryService {
+func NewRegistryService(resourceRepo *repository.EngineRepository) *RegistryService {
 	return &RegistryService{
 		resourceRepo: resourceRepo,
 	}
@@ -79,7 +79,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		updates := map[string]interface{}{
 			"name":                req.Name,
 			"display_name":        displayName,
-			"resource_type":       req.ResourceType,
+			"engine_type":         req.EngineType,
 			"description":         req.Description,
 			"is_builtin":          req.IsBuiltin,
 			"capabilities":        capabilitiesJSON,
@@ -102,10 +102,10 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		displayName = req.Name
 	}
 
-	resource := &localModels.Resource{
+	resource := &localModels.Engine{
 		Name:              req.Name,
 		DisplayName:       displayName,
-		ResourceType:      req.ResourceType,
+		EngineType:      req.EngineType,
 		Description:       req.Description,
 		ConnectionInfo:    connectionInfo,
 		UniqueIdentifier:  &req.UniqueIdentifier,
@@ -125,17 +125,17 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 }
 
 // ListCapabilities 查询能力列表（支持过滤）
-func (s *RegistryService) ListCapabilities(ctx context.Context, filters map[string]interface{}) ([]*localModels.Resource, error) {
-	resources, err := s.resourceRepo.FindByFilters(ctx, filters)
+func (s *RegistryService) ListCapabilities(ctx context.Context, filters map[string]interface{}) ([]*localModels.Engine, error) {
+	engines, err := s.resourceRepo.FindByFilters(ctx, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list capabilities: %w", err)
 	}
 
-	return resources, nil
+	return engines, nil
 }
 
 // GetCapabilityByIdentifier 根据 unique_identifier 查询能力
-func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identifier string) (*localModels.Resource, error) {
+func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identifier string) (*localModels.Engine, error) {
 	resource, err := s.resourceRepo.FindByUniqueIdentifier(ctx, identifier)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get capability: %w", err)
@@ -145,7 +145,7 @@ func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identif
 }
 
 // ListComputeResources 查询所有具有计算能力的资源
-func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localModels.Resource, error) {
+func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localModels.Engine, error) {
 	// 查询条件:
 	// 1. capabilities.compute 不为空（JSONB 查询）
 	// 2. is_active = true
@@ -154,10 +154,10 @@ func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localMod
 		"is_active":              true,
 	}
 
-	resources, err := s.resourceRepo.FindByFilters(ctx, filters)
+	engines, err := s.resourceRepo.FindByFilters(ctx, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list compute resources: %w", err)
 	}
 
-	return resources, nil
+	return engines, nil
 }

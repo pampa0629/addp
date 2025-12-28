@@ -56,12 +56,12 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.POST("/operators/:name/execute", operatorHandler.ExecuteOperator)
 
 		// 资源相关
-		api.GET("/resources", handler.GetResources)
+		api.GET("/engines", handler.GetResources)
 
 		// Schema相关
-		api.GET("/schemas/:resource_id", handler.GetSchemas)
-		api.GET("/schemas/:resource_id/available", handler.ListAvailableSchemas)
-		api.GET("/object-storage/:resource_id/nodes", handler.ListObjectStorageNodes)
+		api.GET("/schemas/:engine_id", handler.GetSchemas)
+		api.GET("/schemas/:engine_id/available", handler.ListAvailableSchemas)
+		api.GET("/object-storage/:engine_id/nodes", handler.ListObjectStorageNodes)
 
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
@@ -82,7 +82,7 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.GET("/metadata/fields", handler.GetTableFields)
 
 		// 新增：用于 Manager 模块的元数据查询接口
-		api.GET("/resources/:resource_id/tree", handler.GetMetadataTree)
+		api.GET("/engines/:engine_id/tree", handler.GetMetadataTree)
 		api.GET("/nodes/:node_id", handler.GetMetaNodeByID)
 		api.GET("/nodes/:node_id/children", handler.GetNodeChildren)
 		api.GET("/nodes/:node_id/items", handler.GetNodeItems)
@@ -91,7 +91,7 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.GET("/metadata/tables/spatial", handler.GetTableSpatialMetadata)
 
 		// 缓存管理
-		api.DELETE("/cache/resources/:resource_id", handler.ClearResourceCache)
+		api.DELETE("/cache/engines/:engine_id", handler.ClearResourceCache)
 		api.POST("/cache/refresh", handler.RefreshResourceCache)
 	}
 

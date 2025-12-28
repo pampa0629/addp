@@ -1,12 +1,12 @@
 <template>
   <div class="data-explorer">
     <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
-      <!-- 左侧资源树 -->
+      <!-- 左侧引擎树 -->
       <ResourceTree
-        :resources="resources"
+        :engines="engines"
         :tree-data="treeData"
         :loading="loadingTree"
-        :loading-resources="loadingResources"
+        :loading-engines="loadingResources"
         :refreshing-node-ids="refreshingNodeIds"
         :expanded-keys="expandedNodeIds"
         :current-node-key="selectedNode?.id || ''"
@@ -49,7 +49,7 @@ const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220,
 const route = useRoute()
 
 // 数据状态
-const resources = ref([])
+const engines = ref([])
 const loadingResources = ref(false)
 const useLegacyEndpoint = ref(false)
 const treeData = ref([])
@@ -85,7 +85,7 @@ const buildSnapshotFromQuery = (query = {}) => {
 
   // If not numeric, treat as resource name/identifier
   // Find matching resource by name or unique_identifier
-  const matchingResource = resources.value.find(r =>
+  const matchingResource = engines.value.find(r =>
     r.name === resourceKey ||
     r.unique_identifier === resourceKey ||
     r.unique_identifier?.endsWith(`.${resourceKey}`)
@@ -126,7 +126,7 @@ const normalizeResourceList = (list = []) =>
   }))
 
 const resolveResourceName = (id) => {
-  const target = resources.value.find((item) => item.id === id)
+  const target = engines.value.find((item) => item.id === id)
   return target?.name ?? id
 }
 
@@ -369,14 +369,14 @@ watch(
 /**
  * 加载存储引擎列表
  */
-const loadResources = async () => {
+const loadEngines = async () => {
   loadingResources.value = true
   try {
-    const response = await dataExplorerAPI.getResources()
+    const response = await dataExplorerAPI.getEngines()
     const list = normalizeResourceList(response.data || [])
 
     useLegacyEndpoint.value = false
-    resources.value = list
+    engines.value = list
 
     if (list.length > 0) {
       await loadTree()
@@ -386,7 +386,7 @@ const loadResources = async () => {
     }
   } catch (error) {
     if (error.response?.status === 404) {
-      console.warn('[DataExplorer] 新接口不可用，回退旧版资源树', error)
+      console.warn('[DataExplorer] 新接口不可用，回退旧版引擎树', error)
       await loadLegacyTree({
         finalizeResourceLoading: true
       })
@@ -401,13 +401,13 @@ const loadResources = async () => {
 }
 
 /**
- * 加载资源树（新接口）
+ * 加载引擎树（新接口）
  */
 const loadModernTrees = async (resourceIds) => {
   const targetIds =
     Array.isArray(resourceIds) && resourceIds.length
       ? resourceIds
-      : resources.value.map((item) => item.id)
+      : engines.value.map((item) => item.id)
 
   if (!targetIds.length) {
     treeData.value = []
@@ -416,7 +416,7 @@ const loadModernTrees = async (resourceIds) => {
     return
   }
 
-  console.log('[DataExplorer] 刷新资源树...', { resourceIds: targetIds })
+  console.log('[DataExplorer] 刷新引擎树...', { resourceIds: targetIds })
   loadingTree.value = true
   try {
     const results = await Promise.allSettled(
@@ -453,8 +453,8 @@ const loadModernTrees = async (resourceIds) => {
 
     resetSelection()
   } catch (error) {
-    console.error('[DataExplorer] 加载资源树失败', error)
-    ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
+    console.error('[DataExplorer] 加载引擎树失败', error)
+    ElMessage.error('加载引擎树失败: ' + (error.response?.data?.error || error.message))
     treeData.value = []
     expandedNodeIds.value = []
     resetSelection()
@@ -464,7 +464,7 @@ const loadModernTrees = async (resourceIds) => {
 }
 
 /**
- * 使用旧版接口加载资源树（含资源列表）
+ * 使用旧版接口加载引擎树（含资源列表）
  */
 const loadLegacyTree = async (
   { finalizeResourceLoading = false, silent = false } = {}
@@ -475,16 +475,16 @@ const loadLegacyTree = async (
     const response = await dataExplorerAPI.getLegacyTree()
     const legacyResources = normalizeResourceList(response.data || [])
 
-    resources.value = legacyResources
+    engines.value = legacyResources
 
     treeData.value = legacyResources.map((item) => transformResource(item))
     syncExpandedKeysWithTree()
     resetSelection()
     await attemptRouteSelection()
   } catch (error) {
-    console.error('[DataExplorer] 使用旧版资源树失败', error)
+    console.error('[DataExplorer] 使用旧版引擎树失败', error)
     if (!silent) {
-      ElMessage.error('加载资源树失败: ' + (error.response?.data?.error || error.message))
+      ElMessage.error('加载引擎树失败: ' + (error.response?.data?.error || error.message))
     }
     treeData.value = []
     expandedNodeIds.value = []
@@ -497,7 +497,7 @@ const loadLegacyTree = async (
 }
 
 /**
- * 根据当前模式加载资源树
+ * 根据当前模式加载引擎树
  */
 const loadTree = async (options = {}) => {
   if (useLegacyEndpoint.value) {
@@ -517,7 +517,7 @@ const loadPreview = async () => {
   loadingPreview.value = true
   try {
     const params = {
-      resource_id: selectedNode.value.resourceId,
+      engine_id: selectedNode.value.resourceId,
       schema: selectedNode.value.schema,
       table: selectedNode.value.path ?? selectedNode.value.table ?? '',
       page: currentPage.value,
@@ -659,7 +659,7 @@ const handleNodeRefresh = async (node) => {
 }
 
 onMounted(() => {
-  loadResources()
+  loadEngines()
 })
 </script>
 

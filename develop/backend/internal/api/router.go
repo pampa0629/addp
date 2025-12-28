@@ -93,12 +93,12 @@ func SetupRouter(
 			executions.POST("/:id/retry", devExecutionHandler.RetryExecution)       // 重试执行
 		}
 
-		// ========== 资源管理 ==========
-		resources := api.Group("/resources")
+		// ========== 引擎管理 ==========
+		engines := api.Group("/engines")
 		{
-			resources.GET("", resourceHandler.ListResources)           // 获取资源列表
-			resources.GET("/:id/schemas", resourceHandler.ListSchemas) // 获取 schemas 列表
-			resources.GET("/:id/tables", resourceHandler.ListTables)   // 获取表列表
+			engines.GET("", resourceHandler.ListEngines)           // 获取引擎列表
+			engines.GET("/:id/schemas", resourceHandler.ListSchemas) // 获取 schemas 列表
+			engines.GET("/:id/tables", resourceHandler.ListTables)   // 获取表列表
 		}
 
 		// ========== 工作流引擎管理 ==========

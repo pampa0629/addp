@@ -15,7 +15,7 @@ type PoolManager struct {
 // ManagedPool 托管的连接池
 type ManagedPool struct {
 	DB         interface{} // 数据库连接（*gorm.DB）
-	ResourceID uint
+	EngineID   uint
 	LastAccess time.Time
 	CreateTime time.Time
 }
@@ -52,7 +52,7 @@ func (pm *PoolManager) GetOrCreatePool(resource *Resource, config *PoolConfig) (
 	pm.mu.Lock()
 	pm.pools[resource.ID] = &ManagedPool{
 		DB:         db,
-		ResourceID: resource.ID,
+		EngineID:   resource.ID,
 		LastAccess: time.Now(),
 		CreateTime: time.Now(),
 	}
@@ -61,12 +61,12 @@ func (pm *PoolManager) GetOrCreatePool(resource *Resource, config *PoolConfig) (
 	return db, nil
 }
 
-// ClosePool 关闭指定资源的连接池
-func (pm *PoolManager) ClosePool(resourceID uint) error {
+// ClosePool 关闭指定引擎的连接池
+func (pm *PoolManager) ClosePool(engineID uint) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	pool, exists := pm.pools[resourceID]
+	pool, exists := pm.pools[engineID]
 	if !exists {
 		return nil
 	}
@@ -82,7 +82,7 @@ func (pm *PoolManager) ClosePool(resourceID uint) error {
 		}
 	}
 
-	delete(pm.pools, resourceID)
+	delete(pm.pools, engineID)
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (pm *PoolManager) GetPoolStats() map[uint]PoolStats {
 	stats := make(map[uint]PoolStats)
 	for id, pool := range pm.pools {
 		stats[id] = PoolStats{
-			ResourceID: pool.ResourceID,
+			EngineID:   pool.EngineID,
 			CreateTime: pool.CreateTime,
 			LastAccess: pool.LastAccess,
 			Age:        time.Since(pool.CreateTime),
@@ -126,7 +126,7 @@ func (pm *PoolManager) GetPoolStats() map[uint]PoolStats {
 
 // PoolStats 连接池统计信息
 type PoolStats struct {
-	ResourceID uint
+	EngineID   uint
 	CreateTime time.Time
 	LastAccess time.Time
 	Age        time.Duration // 连接池存在时长
@@ -144,10 +144,10 @@ func GetOrCreatePool(resource *Resource, config *PoolConfig) (interface{}, error
 	return globalPoolManager.GetOrCreatePool(resource, config)
 }
 
-// ClosePool 全局函数：关闭指定资源的连接池
-// 通常在资源被删除或更新时调用
-func ClosePool(resourceID uint) error {
-	return globalPoolManager.ClosePool(resourceID)
+// ClosePool 全局函数：关闭指定引擎的连接池
+// 通常在引擎被删除或更新时调用
+func ClosePool(engineID uint) error {
+	return globalPoolManager.ClosePool(engineID)
 }
 
 // CloseAllPools 全局函数：关闭所有连接池

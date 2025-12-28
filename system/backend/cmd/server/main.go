@@ -47,9 +47,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 迁移现有资源的 display_name
-	if err := repository.MigrateExistingResourcesDisplayName(db); err != nil {
-		logger.L().Error("现有资源 display_name 迁移失败", "error", err)
+	// 迁移现有引擎的 display_name
+	if err := repository.MigrateExistingEnginesDisplayName(db); err != nil {
+		logger.L().Error("现有引擎 display_name 迁移失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -93,7 +93,7 @@ func main() {
 		// 等待1秒确保服务完全启动
 		time.Sleep(1 * time.Second)
 
-		// 初始化 Redis 客户端（用于 ResourceService）
+		// 初始化 Redis 客户端（用于 EngineService）
 		var redisClient *redis.Client
 		if cfg.RedisHost != "" {
 			redisClient = redis.NewClient(&redis.Options{
@@ -103,13 +103,13 @@ func main() {
 			})
 		}
 
-		// 创建 ResourceService
+		// 创建 EngineService
 		userRepo := repository.NewUserRepository(db)
-		resourceRepo := repository.NewResourceRepository(db)
-		resourceService := service.NewResourceService(resourceRepo, userRepo, cfg.EncryptionKey, redisClient)
+		engineRepo := repository.NewEngineRepository(db)
+		engineService := service.NewEngineService(engineRepo, userRepo, cfg.EncryptionKey, redisClient)
 
 		// 创建并运行健康检查器
-		healthChecker := service.NewHealthChecker(resourceService)
+		healthChecker := service.NewHealthChecker(engineService)
 		healthChecker.CheckAllResourcesOnStartup()
 	}()
 

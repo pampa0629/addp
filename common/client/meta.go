@@ -52,9 +52,9 @@ func (c *MetaClient) addAuth(req *http.Request) {
 	}
 }
 
-// GetMetadataTree 获取资源的完整元数据树
-func (c *MetaClient) GetMetadataTree(resourceID uint) (*models.MetadataTree, error) {
-	url := fmt.Sprintf("%s/api/meta/resources/%d/tree", c.baseURL, resourceID)
+// GetMetadataTree 获取引擎的完整元数据树
+func (c *MetaClient) GetMetadataTree(engineID uint) (*models.MetadataTree, error) {
+	url := fmt.Sprintf("%s/api/meta/engines/%d/tree", c.baseURL, engineID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -86,9 +86,9 @@ func (c *MetaClient) GetMetadataTree(resourceID uint) (*models.MetadataTree, err
 }
 
 // GetNodeByPath 按路径查询节点（支持 Schema/Bucket/Prefix）
-func (c *MetaClient) GetNodeByPath(resourceID uint, nodePath string) (*models.MetaNode, error) {
-	urlStr := fmt.Sprintf("%s/api/meta/nodes/by-path?resource_id=%d&path=%s",
-		c.baseURL, resourceID, url.QueryEscape(nodePath))
+func (c *MetaClient) GetNodeByPath(engineID uint, nodePath string) (*models.MetaNode, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/nodes/by-path?engine_id=%d&path=%s",
+		c.baseURL, engineID, url.QueryEscape(nodePath))
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
@@ -120,9 +120,9 @@ func (c *MetaClient) GetNodeByPath(resourceID uint, nodePath string) (*models.Me
 }
 
 // GetItemByPath 按路径查询项目（对象存储）
-func (c *MetaClient) GetItemByPath(resourceID uint, bucketName, objectPath string) (*models.MetaItem, error) {
-	urlStr := fmt.Sprintf("%s/api/meta/items/by-path?resource_id=%d&bucket=%s&path=%s",
-		c.baseURL, resourceID, url.QueryEscape(bucketName), url.QueryEscape(objectPath))
+func (c *MetaClient) GetItemByPath(engineID uint, bucketName, objectPath string) (*models.MetaItem, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/items/by-path?engine_id=%d&bucket=%s&path=%s",
+		c.baseURL, engineID, url.QueryEscape(bucketName), url.QueryEscape(objectPath))
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
@@ -220,9 +220,9 @@ func (c *MetaClient) GetNodeItems(nodeID uint) ([]models.MetaItem, error) {
 }
 
 // GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
-func (c *MetaClient) GetTableSpatialMetadata(resourceID uint, schema, table string) (*models.SpatialMetadata, error) {
-	urlStr := fmt.Sprintf("%s/api/meta/metadata/tables/spatial?resource_id=%d&schema=%s&table=%s",
-		c.baseURL, resourceID, url.QueryEscape(schema), url.QueryEscape(table))
+func (c *MetaClient) GetTableSpatialMetadata(engineID uint, schema, table string) (*models.SpatialMetadata, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/metadata/tables/spatial?engine_id=%d&schema=%s&table=%s",
+		c.baseURL, engineID, url.QueryEscape(schema), url.QueryEscape(table))
 
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {

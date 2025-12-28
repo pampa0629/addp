@@ -97,7 +97,7 @@ func (g *PipelineTileGenerator) GeneratePipeline(
 	}
 
 	logger.L().Info("开始流水线并行生成",
-		"resource_id", cfg.ResourceID,
+		"engine_id", cfg.EngineID,
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 		"min_zoom", cfg.MinZoom,
 		"max_zoom", cfg.MaxZoom,
@@ -351,7 +351,7 @@ func (g *PipelineTileGenerator) processTileWithUpload(
 
 	// 1. 生成瓦片
 	params := TileGenerationParams{
-		ResourceID: cfg.ResourceID,
+		EngineID: cfg.EngineID,
 		TenantID:   cfg.TenantID,
 		Schema:     cfg.Schema,
 		Table:      cfg.Table,

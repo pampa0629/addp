@@ -179,7 +179,7 @@
             placeholder="选择关联资源"
           >
             <el-option
-              v-for="res in resources"
+              v-for="res in engines"
               :key="res.id"
               :label="res.name"
               :value="res.id"
@@ -285,7 +285,7 @@ import {
   updateDevItem,
   deleteDevItem,
   executeDevItem,
-  listResources
+  listEngines
 } from '@/api/devItem'
 
 const router = useRouter()
@@ -293,14 +293,14 @@ const router = useRouter()
 // 状态管理
 const loading = ref(false)
 const tasks = ref([])
-const resources = ref([])
+const engines = ref([])
 
 // 筛选器
 const filters = reactive({
   keyword: '',
   dev_type: '',
   status: '',
-  resource_id: null,
+  engine_id: null,
   tag: ''
 })
 
@@ -318,7 +318,7 @@ const formData = reactive({
   name: '',
   display_name: '',
   dev_type: 'sql',
-  resource_id: null,
+  engine_id: null,
   description: '',
   tags: [],
   content: {}
@@ -356,10 +356,10 @@ const loadTasks = async () => {
 }
 
 // 加载资源列表
-const loadResources = async () => {
+const loadEngines = async () => {
   try {
-    const data = await listResources()
-    resources.value = data || []
+    const data = await listEngines()
+    engines.value = data || []
   } catch (error) {
     console.error('加载资源失败:', error)
   }
@@ -399,7 +399,7 @@ const getExecutionStatusColor = (status) => {
 
 const getResourceName = (resourceId) => {
   if (!resourceId) return '-'
-  const resource = resources.value.find(r => r.id === resourceId)
+  const resource = engines.value.find(r => r.id === resourceId)
   return resource?.name || `ID: ${resourceId}`
 }
 
@@ -415,7 +415,7 @@ const handleCreate = () => {
     name: '',
     display_name: '',
     dev_type: 'sql',
-    resource_id: null,
+    engine_id: null,
     description: '',
     tags: [],
     content: {}
@@ -430,7 +430,7 @@ const handleEdit = (row) => {
     name: row.name,
     display_name: row.display_name,
     dev_type: row.dev_type,
-    resource_id: row.resource_id,
+    engine_id: row.resource_id,
     description: row.description,
     tags: row.tags || [],
     content: row.content || {}
@@ -564,7 +564,7 @@ watch([filters], () => {
 // 初始化
 onMounted(() => {
   loadTasks()
-  loadResources()
+  loadEngines()
 })
 </script>
 

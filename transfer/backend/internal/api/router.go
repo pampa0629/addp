@@ -14,7 +14,7 @@ import (
 func SetupRouter(
 	taskService *service.TaskService,
 	executionService *service.ExecutionService,
-	localResourceService *service.LocalResourceService,
+	localEngineService *service.LocalEngineService,
 	objectStorageService *service.ObjectStorageService,
 	systemURL string,
 	redisClient *redis.Client,
@@ -56,7 +56,7 @@ func SetupRouter(
 	// 创建 Handlers
 	taskHandler := NewTaskHandler(taskService)
 	executionHandler := NewExecutionHandler(executionService)
-	localResourceHandler := NewLocalResourceHandler(localResourceService)
+	localEngineHandler := NewLocalEngineHandler(localEngineService)
 	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	transformHandler := NewTransformHandler()
 
@@ -96,20 +96,20 @@ func SetupRouter(
 	}
 
 	// 本地存储引擎路由
-	protected.GET("/system-resources", localResourceHandler.ListSystemResources)
+	protected.GET("/system-engines", localEngineHandler.ListSystemEngines)
 
-	localResources := protected.Group("/local-resources")
+	localEngines := protected.Group("/local-engines")
 	{
-		localResources.GET("", localResourceHandler.List)
-		localResources.POST("", localResourceHandler.Create)
-		localResources.PUT("/:id", localResourceHandler.Update)
-		localResources.DELETE("/:id", localResourceHandler.Delete)
-		localResources.POST("/test-connection", localResourceHandler.TestBeforeCreate)
-		localResources.POST("/:id/test", localResourceHandler.TestExisting)
-		localResources.POST("/:id/sync", localResourceHandler.Sync)
-		// 元数据扫描（本地资源）
-		localResources.GET("/:id/tables", localResourceHandler.ListTables)
-		localResources.GET("/:id/fields", localResourceHandler.ListFields)
+		localEngines.GET("", localEngineHandler.List)
+		localEngines.POST("", localEngineHandler.Create)
+		localEngines.PUT("/:id", localEngineHandler.Update)
+		localEngines.DELETE("/:id", localEngineHandler.Delete)
+		localEngines.POST("/test-connection", localEngineHandler.TestBeforeCreate)
+		localEngines.POST("/:id/test", localEngineHandler.TestExisting)
+		localEngines.POST("/:id/sync", localEngineHandler.Sync)
+		// 元数据扫描（本地引擎）
+		localEngines.GET("/:id/tables", localEngineHandler.ListTables)
+		localEngines.GET("/:id/fields", localEngineHandler.ListFields)
 	}
 
 	// 对象存储辅助接口

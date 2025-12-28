@@ -11,8 +11,8 @@ import (
 // NewScanner 创建对应类型的扫描器
 // 这是统一的工厂方法，根据数据库类型返回相应的 Scanner 实现
 // 重构后：不再接受连接字符串，而是接受Resource对象，委托给插件系统
-func NewScanner(resource *commonModels.Resource) (format.Scanner, error) {
-	dbType := strings.ToLower(resource.ResourceType)
+func NewScanner(resource *commonModels.Engine) (format.Scanner, error) {
+	dbType := strings.ToLower(resource.EngineType)
 
 	switch dbType {
 	case "postgresql", "postgres":

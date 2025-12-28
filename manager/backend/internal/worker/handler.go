@@ -31,7 +31,7 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 	}
 
 	// 使用 NewSystemClientWithInternalKey 创建客户端（服务间调用）
-	// 这样会调用 /internal/resources API 而不是 /api/resources
+	// 这样会调用 /internal/engines API 而不是 /api/engines
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 
 	// 创建 ResourceService 适配器
@@ -80,7 +80,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 	}
 
 	logger.L().Info("开始处理快显任务",
-		"resource_id", payload.ResourceID,
+		"engine_id", payload.EngineID,
 		"table", fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName))
 
 	// 1. 更新状态为 generating
@@ -90,7 +90,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 
 	// 2. 执行快显缓存生成（使用混合入队模式）
 	result, err := h.quickViewService.GenerateMixed(ctx, mvt.QuickViewConfig{
-		ResourceID:  payload.ResourceID,
+		EngineID:  payload.EngineID,
 		TenantID:    payload.TenantID,
 		Schema:      payload.SchemaName,
 		Table:       payload.TableName,
@@ -116,7 +116,7 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 	}
 
 	logger.L().Info("快显任务完成",
-		"resource_id", payload.ResourceID,
+		"engine_id", payload.EngineID,
 		"table", fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName),
 		"total_tiles", result.TotalTiles,
 		"cached_tiles", result.CachedTiles,
@@ -134,8 +134,8 @@ func (h *TaskHandler) updateQuickViewStatus(
 ) error {
 	var qv models.QuickView
 
-	err := h.db.Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-		payload.TenantID, payload.ResourceID, payload.SchemaName, payload.TableName).
+	err := h.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		payload.TenantID, payload.EngineID, payload.SchemaName, payload.TableName).
 		First(&qv).Error
 
 	if err != nil {
@@ -143,7 +143,7 @@ func (h *TaskHandler) updateQuickViewStatus(
 			// 记录不存在，创建新记录
 			qv = models.QuickView{
 				TenantID:    payload.TenantID,
-				ResourceID:  payload.ResourceID,
+				EngineID:  payload.EngineID,
 				SchemaName:  payload.SchemaName,
 				Table:       payload.TableName,
 				Status:      status,
@@ -194,6 +194,6 @@ type resourceServiceAdapter struct {
 	systemClient *commonClient.SystemClient
 }
 
-func (a *resourceServiceAdapter) GetResource(resourceID, tenantID uint) (*commonModels.Resource, error) {
-	return a.systemClient.GetResource(resourceID)
+func (a *resourceServiceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
+	return a.systemClient.GetEngine(engineID)
 }

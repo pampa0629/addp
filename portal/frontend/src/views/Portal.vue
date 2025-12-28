@@ -61,7 +61,7 @@
               <el-icon><Timer /></el-icon>
               <span>执行记录</span>
             </el-menu-item>
-            <el-menu-item index="/transfer/local-resources">
+            <el-menu-item index="/transfer/local-engines">
               <el-icon><Connection /></el-icon>
               <span>本地资源</span>
             </el-menu-item>
@@ -167,9 +167,9 @@
               <el-icon><User /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
-            <el-menu-item index="/system/resources">
+            <el-menu-item index="/system/engines">
               <el-icon><Connection /></el-icon>
-              <span>资源管理</span>
+              <span>引擎管理</span>
             </el-menu-item>
             <el-menu-item index="/system/applications">
               <el-icon><Key /></el-icon>
@@ -196,7 +196,7 @@
                 <div class="card-content">
                   <el-icon :size="48" color="#409EFF"><Setting /></el-icon>
                   <h2>系统管理</h2>
-                  <p>用户管理、日志查询、资源配置</p>
+                  <p>用户管理、日志查询、引擎配置</p>
                 </div>
               </el-card>
             </el-col>
@@ -384,7 +384,7 @@ const handleMenuSelect = (index) => {
     const transferPageMap = {
       'tasks': 'tasks',
       'executions': 'executions',
-      'local-resources': 'local-resources',
+      'local-engines': 'local-engines',
       '': 'tasks'
     }
 

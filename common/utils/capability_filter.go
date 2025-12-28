@@ -29,7 +29,7 @@ func ParseCapabilities(capabilitiesJSON *string) (*models.Capability, error) {
 }
 
 // HasStorageCapability 检查资源是否具有存储能力
-func HasStorageCapability(resource *models.Resource) bool {
+func HasStorageCapability(resource *models.Engine) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return false
@@ -39,7 +39,7 @@ func HasStorageCapability(resource *models.Resource) bool {
 }
 
 // HasComputeCapability 检查资源是否具有指定的计算能力
-func HasComputeCapability(resource *models.Resource, computeType string) bool {
+func HasComputeCapability(resource *models.Engine, computeType string) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return false
@@ -55,7 +55,7 @@ func HasComputeCapability(resource *models.Resource, computeType string) bool {
 }
 
 // HasStorageType 检查资源是否具有指定类型的存储能力
-func HasStorageType(resource *models.Resource, storageType string) bool {
+func HasStorageType(resource *models.Engine, storageType string) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return false
@@ -71,22 +71,22 @@ func HasStorageType(resource *models.Resource, storageType string) bool {
 }
 
 // IsRelationalDatabase 检查资源是否为关系型数据库
-func IsRelationalDatabase(resource *models.Resource) bool {
+func IsRelationalDatabase(resource *models.Engine) bool {
 	return HasStorageType(resource, "relational_db")
 }
 
 // IsObjectStorage 检查资源是否为对象存储
-func IsObjectStorage(resource *models.Resource) bool {
+func IsObjectStorage(resource *models.Engine) bool {
 	return HasStorageType(resource, "object_storage")
 }
 
 // SupportsSQLQuery 检查资源是否支持 SQL 查询
-func SupportsSQLQuery(resource *models.Resource) bool {
+func SupportsSQLQuery(resource *models.Engine) bool {
 	return HasComputeCapability(resource, "sql_query")
 }
 
 // MatchesStorageTypes 检查资源是否匹配任一存储类型
-func MatchesStorageTypes(resource *models.Resource, storageTypes []string) bool {
+func MatchesStorageTypes(resource *models.Engine, storageTypes []string) bool {
 	if len(storageTypes) == 0 {
 		return true // 空过滤器匹配所有
 	}
@@ -108,7 +108,7 @@ func MatchesStorageTypes(resource *models.Resource, storageTypes []string) bool 
 }
 
 // MatchesComputeTypes 检查资源是否匹配任一计算类型
-func MatchesComputeTypes(resource *models.Resource, computeTypes []string) bool {
+func MatchesComputeTypes(resource *models.Engine, computeTypes []string) bool {
 	if len(computeTypes) == 0 {
 		return true // 空过滤器匹配所有
 	}
@@ -130,7 +130,7 @@ func MatchesComputeTypes(resource *models.Resource, computeTypes []string) bool 
 }
 
 // MatchesFilter 检查资源是否匹配过滤器
-func MatchesFilter(resource *models.Resource, filter CapabilityFilter) bool {
+func MatchesFilter(resource *models.Engine, filter CapabilityFilter) bool {
 	// 空过滤器匹配所有资源
 	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
 		return true
@@ -157,17 +157,17 @@ func MatchesFilter(resource *models.Resource, filter CapabilityFilter) bool {
 	return matchesCompute
 }
 
-// FilterResourcesByCapability 按能力过滤资源列表
-func FilterResourcesByCapability(resources []models.Resource, filter CapabilityFilter) []models.Resource {
-	// 空过滤器返回所有资源
+// FilterEnginesByCapability 按能力过滤引擎列表
+func FilterEnginesByCapability(engines []models.Engine, filter CapabilityFilter) []models.Engine {
+	// 空过滤器返回所有引擎
 	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
-		return resources
+		return engines
 	}
 
-	var filtered []models.Resource
-	for _, resource := range resources {
-		if MatchesFilter(&resource, filter) {
-			filtered = append(filtered, resource)
+	var filtered []models.Engine
+	for _, engine := range engines {
+		if MatchesFilter(&engine, filter) {
+			filtered = append(filtered, engine)
 		}
 	}
 
@@ -194,7 +194,7 @@ func ParseCommaSeparated(s string) []string {
 
 // SupportsDevMode 检查资源是否支持指定的开发模式
 // devMode: "sql", "workflow", "form", "script"
-func SupportsDevMode(resource *models.Resource, devMode string) bool {
+func SupportsDevMode(resource *models.Engine, devMode string) bool {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return false
@@ -213,7 +213,7 @@ func SupportsDevMode(resource *models.Resource, devMode string) bool {
 }
 
 // GetSupportedDevModes 获取资源支持的所有开发模式
-func GetSupportedDevModes(resource *models.Resource) []string {
+func GetSupportedDevModes(resource *models.Engine) []string {
 	cap, err := ParseCapabilities(resource.Capabilities)
 	if err != nil || cap == nil {
 		return []string{}
@@ -236,13 +236,13 @@ func GetSupportedDevModes(resource *models.Resource) []string {
 	return modes
 }
 
-// FilterResourcesByDevMode 过滤出支持指定开发模式的资源列表
-func FilterResourcesByDevMode(resources []models.Resource, devMode string) []models.Resource {
-	filtered := make([]models.Resource, 0)
+// FilterEnginesByDevMode 过滤出支持指定开发模式的引擎列表
+func FilterEnginesByDevMode(engines []models.Engine, devMode string) []models.Engine {
+	filtered := make([]models.Engine, 0)
 
-	for _, resource := range resources {
-		if SupportsDevMode(&resource, devMode) {
-			filtered = append(filtered, resource)
+	for _, engine := range engines {
+		if SupportsDevMode(&engine, devMode) {
+			filtered = append(filtered, engine)
 		}
 	}
 
@@ -250,16 +250,16 @@ func FilterResourcesByDevMode(resources []models.Resource, devMode string) []mod
 }
 
 // IsAPIEngine 判断资源是否为API引擎(内置模块)
-func IsAPIEngine(resource *models.Resource) bool {
+func IsAPIEngine(resource *models.Engine) bool {
 	// API引擎的资源类型以 "api." 开头
-	if len(resource.ResourceType) > 4 && resource.ResourceType[:4] == "api." {
+	if len(resource.EngineType) > 4 && resource.EngineType[:4] == "api." {
 		return true
 	}
 	return false
 }
 
 // IsStandardLibraryEngine 判断资源是否为标准库引擎(JDBC/S3协议)
-func IsStandardLibraryEngine(resource *models.Resource) bool {
+func IsStandardLibraryEngine(resource *models.Engine) bool {
 	standardTypes := map[string]bool{
 		"postgresql": true,
 		"postgres":   true,
@@ -271,5 +271,5 @@ func IsStandardLibraryEngine(resource *models.Resource) bool {
 		"oss":        true,
 	}
 
-	return standardTypes[resource.ResourceType]
+	return standardTypes[resource.EngineType]
 }

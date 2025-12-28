@@ -28,10 +28,10 @@ func (r *QuickViewRepository) Create(qv *models.QuickView) error {
 }
 
 // GetByTable 根据表信息获取快显记录
-func (r *QuickViewRepository) GetByTable(tenantID, resourceID uint, schema, table string) (*models.QuickView, error) {
+func (r *QuickViewRepository) GetByTable(tenantID, engineID uint, schema, table string) (*models.QuickView, error) {
 	var qv models.QuickView
-	err := r.db.Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-		tenantID, resourceID, schema, table).
+	err := r.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		tenantID, engineID, schema, table).
 		First(&qv).Error
 
 	if err != nil {
@@ -108,8 +108,8 @@ func (r *QuickViewRepository) ListAll(tenantID uint, params ListParams) ([]model
 	}
 
 	// 资源过滤
-	if params.ResourceID != 0 {
-		query = query.Where("resource_id = ?", params.ResourceID)
+	if params.EngineID != 0 {
+		query = query.Where("engine_id = ?", params.EngineID)
 	}
 
 	// 计算总数
@@ -133,10 +133,10 @@ func (r *QuickViewRepository) ListAll(tenantID uint, params ListParams) ([]model
 
 // ListParams 列表参数
 type ListParams struct {
-	Status     string
-	ResourceID uint
-	Page       int
-	PageSize   int
+	Status   string
+	EngineID uint
+	Page     int
+	PageSize int
 }
 
 // GetStatistics 获取统计信息
@@ -178,22 +178,22 @@ func (r *QuickViewRepository) Delete(id uint) error {
 }
 
 // DeleteByTable 根据表信息删除快显记录
-func (r *QuickViewRepository) DeleteByTable(tenantID, resourceID uint, schema, table string) error {
-	return r.db.Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-		tenantID, resourceID, schema, table).
+func (r *QuickViewRepository) DeleteByTable(tenantID, engineID uint, schema, table string) error {
+	return r.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		tenantID, engineID, schema, table).
 		Delete(&models.QuickView{}).Error
 }
 
 // IncrementCachedTiles 增加缓存瓦片数（用于按需生成时更新统计）
 func (r *QuickViewRepository) IncrementCachedTiles(
-	tenantID, resourceID uint,
+	tenantID, engineID uint,
 	schema, table string,
 	avgTimeMs, avgSizeKB float64,
 ) error {
 	// 原子性更新
 	return r.db.Model(&models.QuickView{}).
-		Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-			tenantID, resourceID, schema, table).
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+			tenantID, engineID, schema, table).
 		Updates(map[string]interface{}{
 			"cached_tiles":          gorm.Expr("cached_tiles + 1"),
 			"last_zoom_avg_time_ms": avgTimeMs,
@@ -202,11 +202,11 @@ func (r *QuickViewRepository) IncrementCachedTiles(
 }
 
 // Exists 检查快显记录是否存在
-func (r *QuickViewRepository) Exists(tenantID, resourceID uint, schema, table string) (bool, error) {
+func (r *QuickViewRepository) Exists(tenantID, engineID uint, schema, table string) (bool, error) {
 	var count int64
 	err := r.db.Model(&models.QuickView{}).
-		Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-			tenantID, resourceID, schema, table).
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+			tenantID, engineID, schema, table).
 		Count(&count).Error
 
 	if err != nil {
@@ -217,11 +217,11 @@ func (r *QuickViewRepository) Exists(tenantID, resourceID uint, schema, table st
 }
 
 // IsGenerating 检查是否正在生成
-func (r *QuickViewRepository) IsGenerating(tenantID, resourceID uint, schema, table string) (bool, error) {
+func (r *QuickViewRepository) IsGenerating(tenantID, engineID uint, schema, table string) (bool, error) {
 	var count int64
 	err := r.db.Model(&models.QuickView{}).
-		Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ? AND status = ?",
-			tenantID, resourceID, schema, table, "generating").
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ? AND status = ?",
+			tenantID, engineID, schema, table, "generating").
 		Count(&count).Error
 
 	if err != nil {
@@ -232,11 +232,11 @@ func (r *QuickViewRepository) IsGenerating(tenantID, resourceID uint, schema, ta
 }
 
 // GetFingerprint 获取指纹（如果记录存在）
-func (r *QuickViewRepository) GetFingerprint(tenantID, resourceID uint, schema, table string) (string, error) {
+func (r *QuickViewRepository) GetFingerprint(tenantID, engineID uint, schema, table string) (string, error) {
 	var qv models.QuickView
 	err := r.db.Select("fingerprint").
-		Where("tenant_id = ? AND resource_id = ? AND schema_name = ? AND table_name = ?",
-			tenantID, resourceID, schema, table).
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+			tenantID, engineID, schema, table).
 		First(&qv).Error
 
 	if err != nil {

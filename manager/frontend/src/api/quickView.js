@@ -9,29 +9,29 @@ export const quickViewAPI = {
   /**
    * 获取瓦片配置（计算 minZoom 和 maxZoom）
    */
-  getTileConfig(resourceId, schema, table) {
-    return request.get(`/resources/${resourceId}/spatial/${schema}/${table}/tile-config`)
+  getTileConfig(engineId, schema, table) {
+    return request.get(`/engines/${engineId}/spatial/${schema}/${table}/tile-config`)
   },
 
   /**
    * 触发预缓存生成
    */
-  triggerQuickView(resourceId, schema, table, params = {}) {
-    return request.post(`/resources/${resourceId}/spatial/${schema}/${table}/pre-cache`, params)
+  triggerQuickView(engineId, schema, table, params = {}) {
+    return request.post(`/engines/${engineId}/spatial/${schema}/${table}/pre-cache`, params)
   },
 
   /**
    * 获取预缓存状态
    */
-  getQuickViewStatus(resourceId, schema, table) {
-    return request.get(`/resources/${resourceId}/spatial/${schema}/${table}/pre-cache/status`)
+  getQuickViewStatus(engineId, schema, table) {
+    return request.get(`/engines/${engineId}/spatial/${schema}/${table}/pre-cache/status`)
   },
 
   /**
    * 清除预缓存
    */
-  clearQuickView(resourceId, schema, table) {
-    return request.delete(`/resources/${resourceId}/spatial/${schema}/${table}/pre-cache`)
+  clearQuickView(engineId, schema, table) {
+    return request.delete(`/engines/${engineId}/spatial/${schema}/${table}/pre-cache`)
   },
 
   /**

@@ -540,7 +540,7 @@ func (s *S3Scanner) joinPath(bucket, prefix, name string) string {
 }
 
 // extractObjectMetadata 提取对象的详细元数据（视频、图片、文档等）
-// resID: 资源ID (system.resources)
+// resID: 资源ID (system.engines)
 // bucket: bucket名称
 // objectKey: 对象键
 // contentType: MIME类型
@@ -579,7 +579,7 @@ func (s *S3Scanner) extractObjectMetadata(resID uint, bucket, objectKey, content
 
 	// 构建format.ExtractInput
 	extractInput := format.ExtractInput{
-		ResourceID:   resID,
+		EngineID:     resID,
 		ObjectKey:    objectKey,
 		ContentType:  contentType,
 		Size:         size,
@@ -603,7 +603,7 @@ func (s *S3Scanner) extractObjectMetadata(resID uint, bucket, objectKey, content
 		defer fullObj.Close()
 
 		fullInput := format.ExtractInput{
-			ResourceID:   resID,
+			EngineID:     resID,
 			ObjectKey:    objectKey,
 			ContentType:  contentType,
 			Size:         size,

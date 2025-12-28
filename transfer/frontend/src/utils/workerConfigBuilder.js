@@ -95,8 +95,8 @@ export const mergeTaskConnectorConfig = (base, extra, resourceType) => {
     'bucket',
     'connection_info',
     'scope',
-    'system_resource_id',
-    'local_resource_id',
+    'system_engine_id',
+    'local_engine_id',
     'local_resource_name',
     'resource_type'
   ])
@@ -138,7 +138,7 @@ export const sanitizeConnectorForWorker = (connector) => {
     if (value === undefined) {
       return
     }
-    if (['scope', 'system_resource_id', 'local_resource_id', 'local_resource_name', 'resource_type'].includes(key)) {
+    if (['scope', 'system_engine_id', 'local_engine_id', 'local_resource_name', 'resource_type'].includes(key)) {
       return
     }
     sanitized[key] = value
@@ -303,7 +303,7 @@ export const buildWorkerConfigFromTask = (task, mappings, systemResourceMap) => 
     const fallbackId = key === 'source' ? toNumber(task.source_id) : toNumber(task.target_id)
 
     let resource = null
-    const embeddedId = toNumber(rawConfig.system_resource_id || rawConfig.resource_id)
+    const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.resource_id)
     if (embeddedId !== null) {
       resource = systemResourceMap.get(embeddedId) || null
     }

@@ -12,12 +12,12 @@ import (
 // HealthChecker 资源健康检查器
 // 负责在System启动时检测所有资源的连接状态
 type HealthChecker struct {
-	resourceService *ResourceService
+	resourceService *EngineService
 	log             *slog.Logger
 }
 
 // NewHealthChecker 创建健康检查器
-func NewHealthChecker(resourceService *ResourceService) *HealthChecker {
+func NewHealthChecker(resourceService *EngineService) *HealthChecker {
 	return &HealthChecker{
 		resourceService: resourceService,
 		log:             logger.With("component", "health_checker"),
@@ -30,13 +30,13 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 	h.log.Info("开始检测所有资源健康状态...")
 
 	// 获取所有资源列表
-	resources, err := h.resourceService.repo.List(0, 9999, "")
+	engines, err := h.resourceService.repo.List(0, 9999, "")
 	if err != nil {
-		h.log.Error("获取资源列表失败", "error", err)
+		h.log.Error("获取引擎列表失败", "error", err)
 		return
 	}
 
-	if len(resources) == 0 {
+	if len(engines) == 0 {
 		h.log.Info("没有资源需要检测")
 		return
 	}
@@ -47,11 +47,11 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 	var onlineCount atomic.Int32
 	var offlineCount atomic.Int32
 
-	for _, res := range resources {
+	for _, res := range engines {
 		wg.Add(1)
 		semaphore <- struct{}{} // 获取信号量
 
-		go func(resource commonModels.Resource) {
+		go func(resource commonModels.Engine) {
 			defer wg.Done()
 			defer func() { <-semaphore }() // 释放信号量
 
@@ -66,7 +66,7 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 
 	wg.Wait()
 	h.log.Info("资源健康检测完成",
-		"total", len(resources),
+		"total", len(engines),
 		"online", onlineCount.Load(),
 		"offline", offlineCount.Load())
 }

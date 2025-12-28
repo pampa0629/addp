@@ -54,9 +54,9 @@
               <el-icon><User /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
-            <el-menu-item index="/resources" @click="handleMenuClick('system', 'resources')">
+            <el-menu-item index="/engines" @click="handleMenuClick('system', 'engines')">
               <el-icon><Connection /></el-icon>
-              <span>资源管理</span>
+              <span>引擎管理</span>
             </el-menu-item>
             <el-menu-item index="/applications" @click="handleMenuClick('system', 'applications')">
               <el-icon><Key /></el-icon>

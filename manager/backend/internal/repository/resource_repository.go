@@ -15,22 +15,22 @@ func NewResourceRepository(db *gorm.DB) *ResourceRepository {
 
 // ListAllActive 获取所有激活资源，可选按租户过滤
 func (r *ResourceRepository) ListAllActive(tenantID *uint) ([]models.Resource, error) {
-	var resources []models.Resource
+	var engines []models.Resource
 	query := r.db.Where("is_active = ?", true)
 
 	if tenantID != nil {
 		query = query.Where("tenant_id = ?", *tenantID)
 	}
 
-	if err := query.Order("id").Find(&resources).Error; err != nil {
+	if err := query.Order("id").Find(&engines).Error; err != nil {
 		return nil, err
 	}
-	return resources, nil
+	return engines, nil
 }
 
 // List 获取资源列表
 func (r *ResourceRepository) List(page, pageSize int, resourceType string) ([]models.Resource, int64, error) {
-	var resources []models.Resource
+	var engines []models.Resource
 	var total int64
 
 	query := r.db.Model(&models.Resource{}).Where("is_active = ?", true)
@@ -44,11 +44,11 @@ func (r *ResourceRepository) List(page, pageSize int, resourceType string) ([]mo
 	}
 
 	offset := (page - 1) * pageSize
-	if err := query.Offset(offset).Limit(pageSize).Find(&resources).Error; err != nil {
+	if err := query.Offset(offset).Limit(pageSize).Find(&engines).Error; err != nil {
 		return nil, 0, err
 	}
 
-	return resources, total, nil
+	return engines, total, nil
 }
 
 // GetByID 根据ID获取资源

@@ -40,7 +40,7 @@ func (p *clickhousePreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 ClickHouse
-	resourceType := sanitizeResourceType(req.Resource.ResourceType)
+	resourceType := sanitizeResourceType(req.Resource.EngineType)
 	return resourceType == "clickhouse"
 }
 
@@ -48,9 +48,9 @@ func (p *clickhousePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 	const maxRows = 50
 
 	// 转换 Resource 类型到 common models
-	commonResource := &commonModels.Resource{
+	commonResource := &commonModels.Engine{
 		ID:             req.Resource.ID,
-		ResourceType:   req.Resource.ResourceType,
+		EngineType:   req.Resource.EngineType,
 		ConnectionInfo: commonModels.ConnectionInfo(req.Resource.ConnectionInfo),
 	}
 
@@ -121,9 +121,9 @@ func (p *clickhousePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		PageSize:        req.PageSize,
 		GeometryColumns: []string{}, // ClickHouse 不支持几何列
 		// Populate MVT preview metadata for frontend decision-making
-		ResourceID:   req.Resource.ID,
+		EngineID:   req.Resource.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		ResourceType: req.Resource.ResourceType,
+		EngineType: req.Resource.EngineType,
 	}, nil
 }

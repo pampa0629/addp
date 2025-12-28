@@ -38,13 +38,13 @@ var (
 
 // resourceCacheEntry 缓存条目，包含资源和过期时间
 type resourceCacheEntry struct {
-	resource  *commonModels.Resource
+	resource  *commonModels.Engine
 	expiresAt time.Time
 }
 
-// LocalResourceService 提供 Transfer 模块的本地存储引擎管理能力
-type LocalResourceService struct {
-	repo            *repository.LocalResourceRepository
+// LocalEngineService 提供 Transfer 模块的本地引擎管理能力
+type LocalEngineService struct {
+	repo            *repository.LocalEngineRepository
 	systemClient    *commonClient.SystemClient
 	logger          *slog.Logger
 	cfg             *config.Config
@@ -54,17 +54,17 @@ type LocalResourceService struct {
 	eventSubscriber *events.ResourceEventSubscriber
 }
 
-// NewLocalResourceService 创建 Service
-func NewLocalResourceService(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *LocalResourceService {
+// NewLocalEngineService 创建 Service
+func NewLocalEngineService(db *gorm.DB, cfg *config.Config, redisClient *redis.Client) *LocalEngineService {
 	var systemClient *commonClient.SystemClient
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
 		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
 	}
 
-	service := &LocalResourceService{
-		repo:          repository.NewLocalResourceRepository(db),
+	service := &LocalEngineService{
+		repo:          repository.NewLocalEngineRepository(db),
 		systemClient:  systemClient,
-		logger:        commonLogger.With("component", "local_resource_service"),
+		logger:        commonLogger.With("component", "local_engine_service"),
 		cfg:           cfg,
 		resourceCache: make(map[uint]*resourceCacheEntry),
 		cacheTTL:      2 * time.Minute, // Transfer 使用 2 分钟 TTL
@@ -91,44 +91,44 @@ func NewLocalResourceService(db *gorm.DB, cfg *config.Config, redisClient *redis
 	return service
 }
 
-// List 返回指定租户下的本地存储引擎列表
-func (s *LocalResourceService) List(tenantID uint, resourceType string) ([]models.LocalResource, error) {
-	resources, err := s.repo.List(tenantID, resourceType)
+// List 返回指定租户下的本地引擎列表
+func (s *LocalEngineService) List(tenantID uint, engineType string) ([]models.LocalEngine, error) {
+	engines, err := s.repo.List(tenantID, engineType)
 	if err != nil {
 		return nil, err
 	}
 	// 解密并脱敏敏感信息
-	for i := range resources {
-		connInfo := resources[i].ConnectionInfo
+	for i := range engines {
+		connInfo := engines[i].ConnectionInfo
 		if err := s.decryptConnectionInfo(connInfo); err != nil {
-			s.logger.Warn("failed to decrypt connection info", "resource_id", resources[i].ID, "error", err)
+			s.logger.Warn("failed to decrypt connection info", "engine_id", engines[i].ID, "error", err)
 			// 解密失败不影响其他资源
 		}
 		s.sanitizeConnectionInfo(connInfo)
 	}
-	return resources, nil
+	return engines, nil
 }
 
-// ListSystemResources 获取 System 模块的存储引擎（需启用集成）
-func (s *LocalResourceService) ListSystemResources(resourceType string, tenantID uint) ([]commonModels.Resource, error) {
+// ListSystemEngines 获取 System 模块的存储引擎（需启用集成）
+func (s *LocalEngineService) ListSystemEngines(engineType string, tenantID uint) ([]commonModels.Engine, error) {
 	if s.systemClient == nil {
-		s.logger.Warn("system client unavailable when listing system resources")
+		s.logger.Warn("system client unavailable when listing system engines")
 		return nil, ErrSystemIntegrationDisabled
 	}
 
-	resources, err := s.systemClient.ListResources(resourceType, tenantID)
+	engines, err := s.systemClient.ListEngines(engineType, tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := range resources {
-		if resources[i].ConnectionInfo != nil {
-			sanitizeMap(resources[i].ConnectionInfo)
+	for i := range engines {
+		if engines[i].ConnectionInfo != nil {
+			sanitizeMap(engines[i].ConnectionInfo)
 		}
 	}
 
-	filtered := make([]commonModels.Resource, 0, len(resources))
-	for _, res := range resources {
+	filtered := make([]commonModels.Engine, 0, len(engines))
+	for _, res := range engines {
 		if res.IsActive {
 			filtered = append(filtered, res)
 		}
@@ -138,15 +138,15 @@ func (s *LocalResourceService) ListSystemResources(resourceType string, tenantID
 }
 
 // GetSystemResource 获取 System 模块的资源详情（包含解密信息，带缓存）
-func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*commonModels.Resource, error) {
+func (s *LocalEngineService) GetSystemResource(engineID, tenantID uint) (*commonModels.Engine, error) {
 	if s.systemClient == nil {
-		s.logger.Warn("system client unavailable when fetching system resource", "resource_id", resourceID)
+		s.logger.Warn("system client unavailable when fetching system resource", "engine_id", engineID)
 		return nil, ErrSystemIntegrationDisabled
 	}
 
 	// 检查缓存
 	s.cacheMu.RLock()
-	entry, ok := s.resourceCache[resourceID]
+	entry, ok := s.resourceCache[engineID]
 	s.cacheMu.RUnlock()
 
 	// 如果缓存命中且未过期，返回缓存数据
@@ -154,7 +154,7 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 		if tenantID == 0 || (entry.resource.TenantID != nil && *entry.resource.TenantID == tenantID) {
 			resourceCopy := *entry.resource
 			s.logger.Debug("资源连接信息命中缓存",
-				"resource_id", resourceID,
+				"engine_id", engineID,
 				"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
 			)
 			return &resourceCopy, nil
@@ -162,7 +162,7 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 	}
 
 	// 缓存未命中或已过期，从 System API 获取
-	resource, err := s.systemClient.GetResource(resourceID)
+	resource, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,29 +174,29 @@ func (s *LocalResourceService) GetSystemResource(resourceID, tenantID uint) (*co
 	// 更新缓存
 	s.cacheResource(resource)
 	s.logger.Info("通过内部 API 获取资源连接信息成功",
-		"resource_id", resourceID,
-		"resource_type", resource.ResourceType,
+		"engine_id", engineID,
+		"engine_type", resource.EngineType,
 	)
 
 	return resource, nil
 }
 
 // Get 获取指定资源
-func (s *LocalResourceService) Get(id, tenantID uint) (*models.LocalResource, error) {
+func (s *LocalEngineService) Get(id, tenantID uint) (*models.LocalEngine, error) {
 	resource, err := s.repo.GetByID(id, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	// 解密敏感信息
 	if err := s.decryptConnectionInfo(resource.ConnectionInfo); err != nil {
-		s.logger.Warn("failed to decrypt connection info", "resource_id", id, "error", err)
+		s.logger.Warn("failed to decrypt connection info", "engine_id", id, "error", err)
 		// 解密失败不返回错误，但记录日志
 	}
 	return resource, nil
 }
 
 // Create 创建资源
-func (s *LocalResourceService) Create(resource *models.LocalResource) error {
+func (s *LocalEngineService) Create(resource *models.LocalEngine) error {
 	// 加密敏感信息
 	if err := s.encryptConnectionInfo(resource.ConnectionInfo); err != nil {
 		return fmt.Errorf("failed to encrypt connection info: %w", err)
@@ -210,7 +210,7 @@ func (s *LocalResourceService) Create(resource *models.LocalResource) error {
 }
 
 // Update 更新资源
-func (s *LocalResourceService) Update(resource *models.LocalResource) error {
+func (s *LocalEngineService) Update(resource *models.LocalEngine) error {
 	// 加密敏感信息
 	if err := s.encryptConnectionInfo(resource.ConnectionInfo); err != nil {
 		return fmt.Errorf("failed to encrypt connection info: %w", err)
@@ -224,35 +224,35 @@ func (s *LocalResourceService) Update(resource *models.LocalResource) error {
 }
 
 // Delete 删除资源
-func (s *LocalResourceService) Delete(id, tenantID uint) error {
+func (s *LocalEngineService) Delete(id, tenantID uint) error {
 	return s.repo.Delete(id, tenantID)
 }
 
 // TestConnectionBeforeCreate 测试尚未入库的配置（未加密的明文配置）
-func (s *LocalResourceService) TestConnectionBeforeCreate(resourceType string, connInfo models.JSONMap) error {
+func (s *LocalEngineService) TestConnectionBeforeCreate(engineType string, connInfo models.JSONMap) error {
 	// 这里传入的是前端的明文配置，直接测试即可
-	return s.testConnection(resourceType, connInfo)
+	return s.testConnection(engineType, connInfo)
 }
 
 // TestConnection 测试已存在资源的连接
-func (s *LocalResourceService) TestConnection(id, tenantID uint) error {
+func (s *LocalEngineService) TestConnection(id, tenantID uint) error {
 	resource, err := s.Get(id, tenantID)
 	if err != nil {
 		return err
 	}
 	// Get 方法已经解密了 connection_info，可以直接使用
-	return s.testConnection(resource.ResourceType, resource.ConnectionInfo)
+	return s.testConnection(resource.EngineType, resource.ConnectionInfo)
 }
 
 // SyncToSystem 将本地配置推送到 System 模块，返回在 System 中创建的资源
-func (s *LocalResourceService) SyncToSystem(resource *models.LocalResource) (*commonModels.Resource, error) {
+func (s *LocalEngineService) SyncToSystem(resource *models.LocalEngine) (*commonModels.Engine, error) {
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system integration not available")
 	}
 
 	payload := map[string]interface{}{
 		"name":            resource.Name,
-		"resource_type":   resource.ResourceType,
+		"engine_type":   resource.EngineType,
 		"description":     resource.Description,
 		"connection_info": resource.ConnectionInfo,
 	}
@@ -264,7 +264,7 @@ func (s *LocalResourceService) SyncToSystem(resource *models.LocalResource) (*co
 		payload["created_by"] = *resource.CreatedBy
 	}
 
-	resp, err := s.systemClient.CreateResource(payload)
+	resp, err := s.systemClient.CreateEngine(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -276,8 +276,8 @@ func (s *LocalResourceService) SyncToSystem(resource *models.LocalResource) (*co
 	return resp, nil
 }
 
-func (s *LocalResourceService) testConnection(resourceType string, connInfo models.JSONMap) error {
-    switch resourceType {
+func (s *LocalEngineService) testConnection(engineType string, connInfo models.JSONMap) error {
+    switch engineType {
     case "postgresql":
         return s.testPostgreSQL(connInfo)
     case "mysql":
@@ -287,11 +287,11 @@ func (s *LocalResourceService) testConnection(resourceType string, connInfo mode
     case "spatialite", "sqlite":
         return s.testSpatiaLite(connInfo)
     default:
-        return fmt.Errorf("unsupported resource type: %s", resourceType)
+        return fmt.Errorf("unsupported resource type: %s", engineType)
     }
 }
 
-func (s *LocalResourceService) normalizeHost(host string) string {
+func (s *LocalEngineService) normalizeHost(host string) string {
 	if host == "localhost" || host == "127.0.0.1" {
 		if alias := os.Getenv("RESOURCE_LOCALHOST_ALIAS"); alias != "" {
 			return alias
@@ -301,7 +301,7 @@ func (s *LocalResourceService) normalizeHost(host string) string {
 	return host
 }
 
-func (s *LocalResourceService) testPostgreSQL(connInfo models.JSONMap) error {
+func (s *LocalEngineService) testPostgreSQL(connInfo models.JSONMap) error {
 	host, _ := connInfo["host"].(string)
 	host = s.normalizeHost(host)
 
@@ -353,7 +353,7 @@ func (s *LocalResourceService) testPostgreSQL(connInfo models.JSONMap) error {
 	return nil
 }
 
-func (s *LocalResourceService) testMySQL(connInfo models.JSONMap) error {
+func (s *LocalEngineService) testMySQL(connInfo models.JSONMap) error {
     host, _ := connInfo["host"].(string)
     host = s.normalizeHost(host)
     var port int
@@ -382,7 +382,7 @@ func (s *LocalResourceService) testMySQL(connInfo models.JSONMap) error {
     return nil
 }
 
-func (s *LocalResourceService) testObjectStorage(connInfo models.JSONMap) error {
+func (s *LocalEngineService) testObjectStorage(connInfo models.JSONMap) error {
 	endpoint, _ := connInfo["endpoint"].(string)
 	if endpoint == "" {
 		return fmt.Errorf("missing required field: endpoint")
@@ -416,13 +416,13 @@ func (s *LocalResourceService) testObjectStorage(connInfo models.JSONMap) error 
 	return nil
 }
 
-// ----- Metadata scan for local resources -----
+// ----- Metadata scan for local engines -----
 
 // ListTables 列出本地资源的表名（当前支持 spatialite/sqlite）
-func (s *LocalResourceService) ListTables(id, tenantID uint) ([]string, error) {
+func (s *LocalEngineService) ListTables(id, tenantID uint) ([]string, error) {
     res, err := s.Get(id, tenantID)
     if err != nil { return nil, err }
-    switch res.ResourceType {
+    switch res.EngineType {
     case "spatialite", "sqlite":
         return s.listSQLiteTables(res.ConnectionInfo)
     case "postgresql":
@@ -430,15 +430,15 @@ func (s *LocalResourceService) ListTables(id, tenantID uint) ([]string, error) {
     case "mysql":
         return s.listMySQLTables(res.ConnectionInfo)
     default:
-        return nil, fmt.Errorf("list tables not supported for resource type: %s", res.ResourceType)
+        return nil, fmt.Errorf("list tables not supported for resource type: %s", res.EngineType)
     }
 }
 
 // ListFields 列出指定表的字段信息
-func (s *LocalResourceService) ListFields(id, tenantID uint, table string) ([]map[string]interface{}, error) {
+func (s *LocalEngineService) ListFields(id, tenantID uint, table string) ([]map[string]interface{}, error) {
     res, err := s.Get(id, tenantID)
     if err != nil { return nil, err }
-    switch res.ResourceType {
+    switch res.EngineType {
     case "spatialite", "sqlite":
         return s.listSQLiteFields(res.ConnectionInfo, table)
     case "postgresql":
@@ -446,11 +446,11 @@ func (s *LocalResourceService) ListFields(id, tenantID uint, table string) ([]ma
     case "mysql":
         return s.listMySQLFields(res.ConnectionInfo, table)
     default:
-        return nil, fmt.Errorf("list fields not supported for resource type: %s", res.ResourceType)
+        return nil, fmt.Errorf("list fields not supported for resource type: %s", res.EngineType)
     }
 }
 
-func (s *LocalResourceService) testSpatiaLite(connInfo models.JSONMap) error {
+func (s *LocalEngineService) testSpatiaLite(connInfo models.JSONMap) error {
     filePath, _ := connInfo["file_path"].(string)
     if filePath == "" { return fmt.Errorf("missing required field: file_path") }
 
@@ -469,7 +469,7 @@ func (s *LocalResourceService) testSpatiaLite(connInfo models.JSONMap) error {
     return nil
 }
 
-func (s *LocalResourceService) listSQLiteTables(connInfo models.JSONMap) ([]string, error) {
+func (s *LocalEngineService) listSQLiteTables(connInfo models.JSONMap) ([]string, error) {
     filePath, _ := connInfo["file_path"].(string)
     if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
 
@@ -512,7 +512,7 @@ func (s *LocalResourceService) listSQLiteTables(connInfo models.JSONMap) ([]stri
     return tables, nil
 }
 
-func (s *LocalResourceService) listSQLiteFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+func (s *LocalEngineService) listSQLiteFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
     filePath, _ := connInfo["file_path"].(string)
     if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
 
@@ -559,7 +559,7 @@ func (s *LocalResourceService) listSQLiteFields(connInfo models.JSONMap, table s
 
 // ------- PostgreSQL metadata -------
 
-func (s *LocalResourceService) pgConn(connInfo models.JSONMap) (*sql.DB, error) {
+func (s *LocalEngineService) pgConn(connInfo models.JSONMap) (*sql.DB, error) {
     host, _ := connInfo["host"].(string)
     host = s.normalizeHost(host)
     var port int
@@ -581,7 +581,7 @@ func (s *LocalResourceService) pgConn(connInfo models.JSONMap) (*sql.DB, error) 
     return sql.Open("postgres", dsn)
 }
 
-func (s *LocalResourceService) listPostgresTables(connInfo models.JSONMap) ([]string, error) {
+func (s *LocalEngineService) listPostgresTables(connInfo models.JSONMap) ([]string, error) {
     db, err := s.pgConn(connInfo)
     if err != nil { return nil, err }
     defer db.Close()
@@ -612,7 +612,7 @@ func splitSchemaTableInput(input string) (string, string) {
     return strings.Trim(parts[0], `"`), strings.Trim(parts[1], `"`)
 }
 
-func (s *LocalResourceService) listPostgresFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+func (s *LocalEngineService) listPostgresFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
     db, err := s.pgConn(connInfo)
     if err != nil { return nil, err }
     defer db.Close()
@@ -656,7 +656,7 @@ func (s *LocalResourceService) listPostgresFields(connInfo models.JSONMap, table
 
 // ------- MySQL metadata -------
 
-func (s *LocalResourceService) mySQLConn(connInfo models.JSONMap) (*sql.DB, error) {
+func (s *LocalEngineService) mySQLConn(connInfo models.JSONMap) (*sql.DB, error) {
     host, _ := connInfo["host"].(string)
     host = s.normalizeHost(host)
     var port int
@@ -676,7 +676,7 @@ func (s *LocalResourceService) mySQLConn(connInfo models.JSONMap) (*sql.DB, erro
     return sql.Open("mysql", dsn)
 }
 
-func (s *LocalResourceService) listMySQLTables(connInfo models.JSONMap) ([]string, error) {
+func (s *LocalEngineService) listMySQLTables(connInfo models.JSONMap) ([]string, error) {
     db, err := s.mySQLConn(connInfo)
     if err != nil { return nil, err }
     defer db.Close()
@@ -697,7 +697,7 @@ func (s *LocalResourceService) listMySQLTables(connInfo models.JSONMap) ([]strin
     return out, nil
 }
 
-func (s *LocalResourceService) listMySQLFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
+func (s *LocalEngineService) listMySQLFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
     db, err := s.mySQLConn(connInfo)
     if err != nil { return nil, err }
     defer db.Close()
@@ -729,7 +729,7 @@ func (s *LocalResourceService) listMySQLFields(connInfo models.JSONMap, table st
 }
 
 // encryptConnectionInfo 加密连接信息中的敏感字段
-func (s *LocalResourceService) encryptConnectionInfo(connInfo models.JSONMap) error {
+func (s *LocalEngineService) encryptConnectionInfo(connInfo models.JSONMap) error {
 	if len(s.cfg.EncryptionKey) != 32 {
 		return fmt.Errorf("encryption key must be 32 bytes, got %d", len(s.cfg.EncryptionKey))
 	}
@@ -758,7 +758,7 @@ func (s *LocalResourceService) encryptConnectionInfo(connInfo models.JSONMap) er
 }
 
 // decryptConnectionInfo 解密连接信息中的敏感字段
-func (s *LocalResourceService) decryptConnectionInfo(connInfo models.JSONMap) error {
+func (s *LocalEngineService) decryptConnectionInfo(connInfo models.JSONMap) error {
 	if len(s.cfg.EncryptionKey) != 32 {
 		return fmt.Errorf("decryption key must be 32 bytes, got %d", len(s.cfg.EncryptionKey))
 	}
@@ -789,7 +789,7 @@ func (s *LocalResourceService) decryptConnectionInfo(connInfo models.JSONMap) er
 }
 
 // cacheResource 缓存资源
-func (s *LocalResourceService) cacheResource(resource *commonModels.Resource) {
+func (s *LocalEngineService) cacheResource(resource *commonModels.Engine) {
 	if resource == nil {
 		return
 	}
@@ -803,7 +803,7 @@ func (s *LocalResourceService) cacheResource(resource *commonModels.Resource) {
 }
 
 // sanitizeConnectionInfo 在返回前对敏感字段进行脱敏处理
-func (s *LocalResourceService) sanitizeConnectionInfo(connInfo models.JSONMap) {
+func (s *LocalEngineService) sanitizeConnectionInfo(connInfo models.JSONMap) {
 	if connInfo == nil {
 		return
 	}
@@ -841,7 +841,7 @@ func removeMetaFields(connInfo models.JSONMap) {
 }
 
 // ClearCache 清除所有资源缓存
-func (s *LocalResourceService) ClearCache() {
+func (s *LocalEngineService) ClearCache() {
 	s.cacheMu.Lock()
 	s.resourceCache = make(map[uint]*resourceCacheEntry)
 	s.cacheMu.Unlock()
@@ -849,44 +849,44 @@ func (s *LocalResourceService) ClearCache() {
 }
 
 // ClearResourceCache 清除指定资源的缓存
-func (s *LocalResourceService) ClearResourceCache(resourceID uint) {
+func (s *LocalEngineService) ClearResourceCache(engineID uint) {
 	s.cacheMu.Lock()
-	delete(s.resourceCache, resourceID)
+	delete(s.resourceCache, engineID)
 	s.cacheMu.Unlock()
-	s.logger.Info("资源缓存已清除", "resource_id", resourceID)
+	s.logger.Info("资源缓存已清除", "engine_id", engineID)
 }
 
 // handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
-func (s *LocalResourceService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
+func (s *LocalEngineService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
 	s.logger.Info("收到资源变更事件",
-		"resource_id", event.ResourceID,
+		"engine_id", event.EngineID,
 		"action", event.Action,
 		"timestamp", event.Timestamp)
 
 	switch event.Action {
 	case events.ActionCreate:
 		// 资源创建：不需要特殊处理，等待下次访问时自动加载
-		s.logger.Debug("资源已创建，等待首次访问时加载", "resource_id", event.ResourceID)
+		s.logger.Debug("资源已创建，等待首次访问时加载", "engine_id", event.EngineID)
 
 	case events.ActionUpdate:
 		// 资源更新：清除缓存，强制下次访问时重新获取
-		s.ClearResourceCache(event.ResourceID)
-		s.logger.Info("资源已更新，缓存已清除", "resource_id", event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
+		s.logger.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
 
 	case events.ActionDelete:
 		// 资源删除：清除缓存
-		s.ClearResourceCache(event.ResourceID)
-		s.logger.Info("资源已删除，缓存已清除", "resource_id", event.ResourceID)
+		s.ClearResourceCache(event.EngineID)
+		s.logger.Info("资源已删除，缓存已清除", "engine_id", event.EngineID)
 
 	default:
-		s.logger.Warn("未知的资源变更动作", "action", event.Action, "resource_id", event.ResourceID)
+		s.logger.Warn("未知的资源变更动作", "action", event.Action, "engine_id", event.EngineID)
 	}
 
 	return nil
 }
 
 // Stop 停止资源服务（清理资源）
-func (s *LocalResourceService) Stop() {
+func (s *LocalEngineService) Stop() {
 	if s.eventSubscriber != nil {
 		s.eventSubscriber.Stop()
 		s.logger.Info("资源事件订阅器已停止")

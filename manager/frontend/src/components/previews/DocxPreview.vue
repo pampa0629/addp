@@ -257,7 +257,7 @@ const downloadUrl = computed(() => {
   if (object.signedUrl) return object.signedUrl
 
   if (object.path && resourceId.value) {
-    return `/api/preview/download?resource_id=${resourceId.value}&path=${encodeURIComponent(object.path)}`
+    return `/api/preview/download?engine_id=${resourceId.value}&path=${encodeURIComponent(object.path)}`
   }
 
   return ''

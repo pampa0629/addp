@@ -14,7 +14,7 @@ func TestConnection(ctx context.Context, resource *Resource) error {
 		return fmt.Errorf("resource cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return err
 	}
@@ -29,7 +29,7 @@ func BuildConnectionString(resource *Resource) (string, error) {
 		return "", fmt.Errorf("resource cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +121,7 @@ func CreateConnectionPoolDirect(resource *Resource, config *PoolConfig) (*gorm.D
 		config = DefaultPoolConfig()
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func CreateConnectionPoolDirect(resource *Resource, config *PoolConfig) (*gorm.D
 	// 类型断言：检查是否支持连接池
 	poolPlugin, ok := plugin.(ConnectionPoolPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support connection pool", resource.ResourceType)
+		return nil, fmt.Errorf("plugin %s does not support connection pool", resource.EngineType)
 	}
 
 	return poolPlugin.CreateConnectionPool(resource.ConnectionInfo, config)
@@ -170,14 +170,14 @@ func ListSchemas(ctx context.Context, resource *Resource, db *gorm.DB) ([]Schema
 		return nil, fmt.Errorf("database connection cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
 	metaPlugin, ok := plugin.(MetadataPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.ResourceType)
+		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
 
 	return metaPlugin.ListSchemas(ctx, db)
@@ -192,14 +192,14 @@ func ListTables(ctx context.Context, resource *Resource, db *gorm.DB, schema str
 		return nil, fmt.Errorf("database connection cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
 	metaPlugin, ok := plugin.(MetadataPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.ResourceType)
+		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
 
 	return metaPlugin.ListTables(ctx, db, schema)
@@ -214,14 +214,14 @@ func ListColumns(ctx context.Context, resource *Resource, db *gorm.DB, schema, t
 		return nil, fmt.Errorf("database connection cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return nil, err
 	}
 
 	metaPlugin, ok := plugin.(MetadataPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.ResourceType)
+		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
 
 	return metaPlugin.ListColumns(ctx, db, schema, table)
@@ -236,14 +236,14 @@ func GetTableRowCount(ctx context.Context, resource *Resource, db *gorm.DB, sche
 		return 0, fmt.Errorf("database connection cannot be nil")
 	}
 
-	plugin, err := Get(resource.ResourceType)
+	plugin, err := Get(resource.EngineType)
 	if err != nil {
 		return 0, err
 	}
 
 	metaPlugin, ok := plugin.(MetadataPlugin)
 	if !ok {
-		return 0, fmt.Errorf("plugin %s does not support metadata query", resource.ResourceType)
+		return 0, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
 
 	return metaPlugin.GetTableRowCount(ctx, db, schema, table)

@@ -37,7 +37,7 @@ func (p *mysqlPreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 MySQL 和 Doris (Doris 使用 MySQL 协议)
-	resourceType := sanitizeResourceType(req.Resource.ResourceType)
+	resourceType := sanitizeResourceType(req.Resource.EngineType)
 	return resourceType == "mysql" || resourceType == "doris"
 }
 
@@ -68,9 +68,9 @@ func (p *mysqlPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 		PageSize:        req.PageSize,
 		GeometryColumns: geometryColumns,
 		// Populate MVT preview metadata for frontend decision-making
-		ResourceID:   req.Resource.ID,
+		EngineID:   req.Resource.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		ResourceType: req.Resource.ResourceType,
+		EngineType: req.Resource.EngineType,
 	}, nil
 }
