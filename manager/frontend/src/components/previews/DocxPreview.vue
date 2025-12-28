@@ -220,14 +220,14 @@ const documentData = computed(() => {
   return content.data || content.Data || null
 })
 
-const resourceId = computed(() => {
+const engineId = computed(() => {
   const root = props.data || {}
   const object = root.object || {}
   return (
-    root.resourceId ||
-    root.resource_id ||
-    object.resource_id ||
-    object.resourceId ||
+    root.engineId ||
+    root.engine_id ||
+    object.engine_id ||
+    object.engineId ||
     null
   )
 })
@@ -256,8 +256,8 @@ const downloadUrl = computed(() => {
   if (object.signed_url) return object.signed_url
   if (object.signedUrl) return object.signedUrl
 
-  if (object.path && resourceId.value) {
-    return `/api/preview/download?engine_id=${resourceId.value}&path=${encodeURIComponent(object.path)}`
+  if (object.path && engineId.value) {
+    return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIComponent(object.path)}`
   }
 
   return ''

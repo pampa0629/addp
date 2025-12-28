@@ -44,7 +44,7 @@ export const transformTableNode = (resource, schemaName, table) => {
     type: nodeType,
     nodeType,
     label: table.name,
-    resourceId: resource.id,
+    engineId: resource.id,
     resourceType: resource.resource_type || resource.resourceType,
     schema: schemaName,
     table: nodeType === 'table' ? table.name : path,
@@ -87,7 +87,7 @@ export const transformResource = (resource) => {
       type: nodeType,
       nodeType,
       label: schema.name,
-      resourceId: resource.id,
+      engineId: resource.id,
       resourceType,
       schema: schema.name,
       table: '',
@@ -104,7 +104,7 @@ export const transformResource = (resource) => {
     type: 'resource',
     nodeType: 'resource',
     label: resource.name,
-    resourceId: resource.id,
+    engineId: resource.id,
     resourceType,
     children: schemas
   }

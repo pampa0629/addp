@@ -6,11 +6,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// MetaNode 表示资源下的层级节点，兼容数据库 schema 与对象存储 prefix/bucket
+// MetaNode 表示引擎下的层级节点，兼容数据库 schema 与对象存储 prefix/bucket
 type MetaNode struct {
 	ID              uint           `gorm:"primaryKey" json:"id"`
-	TenantID        uint           `gorm:"not null;index:idx_meta_node_res_tenant,priority:1" json:"tenant_id"`
-	ResID           uint           `gorm:"not null;index:idx_meta_node_res_tenant,priority:2" json:"res_id"`
+	TenantID        uint           `gorm:"not null;index:idx_meta_node_engine_tenant,priority:1" json:"tenant_id"`
+	EngineID        uint           `gorm:"column:engine_id;not null;index:idx_meta_node_engine_tenant,priority:2" json:"engine_id"`
 	ParentNodeID    *uint          `gorm:"index" json:"parent_node_id,omitempty"`
 	NodeType        string         `gorm:"size:64;not null;index:idx_meta_node_type" json:"node_type"`
 	Name            string         `gorm:"size:255;not null" json:"name"`

@@ -300,8 +300,8 @@ const loadTask = async (taskId) => {
       sqlContent.value = task.content.sql
 
       // 如果有关联资源,也设置资源ID
-      if (task.resource_id) {
-        selectedEngineId.value = task.resource_id
+      if (task.engine_id) {
+        selectedEngineId.value = task.engine_id
       }
 
       ElMessage.success(`已加载 SQL 任务: ${task.name}`)

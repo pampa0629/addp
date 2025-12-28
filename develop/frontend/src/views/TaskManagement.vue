@@ -68,7 +68,7 @@
         </el-table-column>
         <el-table-column label="关联资源" width="150">
           <template #default="{ row }">
-            {{ getResourceName(row.resource_id) }}
+            {{ getResourceName(row.engine_id) }}
           </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
@@ -173,7 +173,7 @@
         </el-form-item>
         <el-form-item label="关联资源">
           <el-select
-            v-model="formData.resource_id"
+            v-model="formData.engine_id"
             style="width: 100%;"
             clearable
             placeholder="选择关联资源"
@@ -397,10 +397,10 @@ const getExecutionStatusColor = (status) => {
   return colors[status] || 'info'
 }
 
-const getResourceName = (resourceId) => {
-  if (!resourceId) return '-'
-  const resource = engines.value.find(r => r.id === resourceId)
-  return resource?.name || `ID: ${resourceId}`
+const getResourceName = (engineId) => {
+  if (!engineId) return '-'
+  const resource = engines.value.find(r => r.id === engineId)
+  return resource?.name || `ID: ${engineId}`
 }
 
 const formatTime = (time) => {
@@ -430,7 +430,7 @@ const handleEdit = (row) => {
     name: row.name,
     display_name: row.display_name,
     dev_type: row.dev_type,
-    engine_id: row.resource_id,
+    engine_id: row.engine_id,
     description: row.description,
     tags: row.tags || [],
     content: row.content || {}

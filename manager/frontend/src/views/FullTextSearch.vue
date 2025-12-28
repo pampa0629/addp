@@ -354,7 +354,7 @@ const getSnippet = (item = {}) => {
 
 const formatResource = (item = {}) => {
   const name = item.resource_name || ''
-  const id = item.resource_id
+  const id = item.engine_id
   if (name) {
     return name
   }
@@ -398,14 +398,14 @@ const isVectorMatch = (item = {}) => {
 }
 
 const navigateToDocument = (item = {}) => {
-  if (!item.resource_id) {
+  if (!item.engine_id) {
     ElMessage.warning('缺少引擎信息，无法定位文档')
     return
   }
   const schema = item.schema || item.bucket || ''
   const objectPath = item.relative_path || ''
   const query = {
-    resourceId: String(item.resource_id),
+    engineId: String(item.engine_id),
     schema,
     objectPath
   }

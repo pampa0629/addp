@@ -251,12 +251,12 @@ const formattedSize = computed(() => {
   return formatBytes(sizeBytes.value)
 })
 
-const resourceId = computed(() => {
+const engineId = computed(() => {
   return (
-    objectData.value?.resource_id ??
-    objectData.value?.resourceId ??
-    props.data?.resourceId ??
-    props.data?.resource_id ??
+    objectData.value?.engine_id ??
+    objectData.value?.engineId ??
+    props.data?.engineId ??
+    props.data?.engine_id ??
     null
   )
 })
@@ -276,10 +276,10 @@ const objectKey = computed(() => {
 // 构建视频URL
 const videoSrc = computed(() => {
   if (videoError.value) return ''
-  if (!resourceId.value || !objectKey.value) return ''
+  if (!engineId.value || !objectKey.value) return ''
 
   const params = new URLSearchParams()
-  params.set('engine_id', String(resourceId.value))
+  params.set('engine_id', String(engineId.value))
   params.set('object_key', objectKey.value)
 
   const token = localStorage.getItem('token')

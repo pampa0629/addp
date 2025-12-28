@@ -5,7 +5,7 @@
     placeholder="请选择表"
     filterable
     :loading="loading"
-    :disabled="!resourceId || !schema"
+    :disabled="!engineId || !schema"
   >
     <el-option
       v-for="table in tables"
@@ -34,7 +34,7 @@ const props = defineProps({
     type: String,
     default: null
   },
-  resourceId: {
+  engineId: {
     type: [Number, String],
     default: null
   },
@@ -50,15 +50,15 @@ const tables = ref([])
 const loading = ref(false)
 
 // 加载表列表
-const loadTables = async (resourceId, schema) => {
-  if (!resourceId || !schema) {
+const loadTables = async (engineId, schema) => {
+  if (!engineId || !schema) {
     tables.value = []
     return
   }
 
   loading.value = true
   try {
-    const data = await listTables(resourceId, schema)
+    const data = await listTables(engineId, schema)
     tables.value = data || []
   } catch (error) {
     console.error('获取表列表失败:', error)
@@ -75,9 +75,9 @@ const handleChange = (value) => {
   emit('change', value)
 }
 
-// 监听 resourceId 和 schema 变化
+// 监听 engineId 和 schema 变化
 watch(
-  () => [props.resourceId, props.schema],
+  () => [props.engineId, props.schema],
   ([newResourceId, newSchema]) => {
     loadTables(newResourceId, newSchema)
   },

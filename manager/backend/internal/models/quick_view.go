@@ -11,7 +11,7 @@ import (
 type QuickView struct {
 	ID         uint           `gorm:"primaryKey" json:"id"`
 	TenantID   uint           `gorm:"not null;index:idx_quick_view_tenant_resource" json:"tenant_id"`
-	ResourceID uint           `gorm:"not null;index:idx_quick_view_tenant_resource" json:"engine_id"`
+	EngineID   uint           `gorm:"not null;index:idx_quick_view_tenant_resource" json:"engine_id"`
 	SchemaName string         `gorm:"not null;size:255" json:"schema_name"`
 	Table      string         `gorm:"column:table_name;not null;size:255" json:"table_name"`
 

@@ -365,22 +365,22 @@ const componentKey = computed(() => {
 const previewMode = computed(() => (props.previewData?.mode || '').toLowerCase())
 const objectData = computed(() => props.previewData?.object || {})
 
-const resourceId = computed(() => {
+const engineId = computed(() => {
   return (
-    props.previewData?.resourceId ||
-    props.previewData?.resource_id ||
-    props.selectedNode?.resourceId ||
-    props.selectedNode?.resource_id ||
+    props.previewData?.engineId ||
+    props.previewData?.engine_id ||
+    props.selectedNode?.engineId ||
+    props.selectedNode?.engine_id ||
     null
   )
 })
 
 const fallbackDownloadUrl = computed(() => {
   const path = objectData.value?.path || props.selectedNode?.path || props.selectedNode?.table || ''
-  if (!path || !resourceId.value) {
+  if (!path || !engineId.value) {
     return ''
   }
-  return `/api/preview/download?engine_id=${resourceId.value}&path=${encodeURIComponent(path)}`
+  return `/api/preview/download?engine_id=${engineId.value}&path=${encodeURIComponent(path)}`
 })
 
 const downloadInfo = computed(() => {

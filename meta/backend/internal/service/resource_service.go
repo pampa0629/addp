@@ -676,7 +676,7 @@ func (s *ResourceService) UpdateConnectionStatus(engineID uint, status, message 
 
 	// 更新本地缓存
 	s.cacheMu.Lock()
-	if entry, exists := s.resourceCache[resourceID]; exists {
+	if entry, exists := s.resourceCache[engineID]; exists {
 		now := time.Now()
 		entry.resource.ConnectionStatus = status
 		entry.resource.LastCheckAt = &now

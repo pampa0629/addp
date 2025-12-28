@@ -316,7 +316,7 @@ const transformTableNode = (resource, schemaName, table) => {
     type: nodeType,
     nodeType,
     label: table.name,
-    resourceId: resource.id,
+    engineId: resource.id,
     resourceType: resource.resource_type || resource.resourceType,
     schema: schemaName,
     table: nodeType === 'table' ? table.name : path,
@@ -359,7 +359,7 @@ const transformResource = (resource) => {
       type: nodeType,
       nodeType,
       label: schema.name,
-      resourceId: resource.id,
+      engineId: resource.id,
       resourceType,
       schema: schema.name,
       table: '',
@@ -376,7 +376,7 @@ const transformResource = (resource) => {
     type: 'resource',
     nodeType: 'resource',
     label: resource.name,
-    resourceId: resource.id,
+    engineId: resource.id,
     resourceType,
     children: schemas
   }
@@ -811,7 +811,7 @@ const loadPreview = async () => {
   loadingPreview.value = true
   try {
     const params = {
-      engine_id: selectedNode.value.resourceId,
+      engine_id: selectedNode.value.engineId,
       schema: selectedNode.value.schema,
       table: selectedNode.value.path ?? selectedNode.value.table ?? '',
       page: currentPage.value,
@@ -822,7 +822,7 @@ const loadPreview = async () => {
     previewMode.value = mode
     if (mode === 'table') {
       preview.columns = response.data.columns || []
-      const baseKey = `${selectedNode.value.resourceId || 'res'}-${selectedNode.value.schema || 'schema'}-${selectedNode.value.table || 'table'}`
+      const baseKey = `${selectedNode.value.engineId || 'res'}-${selectedNode.value.schema || 'schema'}-${selectedNode.value.table || 'table'}`
       preview.rows = (response.data.rows || []).map((row, index) => ({
         ...row,
         __rowKey: `${baseKey}-${(currentPage.value - 1) * pageSize.value + index}`
@@ -903,16 +903,16 @@ const openObjectChild = (row) => {
   if (!row || !selectedNode.value) return
   const nodeType = row.type === 'prefix' ? 'directory' : (row.type || '').toLowerCase()
   const schema = selectedNode.value.schema
-  const resourceId = selectedNode.value.resourceId
+  const engineId = selectedNode.value.engineId
   const resourceType = selectedNode.value.resourceType
-  if (!schema || !resourceId) return
+  if (!schema || !engineId) return
   const path = row.path || row.name || ''
   selectedNode.value = {
-    id: makeNodeId(nodeType, resourceId, schema, path || Math.random()),
+    id: makeNodeId(nodeType, engineId, schema, path || Math.random()),
     type: nodeType,
     nodeType,
     label: row.name,
-    resourceId,
+    engineId,
     resourceType,
     schema,
     table: path,

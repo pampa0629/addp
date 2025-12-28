@@ -2,7 +2,7 @@ package models
 
 // DataQueryRequest 数据查询请求
 type DataQueryRequest struct {
-	ResourceID   uint     `json:"engine_id" binding:"required"`
+	EngineID uint     `json:"engine_id" binding:"required"`
 	Schema       string   `json:"schema" binding:"required"`
 	Table        string   `json:"table" binding:"required"`
 	Columns      []string `json:"columns,omitempty"`           // 指定列，为空表示全部列
@@ -33,7 +33,7 @@ type ColumnInfo struct {
 
 // AggregationRequest 聚合查询请求
 type AggregationRequest struct {
-	ResourceID uint              `json:"engine_id" binding:"required"`
+	EngineID uint              `json:"engine_id" binding:"required"`
 	Schema     string            `json:"schema" binding:"required"`
 	Table      string            `json:"table" binding:"required"`
 	GroupBy    []string          `json:"group_by,omitempty"`    // 分组字段

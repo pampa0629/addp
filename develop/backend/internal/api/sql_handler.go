@@ -26,14 +26,14 @@ func NewSQLHandler(sqlEngine *service.SQLEngineService, devItemService *service.
 
 // TestConnectionRequest 测试连接请求
 type TestConnectionRequest struct {
-	ResourceID uint `json:"engine_id" binding:"required"`
+	EngineID uint `json:"engine_id" binding:"required"`
 }
 
 // ExecuteSQLRequest 执行 SQL 请求
 type ExecuteSQLRequest struct {
-	ResourceID uint   `json:"engine_id" binding:"required"`
-	SQL        string `json:"sql" binding:"required"`
-	Timeout    int    `json:"timeout"` // 超时时间（秒）
+	EngineID uint   `json:"engine_id" binding:"required"`
+	SQL      string `json:"sql" binding:"required"`
+	Timeout  int    `json:"timeout"` // 超时时间（秒）
 }
 
 // ExecuteSQLResponse 执行 SQL 响应
@@ -49,7 +49,7 @@ type ExecuteSQLResponse struct {
 type SaveSQLTaskRequest struct {
 	Name        string   `json:"name" binding:"required"`
 	DisplayName string   `json:"display_name"`
-	ResourceID  uint     `json:"engine_id" binding:"required"`
+	EngineID    uint     `json:"engine_id" binding:"required"`
 	SQL         string   `json:"sql" binding:"required"`
 	Description string   `json:"description"`
 	Tags        []string `json:"tags"`

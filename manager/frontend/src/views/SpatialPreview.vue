@@ -7,7 +7,7 @@
     <div class="map-wrap">
       <VectorTilePreview
         v-if="ready"
-        :resource-id="resourceId"
+        :resource-id="engineId"
         :schema="schema"
         :table="table"
         :geom="geom"
@@ -25,13 +25,13 @@ import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 
 const route = useRoute()
 
-const resourceId = computed(() => Number(route.query.resource_id || route.query.resourceId || 0))
+const engineId = computed(() => Number(route.query.engine_id || route.query.engineId || 0))
 const schema = computed(() => String(route.query.schema || 'public'))
 const table = computed(() => String(route.query.table || ''))
 const geom = computed(() => String(route.query.geom || 'geom'))
 const srid = computed(() => Number(route.query.srid || 4326))
 const cols = computed(() => String(route.query.cols || '').split(',').filter(Boolean))
-const ready = computed(() => !!(resourceId.value && schema.value && table.value))
+const ready = computed(() => !!(engineId.value && schema.value && table.value))
 </script>
 
 <style scoped>

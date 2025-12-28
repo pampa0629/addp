@@ -33,7 +33,7 @@
       <div v-if="showMap" class="map-container" :style="{ height: mapHeight + 'px' }">
         <VectorTilePreview
           ref="mapRef"
-          :resource-id="resourceId"
+          :resource-id="engineId"
           :schema="schema"
           :table="table"
           :geom="activeGeometryColumn"
@@ -127,7 +127,7 @@ const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
 
 // 资源信息（用于 MVT 预览）
-const resourceId = computed(() => props.data?.resourceId)
+const engineId = computed(() => props.data?.engineId)
 const schema = computed(() => props.data?.schema)
 const table = computed(() => {
   const rawTable = props.data?.table || props.data?.path
@@ -148,7 +148,7 @@ const displayColumns = computed(() => {
 
 // 生成行键
 const tableData = computed(() => {
-  const baseKey = `${props.data?.resourceId || 'res'}-${props.data?.schema || 'schema'}-${props.data?.table || 'table'}`
+  const baseKey = `${props.data?.engineId || 'res'}-${props.data?.schema || 'schema'}-${props.data?.table || 'table'}`
   return rows.value.map((row, index) => ({
     ...row,
     __rowKey: `${baseKey}-${(currentPage.value - 1) * pageSize.value + index}`
@@ -176,7 +176,7 @@ const handleRowClick = async (row) => {
     try {
       // 调用后端 API 查询要素中心点
       const response = await dataExplorerAPI.getFeatureCentroid(
-        resourceId.value,
+        engineId.value,
         schema.value,
         table.value,
         featureId,
@@ -205,7 +205,7 @@ const handlePageChange = (page) => {
 
 // Pre-Cache 处理函数 (两步式：先预览配置，再确认生成)
 const handleQuickView = async () => {
-  if (!resourceId.value || !schema.value || !table.value) {
+  if (!engineId.value || !schema.value || !table.value) {
     ElMessage.warning('缺少必要参数，无法启用预缓存')
     return
   }
@@ -219,7 +219,7 @@ const handleQuickView = async () => {
     quickViewLoading.value = true
 
     // 步骤1: 获取瓦片配置（计算 minZoom 和 maxZoom）
-    const configResponse = await quickViewAPI.getTileConfig(resourceId.value, schema.value, table.value)
+    const configResponse = await quickViewAPI.getTileConfig(engineId.value, schema.value, table.value)
     const tileConfig = configResponse.data
 
     const { min_zoom: calculatedMin, max_zoom: calculatedMax, extent, srid } = tileConfig
@@ -252,7 +252,7 @@ const handleQuickView = async () => {
     }
 
     // 步骤3: 提交任务到后端
-    await quickViewAPI.triggerQuickView(resourceId.value, schema.value, table.value, {
+    await quickViewAPI.triggerQuickView(engineId.value, schema.value, table.value, {
       min_zoom: minZoom,
       max_zoom: maxZoom,
       concurrency: 10,
@@ -279,12 +279,12 @@ const handleQuickView = async () => {
 
 // 获取预缓存状态
 const fetchQuickViewStatus = async () => {
-  if (!resourceId.value || !schema.value || !table.value) {
+  if (!engineId.value || !schema.value || !table.value) {
     return
   }
 
   try {
-    const response = await quickViewAPI.getQuickViewStatus(resourceId.value, schema.value, table.value)
+    const response = await quickViewAPI.getQuickViewStatus(engineId.value, schema.value, table.value)
     const status = response.data?.status
 
     if (status) {
@@ -340,9 +340,9 @@ watch(
 
 // 监听表变化，重新获取预缓存状态
 watch(
-  () => [resourceId.value, schema.value, table.value],
+  () => [engineId.value, schema.value, table.value],
   () => {
-    if (hasGeometry.value && resourceId.value && schema.value && table.value) {
+    if (hasGeometry.value && engineId.value && schema.value && table.value) {
       fetchQuickViewStatus()
     }
   },
@@ -353,7 +353,7 @@ onMounted(() => {
   loadMapConfig()
 
   // 初始化时获取预缓存状态
-  if (hasGeometry.value && resourceId.value && schema.value && table.value) {
+  if (hasGeometry.value && engineId.value && schema.value && table.value) {
     fetchQuickViewStatus()
   }
 })

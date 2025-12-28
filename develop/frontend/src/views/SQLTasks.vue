@@ -68,8 +68,8 @@
 
         <el-table-column label="数据源" width="150">
           <template #default="{ row }">
-            <el-tag v-if="row.resource_id" size="small" type="info">
-              资源 #{{ row.resource_id }}
+            <el-tag v-if="row.engine_id" size="small" type="info">
+              资源 #{{ row.engine_id }}
             </el-tag>
             <span v-else>-</span>
           </template>
@@ -189,7 +189,7 @@
       <SaveSQLDialog
         v-if="showEditDialog"
         v-model="showEditDialog"
-        :resource-id="editingTask?.resource_id"
+        :resource-id="editingTask?.engine_id"
         :sql="editingTask?.content?.sql || ''"
         @saved="handleUpdateTask"
       />

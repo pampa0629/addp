@@ -7,7 +7,7 @@
 
       <el-form :model="queryForm" label-width="120px">
         <el-form-item label="引擎ID">
-          <el-input-number v-model="queryForm.resource_id" :min="1" placeholder="请输入引擎ID" />
+          <el-input-number v-model="queryForm.engine_id" :min="1" placeholder="请输入引擎ID" />
         </el-form-item>
 
         <el-form-item label="Schema">
@@ -132,7 +132,7 @@ const queryForm = ref({
 const queryResult = ref(null)
 
 const handleQuery = async () => {
-  if (!queryForm.value.resource_id || !queryForm.value.table) {
+  if (!queryForm.value.engine_id || !queryForm.value.table) {
     ElMessage.warning('请输入引擎ID和表名')
     return
   }
@@ -141,7 +141,7 @@ const handleQuery = async () => {
     querying.value = true
 
     const requestData = {
-      engine_id: queryForm.value.resource_id,
+      engine_id: queryForm.value.engine_id,
       schema: queryForm.value.schema,
       table: queryForm.value.table,
       page: queryForm.value.page,

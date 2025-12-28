@@ -6,10 +6,10 @@ import (
 
 // ScanLog 扫描日志（用于追踪扫描历史）
 type ScanLog struct {
-	ID         uint  `gorm:"primaryKey" json:"id"`
-	ResourceID uint  `gorm:"not null;index" json:"engine_id"`
-	SchemaID   *uint `gorm:"index" json:"schema_id,omitempty"` // 可选：特定Schema扫描
-	TenantID   uint  `gorm:"not null;index" json:"tenant_id"`
+	ID       uint  `gorm:"primaryKey" json:"id"`
+	EngineID uint  `gorm:"not null;index" json:"engine_id"`
+	SchemaID *uint `gorm:"index" json:"schema_id,omitempty"` // 可选：特定Schema扫描
+	TenantID uint  `gorm:"not null;index" json:"tenant_id"`
 
 	// 扫描类型
 	ScanType  string `gorm:"size:50;not null" json:"scan_type"` // auto/manual/scheduled

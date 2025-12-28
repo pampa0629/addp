@@ -455,7 +455,7 @@ func (p *objectStoragePreviewProvider) tryExtractMetadataFromMeta(
 
 	// 调用Meta提取
 	extracted, err := metaClient.ExtractObjectMetadata(&ExtractObjectMetadataRequest{
-		EngineID: engineID,
+		EngineID:   resourceID,
 		ObjectKey:  objectKey,
 		ObjectData: objReader,
 	})

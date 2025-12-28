@@ -181,13 +181,13 @@ const getComponentProps = (param) => {
   if (param.ui_type === 'resource_select') {
     props.engineTypes = param.resource_types || []
   } else if (param.ui_type === 'schema_select') {
-    props.resourceId = formData.value[param.depends_on] || null
+    props.engineId = formData.value[param.depends_on] || null
   } else if (param.ui_type === 'table_select') {
-    // table_select 依赖两个参数: resource_id 和 schema
-    // 找到 schema 参数的 depends_on (通常是 resource_id)
+    // table_select 依赖两个参数: engine_id 和 schema
+    // 找到 schema 参数的 depends_on (通常是 engine_id)
     const schemaParam = effectiveParameters.value.find(p => p.name === param.depends_on)
     if (schemaParam && schemaParam.depends_on) {
-      props.resourceId = formData.value[schemaParam.depends_on] || null
+      props.engineId = formData.value[schemaParam.depends_on] || null
     }
     props.schema = formData.value[param.depends_on] || null
   }

@@ -50,7 +50,7 @@ type ScanTaskService struct {
 // ListRunsOptions 定义任务运行查询参数
 type ListRunsOptions struct {
 	TaskID        *uint
-	ResourceID    *uint
+	EngineID      *uint
 	Status        string
 	TriggerType   string
 	StorageType   string

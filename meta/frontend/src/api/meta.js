@@ -34,8 +34,8 @@ export default {
   },
 
   // 同步相关
-  syncResource(resourceId) {
-    return client.post(`/meta/sync/${resourceId}`)
+  syncEngine(engineId) {
+    return client.post(`/meta/sync/${engineId}`)
   },
 
   autoSyncAll() {
@@ -71,8 +71,8 @@ export default {
   },
 
   // 元数据扫描（旧API，保留兼容）
-  getSchemasOld(resourceId) {
-    return client.get(`/meta/scan/schemas/${resourceId}`)
+  getSchemasOld(engineId) {
+    return client.get(`/meta/scan/schemas/${engineId}`)
   },
 
   scanMetadata(data) {
@@ -87,13 +87,13 @@ export default {
   },
 
   // 获取指定引擎的Schema列表
-  getSchemas(resourceId) {
-    return client.get(`/meta/schemas/${resourceId}`)
+  getSchemas(engineId) {
+    return client.get(`/meta/schemas/${engineId}`)
   },
 
   // 获取指定引擎的可用Schema列表（未扫描的）
-  listAvailableSchemas(resourceId) {
-    return client.get(`/meta/schemas/${resourceId}/available`)
+  listAvailableSchemas(engineId) {
+    return client.get(`/meta/schemas/${engineId}/available`)
   },
 
   // 自动扫描所有未扫描的引擎
@@ -102,50 +102,50 @@ export default {
   },
 
   // 扫描指定引擎的指定Schema
-  scanResource(resourceId, schemaNames) {
+  scanEngine(engineId, schemaNames) {
     return client.post('/meta/scan/resource', {
-      engine_id: resourceId,
+      engine_id: engineId,
       schema_names: schemaNames
     })
   },
 
-  getScanRuns(resourceId, params = {}) {
+  getScanRuns(engineId, params = {}) {
     return client.get('/meta/scan/runs', { params }).then(res => {
       const data = res?.data ?? res
       const items = Array.isArray(data) ? data : data.items || []
       const total = data.total || items.length || 0
-      if (!resourceId) {
+      if (!engineId) {
         return { items, total }
       }
-      const filtered = items.filter(run => run.resource_id === resourceId)
+      const filtered = items.filter(run => run.engine_id === engineId)
       return { items: filtered, total: data.total || filtered.length || 0 }
     })
   },
 
-  getScanTasks(resourceId) {
+  getScanTasks(engineId) {
     return client.get('/meta/scan/tasks').then(res => {
       const tasks = res?.data ?? []
-      if (!resourceId) {
+      if (!engineId) {
         return tasks
       }
-      return tasks.filter(task => task.resource_id === resourceId)
+      return tasks.filter(task => task.engine_id === engineId)
     })
   },
 
-  createScanTask(resourceId, payload) {
+  createScanTask(engineId, payload) {
     return client
       .post('/meta/scan/tasks', {
         ...payload,
-        engine_id: resourceId
+        engine_id: engineId
       })
       .then(res => res?.data ?? res)
   },
 
-  updateScanTask(resourceId, taskId, payload) {
+  updateScanTask(engineId, taskId, payload) {
     return client
       .put(`/meta/scan/tasks/${taskId}`, {
         ...payload,
-        engine_id: resourceId
+        engine_id: engineId
       })
       .then(res => res?.data ?? res)
   }

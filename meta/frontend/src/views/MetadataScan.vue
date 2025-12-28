@@ -243,10 +243,10 @@ let resizeStartWidth = leftPanelWidth.value
 const resourcePlanMap = computed(() => {
   const map = {}
   for (const task of allScanTasks.value) {
-    if (!task || typeof task.resource_id !== 'number') continue
+    if (!task || typeof task.engine_id !== 'number') continue
     const desc = typeof task.description === 'string' ? task.description : ''
     if (!desc.includes(AUTO_SCHEDULE_DESC_MARK)) continue
-    map[task.resource_id] = {
+    map[task.engine_id] = {
       enabled: !!task.enabled,
       description: formatScheduleDescription(task),
       nextRun: task.next_run_at ? formatDateTime(task.next_run_at) : ''
@@ -259,7 +259,7 @@ const autoScheduleTask = computed(() => {
   if (!selectedResource.value) return null
   return (
     allScanTasks.value.find(task => {
-      if (!task || task.resource_id !== selectedResource.value.id) return false
+      if (!task || task.engine_id !== selectedResource.value.id) return false
       const desc = typeof task.description === 'string' ? task.description : ''
       return desc.includes(AUTO_SCHEDULE_DESC_MARK)
     }) || null

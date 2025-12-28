@@ -6,16 +6,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// MetaItem 表示资源下的最终数据项，例如表或对象
+// MetaItem 表示引擎下的最终数据项，例如表或对象
 type MetaItem struct {
 	ID                uint           `gorm:"primaryKey" json:"id"`
-	TenantID          uint           `gorm:"not null;index:idx_meta_item_res_tenant,priority:1" json:"tenant_id"`
-	ResID             uint           `gorm:"not null;index:idx_meta_item_res_tenant,priority:2" json:"res_id"`
+	TenantID          uint           `gorm:"not null;index:idx_meta_item_engine_tenant,priority:1" json:"tenant_id"`
+	EngineID          uint           `gorm:"column:engine_id;not null;index:idx_meta_item_engine_tenant,priority:2" json:"engine_id"`
 	NodeID            uint           `gorm:"not null;index" json:"node_id"`
 	ItemType          string         `gorm:"size:64;not null;index:idx_meta_item_type" json:"item_type"`
 	Name              string         `gorm:"size:255;not null" json:"name"`
 	FullName          string         `gorm:"type:text" json:"full_name,omitempty"`
-	Fingerprint       string         `gorm:"size:64;not null;uniqueIndex:idx_meta_item_fingerprint" json:"fingerprint" comment:"数据指纹：基于res_id+路径的SHA256哈希，用于去重和数据血缘追踪"`
+	Fingerprint       string         `gorm:"size:64;not null;uniqueIndex:idx_meta_item_fingerprint" json:"fingerprint" comment:"数据指纹：基于engine_id+路径的SHA256哈希，用于去重和数据血缘追踪"`
 	Status            string         `gorm:"size:20;default:'active'" json:"status"`
 	MetaSchemaVersion int            `gorm:"default:1" json:"meta_schema_version"`
 	RowCount          *int64         `json:"row_count,omitempty"`

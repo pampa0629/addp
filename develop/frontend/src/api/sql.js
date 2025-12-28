@@ -2,13 +2,13 @@ import client from './client'
 
 /**
  * 执行 SQL
- * @param {number} resourceId - 数据源ID
+ * @param {number} engineId - 数据源ID
  * @param {string} sql - SQL语句
  * @param {number} timeout - 超时时间（毫秒）
  */
-export const executeSQL = (resourceId, sql, timeout = 30000) => {
+export const executeSQL = (engineId, sql, timeout = 30000) => {
   return client.post('/develop/execute', {
-    engine_id: resourceId,
+    engine_id: engineId,
     sql: sql,
     timeout: timeout
   })
@@ -16,10 +16,10 @@ export const executeSQL = (resourceId, sql, timeout = 30000) => {
 
 /**
  * 测试数据库连接
- * @param {number} resourceId - 数据源ID
+ * @param {number} engineId - 数据源ID
  */
-export const testConnection = (resourceId) => {
-  return client.get(`/develop/test/${resourceId}`)
+export const testConnection = (engineId) => {
+  return client.get(`/develop/test/${engineId}`)
 }
 
 /**

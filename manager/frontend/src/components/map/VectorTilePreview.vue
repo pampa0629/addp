@@ -22,7 +22,7 @@ import { defaults as defaultControls } from 'ol/control.js'
 import client from '@/api/client'
 
 const props = defineProps({
-  resourceId: { type: [Number, String], required: true },
+  engineId: { type: [Number, String], required: true },
   schema: { type: String, required: true },
   table: { type: String, required: true },
   geom: { type: String, default: 'geom' },

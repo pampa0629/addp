@@ -65,7 +65,7 @@ let previewRequestId = 0
 const pendingRouteSelection = ref(null)
 
 const buildSnapshotFromQuery = (query = {}) => {
-  const resourceKey = query.resourceId ?? query.resource_id ?? query.resource
+  const resourceKey = query.engineId ?? query.engine_id ?? query.resource
   const schema = query.schema ?? query.bucket ?? ''
   const objectPath = query.objectPath ?? query.path ?? query.table ?? ''
   if (!resourceKey) return null
@@ -75,7 +75,7 @@ const buildSnapshotFromQuery = (query = {}) => {
   if (!Number.isNaN(numericId) && numericId > 0) {
     const nodeType = query.nodeType || (objectPath ? 'object' : '')
     return {
-      resourceId: numericId,
+      engineId: numericId,
       schema,
       path: objectPath,
       table: objectPath,
@@ -98,7 +98,7 @@ const buildSnapshotFromQuery = (query = {}) => {
 
   const nodeType = query.nodeType || (objectPath ? 'object' : '')
   return {
-    resourceId: matchingResource.id,
+    engineId: matchingResource.id,
     schema,
     path: objectPath,
     table: objectPath,
@@ -141,7 +141,7 @@ const snapshotNode = (node) => {
   return {
     id: node.id,
     type: node.type,
-    resourceId: node.resourceId,
+    engineId: node.engineId,
     schema: node.schema || '',
     path: node.path || '',
     table: node.table || ''
@@ -163,7 +163,7 @@ const nodesMatch = (candidate, snapshot) => {
   }
   const normalize = (value) => (value ?? '').toString()
   return (
-    Number(candidate.resourceId) === Number(snapshot.resourceId) &&
+    Number(candidate.engineId) === Number(snapshot.engineId) &&
     normalize(candidate.type) === normalize(snapshot.type) &&
     normalize(candidate.schema) === normalize(snapshot.schema) &&
     normalize(candidate.path) === normalize(snapshot.path) &&
@@ -200,11 +200,11 @@ const restoreSelectionFromSnapshot = (snapshot) => {
 const normalizePreviewPayload = (data, node) => {
   if (!data || !node) return data
   const normalized = { ...data }
-  const resourceId = node.resourceId ?? node.resource_id ?? null
+  const engineId = node.engineId ?? node.engine_id ?? null
 
-  if (resourceId != null) {
-    if (normalized.resourceId == null) normalized.resourceId = resourceId
-    if (normalized.resource_id == null) normalized.resource_id = resourceId
+  if (engineId != null) {
+    if (normalized.engineId == null) normalized.engineId = engineId
+    if (normalized.engine_id == null) normalized.engine_id = engineId
   }
 
   if (!normalized.schema && node.schema) {
@@ -216,9 +216,9 @@ const normalizePreviewPayload = (data, node) => {
 
   if (normalized.object && typeof normalized.object === 'object') {
     const object = { ...normalized.object }
-    if (resourceId != null) {
-      if (object.resource_id == null) object.resource_id = resourceId
-      if (object.resourceId == null) object.resourceId = resourceId
+    if (engineId != null) {
+      if (object.engine_id == null) object.engine_id = engineId
+      if (object.engineId == null) object.engineId = engineId
     }
     if (!object.bucket && node.schema) {
       object.bucket = node.schema
@@ -403,10 +403,10 @@ const loadEngines = async () => {
 /**
  * 加载引擎树（新接口）
  */
-const loadModernTrees = async (resourceIds) => {
+const loadModernTrees = async (engineIds) => {
   const targetIds =
-    Array.isArray(resourceIds) && resourceIds.length
-      ? resourceIds
+    Array.isArray(engineIds) && engineIds.length
+      ? engineIds
       : engines.value.map((item) => item.id)
 
   if (!targetIds.length) {
@@ -416,7 +416,7 @@ const loadModernTrees = async (resourceIds) => {
     return
   }
 
-  console.log('[DataExplorer] 刷新引擎树...', { resourceIds: targetIds })
+  console.log('[DataExplorer] 刷新引擎树...', { engineIds: targetIds })
   loadingTree.value = true
   try {
     const results = await Promise.allSettled(
@@ -503,7 +503,7 @@ const loadTree = async (options = {}) => {
   if (useLegacyEndpoint.value) {
     await loadLegacyTree(options)
   } else {
-    await loadModernTrees(options.resourceIds)
+    await loadModernTrees(options.engineIds)
   }
 }
 
@@ -517,7 +517,7 @@ const loadPreview = async () => {
   loadingPreview.value = true
   try {
     const params = {
-      engine_id: selectedNode.value.resourceId,
+      engine_id: selectedNode.value.engineId,
       schema: selectedNode.value.schema,
       table: selectedNode.value.path ?? selectedNode.value.table ?? '',
       page: currentPage.value,
@@ -573,20 +573,20 @@ const handleNavigate = (child) => {
 
   const nodeType = child.type === 'prefix' ? 'directory' : (child.type || '').toLowerCase()
   const schema = selectedNode.value.schema
-  const resourceId = selectedNode.value.resourceId
+  const engineId = selectedNode.value.engineId
   const resourceType = selectedNode.value.resourceType
 
-  if (!schema || !resourceId) return
+  if (!schema || !engineId) return
 
   const path = child.path || child.name || ''
 
   // 创建新的节点
   selectedNode.value = {
-    id: makeNodeId(nodeType, resourceId, schema, path || Math.random()),
+    id: makeNodeId(nodeType, engineId, schema, path || Math.random()),
     type: nodeType,
     nodeType,
     label: child.name,
-    resourceId,
+    engineId,
     resourceType,
     schema,
     table: path,
@@ -600,7 +600,7 @@ const handleNavigate = (child) => {
 }
 
 const handleNodeRefresh = async (node) => {
-  if (!node || !node.resourceId) return
+  if (!node || !node.engineId) return
 
   if (refreshingNodeIds.value.includes(node.id)) return
 
@@ -634,7 +634,7 @@ const handleNodeRefresh = async (node) => {
       resource_type: node.resourceType
     }
 
-    await dataExplorerAPI.refreshNode(node.resourceId, payload)
+    await dataExplorerAPI.refreshNode(node.engineId, payload)
     ElMessage.success('刷新完成')
 
     await loadTree()

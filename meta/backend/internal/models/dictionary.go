@@ -46,7 +46,7 @@ func (MetaJSONSchema) TableName() string {
 type MetaChangeLog struct {
 	ID           uint            `gorm:"primaryKey" json:"id"`
 	TenantID     *uint           `json:"tenant_id,omitempty"`
-	ResID        *uint           `json:"res_id,omitempty"`
+	EngineID     *uint           `json:"engine_id,omitempty"`
 	NodeID       *uint           `json:"node_id,omitempty"`
 	ItemID       *uint           `json:"item_id,omitempty"`
 	ChangeType   string          `gorm:"size:64;not null" json:"change_type"`

@@ -966,7 +966,7 @@ func (s *MetadataService) StreamVideo(
 	tenantID *uint,
 ) (io.ReadCloser, int64, string, string, error) {
 	// 获取resource信息
-	resource, err := s.getResourceForTenant(engineID, tenantID)
+	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
 		return nil, 0, "", "", ErrResourceAccessDenied
 	}

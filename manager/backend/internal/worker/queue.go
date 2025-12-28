@@ -41,7 +41,7 @@ func NewTaskQueue(redisAddr, redisPassword string) *TaskQueue {
 // QuickViewTaskPayload 快显任务载荷
 type QuickViewTaskPayload struct {
 	TenantID          uint    `json:"tenant_id"`
-	ResourceID        uint    `json:"engine_id"`
+	EngineID          uint    `json:"engine_id"`
 	SchemaName        string  `json:"schema_name"`
 	TableName         string  `json:"table_name"`
 	GeomColumn        string  `json:"geom_column"`

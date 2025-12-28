@@ -12,7 +12,7 @@
 
       <el-form :model="filters" label-width="100px" inline @submit.prevent>
         <el-form-item label="资源">
-          <el-select v-model="filters.resourceId" placeholder="全部" clearable style="width: 220px">
+          <el-select v-model="filters.engineId" placeholder="全部" clearable style="width: 220px">
             <el-option
               v-for="engine in engines"
               :key="resource.id"
@@ -149,7 +149,7 @@ const pageSize = 20
 const total = ref(0)
 
 const filters = reactive({
-  resourceId: null,
+  engineId: null,
   status: '',
   triggerType: '',
   storageType: '',
@@ -223,7 +223,7 @@ const loadTaskRuns = async () => {
     const params = {
       page: page.value,
       page_size: pageSize,
-      engine_id: filters.resourceId || undefined,
+      engine_id: filters.engineId || undefined,
       status: filters.status || undefined,
       trigger_type: filters.triggerType || undefined,
       storage_type: filters.storageType || undefined,
@@ -246,7 +246,7 @@ const applyFilters = () => {
 }
 
 const resetFilters = () => {
-  filters.resourceId = null
+  filters.engineId = null
   filters.status = ''
   filters.triggerType = ''
   filters.storageType = ''

@@ -29,7 +29,7 @@ func NewMetaClient(baseURL, token string) *MetaClient {
 
 // ExtractObjectMetadataRequest 提取元数据请求
 type ExtractObjectMetadataRequest struct {
-	ResourceID uint
+	EngineID   uint
 	ObjectKey  string
 	ObjectData io.Reader
 }

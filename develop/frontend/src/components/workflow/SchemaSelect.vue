@@ -5,7 +5,7 @@
     placeholder="请选择 Schema"
     filterable
     :loading="loading"
-    :disabled="!resourceId"
+    :disabled="!engineId"
   >
     <el-option
       v-for="schema in schemas"
@@ -31,7 +31,7 @@ const props = defineProps({
     type: String,
     default: null
   },
-  resourceId: {
+  engineId: {
     type: [Number, String],
     default: null
   }
@@ -43,15 +43,15 @@ const schemas = ref([])
 const loading = ref(false)
 
 // 加载 Schema 列表
-const loadSchemas = async (resourceId) => {
-  if (!resourceId) {
+const loadSchemas = async (engineId) => {
+  if (!engineId) {
     schemas.value = []
     return
   }
 
   loading.value = true
   try {
-    const data = await listSchemas(resourceId)
+    const data = await listSchemas(engineId)
     schemas.value = data || []
   } catch (error) {
     console.error('获取 Schema 列表失败:', error)
@@ -68,9 +68,9 @@ const handleChange = (value) => {
   emit('change', value)
 }
 
-// 监听 resourceId 变化
+// 监听 engineId 变化
 watch(
-  () => props.resourceId,
+  () => props.engineId,
   (newResourceId) => {
     loadSchemas(newResourceId)
   },

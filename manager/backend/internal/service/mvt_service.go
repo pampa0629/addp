@@ -36,7 +36,7 @@ func NewMVTService(meta *repository.MetadataRepository, res *repository.Resource
 func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql.DB, error) {
 	// 1. 先尝试读锁获取已有连接池
 	s.poolMutex.RLock()
-	if pool, exists := s.dbPools[resourceID]; exists {
+	if pool, exists := s.dbPools[engineID]; exists {
 		s.poolMutex.RUnlock()
 		// 验证连接是否有效
 		if err := pool.PingContext(ctx); err == nil {
@@ -53,7 +53,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql
 	defer s.poolMutex.Unlock()
 
 	// 双重检查 (可能其他 goroutine 已创建)
-	if pool, exists := s.dbPools[resourceID]; exists {
+	if pool, exists := s.dbPools[engineID]; exists {
 		if err := pool.PingContext(ctx); err == nil {
 			return pool, nil
 		}
@@ -99,7 +99,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql
 	}
 
 	// 9. 缓存连接池
-	s.dbPools[resourceID] = db
+	s.dbPools[engineID] = db
 	logger.L().Info("✅ 创建数据库连接池",
 		"engine_id", engineID,
 		"max_open_conns", 25,
@@ -165,7 +165,7 @@ func (s *MVTService) GetTile(
 	srid int,
 ) ([]byte, error) {
 	// 1. 验证租户权限
-	res, err := s.resourceRepo.GetByID(engineID)
+	res, err := s.resourceRepo.GetByID(resourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (s *MVTService) GetTile(
 	}
 
 	// 2. ✅ 获取连接池 (复用已有连接)
-	db, err := s.getOrCreateDBPool(ctx, engineID)
+	db, err := s.getOrCreateDBPool(ctx, resourceID)
 	if err != nil {
 		return nil, fmt.Errorf("get db pool failed: %w", err)
 	}
@@ -215,7 +215,7 @@ func (s *MVTService) GetTile(
 	if scanErr != nil {
 		logger.L().Error("MVT query failed",
 			"error", scanErr,
-			"engine_id", engineID,
+			"engine_id", resourceID,
 			"schema", schema,
 			"table", table,
 			"z", z, "x", x, "y", y)

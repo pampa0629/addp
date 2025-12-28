@@ -109,7 +109,7 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  resourceId: {
+  engineId: {
     type: Number,
     default: null
   },
@@ -200,7 +200,7 @@ const handleSave = async () => {
     const taskData = {
       name: formData.value.name,
       display_name: formData.value.display_name || formData.value.name,
-      engine_id: props.resourceId,
+      engine_id: props.engineId,
       sql: props.sql,
       description: formData.value.description,
       tags: formData.value.tags,

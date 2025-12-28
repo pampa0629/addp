@@ -224,7 +224,7 @@ func (s *ScanServiceNew) upsertNode(tenantID, engineID uint, parent *models.Meta
 	if err == gorm.ErrRecordNotFound {
 		node = models.MetaNode{
 			TenantID:     tenantID,
-			ResID:        engineID,
+			EngineID:     engineID,
 			ParentNodeID: parentID,
 			NodeType:     nodeType,
 			Name:         name,
@@ -388,7 +388,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		// 注意：当attrs为nil时（basic扫描保留已有数据），需要先查找已有记录获取指纹
 		var existingItem models.MetaItem
 		err := s.db.Where("res_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-			resourceID, node.ID, itemType, name).First(&existingItem).Error
+			engineID, node.ID, itemType, name).First(&existingItem).Error
 		if err == nil {
 			fingerprint = existingItem.Fingerprint
 		} else {
@@ -405,7 +405,7 @@ func (s *ScanServiceNew) upsertItemSelective(
 		// 创建新记录
 		item = models.MetaItem{
 			TenantID:          tenantID,
-			ResID:             engineID,
+			EngineID:          engineID,
 			NodeID:            node.ID,
 			ItemType:          itemType,
 			Name:              name,
@@ -528,11 +528,11 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 
 	// 对每个资源进行扫描
 	for _, engine := range engines {
-		schemas, tables, fields, err := s.scanResource(resource, tenantID, scanLog.ID)
+		schemas, tables, fields, err := s.scanResource(engine, tenantID, scanLog.ID)
 		if err != nil {
 			s.log.Warn("资源扫描失败",
-				"engine_id", resource.ID,
-				"resource_name", resource.Name,
+				"engine_id", engine.ID,
+				"resource_name", engine.Name,
 				"tenant_id", tenantID,
 				"scan_log_id", scanLog.ID,
 				"error", err,
@@ -543,7 +543,7 @@ func (s *ScanServiceNew) AutoScanUnscanned(tenantID uint) (*models.ScanResponse,
 		totalSchemas += schemas
 		totalTables += tables
 		totalFields += fields
-		scannedResourceIDs = append(scannedResourceIDs, resource.ID)
+		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
 	}
 
 	// 更新扫描日志
@@ -808,7 +808,7 @@ func (s *ScanServiceNew) completeImmediateRun(run *models.ScanTaskRun, summary m
 
 // scanResource 扫描单个资源的所有未扫描Schema
 func (s *ScanServiceNew) scanResource(resource *commonModels.Engine, tenantID uint, scanLogID uint) (int, int, int, error) {
-	resourceID := resource.ID
+	engineID := resource.ID
 
 	startFields := append(connectionLogFields(resource),
 		"scan_log_id", scanLogID,
@@ -2153,7 +2153,7 @@ func (s *ScanServiceNew) fetchObjectContent(ctx context.Context, engineID, tenan
 
 func (s *ScanServiceNew) getObjectClient(engineID, tenantID uint) (*minio.Client, error) {
 	s.objectClientMu.Lock()
-	client, ok := s.objectClients[resourceID]
+	client, ok := s.objectClients[engineID]
 	s.objectClientMu.Unlock()
 	if ok && client != nil {
 		return client, nil
@@ -3603,7 +3603,7 @@ func convertToMetaNodeLite(node models.MetaNode) models.MetaNodeLite {
 	return models.MetaNodeLite{
 		ID:             node.ID,
 		TenantID:       node.TenantID,
-		ResID:          node.ResID,
+		ResID:          node.EngineID,
 		ParentNodeID:   node.ParentNodeID,
 		NodeType:       node.NodeType,
 		Name:           node.Name,
@@ -3629,7 +3629,7 @@ func convertToMetaItemLite(item models.MetaItem) models.MetaItemLite {
 	return models.MetaItemLite{
 		ID:              item.ID,
 		TenantID:        item.TenantID,
-		ResID:           item.ResID,
+		ResID:           item.EngineID,
 		NodeID:          item.NodeID,
 		ItemType:        item.ItemType,
 		Name:            item.Name,

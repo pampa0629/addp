@@ -76,7 +76,7 @@ type ObjectNode struct {
 type ScanTaskUpsertRequest struct {
 	Name           string   `json:"name" binding:"required"`
 	Description    string   `json:"description"`
-	ResourceID     uint     `json:"engine_id" binding:"required"`
+	EngineID       uint     `json:"engine_id" binding:"required"`
 	SchemaNames    []string `json:"schema_names"`
 	ObjectPaths    []string `json:"object_paths"`
 	ScanDepth      string   `json:"scan_depth"`
@@ -107,7 +107,7 @@ type MetadataTreeResponse struct {
 type MetaNodeLite struct {
 	ID             uint                   `json:"id"`
 	TenantID       uint                   `json:"tenant_id"`
-	ResID          uint                   `json:"res_id"`
+	EngineID       uint                   `json:"engine_id"`
 	ParentNodeID   *uint                  `json:"parent_node_id,omitempty"`
 	NodeType       string                 `json:"node_type"`
 	Name           string                 `json:"name"`
@@ -125,7 +125,7 @@ type MetaNodeLite struct {
 type MetaItemLite struct {
 	ID              uint                   `json:"id"`
 	TenantID        uint                   `json:"tenant_id"`
-	ResID           uint                   `json:"res_id"`
+	EngineID        uint                   `json:"engine_id"`
 	NodeID          uint                   `json:"node_id"`
 	ItemType        string                 `json:"item_type"`
 	Name            string                 `json:"name"`

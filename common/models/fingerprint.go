@@ -10,7 +10,7 @@ import (
 // 用于去重和数据血缘追踪
 //
 // 指纹计算规则:
-//   - 基于 resID + identifier 的 SHA256 哈希
+//   - 基于 engineID + identifier 的 SHA256 哈希
 //   - identifier 是数据项的唯一标识，不同存储类型格式不同
 //   - 同一数据项的指纹始终不变，无论数据内容如何变化
 //
@@ -27,7 +27,7 @@ func GenerateItemFingerprint(resID uint, identifier string) string {
 // GenerateObjectFingerprint 为对象存储生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.engines 表）
+//   - resID: 引擎ID（来自 system.engines 表）
 //   - bucket: 存储桶名称
 //   - objectPath: 对象路径（相对于bucket根目录）
 //
@@ -42,7 +42,7 @@ func GenerateObjectFingerprint(resID uint, bucket, objectPath string) string {
 // GenerateTableFingerprint 为关系数据库表生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.engines 表）
+//   - resID: 引擎ID（来自 system.engines 表）
 //   - schema: 模式名称（如 "public", "metadata"）
 //   - tableName: 表名称
 //
@@ -59,7 +59,7 @@ func GenerateTableFingerprint(resID uint, schema, tableName string) string {
 // GenerateFileFingerprint 为文件系统文件生成指纹
 //
 // 参数:
-//   - resID: 资源ID（来自 system.engines 表）
+//   - resID: 引擎ID（来自 system.engines 表）
 //   - filePath: 文件路径（绝对路径）
 //
 // 示例:
