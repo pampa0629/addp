@@ -1,0 +1,235 @@
+# Develop 模块说明
+
+## 核心职责
+
+Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能：
+
+1. **SQL 查询执行** - 支持在线 SQL 查询，连接多种数据库（PostgreSQL、MySQL、MongoDB 等）
+2. **GIS 工作流管理** - 可视化编辑和执行空间数据工作流（基于 GeoPandas Engine）
+3. **Jupyter Notebook 集成** - 支持 Python 数据分析和机器学习
+4. **算子发现** - 聚合所有计算引擎的算子（GeoPandas、Spark Sedona 等）
+5. **执行历史管理** - 保存 SQL/工作流执行记录，支持历史回溯
+
+## 关键架构
+
+### 统一执行架构
+
+```
+前端请求（SQL/工作流/Notebook）
+  ↓
+DevExecutor（统一执行器）
+  ├─ SQL 执行 → SQLEngineService
+  │  ├─ 通过 System 获取数据库连接
+  │  ├─ 使用 common/dbbridge 执行查询
+  │  └─ 返回查询结果
+  ├─ 工作流执行 → WorkflowEngineService
+  │  ├─ 解析工作流 JSON（DAG 结构）
+  │  ├─ 调用 GeoPandas Engine API（21 个空间算子）
+  │  ├─ 或调用 Spark Sedona Engine（大数据空间计算）
+  │  └─ 返回执行结果（GeoJSON/DataFrame）
+  └─ Notebook 执行 → JupyterService
+     ├─ 创建/管理 Jupyter Kernel
+     ├─ 执行 Python 代码
+     └─ 返回执行结果（含 matplotlib 图表）
+  ↓
+DevExecutionRepository（执行记录持久化）
+  └─ develop.dev_execution 表
+```
+
+### 算子发现服务
+
+Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流画布）：
+
+- **GeoPandas Engine** - 21 个空间算子（Buffer、Clip、Union、Intersect 等）
+- **Spark Sedona Engine** - 大数据空间算子（分布式计算）
+
+前端通过算子发现 API 获取所有可用算子，动态构建工作流编辑器的算子面板。
+
+**注意**：Meta、Transfer、Manager 模块提供的是**任务**（Tasks），不是算子，它们主要用于 Orchestrator 工作流编排。
+
+## 重要文件位置
+
+### 核心服务文件
+
+- [dev_executor.go](backend/internal/service/dev_executor.go) - **统一执行器**（调度 SQL/工作流/Notebook 执行）
+- [sql_engine_service.go](backend/internal/service/sql_engine_service.go) - SQL 执行服务
+- [workflow_engine_service.go](backend/internal/service/workflow_engine_service.go) - GIS 工作流执行服务
+- [jupyter_service.go](backend/internal/service/jupyter_service.go) - Jupyter Notebook 服务
+- [operator_discovery_service.go](backend/internal/service/operator_discovery_service.go) - **算子发现服务**（聚合所有引擎算子）
+- [dev_item_service.go](backend/internal/service/dev_item_service.go) - 工作项（SQL/工作流）管理服务
+
+### API 路由文件
+
+- [backend/internal/api/router.go](backend/internal/api/router.go) - HTTP 路由定义
+- [backend/internal/api/sql_handler.go](backend/internal/api/sql_handler.go) - SQL 查询 API
+- [backend/internal/api/dev_execution_handler.go](backend/internal/api/dev_execution_handler.go) - 执行管理 API
+- [backend/internal/api/operator_handler.go](backend/internal/api/operator_handler.go) - 算子发现 API
+- [backend/internal/api/notebook_handler.go](backend/internal/api/notebook_handler.go) - Jupyter Notebook API
+
+### 前端视图文件
+
+- [frontend/src/views/SQLWorkbench.vue](frontend/src/views/SQLWorkbench.vue) - SQL 工作台
+- [frontend/src/views/WorkflowEditor.vue](frontend/src/views/WorkflowEditor.vue) - GIS 工作流编辑器
+- [frontend/src/views/NotebookEditor.vue](frontend/src/views/NotebookEditor.vue) - Jupyter Notebook 编辑器
+- [frontend/src/views/ExecutionHistory.vue](frontend/src/views/ExecutionHistory.vue) - 执行历史查看
+
+### 配置文件
+
+- [backend/internal/config/config.go](backend/internal/config/config.go) - 配置加载逻辑
+- [.env](../.env) - 环境变量（`DEVELOP_*` 前缀）
+
+## 常见开发场景
+
+### 场景 1：执行 SQL 查询
+
+```bash
+# 1. 通过 API 执行 SQL
+curl -X POST http://localhost:8084/api/v1/sql/execute \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "engine_id": 1,
+    "sql": "SELECT * FROM public.cities LIMIT 10",
+    "save_as_dev_item": true,
+    "item_name": "查询前10个城市"
+  }'
+
+# 2. 查看执行结果
+# 返回 JSON: { "columns": [...], "rows": [...], "execution_id": 123 }
+
+# 3. 查看执行历史
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:8084/api/v1/executions?type=sql&limit=20"
+```
+
+### 场景 2：创建 GIS 工作流
+
+```bash
+# 1. 获取可用算子
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8084/api/v1/operators
+
+# 2. 创建工作流（JSON 定义）
+curl -X POST http://localhost:8084/api/v1/workflows \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "缓冲区分析",
+    "description": "对城市点创建1000米缓冲区",
+    "workflow_data": {
+      "nodes": [
+        {"id": "1", "type": "buffer", "params": {"distance": 1000}},
+        {"id": "2", "type": "to_geojson"}
+      ],
+      "edges": [{"from": "1", "to": "2"}]
+    }
+  }'
+
+# 3. 执行工作流
+curl -X POST http://localhost:8084/api/v1/workflows/123/execute \
+  -H "Authorization: Bearer <token>" \
+  -d '{"input_data": "public.cities"}'
+```
+
+### 场景 3：调试工作流执行失败
+
+```bash
+# 1. 查看失败的执行记录
+curl -H "Authorization: Bearer <token>" \
+  "http://localhost:8084/api/v1/executions?status=failed&limit=10"
+
+# 2. 查看详细错误信息
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8084/api/v1/executions/123
+
+# 3. 查看 Develop 后端日志
+tail -f logs/develop-backend.log | grep "execution_id=123"
+
+# 4. 检查 GeoPandas Engine 日志（如果是工作流错误）
+tail -f logs/geopandas-engine.log
+```
+
+## 注意事项
+
+### 1. SQL 注入防护
+
+Develop 模块允许用户执行任意 SQL（在其权限范围内），存在潜在的安全风险：
+
+- ✅ **用户隔离** - 只能查询自己租户的数据库
+- ✅ **权限继承** - 使用数据库连接的原始权限（不做提权）
+- ❌ **不做 SQL 语法检查** - 允许执行 DROP/TRUNCATE 等危险操作（用户自己负责）
+
+**建议**：在生产环境中配置数据库账号为只读权限，或限制危险操作。
+
+### 2. 工作流版本管理
+
+工作流定义存储在 `develop.dev_item` 表的 `content` 字段（JSONB）：
+
+- 每次修改工作流会覆盖原内容（不保留历史版本）
+- 如需版本管理，可在前端实现版本号逻辑（存储到 `metadata` 字段）
+
+### 3. GeoPandas 内存管理
+
+GeoPandas Engine 在内存中处理空间数据（GeoDataFrame）：
+
+- **内存限制** - 受 Python 进程内存限制（默认 4GB）
+- **大数据处理** - 对于超大数据集（>100万行），使用 Spark Sedona Engine
+- **OOM 风险** - 多个并发工作流可能导致内存不足
+
+**优化建议**：
+- 限制输入数据大小（前端提示用户先筛选数据）
+- 配置 GeoPandas Engine 的最大内存限制
+- 使用 Spark Sedona 处理大规模数据
+
+### 4. 与其他模块的交互
+
+- **System 模块** - 获取数据库连接信息（解密后的 ConnectionInfo）
+- **GeoPandas/Spark Engine** - 执行空间计算工作流（提供算子）
+- **Jupyter Engine** - 执行 Python 代码和数据分析
+
+### 5. 执行记录清理
+
+执行记录会不断累积，建议定期清理：
+
+```sql
+-- 删除 30 天前的执行记录
+DELETE FROM develop.dev_execution
+WHERE created_at < NOW() - INTERVAL '30 days';
+```
+
+## 典型开发工作流
+
+### 修改 Develop 后端代码后
+
+```bash
+# 1. 重启 Develop 后端服务
+bash scripts/dev/restart.sh -develop
+
+# 2. 查看启动日志
+tail -f logs/develop-backend.log
+
+# 3. 测试 API
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8084/health
+```
+
+### 添加新算子到工作流编辑器
+
+```bash
+# 1. 在 GeoPandas Engine 中添加新算子实现
+# 2. 在 OperatorDiscoveryService 中注册新算子
+# 3. 重启 Develop 服务
+bash scripts/dev/restart.sh -develop
+
+# 4. 前端调用算子发现 API 获取新算子
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8084/api/v1/operators
+
+# 5. 前端工作流编辑器会自动显示新算子
+```
+
+## 相关文档
+
+- **GeoPandas Engine 说明** - [engines/geopandas/README.md](../engines/geopandas/README.md)
+- **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
+- **共享数据库桥接** - [common/dbbridge/README.md](../common/dbbridge/README.md)
