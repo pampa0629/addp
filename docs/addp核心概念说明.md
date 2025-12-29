@@ -479,26 +479,20 @@ ADDP 支持多种数据类型的预览:
 
 ### 算子工作流 (Operator Workflow)
 
-**算子工作流** 是基于**数据处理算子**的可视化 DAG 工作流,用于空间数据分析和处理。
-
+**算子工作流** 是基于**数据处理算子**的可视化 DAG 工作流,用于空间和非空间的数据分析和处理。
+ 
 **核心特点**:
 - **节点粒度**: 细粒度算子(如 buffer、intersection、centroid)
 - **DAG 层级**: 算子级别的有向无环图
 - **数据传递**: GeoDataFrame 在内存中传递
 - **执行引擎**: GeoPandas (内存计算) 或 Spark Sedona (分布式计算)
-- **适用场景**: 空间数据分析、地理计算
+- **适用场景**: 数据分析、地理计算
 
 **算子** 是工作流中的计算节点,每个算子执行一个特定的数据处理操作:
 - **输入**: 上游算子的输出(GeoDataFrame)
 - **参数**: 算子特定的配置参数
 - **输出**: 处理后的 GeoDataFrame
 
-**21 个空间算子分类**:
-- **数据 I/O**: read_file (读取 Shapefile/GeoJSON)、to_geojson (导出)
-- **几何处理**: buffer (缓冲区)、intersection (相交)、union (合并)、centroid (质心)、difference (差异)、simplify (简化)、convex_hull (凸包)
-- **空间关系**: spatial_join (空间连接)、within (包含判断)、intersects (相交判断)
-- **格式转换**: to_wkt (转 WKT)、from_wkt (从 WKT 解析)
-- **数据操作**: filter (过滤)、merge (合并)、aggregate (聚合)
 
 **工作流 DAG 示例**:
 ```json
@@ -754,9 +748,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 - **Redis**: 缓存、任务队列 (Asynq)、会话管理
   - Key 命名规范: `{module}:{middleware}:{function}:{id}`
   - 端口: 16379
-- **MinIO**: 系统文件存储 (用户头像、系统配置、模块化 buckets)
-  - Bucket 隔离: `system-files`、`manager-files`、`meta-files`
-  - 端口: 19000-19001
+- **MinIO**: 系统文件存储 (用户头像、预览缓存、MVT 瓦片、临时文件)
+  - Bucket 隔离: `system`、`manager`、`meta`、`transfer`、`orchestrator`、`develop`、`service`
+  - API 端口: 19000
+  - Console 端口: 19001
 - **Meilisearch**: 全文搜索引擎 (元数据资产搜索)
   - Index 命名: `{module}:{entity_type}`
   - 端口: 17700
@@ -777,8 +772,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 - 避免表名冲突,权限独立管理
 
 **MinIO Bucket 隔离**:
-- 按模块隔离: `system-files`、`manager-files`、`meta-files`
+- 按模块隔离: `system`、`manager`、`meta`、`transfer`、`orchestrator`、`develop`、`service`
 - 避免文件冲突,配额独立管理
+- `manager` bucket 设置为公开读(MVT 瓦片需前端直接访问)
+- 其他 bucket 均为私有访问
 
 **Redis Key 命名规范**:
 - 格式: `{module}:{middleware}:{function}:{id}`

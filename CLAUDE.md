@@ -22,6 +22,7 @@
 | 新增存储引擎/数据库   | docs/addp新增存储引擎指南.md      | 新数据库、存储引擎 |
 | 新增数据类型/数据格式  | docs/addp数据类型扩展指南.md     | 新数据类型、新数据格式 |
 | 故障和问题修复        | docs/addp常见故障排查.md        | 出错、修复、问题                  |
+| 厘清基本概念        | docs/addp核心概念说明.md        | 概念、术语、混淆、辨析                  |
 | Gateway 路由         | gateway/ARCHITECTURE.md       | 路由、转发、API网关               |
 | System 模块详情      | system/CLAUDE.md              | 认证、用户、租户、日志            |
 | Manager 模块详情     | manager/CLAUDE.md             | 数据预览、MVT、对象存储、插件     |

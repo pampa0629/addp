@@ -3,7 +3,11 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(bash:*)",
+      "Bash(open -a Docker:*)",
+      "Bash(docker info:*)",
+      "Bash(docker compose:*)"
     ],
     "deny": [],
     "ask": []
