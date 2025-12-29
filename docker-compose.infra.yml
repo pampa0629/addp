@@ -13,9 +13,9 @@ services:
 
   postgres:
     # 使用预构建镜像，无需每次构建（节省启动时间）
-    # 本地镜像: addp-postgres-pgvector:latest (PostGIS 15-3.4 + pgvector v0.8.0)
-    # Docker Hub: pampa0629/addp-postgres:15-arm64
-    image: addp-postgres-pgvector:latest
+    # 默认使用 Docker Hub 远程镜像，新环境自动拉取，无需配置
+    # 如需使用本地镜像，设置环境变量: POSTGRES_IMAGE=addp-postgres-pgvector:latest
+    image: ${POSTGRES_IMAGE:-pampa0629/addp-postgres:15-arm64}
     container_name: addp-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB}

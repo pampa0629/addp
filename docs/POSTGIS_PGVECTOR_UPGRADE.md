@@ -30,20 +30,33 @@ ADDP系统PostgreSQL已升级为PostGIS镜像,并添加pgvector扩展支持,实�
 
 ## 使用方法
 
-### 1. 直接启动（推荐 - 使用预构建镜像）
+### 1. 直接启动（零配置）
 
 ```bash
-# 使用本地预构建镜像，无需构建（秒级启动）
 cd ~/code/addp
 bash scripts/infra/up.sh
 ```
 
-**说明**: docker-compose.infra.yml 已配置使用本地预构建镜像 `addp-postgres-pgvector:latest`，启动时无需重新构建。
+**说明**:
+- 默认使用 Docker Hub 远程镜像 `pampa0629/addp-postgres:15-arm64`
+- 新环境自动拉取，无需任何配置
+- 首次启动会下载镜像（约 2.7GB），后续秒级启动
 
-### 2. 重新构建镜像（仅在需要时）
+### 2. 使用本地镜像（可选）
+
+如果已构建本地镜像，可节省网络流量：
 
 ```bash
-# 仅在需要更新 pgvector 版本或修改 Dockerfile 时执行
+# 在 .env 中设置
+echo "POSTGRES_IMAGE=addp-postgres-pgvector:latest" >> .env
+
+# 或临时使用
+POSTGRES_IMAGE=addp-postgres-pgvector:latest bash scripts/infra/up.sh
+```
+
+### 3. 构建本地镜像（仅在需要时）
+
+```bash
 docker build \
   -f scripts/infra/Dockerfile.postgres \
   --build-arg POSTGRES_BASE_IMAGE=imresamu/postgis-arm64:15-3.4 \
@@ -51,29 +64,10 @@ docker build \
   scripts/infra/
 ```
 
-### 3. 推送镜像到 Docker Hub（可选）
+### 4. 推送镜像到 Docker Hub（维护者使用）
 
 ```bash
-# 等网络稳定时执行（带自动重试机制）
 bash scripts/infra/push-postgres-image.sh
-```
-
-该脚本会：
-- 自动检测系统架构（ARM64/AMD64）
-- 打标签为 `pampa0629/addp-postgres:15-arm64` 和 `pampa0629/addp-postgres:latest-arm64`
-- 推送到 Docker Hub（失败时自动重试最多 5 次）
-
-### 4. 从 Docker Hub 拉取（其他用户或新环境）
-
-```bash
-# 拉取预构建镜像
-docker pull pampa0629/addp-postgres:15-arm64
-
-# 重新标记为本地镜像
-docker tag pampa0629/addp-postgres:15-arm64 addp-postgres-pgvector:latest
-
-# 启动基础设施
-bash scripts/infra/up.sh
 ```
 
 ### 5. 验证扩展安装
@@ -276,34 +270,18 @@ LIMIT 10;
 
 ## 故障排查
 
-### PostGIS扩展创建失败
+### PostgreSQL 扩展问题
 
 ```bash
+# 查看已安装扩展
+docker exec addp-postgres psql -U addp -d addp -c '\dx'
+
 # 查看容器日志
 docker logs addp-postgres
 
-# 手动创建扩展
+# 手动创建扩展（如果缺失）
 docker exec addp-postgres psql -U addp -d addp -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-```
-
-### pgvector编译失败
-
-```bash
-# 检查容器内是否有编译工具
-docker exec addp-postgres which gcc
-
-# 手动运行安装脚本
-./scripts/infra-init-pgvector.sh
-```
-
-### 架构不匹配错误
-
-```bash
-# 检查镜像架构
-docker image inspect imresamu/postgis-arm64:15-3.4 --format '{{.Architecture}}'
-
-# 强制拉取ARM64镜像
-docker pull --platform=linux/arm64 imresamu/postgis-arm64:15-3.4
+docker exec addp-postgres psql -U addp -d addp -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 ## 相关文档
