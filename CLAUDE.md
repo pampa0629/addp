@@ -16,13 +16,20 @@
 | 开发原则与编码规范   | docs/addp开发原则.md          | 原则、规范、DRY、向后兼容         |
 | 环境配置、密钥      | docs/addp配置介绍.md          | 配置、环境变量、.env              |
 | 端口               | docs/addp端口分配.md          | 端口                              |
-| Go/前端依赖版本      | docs/技术栈规约.md            | 依赖、版本、升级、库              |
-| 共享模块使用         | docs/共享模块介绍.md          | common、共享代码、复用            |
-| 创建新模块           | docs/新模块开发指南.md        | 新模块、脚手架、模板              |
-| 新增存储引擎/数据库  | docs/addp新增存储引擎指南.md  | 新数据库、存储引擎、插件、MongoDB |
-| 故障和问题修复        | docs/addp常见故障排查.md      | 出错、修复、问题                  |
+| Go/前端依赖版本      | docs/addp技术栈规约.md            | 依赖、版本、升级、库              |
+| 共享模块使用         | docs/addp共享模块介绍.md          | common、共享代码、复用            |
+| 创建新模块           | docs/addp新模块开发指南.md        | 新模块、脚手架、模板              |
+| 新增存储引擎/数据库   | docs/addp新增存储引擎指南.md      | 新数据库、存储引擎 |
+| 新增数据类型/数据格式  | docs/addp数据类型扩展指南.md     | 新数据类型、新数据格式 |
+| 故障和问题修复        | docs/addp常见故障排查.md        | 出错、修复、问题                  |
 | Gateway 路由         | gateway/ARCHITECTURE.md       | 路由、转发、API网关               |
 | System 模块详情      | system/CLAUDE.md              | 认证、用户、租户、日志            |
+| Manager 模块详情     | manager/CLAUDE.md             | 数据预览、MVT、对象存储、插件     |
+| Meta 模块详情        | meta/CLAUDE.md                | 元数据扫描、定时调度、向量化      |
+| Transfer 模块详情    | transfer/CLAUDE.md            | 数据导入、导出、同步、Asynq       |
+| Orchestrator 模块详情| orchestrator/CLAUDE.md        | 工作流编排、DAG、任务调度         |
+| Develop 模块详情     | develop/CLAUDE.md             | SQL 执行、工作流、算子        |
+| Service 模块详情     | service/CLAUDE.md             | 数据服务、OGC 标准、API 发布      |
 
 
 **重要**:
@@ -37,11 +44,11 @@
 
 ### 1. 无需考虑向后兼容
 
-开发阶段优先考虑最佳架构。可自由修改数据库schema和API结构；且无需考虑数据迁移和兼容问题。
+开发阶段优先考虑最佳架构。可自由修改数据库schema结构、API定义和前端调用代码；且无需考虑数据兼容和迁移。
 
 ### 2. 保持整洁
 
-临时脚本和文档保存到 /tmp/,保持项目树整洁。你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块目录下。
+临时脚本和文档保存到 /tmp/,保持项目树整洁。你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块的docs目录下。
 
 ### 3. 无需请求权限
 

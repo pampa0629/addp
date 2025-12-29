@@ -1,229 +1,106 @@
-# Service 模块
+# Service 数据服务模块
 
-数据服务和 GIS 空间服务模块，提供统一的数据查询和 OGC 标准服务能力。
+> 数据服务和 OGC 空间服务发布中心
 
-## 功能概述
+## 📖 文档说明
 
-### 1. 外部服务注册管理
-- ✅ 支持注册多种类型的外部服务（WMS、WFS、WMTS、OGC API、REST API）
-- ✅ 自动获取 OGC 服务元数据（GetCapabilities）
-- ✅ 服务健康检查
-- ✅ 服务代理（统一对外提供服务）
-- ✅ 按租户隔离
+- **README.md** (本文件) - 快速入门和功能概览
+- **[CLAUDE.md](./CLAUDE.md)** - 详细技术文档，包含架构设计、开发指南、API 详解和注意事项
 
-### 2. 数据查询服务
-- ✅ 数据表查询
-- ✅ 聚合查询
-- 🚧 完整实现（待集成 Manager 和 Meta 模块）
+## 🎯 核心功能
 
-### 3. OGC 标准支持（规划中）
-- ⏳ OGC API - Features (REST 标准)
-- ⏳ WMS 1.3.0
-- ⏳ WFS 3.0
-- ⏳ WMTS
+- **外部服务注册**: 管理 OGC 服务（WMS/WFS/WMTS）、REST API 等第三方数据服务
+- **数据查询服务**: 统一的数据查询 API，支持多源数据查询
+- **服务健康检查**: 定时检测注册服务可用性，自动更新服务状态
+- **服务元数据管理**: 自动获取并缓存 OGC GetCapabilities 响应
 
-## 技术架构
+## 🚀 快速开始
 
-```
-service/
-├── backend/
-│   ├── cmd/server/          # 主程序入口
-│   ├── internal/
-│   │   ├── api/             # HTTP API 层
-│   │   ├── config/          # 配置管理
-│   │   ├── models/          # 数据模型
-│   │   ├── repository/      # 数据访问层
-│   │   └── service/         # 业务逻辑层
-│   │       ├── data/        # 数据查询服务
-│   │       └── registry/    # 服务注册管理
-│   └── go.mod
-└── frontend/                # 前端（待实现）
+### 方式 1: 开发模式（推荐）
+
+```bash
+# 启动基础设施
+bash scripts/infra/up.sh
+
+# 启动 Service 模块
+bash scripts/dev/start.sh -service
 ```
 
-## 数据库 Schema
+- 后端: http://localhost:8086
+- 通过 Gateway: http://localhost:8000/api/service/
+
+### 方式 2: Docker 部署
+
+```bash
+cd service
+docker-compose up -d
+```
+
+## 📋 主要 API 端点
+
+```
+服务注册: POST/GET/PUT/DELETE /api/service/registry/services
+服务刷新: POST /api/service/registry/services/:id/refresh
+健康检查: POST /api/service/registry/services/:id/health
+服务目录: GET /api/service/catalog
+数据查询: POST /api/service/data/query
+服务代理: GET /api/service/proxy/:id/*path
+```
+
+完整 API 文档请查看 [CLAUDE.md#常见开发场景](./CLAUDE.md#常见开发场景)
+
+## 🏗️ 数据库设计
 
 **Schema**: `service`
 
-### 表结构
+| 表名 | 说明 |
+|-----|------|
+| `external_services` | 注册的外部服务（WMS、WFS 等），支持租户隔离 |
+| `service_layers` | 服务的图层信息（几何类型、坐标系、边界框等） |
 
-#### external_services（外部服务）
-- `id` - 主键
-- `tenant_id` - 租户 ID（租户隔离）
-- `name` - 服务名称
-- `service_type` - 服务类型（wms/wfs/wmts/ogc_api/data_api/rest）
-- `url` - 服务地址
-- `metadata` - 服务元数据（JSONB）
-- `auth_type` - 认证类型（none/basic/bearer/api_key）
-- `auth_config` - 认证配置（JSONB，加密存储）
-- `status` - 状态（active/inactive/error）
-- `health_check_url` - 健康检查地址
-- `last_checked_at` - 上次检查时间
+详细字段定义请查看 [CLAUDE.md#关键架构](./CLAUDE.md#关键架构)
 
-#### service_layers（服务图层）
-- `id` - 主键
-- `service_id` - 关联服务 ID
-- `layer_name` - 图层名称
-- `geometry_type` - 几何类型
-- `crs` - 坐标系
-- `bbox` - 边界框（JSONB）
-- `metadata` - 图层元数据（JSONB）
+## 🔐 安全特性
 
-## API 端点
+- **租户隔离**: 所有服务按租户 ID 隔离
+- **认证**: 所有 API 端点需要 JWT token 认证
+- **API Key 加密**: 外部服务的敏感信息加密存储
+- **HTTPS 优先**: 建议使用 HTTPS 协议连接外部服务
 
-### 服务注册管理
+## 🐛 常见问题
+
+### 如何注册外部 OGC 服务？
 
 ```bash
-# 创建外部服务
-POST /api/service/registry/services
-{
-  "name": "第三方 WMS 服务",
-  "service_type": "wms",
-  "url": "https://example.com/wms",
-  "auth_type": "none"
-}
-
-# 列出服务
-GET /api/service/registry/services?service_type=wms&page=1&page_size=20
-
-# 获取服务详情
-GET /api/service/registry/services/:id
-
-# 更新服务
-PUT /api/service/registry/services/:id
-
-# 删除服务
-DELETE /api/service/registry/services/:id
-
-# 刷新服务元数据
-POST /api/service/registry/services/:id/refresh
-
-# 健康检查
-POST /api/service/registry/services/:id/health
-
-# 搜索服务
-GET /api/service/registry/search?keyword=地图
-
-# 导出配置
-GET /api/service/registry/export
+curl -X POST http://localhost:8086/api/service/registry/services \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "示例 WMS 服务",
+    "service_type": "wms",
+    "url": "https://example.com/wms",
+    "auth_type": "none"
+  }'
 ```
 
-### 服务目录
+详细示例请查看 [CLAUDE.md#场景-1-注册外部-ogc-服务](./CLAUDE.md#场景-1注册外部-ogc-服务)
+
+### 如何手动触发健康检查？
 
 ```bash
-# 获取服务目录（按类型分类）
-GET /api/service/catalog
+curl -X POST http://localhost:8086/api/service/registry/services/:id/health \
+  -H "Authorization: Bearer <token>"
 ```
 
-### 服务代理
+更多问题请查看 [CLAUDE.md](./CLAUDE.md)
 
-```bash
-# 代理访问外部服务
-GET /api/service/proxy/:id/*path
-```
+## 📚 相关文档
 
-### 数据查询服务
+- **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（架构、开发工作流、场景示例）
+- **[../docs/addp技术栈规约.md](../docs/addp技术栈规约.md)** - 技术栈和依赖版本
+- **[../docs/addp配置介绍.md](../docs/addp配置介绍.md)** - 配置中心说明
+- **[system/CLAUDE.md](../system/CLAUDE.md)** - System 模块（获取数据库连接信息）
 
-```bash
-# 查询数据表
-POST /api/service/data/query
-{
-  "engine_id": 1,
-  "schema": "public",
-  "table": "cities",
-  "page": 1,
-  "page_size": 20
-}
+---
 
-# 聚合查询
-POST /api/service/data/aggregate
-{
-  "engine_id": 1,
-  "schema": "public",
-  "table": "sales",
-  "group_by": ["region"],
-  "aggregates": [
-    {"column": "amount", "function": "sum", "alias": "total"}
-  ]
-}
-```
-
-## 配置
-
-### 环境变量
-
-```bash
-# 服务端口
-PORT=8086
-
-# 数据库配置
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=addp
-DB_PASSWORD=addp_password
-DB_NAME=addp
-DB_SCHEMA=service
-
-# 模块集成
-SYSTEM_SERVICE_URL=http://localhost:8080
-MANAGER_SERVICE_URL=http://localhost:8081
-META_SERVICE_URL=http://localhost:8082
-
-# Redis 配置
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
-```
-
-## 启动服务
-
-### 开发模式
-
-```bash
-# 启动所有服务（包括 service 模块）
-bash scripts/dev/start.sh
-
-# 单独重启 service 模块
-bash scripts/dev/restart.sh -service
-```
-
-### 访问
-
-- **Backend**: http://localhost:8086
-- **通过 Gateway**: http://localhost:8000/api/service/
-- **健康检查**: http://localhost:8086/health
-
-## 开发计划
-
-### Phase 1 ✅（已完成）
-- [x] 模块基础架构
-- [x] 外部服务注册管理
-- [x] 数据查询服务框架
-- [x] Gateway 路由集成
-- [x] 启动脚本支持
-
-### Phase 2（计划中）
-- [ ] 完整的 OGC Capabilities 解析
-- [ ] OGC API - Features 实现
-- [ ] WFS/WMTS 服务实现
-- [ ] 前端管理界面
-- [ ] 完整的数据查询实现（集成 Manager/Meta）
-
-### Phase 3（未来）
-- [ ] WMS 服务实现
-- [ ] 服务性能监控
-- [ ] 缓存优化
-- [ ] 服务发现和负载均衡
-
-## 注意事项
-
-1. **认证**: 所有 API 端点需要通过 JWT token 认证
-2. **租户隔离**: 所有服务按租户 ID 隔离
-3. **健康检查**: 支持定时检查外部服务可用性
-4. **元数据缓存**: OGC 服务元数据会缓存 1 小时
-
-## 相关文档
-
-- [ADDP 开发原则](../docs/addp开发原则.md)
-- [ADDP 配置介绍](../docs/addp配置介绍.md)
-- [新模块开发指南](../docs/新模块开发指南.md)
+Copyright © 2025 ADDP Team
