@@ -30,7 +30,7 @@ Develop 模块是 ADDP 平台的开发工具模块，提供以下功能：
 ### 模块依赖关系
 
 ```
-System（资源配置、认证服务）
+System（引擎配置、认证服务）
   ↓
 Manager（数据源元数据）
   ↓
@@ -53,7 +53,7 @@ Develop 模块使用 `develop` schema，包含 4 张核心表（Phase 2 计划�
 | `tenant_id` | BIGINT | NOT NULL, INDEXED | 租户 ID |
 | `name` | VARCHAR(255) | NOT NULL | 脚本名称 |
 | `description` | TEXT | | 脚本描述 |
-| `resource_id` | BIGINT | FK → system.resources | 关联数据源 |
+| `engine_id` | BIGINT | FK → system.engines | 关联数据源 |
 | `script_type` | VARCHAR(50) | NOT NULL | 脚本类型：query/ddl/dml/procedure |
 | `content` | TEXT | NOT NULL | SQL 脚本内容 |
 | `current_version` | INTEGER | DEFAULT 1 | 当前版本号 |
@@ -65,7 +65,7 @@ Develop 模块使用 `develop` schema，包含 4 张核心表（Phase 2 计划�
 
 **索引**:
 - `idx_scripts_tenant` - 租户索引
-- `idx_scripts_resource` - 数据源索引
+- `idx_scripts_engine` - 数据源索引
 - `idx_scripts_created_by` - 创建者索引
 
 **Go 模型** (`internal/models/script.go`):
@@ -76,7 +76,7 @@ type Script struct {
     TenantID       uint
     Name           string
     Description    string
-    ResourceID     uint
+    EngineID       uint
     ScriptType     string
     Content        string
     CurrentVersion int
@@ -129,7 +129,7 @@ type ScriptVersion struct {
 | `id` | BIGSERIAL | PRIMARY KEY | 执行记录 ID |
 | `tenant_id` | BIGINT | NOT NULL, INDEXED | 租户 ID |
 | `script_id` | BIGINT | FK, INDEXED (nullable) | 关联脚本 ID（临时查询为 NULL） |
-| `resource_id` | BIGINT | NOT NULL, FK | 关联数据源 |
+| `engine_id` | BIGINT | NOT NULL, FK | 关联数据源 |
 | `sql_content` | TEXT | NOT NULL | 执行的 SQL 内容 |
 | `execution_type` | VARCHAR(50) | NOT NULL | 执行类型：query/ddl/dml |
 | `status` | VARCHAR(20) | NOT NULL | 状态：running/success/failed |
@@ -154,7 +154,7 @@ type Execution struct {
     ID               uint
     TenantID         uint
     ScriptID         *uint
-    ResourceID       uint
+    EngineID         uint
     SQLContent       string
     ExecutionType    string
     Status           string
@@ -201,7 +201,7 @@ type ScriptDependency struct {
 ### 2.2 数据表关系图
 
 ```
-system.resources (来自 System 模块)
+system.engines (来自 System 模块)
     ↓
 develop.scripts (脚本定义)
     ↓ 1:N
@@ -226,7 +226,7 @@ develop.script_dependencies (脚本依赖关系)
 
 ```json
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "sql": "SELECT * FROM public.users LIMIT 10",
   "save_to_history": true
 }
@@ -264,7 +264,7 @@ develop.script_dependencies (脚本依赖关系)
 
 ```json
 {
-  "resource_id": 1
+  "engine_id": 1
 }
 ```
 
@@ -321,7 +321,7 @@ develop.script_dependencies (脚本依赖关系)
 {
   "name": "用户统计查询",
   "description": "统计每日新增用户数",
-  "resource_id": 1,
+  "engine_id": 1,
   "script_type": "query",
   "content": "SELECT DATE(created_at), COUNT(*) FROM users GROUP BY DATE(created_at)",
   "is_shared": false
@@ -337,7 +337,7 @@ develop.script_dependencies (脚本依赖关系)
 **查询参数**:
 - `page`: 页码（默认 1）
 - `page_size`: 每页条数（默认 10）
-- `resource_id`: 按数据源过滤
+- `engine_id`: 按数据源过滤
 - `script_type`: 按类型过滤
 
 **响应** (200 OK):
@@ -349,7 +349,7 @@ develop.script_dependencies (脚本依赖关系)
       "id": 1,
       "name": "用户统计查询",
       "description": "统计每日新增用户数",
-      "resource_id": 1,
+      "engine_id": 1,
       "script_type": "query",
       "current_version": 3,
       "is_shared": false,
@@ -460,7 +460,7 @@ develop.script_dependencies (脚本依赖关系)
 **查询参数**:
 - `page`: 页码（默认 1）
 - `page_size`: 每页条数（默认 20）
-- `resource_id`: 按数据源过滤
+- `engine_id`: 按数据源过滤
 - `script_id`: 按脚本过滤
 - `status`: 按状态过滤
 
@@ -472,7 +472,7 @@ develop.script_dependencies (脚本依赖关系)
     {
       "id": 100,
       "script_id": 1,
-      "resource_id": 1,
+      "engine_id": 1,
       "execution_type": "query",
       "status": "success",
       "rows_affected": 50,
@@ -497,7 +497,7 @@ develop.script_dependencies (脚本依赖关系)
 {
   "id": 100,
   "script_id": 1,
-  "resource_id": 1,
+  "engine_id": 1,
   "sql_content": "SELECT * FROM users LIMIT 10",
   "execution_type": "query",
   "status": "success",
@@ -572,7 +572,7 @@ type SQLExecutor struct {
 func (s *SQLExecutor) ExecuteSQL(ctx context.Context, req *ExecuteSQLRequest) (*ExecutionResult, error)
 
 // TestConnection 测试数据库连接
-func (s *SQLExecutor) TestConnection(ctx context.Context, resourceID uint) (*ConnectionTestResult, error)
+func (s *SQLExecutor) TestConnection(ctx context.Context, engineID uint) (*ConnectionTestResult, error)
 
 // FormatSQL 格式化 SQL
 func (s *SQLExecutor) FormatSQL(sql string) (string, error)
@@ -582,7 +582,7 @@ func (s *SQLExecutor) FormatSQL(sql string) (string, error)
 
 1. **动态连接管理**:
    - 从 System 模块获取数据源配置
-   - 按 resource_id 缓存连接池（每个数据源独立连接池）
+   - 按 engine_id 缓存连接池（每个数据源独立连接池）
    - 连接超时自动关闭（5 分钟空闲）
 
 2. **查询执行**:
@@ -615,10 +615,10 @@ type ConnectionPool struct {
 }
 
 // GetConnection 获取或创建数据库连接
-func (p *ConnectionPool) GetConnection(resourceID uint) (*sql.DB, error)
+func (p *ConnectionPool) GetConnection(engineID uint) (*sql.DB, error)
 
-// CloseConnection 关闭指定资源的连接
-func (p *ConnectionPool) CloseConnection(resourceID uint)
+// CloseConnection 关闭指定引擎的连接
+func (p *ConnectionPool) CloseConnection(engineID uint)
 
 // CloseAll 关闭所有连接
 func (p *ConnectionPool) CloseAll()

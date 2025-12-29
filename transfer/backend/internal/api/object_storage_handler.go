@@ -43,7 +43,7 @@ func (h *ObjectStorageHandler) BrowseDirectories(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		case errors.Is(err, service.ErrSystemIntegrationDisabled):
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "system integration not available"})
-		case errors.Is(err, service.ErrResourceAccessDenied):
+		case errors.Is(err, service.ErrEngineAccessDenied):
 			c.JSON(http.StatusForbidden, gin.H{"error": "resource not accessible"})
 		case errors.Is(err, service.ErrObjectStorageNotSupported):
 			c.JSON(http.StatusBadRequest, gin.H{"error": "resource is not object storage"})

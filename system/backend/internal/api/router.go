@@ -175,7 +175,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			registry.POST("/capabilities", registryHandler.RegisterCapability)
 			registry.GET("/capabilities", registryHandler.ListCapabilities)
 			registry.GET("/capabilities/:identifier", registryHandler.GetCapabilityByIdentifier)
-			registry.GET("/compute-resources", registryHandler.ListComputeResources)
+			registry.GET("/compute-engines", registryHandler.ListComputeEngines)
 		}
 
 		// 任务提供者注册 API（供模块启动时自注册使用）

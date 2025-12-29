@@ -27,9 +27,6 @@ func (Engine) TableName() string {
 	return "system.engines"
 }
 
-// Resource 是 Engine 的别名，保持向后兼容
-type Resource = Engine
-
 // Directory 目录结构
 type Directory struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
@@ -74,10 +71,10 @@ func (c *ConnectionInfo) Scan(value interface{}) error {
 // Use commonModels.JSONMap instead
 type JSONMap = commonModels.JSONMap
 
-// ResourceListResponse API 响应
-type ResourceListResponse struct {
-	Data  []Resource `json:"data"`
-	Total int64      `json:"total"`
+// EngineListResponse API 响应
+type EngineListResponse struct {
+	Data  []Engine `json:"data"`
+	Total int64    `json:"total"`
 }
 
 // ManagedTable 纳入管理的数据库表
@@ -142,15 +139,15 @@ type MetadataScanResult struct {
 	Items          []interface{} `json:"items"`
 }
 
-// DataExplorerResource 数据探查资源树节点
-type DataExplorerResource struct {
+// DataExplorerEngine 数据探查引擎树节点
+type DataExplorerEngine struct {
 	ID         uint                 `json:"id"`
 	Name       string               `json:"name"`
 	EngineType string               `json:"engine_type"`
 	Schemas    []DataExplorerSchema `json:"schemas"`
 }
 
-type ExplorerResource struct {
+type ExplorerEngine struct {
 	ID          uint   `json:"id"`
 	Name        string `json:"name"`
 	EngineType  string `json:"engine_type"`
@@ -215,7 +212,7 @@ type TablePreview struct {
 	GeometryColumns []string                 `json:"geometry_columns"`
 	Object          *ObjectPreview           `json:"object,omitempty"`
 	// MVT preview metadata (for frontend to switch between GeoJSON and MVT rendering)
-	EngineID   uint   `json:"resourceId,omitempty"` // Resource ID for MVT API
+	EngineID   uint   `json:"engineId,omitempty"`   // Engine ID for MVT API
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
 	Table      string `json:"table,omitempty"`      // Table name for MVT API
 	EngineType string `json:"engineType,omitempty"` // Engine type (e.g., "postgresql")
@@ -305,8 +302,8 @@ type MetaScanTaskRun struct {
 	StorageType     string     `json:"storage_type"`
 	TaskName        string     `json:"task_name"`
 	TaskPlanName    string     `json:"task_plan_name,omitempty"`
-	ResourceName    string     `json:"resource_name,omitempty"`
-	ResourceType    string     `json:"resource_type,omitempty"`
+	EngineName      string     `json:"engine_name,omitempty"`
+	EngineType      string     `json:"engine_type,omitempty"`
 	TriggerType     string     `json:"trigger_type"`
 	Status          string     `json:"status"`
 	ErrorMessage    string     `json:"error_message,omitempty"`

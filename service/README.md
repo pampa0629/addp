@@ -127,7 +127,7 @@ GET /api/service/proxy/:id/*path
 # 查询数据表
 POST /api/service/data/query
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "schema": "public",
   "table": "cities",
   "page": 1,
@@ -137,7 +137,7 @@ POST /api/service/data/query
 # 聚合查询
 POST /api/service/data/aggregate
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "schema": "public",
   "table": "sales",
   "group_by": ["region"],

@@ -32,7 +32,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  System Backend (能力注册中心)                                  │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │ PostgreSQL (system.resources 表)                          │ │
+│  │ PostgreSQL (system.engines 表) ★ 任务定义存储       │ │
 │  │                                                            │ │
 │  │ ★ 只注册引擎本身（1 条记录）                               │ │
 │  │   {                                                        │ │
@@ -290,7 +290,7 @@ POST /api/develop/spatial/tasks
     ↓
 存储到 PostgreSQL: develop.spatial_tasks 表
     ↓
-自动注册到 System: system.resources
+自动注册到 System: system.engines
   - unique_identifier: "spatial.beijing_poi_buffer.v1"
   - resource_type: "spatial_task"
   - task_api_config: {...}  // 指向 GeoPandas Engine

@@ -12,8 +12,8 @@ import (
 
 const (
 	// Redis channels
-	ChannelResourceChanged = "resource:changed"
-	ChannelResourceDeleted = "resource:deleted"
+	ChannelEngineChanged = "engine:changed"
+	ChannelEngineDeleted = "engine:deleted"
 
 	// Event actions
 	ActionCreate = "create"
@@ -21,32 +21,32 @@ const (
 	ActionDelete = "delete"
 )
 
-// ResourceChangeEvent 资源变更事件
-type ResourceChangeEvent struct {
+// EngineChangeEvent 引擎变更事件
+type EngineChangeEvent struct {
 	EngineID  uint      `json:"engine_id"`
 	Action    string    `json:"action"` // create, update, delete
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// ResourceEventPublisher 资源事件发布器
-type ResourceEventPublisher struct {
+// EngineEventPublisher 引擎事件发布器
+type EngineEventPublisher struct {
 	redis  *redis.Client
 	logger *slog.Logger
 }
 
-// NewResourceEventPublisher 创建资源事件发布器
-func NewResourceEventPublisher(redisClient *redis.Client, logger *slog.Logger) *ResourceEventPublisher {
+// NewEngineEventPublisher 创建引擎事件发布器
+func NewEngineEventPublisher(redisClient *redis.Client, logger *slog.Logger) *EngineEventPublisher {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ResourceEventPublisher{
+	return &EngineEventPublisher{
 		redis:  redisClient,
-		logger: logger.With("component", "resource_event_publisher"),
+		logger: logger.With("component", "engine_event_publisher"),
 	}
 }
 
-// PublishResourceChange 发布资源变更事件
-func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, engineID uint, action string) error {
+// PublishEngineChange 发布引擎变更事件
+func (p *EngineEventPublisher) PublishEngineChange(ctx context.Context, engineID uint, action string) error {
 	if p.redis == nil {
 		p.logger.Warn("Redis client not configured, skipping event publish",
 			"engine_id", engineID,
@@ -54,7 +54,7 @@ func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, engi
 		return nil // 不阻塞业务逻辑
 	}
 
-	event := ResourceChangeEvent{
+	event := EngineChangeEvent{
 		EngineID:  engineID,
 		Action:    action,
 		Timestamp: time.Now(),
@@ -65,13 +65,13 @@ func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, engi
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
 
-	channel := ChannelResourceChanged
+	channel := ChannelEngineChanged
 	if action == ActionDelete {
-		channel = ChannelResourceDeleted
+		channel = ChannelEngineDeleted
 	}
 
 	if err := p.redis.Publish(ctx, channel, data).Err(); err != nil {
-		p.logger.Error("failed to publish resource event",
+		p.logger.Error("failed to publish engine event",
 			"engine_id", engineID,
 			"action", action,
 			"channel", channel,
@@ -79,38 +79,38 @@ func (p *ResourceEventPublisher) PublishResourceChange(ctx context.Context, engi
 		return fmt.Errorf("failed to publish event: %w", err)
 	}
 
-	p.logger.Info("resource event published",
+	p.logger.Info("engine event published",
 		"engine_id", engineID,
 		"action", action,
 		"channel", channel)
 	return nil
 }
 
-// ResourceEventSubscriber 资源事件订阅器
-type ResourceEventSubscriber struct {
+// EngineEventSubscriber 引擎事件订阅器
+type EngineEventSubscriber struct {
 	redis   *redis.Client
 	logger  *slog.Logger
-	handler ResourceChangeHandler
+	handler EngineChangeHandler
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
 
-// ResourceChangeHandler 资源变更处理函数
-type ResourceChangeHandler func(event ResourceChangeEvent) error
+// EngineChangeHandler 引擎变更处理函数
+type EngineChangeHandler func(event EngineChangeEvent) error
 
-// NewResourceEventSubscriber 创建资源事件订阅器
-func NewResourceEventSubscriber(
+// NewEngineEventSubscriber 创建引擎事件订阅器
+func NewEngineEventSubscriber(
 	redisClient *redis.Client,
-	handler ResourceChangeHandler,
+	handler EngineChangeHandler,
 	logger *slog.Logger,
-) *ResourceEventSubscriber {
+) *EngineEventSubscriber {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ResourceEventSubscriber{
+	return &EngineEventSubscriber{
 		redis:   redisClient,
-		logger:  logger.With("component", "resource_event_subscriber"),
+		logger:  logger.With("component", "engine_event_subscriber"),
 		handler: handler,
 		ctx:     ctx,
 		cancel:  cancel,
@@ -118,7 +118,7 @@ func NewResourceEventSubscriber(
 }
 
 // Start 启动订阅
-func (s *ResourceEventSubscriber) Start() error {
+func (s *EngineEventSubscriber) Start() error {
 	if s.redis == nil {
 		s.logger.Warn("Redis client not configured, event subscription disabled")
 		return nil
@@ -128,11 +128,11 @@ func (s *ResourceEventSubscriber) Start() error {
 		return fmt.Errorf("handler is required")
 	}
 
-	pubsub := s.redis.Subscribe(s.ctx, ChannelResourceChanged, ChannelResourceDeleted)
+	pubsub := s.redis.Subscribe(s.ctx, ChannelEngineChanged, ChannelEngineDeleted)
 	defer pubsub.Close()
 
-	s.logger.Info("resource event subscriber started",
-		"channels", []string{ChannelResourceChanged, ChannelResourceDeleted})
+	s.logger.Info("engine event subscriber started",
+		"channels", []string{ChannelEngineChanged, ChannelEngineDeleted})
 
 	// 等待订阅确认
 	_, err := pubsub.Receive(s.ctx)
@@ -145,7 +145,7 @@ func (s *ResourceEventSubscriber) Start() error {
 	for {
 		select {
 		case <-s.ctx.Done():
-			s.logger.Info("resource event subscriber stopped")
+			s.logger.Info("engine event subscriber stopped")
 			return nil
 		case msg := <-ch:
 			s.handleMessage(msg)
@@ -154,14 +154,14 @@ func (s *ResourceEventSubscriber) Start() error {
 }
 
 // Stop 停止订阅
-func (s *ResourceEventSubscriber) Stop() {
-	s.logger.Info("stopping resource event subscriber")
+func (s *EngineEventSubscriber) Stop() {
+	s.logger.Info("stopping engine event subscriber")
 	s.cancel()
 }
 
 // handleMessage 处理单条消息
-func (s *ResourceEventSubscriber) handleMessage(msg *redis.Message) {
-	var event ResourceChangeEvent
+func (s *EngineEventSubscriber) handleMessage(msg *redis.Message) {
+	var event EngineChangeEvent
 	if err := json.Unmarshal([]byte(msg.Payload), &event); err != nil {
 		s.logger.Error("failed to unmarshal event",
 			"channel", msg.Channel,
@@ -170,13 +170,13 @@ func (s *ResourceEventSubscriber) handleMessage(msg *redis.Message) {
 		return
 	}
 
-	s.logger.Debug("received resource event",
+	s.logger.Debug("received engine event",
 		"engine_id", event.EngineID,
 		"action", event.Action,
 		"channel", msg.Channel)
 
 	if err := s.handler(event); err != nil {
-		s.logger.Error("failed to handle resource event",
+		s.logger.Error("failed to handle engine event",
 			"engine_id", event.EngineID,
 			"action", event.Action,
 			"error", err)

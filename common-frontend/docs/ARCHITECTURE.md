@@ -125,7 +125,7 @@ export default defineConfig({
   }
 })
 
-// Resources.vue
+// Engines.vue
 import { StorageEngineForm } from '@common-ui'
 ```
 

@@ -60,7 +60,7 @@ func (s *OperatorService) executeScanOperator(
 	// 解析参数
 	engineID, ok := params["engine_id"].(float64)
 	if !ok {
-		return nil, fmt.Errorf("参数 resource_id 必须为数字")
+		return nil, fmt.Errorf("参数 engine_id 必须为数字")
 	}
 
 	var schemaNames []string

@@ -103,7 +103,7 @@ export default {
 
   // 扫描指定引擎的指定Schema
   scanEngine(engineId, schemaNames) {
-    return client.post('/meta/scan/resource', {
+    return client.post('/meta/scan/engine', {
       engine_id: engineId,
       schema_names: schemaNames
     })

@@ -29,14 +29,14 @@ func (p *postgresPreviewProvider) Priority() int {
 }
 
 func (p *postgresPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" || req.Table == "" {
 		return false
 	}
 
-	return sanitizeResourceType(req.Resource.EngineType) == "postgresql"
+	return sanitizeResourceType(req.Engine.EngineType) == "postgresql"
 }
 
 func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
@@ -45,7 +45,7 @@ func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewReque
 	const maxRows = 50
 
 	columns, rows, total, geometryColumns, err := p.metadataRepo.QueryTablePreview(
-		req.Resource,
+		req.Engine,
 		req.Schema,
 		req.Table,
 		req.Page,
@@ -65,9 +65,9 @@ func (p *postgresPreviewProvider) Preview(ctx context.Context, req *PreviewReque
 		PageSize:        req.PageSize,
 		GeometryColumns: geometryColumns,
 		// Populate MVT preview metadata for frontend decision-making
-		EngineID:   req.Resource.ID,
+		EngineID:   req.Engine.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		EngineType: req.Resource.EngineType,
+		EngineType: req.Engine.EngineType,
 	}, nil
 }

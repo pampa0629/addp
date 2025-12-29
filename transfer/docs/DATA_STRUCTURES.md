@@ -34,7 +34,7 @@ Transfer 模块负责数据导入、导出和同步，提供以下功能：
 ### 模块依赖关系
 
 ```
-System（资源配置）
+System（引擎配置）
   ↓
 Manager、Meta（元数据、连接信息）
   ↓
@@ -58,8 +58,8 @@ Transfer 模块使用 `transfer` schema，包含 5 张核心表。
 | `description` | TEXT | | 任务描述 |
 | `type` | VARCHAR(50) | NOT NULL | 任务类型：import/export/sync |
 | `mode` | VARCHAR(20) | DEFAULT 'batch' | 执行模式：batch/stream/micro-batch |
-| `source_id` | BIGINT | | 源数据源 ID (关联 system.resources) |
-| `target_id` | BIGINT | | 目标数据源 ID (关联 system.resources) |
+| `source_id` | BIGINT | | 源数据源 ID (关联 system.engines) |
+| `target_id` | BIGINT | | 目标数据源 ID (关联 system.engines) |
 | `config` | JSONB | NOT NULL | 任务配置（JSON 格式） |
 | `schedule` | VARCHAR(100) | | Cron 表达式（定时调度） |
 | `batch_size` | INTEGER | DEFAULT 1000 | 批处理大小 |
@@ -216,14 +216,14 @@ type DataMapping struct {
 
 ---
 
-#### 表 4: local_resources - 本地存储引擎配置表
+#### 表 4: local_engines - 本地存储引擎配置表
 
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
-| `id` | BIGSERIAL | PRIMARY KEY | 本地资源 ID |
+| `id` | BIGSERIAL | PRIMARY KEY | 本地引擎 ID |
 | `tenant_id` | BIGINT | NOT NULL, INDEXED | 租户 ID |
 | `name` | VARCHAR(255) | NOT NULL | 名称 |
-| `resource_type` | VARCHAR(50) | NOT NULL | 资源类型 |
+| `engine_type` | VARCHAR(50) | NOT NULL | 引擎类型 |
 | `description` | TEXT | | 描述 |
 | `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
 | `connection_info` | JSONB | NOT NULL | 连接信息（加密存储） |
@@ -232,7 +232,7 @@ type DataMapping struct {
 | `updated_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 **索引**:
-- `idx_local_resources_tenant` - 租户索引
+- `idx_local_engines_tenant` - 租户索引
 
 **用途**: Transfer 模块私有的存储引擎配置，不共享到 System 模块
 
@@ -259,7 +259,7 @@ type DataMapping struct {
 ### 2.2 数据表关系图
 
 ```
-system.resources (来自 System 模块)
+system.engines (来自 System 模块)
     ↓
 transfer.tasks (传输任务)
     ↓ 1:N
@@ -271,7 +271,7 @@ transfer.tasks
     ↓ 1:N
 transfer.data_mappings (字段映射)
 
-transfer.local_resources (本地资源)
+transfer.local_engines (本地引擎)
     ↓ (独立表)
 ```
 
@@ -590,22 +590,22 @@ transfer.local_resources (本地资源)
 
 ---
 
-### 3.4 本地资源 API
+### 3.4 本地引擎 API
 
-#### GET /api/local-resources - 列出本地资源
+#### GET /api/local-engines - 列出本地引擎
 
-**响应** (200 OK): 返回本地资源列表
+**响应** (200 OK): 返回本地引擎列表
 
 ---
 
-#### POST /api/local-resources - 创建本地资源
+#### POST /api/local-engines - 创建本地引擎
 
 **请求体**:
 
 ```json
 {
   "name": "本地 PostgreSQL",
-  "resource_type": "postgresql",
+  "engine_type": "postgresql",
   "connection_info": {
     "host": "localhost",
     "port": "5432",
@@ -616,33 +616,33 @@ transfer.local_resources (本地资源)
 }
 ```
 
-**响应** (201 Created): 返回本地资源对象
+**响应** (201 Created): 返回本地引擎对象
 
 ---
 
-#### PUT /api/local-resources/:id - 更新本地资源
+#### PUT /api/local-engines/:id - 更新本地引擎
 
-**请求体**: 同创建本地资源
+**请求体**: 同创建本地引擎
 
 **响应** (200 OK): 返回更新后的对象
 
 ---
 
-#### DELETE /api/local-resources/:id - 删除本地资源
+#### DELETE /api/local-engines/:id - 删除本地引擎
 
 **响应** (200 OK):
 
 ```json
 {
-  "message": "本地资源删除成功"
+  "message": "本地引擎删除成功"
 }
 ```
 
 ---
 
-#### POST /api/local-resources/test-connection - 创建前测试连接
+#### POST /api/local-engines/test-connection - 创建前测试连接
 
-**请求体**: 同创建本地资源
+**请求体**: 同创建本地引擎
 
 **响应** (200 OK):
 
@@ -655,13 +655,13 @@ transfer.local_resources (本地资源)
 
 ---
 
-#### POST /api/local-resources/:id/test - 测试现有资源连接
+#### POST /api/local-engines/:id/test - 测试现有引擎连接
 
 **响应** (200 OK): 同上
 
 ---
 
-#### POST /api/local-resources/:id/sync - 同步资源元数据
+#### POST /api/local-engines/:id/sync - 同步引擎元数据
 
 **响应** (202 Accepted):
 
@@ -673,7 +673,7 @@ transfer.local_resources (本地资源)
 
 ---
 
-#### GET /api/local-resources/:id/tables - 列出本地资源的表
+#### GET /api/local-engines/:id/tables - 列出本地引擎的表
 
 **响应** (200 OK):
 
@@ -688,7 +688,7 @@ transfer.local_resources (本地资源)
 
 ---
 
-#### GET /api/local-resources/:id/fields - 列出表的字段
+#### GET /api/local-engines/:id/fields - 列出表的字段
 
 **查询参数**:
 - `schema`: Schema 名称（必填）
@@ -709,9 +709,9 @@ transfer.local_resources (本地资源)
 
 ### 3.5 系统资源 API
 
-#### GET /api/system-resources - 列出系统中注册的资源
+#### GET /api/system-engines - 列出系统中注册的引擎
 
-**响应** (200 OK): 返回 System 模块的资源列表
+**响应** (200 OK): 返回 System 模块的引擎列表
 
 ---
 
@@ -723,7 +723,7 @@ transfer.local_resources (本地资源)
 
 ```json
 {
-  "resource_id": 2,
+  "engine_id": 2,
   "scope": "system",
   "prefix": "/data/"
 }

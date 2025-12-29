@@ -70,7 +70,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   "name": "用户数据导出",
   "type": "export",              // import | export | sync
   "mode": "batch",               // batch | stream | micro-batch
-  "source_id": 1,                // 源数据源（system.resources 的 ID）
+  "source_id": 1,                // 源数据源（system.engines 的 ID）
   "target_id": 2,                // 目标数据源
   "config": {                    // 详细配置（JSON）
     "source": {
@@ -139,12 +139,12 @@ TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
   -d '{"username":"admin","password":"admin123"}' | jq -r '.token')
 
 # 创建 PostgreSQL 源数据库
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "业务数据库",
-    "resource_type": "postgresql",
+    "engine_type": "postgresql",
     "connection_info": {
       "host": "localhost",
       "port": 5432,
@@ -156,12 +156,12 @@ curl -X POST http://localhost:8080/api/resources \
 # 记录返回的 ID，例如 {"id": 1, ...}
 
 # 创建 MinIO 目标存储
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "导出文件存储",
-    "resource_type": "minio",
+    "engine_type": "minio",
     "connection_info": {
       "endpoint": "localhost:9002",
       "access_key": "minioadmin",
@@ -265,12 +265,12 @@ mc cat myminio/exports/active_users.csv | head -n 10
 
 ```bash
 # 创建 MinIO 源存储（假设文件已上传到 imports/users.csv）
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "导入文件存储",
-    "resource_type": "minio",
+    "engine_type": "minio",
     "connection_info": {
       "endpoint": "localhost:9002",
       "access_key": "minioadmin",
@@ -282,12 +282,12 @@ curl -X POST http://localhost:8080/api/resources \
 # 记录 ID: 3
 
 # 创建 MySQL 目标数据库
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "MySQL目标库",
-    "resource_type": "mysql",
+    "engine_type": "mysql",
     "connection_info": {
       "host": "localhost",
       "port": 3306,
@@ -411,12 +411,12 @@ curl -X POST http://localhost:8083/api/tasks \
 
 ```bash
 # 创建 S3 源
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "AWS S3 生产环境",
-    "resource_type": "s3",
+    "engine_type": "s3",
     "connection_info": {
       "endpoint": "s3.amazonaws.com",
       "region": "us-west-2",
@@ -687,7 +687,7 @@ curl -X POST http://localhost:8083/api/executions/$EXECUTION_ID/retry \
 ```bash
 # 检查数据源配置
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/resources/$RESOURCE_ID | jq .connection_info
+  http://localhost:8080/api/engines/$ENGINE_ID | jq .connection_info
 
 # 测试数据库连接（以 PostgreSQL 为例）
 psql -h localhost -p 5432 -U user -d database
@@ -868,7 +868,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### 5. 安全建议
 
-- ✅ 使用 System 模块的 Resources 存储连接信息（自动加密）
+- ✅ 使用 System 模块的 Engines 存储连接信息（自动加密）
 - ✅ 不要在任务 `config` 中硬编码密码
 - ✅ 定期轮换 `INTERNAL_API_KEY`
 - ✅ 使用租户隔离（多租户场景）

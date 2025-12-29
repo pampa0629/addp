@@ -55,7 +55,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Refresh, Rank, FolderOpened } from '@element-plus/icons-vue'
-import computeResourcesAPI from '../api/computeResources'
+import computeEnginesAPI from '../api/computeEngines'
 import modulesApi from '../api/modules'
 import { ElMessage } from 'element-plus'
 
@@ -70,18 +70,18 @@ onMounted(async () => {
   await loadAllTasks()
 })
 
-// 加载所有计算资源及其任务
+// 加载所有计算引擎及其任务
 async function loadAllTasks() {
   loading.value = true
   try {
-    // 1. 获取所有计算资源
-    const engines = await computeResourcesAPI.list()
-    console.log('已加载计算资源:', engines)
+    // 1. 获取所有计算引擎
+    const engines = await computeEnginesAPI.list()
+    console.log('已加载计算引擎:', engines)
 
-    // 2. 为每个资源加载任务
+    // 2. 为每个引擎加载任务
     const treeNodes = []
     for (const engine of engines) {
-      const moduleNode = await loadResourceTasks(resource)
+      const moduleNode = await loadEngineTasks(engine)
       if (moduleNode) {
         treeNodes.push(moduleNode)
       }
@@ -97,18 +97,18 @@ async function loadAllTasks() {
   }
 }
 
-// 加载单个资源的任务
-async function loadResourceTasks(resource) {
+// 加载单个引擎的任务
+async function loadEngineTasks(engine) {
   try {
     // 兼容新旧格式: unique_identifier 或 module_name
-    const identifier = resource.unique_identifier || resource.module_name
-    console.log(`加载资源任务: ${identifier}`)
+    const identifier = engine.unique_identifier || engine.module_name
+    console.log(`加载引擎任务: ${identifier}`)
 
     // 调用后端 API 获取任务列表 (使用 module_name 参数)
     const data = await modulesApi.listTasksByIdentifier(identifier)
     const tasks = data.items || []
 
-    console.log(`资源 ${identifier} 的任务:`, tasks)
+    console.log(`引擎 ${identifier} 的任务:`, tasks)
 
     // 构建树节点
     const children = tasks.map(task => ({
@@ -127,19 +127,19 @@ async function loadResourceTasks(resource) {
 
     return {
       id: identifier,
-      label: resource.display_name || resource.name,  // 优先使用中文显示名称
+      label: engine.display_name || engine.name,  // 优先使用中文显示名称
       type: 'module',
       uniqueIdentifier: identifier,
       taskCount: children.length,
       children
     }
   } catch (error) {
-    const identifier = resource.unique_identifier || resource.module_name
-    console.error(`加载资源 ${identifier} 任务失败:`, error)
+    const identifier = engine.unique_identifier || engine.module_name
+    console.error(`加载引擎 ${identifier} 任务失败:`, error)
     // 返回空任务的模块节点
     return {
       id: identifier,
-      label: resource.display_name || resource.name,  // 优先使用中文显示名称
+      label: engine.display_name || engine.name,  // 优先使用中文显示名称
       type: 'module',
       uniqueIdentifier: identifier,
       taskCount: 0,

@@ -17,9 +17,6 @@ type Engine struct {
 	ConnectionInfo ConnectionInfo
 }
 
-// Resource 是 Engine 的别名，保持向后兼容
-type Resource = Engine
-
 // DatabasePlugin 数据库插件基础接口
 // 所有数据库类型插件必须实现此接口
 type DatabasePlugin interface {
@@ -43,7 +40,7 @@ type DatabasePlugin interface {
 	BuildConnectionString(connInfo ConnectionInfo) (string, error)
 
 	// ValidateConnectionInfo 验证连接信息的完整性和有效性
-	// 在创建/更新资源前调用，进行字段检查
+	// 在创建/更新引擎前调用，进行字段检查
 	ValidateConnectionInfo(connInfo ConnectionInfo) error
 
 	// DefaultPort 返回默认端口号
@@ -58,7 +55,7 @@ type DatabasePlugin interface {
 	// 例如: ["password", "access_key", "secret_key", "token"]
 	SensitiveFields() []string
 
-	// GenerateCapabilities 生成资源能力描述（JSON 字符串）
+	// GenerateCapabilities 生成引擎能力描述（JSON 字符串）
 	// 返回 Capability 结构的 JSON 表示
 	GenerateCapabilities() string
 }

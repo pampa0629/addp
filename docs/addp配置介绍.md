@@ -7,7 +7,7 @@
 
 1. **认证**: `JWT_SECRET` - 确保所有服务使用相同的 JWT 签名密钥
 2. **系统数据库**: PostgreSQL 连接信息 - 系统数据的单一来源
-3. **业务数据库**: System 的 `resources` 表中管理的资源 - 所有数据源配置
+3. **业务引擎**: System 的 `engines` 表中管理的引擎 - 所有数据源配置
 4. **加密密钥**: `ENCRYPTION_KEY` - 跨服务的一致加密
 
 **配置加载流程**:
@@ -44,14 +44,14 @@ import (
 // 使用 JWT token 创建客户端
 client := commonClient.NewSystemClient(systemURL, jwtToken)
 
-// 列出所有数据源
-resources, err := client.ListResources("postgresql")
+// 列出所有引擎
+engines, err := client.ListEngines("postgresql")
 
-// 获取特定数据源
-resource, err := client.GetResource(resourceID)
+// 获取特定引擎
+engine, err := client.GetEngine(engineID)
 
 // 构建连接字符串 (密码自动解密)
-connStr, err := commonModels.BuildConnectionString(resource)
+connStr, err := commonModels.BuildConnectionString(engine)
 ```
 
 **模块 .env 文件**:
@@ -217,6 +217,6 @@ curl -X POST http://localhost:8080/api/auth/login \
 - `GET /api/users` - 列出用户
 - `GET/PUT/DELETE /api/users/:id` - 用户 CRUD
 - `GET /api/logs` - 审计日志 (支持 `?user_id=X` 过滤)
-- `POST/GET/PUT/DELETE /api/resources` - 资源 CRUD (支持 `?resource_type=X` 过滤)
+- `POST/GET/PUT/DELETE /api/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
 
 **另请参阅**: `docs/CONFIG_CENTER.md` 获取详细的配置中心使用指南。

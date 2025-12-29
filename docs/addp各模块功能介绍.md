@@ -21,13 +21,13 @@ import (
     commonModels "github.com/addp/common/models"
 )
 
-// 使用 SystemClient 获取资源
+// 使用 SystemClient 获取引擎
 client := commonClient.NewSystemClient(systemURL, jwtToken)
-resources, err := client.ListResources("postgresql")
-resource, err := client.GetResource(resourceID)
+engines, err := client.ListEngines("postgresql")
+engine, err := client.GetEngine(engineID)
 
 // 构建连接字符串 (自动解密密码)
-connStr, err := commonModels.BuildConnectionString(resource)
+connStr, err := commonModels.BuildConnectionString(engine)
 ```
 
 **关键设计原则**:
@@ -157,23 +157,23 @@ import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
 4. **在 `internal/api/` 中创建 HTTP 处理器**:
 
    ```go
-   func (h *ResourceHandler) Create(c *gin.Context) {
-       var req CreateResourceRequest
+   func (h *EngineHandler) Create(c *gin.Context) {
+       var req CreateEngineRequest
        if err := c.ShouldBindJSON(&req); err != nil {
            c.JSON(400, gin.H{"error": err.Error()})
            return
        }
-       resource, err := h.service.CreateResource(&req)
-       c.JSON(201, resource)
+       engine, err := h.service.CreateEngine(&req)
+       c.JSON(201, engine)
    }
    ```
 5. **在 `internal/api/router.go` 中注册路由**:
 
    ```go
-   protected.POST("/resources", resourceHandler.Create)
+   protected.POST("/engines", engineHandler.Create)
    ```
 
-**示例 PR**: 参见 system 模块资源管理实现
+**示例 PR**: 参见 system 模块引擎管理实现
 
 ### 数据库迁移
 
@@ -393,7 +393,7 @@ go test -v -run TestFunctionName ./internal/service/
 - `GET /api/users` - 列出用户
 - `GET/PUT/DELETE /api/users/:id` - 用户 CRUD
 - `GET /api/logs` - 审计日志 (支持 `?user_id=X` 过滤)
-- `POST/GET/PUT/DELETE /api/resources` - 资源 CRUD (支持 `?resource_type=X` 过滤)
+- `POST/GET/PUT/DELETE /api/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
 
 ## 服务架构详情
 
@@ -430,7 +430,7 @@ go test -v -run TestFunctionName ./internal/service/
   - 可扩展的预览处理器 (TextPreview, ImagePreview, PDFPreview, DocxPreview, PptxPreview)
   - 内容类型检测和路由
   - 二进制和文本内容处理
-- 连接到 System 模块进行资源管理
+- 连接到 System 模块进行引擎管理
 - 连接信息解密以安全访问
 
 **关键文件**:
@@ -479,18 +479,18 @@ go test -v -run TestFunctionName ./internal/service/
 
 这通过**事件驱动架构**实现:
 
-1. System 在创建/更新资源时向 Redis 发布资源变更事件
+1. System 在创建/更新引擎时向 Redis 发布引擎变更事件
 2. Meta 订阅这些事件并检查 `ScanConfig.ScheduleType`
 3. 如果 `ScheduleType == "immediate"`, Meta 自动创建并入队扫描任务
 4. 无循环依赖: System → Redis Pub/Sub → Meta (单向通信)
 
 **扫描工作流**:
 
-1. 从 System 模块 `/api/resources` 同步数据源
+1. 从 System 模块 `/api/engines` 同步数据源
 2. 选择要扫描的数据源和 schemas/prefixes
 3. 层级提取元数据:
-   - 数据库: system.resources (database) → meta_node (schemas) → meta_item (tables,字段详情在 JSON 中)
-   - 对象存储: system.resources (bucket scope) → meta_node (prefixes) → meta_item (objects,文件元数据)
+   - 数据库: system.engines (database) → meta_node (schemas) → meta_item (tables,字段详情在 JSON 中)
+   - 对象存储: system.engines (bucket scope) → meta_node (prefixes) → meta_item (objects,文件元数据)
 4. 存储在 PostgreSQL `metadata` schema 中,带租户隔离
 5. 跟踪扫描状态、同步版本和最后扫描时间
 6. 支持手动触发和计划自动同步

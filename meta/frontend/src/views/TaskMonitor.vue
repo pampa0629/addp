@@ -15,9 +15,9 @@
           <el-select v-model="filters.engineId" placeholder="全部" clearable style="width: 220px">
             <el-option
               v-for="engine in engines"
-              :key="resource.id"
-              :label="resource.name"
-              :value="resource.id"
+              :key="engine.id"
+              :label="engine.name"
+              :value="engine.id"
             />
           </el-select>
         </el-form-item>

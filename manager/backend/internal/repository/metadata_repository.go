@@ -450,7 +450,7 @@ func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, re
 }
 
 // QueryTablePreview 查询表数据预览
-func (r *MetadataRepository) QueryTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
+func (r *MetadataRepository) QueryTablePreview(resource *models.Engine, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -759,7 +759,7 @@ func convertMetaItemToLite(item commonModels.MetaItem) models.MetaItemLite {
 }
 
 // QueryMySQLTablePreview 查询 MySQL/Doris 表预览数据
-func (r *MetadataRepository) QueryMySQLTablePreview(resource *models.Resource, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
+func (r *MetadataRepository) QueryMySQLTablePreview(resource *models.Engine, schemaName, tableName string, page, pageSize, maxRows int) ([]string, []map[string]interface{}, int, []string, error) {
 	if page < 1 {
 		page = 1
 	}

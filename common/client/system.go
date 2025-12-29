@@ -282,9 +282,9 @@ func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Eng
 	return &engine, nil
 }
 
-// ListComputeResources 查询所有具有计算能力的资源
-func (c *SystemClient) ListComputeResources(filters map[string]string) ([]*models.Engine, error) {
-	url := fmt.Sprintf("%s/internal/registry/compute-resources", c.baseURL)
+// ListComputeEngines 查询所有具有计算能力的引擎
+func (c *SystemClient) ListComputeEngines(filters map[string]string) ([]*models.Engine, error) {
+	url := fmt.Sprintf("%s/internal/registry/compute-engines", c.baseURL)
 
 	// 添加查询参数（如果需要）
 	if len(filters) > 0 {

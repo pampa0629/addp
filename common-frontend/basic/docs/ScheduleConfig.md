@@ -223,15 +223,15 @@ const handleSubmit = () => {
 
 ### 模式 2：独立对话框模式
 
-**适用场景**：为已存在的资源配置定时规则
+**适用场景**：为已存在的引擎配置定时规则
 
-**示例**：Meta 模块（资源级别的定时扫描配置）
+**示例**：Meta 模块（引擎级别的定时扫描配置）
 
 ```vue
 <template>
-  <!-- 主界面：资源列表 -->
-  <el-table :data="resources">
-    <el-table-column label="资源名称" prop="name" />
+  <!-- 主界面：引擎列表 -->
+  <el-table :data="engines">
+    <el-table-column label="引擎名称" prop="name" />
     <el-table-column label="定时计划">
       <template #default="{ row }">
         <div v-if="row.schedule">
@@ -279,25 +279,25 @@ const handleSubmit = () => {
 import { ref } from 'vue'
 import { ScheduleConfig, describeCron } from '@common-ui'
 
-const resources = ref([])
+const engines = ref([])
 const scheduleDialogVisible = ref(false)
 const scheduleEnabled = ref(false)
 const currentSchedule = ref('')
-const currentResource = ref(null)
+const currentEngine = ref(null)
 
-const openScheduleDialog = (resource) => {
-  currentResource.value = resource
-  currentSchedule.value = resource.schedule || ''
-  scheduleEnabled.value = !!resource.schedule
+const openScheduleDialog = (engine) => {
+  currentEngine.value = engine
+  currentSchedule.value = engine.schedule || ''
+  scheduleEnabled.value = !!engine.schedule
   scheduleDialogVisible.value = true
 }
 
 const saveSchedule = () => {
-  // 保存调度配置到资源
+  // 保存调度配置到引擎
   const updateData = {
     schedule: scheduleEnabled.value ? currentSchedule.value : null
   }
-  // 调用 API 更新资源配置
+  // 调用 API 更新引擎配置
   scheduleDialogVisible.value = false
 }
 </script>
@@ -437,23 +437,23 @@ decodeScheduleToForm('0 9 * * 1')
       </el-form-item>
 
       <el-form-item label="源数据库">
-        <el-select v-model="form.source_resource_id" placeholder="选择源">
+        <el-select v-model="form.source_engine_id" placeholder="选择源">
           <el-option
-            v-for="res in resources"
-            :key="res.id"
-            :label="res.name"
-            :value="res.id"
+            v-for="engine in engines"
+            :key="engine.id"
+            :label="engine.name"
+            :value="engine.id"
           />
         </el-select>
       </el-form-item>
 
       <el-form-item label="目标数据库">
-        <el-select v-model="form.target_resource_id" placeholder="选择目标">
+        <el-select v-model="form.target_engine_id" placeholder="选择目标">
           <el-option
-            v-for="res in resources"
-            :key="res.id"
-            :label="res.name"
-            :value="res.id"
+            v-for="engine in engines"
+            :key="engine.id"
+            :label="engine.name"
+            :value="engine.id"
           />
         </el-select>
       </el-form-item>
@@ -480,21 +480,21 @@ decodeScheduleToForm('0 9 * * 1')
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ScheduleConfig } from '@common-ui'
-import { createTask, listResources } from '@/api/transfer'
+import { createTask, listEngines } from '@/api/transfer'
 
 const dialogVisible = ref(false)
-const resources = ref([])
+const engines = ref([])
 
 const form = ref({
   name: '',
-  source_resource_id: null,
-  target_resource_id: null,
+  source_engine_id: null,
+  target_engine_id: null,
   schedule: ''  // ✅ 统一字段名
 })
 
 onMounted(async () => {
-  const res = await listResources()
-  resources.value = res.data
+  const res = await listEngines()
+  engines.value = res.data
 })
 
 const handleSubmit = async () => {
@@ -549,14 +549,14 @@ const form = ref({
 
 ---
 
-### Meta 模块：资源定时扫描
+### Meta 模块：引擎定时扫描
 
 **文件**：`meta/frontend/src/views/MetadataScan.vue`
 
 ```vue
 <template>
-  <el-table :data="resources">
-    <el-table-column label="资源名称" prop="name" />
+  <el-table :data="engines">
+    <el-table-column label="引擎名称" prop="name" />
 
     <el-table-column label="定时计划" width="200">
       <template #default="{ row }">
@@ -588,8 +588,8 @@ const form = ref({
     width="600px"
   >
     <el-form label-width="120px">
-      <el-form-item label="资源">
-        <el-input :value="currentResource?.name" disabled />
+      <el-form-item label="引擎">
+        <el-input :value="currentEngine?.name" disabled />
       </el-form-item>
 
       <el-form-item label="启用定时扫描">
@@ -616,34 +616,34 @@ import { ref, onMounted } from 'vue'
 import { Clock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { ScheduleConfig, describeCron } from '@common-ui'
-import { listResources, updateResourceSchedule } from '@/api/meta'
+import { listEngines, updateEngineSchedule } from '@/api/meta'
 
-const resources = ref([])
+const engines = ref([])
 const scheduleDialogVisible = ref(false)
 const scheduleEnabled = ref(false)
 const currentSchedule = ref('')
-const currentResource = ref(null)
+const currentEngine = ref(null)
 
 onMounted(async () => {
-  const res = await listResources()
-  resources.value = res.data
+  const res = await listEngines()
+  engines.value = res.data
 })
 
-const openScheduleDialog = (resource) => {
-  currentResource.value = resource
-  currentSchedule.value = resource.schedule || ''
-  scheduleEnabled.value = !!resource.schedule
+const openScheduleDialog = (engine) => {
+  currentEngine.value = engine
+  currentSchedule.value = engine.schedule || ''
+  scheduleEnabled.value = !!engine.schedule
   scheduleDialogVisible.value = true
 }
 
 const saveSchedule = async () => {
   try {
-    await updateResourceSchedule(currentResource.value.id, {
+    await updateEngineSchedule(currentEngine.value.id, {
       schedule: scheduleEnabled.value ? currentSchedule.value : null
     })
 
     // 更新本地数据
-    currentResource.value.schedule = scheduleEnabled.value ? currentSchedule.value : null
+    currentEngine.value.schedule = scheduleEnabled.value ? currentSchedule.value : null
 
     ElMessage.success('定时扫描配置已保存')
     scheduleDialogVisible.value = false

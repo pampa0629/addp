@@ -25,7 +25,7 @@ import (
 
 type MetadataService struct {
 	metadataRepo   *repository.MetadataRepository
-	resourceRepo   *repository.ResourceRepository
+	engineRepo   *repository.EngineRepository
 	systemClient   *commonClient.SystemClient
 	metaClient     *commonClient.MetaClient
 	previews       *PreviewRegistry
@@ -34,7 +34,7 @@ type MetadataService struct {
 	httpClient     *http.Client
 }
 
-var ErrResourceAccessDenied = errors.New("resource not accessible for current tenant")
+var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
 
 type ExplorerNodeRefreshRequest struct {
 	NodeType     string `json:"node_type"`
@@ -46,7 +46,7 @@ type ExplorerNodeRefreshRequest struct {
 	ResourceType string `json:"resource_type"`
 }
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRepo *repository.ResourceRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
+func NewMetadataService(metadataRepo *repository.MetadataRepository, engineRepo *repository.EngineRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
 	pr := previewRegistry
 	if pr == nil {
 		pr = NewPreviewRegistry()
@@ -60,7 +60,7 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, resourceRep
 	}
 	return &MetadataService{
 		metadataRepo:   metadataRepo,
-		resourceRepo:   resourceRepo,
+		engineRepo:   engineRepo,
 		systemClient:   systemClient,
 		metaClient:     metaClient,
 		previews:       pr,
@@ -279,7 +279,7 @@ func (s *MetadataService) RefreshExplorerNode(ctx context.Context, engineID uint
 		return fmt.Errorf("failed to encode scan payload: %w", err)
 	}
 
-	endpoint := s.metaServiceURL + "/api/meta/scan/resource"
+	endpoint := s.metaServiceURL + "/api/meta/scan/engine"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build meta scan request: %w", err)
@@ -556,15 +556,15 @@ func (s *MetadataService) UnmanageTable(tableID uint) error {
 }
 
 // ListExplorerResources 返回可用于数据探查的存储引擎列表
-func (s *MetadataService) ListExplorerEngines(tenantID *uint) ([]models.ExplorerResource, error) {
+func (s *MetadataService) ListExplorerEngines(tenantID *uint) ([]models.ExplorerEngine, error) {
 	engines, err := s.listActiveEngines(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]models.ExplorerResource, 0, len(engines))
+	result := make([]models.ExplorerEngine, 0, len(engines))
 	for _, res := range engines {
-		result = append(result, models.ExplorerResource{
+		result = append(result, models.ExplorerEngine{
 			ID:           res.ID,
 			Name:         res.Name,
 			EngineType: res.EngineType,
@@ -577,7 +577,7 @@ func (s *MetadataService) ListExplorerEngines(tenantID *uint) ([]models.Explorer
 }
 
 // GetResourceTree 获取单个资源的 Schema/目录树
-func (s *MetadataService) GetResourceTree(ctx context.Context, engineID uint, tenantID *uint) (*models.DataExplorerResource, error) {
+func (s *MetadataService) GetResourceTree(ctx context.Context, engineID uint, tenantID *uint) (*models.DataExplorerEngine, error) {
 	resource, err := s.getResourceForTenant(engineID, tenantID)
 	if err != nil {
 		return nil, err
@@ -587,13 +587,13 @@ func (s *MetadataService) GetResourceTree(ctx context.Context, engineID uint, te
 }
 
 // GetLegacyResourceTree 兼容旧接口的全量资源树
-func (s *MetadataService) GetLegacyResourceTree(ctx context.Context, tenantID *uint) ([]models.DataExplorerResource, error) {
+func (s *MetadataService) GetLegacyResourceTree(ctx context.Context, tenantID *uint) ([]models.DataExplorerEngine, error) {
 	engines, err := s.listActiveEngines(tenantID)
 	if err != nil {
 		return nil, err
 	}
 
-	result := make([]models.DataExplorerResource, 0, len(engines))
+	result := make([]models.DataExplorerEngine, 0, len(engines))
 	for i := range engines {
 		tree, err := s.buildResourceTree(ctx, &engines[i])
 		if err != nil {
@@ -608,7 +608,7 @@ func (s *MetadataService) GetLegacyResourceTree(ctx context.Context, tenantID *u
 	return result, nil
 }
 
-func (s *MetadataService) buildResourceTree(ctx context.Context, resource *models.Resource) (*models.DataExplorerResource, error) {
+func (s *MetadataService) buildResourceTree(ctx context.Context, resource *models.Engine) (*models.DataExplorerEngine, error) {
 	// 从 context 中提取 JWT token
 	var metaClientForRequest *commonClient.MetaClient
 	if jwtToken, ok := ctx.Value("jwt_token").(string); ok && jwtToken != "" {
@@ -624,7 +624,7 @@ func (s *MetadataService) buildResourceTree(ctx context.Context, resource *model
 	if err != nil {
 		if errors.Is(err, repository.ErrMetadataSchemaMissing) {
 			logger.L().Warn("数据探查: metadata schema 尚未初始化，返回空树", "engine_id", resource.ID)
-			return &models.DataExplorerResource{
+			return &models.DataExplorerEngine{
 				ID:           resource.ID,
 				Name:         resource.Name,
 				EngineType: resource.EngineType,
@@ -702,7 +702,7 @@ func (s *MetadataService) buildResourceTree(ctx context.Context, resource *model
 		}
 	}
 
-	return &models.DataExplorerResource{
+	return &models.DataExplorerEngine{
 		ID:           resource.ID,
 		Name:         resource.Name,
 		EngineType: resource.EngineType,
@@ -816,7 +816,7 @@ func normalizeObjectPathCandidate(value string) string {
 	return trimmed
 }
 
-func (s *MetadataService) listActiveEngines(tenantID *uint) ([]models.Resource, error) {
+func (s *MetadataService) listActiveEngines(tenantID *uint) ([]models.Engine, error) {
 	var tenantFilter uint
 	if tenantID != nil {
 		tenantFilter = *tenantID
@@ -827,7 +827,7 @@ func (s *MetadataService) listActiveEngines(tenantID *uint) ([]models.Resource, 
 		if err != nil {
 			logger.L().Warn("数据探查: System API 获取资源列表失败，回退数据库查询", "error", err)
 		} else {
-			engines := make([]models.Resource, 0, len(sysResources))
+			engines := make([]models.Engine, 0, len(sysResources))
 			for i := range sysResources {
 				res := sysResources[i]
 				if !res.IsActive {
@@ -847,7 +847,7 @@ func (s *MetadataService) listActiveEngines(tenantID *uint) ([]models.Resource, 
 		}
 	}
 
-	engines, err := s.resourceRepo.ListAllActive(tenantID)
+	engines, err := s.engineRepo.ListAllActive(tenantID)
 	if err != nil {
 		logger.L().Error("数据探查: 数据库获取引擎列表失败", "error", err)
 		return nil, err
@@ -873,7 +873,7 @@ func (s *MetadataService) PreviewTableWithContext(ctx context.Context, engineID 
 	}
 
 	req := &PreviewRequest{
-		Resource: resource,
+		Engine:   resource,
 		Schema:   schemaName,
 		Table:    tableName,
 		Page:     page,
@@ -894,7 +894,7 @@ func (s *MetadataService) PreviewTableWithContext(ctx context.Context, engineID 
 	return result, nil
 }
 
-func resourceAccessible(resource *models.Resource, tenantID *uint) bool {
+func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 	if resource == nil || !resource.IsActive {
 		return false
 	}
@@ -908,27 +908,27 @@ func resourceAccessible(resource *models.Resource, tenantID *uint) bool {
 }
 
 // getResource 优先通过 System 服务获取解密后的资源信息，失败时回退到本地数据库
-func (s *MetadataService) getResource(engineID uint) (*models.Resource, error) {
+func (s *MetadataService) getResource(engineID uint) (*models.Engine, error) {
 	if s.systemClient != nil {
 		if sysResource, err := s.systemClient.GetEngine(engineID); err == nil {
 			return convertResource(sysResource), nil
 		}
 	}
-	return s.resourceRepo.GetByID(engineID)
+	return s.engineRepo.GetByID(engineID)
 }
 
-func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Resource, error) {
+func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Engine, error) {
 	resource, err := s.getResource(engineID)
 	if err != nil {
 		return nil, err
 	}
 	if !resourceAccessible(resource, tenantID) {
-		return nil, ErrResourceAccessDenied
+		return nil, ErrEngineAccessDenied
 	}
 	return resource, nil
 }
 
-func convertResource(src *commonModels.Engine) *models.Resource {
+func convertResource(src *commonModels.Engine) *models.Engine {
 	if src == nil {
 		return nil
 	}
@@ -944,7 +944,7 @@ func convertResource(src *commonModels.Engine) *models.Resource {
 		connInfo[k] = v
 	}
 
-	return &models.Resource{
+	return &models.Engine{
 		ID:             src.ID,
 		Name:           src.Name,
 		EngineType:   src.EngineType,
@@ -968,7 +968,7 @@ func (s *MetadataService) StreamVideo(
 	// 获取resource信息
 	resource, err := s.getResourceForTenant(resourceID, tenantID)
 	if err != nil {
-		return nil, 0, "", "", ErrResourceAccessDenied
+		return nil, 0, "", "", ErrEngineAccessDenied
 	}
 
 	// 检查是否为对象存储类型

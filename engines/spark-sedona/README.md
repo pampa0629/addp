@@ -112,7 +112,7 @@ python3 api_server.py
 curl -X POST http://localhost:8098/api/spatial/operators/st_buffer/execute \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_id": 34,
+    "engine_id": 34,
     "params": {
       "input_df": {...},
       "distance": 100,
@@ -127,7 +127,7 @@ curl -X POST http://localhost:8098/api/spatial/operators/st_buffer/execute \
 curl -X POST http://localhost:8098/api/spatial/workflow \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_id": 34,
+    "engine_id": 34,
     "workflow_def": {
       "tasks": [
         {
@@ -174,7 +174,7 @@ curl -X POST http://localhost:8098/api/spatial/workflow \
 
 ```json
 {
-  "resource_id": 34,
+  "engine_id": 34,
   "workflow_def": {
     "tasks": [
       {
@@ -201,7 +201,7 @@ curl -X POST http://localhost:8098/api/spatial/workflow \
 
 ```json
 {
-  "resource_id": 34,
+  "engine_id": 34,
   "workflow_def": {
     "step1": {
       "operator": "load",
@@ -226,14 +226,14 @@ curl -X POST http://localhost:8098/api/spatial/workflow \
 Spark Sedona Engine 不内置 Spark 集群,而是动态连接到用户注册的 Spark 资源:
 
 1. 用户在 System 模块注册 Spark 资源 (多个)
-2. 创建工作流时选择使用哪个 Spark 资源 (resource_id)
+2. 创建工作流时选择使用哪个 Spark 资源 (engine_id)
 3. Engine 通过 System API 获取资源配置,动态创建 SparkSession
-4. 每个 resource_id 对应一个 SparkSession (缓存复用)
+4. 每个 engine_id 对应一个 SparkSession (缓存复用)
 
 ```python
 # spark_connector.py
 connector = get_spark_connector()
-spark = connector.get_or_create_session(resource_id=34)
+spark = connector.get_or_create_session(engine_id=34)
 ```
 
 ### 统一存储访问
@@ -244,7 +244,7 @@ spark = connector.get_or_create_session(resource_id=34)
 # 加载: 数据库
 df = StorageAdapter.load(spark, {
     "source_type": "table",
-    "resource_id": 34,
+    "engine_id": 34,
     "schema": "public",
     "table": "poi_data"
 })
@@ -275,7 +275,7 @@ df = StorageAdapter.load(spark, {
 4. 引用解析 → `{"$ref": "task_id"}` 获取上游结果
 
 ```python
-engine = SparkWorkflowEngine(resource_id=34)
+engine = SparkWorkflowEngine(engine_id=34)
 engine.load_workflow(workflow_def)
 result = engine.run()
 ```
@@ -312,13 +312,13 @@ GET /api/operators
 ### 执行工作流
 ```
 POST /api/spatial/workflow
-Body: {"resource_id": 34, "workflow_def": {...}}
+Body: {"engine_id": 34, "workflow_def": {...}}
 ```
 
 ### 执行单个算子
 ```
 POST /api/spatial/operators/{operator_name}/execute
-Body: {"resource_id": 34, "params": {...}}
+Body: {"engine_id": 34, "params": {...}}
 ```
 
 ### 查询执行状态
@@ -355,7 +355,7 @@ spark = SparkSession.builder \
 检查 Spark 资源配置:
 - 确保 Spark Thrift Server 正在运行
 - 验证 host 和 port 可访问
-- 检查 resource_id 是否正确
+- 检查 engine_id 是否正确
 
 ### 4. S3 访问失败
 

@@ -14,8 +14,8 @@ router = APIRouter()
 
 class DataSourceCandidate(BaseModel):
     """数据源候选"""
-    resource_id: Optional[int] = None
-    resource_name: Optional[str] = None
+    engine_id: Optional[int] = None
+    engine_name: Optional[str] = None
     schema_name: Optional[str] = None
     table_name: Optional[str] = None
     score: float
@@ -26,7 +26,7 @@ class SQLGenerationRequest(BaseModel):
     """SQL 生成请求"""
     query: str
     conversation_id: Optional[int] = None
-    resource_id: Optional[int] = None
+    engine_id: Optional[int] = None
     tenant_id: int
     user_id: int
 
@@ -52,7 +52,7 @@ async def generate_sql(request: SQLGenerationRequest):
         match_result = await metadata_matcher.match_datasources(
             query=request.query,
             tenant_id=request.tenant_id,
-            resource_id=request.resource_id
+            engine_id=request.engine_id
         )
 
         # 2. 获取对话记忆（如果有）
@@ -85,8 +85,8 @@ async def generate_sql(request: SQLGenerationRequest):
         # 5. 转换候选列表
         candidates = [
             DataSourceCandidate(
-                resource_id=c.get("resource_id"),
-                resource_name=c.get("resource_name"),
+                engine_id=c.get("engine_id"),
+                engine_name=c.get("engine_name"),
                 schema_name=c.get("schema_name"),
                 table_name=c.get("table_name"),
                 score=c.get("score", 0.0),

@@ -159,7 +159,7 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 	status := c.Query("status")
-	resourceIDStr := c.Query("engine_id")
+	engineIDStr := c.Query("engine_id")
 
 	var engineID uint
 	if engineIDStr != "" {

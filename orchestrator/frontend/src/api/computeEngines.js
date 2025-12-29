@@ -1,20 +1,20 @@
 import client from './client'
 
 /**
- * 计算资源 API
- * 用于获取所有具有计算能力的资源（内置引擎 + 外部数据源）
+ * 计算引擎 API
+ * 用于获取所有具有计算能力的引擎（内置引擎 + 外部数据源）
  */
 export default {
   /**
-   * 获取所有计算资源列表
-   * @returns {Promise<Array>} 计算资源列表
+   * 获取所有计算引擎列表
+   * @returns {Promise<Array>} 计算引擎列表
    * @example
    * [
    *   {
    *     id: 1,
    *     name: "Meta Metadata Scanner",
    *     unique_identifier: "meta.scanner.default",
-   *     resource_type: "compute_engine",
+   *     engine_type: "compute_engine",
    *     is_builtin: true,
    *     is_active: true,
    *     capabilities: "{\"compute\":[...]}",
@@ -23,7 +23,7 @@ export default {
    * ]
    */
   async list() {
-    const data = await client.get('/compute-resources')
+    const data = await client.get('/compute-engines')
     return data
   }
 }

@@ -20,23 +20,23 @@ class SparkWorkflowEngine:
     核心功能: DAG 拓扑排序 + DataFrame 内存传递
     """
 
-    def __init__(self, resource_id: int):
+    def __init__(self, engine_id: int):
         """
         初始化工作流引擎
 
         Args:
-            resource_id: Spark资源ID (从system.resources获取)
+            engine_id: Spark引擎ID (从system.engines获取)
         """
-        self.resource_id = resource_id
+        self.engine_id = engine_id
         self.tasks = {}              # {task_id: TaskDef}
         self.results = {}            # {task_id: {port_name: DataFrame}}  # 内存缓存(端口结构)
         self.task_order = []         # 拓扑排序后的任务执行顺序
 
         # 获取SparkSession (预连接)
         connector = get_spark_connector()
-        self.spark = connector.get_or_create_session(resource_id)
+        self.spark = connector.get_or_create_session(engine_id)
 
-        logger.info(f"SparkWorkflowEngine initialized for resource {resource_id}")
+        logger.info(f"SparkWorkflowEngine initialized for engine {engine_id}")
 
     def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str] = None):
         """
@@ -212,9 +212,9 @@ class SparkWorkflowEngine:
         # 解析参数引用
         resolved_params = self.resolve_references(params)
 
-        # 对于需要resource_id的算子,自动注入
+        # 对于需要engine_id的算子,自动注入
         if operator_name in ['load', 'save', 'sql']:
-            resolved_params['resource_id'] = self.resource_id
+            resolved_params['engine_id'] = self.engine_id
 
         # 获取算子函数
         operator_func = get_operator(operator_name)
@@ -344,12 +344,12 @@ class SparkWorkflowEngine:
 # 便捷函数
 # ========================================
 
-def execute_workflow(resource_id: int, workflow_def: Dict[str, Any], input_data: Dict[str, Any] = None) -> Dict[str, Any]:
+def execute_workflow(engine_id: int, workflow_def: Dict[str, Any], input_data: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     执行工作流 (便捷函数)
 
     Args:
-        resource_id: Spark资源ID
+        engine_id: Spark引擎ID
         workflow_def: 工作流定义
         input_data: 输入数据
 
@@ -362,7 +362,7 @@ def execute_workflow(resource_id: int, workflow_def: Dict[str, Any], input_data:
                 "message": "..."
             }
     """
-    engine = SparkWorkflowEngine(resource_id)
+    engine = SparkWorkflowEngine(engine_id)
 
     try:
         # 加载工作流
@@ -381,12 +381,12 @@ def execute_workflow(resource_id: int, workflow_def: Dict[str, Any], input_data:
         }
 
 
-def execute_single_operator(resource_id: int, operator_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def execute_single_operator(engine_id: int, operator_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """
     执行单个算子 (便捷函数)
 
     Args:
-        resource_id: Spark资源ID
+        engine_id: Spark引擎ID
         operator_name: 算子名称
         params: 参数字典
 
@@ -400,14 +400,14 @@ def execute_single_operator(resource_id: int, operator_name: str, params: Dict[s
     try:
         # 获取SparkSession
         connector = get_spark_connector()
-        spark = connector.get_or_create_session(resource_id)
+        spark = connector.get_or_create_session(engine_id)
 
         # 获取算子函数
         operator_func = get_operator(operator_name)
 
-        # 对于需要resource_id的算子,自动注入
+        # 对于需要engine_id的算子,自动注入
         if operator_name in ['load', 'save', 'sql']:
-            params['resource_id'] = resource_id
+            params['engine_id'] = engine_id
 
         # 执行算子
         result = operator_func(**params)
@@ -469,7 +469,7 @@ if __name__ == "__main__":
 
     # 执行工作流 (需要Spark资源ID,这里假设为34)
     result = execute_workflow(
-        resource_id=34,
+        engine_id=34,
         workflow_def=workflow_def
     )
 

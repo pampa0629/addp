@@ -35,10 +35,10 @@ import (
 
 // 使用 SystemClient
 sysClient := client.NewSystemClient("http://localhost:8080", token)
-resource, err := sysClient.GetResource(1)
+engine, err := sysClient.GetEngine(1)
 
 // 构建连接字符串
-connStr, err := models.BuildConnectionString(resource)
+connStr, err := models.BuildConnectionString(engine)
 ```
 
 ## 设计原则

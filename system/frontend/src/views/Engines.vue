@@ -163,7 +163,7 @@
       title="选择引擎类型"
       width="500px"
     >
-      <div class="resource-type-selection">
+      <div class="engine-type-selection">
         <el-card class="type-card" shadow="hover" @click="confirmEngineType('storage')">
           <div class="type-icon">📦</div>
           <h3>存储引擎</h3>
@@ -205,7 +205,7 @@
       />
 
       <!-- 计算引擎表单 -->
-      <ResourceForm
+      <EngineForm
         v-else
         ref="resourceFormRef"
         v-model="form"
@@ -260,7 +260,7 @@ import { ref, onMounted, computed } from 'vue'
 import { enginesAPI } from '../api/engines'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { StorageEngineForm, ResourceForm } from '@common-ui'
+import { StorageEngineForm, EngineForm } from '@common-ui'
 
 const engines = ref([])
 const loading = ref(false)
@@ -449,7 +449,7 @@ const getEngineTypeColor = (type) => {
     'database': 'success',
     'compute_engine': 'info'
   }
-  return colorMap[type] || ''
+  return colorMap[type] || 'info'
 }
 
 const formatDate = (dateString) => {
@@ -725,7 +725,7 @@ const formatJSON = (jsonStr) => {
 
 // 表格行样式
 const tableRowClassName = ({ row }) => {
-  return row.is_builtin ? 'builtin-resource-row' : ''
+  return row.is_builtin ? 'builtin-engine-row' : ''
 }
 
 const resetForm = () => {
@@ -790,16 +790,16 @@ onMounted(() => {
 }
 
 /* 内置引擎行样式 */
-:deep(.builtin-resource-row) {
+:deep(.builtin-engine-row) {
   background-color: #f5f7fa;
 }
 
-:deep(.builtin-resource-row:hover) {
+:deep(.builtin-engine-row:hover) {
   background-color: #ebeef5 !important;
 }
 
 /* 引擎类型选择对话框样式 */
-.resource-type-selection {
+.engine-type-selection {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;

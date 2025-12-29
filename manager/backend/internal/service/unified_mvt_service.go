@@ -67,9 +67,9 @@ func (s *UnifiedMVTService) GetTile(
 	startTime := time.Now()
 
 	// 1. 计算 fingerprint（对前端透明）
-	fingerprint := s.calculateFingerprint(engineID, schema, table)
+	fingerprint := s.calculateFingerprint(resourceID, schema, table)
 	logger.L().Info("📍 统一MVT服务收到请求",
-		"engine_id", engineID,
+		"engine_id", resourceID,
 		"schema", schema,
 		"table", table,
 		"z", z, "x", x, "y", y,
@@ -88,7 +88,7 @@ func (s *UnifiedMVTService) GetTile(
 	var beyondMaxZoom bool // 是否超出预缓存范围
 
 	if s.quickViewService != nil && tenantID != nil {
-		qv, err := s.quickViewService.GetStatus(ctx, *tenantID, engineID, schema, table)
+		qv, err := s.quickViewService.GetStatus(ctx, *tenantID, resourceID, schema, table)
 		logger.L().Info("🔍 GetStatus 结果",
 			"err", err,
 			"extent_len", len(qv.Extent),
@@ -158,13 +158,13 @@ func (s *UnifiedMVTService) GetTile(
 
 	// 4. 缓存未命中，使用 singleflight 从 PG 实时生成
 	logger.L().Info("🔧 缓存未命中，开始实时生成瓦片 (singleflight)",
-		"engine_id", engineID,
+		"engine_id", resourceID,
 		"schema", schema,
 		"table", table,
 		"z", z, "x", x, "y", y)
 
 	// ✅ 构建 singleflight key (确保相同瓦片的并发请求使用同一 key)
-	sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", engineID, schema, table, z, x, y)
+	sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", resourceID, schema, table, z, x, y)
 
 	// ✅ singleflight.Do: 多个并发请求同一瓦片时,只生成一次
 	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
@@ -172,7 +172,7 @@ func (s *UnifiedMVTService) GetTile(
 		genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		tileData, err := s.mvtService.GetTile(genCtx, tenantID, engineID, schema, table, geomCol, cols, z, x, y, srid)
+		tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID, schema, table, geomCol, cols, z, x, y, srid)
 		if err != nil {
 			// 特殊处理超时错误：返回空瓦片而非错误（优雅降级）
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -202,7 +202,7 @@ func (s *UnifiedMVTService) GetTile(
 			"size", len(tileData))
 	} else {
 		logger.L().Info("瓦片实时生成完成 (首次请求)",
-			"engine_id", engineID,
+			"engine_id", resourceID,
 			"schema", schema,
 			"table", table,
 			"z", z, "x", x, "y", y,
@@ -234,7 +234,7 @@ func (s *UnifiedMVTService) GetTile(
 	if shouldCache && len(tileData) > 0 {
 		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存）
 		go s.persistToMinIO(context.Background(), fingerprint, z, x, y, tileData,
-			engineID, schema, table, tenantID, durationMs, tileSizeKB)
+			resourceID, schema, table, tenantID, durationMs, tileSizeKB)
 	}
 
 	return &TileResponse{
@@ -315,7 +315,7 @@ func (s *UnifiedMVTService) persistToMinIO(
 		err := s.quickViewService.IncrementCachedTiles(
 			ctx,
 			*tenantID,
-			engineID,
+			resourceID,
 			schema,
 			table,
 			durationMs,
@@ -325,7 +325,7 @@ func (s *UnifiedMVTService) persistToMinIO(
 			// 不阻塞，仅记录日志
 			logger.L().Debug("更新快显统计失败（可能表无快显记录）",
 				"error", err,
-				"engine_id", engineID,
+				"engine_id", resourceID,
 				"table", fmt.Sprintf("%s.%s", schema, table))
 		}
 	}

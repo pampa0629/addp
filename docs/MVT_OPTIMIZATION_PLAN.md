@@ -78,7 +78,7 @@
 
 ```go
 // 当前实现 (unified_mvt_service.go:168)
-tileData, err = s.mvtService.GetTile(genCtx, tenantID, resourceID, ...)
+tileData, err = s.mvtService.GetTile(genCtx, tenantID, engineID, ...)
 // ❌ 没有合并机制 → 多个并发请求会重复查询
 ```
 
@@ -141,13 +141,13 @@ func (s *UnifiedMVTService) GetTile(...) (*TileResponse, error) {
     // ... 前面的缓存查询代码 ...
 
     // ✅ 使用 singleflight 合并重复请求
-    sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", resourceID, schema, table, z, x, y)
+    sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", engineID, schema, table, z, x, y)
 
     v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
         genCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
         defer cancel()
 
-        tileData, err := s.mvtService.GetTile(genCtx, tenantID, resourceID,
+        tileData, err := s.mvtService.GetTile(genCtx, tenantID, engineID,
             schema, table, geomCol, cols, z, x, y, srid)
 
         if err != nil {
@@ -183,7 +183,7 @@ func (s *UnifiedMVTService) GetTile(...) (*TileResponse, error) {
 ```bash
 # 使用 Apache Bench 测试
 ab -n 10 -c 10 -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/12/3421/1583"
+  "http://localhost:8081/api/engines/2/spatial/tiles/public/dltb/12/3421/1583"
 ```
 
 **预期日志**:
@@ -257,32 +257,32 @@ import (
 // MVTService 生成 MVT 瓦片
 type MVTService struct {
     metadataRepo *repository.MetadataRepository
-    resourceRepo *repository.ResourceRepository
+    engineRepo *repository.EngineRepository
 
-    // ✅ 连接池管理 (按 resourceID 缓存)
+    // ✅ 连接池管理 (按 engineID 缓存)
     dbPools   map[uint]*sql.DB
     poolMutex sync.RWMutex
 }
 
-func NewMVTService(meta *repository.MetadataRepository, res *repository.ResourceRepository) *MVTService {
+func NewMVTService(meta *repository.MetadataRepository, res *repository.EngineRepository) *MVTService {
     return &MVTService{
         metadataRepo: meta,
-        resourceRepo: res,
+        engineRepo: res,
         dbPools:      make(map[uint]*sql.DB),
     }
 }
 
 // getOrCreateDBPool 获取或创建数据库连接池 (线程安全)
-func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*sql.DB, error) {
+func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql.DB, error) {
     // 1. 先尝试读锁获取已有连接池
     s.poolMutex.RLock()
-    if pool, exists := s.dbPools[resourceID]; exists {
+    if pool, exists := s.dbPools[engineID]; exists {
         s.poolMutex.RUnlock()
         // 验证连接是否有效
         if err := pool.PingContext(ctx); err == nil {
             return pool, nil
         }
-        logger.L().Warn("数据库连接池失效，准备重建", "resource_id", resourceID)
+        logger.L().Warn("数据库连接池失效，准备重建", "engine_id", engineID)
     } else {
         s.poolMutex.RUnlock()
     }
@@ -292,18 +292,18 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*s
     defer s.poolMutex.Unlock()
 
     // 双重检查 (可能其他 goroutine 已创建)
-    if pool, exists := s.dbPools[resourceID]; exists {
+    if pool, exists := s.dbPools[engineID]; exists {
         if err := pool.PingContext(ctx); err == nil {
             return pool, nil
         }
         pool.Close()
-        delete(s.dbPools, resourceID)
+        delete(s.dbPools, engineID)
     }
 
-    // 3. 获取资源配置并构建 DSN
-    res, err := s.resourceRepo.GetByID(resourceID)
+    // 3. 获取引擎配置并构建 DSN
+    res, err := s.engineRepo.GetByID(engineID)
     if err != nil {
-        return nil, fmt.Errorf("get resource failed: %w", err)
+        return nil, fmt.Errorf("get engine failed: %w", err)
     }
 
     connInfo, err := s.metadataRepo.DecryptConnectionInfo(res.ConnectionInfo)
@@ -335,9 +335,9 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint) (*s
     }
 
     // 7. 缓存连接池
-    s.dbPools[resourceID] = db
+    s.dbPools[engineID] = db
     logger.L().Info("✅ 创建数据库连接池",
-        "resource_id", resourceID,
+        "engine_id", engineID,
         "max_open_conns", 25,
         "max_idle_conns", 5)
 
@@ -385,23 +385,23 @@ func (s *MVTService) buildDSN(connInfo map[string]interface{}) (string, error) {
 func (s *MVTService) GetTile(
     ctx context.Context,
     tenantID *uint,
-    resourceID uint,
+    engineID uint,
     schema, table, geomCol string,
     cols []string,
     z, x, y int,
     srid int,
 ) ([]byte, error) {
     // 1. 验证租户权限
-    res, err := s.resourceRepo.GetByID(resourceID)
+    res, err := s.engineRepo.GetByID(engineID)
     if err != nil {
         return nil, err
     }
-    if !resourceAccessible(res, tenantID) {
-        return nil, ErrResourceAccessDenied
+    if !engineAccessible(res, tenantID) {
+        return nil, ErrEngineAccessDenied
     }
 
     // 2. ✅ 获取连接池 (复用已有连接)
-    db, err := s.getOrCreateDBPool(ctx, resourceID)
+    db, err := s.getOrCreateDBPool(ctx, engineID)
     if err != nil {
         return nil, fmt.Errorf("get db pool failed: %w", err)
     }
@@ -437,7 +437,7 @@ func (s *MVTService) GetTile(
     var mvt []byte
     scanErr := db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvt)
     if scanErr != nil {
-        logger.L().Error("MVT query failed", "error", scanErr, "resource_id", resourceID)
+        logger.L().Error("MVT query failed", "error", scanErr, "engine_id", engineID)
         return nil, scanErr
     }
 
@@ -454,9 +454,9 @@ func (s *MVTService) Close() error {
     defer s.poolMutex.Unlock()
 
     var errs []error
-    for resourceID, pool := range s.dbPools {
+    for engineID, pool := range s.dbPools {
         if err := pool.Close(); err != nil {
-            errs = append(errs, fmt.Errorf("close pool for resource %d: %w", resourceID, err))
+            errs = append(errs, fmt.Errorf("close pool for engine %d: %w", engineID, err))
         }
     }
 
@@ -487,7 +487,7 @@ import (
 func main() {
     // ... 初始化服务 ...
 
-    mvtService := service.NewMVTService(metadataRepo, resourceRepo)
+    mvtService := service.NewMVTService(metadataRepo, engineRepo)
 
     // ✅ 注册优雅关闭
     c := make(chan os.Signal, 1)
@@ -516,7 +516,7 @@ GROUP BY application_name;
 
 # 压力测试
 ab -n 1000 -c 10 -H "Authorization: Bearer $TOKEN" \
-  "http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/12/3421/1583"
+  "http://localhost:8081/api/engines/2/spatial/tiles/public/dltb/12/3421/1583"
 ```
 
 **预期结果**:
@@ -554,7 +554,7 @@ ab -n 1000 -c 10 -H "Authorization: Bearer $TOKEN" \
 ```go
 type MVTService struct {
     metadataRepo *repository.MetadataRepository
-    resourceRepo *repository.ResourceRepository
+    engineRepo *repository.EngineRepository
 
     // ✅ 双连接池
     realtimeDBPools map[uint]*sql.DB  // 用户实时请求
@@ -562,10 +562,10 @@ type MVTService struct {
     poolMutex       sync.RWMutex
 }
 
-func NewMVTService(meta *repository.MetadataRepository, res *repository.ResourceRepository) *MVTService {
+func NewMVTService(meta *repository.MetadataRepository, res *repository.EngineRepository) *MVTService {
     return &MVTService{
         metadataRepo:    meta,
-        resourceRepo:    res,
+        engineRepo:    res,
         realtimeDBPools: make(map[uint]*sql.DB),
         prewarmDBPools:  make(map[uint]*sql.DB),
     }
@@ -573,17 +573,17 @@ func NewMVTService(meta *repository.MetadataRepository, res *repository.Resource
 
 // GetTile 实时请求使用 realtimeDBPools
 func (s *MVTService) GetTile(...) ([]byte, error) {
-    db, err := s.getOrCreateDBPool(ctx, resourceID, true)  // realtime=true
+    db, err := s.getOrCreateDBPool(ctx, engineID, true)  // realtime=true
     // ...
 }
 
 // GetTilePrewarm 预热任务使用 prewarmDBPools
 func (s *MVTService) GetTilePrewarm(...) ([]byte, error) {
-    db, err := s.getOrCreateDBPool(ctx, resourceID, false)  // realtime=false
+    db, err := s.getOrCreateDBPool(ctx, engineID, false)  // realtime=false
     // ...
 }
 
-func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint, realtime bool) (*sql.DB, error) {
+func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint, realtime bool) (*sql.DB, error) {
     poolMap := s.prewarmDBPools
     if realtime {
         poolMap = s.realtimeDBPools
@@ -600,7 +600,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, resourceID uint, rea
         db.SetMaxIdleConns(2)
     }
 
-    poolMap[resourceID] = db
+    poolMap[engineID] = db
     return db, nil
 }
 ```
@@ -807,7 +807,7 @@ import { ElMessage } from 'element-plus'
 import client from '@/api/client'
 
 const props = defineProps({
-  resourceId: { type: [Number, String], required: true },
+  engineId: { type: [Number, String], required: true },
   schema: { type: String, required: true },
   table: { type: String, required: true },
   geom: { type: String, default: 'geom' }
@@ -824,7 +824,7 @@ const token = () => localStorage.getItem('token') || ''
 
 async function fetchTileConfig() {
   try {
-    const url = `/resources/${props.resourceId}/spatial/${props.schema}/${props.table}/tile-config`
+    const url = `/engines/${props.engineId}/spatial/${props.schema}/${props.table}/tile-config`
     const response = await client.get(url)
     tileConfig.value = response.data
   } catch (err) {
@@ -835,7 +835,7 @@ async function fetchTileConfig() {
 
 const tilesURLTemplate = computed(() => {
   const base = apiBase.value.replace(/\/$/, '')
-  let url = `${base}/resources/${props.resourceId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
+  let url = `${base}/engines/${props.engineId}/spatial/tiles/${props.schema}/${props.table}/{z}/{x}/{y}`
   if (props.geom && props.geom !== 'geom') {
     url += `?geom=${encodeURIComponent(props.geom)}`
   }
@@ -887,8 +887,8 @@ async function initMap() {
 }
 
 function addMVTLayer() {
-  const sourceId = `mvt-source-${props.resourceId}`
-  const layerId = `mvt-layer-${props.resourceId}`
+  const sourceId = `mvt-source-${props.engineId}`
+  const layerId = `mvt-layer-${props.engineId}`
 
   // ✅ 添加矢量瓦片源 (MapLibre 自动处理请求管理)
   map.addSource(sourceId, {
@@ -1032,7 +1032,7 @@ onBeforeUnmount(() => {
 
   <!-- ✅ 新的 -->
   <VectorTileMapLibre
-    :resource-id="resourceId"
+    :engine-id="engineId"
     :schema="schema"
     :table="table"
     :geom="geomColumn"
@@ -1132,7 +1132,7 @@ import VectorTileMapLibre from '@/components/map/VectorTileMapLibre.vue'
 # 测试 10 个并发请求同一瓦片
 
 TOKEN="your_jwt_token_here"
-URL="http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/12/3421/1583"
+URL="http://localhost:8081/api/engines/2/spatial/tiles/public/dltb/12/3421/1583"
 
 echo "开始并发测试..."
 ab -n 10 -c 10 -H "Authorization: Bearer $TOKEN" "$URL"
@@ -1167,7 +1167,7 @@ ORDER BY total_connections DESC;
 # 压力测试 (1000 请求, 50 并发)
 
 TOKEN="your_jwt_token_here"
-BASE_URL="http://localhost:8081/api/resources/2/spatial/tiles/public/dltb"
+BASE_URL="http://localhost:8081/api/engines/2/spatial/tiles/public/dltb"
 
 echo "开始压力测试..."
 for z in {10..12}; do

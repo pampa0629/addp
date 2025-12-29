@@ -33,11 +33,11 @@ func (p *shapefilePreviewProvider) Priority() int {
 }
 
 func (p *shapefilePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 
-	if !isObjectStorageType(req.Resource.EngineType) {
+	if !isObjectStorageType(req.Engine.EngineType) {
 		return false
 	}
 
@@ -50,7 +50,7 @@ func (p *shapefilePreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	minioClient, bucket, err := p.createMinioClient(req.Resource)
+	minioClient, bucket, err := p.createMinioClient(req.Engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
@@ -151,7 +151,7 @@ func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 	}, nil
 }
 
-func (p *shapefilePreviewProvider) createMinioClient(resource *models.Resource) (*minio.Client, string, error) {
+func (p *shapefilePreviewProvider) createMinioClient(resource *models.Engine) (*minio.Client, string, error) {
 	connInfo := resource.ConnectionInfo
 
 	endpoint, _ := connInfo["endpoint"].(string)

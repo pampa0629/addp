@@ -15,7 +15,7 @@
           <el-option
             v-for="engine in engines"
             :key="engine.id"
-            `:label="`${engine.name} (${engine.engine_type})`"
+            :label="`${engine.name} (${engine.engine_type})`"
             :value="engine.id"
           >
             <span style="float: left">{{ engine.name }}</span>
@@ -169,7 +169,7 @@ const loadEngines = async () => {
     }
 
     engines.value = response.filter(r =>
-      ['postgresql', 'mysql', 'doris', 'spark_sql'].includes(r.resource_type.toLowerCase())
+      ['postgresql', 'mysql', 'doris', 'spark_sql'].includes(r.engine_type.toLowerCase())
     )
 
     // 默认选择第一个

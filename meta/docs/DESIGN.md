@@ -14,7 +14,7 @@ Meta 模块采用 **分层元数据管理** 策略，平衡用户体验和资源
 ```sql
 CREATE TABLE metadata.datasources (
     id SERIAL PRIMARY KEY,
-    resource_id INTEGER NOT NULL,           -- 关联 system.resources
+    engine_id INTEGER NOT NULL,           -- 关联 system.engines
     tenant_id INTEGER NOT NULL,             -- 租户隔离
     datasource_name VARCHAR(255),           -- 数据源名称
     datasource_type VARCHAR(50),            -- mysql, postgresql, mongodb, etc.
@@ -26,7 +26,7 @@ CREATE TABLE metadata.datasources (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_metadata_datasources_resource ON metadata.datasources(resource_id);
+CREATE INDEX idx_metadata_datasources_resource ON metadata.datasources(engine_id);
 CREATE INDEX idx_metadata_datasources_tenant ON metadata.datasources(tenant_id);
 ```
 
@@ -141,7 +141,7 @@ CREATE INDEX idx_metadata_sync_logs_created ON metadata.sync_logs(created_at DES
 POST /api/metadata/sync/auto
 Request:
 {
-  "resource_id": 1,           // 数据源 ID（system.resources）
+  "engine_id": 1,           // 数据源 ID（system.engines）
   "force": false              // 是否强制重新同步
 }
 
@@ -159,7 +159,7 @@ Response:
 POST /api/metadata/scan/deep
 Request:
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "database": "business",     // 指定数据库
   "include_tables": true,     // 是否扫描表
   "include_fields": true,     // 是否扫描字段
@@ -181,7 +181,7 @@ Response:
 GET /api/metadata/datasources?tenant_id=1
 
 # 获取数据库列表（Level 1 数据）
-GET /api/metadata/databases?resource_id=1
+GET /api/metadata/databases?engine_id=1
 
 # 获取表列表（Level 2 数据）
 GET /api/metadata/tables?database_id=5
@@ -190,7 +190,7 @@ GET /api/metadata/tables?database_id=5
 GET /api/metadata/fields?table_id=100
 
 # 获取同步日志
-GET /api/metadata/sync-logs?resource_id=1&limit=10
+GET /api/metadata/sync-logs?engine_id=1&limit=10
 ```
 
 #### 4. 检查扫描状态
@@ -219,7 +219,7 @@ GET /api/manager/datasources/:id/available-databases
 
 Response:
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "resource_name": "业务数据库",
   "databases": [
     {
@@ -248,7 +248,7 @@ Response:
 POST /api/manager/manage
 Request:
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "database": "business",
   "tables": ["users", "orders"],  // 可选，不填则纳管整个数据库
   "trigger_deep_scan": true,      // 是否触发深度扫描
@@ -284,7 +284,7 @@ Response:
   "objects": [
     {
       "id": 1,
-      "resource_id": 1,
+      "engine_id": 1,
       "resource_name": "业务数据库",
       "database": "business",
       "table": "users",

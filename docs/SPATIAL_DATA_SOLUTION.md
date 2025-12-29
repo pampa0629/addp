@@ -669,7 +669,7 @@ onMounted(() => {
         'spatial-data': {  // 业务数据矢量切片
           type: 'vector',
           tiles: [
-            `http://localhost:8081/api/tiles/{z}/{x}/{y}.pbf?layer=${props.tableName}&resource_id=${props.resourceId}`
+            `http://localhost:8081/api/tiles/{z}/{x}/{y}.pbf?layer=${props.tableName}&engine_id=${props.resourceId}`
           ],
           minzoom: 0,
           maxzoom: 18

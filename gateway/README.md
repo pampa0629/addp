@@ -42,7 +42,7 @@ Gateway 根据 URL 路径前缀自动路由请求：
 | `/api/auth/*` | System | http://localhost:8080 | 用户认证 |
 | `/api/users/*` | System | http://localhost:8080 | 用户管理 |
 | `/api/tenants/*` | System | http://localhost:8080 | 租户管理 |
-| `/api/resources/*` | System | http://localhost:8080 | 资源管理 |
+| `/api/engines/*` | System | http://localhost:8080 | 引擎管理 |
 | `/api/logs/*` | System | http://localhost:8080 | 日志查询 |
 | `/api/datasources/*` | Manager | http://localhost:8081 | 数据源管理 |
 | `/api/directories/*` | Manager | http://localhost:8081 | 目录管理 |

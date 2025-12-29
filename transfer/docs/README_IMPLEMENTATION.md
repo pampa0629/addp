@@ -156,7 +156,7 @@ type Task struct {
     Name        string
     Type        TaskType    // import, export, sync
     Mode        TaskMode    // batch, stream, micro-batch
-    SourceID    *uint       // 关联 system.resources
+    SourceID    *uint       // 关联 system.engines
     TargetID    *uint
     Config      JSONMap     // 任务配置
     Schedule    string      // Cron 表达式
@@ -705,7 +705,7 @@ export RETRY_DELAY=30s        # 重试延迟
 - [scripts/init-db.sql](../../scripts/init-db.sql) - 数据库 Schema
 
 ### 相关模块
-- **System 模块**：资源管理（`system.resources`）、用户认证
+- **System 模块**：引擎管理（`system.engines`）、用户认证
 - **Meta 模块**：元数据扫描器（可复用为 Reader）
 - **Manager 模块**：S3 客户端（可复用）
 

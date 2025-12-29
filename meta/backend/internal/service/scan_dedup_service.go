@@ -19,7 +19,7 @@ func NewScanDedupService(redis *redis.Client) *ScanDedupService {
 }
 
 // GenerateTaskKey 生成任务唯一标识
-// 格式: meta:cache:scan_task:{tenant_id}:{resource_id}:{scan_type}
+// 格式: meta:cache:scan_task:{tenant_id}:{engine_id}:{scan_type}
 func (s *ScanDedupService) GenerateTaskKey(tenantID, engineID uint, scanType string) string {
 	return fmt.Sprintf("meta:cache:scan_task:%d:%d:%s", tenantID, engineID, scanType)
 }

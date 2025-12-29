@@ -76,7 +76,7 @@ Orchestrator 模块使用 `orchestrator` schema，包含 2 张核心表。
     "name": "扫描元数据",
     "engine_identifier": "meta.scanner.default",
     "parameters": {
-      "resource_id": 1,
+      "engine_id": 1,
       "schema_names": ["public"]
     },
     "depends_on": [],
@@ -87,7 +87,7 @@ Orchestrator 模块使用 `orchestrator` schema，包含 2 张核心表。
     "name": "生成 MVT 瓦片",
     "engine_identifier": "manager.mvt.default",
     "parameters": {
-      "resource_id": 1,
+      "engine_id": 1,
       "schema": "public",
       "table": "cities"
     },
@@ -212,7 +212,7 @@ orchestrator.orchestrations (编排定义)
     ↓ 1:N
 orchestrator.executions (执行实例)
 
-system.resources (能力注册)
+system.engines (能力注册)
     ↓ (动态引用)
 orchestrator.orchestrations.steps[].engine_identifier
 ```
@@ -237,7 +237,7 @@ orchestrator.orchestrations.steps[].engine_identifier
       "name": "扫描元数据",
       "engine_identifier": "meta.scanner.default",
       "parameters": {
-        "resource_id": 1,
+        "engine_id": 1,
         "schema_names": ["public"]
       },
       "depends_on": [],
@@ -374,20 +374,20 @@ orchestrator.orchestrations.steps[].engine_identifier
 
 ---
 
-### 3.3 计算资源 API
+### 3.3 计算引擎 API
 
-#### GET /api/compute-resources - 列出计算资源
+#### GET /api/compute-engines - 列出计算引擎
 
 **响应** (200 OK):
 
 ```json
 {
-  "resources": [
+  "engines": [
     {
       "id": 10,
       "unique_identifier": "meta.scanner.default",
       "name": "Meta 元数据扫描器",
-      "resource_type": "compute_engine",
+      "engine_type": "compute_engine",
       "is_builtin": true,
       "capabilities": {
         "scan": true,
@@ -573,20 +573,20 @@ for each step (按拓扑顺序):
 ```go
 type EngineRegistry struct {
     systemClient *commonClient.SystemClient
-    engines      map[string]*commonModels.Resource
+    engines      map[string]*commonModels.Engine
     mu           sync.RWMutex
     cacheTTL     time.Duration  // 5 分钟
     lastRefresh  time.Time
 }
 
 // GetEngine 根据 unique_identifier 获取引擎配置
-func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*Resource, error)
+func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*Engine, error)
 
 // RefreshCache 从 System 服务刷新所有引擎缓存
 func (r *EngineRegistry) RefreshCache(ctx context.Context) error
 
 // ListAllEngines 列出所有已注册引擎
-func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*Resource, error)
+func (r *EngineRegistry) ListAllEngines(ctx context.Context) ([]*Engine, error)
 ```
 
 **缓存策略**:
@@ -606,13 +606,13 @@ type TaskClient struct {
 }
 
 // CreateTask 创建任务
-func (c *TaskClient) CreateTask(ctx context.Context, engine *Resource, params map[string]interface{}) (string, error)
+func (c *TaskClient) CreateTask(ctx context.Context, engine *Engine, params map[string]interface{}) (string, error)
 
 // ExecuteTask 执行任务
-func (c *TaskClient) ExecuteTask(ctx context.Context, engine *Resource, taskID string, params map[string]interface{}) (string, error)
+func (c *TaskClient) ExecuteTask(ctx context.Context, engine *Engine, taskID string, params map[string]interface{}) (string, error)
 
 // GetTaskStatus 获取任务状态
-func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *Resource, taskID string) (*TaskStatus, error)
+func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *Engine, taskID string) (*TaskStatus, error)
 ```
 
 **API 配置驱动**:
@@ -628,7 +628,7 @@ func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *Resource, taskID
       "path": "/api/scan/tasks",
       "body_template": {
         "tenant_id": "{{ .TenantID }}",
-        "resource_id": "{{ .ResourceID }}"
+        "engine_id": "{{ .ResourceID }}"
       }
     },
     "execute": {
@@ -820,7 +820,7 @@ Orchestrator 支持两种步骤定义模式：
 ### 9.1 核心组件
 
 **DAGEditor.vue** (核心编辑器):
-- 动态渲染计算资源按钮（从 API 动态获取）
+- 动态渲染计算引擎按钮（从 API 动态获取）
 - 拖拽添加节点到画布
 - 连线模式：建立步骤依赖关系
 - 节点配置抽屉：编辑步骤参数

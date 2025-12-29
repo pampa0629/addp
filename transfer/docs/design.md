@@ -419,7 +419,7 @@ type Metrics struct {
 实时监控：当前运行任务的 QPS、延迟、内存使用
 八、与其他模块集成
 8.1 与 System 模块集成
-资源管理：从 system.resources 获取数据源连接信息（复用 common/models.BuildConnectionString）
+引擎管理：从 system.engines 获取数据源连接信息（复用 common/models.BuildConnectionString）
 用户认证：JWT token 验证
 8.2 与 Manager 模块集成
 文件预览：传输完成后可在 Manager 中预览结果文件
@@ -431,11 +431,11 @@ type Metrics struct {
 // 传输完成后记录血缘
 changeLog := &models.MetaChangeLog{
     TenantID:     task.TenantID,
-    ResID:        task.TargetID,
+    EngineID:     task.TargetID,
     ChangeType:   "data_transfer",
     ChangeSource: fmt.Sprintf("transfer_task_%d", task.ID),
     Payload: map[string]interface{}{
-        "source_res_id": task.SourceID,
+        "source_engine_id": task.SourceID,
         "records_count": metrics.RecordsWritten,
         "task_id":       task.ID,
     },

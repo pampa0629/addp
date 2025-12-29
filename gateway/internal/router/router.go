@@ -111,10 +111,21 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/lineage/*path", metaProxy.Handle)
 		api.Any("/scan/*path", metaProxy.Handle)
 
-		// Transfer 模块路由（任务、传输）
+		// Transfer 模块路由（任务、传输、本地引擎）
+		api.Any("/tasks", transferProxy.Handle)
 		api.Any("/tasks/*path", transferProxy.Handle)
+		api.Any("/executions", transferProxy.Handle)
 		api.Any("/executions/*path", transferProxy.Handle)
 		api.Any("/transfer/*path", transferProxy.Handle)
+		api.Any("/local-engines", transferProxy.Handle)
+		api.Any("/local-engines/*path", transferProxy.Handle)
+		api.Any("/system-engines", transferProxy.Handle)
+		api.Any("/operators", transferProxy.Handle)
+		api.Any("/operators/*path", transferProxy.Handle)
+		api.Any("/transforms", transferProxy.Handle)
+		api.Any("/transforms/*path", transferProxy.Handle)
+		api.Any("/mappings/*path", transferProxy.Handle)
+		api.Any("/object-storage/*path", transferProxy.Handle)
 
 		// Develop 模块路由（SQL 开发、脚本管理）
 		api.Any("/develop/*path", developProxy.Handle)

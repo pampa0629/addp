@@ -19,22 +19,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// resourceCacheEntry 缓存条目，包含资源和过期时间
-type resourceCacheEntry struct {
+// engineCacheEntry 缓存条目，包含资源和过期时间
+type engineCacheEntry struct {
 	resource  *commonModels.Engine
 	expiresAt time.Time
 }
 
 // ResourceService 资源服务 - 直接读取 system.engines
-type ResourceService struct {
+type EngineService struct {
 	db              *gorm.DB
 	systemURL       string
 	internalClient  *commonClient.SystemClient
 	cacheMu         sync.RWMutex
-	resourceCache   map[uint]*resourceCacheEntry // 改为存储带过期时间的条目
+	engineCache   map[uint]*engineCacheEntry // 改为存储带过期时间的条目
 	cacheTTL        time.Duration                // 缓存生存时间，默认 5 分钟
 	log             *slog.Logger
-	eventSubscriber *events.ResourceEventSubscriber // Redis 事件订阅器
+	eventSubscriber *events.EngineEventSubscriber // Redis 事件订阅器
 	taskService     ScanTaskServiceInterface        // 扫描任务服务（用于处理 ScanConfig）
 }
 
@@ -45,7 +45,7 @@ type ScanTaskServiceInterface interface {
 	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*models.ScanTaskRun, error)
 }
 
-func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *ResourceService {
+func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *EngineService {
 	// 默认从环境变量读取，便于本地降级
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
@@ -57,12 +57,12 @@ func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient 
 		internalKey = os.Getenv("INTERNAL_API_KEY")
 	}
 
-	service := &ResourceService{
+	service := &EngineService{
 		db:            db,
 		systemURL:     systemURL,
-		resourceCache: make(map[uint]*resourceCacheEntry),
+		engineCache: make(map[uint]*engineCacheEntry),
 		cacheTTL:      5 * time.Minute, // 默认 5 分钟 TTL
-		log:           logger.With("component", "resource_service"),
+		log:           logger.With("component", "engine_service"),
 	}
 
 	if internalKey != "" {
@@ -71,18 +71,18 @@ func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient 
 
 	// 初始化 Redis 事件订阅器
 	if redisClient != nil {
-		service.eventSubscriber = events.NewResourceEventSubscriber(
+		service.eventSubscriber = events.NewEngineEventSubscriber(
 			redisClient,
-			service.handleResourceChangeEvent,
+			service.handleEngineChangeEvent,
 			service.log,
 		)
 		// 启动订阅（在后台 goroutine 中）
 		go func() {
 			if err := service.eventSubscriber.Start(); err != nil {
-				service.log.Error("资源事件订阅器启动失败", "error", err)
+				service.log.Error("引擎事件订阅器启动失败", "error", err)
 			}
 		}()
-		service.log.Info("资源事件订阅器已启动")
+		service.log.Info("引擎事件订阅器已启动")
 	} else {
 		service.log.Warn("Redis 未配置，资源变更事件同步功能将被禁用")
 	}
@@ -91,13 +91,13 @@ func NewResourceService(db *gorm.DB, systemURL, internalKey string, redisClient 
 }
 
 // SetTaskService 设置扫描任务服务（在 main.go 中初始化后调用）
-func (s *ResourceService) SetTaskService(taskService ScanTaskServiceInterface) {
+func (s *EngineService) SetTaskService(taskService ScanTaskServiceInterface) {
 	s.taskService = taskService
 	s.log.Info("扫描任务服务已注入到资源服务")
 }
 
 // ensureInternalClient 尝试按需初始化内部客户端（用于本地脚本未显式传入密钥的情况）
-func (s *ResourceService) ensureInternalClient() {
+func (s *EngineService) ensureInternalClient() {
 	if s.internalClient != nil {
 		return
 	}
@@ -107,8 +107,8 @@ func (s *ResourceService) ensureInternalClient() {
 	}
 }
 
-// PreloadResources 在服务启动时从 System 服务加载资源连接信息并缓存在内存中
-func (s *ResourceService) PreloadResources() error {
+// PreloadResources 在服务启动时从 System 服务加载引擎连接信息并缓存在内存中
+func (s *EngineService) PreloadResources() error {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
 		return fmt.Errorf("internal client not configured")
@@ -119,7 +119,7 @@ func (s *ResourceService) PreloadResources() error {
 		return fmt.Errorf("failed to preload engines from System: %w", err)
 	}
 
-	cache := make(map[uint]*resourceCacheEntry, len(engines))
+	cache := make(map[uint]*engineCacheEntry, len(engines))
 	expiresAt := time.Now().Add(s.cacheTTL)
 	for i := range engines {
 		res := engines[i]
@@ -127,14 +127,14 @@ func (s *ResourceService) PreloadResources() error {
 			continue
 		}
 		engineCopy := res
-		cache[engineCopy.ID] = &resourceCacheEntry{
+		cache[engineCopy.ID] = &engineCacheEntry{
 			resource:  &engineCopy,
 			expiresAt: expiresAt,
 		}
 	}
 
 	s.cacheMu.Lock()
-	s.resourceCache = cache
+	s.engineCache = cache
 	s.cacheMu.Unlock()
 
 	s.log.Info("引擎缓存预加载完成", "active_engines", len(cache), "system_url", s.systemURL, "ttl_minutes", s.cacheTTL.Minutes())
@@ -171,46 +171,46 @@ func containsMaskedSensitive(info commonModels.ConnectionInfo) bool {
 	return false
 }
 
-func (s *ResourceService) cacheResource(resource *commonModels.Engine) {
+func (s *EngineService) cacheEngine(resource *commonModels.Engine) {
 	if resource == nil {
 		return
 	}
 	resourceCopy := *resource
 	s.cacheMu.Lock()
-	s.resourceCache[resourceCopy.ID] = &resourceCacheEntry{
+	s.engineCache[resourceCopy.ID] = &engineCacheEntry{
 		resource:  &resourceCopy,
 		expiresAt: time.Now().Add(s.cacheTTL),
 	}
 	s.cacheMu.Unlock()
 }
 
-// ClearCache 清除所有资源缓存
-func (s *ResourceService) ClearCache() {
+// ClearCache 清除所有引擎缓存
+func (s *EngineService) ClearCache() {
 	s.cacheMu.Lock()
-	s.resourceCache = make(map[uint]*resourceCacheEntry)
+	s.engineCache = make(map[uint]*engineCacheEntry)
 	s.cacheMu.Unlock()
-	s.log.Info("资源缓存已清除")
+	s.log.Info("引擎缓存已清除")
 }
 
-// ClearResourceCache 清除指定资源的缓存
-func (s *ResourceService) ClearResourceCache(engineID uint) {
+// ClearEngineCache 清除指定资源的缓存
+func (s *EngineService) ClearEngineCache(engineID uint) {
 	s.cacheMu.Lock()
-	delete(s.resourceCache, engineID)
+	delete(s.engineCache, engineID)
 	s.cacheMu.Unlock()
-	s.log.Info("资源缓存已清除", "engine_id", engineID)
+	s.log.Info("引擎缓存已清除", "engine_id", engineID)
 }
 
-func (s *ResourceService) snapshotCache() map[uint]*commonModels.Engine {
+func (s *EngineService) snapshotCache() map[uint]*commonModels.Engine {
 	s.cacheMu.RLock()
 	defer s.cacheMu.RUnlock()
 
-	if len(s.resourceCache) == 0 {
+	if len(s.engineCache) == 0 {
 		return nil
 	}
 
 	now := time.Now()
-	result := make(map[uint]*commonModels.Engine, len(s.resourceCache))
-	for id, entry := range s.resourceCache {
+	result := make(map[uint]*commonModels.Engine, len(s.engineCache))
+	for id, entry := range s.engineCache {
 		if entry == nil || entry.resource == nil {
 			continue
 		}
@@ -225,7 +225,7 @@ func (s *ResourceService) snapshotCache() map[uint]*commonModels.Engine {
 }
 
 // GetResourcesByTenant 获取租户的所有数据库类型资源
-func (s *ResourceService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
+func (s *EngineService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
 	if s.internalClient != nil {
@@ -291,12 +291,12 @@ func (s *ResourceService) GetEnginesByTenant(tenantID uint) ([]*commonModels.Eng
 
 // GetResourceByID 根据ID获取资源（从System API获取，密码已解密）
 // token: 用户的JWT token，用于认证System API调用
-func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string) (*commonModels.Engine, error) {
+func (s *EngineService) GetResourceByID(engineID, tenantID uint, token string) (*commonModels.Engine, error) {
 	s.ensureInternalClient()
 
 	// 检查缓存
 	s.cacheMu.RLock()
-	entry, ok := s.resourceCache[engineID]
+	entry, ok := s.engineCache[engineID]
 	s.cacheMu.RUnlock()
 
 	// 如果缓存命中且未过期，返回缓存数据
@@ -308,7 +308,7 @@ func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string)
 				"source", "cache",
 				"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
 			)
-			s.log.Info("资源连接信息命中缓存", fields...)
+			s.log.Info("引擎连接信息命中缓存", fields...)
 			return &resourceCopy, nil
 		}
 	}
@@ -323,12 +323,12 @@ func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string)
 		if tenantID > 0 && (resource.TenantID == nil || *resource.TenantID != tenantID) {
 			return nil, fmt.Errorf("resource not found or access denied")
 		}
-		s.cacheResource(resource)
+		s.cacheEngine(resource)
 		fields := append(connectionLogFields(resource),
 			"requested_tenant_id", tenantID,
 			"source", "internal_api",
 		)
-		s.log.Info("通过内部 API 获取资源连接信息成功", fields...)
+		s.log.Info("通过内部 API 获取引擎连接信息成功", fields...)
 		return resource, nil
 	}
 
@@ -350,7 +350,7 @@ func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string)
 	if s.internalClient != nil && containsMaskedSensitive(resource.ConnectionInfo) {
 		if internalRes, err := s.internalClient.GetEngine(engineID); err == nil {
 			resource = internalRes
-			s.log.Info("检测到敏感字段被掩码，使用内部 API 重新获取资源连接信息",
+			s.log.Info("检测到敏感字段被掩码，使用内部 API 重新获取引擎连接信息",
 				append(connectionLogFields(resource),
 					"requested_tenant_id", tenantID,
 					"source", "internal_api_retry",
@@ -359,24 +359,24 @@ func (s *ResourceService) GetResourceByID(engineID, tenantID uint, token string)
 		}
 	}
 
-	s.cacheResource(resource)
+	s.cacheEngine(resource)
 	fields := append(connectionLogFields(resource),
 		"requested_tenant_id", tenantID,
 		"source", "user_api",
 	)
-	s.log.Info("通过用户 API 获取资源连接信息成功", fields...)
+	s.log.Info("通过用户 API 获取引擎连接信息成功", fields...)
 	return resource, nil
 }
 
 // GetResource 实现 mvt.ResourceService 接口
-// 用于 MVT 生成器获取资源连接信息
-func (s *ResourceService) GetResource(engineID, tenantID uint) (*commonModels.Engine, error) {
+// 用于 MVT 生成器获取引擎连接信息
+func (s *EngineService) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
 	// 直接调用 GetResourceByID，使用空 token（因为是内部调用）
 	return s.GetResourceByID(engineID, tenantID, "")
 }
 
 // GetResourcesWithStats 获取资源及其扫描统计
-func (s *ResourceService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
+func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWithStats, error) {
 	engines, err := s.GetEnginesByTenant(tenantID)
 	if err != nil {
 		return nil, err
@@ -396,50 +396,50 @@ func (s *ResourceService) GetEnginesWithStats(tenantID uint) ([]*models.Resource
 	lastScanByRes := make(map[uint]*time.Time)
 
 	type countRow struct {
-		ResID uint
+		EngineID uint
 		Count int64
 	}
 	var totals []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
+		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
 		Where("parent_node_id IS NULL").
-		Select("res_id, COUNT(*) AS count").
-		Group("res_id").
+		Select("engine_id, COUNT(*) AS count").
+		Group("engine_id").
 		Scan(&totals).Error; err != nil {
 		return nil, fmt.Errorf("failed to count meta nodes: %w", err)
 	}
 	for _, row := range totals {
-		totalCount[row.ResID] = row.Count
+		totalCount[row.EngineID] = row.Count
 	}
 
 	var scanned []countRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
+		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
 		Where("parent_node_id IS NULL AND scan_status = ?", "已扫描").
-		Select("res_id, COUNT(*) AS count").
-		Group("res_id").
+		Select("engine_id, COUNT(*) AS count").
+		Group("engine_id").
 		Scan(&scanned).Error; err != nil {
 		return nil, fmt.Errorf("failed to count scanned nodes: %w", err)
 	}
 	for _, row := range scanned {
-		scannedCount[row.ResID] = row.Count
+		scannedCount[row.EngineID] = row.Count
 	}
 
 	type lastScanRow struct {
-		ResID      uint
+		EngineID   uint
 		LastScanAt *time.Time `gorm:"column:last_scan_at"`
 	}
 	var lastScans []lastScanRow
 	if err := s.db.Table("metadata.meta_node").
-		Where("tenant_id = ? AND res_id IN ?", tenantID, engineIDs).
+		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
 		Where("last_scan_at IS NOT NULL").
-		Select("res_id, MAX(last_scan_at) AS last_scan_at").
-		Group("res_id").
+		Select("engine_id, MAX(last_scan_at) AS last_scan_at").
+		Group("engine_id").
 		Scan(&lastScans).Error; err != nil {
 		return nil, fmt.Errorf("failed to query node last scan time: %w", err)
 	}
 	for _, row := range lastScans {
-		lastScanByRes[row.ResID] = row.LastScanAt
+		lastScanByRes[row.EngineID] = row.LastScanAt
 	}
 
 	result := make([]*models.ResourceWithStats, 0, len(engines))
@@ -481,8 +481,8 @@ func (s *ResourceService) GetEnginesWithStats(tenantID uint) ([]*models.Resource
 	return result, nil
 }
 
-// handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
-func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
+// handleEngineChangeEvent 处理资源变更事件（Redis 订阅回调）
+func (s *EngineService) handleEngineChangeEvent(event events.EngineChangeEvent) error {
 	s.log.Info("收到资源变更事件",
 		"engine_id", event.EngineID,
 		"action", event.Action,
@@ -491,7 +491,7 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 	switch event.Action {
 	case events.ActionCreate, events.ActionUpdate:
 		// 资源创建或更新：检查 ScanConfig
-		s.ClearResourceCache(event.EngineID)
+		s.ClearEngineCache(event.EngineID)
 
 		// 如果配置了 taskService，尝试处理扫描配置
 		if s.taskService != nil && s.internalClient != nil {
@@ -553,7 +553,7 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 
 	case events.ActionDelete:
 		// 资源删除：清除缓存并删除扫描任务
-		s.ClearResourceCache(event.EngineID)
+		s.ClearEngineCache(event.EngineID)
 
 		if s.taskService != nil {
 			if err := s.taskService.DeleteTaskByResourceID(event.EngineID); err != nil {
@@ -574,15 +574,15 @@ func (s *ResourceService) handleResourceChangeEvent(event events.ResourceChangeE
 }
 
 // Stop 停止资源服务（清理资源）
-func (s *ResourceService) Stop() {
+func (s *EngineService) Stop() {
 	if s.eventSubscriber != nil {
 		s.eventSubscriber.Stop()
-		s.log.Info("资源事件订阅器已停止")
+		s.log.Info("引擎事件订阅器已停止")
 	}
 }
 
 // triggerImmediateScan 立即触发扫描（用于 immediate 类型的 ScanConfig）
-func (s *ResourceService) triggerImmediateScan(resource *commonModels.Engine) error {
+func (s *EngineService) triggerImmediateScan(resource *commonModels.Engine) error {
 	if s.taskService == nil {
 		return fmt.Errorf("扫描任务服务未初始化")
 	}
@@ -634,7 +634,7 @@ func (s *ResourceService) triggerImmediateScan(resource *commonModels.Engine) er
 // TriggerConnectionCheck 触发System检测连接状态
 // 仅在连接失败时调用，通知System刷新状态
 // 异步触发，不阻塞调用方
-func (s *ResourceService) TriggerConnectionCheck(engineID uint) {
+func (s *EngineService) TriggerConnectionCheck(engineID uint) {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
 		s.log.Warn("Internal client不可用，无法触发连接检测", "engine_id", engineID)
@@ -658,7 +658,7 @@ func (s *ResourceService) TriggerConnectionCheck(engineID uint) {
 // 用于Meta模块在检测连接状态后更新缓存
 // 注意：此方法已废弃，建议使用TriggerConnectionCheck让System自己检测
 // 保留是为了向后兼容
-func (s *ResourceService) UpdateConnectionStatus(engineID uint, status, message string) error {
+func (s *EngineService) UpdateConnectionStatus(engineID uint, status, message string) error {
 	s.ensureInternalClient()
 	if s.internalClient == nil {
 		return fmt.Errorf("internal client not available")
@@ -676,7 +676,7 @@ func (s *ResourceService) UpdateConnectionStatus(engineID uint, status, message 
 
 	// 更新本地缓存
 	s.cacheMu.Lock()
-	if entry, exists := s.resourceCache[engineID]; exists {
+	if entry, exists := s.engineCache[engineID]; exists {
 		now := time.Now()
 		entry.resource.ConnectionStatus = status
 		entry.resource.LastCheckAt = &now

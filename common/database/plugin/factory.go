@@ -9,38 +9,38 @@ import (
 
 // TestConnection 统一入口：测试数据库连接
 // 自动查找对应类型的插件并调用其 TestConnection 方法
-func TestConnection(ctx context.Context, resource *Resource) error {
-	if resource == nil {
-		return fmt.Errorf("resource cannot be nil")
+func TestConnection(ctx context.Context, engine *Engine) error {
+	if engine == nil {
+		return fmt.Errorf("engine cannot be nil")
 	}
 
-	plugin, err := Get(resource.EngineType)
+	plugin, err := Get(engine.EngineType)
 	if err != nil {
 		return err
 	}
 
-	return plugin.TestConnection(ctx, resource.ConnectionInfo)
+	return plugin.TestConnection(ctx, engine.ConnectionInfo)
 }
 
 // BuildConnectionString 统一入口：构建连接字符串
 // 自动查找对应类型的插件并调用其 BuildConnectionString 方法
-func BuildConnectionString(resource *Resource) (string, error) {
-	if resource == nil {
-		return "", fmt.Errorf("resource cannot be nil")
+func BuildConnectionString(engine *Engine) (string, error) {
+	if engine == nil {
+		return "", fmt.Errorf("engine cannot be nil")
 	}
 
-	plugin, err := Get(resource.EngineType)
+	plugin, err := Get(engine.EngineType)
 	if err != nil {
 		return "", err
 	}
 
-	return plugin.BuildConnectionString(resource.ConnectionInfo)
+	return plugin.BuildConnectionString(engine.ConnectionInfo)
 }
 
 // ValidateConnectionInfo 统一入口：验证连接信息
 // 自动查找对应类型的插件并调用其 ValidateConnectionInfo 方法
-func ValidateConnectionInfo(resourceType string, connInfo ConnectionInfo) error {
-	plugin, err := Get(resourceType)
+func ValidateConnectionInfo(engineType string, connInfo ConnectionInfo) error {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return err
 	}
@@ -48,10 +48,10 @@ func ValidateConnectionInfo(resourceType string, connInfo ConnectionInfo) error 
 	return plugin.ValidateConnectionInfo(connInfo)
 }
 
-// GenerateCapabilities 统一入口：生成资源能力描述
+// GenerateCapabilities 统一入口：生成引擎能力描述
 // 自动查找对应类型的插件并调用其 GenerateCapabilities 方法
-func GenerateCapabilities(resourceType string) (string, error) {
-	plugin, err := Get(resourceType)
+func GenerateCapabilities(engineType string) (string, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return "", err
 	}
@@ -60,8 +60,8 @@ func GenerateCapabilities(resourceType string) (string, error) {
 }
 
 // GetRequiredFields 获取指定类型的必填字段列表
-func GetRequiredFields(resourceType string) ([]string, error) {
-	plugin, err := Get(resourceType)
+func GetRequiredFields(engineType string) ([]string, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +70,8 @@ func GetRequiredFields(resourceType string) ([]string, error) {
 }
 
 // GetSensitiveFields 获取指定类型的敏感字段列表
-func GetSensitiveFields(resourceType string) ([]string, error) {
-	plugin, err := Get(resourceType)
+func GetSensitiveFields(engineType string) ([]string, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +80,8 @@ func GetSensitiveFields(resourceType string) ([]string, error) {
 }
 
 // GetDefaultPort 获取指定类型的默认端口
-func GetDefaultPort(resourceType string) (int, error) {
-	plugin, err := Get(resourceType)
+func GetDefaultPort(engineType string) (int, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return 0, err
 	}
@@ -90,8 +90,8 @@ func GetDefaultPort(resourceType string) (int, error) {
 }
 
 // GetDisplayName 获取指定类型的显示名称
-func GetDisplayName(resourceType string) (string, error) {
-	plugin, err := Get(resourceType)
+func GetDisplayName(engineType string) (string, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return "", err
 	}
@@ -100,8 +100,8 @@ func GetDisplayName(resourceType string) (string, error) {
 }
 
 // GetConnectionCategory 获取指定类型的连接类别
-func GetConnectionCategory(resourceType string) (string, error) {
-	plugin, err := Get(resourceType)
+func GetConnectionCategory(engineType string) (string, error) {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return "", err
 	}
@@ -113,15 +113,15 @@ func GetConnectionCategory(resourceType string) (string, error) {
 
 // CreateConnectionPoolDirect 直接创建连接池（不缓存）
 // 供 PoolManager 内部使用，一般用户应使用 GetOrCreatePoolFromFactory
-func CreateConnectionPoolDirect(resource *Resource, config *PoolConfig) (*gorm.DB, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource cannot be nil")
+func CreateConnectionPoolDirect(engine *Engine, config *PoolConfig) (*gorm.DB, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("engine cannot be nil")
 	}
 	if config == nil {
 		config = DefaultPoolConfig()
 	}
 
-	plugin, err := Get(resource.EngineType)
+	plugin, err := Get(engine.EngineType)
 	if err != nil {
 		return nil, err
 	}
@@ -129,23 +129,23 @@ func CreateConnectionPoolDirect(resource *Resource, config *PoolConfig) (*gorm.D
 	// 类型断言：检查是否支持连接池
 	poolPlugin, ok := plugin.(ConnectionPoolPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s does not support connection pool", resource.EngineType)
+		return nil, fmt.Errorf("plugin %s does not support connection pool", engine.EngineType)
 	}
 
-	return poolPlugin.CreateConnectionPool(resource.ConnectionInfo, config)
+	return poolPlugin.CreateConnectionPool(engine.ConnectionInfo, config)
 }
 
 // GetOrCreatePoolFromFactory 获取或创建连接池（推荐使用）
 // 会自动管理连接池的生命周期，复用已有连接池
-func GetOrCreatePoolFromFactory(resource *Resource, config *PoolConfig) (*gorm.DB, error) {
-	if resource == nil {
-		return nil, fmt.Errorf("resource cannot be nil")
+func GetOrCreatePoolFromFactory(engine *Engine, config *PoolConfig) (*gorm.DB, error) {
+	if engine == nil {
+		return nil, fmt.Errorf("engine cannot be nil")
 	}
 	if config == nil {
 		config = DefaultPoolConfig()
 	}
 
-	result, err := GetOrCreatePool(resource, config)
+	result, err := GetOrCreatePool(engine, config)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func GetOrCreatePoolFromFactory(resource *Resource, config *PoolConfig) (*gorm.D
 // === 元数据查询相关方法 ===
 
 // ListSchemas 列出所有Schema（供Meta模块使用）
-func ListSchemas(ctx context.Context, resource *Resource, db *gorm.DB) ([]SchemaInfo, error) {
+func ListSchemas(ctx context.Context, resource *Engine, db *gorm.DB) ([]SchemaInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -184,7 +184,7 @@ func ListSchemas(ctx context.Context, resource *Resource, db *gorm.DB) ([]Schema
 }
 
 // ListTables 列出指定Schema下的所有表（供Meta模块使用）
-func ListTables(ctx context.Context, resource *Resource, db *gorm.DB, schema string) ([]TableInfo, error) {
+func ListTables(ctx context.Context, resource *Engine, db *gorm.DB, schema string) ([]TableInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -206,7 +206,7 @@ func ListTables(ctx context.Context, resource *Resource, db *gorm.DB, schema str
 }
 
 // ListColumns 列出指定表的所有列（供Meta模块使用）
-func ListColumns(ctx context.Context, resource *Resource, db *gorm.DB, schema, table string) ([]ColumnInfo, error) {
+func ListColumns(ctx context.Context, resource *Engine, db *gorm.DB, schema, table string) ([]ColumnInfo, error) {
 	if resource == nil {
 		return nil, fmt.Errorf("resource cannot be nil")
 	}
@@ -228,7 +228,7 @@ func ListColumns(ctx context.Context, resource *Resource, db *gorm.DB, schema, t
 }
 
 // GetTableRowCount 获取表的行数（供Meta模块使用）
-func GetTableRowCount(ctx context.Context, resource *Resource, db *gorm.DB, schema, table string) (int64, error) {
+func GetTableRowCount(ctx context.Context, resource *Engine, db *gorm.DB, schema, table string) (int64, error) {
 	if resource == nil {
 		return 0, fmt.Errorf("resource cannot be nil")
 	}
@@ -252,8 +252,8 @@ func GetTableRowCount(ctx context.Context, resource *Resource, db *gorm.DB, sche
 // === 辅助方法 ===
 
 // SupportsConnectionPool 检查指定类型是否支持连接池
-func SupportsConnectionPool(resourceType string) bool {
-	plugin, err := Get(resourceType)
+func SupportsConnectionPool(engineType string) bool {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return false
 	}
@@ -263,8 +263,8 @@ func SupportsConnectionPool(resourceType string) bool {
 }
 
 // SupportsMetadataQuery 检查指定类型是否支持元数据查询
-func SupportsMetadataQuery(resourceType string) bool {
-	plugin, err := Get(resourceType)
+func SupportsMetadataQuery(engineType string) bool {
+	plugin, err := Get(engineType)
 	if err != nil {
 		return false
 	}

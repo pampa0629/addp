@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// 初始化 repositories
-	resourceRepo := repository.NewResourceRepository(db)
+	engineRepo := repository.NewEngineRepository(db)
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 
@@ -76,8 +76,8 @@ func main() {
 	}
 
 	// 初始化资源缓存服务（带 Redis 事件订阅）
-	resourceCacheService := service.NewResourceCacheService(cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
-	_ = resourceCacheService // TODO: 集成到 metadataService 中使用
+	engineCacheService := service.NewEngineCacheService(cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	_ = engineCacheService // TODO: 集成到 metadataService 中使用
 
 	// 初始化缓存管理器和扫描事件处理器（用于 Meta 扫描完成后自动刷新缓存）
 	var cacheManager *service.CacheManager
@@ -125,9 +125,9 @@ func main() {
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services
-	resourceService := service.NewResourceService(resourceRepo)
+	engineService := service.NewEngineService(engineRepo)
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
-	metadataService := service.NewMetadataService(metadataRepo, resourceRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
+	metadataService := service.NewMetadataService(metadataRepo, engineRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
 	searchService, err := service.NewFullTextSearchService(cfg)
 	if err != nil {
 		logger.L().Error("初始化全文检索服务失败", "error", err)
@@ -136,7 +136,7 @@ func main() {
 	defer searchService.Close()
 
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
-	mvtService := service.NewMVTService(metadataRepo, resourceRepo)
+	mvtService := service.NewMVTService(metadataRepo, engineRepo)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		service.NewSpatialPreviewService(redisClient),
 		mvtService,
@@ -155,7 +155,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, resourceService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, resourceRepo, metadataRepo, systemClient, cacheManager, redisClient)
+	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, cacheManager, redisClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）

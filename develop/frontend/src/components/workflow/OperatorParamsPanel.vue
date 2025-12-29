@@ -83,7 +83,7 @@
 import { ref, watch, computed } from 'vue'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import ResourceSelect from './ResourceSelect.vue'
+import EngineSelect from './EngineSelect.vue'
 import SchemaSelect from './SchemaSelect.vue'
 import TableSelect from './TableSelect.vue'
 
@@ -156,7 +156,7 @@ watch(() => props.operator, () => {
 // 根据参数元数据选择组件类型
 const getComponentByType = (param) => {
   // 1. 优先检查 ui_type (自定义 UI 组件)
-  if (param.ui_type === 'resource_select') return ResourceSelect
+  if (param.ui_type === 'engine_select') return EngineSelect
   if (param.ui_type === 'schema_select') return SchemaSelect
   if (param.ui_type === 'table_select') return TableSelect
 
@@ -178,8 +178,8 @@ const getComponentProps = (param) => {
   const props = {}
 
   // 自定义组件的专用 props
-  if (param.ui_type === 'resource_select') {
-    props.engineTypes = param.resource_types || []
+  if (param.ui_type === 'engine_select') {
+    props.engineTypes = param.engine_types || []
   } else if (param.ui_type === 'schema_select') {
     props.engineId = formData.value[param.depends_on] || null
   } else if (param.ui_type === 'table_select') {

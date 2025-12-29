@@ -6,7 +6,7 @@
 
 - **多租户管理**: 支持超级管理员、租户管理员、普通用户三级权限体系
 - **账号认证**: 基于 JWT 的用户登录和权限验证
-- **资源管理**: 管理各类数据库、存储引擎等资源连接配置
+- **引擎管理**: 管理各类数据库、存储引擎等连接配置
 - **审计日志**: 自动记录所有操作日志，支持按租户隔离查询
 
 ## 🚀 快速开始
@@ -66,7 +66,7 @@ docker-compose up -d
 ### 数据隔离
 
 所有功能和数据按租户隔离:
-- 资源配置
+- 引擎配置
 - 审计日志
 - 数据管理 (Manager模块)
 - 元数据信息 (Meta模块)
@@ -77,7 +77,7 @@ docker-compose up -d
 ### 密码加密
 
 - **用户密码**: bcrypt 算法加密存储 (cost factor 10)
-- **资源连接密码**: AES-256-GCM 对称加密存储
+- **引擎连接密码**: AES-256-GCM 对称加密存储
 - 加密密钥通过环境变量 `ENCRYPTION_KEY` 配置
 
 ### 认证流程
@@ -107,11 +107,11 @@ docker-compose up -d
 - `PUT /api/users/:id` - 更新用户
 - `DELETE /api/users/:id` - 删除用户 (SuperAdmin不可删除)
 
-### 资源管理
-- `POST /api/resources` - 创建资源 (密码自动加密)
-- `GET /api/resources` - 获取资源列表 (自动过滤租户)
-- `PUT /api/resources/:id` - 更新资源 (密码重新加密)
-- `POST /api/resources/:id/test` - 测试资源连接
+### 引擎管理
+- `POST /api/engines` - 创建引擎 (密码自动加密)
+- `GET /api/engines` - 获取引擎列表 (自动过滤租户)
+- `PUT /api/engines/:id` - 更新引擎 (密码重新加密)
+- `POST /api/engines/:id/test` - 测试引擎连接
 
 ### 日志管理
 - `GET /api/logs` - 获取审计日志 (自动过滤租户)
@@ -148,7 +148,7 @@ PORT=8080
 - `system.users` - 用户账号 (username, password_hash, user_type, tenant_id)
 - `system.tenants` - 租户信息
 - `system.audit_logs` - 审计日志
-- `system.resources` - 资源连接配置 (connection_info 加密存储)
+- `system.engines` - 引擎连接配置 (connection_info 加密存储)
 
 ## 🔗 与其他模块集成
 

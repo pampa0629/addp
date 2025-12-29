@@ -382,7 +382,7 @@ def register_to_system():
         "unique_identifier": "api.geopandas",
         "name": "geopandas_engine",
         "display_name": "GeoPandas空间计算引擎",
-        "resource_type": "api.geopandas",
+        "engine_type": "api.geopandas",
         "is_builtin": True,
         "capabilities": {
             "compute": [{

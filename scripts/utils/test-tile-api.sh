@@ -39,8 +39,8 @@ echo ""
 
 # 2. 测试瓦片请求
 echo "📍 步骤 2: 请求 MVT 瓦片..."
-read -p "资源 ID [2]: " RESOURCE_ID
-RESOURCE_ID=${RESOURCE_ID:-2}
+read -p "引擎 ID [2]: " ENGINE_ID
+ENGINE_ID=${ENGINE_ID:-2}
 
 read -p "Schema [public]: " SCHEMA
 SCHEMA=${SCHEMA:-public}
@@ -54,7 +54,7 @@ TILE_COORDS=${TILE_COORDS:-7/102/72}
 read -p "几何字段 [smgeometry]: " GEOM_FIELD
 GEOM_FIELD=${GEOM_FIELD:-smgeometry}
 
-URL="http://localhost:8081/api/resources/${RESOURCE_ID}/spatial/tiles/${SCHEMA}/${TABLE}/${TILE_COORDS}?geom=${GEOM_FIELD}"
+URL="http://localhost:8081/api/engines/${ENGINE_ID}/spatial/tiles/${SCHEMA}/${TABLE}/${TILE_COORDS}?geom=${GEOM_FIELD}"
 
 echo ""
 echo "请求 URL:"
@@ -103,7 +103,7 @@ elif [ "$HTTP_CODE" -eq 401 ]; then
   cat "$OUTPUT_FILE"
 
 elif [ "$HTTP_CODE" -eq 404 ]; then
-  echo -e "${RED}❌ 资源未找到 (404)${NC}"
+  echo -e "${RED}❌ 引擎未找到 (404)${NC}"
   cat "$OUTPUT_FILE"
 
 else

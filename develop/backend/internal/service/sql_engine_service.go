@@ -182,7 +182,7 @@ func (s *SQLEngineService) getConnection(engineID uint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
 
-	log.Printf("✅ [SQL Engine] 获取连接池成功 resource_id=%d type=%s", engineID, resource.EngineType)
+	log.Printf("✅ [SQL Engine] 获取连接池成功 engine_id=%d type=%s", engineID, resource.EngineType)
 
 	return db, nil
 }
@@ -201,13 +201,13 @@ func (s *SQLEngineService) TestConnection(engineID uint) error {
 	}
 
 	// 使用插件系统测试连接
-	log.Printf("🔌 [SQL Engine] 测试连接 resource_id=%d type=%s", engineID, resource.EngineType)
+	log.Printf("🔌 [SQL Engine] 测试连接 engine_id=%d type=%s", engineID, resource.EngineType)
 
 	if err := dbbridge.TestConnection(context.Background(), resource); err != nil {
 		return fmt.Errorf("connection test failed: %w", err)
 	}
 
-	log.Printf("✅ [SQL Engine] 连接测试成功 resource_id=%d type=%s", engineID, resource.EngineType)
+	log.Printf("✅ [SQL Engine] 连接测试成功 engine_id=%d type=%s", engineID, resource.EngineType)
 	return nil
 }
 

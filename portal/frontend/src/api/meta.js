@@ -5,44 +5,44 @@ const unwrap = (promise, defaultValue) =>
 
 export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
-export const getSchemas = resourceId =>
-  unwrap(client.get(`/meta/schemas/${resourceId}`), [])
+export const getSchemas = engineId =>
+  unwrap(client.get(`/meta/schemas/${engineId}`), [])
 
-export const listAvailableSchemas = resourceId =>
-  unwrap(client.get(`/meta/schemas/${resourceId}/available`), [])
+export const listAvailableSchemas = engineId =>
+  unwrap(client.get(`/meta/schemas/${engineId}/available`), [])
 
 export const autoScan = () => client.post('/meta/scan/auto').then(res => res.data)
 
-export const scanResource = (resourceId, schemaNames) =>
+export const scanEngine = (engineId, schemaNames) =>
   client
-    .post('/meta/scan/resource', {
-      resource_id: resourceId,
+    .post('/meta/scan/engine', {
+      engine_id: engineId,
       schema_names: schemaNames
     })
     .then(res => res.data)
 
-export const getScanTasks = async resourceId => {
+export const getScanTasks = async engineId => {
   const tasks = await unwrap(client.get('/meta/scan/tasks'), [])
-  if (!resourceId) {
+  if (!engineId) {
     return tasks
   }
-  return tasks.filter(task => task.resource_id === resourceId)
+  return tasks.filter(task => task.engine_id === engineId)
 }
 
-export const createScanTask = (resourceId, payload) => {
+export const createScanTask = (engineId, payload) => {
   return client
     .post('/meta/scan/tasks', {
       ...payload,
-      resource_id: resourceId
+      engine_id: engineId
     })
     .then(res => res.data?.data)
 }
 
-export const updateScanTask = (resourceId, taskId, payload) => {
+export const updateScanTask = (engineId, taskId, payload) => {
   return client
     .put(`/meta/scan/tasks/${taskId}`, {
       ...payload,
-      resource_id: resourceId
+      engine_id: engineId
     })
     .then(res => res.data?.data)
 }
@@ -53,32 +53,32 @@ export const deleteScanTask = taskId =>
 export const triggerScanTask = taskId =>
   client.post(`/meta/scan/tasks/${taskId}/trigger`).then(res => res.data?.data)
 
-export const getScanRuns = async (resourceId, params = {}) => {
+export const getScanRuns = async (engineId, params = {}) => {
   const response = await client.get('/meta/scan/runs', { params })
   const runs = response.data?.data ?? []
-  if (!resourceId) {
+  if (!engineId) {
     return runs
   }
-  return runs.filter(run => run.resource_id === resourceId)
+  return runs.filter(run => run.engine_id === engineId)
 }
 
 export const getScanRun = runId =>
   client.get(`/meta/scan/runs/${runId}`).then(res => res.data?.data)
 
-export const createManualScanRun = (resourceId, payload = {}) =>
+export const createManualScanRun = (engineId, payload = {}) =>
   client
     .post('/meta/scan/run/manual', {
-      resource_id: resourceId,
+      engine_id: engineId,
       ...payload
     })
     .then(res => res.data?.data)
 
 export default {
-  getResources,
+  getEngines,
   getSchemas,
   listAvailableSchemas,
   autoScan,
-  scanResource,
+  scanEngine,
   getScanTasks,
   createScanTask,
   updateScanTask,

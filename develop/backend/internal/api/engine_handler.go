@@ -8,14 +8,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ResourceHandler 资源管理 API 处理器
-type ResourceHandler struct {
+// EngineHandler 引擎管理 API 处理器
+type EngineHandler struct {
 	systemClient *commonClient.SystemClient
 }
 
-// NewResourceHandler 创建资源处理器
-func NewResourceHandler(systemClient *commonClient.SystemClient) *ResourceHandler {
-	return &ResourceHandler{
+// NewEngineHandler 创建引擎处理器
+func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
+	return &EngineHandler{
 		systemClient: systemClient,
 	}
 }
@@ -26,7 +26,7 @@ func NewResourceHandler(systemClient *commonClient.SystemClient) *ResourceHandle
 // @Produce json
 // @Success 200 {object} map[string]interface{}
 // @Router /api/develop/engines [get]
-func (h *ResourceHandler) ListEngines(c *gin.Context) {
+func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	// 从 System 模块获取所有支持 SQL 查询的引擎
@@ -50,7 +50,7 @@ func (h *ResourceHandler) ListEngines(c *gin.Context) {
 // @Param id path int true "引擎ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/develop/engines/:id/schemas [get]
-func (h *ResourceHandler) ListSchemas(c *gin.Context) {
+func (h *EngineHandler) ListSchemas(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
@@ -82,7 +82,7 @@ func (h *ResourceHandler) ListSchemas(c *gin.Context) {
 // @Param schema query string false "Schema名称"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/develop/engines/:id/tables [get]
-func (h *ResourceHandler) ListTables(c *gin.Context) {
+func (h *EngineHandler) ListTables(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
@@ -117,7 +117,7 @@ func (h *ResourceHandler) ListTables(c *gin.Context) {
 // @Produce json
 // @Success 200 {array} models.Engine
 // @Router /api/develop/workflow-engines [get]
-func (h *ResourceHandler) ListWorkflowEngines(c *gin.Context) {
+func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	// 从 System 模块获取所有工作流引擎
@@ -139,7 +139,7 @@ func (h *ResourceHandler) ListWorkflowEngines(c *gin.Context) {
 // @Produce json
 // @Success 200 {array} models.Engine
 // @Router /api/develop/spark-runtimes [get]
-func (h *ResourceHandler) ListSparkRuntimes(c *gin.Context) {
+func (h *EngineHandler) ListSparkRuntimes(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
 	// 从 System 模块获取所有 Spark 运行时

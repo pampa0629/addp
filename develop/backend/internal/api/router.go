@@ -16,7 +16,7 @@ func SetupRouter(
 	devItemHandler *DevItemHandler,
 	devExecutionHandler *DevExecutionHandler,
 	operatorHandler *OperatorHandler,
-	resourceHandler *ResourceHandler,
+	engineHandler *EngineHandler,
 	sqlHandler *SQLHandler,
 	notebookHandler *NotebookHandler,
 	devItemService interface{}, // 添加 devItemService 参数
@@ -96,14 +96,14 @@ func SetupRouter(
 		// ========== 引擎管理 ==========
 		engines := api.Group("/engines")
 		{
-			engines.GET("", resourceHandler.ListEngines)           // 获取引擎列表
-			engines.GET("/:id/schemas", resourceHandler.ListSchemas) // 获取 schemas 列表
-			engines.GET("/:id/tables", resourceHandler.ListTables)   // 获取表列表
+			engines.GET("", engineHandler.ListEngines)           // 获取引擎列表
+			engines.GET("/:id/schemas", engineHandler.ListSchemas) // 获取 schemas 列表
+			engines.GET("/:id/tables", engineHandler.ListTables)   // 获取表列表
 		}
 
 		// ========== 工作流引擎管理 ==========
-		api.GET("/workflow-engines", resourceHandler.ListWorkflowEngines) // 获取工作流引擎列表
-		api.GET("/spark-runtimes", resourceHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
+		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines) // 获取工作流引擎列表
+		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
 
 		// ========== SQL 开发 ==========
 		api.GET("/test/:id", sqlHandler.TestConnection) // 测试数据源连接

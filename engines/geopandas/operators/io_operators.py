@@ -23,74 +23,74 @@ def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
 
     接收 DataLocation 信息，根据类型加载数据：
     - source_type: "table" | "file" | "geojson" | "reference"
-    - resource_id: 存储引擎资源 ID
+    - engine_id: 存储引擎 ID
     - 其他参数: table/path、schema/format 等
 
     注意：此算子不直接执行 SQL，而是根据 DataLocation 信息
-    通过 System API 获取资源连接信息后加载数据
+    通过 System API 获取引擎连接信息后加载数据
     """
     source_type = params.get('source_type')
-    resource_id = params.get('resource_id')
+    engine_id = params.get('engine_id')
 
     if source_type == 'table':
-        # 1. 从 System API 获取资源连接信息
+        # 1. 从 System API 获取引擎连接信息
         system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
-        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+        response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
-            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
 
-        resource = response.json()
+        engine = response.json()
 
-        # 2. 根据资源类型构建连接字符串
-        resource_type = resource['resource_type']
-        conn_info = resource['connection_info']
+        # 2. 根据引擎类型构建连接字符串
+        engine_type = engine['engine_type']
+        conn_info = engine['connection_info']
 
         table = params.get('table')
         schema = params.get('schema', 'public')
 
         # 3. 根据不同数据库类型加载
-        if resource_type in ['postgresql', 'PostgreSQL']:
+        if engine_type in ['postgresql', 'PostgreSQL']:
             conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
-            engine = create_engine(conn_str)
+            engine_db = create_engine(conn_str)
 
             # 读取空间数据（假设几何列名为 geom）
             sql = f'SELECT * FROM {schema}.{table}'
-            gdf = gpd.read_postgis(sql, engine, geom_col='geom')
+            gdf = gpd.read_postgis(sql, engine_db, geom_col='geom')
 
-        elif resource_type in ['mysql', 'MySQL', 'doris', 'Doris']:
+        elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             password = conn_info.get('password', '')
             if password:
                 conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             else:
                 conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
 
-            engine = create_engine(conn_str)
+            engine_db = create_engine(conn_str)
 
             # MySQL/Doris 空间数据读取
             sql = f'SELECT * FROM {table}'
-            gdf = gpd.read_postgis(sql, engine, geom_col='geom')
+            gdf = gpd.read_postgis(sql, engine_db, geom_col='geom')
 
         else:
-            raise ValueError(f"Unsupported resource type for table: {resource_type}")
+            raise ValueError(f"Unsupported engine type for table: {engine_type}")
 
         return gdf
 
     elif source_type == 'file':
         # 从对象存储加载文件
         system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
-        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+        response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
-            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
 
-        resource = response.json()
+        engine = response.json()
 
         path = params.get('path')
         format_type = params.get('format', 'geojson')
 
         # TODO: 实现从 MinIO/S3 下载文件逻辑
-        # local_file = download_from_minio(resource, path)
+        # local_file = download_from_minio(engine, path)
 
         # 临时实现：假设文件已在本地
         if format_type in ['geojson', 'shapefile']:
@@ -121,56 +121,56 @@ def save(data: gpd.GeoDataFrame, params: Dict[str, Any]) -> Dict[str, Any]:
 
     根据目标类型保存数据：
     - target_type: "table" | "file"
-    - resource_id: 存储引擎资源 ID
+    - engine_id: 存储引擎 ID
     """
     target_type = params.get('target_type')
-    resource_id = params.get('resource_id')
+    engine_id = params.get('engine_id')
 
     if target_type == 'table':
-        # 1. 从 System API 获取资源连接信息
+        # 1. 从 System API 获取引擎连接信息
         system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
-        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+        response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
-            raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
 
-        resource = response.json()
+        engine = response.json()
 
         # 2. 构建连接
-        resource_type = resource['resource_type']
-        conn_info = resource['connection_info']
+        engine_type = engine['engine_type']
+        conn_info = engine['connection_info']
 
         table = params.get('table')
         schema = params.get('schema', 'public')
         mode = params.get('mode', 'overwrite')
 
         # 3. 根据数据库类型保存
-        if resource_type in ['postgresql', 'PostgreSQL']:
+        if engine_type in ['postgresql', 'PostgreSQL']:
             conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
-            engine = create_engine(conn_str)
+            engine_db = create_engine(conn_str)
 
             if_exists = 'replace' if mode == 'overwrite' else 'append'
-            data.to_postgis(table, engine, schema=schema, if_exists=if_exists, index=False)
+            data.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
 
-        elif resource_type in ['mysql', 'MySQL', 'doris', 'Doris']:
+        elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             password = conn_info.get('password', '')
             if password:
                 conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             else:
                 conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
 
-            engine = create_engine(conn_str)
+            engine_db = create_engine(conn_str)
 
             if_exists = 'replace' if mode == 'overwrite' else 'append'
-            data.to_sql(table, engine, if_exists=if_exists, index=False)
+            data.to_sql(table, engine_db, if_exists=if_exists, index=False)
 
         else:
-            raise ValueError(f"Unsupported resource type for table: {resource_type}")
+            raise ValueError(f"Unsupported engine type for table: {engine_type}")
 
         return {
             "output_type": "table",
             "output_table": f"{schema}.{table}",
-            "resource_id": resource_id,
+            "engine_id": engine_id,
             "row_count": len(data)
         }
 
@@ -221,12 +221,12 @@ LOAD_METADATA = OperatorMetadata(
             notes="可选值: table(数据库表), file(文件), geojson(GeoJSON对象)"
         ),
         OperatorParam(
-            name="resource_id",
+            name="engine_id",
             type="param",
             data_type="integer",
             required=True,
-            description="存储引擎资源ID",
-            notes="仅 source_type=table 时有效,对应 System 模块中的资源ID"
+            description="存储引擎ID",
+            notes="仅 source_type=table 时有效,对应 System 模块中的引擎ID"
         ),
         OperatorParam(
             name="schema",
@@ -271,7 +271,7 @@ LOAD_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "从业务数据库加载河流数据: source_type=table, resource_id=1, table=rivers",
+        "从业务数据库加载河流数据: source_type=table, engine_id=1, table=rivers",
         "从文件加载行政区划: source_type=file, path=/data/admin.shp, format=shapefile",
         "从内存GeoJSON加载临时数据: source_type=geojson, geojson={...}",
         "工作流起始节点: 作为数据输入的第一步"
@@ -289,7 +289,7 @@ LOAD_METADATA = OperatorMetadata(
         'operator': 'load',
         'params': {
             'source_type': 'table',
-            'resource_id': 1,
+            'engine_id': 1,
             'schema': 'public',
             'table': 'rivers'
         },
@@ -323,12 +323,12 @@ SAVE_METADATA = OperatorMetadata(
             notes="可选值: table(数据库表), file(文件)"
         ),
         OperatorParam(
-            name="resource_id",
+            name="engine_id",
             type="param",
             data_type="integer",
             required=False,
-            description="存储引擎资源ID",
-            notes="仅 target_type=table 时必填,对应 System 模块中的资源ID"
+            description="存储引擎ID",
+            notes="仅 target_type=table 时必填,对应 System 模块中的引擎ID"
         ),
         OperatorParam(
             name="schema",
@@ -373,7 +373,7 @@ SAVE_METADATA = OperatorMetadata(
     ],
 
     use_cases=[
-        "保存分析结果到数据库: target_type=table, resource_id=1, table=result, mode=replace",
+        "保存分析结果到数据库: target_type=table, engine_id=1, table=result, mode=replace",
         "导出到GeoJSON文件: target_type=file, path=/output/result.geojson, format=geojson",
         "导出到Shapefile: target_type=file, path=/output/result.shp, format=shapefile",
         "工作流结束节点: 作为数据输出的最后一步"
@@ -392,7 +392,7 @@ SAVE_METADATA = OperatorMetadata(
         'params': {
             'data': {'$ref': 'buffer_rivers'},
             'target_type': 'table',
-            'resource_id': 1,
+            'engine_id': 1,
             'schema': 'public',
             'table': 'river_buffer_result',
             'mode': 'replace'

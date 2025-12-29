@@ -143,13 +143,13 @@ spark.default.parallelism=8 # 并行度
 ```bash
 TOKEN="<your_jwt_token>"
 
-curl -X POST http://localhost:8080/api/resources \
+curl -X POST http://localhost:8080/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "spark_sql_default",
     "display_name": "Spark SQL 分析引擎",
-    "resource_type": "spark_sql",
+    "engine_type": "spark_sql",
     "connection_info": {
       "host": "host.docker.internal",
       "port": 10000,

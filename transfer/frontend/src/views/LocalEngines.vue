@@ -87,7 +87,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { localEnginesAPI } from "../api/localEngines"'
+import { localEnginesAPI } from "../api/localEngines"
 import { Plus, Edit, Delete, Upload, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm } from '@common-ui'

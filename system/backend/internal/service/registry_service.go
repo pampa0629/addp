@@ -144,8 +144,8 @@ func (s *RegistryService) GetCapabilityByIdentifier(ctx context.Context, identif
 	return resource, nil
 }
 
-// ListComputeResources 查询所有具有计算能力的资源
-func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localModels.Engine, error) {
+// ListComputeEngines 查询所有具有计算能力的引擎
+func (s *RegistryService) ListComputeEngines(ctx context.Context) ([]*localModels.Engine, error) {
 	// 查询条件:
 	// 1. capabilities.compute 不为空（JSONB 查询）
 	// 2. is_active = true
@@ -156,7 +156,7 @@ func (s *RegistryService) ListComputeResources(ctx context.Context) ([]*localMod
 
 	engines, err := s.resourceRepo.FindByFilters(ctx, filters)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list compute resources: %w", err)
+		return nil, fmt.Errorf("failed to list compute engines: %w", err)
 	}
 
 	return engines, nil

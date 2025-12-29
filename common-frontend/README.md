@@ -19,8 +19,8 @@ import { ShapefilePreview, GeoJsonPreview, TablePreview, StorageEngineForm } fro
 import { formatFileSize, detectFormatByExtension } from '@addp/common-frontend'
 
 const previewData = ref(null)
-const resourceForm = ref({
-  resource_type: 'postgresql',
+const engineForm = ref({
+  engine_type: 'postgresql',
   name: '',
   connection_info: {}
 })
@@ -29,7 +29,7 @@ const resourceForm = ref({
 <template>
   <ShapefilePreview :data="previewData" />
 
-  <StorageEngineForm v-model="resourceForm" />
+  <StorageEngineForm v-model="engineForm" />
 </template>
 ```
 

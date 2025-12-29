@@ -115,7 +115,7 @@ func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 // @Param page_size query int false "每页数量"
 // @Param dev_type query string false "类型过滤"
 // @Param status query string false "状态过滤"
-// @Param resource_id query int false "资源ID过滤"
+// @Param engine_id query int false "资源ID过滤"
 // @Param tag query string false "标签过滤"
 // @Param keyword query string false "关键词搜索"
 // @Success 200 {object} models.ListDevItemsResponse

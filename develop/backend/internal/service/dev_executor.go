@@ -568,7 +568,7 @@ func resolveTemplates(data interface{}, params map[string]interface{}) interface
 	}
 }
 
-// getNestedValue 根据路径获取嵌套值（如 "input.resource_id"）
+// getNestedValue 根据路径获取嵌套值（如 "input.engine_id"）
 func getNestedValue(data map[string]interface{}, path string) interface{} {
 	// 分割路径
 	parts := splitPath(path)

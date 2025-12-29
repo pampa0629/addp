@@ -7,9 +7,9 @@ import (
 
 // 业务错误定义
 var (
-	// 资源相关错误
-	ErrResourceNotFound     = errors.New("resource not found")
-	ErrResourceAccessDenied = errors.New("resource access denied: tenant mismatch")
+	// 引擎相关错误
+	ErrEngineNotFound     = errors.New("engine not found")
+	ErrEngineAccessDenied = errors.New("engine access denied: tenant mismatch")
 
 	// 租户相关错误
 	ErrInvalidTenantID      = errors.New("invalid tenant ID")
@@ -31,13 +31,13 @@ var (
 // HTTPStatusCode 根据错误返回对应的 HTTP 状态码
 func HTTPStatusCode(err error) int {
 	switch {
-	case errors.Is(err, ErrResourceNotFound),
+	case errors.Is(err, ErrEngineNotFound),
 		errors.Is(err, ErrNodeNotFound),
 		errors.Is(err, ErrItemNotFound),
 		errors.Is(err, ErrScanNotFound):
 		return http.StatusNotFound
 
-	case errors.Is(err, ErrResourceAccessDenied),
+	case errors.Is(err, ErrEngineAccessDenied),
 		errors.Is(err, ErrNodeAccessDenied),
 		errors.Is(err, ErrItemAccessDenied),
 		errors.Is(err, ErrScanAccessDenied),
@@ -55,14 +55,14 @@ func HTTPStatusCode(err error) int {
 // ErrorMessage 返回用户友好的错误消息
 func ErrorMessage(err error) string {
 	switch {
-	case errors.Is(err, ErrResourceAccessDenied),
+	case errors.Is(err, ErrEngineAccessDenied),
 		errors.Is(err, ErrNodeAccessDenied),
 		errors.Is(err, ErrItemAccessDenied),
 		errors.Is(err, ErrScanAccessDenied):
 		return "access denied to this resource"
 
-	case errors.Is(err, ErrResourceNotFound):
-		return "resource not found"
+	case errors.Is(err, ErrEngineNotFound):
+		return "engine not found"
 
 	case errors.Is(err, ErrNodeNotFound):
 		return "node not found"

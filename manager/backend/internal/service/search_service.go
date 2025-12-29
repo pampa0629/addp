@@ -490,7 +490,7 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 				doc.TenantID = *item.Record.TenantID
 			}
 			if item.Record.EngineID != nil {
-				doc.EngineID = *item.Record.EngineID
+				doc.ResourceID = *item.Record.EngineID
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				assignString(meta, "title", &doc.Title)
@@ -693,7 +693,7 @@ func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
 		DocumentID:   v.DocumentID,
 		AssetID:      v.AssetID,
 		Score:        v.Score,
-		EngineID:   v.EngineID,
+		ResourceID:   v.ResourceID,
 		ResourceName: v.ResourceName,
 		EngineType:   v.EngineType,
 		Bucket:       bucket,
@@ -731,7 +731,7 @@ func mapMeilisearchHit(hit interface{}) FullTextDocument {
 		doc.AssetID = val
 	}
 	if val, ok := hitMap["engine_id"].(float64); ok {
-		doc.EngineID = uint(val)
+		doc.ResourceID = uint(val)
 	}
 	if val, ok := hitMap["resource_name"].(string); ok {
 		doc.ResourceName = val

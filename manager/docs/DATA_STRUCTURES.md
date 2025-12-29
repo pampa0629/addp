@@ -61,13 +61,13 @@ Manager 模块使用 `manager` schema，包含 5 张核心表。
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
-**Go 模型** (`internal/models/resource.go`):
+**Go 模型** (`internal/models/engine.go`):
 
 ```go
-type Resource struct {
+type Engine struct {
     ID             uint
     Name           string
-    ResourceType   string
+    EngineType     string
     ConnectionInfo ConnectionInfo
     Description    string
     CreatedBy      *uint
@@ -108,7 +108,7 @@ type Resource struct {
 |--------|------|------|------|
 | `id` | SERIAL | PRIMARY KEY | 任务唯一标识 |
 | `tenant_id` | INT | NOT NULL | 租户 ID |
-| `resource_id` | INT | NOT NULL | 数据源 ID（关联 system.resources） |
+| `engine_id` | INT | NOT NULL | 数据源 ID（关联 system.engines） |
 | `schema_name` | VARCHAR(255) | NOT NULL | 数据库 schema 名称 |
 | `table_name` | VARCHAR(255) | NOT NULL | 表名 |
 | `status` | VARCHAR(50) | DEFAULT 'none' | 状态：none/generating/ready/failed |
@@ -131,7 +131,7 @@ type Resource struct {
 | `updated_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 **约束**:
-- UNIQUE(tenant_id, resource_id, schema_name, table_name)
+- UNIQUE(tenant_id, engine_id, schema_name, table_name)
 
 **索引**:
 - `idx_quick_view_status` - 状态索引
@@ -139,7 +139,7 @@ type Resource struct {
 
 **Fingerprint 计算**:
 ```go
-fingerprint = MD5(fmt.Sprintf("%d:%s:%s", resourceID, schemaName, tableName))
+fingerprint = MD5(fmt.Sprintf("%d:%s:%s", engineID, schemaName, tableName))
 ```
 
 **Go 模型** (`internal/models/quick_view.go`):
@@ -148,7 +148,7 @@ fingerprint = MD5(fmt.Sprintf("%d:%s:%s", resourceID, schemaName, tableName))
 type QuickView struct {
     ID                  uint
     TenantID            uint
-    ResourceID          uint
+    EngineID            uint
     SchemaName          string
     Table               string
     Status              string
@@ -204,7 +204,7 @@ type QuickView struct {
 ### 2.2 数据表关系图
 
 ```
-system.resources (来自 System 模块)
+system.engines (来自 System 模块)
     ↓
 manager.quick_view (快显任务)
     ↓ (fingerprint)
@@ -234,24 +234,24 @@ manager.directory_permissions
 
 ---
 
-### 3.2 资源管理 API
+### 3.2 引擎管理 API
 
-#### GET /api/resources - 列出数据源
+#### GET /api/engines - 列出数据源
 
 **查询参数**:
 - `page`: 页码（默认 1）
 - `page_size`: 每页条数（默认 10）
-- `resource_type`: 按类型过滤
+- `engine_type`: 按类型过滤
 
 **响应** (200 OK):
 
 ```json
 {
-  "resources": [
+  "engines": [
     {
       "id": 1,
       "name": "PostgreSQL-生产库",
-      "resource_type": "postgresql",
+      "engine_type": "postgresql",
       "description": "生产数据库",
       "is_active": true,
       "created_at": "2025-12-11T10:00:00Z"
@@ -265,34 +265,34 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id - 获取单个数据源
+#### GET /api/engines/:id - 获取单个数据源
 
-**响应** (200 OK): 返回 Resource 对象
+**响应** (200 OK): 返回 Engine 对象
 
 ---
 
 ### 3.3 数据探查 API
 
-#### GET /api/data-explorer/tree - 获取所有资源树（兼容旧接口）
+#### GET /api/data-explorer/tree - 获取所有引擎树（兼容旧接口）
 
-**响应** (200 OK): 返回资源树结构
-
----
-
-#### GET /api/data-explorer/resources - 列出可用的存储引擎
-
-**响应** (200 OK): 返回资源列表
+**响应** (200 OK): 返回引擎树结构
 
 ---
 
-#### GET /api/data-explorer/resources/:id/tree - 获取指定资源的 schema/表树
+#### GET /api/data-explorer/engines - 列出可用的存储引擎
+
+**响应** (200 OK): 返回引擎列表
+
+---
+
+#### GET /api/data-explorer/engines/:id/tree - 获取指定引擎的 schema/表树
 
 **响应** (200 OK):
 
 ```json
 {
-  "resource_id": 1,
-  "resource_name": "PostgreSQL-生产库",
+  "engine_id": 1,
+  "engine_name": "PostgreSQL-生产库",
   "schemas": [
     {
       "name": "public",
@@ -311,7 +311,7 @@ manager.directory_permissions
 
 ---
 
-#### POST /api/data-explorer/resources/:id/refresh - 触发 Meta 服务刷新节点
+#### POST /api/data-explorer/engines/:id/refresh - 触发 Meta 服务刷新节点
 
 **请求体**:
 
@@ -334,7 +334,7 @@ manager.directory_permissions
 #### GET /api/data-explorer/preview - 预览表/对象数据
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `schema`: Schema 名称（数据库必填）
 - `table`: 表名（数据库必填）
 - `bucket`: Bucket 名称（对象存储必填）
@@ -378,7 +378,7 @@ manager.directory_permissions
 #### GET /api/data-explorer/video-stream - 视频流服务
 
 **查询参数**:
-- `resource_id`: 资源 ID
+- `engine_id`: 引擎 ID
 - `bucket`: Bucket 名称
 - `path`: 视频路径
 
@@ -388,7 +388,7 @@ manager.directory_permissions
 
 ### 3.4 元数据扫描 API
 
-#### POST /api/resources/:id/scan - 扫描资源元数据
+#### POST /api/engines/:id/scan - 扫描引擎元数据
 
 **请求体**:
 
@@ -410,7 +410,7 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/tables - 获取资源的表列表
+#### GET /api/engines/:id/tables - 获取引擎的表列表
 
 **响应** (200 OK):
 
@@ -430,13 +430,13 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/scan-tasks - 列出扫描任务
+#### GET /api/engines/:id/scan-tasks - 列出扫描任务
 
 **响应** (200 OK): 返回扫描任务列表
 
 ---
 
-#### POST /api/resources/:id/scan-tasks - 创建扫描任务
+#### POST /api/engines/:id/scan-tasks - 创建扫描任务
 
 **请求体**:
 
@@ -452,7 +452,7 @@ manager.directory_permissions
 
 ---
 
-#### PUT /api/resources/:id/scan-tasks/:task_id - 更新扫描任务
+#### PUT /api/engines/:id/scan-tasks/:task_id - 更新扫描任务
 
 **请求体**: 同创建任务
 
@@ -460,7 +460,7 @@ manager.directory_permissions
 
 ---
 
-#### DELETE /api/resources/:id/scan-tasks/:task_id - 删除扫描任务
+#### DELETE /api/engines/:id/scan-tasks/:task_id - 删除扫描任务
 
 **响应** (200 OK):
 
@@ -472,7 +472,7 @@ manager.directory_permissions
 
 ---
 
-#### POST /api/resources/:id/scan-tasks/:task_id/trigger - 立即触发扫描
+#### POST /api/engines/:id/scan-tasks/:task_id/trigger - 立即触发扫描
 
 **响应** (202 Accepted):
 
@@ -485,7 +485,7 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/scan-runs - 列出扫描运行记录
+#### GET /api/engines/:id/scan-runs - 列出扫描运行记录
 
 **查询参数**:
 - `task_id`: 按任务过滤
@@ -497,13 +497,13 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/scan-runs/:run_id - 获取扫描运行详情
+#### GET /api/engines/:id/scan-runs/:run_id - 获取扫描运行详情
 
 **响应** (200 OK): 返回运行详情
 
 ---
 
-#### POST /api/resources/:id/scan-runs/manual - 发起即时扫描
+#### POST /api/engines/:id/scan-runs/manual - 发起即时扫描
 
 **请求体**:
 
@@ -559,7 +559,7 @@ manager.directory_permissions
 
 ### 3.5 快显/预缓存 API
 
-#### POST /api/resources/:id/spatial/:schema/:table/pre-cache - 触发预缓存任务
+#### POST /api/engines/:id/spatial/:schema/:table/pre-cache - 触发预缓存任务
 
 **请求体**:
 
@@ -584,7 +584,7 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/spatial/:schema/:table/pre-cache/status - 获取预缓存状态
+#### GET /api/engines/:id/spatial/:schema/:table/pre-cache/status - 获取预缓存状态
 
 **响应** (200 OK):
 
@@ -604,7 +604,7 @@ manager.directory_permissions
 
 ---
 
-#### DELETE /api/resources/:id/spatial/:schema/:table/pre-cache - 清除预缓存
+#### DELETE /api/engines/:id/spatial/:schema/:table/pre-cache - 清除预缓存
 
 **响应** (200 OK):
 
@@ -626,7 +626,7 @@ manager.directory_permissions
   "tasks": [
     {
       "id": 10,
-      "resource_id": 1,
+      "engine_id": 1,
       "schema_name": "public",
       "table_name": "cities",
       "status": "ready",
@@ -659,7 +659,7 @@ manager.directory_permissions
 
 ### 3.6 MVT 瓦片 API
 
-#### GET /api/resources/:id/spatial/tiles/:schema/:table/:z/:x/:y - 获取 MVT 瓦片
+#### GET /api/engines/:id/spatial/tiles/:schema/:table/:z/:x/:y - 获取 MVT 瓦片
 
 **查询参数**:
 - `geom`: 几何列名（默认 "geom"）
@@ -674,7 +674,7 @@ manager.directory_permissions
 
 ---
 
-#### GET /api/resources/:id/spatial/:schema/:table/tile-config - 获取瓦片配置
+#### GET /api/engines/:id/spatial/:schema/:table/tile-config - 获取瓦片配置
 
 **响应** (200 OK):
 
@@ -705,7 +705,7 @@ manager.directory_permissions
   "hits": [
     {
       "id": "table_1",
-      "resource_name": "PostgreSQL-生产库",
+      "engine_name": "PostgreSQL-生产库",
       "schema": "public",
       "table": "users",
       "row_count": 1000,
@@ -780,7 +780,7 @@ manager.directory_permissions
 
 ### 3.9 要素 API
 
-#### GET /api/resources/:id/features/:feature_id/centroid - 获取要素中心点坐标
+#### GET /api/engines/:id/features/:feature_id/centroid - 获取要素中心点坐标
 
 **查询参数**:
 - `schema`: schema 名称（必填）
@@ -816,8 +816,8 @@ manager:cache:mvt:spatial:{fingerprint}:{z}:{x}:{y}
 **清理模式**:
 
 ```bash
-# 清理指定资源的所有瓦片缓存
-SCAN "manager:cache:mvt:*:resource:{resource_id}:*" 100
+# 清理指定引擎的所有瓦片缓存
+SCAN "manager:cache:mvt:*:engine:{engine_id}:*" 100
 ```
 
 **内存 LRU 缓存**:
@@ -865,7 +865,7 @@ manager/
 ```json
 {
   "id": "file_123",
-  "resource_id": 1,
+  "engine_id": 1,
   "bucket": "mybucket",
   "path": "/data/file.csv",
   "name": "file.csv",
@@ -888,7 +888,7 @@ manager/
 
 | Service 类 | 主要职责 |
 |-----------|---------|
-| `ResourceService` | 资源列表、单个资源查询 |
+| `EngineService` | 引擎列表、单个引擎查询 |
 | `MetadataService` | 元数据扫描管理、任务管理 |
 | `QuickViewService` | 快显任务管理 |
 | `UnifiedMVTService` | 统一 MVT 瓦片获取（三层缓存） |
@@ -902,7 +902,7 @@ manager/
 ### 5.2 缓存层次结构
 
 ```
-请求 GET /api/resources/1/spatial/tiles/public/cities/10/512/384
+请求 GET /api/engines/1/spatial/tiles/public/cities/10/512/384
   ↓
 [1] 内存 LRU 缓存 (8192 items, 5 min TTL)
   ↓ (MISS)
@@ -922,13 +922,13 @@ manager/
 
 ### 5.3 快显预缓存工作流程
 
-1. 前端调用 POST /api/resources/:id/spatial/:schema/:table/pre-cache
+1. 前端调用 POST /api/engines/:id/spatial/:schema/:table/pre-cache
 2. TriggerQuickView 验证：
    - 检查是否已在生成中
    - 从 Meta 获取空间元数据（extent、SRID）
    - 验证 min_zoom/max_zoom 参数
 3. 创建 quick_view 记录（状态：generating）
-4. 计算 fingerprint：MD5(resource_id:schema:table)
+4. 计算 fingerprint：MD5(engine_id:schema:table)
 5. 入队 Asynq 任务（优先级：critical/default/low）
 6. Worker 处理：
    - Zoom 循环（min_zoom 到 max_zoom）

@@ -84,7 +84,7 @@ SQL 开发模块现已支持将 SQL 查询保存为可重用的任务,并支持�
 {
   "name": "daily_user_report",
   "display_name": "每日用户报表",
-  "resource_id": 1,
+  "engine_id": 1,
   "sql": "SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE",
   "description": "统计每日新增用户数量",
   "tags": ["报表", "用户"],
@@ -122,10 +122,10 @@ CREATE TABLE develop.dev_items (
   dev_type VARCHAR(50) NOT NULL,  -- 'sql' | 'workflow' | 'script'
 
   -- 内容存储 (JSONB)
-  content JSONB NOT NULL,  -- { "sql": "...", "resource_id": 1 }
+  content JSONB NOT NULL,  -- { "sql": "...", "engine_id": 1 }
 
   -- 执行配置
-  resource_id INTEGER,
+  engine_id INTEGER,
   schedule VARCHAR(100),
   is_scheduled BOOLEAN DEFAULT false,
   timeout INTEGER DEFAULT 300,

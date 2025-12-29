@@ -19,46 +19,46 @@ class SparkConnector:
     """
 
     def __init__(self):
-        self.sessions: Dict[int, SparkSession] = {}  # {resource_id: SparkSession}
+        self.sessions: Dict[int, SparkSession] = {}  # {engine_id: SparkSession}
         self.system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
 
-    def get_resource_from_system(self, resource_id: int) -> dict:
+    def get_engine_from_system(self, engine_id: int) -> dict:
         """从System Backend获取资源信息"""
         try:
-            response = requests.get(f'{self.system_url}/api/resources/{resource_id}')
+            response = requests.get(f'{self.system_url}/api/engines/{engine_id}')
             if response.status_code != 200:
-                raise ValueError(f"Failed to get resource {resource_id}: {response.text}")
+                raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
             return response.json()
         except Exception as e:
-            logger.error(f"Failed to fetch resource {resource_id} from System: {e}")
+            logger.error(f"Failed to fetch engine {engine_id} from System: {e}")
             raise
 
-    def get_or_create_session(self, resource_id: int) -> SparkSession:
+    def get_or_create_session(self, engine_id: int) -> SparkSession:
         """
         获取或创建SparkSession
 
         Args:
-            resource_id: system.resources 中的资源ID
+            engine_id: system.engines 中的资源ID
 
         Returns:
             SparkSession 实例
         """
         # 如果已存在,直接返回
-        if resource_id in self.sessions:
-            logger.info(f"Reusing existing SparkSession for resource {resource_id}")
-            return self.sessions[resource_id]
+        if engine_id in self.sessions:
+            logger.info(f"Reusing existing SparkSession for engine {engine_id}")
+            return self.sessions[engine_id]
 
         # 获取资源配置
-        resource = self.get_resource_from_system(resource_id)
-        conn_info = resource['connection_info']
+        engine = self.get_engine_from_system(engine_id)
+        conn_info = engine['connection_info']
 
-        logger.info(f"Creating new SparkSession for resource {resource_id}: {conn_info['host']}:{conn_info['port']}")
+        logger.info(f"Creating new SparkSession for engine {engine_id}: {conn_info['host']}:{conn_info['port']}")
 
         # 创建SparkSession
         # 注意: 这里使用Thrift Server模式,而非Standalone/YARN模式
         # 因为用户注册的是Spark SQL Thrift Server
         builder = SparkSession.builder \
-            .appName(f"ADDP-Workflow-Resource-{resource_id}") \
+            .appName(f"ADDP-Workflow-Engine-{engine_id}") \
             .config("spark.sql.extensions", "org.apache.sedona.sql.SedonaSqlExtensions") \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
             .config("spark.kryo.registrator", "org.apache.sedona.core.serde.SedonaKryoRegistrator")
@@ -104,20 +104,20 @@ class SparkConnector:
             logger.warning(f"Failed to register Sedona functions: {e}")
 
         # 缓存会话
-        self.sessions[resource_id] = spark
+        self.sessions[engine_id] = spark
         return spark
 
-    def close_session(self, resource_id: int):
+    def close_session(self, engine_id: int):
         """关闭指定资源的SparkSession"""
-        if resource_id in self.sessions:
-            self.sessions[resource_id].stop()
-            del self.sessions[resource_id]
-            logger.info(f"Closed SparkSession for resource {resource_id}")
+        if engine_id in self.sessions:
+            self.sessions[engine_id].stop()
+            del self.sessions[engine_id]
+            logger.info(f"Closed SparkSession for engine {engine_id}")
 
     def close_all_sessions(self):
         """关闭所有SparkSession"""
-        for resource_id in list(self.sessions.keys()):
-            self.close_session(resource_id)
+        for engine_id in list(self.sessions.keys()):
+            self.close_session(engine_id)
 
 
 # 全局单例

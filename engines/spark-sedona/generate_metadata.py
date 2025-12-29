@@ -148,7 +148,7 @@ def generate_notes(operator: Dict[str, Any]) -> List[str]:
         ]
     elif category == "数据I/O":
         return [
-            "resource_id需要在System模块中预先配置数据源连接信息",
+            "engine_id需要在System模块中预先配置数据源连接信息",
             "几何列默认名称为'geom',如果不同需要显式指定",
             "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
             "支持分区读取,可指定分区列优化查询性能"

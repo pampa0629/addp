@@ -28,7 +28,7 @@ type EngineService struct {
 	repo           *repository.EngineRepository
 	userRepo       *repository.UserRepository
 	encryptionKey  []byte
-	eventPublisher *events.ResourceEventPublisher
+	eventPublisher *events.EngineEventPublisher
 }
 
 func NewEngineService(repo *repository.EngineRepository, userRepo *repository.UserRepository, encryptionKey []byte, redisClient *redis.Client) *EngineService {
@@ -36,7 +36,7 @@ func NewEngineService(repo *repository.EngineRepository, userRepo *repository.Us
 		repo:           repo,
 		userRepo:       userRepo,
 		encryptionKey:  encryptionKey,
-		eventPublisher: events.NewResourceEventPublisher(redisClient, nil),
+		eventPublisher: events.NewEngineEventPublisher(redisClient, nil),
 	}
 }
 
@@ -96,7 +96,7 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 
 	// 发布资源创建事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionCreate)
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), engine.ID, events.ActionCreate)
 	}
 
 	return s.sanitizeResource(engine), nil
@@ -152,7 +152,7 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 
 	// 发布资源创建事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionCreate)
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), engine.ID, events.ActionCreate)
 	}
 
 	return s.sanitizeResource(engine), nil
@@ -283,7 +283,7 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 
 	// 发布资源更新事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), engine.ID, events.ActionUpdate)
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), engine.ID, events.ActionUpdate)
 	}
 
 	return s.sanitizeResource(engine), nil
@@ -322,7 +322,7 @@ func (s *EngineService) Delete(id uint, currentUserID uint) error {
 
 	// 发布资源删除事件
 	if s.eventPublisher != nil {
-		_ = s.eventPublisher.PublishResourceChange(context.Background(), id, events.ActionDelete)
+		_ = s.eventPublisher.PublishEngineChange(context.Background(), id, events.ActionDelete)
 	}
 
 	return nil

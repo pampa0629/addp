@@ -80,8 +80,8 @@ func main() {
 	}
 
 	// 初始化服务
-	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
-	if err := resourceService.PreloadResources(); err != nil {
+	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	if err := engineService.PreloadResources(); err != nil {
 		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
 	}
 	searchIndexer, err := search.NewIndexer(cfg)
@@ -89,7 +89,7 @@ func main() {
 		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
 		searchIndexer = nil // 继续运行，但不使用搜索索引
 	}
-	scanService := service.NewScanServiceNew(db, resourceService)
+	scanService := service.NewScanServiceNew(db, engineService)
 	if searchIndexer != nil {
 		scanService.SetIndexer(searchIndexer)
 	}
@@ -144,9 +144,9 @@ func main() {
 		defer pgVectorStore.Close()
 	}
 
-	taskService := service.NewScanTaskService(db, scanService, resourceService, redisClient)
-	// 将 taskService 注入到 resourceService（用于处理 ScanConfig）
-	resourceService.SetTaskService(taskService)
+	taskService := service.NewScanTaskService(db, scanService, engineService, redisClient)
+	// 将 taskService 注入到 engineService（用于处理 ScanConfig）
+	engineService.SetTaskService(taskService)
 
 	// 如果配置了任务队列，则使用任务队列（worker 模式）
 	if taskQueue != nil {
@@ -162,7 +162,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, resourceService, scanService, taskService, redisClient)
+	router := api.SetupRouterNew(cfg, engineService, scanService, taskService, redisClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）

@@ -199,7 +199,7 @@ src/
 ```bash
 # 1. 确保System模块有数据源
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/resources
+  http://localhost:8080/api/engines
 
 # 2. 访问Transfer前端
 open http://localhost:5176/tasks

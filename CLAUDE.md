@@ -223,7 +223,7 @@ ADDP 采用 **模块化资源隔离** 策略,确保模块资源独立管理:
 **MinIO Bucket 隔离**: 按模块名隔离
 **Redis Key 命名规范**: {module}:{middleware}:{function}:{id}
 **Asynq Queue 命名规范**: {module}:{priority}
-**Meilisearch Index 命名规范**: {module}:{resource_type}
+**Meilisearch Index 命名规范**: {module}:{entity_type}
 
 ## 关键架构模式
 

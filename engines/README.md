@@ -84,7 +84,7 @@ POST /api/{module}/operators/:name/execute
 ```json
 {
   "params": {
-    "resource_id": 123,
+    "engine_id": 123,
     "depth": "deep"
   },
   "execute_now": true,

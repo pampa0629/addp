@@ -53,7 +53,7 @@ func (m *CacheManager) ClearResourceCache(ctx context.Context, engineID uint) er
 
 // clearMVTCache 清理 MVT 瓦片缓存
 func (m *CacheManager) clearMVTCache(ctx context.Context, engineID uint) error {
-	// MVT 缓存 key 模式：manager:cache:mvt:*:resource:{resource_id}:*
+	// MVT 缓存 key 模式：manager:cache:mvt:*:resource:{engine_id}:*
 	pattern := fmt.Sprintf("manager:cache:mvt:*:resource:%d:*", engineID)
 
 	m.log.Debug("扫描 MVT 缓存键", "pattern", pattern)

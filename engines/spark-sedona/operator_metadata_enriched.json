@@ -21,10 +21,10 @@
         "default": "table"
       },
       {
-        "name": "resource_id",
+        "name": "engine_id",
         "type": "integer",
         "required": false,
-        "description": "数据资源ID (从system.resources获取,如PostgreSQL/MinIO资源)",
+        "description": "数据引擎ID (从system.engines获取,如PostgreSQL/MinIO资源)",
         "depends_on": {
           "source_type": [
             "table",
@@ -155,10 +155,10 @@
           "notes": "参考参数定义中的说明"
         },
         {
-          "name": "resource_id",
+          "name": "engine_id",
           "type": "integer",
           "required": false,
-          "description": "数据资源ID (从system.resources获取,如PostgreSQL/MinIO资源)",
+          "description": "数据引擎ID (从system.engines获取,如PostgreSQL/MinIO资源)",
           "notes": "参考参数定义中的说明"
         },
         {
@@ -225,7 +225,7 @@
         "从Iceberg数据湖加载: 加载湖仓中的历史轨迹数据"
       ],
       "notes": [
-        "resource_id需要在System模块中预先配置数据源连接信息",
+        "engine_id需要在System模块中预先配置数据源连接信息",
         "几何列默认名称为'geom',如果不同需要显式指定",
         "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
         "支持分区读取,可指定分区列优化查询性能"
@@ -268,7 +268,7 @@
         "default": "table"
       },
       {
-        "name": "resource_id",
+        "name": "engine_id",
         "type": "integer",
         "required": false,
         "description": "目标资源ID"
@@ -365,7 +365,7 @@
           "notes": "参考参数定义中的说明"
         },
         {
-          "name": "resource_id",
+          "name": "engine_id",
           "type": "integer",
           "required": false,
           "description": "目标资源ID",
@@ -414,7 +414,7 @@
         "追加模式保存数据: mode='append'向表中追加新数据"
       ],
       "notes": [
-        "resource_id需要在System模块中预先配置数据源连接信息",
+        "engine_id需要在System模块中预先配置数据源连接信息",
         "几何列默认名称为'geom',如果不同需要显式指定",
         "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
         "支持分区读取,可指定分区列优化查询性能"
@@ -491,7 +491,7 @@
         "场景4: 大数据场景下使用数据预览进行批量处理"
       ],
       "notes": [
-        "resource_id需要在System模块中预先配置数据源连接信息",
+        "engine_id需要在System模块中预先配置数据源连接信息",
         "几何列默认名称为'geom',如果不同需要显式指定",
         "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
         "支持分区读取,可指定分区列优化查询性能"
@@ -554,7 +554,7 @@
         "场景4: 大数据场景下使用内存缓存进行批量处理"
       ],
       "notes": [
-        "resource_id需要在System模块中预先配置数据源连接信息",
+        "engine_id需要在System模块中预先配置数据源连接信息",
         "几何列默认名称为'geom',如果不同需要显式指定",
         "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
         "支持分区读取,可指定分区列优化查询性能"
@@ -637,7 +637,7 @@
         "场景4: 大数据场景下使用持久化进行批量处理"
       ],
       "notes": [
-        "resource_id需要在System模块中预先配置数据源连接信息",
+        "engine_id需要在System模块中预先配置数据源连接信息",
         "几何列默认名称为'geom',如果不同需要显式指定",
         "大文件读取建议使用Parquet或GeoParquet格式,性能最优",
         "支持分区读取,可指定分区列优化查询性能"

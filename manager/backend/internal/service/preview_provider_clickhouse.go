@@ -32,7 +32,7 @@ func (p *clickhousePreviewProvider) Priority() int {
 }
 
 func (p *clickhousePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" || req.Table == "" {
@@ -40,7 +40,7 @@ func (p *clickhousePreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 ClickHouse
-	resourceType := sanitizeResourceType(req.Resource.EngineType)
+	resourceType := sanitizeResourceType(req.Engine.EngineType)
 	return resourceType == "clickhouse"
 }
 
@@ -49,9 +49,9 @@ func (p *clickhousePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 
 	// 转换 Resource 类型到 common models
 	commonResource := &commonModels.Engine{
-		ID:             req.Resource.ID,
-		EngineType:   req.Resource.EngineType,
-		ConnectionInfo: commonModels.ConnectionInfo(req.Resource.ConnectionInfo),
+		ID:             req.Engine.ID,
+		EngineType:   req.Engine.EngineType,
+		ConnectionInfo: commonModels.ConnectionInfo(req.Engine.ConnectionInfo),
 	}
 
 	// 获取或创建连接池
@@ -121,9 +121,9 @@ func (p *clickhousePreviewProvider) Preview(ctx context.Context, req *PreviewReq
 		PageSize:        req.PageSize,
 		GeometryColumns: []string{}, // ClickHouse 不支持几何列
 		// Populate MVT preview metadata for frontend decision-making
-		EngineID:   req.Resource.ID,
+		EngineID:   req.Engine.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		EngineType: req.Resource.EngineType,
+		EngineType: req.Engine.EngineType,
 	}, nil
 }

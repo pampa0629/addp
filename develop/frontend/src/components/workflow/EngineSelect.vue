@@ -12,8 +12,8 @@
       `:label="`${engine.name} (${engine.engine_type})`"
       :value="engine.id"
     >
-      <div class="resource-option">
-        <span class="resource-name">{{ engine.name }}</span>
+      <div class="engine-option">
+        <span class="engine-name">{{ engine.name }}</span>
         <el-tag size="small" type="info">{{ engine.engine_type }}</el-tag>
       </div>
     </el-option>
@@ -78,14 +78,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.resource-option {
+.engine-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
 }
 
-.resource-name {
+.engine-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;

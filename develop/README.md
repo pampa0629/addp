@@ -106,7 +106,7 @@ Authorization: Bearer <token>
 
 Request:
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "sql": "SELECT * FROM users LIMIT 10",
   "timeout": 30000
 }
@@ -124,7 +124,7 @@ Response:
 
 ### 测试连接
 ```
-GET /api/develop/test/:resource_id
+GET /api/develop/test/:engine_id
 Authorization: Bearer <token>
 
 Response:
@@ -188,7 +188,7 @@ ENCRYPTION_KEY=your-32-byte-key
 -- develop.executions - 执行历史记录
 CREATE TABLE develop.executions (
     id SERIAL PRIMARY KEY,
-    resource_id INTEGER NOT NULL,
+    engine_id INTEGER NOT NULL,
     sql_content TEXT NOT NULL,
     status VARCHAR(20) NOT NULL,
     rows_affected INTEGER,
@@ -238,16 +238,16 @@ CREATE INDEX idx_executions_started ON develop.executions(started_at DESC);
 在 `sql_execution_service.go` 中添加新的连接类型：
 
 ```go
-func (s *SQLExecutionService) getDBConnection(resource *Resource) (*gorm.DB, error) {
-    switch strings.ToLower(resource.ResourceType) {
+func (s *SQLExecutionService) getDBConnection(engine *Engine) (*gorm.DB, error) {
+    switch strings.ToLower(engine.EngineType) {
     case "postgresql":
-        return s.connectPostgreSQL(resource)
+        return s.connectPostgreSQL(engine)
     case "mysql":
-        return s.connectMySQL(resource)
+        return s.connectMySQL(engine)
     case "clickhouse":  // 新增数据库
-        return s.connectClickHouse(resource)
+        return s.connectClickHouse(engine)
     default:
-        return nil, fmt.Errorf("不支持的数据库类型: %s", resource.ResourceType)
+        return nil, fmt.Errorf("不支持的数据库类型: %s", engine.EngineType)
     }
 }
 ```

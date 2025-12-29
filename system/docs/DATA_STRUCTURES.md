@@ -18,7 +18,7 @@ System 模块是 ADDP 平台的核心基础模块，提供以下功能：
 - **用户认证与授权**：JWT Token 签发、验证
 - **用户管理**：用户 CRUD、密码管理、权限控制
 - **租户管理**：多租户隔离、租户 CRUD
-- **资源管理**：存储引擎配置、连接信息加密存储
+- **引擎管理**：存储引擎配置、连接信息加密存储
 - **审计日志**：自动记录所有非 GET 操作
 - **配置中心**：为其他模块提供共享配置（JWT Secret、加密密钥等）
 - **能力注册**：支持 Orchestrator 动态发现和调用执行引擎
@@ -130,8 +130,8 @@ type Tenant struct {
 | `username` | VARCHAR(255) | | 用户名快照 |
 | `tenant_id` | INTEGER | FK → tenants.id (nullable) | 租户 ID（super_admin 操作为 NULL） |
 | `action` | VARCHAR(255) | NOT NULL | 操作类型（HTTP方法+路径） |
-| `resource_type` | VARCHAR(255) | | 资源类型 |
-| `resource_id` | VARCHAR(255) | | 资源 ID |
+| `entity_type` | VARCHAR(255) | | 操作对象类型（如：engine, user, tenant等） |
+| `entity_id` | VARCHAR(255) | | 操作对象 ID |
 | `details` | TEXT | | 操作详情（JSON 格式） |
 | `ip_address` | VARCHAR(255) | | 客户端 IP |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP, INDEXED | 操作时间 |
@@ -155,8 +155,8 @@ type AuditLog struct {
     Username     string    `json:"username"`
     TenantID     *uint     `json:"tenant_id"`
     Action       string    `gorm:"not null" json:"action"`
-    ResourceType string    `json:"resource_type"`
-    ResourceID   string    `json:"resource_id"`
+    EntityType   string    `json:"entity_type"`
+    EntityID     string    `json:"entity_id"`
     Details      string    `gorm:"type:text" json:"details"`
     IPAddress    string    `json:"ip_address"`
     CreatedAt    time.Time `gorm:"index" json:"created_at"`
@@ -165,15 +165,15 @@ type AuditLog struct {
 
 ---
 
-#### 表 4: resources - 资源配置表
+#### 表 4: engines - 引擎配置表
 
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
-| `id` | SERIAL | PRIMARY KEY | 资源唯一标识 |
-| `name` | VARCHAR(255) | NOT NULL, INDEXED | 资源名称 |
-| `resource_type` | VARCHAR(100) | NOT NULL | 资源类型：database/compute_engine/object_storage |
+| `id` | SERIAL | PRIMARY KEY | 引擎唯一标识 |
+| `name` | VARCHAR(255) | NOT NULL, INDEXED | 引擎名称 |
+| `engine_type` | VARCHAR(100) | NOT NULL | 引擎类型：database/compute_engine/object_storage |
 | `connection_info` | JSONB | NOT NULL | 连接信息（敏感字段 AES-256-GCM 加密） |
-| `description` | TEXT | | 资源描述 |
+| `description` | TEXT | | 引擎描述 |
 | `scan_config` | JSONB | | 元数据扫描配置 |
 | `unique_identifier` | VARCHAR(255) | UNIQUE INDEX | 能力唯一标识符（用于 Orchestrator） |
 | `is_builtin` | BOOLEAN | DEFAULT false, INDEXED | 是否内置能力 |
@@ -181,17 +181,17 @@ type AuditLog struct {
 | `task_api_config` | JSONB | | 任务 API 配置（端点、超时等） |
 | `health_check_config` | JSONB | | 健康检查配置 |
 | `created_by` | INTEGER | FK → users.id | 创建者 ID |
-| `tenant_id` | INTEGER | FK → tenants.id (nullable) | 租户 ID（super_admin 资源为 NULL） |
+| `tenant_id` | INTEGER | FK → tenants.id (nullable) | 租户 ID（super_admin 引擎为 NULL） |
 | `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
 | `created_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | 更新时间 |
 
 **索引**:
-- `idx_resources_name` - 资源名称索引
-- `idx_resources_type` - 按类型查询
-- `idx_resources_tenant` - 租户隔离
-- `idx_resources_identifier` - 能力标识符唯一索引
-- `idx_resources_builtin` - 内置能力过滤
+- `idx_engines_name` - 引擎名称索引
+- `idx_engines_type` - 按类型查询
+- `idx_engines_tenant` - 租户隔离
+- `idx_engines_identifier` - 能力标识符唯一索引
+- `idx_engines_builtin` - 内置能力过滤
 
 **加密策略（AES-256-GCM）**:
 
@@ -229,13 +229,13 @@ type AuditLog struct {
 }
 ```
 
-**Go 模型** (`internal/models/resource.go`):
+**Go 模型** (`internal/models/engine.go`):
 
 ```go
-type Resource struct {
+type Engine struct {
     ID                  uint                   `gorm:"primaryKey" json:"id"`
     Name                string                 `gorm:"not null;index" json:"name"`
-    ResourceType        string                 `gorm:"not null" json:"resource_type"`
+    EngineType          string                 `gorm:"not null" json:"engine_type"`
     ConnectionInfo      map[string]interface{} `gorm:"type:jsonb" json:"connection_info"`
     Description         string                 `json:"description"`
     ScanConfig          *ScanConfig            `gorm:"type:jsonb" json:"scan_config,omitempty"`
@@ -271,7 +271,7 @@ type Resource struct {
        │ 1:N
        ↓
 ┌─────────────┐
-│  resources  │ (资源配置表)
+│   engines   │ (引擎配置表)
 │  - id (PK)  │
 │  - created_by
 │  - tenant_id│
@@ -523,9 +523,9 @@ type Resource struct {
       "user_id": 2,
       "username": "admin",
       "tenant_id": 1,
-      "action": "POST /api/resources",
-      "resource_type": "resource",
-      "resource_id": "5",
+      "action": "POST /api/engines",
+      "entity_type": "engine",
+      "entity_id": "5",
       "details": "{\"name\":\"test-db\"}",
       "ip_address": "127.0.0.1",
       "created_at": "2025-12-11T10:30:00Z"
@@ -547,9 +547,9 @@ type Resource struct {
 
 ---
 
-### 3.5 资源管理 API
+### 3.5 引擎管理 API
 
-#### POST /api/resources - 创建资源
+#### POST /api/engines - 创建引擎
 
 **权限**: 本租户用户
 
@@ -558,7 +558,7 @@ type Resource struct {
 ```json
 {
   "name": "PostgreSQL-生产库",
-  "resource_type": "postgresql",
+  "engine_type": "postgresql",
   "connection_info": {
     "host": "localhost",
     "port": "5432",
@@ -575,30 +575,30 @@ type Resource struct {
 }
 ```
 
-**响应** (201 Created): 返回 Resource 对象（connection_info 自动加密）
+**响应** (201 Created): 返回 Engine 对象（connection_info 自动加密）
 
-**事件发布**: 发布 Redis 事件 `system:resource:created`
+**事件发布**: 发布 Redis 事件 `system:engine:created`
 
 ---
 
-#### GET /api/resources - 列出资源
+#### GET /api/engines - 列出引擎
 
-**权限**: 自动过滤本租户资源
+**权限**: 自动过滤本租户引擎
 
 **查询参数**:
 - `page`: 页码（默认 1）
 - `page_size`: 每页条数（默认 10）
-- `resource_type`: 按类型过滤（postgresql/minio/s3 等）
+- `engine_type`: 按类型过滤（postgresql/minio/s3 等）
 
 **响应** (200 OK):
 
 ```json
 {
-  "resources": [
+  "engines": [
     {
       "id": 1,
       "name": "PostgreSQL-生产库",
-      "resource_type": "postgresql",
+      "engine_type": "postgresql",
       "connection_info": {
         "host": "localhost",
         "port": "5432",
@@ -621,27 +621,27 @@ type Resource struct {
 
 ---
 
-#### GET /api/resources/:id - 获取指定资源
+#### GET /api/engines/:id - 获取指定引擎
 
 **权限**: 本租户用户
 
-**响应** (200 OK): 返回 Resource 对象（connection_info 解密）
+**响应** (200 OK): 返回 Engine 对象（connection_info 解密）
 
 ---
 
-#### PUT /api/resources/:id - 更新资源
+#### PUT /api/engines/:id - 更新引擎
 
 **权限**: 本租户用户
 
-**请求体**: 同创建资源（可选字段）
+**请求体**: 同创建引擎（可选字段）
 
-**响应** (200 OK): 返回更新后的 Resource 对象
+**响应** (200 OK): 返回更新后的 Engine 对象
 
-**事件发布**: 发布 Redis 事件 `system:resource:updated`
+**事件发布**: 发布 Redis 事件 `system:engine:updated`
 
 ---
 
-#### DELETE /api/resources/:id - 删除资源
+#### DELETE /api/engines/:id - 删除引擎
 
 **权限**: 本租户用户
 
@@ -649,15 +649,15 @@ type Resource struct {
 
 ```json
 {
-  "message": "资源删除成功"
+  "message": "引擎删除成功"
 }
 ```
 
-**事件发布**: 发布 Redis 事件 `system:resource:deleted`
+**事件发布**: 发布 Redis 事件 `system:engine:deleted`
 
 ---
 
-#### POST /api/resources/:id/test - 测试已有资源连接
+#### POST /api/engines/:id/test - 测试已有引擎连接
 
 **权限**: 本租户用户
 
@@ -684,7 +684,7 @@ type Resource struct {
 
 ---
 
-#### POST /api/resources/test-connection - 创建前测试连接
+#### POST /api/engines/test-connection - 创建前测试连接
 
 **权限**: 本租户用户
 
@@ -692,7 +692,7 @@ type Resource struct {
 
 ```json
 {
-  "resource_type": "postgresql",
+  "engine_type": "postgresql",
   "connection_info": {
     "host": "localhost",
     "port": "5432",
@@ -829,37 +829,37 @@ type Resource struct {
 
 ---
 
-#### GET /internal/resources - 获取资源列表（无租户隔离）
+#### GET /internal/engines - 获取引擎列表（无租户隔离）
 
 **查询参数**:
-- `resource_type`: 按类型过滤
+- `engine_type`: 按类型过滤
 - `tenant_id`: 按租户过滤
 
-**响应** (200 OK): 返回资源列表
+**响应** (200 OK): 返回引擎列表
 
 ---
 
-#### GET /internal/resources/:id - 获取指定资源
+#### GET /internal/engines/:id - 获取指定引擎
 
-**响应** (200 OK): 返回 Resource 对象
+**响应** (200 OK): 返回 Engine 对象
 
 ---
 
-#### POST /internal/resources - 创建资源
+#### POST /internal/engines - 创建引擎
 
 **请求体**:
 
 ```json
 {
-  "name": "资源名",
-  "resource_type": "postgresql",
+  "name": "引擎名",
+  "engine_type": "postgresql",
   "connection_info": {...},
   "tenant_id": 1,
   "created_by": 2
 }
 ```
 
-**响应** (201 Created): 返回 Resource 对象
+**响应** (201 Created): 返回 Engine 对象
 
 ---
 
@@ -875,7 +875,7 @@ type Resource struct {
 {
   "unique_identifier": "meta.scanner.default",
   "name": "Meta 元数据扫描器",
-  "resource_type": "compute_engine",
+  "engine_type": "compute_engine",
   "is_builtin": true,
   "capabilities": {
     "scan": true,
@@ -901,30 +901,30 @@ type Resource struct {
 }
 ```
 
-**响应** (201 Created): 返回 Resource 对象
+**响应** (201 Created): 返回 Engine 对象
 
 ---
 
 #### GET /internal/registry/capabilities - 查询能力列表
 
 **查询参数**:
-- `resource_type`: 按类型过滤（compute_engine 等）
+- `engine_type`: 按类型过滤（compute_engine 等）
 - `is_builtin`: 按是否内置过滤
 - `is_active`: 按激活状态过滤
 
-**响应** (200 OK): 返回 Resource 列表
+**响应** (200 OK): 返回 Engine 列表
 
 ---
 
 #### GET /internal/registry/capabilities/:identifier - 按标识符查询
 
-**响应** (200 OK): 返回 Resource 对象
+**响应** (200 OK): 返回 Engine 对象
 
 ---
 
-#### GET /internal/registry/compute-resources - 查询所有计算资源
+#### GET /internal/registry/compute-engines - 查询所有计算引擎
 
-**响应** (200 OK): 返回 Resource 列表（仅 is_builtin=true）
+**响应** (200 OK): 返回 Engine 列表（仅 is_builtin=true）
 
 ---
 
@@ -938,19 +938,19 @@ type Resource struct {
 - Password: `REDIS_PASSWORD` (可选)
 - DB: `REDIS_DB` (默认: 0)
 
-**用途**: 资源变更事件发布（Pub/Sub）
+**用途**: 引擎变更事件发布（Pub/Sub）
 
 **事件消息格式**:
 
 | 事件名 | 触发条件 | Payload |
 |--------|---------|---------|
-| `system:resource:created` | 创建资源 | `{"resource_id": 1, "resource_type": "postgresql", "tenant_id": 1}` |
-| `system:resource:updated` | 更新资源 | 同上 |
-| `system:resource:deleted` | 删除资源 | 同上 |
+| `system:engine:created` | 创建引擎 | `{"engine_id": 1, "engine_type": "postgresql", "tenant_id": 1}` |
+| `system:engine:updated` | 更新引擎 | 同上 |
+| `system:engine:deleted` | 删除引擎 | 同上 |
 
 **订阅方**:
-- Meta 模块：订阅资源创建事件，根据 ScanConfig 决定是否自动扫描
-- Manager 模块：订阅资源变更事件，刷新缓存
+- Meta 模块：订阅引擎创建事件，根据 ScanConfig 决定是否自动扫描
+- Manager 模块：订阅引擎变更事件，刷新缓存
 
 ---
 
@@ -958,7 +958,7 @@ type Resource struct {
 
 System 模块**不直接使用** MinIO，但支持：
 - 测试 MinIO/S3 连接（`TestConnection` 端点）
-- 存储 MinIO 连接配置于 `resources.connection_info` 中
+- 存储 MinIO 连接配置于 `engines.connection_info` 中
 
 MinIO 的实际使用由其他模块负责：
 - **系统 MinIO** (9000-9001): 存储系统文件（用户头像、系统配置等）
@@ -1030,7 +1030,7 @@ MinIO 的实际使用由其他模块负责：
 | 机制 | 算法 | 用途 |
 |------|------|------|
 | 用户密码 | bcrypt (cost: 10) | `users.password_hash` |
-| 资源敏感字段 | AES-256-GCM | `resources.connection_info` 中的 password/key/token |
+| 引擎敏感字段 | AES-256-GCM | `engines.connection_info` 中的 password/key/token |
 
 ---
 
@@ -1074,7 +1074,7 @@ MinIO 的实际使用由其他模块负责：
 |------|------|------|
 | 路由配置 | `system/backend/internal/api/router.go` | 所有 API 端点定义 |
 | 用户模型 | `system/backend/internal/models/user.go` | 用户字段和请求结构 |
-| 资源模型 | `system/backend/internal/models/resource.go` | 资源和扫描配置 |
+| 引擎模型 | `system/backend/internal/models/engine.go` | 引擎和扫描配置 |
 | 数据库初始化 | `system/backend/internal/repository/database.go` | AutoMigrate 和初始化逻辑 |
 | 配置加载 | `system/backend/internal/config/config.go` | 环境变量和安全验证 |
 | 认证中间件 | `system/backend/internal/middleware/auth.go` | JWT 验证和内部 API 认证 |

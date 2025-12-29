@@ -228,7 +228,7 @@ class GeoPandasWorkflowEngine:
 
 ### 2. 引擎注册模式创新
 
-**传统方式**: 注册21个算子到 System (system.resources 表膨胀)
+**传统方式**: 注册21个算子到 System (system.engines 表膨胀)
 
 **创新方案**:
 - 只注册引擎本身: `geopandas.engine.default`

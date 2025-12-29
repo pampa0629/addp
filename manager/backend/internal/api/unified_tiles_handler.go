@@ -11,7 +11,7 @@ import (
 )
 
 // UnifiedTilesHandler 统一的 MVT 瓦片处理器
-// RESTful API: GET /api/engines/{resource_id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
+// RESTful API: GET /api/engines/{engine_id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}.mvt
 type UnifiedTilesHandler struct {
 	service *service.UnifiedMVTService
 }
@@ -33,7 +33,7 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	fmt.Printf("🔵 UnifiedTilesHandler.GetTile 被调用: %s\n", c.Request.URL.Path)
 
 	// 1. 解析路径参数
-	resourceIDStr := c.Param("id")
+	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})

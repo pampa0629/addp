@@ -16,7 +16,7 @@ SPATIAL_OPERATORS.extend([
         description="从 PostgreSQL/PostGIS 数据库表加载空间数据",
         input_params=[
             OperatorParam("data_source_id", ParamType.STRING,
-                         description="数据源 ID（引用 ADDP system.resources）"),
+                         description="数据源 ID（引用 ADDP system.engines）"),
             OperatorParam("table_name", ParamType.STRING,
                          description="表名"),
             OperatorParam("geom_field", ParamType.STRING, default="geom",

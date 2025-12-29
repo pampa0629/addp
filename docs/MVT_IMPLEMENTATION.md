@@ -213,7 +213,7 @@ func (h *PreprocessHandler) ClearCache(c *gin.Context)
 ```go
 // 在 scanResourceInternal 完成后调用
 if err := s.triggerPreprocessingIfEnabled(ctx, resource, tenantID); err != nil {
-    s.log.Warn("预处理任务触发失败", "resource_id", resource.ID, "error", err)
+    s.log.Warn("预处理任务触发失败", "engine_id", resource.ID, "error", err)
 }
 ```
 

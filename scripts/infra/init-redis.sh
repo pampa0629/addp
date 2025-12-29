@@ -146,7 +146,7 @@ echo ""
 
 # Display Pub/Sub channels
 echo -e "${YELLOW}▶ Pub/Sub 事件通道配置...${NC}"
-echo -e "  ${GREEN}✓ system:resource:*${NC} (资源变更事件)"
+echo -e "  ${GREEN}✓ system:engine:*${NC} (引擎变更事件)"
 echo -e "  ${GREEN}✓ meta:scan:*${NC} (元数据扫描事件)"
 
 echo ""

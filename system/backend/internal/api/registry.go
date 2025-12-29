@@ -80,16 +80,16 @@ func (h *RegistryHandler) GetCapabilityByIdentifier(c *gin.Context) {
 	c.JSON(http.StatusOK, resource)
 }
 
-// ListComputeResources 查询所有具有计算能力的资源
-// GET /internal/registry/compute-resources
-func (h *RegistryHandler) ListComputeResources(c *gin.Context) {
+// ListComputeEngines 查询所有具有计算能力的引擎
+// GET /internal/registry/compute-engines
+func (h *RegistryHandler) ListComputeEngines(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	resources, err := h.registryService.ListComputeResources(ctx)
+	engines, err := h.registryService.ListComputeEngines(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, resources)
+	c.JSON(http.StatusOK, engines)
 }

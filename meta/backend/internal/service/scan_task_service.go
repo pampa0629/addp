@@ -29,7 +29,7 @@ type TaskQueue interface {
 type ScanTaskService struct {
 	db              *gorm.DB
 	scanService     *ScanServiceNew
-	resourceService *ResourceService
+	engineService *EngineService
 	dedupService    *ScanDedupService // 扫描去重服务
 	log             *slog.Logger
 	taskQueue       TaskQueue // 任务队列（可选,用于异步执行）
@@ -61,9 +61,9 @@ type ListRunsOptions struct {
 }
 
 // NewScanTaskService 创建任务服务
-func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceService *ResourceService, redisClient *redis.Client) *ScanTaskService {
+func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, engineService *EngineService, redisClient *redis.Client) *ScanTaskService {
 	if scanService == nil {
-		scanService = NewScanServiceNew(db, resourceService)
+		scanService = NewScanServiceNew(db, engineService)
 	}
 
 	var dedupService *ScanDedupService
@@ -82,7 +82,7 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, resourceServic
 	return &ScanTaskService{
 		db:              db,
 		scanService:     scanService,
-		resourceService: resourceService,
+		engineService: engineService,
 		dedupService:    dedupService,
 		log:             logger.With("component", "scan_task_service"),
 		queue:           make(chan uint, 128),
@@ -285,11 +285,11 @@ func (s *ScanTaskService) CreateManualRun(ctx context.Context, tenantID, userID 
 	}
 
 	if req.EngineID == 0 {
-		return nil, errors.New("resource_id 不能为空")
+		return nil, errors.New("engine_id 不能为空")
 	}
 
 	// 尝试验证资源可访问性（主要用于快速失败）
-	resource, err := s.resourceService.GetResourceByID(req.EngineID, tenantID, token)
+	resource, err := s.engineService.GetResourceByID(req.EngineID, tenantID, token)
 	if err != nil {
 		return nil, fmt.Errorf("验证资源失败: %w", err)
 	}
@@ -415,7 +415,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 		scanDepth = "deep"
 	}
 
-	resp, err := s.scanService.ScanResourceWithDepth(run.EngineID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
+	resp, err := s.scanService.ScanEngineWithDepth(run.EngineID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
 	completeTime := time.Now()
 
 	if err != nil {
@@ -507,7 +507,7 @@ func (s *ScanTaskService) ListRuns(tenantID uint, opts *ListRunsOptions) ([]mode
 		query = query.Where("r.task_id = ?", *opts.TaskID)
 	}
 	if opts.EngineID != nil && *opts.EngineID > 0 {
-		query = query.Where("r.resource_id = ?", *opts.EngineID)
+		query = query.Where("r.engine_id = ?", *opts.EngineID)
 	}
 	if opts.Status != "" {
 		query = query.Where("r.status = ?", opts.Status)
@@ -630,7 +630,7 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		return nil, errors.New("请求不能为空")
 	}
 	if req.EngineID == 0 {
-		return nil, errors.New("resource_id 不能为空")
+		return nil, errors.New("engine_id 不能为空")
 	}
 	if req.Name == "" {
 		return nil, errors.New("任务名称不能为空")
@@ -851,23 +851,23 @@ func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Engi
 	if cache == nil {
 		return nil
 	}
-	if res, ok := cache[resourceID]; ok {
+	if res, ok := cache[engineID]; ok {
 		return res
 	}
 
-	res, err := s.resourceService.GetResourceByID(engineID, tenantID, "")
+	res, err := s.engineService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
 		s.log.Warn("获取资源信息失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
-		cache[resourceID] = nil
+		cache[engineID] = nil
 		return nil
 	}
 
-	cache[resourceID] = res
+	cache[engineID] = res
 	return res
 }
 
 func (s *ScanTaskService) lookupStorageType(engineID, tenantID uint) string {
-	resource, err := s.resourceService.GetResourceByID(engineID, tenantID, "")
+	resource, err := s.engineService.GetResourceByID(engineID, tenantID, "")
 	if err != nil {
 		s.log.Warn("获取资源存储类型失败", "engine_id", engineID, "tenant_id", tenantID, "error", err)
 		return "unknown"
@@ -1033,7 +1033,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 
 	// 查找是否已有该资源的自动扫描任务
 	var existingTask models.ScanTask
-	err := s.db.Where("resource_id = ? AND tenant_id = ? AND name LIKE ?",
+	err := s.db.Where("engine_id = ? AND tenant_id = ? AND name LIKE ?",
 		resource.ID, tenantID, "自动扫描%").First(&existingTask).Error
 
 	// 构建任务名称
@@ -1122,7 +1122,7 @@ func (s *ScanTaskService) CreateOrUpdateTaskFromScanConfig(resource *commonModel
 // DeleteTaskByResourceID 删除指定资源关联的所有自动扫描任务
 func (s *ScanTaskService) DeleteTaskByResourceID(engineID uint) error {
 	var tasks []models.ScanTask
-	if err := s.db.Where("resource_id = ? AND name LIKE ?", engineID, "自动扫描%").Find(&tasks).Error; err != nil {
+	if err := s.db.Where("engine_id = ? AND name LIKE ?", engineID, "自动扫描%").Find(&tasks).Error; err != nil {
 		return fmt.Errorf("查询资源关联任务失败: %w", err)
 	}
 

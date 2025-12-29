@@ -19,12 +19,12 @@ logger = logging.getLogger(__name__)
 # SQL 算子 (2个)
 # ========================================
 
-def sql(resource_id: int, query: str) -> DataFrame:
+def sql(engine_id: int, query: str) -> DataFrame:
     """
     自由SQL查询算子
 
     Args:
-        resource_id: Spark资源ID
+        engine_id: Spark引擎ID
         query: SQL查询语句
 
     Returns:
@@ -32,12 +32,12 @@ def sql(resource_id: int, query: str) -> DataFrame:
 
     Example:
         result = sql(
-            resource_id=34,
+            engine_id=34,
             query="SELECT country, COUNT(*) as city_count FROM cities GROUP BY country"
         )
     """
     connector = get_spark_connector()
-    spark = connector.get_or_create_session(resource_id)
+    spark = connector.get_or_create_session(engine_id)
 
     df_result = spark.sql(query)
 
@@ -81,10 +81,10 @@ SQL_METADATA = OperatorMetadata(
     overview="sql 算子允许执行任意 Spark SQL 查询,支持 SELECT、JOIN、GROUP BY、窗口函数等标准 SQL 语法。适合复杂的数据分析和多表关联场景,也支持 Apache Sedona 的空间 SQL 函数。",
     params=[
         OperatorParam(
-            name="resource_id",
+            name="engine_id",
             type="int",
             required=True,
-            description="Spark资源ID",
+            description="Spark引擎ID",
             notes="确保资源处于活跃状态"
         ),
         OperatorParam(
@@ -113,7 +113,7 @@ SQL_METADATA = OperatorMetadata(
         "id": "sql_city_analysis",
         "operator": "sql",
         "params": {
-            "resource_id": 34,
+            "engine_id": 34,
             "query": "SELECT province, COUNT(*) as city_count FROM cities GROUP BY province"
         },
         "depends_on": ["create_cities_view"]

@@ -115,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_directories_path ON manager.directories(path);
 CREATE TABLE IF NOT EXISTS manager.quick_view (
     id SERIAL PRIMARY KEY,
     tenant_id INT NOT NULL,
-    resource_id INT NOT NULL,
+    engine_id INT NOT NULL,
     schema_name VARCHAR(255) NOT NULL,
     table_name VARCHAR(255) NOT NULL,
 
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS manager.quick_view (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE(tenant_id, resource_id, schema_name, table_name)
+    UNIQUE(tenant_id, engine_id, schema_name, table_name)
 );
 
 CREATE INDEX IF NOT EXISTS idx_quick_view_status ON manager.quick_view(status);
@@ -185,7 +185,7 @@ DROP TABLE IF EXISTS metadata.datasets CASCADE;
 CREATE TABLE IF NOT EXISTS metadata.meta_node (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    res_id BIGINT NOT NULL,
+    engine_id BIGINT NOT NULL,
     parent_node_id BIGINT REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
     node_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -206,18 +206,18 @@ CREATE TABLE IF NOT EXISTS metadata.meta_node (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE (res_id, name, parent_node_id),
+    UNIQUE (engine_id, name, parent_node_id),
     CHECK (depth >= 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_meta_node_res ON metadata.meta_node(res_id);
+CREATE INDEX IF NOT EXISTS idx_meta_node_engine ON metadata.meta_node(engine_id);
 CREATE INDEX IF NOT EXISTS idx_meta_node_parent ON metadata.meta_node(parent_node_id);
 CREATE INDEX IF NOT EXISTS idx_meta_node_type ON metadata.meta_node(node_type);
 
 CREATE TABLE IF NOT EXISTS metadata.meta_item (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    res_id BIGINT NOT NULL,
+    engine_id BIGINT NOT NULL,
     node_id BIGINT NOT NULL REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
     item_type VARCHAR(64) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -255,7 +255,7 @@ CREATE TABLE IF NOT EXISTS metadata.meta_json_schema (
 CREATE TABLE IF NOT EXISTS metadata.meta_change_log (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT,
-    res_id BIGINT,
+    engine_id BIGINT,
     node_id BIGINT,
     item_id BIGINT,
     change_type VARCHAR(64) NOT NULL,
@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS metadata.meta_node_child_rule (
 
 CREATE TABLE IF NOT EXISTS metadata.scan_logs (
     id BIGSERIAL PRIMARY KEY,
-    resource_id BIGINT NOT NULL,
+    engine_id BIGINT NOT NULL,
     schema_id BIGINT,
     tenant_id BIGINT NOT NULL,
     scan_type VARCHAR(50) NOT NULL,
@@ -302,7 +302,7 @@ CREATE TABLE IF NOT EXISTS metadata.scan_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_scan_logs_resource ON metadata.scan_logs(resource_id);
+CREATE INDEX IF NOT EXISTS idx_scan_logs_engine ON metadata.scan_logs(engine_id);
 CREATE INDEX IF NOT EXISTS idx_scan_logs_tenant ON metadata.scan_logs(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON metadata.scan_logs(status);
 
@@ -316,8 +316,8 @@ CREATE TABLE IF NOT EXISTS transfer.tasks (
     description TEXT,
     type VARCHAR(50) NOT NULL, -- 'import', 'export', 'sync'
     mode VARCHAR(20) DEFAULT 'batch', -- 'batch', 'stream', 'micro-batch'
-    source_id BIGINT, -- 关联 system.resources
-    target_id BIGINT, -- 关联 system.resources
+    source_id BIGINT, -- 关联 system.engines
+    target_id BIGINT, -- 关联 system.engines
     config JSONB NOT NULL,
     schedule VARCHAR(100), -- Cron 表达式
     batch_size INTEGER DEFAULT 1000,
@@ -486,7 +486,7 @@ CREATE TABLE IF NOT EXISTS develop.scripts (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     sql_content TEXT NOT NULL,
-    resource_id INTEGER NOT NULL REFERENCES system.resources(id),
+    engine_id INTEGER NOT NULL REFERENCES system.engines(id),
     version INTEGER DEFAULT 1,
     status VARCHAR(20) DEFAULT 'draft',  -- draft, published, archived
     created_by INTEGER NOT NULL REFERENCES system.users(id),
@@ -499,7 +499,7 @@ CREATE TABLE IF NOT EXISTS develop.scripts (
 
 CREATE INDEX IF NOT EXISTS idx_develop_scripts_tenant ON develop.scripts(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_develop_scripts_status ON develop.scripts(status);
-CREATE INDEX IF NOT EXISTS idx_develop_scripts_resource ON develop.scripts(resource_id);
+CREATE INDEX IF NOT EXISTS idx_develop_scripts_engine ON develop.scripts(engine_id);
 CREATE INDEX IF NOT EXISTS idx_develop_scripts_created_by ON develop.scripts(created_by);
 
 -- 脚本版本历史表
@@ -520,7 +520,7 @@ CREATE INDEX IF NOT EXISTS idx_develop_versions_script ON develop.script_version
 CREATE TABLE IF NOT EXISTS develop.executions (
     id SERIAL PRIMARY KEY,
     script_id INTEGER REFERENCES develop.scripts(id) ON DELETE SET NULL,
-    resource_id INTEGER NOT NULL REFERENCES system.resources(id),
+    engine_id INTEGER NOT NULL REFERENCES system.engines(id),
     sql_content TEXT NOT NULL,
     status VARCHAR(20) NOT NULL,  -- running, success, failed, timeout
     rows_affected INTEGER,

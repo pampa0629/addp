@@ -297,7 +297,7 @@ WHERE TABLE_SCHEMA = 'addp_test_db';
 Meta 模块扫描完成后，可以通过 API 验证：
 
 **API 1：获取数据库列表**
-GET http://localhost:8082/api/meta/databases?resource_id=1
+GET http://localhost:8082/api/meta/databases?engine_id=1
 
 预期返回：
 {
@@ -312,7 +312,7 @@ GET http://localhost:8082/api/meta/databases?resource_id=1
 }
 
 **API 2：获取表列表**
-GET http://localhost:8082/api/meta/tables?resource_id=1&database=addp_test_db
+GET http://localhost:8082/api/meta/tables?engine_id=1&database=addp_test_db
 
 预期返回：
 {
@@ -334,7 +334,7 @@ GET http://localhost:8082/api/meta/tables?resource_id=1&database=addp_test_db
 }
 
 **API 3：获取字段列表**
-GET http://localhost:8082/api/meta/columns?resource_id=1&database=addp_test_db&table=users
+GET http://localhost:8082/api/meta/columns?engine_id=1&database=addp_test_db&table=users
 
 预期返回：
 {

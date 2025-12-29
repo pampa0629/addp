@@ -135,7 +135,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { describeCron } from '@common-ui'
-import { systemEnginesAPI } from '@/api/systemResources'
+import { systemEnginesAPI } from '@/api/systemEngines'
 
 const route = useRoute()
 const router = useRouter()
@@ -523,7 +523,7 @@ const resolveConnectorConfigForWorker = (key) => {
   const fallbackId = key === 'source' ? toNumber(task.value?.source_id) : toNumber(task.value?.target_id)
 
   let resource = null
-  const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.resource_id)
+  const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.engine_id)
   if (embeddedId !== null) {
     resource = systemResourceMap.value.get(embeddedId) || null
   }

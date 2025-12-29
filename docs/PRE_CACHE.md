@@ -119,9 +119,9 @@ type PreCacheConfig struct {
 ### 新路由（推荐使用）
 
 ```
-POST   /api/resources/:id/spatial/:schema/:table/pre-cache
-GET    /api/resources/:id/spatial/:schema/:table/pre-cache/status
-DELETE /api/resources/:id/spatial/:schema/:table/pre-cache
+POST   /api/engines/:id/spatial/:schema/:table/pre-cache
+GET    /api/engines/:id/spatial/:schema/:table/pre-cache/status
+DELETE /api/engines/:id/spatial/:schema/:table/pre-cache
 
 GET    /api/pre-cache/tasks
 GET    /api/pre-cache/statistics
@@ -130,9 +130,9 @@ GET    /api/pre-cache/statistics
 ### 旧路由（向后兼容，保留作为别名）
 
 ```
-POST   /api/resources/:id/spatial/:schema/:table/quick-view
-GET    /api/resources/:id/spatial/:schema/:table/quick-view/status
-DELETE /api/resources/:id/spatial/:schema/:table/quick-view
+POST   /api/engines/:id/spatial/:schema/:table/quick-view
+GET    /api/engines/:id/spatial/:schema/:table/quick-view/status
+DELETE /api/engines/:id/spatial/:schema/:table/quick-view
 
 GET    /api/quick-view/tasks
 GET    /api/quick-view/statistics
@@ -146,7 +146,7 @@ GET    /api/quick-view/statistics
 
 **请求**:
 ```bash
-curl -X POST "http://localhost:8081/api/resources/2/spatial/public/dltb/pre-cache" \
+curl -X POST "http://localhost:8081/api/engines/2/spatial/public/dltb/pre-cache" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -168,7 +168,7 @@ curl -X POST "http://localhost:8081/api/resources/2/spatial/public/dltb/pre-cach
 
 **请求**:
 ```bash
-curl "http://localhost:8081/api/resources/2/spatial/public/dltb/pre-cache/status" \
+curl "http://localhost:8081/api/engines/2/spatial/public/dltb/pre-cache/status" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -193,7 +193,7 @@ curl "http://localhost:8081/api/resources/2/spatial/public/dltb/pre-cache/status
 
 **请求**:
 ```bash
-curl "http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config" \
+curl "http://localhost:8081/api/engines/2/spatial/public/dltb/tile-config" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -225,7 +225,7 @@ curl "http://localhost:8081/api/resources/2/spatial/public/dltb/tile-config" \
 ```javascript
 // 获取瓦片配置
 async function fetchTileConfig() {
-  const url = `/resources/${resourceId}/spatial/${schema}/${table}/tile-config`
+  const url = `/engines/${engineId}/spatial/${schema}/${table}/tile-config`
   const response = await client.get(url)
   tileConfig.value = response.data
 }

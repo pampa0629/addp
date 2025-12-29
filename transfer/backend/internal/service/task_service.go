@@ -911,7 +911,7 @@ func (s *TaskService) resolveConnectorConfig(
 	configKey string, // "source" 或 "target"
 	engineID *uint,
 ) (map[string]interface{}, error) {
-	// 情况1：如果提供了 resource_id，从 System 获取资源配置
+	// 情况1：如果提供了 engine_id，从 System 获取资源配置
 	if engineID != nil && *engineID > 0 {
 		resource, err := s.GetResourceConfig(context.Background(), *engineID)
 		if err != nil {

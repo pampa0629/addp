@@ -265,9 +265,9 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	c.JSON(http.StatusOK, exec)
 }
 
-// ListComputeResources 列出所有任务提供者（从 System 的 task_providers 表获取）
-// GET /api/compute-resources
-func (h *OrchestrationHandler) ListComputeResources(c *gin.Context) {
+// ListComputeEngines 列出所有任务提供者（从 System 的 task_providers 表获取）
+// GET /api/compute-engines
+func (h *OrchestrationHandler) ListComputeEngines(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 使用 TaskProviderRegistry 获取所有任务提供者

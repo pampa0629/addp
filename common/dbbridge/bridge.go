@@ -20,24 +20,24 @@ import (
 
 // BuildConnectionString 使用插件系统构建连接字符串
 func BuildConnectionString(engine *models.Engine) (string, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
-	return plugin.BuildConnectionString(pluginResource)
+	return plugin.BuildConnectionString(pluginEngine)
 }
 
 // TestConnection 使用插件系统测试连接
 func TestConnection(ctx context.Context, engine *models.Engine) error {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
 
-	return plugin.TestConnection(ctx, pluginResource)
+	return plugin.TestConnection(ctx, pluginEngine)
 }
 
 // GenerateCapabilities 使用插件系统生成能力描述
@@ -99,12 +99,12 @@ type PluginInfo struct {
 // GetOrCreatePool 获取或创建连接池
 // 这是推荐的获取连接池的方式，会自动管理连接池的生命周期
 func GetOrCreatePool(engine *models.Engine, config *plugin.PoolConfig) (*gorm.DB, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.GetOrCreatePoolFromFactory(pluginResource, config)
+	return plugin.GetOrCreatePoolFromFactory(pluginEngine, config)
 }
 
 // DefaultPoolConfig 返回默认连接池配置
@@ -112,8 +112,8 @@ func DefaultPoolConfig() *plugin.PoolConfig {
 	return plugin.DefaultPoolConfig()
 }
 
-// ClosePool 关闭指定资源的连接池
-// 通常在资源被删除或更新时调用
+// ClosePool 关闭指定引擎的连接池
+// 通常在引擎被删除或更新时调用
 func ClosePool(engineID uint) error {
 	return plugin.ClosePool(engineID)
 }
@@ -133,42 +133,42 @@ func GetPoolStats() map[uint]plugin.PoolStats {
 
 // ListSchemas 列出所有Schema/Database
 func ListSchemas(ctx context.Context, engine *models.Engine, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.ListSchemas(ctx, pluginResource, db)
+	return plugin.ListSchemas(ctx, pluginEngine, db)
 }
 
 // ListTables 列出指定Schema下的所有表
 func ListTables(ctx context.Context, engine *models.Engine, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.ListTables(ctx, pluginResource, db, schema)
+	return plugin.ListTables(ctx, pluginEngine, db, schema)
 }
 
 // ListColumns 列出指定表的所有列
 func ListColumns(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.ListColumns(ctx, pluginResource, db, schema, table)
+	return plugin.ListColumns(ctx, pluginEngine, db, schema, table)
 }
 
 // GetTableRowCount 获取表的行数
 func GetTableRowCount(ctx context.Context, engine *models.Engine, db *gorm.DB, schema, table string) (int64, error) {
-	pluginResource := &plugin.Resource{
+	pluginEngine := &plugin.Engine{
 		ID:             engine.ID,
 		EngineType:   engine.EngineType,
 		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	return plugin.GetTableRowCount(ctx, pluginResource, db, schema, table)
+	return plugin.GetTableRowCount(ctx, pluginEngine, db, schema, table)
 }
 
 // === 辅助方法 ===

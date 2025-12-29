@@ -16,10 +16,10 @@
 Meta 模块负责元数据管理和数据血缘追踪，提供以下功能：
 
 - **元数据扫描**：自动扫描数据库（PostgreSQL/MySQL）和对象存储（MinIO/S3/OSS）
-- **层级管理**：统一的 resource → node → item 层级模型
+- **层级管理**：统一的 engine → node → item 层级模型
 - **空间元数据**：PostGIS 空间数据的元数据提取（几何类型、SRID、范围）
 - **定时调度**：Cron 表达式支持的自动扫描任务
-- **事件驱动**：订阅 System 资源创建事件，自动触发扫描
+- **事件驱动**：订阅 System 引擎创建事件，自动触发扫描
 - **全文索引**：集成 Meilisearch 的元数据资产搜索
 - **向量化**：pgvector 支持的多模态向量检索
 
@@ -54,7 +54,7 @@ Meta 模块使用 `metadata` schema，包含 7 张核心表。
 |--------|------|------|------|
 | `id` | BIGSERIAL | PRIMARY KEY | 节点唯一标识 |
 | `tenant_id` | BIGINT | NOT NULL | 租户 ID |
-| `res_id` | BIGINT | NOT NULL, INDEXED | 资源 ID（关联 system.resources） |
+| `engine_id` | BIGINT | NOT NULL, INDEXED | 引擎 ID（关联 system.engines） |
 | `parent_node_id` | BIGINT | FK, INDEXED | 父节点 ID（自引用） |
 | `node_type` | VARCHAR(64) | NOT NULL, INDEXED | 节点类型（schema/prefix/bucket 等） |
 | `name` | VARCHAR(255) | NOT NULL | 节点名称 |
@@ -77,10 +77,10 @@ Meta 模块使用 `metadata` schema，包含 7 张核心表。
 | `deleted_at` | TIMESTAMP WITH TIME ZONE | | 软删除时间戳 |
 
 **约束**:
-- UNIQUE(res_id, name, parent_node_id)
+- UNIQUE(engine_id, name, parent_node_id)
 
 **索引**:
-- `idx_meta_node_res` - 资源索引
+- `idx_meta_node_engine` - 引擎索引
 - `idx_meta_node_parent` - 父节点索引
 - `idx_meta_node_type` - 节点类型索引
 
@@ -90,7 +90,7 @@ Meta 模块使用 `metadata` schema，包含 7 张核心表。
 type MetaNode struct {
     ID              uint
     TenantID        uint
-    ResID           uint
+    EngineID        uint
     ParentNodeID    *uint
     NodeType        string
     Name            string
@@ -122,7 +122,7 @@ type MetaNode struct {
 |--------|------|------|------|
 | `id` | BIGSERIAL | PRIMARY KEY | 项目唯一标识 |
 | `tenant_id` | BIGINT | NOT NULL | 租户 ID |
-| `res_id` | BIGINT | NOT NULL | 资源 ID |
+| `engine_id` | BIGINT | NOT NULL | 引擎 ID |
 | `node_id` | BIGINT | FK, INDEXED | 所属节点 ID |
 | `item_type` | VARCHAR(64) | NOT NULL, INDEXED | 项目类型（table/view/object 等） |
 | `name` | VARCHAR(255) | NOT NULL | 项目名称 |
@@ -173,7 +173,7 @@ type MetaNode struct {
 type MetaItem struct {
     ID                uint
     TenantID          uint
-    ResID             uint
+    EngineID          uint
     NodeID            uint
     ItemType          string
     Name              string
@@ -246,7 +246,7 @@ type MetaItem struct {
 |--------|------|------|------|
 | `id` | BIGSERIAL | PRIMARY KEY | 日志 ID |
 | `tenant_id` | BIGINT | | 租户 ID |
-| `res_id` | BIGINT | | 资源 ID |
+| `engine_id` | BIGINT | | 引擎 ID |
 | `node_id` | BIGINT | FK | 节点 ID |
 | `item_id` | BIGINT | FK | 项目 ID |
 | `change_type` | VARCHAR(64) | | 变更类型（创建/更新/删除等） |
@@ -262,7 +262,7 @@ type MetaItem struct {
 | 字段名 | 类型 | 约束 | 说明 |
 |--------|------|------|------|
 | `id` | BIGSERIAL | PRIMARY KEY | 日志 ID |
-| `resource_id` | BIGINT | INDEXED | 资源 ID |
+| `engine_id` | BIGINT | INDEXED | 引擎 ID |
 | `schema_id` | BIGINT | | Schema ID（可选） |
 | `tenant_id` | BIGINT | INDEXED | 租户 ID |
 | `scan_type` | VARCHAR(50) | | 扫描类型（auto/manual/scheduled） |
@@ -279,7 +279,7 @@ type MetaItem struct {
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT CURRENT_TIMESTAMP | 创建时间 |
 
 **索引**:
-- `idx_scan_logs_resource` - 资源索引
+- `idx_scan_logs_engine` - 引擎索引
 - `idx_scan_logs_tenant` - 租户索引
 - `idx_scan_logs_status` - 状态索引
 
@@ -288,7 +288,7 @@ type MetaItem struct {
 ### 2.2 数据表关系图
 
 ```
-system.resources (来自 System 模块)
+system.engines (来自 System 模块)
     ↓
 metadata.meta_node (层级节点)
     ↓ 1:N (parent_node_id)
@@ -313,19 +313,19 @@ metadata.meta_node / metadata.meta_item
 
 ## 3. API 端点清单
 
-### 3.1 资源管理 API
+### 3.1 引擎管理 API
 
-#### GET /api/meta/resources - 获取资源列表及统计
+#### GET /api/meta/engines - 获取引擎列表及统计
 
 **响应** (200 OK):
 
 ```json
 {
-  "resources": [
+  "engines": [
     {
       "id": 1,
       "name": "PostgreSQL-生产库",
-      "resource_type": "postgresql",
+      "engine_type": "postgresql",
       "scanned": true,
       "last_scan_at": "2025-12-11T10:00:00Z",
       "node_count": 5,
@@ -338,7 +338,7 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### GET /api/meta/schemas/:resource_id - 获取资源的 Schema 列表
+#### GET /api/meta/schemas/:engine_id - 获取引擎的 Schema 列表
 
 **响应** (200 OK):
 
@@ -358,7 +358,7 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### GET /api/meta/schemas/:resource_id/available - 列出可用 Schema（实时查询）
+#### GET /api/meta/schemas/:engine_id/available - 列出可用 Schema（实时查询）
 
 **响应** (200 OK):
 
@@ -374,7 +374,7 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### GET /api/meta/object-storage/:resource_id/nodes - 分级列出对象存储节点
+#### GET /api/meta/object-storage/:engine_id/nodes - 分级列出对象存储节点
 
 **查询参数**:
 - `parent_id`: 父节点 ID（可选）
@@ -400,26 +400,26 @@ metadata.meta_node / metadata.meta_item
 
 ### 3.2 扫描相关 API
 
-#### POST /api/meta/scan/auto - 自动扫描所有未扫描资源
+#### POST /api/meta/scan/auto - 自动扫描所有未扫描引擎
 
 **响应** (202 Accepted):
 
 ```json
 {
   "message": "自动扫描已启动",
-  "resources_to_scan": 3
+  "engines_to_scan": 3
 }
 ```
 
 ---
 
-#### POST /api/meta/scan/resource - 扫描指定资源
+#### POST /api/meta/scan/engine - 扫描指定引擎
 
 **请求体**:
 
 ```json
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "schema_names": ["public", "data"],
   "scan_depth": "basic"
 }
@@ -442,7 +442,7 @@ metadata.meta_node / metadata.meta_item
 
 ```json
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "storage_type": "postgresql",
   "parameters": {
     "schema_names": ["public"],
@@ -481,7 +481,7 @@ metadata.meta_node / metadata.meta_item
     {
       "id": 43,
       "task_id": 10,
-      "resource_id": 1,
+      "engine_id": 1,
       "status": "success",
       "trigger_type": "manual",
       "started_at": "2025-12-11T10:00:00Z",
@@ -515,7 +515,7 @@ metadata.meta_node / metadata.meta_item
     {
       "id": 10,
       "name": "每日扫描",
-      "resource_id": 1,
+      "engine_id": 1,
       "schedule_type": "daily",
       "cron_expression": "0 0 * * *",
       "enabled": true,
@@ -536,7 +536,7 @@ metadata.meta_node / metadata.meta_item
 {
   "name": "每日扫描",
   "description": "每天凌晨2点扫描",
-  "resource_id": 1,
+  "engine_id": 1,
   "schedule_type": "daily",
   "schedule_time": "02:00",
   "parameters": {
@@ -589,7 +589,7 @@ metadata.meta_node / metadata.meta_item
 #### GET /api/meta/metadata/object - 获取对象元数据
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `bucket`: Bucket 名称（必填）
 - `path`: 对象路径（必填）
 
@@ -616,7 +616,7 @@ metadata.meta_node / metadata.meta_item
 
 ```json
 {
-  "resource_id": 1,
+  "engine_id": 1,
   "bucket": "mybucket",
   "path": "/data/file.parquet"
 }
@@ -640,10 +640,10 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### GET /api/meta/metadata/tables - 获取资源的表列表（Transfer 用）
+#### GET /api/meta/metadata/tables - 获取引擎的表列表（Transfer 用）
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `schema`: Schema 名称（可选）
 
 **响应** (200 OK):
@@ -666,7 +666,7 @@ metadata.meta_node / metadata.meta_item
 #### GET /api/meta/metadata/fields - 获取表的字段列表（带详情）
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `schema`: Schema 名称（必填）
 - `table`: 表名（必填）
 
@@ -695,7 +695,7 @@ metadata.meta_node / metadata.meta_item
 #### GET /api/meta/metadata/tables/spatial - 获取表的空间元数据（MVT 用）
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `schema`: Schema 名称（必填）
 - `table`: 表名（必填）
 
@@ -717,14 +717,14 @@ metadata.meta_node / metadata.meta_item
 
 ### 3.4 Manager 集成接口
 
-#### GET /api/meta/resources/:resource_id/tree - 获取资源元数据树
+#### GET /api/meta/engines/:engine_id/tree - 获取引擎元数据树
 
 **响应** (200 OK):
 
 ```json
 {
-  "resource_id": 1,
-  "resource_name": "PostgreSQL-生产库",
+  "engine_id": 1,
+  "engine_name": "PostgreSQL-生产库",
   "nodes": [
     {
       "id": 10,
@@ -794,7 +794,7 @@ metadata.meta_node / metadata.meta_item
 #### GET /api/meta/nodes/by-path - 按路径查询节点
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `path`: 节点路径（必填）
 
 **响应** (200 OK): 返回 MetaNode 对象
@@ -804,7 +804,7 @@ metadata.meta_node / metadata.meta_item
 #### GET /api/meta/items/by-path - 按路径查询项目
 
 **查询参数**:
-- `resource_id`: 资源 ID（必填）
+- `engine_id`: 引擎 ID（必填）
 - `node_path`: 节点路径（必填）
 - `item_name`: 项目名称（必填）
 
@@ -814,7 +814,7 @@ metadata.meta_node / metadata.meta_item
 
 ### 3.5 缓存管理 API
 
-#### DELETE /api/meta/cache/resources/:resource_id - 清除资源缓存
+#### DELETE /api/meta/cache/engines/:engine_id - 清除引擎缓存
 
 **响应** (200 OK):
 
@@ -826,7 +826,7 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### DELETE /api/meta/cache/resources/all - 清除所有缓存
+#### DELETE /api/meta/cache/engines/all - 清除所有缓存
 
 **响应** (200 OK):
 
@@ -838,13 +838,13 @@ metadata.meta_node / metadata.meta_item
 
 ---
 
-#### POST /api/meta/cache/refresh - 刷新资源缓存
+#### POST /api/meta/cache/refresh - 刷新引擎缓存
 
 **请求体**:
 
 ```json
 {
-  "resource_id": 1
+  "engine_id": 1
 }
 ```
 
@@ -880,7 +880,6 @@ TypeScanTask = "meta:scan"
 
 ```json
 {
-  "run_id": 43,
   "task_id": 10,
   "tenant_id": 1
 }
@@ -907,14 +906,14 @@ asynq:meta:default:archived   死信队列
 ```
 meta/
 ├── scan-cache/              # 扫描缓存
-│   └── {resource_id}/
+│   └── {engine_id}/
 │       └── {schema_name}/
 │           └── metadata.json
 ├── metadata-exports/        # 元数据导出
 │   └── {tenant_id}/
 │       └── {export_id}.json
 └── object-metadata/         # 对象元数据缓存
-    └── {resource_id}/
+    └── {engine_id}/
         └── {object_path}/
             └── metadata.json
 ```
@@ -930,7 +929,7 @@ meta/
 ```json
 {
   "id": "meta_item_100",
-  "resource_id": 1,
+  "engine_id": 1,
   "node_id": 10,
   "item_type": "table",
   "name": "users",
@@ -955,18 +954,18 @@ meta/
 
 **Redis Pub/Sub 事件**:
 
-订阅事件：`system:resource:created`
+订阅事件：`system:engine:created`
 
 ```json
 {
-  "resource_id": 1,
-  "resource_type": "postgresql",
+  "engine_id": 1,
+  "engine_type": "postgresql",
   "tenant_id": 1
 }
 ```
 
 **处理逻辑**:
-1. Meta 订阅资源创建事件
+1. Meta 订阅引擎创建事件
 2. 根据 ScanConfig 决定是否自动扫描
 3. 如果 `schedule_type == "immediate"`，创建 ScanTaskRun 并入队
 

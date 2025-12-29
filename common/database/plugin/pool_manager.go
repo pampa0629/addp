@@ -9,7 +9,7 @@ import (
 // 用于缓存和复用连接池，避免重复创建
 type PoolManager struct {
 	mu    sync.RWMutex
-	pools map[uint]*ManagedPool // 资源ID -> 连接池
+	pools map[uint]*ManagedPool // 引擎ID -> 连接池
 }
 
 // ManagedPool 托管的连接池
@@ -27,7 +27,7 @@ var globalPoolManager = &PoolManager{
 // GetOrCreatePool 获取或创建连接池
 // 如果连接池已存在且未过期，返回缓存的连接池
 // 否则创建新连接池
-func (pm *PoolManager) GetOrCreatePool(resource *Resource, config *PoolConfig) (interface{}, error) {
+func (pm *PoolManager) GetOrCreatePool(resource *Engine, config *PoolConfig) (interface{}, error) {
 	pm.mu.RLock()
 	pool, exists := pm.pools[resource.ID]
 	pm.mu.RUnlock()
@@ -137,7 +137,7 @@ type PoolStats struct {
 
 // GetOrCreatePool 全局函数：获取或创建连接池
 // 这是推荐的获取连接池的方式，会自动管理连接池的生命周期
-func GetOrCreatePool(resource *Resource, config *PoolConfig) (interface{}, error) {
+func GetOrCreatePool(resource *Engine, config *PoolConfig) (interface{}, error) {
 	if config == nil {
 		config = DefaultPoolConfig()
 	}
@@ -164,7 +164,7 @@ func GetPoolStats() map[uint]PoolStats {
 // CreateConnectionPool 创建连接池（内部使用）
 // 通过插件系统创建对应类型的连接池
 // 注意：这个方法返回 interface{} 以便在 PoolManager 内部使用
-func CreateConnectionPool(resource *Resource, config *PoolConfig) (interface{}, error) {
+func CreateConnectionPool(resource *Engine, config *PoolConfig) (interface{}, error) {
 	// 调用 factory.go 中的 CreateConnectionPoolDirect
 	// 这里需要注意类型转换
 	return CreateConnectionPoolDirect(resource, config)

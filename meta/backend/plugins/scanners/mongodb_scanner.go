@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/database/plugin"
 	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"go.mongodb.org/mongo-driver/bson"
@@ -33,13 +32,8 @@ const (
 
 // NewMongoDBScanner 根据资源信息创建 MongoDB 扫描器
 func NewMongoDBScanner(resource *commonModels.Engine) (*MongoDBScanner, error) {
-	// 从插件系统构建连接字符串
-	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		EngineType:   resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
-	}
-	connStr, err := plugin.BuildConnectionString(pluginResource)
+	// 直接使用 commonModels.BuildConnectionString
+	connStr, err := commonModels.BuildConnectionString(resource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}

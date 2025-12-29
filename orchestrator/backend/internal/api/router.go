@@ -68,8 +68,8 @@ func SetupRouter(
 		api.GET("/executions", handler.ListAllExecutions)
 		api.GET("/orch-executions/:id", handler.GetExecution)
 
-		// 计算资源管理（动态从 System 获取）
-		api.GET("/compute-resources", handler.ListComputeResources)
+		// 计算引擎管理（动态从 System 获取）
+		api.GET("/compute-engines", handler.ListComputeEngines)
 
 		// 模块任务列表 (用于拖拽复用，动态调用)
 		api.GET("/tasks/list", handler.ListModuleTasks)

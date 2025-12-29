@@ -77,7 +77,7 @@ func (q *TaskQueue) EnqueueQuickViewTaskWithOptions(ctx context.Context, payload
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	log.Printf("✅ QuickView task enqueued: id=%s queue=%s resource_id=%d table=%s.%s",
+	log.Printf("✅ QuickView task enqueued: id=%s queue=%s engine_id=%d table=%s.%s",
 		info.ID, info.Queue, payload.EngineID, payload.SchemaName, payload.TableName)
 	return nil
 }

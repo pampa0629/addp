@@ -83,7 +83,7 @@ workflow = {
             "operator": "load",
             "params": {
                 "source_type": "table",
-                "resource_id": 1,
+                "engine_id": 1,
                 "table": "cities"
             }
         },

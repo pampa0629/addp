@@ -63,37 +63,37 @@ class DatabaseAdapter:
     """数据库适配器 (JDBC)"""
 
     @staticmethod
-    def get_resource_from_system(resource_id: int) -> dict:
+    def get_engine_from_system(engine_id: int) -> dict:
         """从System Backend获取资源信息"""
         system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
-        response = requests.get(f'{system_url}/api/resources/{resource_id}')
+        response = requests.get(f'{system_url}/api/engines/{engine_id}')
         if response.status_code != 200:
-            raise ValueError(f"Failed to get resource {resource_id}")
+            raise ValueError(f"Failed to get engine {engine_id}")
         return response.json()
 
     @staticmethod
     def load(spark: SparkSession, params: Dict[str, Any]) -> DataFrame:
         """从数据库加载数据"""
-        resource_id = params['resource_id']
-        resource = DatabaseAdapter.get_resource_from_system(resource_id)
+        engine_id = params['engine_id']
+        engine = DatabaseAdapter.get_engine_from_system(engine_id)
 
-        resource_type = resource['resource_type']
-        conn_info = resource['connection_info']
+        engine_type = engine['engine_type']
+        conn_info = engine['connection_info']
         schema = params.get('schema', 'public')
         table = params['table']
 
         # 构建JDBC URL
-        if resource_type in ['postgresql', 'PostgreSQL']:
+        if engine_type in ['postgresql', 'PostgreSQL']:
             jdbc_url = f"jdbc:postgresql://{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             driver = "org.postgresql.Driver"
-        elif resource_type in ['mysql', 'MySQL']:
+        elif engine_type in ['mysql', 'MySQL']:
             jdbc_url = f"jdbc:mysql://{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             driver = "com.mysql.cj.jdbc.Driver"
-        elif resource_type in ['doris', 'Doris']:
+        elif engine_type in ['doris', 'Doris']:
             jdbc_url = f"jdbc:mysql://{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             driver = "com.mysql.cj.jdbc.Driver"
         else:
-            raise ValueError(f"Unsupported resource type: {resource_type}")
+            raise ValueError(f"Unsupported engine type: {engine_type}")
 
         logger.info(f"Loading from database: {jdbc_url}, table: {schema}.{table}")
 
@@ -119,24 +119,24 @@ class DatabaseAdapter:
     @staticmethod
     def save(df: DataFrame, params: Dict[str, Any]):
         """保存到数据库"""
-        resource_id = params['resource_id']
-        resource = DatabaseAdapter.get_resource_from_system(resource_id)
+        engine_id = params['engine_id']
+        engine = DatabaseAdapter.get_engine_from_system(engine_id)
 
-        resource_type = resource['resource_type']
-        conn_info = resource['connection_info']
+        engine_type = engine['engine_type']
+        conn_info = engine['connection_info']
         schema = params.get('schema', 'public')
         table = params['table']
         mode = params.get('mode', 'overwrite')
 
         # 构建JDBC URL
-        if resource_type in ['postgresql', 'PostgreSQL']:
+        if engine_type in ['postgresql', 'PostgreSQL']:
             jdbc_url = f"jdbc:postgresql://{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             driver = "org.postgresql.Driver"
-        elif resource_type in ['mysql', 'MySQL', 'doris', 'Doris']:
+        elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             jdbc_url = f"jdbc:mysql://{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
             driver = "com.mysql.cj.jdbc.Driver"
         else:
-            raise ValueError(f"Unsupported resource type: {resource_type}")
+            raise ValueError(f"Unsupported engine type: {engine_type}")
 
         logger.info(f"Saving to database: {jdbc_url}, table: {schema}.{table}, mode: {mode}")
 
@@ -223,17 +223,17 @@ class FileAdapter:
     @staticmethod
     def _configure_s3_access(spark: SparkSession, params: Dict[str, Any]):
         """配置S3访问凭证"""
-        resource_id = params.get('resource_id')
-        if not resource_id:
+        engine_id = params.get('engine_id')
+        if not engine_id:
             return
 
         # 从System获取MinIO/S3资源配置
         try:
             system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
-            response = requests.get(f'{system_url}/api/resources/{resource_id}')
+            response = requests.get(f'{system_url}/api/engines/{engine_id}')
             if response.status_code == 200:
-                resource = response.json()
-                conn_info = resource['connection_info']
+                engine = response.json()
+                conn_info = engine['connection_info']
 
                 # 配置S3访问
                 spark.conf.set("spark.hadoop.fs.s3a.endpoint", conn_info.get('endpoint', ''))

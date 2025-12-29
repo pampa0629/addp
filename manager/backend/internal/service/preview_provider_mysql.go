@@ -29,7 +29,7 @@ func (p *mysqlPreviewProvider) Priority() int {
 }
 
 func (p *mysqlPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" || req.Table == "" {
@@ -37,7 +37,7 @@ func (p *mysqlPreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 MySQL 和 Doris (Doris 使用 MySQL 协议)
-	resourceType := sanitizeResourceType(req.Resource.EngineType)
+	resourceType := sanitizeResourceType(req.Engine.EngineType)
 	return resourceType == "mysql" || resourceType == "doris"
 }
 
@@ -48,7 +48,7 @@ func (p *mysqlPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 
 	// MySQL/Doris 使用专用的查询方法 (基于 MySQL 协议)
 	columns, rows, total, geometryColumns, err := p.metadataRepo.QueryMySQLTablePreview(
-		req.Resource,
+		req.Engine,
 		req.Schema,
 		req.Table,
 		req.Page,
@@ -68,9 +68,9 @@ func (p *mysqlPreviewProvider) Preview(ctx context.Context, req *PreviewRequest)
 		PageSize:        req.PageSize,
 		GeometryColumns: geometryColumns,
 		// Populate MVT preview metadata for frontend decision-making
-		EngineID:   req.Resource.ID,
+		EngineID:   req.Engine.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		EngineType: req.Resource.EngineType,
+		EngineType: req.Engine.EngineType,
 	}, nil
 }

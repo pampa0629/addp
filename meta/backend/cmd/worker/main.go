@@ -50,11 +50,11 @@ func main() {
 	log.Printf("✅ Redis 客户端已初始化: %s", redisAddr)
 
 	// 初始化 Service 层（传入 Redis 客户端用于事件订阅）
-	resourceService := service.NewResourceService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
-	scanService := service.NewScanServiceNew(db, resourceService)
+	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
+	scanService := service.NewScanServiceNew(db, engineService)
 
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
-	scanTaskService := service.NewScanTaskService(db, scanService, resourceService, redisClient)
+	scanTaskService := service.NewScanTaskService(db, scanService, engineService, redisClient)
 
 	// 创建任务队列（复用已有的 redisAddr）
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)

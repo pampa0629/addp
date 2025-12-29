@@ -371,7 +371,7 @@ CREATE TABLE meta_lineage (
     pipeline_name VARCHAR(255),
     pipeline_type VARCHAR(50),  -- 'spatial_analysis', 'etl', 'ml_training'
 
-    -- 关联的资源（来自 system.resources）
+    -- 关联的引擎（来自 system.engines）
     source_resource_ids UUID[],
     target_resource_ids UUID[],
 

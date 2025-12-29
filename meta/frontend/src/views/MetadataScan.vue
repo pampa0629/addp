@@ -595,7 +595,7 @@ const handleBatchScan = async () => {
       }
     }, 500)
 
-    const res = await metaApi.scanResource(selectedResource.value.id, schemaNames)
+    const res = await metaApi.scanEngine(selectedResource.value.id, schemaNames)
     clearInterval(progressInterval)
     scanProgress.value = 100
 
@@ -666,7 +666,7 @@ const handleScanSchema = async (schema) => {
   scanningSchemas[key] = true
 
   try {
-    await metaApi.scanResource(selectedResource.value.id, [schemaName])
+    await metaApi.scanEngine(selectedResource.value.id, [schemaName])
     ElMessage.success(`Schema "${schemaName}" 扫描完成`)
 
     // 刷新列表

@@ -343,7 +343,7 @@ POSTGRES_IMAGE=imresamu/postgis-arm64:15-3.4 ./scripts/infra/up.sh
    - users - 用户账户
    - tenants - 租户信息
    - audit_logs - 审计日志
-   - resources - 资源配置（数据源连接信息）
+   - engines - 引擎配置（数据源连接信息）
 
 2. **Manager Schema**
    - data_sources - 数据源连接

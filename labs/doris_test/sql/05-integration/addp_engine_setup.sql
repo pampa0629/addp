@@ -1,6 +1,6 @@
 -- ============================================================
--- 05-integration/addp_resource_setup.sql
--- ADDP 系统集成 Doris 资源配置示例
+-- 05-integration/addp_engine_setup.sql
+-- ADDP 系统集成 Doris 引擎配置示例
 -- ============================================================
 
 /*
@@ -168,14 +168,14 @@ INSERT INTO user_statistics VALUES
 }
 
 **API 请求示例**：
-POST http://localhost:8080/api/resources
+POST http://localhost:8080/api/engines
 Content-Type: application/json
 Authorization: Bearer <JWT_TOKEN>
 
 {
   "name": "doris_business",
   "display_name": "ADDP 业务 Doris 数据库",
-  "resource_type": "doris",
+  "engine_type": "doris",
   "description": "用于 ADDP 业务数据分析的 Doris 集群",
   "connection_info": {
     "host": "127.0.0.1",

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 多租户账号管理（超级管理员、租户管理员、普通用户）
 - 日志管理（审计日志存储和查询）
-- 资源管理（数据库连接、计算引擎连接等）
+- 引擎管理（数据库连接、计算引擎连接等）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
 技术栈：
@@ -46,7 +46,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **隔离实现**:
 - 每个用户关联到特定租户 (`users.tenant_id`)
-- 资源、日志等数据关联租户ID
+- 引擎、日志等数据关联租户ID
 - API查询自动过滤：只返回当前用户所属租户的数据
 
 ## 常用命令
@@ -155,7 +155,7 @@ frontend/src/
 │   ├── Dashboard.vue # 首页
 │   ├── Users.vue    # 用户管理
 │   ├── Logs.vue     # 日志管理
-│   └── Resources.vue # 资源管理
+│   └── Engines.vue # 引擎管理
 └── router/          # 路由配置
 ```
 
@@ -186,9 +186,9 @@ frontend/src/
 - 字段: `id`, `user_id`, `tenant_id`, `action`, `method`, `path`, `ip_address`, `created_at`
 - 自动关联租户，支持按租户过滤日志
 
-**system.resources 表**:
-- 存储各类资源连接信息 (数据库、对象存储等)
-- 字段: `id`, `name`, `resource_type`, `connection_info`, `tenant_id`, `created_by`, `is_active`
+**system.engines 表**:
+- 存储各类引擎连接信息 (数据库、对象存储等)
+- 字段: `id`, `name`, `engine_type`, `connection_info`, `tenant_id`, `created_by`, `is_active`
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 
@@ -238,14 +238,14 @@ frontend/src/
    - 不可逆哈希,自动加盐
    - 验证: `CheckPassword(plaintext, hash)`
 
-2. **资源连接密码加密** (system.resources.connection_info)
+2. **引擎连接密码加密** (system.engines.connection_info)
    - 算法: **AES-256-GCM** (对称加密 + 认证)
    - 密钥管理:
      - 开发环境: 默认32字节密钥
      - 生产环境: 环境变量 `ENCRYPTION_KEY` (Base64编码)
    - 加密字段: `password`, `access_key`, `secret_key`, `token`, `api_key`
-   - 自动加密: 创建/更新资源时自动加密敏感字段
-   - 自动解密: 查询资源时自动解密返回
+   - 自动加密: 创建/更新引擎时自动加密敏感字段
+   - 自动解密: 查询引擎时自动解密返回
 
 ### 访问控制
 
@@ -259,7 +259,7 @@ frontend/src/
 | 查看用户列表 | ❌ | ✅ (本租户) | ❌ |
 | 查看自己信息 | ✅ | ✅ | ✅ |
 | 修改自己密码 | ✅ | ✅ | ✅ |
-| 查看资源列表 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
+| 查看引擎列表 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
 | 查看日志 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
 
 ## API 端点
@@ -287,11 +287,11 @@ frontend/src/
 - `GET /api/logs` - 获取日志列表（自动过滤：仅返回本租户日志，支持 user_id 过滤）
 - `GET /api/logs/:id` - 获取指定日志
 
-### 资源管理（需认证）
-- `POST /api/resources` - 创建资源（自动关联当前用户租户）
-- `GET /api/resources` - 获取资源列表（自动过滤：仅返回本租户资源，支持 resource_type 过滤）
-- `GET /api/resources/:id` - 获取指定资源
-- `PUT /api/resources/:id` - 更新资源（敏感字段自动重新加密）
-- `DELETE /api/resources/:id` - 删除资源
-- `POST /api/resources/:id/test` - 测试资源连接
-- `POST /api/resources/test-connection` - 创建前测试连接
+### 引擎管理（需认证）
+- `POST /api/engines` - 创建引擎（自动关联当前用户租户）
+- `GET /api/engines` - 获取引擎列表（自动过滤：仅返回本租户引擎，支持 engine_type 过滤）
+- `GET /api/engines/:id` - 获取指定引擎
+- `PUT /api/engines/:id` - 更新引擎（敏感字段自动重新加密）
+- `DELETE /api/engines/:id` - 删除引擎
+- `POST /api/engines/:id/test` - 测试引擎连接
+- `POST /api/engines/test-connection` - 创建前测试连接

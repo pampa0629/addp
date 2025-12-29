@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
+func setupTestResourceRepo(t *testing.T) *repository.EngineRepository {
 	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -59,12 +59,12 @@ func setupTestResourceRepo(t *testing.T) *repository.ResourceRepository {
 		}
 	}
 
-	return repository.NewResourceRepository(db)
+	return repository.NewEngineRepository(db)
 }
 
 func TestListExplorerResourcesTenantFiltering(t *testing.T) {
-	resourceRepo := setupTestResourceRepo(t)
-	service := NewMetadataService(nil, resourceRepo, nil, nil, nil, "")
+	engineRepo := setupTestResourceRepo(t)
+	service := NewMetadataService(nil, engineRepo, nil, nil, nil, "")
 
 	// 无租户上下文（超级管理员）应看到所有激活资源（含租户为空）
 	resourcesAll, err := service.ListExplorerResources(nil)
@@ -110,12 +110,12 @@ func TestListExplorerResourcesTenantFiltering(t *testing.T) {
 }
 
 func TestGetResourceTreeDeniedForOtherTenant(t *testing.T) {
-	resourceRepo := setupTestResourceRepo(t)
-	service := NewMetadataService(nil, resourceRepo, nil, nil, nil, "")
+	engineRepo := setupTestResourceRepo(t)
+	service := NewMetadataService(nil, engineRepo, nil, nil, nil, "")
 
 	tenantOne := uint(1)
 	_, err := service.GetResourceTree(2, &tenantOne)
-	if !errors.Is(err, ErrResourceAccessDenied) {
+	if !errors.Is(err, ErrEngineAccessDenied) {
 		t.Fatalf("GetResourceTree should deny cross-tenant access, got err=%v", err)
 	}
 }

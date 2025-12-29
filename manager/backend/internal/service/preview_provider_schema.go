@@ -32,7 +32,7 @@ func (p *schemaPreviewProvider) Priority() int {
 }
 
 func (p *schemaPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" {
@@ -44,12 +44,12 @@ func (p *schemaPreviewProvider) Supports(req *PreviewRequest) bool {
 func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	_ = ctx
 
-	node, err := p.metadataRepo.GetNodeByName(req.Resource.ID, req.Schema, p.metaClient)
+	node, err := p.metadataRepo.GetNodeByName(req.Engine.ID, req.Schema, p.metaClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node info: %w", err)
 	}
 
-	isObjectStorage := isObjectStorageType(req.Resource.EngineType)
+	isObjectStorage := isObjectStorageType(req.Engine.EngineType)
 
 	nodeType := "schema"
 	if isObjectStorage {
@@ -111,8 +111,8 @@ func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest
 			Children:    children,
 		},
 	}
-	if req != nil && req.Resource != nil {
-		preview.Object.EngineID = req.Resource.ID
+	if req != nil && req.Engine != nil {
+		preview.Object.EngineID = req.Engine.ID
 	}
 
 	return preview, nil

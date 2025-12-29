@@ -33,7 +33,7 @@ func (p *mongodbPreviewProvider) Priority() int {
 }
 
 func (p *mongodbPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" || req.Table == "" {
@@ -41,16 +41,16 @@ func (p *mongodbPreviewProvider) Supports(req *PreviewRequest) bool {
 	}
 
 	// 支持 MongoDB
-	resourceType := sanitizeResourceType(req.Resource.EngineType)
+	resourceType := sanitizeResourceType(req.Engine.EngineType)
 	return resourceType == "mongodb"
 }
 
 func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	// 转换Resource类型到plugin models
-	pluginResource := &plugin.Resource{
-		ID:             req.Resource.ID,
-		EngineType:   req.Resource.EngineType,
-		ConnectionInfo: plugin.ConnectionInfo(req.Resource.ConnectionInfo),
+	pluginResource := &plugin.Engine{
+		ID:             req.Engine.ID,
+		EngineType:   req.Engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(req.Engine.ConnectionInfo),
 	}
 
 	// 使用插件系统构建连接字符串
@@ -135,10 +135,10 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 			Total:        0,
 			Page:         req.Page,
 			PageSize:     req.PageSize,
-			EngineID:   req.Resource.ID,
+			EngineID:   req.Engine.ID,
 			Schema:       req.Schema,
 			Table:        req.Table,
-			EngineType: req.Resource.EngineType,
+			EngineType: req.Engine.EngineType,
 		}, nil
 	}
 
@@ -184,10 +184,10 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		Total:        int(totalCount),
 		Page:         req.Page,
 		PageSize:     req.PageSize,
-		EngineID:   req.Resource.ID,
+		EngineID:   req.Engine.ID,
 		Schema:       req.Schema,
 		Table:        req.Table,
-		EngineType: req.Resource.EngineType,
+		EngineType: req.Engine.EngineType,
 	}, nil
 }
 

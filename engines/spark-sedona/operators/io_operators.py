@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # I/O 算子 (5个)
 # ========================================
 
-def load(resource_id: int, **params) -> DataFrame:
+def load(engine_id: int, **params) -> DataFrame:
     """
     数据加载算子
 
@@ -30,7 +30,7 @@ def load(resource_id: int, **params) -> DataFrame:
     - catalog: 数据目录 (Iceberg/Delta)
 
     Args:
-        resource_id: Spark资源ID (从system.resources获取)
+        engine_id: Spark引擎ID (从system.engines获取)
         **params: 统一参数 (DataLocation格式)
             - source_type: "table" | "file" | "sql" | "catalog"
             - schema: 数据库schema (table类型)
@@ -47,20 +47,20 @@ def load(resource_id: int, **params) -> DataFrame:
 
     Example:
         # 从数据库加载
-        df = load(resource_id=34, source_type="table", schema="public", table="poi")
+        df = load(engine_id=34, source_type="table", schema="public", table="poi")
 
         # 从文件加载
-        df = load(resource_id=34, source_type="file", path="s3a://bucket/data.parquet", format="parquet")
+        df = load(engine_id=34, source_type="file", path="s3a://bucket/data.parquet", format="parquet")
 
         # 从SQL加载
-        df = load(resource_id=34, source_type="sql", sql="SELECT * FROM poi WHERE category='restaurant'")
+        df = load(engine_id=34, source_type="sql", sql="SELECT * FROM poi WHERE category='restaurant'")
     """
     # 获取SparkSession
     connector = get_spark_connector()
-    spark = connector.get_or_create_session(resource_id)
+    spark = connector.get_or_create_session(engine_id)
 
-    # 添加resource_id到params (StorageAdapter需要)
-    params['resource_id'] = resource_id
+    # 添加engine_id到params (StorageAdapter需要)
+    params['engine_id'] = engine_id
 
     # 使用StorageAdapter加载
     df = StorageAdapter.load(spark, params)
@@ -72,13 +72,13 @@ def load(resource_id: int, **params) -> DataFrame:
 
 
 
-def save(input_df: DataFrame, resource_id: int, **params) -> Dict[str, Any]:
+def save(input_df: DataFrame, engine_id: int, **params) -> Dict[str, Any]:
     """
     数据保存算子
 
     Args:
         input_df: 输入DataFrame
-        resource_id: Spark资源ID
+        engine_id: Spark引擎ID
         **params: 保存参数
             - target_type: "table" | "file"
             - schema: 数据库schema (table类型)
@@ -91,9 +91,9 @@ def save(input_df: DataFrame, resource_id: int, **params) -> Dict[str, Any]:
         执行结果字典 {"status": "success", "rows": count}
 
     Example:
-        save(df, resource_id=34, target_type="table", schema="public", table="result", mode="overwrite")
+        save(df, engine_id=34, target_type="table", schema="public", table="result", mode="overwrite")
     """
-    params['resource_id'] = resource_id
+    params['engine_id'] = engine_id
 
     # 使用StorageAdapter保存
     StorageAdapter.save(input_df, params)
@@ -190,10 +190,10 @@ LOAD_METADATA = OperatorMetadata(
     overview="load 算子是工作流的起点,支持从数据库(PostgreSQL/MySQL/Doris)、文件系统(S3/HDFS/本地)、SQL查询和数据目录(Iceberg/Delta)加载数据到 Spark DataFrame。支持多种格式:Parquet/GeoParquet/CSV/Shapefile/Delta/Hudi。",
     params=[
         OperatorParam(
-            name="resource_id",
+            name="engine_id",
             type="int",
             required=True,
-            description="Spark资源ID,从 system.resources 表获取",
+            description="Spark引擎ID,从 system.engines 表获取",
             notes="确保资源已在系统中注册且状态为活跃"
         ),
         OperatorParam(
@@ -257,7 +257,7 @@ LOAD_METADATA = OperatorMetadata(
         "id": "load_poi_data",
         "operator": "load",
         "params": {
-            "resource_id": 34,
+            "engine_id": 34,
             "source_type": "table",
             "schema": "public",
             "table": "poi",
@@ -284,10 +284,10 @@ SAVE_METADATA = OperatorMetadata(
             notes="必须是有效的 Spark DataFrame"
         ),
         OperatorParam(
-            name="resource_id",
+            name="engine_id",
             type="int",
             required=True,
-            description="Spark资源ID",
+            description="Spark引擎ID",
             notes="确保资源有写权限"
         ),
         OperatorParam(
@@ -338,7 +338,7 @@ SAVE_METADATA = OperatorMetadata(
         "operator": "save",
         "params": {
             "input_df": {"$ref": "buffer_analysis"},
-            "resource_id": 34,
+            "engine_id": 34,
             "target_type": "table",
             "schema": "public",
             "table": "buffer_result",

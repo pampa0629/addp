@@ -46,7 +46,7 @@ GET /api/develop/spatial/engines
       "id": 1,
       "name": "geopandas_engine",
       "display_name": "GeoPandas空间计算引擎",
-      "resource_type": "api.geopandas",
+      "engine_type": "api.geopandas",
       "capabilities": {
         "compute": [{
           "type": "spatial",
@@ -59,7 +59,7 @@ GET /api/develop/spatial/engines
 }
 ```
 
-##### 3. 资源能力声明增强
+##### 3. 引擎能力声明增强
 
 新增 `dev_modes` 字段到 ComputeCapability:
 
@@ -80,9 +80,9 @@ GET /api/develop/spatial/engines
 - `form`: 表单配置
 - `script`: 脚本编辑器(未来)
 
-##### 4. API引擎资源类型
+##### 4. API引擎类型
 
-新增 `api.*` 资源类型命名规范:
+新增 `api.*` 引擎类型命名规范:
 
 - `api.meta`: Meta模块算子
 - `api.transfer`: Transfer模块算子
@@ -95,24 +95,24 @@ GET /api/develop/spatial/engines
 新增通用过滤函数 (`common/utils/capability_filter.go`):
 
 ```go
-// 检查资源是否支持指定开发模式
-SupportsDevMode(resource, "sql")
+// 检查引擎是否支持指定开发模式
+SupportsDevMode(engine, "sql")
 
-// 过滤资源列表
-FilterResourcesByDevMode(resources, "workflow")
+// 过滤引擎列表
+FilterEnginesByDevMode(engines, "workflow")
 
 // 判断引擎类型
-IsAPIEngine(resource)
-IsStandardLibraryEngine(resource)
+IsAPIEngine(engine)
+IsStandardLibraryEngine(engine)
 ```
 
 #### 改进优化
 
-##### 1. Develop模块资源过滤
+##### 1. Develop模块引擎过滤
 
 **SQL编辑器**:
 - 改进: 使用 `SupportsDevMode(&res, "sql")` 替代硬编码类型判断
-- 效果: 自动识别所有支持SQL的资源(PostgreSQL, MySQL, Doris, Spark SQL等)
+- 效果: 自动识别所有支持SQL的引擎(PostgreSQL, MySQL, Doris, Spark SQL等)
 
 **工作流画布**:
 - 新增: `ListSpatialEngines()` 函数获取支持workflow的引擎

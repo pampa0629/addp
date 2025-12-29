@@ -14,14 +14,14 @@ import (
 
 // FeatureHandler 处理要素相关的请求（用于地图与表格关联）
 type FeatureHandler struct {
-	resourceRepo *repository.ResourceRepository
+	engineRepo *repository.EngineRepository
 	metadataRepo *repository.MetadataRepository
 }
 
 // NewFeatureHandler 创建要素处理器
-func NewFeatureHandler(resourceRepo *repository.ResourceRepository, metadataRepo *repository.MetadataRepository) *FeatureHandler {
+func NewFeatureHandler(engineRepo *repository.EngineRepository, metadataRepo *repository.MetadataRepository) *FeatureHandler {
 	return &FeatureHandler{
-		resourceRepo: resourceRepo,
+		engineRepo: engineRepo,
 		metadataRepo: metadataRepo,
 	}
 }
@@ -30,7 +30,7 @@ func NewFeatureHandler(resourceRepo *repository.ResourceRepository, metadataRepo
 // GET /api/engines/:id/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
 func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	// 1. 解析路径参数
-	resourceIDStr := c.Param("id")
+	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})
@@ -57,7 +57,7 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	primaryKey := c.DefaultQuery("primary_key", "id")
 
 	// 3. 获取资源信息
-	resource, err := h.resourceRepo.GetByID(uint(engineID))
+	resource, err := h.engineRepo.GetByID(uint(engineID))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		return

@@ -15,13 +15,13 @@ import (
 
 func SetupRouter(
 	cfg *config.Config,
-	resourceService *service.ResourceService,
+	engineService *service.EngineService,
 	metadataService *service.MetadataService,
 	searchService *service.FullTextSearchService,
 	historyService *service.SearchHistoryService,
 	unifiedMVTService *service.UnifiedMVTService,
 	quickViewService *service.QuickViewService,
-	resourceRepo *repository.ResourceRepository,
+	engineRepo *repository.EngineRepository,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
 	cacheManager *service.CacheManager,
@@ -80,19 +80,19 @@ func SetupRouter(
 		{
 			handler := NewDataExplorerHandler(metadataService)
 			explorer.GET("/tree", handler.GetTree)
-			explorer.GET("/engines", handler.ListResources)
+			explorer.GET("/engines", handler.ListEngines)
 			explorer.GET("/engines/:id/tree", handler.GetResourceTree)
 			explorer.POST("/engines/:id/refresh", handler.RefreshNode)
 			explorer.GET("/preview", handler.PreviewTable)
 			explorer.GET("/video-stream", handler.VideoStream)
 		}
 
-		// 资源管理
+		// 引擎管理
 		engines := api.Group("/engines")
 		{
-			resourceHandler := NewResourceHandler(resourceService)
-			engines.GET("", resourceHandler.List)
-			engines.GET("/:id", resourceHandler.GetByID)
+			engineHandler := NewEngineHandler(engineService)
+			engines.GET("", engineHandler.List)
+			engines.GET("/:id", engineHandler.GetByID)
 
 			// 元数据扫描和管理
 			metadataHandler := NewMetadataHandler(metadataService)
@@ -108,7 +108,7 @@ func SetupRouter(
 			engines.GET("/:id/tables", metadataHandler.GetTables)
 
 			// 要素查询（用于表格与地图关联）
-			featureHandler := NewFeatureHandler(resourceRepo, metadataRepo)
+			featureHandler := NewFeatureHandler(engineRepo, metadataRepo)
 			engines.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
 		}
 
@@ -134,7 +134,7 @@ func SetupRouter(
 		tileConfigHandler := NewTileConfigHandler(quickViewService, systemClient, cfg)
 		engines.GET("/:id/spatial/:schema/:table/tile-config", tileConfigHandler.GetTileConfig)
 
-		// 资源下的空间瓦片服务（统一 MVT API，RESTful 风格）
+		// 引擎下的空间瓦片服务（统一 MVT API，RESTful 风格）
 		// GET /api/engines/{id}/spatial/tiles/{schema}/{table}/{z}/{x}/{y}
 		// 内部自动处理：内存 LRU → Redis → MinIO → 实时 PG 生成
 		engines.GET("/:id/spatial/tiles/:schema/:table/:z/:x/:y", func(c *gin.Context) {

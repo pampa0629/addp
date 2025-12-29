@@ -323,7 +323,7 @@ gateway/
 | `/api/auth/*` | System | 8080 | 用户认证 |
 | `/api/users/*` | System | 8080 | 用户管理 |
 | `/api/logs/*` | System | 8080 | 日志管理 |
-| `/api/resources/*` | System | 8080 | 资源管理 |
+| `/api/engines/*` | System | 8080 | 引擎管理 |
 | `/api/datasources/*` | Manager | 8081 | 数据源管理 |
 | `/api/directories/*` | Manager | 8081 | 目录管理 |
 | `/api/preview/*` | Manager | 8081 | 数据预览 |

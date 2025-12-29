@@ -112,11 +112,11 @@ func isMetaNotFoundError(err error) bool {
 }
 
 func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 
-	if !isObjectStorageType(req.Resource.EngineType) {
+	if !isObjectStorageType(req.Engine.EngineType) {
 		return false
 	}
 
@@ -130,7 +130,7 @@ func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	resource := req.Resource
+	resource := req.Engine
 	bucket := req.Schema
 	path := req.Table
 

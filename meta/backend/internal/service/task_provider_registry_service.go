@@ -84,7 +84,7 @@ func (s *TaskProviderRegistryService) Register() error {
 		BaseURL:             s.metaURL,
 		TaskListEndpoint:    "/api/meta/scan/tasks",          // 扫描任务列表
 		TaskDetailEndpoint:  "/api/meta/scan/tasks/:id",      // 扫描任务详情
-		TaskExecuteEndpoint: "/api/meta/scan/resource",       // 执行扫描任务
+		TaskExecuteEndpoint: "/api/meta/scan/engine",         // 执行扫描任务
 		TaskStatusEndpoint:  "/api/meta/scan/tasks/:id/status", // 扫描任务状态
 
 		// 能力描述（JSON 字符串）

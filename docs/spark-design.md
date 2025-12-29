@@ -106,7 +106,7 @@ business/docker-compose.yml:
 
 ### 注册到 ADDP System
 
-**资源类型：database（而非 compute_engine）**
+**引擎类型：database（而非 compute_engine）**
 
 ```json
 {
@@ -128,9 +128,9 @@ business/docker-compose.yml:
 ```
 
 **注册位置**：
-- 在 ADDP System 模块的"资源管理"中手动注册
+- 在 ADDP System 模块的"引擎管理"中手动注册
 - resource_type: `database`（与 PostgreSQL、Doris 相同）
-- 存储在 `system.resources` 表中
+- 存储在 `system.engines` 表中
 
 ---
 
@@ -196,7 +196,7 @@ GROUP BY d.district_name;
       "id": "step_1_extract_poi",
       "engine_identifier": "develop.sql.default",
       "parameters": {
-        "resource_id": "{{spark_sql_resource_id}}",
+        "engine_id": "{{spark_sql_engine_id}}",
         "query": "SELECT id, name, lon, lat FROM poi WHERE city='北京'"
       }
     },
@@ -204,7 +204,7 @@ GROUP BY d.district_name;
       "id": "step_2_spatial_buffer",
       "engine_identifier": "develop.sql.default",
       "parameters": {
-        "resource_id": "{{spark_sql_resource_id}}",
+        "engine_id": "{{spark_sql_engine_id}}",
         "query": "SELECT id, name, ST_Buffer(ST_Point(lon, lat), 1000) as buffer_geom FROM ({{step_1_extract_poi.result}})"
       },
       "depends_on": ["step_1_extract_poi"]
@@ -214,7 +214,7 @@ GROUP BY d.district_name;
       "engine_identifier": "transfer.batch_worker.default",
       "parameters": {
         "source": "spark_results",
-        "target_resource_id": "{{business_postgres_id}}",
+        "target_engine_id": "{{business_postgres_id}}",
         "table_name": "poi_buffer_results"
       },
       "depends_on": ["step_2_spatial_buffer"]
@@ -347,8 +347,8 @@ ST_GeomFromGeoJSON(json) -- 从 GeoJSON 创建
 1. **登录 ADDP Portal**
    - 访问 System 模块 → 资源管理
 
-2. **创建新资源**
-   - 资源类型：database
+2. **创建新引擎**
+   - 引擎类型：database
    - 子类型：spark_sql
    - 名称：Spark SQL Engine with Sedona
    - 连接信息：
@@ -362,8 +362,8 @@ ST_GeomFromGeoJSON(json) -- 从 GeoJSON 创建
      ```
 
 3. **验收标准**
-   - ✅ 资源保存成功（存储在 `system.resources` 表）
-   - ✅ 在资源列表中可见
+   - ✅ 引擎保存成功（存储在 `system.engines` 表）
+   - ✅ 在引擎列表中可见
 
 ### Phase 3: 在 Develop 模块中使用（0.5 天）
 
@@ -738,11 +738,11 @@ GROUP BY district;
 
 ```go
 // develop/backend/internal/service/spark_sql_executor.go
-func (e *SparkSQLExecutor) Execute(ctx context.Context, resourceID int, query string) (*QueryResult, error) {
-    // 1. 获取 Spark SQL 资源配置
-    resource, _ := e.systemClient.GetResource(resourceID)
-    host := resource.ConnectionInfo["host"].(string)
-    port := int(resource.ConnectionInfo["port"].(float64))
+func (e *SparkSQLExecutor) Execute(ctx context.Context, engineID int, query string) (*QueryResult, error) {
+    // 1. 获取 Spark SQL 引擎配置
+    engine, _ := e.systemClient.GetEngine(engineID)
+    host := engine.ConnectionInfo["host"].(string)
+    port := int(engine.ConnectionInfo["port"].(float64))
 
     // 2. 创建 Hive 连接
     conn, _ := gohive.Connect(host, port, "NONE", gohive.NewConnectConfiguration())

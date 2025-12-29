@@ -8,23 +8,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type ResourceHandler struct {
-	resourceService *service.ResourceService
+type EngineHandler struct {
+	engineService *service.EngineService
 }
 
-func NewResourceHandler(resourceService *service.ResourceService) *ResourceHandler {
-	return &ResourceHandler{
-		resourceService: resourceService,
+func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
+	return &EngineHandler{
+		engineService: engineService,
 	}
 }
 
 // List 获取资源列表
 // GET /api/engines?page=1&page_size=10&resource_type=postgresql
-func (h *ResourceHandler) List(c *gin.Context) {
+func (h *EngineHandler) List(c *gin.Context) {
 	page, pageSize := commonAPI.GetPaginationParams(c)
 	resourceType := c.Query("resource_type")
 
-	engines, total, err := h.resourceService.List(page, pageSize, resourceType)
+	engines, total, err := h.engineService.List(page, pageSize, resourceType)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
@@ -35,13 +35,13 @@ func (h *ResourceHandler) List(c *gin.Context) {
 
 // GetByID 获取单个资源
 // GET /api/engines/:id
-func (h *ResourceHandler) GetByID(c *gin.Context) {
+func (h *EngineHandler) GetByID(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
 	}
 
-	resource, err := h.resourceService.GetByID(id)
+	resource, err := h.engineService.GetByID(id)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return

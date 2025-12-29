@@ -24,7 +24,7 @@ var ErrNoPreviewProvider = errors.New("no preview provider registered for reques
 
 // PreviewRequest 包含生成预览所需的上下文信息。
 type PreviewRequest struct {
-	Resource *models.Resource
+	Engine   *models.Engine
 	Schema   string
 	Table    string
 	Page     int
@@ -42,7 +42,7 @@ func (r *PreviewRequest) Mode() string {
 		return PreviewModeNode
 	}
 
-	if r.Resource != nil && isObjectStorageType(r.Resource.EngineType) {
+	if r.Engine != nil && isObjectStorageType(r.Engine.EngineType) {
 		return PreviewModeObject
 	}
 
@@ -109,9 +109,14 @@ func (r *PreviewRegistry) Providers() []string {
 	return names
 }
 
-// sanitizeResourceType 统一资源类型比较。
+// sanitizeEngineType 统一引擎类型比较。
+func sanitizeEngineType(engineType string) string {
+	return strings.ToLower(strings.TrimSpace(engineType))
+}
+
+// sanitizeResourceType 兼容旧名称
 func sanitizeResourceType(resourceType string) string {
-	return strings.ToLower(strings.TrimSpace(resourceType))
+	return sanitizeEngineType(resourceType)
 }
 
 // ProviderFactory 预览插件工厂函数类型

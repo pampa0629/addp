@@ -12,7 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client) *gin.Engine {
+func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -24,12 +24,12 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 	corsConfig.AllowAllOrigins = true
 	router.Use(cors.New(corsConfig))
 
-	if resourceService == nil || scanService == nil {
-		panic("resourceService and scanService must be provided to SetupRouterNew")
+	if engineService == nil || scanService == nil {
+		panic("engineService and scanService must be provided to SetupRouterNew")
 	}
 
 	// 创建Handler
-	handler := NewHandler(resourceService, scanService, taskService)
+	handler := NewHandler(engineService, scanService, taskService)
 
 	// 创建算子Handler
 	operatorService := service.NewOperatorService(taskService)
@@ -56,7 +56,7 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 		api.POST("/operators/:name/execute", operatorHandler.ExecuteOperator)
 
 		// 资源相关
-		api.GET("/engines", handler.GetResources)
+		api.GET("/engines", handler.GetEngines)
 
 		// Schema相关
 		api.GET("/schemas/:engine_id", handler.GetSchemas)
@@ -65,7 +65,7 @@ func SetupRouterNew(cfg *config.Config, resourceService *service.ResourceService
 
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)
-		api.POST("/scan/resource", handler.ScanResource)
+		api.POST("/scan/engine", handler.ScanEngine)
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/scan/runs/:run_id", handler.GetScanRun)

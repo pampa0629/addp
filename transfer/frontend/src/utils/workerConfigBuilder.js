@@ -303,7 +303,7 @@ export const buildWorkerConfigFromTask = (task, mappings, systemResourceMap) => 
     const fallbackId = key === 'source' ? toNumber(task.source_id) : toNumber(task.target_id)
 
     let resource = null
-    const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.resource_id)
+    const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.engine_id)
     if (embeddedId !== null) {
       resource = systemResourceMap.get(embeddedId) || null
     }

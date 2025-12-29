@@ -40,7 +40,7 @@ Orchestrator 现在支持**参数模板化**功能，允许在工作流步骤中
       "engine_identifier": "sql.postgresql.default",
       "parameters": {
         "query": "SELECT geom, name FROM poi WHERE city='北京'",
-        "resource_id": 5
+        "engine_id": 5
       },
       "depends_on": [],
       "timeout": 300

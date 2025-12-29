@@ -30,7 +30,7 @@ class MetadataMatcherService:
         self,
         query: str,
         tenant_id: int,
-        resource_id: Optional[int] = None
+        engine_id: Optional[int] = None
     ) -> MatchResult:
         """
         匹配数据源
@@ -38,14 +38,14 @@ class MetadataMatcherService:
         Args:
             query: 用户查询
             tenant_id: 租户 ID
-            resource_id: 指定的资源 ID（可选）
+            engine_id: 指定的资源 ID（可选）
 
         Returns:
             MatchResult 匹配结果
         """
         # 1. 查询元数据
-        if resource_id:
-            candidates = await self._get_resource_metadata(resource_id, tenant_id)
+        if engine_id:
+            candidates = await self._get_engine_metadata(engine_id, tenant_id)
         else:
             candidates = await self._search_metadata(query, tenant_id)
 
@@ -107,12 +107,12 @@ class MetadataMatcherService:
             print(f"Error searching metadata: {e}")
             return []
 
-    async def _get_resource_metadata(self, resource_id: int, tenant_id: int) -> List[Dict]:
+    async def _get_engine_metadata(self, engine_id: int, tenant_id: int) -> List[Dict]:
         """
         获取指定资源的元数据
 
         Args:
-            resource_id: 资源 ID
+            engine_id: 资源 ID
             tenant_id: 租户 ID
 
         Returns:
@@ -120,14 +120,14 @@ class MetadataMatcherService:
         """
         try:
             response = await self.client.get(
-                f"{self.meta_api_url}/api/metadata/resources/{resource_id}",
+                f"{self.meta_api_url}/api/metadata/engines/{engine_id}",
                 params={"tenant_id": tenant_id}
             )
             response.raise_for_status()
             data = response.json()
             return data.get("items", [])
         except Exception as e:
-            print(f"Error getting resource metadata: {e}")
+            print(f"Error getting engine metadata: {e}")
             return []
 
     def _score_candidates(self, candidates: List[Dict], query: str) -> List[Dict]:

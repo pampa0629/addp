@@ -133,7 +133,7 @@ func (p *MongoDBPlugin) GenerateCapabilities() string {
 
 #### 关键要点：
 
-1. **类型标识一致性**：`Type()` 返回的字符串必须与 System 模块中 `resource_type` 字段完全一致（小写）
+1. **类型标识一致性**：`Type()` 返回的字符串必须与 System 模块中 `engine_type` 字段完全一致（小写）
 2. **自动注册**：必须在 `init()` 函数中调用 `plugin.Register()`
 3. **连接字符串安全**：处理 localhost 别名、端口格式化等边界情况
 4. **错误处理**：提供清晰的错误信息，帮助用户诊断问题
@@ -165,28 +165,28 @@ import (
 )
 
 type ClickHouseScanner struct {
-	resource *commonModels.Resource
-	db       interface{}
+	engine *commonModels.Engine
+	db     interface{}
 }
 
-func NewClickHouseScanner(resource *commonModels.Resource) (*ClickHouseScanner, error) {
-	db, err := dbbridge.GetOrCreatePool(resource, dbbridge.DefaultPoolConfig())
+func NewClickHouseScanner(engine *commonModels.Engine) (*ClickHouseScanner, error) {
+	db, err := dbbridge.GetOrCreatePool(engine, dbbridge.DefaultPoolConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection pool: %w", err)
 	}
-	return &ClickHouseScanner{resource: resource, db: db}, nil
+	return &ClickHouseScanner{engine: engine, db: db}, nil
 }
 
 func (s *ClickHouseScanner) ScanSchemas() ([]format.SchemaInfo, error) {
-	return dbbridge.ScanSchemas(s.db, s.resource)
+	return dbbridge.ScanSchemas(s.db, s.engine)
 }
 
 func (s *ClickHouseScanner) ScanTables(schemaName string) ([]format.TableInfo, error) {
-	return dbbridge.ScanTables(s.db, s.resource, schemaName)
+	return dbbridge.ScanTables(s.db, s.engine, schemaName)
 }
 
 func (s *ClickHouseScanner) ScanFields(schemaName, tableName string) ([]format.FieldInfo, error) {
-	return dbbridge.ScanFields(s.db, s.resource, schemaName, tableName)
+	return dbbridge.ScanFields(s.db, s.engine, schemaName, tableName)
 }
 ```
 
@@ -214,18 +214,18 @@ import (
 const DefaultSampleSize = 100 // 采样文档数量
 
 type MongoDBScanner struct {
-	resource *commonModels.Resource
-	client   *mongo.Client
+	engine *commonModels.Engine
+	client *mongo.Client
 }
 
-func NewMongoDBScanner(resource *commonModels.Resource) (*MongoDBScanner, error) {
+func NewMongoDBScanner(engine *commonModels.Engine) (*MongoDBScanner, error) {
 	// 使用插件系统构建连接字符串
-	pluginResource := &plugin.Resource{
-		ID:             resource.ID,
-		ResourceType:   resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	pluginEngine := &plugin.Engine{
+		ID:             engine.ID,
+		EngineType:     engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 	}
-	connStr, err := plugin.BuildConnectionString(pluginResource)
+	connStr, err := plugin.BuildConnectionString(pluginEngine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -239,7 +239,7 @@ func NewMongoDBScanner(resource *commonModels.Resource) (*MongoDBScanner, error)
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	return &MongoDBScanner{resource: resource, client: client}, nil
+	return &MongoDBScanner{engine: engine, client: client}, nil
 }
 
 func (s *MongoDBScanner) ScanSchemas() ([]format.SchemaInfo, error) {
@@ -394,20 +394,20 @@ func inferBSONType(value interface{}) string {
 在 `CreateScanner` 函数的 switch 语句中添加新的 case：
 
 ```go
-func CreateScanner(resource *commonModels.Resource) (format.Scanner, error) {
-	dbType := strings.ToLower(resource.ResourceType)
+func CreateScanner(engine *commonModels.Engine) (format.Scanner, error) {
+	dbType := strings.ToLower(engine.EngineType)
 
 	switch dbType {
 	case "postgresql", "postgres":
-		return NewPostgresScanner(resource)
+		return NewPostgresScanner(engine)
 	case "mysql":
-		return NewMySQLScanner(resource)
+		return NewMySQLScanner(engine)
 	case "doris":
-		return NewDorisScanner(resource)
+		return NewDorisScanner(engine)
 	case "clickhouse":  // ← 添加 ClickHouse
-		return NewClickHouseScanner(resource)
+		return NewClickHouseScanner(engine)
 	case "mongodb":     // ← 添加 MongoDB
-		return NewMongoDBScanner(resource)
+		return NewMongoDBScanner(engine)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)
 	}
@@ -460,25 +460,25 @@ func (p *mongodbPreviewProvider) Priority() int {
 }
 
 func (p *mongodbPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 	if req.Schema == "" || req.Table == "" {
 		return false
 	}
 
-	resourceType := sanitizeResourceType(req.Resource.ResourceType)
-	return resourceType == "mongodb"
+	engineType := sanitizeEngineType(req.Engine.EngineType)
+	return engineType == "mongodb"
 }
 
 func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	// 1. 使用插件系统构建连接字符串
-	pluginResource := &plugin.Resource{
-		ID:             req.Resource.ID,
-		ResourceType:   req.Resource.ResourceType,
-		ConnectionInfo: plugin.ConnectionInfo(req.Resource.ConnectionInfo),
+	pluginEngine := &plugin.Engine{
+		ID:             req.Engine.ID,
+		EngineType:     req.Engine.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(req.Engine.ConnectionInfo),
 	}
-	connStr, err := plugin.BuildConnectionString(pluginResource)
+	connStr, err := plugin.BuildConnectionString(pluginEngine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build connection string: %w", err)
 	}
@@ -528,16 +528,16 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	// 5. 处理空结果
 	if len(documents) == 0 {
 		return &models.TablePreview{
-			Mode:         PreviewModeTable,
-			Columns:      []string{},
-			Rows:         []map[string]interface{}{},
-			Total:        0,
-			Page:         req.Page,
-			PageSize:     req.PageSize,
-			ResourceID:   req.Resource.ID,
-			Schema:       req.Schema,
-			Table:        req.Table,
-			ResourceType: req.Resource.ResourceType,
+			Mode:       PreviewModeTable,
+			Columns:    []string{},
+			Rows:       []map[string]interface{}{},
+			Total:      0,
+			Page:       req.Page,
+			PageSize:   req.PageSize,
+			EngineID:   req.Engine.ID,
+			Schema:     req.Schema,
+			Table:      req.Table,
+			EngineType: req.Engine.EngineType,
 		}, nil
 	}
 
@@ -574,16 +574,16 @@ func (p *mongodbPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 	}
 
 	return &models.TablePreview{
-		Mode:         PreviewModeTable,
-		Columns:      columns,
-		Rows:         rows,
-		Total:        int(totalCount),
-		Page:         req.Page,
-		PageSize:     req.PageSize,
-		ResourceID:   req.Resource.ID,
-		Schema:       req.Schema,
-		Table:        req.Table,
-		ResourceType: req.Resource.ResourceType,
+		Mode:       PreviewModeTable,
+		Columns:    columns,
+		Rows:       rows,
+		Total:      int(totalCount),
+		Page:       req.Page,
+		PageSize:   req.PageSize,
+		EngineID:   req.Engine.ID,
+		Schema:     req.Schema,
+		Table:      req.Table,
+		EngineType: req.Engine.EngineType,
 	}, nil
 }
 
@@ -681,7 +681,7 @@ import (
 
 **错误症状**:
 ```
-failed to build connection string: unsupported resource type: mongodb (available types: )
+failed to build connection string: unsupported engine type: mongodb (available types: )
 ```
 
 **原因**: Manager Backend 没有导入数据库插件，导致全局插件注册表为空。
@@ -758,7 +758,7 @@ for _, doc := range documents {
 
 **错误症状**:
 ```
-failed to create scanner: failed to build connection string: unsupported resource type: mongodb
+failed to create scanner: failed to build connection string: unsupported engine type: mongodb
 ```
 
 **原因**: Scanner 使用了硬编码的 `commonModels.BuildConnectionString()`，而不是插件系统的 `plugin.BuildConnectionString()`。
@@ -766,15 +766,15 @@ failed to create scanner: failed to build connection string: unsupported resourc
 **解决方案**:
 ```go
 // 错误的做法 ❌
-connStr, err := commonModels.BuildConnectionString(resource)
+connStr, err := commonModels.BuildConnectionString(engine)
 
 // 正确的做法 ✅
-pluginResource := &plugin.Resource{
-	ID:             resource.ID,
-	ResourceType:   resource.ResourceType,
-	ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+pluginEngine := &plugin.Engine{
+	ID:             engine.ID,
+	EngineType:     engine.EngineType,
+	ConnectionInfo: plugin.ConnectionInfo(engine.ConnectionInfo),
 }
-connStr, err := plugin.BuildConnectionString(pluginResource)
+connStr, err := plugin.BuildConnectionString(pluginEngine)
 ```
 
 ---
@@ -783,18 +783,18 @@ connStr, err := plugin.BuildConnectionString(pluginResource)
 
 **错误症状**:
 ```
-cannot use req.Resource (variable of type *manager/models.Resource) as *common/models.Resource
+cannot use req.Engine (variable of type *manager/models.Engine) as *common/models.Engine
 ```
 
-**原因**: Manager 和 Common 模块有不同的 Resource 类型定义。
+**原因**: Manager 和 Common 模块有不同的 Engine 类型定义。
 
 **解决方案**:
 ```go
-// 转换 Manager Resource 到 Plugin Resource
-pluginResource := &plugin.Resource{
-	ID:             req.Resource.ID,
-	ResourceType:   req.Resource.ResourceType,
-	ConnectionInfo: plugin.ConnectionInfo(req.Resource.ConnectionInfo),
+// 转换 Manager Engine 到 Plugin Engine
+pluginEngine := &plugin.Engine{
+	ID:             req.Engine.ID,
+	EngineType:     req.Engine.EngineType,
+	ConnectionInfo: plugin.ConnectionInfo(req.Engine.ConnectionInfo),
 }
 ```
 
@@ -804,7 +804,7 @@ pluginResource := &plugin.Resource{
 
 ### 1. 测试连接
 
-在 System 模块中添加新的存储引擎资源，点击"测试连接"。
+在 System 模块中添加新的计算引擎，点击"测试连接"。
 
 ### 2. 测试元数据扫描
 
@@ -816,7 +816,7 @@ pluginResource := &plugin.Resource{
 ### 3. 测试数据预览
 
 在 Manager 模块的数据探查页面：
-- 展开资源树
+- 展开引擎树
 - 点击表/集合
 - 验证数据正确显示
 - 测试分页功能
@@ -940,7 +940,7 @@ func init() {
 
 ## 💡 常见问题
 
-**Q: 为什么 Meta 模块不需要导入数据库插件？**
+**Q: Meta 模块为什么不需要导入数据库插件？**
 
 A: Meta 模块使用 Scanner 接口直接操作数据库，Scanner 内部会调用插件系统。但 Scanner 创建时可能需要使用 `plugin.BuildConnectionString()`，所以还是推荐导入插件。
 
@@ -949,7 +949,7 @@ A: Meta 模块使用 Scanner 接口直接操作数据库，Scanner 内部会调�
 A: 在 Scanner Factory 的 switch 中使用多个 case：
 ```go
 case "postgresql", "postgres":
-	return NewPostgresScanner(resource)
+	return NewPostgresScanner(engine)
 ```
 
 **Q: NoSQL 数据库如何推断 schema？**

@@ -77,7 +77,7 @@
 
 **日志证据**:
 ```
-{"time":"2025-11-28T17:25:09.930623+08:00","level":"INFO","msg":"✅ 创建数据库连接池","resource_id":2,"max_open_conns":25,"max_idle_conns":5}
+{"time":"2025-11-28T17:25:09.930623+08:00","level":"INFO","msg":"✅ 创建数据库连接池","engine_id":2,"max_open_conns":25,"max_idle_conns":5}
 ```
 
 **性能数据**:
@@ -196,7 +196,7 @@ echo "🔧 测试 Singleflight - 请求新瓦片"
 # 并发发送10个请求到同一瓦片
 for i in {1..10}; do
   curl -s -H "Authorization: Bearer $TOKEN" \
-    "http://localhost:8081/api/resources/2/spatial/tiles/public/dltb/15/26000/13000?geom=smgeometry" \
+    "http://localhost:8081/api/engines/2/spatial/tiles/public/dltb/15/26000/13000?geom=smgeometry" \
     -o /dev/null &
 done
 

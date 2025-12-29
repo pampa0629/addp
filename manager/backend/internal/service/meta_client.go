@@ -46,7 +46,7 @@ type ExtractObjectMetadataResponse struct {
 
 // ExtractObjectMetadata 调用Meta模块提取对象元数据
 func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/api/meta/metadata/extract?resource_id=%d&object_key=%s",
+	url := fmt.Sprintf("%s/api/meta/metadata/extract?engine_id=%d&object_key=%s",
 		c.baseURL, req.EngineID, req.ObjectKey)
 
 	httpReq, err := http.NewRequest("POST", url, req.ObjectData)
@@ -86,7 +86,7 @@ func (c *MetaClient) ExtractObjectMetadata(req *ExtractObjectMetadataRequest) (m
 
 // GetObjectMetadata 获取已存储的对象元数据
 func (c *MetaClient) GetObjectMetadata(engineID uint, objectKey string) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/api/meta/metadata/object?resource_id=%d&object_key=%s",
+	url := fmt.Sprintf("%s/api/meta/metadata/object?engine_id=%d&object_key=%s",
 		c.baseURL, engineID, objectKey)
 
 	httpReq, err := http.NewRequest("GET", url, nil)

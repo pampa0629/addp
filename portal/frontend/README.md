@@ -60,7 +60,7 @@ Portal 根据菜单选择动态加载对应模块：
 |--------|---------|-----|
 | 用户管理 | System | http://localhost:5173/users |
 | 日志管理 | System | http://localhost:5173/logs |
-| 存储引擎 | System | http://localhost:5173/resources |
+| 存储引擎 | System | http://localhost:5173/engines |
 | 数据源管理 | Manager | http://localhost:5174/ |
 | 目录管理 | Manager | http://localhost:5174/directories |
 | 数据预览 | Manager | http://localhost:5174/preview |

@@ -102,7 +102,7 @@ def execute_workflow_endpoint():
 
     Request Body:
         {
-            "resource_id": 34,           # Spark资源ID
+            "engine_id": 34,           # Spark引擎ID
             "workflow_def": {
                 "tasks": [...]
             },
@@ -119,14 +119,14 @@ def execute_workflow_endpoint():
     """
     try:
         data = request.get_json()
-        resource_id = data.get('resource_id')
+        engine_id = data.get('engine_id')
         workflow_def = data.get('workflow_def')
         input_data = data.get('input_data', {})
 
-        if not resource_id:
+        if not engine_id:
             return jsonify({
                 "status": "failed",
-                "error": "resource_id is required"
+                "error": "engine_id is required"
             }), 400
 
         if not workflow_def:
@@ -137,14 +137,14 @@ def execute_workflow_endpoint():
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
-        logger.info(f"Executing workflow {execution_id} on Spark resource {resource_id}")
+        logger.info(f"Executing workflow {execution_id} on Spark engine {engine_id}")
 
-        result = execute_workflow(resource_id, workflow_def, input_data)
+        result = execute_workflow(engine_id, workflow_def, input_data)
 
         # 存储执行记录
         executions[execution_id] = {
             "execution_id": execution_id,
-            "resource_id": resource_id,
+            "engine_id": engine_id,
             "status": result['status'],
             "result": result.get('final_result'),
             "task_order": result.get('task_order'),
@@ -183,7 +183,7 @@ def execute_operator_endpoint(operator_name):
 
     Request Body:
         {
-            "resource_id": 34,
+            "engine_id": 34,
             "params": {...}
         }
 
@@ -195,18 +195,18 @@ def execute_operator_endpoint(operator_name):
     """
     try:
         data = request.get_json()
-        resource_id = data.get('resource_id')
+        engine_id = data.get('engine_id')
         params = data.get('params', {})
 
-        if not resource_id:
+        if not engine_id:
             return jsonify({
                 "status": "failed",
-                "error": "resource_id is required"
+                "error": "engine_id is required"
             }), 400
 
-        logger.info(f"Executing operator {operator_name} on Spark resource {resource_id}")
+        logger.info(f"Executing operator {operator_name} on Spark engine {engine_id}")
 
-        result = execute_single_operator(resource_id, operator_name, params)
+        result = execute_single_operator(engine_id, operator_name, params)
 
         status_code = 200 if result['status'] == 'success' else 500
         return jsonify(result), status_code
@@ -274,7 +274,7 @@ def register_to_system():
         "unique_identifier": "api.spark_sedona",
         "name": "spark_sedona_engine",
         "display_name": "Spark Sedona 空间计算引擎",
-        "resource_type": "api.spark_sedona",
+        "engine_type": "api.spark_sedona",
         "is_builtin": True,
         "capabilities": {
             "compute": [{

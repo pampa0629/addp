@@ -17,17 +17,17 @@ import (
 // MVTService generates Mapbox Vector Tiles (MVT) from PostGIS tables for preview.
 type MVTService struct {
 	metadataRepo *repository.MetadataRepository
-	resourceRepo *repository.ResourceRepository
+	engineRepo *repository.EngineRepository
 
 	// ✅ 连接池管理 (按 engineID 缓存)
 	dbPools   map[uint]*sql.DB
 	poolMutex sync.RWMutex
 }
 
-func NewMVTService(meta *repository.MetadataRepository, res *repository.ResourceRepository) *MVTService {
+func NewMVTService(meta *repository.MetadataRepository, res *repository.EngineRepository) *MVTService {
 	return &MVTService{
 		metadataRepo: meta,
-		resourceRepo: res,
+		engineRepo: res,
 		dbPools:      make(map[uint]*sql.DB),
 	}
 }
@@ -63,7 +63,7 @@ func (s *MVTService) getOrCreateDBPool(ctx context.Context, engineID uint) (*sql
 	}
 
 	// 3. 获取资源配置
-	res, err := s.resourceRepo.GetByID(engineID)
+	res, err := s.engineRepo.GetByID(engineID)
 	if err != nil {
 		return nil, fmt.Errorf("get resource failed: %w", err)
 	}
@@ -165,12 +165,12 @@ func (s *MVTService) GetTile(
 	srid int,
 ) ([]byte, error) {
 	// 1. 验证租户权限
-	res, err := s.resourceRepo.GetByID(resourceID)
+	res, err := s.engineRepo.GetByID(resourceID)
 	if err != nil {
 		return nil, err
 	}
 	if !resourceAccessible(res, tenantID) {
-		return nil, ErrResourceAccessDenied
+		return nil, ErrEngineAccessDenied
 	}
 
 	// 2. ✅ 获取连接池 (复用已有连接)
@@ -304,4 +304,4 @@ func (s *MVTService) Close() error {
 	return nil
 }
 
-// Note: access policy and ErrResourceAccessDenied are defined in metadata_service.go
+// Note: access policy and ErrEngineAccessDenied are defined in metadata_service.go

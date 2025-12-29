@@ -106,12 +106,12 @@ func (p *commandPreviewProvider) Priority() int {
 }
 
 func (p *commandPreviewProvider) Supports(req *PreviewRequest) bool {
-	if req == nil || req.Resource == nil {
+	if req == nil || req.Engine == nil {
 		return false
 	}
 
 	if len(p.resourceSet) > 0 {
-		if _, ok := p.resourceSet[sanitizeResourceType(req.Resource.EngineType)]; !ok {
+		if _, ok := p.resourceSet[sanitizeResourceType(req.Engine.EngineType)]; !ok {
 			return false
 		}
 	}
@@ -127,7 +127,7 @@ func (p *commandPreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	decrypted, err := p.metadataRepo.DecryptConnectionInfo(req.Resource.ConnectionInfo)
+	decrypted, err := p.metadataRepo.DecryptConnectionInfo(req.Engine.ConnectionInfo)
 	if err != nil {
 		return nil, fmt.Errorf("plugin %s failed to decrypt connection info: %w", p.Name(), err)
 	}
@@ -139,11 +139,11 @@ func (p *commandPreviewProvider) Preview(ctx context.Context, req *PreviewReques
 		"page_size": req.PageSize,
 		"mode":      req.Mode(),
 		"resource": map[string]interface{}{
-			"id":              req.Resource.ID,
-			"name":            req.Resource.Name,
-			"resource_type":   req.Resource.EngineType,
+			"id":              req.Engine.ID,
+			"name":            req.Engine.Name,
+			"resource_type":   req.Engine.EngineType,
 			"connection_info": decrypted,
-			"description":     req.Resource.Description,
+			"description":     req.Engine.Description,
 		},
 	}
 

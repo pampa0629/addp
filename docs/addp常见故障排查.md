@@ -91,7 +91,7 @@ export function createAPIClient(getAuthStore, options = {}) {
 
 检查后端代码发现：
 - **PreviewTable API**（`/api/data-explorer/preview`）：直接返回数据对象，无 `{data: ...}` 包装
-- **ListResources API**（`/api/data-explorer/resources`）：返回 `{data: resources}` 格式
+- **ListEngines API**（`/api/data-explorer/engines`）：返回 `{data: engines}` 格式
 - **GetTree API**（`/api/data-explorer/tree`）：返回 `{data: tree}` 格式
 
 因此 **只需修改预览 API 的调用**，资源列表和树接口保持原样。
@@ -107,7 +107,7 @@ const response = await dataExplorerAPI.getPreview(params)
 ```
 
 **不需要修改的地方**（保持 `.data` 访问）：
-- 第 376 行：`response.data` ✅ 正确（ListResources 返回 `{data: ...}`）
+- 第 376 行：`response.data` ✅ 正确（ListEngines 返回 `{data: ...}`）
 - 第 476 行：`response.data` ✅ 正确（GetTree 返回 `{data: ...}`）
 
 #### 验证方法
@@ -148,7 +148,7 @@ const response = await dataExplorerAPI.getPreview(params)
    ```typescript
    // 类型定义明确返回值
    function getPreview(params): Promise<TablePreview>  // 直接返回数据
-   function getResources(): Promise<{data: Resource[]}>  // 包装格式
+   function getEngines(): Promise<{data: Engine[]}>  // 包装格式
    ```
 
 #### 相关问题

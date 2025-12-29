@@ -287,7 +287,7 @@ import "github.com/hibiken/asynq"
 type SQLExecutionPayload struct {
     QueryID  uint   `json:"query_id"`
     SQL      string `json:"sql"`
-    ResourceID uint `json:"resource_id"`
+    EngineID uint `json:"engine_id"`
 }
 
 // 任务处理器
@@ -296,7 +296,7 @@ func HandleSQLExecution(ctx context.Context, task *asynq.Task) error {
     json.Unmarshal(task.Payload(), &payload)
 
     // 执行 SQL
-    results, err := executionService.Execute(payload.ResourceID, payload.SQL)
+    results, err := executionService.Execute(payload.EngineID, payload.SQL)
 
     // 保存结果到数据库
     return queryRepository.SaveResults(payload.QueryID, results)
@@ -404,7 +404,7 @@ CREATE TABLE develop.scripts (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     sql_content TEXT NOT NULL,
-    resource_id INTEGER NOT NULL REFERENCES system.resources(id), -- 目标数据库
+    engine_id INTEGER NOT NULL REFERENCES system.engines(id), -- 目标引擎
     version INTEGER DEFAULT 1,
     status VARCHAR(20) DEFAULT 'draft',  -- draft, published, archived
     created_by INTEGER NOT NULL REFERENCES system.users(id),
@@ -430,7 +430,7 @@ CREATE TABLE develop.script_versions (
 CREATE TABLE develop.executions (
     id SERIAL PRIMARY KEY,
     script_id INTEGER REFERENCES develop.scripts(id),
-    resource_id INTEGER NOT NULL,
+    engine_id INTEGER NOT NULL,
     sql_content TEXT NOT NULL,
     status VARCHAR(20) NOT NULL,  -- running, success, failed
     rows_affected INTEGER,
@@ -472,7 +472,7 @@ Authorization: Bearer <token>
 
 Request:
 {
-  "resource_id": 123,
+  "engine_id": 123,
   "sql": "SELECT * FROM users LIMIT 10",
   "timeout": 30000  // 毫秒
 }
@@ -498,7 +498,7 @@ POST /api/develop/scripts
   "name": "用户统计查询",
   "description": "按月统计活跃用户数",
   "sql_content": "SELECT DATE_TRUNC('month', created_at) as month, COUNT(*) FROM users GROUP BY month",
-  "resource_id": 123
+  "engine_id": 123
 }
 
 # 列表脚本

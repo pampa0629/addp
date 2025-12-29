@@ -2,7 +2,7 @@
   <div class="data-explorer">
     <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
       <!-- 左侧引擎树 -->
-      <ResourceTree
+      <EngineTree
         :engines="engines"
         :tree-data="treeData"
         :loading="loadingTree"
@@ -36,7 +36,7 @@
 import { ref, onMounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import ResourceTree from '@/components/explorer/ResourceTree.vue'
+import EngineTree from '@/components/explorer/EngineTree.vue'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@/composables/useResizable'

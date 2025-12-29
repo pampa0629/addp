@@ -56,7 +56,7 @@ type TileConfigResponse struct {
 // - srid: 数据的坐标系
 func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	// 1. 解析参数
-	resourceIDStr := c.Param("id")
+	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id parameter"})

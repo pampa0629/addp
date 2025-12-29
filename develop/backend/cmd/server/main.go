@@ -81,13 +81,13 @@ func main() {
 	devItemHandler := api.NewDevItemHandler(devItemService)
 	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
-	resourceHandler := api.NewResourceHandler(systemClient)
+	engineHandler := api.NewEngineHandler(systemClient)
 	sqlHandler := api.NewSQLHandler(sqlEngine, devItemService)
 	notebookHandler := api.NewNotebookHandler(jupyterService)
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, resourceHandler, sqlHandler, notebookHandler, devItemService)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, sqlHandler, notebookHandler, devItemService)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

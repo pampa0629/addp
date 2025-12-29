@@ -33,12 +33,12 @@ import (
 
 var (
 	ErrSystemIntegrationDisabled = errors.New("system integration not available")
-	ErrResourceAccessDenied      = errors.New("resource not accessible")
+	ErrEngineAccessDenied        = errors.New("engine not accessible")
 )
 
-// resourceCacheEntry 缓存条目，包含资源和过期时间
-type resourceCacheEntry struct {
-	resource  *commonModels.Engine
+// engineCacheEntry 缓存条目，包含引擎和过期时间
+type engineCacheEntry struct {
+	engine    *commonModels.Engine
 	expiresAt time.Time
 }
 
@@ -49,9 +49,9 @@ type LocalEngineService struct {
 	logger          *slog.Logger
 	cfg             *config.Config
 	cacheMu         sync.RWMutex
-	resourceCache   map[uint]*resourceCacheEntry
+	engineCache     map[uint]*engineCacheEntry
 	cacheTTL        time.Duration // 缓存生存时间，默认 2 分钟（Transfer 使用较短TTL）
-	eventSubscriber *events.ResourceEventSubscriber
+	eventSubscriber *events.EngineEventSubscriber
 }
 
 // NewLocalEngineService 创建 Service
@@ -66,13 +66,13 @@ func NewLocalEngineService(db *gorm.DB, cfg *config.Config, redisClient *redis.C
 		systemClient:  systemClient,
 		logger:        commonLogger.With("component", "local_engine_service"),
 		cfg:           cfg,
-		resourceCache: make(map[uint]*resourceCacheEntry),
+		engineCache:   make(map[uint]*engineCacheEntry),
 		cacheTTL:      2 * time.Minute, // Transfer 使用 2 分钟 TTL
 	}
 
 	// 初始化 Redis 事件订阅器
 	if redisClient != nil {
-		service.eventSubscriber = events.NewResourceEventSubscriber(
+		service.eventSubscriber = events.NewEngineEventSubscriber(
 			redisClient,
 			service.handleResourceChangeEvent,
 			service.logger,
@@ -146,14 +146,14 @@ func (s *LocalEngineService) GetSystemResource(engineID, tenantID uint) (*common
 
 	// 检查缓存
 	s.cacheMu.RLock()
-	entry, ok := s.resourceCache[engineID]
+	entry, ok := s.engineCache[engineID]
 	s.cacheMu.RUnlock()
 
 	// 如果缓存命中且未过期，返回缓存数据
-	if ok && entry != nil && entry.resource != nil && time.Now().Before(entry.expiresAt) {
-		if tenantID == 0 || (entry.resource.TenantID != nil && *entry.resource.TenantID == tenantID) {
-			resourceCopy := *entry.resource
-			s.logger.Debug("资源连接信息命中缓存",
+	if ok && entry != nil && entry.engine != nil && time.Now().Before(entry.expiresAt) {
+		if tenantID == 0 || (entry.engine.TenantID != nil && *entry.engine.TenantID == tenantID) {
+			resourceCopy := *entry.engine
+			s.logger.Debug("引擎连接信息命中缓存",
 				"engine_id", engineID,
 				"expires_in_seconds", int(time.Until(entry.expiresAt).Seconds()),
 			)
@@ -168,7 +168,7 @@ func (s *LocalEngineService) GetSystemResource(engineID, tenantID uint) (*common
 	}
 
 	if resource.TenantID != nil && *resource.TenantID != 0 && *resource.TenantID != tenantID {
-		return nil, ErrResourceAccessDenied
+		return nil, ErrEngineAccessDenied
 	}
 
 	// 更新缓存
@@ -795,8 +795,8 @@ func (s *LocalEngineService) cacheResource(resource *commonModels.Engine) {
 	}
 	resourceCopy := *resource
 	s.cacheMu.Lock()
-	s.resourceCache[resourceCopy.ID] = &resourceCacheEntry{
-		resource:  &resourceCopy,
+	s.engineCache[resourceCopy.ID] = &engineCacheEntry{
+		engine:    &resourceCopy,
 		expiresAt: time.Now().Add(s.cacheTTL),
 	}
 	s.cacheMu.Unlock()
@@ -840,42 +840,42 @@ func removeMetaFields(connInfo models.JSONMap) {
 	delete(connInfo, "_has_secret_key")
 }
 
-// ClearCache 清除所有资源缓存
+// ClearCache 清除所有引擎缓存
 func (s *LocalEngineService) ClearCache() {
 	s.cacheMu.Lock()
-	s.resourceCache = make(map[uint]*resourceCacheEntry)
+	s.engineCache = make(map[uint]*engineCacheEntry)
 	s.cacheMu.Unlock()
-	s.logger.Info("资源缓存已清除")
+	s.logger.Info("引擎缓存已清除")
 }
 
-// ClearResourceCache 清除指定资源的缓存
-func (s *LocalEngineService) ClearResourceCache(engineID uint) {
+// ClearEngineCache 清除指定引擎的缓存
+func (s *LocalEngineService) ClearEngineCache(engineID uint) {
 	s.cacheMu.Lock()
-	delete(s.resourceCache, engineID)
+	delete(s.engineCache, engineID)
 	s.cacheMu.Unlock()
-	s.logger.Info("资源缓存已清除", "engine_id", engineID)
+	s.logger.Info("引擎缓存已清除", "engine_id", engineID)
 }
 
-// handleResourceChangeEvent 处理资源变更事件（Redis 订阅回调）
-func (s *LocalEngineService) handleResourceChangeEvent(event events.ResourceChangeEvent) error {
-	s.logger.Info("收到资源变更事件",
+// handleEngineChangeEvent 处理引擎变更事件（Redis 订阅回调）
+func (s *LocalEngineService) handleResourceChangeEvent(event events.EngineChangeEvent) error {
+	s.logger.Info("收到引擎变更事件",
 		"engine_id", event.EngineID,
 		"action", event.Action,
 		"timestamp", event.Timestamp)
 
 	switch event.Action {
 	case events.ActionCreate:
-		// 资源创建：不需要特殊处理，等待下次访问时自动加载
-		s.logger.Debug("资源已创建，等待首次访问时加载", "engine_id", event.EngineID)
+		// 引擎创建：不需要特殊处理，等待下次访问时自动加载
+		s.logger.Debug("引擎已创建，等待首次访问时加载", "engine_id", event.EngineID)
 
 	case events.ActionUpdate:
-		// 资源更新：清除缓存，强制下次访问时重新获取
-		s.ClearResourceCache(event.EngineID)
-		s.logger.Info("资源已更新，缓存已清除", "engine_id", event.EngineID)
+		// 引擎更新：清除缓存，强制下次访问时重新获取
+		s.ClearEngineCache(event.EngineID)
+		s.logger.Info("引擎已更新，缓存已清除", "engine_id", event.EngineID)
 
 	case events.ActionDelete:
-		// 资源删除：清除缓存
-		s.ClearResourceCache(event.EngineID)
+		// 引擎删除：清除缓存
+		s.ClearEngineCache(event.EngineID)
 		s.logger.Info("资源已删除，缓存已清除", "engine_id", event.EngineID)
 
 	default:
