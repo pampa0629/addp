@@ -341,7 +341,14 @@
       "Bash(git -C /Users/pampa/code/addp log --name-status --oneline)",
       "Bash(echo \"=== 验证 res_id / ResID ===\" grep -r \"\\\\bres_id\\\\b\\\\|\\\\bResID\\\\b\" --include=\"*.go\" --include=\"*.sql\" /Users/pampa/code/addp)",
       "Bash(wc -l echo \"\" echo \"=== 验证 resource_id \\(代码文件\\) ===\" grep -r \"resource_id\" --include=\"*.go\" --include=\"*.vue\" --include=\"*.js\" /Users/pampa/code/addp)",
-      "Bash(wc -l echo \"\" echo \"=== 验证 engine_id 已存在 ===\" grep -r \"\\\\bengine_id\\\\b\\\\|\\\\bEngineID\\\\b\" --include=\"*.go\" /Users/pampa/code/addp/meta/backend/internal --include=\"*.go\")"
+      "Bash(wc -l echo \"\" echo \"=== 验证 engine_id 已存在 ===\" grep -r \"\\\\bengine_id\\\\b\\\\|\\\\bEngineID\\\\b\" --include=\"*.go\" /Users/pampa/code/addp/meta/backend/internal --include=\"*.go\")",
+      "Bash(docker --version:*)",
+      "Bash(scripts/infra/)",
+      "Bash(bash scripts/infra/down.sh:*)",
+      "Bash(time bash:*)",
+      "Bash(bash scripts/infra/push-postgres-image.sh:*)",
+      "Bash(docker image ls:*)",
+      "Bash(docker manifest inspect:*)"
     ],
     "deny": [],
     "ask": []

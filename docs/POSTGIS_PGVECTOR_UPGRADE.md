@@ -7,15 +7,19 @@ ADDP系统PostgreSQL已升级为PostGIS镜像,并添加pgvector扩展支持,实�
 - ✅ **PostGIS 空间数据支持** - geometry/geography类型,空间索引,空间函数
 - ✅ **pgvector 向量嵌入支持** - vector类型,相似度搜索,多模态AI应用
 - ✅ **多架构支持** - ARM64和AMD64自动选择合适镜像
+- ✅ **预构建镜像** - 无需每次构建，秒级启动（2025-12-29 新增）
 
 ## 镜像版本
 
-### ADDP 系统数据库 (docker-compose.yml)
+### ADDP 系统数据库 (docker-compose.infra.yml)
 
-| 架构 | 镜像 | PostGIS | pgvector |
-|------|------|---------|----------|
-| ARM64 | `imresamu/postgis-arm64:15-3.4` | ✅ 预装 | ✅ 脚本安装 |
-| AMD64 | `postgis/postgis:15-3.4` | ✅ 预装 | ✅ 脚本安装 |
+| 架构 | 镜像来源 | PostGIS | pgvector | 构建时间 |
+|------|---------|---------|----------|----------|
+| ARM64 | `addp-postgres-pgvector:latest` (本地) | ✅ 预装 | ✅ 预装 v0.8.0 | **秒级** ⚡ |
+| ARM64 | `pampa0629/addp-postgres:15-arm64` (Docker Hub) | ✅ 预装 | ✅ 预装 v0.8.0 | **秒级** ⚡ |
+| AMD64 | `postgis/postgis:15-3.4` + 编译 | ✅ 预装 | ✅ 编译安装 | 2-3分钟 |
+
+**推荐使用预构建镜像**（已在 docker-compose.infra.yml 中配置）。
 
 ### 业务数据库 (business/docker-compose.yml)
 
@@ -26,32 +30,53 @@ ADDP系统PostgreSQL已升级为PostGIS镜像,并添加pgvector扩展支持,实�
 
 ## 使用方法
 
-### 1. 重启系统基础设施 (启用PostGIS + pgvector)
+### 1. 直接启动（推荐 - 使用预构建镜像）
 
 ```bash
-# 方法1: 使用集成脚本 (推荐)
+# 使用本地预构建镜像，无需构建（秒级启动）
 cd ~/code/addp
-./scripts/infra-restart.sh
-
-# 方法2: 使用Makefile
-make infra-restart
+bash scripts/infra/up.sh
 ```
 
-该脚本会自动:
-1. 检测CPU架构 (ARM64/AMD64)
-2. 拉取对应的PostGIS镜像
-3. 停止并清理旧容器/镜像
-4. 启动PostgreSQL容器
-5. 安装pgvector扩展
+**说明**: docker-compose.infra.yml 已配置使用本地预构建镜像 `addp-postgres-pgvector:latest`，启动时无需重新构建。
 
-### 2. 重启业务库 (仅启用PostGIS)
+### 2. 重新构建镜像（仅在需要时）
 
 ```bash
-cd ~/code/addp/business
-./scripts/restart.sh
+# 仅在需要更新 pgvector 版本或修改 Dockerfile 时执行
+docker build \
+  -f scripts/infra/Dockerfile.postgres \
+  --build-arg POSTGRES_BASE_IMAGE=imresamu/postgis-arm64:15-3.4 \
+  -t addp-postgres-pgvector:latest \
+  scripts/infra/
 ```
 
-### 3. 验证扩展安装
+### 3. 推送镜像到 Docker Hub（可选）
+
+```bash
+# 等网络稳定时执行（带自动重试机制）
+bash scripts/infra/push-postgres-image.sh
+```
+
+该脚本会：
+- 自动检测系统架构（ARM64/AMD64）
+- 打标签为 `pampa0629/addp-postgres:15-arm64` 和 `pampa0629/addp-postgres:latest-arm64`
+- 推送到 Docker Hub（失败时自动重试最多 5 次）
+
+### 4. 从 Docker Hub 拉取（其他用户或新环境）
+
+```bash
+# 拉取预构建镜像
+docker pull pampa0629/addp-postgres:15-arm64
+
+# 重新标记为本地镜像
+docker tag pampa0629/addp-postgres:15-arm64 addp-postgres-pgvector:latest
+
+# 启动基础设施
+bash scripts/infra/up.sh
+```
+
+### 5. 验证扩展安装
 
 ```bash
 # 查看已安装扩展
@@ -289,6 +314,12 @@ docker pull --platform=linux/arm64 imresamu/postgis-arm64:15-3.4
 - [向量相似度搜索最佳实践](https://github.com/pgvector/pgvector#best-practices)
 
 ## 更新日志
+
+- **2025-12-29**: 预构建镜像优化
+  - 创建预构建镜像 `addp-postgres-pgvector:latest`（PostGIS + pgvector v0.8.0）
+  - 修改 docker-compose.infra.yml 使用预构建镜像，启动时间从 2-3 分钟降至秒级 ⚡
+  - 新增 `scripts/infra/push-postgres-image.sh` 推送脚本（带自动重试机制）
+  - Docker Hub 镜像: `pampa0629/addp-postgres:15-arm64`
 
 - **2025-01-07**: 初始版本
   - ADDP系统PostgreSQL升级为PostGIS镜像 (ARM64: imresamu, AMD64: postgis官方)
