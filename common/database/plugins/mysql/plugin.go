@@ -44,7 +44,7 @@ func (p *MySQLPlugin) SensitiveFields() []string {
 }
 
 func (p *MySQLPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
+	return `{"storage":[{"type":"relational_db","engine":"mysql","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"SQL查询"}]}`
 }
 
 func (p *MySQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

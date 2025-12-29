@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/addp/common/models"
+	commonutils "github.com/addp/common/utils"
 )
 
 // SystemClient 系统服务客户端
@@ -392,8 +393,18 @@ func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Engine, e
 }
 
 // ListSQLQueryEngines 快捷方法：获取所有支持 SQL 查询的引擎（开发模块使用）
+// 改用 dev_modes 过滤，不再依赖 compute.type
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, nil, []string{"sql_query"})
+	// 1. 获取所有关系型数据库引擎
+	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db"}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. 过滤出支持 "sql" 开发模式的引擎
+	sqlEngines := commonutils.FilterEnginesByDevMode(allEngines, "sql")
+
+	return sqlEngines, nil
 }
 
 // ================ TaskProvider 相关方法（新增） ================

@@ -7,7 +7,19 @@
       "Bash(bash:*)",
       "Bash(open -a Docker:*)",
       "Bash(docker info:*)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(time bash:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker inspect:*)",
+      "Bash(go build:*)",
+      "Bash(curl:*)",
+      "Bash(while read file)",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(sort:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjcwMzk1ODAsImlhdCI6MTc2NzAyODc4MH0.kqs6eTGuzpXFkKBcdmdLNmLQ3Y8WYuYxpUnXax86Q5k\")",
+      "Bash(go run:*)"
     ],
     "deny": [],
     "ask": []

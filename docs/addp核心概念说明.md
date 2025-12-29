@@ -221,18 +221,14 @@ ADDP 采用基于 Docker 的微服务架构:
 ```
 
 **计算类型** (`compute.type`):
-- `sql_query`: SQL 查询计算
-- `spatial`: 空间数据分析
-- `scan`: 元数据扫描
-- `transfer.import`: 数据导入
-- `transfer.export`: 数据导出
-- `transfer.sync`: 数据同步
+- **已废弃**: 该字段已不再使用，保留仅为向后兼容
+- 新代码应使用 `dev_modes` 字段标识开发方式
 
 **开发方式** (`dev_modes`):
-- `sql`: SQL 脚本开发
-- `workflow`: 可视化工作流
-- `form`: 表单配置
-- `script`: 脚本编程
+- `sql`: SQL 脚本开发（数据库引擎）
+- `workflow`: 可视化工作流（计算引擎）
+- `form`: 表单配置（任务提供者）
+- `javascript`: 脚本编程（MongoDB）
 
 **示例**:
 
@@ -240,7 +236,7 @@ PostgreSQL 引擎:
 ```json
 {
   "storage": [{"type": "relational_db"}],
-  "compute": [{"type": "sql_query", "dev_modes": ["sql"]}]
+  "compute": [{"dev_modes": ["sql"], "description": "SQL查询"}]
 }
 ```
 
@@ -248,10 +244,10 @@ GeoPandas 引擎:
 ```json
 {
   "compute": [{
-    "type": "spatial",
     "dev_modes": ["workflow"],
     "supported_formats": ["geojson", "wkt", "shapely"],
-    "features": ["dag", "memory_efficient", "batch"]
+    "features": ["dag", "memory_efficient", "batch"],
+    "description": "空间数据分析"
   }]
 }
 ```

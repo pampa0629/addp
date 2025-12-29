@@ -29,26 +29,25 @@ if [ -f ./.env ]; then
 fi
 
 # Detect CPU architecture and set PostgreSQL image
+# Note: docker-compose.infra.yml has default value, only override if needed for compatibility
 if [ -z "${POSTGRES_IMAGE:-}" ]; then
     ARCH=$(uname -m)
     case "${ARCH}" in
         x86_64)
-            export POSTGRES_IMAGE="postgis/postgis:15-3.4"
+            # AMD64: 暂无预构建镜像，需要本地构建
+            export POSTGRES_IMAGE="addp-postgres-pgvector:latest"
+            echo -e "${YELLOW}🏗️  检测到 AMD64 架构${NC}"
+            echo -e "${YELLOW}    如需使用，请先构建本地镜像: docker build -f scripts/infra/Dockerfile.postgres -t addp-postgres-pgvector:latest scripts/infra/${NC}"
             ;;
         aarch64|arm64)
-            export POSTGRES_IMAGE="imresamu/postgis-arm64:15-3.4"
-            ;;
-        armv7l)
-            export POSTGRES_IMAGE="postgis/postgis:15-3.4"  # Fallback to AMD64
+            # ARM64: 使用 Docker Hub 预构建镜像
+            export POSTGRES_IMAGE="pampa0629/addp-postgres:15-arm64"
+            echo -e "${YELLOW}🏗️  检测到 ARM64 架构，使用预构建镜像: ${POSTGRES_IMAGE}${NC}"
             ;;
         *)
-            echo -e "${YELLOW}⚠️  Unknown architecture ${ARCH}, using default image${NC}"
+            echo -e "${YELLOW}⚠️  未知架构 ${ARCH}，使用默认镜像${NC}"
             ;;
     esac
-
-    if [ -n "${POSTGRES_IMAGE:-}" ]; then
-        echo -e "${YELLOW}🏗️  Auto-detected PostgreSQL image: ${POSTGRES_IMAGE}${NC}"
-    fi
 fi
 
 # Ensure DOCKER_DEFAULT_PLATFORM is set (inherited from infra-restart.sh or default)

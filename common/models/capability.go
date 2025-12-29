@@ -14,10 +14,11 @@ type StorageCapability struct {
 
 // ComputeCapability 计算能力
 type ComputeCapability struct {
-	Type             string   `json:"type"`                         // scan, transfer.batch, cache.tile, transform, etc.
+	Type             string   `json:"type,omitempty"`               // 已废弃：仅为向后兼容保留，新代码不应使用此字段
 	SupportedSources []string `json:"supported_sources,omitempty"`  // postgresql, mysql, s3, minio, etc.
 	Features         []string `json:"features,omitempty"`           // incremental, scheduled, parallel, async, retry, etc.
-	DevModes         []string `json:"dev_modes,omitempty"`          // 支持的开发方式: sql, workflow, form, script
+	DevModes         []string `json:"dev_modes,omitempty"`          // 推荐：使用此字段标识开发方式 (sql, workflow, form, script)
+	Description      string   `json:"description,omitempty"`        // 能力描述
 }
 
 // TaskAPIConfig 任务 API 配置（用于动态调用）

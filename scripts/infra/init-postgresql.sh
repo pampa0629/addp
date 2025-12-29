@@ -56,7 +56,7 @@ fi
 DB_USER="${POSTGRES_USER:-addp}"
 DB_PASSWORD="${POSTGRES_PASSWORD:-addp_password}"
 DB_NAME="${POSTGRES_DB:-addp}"
-CONTAINER_NAME="postgres"
+CONTAINER_NAME="addp-postgres"
 
 SKIP_EXTENSIONS=false
 SKIP_HBA=false

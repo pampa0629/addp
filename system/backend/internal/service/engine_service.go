@@ -772,19 +772,19 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	switch engineTypeLower {
 	// API引擎 - 内置模块
 	case "api.meta":
-		return `{"compute":[{"type":"scan","dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"]}]}`
+		return `{"compute":[{"dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"],"description":"元数据扫描"}]}`
 
 	case "api.transfer":
-		return `{"compute":[{"type":"transfer.batch","dev_modes":["workflow","form"],"features":["incremental","scheduled","parallel"]}]}`
+		return `{"compute":[{"dev_modes":["workflow","form"],"features":["incremental","scheduled","parallel"],"description":"批量数据传输"}]}`
 
 	case "api.manager":
-		return `{"compute":[{"type":"tile_cache","dev_modes":["workflow","form"],"supported_formats":["mvt","pbf"],"features":["pre_cache","on_demand"]}]}`
+		return `{"compute":[{"dev_modes":["workflow","form"],"supported_formats":["mvt","pbf"],"features":["pre_cache","on_demand"],"description":"MVT瓦片缓存"}]}`
 
 	case "api.geopandas":
-		return `{"compute":[{"type":"spatial","dev_modes":["workflow"],"supported_formats":["geojson","wkt","shapely"],"features":["dag","memory_efficient","batch"]}]}`
+		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","shapely"],"features":["dag","memory_efficient","batch"],"description":"空间数据分析"}]}`
 
 	case "api.spark_sedona":
-		return `{"compute":[{"type":"spatial","dev_modes":["workflow"],"engine":"sedona","scale":"distributed","features":["big_data","distributed"]}]}`
+		return `{"compute":[{"dev_modes":["workflow"],"engine":"sedona","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
 
 	default:
 		// 未知类型，生成通用 storage 能力

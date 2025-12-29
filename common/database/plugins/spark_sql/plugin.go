@@ -45,7 +45,7 @@ func (p *SparkSQLPlugin) SensitiveFields() []string {
 }
 
 func (p *SparkSQLPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"type":"sql_query","description":"Spark SQL查询","dev_modes":["sql"],"features":["distributed","big_data"]}]}`
+	return `{"compute":[{"dev_modes":["sql"],"description":"Spark SQL查询","features":["distributed","big_data"]}]}`
 }
 
 func (p *SparkSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

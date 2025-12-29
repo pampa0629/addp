@@ -163,7 +163,8 @@ func (p *<DBType>Plugin) SensitiveFields() []string {
 }
 
 func (p *<DBType>Plugin) GenerateCapabilities() string {
-    return `{"storage":[{"type":"relational_db","engine":"<dbtype>","supports_query":true}],"compute":[{"type":"sql_query","description":"SQL查询","dev_modes":["sql"]}]}`
+    // compute 中不需要 "type" 字段，使用 dev_modes 标识开发方式
+    return `{"storage":[{"type":"relational_db","engine":"<dbtype>","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"SQL查询"}]}`
 }
 
 func (p *<DBType>Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
