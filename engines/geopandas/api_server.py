@@ -386,10 +386,10 @@ def register_to_system():
         "is_builtin": True,
         "capabilities": {
             "compute": [{
-                "type": "spatial",
                 "dev_modes": ["workflow"],
                 "supported_formats": ["geojson", "wkt", "shapely"],
-                "features": ["dag", "memory_efficient", "batch"]
+                "features": ["dag", "memory_efficient", "batch"],
+                "description": "基于 GeoPandas 的空间数据处理引擎"
             }]
         },
         "task_api_config": {

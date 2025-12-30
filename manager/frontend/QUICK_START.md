@@ -20,7 +20,7 @@ npm run dev
 
 ### 2. 查看效果
 
-旧版本已备份为 `DataExplorer_old.vue`,新版本已生效!
+DataExplorer 重构版本已上线，采用模块化组件系统！
 
 ---
 

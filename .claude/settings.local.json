@@ -19,7 +19,15 @@
       "Bash(done)",
       "Bash(sort:*)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjcwMzk1ODAsImlhdCI6MTc2NzAyODc4MH0.kqs6eTGuzpXFkKBcdmdLNmLQ3Y8WYuYxpUnXax86Q5k\")",
-      "Bash(go run:*)"
+      "Bash(go run:*)",
+      "Bash(/Users/pampa/code/addp/portal/frontend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/transfer/frontend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/transfer/backend/plugins/writers/jdbc_writer.go.bak )",
+      "Bash(/Users/pampa/code/addp/meta/frontend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/meta/backend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/manager/frontend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/system/frontend/Dockerfile.bak )",
+      "Bash(/Users/pampa/code/addp/nginx/Dockerfile.bak)"
     ],
     "deny": [],
     "ask": []

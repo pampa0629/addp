@@ -366,82 +366,12 @@ func (s *EngineService) ListInternalWithCapability(tenantID uint, filter commonu
 	}
 
 	// 2. 空过滤器返回所有资源
-	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
+	if len(filter.StorageTypes) == 0 {
 		return allResources, nil
 	}
 
-	// 3. 逐个资源进行能力匹配
-	var filtered []models.Engine
-	for _, engine := range allResources {
-		if s.matchesCapabilityFilter(&engine, filter) {
-			filtered = append(filtered, engine)
-		}
-	}
-
-	return filtered, nil
-}
-
-// matchesCapabilityFilter 检查资源是否匹配能力过滤器
-func (s *EngineService) matchesCapabilityFilter(engine *models.Engine, filter commonutils.CapabilityFilter) bool {
-	// 解析 capabilities
-	cap, err := commonutils.ParseCapabilities(engine.Capabilities)
-	if err != nil || cap == nil {
-		return false
-	}
-
-	// 检查存储能力匹配
-	matchesStorage := false
-	if len(filter.StorageTypes) > 0 {
-		for _, storage := range cap.Storage {
-			for _, targetType := range filter.StorageTypes {
-				if storage.Type == targetType {
-					matchesStorage = true
-					break
-				}
-			}
-			if matchesStorage {
-				break
-			}
-		}
-	} else {
-		matchesStorage = true // 空过滤器匹配所有
-	}
-
-	// 检查计算能力匹配
-	matchesCompute := false
-	if len(filter.ComputeTypes) > 0 {
-		for _, compute := range cap.Compute {
-			for _, targetType := range filter.ComputeTypes {
-				if compute.Type == targetType {
-					matchesCompute = true
-					break
-				}
-			}
-			if matchesCompute {
-				break
-			}
-		}
-	} else {
-		matchesCompute = true // 空过滤器匹配所有
-	}
-
-	// 根据 RequireBoth 标志决定逻辑
-	if filter.RequireBoth {
-		// AND 逻辑：必须同时满足
-		return matchesStorage && matchesCompute
-	}
-
-	// OR 逻辑：满足任一即可
-	if len(filter.StorageTypes) > 0 && len(filter.ComputeTypes) > 0 {
-		return matchesStorage || matchesCompute
-	}
-
-	// 只有一种过滤条件
-	if len(filter.StorageTypes) > 0 {
-		return matchesStorage
-	}
-
-	return matchesCompute
+	// 3. 使用通用过滤器进行能力匹配
+	return commonutils.FilterEnginesByCapability(allResources, filter), nil
 }
 
 // GetByIDInternal 内部服务直接访问资源详情（返回解密信息）

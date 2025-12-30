@@ -278,10 +278,10 @@ def register_to_system():
         "is_builtin": True,
         "capabilities": {
             "compute": [{
-                "type": "spatial",
                 "dev_modes": ["workflow"],
                 "supported_formats": ["dataframe", "sql"],
-                "features": ["dag", "distributed", "lakehouse", "large_scale"]
+                "features": ["dag", "distributed", "lakehouse", "large_scale"],
+                "description": "基于 Spark Sedona 的分布式空间计算引擎"
             }]
         },
         "task_api_config": {

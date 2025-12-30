@@ -1147,6 +1147,24 @@ func (s *ScanTaskService) DeleteTaskByResourceID(engineID uint) error {
 }
 
 // buildCronExpressionFromScanConfig 根据 ScanConfig 构建 Cron 表达式
+// parseScheduleTime 解析时间字符串 "HH:mm" 返回小时和分钟
+// 如果解析失败，返回默认值 0, 0
+func parseScheduleTime(scheduleTime string) (hour, minute int) {
+	if scheduleTime == "" {
+		return 0, 0
+	}
+	parts := strings.Split(scheduleTime, ":")
+	if len(parts) == 2 {
+		if h, err := strconv.Atoi(parts[0]); err == nil {
+			hour = h
+		}
+		if m, err := strconv.Atoi(parts[1]); err == nil {
+			minute = m
+		}
+	}
+	return hour, minute
+}
+
 func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels.ScanConfig) (string, error) {
 	if config == nil {
 		return "", errors.New("扫描配置为空")
@@ -1168,34 +1186,12 @@ func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels
 
 	case "daily":
 		// 每日执行：从 schedule_time 解析 HH:mm
-		hour, minute := 0, 0
-		if config.ScheduleTime != "" {
-			parts := strings.Split(config.ScheduleTime, ":")
-			if len(parts) == 2 {
-				if h, err := strconv.Atoi(parts[0]); err == nil {
-					hour = h
-				}
-				if m, err := strconv.Atoi(parts[1]); err == nil {
-					minute = m
-				}
-			}
-		}
+		hour, minute := parseScheduleTime(config.ScheduleTime)
 		return fmt.Sprintf("%d %d * * *", minute, hour), nil
 
 	case "weekly":
 		// 每周执行：从 schedule_time 解析 HH:mm，从 schedule_value 获取星期几
-		hour, minute := 0, 0
-		if config.ScheduleTime != "" {
-			parts := strings.Split(config.ScheduleTime, ":")
-			if len(parts) == 2 {
-				if h, err := strconv.Atoi(parts[0]); err == nil {
-					hour = h
-				}
-				if m, err := strconv.Atoi(parts[1]); err == nil {
-					minute = m
-				}
-			}
-		}
+		hour, minute := parseScheduleTime(config.ScheduleTime)
 		days := "0" // 默认周日
 		if len(config.ScheduleValue) > 0 {
 			dayStrs := make([]string, len(config.ScheduleValue))
@@ -1208,18 +1204,7 @@ func (s *ScanTaskService) buildCronExpressionFromScanConfig(config *commonModels
 
 	case "monthly":
 		// 每月执行：从 schedule_time 解析 HH:mm，从 schedule_value 获取日期
-		hour, minute := 0, 0
-		if config.ScheduleTime != "" {
-			parts := strings.Split(config.ScheduleTime, ":")
-			if len(parts) == 2 {
-				if h, err := strconv.Atoi(parts[0]); err == nil {
-					hour = h
-				}
-				if m, err := strconv.Atoi(parts[1]); err == nil {
-					minute = m
-				}
-			}
-		}
+		hour, minute := parseScheduleTime(config.ScheduleTime)
 		dates := "1" // 默认每月1号
 		if len(config.ScheduleValue) > 0 {
 			dateStrs := make([]string, len(config.ScheduleValue))

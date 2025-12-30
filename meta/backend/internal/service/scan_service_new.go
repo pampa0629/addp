@@ -1169,6 +1169,26 @@ func (s *ScanServiceNew) scanObjectStorageResourceWithReporter(resource *commonM
 	return buckets, objects, 0, nil
 }
 
+// scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）
+//
+// 职责划分：
+// 1. Bucket节点管理：创建/更新Bucket节点
+// 2. 对象迭代：扫描指定路径下的所有对象
+// 3. 元数据持久化：调用persistObjectMetas批量保存对象元数据
+// 4. 去重处理：使用fingerprints避免重复扫描
+// 5. 清理过期数据：软删除已移除的对象
+// 6. 统计聚合：统计对象数量和总大小
+//
+// 参数：
+//   - resource: 数据源引擎配置
+//   - tenantID: 租户ID
+//   - engineID: 引擎ID
+//   - objectScanner: 对象存储扫描器插件
+//   - paths: 要扫描的路径列表（如 ["bucket1", "bucket2/path"]）
+//   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
+//   - reporter: 进度报告器
+//
+// 返回：(对象数量, 错误数量, error)
 func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Engine, tenantID, engineID uint, objectScanner plugins.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
 	s.log.Info("🔍 进入scanObjectStoragePaths函数",
 		"engine_id", engineID,
@@ -1405,6 +1425,28 @@ func (s *ScanServiceNew) scanObjectStoragePaths(resource *commonModels.Engine, t
 	return totalBuckets, totalObjects, nil
 }
 
+// persistObjectMetas 持久化对象元数据到数据库
+//
+// 职责划分：
+// 1. 目录树构建：根据对象路径构建层级目录节点
+// 2. 对象元数据持久化：保存对象的基本信息和增强元数据
+// 3. 文档向量化：为支持的文档类型生成向量嵌入（如果启用）
+// 4. 搜索索引更新：将对象信息同步到Meilisearch
+// 5. 统计聚合：更新各层级节点的统计信息（对象数、总大小）
+//
+// 参数：
+//   - resource: 数据源引擎配置
+//   - tenantID: 租户ID
+//   - engineID: 引擎ID
+//   - bucketNode: Bucket节点
+//   - metas: 对象元数据列表
+//   - stats: 节点统计聚合map
+//   - includeBucketAggregate: 是否包含bucket级别的聚合
+//   - scanDepth: 扫描深度
+//   - scanPathPrefix: 扫描路径前缀
+//   - scannedFingerprints: 已扫描对象的指纹集合
+//
+// 返回：(持久化对象数量, error)
 func (s *ScanServiceNew) persistObjectMetas(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, metas []plugins.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
 	objects := 0
 
@@ -2823,6 +2865,25 @@ func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, engineID uint, b
 	return nil
 }
 
+// scanDatabaseSchema 扫描数据库Schema及其所有表
+//
+// 职责划分：
+// 1. Schema节点管理：创建/更新Schema节点，管理扫描状态
+// 2. 表迭代处理：扫描所有表，判断是否需要更新
+// 3. 字段扫描：深度扫描时获取表字段信息
+// 4. 空间元数据：提取PostGIS等空间类型的元数据
+// 5. 搜索索引：将表资产信息同步到Meilisearch
+// 6. 软删除处理：清理已删除的表
+//
+// 参数：
+//   - resource: 数据源引擎配置
+//   - scan: 插件扫描器
+//   - tenantID: 租户ID
+//   - engineID: 引擎ID
+//   - schemaName: Schema名称
+//   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
+//
+// 返回：(表数量, 字段数量, 错误数量, error)
 func (s *ScanServiceNew) scanDatabaseSchema(resource *commonModels.Engine, scan plugins.Scanner, tenantID, engineID uint, schemaName string, scanDepth string) (int, int, int, error) {
 	schemaNode, err := s.upsertNode(tenantID, engineID, nil, "schema", schemaName, "", nil)
 	if err != nil {

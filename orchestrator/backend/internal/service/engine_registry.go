@@ -57,49 +57,6 @@ func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*com
 	return engine, nil
 }
 
-// GetEnginesByCapability 根据能力类型获取所有匹配的引擎
-// 例如: capabilityType = "scan" 返回所有支持扫描的引擎
-func (r *EngineRegistry) GetEnginesByCapability(ctx context.Context, capabilityType string) ([]*commonModels.Engine, error) {
-	// 检查缓存是否有效
-	r.mu.RLock()
-	cacheValid := time.Since(r.lastRefresh) < r.cacheTTL
-	r.mu.RUnlock()
-
-	if !cacheValid {
-		// 刷新缓存
-		if err := r.RefreshCache(ctx); err != nil {
-			return nil, fmt.Errorf("failed to refresh engine cache: %w", err)
-		}
-	}
-
-	// 从缓存中过滤匹配的引擎
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	var matchedEngines []*commonModels.Engine
-	for _, engine := range r.engines {
-		if engine.Capabilities == nil {
-			continue
-		}
-
-		// 解析 Capabilities JSON
-		var capability commonModels.Capability
-		if err := unmarshalCapability(engine.Capabilities, &capability); err != nil {
-			continue
-		}
-
-		// 检查是否有匹配的计算能力
-		for _, compute := range capability.Compute {
-			if compute.Type == capabilityType {
-				matchedEngines = append(matchedEngines, engine)
-				break
-			}
-		}
-	}
-
-	return matchedEngines, nil
-}
-
 // RefreshCache 刷新所有引擎缓存
 func (r *EngineRegistry) RefreshCache(ctx context.Context) error {
 	// 从 System 查询所有计算引擎

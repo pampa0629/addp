@@ -442,45 +442,23 @@ func (s *TaskService) ExecuteTask(ctx context.Context, taskID, executionID uint)
 
 	// 设置进度回调以定期更新日志和指标
 	s.engine.SetProgressCallback(func(logs string, metrics *pipeline.Metrics) {
-		if err := s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
-			"logs":            logs,
-			"records_read":    metrics.RecordsRead,
-			"records_written": metrics.RecordsWritten,
-			"bytes_read":      metrics.BytesRead,
-			"bytes_written":   metrics.BytesWritten,
-		}); err != nil {
-			s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
-		}
+		s.updateExecutionMetricsWithLogs(executionID, logs, metrics)
 	})
 
 	// 执行任务
 	if err := s.engine.Execute(ctx, execTask); err != nil {
 		s.logger.Error("task execution failed", "error", err, "task_id", taskID)
 
-		// 获取执行日志（包括错误日志）
-		executionLogs := s.engine.GetLogs()
-
 		// 更新执行记录，包含日志
-		s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
-			"logs": executionLogs,
-		})
+		s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), nil)
 
 		s.updateExecutionError(task, executionID, err)
 		return err
 	}
 
-	// 获取执行指标和日志
+	// 获取执行指标和日志并更新
 	metrics := s.engine.GetMetrics()
-	executionLogs := s.engine.GetLogs()
-
-	// 更新执行指标和日志
-	s.execRepo.UpdateMetrics(executionID, map[string]interface{}{
-		"records_read":    metrics.RecordsRead,
-		"records_written": metrics.RecordsWritten,
-		"bytes_read":      metrics.BytesRead,
-		"bytes_written":   metrics.BytesWritten,
-		"logs":            executionLogs,
-	})
+	s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), metrics)
 
 	// 完成执行
 	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusSuccess, ""); err != nil {
@@ -884,6 +862,23 @@ func (s *TaskService) updateExecutionError(task *models.Task, executionID uint, 
 
 	if err := s.taskRepo.UpdateFields(task.ID, updates); err != nil {
 		s.logger.Warn("failed to update task after execution error", "error", err, "task_id", task.ID)
+	}
+}
+
+// updateExecutionMetricsWithLogs 更新执行指标和日志
+func (s *TaskService) updateExecutionMetricsWithLogs(executionID uint, logs string, metrics *pipeline.Metrics) {
+	metricsMap := map[string]interface{}{
+		"logs": logs,
+	}
+	if metrics != nil {
+		metricsMap["records_read"] = metrics.RecordsRead
+		metricsMap["records_written"] = metrics.RecordsWritten
+		metricsMap["bytes_read"] = metrics.BytesRead
+		metricsMap["bytes_written"] = metrics.BytesWritten
+	}
+
+	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
+		s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
 	}
 }
 

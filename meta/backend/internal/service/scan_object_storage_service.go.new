@@ -1,0 +1,230 @@
+package service
+
+import (
+	"fmt"
+	"log/slog"
+	"strings"
+
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/plugins"
+	"gorm.io/gorm"
+)
+
+// ObjectStorageScanService 对象存储扫描服务
+// 职责：扫描MinIO、S3等对象存储的Bucket和对象
+type ObjectStorageScanService struct {
+	db      *gorm.DB
+	log     *slog.Logger
+	metaOps *ScanServiceNew // 委托元数据操作给主服务
+}
+
+// NewObjectStorageScanService 创建对象存储扫描服务
+func NewObjectStorageScanService(db *gorm.DB, log *slog.Logger, metaOps *ScanServiceNew) *ObjectStorageScanService {
+	return &ObjectStorageScanService{
+		db:      db,
+		log:     log,
+		metaOps: metaOps,
+	}
+}
+
+// ScanPaths 扫描对象存储路径（MinIO/S3等）
+//
+// 职责划分：
+// 1. Bucket节点管理：创建/更新Bucket节点
+// 2. 对象迭代：扫描指定路径下的所有对象
+// 3. 元数据持久化：批量保存对象元数据
+// 4. 去重处理：使用fingerprints避免重复扫描
+// 5. 清理过期数据：软删除已移除的对象
+// 6. 统计聚合：统计对象数量和总大小
+//
+// 参数：
+//   - resource: 数据源引擎配置
+//   - tenantID: 租户ID
+//   - engineID: 引擎ID
+//   - objectScanner: 对象存储扫描器插件
+//   - paths: 要扫描的路径列表（如 ["bucket1", "bucket2/path"]）
+//   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
+//   - reporter: 进度报告器
+//
+// 返回：(bucket数量, 对象数量, error)
+func (s *ObjectStorageScanService) ScanPaths(
+	resource *commonModels.Engine,
+	tenantID, engineID uint,
+	objectScanner plugins.ObjectStorageScanner,
+	paths []string,
+	scanDepth string,
+	reporter ScanProgressReporter,
+) (int, int, error) {
+	// 初始化
+	bucketNodes := make(map[string]*models.MetaNode)
+	nodeStats := make(map[uint]*nodeAggregate)
+	scannedFingerprints := make(map[string]bool)
+
+	// 配置扫描器
+	s.configureScannerDepth(objectScanner, engineID, scanDepth)
+
+	totalBuckets := 0
+	totalObjects := 0
+
+	// 扫描每个路径
+	for idx, rawPath := range paths {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
+		}
+
+		bucket, objects, err := s.scanSinglePath(
+			resource, tenantID, engineID,
+			objectScanner, rawPath, scanDepth,
+			bucketNodes, nodeStats, scannedFingerprints,
+		)
+		if err != nil {
+			s.log.Warn("路径扫描失败", "path", rawPath, "error", err)
+		}
+
+		totalBuckets += bucket
+		totalObjects += objects
+
+		if reporter != nil {
+			reporter.Advance(rawPath, idx+1, len(paths), map[string]interface{}{"objects": objects})
+		}
+	}
+
+	// 清理未扫描到的对象
+	s.cleanupRemovedObjects(tenantID, engineID, bucketNodes, scannedFingerprints)
+
+	s.log.Info("对象存储扫描完成",
+		"buckets", totalBuckets,
+		"objects", totalObjects,
+	)
+
+	return totalBuckets, totalObjects, nil
+}
+
+// scanSinglePath 扫描单个路径
+func (s *ObjectStorageScanService) scanSinglePath(
+	resource *commonModels.Engine,
+	tenantID, engineID uint,
+	objectScanner plugins.ObjectStorageScanner,
+	rawPath, scanDepth string,
+	bucketNodes map[string]*models.MetaNode,
+	nodeStats map[uint]*nodeAggregate,
+	scannedFingerprints map[string]bool,
+) (int, int, error) {
+	// 解析路径
+	bucketName, relativePath := splitObjectPath(rawPath)
+	if bucketName == "" {
+		return 0, 0, fmt.Errorf("路径缺少bucket: %s", rawPath)
+	}
+
+	// 扫描对象
+	metas, err := objectScanner.ScanPath(rawPath)
+	if err != nil {
+		return 0, 0, fmt.Errorf("扫描失败: %w", err)
+	}
+
+	// 浅度扫描时过滤
+	if !strings.EqualFold(scanDepth, "deep") {
+		metas = filterObjectMetasForDepth(metas, relativePath)
+	}
+
+	// 获取或创建Bucket节点
+	bucketNode, err := s.getOrCreateBucketNode(tenantID, engineID, bucketName, bucketNodes)
+	if err != nil {
+		return 0, 0, fmt.Errorf("创建bucket节点失败: %w", err)
+	}
+
+	// 持久化对象元数据（委托给enhancer或直接调用）
+	objectCount, err := s.metaOps.persistObjectMetas(
+		resource, tenantID, engineID,
+		bucketNode, metas, nodeStats,
+		isFullBucketScan(rawPath, bucketName),
+		scanDepth, relativePath,
+		scannedFingerprints,
+	)
+	if err != nil {
+		return 0, 0, fmt.Errorf("持久化对象元数据失败: %w", err)
+	}
+
+	return 1, objectCount, nil
+}
+
+// getOrCreateBucketNode 获取或创建Bucket节点
+func (s *ObjectStorageScanService) getOrCreateBucketNode(
+	tenantID, engineID uint,
+	bucketName string,
+	bucketNodes map[string]*models.MetaNode,
+) (*models.MetaNode, error) {
+	if node, exists := bucketNodes[bucketName]; exists {
+		return node, nil
+	}
+
+	attrs := models.JSONMap{"bucket": bucketName}
+	node, err := s.metaOps.upsertNode(tenantID, engineID, nil, "bucket", bucketName, bucketName, attrs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.metaOps.resetNodeState(node, "扫描中"); err != nil {
+		return nil, err
+	}
+
+	bucketNodes[bucketName] = node
+	return node, nil
+}
+
+// configureScannerDepth 配置扫描器的深度参数
+func (s *ObjectStorageScanService) configureScannerDepth(
+	objectScanner plugins.ObjectStorageScanner,
+	engineID uint,
+	scanDepth string,
+) {
+	type depthConfigurable interface {
+		SetResourceID(uint)
+		SetScanDepth(string)
+	}
+
+	scanner, ok := objectScanner.(depthConfigurable)
+	if !ok {
+		return
+	}
+
+	scanner.SetScanDepth(scanDepth)
+
+	// 深度扫描时启用详细元数据提取
+	if strings.EqualFold(scanDepth, "deep") {
+		scanner.SetResourceID(engineID)
+	} else {
+		scanner.SetResourceID(0) // 浅度扫描不提取内容
+	}
+}
+
+// cleanupRemovedObjects 清理已删除的对象
+func (s *ObjectStorageScanService) cleanupRemovedObjects(
+	tenantID, engineID uint,
+	bucketNodes map[string]*models.MetaNode,
+	scannedFingerprints map[string]bool,
+) {
+	for bucketName, bucketNode := range bucketNodes {
+		// 查询该bucket下的所有对象
+		var existingItems []models.MetaItem
+		s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ?",
+			tenantID, engineID, bucketNode.ID).Find(&existingItems)
+
+		// 删除未扫描到的对象
+		for _, item := range existingItems {
+			if item.Fingerprint == nil {
+				continue
+			}
+
+			if !scannedFingerprints[*item.Fingerprint] {
+				s.log.Info("对象已删除，标记删除",
+					"bucket", bucketName,
+					"object", item.Name,
+				)
+				s.db.Delete(&item)
+			}
+		}
+	}
+}
+

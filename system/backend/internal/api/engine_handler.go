@@ -265,7 +265,6 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 
 	// 新增：能力过滤参数
 	storageType := c.Query("storage_type") // 可选：如 "relational_db,object_storage"
-	computeType := c.Query("compute_type") // 可选：如 "sql_query,scan"
 
 	// 内部调用返回所有资源（或按 tenant_id 过滤）
 	var tenantIDUint uint
@@ -277,10 +276,9 @@ func (h *EngineHandler) ListInternal(c *gin.Context) {
 	}
 
 	// 如果指定了 capability 过滤条件，使用新的过滤方法
-	if storageType != "" || computeType != "" {
+	if storageType != "" {
 		filter := commonutils.CapabilityFilter{
 			StorageTypes: parseCommaSeparated(storageType),
-			ComputeTypes: parseCommaSeparated(computeType),
 		}
 
 		engines, err := h.engineService.ListInternalWithCapability(tenantIDUint, filter)

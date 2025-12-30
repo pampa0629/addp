@@ -326,7 +326,7 @@ func (c *SystemClient) ListComputeEngines(filters map[string]string) ([]*models.
 // ================ 能力过滤相关方法（新增） ================
 
 // ListEnginesByCapability 通用方法：按能力过滤资源
-func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes, computeTypes []string) ([]models.Engine, error) {
+func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes []string) ([]models.Engine, error) {
 	// 只能使用内部 API
 	if c.internalKey == "" {
 		return nil, fmt.Errorf("capability filtering requires internal API key")
@@ -341,9 +341,6 @@ func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes, comp
 	}
 	if len(storageTypes) > 0 {
 		queryParams = append(queryParams, "storage_type="+strings.Join(storageTypes, ","))
-	}
-	if len(computeTypes) > 0 {
-		queryParams = append(queryParams, "compute_type="+strings.Join(computeTypes, ","))
 	}
 
 	if len(queryParams) > 0 {
@@ -379,24 +376,24 @@ func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes, comp
 
 // ListRelationalDatabases 快捷方法：获取所有关系型数据库
 func (c *SystemClient) ListRelationalDatabases(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"relational_db"}, nil)
+	return c.ListEnginesByCapability(tenantID, []string{"relational_db"})
 }
 
 // ListObjectStorages 快捷方法：获取所有对象存储
 func (c *SystemClient) ListObjectStorages(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"object_storage"}, nil)
+	return c.ListEnginesByCapability(tenantID, []string{"object_storage"})
 }
 
 // ListScannableResources 快捷方法：获取所有可扫描的资源（元数据模块使用）
 func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Engine, error) {
-	return c.ListEnginesByCapability(tenantID, []string{"relational_db", "object_storage", "generic"}, nil)
+	return c.ListEnginesByCapability(tenantID, []string{"relational_db", "object_storage", "generic"})
 }
 
 // ListSQLQueryEngines 快捷方法：获取所有支持 SQL 查询的引擎（开发模块使用）
 // 改用 dev_modes 过滤，不再依赖 compute.type
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, error) {
 	// 1. 获取所有关系型数据库引擎
-	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db"}, nil)
+	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db"})
 	if err != nil {
 		return nil, err
 	}

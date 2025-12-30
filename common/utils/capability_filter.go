@@ -10,8 +10,7 @@ import (
 // CapabilityFilter 能力过滤器
 type CapabilityFilter struct {
 	StorageTypes []string // 存储能力类型：relational_db, object_storage, generic
-	ComputeTypes []string // 计算能力类型：sql_query, scan, transform 等
-	RequireBoth  bool     // true: 同时满足 storage 和 compute, false: 满足任一即可
+	RequireBoth  bool     // 预留字段，当前仅支持存储能力过滤
 }
 
 // ParseCapabilities 解析资源的 capabilities JSON
@@ -36,22 +35,6 @@ func HasStorageCapability(resource *models.Engine) bool {
 	}
 
 	return len(cap.Storage) > 0
-}
-
-// HasComputeCapability 检查资源是否具有指定的计算能力
-func HasComputeCapability(resource *models.Engine, computeType string) bool {
-	cap, err := ParseCapabilities(resource.Capabilities)
-	if err != nil || cap == nil {
-		return false
-	}
-
-	for _, compute := range cap.Compute {
-		if compute.Type == computeType {
-			return true
-		}
-	}
-
-	return false
 }
 
 // HasStorageType 检查资源是否具有指定类型的存储能力
@@ -80,11 +63,6 @@ func IsObjectStorage(resource *models.Engine) bool {
 	return HasStorageType(resource, "object_storage")
 }
 
-// SupportsSQLQuery 检查资源是否支持 SQL 查询
-func SupportsSQLQuery(resource *models.Engine) bool {
-	return HasComputeCapability(resource, "sql_query")
-}
-
 // MatchesStorageTypes 检查资源是否匹配任一存储类型
 func MatchesStorageTypes(resource *models.Engine, storageTypes []string) bool {
 	if len(storageTypes) == 0 {
@@ -107,60 +85,20 @@ func MatchesStorageTypes(resource *models.Engine, storageTypes []string) bool {
 	return false
 }
 
-// MatchesComputeTypes 检查资源是否匹配任一计算类型
-func MatchesComputeTypes(resource *models.Engine, computeTypes []string) bool {
-	if len(computeTypes) == 0 {
-		return true // 空过滤器匹配所有
-	}
-
-	cap, err := ParseCapabilities(resource.Capabilities)
-	if err != nil || cap == nil {
-		return false
-	}
-
-	for _, compute := range cap.Compute {
-		for _, targetType := range computeTypes {
-			if compute.Type == targetType {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // MatchesFilter 检查资源是否匹配过滤器
 func MatchesFilter(resource *models.Engine, filter CapabilityFilter) bool {
 	// 空过滤器匹配所有资源
-	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
+	if len(filter.StorageTypes) == 0 {
 		return true
 	}
 
-	matchesStorage := MatchesStorageTypes(resource, filter.StorageTypes)
-	matchesCompute := MatchesComputeTypes(resource, filter.ComputeTypes)
-
-	if filter.RequireBoth {
-		// AND 逻辑：必须同时满足
-		return matchesStorage && matchesCompute
-	}
-
-	// OR 逻辑：满足任一即可
-	if len(filter.StorageTypes) > 0 && len(filter.ComputeTypes) > 0 {
-		return matchesStorage || matchesCompute
-	}
-
-	// 只有一种过滤条件
-	if len(filter.StorageTypes) > 0 {
-		return matchesStorage
-	}
-
-	return matchesCompute
+	return MatchesStorageTypes(resource, filter.StorageTypes)
 }
 
 // FilterEnginesByCapability 按能力过滤引擎列表
 func FilterEnginesByCapability(engines []models.Engine, filter CapabilityFilter) []models.Engine {
 	// 空过滤器返回所有引擎
-	if len(filter.StorageTypes) == 0 && len(filter.ComputeTypes) == 0 {
+	if len(filter.StorageTypes) == 0 {
 		return engines
 	}
 

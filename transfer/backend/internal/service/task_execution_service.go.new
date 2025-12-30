@@ -1,0 +1,198 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/addp/transfer/internal/models"
+	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/pkg/pipeline"
+)
+
+// TaskExecutionService 任务执行服务
+// 职责：执行数据传输任务，管理执行状态和进度
+type TaskExecutionService struct {
+	logger      *slog.Logger
+	taskRepo    *repository.TaskRepository
+	execRepo    *repository.ExecutionRepository
+	engine      *pipeline.Engine
+	builder     *TaskBuilder
+}
+
+// NewTaskExecutionService 创建任务执行服务
+func NewTaskExecutionService(
+	logger *slog.Logger,
+	taskRepo *repository.TaskRepository,
+	execRepo *repository.ExecutionRepository,
+	engine *pipeline.Engine,
+	builder *TaskBuilder,
+) *TaskExecutionService {
+	return &TaskExecutionService{
+		logger:   logger,
+		taskRepo: taskRepo,
+		execRepo: execRepo,
+		engine:   engine,
+		builder:  builder,
+	}
+}
+
+// Execute 执行任务
+func (s *TaskExecutionService) Execute(ctx context.Context, taskID, executionID uint) error {
+	s.logger.Info("执行任务", "task_id", taskID, "execution_id", executionID)
+
+	// 1. 获取任务和执行记录
+	task, execution, mappings, err := s.loadTaskData(taskID, executionID)
+	if err != nil {
+		return err
+	}
+
+	// 2. 构建执行任务
+	execTask, err := s.buildTask(task, execution, mappings)
+	if err != nil {
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+
+	// 3. 更新状态为运行中
+	if err := s.execRepo.UpdateStatus(executionID, models.ExecutionStatusRunning); err != nil {
+		s.logger.Warn("更新执行状态失败", "error", err)
+	}
+
+	// 4. 设置进度回调
+	s.setupProgressCallback(executionID)
+
+	// 5. 执行任务
+	if err := s.engine.Execute(ctx, execTask); err != nil {
+		s.logger.Error("任务执行失败", "error", err, "task_id", taskID)
+
+		// 更新执行记录，包含日志
+		s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), nil)
+
+		s.updateExecutionError(task, executionID, err)
+		return err
+	}
+
+	// 6. 获取执行指标并更新
+	metrics := s.engine.GetMetrics()
+	s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), metrics)
+
+	// 7. 完成执行
+	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusSuccess, ""); err != nil {
+		s.logger.Warn("完成执行失败", "error", err)
+	}
+
+	// 8. 更新任务状态
+	s.updateTaskAfterSuccess(task, executionID, metrics)
+
+	s.logger.Info("任务执行成功", "task_id", taskID, "records", metrics.RecordsWritten)
+	return nil
+}
+
+// loadTaskData 加载任务数据
+func (s *TaskExecutionService) loadTaskData(taskID, executionID uint) (*models.Task, *models.TaskExecution, []models.DataMapping, error) {
+	// 获取任务
+	task, err := s.taskRepo.GetByID(taskID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("获取任务失败: %w", err)
+	}
+
+	// 获取执行记录
+	execution, err := s.execRepo.GetByID(executionID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("获取执行记录失败: %w", err)
+	}
+
+	// 获取字段映射
+	mappings, err := s.taskRepo.GetMappingsByTaskID(taskID)
+	if err != nil {
+		s.logger.Warn("获取字段映射失败", "error", err)
+		mappings = []models.DataMapping{}
+	}
+
+	return task, execution, mappings, nil
+}
+
+// buildTask 构建执行任务
+func (s *TaskExecutionService) buildTask(task *models.Task, execution *models.TaskExecution, mappings []models.DataMapping) (*pipeline.ExecutionTask, error) {
+	execTask, err := s.builder.
+		WithTask(task).
+		WithExecution(execution).
+		WithMappings(mappings).
+		Build()
+
+	if err != nil {
+		return nil, fmt.Errorf("构建执行任务失败: %w", err)
+	}
+
+	return execTask, nil
+}
+
+// setupProgressCallback 设置进度回调
+func (s *TaskExecutionService) setupProgressCallback(executionID uint) {
+	s.engine.SetProgressCallback(func(logs string, metrics *pipeline.Metrics) {
+		s.updateExecutionMetricsWithLogs(executionID, logs, metrics)
+	})
+}
+
+// updateExecutionMetricsWithLogs 更新执行指标和日志
+func (s *TaskExecutionService) updateExecutionMetricsWithLogs(executionID uint, logs string, metrics *pipeline.Metrics) {
+	metricsMap := map[string]interface{}{
+		"logs": logs,
+	}
+
+	if metrics != nil {
+		metricsMap["records_read"] = metrics.RecordsRead
+		metricsMap["records_written"] = metrics.RecordsWritten
+		metricsMap["bytes_read"] = metrics.BytesRead
+		metricsMap["bytes_written"] = metrics.BytesWritten
+	}
+
+	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
+		s.logger.Error("更新执行指标失败", "error", err, "execution_id", executionID)
+	}
+}
+
+// updateExecutionError 更新执行错误
+func (s *TaskExecutionService) updateExecutionError(task *models.Task, executionID uint, execErr error) {
+	errorMsg := execErr.Error()
+
+	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusFailed, errorMsg); err != nil {
+		s.logger.Error("更新执行失败状态失败", "error", err, "execution_id", executionID)
+	}
+
+	// 更新任务状态
+	taskStatus := models.TaskStatusFailed
+	if task.Schedule != "" {
+		taskStatus = models.TaskStatusScheduled
+	}
+
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":                     taskStatus,
+		"last_execution_id":          executionID,
+		"last_execution_status":      models.ExecutionStatusFailed,
+		"last_execution_finished_at": time.Now(),
+	}); err != nil {
+		s.logger.Warn("更新任务失败状态失败", "error", err, "task_id", task.ID)
+	}
+}
+
+// updateTaskAfterSuccess 成功后更新任务状态
+func (s *TaskExecutionService) updateTaskAfterSuccess(task *models.Task, executionID uint, metrics *pipeline.Metrics) {
+	finishedAt := time.Now()
+	finalStatus := models.TaskStatusCompleted
+	if task.Schedule != "" {
+		finalStatus = models.TaskStatusScheduled
+	}
+
+	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
+		"status":                     finalStatus,
+		"progress":                   100.0,
+		"last_execution_id":          executionID,
+		"last_execution_status":      models.ExecutionStatusSuccess,
+		"last_execution_finished_at": finishedAt,
+	}); err != nil {
+		s.logger.Warn("更新任务成功状态失败", "error", err, "task_id", task.ID)
+	}
+}

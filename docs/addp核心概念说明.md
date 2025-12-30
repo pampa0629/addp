@@ -211,18 +211,14 @@ ADDP 采用基于 Docker 的微服务架构:
   ],
   "compute": [
     {
-      "type": "sql_query",            // 计算类型
       "dev_modes": ["sql"],           // 开发方式
       "supported_sources": ["postgresql", "mysql"],  // 支持的数据源
-      "features": ["incremental", "scheduled"]       // 功能特性
+      "features": ["incremental", "scheduled"],      // 功能特性
+      "description": "SQL查询"        // 能力描述
     }
   ]
 }
 ```
-
-**计算类型** (`compute.type`):
-- **已废弃**: 该字段已不再使用，保留仅为向后兼容
-- 新代码应使用 `dev_modes` 字段标识开发方式
 
 **开发方式** (`dev_modes`):
 - `sql`: SQL 脚本开发（数据库引擎）
