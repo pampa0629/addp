@@ -101,8 +101,8 @@
         <el-tab-pane label="执行结果" name="result">
           <div class="tab-content">
             <div v-if="execution?.status === 'success' && execution?.result">
-              <!-- SQL 结果: 使用 SQLResult 组件 -->
-              <div v-if="execution.dev_type === 'sql'">
+              <!-- 查询结果: 使用 SQLResult 组件 -->
+              <div v-if="execution.dev_type === 'query'">
                 <SQLResult :result="formatSQLResult(execution.result)" />
               </div>
 
@@ -254,7 +254,7 @@ const loadLogs = async () => {
 
 // 工具函数
 const getTypeLabel = (type) => {
-  const labels = { sql: 'SQL', workflow: '工作流', script: '脚本' }
+  const labels = { query: '查询', workflow: '工作流', script: '脚本' }
   return labels[type] || type
 }
 

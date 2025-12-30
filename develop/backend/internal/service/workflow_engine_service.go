@@ -19,7 +19,7 @@ import (
 )
 
 // WorkflowEngineService 工作流执行引擎服务
-// 支持多种工作流引擎（GeoPandas、Spark Sedona）
+// 支持多种工作流引擎（Python Workflow、Spark Workflow）
 type WorkflowEngineService struct {
 	systemClient *commonClient.SystemClient
 	httpClient   *http.Client
@@ -71,24 +71,24 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 
 	// 3. 根据引擎类型分发执行
 	switch config.EngineType {
-	case "api.geopandas":
-		return s.executeViaGeoPandas(ctx, engine, workflowDef, inputData)
+	case "api.python-workflow":
+		return s.executeViaPythonWorkflow(ctx, engine, workflowDef, inputData)
 
-	case "api.spark_sedona":
+	case "api.spark_workflow":
 		// 从 engine_specific 提取 Spark 集群 ID
 		sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64)
 		if !ok {
-			return nil, errors.New("Spark Sedona 引擎缺少 spark_cluster_id 配置")
+			return nil, errors.New("Spark 工作流引擎缺少 spark_cluster_id 配置")
 		}
-		return s.executeViaSparkSedona(ctx, engine, uint(sparkClusterID), workflowDef, inputData)
+		return s.executeViaSparkWorkflow(ctx, engine, uint(sparkClusterID), workflowDef, inputData)
 
 	default:
 		return nil, fmt.Errorf("不支持的工作流引擎: %s", config.EngineType)
 	}
 }
 
-// executeViaGeoPandas 通过 GeoPandas 引擎执行（自带运行时）
-func (s *WorkflowEngineService) executeViaGeoPandas(
+// executeViaPythonWorkflow 通过 Python Workflow 引擎执行（自带运行时）
+func (s *WorkflowEngineService) executeViaPythonWorkflow(
 	ctx context.Context,
 	engine *commonModels.Engine,
 	workflowDef map[string]interface{},
@@ -97,7 +97,7 @@ func (s *WorkflowEngineService) executeViaGeoPandas(
 	// 从引擎 ConnectionInfo 提取 API URL
 	apiURL, ok := engine.ConnectionInfo["api_url"].(string)
 	if !ok || apiURL == "" {
-		return nil, errors.New("GeoPandas 引擎缺少 api_url 配置")
+		return nil, errors.New("Python Workflow 引擎缺少 api_url 配置")
 	}
 
 	url := fmt.Sprintf("%s/api/spatial/workflow", apiURL)
@@ -120,12 +120,12 @@ func (s *WorkflowEngineService) executeViaGeoPandas(
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	log.Printf("🚀 Develop: 调用 GeoPandas 引擎 (url=%s)", url)
+	log.Printf("🚀 Develop: 调用 Python Workflow 引擎 (url=%s)", url)
 
 	// 执行请求
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("调用 GeoPandas 引擎失败: %w", err)
+		return nil, fmt.Errorf("调用 Python Workflow 引擎失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -144,12 +144,12 @@ func (s *WorkflowEngineService) executeViaGeoPandas(
 		return &workflowResp, fmt.Errorf("工作流执行失败 (status=%d): %s", resp.StatusCode, workflowResp.Error)
 	}
 
-	log.Printf("✅ Develop: GeoPandas 引擎执行成功 (execution_id=%s)", workflowResp.ExecutionID)
+	log.Printf("✅ Develop: Python Workflow 引擎执行成功 (execution_id=%s)", workflowResp.ExecutionID)
 	return &workflowResp, nil
 }
 
-// executeViaSparkSedona 通过 Spark Sedona 引擎执行（PySpark 脚本生成）
-func (s *WorkflowEngineService) executeViaSparkSedona(
+// executeViaSparkWorkflow 通过 Spark 工作流引擎执行（PySpark 脚本生成）
+func (s *WorkflowEngineService) executeViaSparkWorkflow(
 	ctx context.Context,
 	engine *commonModels.Engine,
 	sparkClusterID uint,
@@ -162,20 +162,20 @@ func (s *WorkflowEngineService) executeViaSparkSedona(
 		return nil, fmt.Errorf("查询 Spark 运行时失败: %w", err)
 	}
 
-	// 2. 从 Spark Sedona 引擎 ConnectionInfo 提取 API URL
-	sedonaAPIURL, ok := engine.ConnectionInfo["api_url"].(string)
-	if !ok || sedonaAPIURL == "" {
-		return nil, errors.New("Spark Sedona 引擎缺少 api_url 配置")
+	// 2. 从 Spark 工作流引擎 ConnectionInfo 提取 API URL
+	workflowAPIURL, ok := engine.ConnectionInfo["api_url"].(string)
+	if !ok || workflowAPIURL == "" {
+		return nil, errors.New("Spark 工作流引擎缺少 api_url 配置")
 	}
 
-	url := fmt.Sprintf("%s/api/spatial/workflow/execute", sedonaAPIURL)
+	url := fmt.Sprintf("%s/api/spatial/workflow/execute", workflowAPIURL)
 
 	// 3. 构造请求体（包含目标 Spark 集群信息）
 	requestBody := map[string]interface{}{
 		"workflow_def": workflowDef,
 		"input_data":   inputData,
 		"target_runtime": map[string]interface{}{
-			"type": "spark_sql",
+			"type": "spark",
 			// Spark Master 地址（用于 spark-submit 或 Livy）
 			"spark_master": sparkRuntime.ConnectionInfo["spark_master"],
 			"deploy_mode":  sparkRuntime.ConnectionInfo["deploy_mode"], // cluster/client
@@ -192,19 +192,19 @@ func (s *WorkflowEngineService) executeViaSparkSedona(
 		return nil, fmt.Errorf("序列化请求失败: %w", err)
 	}
 
-	// 4. 调用 Spark Sedona Engine API
+	// 4. 调用 Spark 工作流引擎 API
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("创建请求失败: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	log.Printf("🚀 Develop: 调用 Spark Sedona 引擎 (url=%s, spark_cluster_id=%d)", url, sparkClusterID)
+	log.Printf("🚀 Develop: 调用 Spark 工作流引擎 (url=%s, spark_cluster_id=%d)", url, sparkClusterID)
 
 	// 执行请求
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("调用 Spark Sedona 引擎失败: %w", err)
+		return nil, fmt.Errorf("调用 Spark 工作流引擎失败: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -223,12 +223,12 @@ func (s *WorkflowEngineService) executeViaSparkSedona(
 		return &workflowResp, fmt.Errorf("工作流执行失败 (status=%d): %s", resp.StatusCode, workflowResp.Error)
 	}
 
-	log.Printf("✅ Develop: Spark Sedona 引擎执行成功 (execution_id=%s)", workflowResp.ExecutionID)
+	log.Printf("✅ Develop: Spark 工作流引擎执行成功 (execution_id=%s)", workflowResp.ExecutionID)
 	return &workflowResp, nil
 }
 
-// ExecuteOperator 执行单个算子（向后兼容，使用 GeoPandas 引擎）
-func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, geopandasEngineURL string, operatorName string, params map[string]interface{}) (*WorkflowResponse, error) {
+// ExecuteOperator 执行单个算子（向后兼容，使用 Python Workflow 引擎）
+func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, pythonWorkflowEngineURL string, operatorName string, params map[string]interface{}) (*WorkflowResponse, error) {
 	// 构建请求
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"params": params,
@@ -237,8 +237,8 @@ func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, geopandasEn
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// 发送请求到 GeoPandas Engine
-	url := fmt.Sprintf("%s/api/spatial/operators/%s/execute", geopandasEngineURL, operatorName)
+	// 发送请求到 Python Workflow Engine
+	url := fmt.Sprintf("%s/api/spatial/operators/%s/execute", pythonWorkflowEngineURL, operatorName)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -280,9 +280,9 @@ func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, geopandasEn
 }
 
 // ListOperators 获取所有算子列表（向后兼容）
-func (s *WorkflowEngineService) ListOperators(ctx context.Context, geopandasEngineURL string) ([]commonModels.OperatorMetadata, error) {
-	// 发送请求到 GeoPandas Engine
-	url := fmt.Sprintf("%s/api/spatial/operators", geopandasEngineURL)
+func (s *WorkflowEngineService) ListOperators(ctx context.Context, pythonWorkflowEngineURL string) ([]commonModels.OperatorMetadata, error) {
+	// 发送请求到 Python Workflow Engine
+	url := fmt.Sprintf("%s/api/spatial/operators", pythonWorkflowEngineURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -315,9 +315,9 @@ func (s *WorkflowEngineService) ListOperators(ctx context.Context, geopandasEngi
 }
 
 // GetTaskStatus 查询执行状态（向后兼容）
-func (s *WorkflowEngineService) GetTaskStatus(ctx context.Context, geopandasEngineURL string, executionID string) (map[string]interface{}, error) {
-	// 发送请求到 GeoPandas Engine
-	url := fmt.Sprintf("%s/api/spatial/executions/%s", geopandasEngineURL, executionID)
+func (s *WorkflowEngineService) GetTaskStatus(ctx context.Context, pythonWorkflowEngineURL string, executionID string) (map[string]interface{}, error) {
+	// 发送请求到 Python Workflow Engine
+	url := fmt.Sprintf("%s/api/spatial/executions/%s", pythonWorkflowEngineURL, executionID)
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

@@ -86,7 +86,7 @@ make ports-validate
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
-| GeoPandas Engine      | 8099     | 8099        | 空间计算引擎 (Python)      |
+| Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python)      |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存和队列                 |
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |

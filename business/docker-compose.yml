@@ -7,7 +7,7 @@
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
 # - clickhouse: ClickHouse（高性能列式存储 OLAP）
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
-# - spark-master/workers: Spark SQL 分布式计算引擎
+# - spark-master/workers: Apache Spark 分布式计算引擎
 #
 # 使用方法:
 #   docker-compose up -d    # 启动

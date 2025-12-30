@@ -21,7 +21,7 @@ type Engine struct {
 // 所有数据库类型插件必须实现此接口
 type DatabasePlugin interface {
 	// Type 返回数据库类型标识（小写）
-	// 例如: "postgresql", "mysql", "doris", "spark_sql", "minio", "s3"
+	// 例如: "postgresql", "mysql", "doris", "spark", "minio", "s3"
 	Type() string
 
 	// DisplayName 返回用户友好的显示名称

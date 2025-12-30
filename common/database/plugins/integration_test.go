@@ -26,7 +26,7 @@ func TestAllPluginsRegistered(t *testing.T) {
 		"mysql",
 		"postgresql",
 		"s3",
-		"spark_sql",
+		"spark",
 	}
 
 	registeredTypes := plugin.List()
@@ -62,7 +62,7 @@ func TestGetAllPlugins(t *testing.T) {
 		{"postgresql", "PostgreSQL"},
 		{"mysql", "MySQL"},
 		{"doris", "Apache Doris"},
-		{"spark_sql", "Spark SQL"},
+		{"spark", "Apache Spark"},
 		{"clickhouse", "ClickHouse"},
 		{"mongodb", "MongoDB"},
 		{"minio", "MinIO"},
@@ -93,7 +93,7 @@ func TestPluginCapabilities(t *testing.T) {
 		{"doris", "relational_db"},
 		{"clickhouse", "relational_db"},
 		{"mongodb", "nosql_db"},
-		{"spark_sql", "compute_engine"},
+		{"spark", "compute_engine"},
 		{"minio", "object_storage"},
 		{"s3", "object_storage"},
 	}
@@ -128,7 +128,7 @@ func TestPluginDefaultPorts(t *testing.T) {
 		{"doris", 9030},
 		{"clickhouse", 9000},
 		{"mongodb", 27017},
-		{"spark_sql", 10000},
+		{"spark", 10000},
 		{"minio", 9000},
 		{"s3", 443},
 	}
@@ -157,7 +157,7 @@ func TestPluginRequiredFields(t *testing.T) {
 		{"doris", "database"},
 		{"clickhouse", "host"},
 		{"mongodb", "host"},
-		{"spark_sql", "host"},
+		{"spark", "host"},
 		{"minio", "endpoint"},
 		{"s3", "access_key"},
 	}

@@ -12,11 +12,11 @@ show_usage() {
   echo "  -meta         只启动 Meta 模块 (依赖: System)"
   echo "  -transfer     只启动 Transfer 模块 (依赖: System)"
   echo "  -orchestrator 只启动 Orchestrator 模块 (依赖: System)"
-  echo "  -develop      只启动 Develop 模块 (依赖: System + GeoPandas Engine)"
+  echo "  -develop      只启动 Develop 模块 (依赖: System + Python Workflow Engine)"
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
-  echo "  -geopandas    只启动 GeoPandas Engine"
-  echo "  -spark-sedona 只启动 Spark Sedona Engine"
+  echo "  -python-workflow    只启动 Python Workflow Engine"
+  echo "  -spark-workflow 只启动 Spark 工作流引擎"
   echo "  -jupyter      只启动 Jupyter Engine"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
   echo "  -portal       启动 Portal (依赖: 所有模块)"
@@ -30,9 +30,9 @@ show_usage() {
   echo "  $0                # 启动所有模块"
   echo "  $0 -system        # 只启动 System"
   echo "  $0 -manager       # 启动 Manager + System"
-  echo "  $0 -develop       # 启动 Develop + System + GeoPandas"
-  echo "  $0 -geopandas     # 只启动 GeoPandas Engine"
-  echo "  $0 -spark-sedona  # 启动 Spark Sedona Engine"
+  echo "  $0 -develop       # 启动 Develop + System + Python Workflow"
+  echo "  $0 -python-workflow     # 只启动 Python Workflow Engine"
+  echo "  $0 -spark-workflow  # 启动 Spark 工作流引擎"
   echo "  $0 -jupyter       # 只启动 Jupyter Engine"
   exit 1
 }
@@ -88,7 +88,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-geopandas|-spark-sedona|-jupyter|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-python-workflow|-spark-workflow|-jupyter|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -120,8 +120,8 @@ START_SERVICE_FRONTEND=false
 START_COPILOT_BACKEND=false
 START_GATEWAY=false
 START_PORTAL=false
-START_GEOPANDAS=false
-START_SPARK_SEDONA=false
+START_PYTHON_WORKFLOW=false
+START_SPARK_WORKFLOW=false
 START_JUPYTER=false
 
 # 根据选择的模块设置启动标志
@@ -147,8 +147,8 @@ if [ "$START_ALL" = true ]; then
   START_COPILOT_BACKEND=true
   START_GATEWAY=true
   START_PORTAL=true
-  START_GEOPANDAS=true
-  START_SPARK_SEDONA=true
+  START_PYTHON_WORKFLOW=true
+  START_SPARK_WORKFLOW=true
   START_JUPYTER=true
 else
   # 根据选择的模块设置依赖
@@ -189,8 +189,8 @@ else
       START_SYSTEM_FRONTEND=true
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
-      START_GEOPANDAS=true
-      START_SPARK_SEDONA=true
+      START_PYTHON_WORKFLOW=true
+      START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       ;;
     service)
@@ -204,15 +204,15 @@ else
       START_SYSTEM_FRONTEND=true
       START_META_BACKEND=true
       START_DEVELOP_BACKEND=true
-      START_GEOPANDAS=true
+      START_PYTHON_WORKFLOW=true
       START_JUPYTER=true
       START_COPILOT_BACKEND=true
       ;;
-    geopandas)
-      START_GEOPANDAS=true
+    python-workflow)
+      START_PYTHON_WORKFLOW=true
       ;;
-    spark-sedona)
-      START_SPARK_SEDONA=true
+    spark-workflow)
+      START_SPARK_WORKFLOW=true
       ;;
     jupyter)
       START_JUPYTER=true
@@ -229,8 +229,8 @@ else
       START_DEVELOP_BACKEND=true
       START_SERVICE_BACKEND=true
       START_COPILOT_BACKEND=true
-      START_GEOPANDAS=true
-      START_SPARK_SEDONA=true
+      START_PYTHON_WORKFLOW=true
+      START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       START_GATEWAY=true
       ;;
@@ -255,8 +255,8 @@ else
       START_COPILOT_BACKEND=true
       START_GATEWAY=true
       START_PORTAL=true
-      START_GEOPANDAS=true
-      START_SPARK_SEDONA=true
+      START_PYTHON_WORKFLOW=true
+      START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       ;;
   esac
@@ -805,10 +805,10 @@ echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
 echo ""
 
 # ============================================================
-# Step 4: Start GeoPandas Engine (Python service)
+# Step 4: Start Python Workflow Engine (Python service)
 # ============================================================
-if [ "$START_GEOPANDAS" = true ]; then
-  echo -e "${YELLOW}Step 4/5: 启动 GeoPandas Engine...${NC}"
+if [ "$START_PYTHON_WORKFLOW" = true ]; then
+  echo -e "${YELLOW}Step 4/5: 启动 Python Workflow Engine...${NC}"
 
   # 检查 Python 3 是否安装
   if ! command -v python3 &> /dev/null; then
@@ -826,9 +826,9 @@ if [ "$START_GEOPANDAS" = true ]; then
 
 # 检查并创建虚拟环境（幂等）
 NEED_INSTALL=false
-if [ ! -d "engines/geopandas/venv" ]; then
+if [ ! -d "engines/python-workflow/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/geopandas
+    cd engines/python-workflow
     # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
     if command -v /opt/homebrew/bin/python3 &> /dev/null; then
         echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
@@ -839,9 +839,9 @@ if [ ! -d "engines/geopandas/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/geopandas/venv/bin/python -c "import flask" &> /dev/null; then
+    if ! ./engines/python-workflow/venv/bin/python -c "import flask" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/geopandas
+        cd engines/python-workflow
         NEED_INSTALL=true
     else
         echo "虚拟环境已存在且依赖完整，跳过安装"
@@ -882,10 +882,10 @@ if [ "$NEED_INSTALL" = true ]; then
     cd ..
 fi
 
-# 启动 GeoPandas Engine
-if check_service_running "geopandas-engine" "8099"; then
-  echo "启动 GeoPandas Engine..."
-  cd engines/geopandas
+# 启动 Python Workflow Engine
+if check_service_running "python-workflow-engine" "8099"; then
+  echo "启动 Python Workflow Engine..."
+  cd engines/python-workflow
 
   # 设置环境变量（注意端口改为 8099）
   export PORT=8099
@@ -899,15 +899,15 @@ if check_service_running "geopandas-engine" "8099"; then
   export DB_SCHEMA=develop
 
   # 直接使用虚拟环境的 Python（无需 activate）
-  ./venv/bin/python api_server.py > ../../logs/geopandas-engine.log 2> ../../logs/geopandas-engine-stderr.log &
-  GEOPANDAS_PID=$!
-  echo $GEOPANDAS_PID > ../../.dev-pids/geopandas-engine.pid
+  ./venv/bin/python api_server.py > ../../logs/python-workflow-engine.log 2> ../../logs/python-workflow-engine-stderr.log &
+  PYTHON_WORKFLOW_PID=$!
+  echo $PYTHON_WORKFLOW_PID > ../../.dev-pids/python-workflow-engine.pid
   cd ../..
 
-  echo -e "${GREEN}✓ GeoPandas Engine 已启动 (PID: $GEOPANDAS_PID)${NC}"
+  echo -e "${GREEN}✓ Python Workflow Engine 已启动 (PID: $PYTHON_WORKFLOW_PID)${NC}"
 
   # 等待健康检查通过
-  echo -n "等待 GeoPandas Engine 就绪..."
+  echo -n "等待 Python Workflow Engine 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
   until curl -f http://localhost:8099/health > /dev/null 2>&1; do
@@ -916,29 +916,29 @@ if check_service_running "geopandas-engine" "8099"; then
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ GeoPandas Engine 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/geopandas-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/geopandas-engine-stderr.log${NC}"
+      echo -e "${RED}✗ Python Workflow Engine 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/python-workflow-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/python-workflow-engine-stderr.log${NC}"
       exit 1
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ GeoPandas Engine 就绪 (http://localhost:8099)${NC}"
+  echo -e "${GREEN}✓ Python Workflow Engine 就绪 (http://localhost:8099)${NC}"
 else
-  GEOPANDAS_PID=$(cat .dev-pids/geopandas-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ GeoPandas Engine 已在运行 (PID: $GEOPANDAS_PID)${NC}"
+  PYTHON_WORKFLOW_PID=$(cat .dev-pids/python-workflow-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Python Workflow Engine 已在运行 (PID: $PYTHON_WORKFLOW_PID)${NC}"
 fi
   echo ""
 else
-  echo -e "${YELLOW}Step 4/5: 跳过 GeoPandas Engine${NC}"
+  echo -e "${YELLOW}Step 4/5: 跳过 Python Workflow Engine${NC}"
   echo ""
 fi
 
 # ============================================================
-# Step 4.5: Start Spark Sedona Engine (Python service)
+# Step 4.5: Start Spark 工作流引擎 (Python service)
 # ============================================================
-if [ "$START_SPARK_SEDONA" = true ]; then
-  echo -e "${YELLOW}Step 4.5/5: 启动 Spark Sedona Engine...${NC}"
+if [ "$START_SPARK_WORKFLOW" = true ]; then
+  echo -e "${YELLOW}Step 4.5/5: 启动 Spark 工作流引擎...${NC}"
 
   # 检查 Python 3 是否安装
   if ! command -v python3 &> /dev/null; then
@@ -956,9 +956,9 @@ if [ "$START_SPARK_SEDONA" = true ]; then
 
 # 检查并创建虚拟环境（幂等）
 NEED_INSTALL=false
-if [ ! -d "engines/spark-sedona/venv" ]; then
+if [ ! -d "engines/spark-workflow/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
-    cd engines/spark-sedona
+    cd engines/spark-workflow
     # 优先使用兼容性好的 Python 版本（避免新版本兼容性问题）
     # 优先级: 3.12 > 3.13 > 3.11 > 系统默认
     if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
@@ -979,9 +979,9 @@ if [ ! -d "engines/spark-sedona/venv" ]; then
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
-    if ! ./engines/spark-sedona/venv/bin/python -c "import pyspark" &> /dev/null; then
+    if ! ./engines/spark-workflow/venv/bin/python -c "import pyspark" &> /dev/null; then
         echo "检测到虚拟环境缺少依赖，重新安装..."
-        cd engines/spark-sedona
+        cd engines/spark-workflow
         NEED_INSTALL=true
     else
         echo "虚拟环境已存在且依赖完整，跳过安装"
@@ -1020,10 +1020,10 @@ if [ "$NEED_INSTALL" = true ]; then
     cd ../..
 fi
 
-# 启动 Spark Sedona Engine
-if check_service_running "spark-sedona-engine" "8098"; then
-  echo "启动 Spark Sedona Engine..."
-  cd engines/spark-sedona
+# 启动 Spark 工作流引擎
+if check_service_running "spark-workflow-engine" "8098"; then
+  echo "启动 Spark 工作流引擎..."
+  cd engines/spark-workflow
 
   # 设置环境变量（注意端口改为 8098）
   export PORT=8098
@@ -1032,15 +1032,15 @@ if check_service_running "spark-sedona-engine" "8098"; then
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python（无需 activate）
-  ./venv/bin/python api_server.py > ../../logs/spark-sedona-engine.log 2> ../../logs/spark-sedona-engine-stderr.log &
-  SPARK_SEDONA_PID=$!
-  echo $SPARK_SEDONA_PID > ../../.dev-pids/spark-sedona-engine.pid
+  ./venv/bin/python api_server.py > ../../logs/spark-workflow-engine.log 2> ../../logs/spark-workflow-engine-stderr.log &
+  SPARK_WORKFLOW_PID=$!
+  echo $SPARK_WORKFLOW_PID > ../../.dev-pids/spark-workflow-engine.pid
   cd ../..
 
-  echo -e "${GREEN}✓ Spark Sedona Engine 已启动 (PID: $SPARK_SEDONA_PID)${NC}"
+  echo -e "${GREEN}✓ Spark 工作流引擎 已启动 (PID: $SPARK_WORKFLOW_PID)${NC}"
 
   # 等待健康检查通过
-  echo -n "等待 Spark Sedona Engine 就绪..."
+  echo -n "等待 Spark 工作流引擎 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
   until curl -f http://localhost:8098/health > /dev/null 2>&1; do
@@ -1049,21 +1049,21 @@ if check_service_running "spark-sedona-engine" "8098"; then
     WAIT_COUNT=$((WAIT_COUNT + 1))
     if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
       echo -e " ${RED}✗${NC}"
-      echo -e "${RED}✗ Spark Sedona Engine 启动超时（60秒）${NC}"
-      echo -e "${YELLOW}查看日志: tail -f logs/spark-sedona-engine.log${NC}"
-      echo -e "${YELLOW}或检查错误: tail -f logs/spark-sedona-engine-stderr.log${NC}"
+      echo -e "${RED}✗ Spark 工作流引擎 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/spark-workflow-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/spark-workflow-engine-stderr.log${NC}"
       exit 1
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Spark Sedona Engine 就绪 (http://localhost:8098)${NC}"
+  echo -e "${GREEN}✓ Spark 工作流引擎 就绪 (http://localhost:8098)${NC}"
 else
-  SPARK_SEDONA_PID=$(cat .dev-pids/spark-sedona-engine.pid 2>/dev/null)
-  echo -e "${GREEN}✓ Spark Sedona Engine 已在运行 (PID: $SPARK_SEDONA_PID)${NC}"
+  SPARK_WORKFLOW_PID=$(cat .dev-pids/spark-workflow-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Spark 工作流引擎 已在运行 (PID: $SPARK_WORKFLOW_PID)${NC}"
 fi
   echo ""
 else
-  echo -e "${YELLOW}Step 4.5/5: 跳过 Spark Sedona Engine${NC}"
+  echo -e "${YELLOW}Step 4.5/5: 跳过 Spark 工作流引擎${NC}"
   echo ""
 fi
 
@@ -1573,8 +1573,8 @@ echo "  Develop:  http://localhost:8085"
 echo "  Service:  http://localhost:8086"
 echo "  Copilot:  http://localhost:8087"
 echo "  Jupyter Engine:      http://localhost:8097 (API) / http://localhost:8088 (Lab UI)"
-echo "  Spark Sedona Engine: http://localhost:8098"
-echo "  GeoPandas Engine:    http://localhost:8099"
+echo "  Spark 工作流引擎: http://localhost:8098"
+echo "  Python Workflow Engine:    http://localhost:8099"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"
@@ -1591,8 +1591,8 @@ echo "  Transfer Backend:     $TRANSFER_PID"
 echo "  Orchestrator Backend: $ORCHESTRATOR_PID"
 echo "  Develop Backend:      $DEVELOP_PID"
 echo "  Service Backend:      $SERVICE_PID"
-echo "  GeoPandas Engine:     $GEOPANDAS_PID"
-echo "  Spark Sedona Engine:  $SPARK_SEDONA_PID"
+echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
+echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
 echo "  Gateway:              $GATEWAY_PID"
@@ -1611,8 +1611,8 @@ echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
-echo "  GeoPandas Engine: logs/geopandas-engine.log"
-echo "  Spark Sedona Engine: logs/spark-sedona-engine.log"
+echo "  Python Workflow Engine: logs/python-workflow-engine.log"
+echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"
 echo "  Transfer Worker: logs/transfer-worker.log"

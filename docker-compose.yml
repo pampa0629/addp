@@ -51,7 +51,7 @@ services:
       - MANAGER_SERVICE_URL=http://manager-backend:8081
       - ORCHESTRATOR_SERVICE_URL=http://orchestrator-backend:8084
       - DEVELOP_SERVICE_URL=http://develop-backend:8085
-      - GEOPANDAS_ENGINE_URL=http://geopandas-engine:8099
+      - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
       - GIN_MODE=release
     ports:
       - "8080:8080"
@@ -414,7 +414,7 @@ services:
       - PORT=8085
       - ENV=production
       - SYSTEM_SERVICE_URL=http://system-backend:8080
-      - GEOPANDAS_ENGINE_URL=http://geopandas-engine:8099
+      - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
       - JUPYTER_ENGINE_URL=http://jupyter-engine:8097
       - ENABLE_SERVICE_INTEGRATION=true
       - POSTGRES_HOST=postgres
@@ -569,14 +569,14 @@ services:
           cpus: '0.5'
           memory: 512M
 
-  # ==================== GeoPandas Engine (空间计算引擎) ====================
+  # ==================== Python Workflow Engine (Python 数据处理工作流引擎) ====================
 
-  geopandas-engine:
+  python-workflow-engine:
     build:
-      context: ./engines/geopandas
+      context: ./engines/python-workflow
       dockerfile: Dockerfile
-    image: ${REGISTRY:-localhost:5001}/addp-geopandas-engine:${IMAGE_TAG:-latest}
-    container_name: geopandas-engine
+    image: ${REGISTRY:-localhost:5001}/addp-python-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: python-workflow-engine
     environment:
       - PORT=8099
       - SYSTEM_SERVICE_URL=http://system-backend:8080
@@ -605,12 +605,12 @@ services:
       retries: 30
       start_period: 60s
 
-  spark-sedona-engine:
+  spark-workflow-engine:
     build:
-      context: ./engines/spark-sedona
+      context: ./engines/spark-workflow
       dockerfile: Dockerfile
-    image: ${REGISTRY:-localhost:5001}/addp-spark-sedona-engine:${IMAGE_TAG:-latest}
-    container_name: spark-sedona-engine
+    image: ${REGISTRY:-localhost:5001}/addp-spark-workflow-engine:${IMAGE_TAG:-latest}
+    container_name: spark-workflow-engine
     environment:
       - PORT=8098
       - SYSTEM_SERVICE_URL=http://system-backend:8080

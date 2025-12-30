@@ -83,9 +83,9 @@ echo "----------------------------"
 test_api "Manager算子列表" "GET" "/api/manager/operators" || true
 
 echo ""
-echo "4️⃣  测试GeoPandas引擎算子API"
+echo "4️⃣  测试Python Workflow引擎算子API"
 echo "----------------------------"
-test_api "GeoPandas算子列表" "GET" "/api/develop/spatial/operators" || true
+test_api "Python Workflow算子列表" "GET" "/api/develop/spatial/operators" || true
 
 echo ""
 echo "5️⃣  测试Develop空间引擎列表API"

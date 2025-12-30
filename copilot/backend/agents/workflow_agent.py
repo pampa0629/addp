@@ -19,7 +19,7 @@ class WorkflowGenerationAgent:
 
     功能：
     - 理解用户的自然语言需求
-    - 调用 Develop API 获取 GeoPandas 算子列表
+    - 调用 Develop API 获取 Python Workflow 算子列表
     - 生成工作流 DAG JSON
     - 验证生成的工作流
 

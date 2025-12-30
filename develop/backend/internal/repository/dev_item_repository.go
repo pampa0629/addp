@@ -59,6 +59,11 @@ func (r *DevItemRepository) List(req *models.ListDevItemsRequest, tenantID uint)
 		query = query.Where("dev_type = ?", req.DevType)
 	}
 
+	// 查询类型过滤
+	if req.QueryType != "" {
+		query = query.Where("query_type = ?", req.QueryType)
+	}
+
 	// 状态过滤
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)

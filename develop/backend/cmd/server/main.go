@@ -26,9 +26,8 @@ func main() {
 	log.Printf("🚀 Starting Develop Service on %s", cfg.ServerAddr)
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
-	log.Printf("🔗 GeoPandas Engine: %s", cfg.GeoPandasEngineURL)
 	log.Printf("🔗 Jupyter Engine: %s", cfg.JupyterEngineURL)
-	log.Printf("🔗 Spark Sedona Engine: %s", cfg.SparkEngineURL)
+	log.Printf("🔗 Spark 工作流引擎: %s", cfg.SparkEngineURL)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -47,7 +46,7 @@ func main() {
 	log.Printf("✅ System Client 创建成功")
 
 	// ========== Service 层 ==========
-	// 1. 工作流引擎服务（重构后不再需要 GeoPandasEngineURL，改为从 System 动态获取）
+	// 1. 工作流引擎服务（从 System 动态获取引擎配置）
 	workflowEngine := service.NewWorkflowEngineService(systemClient)
 	log.Printf("✅ WorkflowEngineService 初始化完成")
 
@@ -69,7 +68,7 @@ func main() {
 
 	// 5. 算子发现服务
 	operatorDiscovery := service.NewOperatorDiscoveryService(
-		cfg.GeoPandasEngineURL,
+		cfg.PythonWorkflowEngineURL,
 		cfg.SparkEngineURL, // 新增: Spark Engine
 		cfg.MetaServiceURL,
 		cfg.TransferServiceURL,
@@ -82,12 +81,12 @@ func main() {
 	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
-	sqlHandler := api.NewSQLHandler(sqlEngine, devItemService)
+	queryHandler := api.NewQueryHandler(sqlEngine, devItemService)
 	notebookHandler := api.NewNotebookHandler(jupyterService)
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, sqlHandler, notebookHandler, devItemService)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devItemService)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

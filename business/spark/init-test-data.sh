@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # ============================================================================
-# Spark SQL + Sedona 测试数据初始化脚本
+# Apache Spark + Sedona 测试数据初始化脚本
 # ============================================================================
 # 功能：
 # 1. 在 PostgreSQL 业务库创建测试表
 # 2. 插入空间测试数据（中国主要城市 POI）
-# 3. 验证 Spark SQL 可以通过 JDBC 访问
+# 3. 验证 Apache Spark 可以通过 JDBC 访问
 # 4. 提供示例 SQL 查询
 # ============================================================================
 
@@ -31,7 +31,7 @@ SPARK_HOST="${SPARK_HOST:-localhost}"
 SPARK_PORT="${SPARK_PORT:-10000}"
 
 echo -e "${BLUE}======================================${NC}"
-echo -e "${BLUE}Spark SQL 测试数据初始化${NC}"
+echo -e "${BLUE}Apache Spark 测试数据初始化${NC}"
 echo -e "${BLUE}======================================${NC}"
 echo ""
 
@@ -189,9 +189,9 @@ echo -e "   - POI 数据: ${POI_COUNT} 条"
 echo ""
 
 # ============================================================================
-# 4. 验证 Spark SQL 连接（可选）
+# 4. 验证 Apache Spark 连接（可选）
 # ============================================================================
-echo -e "${YELLOW}[4/5] 验证 Spark SQL 连接...${NC}"
+echo -e "${YELLOW}[4/5] 验证 Apache Spark 连接...${NC}"
 if command -v nc &> /dev/null; then
     if nc -z $SPARK_HOST $SPARK_PORT 2>/dev/null; then
         echo -e "${GREEN}✅ Spark Thrift Server 可访问 (${SPARK_HOST}:${SPARK_PORT})${NC}"
@@ -215,7 +215,7 @@ echo -e "${YELLOW}📝 示例 SQL 查询：${NC}"
 echo ""
 
 cat <<'SQLEXAMPLE'
--- 1. 通过 Spark SQL 查询城市表（JDBC 外部表）
+-- 1. 通过 Apache Spark 查询城市表（JDBC 外部表）
 CREATE TABLE spark_cities
 USING jdbc
 OPTIONS (
@@ -304,9 +304,9 @@ SQLEXAMPLE
 
 echo ""
 echo -e "${GREEN}✨ 提示：${NC}"
-echo -e "   1. 登录 ADDP Portal → System 模块 → 注册 Spark SQL 资源"
+echo -e "   1. 登录 ADDP Portal → System 模块 → 注册 Apache Spark 资源"
 echo -e "   2. 进入 Develop 模块 → SQL 工作台"
-echo -e "   3. 选择 Spark SQL 数据源，粘贴上述 SQL 执行"
+echo -e "   3. 选择 Apache Spark 数据源，粘贴上述 SQL 执行"
 echo ""
 echo -e "${BLUE}======================================${NC}"
 echo -e "${BLUE}详细文档: docs/spark-user-guide.md${NC}"

@@ -58,8 +58,8 @@ docker compose -f docker-compose.yml up -d \
   orchestrator-backend \
   develop-backend \
   service-backend \
-  geopandas-engine \
-  spark-sedona-engine \
+  python-workflow-engine \
+  spark-workflow-engine \
   jupyter-engine \
   gateway
 
@@ -76,8 +76,8 @@ services=(
   "develop-backend:8085"
   "service-backend:8086"
   "jupyter-engine:8097"
-  "spark-sedona-engine:8098"
-  "geopandas-engine:8099"
+  "spark-workflow-engine:8098"
+  "python-workflow-engine:8099"
   "gateway:8000"
 )
 
@@ -164,8 +164,8 @@ echo -e "  Transfer Backend:       http://localhost:8083"
 echo -e "  Orchestrator Backend:   http://localhost:8084"
 echo -e "  Develop Backend:        http://localhost:8085"
 echo -e "  Service Backend:        http://localhost:8086"
-echo -e "  GeoPandas Engine:       http://localhost:8099"
-echo -e "  Spark Sedona Engine:    http://localhost:8098"
+echo -e "  Python Workflow Engine: http://localhost:8099"
+echo -e "  Spark Spark 工作流引擎:    http://localhost:8098"
 echo -e "  Gateway API:            http://localhost:8000"
 
 echo ""

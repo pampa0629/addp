@@ -2,7 +2,7 @@
 
 ## 概述
 
-ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以动态获取支持workflow开发模式的空间引擎列表,为未来扩展(如Spark Sedona)做好准备。
+ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以动态获取支持workflow开发模式的空间引擎列表,为未来扩展(如Spark 工作流)做好准备。
 
 ## 后端API
 
@@ -17,9 +17,9 @@ ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以
   "engines": [
     {
       "id": 1,
-      "name": "geopandas_engine",
-      "display_name": "GeoPandas空间计算引擎",
-      "resource_type": "api.geopandas",
+      "name": "python_workflow_engine",
+      "display_name": "Python Workflow 空间计算引擎",
+      "resource_type": "api.python-workflow",
       "capabilities": {
         "compute": [{
           "type": "spatial",
@@ -227,7 +227,7 @@ onMounted(async () => {
 
 ### 已支持的引擎
 
-1. **GeoPandas Engine** (`api.geopandas`)
+1. **Python Workflow Engine** (`api.python-workflow`)
    - 类型: 内存计算引擎
    - 支持格式: GeoJSON, WKT, Shapely
    - 特性: DAG工作流, 内存高效, 批处理
@@ -235,19 +235,19 @@ onMounted(async () => {
 
 ### 未来扩展
 
-当添加新的空间引擎(如Spark Sedona)时:
+当添加新的空间引擎(如Spark 工作流)时:
 
 1. **后端**: 引擎自动注册到System资源中心
    ```python
    # 新引擎启动时自动注册
    registration_data = {
-       "unique_identifier": "api.spark_sedona",
-       "resource_type": "api.spark_sedona",
+       "unique_identifier": "api.spark_workflow",
+       "resource_type": "api.spark_workflow",
        "capabilities": {
            "compute": [{
                "type": "spatial",
                "dev_modes": ["workflow"],
-               "engine": "sedona",
+               "engine": "spark",
                "scale": "distributed"
            }]
        }
@@ -258,7 +258,7 @@ onMounted(async () => {
 
 3. **算子**: 新引擎提供自己的算子列表API
    ```
-   GET /api/spatial/operators?engine=spark_sedona
+   GET /api/spatial/operators?engine=spark_workflow
    ```
 
 ## 注意事项

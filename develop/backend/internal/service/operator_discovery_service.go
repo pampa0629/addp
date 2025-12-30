@@ -14,14 +14,14 @@ import (
 )
 
 // OperatorDiscoveryService 跨模块算子发现服务
-// 负责从各个模块（Meta、Transfer、Manager、GeoPandas、Spark）获取算子列表并合并缓存
+// 负责从各个模块（Meta、Transfer、Manager、Python Workflow、Spark）获取算子列表并合并缓存
 type OperatorDiscoveryService struct {
-	geopandasEngineURL string
-	sparkEngineURL     string // 新增: Spark Sedona Engine URL
-	metaServiceURL     string
-	transferServiceURL string
-	managerServiceURL  string
-	httpClient         *http.Client
+	pythonWorkflowEngineURL string
+	sparkWorkflowEngineURL  string // Spark 工作流引擎 URL
+	metaServiceURL          string
+	transferServiceURL      string
+	managerServiceURL       string
+	httpClient              *http.Client
 
 	// 缓存
 	cachedOperators []commonModels.OperatorMetadata
@@ -32,18 +32,18 @@ type OperatorDiscoveryService struct {
 
 // NewOperatorDiscoveryService 创建算子发现服务
 func NewOperatorDiscoveryService(
-	geopandasEngineURL string,
-	sparkEngineURL string, // 新增: Spark Engine URL
+	pythonWorkflowEngineURL string,
+	sparkWorkflowEngineURL string, // Spark 工作流引擎 URL
 	metaServiceURL string,
 	transferServiceURL string,
 	managerServiceURL string,
 ) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
-		geopandasEngineURL: geopandasEngineURL,
-		sparkEngineURL:     sparkEngineURL,
-		metaServiceURL:     metaServiceURL,
-		transferServiceURL: transferServiceURL,
-		managerServiceURL:  managerServiceURL,
+		pythonWorkflowEngineURL: pythonWorkflowEngineURL,
+		sparkWorkflowEngineURL:  sparkWorkflowEngineURL,
+		metaServiceURL:          metaServiceURL,
+		transferServiceURL:      transferServiceURL,
+		managerServiceURL:       managerServiceURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -70,26 +70,26 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 	results := make(chan []commonModels.OperatorMetadata, 5) // 增加到5个模块
 	errors := make(chan error, 5)
 
-	// GeoPandas Engine
+	// Python Workflow Engine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		operators, err := s.fetchOperatorsFromModule(ctx, "geopandas", s.geopandasEngineURL)
+		operators, err := s.fetchOperatorsFromModule(ctx, "python", s.pythonWorkflowEngineURL)
 		if err != nil {
-			log.Printf("⚠️ [OperatorDiscovery] GeoPandas Engine 获取失败: %v", err)
+			log.Printf("⚠️ [OperatorDiscovery] Python Workflow Engine 获取失败: %v", err)
 			errors <- err
 		} else {
 			results <- operators
 		}
 	}()
 
-	// Spark Sedona Engine (新增)
+	// Spark 工作流引擎
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		operators, err := s.fetchOperatorsFromModule(ctx, "spark", s.sparkEngineURL)
+		operators, err := s.fetchOperatorsFromModule(ctx, "spark", s.sparkWorkflowEngineURL)
 		if err != nil {
-			log.Printf("⚠️ [OperatorDiscovery] Spark Sedona Engine 获取失败: %v", err)
+			log.Printf("⚠️ [OperatorDiscovery] Spark 工作流引擎获取失败: %v", err)
 			errors <- err
 		} else {
 			results <- operators
@@ -172,10 +172,10 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, module string) ([]commonModels.OperatorMetadata, error) {
 	var url string
 	switch module {
-	case "geopandas":
-		url = s.geopandasEngineURL
-	case "spark": // 新增
-		url = s.sparkEngineURL
+	case "python":
+		url = s.pythonWorkflowEngineURL
+	case "spark":
+		url = s.sparkWorkflowEngineURL
 	case "meta":
 		url = s.metaServiceURL
 	case "transfer":
@@ -190,12 +190,12 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 }
 
 // GetOperatorsByEngineType 根据引擎类型过滤算子
-// 支持的引擎类型: geopandas, spark_sedona
+// 支持的引擎类型: python_workflow, spark_workflow
 func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorMetadata, error) {
 	// 映射引擎类型到模块
 	moduleMapping := map[string]string{
-		"api.geopandas":    "geopandas",
-		"api.spark_sedona": "spark",
+		"api.python-workflow": "python",
+		"api.spark_workflow":  "spark",
 	}
 
 	module, ok := moduleMapping[engineType]

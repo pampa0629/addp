@@ -4,7 +4,7 @@
 
 Manager 模块是 ADDP 平台的**数据管理中枢**，负责以下核心功能：
 
-1. **存储引擎管理** - 管理多类型数据库和对象存储的连接配置（8种引擎：PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark SQL、MinIO、S3）
+1. **存储引擎管理** - 管理多类型数据库和对象存储的连接配置（8种引擎：PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 2. **数据探查与预览** - 提供统一的数据预览能力，支持结构化数据、空间数据、文档、图片等多种格式
 3. **元数据查询与展示** - 与 Meta 模块集成，展示数据目录树、表结构、文件属性等元数据信息
 4. **全文检索** - 基于 Meilisearch 的资产全文搜索，支持数据表、对象存储文件等
@@ -101,7 +101,7 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 - MongoDB (github.com/addp/common/database/plugins/mongodb)
 - ClickHouse (github.com/addp/common/database/plugins/clickhouse)
 - Doris (github.com/addp/common/database/plugins/doris)
-- Spark SQL (github.com/addp/common/database/plugins/spark_sql)
+- Apache Spark (github.com/addp/common/database/plugins/spark_sql)
 - MinIO (github.com/addp/common/database/plugins/minio)
 - S3 (github.com/addp/common/database/plugins/s3)
 

@@ -98,8 +98,8 @@ stop_services_concurrent() {
   pkill -9 -f "addp-.*-worker" 2>/dev/null || true
   # 清理前端和 Python 进程
   pkill -9 -f "vite" 2>/dev/null || true
-  pkill -9 -f "engines/geopandas.*api_server.py" 2>/dev/null || true
-  pkill -9 -f "engines/spark-sedona.*api_server.py" 2>/dev/null || true
+  pkill -9 -f "engines/python-workflow.*api_server.py" 2>/dev/null || true
+  pkill -9 -f "engines/spark-workflow.*api_server.py" 2>/dev/null || true
   pkill -9 -f "engines/jupyter.*api_server.py" 2>/dev/null || true
   pkill -9 -f "jupyter.*lab.*8088" 2>/dev/null || true
   pkill -9 -f "python.*main.py.*copilot" 2>/dev/null || true

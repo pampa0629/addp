@@ -27,13 +27,13 @@ type Config struct {
 	EncryptionKey                []byte
 	InternalAPIKey               string
 
-	// GeoPandas Engine 配置
-	GeoPandasEngineURL string
+	// Python Workflow Engine 配置
+	PythonWorkflowEngineURL string
 
 	// Jupyter Engine 配置
 	JupyterEngineURL string
 
-	// Spark Sedona Engine 配置
+	// Spark 工作流引擎 配置
 	SparkEngineURL string
 
 	// 其他模块服务配置（用于算子发现）
@@ -82,13 +82,13 @@ func Load() *Config {
 		EncryptionKey:            encryptionKey,
 		InternalAPIKey:           internalAPIKey,
 
-		// GeoPandas Engine 配置
-		GeoPandasEngineURL: getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8099"),
+		// Python Workflow Engine 配置
+		PythonWorkflowEngineURL: getEnv("PYTHON_WORKFLOW_ENGINE_URL", "http://localhost:8099"),
 
 		// Jupyter Engine 配置
 		JupyterEngineURL: getEnv("JUPYTER_ENGINE_URL", "http://localhost:8097"),
 
-		// Spark Sedona Engine 配置
+		// Spark 工作流引擎 配置
 		SparkEngineURL: getEnv("SPARK_ENGINE_URL", "http://localhost:8098"),
 
 		// 其他模块服务配置

@@ -92,7 +92,7 @@ import * as operatorApi from '@/api/operator'
 const props = defineProps({
   engineType: {
     type: String,
-    default: null, // 引擎类型: 'api.geopandas', 'api.spark_sedona', 或 null (全部)
+    default: null, // 引擎类型: 'api.python_workflow', 'api.spark_workflow', 或 null (全部)
   }
 })
 
@@ -105,17 +105,17 @@ const searchQuery = ref('')
 const operators = ref([]) // 从后端获取的算子列表 (数组格式,符合 common 标准)
 // 默认展开所有分类，让用户能看到所有算子
 const activeCategories = ref([
-  // GeoPandas 引擎分类
+  // Python Workflow 引擎分类
   '数据I/O', '几何处理', '空间关系', '几何属性',
   '格式转换', '数据操作', '属性计算', '数据筛选',
-  // Spark Sedona 引擎分类
-  'I/O', '空间分析', '数据转换', '聚合分析', 'SQL查询'
+  // Spark Workflow 引擎分类
+  'I/O', '空间分析', '数据转换', '聚合分析', '查询'
 ])
 
 // 分类映射：后端的分类名称已经是中文，直接使用即可
 // 这里只是为每个分类添加图标
 const categoryIcons = {
-  // GeoPandas 引擎分类
+  // Python Workflow 引擎分类
   '数据I/O': '💾',
   '几何处理': '📐',
   '空间关系': '🔗',
@@ -125,12 +125,12 @@ const categoryIcons = {
   '属性计算': '🧮',
   '数据筛选': '🔍',
 
-  // Spark Sedona 引擎分类
+  // Spark 工作流引擎分类
   'I/O': '💾',
   '空间分析': '🗺️',
   '数据转换': '🔄',
   '聚合分析': '📊',
-  'SQL查询': '🔎'
+  '查询': '🔎'
 }
 
 // 加载算子列表
@@ -203,7 +203,7 @@ const categorizedOperators = computed(() => {
   return Object.values(categories).sort((a, b) => {
     // 定义分类顺序权重（可选）
     const order = ['I/O', '数据I/O', '空间分析', '几何处理', '空间关系', '几何属性',
-                   '数据转换', '数据操作', '数据筛选', '聚合分析', 'SQL查询', '格式转换', '属性计算']
+                   '数据转换', '数据操作', '数据筛选', '聚合分析', '查询', '格式转换', '属性计算']
     const aIndex = order.indexOf(a.name)
     const bIndex = order.indexOf(b.name)
     if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex

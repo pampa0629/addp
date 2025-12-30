@@ -142,7 +142,7 @@ bash scripts/restart.sh
 bash spark/init-test-data.sh
 ```
 
-初始化 Spark SQL 测试数据（中国城市 POI 数据）。
+初始化 Apache Spark 测试数据（中国城市 POI 数据）。
 
 ## 常用操作
 

@@ -600,9 +600,9 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 	return filtered, nil
 }
 
-// ListSparkRuntimes 获取所有 Spark SQL 运行时
+// ListSparkRuntimes 获取所有 Apache Spark 运行时
 func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error) {
-	endpoint := fmt.Sprintf("%s/internal/engines?tenant_id=%d&engine_type=spark_sql", c.baseURL, tenantID)
+	endpoint := fmt.Sprintf("%s/internal/engines?tenant_id=%d&engine_type=spark", c.baseURL, tenantID)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {

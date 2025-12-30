@@ -133,8 +133,8 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	c.JSON(http.StatusOK, engines)
 }
 
-// ListSparkRuntimes 获取 Spark 运行时列表
-// @Summary 获取所有 Spark SQL 运行时列表
+// ListSparkRuntimes 获取 Apache Spark 运行时列表
+// @Summary 获取所有 Apache Spark 运行时列表
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine

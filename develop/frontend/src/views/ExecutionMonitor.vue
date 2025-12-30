@@ -23,7 +23,7 @@
           clearable
           style="width: 120px; margin-right: 10px;"
         >
-          <el-option label="SQL" value="sql" />
+          <el-option label="查询" value="query" />
           <el-option label="工作流" value="workflow" />
           <el-option label="脚本" value="script" />
         </el-select>

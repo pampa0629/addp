@@ -6,13 +6,13 @@
 
 ```
 engines/
-├── geopandas/          # GeoPandas空间计算引擎(Python)
+├── python_workflow/    # Python Workflow 空间计算引擎(Python)
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── api_server.py
 │   ├── operators.py
 │   └── workflow_engine.py
-├── spark-sedona/       # Spark Sedona空间计算引擎(未来)
+├── spark-workflow/       # Spark 工作流空间计算引擎(未来)
 └── README.md           # 本文件
 ```
 
@@ -25,15 +25,15 @@ engines/
 - `api.meta` - 元数据管理模块(元数据扫描等算子)
 - `api.transfer` - 数据传输模块(数据传输等算子)
 - `api.manager` - 数据管理模块(瓦片生成等算子)
-- `api.geopandas` - GeoPandas引擎(空间计算算子)
+- `api.python-workflow` - Python Workflow 引擎(空间计算算子)
 
 **规划中**:
-- `api.spark_sedona` - Spark Sedona引擎(大数据空间计算)
+- `api.spark_workflow` - Spark Workflow 引擎(大数据空间计算)
 
 ### 标准库引擎
 通过标准协议(JDBC/S3)访问的外部数据源:
 - `postgresql`, `mysql`, `doris` - 数据库
-- `spark_sql` - Spark SQL
+- `spark` - Apache Spark
 - `minio`, `s3`, `oss` - 对象存储
 
 ## 统一算子API规范
@@ -57,7 +57,7 @@ GET /api/{module}/operators
       "type": "spatial",
       "category": "空间分析",
       "description": "对几何对象生成缓冲区",
-      "module": "geopandas",
+      "module": "python_workflow",
       "parameters": [
         {
           "name": "distance",
@@ -110,8 +110,8 @@ POST /api/{module}/operators/:name/execute
 
 | DevMode | 说明 | 使用场景 |
 |---------|------|---------|
-| `sql` | SQL编辑器(文本编码) | PostgreSQL, Spark SQL等数据库引擎 |
-| `workflow` | 工作流画布(算子拖拽成DAG) | GeoPandas, Spark Sedona等计算引擎 |
+| `sql` | SQL编辑器(文本编码) | PostgreSQL, Apache Spark等数据库引擎 |
+| `workflow` | 工作流画布(算子拖拽成DAG) | GeoPandas, Spark 工作流等计算引擎 |
 | `form` | 简单表单配置 | 单一算子快速执行(如手动触发扫描) |
 | `script` | 脚本编辑器(未来) | Python/JavaScript等脚本语言 |
 
@@ -124,10 +124,10 @@ POST /api/{module}/operators/:name/execute
 **注册数据格式**:
 ```json
 {
-  "unique_identifier": "api.geopandas",
-  "name": "geopandas_engine",
-  "display_name": "GeoPandas空间计算引擎",
-  "resource_type": "api.geopandas",
+  "unique_identifier": "api.python-workflow",
+  "name": "python_workflow_engine",
+  "display_name": "Python Workflow 空间计算引擎",
+  "resource_type": "api.python-workflow",
   "is_builtin": true,
   "capabilities": {
     "compute": [{
@@ -138,7 +138,7 @@ POST /api/{module}/operators/:name/execute
     }]
   },
   "task_api_config": {
-    "base_url": "http://geopandas-engine:8099",
+    "base_url": "http://python-workflow-engine:8099",
     "endpoints": {
       "list_operators": {
         "method": "GET",
@@ -173,8 +173,8 @@ POST /api/{module}/operators/:name/execute
 
 ## 参考实现
 
-- **GeoPandas Engine**: [engines/geopandas/](./geopandas/)
-  - Python Flask实现
+- **Python Workflow Engine**: [engines/python_workflow/](./python_workflow/)
+  - Python FastAPI 实现
   - 21个空间算子
   - 自动注册到System
 

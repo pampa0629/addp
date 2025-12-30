@@ -19,7 +19,7 @@ type OperatorMetadata struct {
 	Parameters  []ParameterMetadata  `json:"parameters"`   // 参数定义
 	Inputs      []string             `json:"inputs"`       // 输入类型列表
 	OutputPorts []OutputPortMetadata `json:"output_ports"` // 输出端口定义 (替代 Outputs)
-	Module      string               `json:"module"`       // 所属模块 (meta/transfer/manager/geopandas)
+	Module      string               `json:"module"`       // 所属模块 (meta/transfer/manager/python_workflow)
 }
 
 // ParameterMetadata 参数元数据

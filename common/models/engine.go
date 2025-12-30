@@ -91,7 +91,7 @@ type Engine struct {
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
 	// 扩展引擎字段
-	UniqueIdentifier  *string `gorm:"column:unique_identifier;size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "api.geopandas"）
+	UniqueIdentifier  *string `gorm:"column:unique_identifier;size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "api.python-workflow"）
 	IsBuiltin         bool    `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`           // 是否为内置引擎（内置引擎不可删除）
 	Capabilities      *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"`           // 能力声明（JSONB）
 	TaskAPIConfig     *string `gorm:"column:task_api_config;type:jsonb" json:"task_api_config,omitempty"`     // 任务 API 配置（JSONB，仅扩展引擎）

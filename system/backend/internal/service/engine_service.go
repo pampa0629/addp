@@ -710,11 +710,11 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	case "api.manager":
 		return `{"compute":[{"dev_modes":["workflow","form"],"supported_formats":["mvt","pbf"],"features":["pre_cache","on_demand"],"description":"MVT瓦片缓存"}]}`
 
-	case "api.geopandas":
-		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","shapely"],"features":["dag","memory_efficient","batch"],"description":"空间数据分析"}]}`
+	case "api.python-workflow":
+		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","csv","parquet"],"features":["dag","memory_efficient","batch","pandas","numpy","scipy"],"description":"Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"}]}`
 
-	case "api.spark_sedona":
-		return `{"compute":[{"dev_modes":["workflow"],"engine":"sedona","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
+	case "api.spark_workflow":
+		return `{"compute":[{"dev_modes":["workflow"],"engine":"spark","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
 
 	default:
 		// 未知类型，生成通用 storage 能力

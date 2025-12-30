@@ -5,9 +5,9 @@
 Develop 模块是 ADDP 平台的**开发工作台**，负责以下核心功能：
 
 1. **SQL 查询执行** - 支持在线 SQL 查询，连接多种数据库（PostgreSQL、MySQL、MongoDB 等）
-2. **GIS 工作流管理** - 可视化编辑和执行空间数据工作流（基于 GeoPandas Engine）
+2. **GIS 工作流管理** - 可视化编辑和执行空间数据工作流（基于 Python Workflow Engine）
 3. **Jupyter Notebook 集成** - 支持 Python 数据分析和机器学习
-4. **算子发现** - 聚合所有计算引擎的算子（GeoPandas、Spark Sedona 等）
+4. **算子发现** - 聚合所有计算引擎的算子（Python Workflow、Spark 工作流 等）
 5. **执行历史管理** - 保存 SQL/工作流执行记录，支持历史回溯
 
 ## 关键架构
@@ -24,8 +24,8 @@ DevExecutor（统一执行器）
   │  └─ 返回查询结果
   ├─ 工作流执行 → WorkflowEngineService
   │  ├─ 解析工作流 JSON（DAG 结构）
-  │  ├─ 调用 GeoPandas Engine API（21 个空间算子）
-  │  ├─ 或调用 Spark Sedona Engine（大数据空间计算）
+  │  ├─ 调用 Python Workflow Engine API（21 个空间算子）
+  │  ├─ 或调用 Spark 工作流引擎（大数据空间计算）
   │  └─ 返回执行结果（GeoJSON/DataFrame）
   └─ Notebook 执行 → JupyterService
      ├─ 创建/管理 Jupyter Kernel
@@ -40,8 +40,8 @@ DevExecutionRepository（执行记录持久化）
 
 Develop 模块聚合了所有**计算引擎**的算子定义（用于工作流画布）：
 
-- **GeoPandas Engine** - 21 个空间算子（Buffer、Clip、Union、Intersect 等）
-- **Spark Sedona Engine** - 大数据空间算子（分布式计算）
+- **Python Workflow Engine** - 21 个空间算子（Buffer、Clip、Union、Intersect 等）
+- **Spark 工作流引擎** - 大数据空间算子（分布式计算）
 
 前端通过算子发现 API 获取所有可用算子，动态构建工作流编辑器的算子面板。
 
@@ -145,8 +145,8 @@ curl -H "Authorization: Bearer <token>" \
 # 3. 查看 Develop 后端日志
 tail -f logs/develop-backend.log | grep "execution_id=123"
 
-# 4. 检查 GeoPandas Engine 日志（如果是工作流错误）
-tail -f logs/geopandas-engine.log
+# 4. 检查 Python Workflow Engine 日志（如果是工作流错误）
+tail -f logs/python-workflow-engine.log
 ```
 
 ## 注意事项
@@ -170,21 +170,21 @@ Develop 模块允许用户执行任意 SQL（在其权限范围内），存在�
 
 ### 3. GeoPandas 内存管理
 
-GeoPandas Engine 在内存中处理空间数据（GeoDataFrame）：
+Python Workflow Engine 在内存中处理空间数据（GeoDataFrame）：
 
 - **内存限制** - 受 Python 进程内存限制（默认 4GB）
-- **大数据处理** - 对于超大数据集（>100万行），使用 Spark Sedona Engine
+- **大数据处理** - 对于超大数据集（>100万行），使用 Spark 工作流引擎
 - **OOM 风险** - 多个并发工作流可能导致内存不足
 
 **优化建议**：
 - 限制输入数据大小（前端提示用户先筛选数据）
-- 配置 GeoPandas Engine 的最大内存限制
-- 使用 Spark Sedona 处理大规模数据
+- 配置 Python Workflow Engine 的最大内存限制
+- 使用 Spark 工作流 处理大规模数据
 
 ### 4. 与其他模块的交互
 
 - **System 模块** - 获取数据库连接信息（解密后的 ConnectionInfo）
-- **GeoPandas/Spark Engine** - 执行空间计算工作流（提供算子）
+- **Python Workflow/Spark Engine** - 执行空间计算工作流（提供算子）
 - **Jupyter Engine** - 执行 Python 代码和数据分析
 
 ### 5. 执行记录清理
@@ -216,7 +216,7 @@ curl -H "Authorization: Bearer <token>" \
 ### 添加新算子到工作流编辑器
 
 ```bash
-# 1. 在 GeoPandas Engine 中添加新算子实现
+# 1. 在 Python Workflow Engine 中添加新算子实现
 # 2. 在 OperatorDiscoveryService 中注册新算子
 # 3. 重启 Develop 服务
 bash scripts/dev/restart.sh -develop
@@ -230,6 +230,6 @@ curl -H "Authorization: Bearer <token>" \
 
 ## 相关文档
 
-- **GeoPandas Engine 说明** - [engines/geopandas/README.md](../engines/geopandas/README.md)
+- **Python Workflow Engine 说明** - [engines/python_workflow/README.md](../engines/python_workflow/README.md)
 - **System 模块说明** - [system/CLAUDE.md](../system/CLAUDE.md)
 - **共享数据库桥接** - [common/dbbridge/README.md](../common/dbbridge/README.md)

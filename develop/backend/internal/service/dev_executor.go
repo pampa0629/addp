@@ -101,7 +101,7 @@ func (e *DevExecutor) ExecuteContent(
 	timeout int,
 ) (string, error) {
 	// 验证 dev_type
-	if devType != "sql" && devType != "workflow" && devType != "script" && devType != "notebook" {
+	if devType != "query" && devType != "workflow" && devType != "script" && devType != "notebook" {
 		return "", fmt.Errorf("无效的 dev_type: %s", devType)
 	}
 
@@ -160,8 +160,8 @@ func (e *DevExecutor) executeAsync(recordID uint, executionID string, devItem *m
 	switch devItem.DevType {
 	case "workflow":
 		result, errorMessage = e.executeWorkflow(ctx, devItem, executionID)
-	case "sql":
-		result, errorMessage, rowsAffected = e.executeSQL(ctx, devItem, executionID)
+	case "query":
+		result, errorMessage, rowsAffected = e.executeQuery(ctx, devItem, executionID)
 	case "script":
 		result, errorMessage = e.executeScript(ctx, devItem, executionID)
 	case "notebook":
@@ -276,6 +276,25 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 	}
 
 	return result, ""
+}
+
+// executeQuery 执行查询（根据query_type路由）
+func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string, *int64) {
+	// 根据 query_type 路由到不同执行器
+	switch devItem.QueryType {
+	case "sql":
+		return e.executeSQL(ctx, devItem, executionID)
+	case "mql":
+		return nil, "MongoDB 查询功能尚未实现", nil
+	case "dsl":
+		return nil, "Elasticsearch 查询功能尚未实现", nil
+	default:
+		// 如果没有指定query_type，默认当作SQL处理（向后兼容）
+		if devItem.QueryType == "" {
+			return e.executeSQL(ctx, devItem, executionID)
+		}
+		return nil, fmt.Sprintf("不支持的查询类型: %s", devItem.QueryType), nil
+	}
 }
 
 // executeSQL 执行SQL

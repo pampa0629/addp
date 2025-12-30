@@ -9,7 +9,7 @@
 
 ## 🎯 核心功能
 
-- **存储引擎管理**: 8 种引擎支持（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark SQL、MinIO、S3）
+- **存储引擎管理**: 8 种引擎支持（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
 - **空间数据可视化**: MVT 矢量瓦片服务 + 三层缓存（PostgreSQL + Redis + 实时生成）
 - **全文检索**: 基于 Meilisearch 的资产搜索
@@ -40,7 +40,7 @@ docker-compose up -d
 ## 📊 支持的数据类型
 
 ### 数据库
-PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark SQL
+PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark
 
 ### 对象存储
 MinIO、S3

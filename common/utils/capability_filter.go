@@ -203,7 +203,7 @@ func IsStandardLibraryEngine(resource *models.Engine) bool {
 		"postgres":   true,
 		"mysql":      true,
 		"doris":      true,
-		"spark_sql":  true,
+		"spark":      true,
 		"minio":      true,
 		"s3":         true,
 		"oss":        true,

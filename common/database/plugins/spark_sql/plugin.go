@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SparkSQLPlugin Spark SQL Thrift Server 插件
+// SparkSQLPlugin Apache Spark Thrift Server 插件
 type SparkSQLPlugin struct{}
 
 func init() {
@@ -21,11 +21,11 @@ func init() {
 }
 
 func (p *SparkSQLPlugin) Type() string {
-	return "spark_sql"
+	return "spark"
 }
 
 func (p *SparkSQLPlugin) DisplayName() string {
-	return "Spark SQL"
+	return "Apache Spark"
 }
 
 func (p *SparkSQLPlugin) ConnectionCategory() string {
@@ -33,7 +33,7 @@ func (p *SparkSQLPlugin) ConnectionCategory() string {
 }
 
 func (p *SparkSQLPlugin) DefaultPort() int {
-	return 10000 // Spark SQL Thrift Server 默认端口
+	return 10000 // Apache Spark Thrift Server 默认端口
 }
 
 func (p *SparkSQLPlugin) RequiredFields() []string {
@@ -45,7 +45,7 @@ func (p *SparkSQLPlugin) SensitiveFields() []string {
 }
 
 func (p *SparkSQLPlugin) GenerateCapabilities() string {
-	return `{"compute":[{"dev_modes":["sql"],"description":"Spark SQL查询","features":["distributed","big_data"]}]}`
+	return `{"compute":[{"dev_modes":["sql"],"description":"Apache Spark查询","features":["distributed","big_data"]}]}`
 }
 
 func (p *SparkSQLPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
@@ -65,7 +65,7 @@ func (p *SparkSQLPlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (
 	}
 
 	if host == "" {
-		return "", fmt.Errorf("missing required Spark SQL connection info: host")
+		return "", fmt.Errorf("missing required Apache Spark connection info: host")
 	}
 
 	// 返回格式：host:port:database（用冒号分隔，方便解析）
@@ -105,10 +105,10 @@ func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Con
 	configuration.ConnectTimeout = 30 * time.Second
 	configuration.SocketTimeout = 30 * time.Second
 
-	// 连接到 Spark SQL Thrift Server
+	// 连接到 Apache Spark Thrift Server
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
+		return fmt.Errorf("failed to connect to Apache Spark: %w", err)
 	}
 	defer connection.Close()
 
@@ -132,7 +132,7 @@ func (p *SparkSQLPlugin) TestConnection(ctx context.Context, connInfo plugin.Con
 	return nil
 }
 
-// ParseConnectionString 解析 Spark SQL 连接字符串
+// ParseConnectionString 解析 Apache Spark 连接字符串
 // 格式: "host:port:database"
 func ParseConnectionString(connStr string) (host string, port int, database string, err error) {
 	// 简单的字符串解析
@@ -155,7 +155,7 @@ func ParseConnectionString(connStr string) (host string, port int, database stri
 	}
 
 	if len(parts) != 3 {
-		return "", 0, "", fmt.Errorf("invalid Spark SQL connection string format: %s", connStr)
+		return "", 0, "", fmt.Errorf("invalid Apache Spark connection string format: %s", connStr)
 	}
 
 	host = parts[0]
@@ -172,7 +172,7 @@ func ParseConnectionString(connStr string) (host string, port int, database stri
 // === ConnectionPoolPlugin 接口实现 ===
 
 // CreateConnectionPool 创建GORM连接池
-// 注意：SparkSQL使用Thrift协议，这里创建一个兼容的连接池
+// 注意：Apache Spark 使用Thrift协议，这里创建一个兼容的连接池
 func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
 	// 解析连接参数
 	host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
@@ -193,7 +193,7 @@ func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, po
 		return nil, fmt.Errorf("missing required field: host")
 	}
 
-	// SparkSQL通过Thrift协议，我们使用MySQL兼容模式
+	// Apache Spark 通过Thrift协议，我们使用MySQL兼容模式
 	// 构建DSN: user:password@tcp(host:port)/database
 	var dsn string
 	if user != "" && password != "" {
@@ -204,7 +204,7 @@ func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, po
 		dsn = fmt.Sprintf("tcp(%s:%d)/%s", host, port, database)
 	}
 
-	// 创建GORM连接（使用MySQL驱动，因为SparkSQL兼容MySQL协议）
+	// 创建GORM连接（使用MySQL驱动，因为 Apache Spark 兼容MySQL协议）
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		DisableAutomaticPing: false,
 	})
@@ -228,16 +228,16 @@ func (p *SparkSQLPlugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, po
 
 // GetDialect 获取数据库方言
 func (p *SparkSQLPlugin) GetDialect() string {
-	return "mysql" // SparkSQL使用MySQL兼容协议
+	return "mysql" // Apache Spark 使用MySQL兼容协议
 }
 
 // === MetadataPlugin 接口实现 ===
 
-// ListSchemas 列出所有Schema（Spark SQL中对应Database）
+// ListSchemas 列出所有Schema（Apache Spark 中对应Database）
 func (p *SparkSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
 	var schemas []plugin.SchemaInfo
 
-	// Spark SQL使用 SHOW DATABASES 命令
+	// Apache Spark 使用 SHOW DATABASES 命令
 	rows, err := db.WithContext(ctx).Raw("SHOW DATABASES").Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list databases: %w", err)
@@ -339,7 +339,7 @@ func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, t
 			ColumnName:   colName.String,
 			DataType:     dataType.String,
 			StdType:      plugin.MapToStandardType(dataType.String), // 使用通用映射工具
-			IsNullable:   true, // Spark SQL默认允许NULL
+			IsNullable:   true, // Apache Spark 默认允许NULL
 			IsPrimaryKey: false,
 			Comment:      "",
 		}

@@ -57,18 +57,18 @@ else
   echo -e "${RED}✗ jupyter-engine${NC}"
 fi
 
-# Spark Sedona Engine
+# Spark Spark 工作流引擎
 if curl -f http://localhost:8098/health > /dev/null 2>&1; then
-  echo -e "${GREEN}✓ spark-sedona-engine${NC}"
+  echo -e "${GREEN}✓ spark-workflow-engine${NC}"
 else
-  echo -e "${RED}✗ spark-sedona-engine${NC}"
+  echo -e "${RED}✗ spark-workflow-engine${NC}"
 fi
 
-# GeoPandas Engine
+# Python Workflow Engine
 if curl -f http://localhost:8099/health > /dev/null 2>&1; then
-  echo -e "${GREEN}✓ geopandas-engine${NC}"
+  echo -e "${GREEN}✓ python-workflow-engine${NC}"
 else
-  echo -e "${RED}✗ geopandas-engine${NC}"
+  echo -e "${RED}✗ python-workflow-engine${NC}"
 fi
 
 # Gateway

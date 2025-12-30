@@ -17,7 +17,7 @@ func SetupRouter(
 	devExecutionHandler *DevExecutionHandler,
 	operatorHandler *OperatorHandler,
 	engineHandler *EngineHandler,
-	sqlHandler *SQLHandler,
+	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
 	devItemService interface{}, // 添加 devItemService 参数
 ) *gin.Engine {
@@ -105,18 +105,18 @@ func SetupRouter(
 		api.GET("/workflow-engines", engineHandler.ListWorkflowEngines) // 获取工作流引擎列表
 		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
 
-		// ========== SQL 开发 ==========
-		api.GET("/test/:id", sqlHandler.TestConnection) // 测试数据源连接
-		api.POST("/execute", sqlHandler.ExecuteSQL)     // 执行 SQL
+		// ========== 查询开发 ==========
+		api.GET("/test/:id", queryHandler.TestConnection) // 测试数据源连接
+		api.POST("/execute", queryHandler.ExecuteQuery)     // 执行查询
 
-		// SQL 任务管理
-		sqlTasks := api.Group("/sql/tasks")
+		// 查询任务管理
+		queryTasks := api.Group("/query/tasks")
 		{
-			sqlTasks.POST("", sqlHandler.SaveSQLTask)       // 保存 SQL 任务
-			sqlTasks.GET("", sqlHandler.ListSQLTasks)       // 获取 SQL 任务列表
-			sqlTasks.GET("/:id", sqlHandler.GetSQLTask)     // 获取 SQL 任务详情
-			sqlTasks.PUT("/:id", sqlHandler.UpdateSQLTask)  // 更新 SQL 任务
-			sqlTasks.DELETE("/:id", sqlHandler.DeleteSQLTask) // 删除 SQL 任务
+			queryTasks.POST("", queryHandler.SaveQueryTask)       // 保存查询任务
+			queryTasks.GET("", queryHandler.ListQueryTasks)       // 获取查询任务列表
+			queryTasks.GET("/:id", queryHandler.GetQueryTask)     // 获取查询任务详情
+			queryTasks.PUT("/:id", queryHandler.UpdateQueryTask)  // 更新查询任务
+			queryTasks.DELETE("/:id", queryHandler.DeleteQueryTask) // 删除查询任务
 		}
 
 		// ========== Notebook 开发 ==========

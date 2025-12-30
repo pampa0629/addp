@@ -207,8 +207,8 @@
       </div>
     </template>
 
-    <!-- Spark SQL -->
-    <template v-else-if="formState.resource_type === 'spark_sql'">
+    <!-- Apache Spark -->
+    <template v-else-if="formState.resource_type === 'spark'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
       </el-form-item>
@@ -230,7 +230,7 @@
         />
       </el-form-item>
       <div class="field-hint">
-        Spark SQL 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000
+        Apache Spark 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000
       </div>
     </template>
 
@@ -351,7 +351,7 @@ const props = defineProps({
       { label: 'ClickHouse', value: 'clickhouse' },
       { label: 'MongoDB', value: 'mongodb' },
       { label: 'MinIO', value: 'minio' },
-      { label: 'Spark SQL', value: 'spark_sql' },
+      { label: 'Apache Spark', value: 'spark' },
       { label: 'SpatiaLite/SQLite', value: 'spatialite' }
     ])
   },
@@ -436,7 +436,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
     form.connection_info = {
       file_path: original.file_path ?? ''
     }
-  } else if (form.resource_type === 'spark_sql') {
+  } else if (form.resource_type === 'spark') {
     form.connection_info = {
       host: original.host ?? 'host.docker.internal',
       port: original.port ?? 10000,
@@ -674,7 +674,7 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'spark_sql') {
+  if (formState.resource_type === 'spark') {
     return {
       resource_type: rules.resource_type,
       name: rules.name,

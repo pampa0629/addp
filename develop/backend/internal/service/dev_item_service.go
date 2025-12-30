@@ -33,8 +33,21 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 	}
 
 	// 业务验证：验证 dev_type
-	if req.DevType != "sql" && req.DevType != "workflow" && req.DevType != "script" {
+	validTypes := []string{"query", "workflow", "script", "notebook"}
+	isValidType := false
+	for _, t := range validTypes {
+		if req.DevType == t {
+			isValidType = true
+			break
+		}
+	}
+	if !isValidType {
 		return nil, fmt.Errorf("无效的 dev_type: %s", req.DevType)
+	}
+
+	// 业务验证：如果是 query 类型，必须提供 query_type
+	if req.DevType == "query" && req.QueryType == "" {
+		return nil, fmt.Errorf("query 类型必须提供 query_type")
 	}
 
 	// 业务验证：content 不能为空
@@ -58,8 +71,9 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
 		DevType:     req.DevType,
+		QueryType:   req.QueryType,
 		Content:     req.Content,
-		EngineID:  req.EngineID,
+		EngineID:    req.EngineID,
 		Schedule:    req.Schedule,
 		IsScheduled: req.IsScheduled,
 		Timeout:     req.Timeout,
@@ -107,6 +121,9 @@ func (s *DevItemService) UpdateDevItem(id uint, req *models.UpdateDevItemRequest
 	// 更新字段
 	if req.DisplayName != "" {
 		item.DisplayName = req.DisplayName
+	}
+	if req.QueryType != "" {
+		item.QueryType = req.QueryType
 	}
 	if req.Content != nil && len(req.Content) > 0 {
 		item.Content = req.Content

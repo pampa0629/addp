@@ -379,7 +379,7 @@ GeoPandas 引擎 (空间分析)
        {
          "id": "spatial_analysis",
          "name": "空间缓冲区分析",
-         "engine_identifier": "geopandas.engine.default",
+         "engine_identifier": "python-workflow.engine.default",
          "parameters": {
            "task_id": 1,
            "inputs": {

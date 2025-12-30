@@ -1,6 +1,6 @@
 ## Common 模块
 
-`common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 GeoPandas Engine 集成)。
+`common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 Python Workflow Engine 集成)。
 
 **内容**:
 
@@ -547,7 +547,7 @@ go test -v -run TestFunctionName ./internal/service/
   - 其他模块: `{module_name}:*` 队列
 - **Worker 配置**: 使用 Docker Swarm 运行以实现高可用 (默认 2 个副本)
 
-### GeoPandas Engine (已实现)
+### Python Workflow Engine (已实现)
 
 **目的**: 基于 Python 的空间计算引擎,提供 GIS 工作流执行能力
 
@@ -575,7 +575,7 @@ go test -v -run TestFunctionName ./internal/service/
   - **任务保存**: 保存为 GIS 任务(存储到 `develop.spatial_tasks`),供 Orchestrator 编排
 - **引擎注册**:
 
-  - 仅注册引擎本身到 System (`geopandas.engine.default`)
+  - 仅注册引擎本身到 System (`python-workflow.engine.default`)
   - 不注册具体算子 (Transfer 模式)
   - 任务动态发现: `GET /api/spatial/tasks`
 
@@ -615,9 +615,9 @@ GET  /api/spatial/executions/:id      - 查询执行状态
 
 **关键文件**:
 
-- [geopandas-engine/workflow_engine.py](geopandas-engine/workflow_engine.py) - DAG执行引擎
-- [geopandas-engine/operators.py](geopandas-engine/operators.py) - 21个空间算子
-- [geopandas-engine/api_server.py](geopandas-engine/api_server.py) - Flask REST API
+- [python-workflow/workflow_engine.py](python-workflow/workflow_engine.py) - DAG执行引擎
+- [python-workflow/operators.py](python-workflow/operators.py) - 21个空间算子
+- [python-workflow/api_server.py](python-workflow/api_server.py) - Flask REST API
 - [develop/backend/internal/service/spatial_workflow_service.go](develop/backend/internal/service/spatial_workflow_service.go) - Develop集成
 - [develop/frontend/src/views/SpatialTasks.vue](develop/frontend/src/views/SpatialTasks.vue) - 任务管理UI
 - [orchestrator/backend/internal/service/executor.go](orchestrator/backend/internal/service/executor.go) - 参数模板化实现

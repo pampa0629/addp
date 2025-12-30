@@ -39,7 +39,7 @@ bash scripts/dev/start.sh
 
 自动启动以下内容:
 1. 基础设施 (如未运行)
-2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、GeoPandas Engine)
+2. 所有后端服务 (System、Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine)
 3. Gateway 服务
 4. 所有前端服务 (可选,提示用户)
 
@@ -92,7 +92,7 @@ bash scripts/prod/start.sh
 
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
-3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、GeoPandas Engine、Gateway)
+3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Gateway)
 4. **启动前端服务** (所有模块前端 + Portal + Nginx)
 5. **健康检查** (验证所有服务就绪)
 

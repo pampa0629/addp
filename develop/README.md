@@ -10,7 +10,7 @@
 ## 🎯 核心功能
 
 - **SQL 工作台**: Monaco Editor + 多数据库支持（PostgreSQL、MySQL 等）
-- **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 GeoPandas 算子）
+- **GIS 工作流**: 可视化编辑和执行空间计算工作流（21个 Python Workflow 算子）
 - **Jupyter Notebook**: 在线 Python 数据分析和机器学习环境
 - **算子管理**: 聚合所有计算引擎算子，供工作流编辑器使用
 - **执行历史**: 保存所有执行记录，支持历史回溯
@@ -68,12 +68,12 @@ Notebook:   POST/GET /api/v1/notebooks
 
 ### 内存不足错误？
 
-大数据集建议使用 Spark Sedona Engine。详见 [CLAUDE.md#3-geopandas-内存管理](./CLAUDE.md#3-geopandas-内存管理)
+大数据集建议使用 Spark 工作流引擎。详见 [CLAUDE.md#3-python-workflow-内存管理](./CLAUDE.md#3-python-workflow-内存管理)
 
 ## 📚 相关文档
 
 - **[CLAUDE.md](./CLAUDE.md)** - 完整技术文档（核心架构、执行流程、常见场景）
-- **[engines/geopandas/README.md](../engines/geopandas/README.md)** - GeoPandas 空间计算引擎
+- **[engines/python_workflow/README.md](../engines/python_workflow/README.md)** - Python Workflow 空间计算引擎
 - **[system/CLAUDE.md](../system/CLAUDE.md)** - 数据库连接与认证
 - **[common/dbbridge/README.md](../common/dbbridge/README.md)** - 数据库桥接库
 

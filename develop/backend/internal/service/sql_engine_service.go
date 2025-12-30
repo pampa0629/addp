@@ -66,8 +66,8 @@ func (s *SQLEngineService) ExecuteSQL(
 		return nil, fmt.Errorf("failed to get resource config: %w", err)
 	}
 
-	// Spark SQL 特殊处理
-	if strings.ToLower(resource.EngineType) == "spark_sql" {
+	// Apache Spark 特殊处理
+	if strings.ToLower(resource.EngineType) == "spark" {
 		return s.executeSparkSQL(execCtx, resource, sqlContent)
 	}
 
@@ -171,9 +171,9 @@ func (s *SQLEngineService) getConnection(engineID uint) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to get resource config: %w", err)
 	}
 
-	// Spark SQL 特殊处理：不支持GORM连接池
-	if strings.ToLower(resource.EngineType) == "spark_sql" {
-		return nil, fmt.Errorf("Spark SQL does not support connection pooling via GORM, please use direct SQL execution")
+	// Apache Spark 特殊处理：不支持GORM连接池
+	if strings.ToLower(resource.EngineType) == "spark" {
+		return nil, fmt.Errorf("Apache Spark does not support connection pooling via GORM, please use direct SQL execution")
 	}
 
 	// 从插件系统获取或创建连接池
@@ -195,8 +195,8 @@ func (s *SQLEngineService) TestConnection(engineID uint) error {
 		return fmt.Errorf("failed to get resource config: %w", err)
 	}
 
-	// Spark SQL 特殊处理
-	if strings.ToLower(resource.EngineType) == "spark_sql" {
+	// Apache Spark 特殊处理
+	if strings.ToLower(resource.EngineType) == "spark" {
 		return s.testSparkSQLConnection(resource)
 	}
 
@@ -232,7 +232,7 @@ func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID u
 }
 
 
-// executeSparkSQL 执行 Spark SQL 查询
+// executeSparkSQL 执行 Apache Spark 查询
 func (s *SQLEngineService) executeSparkSQL(
 	ctx context.Context,
 	resource *commonModels.Engine,
@@ -247,7 +247,7 @@ func (s *SQLEngineService) executeSparkSQL(
 	// 解析连接字符串 (格式: host:port:database)
 	parts := strings.Split(connStr, ":")
 	if len(parts) != 3 {
-		return nil, fmt.Errorf("invalid Spark SQL connection string format: %s", connStr)
+		return nil, fmt.Errorf("invalid Apache Spark connection string format: %s", connStr)
 	}
 
 	host := parts[0]
@@ -277,10 +277,10 @@ func (s *SQLEngineService) executeSparkSQL(
 	configuration.ConnectTimeout = 10 * time.Second
 	configuration.SocketTimeout = 10 * time.Second
 
-	// 连接到 Spark SQL Thrift Server
+	// 连接到 Apache Spark Thrift Server
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Spark SQL: %w", err)
+		return nil, fmt.Errorf("failed to connect to Apache Spark: %w", err)
 	}
 	defer connection.Close()
 
@@ -321,7 +321,7 @@ func (s *SQLEngineService) executeSparkSQL(
 		results = append(results, row)
 	}
 
-	log.Printf("✅ [SQL Engine] Spark SQL 查询成功，返回 %d 行", len(results))
+	log.Printf("✅ [SQL Engine] Apache Spark 查询成功，返回 %d 行", len(results))
 
 	return &SQLResult{
 		Columns:      columns,
@@ -330,7 +330,7 @@ func (s *SQLEngineService) executeSparkSQL(
 	}, nil
 }
 
-// testSparkSQLConnection 测试 Spark SQL Thrift Server 连接
+// testSparkSQLConnection 测试 Apache Spark Thrift Server 连接
 func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Engine) error {
 	// 解析连接信息
 	connStr, err := commonModels.BuildConnectionString(resource)
@@ -341,7 +341,7 @@ func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Engine)
 	// 解析连接字符串 (格式: host:port:database)
 	parts := strings.Split(connStr, ":")
 	if len(parts) != 3 {
-		return fmt.Errorf("invalid Spark SQL connection string format: %s", connStr)
+		return fmt.Errorf("invalid Apache Spark connection string format: %s", connStr)
 	}
 
 	host := parts[0]
@@ -371,10 +371,10 @@ func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Engine)
 	configuration.ConnectTimeout = 10 * time.Second
 	configuration.SocketTimeout = 10 * time.Second
 
-	// 连接到 Spark SQL Thrift Server
+	// 连接到 Apache Spark Thrift Server
 	connection, err := gohive.Connect(host, port, "NONE", configuration)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Spark SQL: %w", err)
+		return fmt.Errorf("failed to connect to Apache Spark: %w", err)
 	}
 	defer connection.Close()
 
@@ -395,6 +395,6 @@ func (s *SQLEngineService) testSparkSQLConnection(resource *commonModels.Engine)
 		return fmt.Errorf("failed to execute test query: %w", cursor.Err)
 	}
 
-	log.Printf("✅ [SQL Engine] Spark SQL 连接测试成功")
+	log.Printf("✅ [SQL Engine] Apache Spark 连接测试成功")
 	return nil
 }

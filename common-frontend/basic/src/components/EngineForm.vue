@@ -3,7 +3,7 @@
     <el-form-item label="唯一标识符" prop="unique_identifier">
       <el-input
         v-model="formData.unique_identifier"
-        placeholder="例如: geopandas.engine.custom"
+        placeholder="例如: python_workflow.engine.custom"
         :disabled="isEdit"
       />
       <div class="form-hint">格式: module.type.instance（创建后不可修改）</div>

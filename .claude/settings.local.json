@@ -27,7 +27,17 @@
       "Bash(/Users/pampa/code/addp/meta/backend/Dockerfile.bak )",
       "Bash(/Users/pampa/code/addp/manager/frontend/Dockerfile.bak )",
       "Bash(/Users/pampa/code/addp/system/frontend/Dockerfile.bak )",
-      "Bash(/Users/pampa/code/addp/nginx/Dockerfile.bak)"
+      "Bash(/Users/pampa/code/addp/nginx/Dockerfile.bak)",
+      "Bash(xargs:*)",
+      "Bash(psql:*)",
+      "Bash(wc:*)",
+      "Bash(python3:*)",
+      "Bash(jq:*)",
+      "Bash(PGPASSWORD=addp_password psql:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker rmi:*)",
+      "Bash(pkill:*)",
+      "Bash(echo \"=== 最终验证结果 ===\" echo \"\" echo \"1. 检查 geopandas.engine.default 引用:\" grep -r \"geopandas\\\\.engine\\\\.default\" --include=\"*.md\" --include=\"*.py\" --include=\"*.go\" --include=\"*.sh\" .)"
     ],
     "deny": [],
     "ask": []

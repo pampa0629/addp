@@ -74,8 +74,8 @@ ADDP 平台由以下核心模块组成:
 
 | 引擎 | 类型 | 说明 | 路径 |
 |------|------|------|------|
-| **geopandas** | 空间计算引擎 | 基于 Python 的内存空间计算,提供 21 个空间算子 | `engines/geopandas/` |
-| **spark-sedona** | 分布式空间计算引擎 | 基于 Spark 的大规模空间数据处理 | `engines/spark-sedona/` |
+| **python_workflow** | 空间计算引擎 | 基于 Python 的内存空间计算,提供 21 个空间算子 | `engines/python_workflow/` |
+| **spark-workflow** | 分布式空间计算引擎 | 基于 Spark 的大规模空间数据处理 | `engines/spark-workflow/` |
 | **jupyter** | 脚本执行引擎 | 交互式 Notebook 环境,支持 Python 脚本 | `engines/jupyter/` |
 
 这些引擎在系统启动时自动注册为**内置引擎**,全局可用。
@@ -138,7 +138,7 @@ ADDP 采用基于 Docker 的微服务架构:
 **引擎** 是 ADDP 平台中所有数据源和计算资源的统一抽象。引擎代表一个可以存储数据或执行计算的外部系统(数据库、对象存储)或内部模块(空间计算引擎)。
 
 **核心属性**:
-- **引擎类型** (EngineType): 如 `postgresql`、`api.geopandas`
+- **引擎类型** (EngineType): 如 `postgresql`、`api.python-workflow`
 - **引擎分类** (EngineCategory): `standard` 或 `extension`
 - **连接信息** (ConnectionInfo): 数据库连接串、API 端点等
 - **能力声明** (Capabilities): 引擎支持的功能列表
@@ -157,7 +157,7 @@ ADDP 采用基于 Docker 的微服务架构:
 - 提供数据处理和分析能力
 - 计算能力包括:
   - **SQL 计算**: 执行 SQL 查询(PostgreSQL、MySQL、Doris)
-  - **算子计算**: 执行空间算子工作流(GeoPandas、Spark Sedona)
+  - **算子计算**: 执行空间算子工作流(GeoPandas、Spark 工作流引擎)
   - **脚本计算**: 执行 Python/Shell 脚本(Jupyter)
   - **组合计算**: 同时支持多种计算方式
 - 能力: `{"compute": [{"type": "sql_query", "dev_modes": ["sql"]}]}`
@@ -178,8 +178,8 @@ ADDP 采用基于 Docker 的微服务架构:
 **扩展引擎 (Extension Engine / API Engine)**:
 - ADDP 平台内置的计算模块,通过 HTTP API 调用
 - ADDP平台内置了若干扩展引擎（均放在engines目录下），用户也可以按照约定的标准自定义开发，然后注册到平台中
-- 示例: GeoPandas 引擎、Spark Sedona 引擎
-- 类型命名: 以 `api.` 开头(如 `api.geopandas`)
+- 示例: GeoPandas 引擎、Spark 工作流引擎 引擎
+- 类型命名: 以 `api.` 开头(如 `api.python-workflow`)
 
 #### 3. 按注册方式分类
 
@@ -194,7 +194,7 @@ ADDP 采用基于 Docker 的微服务架构:
 - 不属于任何租户(`tenant_id = null`),全局可见
 - 不可删除或修改核心配置(防止误操作)
 - `is_builtin = true`
-- 具有全局唯一标识符(`unique_identifier`,如 `"api.geopandas"`)
+- 具有全局唯一标识符(`unique_identifier`,如 `"api.python-workflow"`)
 
 ### 引擎能力 (Capabilities)
 
@@ -256,17 +256,17 @@ GeoPandas 引擎:
 - Doris - OLAP 分析型数据库
 - ClickHouse - 列式存储 OLAP 数据库
 - MongoDB - 文档型数据库
-- Spark SQL - 分布式 SQL 查询引擎
+- Apache Spark - 分布式 SQL 查询引擎
 - MinIO - 开源对象存储(S3 兼容)
 - S3 - AWS 对象存储
 
 **扩展引擎**:
-- **GeoPandas** - 空间计算引擎
-  - 类型: `api.geopandas`
+- **Python Workflow** - 空间计算引擎
+  - 类型: `api.python-workflow`
   - 能力: 算子工作流(21 个空间算子)
   - 适用场景: 中小规模空间数据分析(< 100 万行)
-- **Spark Sedona** - 分布式空间计算引擎
-  - 类型: `api.spark_sedona`
+- **Spark Workflow 引擎** - 分布式空间计算引擎
+  - 类型: `api.spark_workflow`
   - 能力: 大规模空间数据处理
   - 适用场景: 大规模空间数据分析(> 100 万行)
 - **Jupyter** - 脚本执行引擎
@@ -477,7 +477,7 @@ ADDP 支持多种数据类型的预览:
 - **节点粒度**: 细粒度算子(如 buffer、intersection、centroid)
 - **DAG 层级**: 算子级别的有向无环图
 - **数据传递**: GeoDataFrame 在内存中传递
-- **执行引擎**: GeoPandas (内存计算) 或 Spark Sedona (分布式计算)
+- **执行引擎**: GeoPandas (内存计算) 或 Spark 工作流引擎 (分布式计算)
 - **适用场景**: 数据分析、地理计算
 
 **算子** 是工作流中的计算节点,每个算子执行一个特定的数据处理操作:
@@ -512,8 +512,8 @@ ADDP 支持多种数据类型的预览:
 ```
 
 **执行引擎选择**:
-- **GeoPandas**: 数据量 < 100 万行,内存计算,快速
-- **Spark Sedona**: 数据量 > 100 万行,分布式计算,可扩展
+- **Python Workflow**: 数据量 < 100 万行,内存计算,快速
+- **Spark Workflow 引擎**: 数据量 > 100 万行,分布式计算,可扩展
 
 ### 脚本开发
 
@@ -637,7 +637,7 @@ ADDP 支持多种数据类型的预览:
 |------|---------------------|-------------------------|
 | **节点粒度** | 细粒度算子 (buffer, centroid) | 粗粒度业务任务 (扫描元数据, 导入数据) |
 | **DAG 层级** | 算子级别 DAG | 任务级别 DAG |
-| **执行引擎** | GeoPandas/Spark Sedona 引擎 | 跨模块动态引擎调用 |
+| **执行引擎** | GeoPandas/Spark 工作流引擎 引擎 | 跨模块动态引擎调用 |
 | **数据传递** | GeoDataFrame 内存传递 | 参数模板 `{{stepID.field}}` |
 | **适用场景** | 空间数据分析、地理计算 | 跨模块数据流水线、ETL 作业 |
 | **存储表** | `develop.dev_items` | `orchestrator.orchestrations` |
@@ -690,7 +690,7 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 
 **说明**:
 - Orchestrator 只知道 Develop 模块提供的任务(如 SQL 执行、工作流执行)
-- 具体使用哪个引擎(GeoPandas、Spark Sedona)由 Develop 模块内部决定
+- 具体使用哪个引擎(GeoPandas、Spark 工作流引擎)由 Develop 模块内部决定
 - 通过 `engine_identifier` 调用 Develop 模块注册的任务,而不直接引用底层引擎
 
 ---

@@ -36,9 +36,9 @@
           router
           class="sidebar-menu"
         >
-          <el-menu-item index="/sql">
+          <el-menu-item index="/query">
             <el-icon><Document /></el-icon>
-            <span>SQL 工作台</span>
+            <span>查询编辑器</span>
           </el-menu-item>
 
           <el-menu-item index="/notebook">
@@ -46,9 +46,9 @@
             <span>Notebook 开发</span>
           </el-menu-item>
 
-          <el-menu-item index="/sql-tasks">
+          <el-menu-item index="/query-tasks">
             <el-icon><FolderOpened /></el-icon>
-            <span>SQL 任务</span>
+            <span>查询任务</span>
           </el-menu-item>
 
           <el-menu-item index="/workflow">

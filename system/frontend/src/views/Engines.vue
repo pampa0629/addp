@@ -430,7 +430,7 @@ const engineTypeMap = {
   'mysql': 'MySQL',
   'doris': 'Apache Doris',
   'minio': 'MinIO',
-  'spark_sql': 'Spark SQL',
+  'spark': 'Apache Spark',
   'database': '数据库',
   'compute_engine': '计算引擎'
 }
@@ -445,7 +445,7 @@ const getEngineTypeColor = (type) => {
     'mysql': 'success',
     'doris': 'warning',
     'minio': 'warning',
-    'spark_sql': 'danger',
+    'spark': 'danger',
     'database': 'success',
     'compute_engine': 'info'
   }

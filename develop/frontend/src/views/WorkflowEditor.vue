@@ -52,7 +52,7 @@
             </el-select>
           </div>
 
-          <!-- 2️⃣ Spark 运行时选择（仅 Spark Sedona 引擎需要） -->
+          <!-- 2️⃣ Spark 运行时选择（仅 Spark 工作流引擎需要） -->
           <div v-if="needsSparkRuntime()" class="spark-runtime-select-group">
             <label>Spark 运行时:</label>
             <el-select
@@ -406,17 +406,17 @@ const loadSparkRuntimes = async () => {
   }
 }
 
-// 选择默认引擎（优先 GeoPandas）
+// 选择默认引擎（优先 Python Workflow）
 const selectDefaultEngine = () => {
   if (workflowEngines.value.length === 0) return
 
-  const geopandas = workflowEngines.value.find(
-    e => e.resource_type === 'api.geopandas'
+  const pythonWorkflow = workflowEngines.value.find(
+    e => e.resource_type === 'api.python_workflow'
   )
 
-  if (geopandas) {
-    workflowEngineId.value = geopandas.id
-    selectedEngine.value = geopandas
+  if (pythonWorkflow) {
+    workflowEngineId.value = pythonWorkflow.id
+    selectedEngine.value = pythonWorkflow
   } else {
     workflowEngineId.value = workflowEngines.value[0].id
     selectedEngine.value = workflowEngines.value[0]
@@ -427,7 +427,7 @@ const selectDefaultEngine = () => {
 const handleEngineChange = async (engineId) => {
   selectedEngine.value = workflowEngines.value.find(e => e.id === engineId)
 
-  // 如果切换到 Spark Sedona 引擎，加载 Spark 运行时列表
+  // 如果切换到 Spark 工作流引擎，加载 Spark 运行时列表
   if (needsSparkRuntime()) {
     await loadSparkRuntimes()
 
@@ -436,22 +436,22 @@ const handleEngineChange = async (engineId) => {
       sparkRuntimeId.value = sparkRuntimes.value[0].id
     }
   } else {
-    // 切换到 GeoPandas，清空 Spark 运行时选择
+    // 切换到 Python Workflow，清空 Spark 运行时选择
     sparkRuntimeId.value = null
   }
 }
 
 // 判断是否需要选择 Spark 运行时
 const needsSparkRuntime = () => {
-  return selectedEngine.value?.resource_type === 'api.spark_sedona'
+  return selectedEngine.value?.resource_type === 'api.spark_workflow'
 }
 
 // 获取引擎标签
 const getEngineTag = (engine) => {
-  if (engine.resource_type === 'api.geopandas') {
-    return 'GeoPandas'
-  } else if (engine.resource_type === 'api.spark_sedona') {
-    return 'Spark Sedona'
+  if (engine.resource_type === 'api.python_workflow') {
+    return 'Python 工作流'
+  } else if (engine.resource_type === 'api.spark_workflow') {
+    return 'Spark 工作流引擎'
   }
   return engine.resource_type
 }
@@ -462,8 +462,8 @@ const formatRuntimeLabel = (runtime) => {
   let connInfo = '未配置'
 
   if (runtime.connection_info) {
-    if (runtime.resource_type === 'spark_sql') {
-      // Spark SQL 数据源：显示 host:port/database
+    if (runtime.resource_type === 'spark') {
+      // Apache Spark 数据源：显示 host:port/database
       const { host, port, database } = runtime.connection_info
       if (host && port) {
         connInfo = `${host}:${port}${database ? '/' + database : ''}`
@@ -482,7 +482,7 @@ const canSave = () => {
   // 必须选择工作流引擎
   if (!workflowEngineId.value) return false
 
-  // 如果是 Spark Sedona，必须选择运行时
+  // 如果是 Spark 工作流引擎，必须选择运行时
   if (needsSparkRuntime() && !sparkRuntimeId.value) return false
 
   // 必须有工作流内容
@@ -527,7 +527,7 @@ const confirmSave = async () => {
       engine_type: selectedEngine.value.resource_type,
     }
 
-    // 如果是 Spark Sedona，添加 engine_specific 配置
+    // 如果是 Spark 工作流引擎，添加 engine_specific 配置
     if (needsSparkRuntime()) {
       executionConfig.engine_specific = {
         spark_cluster_id: sparkRuntimeId.value
@@ -603,7 +603,7 @@ const confirmExecute = async () => {
       engine_type: selectedEngine.value.resource_type,
     }
 
-    // 如果是 Spark Sedona，添加 engine_specific 配置
+    // 如果是 Spark 工作流引擎，添加 engine_specific 配置
     if (needsSparkRuntime()) {
       executionConfig.engine_specific = {
         spark_cluster_id: sparkRuntimeId.value

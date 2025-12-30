@@ -14,7 +14,7 @@ type DevExecution struct {
 	ExecutionID string `gorm:"size:255;uniqueIndex:idx_dev_executions_execution_id;not null" json:"execution_id"` // UUID 全局唯一标识
 
 	// 执行信息
-	DevType     string `gorm:"size:50;not null" json:"dev_type"`                                    // 'sql' | 'workflow' | 'script'
+	DevType     string `gorm:"size:50;not null" json:"dev_type"`                                    // 'query' | 'workflow' | 'script' | 'notebook'
 	TriggerType string `gorm:"size:50;index:idx_dev_executions_trigger_type" json:"trigger_type"` // 'manual' | 'schedule' | 'orchestrator' | 'api'
 	TriggeredBy *uint  `json:"triggered_by,omitempty"`
 
@@ -71,7 +71,7 @@ func (r *ExecutionResult) Scan(value interface{}) error {
 // CreateExecutionRequest 创建执行请求
 type CreateExecutionRequest struct {
 	DevItemID   *uint                  `json:"dev_item_id"`
-	DevType     string                 `json:"dev_type" binding:"required,oneof=sql workflow script"`
+	DevType     string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
 	TriggerType string                 `json:"trigger_type" binding:"required,oneof=manual schedule orchestrator api"`
 	EngineID    *uint                  `json:"engine_id"`
 	Content     map[string]interface{} `json:"content"` // 执行内容（对于临时执行）
@@ -94,7 +94,7 @@ type ListExecutionsRequest struct {
 	Page        int    `form:"page" binding:"min=1"`
 	PageSize    int    `form:"page_size" binding:"min=1,max=100"`
 	DevItemID   *uint  `form:"dev_item_id"`
-	DevType     string `form:"dev_type" binding:"omitempty,oneof=sql workflow script"`
+	DevType     string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
 	Status      string `form:"status" binding:"omitempty,oneof=pending running success failed timeout cancelled"`
 	TriggerType string `form:"trigger_type" binding:"omitempty,oneof=manual schedule orchestrator api"`
 	StartDate   string `form:"start_date"` // YYYY-MM-DD

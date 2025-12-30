@@ -30,14 +30,14 @@ echo ""
 # 清理 Python 虚拟环境
 echo "🗑️  清理 Python 虚拟环境..."
 cleaned_py=0
-if [ -d "engines/geopandas/venv" ]; then
-  rm -rf engines/geopandas/venv
-  echo "✓ GeoPandas Engine venv 已清理"
+if [ -d "engines/python-workflow/venv" ]; then
+  rm -rf engines/python-workflow/venv
+  echo "✓ Python Workflow Engine venv 已清理"
   ((cleaned_py++))
 fi
-if [ -d "engines/spark-sedona/venv" ]; then
-  rm -rf engines/spark-sedona/venv
-  echo "✓ Spark Sedona Engine venv 已清理"
+if [ -d "engines/spark-workflow/venv" ]; then
+  rm -rf engines/spark-workflow/venv
+  echo "✓ Spark Spark 工作流引擎 venv 已清理"
   ((cleaned_py++))
 fi
 if [ -d "engines/jupyter/venv" ]; then

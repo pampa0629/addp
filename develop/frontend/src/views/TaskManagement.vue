@@ -31,7 +31,7 @@
           clearable
           style="width: 120px; margin-right: 10px;"
         >
-          <el-option label="SQL" value="sql" />
+          <el-option label="查询" value="query" />
           <el-option label="工作流" value="workflow" />
           <el-option label="脚本" value="script" />
         </el-select>
@@ -166,7 +166,7 @@
         </el-form-item>
         <el-form-item label="任务类型" required>
           <el-select v-model="formData.dev_type" style="width: 100%;">
-            <el-option label="SQL 查询" value="sql" />
+            <el-option label="查询" value="query" />
             <el-option label="工作流" value="workflow" />
             <el-option label="脚本" value="script" />
           </el-select>
@@ -317,7 +317,7 @@ const dialogMode = ref('create') // 'create' | 'edit'
 const formData = reactive({
   name: '',
   display_name: '',
-  dev_type: 'sql',
+  dev_type: 'query',
   engine_id: null,
   description: '',
   tags: [],
@@ -414,7 +414,7 @@ const handleCreate = () => {
   Object.assign(formData, {
     name: '',
     display_name: '',
-    dev_type: 'sql',
+    dev_type: 'query',
     engine_id: null,
     description: '',
     tags: [],
@@ -440,7 +440,7 @@ const handleEdit = (row) => {
 
 const handleView = (row) => {
   // 根据类型跳转到对应编辑器,传递任务 ID
-  if (row.dev_type === 'sql') {
+  if (row.dev_type === 'query') {
     router.push({ path: '/sql', query: { taskId: row.id } })
   } else if (row.dev_type === 'workflow') {
     router.push({ path: '/workflow', query: { taskId: row.id } })

@@ -121,7 +121,7 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 | Orchestrator Frontend| 5177     | 8094        | 独立访问             |
 | Develop Backend      | 8085     | 8085        | 开发工具             |
 | Develop Frontend     | 5178     | 8095        | 独立访问             |
-| GeoPandas Engine     | 8099     | 8099        | 空间计算引擎 (Python) |
+| Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python) |
 | PostgreSQL (System)  | 5432     | 5432        | ADDP 系统元数据          |
 | Redis                | 6379     | 6379        | 缓存和队列                 |
 | MinIO System API     | 9000     | 9000        | 系统文件存储           |

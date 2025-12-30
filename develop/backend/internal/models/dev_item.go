@@ -15,7 +15,8 @@ type DevItem struct {
 	TenantID    uint           `gorm:"not null;index:idx_dev_items_tenant_type" json:"tenant_id"`
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	DisplayName string         `gorm:"size:255" json:"display_name,omitempty"`
-	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'sql' | 'workflow' | 'script' | 'notebook'
+	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'script' | 'notebook'
+	QueryType   string         `gorm:"size:50;index:idx_dev_items_query_type" json:"query_type,omitempty"` // 'sql' | 'mql' | 'dsl' (仅当 dev_type='query' 时)
 
 	// 内容存储（根据类型解析）
 	Content DevItemContent `gorm:"type:jsonb;not null" json:"content"`
@@ -80,7 +81,8 @@ func (c *DevItemContent) Scan(value interface{}) error {
 type CreateDevItemRequest struct {
 	Name            string                 `json:"name" binding:"required"`
 	DisplayName     string                 `json:"display_name"`
-	DevType         string                 `json:"dev_type" binding:"required,oneof=sql workflow script notebook"`
+	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
+	QueryType       string                 `json:"query_type" binding:"required_if=DevType query,omitempty,oneof=sql mql dsl"`
 	Content         map[string]interface{} `json:"content" binding:"required"`
 	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
 	EngineID        *uint                  `json:"engine_id"`        // 已废弃，保留兼容
@@ -95,6 +97,7 @@ type CreateDevItemRequest struct {
 type UpdateDevItemRequest struct {
 	Name            string                 `json:"name"`
 	DisplayName     string                 `json:"display_name"`
+	QueryType       string                 `json:"query_type" binding:"omitempty,oneof=sql mql dsl"`
 	Content         map[string]interface{} `json:"content"`
 	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
 	EngineID        *uint                  `json:"engine_id"`        // 已废弃，保留兼容
@@ -108,13 +111,14 @@ type UpdateDevItemRequest struct {
 
 // ListDevItemsRequest 查询开发项列表请求
 type ListDevItemsRequest struct {
-	Page     int    `form:"page" binding:"min=1"`
-	PageSize int    `form:"page_size" binding:"min=1,max=100"`
-	DevType  string `form:"dev_type" binding:"omitempty,oneof=sql workflow script"`
-	Status   string `form:"status" binding:"omitempty,oneof=active inactive archived"`
-	EngineID *uint  `form:"engine_id"`
-	Tag      string `form:"tag"`
-	Keyword  string `form:"keyword"` // 搜索名称或描述
+	Page      int    `form:"page" binding:"min=1"`
+	PageSize  int    `form:"page_size" binding:"min=1,max=100"`
+	DevType   string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
+	QueryType string `form:"query_type" binding:"omitempty,oneof=sql mql dsl"`
+	Status    string `form:"status" binding:"omitempty,oneof=active inactive archived"`
+	EngineID  *uint  `form:"engine_id"`
+	Tag       string `form:"tag"`
+	Keyword   string `form:"keyword"` // 搜索名称或描述
 }
 
 // ListDevItemsResponse 开发项列表响应

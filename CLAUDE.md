@@ -94,7 +94,7 @@
 - **orchestrator/** - 工作流编排:任务调度和执行 - **已实现**
 - **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 - **已实现**
 - **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 - **已实现** (PostgreSQL service schema)
-- **engines/geopandas/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
+- **engines/python_workflow/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
@@ -192,7 +192,7 @@ bash scripts/dev/restart.sh
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (S3 兼容)
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块)、Cron (用于 Meta 模块调度)
-- **空间计算**: GeoPandas Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
+- **空间计算**: Python Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
 ### Go 依赖版本规范
 
@@ -356,7 +356,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 ## 数据库插件系统
 
-ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 种**数据库/存储引擎（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Spark SQL、MinIO、S3）。
+ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 种**数据库/存储引擎（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）。
 
 **相关文档**：
 - **架构说明**：[docs/数据库插件系统.md](docs/数据库插件系统.md) - 了解插件系统的整体架构和设计

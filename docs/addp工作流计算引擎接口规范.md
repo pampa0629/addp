@@ -36,8 +36,8 @@ ADDP 平台中存在两类不同的能力提供者：
 
 | 引擎 | 引擎类型 | 提供的算子 | API 端点 | 开发模式 | 当前状态 |
 |------|---------|-----------|---------|---------|---------|
-| GeoPandas | `api.geopandas` | 21 个空间算子 | `GET /api/spatial/operators` | workflow | ✅ 已实现 |
-| Spark Sedona | `api.spark_sedona` | 分布式空间算子 | `GET /api/sedona/operators` | workflow | 🔄 预留 |
+| Python Workflow | `api.python-workflow` | 21 个空间算子 | `GET /api/spatial/operators` | workflow | ✅ 已实现 |
+| Spark Workflow 引擎 | `api.spark_workflow` | 分布式空间算子 | `GET /api/spark-workflow/operators` | workflow | 🔄 预留 |
 | Stats Engine | `api.stats` | 统计分析算子 | `GET /api/stats/operators` | workflow | 🔄 预留 |
 | ML Engine | `api.ml` | 机器学习算子 | `GET /api/ml/operators` | workflow | 🔄 预留 |
 
@@ -70,9 +70,9 @@ ADDP 平台中存在两类不同的能力提供者：
 │  │ 计算引擎注册示例:                                           │ │
 │  │ {                                                          │ │
 │  │   id: 5,                                                   │ │
-│  │   name: "geopandas_engine",                               │ │
-│  │   display_name: "GeoPandas空间计算引擎",                  │ │
-│  │   engine_type: "api.geopandas",                           │ │
+│  │   name: "python_workflow_engine",                    │ │
+│  │   display_name: "Python Workflow 空间计算引擎",        │ │
+│  │   engine_type: "api.python-workflow",                 │ │
 │  │   capabilities: {                                          │ │
 │  │     compute: [{                                            │ │
 │  │       type: "spatial",                                     │ │
@@ -84,7 +84,7 @@ ADDP 平台中存在两类不同的能力提供者：
 │  │     }]                                                     │ │
 │  │   },                                                       │ │
 │  │   connection_config: {                                     │ │
-│  │     base_url: "http://geopandas-engine:8090"              │ │
+│  │     base_url: "http://python-workflow-engine:8090"        │ │
 │  │   }                                                        │ │
 │  │ }                                                          │ │
 │  └───────────────────────────────────────────────────────────┘ │
@@ -92,18 +92,18 @@ ADDP 平台中存在两类不同的能力提供者：
                               │
                               │ 1. Develop 模块查询支持 workflow 的引擎
                               │    GET /api/system/engines?dev_mode=workflow
-                              │    → 返回 [geopandas_engine, spark_sedona_engine, ...]
+                              │    → 返回 [python_workflow_engine, spark_workflow_engine, ...]
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  Develop Backend (工作流编辑器)                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
 │  │ 1. 获取支持 workflow 的引擎列表                            │ │
 │  │    GET /api/system/engines?capabilities.compute.dev_modes=workflow │ │
-│  │    → [api.geopandas, api.spark_sedona, ...]              │ │
+│  │    → [api.python-workflow, api.spark_workflow, ...]              │ │
 │  │                                                            │ │
 │  │ 2. 遍历引擎，获取算子列表                                  │ │
-│  │    GET http://geopandas-engine:8090/api/spatial/operators │ │
-│  │    → 返回 21 个 GeoPandas 算子                            │ │
+│  │    GET http://python-workflow-engine:8090/api/spatial/operators │ │
+│  │    → 返回 21 个 Python Workflow 算子                      │ │
 │  │                                                            │ │
 │  │ 3. 聚合所有算子，渲染工作流画布                            │ │
 │  │    算子面板: [buffer] [intersection] [union] ...         │ │
@@ -111,10 +111,10 @@ ADDP 平台中存在两类不同的能力提供者：
 └─────────────────────────────────────────────────────────────────┘
                               │
                               │ 用户拖拽算子，配置参数，连接数据流
-                              │ POST http://geopandas-engine:8090/api/spatial/operators/buffer/execute
+                              │ POST http://python-workflow-engine:8090/api/spatial/operators/buffer/execute
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  GeoPandas Engine (Python FastAPI)                             │
+│  Python Workflow Engine (Python FastAPI)                       │
 │  ┌───────────────────────────────────────────────────────────┐ │
 │  │ 1. 接收算子执行请求                                        │ │
 │  │ 2. 执行空间计算（内存 GeoDataFrame）                      │ │
@@ -151,7 +151,7 @@ ADDP 平台中存在两类不同的能力提供者：
 
 **请求示例**:
 ```bash
-GET http://geopandas-engine:8090/api/spatial/operators
+GET http://python-workflow-engine:8090/api/spatial/operators
 Authorization: Bearer <token>
 ```
 
@@ -167,7 +167,7 @@ Authorization: Bearer <token>
       "type": "spatial",
       "category": "几何操作",
       "description": "对几何对象创建缓冲区",
-      "module": "geopandas",
+      "module": "python_workflow",
       "parameters": [
         {
           "name": "distance",
@@ -204,7 +204,7 @@ Authorization: Bearer <token>
       "type": "spatial",
       "category": "几何操作",
       "description": "计算两个几何对象的相交部分",
-      "module": "geopandas",
+      "module": "python_workflow",
       "parameters": [],
       "inputs": ["geodataframe", "geodataframe"],
       "output_ports": [
@@ -231,7 +231,7 @@ Authorization: Bearer <token>
 | `type` | string | ✅ | 算子类型（spatial/stats/ml 等） |
 | `category` | string | ✅ | 分类名称（用于算子面板分组） |
 | `description` | string | ✅ | 功能描述 |
-| `module` | string | ✅ | 所属引擎模块（geopandas/sedona 等） |
+| `module` | string | ✅ | 所属引擎模块（python-workflow/spark_workflow 等） |
 | `parameters` | array | ✅ | 参数定义列表 |
 | `inputs` | array | ✅ | 输入端口类型列表 |
 | `output_ports` | array | ✅ | 输出端口定义（支持多输出） |
@@ -304,7 +304,7 @@ Authorization: Bearer <token>
 
 **请求示例**:
 ```bash
-POST http://geopandas-engine:8090/api/spatial/operators/buffer/execute
+POST http://python-workflow-engine:8090/api/spatial/operators/buffer/execute
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -458,9 +458,9 @@ type OperatorExecuteResponse struct {
 ```json
 {
   "id": 5,
-  "name": "geopandas_engine",
-  "display_name": "GeoPandas空间计算引擎",
-  "engine_type": "api.geopandas",
+  "name": "python_workflow_engine",
+  "display_name": "Python Workflow 空间计算引擎",
+  "engine_type": "api.python-workflow",
   "capabilities": {
     "compute": [
       {
@@ -475,7 +475,7 @@ type OperatorExecuteResponse struct {
     ]
   },
   "connection_config": {
-    "base_url": "http://geopandas-engine:8090"
+    "base_url": "http://python-workflow-engine:8090"
   }
 }
 ```
@@ -484,17 +484,17 @@ type OperatorExecuteResponse struct {
 
 | 字段 | 说明 | 示例值 |
 |-----|------|--------|
-| `engine_type` | 引擎类型（必须以 `api.` 开头） | `api.geopandas` |
+| `engine_type` | 引擎类型（必须以 `api.` 开头） | `api.python-workflow` |
 | `capabilities.compute[].dev_modes` | 支持的开发模式（必须包含 `workflow`） | `["workflow"]` |
 | `capabilities.compute[].api_endpoints` | 算子 API 端点配置 | 见上例 |
-| `connection_config.base_url` | 引擎服务地址 | `http://geopandas-engine:8090` |
+| `connection_config.base_url` | 引擎服务地址 | `http://python-workflow-engine:8090` |
 
 ### 开发模式类型
 
 | 开发模式 | 说明 | 适用对象 |
 |---------|------|---------|
 | `sql` | SQL 编辑器 | 数据库引擎（PostgreSQL、MySQL 等） |
-| `workflow` | 工作流画布 | **计算引擎**（GeoPandas、Spark Sedona 等） |
+| `workflow` | 工作流画布 | **计算引擎**（Python Workflow、Spark 工作流引擎 等） |
 | `form` | 表单配置 | **任务提供者**（Meta、Transfer、Manager） |
 | `script` | 脚本编辑器 | 脚本执行引擎（预留） |
 
@@ -506,11 +506,11 @@ type OperatorExecuteResponse struct {
 
 ### Python 引擎实现（推荐）
 
-以 GeoPandas Engine 为例，展示如何用 Python + FastAPI 实现计算引擎。
+以 Python Workflow Engine 为例，展示如何用 Python + FastAPI 实现计算引擎。
 
 #### 1. 定义算子注册表
 
-文件: `engines/geopandas/operators.py`
+文件: `engines/python_workflow/operators.py`
 
 ```python
 from typing import List, Dict, Any
@@ -523,7 +523,7 @@ OPERATORS = {
         "type": "spatial",
         "category": "几何操作",
         "description": "对几何对象创建缓冲区",
-        "module": "geopandas",
+        "module": "python_workflow",
         "parameters": [
             {
                 "name": "distance",
@@ -560,7 +560,7 @@ OPERATORS = {
         "type": "spatial",
         "category": "几何操作",
         "description": "计算两个几何对象的相交部分",
-        "module": "geopandas",
+        "module": "python_workflow",
         "parameters": [],
         "inputs": ["geodataframe", "geodataframe"],
         "output_ports": [
@@ -586,7 +586,7 @@ def list_operators() -> Dict[str, Any]:
 
 #### 2. 实现 API 端点
 
-文件: `engines/geopandas/api_server.py`
+文件: `engines/python_workflow/api_server.py`
 
 ```python
 from fastapi import FastAPI, HTTPException
@@ -649,7 +649,7 @@ def execute_spatial_operator(name: str, params: Dict[str, Any]) -> Dict[str, Any
 
 #### 3. 启动引擎服务
 
-文件: `engines/geopandas/main.py`
+文件: `engines/python_workflow/main.py`
 
 ```python
 import uvicorn
@@ -808,12 +808,12 @@ func (s *SpatialWorkflowService) ListSpatialEngines(ctx context.Context) ([]mode
 
 | 引擎 | 引擎类型 | 算子数量 | 算子列表 | 开发模式 | 状态 |
 |------|---------|---------|---------|---------|------|
-| GeoPandas | `api.geopandas` | 21 | buffer, intersection, union, clip, dissolve 等 | workflow | ✅ 已实现 |
-| Spark Sedona | `api.spark_sedona` | - | - | workflow | 🔄 预留 |
+| Python Workflow | `api.python-workflow` | 21 | buffer, intersection, union, clip, dissolve 等 | workflow | ✅ 已实现 |
+| Spark Workflow 引擎 | `api.spark_workflow` | - | - | workflow | 🔄 预留 |
 | Stats Engine | `api.stats` | - | - | workflow | 🔄 预留 |
 | ML Engine | `api.ml` | - | - | workflow | 🔄 预留 |
 
-### GeoPandas 算子列表
+### Python Workflow 算子列表
 
 | 分类 | 算子名称 | 功能描述 |
 |------|---------|---------|
@@ -849,8 +849,8 @@ func (s *SpatialWorkflowService) ListSpatialEngines(ctx context.Context) ([]mode
 
 | 引擎 | 算子列表端点 | 算子执行端点 |
 |------|-------------|-------------|
-| GeoPandas | `GET /api/spatial/operators` | `POST /api/spatial/operators/:name/execute` |
-| Spark Sedona | `GET /api/sedona/operators` | `POST /api/sedona/operators/:name/execute` |
+| Python Workflow | `GET /api/spatial/operators` | `POST /api/spatial/operators/:name/execute` |
+| Spark Workflow 引擎 | `GET /api/spark-workflow/operators` | `POST /api/spark-workflow/operators/:name/execute` |
 | Stats Engine | `GET /api/stats/operators` | `POST /api/stats/operators/:name/execute` |
 
 ### Develop 模块发现端点
@@ -882,7 +882,7 @@ go test -run TestSpatialWorkflowService
 # 设置 Token
 export TOKEN="your_jwt_token"
 
-# 测试 GeoPandas 算子列表
+# 测试 Python Workflow 算子列表
 curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8090/api/spatial/operators
 
@@ -906,7 +906,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 1. 启动所有服务: `bash scripts/dev/start.sh`
 2. 登录 Portal: http://localhost:5170
 3. 进入 Develop 模块 → GIS 工作流编辑器
-   - 验证左侧算子面板显示 21 个 GeoPandas 算子
+   - 验证左侧算子面板显示 21 个 Python Workflow 算子
    - 验证算子按分类分组（几何操作、空间关系等）
    - 拖拽算子到画布，验证参数配置表单
    - 连接多个算子，验证数据流连接
@@ -920,7 +920,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 **重要**：不要混淆这两个概念！
 
-| 对比项 | 任务提供者（Meta/Transfer/Manager） | 计算引擎（GeoPandas/Sedona） |
+| 对比项 | 任务提供者（Meta/Transfer/Manager） | 计算引擎（Python Workflow/Sedona） |
 |-------|-----------------------------------|----------------------------|
 | 提供内容 | **任务**（Tasks） | **算子**（Operators） |
 | API 端点 | `/api/{module}/tasks` | `/api/{module}/operators` |
@@ -977,7 +977,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ### 4. 引擎类型命名规范
 
-- **计算引擎**必须以 `api.` 开头（如 `api.geopandas`）
+- **计算引擎**必须以 `api.` 开头（如 `api.python-workflow`）
 - 标准库引擎使用简单名称（如 `postgresql`、`mysql`）
 
 ### 5. 开发模式声明
@@ -1018,7 +1018,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 - 通过表单配置执行
 - 用于 Orchestrator 工作流编排
 
-**计算引擎**（GeoPandas/Sedona 等）:
+**计算引擎**（Python Workflow/Sedona 等）:
 - 提供**算子**，支持 `workflow` 开发模式
 - 算子可在工作流画布中拖拽组合
 - 用于 Develop 工作流编辑器
@@ -1030,7 +1030,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 - ✅ **语言无关**: 引擎实现可使用任意技术栈（Python/Go/Rust/Java）
 - ✅ **解耦性**: 计算引擎与任务提供者各司其职，职责清晰
 
-**当前状态**: 已在 GeoPandas Engine 中实施，提供 21 个标准化空间算子。
+**当前状态**: 已在 Python Workflow Engine 中实施，提供 21 个标准化空间算子。
 
 ---
 

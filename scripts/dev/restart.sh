@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-geopandas] [-copilot] [-spark-sedona] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-python-workflow] [-copilot] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -16,9 +16,9 @@ show_usage() {
   echo "  -develop     强制重新编译 Develop 模块"
   echo "  -service     强制重新编译 Service 模块"
   echo "  -gateway     强制重新编译 Gateway 模块"
-  echo "  -geopandas   重启 GeoPandas Engine (Python 服务)"
+  echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
-  echo "  -spark-sedona 重启 Spark Sedona Engine (Python 服务)"
+  echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo ""
   echo "智能检测说明:"
@@ -28,13 +28,13 @@ show_usage() {
   echo "  - 只指定 Python 服务参数时,仍会执行智能检测"
   echo ""
   echo "注意:"
-  echo "  - GeoPandas Engine、Spark Sedona Engine、Jupyter Engine 和 Copilot (Python) 会自动重启"
+  echo "  - Python Workflow Engine、Spark 工作流 Engine、Jupyter Engine 和 Copilot (Python) 会自动重启"
   echo "  - 只有 Go 后端模块支持选择性编译"
   echo ""
   echo "示例:"
   echo "  $0                    # 智能检测 + 重启 (推荐)"
   echo "  $0 -system -meta      # 重启并重新编译 system 和 meta"
-  echo "  $0 -geopandas         # 智能检测 + 重启 GeoPandas Engine"
+  echo "  $0 -python-workflow         # 智能检测 + 重启 Python Workflow Engine"
   echo "  $0 -all               # 重启并重新编译所有模块 (完整)"
   exit 1
 }
@@ -59,7 +59,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-geopandas|-copilot|-spark-sedona|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-python-workflow|-copilot|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -78,9 +78,9 @@ done
 has_go_module_params() {
     for module in "${FORCE_BUILD_MODULES[@]}"; do
         # Python 服务列表
-        if [[ "$module" != "geopandas" &&
+        if [[ "$module" != "python-workflow" &&
               "$module" != "copilot" &&
-              "$module" != "spark-sedona" &&
+              "$module" != "spark-workflow" &&
               "$module" != "jupyter" ]]; then
             return 0  # 有 Go 模块参数
         fi
@@ -169,9 +169,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "copilot" ]; then
       # Copilot 是 Python 服务，不需要编译，只需清理虚拟环境
       echo "  标记 Copilot Backend 需要重启（无需编译）"
-    elif [ "$module" = "spark-sedona" ]; then
-      # Spark Sedona Engine 是 Python 服务，不需要编译
-      echo "  标记 Spark Sedona Engine 需要重启（无需编译）"
+    elif [ "$module" = "spark-workflow" ]; then
+      # Spark 工作流 Engine 是 Python 服务，不需要编译
+      echo "  标记 Spark 工作流 Engine 需要重启（无需编译）"
     elif [ "$module" = "jupyter" ]; then
       # Jupyter Engine 是 Python 服务，不需要编译
       echo "  标记 Jupyter Engine 需要重启（无需编译）"
@@ -185,7 +185,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "copilot" ]; then
       # Python 服务无二进制文件
       :
-    elif [ "$module" = "spark-sedona" ]; then
+    elif [ "$module" = "spark-workflow" ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "jupyter" ]; then
@@ -202,7 +202,7 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "copilot" ]; then
       # Python 服务无需清理 Go 缓存
       :
-    elif [ "$module" = "spark-sedona" ]; then
+    elif [ "$module" = "spark-workflow" ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "jupyter" ]; then

@@ -1,7 +1,7 @@
 package models
 
 // DataLocation 数据位置定义（输入/输出统一使用）
-// 用于在 Orchestrator → Develop → GeoPandas 的数据流中传递数据位置信息
+// 用于在 Orchestrator → Develop → Python Workflow 的数据流中传递数据位置信息
 type DataLocation struct {
 	// 数据源类型
 	SourceType string `json:"source_type"` // "table"|"file"|"geojson"|"reference"
