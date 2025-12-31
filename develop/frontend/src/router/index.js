@@ -19,7 +19,7 @@ const routes = [
       {
         path: 'sql',
         name: 'QueryEditor',
-        component: () => import('../views/SQLEditor.vue'),
+        component: () => import('../views/QueryEditor.vue'),
         meta: { requiresAuth: true, title: '查询编辑器' }
       },
       {
@@ -31,7 +31,7 @@ const routes = [
       {
         path: 'sql-tasks',
         name: 'QueryTasks',
-        component: () => import('../views/SQLTasks.vue'),
+        component: () => import('../views/QueryTasks.vue'),
         meta: { requiresAuth: true, title: '查询任务' }
       },
       {

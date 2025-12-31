@@ -101,9 +101,9 @@
         <el-tab-pane label="执行结果" name="result">
           <div class="tab-content">
             <div v-if="execution?.status === 'success' && execution?.result">
-              <!-- 查询结果: 使用 SQLResult 组件 -->
+              <!-- 查询结果: 使用 QueryResult 组件 -->
               <div v-if="execution.dev_type === 'query'">
-                <SQLResult :result="formatSQLResult(execution.result)" />
+                <QueryResult :result="formatSQLResult(execution.result)" />
               </div>
 
               <!-- 工作流结果: 使用表格展示任务列表 -->
@@ -215,7 +215,7 @@ import {
   cancelExecution,
   retryExecution
 } from '@/api/devExecution'
-import SQLResult from '@/components/SQLResult.vue'
+import QueryResult from '@/components/QueryResult.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -340,7 +340,7 @@ const formatTime = (time) => {
 }
 
 const formatSQLResult = (result) => {
-  // 将后端结果格式转换为 SQLResult 组件需要的格式
+  // 将后端结果格式转换为 QueryResult 组件需要的格式
   return {
     success: true,
     columns: result.columns || [],

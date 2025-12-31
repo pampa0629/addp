@@ -210,7 +210,7 @@ import {
 } from '@element-plus/icons-vue'
 import { ScheduleDisplay } from '@addp/common-frontend'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/sql.js'
+import { listQueryTasks, deleteQueryTask, updateQueryTask } from '../api/query.js'
 import { executeDevItem } from '../api/devItem.js'
 import dayjs from 'dayjs'
 

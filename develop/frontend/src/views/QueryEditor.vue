@@ -138,7 +138,7 @@ import { format } from 'sql-formatter'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { executeQuery as executeAPI, testConnection, saveQueryTask } from '../api/sql.js'
+import { executeQuery as executeAPI, testConnection, saveQueryTask } from '../api/query.js'
 import { getDevItem } from '../api/devItem.js'
 import client from '../api/client.js'
 

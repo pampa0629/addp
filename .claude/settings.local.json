@@ -37,7 +37,12 @@
       "Bash(docker rm:*)",
       "Bash(docker rmi:*)",
       "Bash(pkill:*)",
-      "Bash(echo \"=== 最终验证结果 ===\" echo \"\" echo \"1. 检查 geopandas.engine.default 引用:\" grep -r \"geopandas\\\\.engine\\\\.default\" --include=\"*.md\" --include=\"*.py\" --include=\"*.go\" --include=\"*.sh\" .)"
+      "Bash(echo \"=== 最终验证结果 ===\" echo \"\" echo \"1. 检查 geopandas.engine.default 引用:\" grep -r \"geopandas\\\\.engine\\\\.default\" --include=\"*.md\" --include=\"*.py\" --include=\"*.go\" --include=\"*.sh\" .)",
+      "Bash(vm_stat:*)",
+      "Bash(go version:*)",
+      "Bash(cat:*)",
+      "Bash(go clean:*)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []
