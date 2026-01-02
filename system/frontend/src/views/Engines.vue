@@ -99,9 +99,6 @@
           </template>
         </el-table-column>
 
-        <!-- 描述 -->
-        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
-
         <!-- 创建时间 -->
         <el-table-column label="创建时间" width="160">
           <template #default="{ row }">
@@ -110,7 +107,7 @@
         </el-table-column>
 
         <!-- 操作列 -->
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" @click="testConnection(row)">测试</el-button>
             <el-button size="small" @click="viewEngineDetails(row)">详情</el-button>
@@ -222,13 +219,10 @@
       width="800px"
       destroy-on-close
     >
-      <div v-loading="detailsLoading" style="min-height: 200px">
-        <div v-if="selectedEngine">
-          <!-- 基本信息 -->
-          <el-card shadow="never" style="margin-bottom: 16px">
-            <template #header>
-              <strong>基本信息</strong>
-            </template>
+      <div v-loading="detailsLoading" style="min-height: 300px">
+        <el-tabs v-if="selectedEngine" type="border-card">
+          <!-- 基本信息标签页 -->
+          <el-tab-pane label="基本信息">
             <el-descriptions :column="2" border>
               <el-descriptions-item label="ID">{{ selectedEngine.id }}</el-descriptions-item>
               <el-descriptions-item label="名称">{{ selectedEngine.name }}</el-descriptions-item>
@@ -261,67 +255,56 @@
                 {{ selectedEngine.description || '无' }}
               </el-descriptions-item>
             </el-descriptions>
-          </el-card>
+          </el-tab-pane>
 
-          <!-- 连接配置 -->
-          <el-card shadow="never" style="margin-bottom: 16px" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
-            <template #header>
-              <strong>连接配置</strong>
-            </template>
+          <!-- 连接配置标签页 -->
+          <el-tab-pane label="连接配置" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
             <el-descriptions :column="1" border>
               <el-descriptions-item
-                v-for="(value, key) in selectedEngine.connection_info"
+                v-for="[key, value] in sortedConnectionInfo"
                 :key="key"
                 :label="key"
               >
                 {{ value }}
               </el-descriptions-item>
             </el-descriptions>
-          </el-card>
+          </el-tab-pane>
 
-          <!-- 能力声明 -->
-          <el-card shadow="never" style="margin-bottom: 16px" v-if="selectedEngine.capabilities">
-            <template #header>
-              <strong>能力声明</strong>
-            </template>
-            <div>
-              <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 16px">
-                <div style="font-weight: 500; margin-bottom: 8px; color: #606266">存储能力</div>
-                <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
-                  <el-table-column prop="type" label="类型" width="150">
-                    <template #default="{ row }">
-                      {{ getStorageTypeLabel(row.type) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="engine" label="引擎" />
-                </el-table>
-              </div>
-              <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
-                <div style="font-weight: 500; margin-bottom: 8px; color: #606266">计算能力</div>
-                <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
-                  <el-table-column prop="type" label="类型" width="150">
-                    <template #default="{ row }">
-                      {{ getComputeTypeLabel(row.type) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="dev_modes" label="开发模式" width="150">
-                    <template #default="{ row }">
-                      <el-tag v-for="mode in row.dev_modes" :key="mode" size="small" style="margin: 2px">
-                        {{ mode }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="description" label="描述" />
-                </el-table>
-              </div>
+          <!-- 能力声明标签页 -->
+          <el-tab-pane label="能力声明" v-if="selectedEngine.capabilities">
+            <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 20px">
+              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">存储能力</div>
+              <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
+                <el-table-column prop="type" label="类型" width="150">
+                  <template #default="{ row }">
+                    {{ getStorageTypeLabel(row.type) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="engine" label="引擎" />
+              </el-table>
             </div>
-          </el-card>
+            <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
+              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">计算能力</div>
+              <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
+                <el-table-column prop="type" label="类型" width="150">
+                  <template #default="{ row }">
+                    {{ getComputeTypeLabel(row.type) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="dev_modes" label="开发模式" width="150">
+                  <template #default="{ row }">
+                    <el-tag v-for="mode in row.dev_modes" :key="mode" size="small" style="margin: 2px">
+                      {{ mode }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="description" label="描述" />
+              </el-table>
+            </div>
+          </el-tab-pane>
 
-          <!-- 扫描配置 -->
-          <el-card shadow="never" v-if="selectedEngine.scan_config">
-            <template #header>
-              <strong>扫描配置</strong>
-            </template>
+          <!-- 扫描配置标签页 -->
+          <el-tab-pane label="扫描配置" v-if="selectedEngine.scan_config">
             <el-descriptions :column="2" border>
               <el-descriptions-item label="立即扫描" :span="2">
                 <el-tag :type="selectedEngine.scan_config.immediate_scan ? 'success' : 'info'">
@@ -346,8 +329,8 @@
                 {{ selectedEngine.scan_config.schedule_time }}
               </el-descriptions-item>
             </el-descriptions>
-          </el-card>
-        </div>
+          </el-tab-pane>
+        </el-tabs>
       </div>
       <template #footer>
         <el-button @click="detailsVisible = false">关闭</el-button>
@@ -459,6 +442,37 @@ const filteredEngines = computed(() => {
 
     return matches && matchesBuiltin
   })
+})
+
+// 对连接配置字段进行排序显示
+const sortedConnectionInfo = computed(() => {
+  if (!selectedEngine.value?.connection_info) {
+    return []
+  }
+
+  // 定义字段显示的优先顺序
+  const fieldOrder = ['host', 'port', 'database', 'user', 'password', 'sslmode']
+  const connectionInfo = selectedEngine.value.connection_info
+  const entries = Object.entries(connectionInfo)
+
+  // 排序：优先显示 fieldOrder 中的字段，然后是其他字段（按字母顺序）
+  const sorted = entries.sort((a, b) => {
+    const [keyA] = a
+    const [keyB] = b
+    const indexA = fieldOrder.indexOf(keyA)
+    const indexB = fieldOrder.indexOf(keyB)
+
+    // 如果 A 在优先顺序中，B 不在，A 排前面
+    if (indexA !== -1 && indexB === -1) return -1
+    // 如果 B 在优先顺序中，A 不在，B 排前面
+    if (indexA === -1 && indexB !== -1) return 1
+    // 如果都在优先顺序中，按照顺序索引排序
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB
+    // 如果都不在优先顺序中，按字母顺序排序
+    return keyA.localeCompare(keyB)
+  })
+
+  return sorted
 })
 
 // 解析 capabilities JSON 为对象
@@ -730,11 +744,17 @@ const testConnection = async (row) => {
     const response = await enginesAPI.testExistingConnection(row.id)
     if (response.success) {
       ElMessage.success('连接测试成功！')
+      // 刷新列表以更新连接状态图标
+      await loadEngines()
     } else {
       ElMessage.error(`连接测试失败: ${response.error || response.message}`)
+      // 即使失败也刷新，因为后端可能更新了状态
+      await loadEngines()
     }
   } catch (error) {
     ElMessage.error(`连接测试失败: ${error.response?.data?.error || error.message}`)
+    // 刷新列表
+    await loadEngines()
   }
 }
 

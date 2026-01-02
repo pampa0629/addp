@@ -29,22 +29,6 @@
       <el-input v-model="formState.name" placeholder="请输入资源名称" />
     </el-form-item>
 
-    <el-form-item label="描述" prop="description">
-      <el-input
-        v-model="formState.description"
-        type="textarea"
-        :rows="2"
-        placeholder="请输入资源描述"
-      />
-    </el-form-item>
-
-    <el-form-item v-if="showActiveSwitch" label="激活状态">
-      <el-switch v-model="formState.is_active" />
-      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
-        禁用后，该资源将不会出现在可用列表中
-      </span>
-    </el-form-item>
-
     <!-- PostgreSQL -->
     <template v-if="formState.engine_type === 'postgresql'">
       <el-form-item label="主机地址" prop="connection_info.host">
@@ -252,6 +236,24 @@
         工作流引擎的 API 端点已标准化，无需手动配置。
       </div>
     </template>
+
+    <!-- 描述 -->
+    <el-form-item label="描述" prop="description">
+      <el-input
+        v-model="formState.description"
+        type="textarea"
+        :rows="2"
+        placeholder="请输入资源描述"
+      />
+    </el-form-item>
+
+    <!-- 激活状态 -->
+    <el-form-item v-if="showActiveSwitch" label="激活状态">
+      <el-switch v-model="formState.is_active" />
+      <span style="margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary)">
+        禁用后，该资源将不会出现在可用列表中
+      </span>
+    </el-form-item>
 
     <!-- 元数据扫描配置 -->
     <el-divider content-position="left">
