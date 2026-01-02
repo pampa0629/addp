@@ -24,6 +24,11 @@ type Config struct {
 	DeepScanTimeout   string
 	DeepScanBatchSize int
 
+	// 扫描性能优化配置
+	ScanConcurrency      int // 并发扫描数（表级别）
+	LargeTableThreshold  int // 大表行数阈值，超过此值使用采样
+	ExtentSamplePercent  int // Extent 计算采样百分比（1-100）
+
 	// Meilisearch 配置
 	MeilisearchURL           string
 	MeilisearchMasterKey     string
@@ -68,6 +73,11 @@ func LoadConfig() *Config {
 		AutoSyncLevel:     commonConfig.GetEnv("AUTO_SYNC_LEVEL", "database"),
 		DeepScanTimeout:   commonConfig.GetEnv("DEEP_SCAN_TIMEOUT", "30m"),
 		DeepScanBatchSize: commonConfig.GetEnvInt("DEEP_SCAN_BATCH_SIZE", 10),
+
+		// 扫描性能优化配置
+		ScanConcurrency:     commonConfig.GetEnvInt("META_SCAN_CONCURRENCY", 5),
+		LargeTableThreshold: commonConfig.GetEnvInt("META_LARGE_TABLE_THRESHOLD", 1000000),
+		ExtentSamplePercent: commonConfig.GetEnvInt("META_EXTENT_SAMPLE_PERCENT", 1),
 	}
 
 	// 设置 BaseConfig 字段

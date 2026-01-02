@@ -9,6 +9,7 @@ import logging
 import uuid
 from datetime import datetime
 import os
+import time
 
 from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
@@ -23,8 +24,36 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # 启用跨域
 
+# 启动时间（用于计算 uptime）
+start_time = datetime.now()
+
 # 内存存储 (生产环境应使用数据库)
 executions = {}  # {execution_id: {status, result, ...}}
+
+
+# ========================================
+# 标准错误码（符合 ADDP 工作流计算引擎接口规范）
+# ========================================
+
+class ErrorCode:
+    """标准错误码"""
+    OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"      # 算子不存在
+    INVALID_PARAMS = "INVALID_PARAMS"              # 参数错误
+    EXECUTION_FAILED = "EXECUTION_FAILED"          # 执行失败
+    WORKFLOW_INVALID = "WORKFLOW_INVALID"          # 工作流定义无效
+    INTERNAL_ERROR = "INTERNAL_ERROR"              # 内部错误
+
+
+def error_response(error_code: str, message: str, details: str = None):
+    """构造标准错误响应"""
+    response = {
+        "status": "failed",
+        "error": message,
+        "error_code": error_code
+    }
+    if details:
+        response["details"] = details
+    return response
 
 
 # ========================================
@@ -33,12 +62,55 @@ executions = {}  # {execution_id: {status, result, ...}}
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """健康检查端点"""
-    return jsonify({
-        "status": "healthy",
-        "service": "spark-workflow-engine",
-        "version": "1.0.0"
-    }), 200
+    """
+    健康检查端点（符合 ADDP 工作流计算引擎接口规范）
+
+    Returns:
+        {
+            "status": "healthy",
+            "service": "spark-workflow-engine",
+            "version": "1.0.0",
+            "uptime": 3600,
+            "operators_count": 35,
+            "dependencies": {
+                "pyspark": "3.5.0",
+                "sedona": "1.5.1"
+            }
+        }
+    """
+    try:
+        from pyspark import __version__ as spark_version
+        from importlib.metadata import version as get_version
+
+        uptime = int((datetime.now() - start_time).total_seconds())
+
+        # 获取算子数量
+        from operator_metadata import get_operator_metadata
+        operators = get_operator_metadata()
+
+        # 获取 Sedona 版本（使用 importlib.metadata）
+        try:
+            sedona_version = get_version('apache-sedona')
+        except Exception:
+            sedona_version = "unknown"
+
+        return jsonify({
+            "status": "healthy",
+            "service": "spark-workflow-engine",
+            "version": "1.0.0",
+            "uptime": uptime,
+            "operators_count": len(operators),
+            "dependencies": {
+                "pyspark": spark_version,
+                "sedona": sedona_version
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
 
 
 # ========================================
@@ -51,30 +123,27 @@ def get_operators():
     获取所有空间算子列表 (Common 模块标准接口)
     供 Develop Backend OperatorDiscoveryService 使用
 
+    Query Parameters:
+        category (optional): 按分类过滤
+
     Response:
         {
             "status": "success",
-            "operators": [
-                {
-                    "id": "load",
-                    "name": "load",
-                    "display_name": "数据加载",
-                    "module": "spark",
-                    "category": "数据I/O",
-                    "description": "从数据库、文件、湖仓加载数据",
-                    "parameters": [...],
-                    "output_ports": [...]
-                },
-                ...
-            ],
+            "operators": [...],
             "count": 35
         }
     """
     try:
+        category = request.args.get('category')
+
         # 导入算子元数据定义
         from operator_metadata import get_operator_metadata
 
         operators = get_operator_metadata()
+
+        # 按分类过滤
+        if category:
+            operators = [op for op in operators if op.get('category') == category]
 
         return jsonify({
             "status": "success",
@@ -83,11 +152,11 @@ def get_operators():
         }), 200
 
     except Exception as e:
-        logger.error(f"Failed to list operators: {e}")
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        logger.error(f"Failed to list operators: {e}", exc_info=True)
+        return jsonify(error_response(
+            ErrorCode.INTERNAL_ERROR,
+            f"获取算子列表失败: {str(e)}"
+        )), 500
 
 
 # ========================================
@@ -270,11 +339,14 @@ def register_to_system():
     system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
     internal_api_key = os.getenv('INTERNAL_API_KEY', '')
 
+    # 获取当前引擎的连接信息
+    protocol = os.getenv('PROTOCOL', 'http')
+    host = os.getenv('HOST', 'localhost')
+    port = int(os.getenv('PORT', 8098))
+
     registration_data = {
-        "unique_identifier": "api.spark_workflow",
-        "name": "spark_workflow_engine",
-        "display_name": "Spark 工作流引擎",
-        "engine_type": "api.spark_workflow",
+        "name": "Spark Workflow",
+        "engine_type": "spark_workflow",
         "is_builtin": True,
         "capabilities": {
             "compute": [{
@@ -284,57 +356,11 @@ def register_to_system():
                 "description": "基于 Apache Spark 和 Sedona 的分布式空间计算引擎"
             }]
         },
-        "task_api_config": {
-            "base_url": os.getenv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
-            "endpoints": {
-                "list": {
-                    "method": "GET",
-                    "path": "/api/develop/spatial/tasks",
-                    "query_params": {
-                        "page": "{{.Page}}",
-                        "page_size": "{{.PageSize}}"
-                    }
-                },
-                "create": {
-                    "method": "POST",
-                    "path": "/api/develop/spatial/tasks",
-                    "body_template": {
-                        "name": "{{.Name}}",
-                        "description": "{{.Description}}",
-                        "workflow_def": "{{.WorkflowDef}}",
-                        "input_schema": "{{.InputSchema}}",
-                        "output_schema": "{{.OutputSchema}}",
-                        "schedule": "{{.Schedule}}"
-                    }
-                },
-                "execute": {
-                    "method": "POST",
-                    "path": "/api/develop/spatial/tasks/{{.TaskID}}/execute",
-                    "body_template": {
-                        "inputs": "{{.Inputs}}"
-                    }
-                },
-                "status": {
-                    "method": "GET",
-                    "path": "/api/develop/spatial/executions/{{.ExecutionID}}",
-                    "response_mapping": {
-                        "status_field": "status",
-                        "message_field": "error_message",
-                        "progress_field": "progress",
-                        "task_id_field": "id"
-                    }
-                }
-            },
-            "timeout": {
-                "create": 30,
-                "execute": 600,
-                "status": 10
-            }
-        },
-        "health_check_config": {
-            "endpoint": "/health",
-            "timeout": 5,
-            "interval": 60
+        "description": "基于 Apache Spark 和 Sedona 的分布式空间计算引擎，支持大规模数据处理",
+        "connection_info": {
+            "protocol": protocol,
+            "host": host,
+            "port": port
         }
     }
 

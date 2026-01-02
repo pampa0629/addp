@@ -47,11 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 迁移现有引擎的 display_name
-	if err := repository.MigrateExistingEnginesDisplayName(db); err != nil {
-		logger.L().Error("现有引擎 display_name 迁移失败", "error", err)
-		os.Exit(1)
-	}
+	// 注释：MigrateExistingEnginesDisplayName 已删除（display_name 字段已移除）
 
 	// 初始化超级管理员用户
 	if err := repository.InitSuperAdmin(db); err != nil {
@@ -62,6 +58,12 @@ func main() {
 	// 初始化默认租户和租户管理员 (仅开发环境且显式启用时)
 	if err := repository.InitDefaultTenant(db); err != nil {
 		logger.L().Error("默认租户初始化失败", "error", err)
+		os.Exit(1)
+	}
+
+	// 初始化内置引擎 (仅开发环境且显式启用时)
+	if err := repository.InitBuiltinEngines(db); err != nil {
+		logger.L().Error("内置引擎初始化失败", "error", err)
 		os.Exit(1)
 	}
 

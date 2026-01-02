@@ -3,7 +3,9 @@ package api
 import (
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/middleware/audit"
 	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
@@ -12,7 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client) *gin.Engine {
+func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -48,6 +50,10 @@ func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, sc
 	} else {
 		// Fallback: 无缓存模式
 		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	}
+	// 审计日志中间件（记录到 System 模块）
+	if systemClient != nil {
+		api.Use(audit.AuditMiddleware("meta", systemClient))
 	}
 	api.Use(auth.TenantIsolationMiddleware()) // 租户隔离
 	{

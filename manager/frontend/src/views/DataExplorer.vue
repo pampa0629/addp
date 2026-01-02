@@ -84,11 +84,9 @@ const buildSnapshotFromQuery = (query = {}) => {
   }
 
   // If not numeric, treat as resource name/identifier
-  // Find matching resource by name or unique_identifier
+  // Find matching resource by name
   const matchingResource = engines.value.find(r =>
-    r.name === resourceKey ||
-    r.unique_identifier === resourceKey ||
-    r.unique_identifier?.endsWith(`.${resourceKey}`)
+    r.name === resourceKey
   )
 
   if (!matchingResource) {

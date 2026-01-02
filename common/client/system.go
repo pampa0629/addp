@@ -399,9 +399,9 @@ func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, erro
 	}
 
 	// 2. 过滤出支持 "sql" 开发模式的引擎
-	sqlEngines := commonutils.FilterEnginesByDevMode(allEngines, "sql")
+	queryEngines := commonutils.FilterEnginesByDevMode(allEngines, "sql")
 
-	return sqlEngines, nil
+	return queryEngines, nil
 }
 
 // ================ TaskProvider 相关方法（新增） ================
@@ -678,6 +678,42 @@ func (c *SystemClient) DoRequest(method, url string, payload interface{}, result
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// CreateAuditLog 创建审计日志（跨模块调用）
+func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
+	url := fmt.Sprintf("%s/internal/audit-logs", c.baseURL)
+
+	// 脱敏敏感信息
+	if log.Details != "" {
+		log.Details = commonutils.MaskSensitiveData(log.Details)
+	}
+
+	bodyBytes, err := json.Marshal(log)
+	if err != nil {
+		return fmt.Errorf("failed to marshal audit log: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("create audit log failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil

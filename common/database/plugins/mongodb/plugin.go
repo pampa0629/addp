@@ -51,7 +51,7 @@ func (p *MongoDBPlugin) SensitiveFields() []string {
 
 // GenerateCapabilities 生成资源能力描述
 func (p *MongoDBPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"nosql_db","engine":"mongodb","supports_query":true}],"compute":[{"dev_modes":["javascript"],"description":"文档型数据库查询","features":["flexible_schema","json_native"]}]}`
+	return `{"storage":[{"type":"nosql_db","engine":"mongodb","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"文档型数据库查询（MQL）","features":["flexible_schema","json_native"]}]}`
 }
 
 // ValidateConnectionInfo 验证连接信息

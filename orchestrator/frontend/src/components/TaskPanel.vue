@@ -100,8 +100,8 @@ async function loadAllTasks() {
 // 加载单个引擎的任务
 async function loadEngineTasks(engine) {
   try {
-    // 兼容新旧格式: unique_identifier 或 module_name
-    const identifier = engine.unique_identifier || engine.module_name
+    // 使用 engine_type 作为标识符
+    const identifier = engine.module_name || engine.engine_type
     console.log(`加载引擎任务: ${identifier}`)
 
     // 调用后端 API 获取任务列表 (使用 module_name 参数)
@@ -127,19 +127,19 @@ async function loadEngineTasks(engine) {
 
     return {
       id: identifier,
-      label: engine.display_name || engine.name,  // 优先使用中文显示名称
+      label: engine.name,
       type: 'module',
       uniqueIdentifier: identifier,
       taskCount: children.length,
       children
     }
   } catch (error) {
-    const identifier = engine.unique_identifier || engine.module_name
+    const identifier = engine.module_name
     console.error(`加载引擎 ${identifier} 任务失败:`, error)
     // 返回空任务的模块节点
     return {
       id: identifier,
-      label: engine.display_name || engine.name,  // 优先使用中文显示名称
+      label: engine.name,
       type: 'module',
       uniqueIdentifier: identifier,
       taskCount: 0,

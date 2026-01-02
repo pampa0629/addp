@@ -39,7 +39,7 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	// 内置引擎服务 URL（用于 task_api_config.base_url）
+	// 内置引擎服务 URL（用于 extension_api_config.base_url）
 	SystemServiceURL      string
 	MetaServiceURL        string
 	TransferServiceURL    string
@@ -47,6 +47,15 @@ type Config struct {
 	OrchestratorServiceURL string
 	DevelopServiceURL     string
 	GeopandasEngineURL    string
+
+	// 日志归档配置
+	LogRetentionDays int    // 日志保留天数
+	LogArchiveEnable bool   // 是否启用归档
+	LogCleanupEnable bool   // 是否启用清理
+	LogArchiveCron   string // 归档任务 cron 表达式
+
+	// CORS 配置
+	AllowedOrigins []string // CORS 白名单
 }
 
 func Load() *Config {
@@ -92,6 +101,15 @@ func Load() *Config {
 		log.Println("⚠️  WARNING: INTERNAL_API_KEY is not set! Internal API endpoints will not be accessible.")
 	}
 
+	// 加载 CORS 白名单
+	allowedOriginsStr := getEnv("ALLOWED_ORIGINS", "http://localhost:5170,http://localhost:5173")
+	allowedOrigins := strings.Split(allowedOriginsStr, ",")
+	// 去除空白字符
+	for i, origin := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(origin)
+	}
+	log.Printf("✅ CORS AllowedOrigins: %v", allowedOrigins)
+
 	return &Config{
 		Env:                     env,
 		ServerAddr:              getEnv("SERVER_ADDR", ":8080"),
@@ -131,6 +149,15 @@ func Load() *Config {
 		OrchestratorServiceURL: getEnv("ORCHESTRATOR_SERVICE_URL", "http://localhost:8084"),
 		DevelopServiceURL:     getEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
 		GeopandasEngineURL:    getEnv("GEOPANDAS_ENGINE_URL", "http://localhost:8090"),
+
+		// 日志归档配置
+		LogRetentionDays: getEnvAsInt("LOG_RETENTION_DAYS", 30),             // 默认保留30天
+		LogArchiveEnable: getEnvAsBool("LOG_ARCHIVE_ENABLE", false),         // 默认不启用归档
+		LogCleanupEnable: getEnvAsBool("LOG_CLEANUP_ENABLE", true),          // 默认启用清理
+		LogArchiveCron:   getEnv("LOG_ARCHIVE_CRON", "0 2 * * *"),           // 每天凌晨2点执行
+
+		// CORS 配置
+		AllowedOrigins: allowedOrigins,
 	}
 }
 

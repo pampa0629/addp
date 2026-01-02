@@ -222,7 +222,7 @@ func (s *SQLEngineService) ListDatabaseResources(ctx context.Context, tenantID u
 	// 过滤出支持 SQL 开发模式的资源
 	var dbResources []commonModels.Engine
 	for _, res := range allResources {
-		if utils.SupportsDevMode(&res, "sql") {
+		if utils.SupportsDevMode(&res, "query") {
 			dbResources = append(dbResources, res)
 		}
 	}

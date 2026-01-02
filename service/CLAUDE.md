@@ -52,6 +52,30 @@ Data Service API（统一查询接口）
 - **WMTS (Web Map Tile Service)** - 瓦片地图服务
 - **WCS (Web Coverage Service)** - 栅格覆盖服务
 
+## 数据库文档
+
+**遇到以下场景时,主动阅读对应文档**:
+
+| 场景 | 必读文档 | 触发关键词 |
+|------|---------|----------|
+| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
+| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
+| API端点详情 | 对应单表文档 | API、接口、请求响应 |
+| 服务注册管理 | external_services表 | WMS、WFS、服务注册、认证 |
+| 图层管理 | service_layers表 | 图层列表、几何类型、坐标系统 |
+
+### 架构说明
+- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策
+
+### 单表文档
+
+详细的表结构和API说明文档：
+
+- [external_services表](docs/tables/external_services表.md) - 外部服务注册表,支持多种服务类型和认证方式
+- [service_layers表](docs/tables/service_layers表.md) - 服务图层表,存储服务的图层/要素类信息
+
+**重要**：修改表结构或API时，必须同步更新对应的单表文档。
+
 ## 重要文件位置
 
 ### 核心服务文件

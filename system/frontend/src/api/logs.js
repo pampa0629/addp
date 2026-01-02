@@ -1,9 +1,19 @@
 import client from './client'
 
 export const logsAPI = {
-  list: (page = 1, pageSize = 20, userId = null) => {
-    const params = { page, page_size: pageSize }
-    if (userId) params.user_id = userId
+  // 支持对象参数或传统参数
+  list: (paramsOrPage = 1, pageSize = 20, userId = null) => {
+    let params
+
+    // 如果第一个参数是对象，直接使用
+    if (typeof paramsOrPage === 'object') {
+      params = paramsOrPage
+    } else {
+      // 否则使用传统的参数方式
+      params = { page: paramsOrPage, page_size: pageSize }
+      if (userId) params.user_id = userId
+    }
+
     return client.get('/logs', { params })
   },
 

@@ -46,7 +46,7 @@ func (p *DorisPlugin) SensitiveFields() []string {
 }
 
 func (p *DorisPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"doris","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"OLAP分析查询"}]}`
+	return `{"storage":[{"type":"relational_db","engine":"doris","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"OLAP分析查询"}]}`
 }
 
 func (p *DorisPlugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {

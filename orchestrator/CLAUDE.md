@@ -243,6 +243,34 @@ GeoPandas 引擎 (空间分析)
   - `orchestrator:cache:provider:{name}` - 任务提供者缓存
 - **MinIO Bucket**: 无 (Orchestrator 不存储数据)
 
+---
+
+## 数据库文档
+
+**遇到以下场景时，主动阅读对应文档**：
+
+| 场景 | 必读文档 | 触发关键词 |
+|------|---------|----------|
+| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
+| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
+| API端点详情 | 对应单表文档 | API、接口、请求响应 |
+| 执行流程理解 | 数据库架构.md | DAG、拓扑排序、异步执行 |
+
+### 架构说明
+
+- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策、性能优化
+
+### 单表文档
+
+详细的表结构和API说明文档：
+
+- [orchestrations表](docs/tables/orchestrations表.md) - 编排定义表，存储 DAG 工作流配置
+- [executions表](docs/tables/executions表.md) - 执行实例表，记录每次工作流的运行结果
+
+**重要**：修改表结构或API时，必须同步更新对应的单表文档。
+
+---
+
 ## 重要文件位置
 
 ### 核心服务文件
@@ -277,7 +305,9 @@ GeoPandas 引擎 (空间分析)
 
 ### 文档文件
 
-- [docs/DATA_STRUCTURES.md](docs/DATA_STRUCTURES.md) - 数据结构和 API 文档
+- [docs/数据库架构.md](docs/数据库架构.md) - 数据库架构和设计决策
+- [docs/tables/orchestrations表.md](docs/tables/orchestrations表.md) - orchestrations 表结构和 API 说明
+- [docs/tables/executions表.md](docs/tables/executions表.md) - executions 表结构和 API 说明
 - [docs/PARAMETER_TEMPLATING.md](docs/PARAMETER_TEMPLATING.md) - 参数模板化功能说明
 
 ## 常见开发场景

@@ -13,12 +13,13 @@ const routes = [
   {
     path: '/',
     component: Layout,
-    redirect: '/query',
+    redirect: '/sql',
     meta: { requiresAuth: true },
     children: [
       {
         path: 'sql',
         name: 'QueryEditor',
+        alias: 'query',
         component: () => import('../views/QueryEditor.vue'),
         meta: { requiresAuth: true, title: '查询编辑器' }
       },

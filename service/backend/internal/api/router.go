@@ -1,6 +1,8 @@
 package api
 
 import (
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
 	corsMiddleware "github.com/addp/common/middleware/cors"
 	"github.com/addp/service/internal/config"
@@ -11,6 +13,7 @@ func SetupRouter(
 	cfg *config.Config,
 	serviceRegistryHandler *ServiceRegistryHandler,
 	dataServiceHandler *DataServiceHandler,
+	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -27,6 +30,10 @@ func SetupRouter(
 	{
 		// 认证中间件（通过 System 服务验证 token）
 		api.Use(authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL))
+		// 审计日志中间件（记录到 System 模块）
+		if systemClient != nil {
+			api.Use(audit.AuditMiddleware("service", systemClient))
+		}
 
 		// 服务注册管理 API
 		registry := api.Group("/registry")

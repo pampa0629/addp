@@ -35,20 +35,34 @@ func (r *UserRepository) GetByUsername(username string) (*models.User, error) {
 	return &user, nil
 }
 
-func (r *UserRepository) List(offset, limit int) ([]models.User, error) {
+func (r *UserRepository) List(offset, limit int) ([]models.User, int64, error) {
 	var users []models.User
+	var total int64
+
+	// 获取总数
+	if err := r.db.Model(&models.User{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
 	err := r.db.Offset(offset).Limit(limit).Find(&users).Error
-	return users, err
+	return users, total, err
 }
 
-func (r *UserRepository) ListByTenant(tenantID uint, offset, limit int) ([]models.User, error) {
+func (r *UserRepository) ListByTenant(tenantID uint, offset, limit int) ([]models.User, int64, error) {
 	var users []models.User
-	// 只返回指定租户的用户，排除超级管理员
-	err := r.db.Where("tenant_id = ? AND user_type != ?", tenantID, models.UserTypeSuperAdmin).
-		Offset(offset).
-		Limit(limit).
-		Find(&users).Error
-	return users, err
+	var total int64
+
+	query := r.db.Where("tenant_id = ? AND user_type != ?", tenantID, models.UserTypeSuperAdmin)
+
+	// 获取总数
+	if err := query.Model(&models.User{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 分页查询
+	err := query.Offset(offset).Limit(limit).Find(&users).Error
+	return users, total, err
 }
 
 func (r *UserRepository) Update(user *models.User) error {

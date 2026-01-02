@@ -1,14 +1,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [
-    vue(),
-    monacoEditorPlugin({
-      languages: ['sql', 'json', 'javascript', 'typescript', 'html', 'css']
-    })
+    vue()
   ],
 
   resolve: {

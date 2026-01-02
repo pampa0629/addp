@@ -45,7 +45,7 @@
 
 ### 1. 无需考虑向后兼容
 
-开发阶段优先考虑最佳架构。可自由修改数据库schema结构、API定义和前端调用代码；且无需考虑数据兼容和迁移。
+当前addp无需考虑任何兼容性，可自由修改数据库schema和表的结构、API定义（同步修改前端调用代码即可）。若已有的数据无法自动升级，则直接删除。
 
 ### 2. 保持整洁
 
@@ -69,7 +69,7 @@
 
 ### 7. 挑战不合理的需求
 
-质疑不合理的需求,平等讨论达成共识。
+质疑不合理的需求和实现要求,平等讨论达成共识。
 
 ### 8. DRY (不要重复自己)
 
@@ -85,16 +85,17 @@
 - **common-frontend/** - 前端共享库:Vue 3 组件、工具和类型定义,供前端复用
   - **basic/** - 基础 UI 组件,无地图依赖(StorageEngineForm、ImagePreview、formatters)
   - **map/** - 地图相关组件,需要 OpenLayers 和高德地图(GeoJsonPreview、ShapefilePreview、TablePreview)
-- **portal/** - 统一门户入口,基于 iframe 的模块集成 - **已实现**
-- **system/** - 核心系统模块:用户认证、日志、引擎管理 - **已实现** (PostgreSQL system schema)
-- **gateway/** - API 网关:处理外部请求并路由到内部服务 - **已实现** (反向代理)
-- **manager/** - 数据管理:数据源连接、上传目录组织、数据预览 - **已实现**
-- **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 - **已实现** (PostgreSQL metadata schema)
-- **transfer/** - 数据传输:数据导入/导出/同步 - **已实现**
-- **orchestrator/** - 工作流编排:任务调度和执行 - **已实现**
-- **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 - **已实现**
-- **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 - **已实现** (PostgreSQL service schema)
-- **engines/python_workflow/** - 空间计算引擎:基于 Python 的 GIS 工作流执行,提供 21 个空间算子 - **已实现**
+- **portal/** - 统一门户入口,基于 iframe 的模块集成 
+- **system/** - 核心系统模块:用户认证、日志、引擎管理 -  (PostgreSQL system schema)
+- **gateway/** - API 网关:处理外部请求并路由到内部服务 -  (反向代理)
+- **manager/** - 数据管理:数据源连接、上传目录组织、数据预览 
+- **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 -  (PostgreSQL metadata schema)
+- **transfer/** - 数据传输:数据导入/导出/同步
+- **orchestrator/** - 工作流编排:任务调度和执行
+- **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 
+- **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 (PostgreSQL service schema)
+- **engines/python_workflow/** - 基于Python的工作流计算引擎,提供空间和非空间算子
+- **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,空间和非空间算子
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
@@ -118,19 +119,9 @@
 **只启动需要的模块,加快开发速度,节省资源**:
 
 ```bash
-# 只启动 System 模块 (5-8秒,节省85%资源)
+# 如：只启动 System 模块 (5-8秒,节省85%资源)
 bash scripts/dev/start.sh -system
-
-# 启动 Manager 模块 + 依赖 (10-15秒)
-bash scripts/dev/start.sh -manager
-
-# 启动 Develop 模块 + GeoPandas (12-18秒)
-bash scripts/dev/start.sh -develop
-
-# 查看所有选项
-bash scripts/dev/start.sh -h
 ```
-
 **详细指南**: [docs/模块选择启动指南.md](docs/模块选择启动指南.md)
 
 ### 开发工作流（重要）
@@ -141,16 +132,10 @@ bash scripts/dev/start.sh -h
 # 场景 1: 修改了 Manager 模块
 bash scripts/dev/restart.sh -manager
 
-# 场景 2: 修改了 Meta 和 Transfer 模块
-bash scripts/dev/restart.sh -meta -transfer
-
-# 场景 3: 修改了 System 模块
-bash scripts/dev/restart.sh -system
-
-# 场景 4: 修改了多个模块或不确定影响范围
+# 场景 2: 修改了多个模块或不确定影响范围
 bash scripts/dev/restart.sh -all
 
-# 场景 5: 只重启服务，不重新编译（最快）
+# 场景 3: 只重启服务，不重新编译（最快）
 bash scripts/dev/restart.sh
 ```
 
@@ -313,10 +298,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 ### 配置中心模式
 
 需要详细内容时,请阅读 docs/addp配置介绍.md
-
-端口分配
-
-需要了解端口分配时，请阅读 docs/PORTS分配.md
+需要了解端口分配时，请阅读 docs/addp端口分配.md
 
 ### 新模块开发
 
@@ -373,3 +355,5 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 各模块的日志都统一输出到 addp/logs目录下，按照模块和前后端区分不同的日志文件。
 
 **开发状态，故障修改后，请使用 `./scripts/dev/restart.sh -<模块名>` 重启对应服务来验证确认结果，没有经过这一步，不要告知我已经改好了。**
+
+**每次更新plan时，务必根据最新的讨论结果，修订全部plan文档，而不是仅仅补充讨论结果（因为讨论结果会影响前面的plan内容）**

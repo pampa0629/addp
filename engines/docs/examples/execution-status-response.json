@@ -1,0 +1,22 @@
+{
+  "status": "success",
+  "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+  "task_status": "completed",
+  "result": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": {
+          "type": "Point",
+          "coordinates": [116.4074, 39.9042]
+        },
+        "properties": {
+          "area": 785398.16
+        }
+      }
+    ]
+  },
+  "progress": 100,
+  "started_at": "2025-12-31T10:30:00Z"
+}

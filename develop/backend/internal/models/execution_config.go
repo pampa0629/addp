@@ -7,13 +7,13 @@ type ExecutionConfig interface {
 
 // SQLExecutionConfig SQL 执行配置
 type SQLExecutionConfig struct {
-	Type         string `json:"type"`           // "sql"
+	Type         string `json:"type"`           // "query"
 	DataSourceID uint   `json:"data_source_id"` // PostgreSQL/MySQL/Apache Spark 资源 ID
 }
 
 // GetType 实现 ExecutionConfig 接口
 func (c SQLExecutionConfig) GetType() string {
-	return "sql"
+	return "query"
 }
 
 // WorkflowExecutionConfig 工作流执行配置（基础）

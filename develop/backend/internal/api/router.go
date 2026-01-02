@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/develop/backend/internal/config"
@@ -20,6 +22,7 @@ func SetupRouter(
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
 	devItemService interface{}, // 添加 devItemService 参数
+	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -63,6 +66,10 @@ func SetupRouter(
 	// API 路由组（需要认证）
 	api := router.Group("/api/develop")
 	api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	// 审计日志中间件（记录到 System 模块）
+	if systemClient != nil {
+		api.Use(audit.AuditMiddleware("develop", systemClient))
+	}
 	{
 		// ========== 任务列表 API（供 Orchestrator 使用）==========
 		taskListHandler := NewTaskListHandler(devItemService.(*service.DevItemService))

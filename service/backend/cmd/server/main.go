@@ -69,8 +69,8 @@ func main() {
 	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 
-	// 设置路由
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler)
+	// 设置路由（传递 systemClient 用于审计日志）
+	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, systemClient)
 
 	// 初始化调度器
 	ctx := context.Background()

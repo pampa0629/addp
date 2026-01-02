@@ -2,8 +2,8 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,86 +20,64 @@ func NewTenantHandler(tenantService *service.TenantService) *TenantHandler {
 func (h *TenantHandler) Create(c *gin.Context) {
 	var req models.TenantCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	tenant, err := h.tenantService.Create(&req, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, tenant)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	tenant, err := h.tenantService.Create(&req, userID)
+	commonapi.RespondOrError(c, tenant, err)
 }
 
 func (h *TenantHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	currentUserID := c.GetUint("user_id")
+	page, pageSize := commonapi.ParsePagination(c)
+	userID, _ := commonapi.GetCurrentUserID(c)
 
-	tenants, err := h.tenantService.List(page, pageSize, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, tenants)
+	tenants, err := h.tenantService.List(page, pageSize, userID)
+	commonapi.RespondOrError(c, tenants, err)
 }
 
 func (h *TenantHandler) GetByID(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的租户ID"})
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	tenant, err := h.tenantService.GetByID(uint(id), currentUserID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, tenant)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	tenant, err := h.tenantService.GetByID(id, userID)
+	commonapi.RespondOrError(c, tenant, err)
 }
 
 func (h *TenantHandler) Update(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的租户ID"})
 		return
 	}
 
 	var req models.TenantUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	tenant, err := h.tenantService.Update(uint(id), &req, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, tenant)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	tenant, err := h.tenantService.Update(id, &req, userID)
+	commonapi.RespondOrError(c, tenant, err)
 }
 
 func (h *TenantHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的租户ID"})
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	if err := h.tenantService.Delete(uint(id), currentUserID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	userID, _ := commonapi.GetCurrentUserID(c)
+	err = h.tenantService.Delete(id, userID)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	commonapi.RespondSuccess(c, gin.H{"message": "删除成功"})
 }
+

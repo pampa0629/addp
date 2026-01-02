@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
@@ -84,12 +85,21 @@ func main() {
 	if err := engineService.PreloadResources(); err != nil {
 		logger.L().Warn("资源预加载失败，延迟到首次请求", "error", err)
 	}
+
+	// 初始化 System 客户端（用于审计日志和服务间调用）
+	var systemClient *commonClient.SystemClient
+	if cfg.EnableIntegration && cfg.InternalAPIKey != "" {
+		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		logger.L().Info("SystemClient 已初始化", "system_url", cfg.SystemServiceURL)
+	}
+
 	searchIndexer, err := search.NewIndexer(cfg)
 	if err != nil {
 		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
 		searchIndexer = nil // 继续运行，但不使用搜索索引
 	}
 	scanService := service.NewScanServiceNew(db, engineService)
+	scanService.SetConfig(cfg) // 注入配置
 	if searchIndexer != nil {
 		scanService.SetIndexer(searchIndexer)
 	}
@@ -161,8 +171,22 @@ func main() {
 	}
 	defer taskService.Stop(context.Background())
 
+	// ========== 启动清理服务 ==========
+	cleanupService := service.NewCleanupService(db, service.CleanupConfig{
+		Enabled:         true,
+		RetentionDays:   90,
+		CleanupInterval: 24 * time.Hour,
+	})
+	if err := cleanupService.Start(context.Background()); err != nil {
+		logger.L().Error("清理服务启动失败", "error", err)
+		os.Exit(1)
+	}
+	defer cleanupService.Stop(context.Background())
+	logger.L().Info("清理服务已启动", "retention_days", 90)
+	// ===================================
+
 	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, engineService, scanService, taskService, redisClient)
+	router := api.SetupRouterNew(cfg, engineService, scanService, taskService, redisClient, systemClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）

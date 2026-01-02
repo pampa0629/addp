@@ -39,11 +39,11 @@
               <el-option
                 v-for="engine in workflowEngines"
                 :key="engine.id"
-                :label="engine.display_name"
+                :label="engine.name"
                 :value="engine.id"
               >
                 <div style="display: flex; justify-content: space-between; align-items: center">
-                  <span>{{ engine.display_name }}</span>
+                  <span>{{ engine.name }}</span>
                   <el-tag size="small" type="success" style="margin-left: 8px">
                     {{ getEngineTag(engine) }}
                   </el-tag>
@@ -68,7 +68,7 @@
                 :value="runtime.id"
               >
                 <div>
-                  <div>{{ runtime.display_name }}</div>
+                  <div>{{ runtime.name }}</div>
                   <div style="font-size: 12px; color: #8492a6">
                     {{ runtime.connection_info?.spark_master || '未配置' }}
                   </div>
@@ -474,7 +474,7 @@ const formatRuntimeLabel = (runtime) => {
     }
   }
 
-  return `${runtime.display_name} (${connInfo})`
+  return `${runtime.name} (${connInfo})`
 }
 
 // 是否可以保存

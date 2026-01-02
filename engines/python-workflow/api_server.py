@@ -10,6 +10,7 @@ import logging
 import uuid
 from datetime import datetime
 import os
+import time
 
 from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
@@ -25,8 +26,36 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # 启用跨域
 
+# 启动时间（用于计算 uptime）
+start_time = datetime.now()
+
 # 内存存储（生产环境应使用数据库）
 executions = {}  # {execution_id: {status, result, ...}}
+
+
+# ========================================
+# 标准错误码（符合 ADDP 工作流计算引擎接口规范）
+# ========================================
+
+class ErrorCode:
+    """标准错误码"""
+    OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"      # 算子不存在
+    INVALID_PARAMS = "INVALID_PARAMS"              # 参数错误
+    EXECUTION_FAILED = "EXECUTION_FAILED"          # 执行失败
+    WORKFLOW_INVALID = "WORKFLOW_INVALID"          # 工作流定义无效
+    INTERNAL_ERROR = "INTERNAL_ERROR"              # 内部错误
+
+
+def error_response(error_code: str, message: str, details: str = None):
+    """构造标准错误响应"""
+    response = {
+        "status": "failed",
+        "error": message,
+        "error_code": error_code
+    }
+    if details:
+        response["details"] = details
+    return response
 
 
 # ========================================
@@ -35,12 +64,46 @@ executions = {}  # {execution_id: {status, result, ...}}
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """健康检查端点"""
-    return jsonify({
-        "status": "healthy",
-        "service": "python-workflow-engine",
-        "version": "1.0.0"
-    }), 200
+    """
+    健康检查端点（符合 ADDP 工作流计算引擎接口规范）
+
+    Returns:
+        {
+            "status": "healthy",
+            "service": "python-workflow-engine",
+            "version": "1.0.0",
+            "uptime": 3600,
+            "operators_count": 42,
+            "dependencies": {
+                "geopandas": "0.14.1",
+                "pandas": "2.1.4"
+            }
+        }
+    """
+    try:
+        import geopandas as gpd
+        import pandas as pd
+
+        uptime = int((datetime.now() - start_time).total_seconds())
+        operators = list_operators()
+
+        return jsonify({
+            "status": "healthy",
+            "service": "python-workflow-engine",
+            "version": "1.0.0",
+            "uptime": uptime,
+            "operators_count": len(operators),
+            "dependencies": {
+                "geopandas": gpd.__version__,
+                "pandas": pd.__version__
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
 
 
 # ========================================
@@ -52,20 +115,37 @@ def get_operators():
     """
     获取所有空间算子列表 (Common 模块标准接口)
     供 Develop Backend OperatorDiscoveryService 使用
+
+    Query Parameters:
+        category (optional): 按分类过滤
+
+    Returns:
+        {
+            "status": "success",
+            "operators": [...],
+            "count": 42
+        }
     """
     try:
+        category = request.args.get('category')
+
         operators = list_operators()
+
+        # 按分类过滤
+        if category:
+            operators = [op for op in operators if op.get('category') == category]
+
         return jsonify({
             "status": "success",
             "operators": operators,
             "count": len(operators)
         }), 200
     except Exception as e:
-        logger.error(f"Failed to list operators: {e}")
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        logger.error(f"Failed to list operators: {e}", exc_info=True)
+        return jsonify(error_response(
+            ErrorCode.INTERNAL_ERROR,
+            f"获取算子列表失败: {str(e)}"
+        )), 500
 
 
 # ========================================
@@ -91,25 +171,30 @@ def execute_workflow_endpoint():
             "status": "success",
             "execution_id": "...",
             "final_result": "...",  // GeoJSON
-            "all_results": {...}
+            "all_results": {...},
+            "execution_time_ms": 123.45
         }
     """
+    start = time.time()
+
     try:
         data = request.get_json()
         workflow_def = data.get('workflow_def')
         input_data = data.get('input_data', {})
 
         if not workflow_def:
-            return jsonify({
-                "status": "failed",
-                "error": "workflow_def is required"
-            }), 400
+            return jsonify(error_response(
+                ErrorCode.INVALID_PARAMS,
+                "请求体缺少 'workflow_def' 字段"
+            )), 400
 
         # 执行工作流
         execution_id = str(uuid.uuid4())
         logger.info(f"Executing workflow {execution_id}")
 
         result = execute_workflow(workflow_def, input_data)
+
+        execution_time = (time.time() - start) * 1000
 
         # 存储执行记录
         executions[execution_id] = {
@@ -118,29 +203,47 @@ def execute_workflow_endpoint():
             "result": result.get('final_result'),
             "all_results": result.get('all_results'),
             "error": result.get('error'),
-            "started_at": datetime.now().isoformat()
+            "started_at": datetime.now().isoformat(),
+            "execution_time_ms": execution_time
         }
 
         response = {
             "status": result['status'],
-            "execution_id": execution_id
+            "execution_id": execution_id,
+            "execution_time_ms": execution_time
         }
 
         if result['status'] == 'success':
             response['final_result'] = result['final_result']
             response['all_results'] = result['all_results']
+            logger.info(f"Workflow {execution_id} completed successfully in {execution_time:.2f}ms")
+            return jsonify(response), 200
         else:
-            response['error'] = result['error']
+            response.update(error_response(
+                ErrorCode.EXECUTION_FAILED,
+                result.get('error', '工作流执行失败')
+            ))
+            return jsonify(response), 500
 
-        status_code = 200 if result['status'] == 'success' else 500
-        return jsonify(response), status_code
+    except ValueError as e:
+        execution_time = (time.time() - start) * 1000
+        logger.error(f"Workflow validation failed: {e}")
+        response = error_response(
+            ErrorCode.WORKFLOW_INVALID,
+            f"工作流定义无效: {str(e)}"
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 400
 
     except Exception as e:
+        execution_time = (time.time() - start) * 1000
         logger.error(f"Workflow execution failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        response = error_response(
+            ErrorCode.EXECUTION_FAILED,
+            f"工作流执行失败: {str(e)}"
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 500
 
 
 @app.route('/api/spatial/operators/<operator_name>/execute', methods=['POST'])
@@ -148,6 +251,9 @@ def execute_operator_endpoint(operator_name):
     """
     执行单个算子
     供 Develop 模块快速测试使用
+
+    Path Parameters:
+        operator_name: 算子名称
 
     Request Body:
         {
@@ -157,26 +263,85 @@ def execute_operator_endpoint(operator_name):
     Response:
         {
             "status": "success",
-            "result": "..."  // GeoJSON
+            "execution_id": "uuid-...",
+            "result": "...",  // GeoJSON
+            "execution_time_ms": 12.34
         }
     """
-    try:
-        data = request.get_json()
-        params = data.get('params', {})
+    start = time.time()
 
-        logger.info(f"Executing operator {operator_name}")
+    try:
+        # 检查算子是否存在
+        operators = list_operators()
+        operator_names = [op['name'] for op in operators]
+
+        if operator_name not in operator_names:
+            execution_time = (time.time() - start) * 1000
+            response = error_response(
+                ErrorCode.OPERATOR_NOT_FOUND,
+                f"算子 '{operator_name}' 不存在",
+                details=f"可用算子: {', '.join(operator_names[:10])}..."
+            )
+            response["execution_time_ms"] = execution_time
+            return jsonify(response), 404
+
+        data = request.get_json()
+
+        if not data or 'params' not in data:
+            execution_time = (time.time() - start) * 1000
+            response = error_response(
+                ErrorCode.INVALID_PARAMS,
+                "请求体缺少 'params' 字段"
+            )
+            response["execution_time_ms"] = execution_time
+            return jsonify(response), 400
+
+        params = data['params']
+        execution_id = str(uuid.uuid4())
+
+        logger.info(f"Executing operator {operator_name}, execution_id={execution_id}")
 
         result = execute_single_operator(operator_name, params)
 
-        status_code = 200 if result['status'] == 'success' else 500
-        return jsonify(result), status_code
+        execution_time = (time.time() - start) * 1000
+
+        if result['status'] == 'success':
+            response = {
+                "status": "success",
+                "execution_id": execution_id,
+                "result": result['result'],
+                "execution_time_ms": execution_time
+            }
+            logger.info(f"Operator {operator_name} completed successfully in {execution_time:.2f}ms")
+            return jsonify(response), 200
+        else:
+            response = error_response(
+                ErrorCode.EXECUTION_FAILED,
+                result.get('error', '算子执行失败')
+            )
+            response["execution_id"] = execution_id
+            response["execution_time_ms"] = execution_time
+            return jsonify(response), 500
+
+    except TypeError as e:
+        execution_time = (time.time() - start) * 1000
+        logger.error(f"Parameter error: {e}")
+        response = error_response(
+            ErrorCode.INVALID_PARAMS,
+            f"参数错误: {str(e)}"
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 400
 
     except Exception as e:
+        execution_time = (time.time() - start) * 1000
         logger.error(f"Operator execution failed: {e}", exc_info=True)
-        return jsonify({
-            "status": "failed",
-            "error": str(e)
-        }), 500
+        response = error_response(
+            ErrorCode.EXECUTION_FAILED,
+            f"算子执行失败: {str(e)}"
+        )
+        response["execution_time_ms"] = execution_time
+        return jsonify(response), 500
 
 
 # ========================================
@@ -379,11 +544,14 @@ def register_to_system():
     system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
     internal_api_key = os.getenv('INTERNAL_API_KEY', '')
 
+    # 获取当前引擎的连接信息
+    protocol = os.getenv('PROTOCOL', 'http')
+    host = os.getenv('HOST', 'localhost')
+    port = int(os.getenv('PORT', 8099))
+
     registration_data = {
-        "unique_identifier": "api.python-workflow",
-        "name": "python_workflow_engine",
-        "display_name": "Python数据处理工作流引擎",
-        "engine_type": "api.python-workflow",
+        "name": "Python Workflow",
+        "engine_type": "python_workflow",
         "is_builtin": True,
         "capabilities": {
             "compute": [{
@@ -393,57 +561,11 @@ def register_to_system():
                 "description": "基于 Python 生态的通用数据处理工作流引擎（Pandas, GeoPandas, NumPy, SciPy）"
             }]
         },
-        "task_api_config": {
-            "base_url": os.getenv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
-            "endpoints": {
-                "list": {
-                    "method": "GET",
-                    "path": "/api/develop/spatial/tasks",
-                    "query_params": {
-                        "page": "{{.Page}}",
-                        "page_size": "{{.PageSize}}"
-                    }
-                },
-                "create": {
-                    "method": "POST",
-                    "path": "/api/develop/spatial/tasks",
-                    "body_template": {
-                        "name": "{{.Name}}",
-                        "description": "{{.Description}}",
-                        "workflow_def": "{{.WorkflowDef}}",
-                        "input_schema": "{{.InputSchema}}",
-                        "output_schema": "{{.OutputSchema}}",
-                        "schedule": "{{.Schedule}}"
-                    }
-                },
-                "execute": {
-                    "method": "POST",
-                    "path": "/api/develop/spatial/tasks/{{.TaskID}}/execute",
-                    "body_template": {
-                        "inputs": "{{.Inputs}}"
-                    }
-                },
-                "status": {
-                    "method": "GET",
-                    "path": "/api/develop/spatial/executions/{{.ExecutionID}}",
-                    "response_mapping": {
-                        "status_field": "status",
-                        "message_field": "error_message",
-                        "progress_field": "progress",
-                        "task_id_field": "id"
-                    }
-                }
-            },
-            "timeout": {
-                "create": 30,
-                "execute": 600,
-                "status": 10
-            }
-        },
-        "health_check_config": {
-            "endpoint": "/health",
-            "timeout": 5,
-            "interval": 60
+        "description": "基于 Python (Pandas, GeoPandas, NumPy, SciPy) 的通用数据处理工作流引擎，支持空间和非空间数据处理",
+        "connection_info": {
+            "protocol": protocol,
+            "host": host,
+            "port": port
         }
     }
 

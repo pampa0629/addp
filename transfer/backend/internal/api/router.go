@@ -3,6 +3,8 @@ package api
 import (
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
 	"github.com/addp/transfer/internal/service"
@@ -18,6 +20,7 @@ func SetupRouter(
 	objectStorageService *service.ObjectStorageService,
 	systemURL string,
 	redisClient *redis.Client,
+	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -51,6 +54,10 @@ func SetupRouter(
 	} else {
 		// Fallback: 无缓存模式
 		protected.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	}
+	// 审计日志中间件（记录到 System 模块）
+	if systemClient != nil {
+		protected.Use(audit.AuditMiddleware("transfer", systemClient))
 	}
 
 	// 创建 Handlers

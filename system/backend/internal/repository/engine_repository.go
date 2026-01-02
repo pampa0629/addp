@@ -78,6 +78,16 @@ func (r *EngineRepository) FindByUniqueIdentifier(ctx context.Context, identifie
 	return &engine, nil
 }
 
+// FindByEngineTypeAndBuiltin 根据 engine_type 和 is_builtin 查找引擎
+func (r *EngineRepository) FindByEngineTypeAndBuiltin(ctx context.Context, engineType string) (*models.Engine, error) {
+	var engine models.Engine
+	err := r.db.WithContext(ctx).Where("engine_type = ? AND is_builtin = ?", engineType, true).First(&engine).Error
+	if err != nil {
+		return nil, err
+	}
+	return &engine, nil
+}
+
 // FindByFilters 根据过滤条件查询引擎列表
 func (r *EngineRepository) FindByFilters(ctx context.Context, filters map[string]interface{}) ([]*models.Engine, error) {
 	var engines []*models.Engine

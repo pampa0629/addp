@@ -103,8 +103,8 @@ CREATE TABLE IF NOT EXISTS manager.directories (
     mime_type TEXT,
     storage_id BIGINT,
     created_by BIGINT,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(parent_id, name)
 );
 

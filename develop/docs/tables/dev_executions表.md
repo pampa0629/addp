@@ -1,0 +1,308 @@
+# dev_executions 表结构和 API 说明
+
+## 一、表结构概览
+
+`develop.dev_executions` 表是 Develop 模块的执行记录表，记录所有 SQL 查询、工作流、Notebook 的执行历史。支持执行状态追踪、结果存储、性能监控。
+
+### 核心功能
+
+- **执行记录管理**：记录所有开发项的执行历史
+- **状态追踪**：实时追踪执行状态（pending → running → success/failed）
+- **结果存储**：存储执行结果、错误信息、性能指标
+- **关联开发项**：可关联到 dev_items 表，也可独立执行
+
+---
+
+## 二、表结构定义
+
+### 2.1 核心字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| `id` | SERIAL | PRIMARY KEY | 执行记录唯一标识 |
+| `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
+| `dev_item_id` | INTEGER | INDEXED | 关联的开发项 ID（可为空） |
+| `execution_id` | VARCHAR(255) | NOT NULL, UNIQUE | UUID 执行标识 |
+| `execution_type` | VARCHAR(50) | NOT NULL | 执行类型：'query'、'workflow'、'notebook' |
+| `status` | VARCHAR(50) | NOT NULL, INDEXED | 执行状态 |
+| `result` | JSONB | | 执行结果（查询结果、工作流输出等） |
+| `error_message` | TEXT | | 错误信息（失败时） |
+| `execution_time_ms` | INTEGER | | 执行耗时（毫秒） |
+| `rows_affected` | INTEGER | | 影响行数（SQL 查询） |
+| `engine_id` | INTEGER | | 使用的引擎 ID |
+| `started_at` | TIMESTAMP | | 开始时间 |
+| `completed_at` | TIMESTAMP | | 完成时间 |
+| `created_by` | INTEGER | | 创建者 ID |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
+
+### 2.2 数据库索引
+
+| 索引名 | 字段 | 说明 |
+|--------|------|------|
+| `idx_dev_executions_tenant_status` | tenant_id, status | 按租户和状态查询 |
+| `idx_dev_executions_item` | dev_item_id | 按开发项查询 |
+| `idx_dev_executions_execution_id` | execution_id | UUID 唯一索引 |
+
+---
+
+## 三、ExecutionStatus 说明
+
+| 值 | 含义 | 说明 |
+|---|------|------|
+| `pending` | 待执行 | 已提交，等待执行 |
+| `running` | 执行中 | 正在执行 |
+| `success` | 执行成功 | 正常完成 |
+| `failed` | 执行失败 | 执行出错 |
+| `timeout` | 超时 | 执行超时 |
+| `cancelled` | 已取消 | 用户取消 |
+
+### 状态流转图
+
+```
+pending → running → success
+               ↓
+            failed
+               ↓
+            timeout
+               ↓
+            cancelled
+```
+
+---
+
+## 四、Result 字段结构
+
+### 4.1 Query 类型（execution_type='query'）
+
+```json
+{
+  "columns": [
+    {"name": "id", "type": "integer"},
+    {"name": "name", "type": "text"}
+  ],
+  "rows": [
+    [1, "北京"],
+    [2, "上海"]
+  ],
+  "total_rows": 2,
+  "execution_plan": "Seq Scan on cities..."
+}
+```
+
+### 4.2 Workflow 类型（execution_type='workflow'）
+
+```json
+{
+  "workflow_id": "workflow-uuid",
+  "step_results": [
+    {
+      "step_id": "step1",
+      "status": "success",
+      "output": {
+        "type": "FeatureCollection",
+        "features": [...]
+      },
+      "execution_time_ms": 123
+    }
+  ],
+  "output_file": "s3://bucket/output.geojson"
+}
+```
+
+---
+
+## 五、API 端点说明
+
+### 5.1 POST /api/v1/sql/execute - 执行 SQL 查询
+
+**请求体**：
+
+```json
+{
+  "engine_id": 1,
+  "sql": "SELECT * FROM cities WHERE population > 1000000",
+  "save_as_dev_item": true,
+  "item_name": "查询大城市"
+}
+```
+
+**响应**（201 Created）：
+
+```json
+{
+  "execution_id": "uuid-xxxx",
+  "status": "success",
+  "columns": [...],
+  "rows": [...],
+  "execution_time_ms": 245,
+  "rows_affected": 10
+}
+```
+
+---
+
+### 5.2 POST /api/v1/workflow/execute - 执行工作流
+
+**请求体**：
+
+```json
+{
+  "workflow": {
+    "steps": [
+      {"id": "step1", "type": "data_loader", "params": {...}},
+      {"id": "step2", "type": "buffer", "params": {"distance": 100}}
+    ]
+  },
+  "save_as_dev_item": true,
+  "item_name": "缓冲区分析工作流"
+}
+```
+
+**响应**：
+
+```json
+{
+  "execution_id": "uuid-yyyy",
+  "status": "running",
+  "message": "工作流已提交执行"
+}
+```
+
+---
+
+### 5.3 GET /api/v1/executions - 查询执行记录列表
+
+**查询参数**：
+- `execution_type`：按类型过滤
+- `status`：按状态过滤
+- `dev_item_id`：按开发项过滤
+- `page`、`page_size`：分页参数
+
+**响应**：
+
+```json
+{
+  "items": [
+    {
+      "id": 123,
+      "execution_id": "uuid-xxxx",
+      "execution_type": "query",
+      "status": "success",
+      "execution_time_ms": 245,
+      "created_at": "2025-01-01T10:00:00Z"
+    }
+  ],
+  "total": 100,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+---
+
+### 5.4 GET /api/v1/executions/:execution_id - 获取执行详情
+
+**响应**：返回完整 DevExecution 对象（包含 result JSONB）
+
+---
+
+### 5.5 POST /api/v1/executions/:execution_id/cancel - 取消执行
+
+**响应**：
+
+```json
+{
+  "message": "执行已取消",
+  "execution_id": "uuid-xxxx",
+  "status": "cancelled"
+}
+```
+
+---
+
+## 六、性能监控
+
+### 6.1 执行时间追踪
+
+```sql
+-- 查询平均执行时间
+SELECT 
+  execution_type,
+  AVG(execution_time_ms) as avg_time_ms,
+  MAX(execution_time_ms) as max_time_ms,
+  COUNT(*) as total_executions
+FROM develop.dev_executions
+WHERE status = 'success'
+  AND tenant_id = 1
+  AND created_at > NOW() - INTERVAL '7 days'
+GROUP BY execution_type;
+```
+
+### 6.2 失败率分析
+
+```sql
+-- 查询失败率
+SELECT 
+  execution_type,
+  COUNT(CASE WHEN status = 'failed' THEN 1 END) * 100.0 / COUNT(*) as failure_rate
+FROM develop.dev_executions
+WHERE tenant_id = 1
+  AND created_at > NOW() - INTERVAL '7 days'
+GROUP BY execution_type;
+```
+
+---
+
+## 七、使用示例
+
+### 示例 1：执行 SQL 并查看结果
+
+```bash
+# 1. 执行 SQL
+EXECUTION_ID=$(curl -X POST http://localhost:8084/api/v1/sql/execute \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "engine_id": 1,
+    "sql": "SELECT * FROM cities LIMIT 10"
+  }' | jq -r '.execution_id')
+
+# 2. 查询执行结果
+curl -X GET http://localhost:8084/api/v1/executions/$EXECUTION_ID \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 示例 2：查询某个开发项的执行历史
+
+```bash
+curl -X GET "http://localhost:8084/api/v1/executions?dev_item_id=5&page=1&page_size=10" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+## 八、重要说明
+
+### 8.1 执行记录清理策略
+
+- **成功记录**：保留 30 天
+- **失败记录**：保留 90 天（用于故障分析）
+- **大结果集**：result JSONB 超过 10MB 时，存储到 MinIO，result 中仅保留对象路径
+
+### 8.2 并发控制
+
+- 每个租户最多同时执行 10 个任务
+- 超过限制时，新任务进入 pending 状态
+
+### 8.3 超时配置
+
+- **SQL 查询**：默认 300 秒
+- **工作流**：默认 600 秒
+- **Notebook**：默认 900 秒
+
+---
+
+## 九、相关文档
+
+- [dev_items表](./dev_items表.md) - 开发项定义表
+- [数据库架构](../数据库架构.md) - Develop 模块架构

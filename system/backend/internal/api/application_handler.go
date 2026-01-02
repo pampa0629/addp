@@ -2,8 +2,8 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -22,39 +22,33 @@ func NewApplicationHandler(service *service.ApplicationService) *ApplicationHand
 func (h *ApplicationHandler) CreateApplication(c *gin.Context) {
 	var req models.CreateApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// 从上下文获取用户信息
-	userID, _ := c.Get("user_id")
+	userID, _ := commonapi.GetCurrentUserID(c)
 	tenantID, _ := c.Get("tenant_id")
 
-	app, err := h.service.CreateApplication(&req, tenantID.(uint), userID.(uint))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, app)
+	app, err := h.service.CreateApplication(&req, tenantID.(uint), userID)
+	commonapi.RespondOrError(c, app, err)
 }
 
 // GetApplication 获取应用详情
 // GET /api/applications/:id
 func (h *ApplicationHandler) GetApplication(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
-	app, err := h.service.GetApplication(uint(id))
+	app, err := h.service.GetApplication(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+		commonapi.RespondError(c, http.StatusNotFound, "Application not found")
 		return
 	}
 
-	c.JSON(http.StatusOK, app)
+	commonapi.RespondSuccess(c, app)
 }
 
 // ListApplications 列出应用
@@ -64,11 +58,11 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 
 	apps, err := h.service.ListApplications(tenantID.(uint))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	commonapi.RespondSuccess(c, gin.H{
 		"applications": apps,
 		"total":        len(apps),
 	})
@@ -77,86 +71,72 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 // UpdateApplication 更新应用
 // PUT /api/applications/:id
 func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
 	var req models.UpdateApplicationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	app, err := h.service.UpdateApplication(uint(id), &req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, app)
+	app, err := h.service.UpdateApplication(id, &req)
+	commonapi.RespondOrError(c, app, err)
 }
 
 // DeleteApplication 删除应用
 // DELETE /api/applications/:id
 func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
-	if err := h.service.DeleteApplication(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	err = h.service.DeleteApplication(id)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Application deleted successfully"})
+	commonapi.RespondSuccess(c, gin.H{"message": "Application deleted successfully"})
 }
 
 // GenerateAPIKey 为应用生成 API Key
 // POST /api/applications/:id/keys
 func (h *ApplicationHandler) GenerateAPIKey(c *gin.Context) {
-	appID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	appID, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
 	var req models.CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-
-	apiKey, err := h.service.GenerateAPIKey(uint(appID), &req, userID.(uint))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, apiKey)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	apiKey, err := h.service.GenerateAPIKey(appID, &req, userID)
+	commonapi.RespondOrError(c, apiKey, err)
 }
 
 // ListAPIKeys 列出应用的 API Keys
 // GET /api/applications/:id/keys
 func (h *ApplicationHandler) ListAPIKeys(c *gin.Context) {
-	appID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	appID, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
-	keys, err := h.service.ListAPIKeys(uint(appID))
+	keys, err := h.service.ListAPIKeys(appID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	commonapi.RespondSuccess(c, gin.H{
 		"keys":  keys,
 		"total": len(keys),
 	})
@@ -165,24 +145,23 @@ func (h *ApplicationHandler) ListAPIKeys(c *gin.Context) {
 // RevokeAPIKey 撤销 API Key
 // DELETE /api/applications/:id/keys/:key_id
 func (h *ApplicationHandler) RevokeAPIKey(c *gin.Context) {
-	appID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	appID, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid application ID"})
 		return
 	}
 
-	keyID, err := strconv.ParseUint(c.Param("key_id"), 10, 32)
+	keyID, err := commonapi.BindIDParam(c, "key_id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid key ID"})
 		return
 	}
 
-	userID, _ := c.Get("user_id")
-
-	if err := h.service.RevokeAPIKey(uint(appID), uint(keyID), userID.(uint)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	userID, _ := commonapi.GetCurrentUserID(c)
+	err = h.service.RevokeAPIKey(appID, keyID, userID)
+	if err != nil {
+		commonapi.RespondError(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "API key revoked successfully"})
+	commonapi.RespondSuccess(c, gin.H{"message": "API key revoked successfully"})
 }
+

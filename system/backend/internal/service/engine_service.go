@@ -68,9 +68,8 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 	}
 
 	engine := &models.Engine{
-		Name:           req.Name,
-		DisplayName:    req.DisplayName, // 中文显示名称
-		EngineType:   req.EngineType,
+		Name:           req.Name, // 显示名称
+		EngineType:     req.EngineType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		ScanConfig:     req.ScanConfig, // 保存扫描配置
@@ -79,15 +78,25 @@ func (s *EngineService) Create(req *models.EngineCreateRequest, createdBy uint) 
 		IsActive:       true,
 	}
 
-	// 如果未提供 display_name，默认等于 name
-	if engine.DisplayName == "" {
-		engine.DisplayName = engine.Name
+	// 设置引擎分类（如果提供）
+	if req.EngineCategory != "" {
+		engine.EngineCategory = req.EngineCategory
+	}
+
+	// 保存能力声明（如果提供）
+	if req.Capabilities != nil {
+		engine.Capabilities = req.Capabilities
 	}
 
 	// 自动生成 capabilities（如果请求中未提供）
 	if engine.Capabilities == nil || *engine.Capabilities == "" {
 		capabilities := s.generateDefaultCapabilities(req.EngineType)
 		engine.Capabilities = &capabilities
+	}
+
+	// 验证能力声明
+	if err := s.validateCapabilities(engine.Capabilities); err != nil {
+		return nil, fmt.Errorf("能力声明验证失败: %w", err)
 	}
 
 	if err := s.repo.Create(engine); err != nil {
@@ -124,20 +133,14 @@ func (s *EngineService) CreateInternal(req *models.EngineCreateRequest, tenantID
 	}
 
 	engine := &models.Engine{
-		Name:           req.Name,
-		DisplayName:    req.DisplayName, // 中文显示名称
-		EngineType:   req.EngineType,
+		Name:           req.Name, // 显示名称
+		EngineType:     req.EngineType,
 		ConnectionInfo: encryptedConnInfo,
 		Description:    req.Description,
 		ScanConfig:     req.ScanConfig, // 保存扫描配置
 		TenantID:       tenantPtr,
 		IsActive:       true,
 		CreatedBy:      createdBy,
-	}
-
-	// 如果未提供 display_name，默认等于 name
-	if engine.DisplayName == "" {
-		engine.DisplayName = engine.Name
 	}
 
 	// 自动生成 capabilities（如果请求中未提供）
@@ -253,9 +256,6 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	if req.Name != nil {
 		engine.Name = *req.Name
 	}
-	if req.DisplayName != nil {
-		engine.DisplayName = *req.DisplayName
-	}
 	if req.ConnectionInfo != nil {
 		// 合并连接信息：如果新值是脱敏占位符，保留原值
 		mergedConnInfo := s.mergeConnectionInfo(engine.ConnectionInfo, *req.ConnectionInfo)
@@ -275,6 +275,9 @@ func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, current
 	}
 	if req.ScanConfig != nil {
 		engine.ScanConfig = req.ScanConfig
+	}
+	if req.Capabilities != nil {
+		engine.Capabilities = req.Capabilities
 	}
 
 	if err := s.repo.Update(engine); err != nil {
@@ -615,6 +618,11 @@ func (s *EngineService) authorizeResourceAccess(engine *models.Engine, user *mod
 		return nil
 	}
 
+	// 内置引擎对所有租户可见和可用
+	if engine.IsBuiltin {
+		return nil
+	}
+
 	// 检查用户和资源是否都有租户ID
 	if user.TenantID == nil || engine.TenantID == nil {
 		return ErrResourceForbidden
@@ -689,6 +697,43 @@ func (s *EngineService) validateScanConfig(config *models.ScanConfig) error {
 	return nil
 }
 
+// validateCapabilities 验证引擎能力声明的有效性
+func (s *EngineService) validateCapabilities(capabilitiesPtr *string) error {
+	if capabilitiesPtr == nil || *capabilitiesPtr == "" {
+		return nil // 空能力声明是允许的
+	}
+
+	capabilities, err := commonutils.ParseCapabilities(capabilitiesPtr)
+	if err != nil {
+		return fmt.Errorf("能力声明 JSON 格式错误: %w", err)
+	}
+
+	// 验证计算能力
+	if len(capabilities.Compute) > 0 {
+		validDevModes := map[string]bool{
+			"query":    true,
+			"workflow": true,
+			"notebook": true,
+		}
+
+		for i, compute := range capabilities.Compute {
+			// 检查是否至少声明了一个开发模式
+			if len(compute.DevModes) == 0 {
+				return fmt.Errorf("计算能力 [%d] 必须声明至少一个 dev_mode", i)
+			}
+
+			// 验证每个 dev_mode 的值是否有效
+			for _, mode := range compute.DevModes {
+				if !validDevModes[mode] {
+					return fmt.Errorf("计算能力 [%d] 包含无效的 dev_mode: %s (有效值: query, workflow, notebook)", i, mode)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // generateDefaultCapabilities 根据资源类型生成默认 capabilities
 func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	// 尝试从插件系统获取能力描述
@@ -700,16 +745,6 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	// 降级：对于API引擎等非数据库类型，使用硬编码
 	engineTypeLower := strings.ToLower(engineType)
 	switch engineTypeLower {
-	// API引擎 - 内置模块
-	case "api.meta":
-		return `{"compute":[{"dev_modes":["workflow","form"],"supported_sources":["postgresql","mysql","minio","s3"],"features":["basic","deep","scheduled"],"description":"元数据扫描"}]}`
-
-	case "api.transfer":
-		return `{"compute":[{"dev_modes":["workflow","form"],"features":["incremental","scheduled","parallel"],"description":"批量数据传输"}]}`
-
-	case "api.manager":
-		return `{"compute":[{"dev_modes":["workflow","form"],"supported_formats":["mvt","pbf"],"features":["pre_cache","on_demand"],"description":"MVT瓦片缓存"}]}`
-
 	case "api.python-workflow":
 		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","csv","parquet"],"features":["dag","memory_efficient","batch","pandas","numpy","scipy"],"description":"Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"}]}`
 

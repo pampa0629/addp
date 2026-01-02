@@ -9,8 +9,8 @@ type Tenant struct {
 	Name        string    `gorm:"not null;unique" json:"name"`
 	Description string    `json:"description"`
 	IsActive    bool      `gorm:"default:true" json:"is_active"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	CreatedAt   time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 type TenantCreateRequest struct {

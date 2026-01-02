@@ -24,44 +24,13 @@
       </div>
 
       <el-table :data="filteredEngines" v-loading="loading" stripe :row-class-name="tableRowClassName">
+        <!-- ID -->
         <el-table-column prop="id" label="ID" width="80" />
+
+        <!-- 名称 -->
         <el-table-column prop="name" label="名称" min-width="150" />
 
-        <!-- 类型标签列 -->
-        <el-table-column label="类型标签" width="180">
-          <template #default="{ row }">
-            <el-tag
-              v-for="label in getTypeLabels(row)"
-              :key="label"
-              size="small"
-              :type="label === '存储' ? 'success' : 'info'"
-              style="margin-right: 5px"
-            >
-              {{ label }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="引擎标识" width="120">
-          <template #default="{ row }">
-            <el-tag v-if="row.is_builtin" type="info" size="small" effect="plain">
-              🔵 内置
-            </el-tag>
-            <el-tag v-else type="success" size="small" effect="light">
-              用户引擎
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <!-- 引擎分类列 -->
-        <el-table-column label="引擎分类" width="120">
-          <template #default="{ row }">
-            <el-tag :type="row.engine_category === 'standard' ? 'success' : 'warning'">
-              {{ row.engine_category === 'standard' ? '标准引擎' : '扩展引擎' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
+        <!-- 类型 -->
         <el-table-column prop="resource_type" label="类型" width="150">
           <template #default="{ row }">
             <el-tag :type="getEngineTypeColor(row.engine_type)">
@@ -70,8 +39,32 @@
           </template>
         </el-table-column>
 
-        <!-- 能力标签列 -->
-        <el-table-column label="能力" min-width="250">
+        <!-- 连接状态（图标方式） -->
+        <el-table-column label="连接" width="100" align="center">
+          <template #default="{ row }">
+            <el-tooltip
+              :content="getConnectionTooltip(row)"
+              placement="top"
+            >
+              <span
+                class="connection-status-icon"
+                :class="getConnectionStatusClass(row.connection_status)"
+              ></span>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+
+        <!-- 激活状态 -->
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.is_active ? 'success' : 'danger'">
+              {{ row.is_active ? '激活' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <!-- 能力标签 -->
+        <el-table-column label="能力" min-width="220">
           <template #default="{ row }">
             <el-tag
               v-for="tag in parseCapabilities(row.capabilities)"
@@ -85,41 +78,45 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="description" label="描述" min-width="200" />
-
-        <!-- 连接状态列 -->
-        <el-table-column label="连接状态" width="120">
+        <!-- 引擎分类 -->
+        <el-table-column label="分类" width="100">
           <template #default="{ row }">
-            <el-tooltip
-              :content="getConnectionTooltip(row)"
-              placement="top"
-              :disabled="!row.connection_status"
-            >
-              <el-tag :type="getConnectionStatusType(row.connection_status)">
-                {{ getConnectionStatusLabel(row.connection_status) }}
-              </el-tag>
-            </el-tooltip>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'danger'">
-              {{ row.is_active ? '激活' : '禁用' }}
+            <el-tag :type="row.engine_category === 'standard' ? 'success' : 'warning'" size="small">
+              {{ row.engine_category === 'standard' ? '标准' : '扩展' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" width="180">
+
+        <!-- 注册/内置标识 -->
+        <el-table-column label="注册/内置" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_builtin" type="info" size="small" effect="plain">
+              内置
+            </el-tag>
+            <el-tag v-else type="success" size="small" effect="light">
+              注册
+            </el-tag>
+          </template>
+        </el-table-column>
+
+        <!-- 描述 -->
+        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
+
+        <!-- 创建时间 -->
+        <el-table-column label="创建时间" width="160">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+
+        <!-- 操作列 -->
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="success" @click="testConnection(row)">测试连接</el-button>
+            <el-button size="small" type="primary" @click="testConnection(row)">测试</el-button>
+            <el-button size="small" @click="viewEngineDetails(row)">详情</el-button>
             <el-button
               size="small"
-              type="primary"
+              type="warning"
               :icon="Edit"
               :disabled="row.is_builtin"
               @click="editEngine(row)"
@@ -134,14 +131,6 @@
               @click="deleteEngine(row)"
             >
               删除
-            </el-button>
-            <el-button
-              v-if="row.is_builtin"
-              size="small"
-              type="info"
-              @click="viewBuiltinDetails(row)"
-            >
-              详情
             </el-button>
           </template>
         </el-table-column>
@@ -226,31 +215,142 @@
       </template>
     </el-dialog>
 
-    <!-- 内置引擎详情弹窗 -->
+    <!-- 引擎详情弹窗 -->
     <el-dialog
-      v-model="builtinDetailsVisible"
-      title="内置引擎详情"
-      width="600px"
+      v-model="detailsVisible"
+      :title="`引擎详情 - ${selectedEngine?.name || ''}`"
+      width="800px"
+      destroy-on-close
     >
-      <el-descriptions :column="1" border v-if="selectedBuiltinEngine">
-        <el-descriptions-item label="唯一标识">
-          {{ selectedBuiltinEngine.unique_identifier || 'N/A' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="显示名称">
-          {{ selectedBuiltinEngine.display_name || 'N/A' }}
-        </el-descriptions-item>
-        <el-descriptions-item label="引擎类型">
-          {{ selectedBuiltinEngine.engine_type }}
-        </el-descriptions-item>
-        <el-descriptions-item label="能力声明">
-          <pre style="margin: 0; white-space: pre-wrap; font-size: 12px;">{{ formatJSON(selectedBuiltinEngine.capabilities) }}</pre>
-        </el-descriptions-item>
-        <el-descriptions-item label="描述">
-          {{ selectedBuiltinEngine.description || '无' }}
-        </el-descriptions-item>
-      </el-descriptions>
+      <div v-loading="detailsLoading" style="min-height: 200px">
+        <div v-if="selectedEngine">
+          <!-- 基本信息 -->
+          <el-card shadow="never" style="margin-bottom: 16px">
+            <template #header>
+              <strong>基本信息</strong>
+            </template>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="ID">{{ selectedEngine.id }}</el-descriptions-item>
+              <el-descriptions-item label="名称">{{ selectedEngine.name }}</el-descriptions-item>
+              <el-descriptions-item label="引擎类型">
+                <el-tag :type="getEngineTypeColor(selectedEngine.engine_type)">
+                  {{ getEngineTypeLabel(selectedEngine.engine_type) }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="引擎分类">
+                <el-tag :type="selectedEngine.engine_category === 'standard' ? 'success' : 'warning'">
+                  {{ selectedEngine.engine_category === 'standard' ? '标准引擎' : '扩展引擎' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="注册方式">
+                <el-tag v-if="selectedEngine.is_builtin" type="info">内置引擎</el-tag>
+                <el-tag v-else type="success">用户注册</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="激活状态">
+                <el-tag :type="selectedEngine.is_active ? 'success' : 'danger'">
+                  {{ selectedEngine.is_active ? '激活' : '禁用' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="创建时间" :span="2">
+                {{ formatDate(selectedEngine.created_at) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="更新时间" :span="2">
+                {{ formatDate(selectedEngine.updated_at) }}
+              </el-descriptions-item>
+              <el-descriptions-item label="描述" :span="2">
+                {{ selectedEngine.description || '无' }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+
+          <!-- 连接配置 -->
+          <el-card shadow="never" style="margin-bottom: 16px" v-if="selectedEngine.connection_info && Object.keys(selectedEngine.connection_info).length > 0">
+            <template #header>
+              <strong>连接配置</strong>
+            </template>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item
+                v-for="(value, key) in selectedEngine.connection_info"
+                :key="key"
+                :label="key"
+              >
+                {{ value }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+
+          <!-- 能力声明 -->
+          <el-card shadow="never" style="margin-bottom: 16px" v-if="selectedEngine.capabilities">
+            <template #header>
+              <strong>能力声明</strong>
+            </template>
+            <div>
+              <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 16px">
+                <div style="font-weight: 500; margin-bottom: 8px; color: #606266">存储能力</div>
+                <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
+                  <el-table-column prop="type" label="类型" width="150">
+                    <template #default="{ row }">
+                      {{ getStorageTypeLabel(row.type) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="engine" label="引擎" />
+                </el-table>
+              </div>
+              <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
+                <div style="font-weight: 500; margin-bottom: 8px; color: #606266">计算能力</div>
+                <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
+                  <el-table-column prop="type" label="类型" width="150">
+                    <template #default="{ row }">
+                      {{ getComputeTypeLabel(row.type) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="dev_modes" label="开发模式" width="150">
+                    <template #default="{ row }">
+                      <el-tag v-for="mode in row.dev_modes" :key="mode" size="small" style="margin: 2px">
+                        {{ mode }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="description" label="描述" />
+                </el-table>
+              </div>
+            </div>
+          </el-card>
+
+          <!-- 扫描配置 -->
+          <el-card shadow="never" v-if="selectedEngine.scan_config">
+            <template #header>
+              <strong>扫描配置</strong>
+            </template>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="立即扫描" :span="2">
+                <el-tag :type="selectedEngine.scan_config.immediate_scan ? 'success' : 'info'">
+                  {{ selectedEngine.scan_config.immediate_scan ? '是' : '否' }}
+                </el-tag>
+                <span v-if="selectedEngine.scan_config.immediate_scan" style="margin-left: 8px">
+                  (深度: {{ selectedEngine.scan_config.immediate_depth || 'basic' }})
+                </span>
+              </el-descriptions-item>
+              <el-descriptions-item label="定时扫描" :span="2">
+                <el-tag :type="selectedEngine.scan_config.scheduled_scan ? 'success' : 'info'">
+                  {{ selectedEngine.scan_config.scheduled_scan ? '是' : '否' }}
+                </el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan" label="调度类型">
+                {{ selectedEngine.scan_config.schedule_type }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.cron_expression" label="Cron 表达式">
+                {{ selectedEngine.scan_config.cron_expression }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="selectedEngine.scan_config.scheduled_scan && selectedEngine.scan_config.schedule_time" label="调度时间">
+                {{ selectedEngine.scan_config.schedule_time }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </el-card>
+        </div>
+      </div>
       <template #footer>
-        <el-button @click="builtinDetailsVisible = false">关闭</el-button>
+        <el-button @click="detailsVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 </template>
@@ -284,9 +384,10 @@ const submitting = ref(false)
 const isEdit = ref(false)
 const editId = ref(null)
 
-// 内置引擎详情弹窗相关
-const builtinDetailsVisible = ref(false)
-const selectedBuiltinEngine = ref(null)
+// 引擎详情弹窗相关
+const detailsVisible = ref(false)
+const selectedEngine = ref(null)
+const detailsLoading = ref(false)
 
 const form = ref({
   engine_type: '',
@@ -359,17 +460,6 @@ const filteredEngines = computed(() => {
     return matches && matchesBuiltin
   })
 })
-
-// 获取类型标签（[存储] [计算]）
-const getTypeLabels = (engine) => {
-  const labels = []
-  const caps = parseCapabilitiesJSON(engine.capabilities)
-
-  if (caps.storage?.length > 0) labels.push('存储')
-  if (caps.compute?.length > 0) labels.push('计算')
-
-  return labels
-}
 
 // 解析 capabilities JSON 为对象
 const parseCapabilitiesJSON = (capabilitiesJSON) => {
@@ -467,7 +557,18 @@ const getConnectionStatusLabel = (status) => {
   return labelMap[status] || '未检测'
 }
 
-// 获取连接状态标签类型（颜色）
+// 获取连接状态图标 CSS class
+const getConnectionStatusClass = (status) => {
+  const classMap = {
+    'online': 'status-online',
+    'offline': 'status-offline',
+    'unknown': 'status-unknown',
+    'checking': 'status-checking'
+  }
+  return classMap[status] || 'status-unknown'
+}
+
+// 获取连接状态标签类型（颜色）- 保留用于其他地方
 const getConnectionStatusType = (status) => {
   const typeMap = {
     'online': 'success',
@@ -482,14 +583,14 @@ const getConnectionStatusType = (status) => {
 const getConnectionTooltip = (row) => {
   if (!row.connection_status) return '未检测'
 
-  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}\n`
+  let tooltip = `状态: ${getConnectionStatusLabel(row.connection_status)}`
 
   if (row.last_check_at) {
-    tooltip += `检测时间: ${formatDate(row.last_check_at)}\n`
+    tooltip += `\n最后检测: ${formatDate(row.last_check_at)}`
   }
 
   if (row.check_message) {
-    tooltip += `详情: ${row.check_message}`
+    tooltip += `\n详情: ${row.check_message}`
   }
 
   return tooltip
@@ -707,10 +808,22 @@ const deleteEngine = (row) => {
   }).catch(() => {})
 }
 
-// 查看内置引擎详情
-const viewBuiltinDetails = (row) => {
-  selectedBuiltinEngine.value = row
-  builtinDetailsVisible.value = true
+// 查看引擎详情
+const viewEngineDetails = async (row) => {
+  detailsLoading.value = true
+  detailsVisible.value = true
+  selectedEngine.value = null
+
+  try {
+    const response = await enginesAPI.getById(row.id)
+    selectedEngine.value = response
+  } catch (error) {
+    ElMessage.error('获取引擎详情失败')
+    console.error(error)
+    detailsVisible.value = false
+  } finally {
+    detailsLoading.value = false
+  }
 }
 
 // 格式化JSON字符串
@@ -721,6 +834,28 @@ const formatJSON = (jsonStr) => {
   } catch {
     return jsonStr
   }
+}
+
+// 获取存储类型标签
+const getStorageTypeLabel = (type) => {
+  const typeMap = {
+    'relational_db': '关系数据库',
+    'object_storage': '对象存储',
+    'graph_db': '图数据库'
+  }
+  return typeMap[type] || type
+}
+
+// 获取计算类型标签
+const getComputeTypeLabel = (type) => {
+  const typeMap = {
+    'sql_query': 'SQL查询',
+    'spatial': '空间计算',
+    'tile_cache': '瓦片缓存',
+    'scan': '元数据扫描',
+    'workflow': '工作流'
+  }
+  return typeMap[type] || type
 }
 
 // 表格行样式
@@ -796,6 +931,50 @@ onMounted(() => {
 
 :deep(.builtin-engine-row:hover) {
   background-color: #ebeef5 !important;
+}
+
+/* 连接状态图标样式 */
+.connection-status-icon {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: help;
+  transition: all 0.3s;
+}
+
+.connection-status-icon:hover {
+  transform: scale(1.2);
+}
+
+.status-online {
+  background-color: #67c23a;
+  box-shadow: 0 0 6px rgba(103, 194, 58, 0.6);
+}
+
+.status-offline {
+  background-color: #f56c6c;
+  box-shadow: 0 0 6px rgba(245, 108, 108, 0.6);
+}
+
+.status-unknown {
+  background-color: #909399;
+  box-shadow: 0 0 6px rgba(144, 147, 153, 0.6);
+}
+
+.status-checking {
+  background-color: #e6a23c;
+  box-shadow: 0 0 6px rgba(230, 162, 60, 0.6);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* 引擎类型选择对话框样式 */

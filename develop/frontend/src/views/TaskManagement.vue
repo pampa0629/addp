@@ -33,7 +33,7 @@
         >
           <el-option label="查询" value="query" />
           <el-option label="工作流" value="workflow" />
-          <el-option label="脚本" value="script" />
+          <el-option label="Notebook开发" value="notebook" />
         </el-select>
         <el-select
           v-model="filters.status"
@@ -168,7 +168,7 @@
           <el-select v-model="formData.dev_type" style="width: 100%;">
             <el-option label="查询" value="query" />
             <el-option label="工作流" value="workflow" />
-            <el-option label="脚本" value="script" />
+            <el-option label="Notebook开发" value="notebook" />
           </el-select>
         </el-form-item>
         <el-form-item label="关联资源">
@@ -367,12 +367,12 @@ const loadEngines = async () => {
 
 // 工具函数
 const getTypeLabel = (type) => {
-  const labels = { sql: 'SQL', workflow: '工作流', script: '脚本' }
+  const labels = { query: '查询工作台', workflow: '工作流编辑器', notebook: 'Notebook开发' }
   return labels[type] || type
 }
 
 const getTypeColor = (type) => {
-  const colors = { sql: 'primary', workflow: 'success', script: 'warning' }
+  const colors = { query: 'primary', workflow: 'success', notebook: 'warning' }
   return colors[type] || 'info'
 }
 

@@ -1,32 +1,23 @@
 package models
 
 import (
-	"time"
+	commonmodels "github.com/addp/common/models"
 )
 
-// UserType 用户类型
-type UserType string
+// 使用 common/models 中的类型定义
+type (
+	UserType = commonmodels.UserType
+	User     = commonmodels.User
+)
 
+// 常量定义
 const (
-	UserTypeSuperAdmin  UserType = "super_admin"  // 超级管理员
-	UserTypeTenantAdmin UserType = "tenant_admin" // 租户管理员
-	UserTypeUser        UserType = "user"         // 普通用户
+	UserTypeSuperAdmin  = commonmodels.UserTypeSuperAdmin
+	UserTypeTenantAdmin = commonmodels.UserTypeTenantAdmin
+	UserTypeUser        = commonmodels.UserTypeUser
 )
 
-type User struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	Username     string    `gorm:"not null;unique" json:"username"`
-	Email        string    `gorm:"unique" json:"email"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	FullName     string    `json:"full_name"`
-	IsActive     bool      `gorm:"default:true" json:"is_active"`
-	UserType     UserType  `gorm:"type:varchar(20);default:'user';not null" json:"user_type"` // 用户类型
-	TenantID     *uint     `gorm:"index" json:"tenant_id"`                                     // 租户ID (SuperAdmin没有租户)
-	IsSuperuser  bool      `gorm:"default:false" json:"is_superuser"`                          // 保留以兼容旧代码
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
+// UserCreateRequest DTO - 保留在 system 模块中
 type UserCreateRequest struct {
 	Username string   `json:"username" binding:"required"`
 	Email    string   `json:"email"`
@@ -35,6 +26,7 @@ type UserCreateRequest struct {
 	UserType UserType `json:"user_type"` // 用户类型
 }
 
+// UserUpdateRequest DTO
 type UserUpdateRequest struct {
 	Email    *string   `json:"email"`
 	FullName *string   `json:"full_name"`
@@ -43,16 +35,19 @@ type UserUpdateRequest struct {
 	UserType *UserType `json:"user_type"` // 用户类型
 }
 
+// LoginRequest DTO
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
+// LoginResponse DTO
 type LoginResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 }
 
+// ChangePasswordRequest DTO
 type ChangePasswordRequest struct {
 	OldPassword string `json:"old_password" binding:"required"`
 	NewPassword string `json:"new_password" binding:"required,min=6"`

@@ -1,0 +1,762 @@
+# Engines 表结构和 API 说明
+
+## 一、表结构概览
+
+`system.engines` 表是 ADDP 平台的核心表，用于管理所有类型的数据引擎（数据库、对象存储、计算引擎等）。采用多租户隔离设计，支持灵活的能力声明和扩展机制。
+
+---
+
+## 二、表结构定义
+
+### 2.1 核心字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| `id` | SERIAL | PRIMARY KEY | 主键，自增ID |
+| `tenant_id` | INTEGER | NULLABLE, INDEX | 租户ID，NULL表示系统级引擎（仅SuperAdmin可见） |
+| `name` | VARCHAR(255) | NOT NULL, INDEX | 显示名称（中文或英文） |
+| `engine_type` | VARCHAR(255) | NOT NULL, INDEX | 引擎类型（postgresql/mysql/python_workflow等） |
+| `engine_category` | VARCHAR(50) | NOT NULL, DEFAULT 'standard' | 引擎分类：standard（标准）/extension（扩展） |
+| `connection_info` | JSON | NOT NULL | 连接信息（敏感字段加密） |
+| `description` | TEXT | | 描述信息 |
+| `is_active` | BOOLEAN | DEFAULT true | 是否激活 |
+| `created_by` | INTEGER | | 创建者ID |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | 更新时间 |
+
+### 2.2 扩展引擎字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| `is_builtin` | BOOLEAN | DEFAULT false, INDEX | 是否为内置引擎（内置引擎不可删除） |
+| `capabilities` | JSONB | | 能力声明（存储和计算能力） |
+
+**注意**：
+- `extension_api_config` 和 `health_check_config` 字段已废弃（数据库字段保留但不使用）
+- 工作流引擎的 API 配置已标准化到代码中（见 `common/models/workflow_standards.go`）
+
+### 2.3 连接状态缓存字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| `connection_status` | VARCHAR(20) | DEFAULT 'unknown', INDEX | 连接状态：online/offline/unknown/checking |
+| `last_check_at` | TIMESTAMP | | 上次检测时间 |
+| `check_message` | TEXT | | 检测结果消息 |
+
+### 2.4 元数据扫描配置字段
+
+| 字段名 | 类型 | 约束 | 说明 |
+|--------|------|------|------|
+| `scan_config` | JSON | | 扫描配置（可选） |
+
+### 2.5 数据库索引
+
+| 索引名 | 字段 | 类型 | 说明 |
+|--------|------|------|------|
+| `idx_engines_name` | `name` | 普通索引 | 按名称查询 |
+| `idx_engines_type` | `engine_type` | 普通索引 | 按类型查询 |
+| `idx_engines_tenant` | `tenant_id` | 普通索引 | 租户隔离 |
+| `idx_engines_category` | `engine_category` | 普通索引 | 按分类查询 |
+| `idx_engines_builtin` | `is_builtin` | 普通索引 | 查询内置引擎 |
+| `idx_engines_connection_status` | `connection_status` | 普通索引 | 按连接状态查询 |
+| `idx_builtin_engine_type` | `engine_type` | 唯一索引（WHERE is_builtin=true） | 内置引擎类型唯一 |
+
+---
+
+## 三、引擎分类说明
+
+### 3.1 Standard 引擎（标准引擎）
+
+**定义**：直接连接的数据库和存储引擎
+
+**特点**：
+- 通过驱动程序直接连接（JDBC、Go driver等）
+- `connection_info` 包含主机、端口、用户名、密码
+- 不需要 `extension_api_config`
+
+**典型类型**：
+- 数据库：`postgresql`、`mysql`、`doris`、`clickhouse`、`mongodb`、`spark_sql`
+- 对象存储：`minio`、`s3`
+
+**示例**：
+```json
+{
+  "name": "生产PostgreSQL",
+  "engine_type": "postgresql",
+  "engine_category": "standard",
+  "connection_info": {
+    "host": "localhost",
+    "port": 5432,
+    "username": "admin",
+    "password": "[ENCRYPTED]",
+    "database": "production"
+  }
+}
+```
+
+### 3.2 Extension 引擎（扩展引擎）
+
+**定义**：通过 HTTP API 调用的外部服务引擎
+
+**特点**：
+- 通过 HTTP API 调用
+- `connection_info` 包含 `protocol`、`host`、`port`
+- API 端点配置已标准化到代码中（`common/models/workflow_standards.go`）
+
+**典型类型**：
+- 工作流引擎：`python_workflow`、`spark_workflow`
+- Notebook引擎：`jupyter`
+
+**示例**：
+```json
+{
+  "name": "Python工作流引擎",
+  "engine_type": "python_workflow",
+  "engine_category": "extension",
+  "connection_info": {
+    "protocol": "http",
+    "host": "localhost",
+    "port": 8099
+  },
+  "capabilities": {
+    "compute": [{
+      "dev_modes": ["workflow"],
+      "supported_sources": ["postgresql", "mysql", "minio"],
+      "features": ["dag", "pandas", "numpy"],
+      "description": "Python数据处理引擎"
+    }]
+  }
+}
+```
+
+**API 标准配置**：工作流引擎的 API 端点在 `common/models/workflow_standards.go` 中定义，包括：
+- `execute`: `POST /api/workflows/execute`
+- `status`: `GET /api/workflows/status/{id}`
+- `logs`: `GET /api/workflows/logs/{id}`
+- `cancel`: `POST /api/workflows/cancel/{id}`
+- 健康检查: `GET /health`
+
+---
+
+## 四、JSON 字段详细结构
+
+### 4.1 ConnectionInfo（连接信息）
+
+**安全特性**：敏感字段使用 **AES-256-GCM** 加密存储
+
+#### 加密字段（自动处理）
+- `password` - 数据库密码
+- `access_key` - MinIO/S3 访问密钥
+- `secret_key` - MinIO/S3 密钥
+- `token` - API Token
+- `api_key` - API 密钥
+
+#### PostgreSQL 示例
+```json
+{
+  "host": "localhost",
+  "port": 5432,
+  "username": "user",
+  "password": "[ENCRYPTED]",
+  "database": "mydb"
+}
+```
+
+#### MinIO/S3 示例
+```json
+{
+  "endpoint": "http://localhost:9000",
+  "access_key": "[ENCRYPTED]",
+  "secret_key": "[ENCRYPTED]",
+  "bucket": "my-bucket",
+  "use_ssl": false
+}
+```
+
+#### Extension 引擎示例
+```json
+{
+  "protocol": "http",
+  "host": "localhost",
+  "port": 8099
+}
+```
+
+**注意**：工作流引擎的 API 端点和健康检查配置已标准化到代码中（`common/models/workflow_standards.go`），无需在数据库中配置。
+
+---
+
+### 4.2 Capabilities（能力声明）
+
+**类型**：JSONB
+**作用**：声明引擎支持的存储和计算能力
+
+#### 数据结构
+
+```go
+type Capability struct {
+    Storage []StorageCapability `json:"storage,omitempty"`
+    Compute []ComputeCapability `json:"compute,omitempty"`
+}
+
+type StorageCapability struct {
+    Type    string   `json:"type"`              // read（可读）, write（可写）
+    Formats []string `json:"formats,omitempty"` // 支持的格式
+}
+
+type ComputeCapability struct {
+    SupportedSources []string `json:"supported_sources,omitempty"` // 支持的数据源
+    Features         []string `json:"features,omitempty"`          // 功能特性
+    DevModes         []string `json:"dev_modes,omitempty"`         // 开发模式
+    Description      string   `json:"description,omitempty"`       // 描述
+}
+```
+
+#### DevModes 可选值
+
+| 值 | 含义 | 适用引擎 |
+|---|---|---|
+| `query` | 查询语言开发（SQL/MQL等） | PostgreSQL、MySQL、MongoDB |
+| `workflow` | 可视化工作流 | Python Workflow、Spark Workflow |
+| `notebook` | Notebook 开发 | Jupyter Notebook |
+
+#### PostgreSQL 示例
+```json
+{
+  "storage": [
+    {
+      "type": "read",
+      "formats": ["sql", "table"]
+    },
+    {
+      "type": "write",
+      "formats": ["sql", "table"]
+    }
+  ],
+  "compute": [
+    {
+      "dev_modes": ["query"],
+      "supported_sources": ["postgresql"],
+      "features": ["sql", "transaction", "acid"],
+      "description": "PostgreSQL SQL查询引擎"
+    }
+  ]
+}
+```
+
+#### Python Workflow 示例
+```json
+{
+  "compute": [
+    {
+      "dev_modes": ["workflow"],
+      "supported_sources": ["postgresql", "mysql", "minio", "s3"],
+      "supported_formats": ["geojson", "wkt", "csv", "parquet"],
+      "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
+      "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"
+    }
+  ]
+}
+```
+
+---
+
+### ~~4.3 ExtensionAPIConfig（扩展引擎 API 配置）~~
+
+**⚠️ 已废弃**：此字段已从数据库中删除。
+
+**新方案**：工作流引擎的 API 端点配置已标准化到代码中（`common/models/workflow_standards.go`）。
+
+**标准配置示例**（Python Workflow / Spark Workflow）：
+```go
+WorkflowStandards = map[string]WorkflowStandard{
+    "python_workflow": {
+        Endpoints: map[string]WorkflowEndpoint{
+            "execute": {Method: "POST", Path: "/api/workflows/execute", Timeout: 300},
+            "status":  {Method: "GET",  Path: "/api/workflows/status/{id}", Timeout: 10},
+            "logs":    {Method: "GET",  Path: "/api/workflows/logs/{id}", Timeout: 10},
+            "cancel":  {Method: "POST", Path: "/api/workflows/cancel/{id}", Timeout: 30},
+        },
+        HealthCheck: {Endpoint: "/health", Timeout: 5, Interval: 60},
+    },
+}
+```
+
+---
+
+### 4.4 ScanConfig（元数据扫描配置）
+
+**类型**：JSON
+**作用**：配置引擎的元数据扫描策略
+
+#### 数据结构
+
+```go
+type ScanConfig struct {
+    Enabled           bool                 `json:"enabled"`
+    ImmediateScan     bool                 `json:"immediate_scan"`
+    ImmediateDepth    string               `json:"immediate_depth,omitempty"`    // basic/deep
+    ScheduledScan     bool                 `json:"scheduled_scan"`
+    ScheduleType      string               `json:"schedule_type"`                 // daily/weekly/monthly/cron
+    CronExpression    string               `json:"cron_expression,omitempty"`
+    ScheduleTime      string               `json:"schedule_time,omitempty"`       // HH:mm
+    ScheduleValue     []int                `json:"schedule_value,omitempty"`      // 周几或月几
+    ScanDepth         string               `json:"scan_depth"`                    // shallow/deep/basic
+    Preprocessing     *PreprocessingConfig `json:"preprocessing,omitempty"`
+}
+
+type PreprocessingConfig struct {
+    Enabled     bool                 `json:"enabled"`
+    AutoTrigger bool                 `json:"auto_trigger"`
+    Types       []string             `json:"types"`                   // ["mvt_tiles", "vector_embedding"]
+    MVTConfig   *MVTPreprocessConfig `json:"mvt_config,omitempty"`
+}
+
+type MVTPreprocessConfig struct {
+    MaxZoom          int     `json:"max_zoom"`             // 0-18
+    Concurrency      int     `json:"concurrency"`          // 1-20
+    StopThresholdSec float64 `json:"stop_threshold_sec"`   // 默认3.0
+    StopThresholdKB  float64 `json:"stop_threshold_kb"`    // 默认50.0
+}
+```
+
+#### 示例
+```json
+{
+  "enabled": true,
+  "immediate_scan": false,
+  "immediate_depth": "basic",
+  "scheduled_scan": true,
+  "schedule_type": "daily",
+  "schedule_time": "02:00",
+  "scan_depth": "deep",
+  "preprocessing": {
+    "enabled": true,
+    "auto_trigger": false,
+    "types": ["mvt_tiles"],
+    "mvt_config": {
+      "max_zoom": 18,
+      "concurrency": 10,
+      "stop_threshold_sec": 3.0,
+      "stop_threshold_kb": 50.0
+    }
+  }
+}
+```
+
+---
+
+### ~~4.5 HealthCheckConfig（健康检查配置）~~
+
+**⚠️ 已废弃**：此字段已从数据库中删除。
+
+**新方案**：健康检查配置已标准化到代码中（`common/models/workflow_standards.go`），所有工作流引擎统一使用 `/health` 端点。
+
+---
+
+## 五、API 端点说明
+
+### 5.1 外部 API（需要认证）
+
+#### 列表查询
+```
+GET /api/engines?engine_type={type}&is_active={true|false}
+```
+
+**查询参数**：
+- `engine_type`（可选）- 按类型过滤
+- `is_active`（可选）- 按激活状态过滤
+
+**响应示例**：
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "id": 1,
+      "tenant_id": 1,
+      "name": "生产PostgreSQL",
+      "engine_type": "postgresql",
+      "engine_category": "standard",
+      "connection_info": {
+        "host": "localhost",
+        "port": 5432,
+        "username": "admin",
+        "password": "******",
+        "database": "production"
+      },
+      "is_active": true,
+      "connection_status": "online",
+      "last_check_at": "2026-01-01T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### 获取单个引擎
+```
+GET /api/engines/:id
+```
+
+#### 创建引擎
+```
+POST /api/engines
+Content-Type: application/json
+
+{
+  "name": "测试PostgreSQL",
+  "engine_type": "postgresql",
+  "connection_info": {
+    "host": "localhost",
+    "port": 5432,
+    "username": "user",
+    "password": "password",
+    "database": "testdb"
+  },
+  "description": "测试环境数据库",
+  "scan_config": {
+    "enabled": true,
+    "immediate_scan": true,
+    "immediate_depth": "basic"
+  }
+}
+```
+
+#### 更新引擎
+```
+PUT /api/engines/:id
+Content-Type: application/json
+
+{
+  "name": "生产PostgreSQL（更新）",
+  "description": "生产环境主数据库",
+  "is_active": true
+}
+```
+
+**注意**：
+- 敏感字段如果传入 `"******"` 或 `"****"`，系统会保留原始加密值
+- 内置引擎不允许修改核心配置（`name`、`connection_info`）
+
+#### 删除引擎
+```
+DELETE /api/engines/:id
+```
+
+**限制**：
+- 内置引擎（`is_builtin=true`）不可删除
+- 只有管理员可以删除
+
+#### 测试连接（创建前）
+```
+POST /api/engines/test-connection
+Content-Type: application/json
+
+{
+  "engine_type": "postgresql",
+  "connection_info": {
+    "host": "localhost",
+    "port": 5432,
+    "username": "user",
+    "password": "password",
+    "database": "testdb"
+  }
+}
+```
+
+#### 测试连接（已创建）
+```
+POST /api/engines/:id/test
+```
+
+---
+
+### 5.2 内部 API（服务间调用）
+
+#### 内部列表查询（解密）
+```
+GET /internal/engines?engine_type={type}&tenant_id={id}
+```
+
+**特性**：
+- 自动解密 `connection_info`
+- 无需用户认证
+- 支持跨租户查询（SuperAdmin）
+
+#### 内部获取单个（解密）
+```
+GET /internal/engines/:id
+```
+
+#### 注册能力
+```
+POST /internal/registry/capabilities
+Content-Type: application/json
+
+{
+  "name": "Python工作流引擎",
+  "engine_type": "python_workflow",
+  "is_builtin": true,
+  "capabilities": {
+    "compute": [
+      {
+        "dev_modes": ["workflow"],
+        "supported_sources": ["postgresql", "mysql", "minio"],
+        "features": ["dag", "pandas"],
+        "description": "Python数据处理"
+      }
+    ]
+  },
+  "description": "基于 Python 的工作流引擎",
+  "connection_info": {
+    "protocol": "http",
+    "host": "localhost",
+    "port": 8099
+  }
+}
+```
+
+**注意**：API 端点配置已标准化到代码中，注册时无需提供。
+
+#### 查询能力
+```
+GET /internal/registry/capabilities?filter={key}={value}
+```
+
+#### 查询计算引擎
+```
+GET /internal/registry/compute-engines
+```
+
+---
+
+## 六、权限控制
+
+### 6.1 权限模型
+
+| 角色 | 查看 | 创建 | 修改 | 删除 |
+|------|------|------|------|------|
+| SuperAdmin | 所有引擎 | 租户级/系统级 | 所有引擎 | 非内置引擎 |
+| TenantAdmin | 本租户 | 租户级 | 本租户 | 本租户非内置 |
+| 普通用户 | 本租户 | ❌ | ❌ | ❌ |
+
+### 6.2 租户隔离
+
+**系统级引擎**（`tenant_id = NULL`）：
+- 仅 SuperAdmin 可见和管理
+- 用于平台级共享资源
+
+**租户级引擎**（`tenant_id` 有值）：
+- 本租户所有用户可见
+- 仅 TenantAdmin 可管理
+
+---
+
+## 七、数据安全
+
+### 7.1 敏感字段加密
+
+**加密算法**：AES-256-GCM
+
+**加密时机**：
+- 创建引擎时
+- 更新连接信息时
+
+**解密时机**：
+- 内部服务调用（`GetByIDInternal`, `ListInternal`）
+- 测试连接（`GetForConnection`）
+
+**脱敏显示**：
+- 外部 API 查询 - 敏感字段显示为 `"******"`
+
+### 7.2 占位符保护
+
+更新引擎时，如果敏感字段值为：
+- `"******"` 或 `"****"` → 保留原始加密值
+- 真实新值 → 加密并保存
+
+---
+
+## 八、连接状态管理
+
+### 8.1 状态值
+
+| 状态 | 含义 |
+|------|------|
+| `online` | 连接成功 |
+| `offline` | 连接失败 |
+| `unknown` | 未检测（新创建） |
+| `checking` | 检测中（预留） |
+
+### 8.2 更新策略
+
+**混合模式**：
+
+1. **启动时检测**
+   - System 服务启动时自动检测所有引擎
+   - 更新 `connection_status`、`last_check_at`、`check_message`
+
+2. **用户手动触发**
+   - API：`POST /api/engines/:id/test`
+   - 同步返回检测结果并更新状态
+
+3. **不实施后台定时检测**
+   - 原因：节省资源，避免频繁连接
+   - 用户按需检测即可
+
+---
+
+## 九、使用示例
+
+### 9.1 创建 Standard 引擎（PostgreSQL）
+
+```bash
+curl -X POST http://localhost:8080/api/engines \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "生产PostgreSQL",
+    "engine_type": "postgresql",
+    "connection_info": {
+      "host": "localhost",
+      "port": 5432,
+      "username": "admin",
+      "password": "admin123",
+      "database": "production"
+    },
+    "description": "生产环境主数据库",
+    "scan_config": {
+      "enabled": true,
+      "immediate_scan": true,
+      "immediate_depth": "basic",
+      "scheduled_scan": true,
+      "schedule_type": "daily",
+      "schedule_time": "02:00"
+    }
+  }'
+```
+
+### 9.2 创建 Extension 引擎（Python Workflow）
+
+```bash
+curl -X POST http://localhost:8080/api/engines \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "name": "Python工作流引擎",
+    "engine_type": "python_workflow",
+    "engine_category": "extension",
+    "connection_info": {
+      "protocol": "http",
+      "host": "localhost",
+      "port": 8099
+    },
+    "capabilities": {
+      "compute": [
+        {
+          "dev_modes": ["workflow"],
+          "supported_sources": ["postgresql", "mysql", "minio"],
+          "features": ["dag", "pandas", "numpy"],
+          "description": "Python数据处理引擎"
+        }
+      ]
+    },
+    "description": "基于 Python 的通用数据处理工作流引擎"
+  }'
+```
+
+**注意**：API 端点配置已标准化到代码中（`common/models/workflow_standards.go`），创建时无需提供。
+
+### 9.3 测试连接
+
+```bash
+curl -X POST http://localhost:8080/api/engines/1/test \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**响应示例**：
+```json
+{
+  "code": 200,
+  "message": "连接成功",
+  "data": {
+    "status": "online",
+    "message": "连接正常",
+    "checked_at": "2026-01-01T10:00:00Z"
+  }
+}
+```
+
+### 9.4 查询计算引擎（内部 API）
+
+```bash
+curl http://localhost:8080/internal/registry/compute-engines
+```
+
+**响应示例**：
+```json
+{
+  "code": 200,
+  "data": [
+    {
+      "id": 2,
+      "name": "Python工作流引擎",
+      "engine_type": "python_workflow",
+      "connection_info": {
+        "protocol": "http",
+        "host": "localhost",
+        "port": 8099
+      },
+      "capabilities": {
+        "compute": [
+          {
+            "dev_modes": ["workflow"],
+            "description": "Python数据处理引擎"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**注意**：API 端点配置在代码中（`common/models/workflow_standards.go`），API 响应不包含该信息。
+
+---
+
+## 十、重要说明
+
+### 10.1 命名约定
+
+1. **时间戳字段**使用 `_at` 后缀（如 `last_check_at`）
+2. **配置时间**使用 `_time` 后缀（如 `schedule_time`）
+3. **敏感字段**自动加密（`password`、`access_key`、`secret_key`、`token`、`api_key`）
+
+### 10.2 废弃字段
+
+以下字段已从 `ScanConfig` 中删除：
+- ~~`schema_names`~~ - 使用 API 参数传递
+- ~~`object_paths`~~ - 使用 API 参数传递
+
+### 10.3 内置引擎保护
+
+**创建时**：
+- `is_builtin=true` 的引擎标记为内置
+- 内置引擎有唯一索引（`engine_type` 唯一）
+
+**修改限制**：
+- 不允许修改 `engine_type`
+- 不允许修改 `is_builtin`
+- 只允许修改描述和激活状态
+
+**删除保护**：
+- 内置引擎不可删除
+
+---
+
+## 十一、相关文档
+
+- **数据库插件系统**：[docs/数据库插件系统.md](../../docs/数据库插件系统.md)
+- **新增存储引擎指南**：[docs/addp新增存储引擎指南.md](../../docs/addp新增存储引擎指南.md)
+- **核心概念说明**：[docs/addp核心概念说明.md](../../docs/addp核心概念说明.md)
+- **System模块说明**：[system/CLAUDE.md](../CLAUDE.md)

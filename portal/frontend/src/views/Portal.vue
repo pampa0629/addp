@@ -119,11 +119,11 @@
             </template>
             <el-menu-item index="/develop/sql">
               <el-icon><Monitor /></el-icon>
-              <span>SQL 工作台</span>
+              <span>查询工作台</span>
             </el-menu-item>
             <el-menu-item index="/develop/notebook">
               <el-icon><Notebook /></el-icon>
-              <span>Notebook 脚本开发</span>
+              <span>Notebook 开发</span>
             </el-menu-item>
             <el-menu-item index="/develop/workflow">
               <el-icon><Connection /></el-icon>
@@ -238,7 +238,7 @@
                 <div class="card-content">
                   <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
                   <h2>数据开发</h2>
-                  <p>SQL 查询、GIS 空间计算、脚本开发、结果导出</p>
+                  <p>查询工作台、工作流编辑器、Notebook 开发</p>
                 </div>
               </el-card>
             </el-col>

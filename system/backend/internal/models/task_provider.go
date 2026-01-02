@@ -27,8 +27,8 @@ type TaskProvider struct {
 	// 状态
 	IsEnabled bool `gorm:"column:is_enabled;default:true" json:"is_enabled"`
 
-	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at" json:"updated_at"`
+	CreatedAt time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // TableName 指定表名

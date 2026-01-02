@@ -15,7 +15,7 @@ type DevItem struct {
 	TenantID    uint           `gorm:"not null;index:idx_dev_items_tenant_type" json:"tenant_id"`
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	DisplayName string         `gorm:"size:255" json:"display_name,omitempty"`
-	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'script' | 'notebook'
+	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'notebook'
 	QueryType   string         `gorm:"size:50;index:idx_dev_items_query_type" json:"query_type,omitempty"` // 'sql' | 'mql' | 'dsl' (仅当 dev_type='query' 时)
 
 	// 内容存储（根据类型解析）

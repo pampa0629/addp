@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
@@ -71,8 +72,15 @@ func main() {
 	localEngineService := service.NewLocalEngineService(db, cfg, redisClient)
 	objectStorageService := service.NewObjectStorageService(localEngineService)
 
+	// 初始化 System 客户端（用于审计日志和服务间调用）
+	var systemClient *commonClient.SystemClient
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		log.Printf("✅ SystemClient 已初始化: %s", cfg.SystemServiceURL)
+	}
+
 	// 设置路由
-	router := api.SetupRouter(taskService, executionService, localEngineService, objectStorageService, cfg.SystemServiceURL, redisClient)
+	router := api.SetupRouter(taskService, executionService, localEngineService, objectStorageService, cfg.SystemServiceURL, redisClient, systemClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Transfer 服务的外部访问 URL（供 Orchestrator 调用）

@@ -46,7 +46,7 @@ ADDP 平台由以下核心模块组成:
 | **Meta** | 元数据服务:元数据扫描、索引、搜索 | 8082 |
 | **Transfer** | 数据传输:导入、导出、同步任务 | 8083 |
 | **Orchestrator** | 工作流编排:跨模块任务调度 | 8084 |
-| **Develop** | 数据开发:SQL 执行、空间工作流、脚本 | 8085 |
+| **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8085 |
 | **Service** | 数据服务:API 发布、OGC 标准服务 | 8086 |
 
 ### 共享模块
@@ -76,7 +76,7 @@ ADDP 平台由以下核心模块组成:
 |------|------|------|------|
 | **python_workflow** | 空间计算引擎 | 基于 Python 的内存空间计算,提供 21 个空间算子 | `engines/python_workflow/` |
 | **spark-workflow** | 分布式空间计算引擎 | 基于 Spark 的大规模空间数据处理 | `engines/spark-workflow/` |
-| **jupyter** | 脚本执行引擎 | 交互式 Notebook 环境,支持 Python 脚本 | `engines/jupyter/` |
+| **jupyter** | Notebook 执行引擎 | 交互式 Notebook 环境，支持 Python 和 Shell | `engines/jupyter/` |
 
 这些引擎在系统启动时自动注册为**内置引擎**,全局可用。
 
@@ -156,11 +156,11 @@ ADDP 采用基于 Docker 的微服务架构:
 **计算引擎**:
 - 提供数据处理和分析能力
 - 计算能力包括:
-  - **SQL 计算**: 执行 SQL 查询(PostgreSQL、MySQL、Doris)
-  - **算子计算**: 执行空间算子工作流(GeoPandas、Spark 工作流引擎)
-  - **脚本计算**: 执行 Python/Shell 脚本(Jupyter)
+  - **SQL等查询语言的计算**: 执行SQL等查询(PostgreSQL、MySQL、Doris、MongoDB)
+  - **算子计算**: 执行空间和非空间的算子工作流(Python、Spark 工作流引擎)
+  - **Notebook 计算**: Jupyter Notebook 交互式开发
   - **组合计算**: 同时支持多种计算方式
-- 能力: `{"compute": [{"type": "sql_query", "dev_modes": ["sql"]}]}`
+- 能力: `{"compute": [{"dev_modes": ["query"], "description": "SQL查询"}]}`
 
 **计算存储兼有**:
 - 同时提供存储和计算能力
@@ -177,14 +177,14 @@ ADDP 采用基于 Docker 的微服务架构:
 
 **扩展引擎 (Extension Engine / API Engine)**:
 - ADDP 平台内置的计算模块,通过 HTTP API 调用
-- ADDP平台内置了若干扩展引擎（均放在engines目录下），用户也可以按照约定的标准自定义开发，然后注册到平台中
-- 示例: GeoPandas 引擎、Spark 工作流引擎 引擎
+- ADDP平台内置了若干扩展引擎（均放在engines目录下）；用户也可以按照约定的标准自定义开发，然后注册到平台中
+- 示例: python工作流引擎、Spark 工作流引擎
 - 类型命名: 以 `api.` 开头(如 `api.python-workflow`)
 
 #### 3. 按注册方式分类
 
 **注册引擎 (Registered Engine)**:
-- 由用户通过前端表单或 API 手动创建
+- 由用户通过前端表单或 API 手动创建，并注册进来
 - 关联到特定租户(`tenant_id`)
 - 可被用户删除或修改
 - `is_builtin = false`
@@ -211,7 +211,7 @@ ADDP 采用基于 Docker 的微服务架构:
   ],
   "compute": [
     {
-      "dev_modes": ["sql"],           // 开发方式
+      "dev_modes": ["query"],           // 开发方式
       "supported_sources": ["postgresql", "mysql"],  // 支持的数据源
       "features": ["incremental", "scheduled"],      // 功能特性
       "description": "SQL查询"        // 能力描述
@@ -221,10 +221,24 @@ ADDP 采用基于 Docker 的微服务架构:
 ```
 
 **开发方式** (`dev_modes`):
-- `sql`: SQL 脚本开发（数据库引擎）
-- `workflow`: 可视化工作流（计算引擎）
-- `form`: 表单配置（任务提供者）
-- `javascript`: 脚本编程（MongoDB）
+**dev_modes 是引擎能力的核心字段**，声明引擎在 Develop 模块中提供的开发界面类型：
+- `query`: 查询开发（数据库计算引擎），对应查询工作台界面，支持 SQL、MQL 等查询语言
+- `workflow`: 可视化工作流（工作流计算引擎），对应工作流编辑器
+- `notebook`: 基于 Jupyter 的 Notebook 开发（Notebook 执行引擎），对应 Notebook 编辑器
+
+**功能特性** (`features`):
+声明引擎支持的功能特性，例如：
+- `incremental`: 增量处理
+- `scheduled`: 定时调度
+- `parallel`: 并行处理
+- `async`: 异步执行
+- `retry`: 失败重试
+
+**支持的数据源** (`supported_sources`):
+声明引擎支持处理的数据源类型，例如：
+- `postgresql`, `mysql`: 关系型数据库
+- `minio`, `s3`: 对象存储
+- `geojson`, `shapefile`: 空间数据格式
 
 **示例**:
 
@@ -232,7 +246,7 @@ PostgreSQL 引擎:
 ```json
 {
   "storage": [{"type": "relational_db"}],
-  "compute": [{"dev_modes": ["sql"], "description": "SQL查询"}]
+  "compute": [{"dev_modes": ["query"], "description": "SQL查询"}]
 }
 ```
 
@@ -261,18 +275,18 @@ GeoPandas 引擎:
 - S3 - AWS 对象存储
 
 **扩展引擎**:
-- **Python Workflow** - 空间计算引擎
+- **Python Workflow** - 基于python的单节点工作流计算引擎
   - 类型: `api.python-workflow`
-  - 能力: 算子工作流(21 个空间算子)
+  - 能力: 算子工作流(多个空间和非空间算子)
   - 适用场景: 中小规模空间数据分析(< 100 万行)
-- **Spark Workflow 引擎** - 分布式空间计算引擎
+- **Spark Workflow** - 基于spark的分布式工作流引擎，需要用户手动设置spark标准计算引擎支持
   - 类型: `api.spark_workflow`
-  - 能力: 大规模空间数据处理
-  - 适用场景: 大规模空间数据分析(> 100 万行)
-- **Jupyter** - 脚本执行引擎
+  - 能力: 大规模数据处理
+  - 适用场景: 大规模数据分析(> 100 万行)
+- **Jupyter** - Notebook 执行引擎
   - 类型: `api.jupyter`
   - 能力: 交互式 Python Notebook
-  - 适用场景: 脚本开发、数据探索
+  - 适用场景: Notebook 开发、数据探索
 
 ### 引擎插件系统
 
@@ -461,10 +475,10 @@ ADDP 支持多种数据类型的预览:
 
 ## 七、数据开发
 
-### SQL 开发
+### 查询开发
 
-**SQL 编辑、执行、结果展示**:
-- 支持多种数据库的 SQL 方言(PostgreSQL、MySQL、Doris、ClickHouse)
+**SQL等查询语言的 编辑、执行、结果展示**:
+- 支持多种数据库的 SQL 方言(PostgreSQL、MySQL、Doris、ClickHouse)，MQL（MongoDB）
 - 代码编辑器: 语法高亮、自动补全、格式化
 - 结果展示: 表格视图、导出 CSV
 - 执行历史: 保存 SQL 和结果,可回溯
@@ -515,9 +529,9 @@ ADDP 支持多种数据类型的预览:
 - **Python Workflow**: 数据量 < 100 万行,内存计算,快速
 - **Spark Workflow 引擎**: 数据量 > 100 万行,分布式计算,可扩展
 
-### 脚本开发
+### Notebook开发
 
-**Python/Shell 脚本执行**:
+**Jupyter Notebook 交互式开发**:
 - **Jupyter 引擎**: 交互式 Notebook 环境
 - 代码编辑器: 支持 Python、Shell
 - 变量传递: 工作流间传递变量
@@ -542,7 +556,7 @@ ADDP 支持多种数据类型的预览:
 - **Transfer 模块**: 提供数据导入、导出、同步任务
 - **Meta 模块**: 提供元数据扫描任务(基础扫描、深度扫描)
 - **Manager 模块**: 提供 MVT 瓦片生成、数据预览任务
-- **Develop 模块**: 提供 SQL 执行、工作流执行、脚本执行任务
+- **Develop 模块**: 提供查询执行、工作流执行、Notebook 执行任务
 
 **工作原理**:
 1. 各模块在 System 模块中注册自己的能力和任务 API

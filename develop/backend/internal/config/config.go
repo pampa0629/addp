@@ -27,14 +27,8 @@ type Config struct {
 	EncryptionKey                []byte
 	InternalAPIKey               string
 
-	// Python Workflow Engine 配置
-	PythonWorkflowEngineURL string
-
-	// Jupyter Engine 配置
+	// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
 	JupyterEngineURL string
-
-	// Spark 工作流引擎 配置
-	SparkEngineURL string
 
 	// 其他模块服务配置（用于算子发现）
 	MetaServiceURL     string
@@ -82,14 +76,8 @@ func Load() *Config {
 		EncryptionKey:            encryptionKey,
 		InternalAPIKey:           internalAPIKey,
 
-		// Python Workflow Engine 配置
-		PythonWorkflowEngineURL: getEnv("PYTHON_WORKFLOW_ENGINE_URL", "http://localhost:8099"),
-
-		// Jupyter Engine 配置
+		// Jupyter Engine 配置（仍需保留，用于 notebook 功能）
 		JupyterEngineURL: getEnv("JUPYTER_ENGINE_URL", "http://localhost:8097"),
-
-		// Spark 工作流引擎 配置
-		SparkEngineURL: getEnv("SPARK_ENGINE_URL", "http://localhost:8098"),
 
 		// 其他模块服务配置
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),

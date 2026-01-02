@@ -2,9 +2,14 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/addp/common/database/plugin"
 	"github.com/addp/common/dbbridge"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 )
 
@@ -14,10 +19,59 @@ func NewStorageEngineService() *StorageEngineService {
 	return &StorageEngineService{}
 }
 
-// TestConnection 测试存储引擎连接
-// 使用插件系统统一处理所有数据库类型的连接测试
+// TestConnection 测试引擎连接
+// 根据 engine_category 区分测试方式：
+// - standard: 使用数据库插件测试（dbbridge）
+// - extension: 使用 HTTP 健康检查（/health 端点）
 func (s *StorageEngineService) TestConnection(resource *models.Engine) error {
+	// 根据引擎分类选择测试方式
+	if resource.EngineCategory == "extension" {
+		return s.testExtensionEngineConnection(resource)
+	}
+
+	// 默认使用数据库插件测试（standard 引擎）
 	return dbbridge.TestConnection(context.Background(), resource)
+}
+
+// testExtensionEngineConnection 测试扩展引擎连接（HTTP 健康检查）
+func (s *StorageEngineService) testExtensionEngineConnection(resource *models.Engine) error {
+	// 构建 base URL
+	baseURL, err := commonmodels.BuildBaseURL(resource.ConnectionInfo)
+	if err != nil {
+		return fmt.Errorf("构建引擎 URL 失败: %w", err)
+	}
+
+	// 获取健康检查配置
+	healthCheckEndpoint := "/health"
+	timeout := 5 * time.Second
+
+	// 如果引擎类型有标准配置，使用标准配置
+	if standard, ok := commonmodels.WorkflowStandards[resource.EngineType]; ok {
+		healthCheckEndpoint = standard.HealthCheck.Endpoint
+		timeout = time.Duration(standard.HealthCheck.Timeout) * time.Second
+	}
+
+	// 构建完整的健康检查 URL
+	healthURL := strings.TrimRight(baseURL, "/") + healthCheckEndpoint
+
+	// 创建 HTTP 客户端
+	client := &http.Client{
+		Timeout: timeout,
+	}
+
+	// 发送 GET 请求
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return fmt.Errorf("健康检查失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("健康检查失败: HTTP %d", resp.StatusCode)
+	}
+
+	return nil
 }
 
 // GetConnectionInfo 获取存储引擎连接信息（用于前端展示，隐藏敏感信息）

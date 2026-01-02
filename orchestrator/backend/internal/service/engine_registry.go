@@ -14,7 +14,7 @@ import (
 // EngineRegistry 引擎注册表（从 System 动态加载计算引擎配置）
 type EngineRegistry struct {
 	systemClient *commonClient.SystemClient
-	engines      map[string]*commonModels.Engine // key: unique_identifier
+	engines      map[string]*commonModels.Engine // key: engine_type
 	mu           sync.RWMutex
 	cacheTTL     time.Duration
 	lastRefresh  time.Time
@@ -33,7 +33,7 @@ func NewEngineRegistry(systemURL, internalAPIKey string, cacheTTL time.Duration)
 	}
 }
 
-// GetEngine 根据 unique_identifier 获取引擎配置
+// GetEngine 根据 engine_type 获取引擎配置
 func (r *EngineRegistry) GetEngine(ctx context.Context, identifier string) (*commonModels.Engine, error) {
 	// 先检查缓存
 	r.mu.RLock()
@@ -79,9 +79,7 @@ func (r *EngineRegistry) RefreshCache(ctx context.Context) error {
 
 	// 重新填充
 	for _, engine := range engines {
-		if engine.UniqueIdentifier != nil {
-			r.engines[*engine.UniqueIdentifier] = engine
-		}
+		r.engines[engine.EngineType] = engine
 	}
 
 	r.lastRefresh = time.Now()

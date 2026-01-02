@@ -20,6 +20,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/vectorstore"
+	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/plugins"
@@ -33,7 +34,8 @@ import (
 // ScanServiceNew 新的统一扫描服务
 type ScanServiceNew struct {
 	db                 *gorm.DB
-	engineService    *EngineService
+	engineService      *EngineService
+	config             *config.Config
 	log                *slog.Logger
 	indexer            *search.Indexer
 	vectorStore        *vectorstore.PgVectorStore
@@ -42,6 +44,7 @@ type ScanServiceNew struct {
 	objectClients      map[uint]*minio.Client
 	objectClientMu     sync.Mutex
 	scanEventPublisher *events.ScanEventPublisher // 扫描事件发布器
+	metadataExtractor  *MetadataExtractor          // 元数据提取器
 }
 
 const (
@@ -65,17 +68,23 @@ func NewScanServiceNew(db *gorm.DB, engineService *EngineService) *ScanServiceNe
 	}
 
 	return &ScanServiceNew{
-		db:               db,
-		engineService:  engineService,
-		log:              logger.With("component", "scan_service"),
-		embeddingTimeout: 20 * time.Second,
-		objectClients:    make(map[uint]*minio.Client),
+		db:                db,
+		engineService:     engineService,
+		log:               logger.With("component", "scan_service"),
+		embeddingTimeout:  20 * time.Second,
+		objectClients:     make(map[uint]*minio.Client),
+		metadataExtractor: NewMetadataExtractor(db), // 初始化元数据提取器
 	}
 }
 
 // SetIndexer 注入搜索索引器
 func (s *ScanServiceNew) SetIndexer(indexer *search.Indexer) {
 	s.indexer = indexer
+}
+
+// SetConfig 注入配置
+func (s *ScanServiceNew) SetConfig(cfg *config.Config) {
+	s.config = cfg
 }
 
 // SetScanEventPublisher 注入扫描事件发布器
@@ -175,27 +184,6 @@ func isObjectStorageType(resourceType string) bool {
 	default:
 		return false
 	}
-}
-
-func composeNodePath(nodeID uint, parent *models.MetaNode) string {
-	current := fmt.Sprintf("%d", nodeID)
-	if parent == nil || parent.Path == "" {
-		if parent == nil {
-			return current
-		}
-		return fmt.Sprintf("%d/%s", parent.ID, current)
-	}
-	return fmt.Sprintf("%s/%s", parent.Path, current)
-}
-
-func composeNodeFullName(name string, parent *models.MetaNode, separator string) string {
-	if parent == nil || parent.FullName == "" {
-		return name
-	}
-	if separator == "" {
-		separator = "."
-	}
-	return fmt.Sprintf("%s%s%s", parent.FullName, separator, name)
 }
 
 type nodeAggregate struct {
@@ -2431,21 +2419,6 @@ func getStringFromMap(metadata map[string]interface{}, key string) string {
 	return ""
 }
 
-func truncateRunes(text string, limit int) string {
-	if limit <= 0 {
-		return ""
-	}
-	runes := []rune(text)
-	if len(runes) <= limit {
-		return text
-	}
-	return string(runes[:limit])
-}
-
-func previewText(text string, limit int) string {
-	return truncateRunes(text, limit)
-}
-
 func intFromInterface(value interface{}) int {
 	switch v := value.(type) {
 	case int:
@@ -2498,262 +2471,24 @@ func extractTimePtr(value interface{}) *time.Time {
 	return nil
 }
 
-// extractEnhancedMetadata 使用插件提取增强的元数据
+// extractEnhancedMetadata 使用插件提取增强的元数据 (代理到 metadataExtractor)
 func (s *ScanServiceNew) extractEnhancedMetadata(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
-	// 如果S3Scanner已经提取了元数据，直接使用
-	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
-		if text, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok && text != "" {
-			baseAttrs["plain_text_preview"] = previewText(text, documentPreviewRuneLimit)
-		}
-		// 将提取的CustomAttrs合并到baseAttrs中，跳过大字段
-		for key, value := range meta.ExtractedMetadata.CustomAttrs {
-			if key == "plain_text" {
-				continue
-			}
-			baseAttrs[key] = value
-		}
-
-		// 添加基本信息
-		baseAttrs["metadata_extracted"] = true
-		baseAttrs["file_type_friendly"] = meta.ExtractedMetadata.BasicInfo.FileType
-		if meta.ExtractedMetadata.BasicInfo.ContentType != "" {
-			baseAttrs["content_type"] = meta.ExtractedMetadata.BasicInfo.ContentType
-		}
-
-		return baseAttrs
-	}
-
-	// 如果没有提取元数据，检查是否有可用的提取器
-	contentType := mime.TypeByExtension(pathpkg.Ext(meta.Path))
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	// 获取适配的元数据提取器
-	extractor := plugins.GetExtractor(contentType)
-	if extractor == nil {
-		// 没有合适的提取器，返回基础属性
-		return baseAttrs
-	}
-
-	// 标记有提取器可用（但本次扫描未提取）
-	baseAttrs["extractor_available"] = true
-	baseAttrs["content_type"] = contentType
-
-	return baseAttrs
+	return s.metadataExtractor.ExtractEnhancedMetadata(engineID, meta, baseAttrs)
 }
 
-// extractEnhancedMetadataWithCache 带缓存检查的元数据提取
-// 如果文件未修改（基于last_modified时间），跳过重新提取
-// fullPath: 文件在bucket中的完整路径（用于fingerprint生成）
+// extractEnhancedMetadataWithCache 带缓存检查的元数据提取 (代理到 metadataExtractor)
 func (s *ScanServiceNew) extractEnhancedMetadataWithCache(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
-	// 生成fingerprint以查找已有记录 - 使用传入的fullPath确保一致性
-	bucket, _ := baseAttrs["bucket"].(string)
-	fingerprint := commonModels.GenerateObjectFingerprint(engineID, bucket, fullPath)
-
-	// 查找已有的meta_item记录
-	var existingItem models.MetaItem
-	err := s.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error
-
-	// 如果找到已有记录，检查last_modified是否变化
-	if err == nil && existingItem.LastModifiedAt != nil && meta.LastModified != nil {
-		// 比较时间（精确到秒）
-		existingTime := existingItem.LastModifiedAt.Truncate(time.Second)
-		newTime := meta.LastModified.Truncate(time.Second)
-
-		if existingTime.Equal(newTime) {
-			// 文件未变化，复用已有的metadata
-			if existingItem.Attributes != nil && len(existingItem.Attributes) > 0 {
-				// 检查是否已经提取过元数据
-				if extracted, ok := existingItem.Attributes["metadata_extracted"].(bool); ok && extracted {
-					s.log.Debug("复用缓存的元数据",
-						"fingerprint", fingerprint,
-						"fullPath", fullPath,
-						"last_modified", existingTime)
-					// 将已有的attributes合并到baseAttrs
-					for key, value := range existingItem.Attributes {
-						baseAttrs[key] = value
-					}
-					return baseAttrs
-				}
-			}
-		}
-	}
-
-	// 文件是新的或已更新，执行完整的元数据提取
-	return s.extractEnhancedMetadata(engineID, meta, baseAttrs)
+	return s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, meta, baseAttrs, fullPath)
 }
 
-// GetObjectMetadata 获取指定对象的元数据
-// 用于Manager模块预览时查询已扫描的元数据
+// GetObjectMetadata 获取指定对象的元数据 (代理到 metadataExtractor)
 func (s *ScanServiceNew) GetObjectMetadata(tenantID, engineID uint, objectKey string) (*models.MetaItem, error) {
-	// 解析对象路径
-	bucket, relativePath := splitObjectPath(objectKey)
-	if bucket == "" {
-		return nil, fmt.Errorf("invalid object key: %s", objectKey)
-	}
-
-	// 查找bucket节点
-	var bucketNode models.MetaNode
-	err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-		tenantID, engineID, "bucket", bucket).First(&bucketNode).Error
-	if err != nil {
-		return nil, fmt.Errorf("bucket not found: %w", err)
-	}
-
-	// 查找对象item
-	objectName := pathpkg.Base(relativePath)
-	if objectName == "" {
-		objectName = relativePath
-	}
-
-	var item models.MetaItem
-
-	// 如果有相对路径，需要先找到对应的prefix节点
-	if relativePath != "" && relativePath != objectName {
-		// 构建prefix路径
-		prefixPath := pathpkg.Dir(relativePath)
-		segments := strings.Split(prefixPath, "/")
-
-		currentParent := &bucketNode
-		for _, segment := range segments {
-			if segment == "" || segment == "." {
-				continue
-			}
-
-			var prefixNode models.MetaNode
-			err := s.db.Where("tenant_id = ? AND engine_id = ? AND parent_node_id = ? AND node_type = ? AND name = ?",
-				tenantID, engineID, currentParent.ID, "prefix", segment).First(&prefixNode).Error
-			if err != nil {
-				return nil, fmt.Errorf("prefix not found: %s", segment)
-			}
-			currentParent = &prefixNode
-		}
-
-		// 在最终的prefix节点下查找对象
-		err = s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-			tenantID, engineID, currentParent.ID, "object", objectName).First(&item).Error
-	} else {
-		// 直接在bucket下查找对象
-		err = s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND name = ?",
-			tenantID, engineID, bucketNode.ID, "object", objectName).First(&item).Error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("object metadata not found: %w", err)
-	}
-
-	return &item, nil
+	return s.metadataExtractor.GetObjectMetadata(tenantID, engineID, objectKey)
 }
 
-// ExtractObjectMetadataOnDemand 按需提取对象的深度元数据
-// 当Manager预览时发现元数据未提取，可以调用此方法触发实时提取
+// ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
 func (s *ScanServiceNew) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*plugins.Metadata, error) {
-	// 检测内容类型
-	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	// 获取元数据提取器
-	extractor := plugins.GetExtractor(contentType)
-	if extractor == nil {
-		return nil, fmt.Errorf("no extractor available for content type: %s", contentType)
-	}
-
-	// 获取对象的基本信息
-	item, err := s.GetObjectMetadata(tenantID, engineID, objectKey)
-	if err != nil {
-		// 如果元数据不存在，使用默认值
-		s.log.Warn("对象元数据不存在，使用默认值", "object_key", objectKey, "error", err)
-	}
-
-	// 构建提取输入
-	input := plugins.ExtractInput{
-		EngineID:  engineID,
-		ObjectKey:   objectKey,
-		ContentType: contentType,
-		Reader:      objectReader,
-	}
-
-	if item != nil {
-		if item.ObjectSizeBytes != nil {
-			input.Size = *item.ObjectSizeBytes
-		}
-		if item.LastModifiedAt != nil {
-			input.LastModified = *item.LastModifiedAt
-		}
-		if etag, ok := item.Attributes["etag"].(string); ok {
-			input.ETag = etag
-		}
-	}
-
-	// 调用提取器
-	ctx := context.Background()
-	metadata, err := extractor.Extract(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract metadata: %w", err)
-	}
-
-	// 如果元数据item存在，更新attributes
-	if item != nil {
-		enhancedAttrs := item.Attributes
-		if enhancedAttrs == nil {
-			enhancedAttrs = make(models.JSONMap)
-		}
-
-		// 合并提取的元数据到attributes
-		enhancedAttrs["extracted_metadata"] = map[string]interface{}{
-			"basic_info":   metadata.BasicInfo,
-			"custom_attrs": metadata.CustomAttrs,
-		}
-
-		if metadata.SchemaInfo != nil {
-			enhancedAttrs["schema_info"] = metadata.SchemaInfo
-		}
-
-		// 更新数据库
-		if err := s.db.Model(item).Update("attributes", enhancedAttrs).Error; err != nil {
-			s.log.Warn("更新元数据失败", "item_id", item.ID, "error", err)
-		}
-	}
-
-	return metadata, nil
-}
-
-func prepareObjectPaths(paths, fallback []string, scanner plugins.ObjectStorageScanner) []string {
-	pathSet := map[string]struct{}{}
-	for _, p := range paths {
-		clean := sanitizeObjectPath(p)
-		if clean != "" {
-			pathSet[clean] = struct{}{}
-		}
-	}
-
-	if len(pathSet) == 0 {
-		for _, p := range fallback {
-			clean := sanitizeObjectPath(p)
-			if clean != "" {
-				pathSet[clean] = struct{}{}
-			}
-		}
-	}
-
-	if len(pathSet) == 0 {
-		for _, bucket := range scanner.AllowedBuckets() {
-			clean := sanitizeObjectPath(bucket)
-			if clean != "" {
-				pathSet[clean] = struct{}{}
-			}
-		}
-	}
-
-	var result []string
-	for p := range pathSet {
-		result = append(result, p)
-	}
-	sort.Strings(result)
-	return result
+	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
 }
 
 func filterObjectMetasForDepth(metas []plugins.ObjectMetadata, basePath string) []plugins.ObjectMetadata {
@@ -2795,28 +2530,6 @@ func filterObjectMetasForDepth(metas []plugins.ObjectMetadata, basePath string) 
 		}
 	}
 	return filtered
-}
-
-func sanitizeObjectPath(path string) string {
-	path = strings.TrimSpace(path)
-	path = strings.Trim(path, "/")
-	return path
-}
-
-func splitObjectPath(path string) (string, string) {
-	clean := sanitizeObjectPath(path)
-	if clean == "" {
-		return "", ""
-	}
-	parts := strings.SplitN(clean, "/", 2)
-	bucket := parts[0]
-	if bucket == "" {
-		return "", ""
-	}
-	if len(parts) == 1 {
-		return bucket, ""
-	}
-	return bucket, parts[1]
 }
 
 func (s *ScanServiceNew) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {

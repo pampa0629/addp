@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"text/template"
 	"time"
 
 	commonModels "github.com/addp/common/models"
@@ -34,29 +32,30 @@ func NewTaskClient(timeout time.Duration) *TaskClient {
 // CreateTask 创建任务
 // params 包含模板变量,如: {"TenantID": 1, "ResourceID": 5, "ScanConfig": {...}}
 func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Engine, params map[string]interface{}) (string, error) {
-	// 解析 TaskAPIConfig
-	var apiConfig commonModels.TaskAPIConfig
-	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {
-		return "", fmt.Errorf("failed to parse task_api_config: %w", err)
-	}
-
-	// 获取 create endpoint 配置
-	createEndpoint, ok := apiConfig.Endpoints["create"]
-	if !ok {
-		return "", fmt.Errorf("no 'create' endpoint defined in task_api_config")
-	}
-
-	// 构建请求 URL
-	targetURL := apiConfig.BaseURL + createEndpoint.Path
-
-	// 渲染请求 body 模板
-	bodyJSON, err := renderTemplate(createEndpoint.BodyTemplate, params)
+	// 从 connection_info 构建 base_url
+	baseURL, err := commonModels.BuildBaseURL(engine.ConnectionInfo)
 	if err != nil {
-		return "", fmt.Errorf("failed to render body template: %w", err)
+		return "", fmt.Errorf("failed to build base_url: %w", err)
+	}
+
+	// 获取标准配置
+	standard, ok := commonModels.WorkflowStandards[engine.EngineType]
+	if !ok {
+		return "", fmt.Errorf("no standard config for engine_type: %s", engine.EngineType)
+	}
+
+	// 获取 execute endpoint 配置（工作流引擎使用 execute 端点）
+	executeEndpoint := standard.Endpoints["execute"]
+	targetURL := baseURL + executeEndpoint.Path
+
+	// 构建请求 body（直接使用 params）
+	bodyJSON, err := json.Marshal(params)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal params: %w", err)
 	}
 
 	// 发送 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, createEndpoint.Method, targetURL, bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, executeEndpoint.Method, targetURL, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return "", fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -64,10 +63,7 @@ func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Engine
 	req.Header.Set("Content-Type", "application/json")
 
 	// 设置超时
-	timeout := 30
-	if t, ok := apiConfig.Timeout["create"]; ok {
-		timeout = t
-	}
+	timeout := executeEndpoint.Timeout
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
@@ -102,132 +98,33 @@ func (c *TaskClient) CreateTask(ctx context.Context, engine *commonModels.Engine
 	return "", fmt.Errorf("no task ID found in response")
 }
 
-// ExecuteTask 执行任务
+// ExecuteTask 执行任务（已废弃，工作流引擎使用 CreateTask 直接执行）
+// 保留此方法以兼容旧代码，实际上调用 CreateTask
 func (c *TaskClient) ExecuteTask(ctx context.Context, engine *commonModels.Engine, taskID string, params map[string]interface{}) (string, error) {
-	// 解析 TaskAPIConfig
-	var apiConfig commonModels.TaskAPIConfig
-	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {
-		return "", fmt.Errorf("failed to parse task_api_config: %w", err)
-	}
-
-	// 获取 execute endpoint 配置
-	executeEndpoint, ok := apiConfig.Endpoints["execute"]
-	if !ok {
-		return "", fmt.Errorf("no 'execute' endpoint defined in task_api_config")
-	}
-
-	// 渲染路径模板（替换 {{.TaskID}}）
-	pathParams := map[string]interface{}{
-		"TaskID": taskID,
-	}
-	for k, v := range params {
-		pathParams[k] = v
-	}
-
-	path, err := renderStringTemplate(executeEndpoint.Path, pathParams)
-	if err != nil {
-		return "", fmt.Errorf("failed to render path template: %w", err)
-	}
-
-	targetURL := apiConfig.BaseURL + path
-
-	// 渲染请求 body 模板（如果有）
-	var bodyReader io.Reader
-	if executeEndpoint.BodyTemplate != nil {
-		bodyJSON, err := renderTemplate(executeEndpoint.BodyTemplate, params)
-		if err != nil {
-			return "", fmt.Errorf("failed to render body template: %w", err)
-		}
-		bodyReader = bytes.NewReader(bodyJSON)
-	}
-
-	// 发送 HTTP 请求
-	req, err := http.NewRequestWithContext(ctx, executeEndpoint.Method, targetURL, bodyReader)
-	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	// 设置超时
-	timeout := 300
-	if t, ok := apiConfig.Timeout["execute"]; ok {
-		timeout = t
-	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return "", fmt.Errorf("HTTP request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
-	}
-
-	// 解析响应
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// 提取执行 ID（优先级: execution_id > run_id > id）
-	if execID, ok := result["execution_id"]; ok {
-		return fmt.Sprintf("%v", execID), nil
-	}
-	if runID, ok := result["run_id"]; ok {
-		return fmt.Sprintf("%v", runID), nil
-	}
-	if id, ok := result["id"]; ok {
-		return fmt.Sprintf("%v", id), nil
-	}
-
-	// 如果没有返回 ID,返回任务 ID
-	return taskID, nil
+	// 工作流引擎的执行已合并到 CreateTask 中
+	return c.CreateTask(ctx, engine, params)
 }
 
 // GetTaskStatus 获取任务状态
 func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *commonModels.Engine, taskID string) (*TaskStatus, error) {
-	// 解析 TaskAPIConfig
-	var apiConfig commonModels.TaskAPIConfig
-	if err := unmarshalTaskAPIConfig(engine.TaskAPIConfig, &apiConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse task_api_config: %w", err)
+	// 从 connection_info 构建 base_url
+	baseURL, err := commonModels.BuildBaseURL(engine.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build base_url: %w", err)
+	}
+
+	// 获取标准配置
+	standard, ok := commonModels.WorkflowStandards[engine.EngineType]
+	if !ok {
+		return nil, fmt.Errorf("no standard config for engine_type: %s", engine.EngineType)
 	}
 
 	// 获取 status endpoint 配置
-	statusEndpoint, ok := apiConfig.Endpoints["status"]
-	if !ok {
-		return nil, fmt.Errorf("no 'status' endpoint defined in task_api_config")
-	}
+	statusEndpoint := standard.Endpoints["status"]
 
-	// 渲染路径模板（替换 {{.TaskID}} 或 {{.RunID}}）
-	pathParams := map[string]interface{}{
-		"TaskID": taskID,
-		"RunID":  taskID, // 兼容两种命名
-	}
-
-	path, err := renderStringTemplate(statusEndpoint.Path, pathParams)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render path template: %w", err)
-	}
-
-	targetURL := apiConfig.BaseURL + path
-
-	// 添加 query params（如果有）
-	if len(statusEndpoint.QueryParams) > 0 {
-		queryVals := url.Values{}
-		for key, valueTpl := range statusEndpoint.QueryParams {
-			value, err := renderStringTemplate(valueTpl, pathParams)
-			if err != nil {
-				return nil, fmt.Errorf("failed to render query param %s: %w", key, err)
-			}
-			queryVals.Set(key, value)
-		}
-		targetURL += "?" + queryVals.Encode()
-	}
+	// 替换路径中的 {id} 占位符
+	path := strings.Replace(statusEndpoint.Path, "{id}", taskID, -1)
+	targetURL := baseURL + path
 
 	// 发送 HTTP 请求
 	req, err := http.NewRequestWithContext(ctx, statusEndpoint.Method, targetURL, nil)
@@ -236,10 +133,7 @@ func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *commonModels.Eng
 	}
 
 	// 设置超时
-	timeout := 10
-	if t, ok := apiConfig.Timeout["status"]; ok {
-		timeout = t
-	}
+	timeout := statusEndpoint.Timeout
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
@@ -259,15 +153,20 @@ func (c *TaskClient) GetTaskStatus(ctx context.Context, engine *commonModels.Eng
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// 使用 ResponseMapping 提取字段
-	status := extractField(result, statusEndpoint.ResponseMapping, "status")
-	message := extractField(result, statusEndpoint.ResponseMapping, "message")
-	progressStr := extractField(result, statusEndpoint.ResponseMapping, "progress")
+	// 提取字段（使用默认字段名）
+	status := ""
+	if v, ok := result["status"]; ok {
+		status = fmt.Sprintf("%v", v)
+	}
 
-	// 解析 progress
+	message := ""
+	if v, ok := result["message"]; ok {
+		message = fmt.Sprintf("%v", v)
+	}
+
 	progress := 0
-	if progressStr != "" {
-		fmt.Sscanf(progressStr, "%d", &progress)
+	if v, ok := result["progress"]; ok {
+		fmt.Sscanf(fmt.Sprintf("%v", v), "%d", &progress)
 	}
 
 	return &TaskStatus{
@@ -286,103 +185,4 @@ type TaskStatus struct {
 	Progress int    // 0-100
 	Message  string
 	Raw      map[string]interface{} // 原始响应
-}
-
-// unmarshalTaskAPIConfig 辅助函数：解析 TaskAPIConfig JSON 字符串
-func unmarshalTaskAPIConfig(configJSON *string, result *commonModels.TaskAPIConfig) error {
-	if configJSON == nil {
-		return fmt.Errorf("task_api_config is nil")
-	}
-
-	if err := json.Unmarshal([]byte(*configJSON), result); err != nil {
-		return fmt.Errorf("failed to unmarshal task_api_config: %w", err)
-	}
-
-	return nil
-}
-
-// renderTemplate 渲染 JSON 模板（支持 Go template 语法）
-func renderTemplate(tpl map[string]interface{}, params map[string]interface{}) ([]byte, error) {
-	// 先将模板转换为 JSON 字符串
-	tplJSON, err := json.Marshal(tpl)
-	if err != nil {
-		return nil, err
-	}
-
-	// 使用 Go template 渲染
-	tmpl, err := template.New("body").Parse(string(tplJSON))
-	if err != nil {
-		return nil, err
-	}
-
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, params); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-// renderStringTemplate 渲染字符串模板
-func renderStringTemplate(tpl string, params map[string]interface{}) (string, error) {
-	tmpl, err := template.New("string").Parse(tpl)
-	if err != nil {
-		return "", err
-	}
-
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, params); err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
-}
-
-// extractField 从响应中提取字段（支持 ResponseMapping）
-func extractField(result map[string]interface{}, mapping *commonModels.ResponseMapping, fieldType string) string {
-	if mapping == nil {
-		// 使用默认字段名
-		switch fieldType {
-		case "status":
-			if v, ok := result["status"]; ok {
-				return fmt.Sprintf("%v", v)
-			}
-		case "message":
-			if v, ok := result["message"]; ok {
-				return fmt.Sprintf("%v", v)
-			}
-			if v, ok := result["error_message"]; ok {
-				return fmt.Sprintf("%v", v)
-			}
-		case "progress":
-			if v, ok := result["progress"]; ok {
-				return fmt.Sprintf("%v", v)
-			}
-			if v, ok := result["progress_percent"]; ok {
-				return fmt.Sprintf("%v", v)
-			}
-		}
-		return ""
-	}
-
-	// 使用自定义映射
-	var fieldName string
-	switch fieldType {
-	case "status":
-		fieldName = mapping.StatusField
-	case "message":
-		fieldName = mapping.MessageField
-	case "progress":
-		fieldName = mapping.ProgressField
-	}
-
-	if fieldName == "" {
-		return ""
-	}
-
-	if v, ok := result[fieldName]; ok {
-		return fmt.Sprintf("%v", v)
-	}
-
-	return ""
 }

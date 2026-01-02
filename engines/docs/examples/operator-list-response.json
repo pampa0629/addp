@@ -1,0 +1,90 @@
+{
+  "status": "success",
+  "operators": [
+    {
+      "id": "buffer",
+      "name": "buffer",
+      "display_name": "缓冲区分析",
+      "category": "几何处理",
+      "description": "对几何对象创建缓冲区",
+      "brief_description": "在几何对象周围创建指定距离的缓冲区",
+      "module": "python-workflow",
+      "parameters": [
+        {
+          "name": "input_gdf",
+          "type": "geodataframe",
+          "required": true,
+          "description": "输入 GeoDataFrame"
+        },
+        {
+          "name": "distance",
+          "type": "float",
+          "required": true,
+          "description": "缓冲距离(米)",
+          "default": 100.0,
+          "min": 0.0,
+          "max": 10000.0,
+          "notes": "单位与坐标系一致"
+        },
+        {
+          "name": "resolution",
+          "type": "integer",
+          "required": false,
+          "description": "圆角分辨率",
+          "default": 16,
+          "min": 1,
+          "max": 64
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "default",
+          "type": "geodataframe",
+          "description": "缓冲区结果",
+          "is_default": true
+        }
+      ],
+      "use_cases": [
+        "POI 影响范围分析",
+        "河流污染影响区域计算",
+        "交通站点服务范围分析"
+      ],
+      "notes": [
+        "对于地理坐标系(WGS84等),distance单位为度而非米",
+        "大数据集建议先投影到平面坐标系以提高性能"
+      ]
+    },
+    {
+      "id": "add",
+      "name": "add",
+      "display_name": "加法",
+      "category": "数学运算",
+      "description": "两数相加",
+      "brief_description": "计算两个数的和",
+      "module": "math-workflow",
+      "parameters": [
+        {
+          "name": "a",
+          "type": "float",
+          "required": true,
+          "description": "加数1"
+        },
+        {
+          "name": "b",
+          "type": "float",
+          "required": true,
+          "description": "加数2"
+        }
+      ],
+      "output_ports": [
+        {
+          "name": "default",
+          "type": "float",
+          "description": "和",
+          "is_default": true
+        }
+      ]
+    }
+  ],
+  "count": 2
+}

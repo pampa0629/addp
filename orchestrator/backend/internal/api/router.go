@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/orchestrator/internal/repository"
 	"github.com/addp/orchestrator/internal/service"
@@ -22,6 +24,7 @@ func SetupRouter(
 	taskProviderRegistry *service.TaskProviderRegistry,
 	systemURL string,
 	redisClient *redis.Client,
+	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -52,6 +55,10 @@ func SetupRouter(
 	} else {
 		// Fallback: 无缓存模式
 		api.Use(commonAuth.SystemAuthMiddleware(systemURL))
+	}
+	// 审计日志中间件（记录到 System 模块）
+	if systemClient != nil {
+		api.Use(audit.AuditMiddleware("orchestrator", systemClient))
 	}
 
 	{

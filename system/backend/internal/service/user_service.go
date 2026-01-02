@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 
+	commonservice "github.com/addp/common/service"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/pkg/utils"
@@ -10,11 +11,15 @@ import (
 )
 
 type UserService struct {
-	repo *repository.UserRepository
+	repo    repository.UserRepositoryInterface
+	authSvc *commonservice.AuthService
 }
 
-func NewUserService(repo *repository.UserRepository) *UserService {
-	return &UserService{repo: repo}
+func NewUserService(repo repository.UserRepositoryInterface) *UserService {
+	return &UserService{
+		repo:    repo,
+		authSvc: commonservice.NewAuthService(),
+	}
 }
 
 func (s *UserService) Create(req *models.UserCreateRequest, creatorID uint) (*models.User, error) {
@@ -90,20 +95,20 @@ func (s *UserService) GetByID(id uint, currentUserID uint) (*models.User, error)
 		return nil, err
 	}
 
-	// 获取当前用户信息
+	// 获取当前用户
 	currentUser, err := s.repo.GetByID(currentUserID)
 	if err != nil {
 		return nil, errors.New("当前用户不存在")
 	}
 
 	// 超级管理员可以查看所有用户
-	if currentUser.UserType == models.UserTypeSuperAdmin {
+	if s.authSvc.IsSuperAdmin(currentUser) {
 		return user, nil
 	}
 
 	// 租户管理员只能查看同租户的用户
-	if currentUser.UserType == models.UserTypeTenantAdmin {
-		if user.TenantID == nil || currentUser.TenantID == nil || *user.TenantID != *currentUser.TenantID {
+	if s.authSvc.IsTenantAdmin(currentUser) {
+		if err := s.authSvc.CheckTenantAccess(currentUser, user.TenantID); err != nil {
 			return nil, errors.New("没有权限查看该用户")
 		}
 		return user, nil
@@ -120,20 +125,21 @@ func (s *UserService) GetByID(id uint, currentUserID uint) (*models.User, error)
 func (s *UserService) List(page, pageSize int, currentUserID uint) ([]models.User, error) {
 	offset := (page - 1) * pageSize
 
-	// 获取当前用户信息
+	// 获取当前用户
 	currentUser, err := s.repo.GetByID(currentUserID)
 	if err != nil {
 		return nil, errors.New("当前用户不存在")
 	}
 
 	// 超级管理员不查看普通用户列表，应该查看租户列表
-	if currentUser.UserType == models.UserTypeSuperAdmin {
+	if s.authSvc.IsSuperAdmin(currentUser) {
 		return []models.User{}, nil
 	}
 
 	// 租户管理员只能查看同租户的用户
-	if currentUser.UserType == models.UserTypeTenantAdmin {
-		return s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize)
+	if s.authSvc.IsTenantAdmin(currentUser) {
+		users, _, err := s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize)
+		return users, err
 	}
 
 	// 普通用户只能查看自己
@@ -146,7 +152,7 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 		return nil, err
 	}
 
-	// 获取当前用户信息
+	// 获取当前用户并验证权限
 	currentUser, err := s.repo.GetByID(currentUserID)
 	if err != nil {
 		return nil, errors.New("当前用户不存在")
@@ -157,7 +163,7 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 		return nil, err
 	}
 
-	// 更新字段
+	// 更新基本字段
 	if req.Email != nil {
 		user.Email = *req.Email
 	}
@@ -172,22 +178,18 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 		user.PasswordHash = passwordHash
 	}
 
-	// 只有超级管理员和租户管理员可以修改激活状态和用户类型
-	if currentUser.UserType == models.UserTypeSuperAdmin || currentUser.UserType == models.UserTypeTenantAdmin {
-		// 只有在修改他人时，才允许更新 is_active 和 user_type
-		// 修改自己时，忽略这些字段，防止权限提升攻击
-		if currentUser.ID != user.ID {
-			if req.IsActive != nil {
-				user.IsActive = *req.IsActive
+	// 只有管理员可以修改激活状态和用户类型（且不能修改自己）
+	if (s.authSvc.IsSuperAdmin(currentUser) || s.authSvc.IsTenantAdmin(currentUser)) && currentUser.ID != user.ID {
+		if req.IsActive != nil {
+			user.IsActive = *req.IsActive
+		}
+		if req.UserType != nil {
+			// 验证用户类型修改权限
+			if err := s.validateCreatePermission(currentUser, *req.UserType); err != nil {
+				return nil, err
 			}
-			if req.UserType != nil {
-				// 验证用户类型修改权限
-				if err := s.validateCreatePermission(currentUser, *req.UserType); err != nil {
-					return nil, err
-				}
-				user.UserType = *req.UserType
-				user.IsSuperuser = *req.UserType == models.UserTypeSuperAdmin
-			}
+			user.UserType = *req.UserType
+			user.IsSuperuser = *req.UserType == models.UserTypeSuperAdmin
 		}
 	}
 
@@ -198,16 +200,16 @@ func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUser
 	return user, nil
 }
 
-// validateUpdatePermission 验证更新权限 (多租户版本)
+// validateUpdatePermission 验证更新权限
 func (s *UserService) validateUpdatePermission(currentUser, targetUser *models.User, req *models.UserUpdateRequest) error {
 	// 超级管理员可以修改所有用户
-	if currentUser.UserType == models.UserTypeSuperAdmin {
+	if s.authSvc.IsSuperAdmin(currentUser) {
 		return nil
 	}
 
 	// 租户管理员只能修改同租户的用户
-	if currentUser.UserType == models.UserTypeTenantAdmin {
-		if targetUser.TenantID == nil || currentUser.TenantID == nil || *targetUser.TenantID != *currentUser.TenantID {
+	if s.authSvc.IsTenantAdmin(currentUser) {
+		if err := s.authSvc.CheckTenantAccess(currentUser, targetUser.TenantID); err != nil {
 			return errors.New("只能修改同租户的用户")
 		}
 		// 不能修改其他租户管理员
@@ -242,20 +244,20 @@ func (s *UserService) Delete(id uint, currentUserID uint) error {
 		return errors.New("不能删除SuperAdmin用户")
 	}
 
-	// 获取当前用户信息
+	// 使用 AuthService 获取当前用户
 	currentUser, err := s.repo.GetByID(currentUserID)
 	if err != nil {
-		return errors.New("当前用户不存在")
+		return err
 	}
 
 	// 超级管理员可以删除所有用户（除了SuperAdmin）
-	if currentUser.UserType == models.UserTypeSuperAdmin {
+	if s.authSvc.IsSuperAdmin(currentUser) {
 		return s.repo.Delete(id)
 	}
 
 	// 租户管理员只能删除同租户的普通用户
-	if currentUser.UserType == models.UserTypeTenantAdmin {
-		if targetUser.TenantID == nil || currentUser.TenantID == nil || *targetUser.TenantID != *currentUser.TenantID {
+	if s.authSvc.IsTenantAdmin(currentUser) {
+		if err := s.authSvc.CheckTenantAccess(currentUser, targetUser.TenantID); err != nil {
 			return errors.New("只能删除同租户的用户")
 		}
 		// 不能删除租户管理员

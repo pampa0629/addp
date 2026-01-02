@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/addp/common/middleware/ratelimit"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
 	"github.com/addp/system/internal/repository"
@@ -30,11 +31,28 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		log.Println("⚠️  Redis 未配置，资源变更事件通知功能将被禁用")
 	}
 
-	// CORS
+	// CORS 中间件（基于白名单）
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+
+		// 检查 origin 是否在白名单中
+		allowed := false
+		for _, allowedOrigin := range cfg.AllowedOrigins {
+			if allowedOrigin == origin {
+				allowed = true
+				break
+			}
+		}
+
+		// 只允许白名单中的 origin
+		if allowed {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -79,7 +97,8 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		auth := api.Group("/auth")
 		{
 			authHandler := NewAuthHandler(userService, cfg)
-			auth.POST("/login", authHandler.Login)
+			// 登录接口限流: 15分钟内最多5次尝试
+			auth.POST("/login", ratelimit.LoginRateLimitMiddleware(), authHandler.Login)
 			auth.POST("/register", authHandler.Register)
 			auth.POST("/refresh", authHandler.Refresh) // Token 刷新端点
 		}
@@ -106,6 +125,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			{
 				logHandler := NewLogHandler(logService)
 				logs.GET("", logHandler.List)
+				logs.GET("/export", logHandler.Export) // 导出日志
 				logs.GET("/:id", logHandler.GetByID)
 			}
 
@@ -182,6 +202,10 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		taskProviderHandler := NewTaskProviderHandler(taskProviderService)
 		internal.POST("/task-providers/register", taskProviderHandler.RegisterOrUpdate)
 		internal.GET("/task-providers", taskProviderHandler.List)
+
+		// 审计日志 API（供其他模块记录审计日志）
+		logHandler := NewLogHandler(logService)
+		internal.POST("/audit-logs", logHandler.CreateFromInternal)
 		internal.GET("/task-providers/:module_name", taskProviderHandler.Get)
 
 		// API Key 验证 API（供 Gateway 调用）

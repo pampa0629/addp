@@ -52,7 +52,7 @@ func (p *ClickHousePlugin) SensitiveFields() []string {
 
 // GenerateCapabilities 生成资源能力描述
 func (p *ClickHousePlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"clickhouse","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"OLAP分析查询","features":["columnar","distributed","real_time"]}]}`
+	return `{"storage":[{"type":"relational_db","engine":"clickhouse","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"OLAP分析查询","features":["columnar","distributed","real_time"]}]}`
 }
 
 // ValidateConnectionInfo 验证连接信息

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 多租户账号管理（超级管理员、租户管理员、普通用户）
 - 日志管理（审计日志存储和查询）
-- 引擎管理（数据库连接、计算引擎连接等）
+- 引擎管理（标准库连接、扩展引擎连接等）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
 技术栈：
@@ -140,6 +140,33 @@ backend/
 - **Repository Layer**: 数据库操作、CRUD 接口
 - **Model Layer**: 定义数据结构、数据库表映射
 
+**代码质量改进（v0.0.20）**:
+
+System 模块已完成大规模重构（2026-01），显著提升代码质量、可维护性和安全性：
+
+1. **消除代码重复**
+   - 提取 `common/api/handler_helpers.go` - 消除 Handler 层 10+ 处 ID 解析、15+ 处用户获取重复
+   - 提取 `common/service/auth_service.go` - 消除 Service 层 20+ 处权限检查重复
+   - **Handler 层减少**: 912 → 789 行 (-13.5%)
+
+2. **Repository 接口化**
+   - 创建 `internal/repository/interfaces.go`
+   - 支持依赖注入和 mock 测试
+   - Repository 返回值标准化（添加 total 分页信息）
+
+3. **安全增强**
+   - ✅ CORS 白名单配置（移除不安全的 "*"）
+   - ✅ Rate Limiting 中间件（登录接口 15 分钟内最多 5 次尝试）
+   - ✅ 加密服务 (`common/service/crypto_service.go`) 统一处理敏感字段
+
+4. **测试覆盖**
+   - AuthService 单元测试：22 个测试用例全部通过
+   - API Helpers 单元测试：30+ 个测试用例全部通过
+   - common/api 覆盖率：27.1%
+   - common/service 覆盖率：30.3%
+
+参考：详细改进计划见 `~/.claude/plans/iridescent-yawning-newell.md`
+
 ### 前端架构（Vue 3）
 
 ```
@@ -148,16 +175,74 @@ frontend/src/
 │   ├── client.js    # Axios 实例配置（拦截器、认证）
 │   └── *.js         # 各模块的 API 调用
 ├── components/       # 可复用组件
+│   ├── users/       # 用户管理子组件（新）
+│   │   ├── UserList.vue
+│   │   ├── UserFormDialog.vue
+│   │   └── PasswordDialog.vue
+│   └── engines/     # 引擎管理子组件（新）
+│       ├── EngineList.vue
+│       └── EngineFilterBar.vue
+├── composables/     # Vue Composables（新）
+│   ├── usePagination.js           # 分页逻辑复用
+│   ├── useFormDialog.js           # 对话框状态管理
+│   ├── useUserManagement.js       # 用户管理业务逻辑
+│   └── useEngineManagement.js     # 引擎管理业务逻辑
 ├── store/           # Pinia 状态管理
 │   └── auth.js      # 认证状态
 ├── views/           # 页面组件
 │   ├── Login.vue    # 登录页
 │   ├── Dashboard.vue # 首页
-│   ├── Users.vue    # 用户管理
+│   ├── Users.vue    # 用户管理（重构：531 → 223 行，-58%）
 │   ├── Logs.vue     # 日志管理
-│   └── Engines.vue # 引擎管理
+│   └── Engines.vue  # 引擎管理（重构：1052 → 131 行，-87.5%）
 └── router/          # 路由配置
 ```
+
+**代码质量改进（v0.0.20）**:
+
+前端代码已完成组件化重构（2026-01），显著提升可维护性：
+
+1. **组件拆分**
+   - Users.vue：531 → 223 行（-58%）- 拆分为 UserList, UserFormDialog, PasswordDialog
+   - Engines.vue：1052 → 131 行（-87.5%）- 拆分为 EngineList, EngineFilterBar
+   - **总减少**: 1583 → 354 行（-77.6%）
+
+2. **Composables 提取**
+   - `usePagination.js` - 消除 5+ 处分页重复
+   - `useFormDialog.js` - 消除 6+ 处对话框状态重复
+   - `useUserManagement.js` - 用户 CRUD 业务逻辑（3 个 composables）
+   - `useEngineManagement.js` - 引擎 CRUD 业务逻辑（2 个 composables）
+
+3. **代码复用**
+   - 移除重复的 formatDate 实现（5+ 处）
+   - 改用 `@common-ui/utils/formatters`
+
+## 数据库文档
+
+**遇到以下场景时,主动阅读对应文档**:
+
+| 场景 | 必读文档 | 触发关键词 |
+|------|---------|----------|
+| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
+| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
+| API端点详情 | 对应单表文档 | API、接口、请求响应 |
+| 权限控制规则 | 对应单表文档 | 权限、访问控制、租户隔离 |
+| 数据加密机制 | engines表、数据库架构 | 加密、AES、bcrypt |
+
+### 架构说明
+
+- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策
+
+### 单表文档
+
+详细的表结构和 API 说明文档:
+
+- [users表](docs/tables/users表.md) - 用户表,认证和权限管理
+- [tenants表](docs/tables/tenants表.md) - 租户表,多租户隔离
+- [audit_logs表](docs/tables/audit_logs表.md) - 审计日志表,操作审计和追溯
+- [engines表](docs/tables/engines表.md) - 引擎配置表,数据源管理
+
+**重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
 
 ## 核心功能实现
 

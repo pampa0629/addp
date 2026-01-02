@@ -52,7 +52,7 @@ func (p *PostgreSQLPlugin) SensitiveFields() []string {
 
 // GenerateCapabilities 生成资源能力描述
 func (p *PostgreSQLPlugin) GenerateCapabilities() string {
-	return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"SQL查询"}]}`
+	return `{"storage":[{"type":"relational_db","engine":"postgresql","supports_query":true}],"compute":[{"dev_modes":["query"],"description":"SQL查询"}]}`
 }
 
 // ValidateConnectionInfo 验证连接信息

@@ -426,21 +426,7 @@ type Metrics struct {
 权限控制：读取 manager.data_source_permissions 校验用户权限
 8.3 与 Meta 模块集成
 元数据感知：传输前读取 metadata.meta_item 获取 schema
-血缘追踪：传输完成后写入 metadata.meta_change_log，记录数据血缘
-自动扫描触发：传输完成后触发 Meta 扫描新数据
-// 传输完成后记录血缘
-changeLog := &models.MetaChangeLog{
-    TenantID:     task.TenantID,
-    EngineID:     task.TargetID,
-    ChangeType:   "data_transfer",
-    ChangeSource: fmt.Sprintf("transfer_task_%d", task.ID),
-    Payload: map[string]interface{}{
-        "source_engine_id": task.SourceID,
-        "records_count": metrics.RecordsWritten,
-        "task_id":       task.ID,
-    },
-}
-db.Create(changeLog)
+自动扫描触发：传输完成后触发 Meta 扫描新数据，更新元数据
 九、数据库 Schema 增强
 9.1 扩展 transfer.tasks 表
 ALTER TABLE transfer.tasks 

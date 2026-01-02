@@ -121,21 +121,66 @@ func (s *ScanServiceNew) querySRID(db *sql.DB, schema, table, geomColumn string)
 }
 
 // calculateExtent 计算空间范围（WGS84）
+// 大表自动使用采样避免 OOM
 func (s *ScanServiceNew) calculateExtent(db *sql.DB, schema, table, geomColumn string, srid int) ([]float64, error) {
-	query := fmt.Sprintf(`
-		SELECT
-			ST_XMin(extent) as min_lng,
-			ST_YMin(extent) as min_lat,
-			ST_XMax(extent) as max_lng,
-			ST_YMax(extent) as max_lat
-		FROM (
-			SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
-			FROM "%s"."%s"
-		) t
-	`, geomColumn, schema, table)
+	// 1. 查询表行数
+	rowCount, err := s.getTableRowCount(db, schema, table)
+	if err != nil {
+		logger.L().Warn("Failed to get table row count, using full calculation", "error", err)
+		rowCount = 0 // 降级到全表计算
+	}
+
+	// 2. 获取配置参数
+	largeTableThreshold := 1000000 // 默认阈值 100 万行
+	samplePercent := 1             // 默认采样 1%
+	if s.config != nil {
+		largeTableThreshold = s.config.LargeTableThreshold
+		samplePercent = s.config.ExtentSamplePercent
+	}
+
+	var extentQuery string
+
+	// 3. 根据行数选择计算策略
+	if rowCount > int64(largeTableThreshold) {
+		// 大表：使用采样（TABLESAMPLE + LIMIT）
+		logger.L().Info("Large table detected, using sampling for extent calculation",
+			"schema", schema, "table", table, "rows", rowCount,
+			"sample_percent", samplePercent)
+
+		extentQuery = fmt.Sprintf(`
+			SELECT
+				ST_XMin(extent) as min_lng,
+				ST_YMin(extent) as min_lat,
+				ST_XMax(extent) as max_lng,
+				ST_YMax(extent) as max_lat
+			FROM (
+				SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
+				FROM (
+					SELECT "%s" FROM "%s"."%s"
+					WHERE "%s" IS NOT NULL
+					TABLESAMPLE SYSTEM (%d)
+					LIMIT 10000
+				) AS sample
+			) t
+		`, geomColumn, geomColumn, schema, table, geomColumn, samplePercent)
+	} else {
+		// 小表：完整计算
+		extentQuery = fmt.Sprintf(`
+			SELECT
+				ST_XMin(extent) as min_lng,
+				ST_YMin(extent) as min_lat,
+				ST_XMax(extent) as max_lng,
+				ST_YMax(extent) as max_lat
+			FROM (
+				SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
+				FROM "%s"."%s"
+				WHERE "%s" IS NOT NULL
+			) t
+		`, geomColumn, schema, table, geomColumn)
+	}
 
 	var minLng, minLat, maxLng, maxLat sql.NullFloat64
-	err := db.QueryRow(query).Scan(&minLng, &minLat, &maxLng, &maxLat)
+	err = db.QueryRow(extentQuery).Scan(&minLng, &minLat, &maxLng, &maxLat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate extent: %w", err)
 	}
@@ -145,6 +190,30 @@ func (s *ScanServiceNew) calculateExtent(db *sql.DB, schema, table, geomColumn s
 	}
 
 	return []float64{minLng.Float64, minLat.Float64, maxLng.Float64, maxLat.Float64}, nil
+}
+
+// getTableRowCount 查询表的行数（使用统计信息，快速）
+func (s *ScanServiceNew) getTableRowCount(db *sql.DB, schema, table string) (int64, error) {
+	// 优先使用 pg_class 统计信息（快速，但可能不精确）
+	query := `
+		SELECT c.reltuples::bigint
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2
+	`
+
+	var rowCount int64
+	err := db.QueryRow(query, schema, table).Scan(&rowCount)
+	if err != nil {
+		// 降级到 COUNT(*) 查询（精确，但慢）
+		countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, schema, table)
+		err = db.QueryRow(countQuery).Scan(&rowCount)
+		if err != nil {
+			return 0, fmt.Errorf("failed to count rows: %w", err)
+		}
+	}
+
+	return rowCount, nil
 }
 
 // getGeometryTypes 统计几何类型

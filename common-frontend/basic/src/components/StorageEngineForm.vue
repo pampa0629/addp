@@ -8,10 +8,10 @@
     <el-form-item
       v-if="typeOptions && typeOptions.length"
       label="存储引擎类型"
-      prop="resource_type"
+      prop="engine_type"
     >
       <el-select
-        v-model="formState.resource_type"
+        v-model="formState.engine_type"
         placeholder="请选择存储引擎类型"
         :disabled="isEdit && disableTypeChange"
         @change="handleTypeChange"
@@ -46,7 +46,7 @@
     </el-form-item>
 
     <!-- PostgreSQL -->
-    <template v-if="formState.resource_type === 'postgresql'">
+    <template v-if="formState.engine_type === 'postgresql'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
@@ -81,7 +81,7 @@
     </template>
 
     <!-- Apache Doris -->
-    <template v-else-if="formState.resource_type === 'doris'">
+    <template v-else-if="formState.engine_type === 'doris'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
@@ -111,7 +111,7 @@
     </template>
 
     <!-- ClickHouse -->
-    <template v-else-if="formState.resource_type === 'clickhouse'">
+    <template v-else-if="formState.engine_type === 'clickhouse'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
@@ -141,7 +141,7 @@
     </template>
 
     <!-- MongoDB -->
-    <template v-else-if="formState.resource_type === 'mongodb'">
+    <template v-else-if="formState.engine_type === 'mongodb'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="localhost" />
       </el-form-item>
@@ -171,7 +171,7 @@
     </template>
 
     <!-- MinIO / S3 -->
-    <template v-else-if="formState.resource_type === 'minio' || formState.resource_type === 's3'">
+    <template v-else-if="formState.engine_type === 'minio' || formState.engine_type === 's3'">
       <el-form-item label="端点地址" prop="connection_info.endpoint">
         <el-input v-model="formState.connection_info.endpoint" placeholder="localhost:9002" />
       </el-form-item>
@@ -198,7 +198,7 @@
     </template>
 
     <!-- SpatiaLite / SQLite (file-based) -->
-    <template v-else-if="formState.resource_type === 'spatialite' || formState.resource_type === 'sqlite'">
+    <template v-else-if="formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite'">
       <el-form-item label="文件路径" prop="connection_info.file_path">
         <el-input v-model="formState.connection_info.file_path" placeholder="/path/to/data.sqlite 或 .spatialite" />
       </el-form-item>
@@ -208,7 +208,7 @@
     </template>
 
     <!-- Apache Spark -->
-    <template v-else-if="formState.resource_type === 'spark'">
+    <template v-else-if="formState.engine_type === 'spark'">
       <el-form-item label="主机地址" prop="connection_info.host">
         <el-input v-model="formState.connection_info.host" placeholder="host.docker.internal" />
       </el-form-item>
@@ -231,6 +231,25 @@
       </el-form-item>
       <div class="field-hint">
         Apache Spark 通过 Thrift Server (Hive2 协议) 连接，支持 Sedona 空间扩展。默认端口: 10000
+      </div>
+    </template>
+
+    <!-- Python Workflow / Spark Workflow -->
+    <template v-else-if="formState.engine_type === 'python_workflow' || formState.engine_type === 'spark_workflow'">
+      <el-form-item label="协议">
+        <el-select v-model="formState.connection_info.protocol">
+          <el-option label="HTTP" value="http" />
+          <el-option label="HTTPS" value="https" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <div class="field-hint">
+        工作流引擎的 API 端点已标准化，无需手动配置。
       </div>
     </template>
 
@@ -383,7 +402,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
   const hadPassword = original._has_password === true
   const hadSecret = original._has_secret_key === true
 
-  if (form.resource_type === 'postgresql') {
+  if (form.engine_type === 'postgresql') {
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 5432,
@@ -392,7 +411,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       password: original.password ?? '',
       sslmode: original.sslmode ?? 'disable'
     }
-  } else if (form.resource_type === 'mysql') {
+  } else if (form.engine_type === 'mysql') {
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 3306,
@@ -400,7 +419,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       user: original.user ?? '',
       password: original.password ?? ''
     }
-  } else if (form.resource_type === 'doris') {
+  } else if (form.engine_type === 'doris') {
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 9030,
@@ -408,7 +427,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       user: original.user ?? 'root',
       password: original.password ?? ''
     }
-  } else if (form.resource_type === 'clickhouse') {
+  } else if (form.engine_type === 'clickhouse') {
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 9000,
@@ -416,7 +435,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       user: original.user ?? 'default',
       password: original.password ?? ''
     }
-  } else if (form.resource_type === 'mongodb') {
+  } else if (form.engine_type === 'mongodb') {
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 27017,
@@ -424,7 +443,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       user: original.user ?? '',
       password: original.password ?? ''
     }
-  } else if (form.resource_type === 'minio' || form.resource_type === 's3') {
+  } else if (form.engine_type === 'minio' || form.engine_type === 's3') {
     form.connection_info = {
       endpoint: original.endpoint ?? 'localhost:9002',
       access_key: original.access_key ?? '',
@@ -432,17 +451,23 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
       bucket: original.bucket ?? '',
       use_ssl: original.use_ssl ?? false
     }
-  } else if (form.resource_type === 'spatialite' || form.resource_type === 'sqlite') {
+  } else if (form.engine_type === 'spatialite' || form.engine_type === 'sqlite') {
     form.connection_info = {
       file_path: original.file_path ?? ''
     }
-  } else if (form.resource_type === 'spark') {
+  } else if (form.engine_type === 'spark') {
     form.connection_info = {
       host: original.host ?? 'host.docker.internal',
       port: original.port ?? 10000,
       database: original.database ?? 'default',
       username: original.username ?? '',
       password: original.password ?? ''
+    }
+  } else if (form.engine_type === 'python_workflow' || form.engine_type === 'spark_workflow') {
+    form.connection_info = {
+      protocol: original.protocol ?? 'http',
+      host: original.host ?? 'localhost',
+      port: original.port ?? (form.engine_type === 'python_workflow' ? 8099 : 8100)
     }
   } else {
     form.connection_info = { ...original }
@@ -474,7 +499,7 @@ const applySensitiveHints = () => {
 }
 
 const formState = reactive({
-  resource_type: '',
+  engine_type: '',
   name: '',
   description: '',
   is_active: true,
@@ -491,7 +516,7 @@ const formState = reactive({
 })
 
 const syncFromProps = (value) => {
-  formState.resource_type = value.resource_type || ''
+  formState.engine_type = value.engine_type || ''
   formState.name = value.name || ''
   formState.description = value.description || ''
   formState.is_active = value.is_active !== undefined ? value.is_active : true
@@ -564,7 +589,7 @@ watch(
     // Skip emitting while we are syncing from props to prevent recursion
     if (syncingFromProps) return
     const payload = {
-      resource_type: value.resource_type,
+      engine_type: value.engine_type,
       name: value.name,
       description: value.description,
       is_active: value.is_active,
@@ -580,7 +605,7 @@ watch(
 )
 
 const rules = {
-  resource_type: [{ required: true, message: '请选择存储引擎类型', trigger: 'change' }],
+  engine_type: [{ required: true, message: '请选择存储引擎类型', trigger: 'change' }],
   name: [{ required: true, message: '请输入资源名称', trigger: 'blur' }],
   'connection_info.host': [{ required: true, message: '请输入主机地址', trigger: 'blur' }],
   'connection_info.port': [{ required: true, message: '请输入端口', trigger: 'change' }],
@@ -594,9 +619,9 @@ const rules = {
 }
 
 const computedRules = computed(() => {
-  if (formState.resource_type === 'postgresql') {
+  if (formState.engine_type === 'postgresql') {
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -606,9 +631,9 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'mysql') {
+  if (formState.engine_type === 'mysql') {
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -618,10 +643,10 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'doris') {
+  if (formState.engine_type === 'doris') {
     // Doris 默认 root 用户密码为空，所以密码非必填
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -631,10 +656,10 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'clickhouse') {
+  if (formState.engine_type === 'clickhouse') {
     // ClickHouse 默认 default 用户密码为空，所以密码非必填
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -644,10 +669,10 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'mongodb') {
+  if (formState.engine_type === 'mongodb') {
     // MongoDB 用户名和密码可选（无认证模式）
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -656,9 +681,9 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'minio' || formState.resource_type === 's3') {
+  if (formState.engine_type === 'minio' || formState.engine_type === 's3') {
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.endpoint': rules['connection_info.endpoint'],
       'connection_info.access_key': rules['connection_info.access_key'],
@@ -666,17 +691,17 @@ const computedRules = computed(() => {
     }
   }
 
-  if (formState.resource_type === 'spatialite' || formState.resource_type === 'sqlite') {
+  if (formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite') {
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.file_path': rules['connection_info.file_path']
     }
   }
 
-  if (formState.resource_type === 'spark') {
+  if (formState.engine_type === 'spark') {
     return {
-      resource_type: rules.resource_type,
+      engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.host': rules['connection_info.host'],
       'connection_info.port': rules['connection_info.port'],
@@ -685,7 +710,7 @@ const computedRules = computed(() => {
   }
 
   return {
-    resource_type: rules.resource_type,
+    engine_type: rules.engine_type,
     name: rules.name
   }
 })

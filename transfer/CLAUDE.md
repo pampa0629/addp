@@ -59,6 +59,33 @@ ExecutionRepository (更新执行记录)
   └─ transfer.task_executions
 ```
 
+## 数据库文档
+
+**遇到以下场景时,主动阅读对应文档**:
+
+| 场景 | 必读文档 | 触发关键词 |
+|------|---------|----------|
+| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
+| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
+| API端点详情 | 对应单表文档 | API、接口、请求响应 |
+| 任务管理 | tasks表 | 导入、导出、同步、定时任务 |
+| 执行追踪 | task_executions表 | 执行记录、性能统计、断点 |
+| 字段映射 | data_mappings表 | 字段转换、映射规则 |
+
+### 架构说明
+- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策
+
+### 单表文档
+
+详细的表结构和API说明文档：
+
+- [tasks表](docs/tables/tasks表.md) - 传输任务定义表,支持导入/导出/同步
+- [task_executions表](docs/tables/task_executions表.md) - 执行记录表,性能统计和断点续传
+- [data_mappings表](docs/tables/data_mappings表.md) - 字段映射表,定义转换规则
+- [local_engines表](docs/tables/local_engines表.md) - 本地引擎配置表,私有数据源
+
+**重要**：修改表结构或API时，必须同步更新对应的单表文档。
+
 ### 插件化架构（核心设计）
 
 Transfer 采用 **Reader → Transform → Writer** 插件化数据流架构：

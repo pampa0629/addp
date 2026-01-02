@@ -10,18 +10,18 @@ import (
 	"sync"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 )
 
 // OperatorDiscoveryService 跨模块算子发现服务
-// 负责从各个模块（Meta、Transfer、Manager、Python Workflow、Spark）获取算子列表并合并缓存
+// 负责从各个模块（Meta、Transfer、Manager）和所有注册的工作流引擎获取算子列表并合并缓存
 type OperatorDiscoveryService struct {
-	pythonWorkflowEngineURL string
-	sparkWorkflowEngineURL  string // Spark 工作流引擎 URL
-	metaServiceURL          string
-	transferServiceURL      string
-	managerServiceURL       string
-	httpClient              *http.Client
+	systemClient       *commonClient.SystemClient // 新增：System 客户端（动态发现引擎）
+	metaServiceURL     string
+	transferServiceURL string
+	managerServiceURL  string
+	httpClient         *http.Client
 
 	// 缓存
 	cachedOperators []commonModels.OperatorMetadata
@@ -32,18 +32,16 @@ type OperatorDiscoveryService struct {
 
 // NewOperatorDiscoveryService 创建算子发现服务
 func NewOperatorDiscoveryService(
-	pythonWorkflowEngineURL string,
-	sparkWorkflowEngineURL string, // Spark 工作流引擎 URL
+	systemClient *commonClient.SystemClient, // 新增：System 客户端
 	metaServiceURL string,
 	transferServiceURL string,
 	managerServiceURL string,
 ) *OperatorDiscoveryService {
 	return &OperatorDiscoveryService{
-		pythonWorkflowEngineURL: pythonWorkflowEngineURL,
-		sparkWorkflowEngineURL:  sparkWorkflowEngineURL,
-		metaServiceURL:          metaServiceURL,
-		transferServiceURL:      transferServiceURL,
-		managerServiceURL:       managerServiceURL,
+		systemClient:       systemClient,
+		metaServiceURL:     metaServiceURL,
+		transferServiceURL: transferServiceURL,
+		managerServiceURL:  managerServiceURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -65,38 +63,47 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 
 	log.Printf("🔍 [OperatorDiscovery] 开始发现所有模块的算子...")
 
-	// 并发获取各模块的算子
+	// ✅ 第1步：从 System Backend 查询所有支持 workflow 的引擎
+	workflowEngines, err := s.systemClient.ListWorkflowEngines(1) // tenantID=1 (默认租户)
+	if err != nil {
+		log.Printf("⚠️ [OperatorDiscovery] 查询工作流引擎失败: %v", err)
+		// 即使失败也继续获取任务提供者的算子
+		workflowEngines = []commonModels.Engine{}
+	}
+
+	log.Printf("✅ [OperatorDiscovery] 发现 %d 个工作流引擎", len(workflowEngines))
+
+	// ✅ 第2步：并发获取所有引擎的算子
+	totalModules := len(workflowEngines) + 3 // workflow 引擎 + Meta + Transfer + Manager
 	var wg sync.WaitGroup
-	results := make(chan []commonModels.OperatorMetadata, 5) // 增加到5个模块
-	errors := make(chan error, 5)
+	results := make(chan []commonModels.OperatorMetadata, totalModules)
+	errors := make(chan error, totalModules)
 
-	// Python Workflow Engine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		operators, err := s.fetchOperatorsFromModule(ctx, "python", s.pythonWorkflowEngineURL)
-		if err != nil {
-			log.Printf("⚠️ [OperatorDiscovery] Python Workflow Engine 获取失败: %v", err)
-			errors <- err
-		} else {
-			results <- operators
-		}
-	}()
+	// 遍历所有工作流引擎
+	for _, engine := range workflowEngines {
+		wg.Add(1)
+		go func(eng commonModels.Engine) {
+			defer wg.Done()
 
-	// Spark 工作流引擎
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		operators, err := s.fetchOperatorsFromModule(ctx, "spark", s.sparkWorkflowEngineURL)
-		if err != nil {
-			log.Printf("⚠️ [OperatorDiscovery] Spark 工作流引擎获取失败: %v", err)
-			errors <- err
-		} else {
-			results <- operators
-		}
-	}()
+			// 从引擎的 connection_info 中构建 base_url
+			baseURL, err := commonModels.BuildBaseURL(eng.ConnectionInfo)
+			if err != nil {
+				log.Printf("⚠️ [OperatorDiscovery] 引擎 %s base_url 构建失败: %v", eng.Name, err)
+				errors <- fmt.Errorf("引擎 %s base_url 构建失败: %w", eng.Name, err)
+				return
+			}
 
-	// Meta Service
+			operators, err := s.fetchOperatorsFromModule(ctx, eng.Name, baseURL)
+			if err != nil {
+				log.Printf("⚠️ [OperatorDiscovery] 引擎 %s 获取失败: %v", eng.Name, err)
+				errors <- err
+			} else {
+				results <- operators
+			}
+		}(engine)
+	}
+
+	// Meta Service（任务提供者）
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -109,7 +116,7 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 		}
 	}()
 
-	// Transfer Service
+	// Transfer Service（任务提供者）
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -122,7 +129,7 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 		}
 	}()
 
-	// Manager Service
+	// Manager Service（任务提供者）
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -168,43 +175,74 @@ func (s *OperatorDiscoveryService) DiscoverAllOperators(ctx context.Context) ([]
 	return allOperators, nil
 }
 
-// GetOperatorsByModule 获取指定模块的算子
-func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, module string) ([]commonModels.OperatorMetadata, error) {
-	var url string
-	switch module {
-	case "python":
-		url = s.pythonWorkflowEngineURL
-	case "spark":
-		url = s.sparkWorkflowEngineURL
-	case "meta":
-		url = s.metaServiceURL
-	case "transfer":
-		url = s.transferServiceURL
-	case "manager":
-		url = s.managerServiceURL
-	default:
-		return nil, fmt.Errorf("未知的模块: %s", module)
+// GetOperatorsByEngineType 根据引擎类型过滤算子（动态查询 System Backend）
+func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorMetadata, error) {
+	// 从 System Backend 查询指定类型的引擎
+	engines, err := s.systemClient.ListEngines(engineType, 1) // tenantID=1
+	if err != nil {
+		return nil, fmt.Errorf("查询引擎失败: %w", err)
 	}
 
-	return s.fetchOperatorsFromModule(ctx, module, url)
+	if len(engines) == 0 {
+		return nil, fmt.Errorf("未找到类型为 %s 的引擎", engineType)
+	}
+
+	// 使用第一个激活的引擎
+	var targetEngine *commonModels.Engine
+	for _, eng := range engines {
+		if eng.IsActive {
+			targetEngine = &eng
+			break
+		}
+	}
+
+	if targetEngine == nil {
+		return nil, fmt.Errorf("类型为 %s 的引擎均未激活", engineType)
+	}
+
+	// 从引擎的 connection_info 中构建 base_url
+	baseURL, err := commonModels.BuildBaseURL(targetEngine.ConnectionInfo)
+	if err != nil {
+		return nil, fmt.Errorf("引擎 %s base_url 构建失败: %w", targetEngine.Name, err)
+	}
+
+	return s.fetchOperatorsFromModule(ctx, targetEngine.Name, baseURL)
 }
 
-// GetOperatorsByEngineType 根据引擎类型过滤算子
-// 支持的引擎类型: python_workflow, spark_workflow
-func (s *OperatorDiscoveryService) GetOperatorsByEngineType(ctx context.Context, engineType string) ([]commonModels.OperatorMetadata, error) {
-	// 映射引擎类型到模块
-	moduleMapping := map[string]string{
-		"api.python-workflow": "python",
-		"api.spark_workflow":  "spark",
+// GetOperatorsByModule 获取指定模块的算子（兼容旧接口，支持静态模块和动态引擎）
+func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, module string) ([]commonModels.OperatorMetadata, error) {
+	// 静态模块（任务提供者）
+	staticModules := map[string]string{
+		"meta":     s.metaServiceURL,
+		"transfer": s.transferServiceURL,
+		"manager":  s.managerServiceURL,
 	}
 
-	module, ok := moduleMapping[engineType]
-	if !ok {
-		return nil, fmt.Errorf("不支持的引擎类型: %s", engineType)
+	// 如果是静态模块，直接调用
+	if url, ok := staticModules[module]; ok {
+		return s.fetchOperatorsFromModule(ctx, module, url)
 	}
 
-	// 获取指定模块的算子
-	return s.GetOperatorsByModule(ctx, module)
+	// 动态引擎（python, spark, math-workflow 等）
+	// 从缓存的算子列表中过滤
+	allOperators, err := s.DiscoverAllOperators(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("获取算子列表失败: %w", err)
+	}
+
+	// 按 module 字段过滤
+	var filteredOperators []commonModels.OperatorMetadata
+	for _, op := range allOperators {
+		if op.Module == module {
+			filteredOperators = append(filteredOperators, op)
+		}
+	}
+
+	if len(filteredOperators) == 0 {
+		return nil, fmt.Errorf("未找到模块 %s 的算子", module)
+	}
+
+	return filteredOperators, nil
 }
 
 // GetOperatorDetail 获取算子详情（从缓存中查找）

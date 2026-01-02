@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/orchestrator/internal/api"
 	"github.com/addp/orchestrator/internal/config"
 	"github.com/addp/orchestrator/internal/models"
@@ -86,8 +87,15 @@ func main() {
 	log.Println("✅ 引擎注册表已初始化（从 System 动态加载）")
 	log.Println("✅ 任务提供者注册表已初始化（从 System 动态加载）")
 
-	// 设置路由（传递 engineRegistry、taskProviderRegistry、systemURL 和 redisClient）
-	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, cfg.SystemServiceURL, redisClient)
+	// 初始化 System 客户端（用于审计日志）
+	var systemClient *commonClient.SystemClient
+	if cfg.InternalAPIKey != "" {
+		systemClient = commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		log.Println("✅ SystemClient 已初始化（用于审计日志）")
+	}
+
+	// 设置路由（传递 engineRegistry、taskProviderRegistry、systemURL、redisClient 和 systemClient）
+	router := api.SetupRouter(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
 
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.ServerPort)

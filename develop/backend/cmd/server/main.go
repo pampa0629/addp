@@ -27,7 +27,6 @@ func main() {
 	log.Printf("📦 Environment: %s", cfg.Env)
 	log.Printf("🔗 System Service: %s", cfg.SystemServiceURL)
 	log.Printf("🔗 Jupyter Engine: %s", cfg.JupyterEngineURL)
-	log.Printf("🔗 Spark 工作流引擎: %s", cfg.SparkEngineURL)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -66,10 +65,9 @@ func main() {
 	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine, jupyterService)
 	log.Printf("✅ DevExecutor 初始化完成")
 
-	// 5. 算子发现服务
+	// 5. 算子发现服务（动态发现工作流引擎）
 	operatorDiscovery := service.NewOperatorDiscoveryService(
-		cfg.PythonWorkflowEngineURL,
-		cfg.SparkEngineURL, // 新增: Spark Engine
+		systemClient, // 新增：传入 System Client（动态发现引擎）
 		cfg.MetaServiceURL,
 		cfg.TransferServiceURL,
 		cfg.ManagerServiceURL,
@@ -86,7 +84,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devItemService)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devItemService, systemClient)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

@@ -63,6 +63,33 @@ ScanServiceNew (扫描执行器)
   └─ meta:events:scan_completed
 ```
 
+## 数据库文档
+
+**遇到以下场景时,主动阅读对应文档**:
+
+| 场景 | 必读文档 | 触发关键词 |
+|------|---------|----------|
+| 数据库表结构查询 | 对应单表文档 | 字段定义、索引、约束 |
+| 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
+| API端点详情 | 对应单表文档 | API、接口、请求响应 |
+| 扫描任务配置 | scan_tasks表.md | 定时任务、Cron表达式 |
+| 元数据层级组织 | meta_node表.md | 树形结构、节点类型 |
+
+### 架构说明
+- [数据库架构](docs/数据库架构.md) - 表关系、数据流向、扫描流程设计
+
+### 单表文档
+
+详细的表结构和API说明文档：
+
+- [meta_node表](docs/tables/meta_node表.md) - 元数据层级节点（Engine/Schema/Bucket/Prefix）
+- [meta_item表](docs/tables/meta_item表.md) - 数据项（Table/View/Object/File）
+- [scan_tasks表](docs/tables/scan_tasks表.md) - 扫描任务配置（定时调度、手动触发）
+- [scan_task_runs表](docs/tables/scan_task_runs表.md) - 任务运行记录（状态、进度、结果摘要）
+- [scan_logs表](docs/tables/scan_logs表.md) - 扫描日志（INFO/WARN/ERROR）
+
+**重要**：修改表结构或API时，必须同步更新对应的单表文档。
+
 ### 数据模型设计
 
 **MetaNode（层级节点）**：

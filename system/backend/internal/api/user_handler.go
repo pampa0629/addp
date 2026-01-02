@@ -1,9 +1,7 @@
 package api
 
 import (
-	"net/http"
-	"strconv"
-
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -20,119 +18,89 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) Create(c *gin.Context) {
 	var req models.UserCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, 400, err.Error())
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	user, err := h.userService.Create(&req, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusCreated, user)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	user, err := h.userService.Create(&req, userID)
+	commonapi.RespondOrError(c, user, err)
 }
 
 func (h *UserHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
-	currentUserID := c.GetUint("user_id")
+	page, pageSize := commonapi.ParsePagination(c)
+	userID, _ := commonapi.GetCurrentUserID(c)
 
-	users, err := h.userService.List(page, pageSize, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, users)
+	users, err := h.userService.List(page, pageSize, userID)
+	commonapi.RespondOrError(c, users, err)
 }
 
 func (h *UserHandler) GetByID(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
-		return
+		return // 错误已经在 BindIDParam 中处理
 	}
 
-	currentUserID := c.GetUint("user_id")
-	user, err := h.userService.GetByID(uint(id), currentUserID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	user, err := h.userService.GetByID(id, userID)
+	commonapi.RespondOrError(c, user, err)
 }
 
 func (h *UserHandler) Update(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
 	}
 
 	var req models.UserUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, 400, err.Error())
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	user, err := h.userService.Update(uint(id), &req, currentUserID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
+	userID, _ := commonapi.GetCurrentUserID(c)
+	user, err := h.userService.Update(id, &req, userID)
+	commonapi.RespondOrError(c, user, err)
 }
 
 func (h *UserHandler) Delete(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	if err := h.userService.Delete(uint(id), currentUserID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	userID, _ := commonapi.GetCurrentUserID(c)
+	err = h.userService.Delete(id, userID)
+	if err != nil {
+		commonapi.RespondOrError(c, nil, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+	commonapi.RespondSuccess(c, gin.H{"message": "删除成功"})
 }
 
 func (h *UserHandler) Me(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := commonapi.GetCurrentUserID(c)
 	user, err := h.userService.GetByID(userID, userID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
+	commonapi.RespondOrError(c, user, err)
 }
 
 func (h *UserHandler) ChangePassword(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的用户ID"})
 		return
 	}
 
 	var req models.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, 400, err.Error())
 		return
 	}
 
-	currentUserID := c.GetUint("user_id")
-	if err := h.userService.ChangePassword(uint(id), &req, currentUserID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	userID, _ := commonapi.GetCurrentUserID(c)
+	err = h.userService.ChangePassword(id, &req, userID)
+	if err != nil {
+		commonapi.RespondOrError(c, nil, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "密码修改成功"})
+	commonapi.RespondSuccess(c, gin.H{"message": "密码修改成功"})
 }

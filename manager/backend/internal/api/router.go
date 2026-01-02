@@ -4,6 +4,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/cors"
 	"github.com/addp/manager/internal/config"
@@ -60,6 +61,10 @@ func SetupRouter(
 	} else {
 		// Fallback: 无缓存模式
 		api.Use(auth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	}
+	// 审计日志中间件（记录到 System 模块）
+	if systemClient != nil {
+		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
 		// 算子API (统一算子接口)

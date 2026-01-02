@@ -421,10 +421,41 @@ const handleGenerateKey = async () => {
 // 复制 API Key
 const copyApiKey = async () => {
   try {
-    await navigator.clipboard.writeText(generatedApiKey.value)
-    ElMessage.success('已复制到剪贴板')
+    // 优先使用 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(generatedApiKey.value)
+      ElMessage.success('已复制到剪贴板')
+    } else {
+      // 回退方案：使用传统的选择和复制方法
+      const input = apiKeyInput.value?.input || apiKeyInput.value?.$el?.querySelector('input')
+      if (input) {
+        input.select()
+        input.setSelectionRange(0, input.value.length)
+        const successful = document.execCommand('copy')
+        if (successful) {
+          ElMessage.success('已复制到剪贴板')
+        } else {
+          ElMessage.error('复制失败，请手动复制')
+        }
+      } else {
+        ElMessage.error('复制失败，请手动复制')
+      }
+    }
   } catch (error) {
-    ElMessage.error('复制失败，请手动复制')
+    console.error('复制失败:', error)
+    // 最后的回退：尝试传统方法
+    try {
+      const input = apiKeyInput.value?.input || apiKeyInput.value?.$el?.querySelector('input')
+      if (input) {
+        input.select()
+        document.execCommand('copy')
+        ElMessage.success('已复制到剪贴板')
+      } else {
+        ElMessage.error('复制失败，请手动复制')
+      }
+    } catch (e) {
+      ElMessage.error('复制失败，请手动复制')
+    }
   }
 }
 

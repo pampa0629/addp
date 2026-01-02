@@ -385,7 +385,7 @@ function addNode(resource) {
     return
   }
 
-  const uniqueIdentifier = resource.unique_identifier || 'unknown'
+  const uniqueIdentifier = resource.module_name || resource.engine_type || 'unknown'
   const id = `${uniqueIdentifier}-${Date.now()}`
   const color = generateColor(uniqueIdentifier)
 
@@ -399,7 +399,7 @@ function addNode(resource) {
     id,
     label: resource.name,
     uniqueIdentifier,  // 新增：存储 unique_identifier
-    module: resource.unique_identifier ? resource.unique_identifier.split('.')[0] : 'unknown',  // 兼容旧字段
+    module: resource.module_name || resource.engine_type?.split('.')[0] || 'unknown',  // 兼容旧字段
     name: '',
     action: '',
     endpoint: '',

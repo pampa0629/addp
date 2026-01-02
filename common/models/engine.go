@@ -36,8 +36,6 @@ type ScanConfig struct {
 	ScheduleTime   string               `json:"schedule_time,omitempty"`   // 执行时间 HH:mm（daily/weekly/monthly 时使用）
 	ScheduleValue  []int                `json:"schedule_value,omitempty"`  // 周几（0-6）或月几（1-31）
 	ScanDepth      string               `json:"scan_depth"`                // 兼容旧版字段：shallow, deep
-	SchemaNames    []string             `json:"schema_names,omitempty"`    // 已废弃：PostgreSQL schemas（系统自动过滤）
-	ObjectPaths    []string             `json:"object_paths,omitempty"`    // 已废弃：MinIO prefixes（系统自动过滤）
 	Preprocessing  *PreprocessingConfig `json:"preprocessing,omitempty"`   // 预处理配置（可选）
 }
 
@@ -80,9 +78,8 @@ func (s *ScanConfig) Scan(value interface{}) error {
 type Engine struct {
 	ID             uint           `gorm:"column:id" json:"id"`
 	TenantID       *uint          `gorm:"column:tenant_id;index" json:"tenant_id"` // 租户ID，SuperAdmin创建的引擎为null
-	Name           string         `gorm:"column:name;not null;index" json:"name"` // 数据库字段是 name（英文标识）
-	DisplayName    string         `gorm:"column:display_name;not null;size:255" json:"display_name"` // 中文显示名称
-	EngineType     string         `gorm:"column:engine_type;not null" json:"engine_type"` // 引擎类型（postgresql, mysql, minio, compute_engine等）
+	Name           string         `gorm:"column:name;not null;size:255;index" json:"name"` // 显示名称（原 display_name）
+	EngineType     string         `gorm:"column:engine_type;not null;index" json:"engine_type"` // 引擎类型（postgresql, mysql, python_workflow等）
 	EngineCategory string         `gorm:"column:engine_category;not null;default:'standard'" json:"engine_category"` // 引擎分类：standard（标准引擎）或 extension（扩展引擎）
 	ConnectionInfo ConnectionInfo `gorm:"column:connection_info;type:json;not null" json:"connection_info"`
 	Description    string         `gorm:"column:description;type:text" json:"description"`
@@ -91,16 +88,17 @@ type Engine struct {
 	CreatedBy      *uint          `gorm:"column:created_by" json:"created_by,omitempty"`
 
 	// 扩展引擎字段
-	UniqueIdentifier  *string `gorm:"column:unique_identifier;size:255;uniqueIndex:idx_unique_identifier" json:"unique_identifier,omitempty"` // 逻辑标识符（如 "api.python-workflow"）
-	IsBuiltin         bool    `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`           // 是否为内置引擎（内置引擎不可删除）
-	Capabilities      *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"`           // 能力声明（JSONB）
-	TaskAPIConfig     *string `gorm:"column:task_api_config;type:jsonb" json:"task_api_config,omitempty"`     // 任务 API 配置（JSONB，仅扩展引擎）
-	HealthCheckConfig *string `gorm:"column:health_check_config;type:jsonb" json:"health_check_config,omitempty"` // 健康检查配置（JSONB）
+	IsBuiltin    bool    `gorm:"column:is_builtin;default:false;index" json:"is_builtin"`        // 是否为内置引擎（内置引擎不可删除）
+	Capabilities *string `gorm:"column:capabilities;type:jsonb" json:"capabilities,omitempty"` // 能力声明（JSONB）
 
 	// 连接状态缓存（优化扫描性能）
 	ConnectionStatus string     `gorm:"column:connection_status;size:20;default:'unknown';index" json:"connection_status"` // online/offline/unknown/checking
 	LastCheckAt      *time.Time `gorm:"column:last_check_at" json:"last_check_at,omitempty"`                               // 上次检测时间
 	CheckMessage     string     `gorm:"column:check_message;type:text" json:"check_message,omitempty"`                     // 检测结果消息（错误信息等）
+
+	// 时间戳字段
+	CreatedAt time.Time  `gorm:"column:created_at;default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt time.Time  `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // BuildConnectionString 根据引擎信息构建连接字符串

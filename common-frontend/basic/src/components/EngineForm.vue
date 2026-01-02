@@ -1,20 +1,7 @@
 <template>
   <el-form ref="formRef" :model="formData" :rules="rules" label-width="120px">
-    <el-form-item label="唯一标识符" prop="unique_identifier">
-      <el-input
-        v-model="formData.unique_identifier"
-        placeholder="例如: python_workflow.engine.custom"
-        :disabled="isEdit"
-      />
-      <div class="form-hint">格式: module.type.instance（创建后不可修改）</div>
-    </el-form-item>
-
-    <el-form-item label="资源名称" prop="name">
-      <el-input v-model="formData.name" placeholder="英文名称" />
-    </el-form-item>
-
-    <el-form-item label="显示名称" prop="display_name">
-      <el-input v-model="formData.display_name" placeholder="中文显示名称" />
+    <el-form-item label="名称" prop="name">
+      <el-input v-model="formData.name" placeholder="引擎显示名称（中文或英文）" />
     </el-form-item>
 
     <el-form-item label="描述" prop="description">
@@ -69,28 +56,6 @@
       </div>
     </el-form-item>
 
-    <el-form-item label="任务 API 配置" prop="task_api_config">
-      <el-input
-        v-model="formData.task_api_config"
-        type="textarea"
-        :rows="6"
-        placeholder='{"base_url": "http://localhost:8099", "endpoints": {"list_operators": "/api/spatial/operators"}}'
-      />
-      <div class="form-hint">
-        计算引擎需要配置任务 API 地址和端点
-      </div>
-    </el-form-item>
-
-    <el-form-item label="健康检查配置">
-      <el-input
-        v-model="formData.health_check_config"
-        type="textarea"
-        :rows="3"
-        placeholder='{"endpoint": "/health", "interval": 30, "timeout": 5}'
-      />
-      <div class="form-hint">可选，用于定期检查资源健康状态</div>
-    </el-form-item>
-
     <el-form-item label="启用状态">
       <el-switch v-model="formData.is_active" />
     </el-form-item>
@@ -119,32 +84,17 @@ const formRef = ref(null)
 const capabilitiesTab = ref('json')
 
 const formData = reactive({
-  unique_identifier: '',
   name: '',
-  display_name: '',
   description: '',
   resource_type: 'compute_engine',
   capabilities: '',
-  task_api_config: '',
-  health_check_config: '',
   is_active: true
 })
 
 // 表单校验规则
 const rules = {
-  unique_identifier: [
-    { required: true, message: '请输入唯一标识符', trigger: 'blur' },
-    {
-      pattern: /^[a-z0-9]+\.[a-z0-9_]+\.[a-z0-9_]+$/,
-      message: '格式: module.type.instance（小写字母、数字、下划线）',
-      trigger: 'blur'
-    }
-  ],
   name: [
-    { required: true, message: '请输入资源名称', trigger: 'blur' }
-  ],
-  display_name: [
-    { required: true, message: '请输入显示名称', trigger: 'blur' }
+    { required: true, message: '请输入名称', trigger: 'blur' }
   ],
   resource_type: [
     { required: true, message: '请选择资源类型', trigger: 'change' }
@@ -152,9 +102,6 @@ const rules = {
   capabilities: [
     { required: true, message: '请输入能力声明', trigger: 'blur' },
     { validator: validateCapabilities, trigger: 'blur' }
-  ],
-  task_api_config: [
-    { validator: validateJSON, trigger: 'blur' }
   ]
 }
 
@@ -227,9 +174,9 @@ watch(
         capabilities: typeof newVal.capabilities === 'string'
           ? newVal.capabilities
           : JSON.stringify(newVal.capabilities || {}, null, 2),
-        task_api_config: typeof newVal.task_api_config === 'string'
-          ? newVal.task_api_config
-          : JSON.stringify(newVal.task_api_config || {}, null, 2),
+        extension_api_config: typeof newVal.extension_api_config === 'string'
+          ? newVal.extension_api_config
+          : JSON.stringify(newVal.extension_api_config || {}, null, 2),
         health_check_config: typeof newVal.health_check_config === 'string'
           ? newVal.health_check_config
           : JSON.stringify(newVal.health_check_config || {}, null, 2)
