@@ -51,7 +51,7 @@ func main() {
 
 	// 初始化 Service 层（传入 Redis 客户端用于事件订阅）
 	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
-	scanService := service.NewScanServiceNew(db, engineService)
+	scanService := service.NewScanService(db, engineService)
 
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
 	scanTaskService := service.NewScanTaskService(db, scanService, engineService, redisClient)

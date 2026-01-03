@@ -79,7 +79,17 @@
       "Bash(venv/bin/pip index:*)",
       "Bash(venv/bin/jupyter labextension list)",
       "Bash(venv/bin/jupyter lab build:*)",
-      "Bash(PGPASSWORD=postgres psql:*)"
+      "Bash(PGPASSWORD=postgres psql:*)",
+      "Bash(PGPASSWORD=addp psql:*)",
+      "Bash(__NEW_LINE__ curl -X POST \"http://localhost:8080/api/engines/65/test\" )",
+      "Bash(__NEW_LINE__ curl -X POST \"http://localhost:8080/api/engines/66/test\" )",
+      "Bash(__NEW_LINE__)",
+      "Bash(./venv/bin/pip install:*)",
+      "Bash(venv/bin/python -m pip:*)",
+      "Bash(venv/bin/python:*)",
+      "Bash(env)",
+      "Bash(networksetup -getwebproxy:*)",
+      "Bash(ps:*)"
     ],
     "deny": [],
     "ask": []

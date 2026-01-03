@@ -87,8 +87,8 @@ func (r *ScanRepository) UpsertNode(
 			NodeType:     nodeType,
 			Name:         name,
 			Depth:        depth,
-			Status:       "active",
 			ScanStatus:   "未扫描",
+			ScanConfig:   models.JSONMap{},
 			Attributes:   models.JSONMap{},
 		}
 		if fullName != "" {
@@ -158,7 +158,6 @@ func (r *ScanRepository) UpsertNode(
 	}
 
 	if len(updates) > 0 {
-		updates["updated_at"] = time.Now()
 		if err := r.db.Unscoped().Model(&node).Updates(updates).Error; err != nil {
 			return nil, err
 		}
@@ -171,12 +170,19 @@ func (r *ScanRepository) UpsertNode(
 func (r *ScanRepository) ResetNodeState(node *models.MetaNode, status string) error {
 	now := time.Now()
 	update := map[string]interface{}{
-		"scan_status":   status,
-		"error_message": "",
-		"updated_at":    now,
+		"scan_status": status,
 	}
+
+	// 更新 scan_config：清除错误信息
+	scanConfig := models.JSONMap{}
+	if node.ScanConfig != nil {
+		scanConfig = node.ScanConfig
+	}
+	scanConfig["error_message"] = ""
+	update["scan_config"] = scanConfig
+
 	if status == "扫描中" {
-		update["last_scan_at"] = now
+		update["scanned_at"] = now
 	}
 	return r.db.Model(node).Updates(update).Error
 }
@@ -193,11 +199,18 @@ func (r *ScanRepository) FinalizeNodeState(
 		"scan_status":      status,
 		"item_count":       itemCount,
 		"total_size_bytes": totalSize,
-		"error_message":    errMsg,
-		"updated_at":       time.Now(),
 	}
+
+	// 更新 scan_config：设置错误信息
+	scanConfig := models.JSONMap{}
+	if node.ScanConfig != nil {
+		scanConfig = node.ScanConfig
+	}
+	scanConfig["error_message"] = errMsg
+	update["scan_config"] = scanConfig
+
 	if status == "已扫描" {
-		update["last_scan_at"] = time.Now()
+		update["scanned_at"] = time.Now()
 	}
 	return r.db.Model(node).Updates(update).Error
 }
@@ -230,13 +243,12 @@ func (r *ScanRepository) UpsertItem(
 	node *models.MetaNode,
 	itemType, name, fullName string,
 	attrs models.JSONMap,
-	rowCount, sizeBytes, objectSize *int64,
-	lastModified *time.Time,
-	schemaVersion int,
+	rowCount, sizeBytes *int64,
+	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
 	return r.UpsertItemSelective(
 		tenantID, engineID, node, itemType, name, fullName,
-		attrs, rowCount, sizeBytes, objectSize, lastModified, schemaVersion,
+		attrs, rowCount, sizeBytes, dataUpdated,
 	)
 }
 
@@ -247,9 +259,8 @@ func (r *ScanRepository) UpsertItemSelective(
 	node *models.MetaNode,
 	itemType, name, fullName string,
 	attrs models.JSONMap,
-	rowCount, sizeBytes, objectSize *int64,
-	lastModified *time.Time,
-	schemaVersion int,
+	rowCount, sizeBytes *int64,
+	dataUpdated *time.Time,
 ) (*models.MetaItem, error) {
 	// 生成数据指纹
 	fingerprint, err := r.generateFingerprint(engineID, node, itemType, name, fullName, attrs)
@@ -263,21 +274,20 @@ func (r *ScanRepository) UpsertItemSelective(
 
 	if err == gorm.ErrRecordNotFound {
 		// 创建新记录
+		now := time.Now()
 		item = models.MetaItem{
-			TenantID:          tenantID,
-			EngineID:          engineID,
-			NodeID:            node.ID,
-			ItemType:          itemType,
-			Name:              name,
-			FullName:          fullName,
-			Fingerprint:       fingerprint,
-			Status:            "active",
-			MetaSchemaVersion: schemaVersion,
-			Attributes:        models.JSONMap{},
-			RowCount:          rowCount,
-			SizeBytes:         sizeBytes,
-			ObjectSizeBytes:   objectSize,
-			LastModifiedAt:    lastModified,
+			TenantID:      tenantID,
+			EngineID:      engineID,
+			NodeID:        node.ID,
+			ItemType:      itemType,
+			Name:          name,
+			FullName:      fullName,
+			Fingerprint:   fingerprint,
+			Attributes:    models.JSONMap{},
+			RowCount:      rowCount,
+			SizeBytes:     sizeBytes,
+			DataUpdatedAt: dataUpdated,
+			ScannedAt:     &now,
 		}
 		if attrs != nil {
 			item.Attributes = attrs
@@ -293,16 +303,15 @@ func (r *ScanRepository) UpsertItemSelective(
 	}
 
 	// 更新已有记录（包括恢复软删除的记录）
+	now := time.Now()
 	updates := map[string]interface{}{
-		"node_id":             node.ID, // 允许 node_id 变化（数据移动）
-		"full_name":           fullName,
-		"meta_schema_version": schemaVersion,
-		"row_count":           rowCount,
-		"size_bytes":          sizeBytes,
-		"object_size_bytes":   objectSize,
-		"last_modified_at":    lastModified,
-		"updated_at":          time.Now(),
-		"deleted_at":          nil, // 恢复软删除的记录
+		"node_id":         node.ID, // 允许 node_id 变化（数据移动）
+		"full_name":       fullName,
+		"row_count":       rowCount,
+		"size_bytes":      sizeBytes,
+		"data_updated_at": dataUpdated,
+		"scanned_at":      &now,
+		"deleted_at":      nil, // 恢复软删除的记录
 	}
 
 	// 只有当 attrs 不为 nil 时才更新 attributes（basic 扫描时保留已有的 deep 元数据）
@@ -318,11 +327,10 @@ func (r *ScanRepository) UpsertItemSelective(
 	// 更新内存中的对象
 	item.NodeID = node.ID
 	item.FullName = fullName
-	item.MetaSchemaVersion = schemaVersion
 	item.RowCount = rowCount
 	item.SizeBytes = sizeBytes
-	item.ObjectSizeBytes = objectSize
-	item.LastModifiedAt = lastModified
+	item.DataUpdatedAt = dataUpdated
+	item.ScannedAt = &now
 	item.DeletedAt = gorm.DeletedAt{}
 
 	return &item, nil

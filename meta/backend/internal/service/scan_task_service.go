@@ -28,7 +28,7 @@ type TaskQueue interface {
 // ScanTaskService 管理扫描任务、运行队列与调度
 type ScanTaskService struct {
 	db              *gorm.DB
-	scanService     *ScanServiceNew
+	scanService     *ScanService
 	engineService *EngineService
 	dedupService    *ScanDedupService // 扫描去重服务
 	log             *slog.Logger
@@ -61,9 +61,9 @@ type ListRunsOptions struct {
 }
 
 // NewScanTaskService 创建任务服务
-func NewScanTaskService(db *gorm.DB, scanService *ScanServiceNew, engineService *EngineService, redisClient *redis.Client) *ScanTaskService {
+func NewScanTaskService(db *gorm.DB, scanService *ScanService, engineService *EngineService, redisClient *redis.Client) *ScanTaskService {
 	if scanService == nil {
-		scanService = NewScanServiceNew(db, engineService)
+		scanService = NewScanService(db, engineService)
 	}
 
 	var dedupService *ScanDedupService

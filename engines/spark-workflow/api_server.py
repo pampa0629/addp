@@ -11,6 +11,11 @@ from datetime import datetime
 import os
 import time
 
+# 加载环境变量（从项目根目录的 .env 文件）
+from dotenv import load_dotenv, find_dotenv
+# 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
+load_dotenv(find_dotenv())
+
 from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
 
@@ -332,51 +337,69 @@ def get_execution_status(execution_id):
 
 def register_to_system():
     """
-    启动时自动注册到 System Backend (单次尝试)
+    向 System Backend 自注册（创建或更新引擎记录）
     """
     import requests
+    import json
 
     system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
-    internal_api_key = os.getenv('INTERNAL_API_KEY', '')
+    api_key = os.getenv('INTERNAL_API_KEY', '')
 
-    # 获取当前引擎的连接信息
-    protocol = os.getenv('PROTOCOL', 'http')
-    host = os.getenv('HOST', 'localhost')
+    # 读取自身配置
     port = int(os.getenv('PORT', 8098))
+    protocol = os.getenv('PROTOCOL', 'http')
 
-    registration_data = {
-        "name": "Spark Workflow",
+    # 生成 capabilities
+    capabilities = {
+        "compute": [{
+            "dev_modes": ["workflow"],
+            "engine": "spark",
+            "scale": "distributed",
+            "features": ["big_data", "distributed"],
+            "description": "分布式空间分析"
+        }]
+    }
+
+    # 构建注册请求
+    payload = {
         "engine_type": "spark_workflow",
-        "is_builtin": True,
-        "capabilities": {
-            "compute": [{
-                "dev_modes": ["workflow"],
-                "supported_formats": ["dataframe", "sql"],
-                "features": ["dag", "distributed", "lakehouse", "large_scale"],
-                "description": "基于 Apache Spark 和 Sedona 的分布式空间计算引擎"
-            }]
-        },
-        "description": "基于 Apache Spark 和 Sedona 的分布式空间计算引擎，支持大规模数据处理",
+        "name": "Spark 工作流引擎",
+        "description": "基于 Apache Spark 的分布式工作流执行引擎",
         "connection_info": {
             "protocol": protocol,
-            "host": host,
             "port": port
-        }
+            # host 由 System 自动填充
+        },
+        "capabilities": json.dumps(capabilities)
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Internal-API-Key": api_key
     }
 
     try:
+        # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
+        proxies = {
+            'http': None,
+            'https': None
+        }
+
         response = requests.post(
-            f"{system_url}/internal/registry/capabilities",
-            json=registration_data,
-            headers={"X-Internal-API-Key": internal_api_key},
+            f"{system_url}/internal/engines/register",
+            json=payload,
+            headers=headers,
+            proxies=proxies,
             timeout=10
         )
 
-        if response.status_code in [200, 201]:
-            logger.info("✅ Successfully registered to System Backend")
+        if response.status_code == 202:
+            result = response.json()
+            engine_id = result.get('engine_id')
+            logger.info(f"✅ Successfully registered to System Backend (Engine ID: {engine_id})")
             return True
         else:
-            logger.warning(f"⚠️  Failed to register to System: {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Failed to register: {response.status_code} - {response.text}")
             return False
 
     except Exception as e:

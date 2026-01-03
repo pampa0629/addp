@@ -51,7 +51,7 @@
                 <div style="color: #E6A23C">未扫: {{ row.unscanned_schemas || 0 }}</div>
               </template>
             </el-table-column>
-            <el-table-column prop="last_scan_at" label="上次扫描" width="150" />
+            <el-table-column prop="scanned_at" label="上次扫描" width="150" />
             <el-table-column label="定时计划" min-width="220">
               <template #default="{ row }">
                 <div v-if="resourcePlanMap[row.id]" class="plan-summary">
@@ -129,7 +129,7 @@
                 </template>
               </el-table-column>
               <el-table-column prop="table_count" label="表数量" width="100" />
-              <el-table-column prop="last_scan_at" label="上次扫描" width="150" />
+              <el-table-column prop="scanned_at" label="上次扫描" width="150" />
               <el-table-column label="操作" width="150">
                 <template #default="{ row }">
                   <el-button
@@ -402,7 +402,7 @@ const loadSchemas = async () => {
         schema_name: scanned.schema_name,
         scan_status: '连接失败 - ' + scanned.scan_status,
         table_count: scanned.table_count || 0,
-        last_scan_at: scanned.last_scan_at || '',
+        scanned_at: scanned.scanned_at || '',
         total_size_bytes: scanned.total_size_bytes || 0
       }))
       // 已通过左侧连接状态图标显示，无需额外提示
@@ -416,7 +416,7 @@ const loadSchemas = async () => {
           schema_name: available.name,  // 保持兼容
           scan_status: scanned?.scan_status || '未扫描',
           table_count: scanned?.table_count || 0,
-          last_scan_at: scanned?.last_scan_at || '',
+          scanned_at: scanned?.scanned_at || '',
           total_size_bytes: scanned?.total_size_bytes || 0
         }
       })

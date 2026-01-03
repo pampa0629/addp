@@ -189,7 +189,163 @@ const response = await dataExplorerAPI.getPreview(params)
 
 ## 网络问题
 
-（待补充）
+### 1. Workflow 引擎注册失败 502（系统代理拦截问题）
+
+#### 问题现象
+
+- Python/Spark Workflow 引擎启动后注册失败
+- 引擎日志显示收到 502 Bad Gateway 响应
+- System Backend 日志中没有任何注册请求记录
+- curl 测试同一接口可以正常连接
+- 引擎状态一直保持 `offline`
+
+#### 问题根因
+
+**系统 HTTP 代理拦截了 Python requests 库对 localhost 的请求**
+
+技术细节：
+
+1. **Python requests 库行为**
+   - requests 和 urllib 会自动使用系统级 HTTP 代理设置
+   - macOS 系统代理可通过 `networksetup -getwebproxy Wi-Fi` 查看
+   - 常见代理工具：Clash、V2Ray、Charles 等
+
+2. **代理服务器限制**
+   - 多数代理服务器不处理对 `localhost` 或 `127.0.0.1` 的请求
+   - 代理收到这类请求后直接返回 502 Bad Gateway
+   - 响应头特征：只有 `Connection: close` 和 `Content-Length: 0`
+
+3. **curl 能正常工作的原因**
+   - curl 默认不使用系统代理（除非显式指定 `-x` 参数）
+   - 所以 curl 可以直接连接到 localhost:8080
+
+#### 关键证据
+
+引擎日志显示：
+```
+📥 收到响应: status=502, body=
+📋 响应头: {'Connection': 'close', 'Content-Length': '0'}
+```
+
+系统代理检查：
+```bash
+$ networksetup -getwebproxy Wi-Fi
+Enabled: Yes
+Server: 127.0.0.1
+Port: 17890
+```
+
+手动测试对比：
+```bash
+# Python requests - 失败（走代理）
+$ python -c "import requests; print(requests.get('http://localhost:8080/health').status_code)"
+502
+
+# curl - 成功（不走代理）
+$ curl http://localhost:8080/health
+{"status":"ok"}
+```
+
+#### 解决方案
+
+**在 Python 引擎的注册函数中禁用代理**
+
+修改文件：
+- `engines/python-workflow/api_server.py:590-601`
+- `engines/spark-workflow/api_server.py:382-393`
+
+```python
+def register_to_system():
+    # ...
+
+    # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
+    proxies = {
+        'http': None,
+        'https': None
+    }
+
+    response = requests.post(
+        f"{system_url}/internal/engines/register",
+        json=payload,
+        headers=headers,
+        proxies=proxies,  # ← 添加这个参数
+        timeout=10
+    )
+```
+
+#### 验证方法
+
+1. **修改代码后重启引擎**
+   ```bash
+   bash scripts/dev/restart.sh
+   ```
+
+2. **查看引擎日志**
+   ```bash
+   tail -f logs/python-workflow-engine.log
+   # 应该看到：✅ Successfully registered to System Backend (Engine ID: 65)
+   ```
+
+3. **检查数据库状态**
+   ```sql
+   SELECT id, name, engine_type, connection_status
+   FROM system.engines
+   WHERE engine_type IN ('python_workflow', 'spark_workflow');
+   ```
+
+   应该显示 `connection_status = 'online'`
+
+#### 预防措施
+
+1. **本地开发环境**
+   - 关闭系统代理或配置代理规则排除 localhost
+   - 推荐在代理工具中添加 `localhost` 到直连列表
+
+2. **生产环境部署**
+   - 确保容器内部通信不经过代理
+   - 使用 `NO_PROXY` 环境变量排除内部服务
+
+3. **通用 HTTP 客户端封装**（建议）
+   ```python
+   # 创建统一的内部服务调用客户端
+   def create_internal_client():
+       """创建用于内部服务调用的 HTTP 客户端（禁用代理）"""
+       return requests.Session()
+       session = requests.Session()
+       session.proxies = {'http': None, 'https': None}
+       return session
+   ```
+
+#### 相关问题
+
+如果遇到其他 Python 服务无法连接 localhost 的问题，检查：
+
+1. **是否启用了系统代理**
+   ```bash
+   # macOS
+   networksetup -getwebproxy Wi-Fi
+
+   # Linux
+   echo $http_proxy
+   echo $https_proxy
+   ```
+
+2. **Python 环境变量**
+   ```bash
+   env | grep -i proxy
+   ```
+
+3. **临时禁用代理测试**
+   ```python
+   import os
+   os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
+   ```
+
+#### 修复日期
+
+- **发现日期：** 2026-01-03
+- **修复版本：** v0.0.20+
+- **影响范围：** Python/Spark Workflow 引擎自注册功能
 
 ---
 
@@ -204,3 +360,4 @@ const response = await dataExplorerAPI.getPreview(params)
 | 日期 | 问题 | 修复人员 |
 |------|------|---------|
 | 2025-12-18 | Manager 数据预览"暂无数据"（双重 .data 访问） | Claude Code |
+| 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |

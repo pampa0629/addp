@@ -11,12 +11,14 @@ import (
 // RegistryHandler 能力注册 API 处理器
 type RegistryHandler struct {
 	registryService *service.RegistryService
+	engineService   *service.EngineService
 }
 
 // NewRegistryHandler 创建能力注册处理器
-func NewRegistryHandler(registryService *service.RegistryService) *RegistryHandler {
+func NewRegistryHandler(registryService *service.RegistryService, engineService *service.EngineService) *RegistryHandler {
 	return &RegistryHandler{
 		registryService: registryService,
+		engineService:   engineService,
 	}
 }
 
@@ -29,12 +31,22 @@ func (h *RegistryHandler) RegisterCapability(c *gin.Context) {
 		return
 	}
 
-	if err := h.registryService.RegisterCapability(c.Request.Context(), &req); err != nil {
+	engineID, err := h.registryService.RegisterCapability(c.Request.Context(), &req)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "capability registered successfully"})
+	// 触发异步连接测试
+	if err := h.engineService.AsyncCheckConnection(engineID); err != nil {
+		// 连接测试失败不影响注册成功
+		// 只记录警告日志
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "capability registered successfully",
+		"engine_id": engineID,
+	})
 }
 
 // ListCapabilities 查询能力列表

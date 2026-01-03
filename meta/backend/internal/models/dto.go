@@ -28,7 +28,7 @@ type ResourceWithStats struct {
 	TotalSchemas     int    `json:"total_schemas"`
 	ScannedSchemas   int    `json:"scanned_schemas"`
 	UnscannedSchemas int    `json:"unscanned_schemas"`
-	LastScanAt       string `json:"last_scan_at,omitempty"`
+	ScannedAt        string `json:"scanned_at,omitempty"`
 	// 连接状态相关字段
 	ConnectionStatus string `json:"connection_status,omitempty"` // online/offline/unknown/checking
 	LastCheckAt      string `json:"last_check_at,omitempty"`     // 最后检测时间
@@ -37,22 +37,19 @@ type ResourceWithStats struct {
 
 // SchemaWithStatus Schema及其状态
 type SchemaWithStatus struct {
-	ID              uint   `json:"id"`
-	SchemaName      string `json:"schema_name"`
-	ScanStatus      string `json:"scan_status"`
-	LastScanAt      string `json:"last_scan_at,omitempty"`
-	TableCount      int    `json:"table_count"`
-	TotalSizeBytes  int64  `json:"total_size_bytes"`
-	AutoScanEnabled bool   `json:"auto_scan_enabled"`
-	AutoScanCron    string `json:"auto_scan_cron,omitempty"`
-	NextScanAt      string `json:"next_scan_at,omitempty"`
+	ID             uint       `json:"id"`
+	SchemaName     string     `json:"schema_name"`
+	ScanStatus     string     `json:"scan_status"`
+	ScannedAt      string     `json:"scanned_at,omitempty"`
+	TableCount     int        `json:"table_count"`
+	TotalSizeBytes int64      `json:"total_size_bytes"`
+	ScanConfig     ScanConfig `json:"scan_config,omitempty"` // 扫描配置
 }
 
 // ScheduleRequest 定时扫描配置请求
 type ScheduleRequest struct {
-	SchemaID        uint   `json:"schema_id" binding:"required"`
-	AutoScanEnabled bool   `json:"auto_scan_enabled"`
-	AutoScanCron    string `json:"auto_scan_cron"` // 如 "0 0 * * *"
+	SchemaID   uint       `json:"schema_id" binding:"required"`
+	ScanConfig ScanConfig `json:"scan_config"` // 扫描配置
 }
 
 // SchemaInfo Schema信息（用于获取Schema列表）
@@ -115,7 +112,7 @@ type MetaNodeLite struct {
 	Depth          int                    `json:"depth"`
 	Path           string                 `json:"path"`
 	ScanStatus     string                 `json:"scan_status"`
-	LastScanAt     *string                `json:"last_scan_at,omitempty"`
+	ScannedAt      *string                `json:"scanned_at,omitempty"`
 	ItemCount      int                    `json:"item_count"`
 	TotalSizeBytes int64                  `json:"total_size_bytes"`
 	Attributes     map[string]interface{} `json:"attributes,omitempty"`
@@ -123,18 +120,17 @@ type MetaNodeLite struct {
 
 // MetaItemLite 元数据项简化模型（用于返回给 Manager）
 type MetaItemLite struct {
-	ID              uint                   `json:"id"`
-	TenantID        uint                   `json:"tenant_id"`
-	EngineID        uint                   `json:"engine_id"`
-	NodeID          uint                   `json:"node_id"`
-	ItemType        string                 `json:"item_type"`
-	Name            string                 `json:"name"`
-	FullName        string                 `json:"full_name"`
-	RowCount        *int64                 `json:"row_count,omitempty"`
-	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
-	ObjectSizeBytes *int64                 `json:"object_size_bytes,omitempty"`
-	LastModifiedAt  *string                `json:"last_modified_at,omitempty"`
-	Attributes      map[string]interface{} `json:"attributes,omitempty"`
+	ID            uint                   `json:"id"`
+	TenantID      uint                   `json:"tenant_id"`
+	EngineID      uint                   `json:"engine_id"`
+	NodeID        uint                   `json:"node_id"`
+	ItemType      string                 `json:"item_type"`
+	Name          string                 `json:"name"`
+	FullName      string                 `json:"full_name"`
+	RowCount      *int64                 `json:"row_count,omitempty"`
+	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
+	DataUpdatedAt *string                `json:"data_updated_at,omitempty"`
+	Attributes    map[string]interface{} `json:"attributes,omitempty"`
 }
 
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）

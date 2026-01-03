@@ -296,50 +296,94 @@ def get_execution_status(execution_id):
 
 def register_to_system():
     """引擎启动时自动注册到 System Backend"""
+    import json
+
     time.sleep(5)  # 等待引擎完全启动
 
-    system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://system-backend:8080')
+    system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
     internal_api_key = os.getenv('INTERNAL_API_KEY', '')
-    engine_url = os.getenv('ENGINE_URL', 'http://math-workflow-engine:8097')
+    port = int(os.getenv('PORT', 8097))
+    protocol = os.getenv('PROTOCOL', 'http')
+
+    # 构建引擎 URL（host 将由 System 自动填充）
+    engine_url = f"{protocol}://localhost:{port}"
 
     registration_data = {
-        "unique_identifier": "api.math-workflow",
-        "engine_type": "api.math-workflow",
-        "display_name": "Math Workflow 计算引擎",
-        "dev_modes": ["workflow"],  # 关键：声明支持工作流
+        "name": "Math Workflow 计算引擎",
+        "engine_type": "math_workflow",
+        "is_builtin": True,
+        "description": "基于 Python 的数学计算工作流引擎，支持基本数学运算",
         "capabilities": {
             "compute": [{
-                "type": "math",
                 "dev_modes": ["workflow"],
-                "api_endpoints": {
-                    "operators": "/api/operators",
-                    "execute": "/api/spatial/operators/:name/execute",
-                    "workflow": "/api/spatial/workflow"
-                },
-                "supported_formats": ["json"]
+                "features": ["math_operations", "workflow_execution"],
+                "description": "支持加减乘除等基本数学运算的工作流执行"
             }]
         },
         "connection_info": {
+            "protocol": protocol,
+            "host": "localhost",
+            "port": port,
             "api_url": engine_url
         }
     }
 
+    # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
+    proxies = {
+        'http': None,
+        'https': None
+    }
+
     try:
-        logger.info(f"尝试注册到 System Backend: {system_url}")
+        logger.info(f"📤 尝试注册到 System Backend: {system_url}")
+        logger.info(f"📦 Payload: {json.dumps(registration_data, ensure_ascii=False)}")
+        logger.info(f"🔑 API Key length: {len(internal_api_key)}")
+
         response = requests.post(
             f"{system_url}/internal/registry/capabilities",
             json=registration_data,
             headers={"X-Internal-API-Key": internal_api_key},
+            proxies=proxies,
             timeout=10
         )
 
+        logger.info(f"📥 收到响应: status={response.status_code}, body={response.text[:500]}")
+
         if response.status_code == 200:
             logger.info("✅ Math Workflow Engine 注册成功")
+            return True
         else:
-            logger.warning(f"❌ 注册失败: HTTP {response.status_code}, {response.text}")
+            logger.warning(f"⚠️  注册失败: HTTP {response.status_code}, {response.text}")
+            return False
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ 网络请求异常: {type(e).__name__}: {e}")
+        return False
     except Exception as e:
-        logger.warning(f"❌ 注册异常: {e} (引擎将继续运行，可手动注册)")
+        logger.error(f"❌ 注册异常: {e}")
+        import traceback
+        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+        return False
+
+
+def register_to_system_with_retry():
+    """后台线程定期重试注册（最多5次，间隔10秒）"""
+    max_retries = 5
+    retry_interval = 10
+
+    for attempt in range(1, max_retries + 1):
+        logger.info(f"🔄 Attempting to register to System (attempt {attempt}/{max_retries})")
+
+        if register_to_system():
+            logger.info(f"✅ Registration successful on attempt {attempt}")
+            return
+
+        if attempt < max_retries:
+            logger.info(f"⏳ Waiting {retry_interval}s before retry...")
+            time.sleep(retry_interval)
+
+    logger.error(f"❌ Registration failed after {max_retries} attempts")
+
 
 
 # ============ 应用启动 ============

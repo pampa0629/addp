@@ -103,9 +103,9 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 	err := e.db.Where("fingerprint = ?", fingerprint).First(&existingItem).Error
 
 	// 如果找到已有记录，检查 last_modified 是否变化
-	if err == nil && existingItem.LastModifiedAt != nil && meta.LastModified != nil {
+	if err == nil && existingItem.DataUpdatedAt != nil && meta.LastModified != nil {
 		// 比较时间（精确到秒）
-		existingTime := existingItem.LastModifiedAt.Truncate(time.Second)
+		existingTime := existingItem.DataUpdatedAt.Truncate(time.Second)
 		newTime := meta.LastModified.Truncate(time.Second)
 
 		if existingTime.Equal(newTime) {
@@ -236,11 +236,11 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	if item != nil {
-		if item.ObjectSizeBytes != nil {
-			input.Size = *item.ObjectSizeBytes
+		if item.SizeBytes != nil {
+			input.Size = *item.SizeBytes
 		}
-		if item.LastModifiedAt != nil {
-			input.LastModified = *item.LastModifiedAt
+		if item.DataUpdatedAt != nil {
+			input.LastModified = *item.DataUpdatedAt
 		}
 		if etag, ok := item.Attributes["etag"].(string); ok {
 			input.ETag = etag

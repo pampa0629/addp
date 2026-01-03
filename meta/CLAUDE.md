@@ -96,12 +96,16 @@ ScanServiceNew (扫描执行器)
 - 代表数据库 Schema、对象存储 Bucket/Prefix（目录）
 - 支持树形结构（parent_node_id）
 - 聚合统计（item_count、total_size_bytes）
-- 扫描状态追踪（scan_status、last_scan_at）
+- 扫描状态追踪（scan_status、scanned_at）
+- 扫描配置（scan_config JSONB）- 合并了 auto_enabled、cron、next_scan_at、error_message 等配置字段
 
 **MetaItem（数据项）**：
 - 代表数据库 Table/View、对象存储 Object（文件）
 - 关联到 MetaNode（node_id 外键）
 - 数据指纹（fingerprint）- 基于 engine_id + 路径的 SHA256 哈希，用于去重和数据血缘追踪
+- 时间字段区分：
+  - `data_updated_at` - 被扫描数据的最后更新时间（源数据修改时间）
+  - `scanned_at` - Meta 模块扫描该数据项的时间
 - 扩展属性（attributes JSONB）- 存储表 Schema、空间元数据、文件元数据等
 
 **数据模型层次关系**：

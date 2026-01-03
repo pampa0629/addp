@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/addp/common/database/plugin"
 	"github.com/addp/common/models"
 	localModels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -23,7 +24,8 @@ func NewRegistryService(resourceRepo *repository.EngineRepository) *RegistryServ
 }
 
 // RegisterCapability 注册能力（幂等操作）
-func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.CapabilityRegistrationRequest) error {
+// 返回引擎 ID，以便调用方触发连接测试
+func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.CapabilityRegistrationRequest) (uint, error) {
 	// 1. 根据 engine_type + is_builtin 查询是否已存在（幂等检查）
 	var existing *localModels.Engine
 	if req.IsBuiltin {
@@ -31,7 +33,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		var err error
 		existing, err = s.resourceRepo.FindByEngineTypeAndBuiltin(ctx, req.EngineType)
 		if err != nil && err.Error() != "record not found" {
-			return fmt.Errorf("failed to query existing resource: %w", err)
+			return 0, fmt.Errorf("failed to query existing resource: %w", err)
 		}
 	}
 
@@ -40,7 +42,7 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	if req.Capabilities != nil {
 		capBytes, err := json.Marshal(req.Capabilities)
 		if err != nil {
-			return fmt.Errorf("failed to marshal capabilities: %w", err)
+			return 0, fmt.Errorf("failed to marshal capabilities: %w", err)
 		}
 		capStr := string(capBytes)
 		capabilitiesJSON = &capStr
@@ -65,16 +67,23 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 		}
 
 		if err := s.resourceRepo.UpdateByID(ctx, existing.ID, updates); err != nil {
-			return fmt.Errorf("failed to update existing resource: %w", err)
+			return 0, fmt.Errorf("failed to update existing resource: %w", err)
 		}
 
-		return nil
+		return existing.ID, nil
 	}
 
 	// 不存在，创建新记录
+	// 从插件获取 engine_category
+	engineCategory := "standard" // 默认值
+	if p, err := plugin.Get(req.EngineType); err == nil && p != nil {
+		engineCategory = p.ConnectionCategory()
+	}
+
 	resource := &localModels.Engine{
 		Name:           req.Name,
 		EngineType:     req.EngineType,
+		EngineCategory: engineCategory,
 		Description:    req.Description,
 		ConnectionInfo: connectionInfo,
 		IsBuiltin:      req.IsBuiltin,
@@ -84,10 +93,10 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	}
 
 	if err := s.resourceRepo.CreateWithContext(ctx, resource); err != nil {
-		return fmt.Errorf("failed to create resource: %w", err)
+		return 0, fmt.Errorf("failed to create resource: %w", err)
 	}
 
-	return nil
+	return resource.ID, nil
 }
 
 // ListCapabilities 查询能力列表（支持过滤）

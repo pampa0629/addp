@@ -61,12 +61,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 初始化内置引擎 (仅开发环境且显式启用时)
-	if err := repository.InitBuiltinEngines(db); err != nil {
-		logger.L().Error("内置引擎初始化失败", "error", err)
-		os.Exit(1)
-	}
-
 	// 设置 Gin 模式
 	if cfg.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -92,8 +86,9 @@ func main() {
 
 	// 启动健康检查（在后台goroutine中）
 	go func() {
-		// 等待1秒确保服务完全启动
-		time.Sleep(1 * time.Second)
+		// 等待3秒确保服务完全启动
+		// 工作流引擎会主动触发连接检查，无需等待过长时间
+		time.Sleep(3 * time.Second)
 
 		// 初始化 Redis 客户端（用于 EngineService）
 		var redisClient *redis.Client

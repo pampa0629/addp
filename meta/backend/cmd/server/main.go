@@ -98,7 +98,7 @@ func main() {
 		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
 		searchIndexer = nil // 继续运行，但不使用搜索索引
 	}
-	scanService := service.NewScanServiceNew(db, engineService)
+	scanService := service.NewScanService(db, engineService)
 	scanService.SetConfig(cfg) // 注入配置
 	if searchIndexer != nil {
 		scanService.SetIndexer(searchIndexer)
@@ -185,8 +185,8 @@ func main() {
 	logger.L().Info("清理服务已启动", "retention_days", 90)
 	// ===================================
 
-	// 设置路由（使用新的简化路由）
-	router := api.SetupRouterNew(cfg, engineService, scanService, taskService, redisClient, systemClient)
+	// 设置路由
+	router := api.SetupRouter(cfg, engineService, scanService, taskService, redisClient, systemClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）

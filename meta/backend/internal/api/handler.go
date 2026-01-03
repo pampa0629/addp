@@ -18,11 +18,11 @@ import (
 
 type Handler struct {
 	engineService *service.EngineService
-	scanService     *service.ScanServiceNew
+	scanService     *service.ScanService
 	taskService     *service.ScanTaskService
 }
 
-func NewHandler(engineService *service.EngineService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService) *Handler {
+func NewHandler(engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService) *Handler {
 	return &Handler{
 		engineService: engineService,
 		scanService:     scanService,

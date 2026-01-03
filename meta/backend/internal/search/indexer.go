@@ -39,28 +39,27 @@ type FieldRecord struct {
 
 // AssetRecord 描述结构化或对象资产
 type AssetRecord struct {
-	AssetID         string                 `json:"asset_id"`
-	TenantID        uint                   `json:"tenant_id"`
-	EngineID        uint                   `json:"engine_id"`
-	ResourceName    string                 `json:"resource_name,omitempty"`
-	ResourceType    string                 `json:"resource_type,omitempty"`
-	AssetType       string                 `json:"asset_type"`
-	Name            string                 `json:"name"`
-	FullName        string                 `json:"full_name,omitempty"`
-	Schema          string                 `json:"schema,omitempty"`
-	TableType       string                 `json:"table_type,omitempty"`
-	Bucket          string                 `json:"bucket,omitempty"`
-	Path            string                 `json:"path,omitempty"`
-	RelativePath    string                 `json:"relative_path,omitempty"`
-	Description     string                 `json:"description,omitempty"`
-	Tags            []string               `json:"tags,omitempty"`
-	RowCount        *int64                 `json:"row_count,omitempty"`
-	SizeBytes       *int64                 `json:"size_bytes,omitempty"`
-	ObjectSizeBytes *int64                 `json:"object_size_bytes,omitempty"`
-	LastModified    *time.Time             `json:"last_modified,omitempty"`
-	Metadata        map[string]interface{} `json:"metadata,omitempty"`
-	Fields          []FieldRecord          `json:"fields,omitempty"`
-	UpdatedAt       time.Time              `json:"updated_at"`
+	AssetID       string                 `json:"asset_id"`
+	TenantID      uint                   `json:"tenant_id"`
+	EngineID      uint                   `json:"engine_id"`
+	ResourceName  string                 `json:"resource_name,omitempty"`
+	ResourceType  string                 `json:"resource_type,omitempty"`
+	AssetType     string                 `json:"asset_type"`
+	Name          string                 `json:"name"`
+	FullName      string                 `json:"full_name,omitempty"`
+	Schema        string                 `json:"schema,omitempty"`
+	TableType     string                 `json:"table_type,omitempty"`
+	Bucket        string                 `json:"bucket,omitempty"`
+	Path          string                 `json:"path,omitempty"`
+	RelativePath  string                 `json:"relative_path,omitempty"`
+	Description   string                 `json:"description,omitempty"`
+	Tags          []string               `json:"tags,omitempty"`
+	RowCount      *int64                 `json:"row_count,omitempty"`
+	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
+	DataUpdatedAt *time.Time             `json:"data_updated_at,omitempty"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	Fields        []FieldRecord          `json:"fields,omitempty"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 // DocumentRecord 描述可全文搜索的文档数据
@@ -257,8 +256,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"tags":               record.Tags,
 		"row_count":          record.RowCount,
 		"size_bytes":         record.SizeBytes,
-		"object_size_bytes":  record.ObjectSizeBytes,
-		"last_modified":      record.LastModified,
+		"data_updated_at":    record.DataUpdatedAt,
 		"metadata":           record.Metadata,
 		"fields":             record.Fields,
 		"updated_at":         record.UpdatedAt,

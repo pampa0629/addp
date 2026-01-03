@@ -17,21 +17,23 @@ import (
 // DatabaseScanService 数据库扫描服务
 // 职责：扫描关系型数据库（PostgreSQL、MySQL等）的Schema、Table、Field
 type DatabaseScanService struct {
-	db      *gorm.DB
-	log     *slog.Logger
-	indexer *search.Indexer
-
-	// 元数据操作委托给主服务
-	metaOps *ScanServiceNew
+	db               *gorm.DB
+	log              *slog.Logger
+	indexer          *search.Indexer
+	repo             *ScanRepository // 数据访问层
+	spatialService   *SpatialMetadataService // 空间元数据扫描服务
+	indexerService   *IndexerService         // 索引服务
 }
 
 // NewDatabaseScanService 创建数据库扫描服务
-func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, metaOps *ScanServiceNew) *DatabaseScanService {
+func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Indexer, repo *ScanRepository, spatialService *SpatialMetadataService, indexerService *IndexerService) *DatabaseScanService {
 	return &DatabaseScanService{
-		db:      db,
-		log:     log,
-		indexer: indexer,
-		metaOps: metaOps,
+		db:             db,
+		log:            log,
+		indexer:        indexer,
+		repo:           repo,
+		spatialService: spatialService,
+		indexerService: indexerService,
 	}
 }
 
@@ -56,19 +58,19 @@ func NewDatabaseScanService(db *gorm.DB, log *slog.Logger, indexer *search.Index
 // 返回：(schema数量, 表数量, 字段数量, error)
 func (s *DatabaseScanService) ScanSchema(resource *commonModels.Engine, scan plugins.Scanner, tenantID, engineID uint, schemaName string, scanDepth string) (int, int, int, error) {
 	// 1. 创建/更新 Schema 节点
-	schemaNode, err := s.metaOps.upsertNode(tenantID, engineID, nil, "schema", schemaName, "", nil)
+	schemaNode, err := s.repo.UpsertNode(tenantID, engineID, nil, "schema", schemaName, "", nil)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
-	if err := s.metaOps.resetNodeState(schemaNode, "扫描中"); err != nil {
+	if err := s.repo.ResetNodeState(schemaNode, "扫描中"); err != nil {
 		return 0, 0, 0, err
 	}
 
 	// 2. 扫描表
 	tables, fields, err := s.scanTables(resource, scan, tenantID, engineID, schemaNode, schemaName, scanDepth)
 	if err != nil {
-		s.metaOps.finalizeNodeState(schemaNode, "未扫描", 0, 0, err.Error())
+		s.repo.FinalizeNodeState(schemaNode, "未扫描", 0, 0, err.Error())
 		return 0, 0, 0, err
 	}
 
@@ -80,7 +82,7 @@ func (s *DatabaseScanService) ScanSchema(resource *commonModels.Engine, scan plu
 		}
 	}
 
-	if err := s.metaOps.finalizeNodeState(schemaNode, "已扫描", tables, totalSize, ""); err != nil {
+	if err := s.repo.FinalizeNodeState(schemaNode, "已扫描", tables, totalSize, ""); err != nil {
 		return 0, tables, fields, err
 	}
 
@@ -163,7 +165,7 @@ func (s *DatabaseScanService) scanTables(
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
-		item, err := s.metaOps.upsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil, nil, 1)
+		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
@@ -179,8 +181,8 @@ func (s *DatabaseScanService) scanTables(
 		)
 
 		// 深度扫描时索引表资产
-		if isDeepScan {
-			s.metaOps.indexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
+		if isDeepScan && s.indexerService != nil {
+			s.indexerService.IndexTableAsset(resource, tenantID, schemaName, tableInfo, fields, item)
 		}
 
 		totalTables++
@@ -272,7 +274,7 @@ func (s *DatabaseScanService) scanSpatialMetadata(scan plugins.Scanner, schemaNa
 		return nil
 	}
 
-	spatialMeta, err := s.metaOps.scanSpatialMetadata(context.Background(), dbScanner.GetDB(), schemaName, tableName)
+	spatialMeta, err := s.spatialService.ScanTableSpatialMetadata(context.Background(), dbScanner.GetDB(), schemaName, tableName)
 	if err != nil {
 		s.log.Warn("空间元数据扫描失败",
 			"schema", schemaName,
@@ -306,7 +308,9 @@ func (s *DatabaseScanService) deleteRemovedTables(
 				)
 			}
 			// 从索引中删除
-			s.metaOps.deleteTablesFromIndex(tenantID, engineID, schemaName)
+			if s.indexerService != nil {
+				s.indexerService.DeleteTablesFromIndex(tenantID, engineID, schemaName)
+			}
 		}
 	}
 }

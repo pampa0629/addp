@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 
-	commonModels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/pkg/utils"
 	"gorm.io/driver/postgres"
@@ -239,91 +238,6 @@ func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
 	if result.RowsAffected > 0 {
 		log.Printf("✅ 已为 %d 个现有引擎设置 display_name\n", result.RowsAffected)
 	}
-	return nil
-}
-
-// InitBuiltinEngines 初始化内置引擎（Python Workflow、Spark Workflow 等）
-// 内置引擎在启动时自动注册，不属于任何租户，所有租户均可使用
-func InitBuiltinEngines(db *gorm.DB) error {
-	// 定义内置引擎配置
-	builtinEngines := []struct {
-		Name        string
-		EngineType  string
-		Description string
-		BaseURL     string
-	}{
-		{
-			Name:        "Python 工作流引擎",
-			EngineType:  "python_workflow",
-			Description: "基于 Python 的工作流执行引擎,支持 GeoPandas、Pandas、NumPy 等数据处理库",
-			BaseURL:     getEnv("PYTHON_WORKFLOW_URL", "http://localhost:8099"),
-		},
-	}
-
-	// 注册每个内置引擎
-	for _, engineDef := range builtinEngines {
-		// 幂等检查：通过 engine_type + is_builtin 查找
-		var existingEngine models.Engine
-		result := db.Where("engine_type = ? AND is_builtin = true", engineDef.EngineType).First(&existingEngine)
-
-		if result.Error == gorm.ErrRecordNotFound {
-			// 创建新引擎
-			// 将 base_url 解析为 protocol, host, port 格式
-			connectionInfo, err := commonModels.ParseBaseURLToConnectionInfo(engineDef.BaseURL)
-			if err != nil {
-				log.Printf("❌ 内置引擎 %s 的 base_url 解析失败: %v\n", engineDef.Name, err)
-				continue
-			}
-
-			// 根据引擎类型生成默认 capabilities
-			var capabilities string
-			if engineDef.EngineType == "python_workflow" {
-				capabilities = `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","csv","parquet"],"features":["dag","memory_efficient","batch","pandas","numpy","scipy"],"description":"Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"}]}`
-			} else if engineDef.EngineType == "spark_workflow" {
-				capabilities = `{"compute":[{"dev_modes":["workflow"],"engine":"spark","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
-			} else {
-				capabilities = `{"storage":[{"type":"generic"}]}`
-			}
-
-			engine := models.Engine{
-				Name:             engineDef.Name,
-				EngineType:       engineDef.EngineType,
-				EngineCategory:   "extension",
-				Description:      engineDef.Description,
-				ConnectionInfo:   connectionInfo,
-				Capabilities:     &capabilities,
-				IsActive:         true,
-				IsBuiltin:        true,
-				TenantID:         nil, // 内置引擎不属于任何租户
-				ConnectionStatus: "unknown",
-			}
-
-			if err := db.Create(&engine).Error; err != nil {
-				log.Printf("❌ 内置引擎创建失败: %s - %v\n", engineDef.Name, err)
-				continue
-			}
-
-			log.Printf("✅ 内置引擎已注册: %s (ID: %d, 类型: %s)\n", engineDef.Name, engine.ID, engineDef.EngineType)
-		} else if result.Error != nil {
-			log.Printf("❌ 查询内置引擎失败: %s - %v\n", engineDef.Name, result.Error)
-			continue
-		} else {
-			// 已存在，更新配置（确保配置最新）
-			connectionInfo, err := commonModels.ParseBaseURLToConnectionInfo(engineDef.BaseURL)
-			if err != nil {
-				log.Printf("❌ 内置引擎 %s 的 base_url 解析失败: %v\n", engineDef.Name, err)
-				continue
-			}
-			existingEngine.ConnectionInfo = connectionInfo
-
-			if err := db.Save(&existingEngine).Error; err != nil {
-				log.Printf("❌ 内置引擎更新失败: %s - %v\n", engineDef.Name, err)
-				continue
-			}
-			log.Printf("🔄 内置引擎已更新: %s (ID: %d)\n", engineDef.Name, existingEngine.ID)
-		}
-	}
-
 	return nil
 }
 

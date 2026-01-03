@@ -12,6 +12,11 @@ from datetime import datetime
 import os
 import time
 
+# 加载环境变量（从项目根目录的 .env 文件）
+from dotenv import load_dotenv, find_dotenv
+# 自动向上搜索 .env 文件（类似 common/config/loader.go 的 LoadEnv）
+load_dotenv(find_dotenv())
+
 from workflow_engine import execute_workflow, execute_single_operator
 from operators import list_operators
 
@@ -537,55 +542,85 @@ def get_execution_status(execution_id):
 
 def register_to_system():
     """
-    启动时自动注册到 System Backend（单次尝试）
+    向 System Backend 自注册（创建或更新引擎记录）
     """
     import requests
+    import json
 
     system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
-    internal_api_key = os.getenv('INTERNAL_API_KEY', '')
+    api_key = os.getenv('INTERNAL_API_KEY', '')
 
-    # 获取当前引擎的连接信息
-    protocol = os.getenv('PROTOCOL', 'http')
-    host = os.getenv('HOST', 'localhost')
+    # 读取自身配置
     port = int(os.getenv('PORT', 8099))
+    protocol = os.getenv('PROTOCOL', 'http')
 
-    registration_data = {
-        "name": "Python Workflow",
+    # 生成 capabilities
+    capabilities = {
+        "compute": [{
+            "dev_modes": ["workflow"],
+            "supported_formats": ["geojson", "wkt", "csv", "parquet"],
+            "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
+            "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"
+        }]
+    }
+
+    # 构建注册请求
+    payload = {
         "engine_type": "python_workflow",
-        "is_builtin": True,
-        "capabilities": {
-            "compute": [{
-                "dev_modes": ["workflow"],
-                "supported_formats": ["geojson", "wkt", "shapely", "csv", "parquet"],
-                "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
-                "description": "基于 Python 生态的通用数据处理工作流引擎（Pandas, GeoPandas, NumPy, SciPy）"
-            }]
-        },
-        "description": "基于 Python (Pandas, GeoPandas, NumPy, SciPy) 的通用数据处理工作流引擎，支持空间和非空间数据处理",
+        "name": "Python 工作流引擎",
+        "description": "基于 Python 的工作流执行引擎，支持 GeoPandas、Pandas、NumPy 等数据处理库",
         "connection_info": {
             "protocol": protocol,
-            "host": host,
             "port": port
-        }
+            # host 由 System 自动填充
+        },
+        "capabilities": json.dumps(capabilities)
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Internal-API-Key": api_key
     }
 
     try:
+        logger.info(f"📤 发送注册请求到: {system_url}/internal/engines/register")
+        logger.info(f"📦 Payload: {payload}")
+        logger.info(f"🔑 Headers: Content-Type={headers['Content-Type']}, API Key length={len(api_key)}")
+
+        # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
+        proxies = {
+            'http': None,
+            'https': None
+        }
+
         response = requests.post(
-            f"{system_url}/internal/registry/capabilities",
-            json=registration_data,
-            headers={"X-Internal-API-Key": internal_api_key},
+            f"{system_url}/internal/engines/register",
+            json=payload,
+            headers=headers,
+            proxies=proxies,
             timeout=10
         )
 
-        if response.status_code in [200, 201]:
-            logger.info("✅ Successfully registered to System Backend")
+        logger.info(f"📥 收到响应: status={response.status_code}, body={response.text[:500]}")
+
+        if response.status_code == 202:
+            result = response.json()
+            engine_id = result.get('engine_id')
+            logger.info(f"✅ Successfully registered to System Backend (Engine ID: {engine_id})")
             return True
         else:
-            logger.warning(f"⚠️  Failed to register to System: {response.status_code} - {response.text}")
+            logger.warning(f"⚠️  Failed to register: {response.status_code} - {response.text}")
             return False
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ 网络请求异常: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+        return False
     except Exception as e:
-        logger.warning(f"⚠️  Failed to register to System: {e}")
+        logger.error(f"❌ 注册异常: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
         return False
 
 

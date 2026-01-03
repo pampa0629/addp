@@ -427,3 +427,95 @@ func (h *EngineHandler) UpdateConnectionStatusInternal(c *gin.Context) {
 		"message": "连接状态已更新",
 	})
 }
+
+// RegisterEngineRequest 引擎自注册请求
+type RegisterEngineRequest struct {
+	EngineType     string                 `json:"engine_type" binding:"required"`
+	Name           string                 `json:"name" binding:"required"`
+	Description    string                 `json:"description"`
+	ConnectionInfo map[string]interface{} `json:"connection_info" binding:"required"`
+	Capabilities   string                 `json:"capabilities"` // JSON 字符串
+}
+
+// RegisterEngineInternal 内部API：引擎自注册（创建或更新引擎记录并触发连接检查）
+// POST /api/internal/engines/register
+// 用于工作流引擎启动时自动注册并触发连接检查
+func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
+	var req RegisterEngineRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		commonapi.RespondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	fmt.Printf("[RegisterEngine] 📥 收到引擎注册请求: type=%s, name=%s\n", req.EngineType, req.Name)
+
+	// 1. 自动填充 host（从请求来源 IP，规范化回环地址）
+	clientIP := c.ClientIP()
+	// 将 IPv6/IPv4 回环地址统一规范化为 localhost
+	if clientIP == "::1" || clientIP == "127.0.0.1" || clientIP == "localhost" {
+		req.ConnectionInfo["host"] = "localhost"
+	} else {
+		req.ConnectionInfo["host"] = clientIP
+	}
+	fmt.Printf("[RegisterEngine] 🌐 自动填充 host: %s (来源 IP: %s)\n", req.ConnectionInfo["host"], clientIP)
+
+	// 2. 查找是否已存在（engine_type + tenant_id IS NULL 表示平台级引擎）
+	existingEngine, err := h.engineService.GetByEngineTypeAndTenant(req.EngineType, nil)
+
+	var engine *models.Engine
+	if err != nil {
+		// 不存在 - 创建新记录
+		fmt.Printf("[RegisterEngine] ➕ 引擎不存在，创建新记录\n")
+		newEngine := models.Engine{
+			Name:             req.Name,
+			EngineType:       req.EngineType,
+			EngineCategory:   "extension", // 工作流引擎都是扩展引擎
+			Description:      req.Description,
+			ConnectionInfo:   req.ConnectionInfo,
+			Capabilities:     &req.Capabilities,
+			IsActive:         true,
+			IsBuiltin:        false, // 废弃字段，设为 false
+			TenantID:         nil,   // 平台级引擎
+			ConnectionStatus: "unknown",
+		}
+
+		if err := h.engineService.CreateEngine(&newEngine); err != nil {
+			fmt.Printf("[RegisterEngine] ❌ 创建引擎失败: %v\n", err)
+			commonapi.RespondError(c, http.StatusInternalServerError, fmt.Sprintf("创建引擎失败: %v", err))
+			return
+		}
+		fmt.Printf("[RegisterEngine] ✅ 引擎创建成功，ID=%d\n", newEngine.ID)
+		engine = &newEngine
+	} else {
+		// 已存在 - 更新记录
+		fmt.Printf("[RegisterEngine] 🔄 引擎已存在 (ID=%d)，更新记录\n", existingEngine.ID)
+		existingEngine.Name = req.Name
+		existingEngine.Description = req.Description
+		existingEngine.ConnectionInfo = req.ConnectionInfo
+		existingEngine.Capabilities = &req.Capabilities
+
+		if err := h.engineService.UpdateEngine(existingEngine); err != nil {
+			fmt.Printf("[RegisterEngine] ❌ 更新引擎失败: %v\n", err)
+			commonapi.RespondError(c, http.StatusInternalServerError, fmt.Sprintf("更新引擎失败: %v", err))
+			return
+		}
+		fmt.Printf("[RegisterEngine] ✅ 引擎更新成功\n")
+		engine = existingEngine
+	}
+
+	// 3. 异步触发连接检查
+	fmt.Printf("[RegisterEngine] 🔍 触发异步连接测试...\n")
+	if err := h.engineService.AsyncCheckConnection(engine.ID); err != nil {
+		// 连接检查失败不影响注册成功，只记录日志
+		fmt.Printf("[RegisterEngine] ⚠️  触发连接检查失败: %v\n", err)
+	} else {
+		fmt.Printf("[RegisterEngine] ✅ 异步连接测试已启动\n")
+	}
+
+	c.JSON(http.StatusAccepted, gin.H{
+		"success":     true,
+		"message":     "引擎注册成功，连接检查已启动",
+		"engine_id":   engine.ID,
+		"engine_type": req.EngineType,
+	})
+}

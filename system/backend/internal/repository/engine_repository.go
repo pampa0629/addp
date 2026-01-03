@@ -88,6 +88,25 @@ func (r *EngineRepository) FindByEngineTypeAndBuiltin(ctx context.Context, engin
 	return &engine, nil
 }
 
+// GetByEngineTypeAndTenant 根据 engine_type 和 tenant_id 查询引擎
+// 用于工作流引擎自注册时查找是否已存在记录
+func (r *EngineRepository) GetByEngineTypeAndTenant(engineType string, tenantID *uint) (*models.Engine, error) {
+	var engine models.Engine
+	query := r.db.Where("engine_type = ?", engineType)
+
+	if tenantID == nil {
+		query = query.Where("tenant_id IS NULL")
+	} else {
+		query = query.Where("tenant_id = ?", *tenantID)
+	}
+
+	if err := query.First(&engine).Error; err != nil {
+		return nil, err
+	}
+
+	return &engine, nil
+}
+
 // FindByFilters 根据过滤条件查询引擎列表
 func (r *EngineRepository) FindByFilters(ctx context.Context, filters map[string]interface{}) ([]*models.Engine, error) {
 	var engines []*models.Engine

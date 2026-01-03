@@ -427,13 +427,13 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 
 	type lastScanRow struct {
 		EngineID   uint
-		LastScanAt *time.Time `gorm:"column:last_scan_at"`
+		LastScanAt *time.Time `gorm:"column:scanned_at"`
 	}
 	var lastScans []lastScanRow
 	if err := s.db.Table("metadata.meta_node").
 		Where("tenant_id = ? AND engine_id IN ?", tenantID, engineIDs).
-		Where("last_scan_at IS NOT NULL").
-		Select("engine_id, MAX(last_scan_at) AS last_scan_at").
+		Where("scanned_at IS NOT NULL").
+		Select("engine_id, MAX(scanned_at) AS scanned_at").
 		Group("engine_id").
 		Scan(&lastScans).Error; err != nil {
 		return nil, fmt.Errorf("failed to query node last scan time: %w", err)
@@ -471,7 +471,7 @@ func (s *EngineService) GetEnginesWithStats(tenantID uint) ([]*models.ResourceWi
 			TotalSchemas:     totalSchemas,
 			ScannedSchemas:   scannedSchemas,
 			UnscannedSchemas: totalSchemas - scannedSchemas,
-			LastScanAt:       lastScanAt,
+			ScannedAt:       lastScanAt,
 			ConnectionStatus: res.ConnectionStatus,
 			LastCheckAt:      lastCheckAt,
 			CheckMessage:     res.CheckMessage,

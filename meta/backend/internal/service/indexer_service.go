@@ -1,0 +1,383 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"time"
+
+	commonModels "github.com/addp/common/models"
+	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/search"
+	"github.com/addp/meta/plugins"
+)
+
+const (
+	documentPreviewRuneLimit = 400
+	documentContentRuneLimit = 20000
+)
+
+// IndexerService 负责管理 Meilisearch 索引
+// 提取自 ScanService，消除循环依赖
+type IndexerService struct {
+	indexer *search.Indexer
+	log     *slog.Logger
+}
+
+// NewIndexerService 创建索引服务
+func NewIndexerService(indexer *search.Indexer, log *slog.Logger) *IndexerService {
+	return &IndexerService{
+		indexer: indexer,
+		log:     log,
+	}
+}
+
+// IndexTableAsset 索引表资产到 Meilisearch
+func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugins.TableInfo, fields []plugins.FieldInfo, item *models.MetaItem) {
+	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
+		return
+	}
+
+	metadata := search.NormalizeMap(copyJSONMap(item.Attributes))
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	delete(metadata, "fields")
+
+	fieldRecords := make([]search.FieldRecord, 0, len(fields))
+	for _, field := range fields {
+		fieldRecords = append(fieldRecords, search.FieldRecord{
+			Name:            field.Name,
+			DataType:        field.DataType,
+			ColumnType:      field.ColumnType,
+			Comment:         field.Comment,
+			OrdinalPosition: field.OrdinalPosition,
+			IsNullable:      field.IsNullable,
+			IsPrimaryKey:    field.IsPrimaryKey,
+			IsUniqueKey:     field.IsUniqueKey,
+		})
+	}
+
+	record := &search.AssetRecord{
+		AssetID:       item.Fingerprint,
+		TenantID:      tenantID,
+		EngineID:      resource.ID,
+		ResourceName:  resource.Name,
+		ResourceType:  resource.EngineType,
+		AssetType:     "table",
+		Name:          item.Name,
+		FullName:      item.FullName,
+		Schema:        schemaName,
+		TableType:     tableInfo.Type,
+		Description:   tableInfo.Comment,
+		RowCount:      item.RowCount,
+		SizeBytes:     item.SizeBytes,
+		Metadata:      metadata,
+		Fields:        fieldRecords,
+		DataUpdatedAt: item.DataUpdatedAt,
+	}
+
+	if err := s.indexer.IndexAsset(context.Background(), record); err != nil {
+		s.log.Warn("索引表元数据失败", "fingerprint", item.Fingerprint, "schema", schemaName, "error", err)
+	}
+}
+
+// IndexObjectAsset 索引对象资产到 Meilisearch
+// 注意：此方法不包含向量化逻辑，向量化应该在外部处理
+func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta plugins.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) *search.DocumentRecord {
+	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
+		return nil
+	}
+
+	attributes := copyJSONMap(item.Attributes)
+	metadata := search.NormalizeMap(attributes)
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+
+	tags := extractStringSlice(metadata["tags"])
+	if len(tags) > 0 {
+		delete(metadata, "tags")
+	}
+
+	plainText := ""
+	if meta.ExtractedMetadata != nil && meta.ExtractedMetadata.CustomAttrs != nil {
+		if v, ok := meta.ExtractedMetadata.CustomAttrs["plain_text"].(string); ok {
+			plainText = v
+		}
+	}
+	if v, ok := metadata["plain_text"].(string); ok && plainText == "" {
+		plainText = v
+	}
+	delete(metadata, "plain_text")
+
+	// 索引资产记录
+	assetRecord := &search.AssetRecord{
+		AssetID:       item.Fingerprint,
+		TenantID:      tenantID,
+		EngineID:      engineID,
+		ResourceName:  resource.Name,
+		ResourceType:  resource.EngineType,
+		AssetType:     "object",
+		Name:          item.Name,
+		FullName:      fullName,
+		Bucket:        meta.Bucket,
+		Path:          meta.Path,
+		RelativePath:  relativePath,
+		Metadata:      metadata,
+		SizeBytes:     item.SizeBytes,
+		DataUpdatedAt: meta.LastModified,
+	}
+
+	if len(tags) > 0 {
+		assetRecord.Tags = tags
+	}
+	if desc := getStringFromMap(metadata, "file_type_friendly"); desc != "" {
+		assetRecord.Description = desc
+	}
+
+	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
+		s.log.Warn("索引对象元数据失败", "fingerprint", item.Fingerprint, "bucket", meta.Bucket, "path", meta.Path, "error", err)
+	}
+
+	// 构建文档记录用于后续向量化（在外部处理）
+	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
+	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
+	docMetadata := cloneInterfaceMap(metadata)
+
+	docRecord := &search.DocumentRecord{
+		DocumentID:     item.Fingerprint,
+		AssetID:        item.Fingerprint,
+		TenantID:       tenantID,
+		EngineID:       engineID,
+		ResourceName:   resource.Name,
+		ResourceType:   resource.EngineType,
+		Bucket:         meta.Bucket,
+		RelativePath:   relativePath,
+		FileName:       item.Name,
+		FilePath:       meta.Path,
+		Content:        truncatedContent,
+		ContentPreview: contentPreview,
+		FileSize:       meta.SizeBytes,
+		Metadata:       docMetadata,
+	}
+
+	if meta.ExtractedMetadata != nil {
+		if basic := meta.ExtractedMetadata.BasicInfo; basic.FileName != "" {
+			docRecord.FileName = basic.FileName
+		}
+		if basic := meta.ExtractedMetadata.BasicInfo; basic.ContentType != "" {
+			docRecord.ContentType = basic.ContentType
+		}
+		if basic := meta.ExtractedMetadata.BasicInfo; !basic.LastModified.IsZero() {
+			lm := basic.LastModified
+			docRecord.LastModified = &lm
+		} else if meta.LastModified != nil {
+			docRecord.LastModified = meta.LastModified
+		}
+	}
+	if docRecord.LastModified == nil && meta.LastModified != nil {
+		docRecord.LastModified = meta.LastModified
+	}
+
+	if value := getStringFromMap(metadata, "document_type"); value != "" {
+		docRecord.DocumentType = value
+	}
+	if value := getStringFromMap(metadata, "title"); value != "" {
+		docRecord.Title = value
+	}
+	if value := getStringFromMap(metadata, "author"); value != "" {
+		docRecord.Author = value
+	}
+	if keywords := extractStringSlice(metadata["keywords"]); len(keywords) > 0 {
+		docRecord.Keywords = keywords
+	}
+	if wc := intFromInterface(metadata["word_count"]); wc > 0 {
+		docRecord.WordCount = wc
+	}
+	if pc := intFromInterface(metadata["page_count"]); pc > 0 {
+		docRecord.PageCount = pc
+	}
+	if created := extractTimePtr(metadata["created_date"]); created != nil {
+		docRecord.CreatedDate = created
+	}
+	if modified := extractTimePtr(metadata["modified_date"]); modified != nil {
+		docRecord.ModifiedDate = modified
+	}
+
+	if err := s.indexer.IndexDocument(context.Background(), docRecord); err != nil {
+		s.log.Warn("索引文档内容失败", "fingerprint", item.Fingerprint, "error", err)
+	}
+
+	// 返回文档记录，以便外部可以进行向量化
+	return docRecord
+}
+
+// DeleteTablesFromIndex 从索引中删除表
+func (s *IndexerService) DeleteTablesFromIndex(tenantID, engineID uint, schemaName string) {
+	if s.indexer == nil || !s.indexer.Enabled() || schemaName == "" {
+		return
+	}
+	if err := s.indexer.DeleteTables(context.Background(), tenantID, engineID, schemaName); err != nil {
+		s.log.Warn("删除表索引失败", "schema", schemaName, "engine_id", engineID, "error", err)
+	}
+}
+
+// DeleteObjectsFromIndex 从索引中删除对象
+func (s *IndexerService) DeleteObjectsFromIndex(tenantID, engineID uint, bucketName, relativePath string) {
+	if s.indexer == nil || !s.indexer.Enabled() || bucketName == "" {
+		return
+	}
+	if err := s.indexer.DeleteObjects(context.Background(), tenantID, engineID, bucketName, relativePath); err != nil {
+		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", relativePath, "error", err)
+	}
+}
+
+// 辅助函数（从 scan_service.go 复制）
+
+func copyJSONMap(m models.JSONMap) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		result[k] = v
+	}
+	return result
+}
+
+func cloneInterfaceMap(m map[string]interface{}) map[string]interface{} {
+	if m == nil {
+		return nil
+	}
+	result := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		switch vv := v.(type) {
+		case map[string]interface{}:
+			result[k] = cloneInterfaceMap(vv)
+		case []interface{}:
+			arr := make([]interface{}, 0, len(vv))
+			for _, item := range vv {
+				switch nested := item.(type) {
+				case map[string]interface{}:
+					arr = append(arr, cloneInterfaceMap(nested))
+				default:
+					arr = append(arr, nested)
+				}
+			}
+			result[k] = arr
+		default:
+			result[k] = vv
+		}
+	}
+	return result
+}
+
+func extractStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, raw := range v {
+			if s, ok := raw.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	default:
+		return nil
+	}
+}
+
+func getStringFromMap(metadata map[string]interface{}, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	if val, ok := metadata[key]; ok {
+		switch v := val.(type) {
+		case string:
+			return v
+		case fmt.Stringer:
+			return v.String()
+		case []byte:
+			return string(v)
+		default:
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
+}
+
+func intFromInterface(value interface{}) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case json.Number:
+		if i64, err := v.Int64(); err == nil {
+			return int(i64)
+		}
+	case string:
+		if v == "" {
+			return 0
+		}
+		if i64, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return int(i64)
+		}
+	}
+	return 0
+}
+
+func extractTimePtr(value interface{}) *time.Time {
+	switch v := value.(type) {
+	case time.Time:
+		if v.IsZero() {
+			return nil
+		}
+		vv := v
+		return &vv
+	case *time.Time:
+		if v == nil || v.IsZero() {
+			return nil
+		}
+		vv := v.UTC()
+		return &vv
+	case string:
+		if v == "" {
+			return nil
+		}
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			return &parsed
+		}
+	}
+	return nil
+}

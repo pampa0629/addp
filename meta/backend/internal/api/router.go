@@ -14,7 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanServiceNew, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -27,7 +27,7 @@ func SetupRouterNew(cfg *config.Config, engineService *service.EngineService, sc
 	router.Use(cors.New(corsConfig))
 
 	if engineService == nil || scanService == nil {
-		panic("engineService and scanService must be provided to SetupRouterNew")
+		panic("engineService and scanService must be provided to SetupRouter")
 	}
 
 	// 创建Handler

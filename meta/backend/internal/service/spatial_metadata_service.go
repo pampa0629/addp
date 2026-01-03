@@ -4,15 +4,31 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/addp/common/logger"
+	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/models"
 )
 
-// scanSpatialMetadata 扫描空间表的几何元数据
+// SpatialMetadataService 负责扫描空间表的几何元数据
+// 从 scan_spatial.go 提取，消除循环依赖
+type SpatialMetadataService struct {
+	config *config.Config
+	log    *slog.Logger
+}
+
+// NewSpatialMetadataService 创建空间元数据服务
+func NewSpatialMetadataService(cfg *config.Config, log *slog.Logger) *SpatialMetadataService {
+	return &SpatialMetadataService{
+		config: cfg,
+		log:    log,
+	}
+}
+
+// ScanTableSpatialMetadata 扫描空间表的几何元数据
 // 在深度扫描表时调用，检测空间列并提取元数据
-func (s *ScanServiceNew) scanSpatialMetadata(
+func (s *SpatialMetadataService) ScanTableSpatialMetadata(
 	ctx context.Context,
 	db *sql.DB,
 	schema, table string,
@@ -26,28 +42,28 @@ func (s *ScanServiceNew) scanSpatialMetadata(
 	// 2. 查询 SRID
 	srid, err := s.querySRID(db, schema, table, geomColumn)
 	if err != nil {
-		logger.L().Warn("Failed to query SRID", "schema", schema, "table", table, "error", err)
+		s.log.Warn("Failed to query SRID", "schema", schema, "table", table, "error", err)
 		return nil, err
 	}
 
 	// 3. 计算 extent (WGS84)
 	extent, err := s.calculateExtent(db, schema, table, geomColumn, srid)
 	if err != nil {
-		logger.L().Warn("Failed to calculate extent", "schema", schema, "table", table, "error", err)
+		s.log.Warn("Failed to calculate extent", "schema", schema, "table", table, "error", err)
 		return nil, err
 	}
 
 	// 4. 统计几何类型
 	geomTypes, err := s.getGeometryTypes(db, schema, table, geomColumn)
 	if err != nil {
-		logger.L().Warn("Failed to get geometry types", "schema", schema, "table", table, "error", err)
+		s.log.Warn("Failed to get geometry types", "schema", schema, "table", table, "error", err)
 		geomTypes = []string{}
 	}
 
 	// 5. 检查空间索引
 	hasIndex, indexName, err := s.checkSpatialIndex(db, schema, table, geomColumn)
 	if err != nil {
-		logger.L().Warn("Failed to check spatial index", "schema", schema, "table", table, "error", err)
+		s.log.Warn("Failed to check spatial index", "schema", schema, "table", table, "error", err)
 		hasIndex = false
 	}
 
@@ -68,7 +84,7 @@ func (s *ScanServiceNew) scanSpatialMetadata(
 }
 
 // detectGeometryColumn 检测几何列
-func (s *ScanServiceNew) detectGeometryColumn(db *sql.DB, schema, table string) (string, error) {
+func (s *SpatialMetadataService) detectGeometryColumn(db *sql.DB, schema, table string) (string, error) {
 	// 常见的几何列名
 	commonNames := []string{"geom", "geometry", "shape", "the_geom", "geog", "geography", "smgeometry"}
 
@@ -106,7 +122,7 @@ func (s *ScanServiceNew) detectGeometryColumn(db *sql.DB, schema, table string) 
 }
 
 // querySRID 查询空间参考系统 ID
-func (s *ScanServiceNew) querySRID(db *sql.DB, schema, table, geomColumn string) (int, error) {
+func (s *SpatialMetadataService) querySRID(db *sql.DB, schema, table, geomColumn string) (int, error) {
 	query := `
 		SELECT Find_SRID($1, $2, $3)
 	`
@@ -122,11 +138,11 @@ func (s *ScanServiceNew) querySRID(db *sql.DB, schema, table, geomColumn string)
 
 // calculateExtent 计算空间范围（WGS84）
 // 大表自动使用采样避免 OOM
-func (s *ScanServiceNew) calculateExtent(db *sql.DB, schema, table, geomColumn string, srid int) ([]float64, error) {
+func (s *SpatialMetadataService) calculateExtent(db *sql.DB, schema, table, geomColumn string, srid int) ([]float64, error) {
 	// 1. 查询表行数
 	rowCount, err := s.getTableRowCount(db, schema, table)
 	if err != nil {
-		logger.L().Warn("Failed to get table row count, using full calculation", "error", err)
+		s.log.Warn("Failed to get table row count, using full calculation", "error", err)
 		rowCount = 0 // 降级到全表计算
 	}
 
@@ -143,7 +159,7 @@ func (s *ScanServiceNew) calculateExtent(db *sql.DB, schema, table, geomColumn s
 	// 3. 根据行数选择计算策略
 	if rowCount > int64(largeTableThreshold) {
 		// 大表：使用采样（TABLESAMPLE + LIMIT）
-		logger.L().Info("Large table detected, using sampling for extent calculation",
+		s.log.Info("Large table detected, using sampling for extent calculation",
 			"schema", schema, "table", table, "rows", rowCount,
 			"sample_percent", samplePercent)
 
@@ -193,7 +209,7 @@ func (s *ScanServiceNew) calculateExtent(db *sql.DB, schema, table, geomColumn s
 }
 
 // getTableRowCount 查询表的行数（使用统计信息，快速）
-func (s *ScanServiceNew) getTableRowCount(db *sql.DB, schema, table string) (int64, error) {
+func (s *SpatialMetadataService) getTableRowCount(db *sql.DB, schema, table string) (int64, error) {
 	// 优先使用 pg_class 统计信息（快速，但可能不精确）
 	query := `
 		SELECT c.reltuples::bigint
@@ -217,7 +233,7 @@ func (s *ScanServiceNew) getTableRowCount(db *sql.DB, schema, table string) (int
 }
 
 // getGeometryTypes 统计几何类型
-func (s *ScanServiceNew) getGeometryTypes(db *sql.DB, schema, table, geomColumn string) ([]string, error) {
+func (s *SpatialMetadataService) getGeometryTypes(db *sql.DB, schema, table, geomColumn string) ([]string, error) {
 	query := fmt.Sprintf(`
 		SELECT DISTINCT ST_GeometryType("%s") as geom_type
 		FROM "%s"."%s"
@@ -244,7 +260,7 @@ func (s *ScanServiceNew) getGeometryTypes(db *sql.DB, schema, table, geomColumn 
 }
 
 // checkSpatialIndex 检查空间索引
-func (s *ScanServiceNew) checkSpatialIndex(db *sql.DB, schema, table, geomColumn string) (bool, string, error) {
+func (s *SpatialMetadataService) checkSpatialIndex(db *sql.DB, schema, table, geomColumn string) (bool, string, error) {
 	query := `
 		SELECT indexname
 		FROM pg_indexes
@@ -267,7 +283,7 @@ func (s *ScanServiceNew) checkSpatialIndex(db *sql.DB, schema, table, geomColumn
 }
 
 // detectUpdatedAtColumn 检测 updated_at 字段
-func (s *ScanServiceNew) detectUpdatedAtColumn(db *sql.DB, schema, table string) (bool, string) {
+func (s *SpatialMetadataService) detectUpdatedAtColumn(db *sql.DB, schema, table string) (bool, string) {
 	// 常见的更新时间列名
 	commonNames := []string{"updated_at", "update_time", "modified_at", "modify_time", "last_modified"}
 
@@ -289,8 +305,8 @@ func (s *ScanServiceNew) detectUpdatedAtColumn(db *sql.DB, schema, table string)
 	return false, ""
 }
 
-// getTableStats 查询表统计信息（用于变更检测）
-func (s *ScanServiceNew) getTableStats(db *sql.DB, schema, table string) (*models.TableStats, error) {
+// GetTableStats 查询表统计信息（用于变更检测）
+func (s *SpatialMetadataService) GetTableStats(db *sql.DB, schema, table string) (*models.TableStats, error) {
 	query := `
 		SELECT
 			n_tup_ins + n_tup_upd + n_tup_del as total_changes,

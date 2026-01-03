@@ -787,16 +787,21 @@ func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, 
 // 返回true表示在线，false表示离线
 // 用于启动时的健康检查和用户手动测试连接
 func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
+	fmt.Printf("[ConnectionCheck] 🔍 开始检查引擎连接状态: ID=%d\n", engineID)
+
 	// 1. 获取资源
 	engine, err := s.repo.GetByID(engineID)
 	if err != nil {
+		fmt.Printf("[ConnectionCheck] ❌ 获取资源失败: %v\n", err)
 		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("获取资源失败: %v", err))
 		return false
 	}
+	fmt.Printf("[ConnectionCheck] ✅ 获取引擎信息: type=%s, name=%s\n", engine.EngineType, engine.Name)
 
 	// 2. 跳过API类型资源（api.xxx）的连接检测
 	// API类型资源需要通过health_check_config配置的健康检查端点来检测
 	if strings.HasPrefix(engine.EngineType, "api.") {
+		fmt.Printf("[ConnectionCheck] ⏭️  跳过API类型资源\n")
 		s.updateConnectionStatus(engineID, "unknown", "API类型资源不支持自动连接检测")
 		return false
 	}
@@ -804,12 +809,15 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 	// 3. 解密连接信息
 	decryptedConnInfo, err := s.decryptSensitiveFields(engine.ConnectionInfo)
 	if err != nil {
+		fmt.Printf("[ConnectionCheck] ❌ 解密连接信息失败: %v\n", err)
 		s.updateConnectionStatus(engineID, "unknown", fmt.Sprintf("解密连接信息失败: %v", err))
 		return false
 	}
 	engine.ConnectionInfo = decryptedConnInfo
+	fmt.Printf("[ConnectionCheck] 🔓 连接信息解密成功: %+v\n", engine.ConnectionInfo)
 
 	// 4. 测试连接
+	fmt.Printf("[ConnectionCheck] ⏱️  开始连接测试 (超时: 3秒)...\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -817,10 +825,12 @@ func (s *EngineService) CheckAndUpdateConnectionStatus(engineID uint) bool {
 
 	// 5. 更新状态
 	if err != nil {
+		fmt.Printf("[ConnectionCheck] ❌ 连接测试失败: %v\n", err)
 		s.updateConnectionStatus(engineID, "offline", err.Error())
 		return false
 	}
 
+	fmt.Printf("[ConnectionCheck] ✅ 连接测试成功\n")
 	s.updateConnectionStatus(engineID, "online", "连接正常")
 	return true
 }
@@ -866,5 +876,21 @@ func (s *EngineService) updateConnectionStatus(engineID uint, status, message st
 // 保留是为了向后兼容
 func (s *EngineService) UpdateConnectionStatus(engineID uint, status string, message string) error {
 	return s.updateConnectionStatus(engineID, status, message)
+}
+
+// GetByEngineTypeAndTenant 根据 engine_type 和 tenant_id 查询引擎
+// 用于工作流引擎自注册时查找是否已存在记录
+func (s *EngineService) GetByEngineTypeAndTenant(engineType string, tenantID *uint) (*models.Engine, error) {
+	return s.repo.GetByEngineTypeAndTenant(engineType, tenantID)
+}
+
+// CreateEngine 创建引擎
+func (s *EngineService) CreateEngine(engine *models.Engine) error {
+	return s.repo.Create(engine)
+}
+
+// UpdateEngine 更新引擎
+func (s *EngineService) UpdateEngine(engine *models.Engine) error {
+	return s.repo.Update(engine)
 }
 
