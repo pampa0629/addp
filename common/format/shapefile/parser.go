@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/addp/common/format"
@@ -30,7 +31,148 @@ func (p *Parser) SupportedFormats() []format.FormatType {
 	return []format.FormatType{format.FormatShapefile}
 }
 
+// ============ FileTableParser 接口实现 ============
+
+// ParseTableInfo 从 Shapefile 文件中提取 TableInfo
+func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+	// 使用传入的 options，如果为 nil 则使用默认的
+	opts := p.options
+	if options != nil {
+		opts = options
+		p.options = opts // 更新 options 以供内部方法使用
+	}
+
+	// Shapefile 需要文件路径，将 input 保存到临时文件
+	tempDir, cleanup, err := p.saveToTempFiles(input)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	// 打开 shapefile
+	shpPath := filepath.Join(tempDir, "data.shp")
+	reader, err := Open(shpPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open shapefile: %w", err)
+	}
+	defer reader.Close()
+
+	// 获取 schema 信息
+	shpSchema := reader.GetSchema()
+	geometryField := p.getGeometryFieldName()
+
+	// 构建 FieldInfo 列表（几何字段 + 属性字段）
+	fields := make([]format.FieldInfo, 0, len(shpSchema)+1)
+
+	// 添加几何字段
+	fields = append(fields, format.FieldInfo{
+		Name:         geometryField,
+		Type:         format.FieldTypeGeometry,
+		OriginalType: "Geometry",
+		Nullable:     false,
+		IsPrimaryKey: false,
+		Comment:      "Shapefile geometry field",
+	})
+
+	// 添加属性字段
+	for _, field := range shpSchema {
+		fields = append(fields, format.FieldInfo{
+			Name:         field.Name,
+			Type:         mapShapefileTypeToFieldType(field.Type),
+			OriginalType: field.Type,
+			Nullable:     true,
+			IsPrimaryKey: false,
+			Comment:      "",
+		})
+	}
+
+	// 统计记录数
+	recordCount := int64(0)
+	for reader.Next() {
+		recordCount++
+	}
+
+	// 构建 SpatialInfo 扩展
+	// 重新打开 reader 来获取第一个 shape 以确定几何类型
+	reader2, err := Open(shpPath)
+	if err == nil {
+		defer reader2.Close()
+		var geomType string
+		if reader2.Next() {
+			_, shape := reader2.Shape()
+			// 使用 shape 的类型来确定几何类型
+			geomType = fmt.Sprintf("%T", shape) // 简化处理
+			// 标准化类型名称
+			if strings.Contains(geomType, "Point") {
+				geomType = "Point"
+			} else if strings.Contains(geomType, "Polygon") {
+				geomType = "Polygon"
+			} else if strings.Contains(geomType, "PolyLine") {
+				geomType = "LineString"
+			} else {
+				geomType = "Geometry"
+			}
+		} else {
+			geomType = "Geometry"
+		}
+
+		spatialInfo := &format.SpatialInfo{
+			GeometryColumn: geometryField,
+			GeometryType:   geomType,
+			SRID:           4326, // Shapefile 默认 WGS84
+			Dimension:      2,    // Shapefile 默认 2D
+		}
+
+		// 如果在 options 中指定了空间参考系统，解析 SRID
+		if opts.SpatialRefSys != "" {
+			if srid := parseSRID(opts.SpatialRefSys); srid > 0 {
+				spatialInfo.SRID = srid
+			}
+		}
+
+		// 构建 ShapefileInfo 扩展
+		shapefileInfo := &format.ShapefileInfo{
+			Encoding:   opts.Encoding,
+			ShapeType:  geomType,
+			HasPRJ:     false, // TODO: 检测 .prj 文件
+			HasCPG:     false, // TODO: 检测 .cpg 文件
+			DBFVersion: 0,     // TODO: 从 DBF 读取版本号
+		}
+
+		// 构建 TableInfo
+		tableInfo := &format.TableInfo{
+			Name:       "shapefile_data", // Shapefile 没有表名，使用默认值
+			RowCount:   &recordCount,
+			Fields:     fields,
+			PrimaryKey: []string{}, // Shapefile 没有主键
+			Extensions: []format.ExtensionInfo{spatialInfo, shapefileInfo},
+		}
+
+		return tableInfo, nil
+	}
+
+	// 如果无法重新打开文件，返回不带扩展信息的 TableInfo
+	tableInfo := &format.TableInfo{
+		Name:       "shapefile_data",
+		RowCount:   &recordCount,
+		Fields:     fields,
+		PrimaryKey: []string{},
+		Extensions: []format.ExtensionInfo{},
+	}
+
+	return tableInfo, nil
+}
+
+// ReadPreview 读取 Shapefile 数据预览
+func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	// 直接调用现有的 ReadRecords 方法
+	return p.ReadRecords(ctx, input, offset, limit)
+}
+
+// ============ 向后兼容（已废弃）============
+
 // ParseSchema 解析 Shapefile Schema
+// @Deprecated: 使用 ParseTableInfo() 替代
 // 注意：Shapefile 需要 .shp, .shx, .dbf 三个文件，input 应该是 .shp 文件路径
 func (p *Parser) ParseSchema(ctx context.Context, input io.Reader) (*format.Schema, error) {
 	// Shapefile 需要文件路径，将 input 保存到临时文件
@@ -365,6 +507,40 @@ func geomToWKT(geom interface{}) (string, error) {
 	// 可以使用 github.com/twpayne/go-geom/encoding/wkt
 	// 简化实现，返回几何类型描述
 	return fmt.Sprintf("%T", geom), nil
+}
+
+// determineShapefileGeometryType 根据 shape type 确定几何类型
+func determineShapefileGeometryType(shapeType shp.ShapeType) string {
+	switch shapeType {
+	case shp.POINT, shp.POINTZ, shp.POINTM:
+		return "Point"
+	case shp.POLYLINE, shp.POLYLINEZ, shp.POLYLINEM:
+		return "LineString"
+	case shp.POLYGON, shp.POLYGONZ, shp.POLYGONM:
+		return "Polygon"
+	case shp.MULTIPOINT, shp.MULTIPOINTZ, shp.MULTIPOINTM:
+		return "MultiPoint"
+	default:
+		return "Geometry"
+	}
+}
+
+// parseSRID 从空间参考系统字符串中解析 SRID
+// 例如: "EPSG:4326" -> 4326
+func parseSRID(srsStr string) int {
+	if srsStr == "" {
+		return 0
+	}
+
+	// 处理 "EPSG:xxxx" 格式
+	if strings.HasPrefix(strings.ToUpper(srsStr), "EPSG:") {
+		sridStr := strings.TrimPrefix(strings.ToUpper(srsStr), "EPSG:")
+		if srid, err := strconv.Atoi(sridStr); err == nil {
+			return srid
+		}
+	}
+
+	return 0
 }
 
 func init() {
