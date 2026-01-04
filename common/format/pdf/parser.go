@@ -273,7 +273,60 @@ func parseKeywords(keywords string) []string {
 	return result
 }
 
+// ============ ObjectInfoParser 接口实现 ============
+
+// ParseObjectInfo 实现 ObjectInfoParser 接口
+// 从 PDF 文件中提取 ObjectInfo（包含 PDFInfo 扩展信息）
+func (p *Parser) ParseObjectInfo(ctx context.Context, input io.Reader, basicInfo format.ObjectBasicInfo) (*format.ObjectInfo, error) {
+	// 读取 PDF 内容
+	content, err := io.ReadAll(input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PDF content: %w", err)
+	}
+
+	// 验证 PDF
+	if !bytes.HasPrefix(content, []byte("%PDF-")) {
+		return nil, fmt.Errorf("not a valid PDF file")
+	}
+
+	// 提取元数据
+	docMeta := extractPDFMetadata(content)
+	pageCount := estimatePageCount(content)
+
+	// 构建 PDFInfo
+	pdfInfo := &format.PDFInfo{
+		PageCount: pageCount,
+		Title:     docMeta["Title"],
+		Author:    docMeta["Author"],
+		Subject:   docMeta["Subject"],
+		Creator:   docMeta["Creator"],
+		Producer:  docMeta["Producer"],
+		Encrypted: bytes.Contains(content, []byte("/Encrypt")),
+	}
+
+	// 构建 ObjectInfo
+	objectInfo := &format.ObjectInfo{
+		Key:         basicInfo.Key,
+		SizeBytes:   basicInfo.SizeBytes,
+		ModifiedAt:  basicInfo.ModifiedAt,
+		ContentType: basicInfo.ContentType,
+		ETag:        basicInfo.ETag,
+		Extensions:  []format.ExtensionInfo{pdfInfo},
+	}
+
+	return objectInfo, nil
+}
+
+// SupportedContentTypes 实现 ObjectInfoParser 接口
+// 返回支持的 MIME 类型
+func (p *Parser) SupportedContentTypes() []string {
+	return []string{
+		"application/pdf",
+	}
+}
+
 func init() {
-	// 注册到全局 format registry
-	_ = format.Register(NewParser(nil))
+	parser := NewParser(nil)
+	// 注册为 ObjectInfoParser
+	_ = format.RegisterObjectInfoParser(parser)
 }

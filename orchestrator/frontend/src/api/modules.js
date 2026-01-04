@@ -14,45 +14,5 @@ export default {
       params: { unique_identifier: uniqueIdentifier, ...params }
     })
     return data
-  },
-
-  /**
-   * 【旧】获取 Transfer 任务列表（向后兼容，推荐使用 listTasksByIdentifier）
-   * @param {Object} params - 查询参数 {page, page_size, type, status}
-   * @returns {Promise<{items: Array, total: number}>}
-   * @deprecated 请使用 listTasksByIdentifier('transfer.importer.default', params)
-   */
-  async listTransferTasks(params = {}) {
-    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
-    const data = await client.get('/tasks/list', {
-      params: { module: 'transfer', page_size: 100, ...params }
-    })
-    return data
-  },
-
-  /**
-   * 【旧】获取 Meta 扫描任务列表（向后兼容，推荐使用 listTasksByIdentifier）
-   * @returns {Promise<Array>}
-   * @deprecated 请使用 listTasksByIdentifier('meta.scanner.default')
-   */
-  async listMetaTasks() {
-    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
-    const data = await client.get('/tasks/list', {
-      params: { module: 'meta' }
-    })
-    return data
-  },
-
-  /**
-   * 【旧】获取 Manager 任务列表（向后兼容，推荐使用 listTasksByIdentifier）
-   * @returns {Promise<Array>}
-   * @deprecated 请使用 listTasksByIdentifier('manager.tile_cache.default')
-   */
-  async listManagerTasks() {
-    // 注意: client 的响应拦截器已经返回 response.data，所以这里直接返回
-    const data = await client.get('/tasks/list', {
-      params: { module: 'manager' }
-    })
-    return data
   }
 }

@@ -1,25 +1,22 @@
 package format
 
 import (
-	"context"
 	"fmt"
 	"sync"
 )
 
 // Registry 是解析器的全局注册中心
 // 支持三种类型的解析器：
-//  1. Parser（旧接口，向后兼容）
-//  2. FileTableParser（文件表解析器）
-//  3. DBTableParser（数据库表解析器）
+//  1. FileTableParser（文件表解析器）
+//  2. DBTableParser（数据库表解析器）
+//  3. ObjectInfoParser（对象信息解析器）
 type Registry struct {
 	mu sync.RWMutex
 
-	// 旧接口（向后兼容）
-	parsers map[FormatType]Parser
-
 	// 新接口
-	fileTableParsers map[FormatType]FileTableParser // key: FormatType (e.g., FormatCSV, FormatShapefile)
-	dbTableParsers   map[string]DBTableParser       // key: engine type (e.g., "postgresql", "mysql")
+	fileTableParsers  map[FormatType]FileTableParser // key: FormatType (e.g., FormatCSV, FormatShapefile)
+	dbTableParsers    map[string]DBTableParser       // key: engine type (e.g., "postgresql", "mysql")
+	objectInfoParsers map[string]ObjectInfoParser    // key: content type (e.g., "image/jpeg", "application/pdf")
 }
 
 var (
@@ -29,60 +26,10 @@ var (
 // NewRegistry 创建新的解析器注册中心
 func NewRegistry() *Registry {
 	return &Registry{
-		parsers:          make(map[FormatType]Parser),
-		fileTableParsers: make(map[FormatType]FileTableParser),
-		dbTableParsers:   make(map[string]DBTableParser),
+		fileTableParsers:  make(map[FormatType]FileTableParser),
+		dbTableParsers:    make(map[string]DBTableParser),
+		objectInfoParsers: make(map[string]ObjectInfoParser),
 	}
-}
-
-// ============ 旧接口（向后兼容）============
-
-// Register 注册解析器到全局注册中心
-// @Deprecated: 使用 RegisterFileTableParser 或 RegisterDBTableParser
-func Register(parser Parser) error {
-	return globalRegistry.RegisterParser(parser)
-}
-
-// RegisterParser 注册解析器
-// @Deprecated: 使用 RegisterFileTableParser 或 RegisterDBTableParser
-func (r *Registry) RegisterParser(parser Parser) error {
-	if parser == nil {
-		return fmt.Errorf("parser cannot be nil")
-	}
-
-	formats := parser.SupportedFormats()
-	if len(formats) == 0 {
-		return fmt.Errorf("parser must support at least one format")
-	}
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, formatType := range formats {
-		r.parsers[formatType] = parser
-	}
-
-	return nil
-}
-
-// GetParser 获取指定格式的解析器
-// @Deprecated: 使用 GetFileTableParser
-func GetParser(formatType FormatType) (Parser, error) {
-	return globalRegistry.Get(formatType)
-}
-
-// Get 获取指定格式的解析器
-// @Deprecated: 使用 GetFileTableParser
-func (r *Registry) Get(formatType FormatType) (Parser, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	parser, ok := r.parsers[formatType]
-	if !ok {
-		return nil, fmt.Errorf("no parser registered for format: %s", formatType)
-	}
-
-	return parser, nil
 }
 
 // ============ FileTableParser 注册 ============
@@ -213,39 +160,67 @@ func (r *Registry) ListEngineTypes() []string {
 	return types
 }
 
-// ============ 便捷函数（向后兼容）============
+// ============ ObjectInfoParser 注册 ============
 
-// ListSupportedFormats 列出所有已注册的格式（旧接口）
-// @Deprecated: 使用 ListSupportedFileFormats
-func ListSupportedFormats() []FormatType {
-	return globalRegistry.ListFormats()
+// RegisterObjectInfoParser 注册对象信息解析器到全局注册中心
+func RegisterObjectInfoParser(parser ObjectInfoParser) error {
+	return globalRegistry.RegisterObjectParser(parser)
 }
 
-// ListFormats 列出所有已注册的格式（旧接口）
-// @Deprecated: 使用 ListFileFormats
-func (r *Registry) ListFormats() []FormatType {
+// RegisterObjectParser 注册对象信息解析器
+func (r *Registry) RegisterObjectParser(parser ObjectInfoParser) error {
+	if parser == nil {
+		return fmt.Errorf("object info parser cannot be nil")
+	}
+
+	contentTypes := parser.SupportedContentTypes()
+	if len(contentTypes) == 0 {
+		return fmt.Errorf("object info parser must support at least one content type")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, contentType := range contentTypes {
+		r.objectInfoParsers[contentType] = parser
+	}
+
+	return nil
+}
+
+// GetObjectInfoParser 获取指定内容类型的对象信息解析器
+func GetObjectInfoParser(contentType string) (ObjectInfoParser, error) {
+	return globalRegistry.GetObjectParser(contentType)
+}
+
+// GetObjectParser 获取指定内容类型的对象信息解析器
+func (r *Registry) GetObjectParser(contentType string) (ObjectInfoParser, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	formats := make([]FormatType, 0, len(r.parsers))
-	for formatType := range r.parsers {
-		formats = append(formats, formatType)
+	parser, ok := r.objectInfoParsers[contentType]
+	if !ok {
+		return nil, fmt.Errorf("no object info parser registered for content type: %s", contentType)
 	}
 
-	return formats
+	return parser, nil
 }
 
-// ParseSchema 使用注册的解析器解析 Schema（旧接口）
-// @Deprecated: 使用 FileTableParser.ParseTableInfo() 替代
-func ParseSchema(ctx context.Context, formatType FormatType, input interface{}) (*Schema, error) {
-	_, err := GetParser(formatType)
-	if err != nil {
-		return nil, err
+// ListSupportedContentTypes 列出所有已注册的内容类型
+func ListSupportedContentTypes() []string {
+	return globalRegistry.ListContentTypes()
+}
+
+// ListContentTypes 列出所有已注册的内容类型
+func (r *Registry) ListContentTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	types := make([]string, 0, len(r.objectInfoParsers))
+	for contentType := range r.objectInfoParsers {
+		types = append(types, contentType)
 	}
 
-	// TODO: 根据 input 类型转换为 io.Reader
-	// 这里简化处理，实际使用时各模块会直接调用特定解析器
-
-	return nil, fmt.Errorf("not implemented: use specific parser directly")
+	return types
 }
 

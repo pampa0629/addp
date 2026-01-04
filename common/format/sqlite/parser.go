@@ -361,6 +361,8 @@ func (p *Parser) saveToTempFile(input io.Reader) (string, func(), error) {
 }
 
 func init() {
-	// 注册到全局 format registry
-	_ = format.Register(NewParser(nil))
+	// TODO: SQLite parser 需要实现 FileTableParser 接口（ParseTableInfo、ReadPreview 方法）
+	// 暂时不注册，等待实现新接口
+	// parser := NewParser(nil)
+	// _ = format.RegisterFileTableParser(parser)
 }

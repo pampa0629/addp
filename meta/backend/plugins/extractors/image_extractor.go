@@ -46,18 +46,42 @@ func (e *ImageExtractor) Extract(ctx context.Context, input format.ExtractInput)
 	// 1. 创建共享 image parser
 	parser := imageParser.NewParser(nil)
 
-	// 2. 提取元数据
-	imgMeta, err := parser.ExtractMetadata(ctx, input.Reader)
+	// 2. 构建 ObjectBasicInfo
+	basicInfo := format.ObjectBasicInfo{
+		Key:         input.ObjectKey,
+		SizeBytes:   input.Size,
+		ContentType: input.ContentType,
+		ETag:        input.ETag,
+		ModifiedAt:  input.LastModified,
+	}
+
+	// 3. 使用新接口提取 ObjectInfo
+	objectInfo, err := parser.ParseObjectInfo(ctx, input.Reader, basicInfo)
 	if err != nil {
 		// 如果解码失败，返回基础元数据
 		return e.extractBasicMetadata(input, "unknown", err), nil
 	}
 
-	// 3. 构建基础元数据
+	// 4. 从 ObjectInfo 中提取 ImageInfo
+	var imageInfo *format.ImageInfo
+	for _, ext := range objectInfo.Extensions {
+		if ext.ExtensionType() == "image" {
+			if img, ok := ext.(*format.ImageInfo); ok {
+				imageInfo = img
+				break
+			}
+		}
+	}
+
+	if imageInfo == nil {
+		return e.extractBasicMetadata(input, "unknown", fmt.Errorf("no image info in object")), nil
+	}
+
+	// 5. 构建基础元数据
 	metadata := &format.ExtractedMetadata{
 		BasicInfo: format.BasicMetadata{
 			FileName:     filepath.Base(input.ObjectKey),
-			FileType:     fmt.Sprintf("Image (%s)", imgMeta["format"]),
+			FileType:     fmt.Sprintf("Image (%s)", imageInfo.Format),
 			Size:         input.Size,
 			ContentType:  input.ContentType,
 			LastModified: input.LastModified,
@@ -66,23 +90,22 @@ func (e *ImageExtractor) Extract(ctx context.Context, input format.ExtractInput)
 		CustomAttrs: make(map[string]interface{}),
 	}
 
-	// 4. 添加图像专用元数据（直接使用解析器返回的元数据）
-	metadata.CustomAttrs["image_metadata"] = imgMeta
-
-	// 5. 构建 ImageMetadata 结构（兼容旧代码）
-	if width, ok := imgMeta["width"].(int); ok {
-		if height, ok := imgMeta["height"].(int); ok {
-			if format, ok := imgMeta["format"].(string); ok {
-				imageMeta := &ImageMetadata{
-					Width:      width,
-					Height:     height,
-					Format:     format,
-					ColorSpace: imgMeta["color_model"].(string),
-				}
-				metadata.CustomAttrs["image_classification"] = classifyImage(imageMeta)
-			}
-		}
+	// 6. 添加图像专用元数据
+	metadata.CustomAttrs["image_metadata"] = map[string]interface{}{
+		"width":       imageInfo.Width,
+		"height":      imageInfo.Height,
+		"format":      imageInfo.Format,
+		"color_model": imageInfo.ColorSpace,
 	}
+
+	// 7. 构建 ImageMetadata 结构（兼容旧代码）
+	imageMeta := &ImageMetadata{
+		Width:      imageInfo.Width,
+		Height:     imageInfo.Height,
+		Format:     imageInfo.Format,
+		ColorSpace: imageInfo.ColorSpace,
+	}
+	metadata.CustomAttrs["image_classification"] = classifyImage(imageMeta)
 
 	return metadata, nil
 }

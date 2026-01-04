@@ -175,7 +175,7 @@ func ListSchemas(ctx context.Context, resource *Engine, db *gorm.DB) ([]SchemaIn
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(MetadataPlugin)
+	metaPlugin, ok := plugin.(RelationalDBPlugin)
 	if !ok {
 		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
@@ -197,7 +197,7 @@ func ListTables(ctx context.Context, resource *Engine, db *gorm.DB, schema strin
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(MetadataPlugin)
+	metaPlugin, ok := plugin.(RelationalDBPlugin)
 	if !ok {
 		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
@@ -219,7 +219,7 @@ func ListColumns(ctx context.Context, resource *Engine, db *gorm.DB, schema, tab
 		return nil, err
 	}
 
-	metaPlugin, ok := plugin.(MetadataPlugin)
+	metaPlugin, ok := plugin.(RelationalDBPlugin)
 	if !ok {
 		return nil, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
@@ -241,7 +241,7 @@ func GetTableRowCount(ctx context.Context, resource *Engine, db *gorm.DB, schema
 		return 0, err
 	}
 
-	metaPlugin, ok := plugin.(MetadataPlugin)
+	metaPlugin, ok := plugin.(RelationalDBPlugin)
 	if !ok {
 		return 0, fmt.Errorf("plugin %s does not support metadata query", resource.EngineType)
 	}
@@ -269,6 +269,6 @@ func SupportsMetadataQuery(engineType string) bool {
 		return false
 	}
 
-	_, ok := plugin.(MetadataPlugin)
+	_, ok := plugin.(RelationalDBPlugin)
 	return ok
 }

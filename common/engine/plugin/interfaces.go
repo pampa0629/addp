@@ -255,26 +255,3 @@ type ObjectInfo struct {
 	ContentType  string    // MIME 类型
 	ETag         string    // ETag（可选）
 }
-
-// ============ 向后兼容的类型别名 ============
-
-// DatabasePlugin 向后兼容的类型别名
-// @Deprecated: 使用 EnginePlugin 替代
-type DatabasePlugin = EnginePlugin
-
-// MetadataPlugin 向后兼容的类型别名
-// @Deprecated: 元数据查询方法已直接定义在 RelationalDBPlugin 中
-type MetadataPlugin = RelationalDBPlugin
-
-// SQLDatabasePlugin 向后兼容的类型别名
-// @Deprecated: 使用 RelationalDBPlugin 替代
-type SQLDatabasePlugin interface {
-	RelationalDBPlugin
-
-	// SupportsTransactions 是否支持事务
-	SupportsTransactions() bool
-
-	// DefaultDialect 返回 SQL 方言
-	// 例如: "postgres", "mysql"
-	DefaultDialect() string
-}

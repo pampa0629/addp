@@ -180,95 +180,6 @@ func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit
 	return records, nil
 }
 
-// ============ 向后兼容（已废弃）============
-
-// ParseSchema 解析 CSV Schema
-// @Deprecated: 使用 ParseTableInfo() 替代
-func (p *Parser) ParseSchema(ctx context.Context, input io.Reader) (*format.Schema, error) {
-	tableInfo, err := p.ParseTableInfo(ctx, input, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// 转换 TableInfo 到 Schema
-	schema := &format.Schema{
-		Fields: make([]format.Field, len(tableInfo.Fields)),
-	}
-
-	for i, fieldInfo := range tableInfo.Fields {
-		schema.Fields[i] = format.Field{
-			Name:     fieldInfo.Name,
-			Type:     fieldInfo.Type,
-			Nullable: fieldInfo.Nullable,
-			Comment:  fieldInfo.Comment,
-		}
-	}
-
-	if tableInfo.RowCount != nil {
-		schema.RecordCount = tableInfo.RowCount
-	}
-
-	return schema, nil
-}
-
-// ReadRecords 读取 CSV 数据记录
-// @Deprecated: 使用 ReadPreview() 替代
-func (p *Parser) ReadRecords(ctx context.Context, input io.Reader, offset, limit int64) ([]map[string]interface{}, error) {
-	return p.ReadPreview(ctx, input, offset, limit, nil)
-}
-
-// CountRecords 统计总记录数
-// @Deprecated: 使用 ParseTableInfo().RowCount 替代
-func (p *Parser) CountRecords(ctx context.Context, input io.Reader) (int64, error) {
-	reader := csv.NewReader(input)
-	p.configureReader(reader)
-
-	// 跳过表头
-	if _, err := reader.Read(); err != nil {
-		return 0, err
-	}
-
-	count := int64(0)
-	for {
-		_, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// 容错：跳过损坏的行
-			continue
-		}
-		count++
-	}
-
-	return count, nil
-}
-
-// ExtractMetadata 提取 CSV 元数据
-// @Deprecated: 使用 ParseTableInfo() 替代
-func (p *Parser) ExtractMetadata(ctx context.Context, input io.Reader) (map[string]interface{}, error) {
-	tableInfo, err := p.ParseTableInfo(ctx, input, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	csvInfo := tableInfo.GetCSVInfo()
-	if csvInfo == nil {
-		return nil, fmt.Errorf("CSV info not found in TableInfo")
-	}
-
-	metadata := map[string]interface{}{
-		"delimiter":    string(csvInfo.Delimiter),
-		"has_header":   csvInfo.HasHeader,
-		"column_count": len(tableInfo.Fields),
-		"row_count":    *tableInfo.RowCount,
-		"encoding":     csvInfo.Encoding,
-		"headers":      tableInfo.FieldNames(),
-	}
-
-	return metadata, nil
-}
-
 // ============ 辅助方法 ============
 
 // configureReader 配置 CSV reader（使用默认 options）
@@ -439,3 +350,10 @@ func DetectDelimiter(filename string) rune {
 		return ','
 	}
 }
+
+func init() {
+	parser := NewParser(nil)
+	// 注册为 FileTableParser
+	_ = format.RegisterFileTableParser(parser)
+}
+

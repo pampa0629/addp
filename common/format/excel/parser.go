@@ -557,6 +557,7 @@ func trimValue(s string) interface{} {
 }
 
 func init() {
-	// 注册到全局 format registry
-	_ = format.Register(NewParser(nil))
+	parser := NewParser(nil)
+	// 注册为 FileTableParser
+	_ = format.RegisterFileTableParser(parser)
 }

@@ -38,16 +38,40 @@ func (e *PDFExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 	// 1. 创建共享 PDF parser
 	parser := pdfParser.NewParser(nil)
 
-	// 2. 提取元数据
-	pdfMeta, err := parser.ExtractMetadata(ctx, input.Reader)
+	// 2. 构建 ObjectBasicInfo
+	basicInfo := format.ObjectBasicInfo{
+		Key:         input.ObjectKey,
+		SizeBytes:   input.Size,
+		ContentType: input.ContentType,
+		ETag:        input.ETag,
+		ModifiedAt:  input.LastModified,
+	}
+
+	// 3. 使用新接口提取 ObjectInfo
+	objectInfo, err := parser.ParseObjectInfo(ctx, input.Reader, basicInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract PDF metadata: %w", err)
 	}
 
-	// 3. 构建基础元数据
+	// 4. 从 ObjectInfo 中提取 PDFInfo
+	var pdfInfo *format.PDFInfo
+	for _, ext := range objectInfo.Extensions {
+		if ext.ExtensionType() == "pdf" {
+			if pdf, ok := ext.(*format.PDFInfo); ok {
+				pdfInfo = pdf
+				break
+			}
+		}
+	}
+
+	if pdfInfo == nil {
+		return nil, fmt.Errorf("no PDF info in object")
+	}
+
+	// 5. 构建基础元数据
 	version := "unknown"
-	if v, ok := pdfMeta["version"].(string); ok {
-		version = v
+	if pdfInfo.PageCount > 0 {
+		version = "PDF"
 	}
 
 	metadata := &format.ExtractedMetadata{
@@ -62,53 +86,26 @@ func (e *PDFExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 		CustomAttrs: make(map[string]interface{}),
 	}
 
-	// 4. 添加 PDF 专用元数据（直接使用解析器返回的元数据）
-	metadata.CustomAttrs["pdf_metadata"] = pdfMeta
-
-	// 5. 构建文档元数据结构（兼容旧代码）
-	pageCount := 0
-	if pc, ok := pdfMeta["page_count"].(int); ok {
-		pageCount = pc
+	// 6. 添加 PDF 专用元数据
+	metadata.CustomAttrs["pdf_metadata"] = map[string]interface{}{
+		"page_count": pdfInfo.PageCount,
+		"title":      pdfInfo.Title,
+		"author":     pdfInfo.Author,
+		"subject":    pdfInfo.Subject,
+		"creator":    pdfInfo.Creator,
+		"producer":   pdfInfo.Producer,
+		"encrypted":  pdfInfo.Encrypted,
 	}
 
-	title := ""
-	if t, ok := pdfMeta["title"].(string); ok {
-		title = t
-	}
-
-	author := ""
-	if a, ok := pdfMeta["author"].(string); ok {
-		author = a
-	}
-
-	subject := ""
-	if s, ok := pdfMeta["subject"].(string); ok {
-		subject = s
-	}
-
-	creator := ""
-	if c, ok := pdfMeta["creator"].(string); ok {
-		creator = c
-	}
-
-	producer := ""
-	if p, ok := pdfMeta["producer"].(string); ok {
-		producer = p
-	}
-
-	keywords := []string{}
-	if kw, ok := pdfMeta["keywords"].([]string); ok {
-		keywords = kw
-	}
-
+	// 7. 构建文档元数据结构（兼容旧代码）
 	metadata.CustomAttrs["document_metadata"] = &DocumentMetadata{
-		Title:     title,
-		Author:    author,
-		Subject:   subject,
-		Keywords:  keywords,
-		Creator:   creator,
-		Producer:  producer,
-		PageCount: pageCount,
+		Title:     pdfInfo.Title,
+		Author:    pdfInfo.Author,
+		Subject:   pdfInfo.Subject,
+		Keywords:  []string{}, // PDFInfo 中没有 keywords，使用空数组
+		Creator:   pdfInfo.Creator,
+		Producer:  pdfInfo.Producer,
+		PageCount: pdfInfo.PageCount,
 	}
 
 	return metadata, nil

@@ -806,7 +806,9 @@ func contextErr(ctx context.Context) error {
 }
 
 func init() {
-	_ = format.Register(NewParser(nil))
+	parser := NewParser(nil)
+	// 注册为 FileTableParser
+	_ = format.RegisterFileTableParser(parser)
 }
 
 // Iterator 为外部提供流式读取能力

@@ -10,18 +10,18 @@ import (
 // Registry 全局插件注册表
 type Registry struct {
 	mu      sync.RWMutex
-	plugins map[string]DatabasePlugin
+	plugins map[string]EnginePlugin
 }
 
 // globalRegistry 全局单例注册表
 var globalRegistry = &Registry{
-	plugins: make(map[string]DatabasePlugin),
+	plugins: make(map[string]EnginePlugin),
 }
 
 // Register 注册数据库插件
 // 通常在插件包的 init() 函数中调用
 // 如果类型已注册，会被新插件覆盖（允许插件替换）
-func Register(plugin DatabasePlugin) {
+func Register(plugin EnginePlugin) {
 	if plugin == nil {
 		panic("cannot register nil plugin")
 	}
@@ -40,7 +40,7 @@ func Register(plugin DatabasePlugin) {
 // Get 获取指定类型的数据库插件
 // dbType: 数据库类型（不区分大小写）
 // 返回插件实例，如果未找到返回 error
-func Get(dbType string) (DatabasePlugin, error) {
+func Get(dbType string) (EnginePlugin, error) {
 	dbType = strings.ToLower(dbType)
 
 	globalRegistry.mu.RLock()
@@ -72,12 +72,12 @@ func List() []string {
 
 // GetAll 获取所有已注册的插件
 // 返回 map[类型]插件实例
-func GetAll() map[string]DatabasePlugin {
+func GetAll() map[string]EnginePlugin {
 	globalRegistry.mu.RLock()
 	defer globalRegistry.mu.RUnlock()
 
 	// 创建副本，避免外部修改
-	plugins := make(map[string]DatabasePlugin, len(globalRegistry.plugins))
+	plugins := make(map[string]EnginePlugin, len(globalRegistry.plugins))
 	for dbType, plugin := range globalRegistry.plugins {
 		plugins[dbType] = plugin
 	}
@@ -111,5 +111,5 @@ func Clear() {
 	globalRegistry.mu.Lock()
 	defer globalRegistry.mu.Unlock()
 
-	globalRegistry.plugins = make(map[string]DatabasePlugin)
+	globalRegistry.plugins = make(map[string]EnginePlugin)
 }
