@@ -85,33 +85,25 @@ func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (
 		SampleSize: 100,
 	}
 
-	// Use shared CSV parser
+	// Use shared CSV parser (now using FileTableParser interface)
 	parser := csvParser.NewParser(opts)
 
-	// Get total count first
-	totalCount, err := parser.CountRecords(ctx, object)
+	// Parse TableInfo to get schema and row count
+	tableInfo, err := parser.ParseTableInfo(ctx, object, opts)
 	if err != nil {
-		// If count fails, continue with best effort
-		totalCount = 0
+		return nil, fmt.Errorf("failed to parse CSV table info: %w", err)
 	}
 
-	// Reset stream
-	object, err = minioClient.GetObject(ctx, bucket, fullPath, minio.GetObjectOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to reopen object: %w", err)
-	}
-	defer object.Close()
-
-	// Parse schema to get column names
-	schema, err := parser.ParseSchema(ctx, object)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse CSV schema: %w", err)
-	}
-
-	// Extract column names
-	columns := make([]string, len(schema.Fields))
-	for i, field := range schema.Fields {
+	// Extract column names from TableInfo
+	columns := make([]string, len(tableInfo.Fields))
+	for i, field := range tableInfo.Fields {
 		columns[i] = field.Name
+	}
+
+	// Get total count from TableInfo
+	totalCount := int64(0)
+	if tableInfo.RowCount != nil {
+		totalCount = *tableInfo.RowCount
 	}
 
 	// Calculate pagination
@@ -122,15 +114,15 @@ func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (
 
 	offset := req.Page * pageSize
 
-	// Reset stream again for data reading
+	// Reset stream for data reading
 	object, err = minioClient.GetObject(ctx, bucket, fullPath, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to reopen object for data: %w", err)
 	}
 	defer object.Close()
 
-	// Read paginated records using shared parser
-	records, err := parser.ReadRecords(ctx, object, int64(offset), int64(pageSize))
+	// Read paginated records using new FileTableParser.ReadPreview
+	records, err := parser.ReadPreview(ctx, object, int64(offset), int64(pageSize), opts)
 	if err != nil {
 		// Partial read is OK
 		if len(records) == 0 {

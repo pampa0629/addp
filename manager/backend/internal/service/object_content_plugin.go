@@ -377,6 +377,7 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 	opts := format.DefaultParseOptions()
 	parser := geojson.NewParser(opts)
 
+	// GeoJSON parser still uses old interface (backward compatible)
 	schema, err := parser.ParseSchema(ctx, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
