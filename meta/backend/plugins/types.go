@@ -2,14 +2,13 @@ package plugins
 
 import (
 	"github.com/addp/common/format"
-	commonModels "github.com/addp/common/models"
-	"github.com/addp/meta/plugins/scanners"
 )
 
 // 重新导出 common/format 包中的类型，方便 meta 模块内部使用
 // 这些类型别名保持向后兼容，避免大范围修改现有代码
 type (
-	// Scanner 相关类型
+	// 已废弃：Scanner 相关类型（重构后不再使用）
+	// 保留类型别名仅用于兼容性，实际使用 plugin.RelationalDBPlugin 和 plugin.ObjectStoragePlugin
 	Scanner              = format.Scanner
 	SchemaInfo           = format.SchemaInfo
 	TableInfo            = format.TableInfo
@@ -18,7 +17,7 @@ type (
 	ObjectMetadata       = format.ObjectMetadata
 	ObjectStorageScanner = format.ObjectStorageScanner
 
-	// Extractor 相关类型
+	// Extractor 相关类型（仍在使用）
 	MetadataExtractor = format.FileMetadataExtractor
 	ExtractInput      = format.ExtractInput
 	Metadata          = format.ExtractedMetadata
@@ -26,13 +25,6 @@ type (
 	SchemaMetadata    = format.SchemaMetadata
 	ColumnInfo        = format.ColumnMetadata
 )
-
-// NewScanner 创建扫描器的便捷函数
-// 重新导出 scanners.NewScanner，方便调用
-// 重构后：接受Resource对象而不是连接字符串
-func NewScanner(resource *commonModels.Engine) (Scanner, error) {
-	return scanners.NewScanner(resource)
-}
 
 // GetExtractor 获取元数据提取器的便捷函数
 // 重新导出 format.GetExtractor

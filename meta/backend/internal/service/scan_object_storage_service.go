@@ -6,9 +6,11 @@ import (
 	"io"
 	"log/slog"
 	pathpkg "path"
+	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/addp/common/database/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/plugins"
@@ -66,19 +68,34 @@ func (s *ObjectStorageScanService) ScanPaths(
 		scanDepth = "deep"
 	}
 
-	// 创建对象存储扫描器
-	scan, err := plugins.NewScanner(resource)
+	// 获取 ObjectStoragePlugin
+	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to create scanner: %w", err)
+		return 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	defer scan.Close()
 
-	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
+	objPlugin, ok := p.(plugin.ObjectStoragePlugin)
 	if !ok {
-		return 0, 0, fmt.Errorf("resource %s is not object storage", resource.EngineType)
+		return 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
 	}
 
-	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
+	// 确定扫描路径
+	paths := objectPaths
+	if len(paths) == 0 {
+		paths = fallback
+	}
+
+	// 如果仍然没有路径，列出所有 buckets
+	if len(paths) == 0 {
+		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to list buckets: %w", err)
+		}
+		for _, b := range buckets {
+			paths = append(paths, b.Name)
+		}
+	}
+
 	if len(paths) == 0 {
 		if reporter != nil {
 			reporter.Message("未检测到可扫描的对象路径")
@@ -91,7 +108,7 @@ func (s *ObjectStorageScanService) ScanPaths(
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, scanDepth, reporter)
+	buckets, objects, err := s.scanObjectStoragePathsWithPlugin(resource, tenantID, resourceID, objPlugin, paths, scanDepth, reporter)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -103,7 +120,264 @@ func (s *ObjectStorageScanService) ScanPaths(
 // 核心扫描方法
 // ============================================================================
 
-// scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）
+// scanObjectStoragePathsWithPlugin 使用 ObjectStoragePlugin 扫描对象存储路径
+func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
+	resource *commonModels.Engine,
+	tenantID, engineID uint,
+	objPlugin plugin.ObjectStoragePlugin,
+	paths []string,
+	scanDepth string,
+	reporter ScanProgressReporter,
+) (int, int, error) {
+	s.log.Info("🔍 进入scanObjectStoragePathsWithPlugin函数",
+		"engine_id", engineID,
+		"tenant_id", tenantID,
+		"paths_count", len(paths),
+		"scanDepth", scanDepth)
+
+	bucketNodes := make(map[string]*models.MetaNode)
+	processedBuckets := make(map[string]bool)
+	nodeStats := make(map[uint]*nodeAggregate)
+
+	// 记录本次扫描到的所有fingerprints，用于后续清理未扫描到的item
+	scannedFingerprints := make(map[string]bool)
+
+	totalBuckets := 0
+	totalObjects := 0
+	total := len(paths)
+	completed := 0
+
+	isDeepScan := strings.EqualFold(scanDepth, "deep")
+
+	for _, rawPath := range paths {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("扫描对象路径 %s", rawPath))
+		}
+		bucketName, prefix := s.splitObjectPath(rawPath)
+		if bucketName == "" {
+			s.log.Warn("对象存储路径缺少 bucket，跳过刷新", "path", rawPath)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 缺少 bucket 信息，已跳过", rawPath))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
+			continue
+		}
+
+		// 直接使用 plugin 列出对象
+		objects, err := objPlugin.ListObjects(
+			context.Background(),
+			plugin.ConnectionInfo(resource.ConnectionInfo),
+			bucketName,
+			prefix,
+			isDeepScan, // 深度扫描时递归
+		)
+		if err != nil {
+			s.log.Warn("对象存储路径扫描失败",
+				"engine_id", engineID,
+				"tenant_id", tenantID,
+				"path", rawPath,
+				"error", err,
+			)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 扫描失败: %v", rawPath, err))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
+			continue
+		}
+
+		// 转换为 plugins.ObjectMetadata 格式
+		metas := s.convertToObjectMetadata(objects, bucketName, prefix, isDeepScan, engineID, resource.ConnectionInfo)
+
+		bucketNode, ok := bucketNodes[bucketName]
+		if !ok {
+			attrs := models.JSONMap{"bucket": bucketName}
+			bucketNode, err = s.repo.UpsertNode(tenantID, engineID, nil, "bucket", bucketName, bucketName, attrs)
+			if err != nil {
+				return totalBuckets, totalObjects, err
+			}
+			bucketNodes[bucketName] = bucketNode
+			totalBuckets++
+		}
+
+		fullBucket := prefix == ""
+		if fullBucket {
+			if !processedBuckets[bucketName] {
+				if err := s.repo.ResetNodeState(bucketNode, "扫描中"); err != nil {
+					return totalBuckets, totalObjects, err
+				}
+			}
+			processedBuckets[bucketName] = true
+		}
+
+		if len(metas) == 0 {
+			if fullBucket {
+				ensureNodeAggregate(nodeStats, bucketNode)
+			}
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("对象路径 %s 未发现新对象", rawPath))
+			}
+			completed++
+			if reporter != nil {
+				reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": 0})
+			}
+			continue
+		}
+
+		// 传递扫描路径前缀，用于正确计算fullName
+		scanPathPrefix := prefix
+		s.log.Info("传递scanPathPrefix到persistObjectMetas",
+			"rawPath", rawPath,
+			"bucketName", bucketName,
+			"prefix", prefix,
+			"scanPathPrefix", scanPathPrefix,
+			"fullBucket", fullBucket,
+			"metasCount", len(metas),
+			"scanDepth", scanDepth)
+		objectCount, err := s.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, nodeStats, fullBucket, scanDepth, scanPathPrefix, scannedFingerprints)
+		if err != nil {
+			s.log.Error("对象存储元数据持久化失败",
+				"engine_id", engineID,
+				"tenant_id", tenantID,
+				"bucket", bucketName,
+				"error", err,
+			)
+			continue
+		}
+		totalObjects += objectCount
+		completed++
+		if reporter != nil {
+			reporter.Advance(rawPath, completed, total, map[string]interface{}{"objects": objectCount})
+		}
+	}
+
+	// 清理未在本次扫描中出现的旧item
+	if isDeepScan && len(scannedFingerprints) > 0 {
+		for bucketName := range processedBuckets {
+			var existingItems []models.MetaItem
+			bucketNode := bucketNodes[bucketName]
+			if bucketNode == nil {
+				continue
+			}
+
+			if err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ?",
+				tenantID, engineID, "object").
+				Where("attributes->>'bucket' = ?", bucketName).
+				Find(&existingItems).Error; err != nil {
+				s.log.Warn("查询已存在对象元数据失败",
+					"bucket", bucketName,
+					"error", err,
+				)
+				continue
+			}
+
+			for _, item := range existingItems {
+				if !scannedFingerprints[item.Fingerprint] {
+					s.log.Info("对象已不存在，标记删除",
+						"bucket", bucketName,
+						"fingerprint", item.Fingerprint,
+						"name", item.Name,
+					)
+					if err := s.db.Delete(&item).Error; err != nil {
+						s.log.Warn("软删除对象元数据失败",
+							"bucket", bucketName,
+							"fingerprint", item.Fingerprint,
+							"error", err,
+						)
+					}
+				}
+			}
+		}
+	}
+
+	// 完成bucket节点的扫描状态更新
+	for bucketName, bucketNode := range bucketNodes {
+		if !processedBuckets[bucketName] {
+			continue
+		}
+
+		agg, ok := nodeStats[bucketNode.ID]
+		if !ok {
+			continue
+		}
+
+		if err := s.repo.FinalizeNodeState(bucketNode, "已扫描", agg.itemCount, agg.totalSize, ""); err != nil {
+			s.log.Warn("完成bucket节点状态更新失败",
+				"bucket", bucketName,
+				"error", err,
+			)
+		}
+	}
+
+	s.log.Info("对象存储路径扫描完成",
+		"buckets", totalBuckets,
+		"objects", totalObjects,
+	)
+
+	return totalBuckets, totalObjects, nil
+}
+
+// convertToObjectMetadata 将 plugin.ObjectInfo 转换为 plugins.ObjectMetadata
+func (s *ObjectStorageScanService) convertToObjectMetadata(
+	objects []plugin.ObjectInfo,
+	bucket, prefix string,
+	isDeepScan bool,
+	engineID uint,
+	connInfo commonModels.ConnectionInfo,
+) []plugins.ObjectMetadata {
+	metas := make([]plugins.ObjectMetadata, 0, len(objects))
+
+	for _, obj := range objects {
+		// 计算相对路径（去掉 prefix）
+		relativePath := strings.TrimPrefix(obj.Key, prefix)
+		relativePath = strings.TrimPrefix(relativePath, "/")
+
+		// 推断文件类型
+		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
+
+		// 构建 ObjectMetadata
+		meta := plugins.ObjectMetadata{
+			Bucket:       bucket,
+			Path:         bucket + "/" + obj.Key,
+			RelativePath: relativePath,
+			NodeType:     "object",
+			FileType:     ext,
+			SizeBytes:    obj.Size,
+			ObjectCount:  1,
+			LastModified: &obj.LastModified,
+		}
+
+		// 深度扫描时提取元数据
+		if isDeepScan && s.metadataExtractor != nil {
+			// 这里可以调用 metadataExtractor 提取详细元数据
+			// 但为了简化，暂时跳过（可以在后续增强）
+		}
+
+		metas = append(metas, meta)
+	}
+
+	return metas
+}
+
+// splitObjectPath 分割对象路径为 bucket 和 prefix
+func (s *ObjectStorageScanService) splitObjectPath(path string) (bucket, prefix string) {
+	path = strings.TrimSpace(path)
+	path = strings.Trim(path, "/")
+
+	parts := strings.SplitN(path, "/", 2)
+	bucket = parts[0]
+	if len(parts) > 1 {
+		prefix = parts[1]
+	}
+	return
+}
+
+// scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）- 保留原方法用于向后兼容
 //
 // 职责划分：
 // 1. Bucket节点管理：创建/更新Bucket节点

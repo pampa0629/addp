@@ -17,26 +17,28 @@ type Engine struct {
 	ConnectionInfo ConnectionInfo
 }
 
-// DatabasePlugin 数据库插件基础接口
-// 所有数据库类型插件必须实现此接口
-type DatabasePlugin interface {
-	// Type 返回数据库类型标识（小写）
-	// 例如: "postgresql", "mysql", "doris", "spark", "minio", "s3"
+// ============ 第一层：EnginePlugin（所有引擎基础接口）============
+
+// EnginePlugin 所有引擎的基础接口
+// 所有引擎（数据库、对象存储、计算引擎）都必须实现此接口
+type EnginePlugin interface {
+	// Type 返回引擎类型标识（小写）
+	// 例如: "postgresql", "mysql", "doris", "spark", "minio", "s3", "python_workflow"
 	Type() string
 
 	// DisplayName 返回用户友好的显示名称
-	// 例如: "PostgreSQL", "MySQL", "Apache Doris"
+	// 例如: "PostgreSQL", "MySQL", "Apache Doris", "Python Workflow"
 	DisplayName() string
 
 	// ConnectionCategory 返回连接类别
-	// 可选值: "relational_db", "object_storage", "compute_engine"
+	// 可选值: "storage" (存储引擎), "compute" (计算引擎)
 	ConnectionCategory() string
 
-	// TestConnection 测试数据库连接是否有效
+	// TestConnection 测试引擎连接是否有效
 	TestConnection(ctx context.Context, connInfo ConnectionInfo) error
 
 	// BuildConnectionString 根据连接信息构建连接字符串
-	// 返回的格式取决于具体数据库类型
+	// 返回的格式取决于具体引擎类型
 	BuildConnectionString(connInfo ConnectionInfo) (string, error)
 
 	// ValidateConnectionInfo 验证连接信息的完整性和有效性
@@ -60,52 +62,35 @@ type DatabasePlugin interface {
 	GenerateCapabilities() string
 }
 
-// SQLDatabasePlugin SQL 数据库插件扩展接口（可选）
-// 关系型数据库可以实现此接口以提供额外的 SQL 特定功能
-type SQLDatabasePlugin interface {
-	DatabasePlugin
+// ============ 第二层：按功能分类 ============
 
-	// SupportsTransactions 是否支持事务
-	SupportsTransactions() bool
+// StoragePlugin 存储引擎接口（数据库、对象存储）
+type StoragePlugin interface {
+	EnginePlugin
 
-	// DefaultDialect 返回 SQL 方言
-	// 例如: "postgres", "mysql"
-	DefaultDialect() string
+	// SupportsMetadataQuery 是否支持元数据扫描
+	// 返回 true 表示该存储引擎可以被 Meta 模块扫描
+	SupportsMetadataQuery() bool
 }
 
-// ObjectStoragePlugin 对象存储插件扩展接口（可选）
-// 对象存储类型可以实现此接口
-type ObjectStoragePlugin interface {
-	DatabasePlugin
+// ComputePlugin 计算引擎接口（工作流引擎）
+type ComputePlugin interface {
+	EnginePlugin
 
-	// DefaultBucket 返回默认存储桶名称（如果适用）
-	DefaultBucket() string
+	// GetSupportedOperators 获取支持的算子列表
+	// 返回算子名称列表，例如: ["filter", "transform", "aggregate"]
+	GetSupportedOperators() []string
 
-	// SupportsSSL 是否支持 SSL 连接
-	SupportsSSL() bool
+	// HealthCheckEndpoint 健康检查端点
+	// 返回健康检查的 HTTP 端点路径，例如: "/health"
+	HealthCheckEndpoint() string
 }
 
-// PoolConfig 连接池配置
-type PoolConfig struct {
-	MaxOpenConns    int           // 最大打开连接数，默认10
-	MaxIdleConns    int           // 最大空闲连接数，默认5
-	ConnMaxLifetime time.Duration // 连接最大生命周期，默认1小时
-}
+// ============ 第三层：存储引擎细分 ============
 
-// DefaultPoolConfig 返回默认连接池配置
-func DefaultPoolConfig() *PoolConfig {
-	return &PoolConfig{
-		MaxOpenConns:    10,
-		MaxIdleConns:    5,
-		ConnMaxLifetime: time.Hour,
-	}
-}
-
-// ConnectionPoolPlugin SQL数据库插件，支持连接池管理
+// ConnectionPoolPlugin SQL数据库连接池管理接口
 // 关系型数据库应该实现此接口以提供连接池能力
 type ConnectionPoolPlugin interface {
-	DatabasePlugin
-
 	// CreateConnectionPool 创建GORM连接池
 	// 参数:
 	//   - connInfo: 连接信息
@@ -118,34 +103,13 @@ type ConnectionPoolPlugin interface {
 	GetDialect() string
 }
 
-// SchemaInfo Schema/Database 信息
-type SchemaInfo struct {
-	Name       string // Schema 或 Database 名称
-	TableCount int    // 包含的表数量
-}
-
-// TableInfo 表信息
-type TableInfo struct {
-	Schema    string // 所属 Schema
-	TableName string // 表名
-	RowCount  int64  // 行数（估算值）
-	SizeBytes int64  // 表大小（字节）
-}
-
-// ColumnInfo 列信息
-type ColumnInfo struct {
-	ColumnName   string // 列名
-	DataType     string // 原生数据类型（如 varchar, int4）
-	StdType      string // 标准化类型（如 string, integer）
-	IsNullable   bool   // 是否可为空
-	IsPrimaryKey bool   // 是否主键
-	Comment      string // 列注释
-}
-
-// MetadataPlugin 元数据查询插件
-// 支持查询数据库的元数据信息（Schema、表、列）
-type MetadataPlugin interface {
+// RelationalDBPlugin 关系型数据库插件
+// 包含连接池管理和元数据查询能力
+type RelationalDBPlugin interface {
+	StoragePlugin
 	ConnectionPoolPlugin
+
+	// ===== 元数据查询方法（直接定义，不需要单独的 MetadataPlugin 接口）=====
 
 	// ListSchemas 列出所有Schema（PostgreSQL）或Database（MySQL）
 	// 参数:
@@ -179,4 +143,139 @@ type MetadataPlugin interface {
 	//   - table: 表名
 	// 返回: 行数
 	GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error)
+
+	// IsSystemSchema 判断是否为系统 Schema
+	// 不同数据库的系统 Schema 不同，由各插件自己实现
+	// 例如 PostgreSQL: pg_catalog, information_schema
+	//      MySQL: information_schema, mysql, performance_schema
+	IsSystemSchema(schemaName string) bool
+}
+
+// ObjectStoragePlugin 对象存储插件
+// 包含对象存储操作能力
+type ObjectStoragePlugin interface {
+	StoragePlugin
+
+	// ===== 对象存储操作方法（直接定义，不需要单独的 ObjectMetadataPlugin 接口）=====
+
+	// ListBuckets 列出所有 Bucket
+	// 参数:
+	//   - ctx: 上下文
+	//   - connInfo: 连接信息
+	// 返回: Bucket列表
+	ListBuckets(ctx context.Context, connInfo ConnectionInfo) ([]BucketInfo, error)
+
+	// ListObjects 列出对象（支持前缀过滤和递归）
+	// 参数:
+	//   - ctx: 上下文
+	//   - connInfo: 连接信息
+	//   - bucket: 存储桶名称
+	//   - prefix: 前缀过滤（可选）
+	//   - recursive: 是否递归列出子目录
+	// 返回: 对象列表
+	ListObjects(ctx context.Context, connInfo ConnectionInfo, bucket, prefix string, recursive bool) ([]ObjectInfo, error)
+
+	// GetObjectMetadata 获取单个对象的元数据
+	// 参数:
+	//   - ctx: 上下文
+	//   - connInfo: 连接信息
+	//   - bucket: 存储桶名称
+	//   - key: 对象键
+	// 返回: 对象信息
+	GetObjectMetadata(ctx context.Context, connInfo ConnectionInfo, bucket, key string) (*ObjectInfo, error)
+
+	// InferContentType 根据对象键推断 MIME 类型
+	// 参数:
+	//   - objectKey: 对象键（文件路径）
+	// 返回: MIME 类型，例如: "application/geo+json", "image/png"
+	InferContentType(objectKey string) string
+
+	// ===== 对象存储特有属性 =====
+
+	// DefaultBucket 返回默认存储桶名称（如果适用）
+	DefaultBucket() string
+
+	// SupportsSSL 是否支持 SSL 连接
+	SupportsSSL() bool
+}
+
+// ============ 数据结构定义 ============
+
+// PoolConfig 连接池配置
+type PoolConfig struct {
+	MaxOpenConns    int           // 最大打开连接数，默认10
+	MaxIdleConns    int           // 最大空闲连接数，默认5
+	ConnMaxLifetime time.Duration // 连接最大生命周期，默认1小时
+}
+
+// DefaultPoolConfig 返回默认连接池配置
+func DefaultPoolConfig() *PoolConfig {
+	return &PoolConfig{
+		MaxOpenConns:    10,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: time.Hour,
+	}
+}
+
+// SchemaInfo Schema/Database 信息
+type SchemaInfo struct {
+	Name       string // Schema 或 Database 名称
+	TableCount int    // 包含的表数量
+}
+
+// TableInfo 表信息
+type TableInfo struct {
+	Schema    string // 所属 Schema
+	TableName string // 表名
+	RowCount  int64  // 行数（估算值）
+	SizeBytes int64  // 表大小（字节）
+}
+
+// ColumnInfo 列信息
+type ColumnInfo struct {
+	ColumnName   string // 列名
+	DataType     string // 原生数据类型（如 varchar, int4）
+	StdType      string // 标准化类型（如 string, integer）
+	IsNullable   bool   // 是否可为空
+	IsPrimaryKey bool   // 是否主键
+	Comment      string // 列注释
+}
+
+// BucketInfo Bucket 信息
+type BucketInfo struct {
+	Name         string    // Bucket 名称
+	CreationDate time.Time // 创建时间
+}
+
+// ObjectInfo 对象信息
+type ObjectInfo struct {
+	Bucket       string    // 所属 Bucket
+	Key          string    // 对象键（完整路径）
+	Size         int64     // 对象大小（字节）
+	LastModified time.Time // 最后修改时间
+	ContentType  string    // MIME 类型
+	ETag         string    // ETag（可选）
+}
+
+// ============ 向后兼容的类型别名 ============
+
+// DatabasePlugin 向后兼容的类型别名
+// @Deprecated: 使用 EnginePlugin 替代
+type DatabasePlugin = EnginePlugin
+
+// MetadataPlugin 向后兼容的类型别名
+// @Deprecated: 元数据查询方法已直接定义在 RelationalDBPlugin 中
+type MetadataPlugin = RelationalDBPlugin
+
+// SQLDatabasePlugin 向后兼容的类型别名
+// @Deprecated: 使用 RelationalDBPlugin 替代
+type SQLDatabasePlugin interface {
+	RelationalDBPlugin
+
+	// SupportsTransactions 是否支持事务
+	SupportsTransactions() bool
+
+	// DefaultDialect 返回 SQL 方言
+	// 例如: "postgres", "mysql"
+	DefaultDialect() string
 }

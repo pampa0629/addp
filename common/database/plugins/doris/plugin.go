@@ -29,7 +29,7 @@ func (p *DorisPlugin) DisplayName() string {
 }
 
 func (p *DorisPlugin) ConnectionCategory() string {
-	return "relational_db"
+	return "storage"
 }
 
 func (p *DorisPlugin) DefaultPort() int {
@@ -264,4 +264,22 @@ func (p *DorisPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	}
 
 	return count, nil
+}
+
+// SupportsMetadataQuery 实现 StoragePlugin 接口
+func (p *DorisPlugin) SupportsMetadataQuery() bool {
+	return true
+}
+
+// IsSystemSchema 判断是否为系统 Schema
+// Doris 兼容 MySQL 协议，系统 schema 同 MySQL
+func (p *DorisPlugin) IsSystemSchema(schemaName string) bool {
+	systemSchemas := map[string]bool{
+		"information_schema": true,
+		"mysql":              true,
+		"performance_schema": true,
+		"sys":                true,
+		"__internal_schema":  true, // Doris 内部 schema
+	}
+	return systemSchemas[schemaName]
 }

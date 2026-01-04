@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/database/plugin"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
@@ -18,9 +19,9 @@ import (
 	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/plugins"
 	_ "github.com/addp/meta/plugins/extractors" // 自动注册提取器
-	"github.com/addp/meta/internal/search"
 	"gorm.io/gorm"
 )
 
@@ -609,89 +610,50 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	)
 	s.log.Info("开始扫描资源", startFields...)
 
-	// 重构后：直接传入Resource对象，由插件系统管理连接
-	scan, err := plugins.NewScanner(resource)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
-	}
-	defer scan.Close()
+	// 检查是否为对象存储类型
+	if isObjectStorageType(strings.ToLower(resource.EngineType)) {
+		// 使用 ObjectStoragePlugin 扫描
+		p, err := plugin.Get(resource.EngineType)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		}
 
-	if objectScanner, ok := scan.(plugins.ObjectStorageScanner); ok && isObjectStorageType(strings.ToLower(resource.EngineType)) {
-		buckets := objectScanner.AllowedBuckets()
+		objPlugin, ok := p.(plugin.ObjectStoragePlugin)
+		if !ok {
+			return 0, 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
+		}
+
+		// 列出所有 buckets
+		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("failed to list buckets: %w", err)
+		}
+
 		if len(buckets) == 0 {
 			s.log.Info("对象存储资源未配置可扫描桶，跳过扫描", cloneLogFields(startFields, "allowed_bucket_count", 0)...)
 			return 0, 0, 0, nil
 		}
-		sort.Strings(buckets)
 
-		totalBuckets := 0
-		totalObjects := 0
-
-		s.log.Info("对象存储资源扫描开始", cloneLogFields(startFields, "allowed_bucket_count", len(buckets), "allowed_buckets", buckets)...)
-
-		// 记录本次扫描到的 bucket
-		scannedBuckets := make(map[string]bool)
-
-		for _, bucket := range buckets {
-			scannedBuckets[bucket] = true
-
-			var node models.MetaNode
-			err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ? AND name = ?",
-				tenantID, engineID, "bucket", bucket).First(&node).Error
-
-			// 无论 bucket 是否已存在,都进行扫描以确保元数据同步
-			// 这样可以触发对象的增量更新和过期对象的清理
-			if err == gorm.ErrRecordNotFound || err == nil {
-				schemas, objects, err := s.scanObjectStoragePaths(resource, tenantID, engineID, objectScanner, []string{bucket}, "deep", nil)
-				if err != nil {
-					s.log.Warn("对象存储桶扫描失败",
-						"engine_id", engineID,
-						"tenant_id", tenantID,
-						"bucket", bucket,
-						"error", err,
-					)
-					continue
-				}
-				totalBuckets += schemas
-				totalObjects += objects
-			} else {
-				s.log.Warn("查询对象存储节点失败",
-					"engine_id", engineID,
-					"tenant_id", tenantID,
-					"bucket", bucket,
-					"error", err,
-				)
-			}
+		// 构建扫描路径列表
+		var paths []string
+		for _, b := range buckets {
+			paths = append(paths, b.Name)
 		}
+		sort.Strings(paths)
 
-		// 软删除那些不再存在的 bucket
-		var existingBuckets []models.MetaNode
-		if err := s.db.Where("tenant_id = ? AND engine_id = ? AND node_type = ?",
-			tenantID, engineID, "bucket").Find(&existingBuckets).Error; err != nil {
-			s.log.Warn("查询已存在 bucket 节点失败", "error", err)
-		} else {
-			for _, bucketNode := range existingBuckets {
-				if !scannedBuckets[bucketNode.Name] {
-					s.log.Info("Bucket 已不存在，标记删除",
-						"engine_id", engineID,
-						"bucket", bucketNode.Name,
-					)
-					if err := s.db.Delete(&bucketNode).Error; err != nil {
-						s.log.Warn("软删除 bucket 节点失败",
-							"bucket", bucketNode.Name,
-							"error", err,
-						)
-					} else {
-						// 同时软删除该 bucket 下的所有对象
-						if err := s.db.Where("node_id = ?", bucketNode.ID).Delete(&models.MetaItem{}).Error; err != nil {
-							s.log.Warn("软删除 bucket 下的对象失败",
-								"bucket", bucketNode.Name,
-								"error", err,
-							)
-						}
-					}
-				}
-			}
+		s.log.Info("对象存储资源扫描开始", cloneLogFields(startFields, "bucket_count", len(buckets), "buckets", paths)...)
+
+		// 调用 ObjectStorageScanService 进行扫描
+		totalBuckets, totalObjects, err := s.objectScanService.ScanPaths(
+			resource,
+			tenantID,
+			paths,
+			nil,
+			"deep",
+			nil,
+		)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("object storage scan failed: %w", err)
 		}
 
 		s.log.Info("对象存储资源扫描完成", cloneLogFields(startFields,
@@ -701,7 +663,27 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		return totalBuckets, totalObjects, 0, nil
 	}
 
-	schemasInfo, err := scan.ListSchemas()
+	// 数据库扫描：直接使用 RelationalDBPlugin
+	p, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+
+	relPlugin, ok := p.(plugin.RelationalDBPlugin)
+	if !ok {
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
+	}
+
+	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+		ID:             resource.ID,
+		EngineType:     resource.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}, nil)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to create connection pool: %w", err)
+	}
+
+	schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to list schemas: %w", err)
 	}
@@ -716,6 +698,12 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 	scannedSchemas := make(map[string]bool)
 
 	for _, schemaInfo := range schemasInfo {
+		// 过滤系统 schema
+		if relPlugin.IsSystemSchema(schemaInfo.Name) {
+			s.log.Debug("跳过系统 schema", "schema", schemaInfo.Name)
+			continue
+		}
+
 		scannedSchemas[schemaInfo.Name] = true
 
 		var node models.MetaNode
@@ -725,7 +713,7 @@ func (s *ScanService) scanResource(resource *commonModels.Engine, tenantID uint,
 		// 无论 schema 是否已存在,都进行扫描以确保元数据同步
 		// 这样可以触发表的增量更新和过期表的清理
 		if err == gorm.ErrRecordNotFound || err == nil {
-			schemas, tables, fields, err := s.dbScanService.ScanSchema(resource, scan, tenantID, engineID, schemaInfo.Name, "deep")
+			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, engineID, schemaInfo.Name, "deep")
 			if err != nil {
 				s.log.Warn("Schema 扫描失败",
 					"engine_id", engineID,
@@ -809,54 +797,41 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 	}
 	s.log.Info("开始扫描指定 Schema 列表", startFields...)
 
-	// 重构后：不再手动构建连接字符串，由插件系统管理
-	s.log.Info("🔧 准备创建Scanner",
-		"engine_id", resourceID,
-		"resource_type", resource.EngineType,
-	)
-
-	scan, err := plugins.NewScanner(resource)
-	if err != nil {
-		s.log.Error("❌ 创建Scanner失败",
-			"engine_id", resourceID,
-			"resource_type", resource.EngineType,
-			"error", err,
-		)
-		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
-	}
-	defer scan.Close()
-
-	s.log.Info("✅ Scanner创建成功",
-		"engine_id", resourceID,
-		"resource_type", resource.EngineType,
-	)
-
 	// 如果未指定Schema，则扫描所有Schema（自动过滤系统schema）
 	if len(schemaNames) == 0 {
 		if reporter != nil {
 			reporter.Message("未指定 Schema，正在获取完整列表")
 		}
-		schemasInfo, err := scan.ListSchemas()
+
+		// 获取插件
+		p, err := plugin.Get(resource.EngineType)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+		}
+
+		relPlugin, ok := p.(plugin.RelationalDBPlugin)
+		if !ok {
+			return 0, 0, 0, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
+		}
+
+		db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+			ID:             resource.ID,
+			EngineType:     resource.EngineType,
+			ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+		}, nil)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("failed to create connection pool: %w", err)
+		}
+
+		schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
 		if err != nil {
 			return 0, 0, 0, err
 		}
 
-		// 系统 schema 黑名单（自动过滤）
-		systemSchemas := map[string]bool{
-			"pg_catalog":         true,
-			"information_schema": true,
-			"pg_toast":           true,
-		}
-
 		for _, info := range schemasInfo {
-			// 过滤系统 schema
-			if systemSchemas[info.Name] {
+			// 使用插件的 IsSystemSchema 方法过滤系统 schema
+			if relPlugin.IsSystemSchema(info.Name) {
 				s.log.Debug("跳过系统 schema", "schema", info.Name)
-				continue
-			}
-			// 过滤 pg_toast 开头的 schema（动态生成的临时表）
-			if strings.HasPrefix(info.Name, "pg_toast_") {
-				s.log.Debug("跳过系统临时 schema", "schema", info.Name)
 				continue
 			}
 			schemaNames = append(schemaNames, info.Name)
@@ -881,7 +856,7 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
 		}
 
-		schemas, tables, fields, err := s.dbScanService.ScanSchema(resource, scan, tenantID, resourceID, schemaName, scanDepth)
+		schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schemaName, scanDepth)
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
 				"engine_id", resourceID,
@@ -922,26 +897,39 @@ func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, t
 }
 
 func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string, scanDepth string, reporter ScanProgressReporter) (int, int, int, error) {
-	resourceID := resource.ID
-
 	// 标准化 scanDepth
 	if scanDepth == "" {
 		scanDepth = "deep"
 	}
 
-	// 重构后：直接传入Resource对象，由插件系统管理连接
-	scan, err := plugins.NewScanner(resource)
+	// ✅ 重构后：直接使用 ObjectStoragePlugin
+	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("failed to create scanner: %w", err)
+		return 0, 0, 0, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
-	defer scan.Close()
 
-	objectScanner, ok := scan.(plugins.ObjectStorageScanner)
+	objPlugin, ok := p.(plugin.ObjectStoragePlugin)
 	if !ok {
-		return 0, 0, 0, fmt.Errorf("resource %s is not object storage", resource.EngineType)
+		return 0, 0, 0, fmt.Errorf("engine %s does not implement ObjectStoragePlugin", resource.EngineType)
 	}
 
-	paths := prepareObjectPaths(objectPaths, fallback, objectScanner)
+	// 准备扫描路径
+	var paths []string
+	if len(objectPaths) > 0 {
+		paths = objectPaths
+	} else if len(fallback) > 0 {
+		paths = fallback
+	} else {
+		// 如果未指定路径，列出所有 buckets
+		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("failed to list buckets: %w", err)
+		}
+		for _, b := range buckets {
+			paths = append(paths, b.Name)
+		}
+	}
+
 	if len(paths) == 0 {
 		if reporter != nil {
 			reporter.Message("未检测到可扫描的对象路径")
@@ -954,37 +942,20 @@ func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonMode
 		reporter.SetTotal(len(paths))
 	}
 
-	buckets, objects, err := s.scanObjectStoragePaths(resource, tenantID, resourceID, objectScanner, paths, scanDepth, reporter)
+	// 调用 ObjectStorageScanService 进行扫描
+	buckets, objects, err := s.objectScanService.ScanPaths(
+		resource,
+		tenantID,
+		paths,
+		nil,
+		scanDepth,
+		reporter,
+	)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 
 	return buckets, objects, 0, nil
-}
-
-// scanObjectStoragePaths 扫描对象存储路径（MinIO/S3等）
-//
-// 职责划分：
-// 1. Bucket节点管理：创建/更新Bucket节点
-// 2. 对象迭代：扫描指定路径下的所有对象
-// 3. 元数据持久化：调用persistObjectMetas批量保存对象元数据
-// 4. 去重处理：使用fingerprints避免重复扫描
-// 5. 清理过期数据：软删除已移除的对象
-// 6. 统计聚合：统计对象数量和总大小
-//
-// 参数：
-//   - resource: 数据源引擎配置
-//   - tenantID: 租户ID
-//   - engineID: 引擎ID
-//   - objectScanner: 对象存储扫描器插件
-//   - paths: 要扫描的路径列表（如 ["bucket1", "bucket2/path"]）
-//   - scanDepth: 扫描深度 ("quick"快速扫描 | "deep"深度扫描)
-//   - reporter: 进度报告器
-//
-// 返回：(对象数量, 错误数量, error)
-func (s *ScanService) scanObjectStoragePaths(resource *commonModels.Engine, tenantID, engineID uint, objectScanner plugins.ObjectStorageScanner, paths []string, scanDepth string, reporter ScanProgressReporter) (int, int, error) {
-	// 委托给 ObjectStorageScanService
-	return s.objectScanService.scanObjectStoragePaths(resource, tenantID, engineID, objectScanner, paths, scanDepth, reporter)
 }
 
 // persistObjectMetas 持久化对象元数据到数据库

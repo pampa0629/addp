@@ -26,7 +26,7 @@ func (p *PythonWorkflowPlugin) DisplayName() string {
 }
 
 func (p *PythonWorkflowPlugin) ConnectionCategory() string {
-	return "extension"
+	return "compute"
 }
 
 func (p *PythonWorkflowPlugin) DefaultPort() int {
@@ -104,4 +104,23 @@ func (p *PythonWorkflowPlugin) TestConnection(ctx context.Context, connInfo plug
 
 	fmt.Printf("[PythonWorkflowPlugin] ✅ 连接测试成功\n")
 	return nil
+}
+
+// === ComputePlugin 接口实现 ===
+
+// GetSupportedOperators 获取支持的算子列表
+func (p *PythonWorkflowPlugin) GetSupportedOperators() []string {
+	return []string{
+		// 空间算子
+		"buffer", "intersection", "union", "difference", "dissolve",
+		"clip", "overlay", "spatial_join", "centroid", "convex_hull",
+		// 数据处理算子
+		"filter", "select", "groupby", "join", "aggregate",
+		"sort", "rename", "drop", "fillna", "dropna",
+	}
+}
+
+// HealthCheckEndpoint 健康检查端点
+func (p *PythonWorkflowPlugin) HealthCheckEndpoint() string {
+	return "/health"
 }

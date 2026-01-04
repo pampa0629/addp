@@ -29,20 +29,23 @@ ScanTaskService (任务管理)
 ScanServiceNew (扫描执行器)
   ├─ 验证租户权限（verifyResourceAccess）
   ├─ 判断存储引擎类型（数据库 vs 对象存储）
-  ├─ 数据库扫描流程（scanDatabase）
-  │  ├─ 连接数据库（通过 common/database 插件）
-  │  ├─ 扫描 Schema/Database 列表
-  │  ├─ 创建/更新 MetaNode（节点）
-  │  ├─ 扫描 Table/View 列表
-  │  ├─ 创建/更新 MetaItem（数据项）
+  ├─ 数据库扫描流程（DatabaseScanService）
+  │  ├─ 🔌 获取插件: plugin.Get(engineType) → RelationalDBPlugin
+  │  ├─ 创建连接池: plugin.GetOrCreatePoolFromFactory()
+  │  ├─ 列出 Schema: relPlugin.ListSchemas(ctx, db)
+  │  ├─ 过滤系统 Schema: relPlugin.IsSystemSchema(schemaName)
+  │  ├─ 创建/更新 MetaNode（Schema 节点）
+  │  ├─ 列出表: relPlugin.ListTables(ctx, db, schemaName)
+  │  ├─ 创建/更新 MetaItem（Table 数据项）
+  │  ├─ 列出字段: relPlugin.ListColumns(ctx, db, schemaName, tableName)
   │  ├─ 提取表 Schema（字段、类型、注释）
   │  ├─ 空间元数据提取（ST_Extent、SRID、几何类型）
   │  └─ 索引到 Meilisearch
-  └─ 对象存储扫描流程（scanObjectStorage）
-     ├─ 连接对象存储（MinIO/S3 客户端）
-     ├─ 扫描 Bucket 列表
+  └─ 对象存储扫描流程（ObjectStorageScanService）
+     ├─ 🔌 获取插件: plugin.Get(engineType) → ObjectStoragePlugin
+     ├─ 列出 Bucket: objPlugin.ListBuckets(ctx, connInfo)
      ├─ 创建/更新 MetaNode（Bucket）
-     ├─ 递归扫描对象（支持深度控制）
+     ├─ 列出对象: objPlugin.ListObjects(ctx, connInfo, bucket, prefix, recursive)
      ├─ 创建/更新 MetaItem（Object）
      ├─ 提取文件元数据（扩展名、MIME、文件大小）
      ├─ 文档内容向量化（可选，需配置 Embedding Service）
@@ -62,6 +65,33 @@ ScanServiceNew (扫描执行器)
 事件发布（Redis）
   └─ meta:events:scan_completed
 ```
+
+### 插件系统架构（v0.0.20 重构）
+
+Meta 模块通过 `common/database/plugin` 三层插件架构直接访问存储引擎：
+
+```
+Meta 模块 (internal/service)
+  ↓ 调用
+plugin.Get(engineType) → EnginePlugin
+  ↓ 类型断言
+RelationalDBPlugin (数据库)          ObjectStoragePlugin (对象存储)
+  ├─ ListSchemas()                   ├─ ListBuckets()
+  ├─ ListTables()                    ├─ ListObjects()
+  ├─ ListColumns()                   └─ GetObjectMetadata()
+  ├─ IsSystemSchema()
+  └─ GetTableMetadata()
+  ↓ 实现
+PostgreSQL / MySQL / Doris          MinIO / S3
+ClickHouse / MongoDB
+```
+
+**重构优势**（v0.0.20）：
+- ✅ **调用链简化**: 从 5 层缩减为 2 层（ScanService → Plugin → 数据库）
+- ✅ **代码复用**: DatabaseScanService 和 ObjectStorageScanService 直接复用 common 插件
+- ✅ **减少维护成本**: 删除 1200+ 行冗余 Scanner 适配层代码
+- ✅ **统一接口**: Meta、Manager、Transfer 等模块使用相同的插件接口
+- ✅ **扩展性强**: 新增存储引擎只需实现 common 插件接口
 
 ## 数据库文档
 

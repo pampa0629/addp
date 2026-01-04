@@ -28,7 +28,7 @@ func (p *MySQLPlugin) DisplayName() string {
 }
 
 func (p *MySQLPlugin) ConnectionCategory() string {
-	return "relational_db"
+	return "storage"
 }
 
 func (p *MySQLPlugin) DefaultPort() int {
@@ -260,4 +260,20 @@ func (p *MySQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema,
 	}
 
 	return count, nil
+}
+
+// SupportsMetadataQuery 实现 StoragePlugin 接口
+func (p *MySQLPlugin) SupportsMetadataQuery() bool {
+	return true
+}
+
+// IsSystemSchema 判断是否为系统 Schema
+func (p *MySQLPlugin) IsSystemSchema(schemaName string) bool {
+	systemSchemas := map[string]bool{
+		"information_schema": true,
+		"mysql":              true,
+		"performance_schema": true,
+		"sys":                true,
+	}
+	return systemSchemas[schemaName]
 }

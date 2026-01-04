@@ -32,7 +32,12 @@ func (p *PostgreSQLPlugin) DisplayName() string {
 
 // ConnectionCategory 返回连接类别
 func (p *PostgreSQLPlugin) ConnectionCategory() string {
-	return "relational_db"
+	return "storage"
+}
+
+// SupportsMetadataQuery 实现 StoragePlugin 接口
+func (p *PostgreSQLPlugin) SupportsMetadataQuery() bool {
+	return true
 }
 
 // DefaultPort 返回默认端口
@@ -299,4 +304,27 @@ func (p *PostgreSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, sc
 	}
 
 	return count, nil
+}
+
+// IsSystemSchema 判断是否为系统 Schema
+func (p *PostgreSQLPlugin) IsSystemSchema(schemaName string) bool {
+	systemSchemas := map[string]bool{
+		"pg_catalog":         true,
+		"information_schema": true,
+		"pg_toast":           true,
+		"pg_temp_1":          true,
+		"pg_toast_temp_1":    true,
+	}
+
+	// 检查是否在系统 schema 列表中
+	if systemSchemas[schemaName] {
+		return true
+	}
+
+	// 检查是否以 pg_toast_ 或 pg_temp_ 开头
+	if len(schemaName) >= 9 && (schemaName[:9] == "pg_toast_" || schemaName[:8] == "pg_temp_") {
+		return true
+	}
+
+	return false
 }
