@@ -21,9 +21,9 @@ type Scanner interface {
 	// ListSchemas 列出所有Schema（PostgreSQL）或数据库（MySQL）
 	ListSchemas() ([]SchemaInfo, error)
 	// ScanTables 扫描指定Schema的所有表
-	ScanTables(schemaName string) ([]TableInfo, error)
+	ScanTables(schemaName string) ([]ScannerTableInfo, error)
 	// ScanFields 扫描指定表的所有字段
-	ScanFields(schemaName, tableName string) ([]FieldInfo, error)
+	ScanFields(schemaName, tableName string) ([]ScannerFieldInfo, error)
 	// Close 关闭连接
 	Close() error
 }
@@ -35,8 +35,9 @@ type SchemaInfo struct {
 	TotalSizeBytes int64
 }
 
-// TableInfo 表信息
-type TableInfo struct {
+// ScannerTableInfo 表信息（Scanner 专用）
+// 注意：这是旧的扫描器结构体，新代码应使用 TableInfo (info.go)
+type ScannerTableInfo struct {
 	Name      string
 	Type      string
 	Comment   string
@@ -44,8 +45,9 @@ type TableInfo struct {
 	SizeBytes int64
 }
 
-// FieldInfo 字段信息
-type FieldInfo struct {
+// ScannerFieldInfo 字段信息（Scanner 专用）
+// 注意：这是旧的扫描器结构体，新代码应使用 FieldInfo (info.go)
+type ScannerFieldInfo struct {
 	Name             string
 	OrdinalPosition  int
 	DataType         string

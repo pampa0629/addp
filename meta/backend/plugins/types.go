@@ -11,8 +11,8 @@ type (
 	// 保留类型别名仅用于兼容性，实际使用 plugin.RelationalDBPlugin 和 plugin.ObjectStoragePlugin
 	Scanner              = format.Scanner
 	SchemaInfo           = format.SchemaInfo
-	TableInfo            = format.TableInfo
-	FieldInfo            = format.FieldInfo
+	TableInfo            = format.ScannerTableInfo // 注意：使用 Scanner 专用类型
+	FieldInfo            = format.ScannerFieldInfo // 注意：使用 Scanner 专用类型
 	ObjectNode           = format.ObjectNode
 	ObjectMetadata       = format.ObjectMetadata
 	ObjectStorageScanner = format.ObjectStorageScanner
