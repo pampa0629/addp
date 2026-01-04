@@ -238,11 +238,6 @@ func (p *DorisPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, tabl
 		return nil, fmt.Errorf("failed to list columns: %w", err)
 	}
 
-	// 填充标准化类型（使用通用映射工具）
-	for i := range columns {
-		columns[i].StdType = plugin.MapToStandardType(columns[i].DataType)
-	}
-
 	return columns, nil
 }
 

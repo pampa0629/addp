@@ -338,7 +338,6 @@ func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, t
 		column := plugin.ColumnInfo{
 			ColumnName:   colName.String,
 			DataType:     dataType.String,
-			StdType:      plugin.MapToStandardType(dataType.String), // 使用通用映射工具
 			IsNullable:   true, // Apache Spark 默认允许NULL
 			IsPrimaryKey: false,
 			Comment:      "",
