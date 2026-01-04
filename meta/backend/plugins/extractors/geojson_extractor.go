@@ -36,21 +36,19 @@ func (e *GeoJSONExtractor) Extract(ctx context.Context, input format.ExtractInpu
 		return nil, fmt.Errorf("geojson extractor: read content failed: %w", err)
 	}
 
-	parser := geojson.NewParser(nil)
+	opts := format.DefaultParseOptions()
+	parser := geojson.NewParser(opts)
 
-	schema, err := parser.ParseSchema(ctx, bytes.NewReader(content))
+	// 使用新接口 ParseTableInfo
+	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(content), opts)
 	if err != nil {
 		return nil, fmt.Errorf("geojson extractor: parse schema failed: %w", err)
 	}
 
-	records, err := parser.ReadRecords(ctx, bytes.NewReader(content), 0, geoJSONSampleLimit)
+	// 使用新接口 ReadPreview
+	records, err := parser.ReadPreview(ctx, bytes.NewReader(content), 0, geoJSONSampleLimit, opts)
 	if err != nil {
 		return nil, fmt.Errorf("geojson extractor: read sample records failed: %w", err)
-	}
-
-	metaMap, err := parser.ExtractMetadata(ctx, bytes.NewReader(content))
-	if err != nil {
-		return nil, fmt.Errorf("geojson extractor: extract metadata failed: %w", err)
 	}
 
 	collection, err := geojson.LoadFeatureCollection(bytes.NewReader(content))
@@ -71,30 +69,35 @@ func (e *GeoJSONExtractor) Extract(ctx context.Context, input format.ExtractInpu
 		CustomAttrs: make(map[string]interface{}),
 	}
 
-	geometryField := determineGeometryField(schema)
-	metadata.SchemaInfo = buildSchemaMetadata(schema, records, collection, geometryField)
-	metadata.CustomAttrs["geo_metadata"] = buildGeoMetadata(metaMap, collection, geometryField)
+	geometryField := determineGeometryFieldFromTableInfo(tableInfo)
+	metadata.SchemaInfo = buildSchemaMetadataFromTableInfo(tableInfo, records, collection, geometryField)
+	metadata.CustomAttrs["geo_metadata"] = buildGeoMetadataFromTableInfo(tableInfo, collection, geometryField)
 
 	return metadata, nil
 }
 
-func determineGeometryField(schema *format.Schema) string {
-	if schema == nil {
+func determineGeometryFieldFromTableInfo(tableInfo *format.TableInfo) string {
+	if tableInfo == nil {
 		return "geometry"
 	}
-	if schema.GeometryField != nil && *schema.GeometryField != "" {
-		return *schema.GeometryField
+	// 从 Extensions 中提取 SpatialInfo
+	for _, ext := range tableInfo.Extensions {
+		if spatialInfo, ok := ext.(*format.SpatialInfo); ok {
+			if spatialInfo.GeometryColumn != "" {
+				return spatialInfo.GeometryColumn
+			}
+		}
 	}
 	return "geometry"
 }
 
-func buildSchemaMetadata(schema *format.Schema, records []map[string]interface{}, collection *geojson.FeatureCollection, geometryField string) *format.SchemaMetadata {
-	if schema == nil {
+func buildSchemaMetadataFromTableInfo(tableInfo *format.TableInfo, records []map[string]interface{}, collection *geojson.FeatureCollection, geometryField string) *format.SchemaMetadata {
+	if tableInfo == nil {
 		return nil
 	}
 
-	columns := make([]format.ColumnMetadata, 0, len(schema.Fields))
-	for _, field := range schema.Fields {
+	columns := make([]format.ColumnMetadata, 0, len(tableInfo.Fields))
+	for _, field := range tableInfo.Fields {
 		columns = append(columns, format.ColumnMetadata{
 			Name:     field.Name,
 			Type:     string(field.Type),
@@ -103,8 +106,8 @@ func buildSchemaMetadata(schema *format.Schema, records []map[string]interface{}
 	}
 
 	rowCount := int64(-1)
-	if schema.RecordCount != nil {
-		rowCount = *schema.RecordCount
+	if tableInfo.RowCount != nil {
+		rowCount = *tableInfo.RowCount
 	} else if collection != nil {
 		rowCount = int64(len(collection.Features))
 	}
@@ -141,58 +144,57 @@ func buildSchemaMetadata(schema *format.Schema, records []map[string]interface{}
 	}
 }
 
-func buildGeoMetadata(meta map[string]interface{}, collection *geojson.FeatureCollection, geometryField string) map[string]interface{} {
+func buildGeoMetadataFromTableInfo(tableInfo *format.TableInfo, collection *geojson.FeatureCollection, geometryField string) map[string]interface{} {
 	result := map[string]interface{}{
 		"geometry_field": geometryField,
 	}
 
-	if fc, ok := meta["feature_count"]; ok {
-		result["feature_count"] = fc
+	if tableInfo != nil && tableInfo.RowCount != nil {
+		result["feature_count"] = *tableInfo.RowCount
 	}
 
-	if bbox := extractBoundingBox(meta, collection); bbox != nil {
-		result["bounding_box"] = bbox
-		result["dimensions"] = inferDimensions(len(bbox))
+	// 从 Extensions 中提取 SpatialInfo
+	var spatialInfo *format.SpatialInfo
+	if tableInfo != nil {
+		for _, ext := range tableInfo.Extensions {
+			if si, ok := ext.(*format.SpatialInfo); ok {
+				spatialInfo = si
+				break
+			}
+		}
 	}
 
-	geometryTypes := extractGeometryTypes(meta, collection)
-	if len(geometryTypes) > 0 {
-		result["geometry_types"] = geometryTypes
-		result["geometry_type"] = geometryTypes[0]
+	if spatialInfo != nil {
+		if spatialInfo.GeometryType != "" {
+			result["geometry_types"] = []string{spatialInfo.GeometryType}
+			result["geometry_type"] = spatialInfo.GeometryType
+		}
+		if spatialInfo.SRID != 0 {
+			result["coordinate_system"] = fmt.Sprintf("EPSG:%d", spatialInfo.SRID)
+		} else {
+			result["coordinate_system"] = defaultCoordinateSys
+		}
 	}
 
-	coordinateSystem := extractCoordinateSystem(meta, collection)
-	if coordinateSystem != "" {
-		result["coordinate_system"] = coordinateSystem
-	} else {
-		result["coordinate_system"] = defaultCoordinateSys
+	// 从 collection 提取 bounding box
+	if collection != nil && len(collection.Metadata.BoundingBox) > 0 {
+		result["bounding_box"] = collection.Metadata.BoundingBox
+		result["dimensions"] = inferDimensions(len(collection.Metadata.BoundingBox))
 	}
 
-	if props, ok := meta["properties"]; ok {
-		result["properties"] = props
+	// 从 collection 提取几何类型
+	if collection != nil {
+		geometryTypes := extractGeometryTypesFromCollection(collection)
+		if len(geometryTypes) > 0 && spatialInfo == nil {
+			result["geometry_types"] = geometryTypes
+			result["geometry_type"] = geometryTypes[0]
+		}
 	}
 
 	return result
 }
 
-func extractGeometryTypes(meta map[string]interface{}, collection *geojson.FeatureCollection) []string {
-	if meta != nil {
-		if types, ok := meta["geometry_types"].([]string); ok {
-			return types
-		}
-		if raw, ok := meta["geometry_types"].([]interface{}); ok {
-			out := make([]string, 0, len(raw))
-			for _, item := range raw {
-				if s, ok := item.(string); ok {
-					out = append(out, s)
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		}
-	}
-
+func extractGeometryTypesFromCollection(collection *geojson.FeatureCollection) []string {
 	if collection == nil {
 		return nil
 	}
@@ -209,44 +211,6 @@ func extractGeometryTypes(meta map[string]interface{}, collection *geojson.Featu
 		types = append(types, t)
 	}
 	return types
-}
-
-func extractBoundingBox(meta map[string]interface{}, collection *geojson.FeatureCollection) []float64 {
-	if meta != nil {
-		if bbox, ok := meta["bounding_box"].([]float64); ok {
-			return bbox
-		}
-		if raw, ok := meta["bounding_box"].([]interface{}); ok {
-			out := make([]float64, 0, len(raw))
-			for _, item := range raw {
-				switch v := item.(type) {
-				case float64:
-					out = append(out, v)
-				case float32:
-					out = append(out, float64(v))
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		}
-	}
-	if collection != nil && len(collection.Metadata.BoundingBox) > 0 {
-		return collection.Metadata.BoundingBox
-	}
-	return nil
-}
-
-func extractCoordinateSystem(meta map[string]interface{}, collection *geojson.FeatureCollection) string {
-	if meta != nil {
-		if cs, ok := meta["coordinate_system"].(string); ok && cs != "" {
-			return cs
-		}
-	}
-	if collection != nil && collection.Metadata.CoordinateSystem != "" {
-		return collection.Metadata.CoordinateSystem
-	}
-	return ""
 }
 
 func inferDimensions(bboxLen int) string {

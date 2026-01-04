@@ -38,14 +38,13 @@ func (e *CSVExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 	// 2. 创建共享 CSV parser
 	parser := csvParser.NewParser(opts)
 
-	// 3. 解析 schema
-	schema, err := parser.ParseSchema(ctx, input.Reader)
+	// 3. 解析 schema 使用新接口
+	tableInfo, err := parser.ParseTableInfo(ctx, input.Reader, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse CSV schema: %w", err)
 	}
 
 	// 4. 提取元数据
-	// 注意：ExtractMetadata 需要重新读取，这里简化处理，直接使用 schema 信息
 	metadata := &format.ExtractedMetadata{
 		BasicInfo: format.BasicMetadata{
 			FileName:     filepath.Base(input.ObjectKey),
@@ -59,9 +58,9 @@ func (e *CSVExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 		CustomAttrs: make(map[string]interface{}),
 	}
 
-	// 5. 转换 schema 到 SchemaMetadata
-	columns := make([]format.ColumnMetadata, len(schema.Fields))
-	for i, field := range schema.Fields {
+	// 5. 转换 TableInfo 到 SchemaMetadata
+	columns := make([]format.ColumnMetadata, len(tableInfo.Fields))
+	for i, field := range tableInfo.Fields {
 		columns[i] = format.ColumnMetadata{
 			Name:     field.Name,
 			Type:     mapFormatTypeToMetaType(field.Type),
@@ -70,8 +69,8 @@ func (e *CSVExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 	}
 
 	var rowCount int64
-	if schema.RecordCount != nil {
-		rowCount = *schema.RecordCount
+	if tableInfo.RowCount != nil {
+		rowCount = *tableInfo.RowCount
 	}
 
 	metadata.SchemaInfo = &format.SchemaMetadata{
@@ -80,14 +79,14 @@ func (e *CSVExtractor) Extract(ctx context.Context, input format.ExtractInput) (
 		Extra: map[string]interface{}{
 			"delimiter":    string(opts.Delimiter),
 			"has_header":   opts.HasHeader,
-			"column_count": len(schema.Fields),
+			"column_count": len(tableInfo.Fields),
 		},
 	}
 
 	// 6. 添加统计信息
 	metadata.CustomAttrs["statistics"] = map[string]interface{}{
 		"total_rows":    rowCount,
-		"total_columns": len(schema.Fields),
+		"total_columns": len(tableInfo.Fields),
 		"encoding":      opts.Encoding,
 	}
 

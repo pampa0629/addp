@@ -80,11 +80,11 @@ func (r *GeoJSONReader) Open(ctx context.Context, _ pipeline.ConnectorConfig) er
 	if err := r.resetReader(); err != nil {
 		return err
 	}
-	formatSchema, err := parser.ParseSchema(ctx, r.file)
+	tableInfo, err := parser.ParseTableInfo(ctx, r.file, parseOpts)
 	if err != nil {
 		return fmt.Errorf("failed to parse geojson schema: %w", err)
 	}
-	r.schema = convertSchema(formatSchema)
+	r.schema = convertSchemaFromTableInfo(tableInfo)
 
 	if err := r.resetReader(); err != nil {
 		return err
@@ -169,6 +169,61 @@ func (r *GeoJSONReader) resetReader() error {
 	}
 	_, err := r.file.Seek(0, io.SeekStart)
 	return err
+}
+
+func convertSchemaFromTableInfo(tableInfo *format.TableInfo) *pipeline.Schema {
+	if tableInfo == nil {
+		return nil
+	}
+
+	fields := make([]pipeline.Field, 0, len(tableInfo.Fields))
+	var spatialType string
+	var srid int
+	var geometryField string
+
+	// 从 Extensions 中提取 SpatialInfo
+	for _, ext := range tableInfo.Extensions {
+		if spatialInfo, ok := ext.(*format.SpatialInfo); ok {
+			spatialType = spatialInfo.GeometryType
+			srid = spatialInfo.SRID
+			geometryField = spatialInfo.GeometryColumn
+			break
+		}
+	}
+
+	for _, field := range tableInfo.Fields {
+		pField := pipeline.Field{
+			Name:     field.Name,
+			Type:     string(field.Type),
+			Nullable: field.Nullable,
+		}
+
+		if field.Type == format.FieldTypeGeometry {
+			pField.SpatialType = spatialType
+			pField.SRID = srid
+		}
+
+		fields = append(fields, pField)
+	}
+
+	metadata := make(map[string]interface{})
+	if geometryField != "" {
+		metadata["geometry_field"] = geometryField
+	}
+	if spatialType != "" {
+		metadata["geometry_type"] = spatialType
+	}
+	if srid != 0 {
+		metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", srid)
+	}
+	if tableInfo.RowCount != nil {
+		metadata["record_count"] = *tableInfo.RowCount
+	}
+
+	return &pipeline.Schema{
+		Fields:   fields,
+		Metadata: metadata,
+	}
 }
 
 func convertSchema(schema *format.Schema) *pipeline.Schema {

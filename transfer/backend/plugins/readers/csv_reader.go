@@ -93,15 +93,15 @@ func (r *CSVReader) Open(ctx context.Context, config pipeline.ConnectorConfig) e
 	// Create parser
 	r.parser = csvParser.NewParser(opts)
 
-	// Parse schema
-	commonSchema, err := r.parser.ParseSchema(ctx, r.file)
+	// Parse schema using new FileTableParser interface
+	tableInfo, err := r.parser.ParseTableInfo(ctx, r.file, opts)
 	if err != nil {
 		r.file.Close()
 		return fmt.Errorf("failed to parse CSV schema: %w", err)
 	}
 
 	// Convert to pipeline schema
-	r.schema = r.convertSchema(commonSchema)
+	r.schema = r.convertSchemaFromTableInfo(tableInfo)
 
 	// Reset file for reading data
 	if _, err := r.file.Seek(0, 0); err != nil {
@@ -118,8 +118,8 @@ func (r *CSVReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
 		return nil, fmt.Errorf("reader not opened")
 	}
 
-	// Read a batch using shared parser
-	records, err := r.parser.ReadRecords(ctx, r.file, r.rowOffset, int64(r.batchSize))
+	// Read a batch using new FileTableParser interface
+	records, err := r.parser.ReadPreview(ctx, r.file, r.rowOffset, int64(r.batchSize), r.opts)
 	if err != nil {
 		if err == io.EOF && len(records) == 0 {
 			return nil, io.EOF
@@ -147,11 +147,11 @@ func (r *CSVReader) Read(ctx context.Context) (*pipeline.DataBatch, error) {
 	}, nil
 }
 
-// convertSchema converts common format Schema to pipeline Schema
-func (r *CSVReader) convertSchema(commonSchema *format.Schema) *pipeline.Schema {
-	pipelineFields := make([]pipeline.Field, len(commonSchema.Fields))
+// convertSchemaFromTableInfo converts format.TableInfo to pipeline.Schema
+func (r *CSVReader) convertSchemaFromTableInfo(tableInfo *format.TableInfo) *pipeline.Schema {
+	pipelineFields := make([]pipeline.Field, len(tableInfo.Fields))
 
-	for i, field := range commonSchema.Fields {
+	for i, field := range tableInfo.Fields {
 		pipelineFields[i] = pipeline.Field{
 			Name:     field.Name,
 			Type:     string(field.Type),
@@ -167,8 +167,8 @@ func (r *CSVReader) convertSchema(commonSchema *format.Schema) *pipeline.Schema 
 		},
 	}
 
-	if commonSchema.RecordCount != nil {
-		schema.Metadata["estimated_rows"] = *commonSchema.RecordCount
+	if tableInfo.RowCount != nil {
+		schema.Metadata["estimated_rows"] = *tableInfo.RowCount
 	}
 
 	return schema
@@ -206,7 +206,7 @@ func (r *CSVReader) SeekTo(offset int64) error {
 		skipCount++ // Skip header row
 	}
 
-	_, err = r.parser.ReadRecords(ctx, r.file, 0, skipCount)
+	_, err = r.parser.ReadPreview(ctx, r.file, 0, skipCount, r.opts)
 	if err != nil && err != io.EOF {
 		return fmt.Errorf("failed to seek to offset %d: %w", offset, err)
 	}
