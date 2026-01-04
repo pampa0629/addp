@@ -377,38 +377,58 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 	opts := format.DefaultParseOptions()
 	parser := geojson.NewParser(opts)
 
-	// GeoJSON parser still uses old interface (backward compatible)
-	schema, err := parser.ParseSchema(ctx, bytes.NewReader(data))
+	// 使用新的 FileTableParser 接口
+	tableInfo, err := parser.ParseTableInfo(ctx, bytes.NewReader(data), opts)
 	if err != nil {
 		return nil, err
 	}
 
-	sampleRecords, _ := parser.ReadRecords(ctx, bytes.NewReader(data), 0, 10)
-	metaMap, _ := parser.ExtractMetadata(ctx, bytes.NewReader(data))
+	// 读取预览数据（前10条记录）
+	sampleRecords, _ := parser.ReadPreview(ctx, bytes.NewReader(data), 0, 10, opts)
 
+	// 构建元数据
 	metadata := make(map[string]interface{})
-	if metaMap != nil {
-		for k, v := range metaMap {
-			metadata[k] = v
+
+	// 从 TableInfo 提取元数据
+	if tableInfo != nil {
+		// 添加字段信息
+		columns := make([]map[string]interface{}, 0, len(tableInfo.Fields))
+		for _, field := range tableInfo.Fields {
+			col := map[string]interface{}{
+				"name":     field.Name,
+				"type":     string(field.Type),
+				"nullable": field.Nullable,
+			}
+			if field.Type == format.FieldTypeGeometry {
+				col["type"] = "geometry"
+			}
+			columns = append(columns, col)
+		}
+		metadata["columns"] = columns
+
+		// 添加行数
+		if tableInfo.RowCount != nil {
+			metadata["record_count"] = *tableInfo.RowCount
+			metadata["feature_count"] = *tableInfo.RowCount
+		}
+
+		// 从 Extensions 中提取空间信息
+		for _, ext := range tableInfo.Extensions {
+			if spatialInfo, ok := ext.(*format.SpatialInfo); ok {
+				metadata["geometry_field"] = spatialInfo.GeometryColumn
+				metadata["geometry_type"] = spatialInfo.GeometryType
+				metadata["geometry_types"] = []string{spatialInfo.GeometryType}
+				if spatialInfo.SRID != 0 {
+					metadata["spatial_ref_sys"] = fmt.Sprintf("EPSG:%d", spatialInfo.SRID)
+				}
+				break
+			}
 		}
 	}
+
+	// 添加示例记录
 	if len(sampleRecords) > 0 {
 		metadata["sample_records"] = sampleRecords
-	}
-	if schema != nil {
-		metadata["columns"] = convertFormatColumns(schema)
-		if schema.GeometryField != nil {
-			metadata["geometry_field"] = *schema.GeometryField
-		}
-		if schema.GeometryType != nil {
-			metadata["geometry_type"] = *schema.GeometryType
-		}
-		if schema.SpatialRefSys != nil {
-			metadata["spatial_ref_sys"] = *schema.SpatialRefSys
-		}
-		if schema.RecordCount != nil {
-			metadata["record_count"] = *schema.RecordCount
-		}
 	}
 
 	return &models.ObjectPreviewContent{
@@ -417,25 +437,6 @@ func buildGeoJSONPreview(ctx context.Context, data []byte, parsed interface{}) (
 		GeoJSON:  parsed,
 		Metadata: metadata,
 	}, nil
-}
-
-func convertFormatColumns(schema *format.Schema) []map[string]interface{} {
-	if schema == nil {
-		return nil
-	}
-	columns := make([]map[string]interface{}, 0, len(schema.Fields))
-	for _, field := range schema.Fields {
-		col := map[string]interface{}{
-			"name":     field.Name,
-			"type":     string(field.Type),
-			"nullable": field.Nullable,
-		}
-		if field.Type == format.FieldTypeGeometry {
-			col["type"] = "geometry"
-		}
-		columns = append(columns, col)
-	}
-	return columns
 }
 
 func buildExcelPreviewFromAnalysis(analysis *excel.WorkbookAnalysis) map[string]interface{} {

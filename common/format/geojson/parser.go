@@ -44,7 +44,108 @@ func (p *Parser) SupportedFormats() []format.FormatType {
 	return []format.FormatType{format.FormatGeoJSON}
 }
 
+// ============ FileTableParser 接口实现 ============
+
+// ParseTableInfo 从 GeoJSON 文件中提取 TableInfo
+// 实现 format.FileTableParser 接口
+func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *format.ParseOptions) (*format.TableInfo, error) {
+	// 使用传入的 options，如果为 nil 则使用默认的
+	opts := p.options
+	if options != nil {
+		opts = options
+		// 更新 geometry field
+		if opts.ExtraParams != nil {
+			if v, ok := opts.ExtraParams["geometry_field"].(string); ok && v != "" {
+				p.geometryField = v
+			}
+		}
+	}
+
+	iter, err := newIterator(input)
+	if err != nil {
+		return nil, err
+	}
+
+	builder := newSchemaBuilder(p.geometryField)
+	featureCount := int64(0)
+
+	for {
+		if err := contextErr(ctx); err != nil {
+			return nil, err
+		}
+
+		feature, err := iter.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		builder.AddFeature(feature)
+		featureCount++
+	}
+
+	schema := builder.Build()
+
+	// 转换为 TableInfo
+	fields := make([]format.FieldInfo, len(schema.Fields))
+	for i, field := range schema.Fields {
+		fields[i] = format.FieldInfo{
+			Name:         field.Name,
+			Type:         field.Type,
+			OriginalType: string(field.Type), // GeoJSON没有原始类型
+			Nullable:     field.Nullable,
+			IsPrimaryKey: false,
+			Comment:      field.Comment,
+		}
+	}
+
+	// 构建 SpatialInfo 扩展
+	var extensions []format.ExtensionInfo
+	geometryType := builder.GeometryType()
+	if geometryType != "" {
+		srid := 4326 // GeoJSON 默认 WGS84
+		if iter.meta.CoordinateSystem != "" {
+			// 尝试从坐标系统字符串解析 SRID
+			// 简化处理：如果包含EPSG信息则提取
+			if strings.Contains(strings.ToUpper(iter.meta.CoordinateSystem), "EPSG:") {
+				// 可以进一步解析
+			}
+		}
+
+		spatialInfo := &format.SpatialInfo{
+			GeometryColumn: p.geometryField,
+			GeometryType:   geometryType,
+			SRID:           srid,
+			Dimension:      2, // GeoJSON 主要是 2D
+		}
+		extensions = append(extensions, spatialInfo)
+	}
+
+	// 构建 TableInfo
+	tableInfo := &format.TableInfo{
+		Name:       "geojson_features", // GeoJSON 没有表名，使用默认值
+		RowCount:   &featureCount,
+		Fields:     fields,
+		PrimaryKey: []string{}, // GeoJSON 没有主键
+		Extensions: extensions,
+	}
+
+	return tableInfo, nil
+}
+
+// ReadPreview 读取 GeoJSON 数据预览
+// 实现 format.FileTableParser 接口
+func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
+	// 直接调用现有的 ReadRecords 方法
+	return p.ReadRecords(ctx, input, offset, limit)
+}
+
+// ============ 向后兼容（已废弃）============
+
 // ParseSchema 解析 GeoJSON Schema
+// @Deprecated: 使用 ParseTableInfo() 替代
 func (p *Parser) ParseSchema(ctx context.Context, input io.Reader) (*format.Schema, error) {
 	iter, err := newIterator(input)
 	if err != nil {
