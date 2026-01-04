@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/dbbridge"
 	commonmodels "github.com/addp/common/models"
 	"github.com/addp/system/internal/models"

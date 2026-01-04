@@ -3,22 +3,22 @@ package dbbridge
 import (
 	"context"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	"gorm.io/gorm"
 
 	// 导入所有数据库插件，触发 init() 注册
-	_ "github.com/addp/common/database/plugins/clickhouse"
-	_ "github.com/addp/common/database/plugins/doris"
-	_ "github.com/addp/common/database/plugins/math_workflow"
-	_ "github.com/addp/common/database/plugins/minio"
-	_ "github.com/addp/common/database/plugins/mongodb"
-	_ "github.com/addp/common/database/plugins/mysql"
-	_ "github.com/addp/common/database/plugins/postgresql"
-	_ "github.com/addp/common/database/plugins/python_workflow"
-	_ "github.com/addp/common/database/plugins/s3"
-	_ "github.com/addp/common/database/plugins/spark_sql"
-	_ "github.com/addp/common/database/plugins/spark_workflow"
+	_ "github.com/addp/common/engine/plugins/clickhouse"
+	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/math_workflow"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/python_workflow"
+	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/spark_sql"
+	_ "github.com/addp/common/engine/plugins/spark_workflow"
 )
 
 // BuildConnectionString 使用插件系统构建连接字符串
@@ -77,7 +77,7 @@ func GetAllPlugins() map[string]PluginInfo {
 		result[dbType] = PluginInfo{
 			Type:             p.Type(),
 			DisplayName:      p.DisplayName(),
-			Category:         p.ConnectionCategory(),
+			Category:         p.EngineCategory(),
 			DefaultPort:      p.DefaultPort(),
 			RequiredFields:   p.RequiredFields(),
 			SensitiveFields:  p.SensitiveFields(),

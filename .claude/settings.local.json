@@ -92,7 +92,9 @@
       "Bash(ps:*)",
       "Bash(chmod:*)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc0OTgzNzksImlhdCI6MTc2NzQ4NzU3OX0.SFF-IRhveCMDn_Ya0CJEczv6FHBIyzkFxmZ_O6EJzC8\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc0OTg4NTAsImlhdCI6MTc2NzQ4ODA1MH0.P7P5t-CXmAsvY7OQZ1pl_npbV4UVFXpjWQFa7Qj9Qvg\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc0OTg4NTAsImlhdCI6MTc2NzQ4ODA1MH0.P7P5t-CXmAsvY7OQZ1pl_npbV4UVFXpjWQFa7Qj9Qvg\")",
+      "Bash(git mv:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

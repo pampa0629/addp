@@ -96,17 +96,30 @@ export default {
     return client.get(`/meta/schemas/${engineId}/available`)
   },
 
+  // 获取对象存储的节点列表
+  listObjectStorageNodes(engineId, path = '') {
+    return client.get(`/meta/object-storage/${engineId}/nodes`, {
+      params: { path }
+    })
+  },
+
   // 自动扫描所有未扫描的引擎
   autoScan() {
     return client.post('/meta/scan/auto')
   },
 
-  // 扫描指定引擎的指定Schema
-  scanEngine(engineId, schemaNames) {
-    return client.post('/meta/scan/engine', {
-      engine_id: engineId,
-      schema_names: schemaNames
-    })
+  // 扫描指定引擎的指定Schema或对象路径
+  scanEngine(engineId, schemaNames, objectPaths) {
+    const payload = {
+      engine_id: engineId
+    }
+    if (schemaNames && schemaNames.length > 0) {
+      payload.schema_names = schemaNames
+    }
+    if (objectPaths && objectPaths.length > 0) {
+      payload.object_paths = objectPaths
+    }
+    return client.post('/meta/scan/engine', payload)
   },
 
   getScanRuns(engineId, params = {}) {

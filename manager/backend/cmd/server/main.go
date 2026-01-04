@@ -21,14 +21,14 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	// 导入数据库插件以触发自动注册
-	_ "github.com/addp/common/database/plugins/clickhouse"
-	_ "github.com/addp/common/database/plugins/doris"
-	_ "github.com/addp/common/database/plugins/minio"
-	_ "github.com/addp/common/database/plugins/mongodb"
-	_ "github.com/addp/common/database/plugins/mysql"
-	_ "github.com/addp/common/database/plugins/postgresql"
-	_ "github.com/addp/common/database/plugins/s3"
-	_ "github.com/addp/common/database/plugins/spark_sql"
+	_ "github.com/addp/common/engine/plugins/clickhouse"
+	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/spark_sql"
 )
 
 func main() {

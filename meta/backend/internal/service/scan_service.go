@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"

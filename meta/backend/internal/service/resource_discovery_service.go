@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )

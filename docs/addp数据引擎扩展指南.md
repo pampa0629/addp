@@ -145,9 +145,9 @@ func (p *<DBType>Plugin) DisplayName() string {
     return "<Display Name>"
 }
 
-func (p *<DBType>Plugin) ConnectionCategory() string {
-    // 选择：relational_db / compute_engine / object_storage / nosql_db
-    return "relational_db"
+func (p *<DBType>Plugin) EngineCategory() string {
+    // 选择：standard (标准引擎，如 PostgreSQL/MySQL) 或 extension (扩展引擎，如工作流引擎)
+    return "standard"
 }
 
 func (p *<DBType>Plugin) DefaultPort() int {
@@ -1018,8 +1018,8 @@ func (p *SQLitePlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (st
 // 默认端口：6379
 // 不支持 GORM，不实现 ConnectionPoolPlugin
 
-func (p *RedisPlugin) ConnectionCategory() string {
-    return "nosql_db"  // 或 "cache"
+func (p *RedisPlugin) EngineCategory() string {
+    return "standard"  // 标准引擎
 }
 
 // 注意：Redis 不支持标准 SQL，不实现 MetadataPlugin

@@ -26,7 +26,7 @@ ScanTaskService (任务管理)
   ├─ 任务队列（Asynq Worker 或本地 goroutine）
   └─ 调用 ScanServiceNew.ExecuteScan()
   ↓
-ScanServiceNew (扫描执行器)
+ScanService (扫描执行器)
   ├─ 验证租户权限（verifyResourceAccess）
   ├─ 判断存储引擎类型（数据库 vs 对象存储）
   ├─ 数据库扫描流程（DatabaseScanService）

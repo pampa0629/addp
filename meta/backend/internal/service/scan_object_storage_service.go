@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/plugins"

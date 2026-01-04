@@ -20,6 +20,16 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
 	"github.com/redis/go-redis/v9"
+
+	// 导入数据库插件以触发自动注册
+	_ "github.com/addp/common/engine/plugins/clickhouse"
+	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/spark_sql"
 )
 
 func main() {

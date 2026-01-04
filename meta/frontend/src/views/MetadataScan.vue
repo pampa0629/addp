@@ -87,7 +87,7 @@
         <!-- 右侧：Schema列表 -->
         <div class="right-panel">
           <div class="panel-header">
-            <h3>Schema列表 {{ selectedResource ? `- ${selectedResource.name}` : '' }}</h3>
+            <h3>{{ rightPanelTitle }}</h3>
             <div v-if="selectedResource" class="schema-actions">
               <el-button @click="loadSchemas" :loading="loadingSchemas">
                 <el-icon><Refresh /></el-icon> 刷新
@@ -266,6 +266,14 @@ const autoScheduleTask = computed(() => {
   )
 })
 
+// 计算右侧面板标题（根据引擎类型显示 Schema 或 Bucket）
+const rightPanelTitle = computed(() => {
+  if (!selectedResource.value) return 'Schema列表'
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  const label = isObjectStorage ? 'Bucket列表' : 'Schema列表'
+  return `${label} - ${selectedResource.value.name}`
+})
+
 // 加载引擎列表
 const loadEngines = async () => {
   loadingResources.value = true
@@ -356,6 +364,13 @@ const stopResizing = () => {
   enforceBounds()
 }
 
+// 判断是否为对象存储类型
+const isObjectStorageType = (resourceType) => {
+  if (!resourceType) return false
+  const type = resourceType.toLowerCase()
+  return ['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)
+}
+
 // 加载Schema列表
 const loadSchemas = async () => {
   if (!selectedResource.value) return
@@ -364,20 +379,36 @@ const loadSchemas = async () => {
   let availableSchemas = []
   let connectionError = null
 
+  // 判断是否为对象存储类型
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+
   try {
     // 检查引擎连接状态，如果已知离线，直接跳过实际连接
     if (selectedResource.value.connection_status === 'offline') {
       connectionError = new Error(`引擎离线: ${selectedResource.value.check_message || '连接失败'}`)
       console.warn('资源已标记为离线，跳过实际连接:', selectedResource.value.name)
     } else {
-      // 引擎在线或状态未知，尝试获取实际Schema列表
+      // 引擎在线或状态未知，尝试获取实际Schema/Bucket列表
       try {
-        const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
-        availableSchemas = availableRes.data || []
+        if (isObjectStorage) {
+          // 对象存储：获取节点列表（buckets）
+          const nodesRes = await metaApi.listObjectStorageNodes(selectedResource.value.id)
+          const nodes = nodesRes.data || []
+          // 转换为 schema 格式以兼容现有UI
+          availableSchemas = nodes.map(node => ({
+            name: node.name,
+            node_type: node.node_type,
+            path: node.path || node.name
+          }))
+        } else {
+          // 关系型数据库：获取Schema列表
+          const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
+          availableSchemas = availableRes.data || []
+        }
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
         connectionError = error
-        console.warn('获取可用Schema失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
+        console.warn('获取可用Schema/Bucket失败（可能存储引擎离线）:', error.response?.data?.error || error.message)
       }
     }
   } catch (error) {
@@ -573,10 +604,13 @@ const handleAutoScan = async () => {
 const handleBatchScan = async () => {
   if (!selectedSchemas.value.length) return
 
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  const targetLabel = isObjectStorage ? 'Bucket' : 'Schema'
+
   try {
     await ElMessageBox.confirm(
-      `将扫描 ${selectedSchemas.value.length} 个Schema，是否继续？`,
-      '确认批量扫描',
+      `将扫描 ${selectedSchemas.value.length} 个${targetLabel}，是否继续？`,
+      `确认批量扫描`,
       { type: 'warning' }
     )
 
@@ -586,7 +620,16 @@ const handleBatchScan = async () => {
     scanMessage.value = '正在扫描...'
     scanResult.value = null
 
-    const schemaNames = selectedSchemas.value.map(item => item.schema_name || item.name)
+    let schemaNames = null
+    let objectPaths = null
+
+    if (isObjectStorage) {
+      // 对象存储：传递路径列表
+      objectPaths = selectedSchemas.value.map(item => item.path || item.name)
+    } else {
+      // 关系型数据库：传递Schema名称列表
+      schemaNames = selectedSchemas.value.map(item => item.schema_name || item.name)
+    }
 
     // 模拟进度
     const progressInterval = setInterval(() => {
@@ -595,7 +638,7 @@ const handleBatchScan = async () => {
       }
     }, 500)
 
-    const res = await metaApi.scanEngine(selectedResource.value.id, schemaNames)
+    const res = await metaApi.scanEngine(selectedResource.value.id, schemaNames, objectPaths)
     clearInterval(progressInterval)
     scanProgress.value = 100
 

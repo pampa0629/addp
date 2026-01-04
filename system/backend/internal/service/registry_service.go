@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/addp/common/database/plugin"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/models"
 	localModels "github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
@@ -57,8 +57,16 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	// 4. 幂等更新或创建
 	if existing != nil {
 		// 已存在，更新配置
+		// 内置引擎使用插件的 DisplayName()，非内置引擎使用请求中的 Name
+		engineName := req.Name
+		if req.IsBuiltin {
+			if p, err := plugin.Get(req.EngineType); err == nil && p != nil {
+				engineName = p.DisplayName()
+			}
+		}
+
 		updates := map[string]interface{}{
-			"name":         req.Name,
+			"name":         engineName,
 			"engine_type":  req.EngineType,
 			"description":  req.Description,
 			"is_builtin":   req.IsBuiltin,
@@ -77,11 +85,19 @@ func (s *RegistryService) RegisterCapability(ctx context.Context, req *models.Ca
 	// 从插件获取 engine_category
 	engineCategory := "standard" // 默认值
 	if p, err := plugin.Get(req.EngineType); err == nil && p != nil {
-		engineCategory = p.ConnectionCategory()
+		engineCategory = p.EngineCategory()
+	}
+
+	// 内置引擎使用插件的 DisplayName()，非内置引擎使用请求中的 Name
+	engineName := req.Name
+	if req.IsBuiltin {
+		if p, err := plugin.Get(req.EngineType); err == nil && p != nil {
+			engineName = p.DisplayName()
+		}
 	}
 
 	resource := &localModels.Engine{
-		Name:           req.Name,
+		Name:           engineName,
 		EngineType:     req.EngineType,
 		EngineCategory: engineCategory,
 		Description:    req.Description,
