@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/plugins"
 	"gorm.io/gorm"
 )
 
@@ -39,7 +39,7 @@ func NewMetadataExtractor(db *gorm.DB) *MetadataExtractor {
 // ExtractEnhancedMetadata 使用插件提取增强的元数据
 func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	engineID uint,
-	meta plugins.ObjectMetadata,
+	meta format.ObjectMetadata,
 	baseAttrs models.JSONMap,
 ) models.JSONMap {
 	// 如果 S3Scanner 已经提取了元数据，直接使用
@@ -72,7 +72,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 	}
 
 	// 获取适配的元数据提取器
-	extractor := plugins.GetExtractor(contentType)
+	extractor := format.GetExtractor(contentType)
 	if extractor == nil {
 		// 没有合适的提取器，返回基础属性
 		return baseAttrs
@@ -90,7 +90,7 @@ func (e *MetadataExtractor) ExtractEnhancedMetadata(
 // fullPath: 文件在 bucket 中的完整路径（用于 fingerprint 生成）
 func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 	engineID uint,
-	meta plugins.ObjectMetadata,
+	meta format.ObjectMetadata,
 	baseAttrs models.JSONMap,
 	fullPath string,
 ) models.JSONMap {
@@ -207,7 +207,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	objectKey string,
 	token string,
 	objectReader io.Reader,
-) (*plugins.Metadata, error) {
+) (*format.ExtractedMetadata, error) {
 	// 检测内容类型
 	contentType := mime.TypeByExtension(pathpkg.Ext(objectKey))
 	if contentType == "" {
@@ -215,7 +215,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	// 获取元数据提取器
-	extractor := plugins.GetExtractor(contentType)
+	extractor := format.GetExtractor(contentType)
 	if extractor == nil {
 		return nil, fmt.Errorf("no extractor available for content type: %s", contentType)
 	}
@@ -228,7 +228,7 @@ func (e *MetadataExtractor) ExtractObjectMetadataOnDemand(
 	}
 
 	// 构建提取输入
-	input := plugins.ExtractInput{
+	input := format.ExtractInput{
 		EngineID:    engineID,
 		ObjectKey:   objectKey,
 		ContentType: contentType,
@@ -313,7 +313,7 @@ func splitObjectPath(path string) (string, string) {
 // 优先级：paths > fallback > scanner.AllowedBuckets()
 func prepareObjectPaths(
 	paths, fallback []string,
-	scanner plugins.ObjectStorageScanner,
+	scanner format.ObjectStorageScanner,
 ) []string {
 	pathSet := map[string]struct{}{}
 	for _, p := range paths {

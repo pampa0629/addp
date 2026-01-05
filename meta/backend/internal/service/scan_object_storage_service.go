@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
-	"github.com/addp/meta/plugins"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/gorm"
@@ -191,7 +191,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 			continue
 		}
 
-		// 转换为 plugins.ObjectMetadata 格式
+		// 转换为 format.ObjectMetadata 格式
 		metas := s.convertToObjectMetadata(objects, bucketName, prefix, isDeepScan, engineID, resource.ConnectionInfo)
 
 		bucketNode, ok := bucketNodes[bucketName]
@@ -322,15 +322,15 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 	return totalBuckets, totalObjects, nil
 }
 
-// convertToObjectMetadata 将 plugin.ObjectInfo 转换为 plugins.ObjectMetadata
+// convertToObjectMetadata 将 plugin.ObjectInfo 转换为 format.ObjectMetadata
 func (s *ObjectStorageScanService) convertToObjectMetadata(
 	objects []plugin.ObjectInfo,
 	bucket, prefix string,
 	isDeepScan bool,
 	engineID uint,
 	connInfo commonModels.ConnectionInfo,
-) []plugins.ObjectMetadata {
-	metas := make([]plugins.ObjectMetadata, 0, len(objects))
+) []format.ObjectMetadata {
+	metas := make([]format.ObjectMetadata, 0, len(objects))
 
 	for _, obj := range objects {
 		// 计算相对路径（去掉 prefix）
@@ -341,7 +341,7 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
 
 		// 构建 ObjectMetadata
-		meta := plugins.ObjectMetadata{
+		meta := format.ObjectMetadata{
 			Bucket:       bucket,
 			Path:         bucket + "/" + obj.Key,
 			RelativePath: relativePath,
@@ -389,7 +389,7 @@ func (s *ObjectStorageScanService) splitObjectPath(path string) (bucket, prefix 
 func (s *ObjectStorageScanService) scanObjectStoragePaths(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
-	objectScanner plugins.ObjectStorageScanner,
+	objectScanner format.ObjectStorageScanner,
 	paths []string,
 	scanDepth string,
 	reporter ScanProgressReporter,
@@ -626,7 +626,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 	resource *commonModels.Engine,
 	tenantID, engineID uint,
 	bucketNode *models.MetaNode,
-	metas []plugins.ObjectMetadata,
+	metas []format.ObjectMetadata,
 	stats map[uint]*nodeAggregate,
 	includeBucketAggregate bool,
 	scanDepth string,

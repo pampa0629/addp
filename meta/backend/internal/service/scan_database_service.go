@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
-	"github.com/addp/meta/plugins"
 	"gorm.io/gorm"
 )
 
@@ -142,9 +142,9 @@ func (s *DatabaseScanService) scanTables(
 	}
 
 	// 转换为 meta 内部的 TableInfo 格式
-	tables := make([]plugins.TableInfo, len(pluginTables))
+	tables := make([]format.ScannerTableInfo, len(pluginTables))
 	for i, t := range pluginTables {
-		tables[i] = plugins.TableInfo{
+		tables[i] = format.ScannerTableInfo{
 			Name:      t.TableName,
 			Type:      "BASE TABLE", // plugin.TableInfo 没有 Type 字段，默认为 BASE TABLE
 			Comment:   "",           // plugin.TableInfo 没有 Comment 字段
@@ -244,11 +244,11 @@ func (s *DatabaseScanService) scanTableDetails(
 	relPlugin plugin.RelationalDBPlugin,
 	db *gorm.DB,
 	schemaName string,
-	tableInfo plugins.TableInfo,
+	tableInfo format.ScannerTableInfo,
 	existingItem *models.MetaItem,
 	isDeepScan bool,
-) ([]plugins.FieldInfo, models.JSONMap, error) {
-	var fields []plugins.FieldInfo
+) ([]format.ScannerFieldInfo, models.JSONMap, error) {
+	var fields []format.ScannerFieldInfo
 	var attrs models.JSONMap
 
 	if isDeepScan {
@@ -259,9 +259,9 @@ func (s *DatabaseScanService) scanTableDetails(
 		}
 
 		// 转换为 meta 内部的 FieldInfo 格式
-		fields = make([]plugins.FieldInfo, len(pluginColumns))
+		fields = make([]format.ScannerFieldInfo, len(pluginColumns))
 		for i, col := range pluginColumns {
-			fields[i] = plugins.FieldInfo{
+			fields[i] = format.ScannerFieldInfo{
 				Name:         col.ColumnName,
 				DataType:     col.DataType,
 				IsNullable:   col.IsNullable,
@@ -389,7 +389,7 @@ func getTableItems(db *gorm.DB, tenantID, engineID, nodeID uint) []models.MetaIt
 	return items
 }
 
-func shouldUpdateTable(existingItem *models.MetaItem, tableInfo plugins.TableInfo) bool {
+func shouldUpdateTable(existingItem *models.MetaItem, tableInfo format.ScannerTableInfo) bool {
 	if existingItem == nil {
 		return true
 	}

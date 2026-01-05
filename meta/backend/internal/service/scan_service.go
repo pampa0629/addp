@@ -13,6 +13,7 @@ import (
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
+	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/vectorstore"
@@ -20,8 +21,6 @@ import (
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
-	"github.com/addp/meta/plugins"
-	_ "github.com/addp/meta/plugins/extractors" // 自动注册提取器
 	"gorm.io/gorm"
 )
 
@@ -261,7 +260,7 @@ func (s *ScanService) upsertItemSelective(
 	return s.repo.UpsertItemSelective(tenantID, engineID, node, itemType, name, fullName, attrs, rowCount, sizeBytes, dataUpdated)
 }
 
-func buildFieldAttributes(fields []plugins.FieldInfo) []map[string]interface{} {
+func buildFieldAttributes(fields []format.ScannerFieldInfo) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(fields))
 	for _, field := range fields {
 		result = append(result, map[string]interface{}{
@@ -980,18 +979,18 @@ func (s *ScanService) scanObjectStorageResourceWithReporter(resource *commonMode
 //   - scannedFingerprints: 已扫描对象的指纹集合
 //
 // 返回：(持久化对象数量, error)
-func (s *ScanService) persistObjectMetas(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, metas []plugins.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
+func (s *ScanService) persistObjectMetas(resource *commonModels.Engine, tenantID, engineID uint, bucketNode *models.MetaNode, metas []format.ObjectMetadata, stats map[uint]*nodeAggregate, includeBucketAggregate bool, scanDepth string, scanPathPrefix string, scannedFingerprints map[string]bool) (int, error) {
 	// 委托给 ObjectStorageScanService
 	return s.objectScanService.persistObjectMetas(resource, tenantID, engineID, bucketNode, metas, stats, includeBucketAggregate, scanDepth, scanPathPrefix, scannedFingerprints)
 }
 
 // extractEnhancedMetadata 使用插件提取增强的元数据 (代理到 metadataExtractor)
-func (s *ScanService) extractEnhancedMetadata(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
+func (s *ScanService) extractEnhancedMetadata(engineID uint, meta format.ObjectMetadata, baseAttrs models.JSONMap) models.JSONMap {
 	return s.metadataExtractor.ExtractEnhancedMetadata(engineID, meta, baseAttrs)
 }
 
 // extractEnhancedMetadataWithCache 带缓存检查的元数据提取 (代理到 metadataExtractor)
-func (s *ScanService) extractEnhancedMetadataWithCache(engineID uint, meta plugins.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
+func (s *ScanService) extractEnhancedMetadataWithCache(engineID uint, meta format.ObjectMetadata, baseAttrs models.JSONMap, fullPath string) models.JSONMap {
 	return s.metadataExtractor.ExtractEnhancedMetadataWithCache(engineID, meta, baseAttrs, fullPath)
 }
 
@@ -1001,17 +1000,17 @@ func (s *ScanService) GetObjectMetadata(tenantID, engineID uint, objectKey strin
 }
 
 // ExtractObjectMetadataOnDemand 按需提取对象的深度元数据 (代理到 metadataExtractor)
-func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*plugins.Metadata, error) {
+func (s *ScanService) ExtractObjectMetadataOnDemand(tenantID, engineID uint, objectKey string, token string, objectReader io.Reader) (*format.ExtractedMetadata, error) {
 	return s.metadataExtractor.ExtractObjectMetadataOnDemand(tenantID, engineID, objectKey, token, objectReader)
 }
 
-func filterObjectMetasForDepth(metas []plugins.ObjectMetadata, basePath string) []plugins.ObjectMetadata {
+func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) []format.ObjectMetadata {
 	base := sanitizeObjectPath(basePath)
 	if len(metas) == 0 {
 		return metas
 	}
 
-	filtered := make([]plugins.ObjectMetadata, 0, len(metas))
+	filtered := make([]format.ObjectMetadata, 0, len(metas))
 	for _, meta := range metas {
 		if meta.NodeType == "bucket" {
 			filtered = append(filtered, meta)

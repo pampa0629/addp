@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/addp/common/format"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
-	"github.com/addp/meta/plugins"
 )
 
 const (
@@ -35,7 +35,7 @@ func NewIndexerService(indexer *search.Indexer, log *slog.Logger) *IndexerServic
 }
 
 // IndexTableAsset 索引表资产到 Meilisearch
-func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo plugins.TableInfo, fields []plugins.FieldInfo, item *models.MetaItem) {
+func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID uint, schemaName string, tableInfo format.ScannerTableInfo, fields []format.ScannerFieldInfo, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return
 	}
@@ -86,7 +86,7 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 
 // IndexObjectAsset 索引对象资产到 Meilisearch
 // 注意：此方法不包含向量化逻辑，向量化应该在外部处理
-func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta plugins.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) *search.DocumentRecord {
+func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta format.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) *search.DocumentRecord {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
 		return nil
 	}
