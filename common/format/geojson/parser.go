@@ -138,59 +138,6 @@ func (p *Parser) ParseTableInfo(ctx context.Context, input io.Reader, options *f
 // ReadPreview 读取 GeoJSON 数据预览
 // 实现 format.FileTableParser 接口
 func (p *Parser) ReadPreview(ctx context.Context, input io.Reader, offset, limit int64, options *format.ParseOptions) ([]map[string]interface{}, error) {
-	// 直接调用现有的 ReadRecords 方法
-	return p.ReadRecords(ctx, input, offset, limit)
-}
-
-// ============ 向后兼容（已废弃）============
-
-// ParseSchema 解析 GeoJSON Schema
-// @Deprecated: 使用 ParseTableInfo() 替代
-func (p *Parser) ParseSchema(ctx context.Context, input io.Reader) (*format.Schema, error) {
-	iter, err := newIterator(input)
-	if err != nil {
-		return nil, err
-	}
-
-	builder := newSchemaBuilder(p.geometryField)
-	featureCount := int64(0)
-
-	for {
-		if err := contextErr(ctx); err != nil {
-			return nil, err
-		}
-
-		feature, err := iter.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		builder.AddFeature(feature)
-		featureCount++
-	}
-
-	schema := builder.Build()
-	if featureCount > 0 {
-		schema.RecordCount = &featureCount
-	}
-
-	if iter.meta.CoordinateSystem != "" {
-		cs := iter.meta.CoordinateSystem
-		schema.SpatialRefSys = &cs
-	}
-
-	if geoType := builder.GeometryType(); geoType != "" {
-		schema.GeometryType = &geoType
-	}
-
-	return schema, nil
-}
-
-// ReadRecords 读取 GeoJSON 记录
-func (p *Parser) ReadRecords(ctx context.Context, input io.Reader, offset, limit int64) ([]map[string]interface{}, error) {
 	iter, err := newIterator(input)
 	if err != nil {
 		return nil, err
@@ -241,66 +188,6 @@ func (p *Parser) ReadRecords(ctx context.Context, input io.Reader, offset, limit
 	}
 
 	return records, nil
-}
-
-// CountRecords 统计记录数
-func (p *Parser) CountRecords(ctx context.Context, input io.Reader) (int64, error) {
-	iter, err := newIterator(input)
-	if err != nil {
-		return 0, err
-	}
-
-	var count int64
-	for {
-		if err := contextErr(ctx); err != nil {
-			return 0, err
-		}
-
-		_, err := iter.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return 0, err
-		}
-		count++
-	}
-
-	return count, nil
-}
-
-// ExtractMetadata 提取 GeoJSON 元数据
-func (p *Parser) ExtractMetadata(ctx context.Context, input io.Reader) (map[string]interface{}, error) {
-	iter, err := newIterator(input)
-	if err != nil {
-		return nil, err
-	}
-
-	builder := newMetadataBuilder()
-	for {
-		if err := contextErr(ctx); err != nil {
-			return nil, err
-		}
-
-		feature, err := iter.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		builder.AddFeature(feature)
-	}
-
-	meta := builder.Build()
-	if len(iter.meta.BoundingBox) > 0 {
-		meta["bounding_box"] = iter.meta.BoundingBox
-	}
-	if iter.meta.CoordinateSystem != "" {
-		meta["coordinate_system"] = iter.meta.CoordinateSystem
-	}
-	meta["geometry_field"] = p.geometryField
-	return meta, nil
 }
 
 // Feature 表示单条 GeoJSON Feature

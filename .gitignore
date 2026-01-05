@@ -113,3 +113,10 @@ addp-deploy-*.tar.gz
 # Build artifacts (unified - all binaries in dist/)
 dist/
 labs/vector/clip-service/clip_cn_vit-b-16.pt
+develop/backend/cmd/server/server
+manager/backend/cmd/server/server
+meta/backend/cmd/server/server
+server
+service/backend/cmd/server/server
+system/backend/cmd/server/server
+transfer/backend/cmd/server/server
