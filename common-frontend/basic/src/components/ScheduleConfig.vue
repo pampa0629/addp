@@ -15,6 +15,7 @@
         v-for="preset in effectivePresets"
         :key="preset.key"
         size="small"
+        :type="isPresetSelected(preset.key) ? 'primary' : 'default'"
         :disabled="disabled || readonly"
         :title="preset.description"
         @click="handlePresetClick(preset.key)"
@@ -22,8 +23,8 @@
         {{ preset.label }}
       </el-button>
       <el-button
-        type="primary"
         size="small"
+        :type="isCustomSchedule ? 'primary' : 'default'"
         :disabled="disabled || readonly"
         title="设置每天、每周或每月的自定义执行时间"
         @click="openDialog"
@@ -40,6 +41,13 @@
       >
         清除调度
       </el-button>
+    </div>
+
+    <!-- 当前配置显示 -->
+    <div v-if="showPresets && modelValue" class="schedule-current">
+      <el-icon class="schedule-current__icon"><Clock /></el-icon>
+      <span class="schedule-current__label">当前配置:</span>
+      <span class="schedule-current__value">{{ description }}</span>
     </div>
 
     <!-- 自定义配置对话框 -->
@@ -133,6 +141,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Clock } from '@element-plus/icons-vue'
 import {
   presetOptions,
   presetOptionMapByKey,
@@ -206,6 +215,21 @@ const customPreview = computed(() => {
 // 有效的预设列表（支持自定义）
 const effectivePresets = computed(() => {
   return props.presetList || presetOptions
+})
+
+// 判断某个预设是否被选中
+const isPresetSelected = (key) => {
+  if (!props.modelValue) return false
+  const preset = presetOptionMapByKey[key]
+  return preset && preset.cron === props.modelValue
+}
+
+// 判断是否为自定义调度（不在预设列表中）
+const isCustomSchedule = computed(() => {
+  if (!props.modelValue) return false
+  // 检查是否匹配任何预设
+  const matchesPreset = effectivePresets.value.some(preset => preset.cron === props.modelValue)
+  return !matchesPreset
 })
 
 // 点击预设选项
@@ -328,6 +352,36 @@ const handleConfirm = () => {
   color: #606266;
   font-size: 13px;
   margin-left: 8px;
+}
+
+/* 当前配置显示 */
+.schedule-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: #f0f9ff;
+  border: 1px solid #409eff;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.schedule-current__icon {
+  color: #409eff;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.schedule-current__label {
+  color: #606266;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.schedule-current__value {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .schedule-dialog__tip {

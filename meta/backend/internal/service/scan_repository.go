@@ -88,7 +88,6 @@ func (r *ScanRepository) UpsertNode(
 			Name:         name,
 			Depth:        depth,
 			ScanStatus:   "未扫描",
-			ScanConfig:   models.JSONMap{},
 			Attributes:   models.JSONMap{},
 		}
 		if fullName != "" {
@@ -171,15 +170,8 @@ func (r *ScanRepository) ResetNodeState(node *models.MetaNode, status string) er
 	now := time.Now()
 	update := map[string]interface{}{
 		"scan_status": status,
+		"scan_error":  "", // 清除错误信息
 	}
-
-	// 更新 scan_config：清除错误信息
-	scanConfig := models.JSONMap{}
-	if node.ScanConfig != nil {
-		scanConfig = node.ScanConfig
-	}
-	scanConfig["error_message"] = ""
-	update["scan_config"] = scanConfig
 
 	if status == "扫描中" {
 		update["scanned_at"] = now
@@ -199,15 +191,8 @@ func (r *ScanRepository) FinalizeNodeState(
 		"scan_status":      status,
 		"item_count":       itemCount,
 		"total_size_bytes": totalSize,
+		"scan_error":       errMsg,
 	}
-
-	// 更新 scan_config：设置错误信息
-	scanConfig := models.JSONMap{}
-	if node.ScanConfig != nil {
-		scanConfig = node.ScanConfig
-	}
-	scanConfig["error_message"] = errMsg
-	update["scan_config"] = scanConfig
 
 	if status == "已扫描" {
 		update["scanned_at"] = time.Now()

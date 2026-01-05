@@ -37,19 +37,13 @@ type ResourceWithStats struct {
 
 // SchemaWithStatus Schema及其状态
 type SchemaWithStatus struct {
-	ID             uint       `json:"id"`
-	SchemaName     string     `json:"schema_name"`
-	ScanStatus     string     `json:"scan_status"`
-	ScannedAt      string     `json:"scanned_at,omitempty"`
-	TableCount     int        `json:"table_count"`
-	TotalSizeBytes int64      `json:"total_size_bytes"`
-	ScanConfig     ScanConfig `json:"scan_config,omitempty"` // 扫描配置
-}
-
-// ScheduleRequest 定时扫描配置请求
-type ScheduleRequest struct {
-	SchemaID   uint       `json:"schema_id" binding:"required"`
-	ScanConfig ScanConfig `json:"scan_config"` // 扫描配置
+	ID             uint   `json:"id"`
+	SchemaName     string `json:"schema_name"`
+	ScanStatus     string `json:"scan_status"`
+	ScannedAt      string `json:"scanned_at,omitempty"`
+	TableCount     int    `json:"table_count"`
+	TotalSizeBytes int64  `json:"total_size_bytes"`
+	ErrorMessage   string `json:"error_message,omitempty"` // 扫描错误信息
 }
 
 // SchemaInfo Schema信息（用于获取Schema列表）

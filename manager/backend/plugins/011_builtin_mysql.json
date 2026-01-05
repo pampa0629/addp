@@ -1,6 +1,0 @@
-{
-  "name": "builtin:mysql-table",
-  "type": "builtin",
-  "builtin": "mysql-table",
-  "priority": 100
-}

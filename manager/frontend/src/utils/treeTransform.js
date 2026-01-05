@@ -1,27 +1,12 @@
 /**
  * 树形数据转换工具
  */
+import { makeNodeId } from '@addp/common-frontend'
 
 const OBJECT_STORAGE_TYPES = ['s3', 'minio', 'oss', 'object_storage', 'object-storage']
 
 export const isObjectStorageResource = (type) => {
   return OBJECT_STORAGE_TYPES.includes(String(type || '').toLowerCase())
-}
-
-const sanitizeNodeId = (value) =>
-  String(value ?? '')
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-
-export const makeNodeId = (...parts) => {
-  const cleaned = parts
-    .filter((part) => part !== undefined && part !== null && String(part).length)
-    .map((part) => sanitizeNodeId(part))
-    .filter((part) => part.length)
-  if (cleaned.length === 0) {
-    return `node-${Math.random().toString(36).slice(2)}`
-  }
-  return cleaned.join('-')
 }
 
 export const transformTableNode = (resource, schemaName, table) => {

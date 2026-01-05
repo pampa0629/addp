@@ -70,6 +70,101 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 - **StorageEngineForm** - 存储引擎配置表单（支持 PostgreSQL、MinIO/S3）
 
+### 树形组件
+
+- **ResourceTree** - 通用资源树组件
+  - 配置式节点操作（刷新、查看详情等）
+  - 全树搜索，自动展开匹配路径
+  - 智能展开状态管理
+  - 双击展开/折叠交互
+  - 支持 v-model 绑定（展开状态、选中节点、搜索关键词）
+  - 自定义节点渲染（插槽支持）
+
+**使用示例**:
+
+```vue
+<template>
+  <ResourceTree
+    :tree-data="treeData"
+    :loading="loading"
+    :refreshing-node-ids="refreshingNodeIds"
+    v-model:expanded-keys="expandedKeys"
+    v-model:current-node-key="currentNodeKey"
+    v-model:filter-text="searchKeyword"
+    :node-actions="nodeActions"
+    title="存储引擎"
+    @refresh="handleRefresh"
+    @node-click="handleNodeClick"
+    @node-action="handleNodeAction"
+  />
+</template>
+
+<script setup>
+import { ref, computed } from 'vue'
+import { ResourceTree } from '@addp/common-frontend'
+
+const treeData = ref([
+  {
+    id: 'engine-1',
+    type: 'resource',
+    label: 'PostgreSQL-Prod',
+    metadata: { engineId: 1, resourceType: 'postgresql' },
+    children: [
+      {
+        id: 'schema-1-public',
+        type: 'schema',
+        label: 'public',
+        metadata: { engineId: 1, schema: 'public' },
+        children: [
+          {
+            id: 'table-1-users',
+            type: 'table',
+            label: 'users',
+            metadata: { engineId: 1, schema: 'public', table: 'users' }
+          }
+        ]
+      }
+    ]
+  }
+])
+
+const nodeActions = [
+  {
+    name: 'refresh',
+    icon: 'Refresh',
+    visible: (node) => node.type !== 'resource',
+    disabled: (node) => loading.value,
+    loading: (node) => refreshingNodeIds.value.includes(node.id),
+    tooltip: '刷新'
+  }
+]
+
+const handleNodeAction = ({ action, node }) => {
+  if (action === 'refresh') {
+    // 处理刷新逻辑
+  }
+}
+</script>
+```
+
+**树形工具函数**:
+
+```js
+import { makeNodeId, findNodeById, flattenTree, findNodePath } from '@addp/common-frontend'
+
+// 生成唯一节点 ID
+const nodeId = makeNodeId('engine', 1, 'public', 'users')
+
+// 查找节点
+const node = findNodeById(treeData, 'table-1-users')
+
+// 扁平化树
+const allNodes = flattenTree(treeData)
+
+// 查找节点路径
+const path = findNodePath(treeData, 'table-1-users')
+```
+
 ### 定时调度组件
 
 > 📚 **详细文档**: [ScheduleConfig.md](./basic/docs/ScheduleConfig.md)

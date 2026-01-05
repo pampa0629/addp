@@ -2,17 +2,17 @@
   <div class="data-explorer">
     <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
       <!-- 左侧引擎树 -->
-      <EngineTree
-        :engines="engines"
+      <ResourceTree
         :tree-data="treeData"
-        :loading="loadingTree"
-        :loading-engines="loadingResources"
+        :loading="loadingTree || loadingResources"
         :refreshing-node-ids="refreshingNodeIds"
-        :expanded-keys="expandedNodeIds"
+        v-model:expanded-keys="expandedNodeIds"
         :current-node-key="selectedNode?.id || ''"
+        :node-actions="nodeActions"
+        title="存储引擎"
         @refresh="loadTree"
         @node-click="handleNodeClick"
-        @refresh-node="handleNodeRefresh"
+        @node-action="handleNodeAction"
         @node-expand="handleNodeExpandEvent"
         @node-collapse="handleNodeCollapseEvent"
       />
@@ -33,15 +33,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, watch, nextTick, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import EngineTree from '@/components/explorer/EngineTree.vue'
+import { ResourceTree, makeNodeId } from '@addp/common-frontend'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@/composables/useResizable'
 import dataExplorerAPI from '@/api/dataExplorer'
-import { transformResource, makeNodeId } from '@/utils/treeTransform'
+import { transformResource } from '@/utils/treeTransform'
 
 // 树形面板宽度
 const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
@@ -595,6 +595,29 @@ const handleNavigate = (child) => {
   ensureNodeExpanded(selectedNode.value.id)
   ensureNodePathExpanded(selectedNode.value.id)
   loadPreview()
+}
+
+/**
+ * 配置节点操作
+ */
+const nodeActions = computed(() => [
+  {
+    name: 'refresh',
+    icon: 'Refresh',
+    visible: (node) => node.type !== 'resource',
+    disabled: (node) => loadingTree.value || loadingResources.value,
+    loading: (node) => refreshingNodeIds.value.includes(node.id),
+    tooltip: '刷新'
+  }
+])
+
+/**
+ * 处理节点操作
+ */
+const handleNodeAction = ({ action, node }) => {
+  if (action === 'refresh') {
+    handleNodeRefresh(node)
+  }
 }
 
 const handleNodeRefresh = async (node) => {

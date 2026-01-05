@@ -69,6 +69,8 @@ func NewScanTaskService(db *gorm.DB, scanService *ScanService, engineService *En
 	var dedupService *ScanDedupService
 	if redisClient != nil {
 		dedupService = NewScanDedupService(redisClient)
+		// 同时注入到ScanService
+		scanService.SetDedupService(dedupService)
 	}
 
 	// 创建公共调度器
@@ -642,25 +644,24 @@ func (s *ScanTaskService) CreateTask(ctx context.Context, tenantID, userID uint,
 		"scan_depth":   req.ScanDepth,
 	}
 
-	cronExpr, scheduleConfig, err := s.buildCronExpression(req)
+	cronExpr, err := s.buildCronExpression(req)
 	if err != nil {
 		return nil, err
 	}
 
 	task := &models.ScanTask{
-		TenantID:       tenantID,
+		TenantID:     tenantID,
 		EngineID:     req.EngineID,
-		Name:           req.Name,
-		Description:    req.Description,
-		ScheduleType:   req.ScheduleType,
-		Schedule:       cronExpr,
-		Enabled:        req.Enabled,
-		Parameters:     params,
-		ScheduleConfig: scheduleConfig,
-		CreatedBy:      userID,
-		UpdatedBy:      userID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		Name:         req.Name,
+		Description:  req.Description,
+		ScheduleType: req.ScheduleType,
+		Schedule:     cronExpr,
+		Enabled:      req.Enabled,
+		Parameters:   params,
+		CreatedBy:    userID,
+		UpdatedBy:    userID,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 
 	if cronExpr != "" {
@@ -695,7 +696,7 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 		"scan_depth":   req.ScanDepth,
 	}
 
-	cronExpr, scheduleConfig, err := s.buildCronExpression(req)
+	cronExpr, err := s.buildCronExpression(req)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +708,6 @@ func (s *ScanTaskService) UpdateTask(ctx context.Context, tenantID, taskID, user
 	task.Schedule = cronExpr
 	task.Enabled = req.Enabled
 	task.Parameters = params
-	task.ScheduleConfig = scheduleConfig
 	task.UpdatedBy = userID
 	task.UpdatedAt = time.Now()
 
@@ -810,16 +810,32 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 		}
 	}
 
+	// 计算继承目标：排除已有独立调度的schema/bucket
+	targetSchemas, targetPaths := s.computeInheritedTargets(&task)
+
+	// 如果没有需要扫描的目标，跳过本次执行
+	if len(targetSchemas) == 0 && len(targetPaths) == 0 {
+		s.log.Info("所有目标均已配置独立调度，跳过引擎级扫描",
+			"task_id", taskID,
+			"engine_id", task.EngineID)
+		return nil
+	}
+
 	storageType := s.lookupStorageType(task.EngineID, task.TenantID)
 
+	// 创建运行，使用计算后的继承目标
 	run := &models.ScanTaskRun{
-		TaskID:          uintPtr(taskID),
-		TenantID:        task.TenantID,
-		EngineID:      task.EngineID,
-		StorageType:     storageType,
-		TriggerType:     triggerTypeScheduled,
-		Status:          runStatusPending,
-		Parameters:      cloneJSONMap(task.Parameters),
+		TaskID:      uintPtr(taskID),
+		TenantID:    task.TenantID,
+		EngineID:    task.EngineID,
+		StorageType: storageType,
+		TriggerType: triggerTypeScheduled,
+		Status:      runStatusPending,
+		Parameters: models.JSONMap{
+			"schema_names": targetSchemas,
+			"object_paths": targetPaths,
+			"scan_depth":   "deep", // 定时扫描固定深度
+		},
 		ProgressMessage: "定时任务等待执行",
 		CreatedAt:       time.Now(),
 		UpdatedAt:       time.Now(),
@@ -845,6 +861,93 @@ func (s *ScanTaskService) triggerScheduledTask(taskID uint) error {
 
 	s.enqueueRun(run.ID)
 	return nil
+}
+
+// computeInheritedTargets 计算继承目标（排除已有独立调度的schema/bucket）
+func (s *ScanTaskService) computeInheritedTargets(task *models.ScanTask) ([]string, []string) {
+	if task == nil || task.Parameters == nil {
+		return []string{}, []string{}
+	}
+
+	// 1. 获取任务的原始目标
+	var allSchemas []string
+	var allPaths []string
+
+	if schemasRaw, ok := task.Parameters["schema_names"]; ok {
+		if schemasSlice, ok := schemasRaw.([]interface{}); ok {
+			for _, s := range schemasSlice {
+				if schemaName, ok := s.(string); ok {
+					allSchemas = append(allSchemas, schemaName)
+				}
+			}
+		}
+	}
+
+	if pathsRaw, ok := task.Parameters["object_paths"]; ok {
+		if pathsSlice, ok := pathsRaw.([]interface{}); ok {
+			for _, p := range pathsSlice {
+				if pathStr, ok := p.(string); ok {
+					allPaths = append(allPaths, pathStr)
+				}
+			}
+		}
+	}
+
+	// 2. 查询该引擎下所有其他启用的独立调度
+	var independentTasks []models.ScanTask
+	if err := s.db.Where("engine_id = ? AND id != ? AND enabled = ?",
+		task.EngineID, task.ID, true).Find(&independentTasks).Error; err != nil {
+		s.log.Warn("查询独立调度任务失败", "engine_id", task.EngineID, "error", err)
+		// 出错时返回所有目标（保守策略）
+		return allSchemas, allPaths
+	}
+
+	// 3. 提取已独立调度的schema和path
+	scheduledSchemas := make(map[string]bool)
+	scheduledPaths := make(map[string]bool)
+
+	for _, t := range independentTasks {
+		if t.Parameters == nil {
+			continue
+		}
+
+		if schemasRaw, ok := t.Parameters["schema_names"]; ok {
+			if schemasSlice, ok := schemasRaw.([]interface{}); ok {
+				for _, s := range schemasSlice {
+					if schemaName, ok := s.(string); ok {
+						scheduledSchemas[schemaName] = true
+					}
+				}
+			}
+		}
+
+		if pathsRaw, ok := t.Parameters["object_paths"]; ok {
+			if pathsSlice, ok := pathsRaw.([]interface{}); ok {
+				for _, p := range pathsSlice {
+					if pathStr, ok := p.(string); ok {
+						scheduledPaths[pathStr] = true
+					}
+				}
+			}
+		}
+	}
+
+	// 4. 排除已调度的目标
+	targetSchemas := []string{}
+	for _, schemaName := range allSchemas {
+		if !scheduledSchemas[schemaName] {
+			targetSchemas = append(targetSchemas, schemaName)
+		}
+	}
+
+	targetPaths := []string{}
+	for _, pathStr := range allPaths {
+		if !scheduledPaths[pathStr] {
+			targetPaths = append(targetPaths, pathStr)
+		}
+	}
+
+	return targetSchemas, targetPaths
 }
 
 func (s *ScanTaskService) ensureResourceCached(cache map[uint]*commonModels.Engine, engineID, tenantID uint) *commonModels.Engine {
@@ -898,7 +1001,7 @@ func (s *ScanTaskService) nextTimeFromSpec(spec string, from time.Time) *time.Ti
 	return &next
 }
 
-func (s *ScanTaskService) buildCronExpression(req *models.ScanTaskUpsertRequest) (string, models.JSONMap, error) {
+func (s *ScanTaskService) buildCronExpression(req *models.ScanTaskUpsertRequest) (string, error) {
 	// 使用公共 ExpressionBuilder
 	scheduleConfig := commonScheduler.ScheduleConfig{
 		Type:  req.ScheduleType,
@@ -907,18 +1010,12 @@ func (s *ScanTaskService) buildCronExpression(req *models.ScanTaskUpsertRequest)
 		Expr:  req.Schedule,
 	}
 
-	cronExpr, config, err := s.exprBuilder.BuildFromScheduleConfig(scheduleConfig)
+	cronExpr, _, err := s.exprBuilder.BuildFromScheduleConfig(scheduleConfig)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 
-	// 转换为 models.JSONMap 类型
-	jsonConfig := models.JSONMap{}
-	for k, v := range config {
-		jsonConfig[k] = v
-	}
-
-	return cronExpr, jsonConfig, nil
+	return cronExpr, nil
 }
 
 // runProgressReporter 实现 ScanProgressReporter，将回调写入数据库

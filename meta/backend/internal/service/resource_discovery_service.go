@@ -43,30 +43,13 @@ func (s *ResourceDiscoveryService) GetSchemasByResource(engineID, tenantID uint)
 
 	result := make([]*models.SchemaWithStatus, 0, len(nodes))
 	for _, node := range nodes {
-		// 解析 ScanConfig
-		var scanConfig models.ScanConfig
-		if node.ScanConfig != nil {
-			if autoEnabled, ok := node.ScanConfig["auto_enabled"].(bool); ok {
-				scanConfig.AutoEnabled = autoEnabled
-			}
-			if cron, ok := node.ScanConfig["cron"].(string); ok {
-				scanConfig.Cron = cron
-			}
-			if nextScanAt, ok := node.ScanConfig["next_scan_at"].(string); ok {
-				scanConfig.NextScanAt = nextScanAt
-			}
-			if errMsg, ok := node.ScanConfig["error_message"].(string); ok {
-				scanConfig.ErrorMessage = errMsg
-			}
-		}
-
 		item := &models.SchemaWithStatus{
 			ID:             node.ID,
 			SchemaName:     node.Name,
 			ScanStatus:     node.ScanStatus,
 			TableCount:     node.ItemCount,
 			TotalSizeBytes: node.TotalSizeBytes,
-			ScanConfig:     scanConfig,
+			ErrorMessage:   node.ScanError,
 		}
 		if node.ScannedAt != nil {
 			item.ScannedAt = node.ScannedAt.Format("2006-01-02 15:04:05")
@@ -159,6 +142,24 @@ func (s *ResourceDiscoveryService) ListObjectStorageNodes(engineID, tenantID uin
 
 	// 解析路径：bucket/prefix
 	bucket, prefix := splitObjectPath(path)
+
+	// 🔧 如果 path 为空，列出所有 buckets（根级别）
+	if bucket == "" {
+		buckets, err := objPlugin.ListBuckets(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+		if err != nil {
+			return nil, fmt.Errorf("failed to list buckets: %w", err)
+		}
+
+		var result []*models.ObjectNode
+		for _, bucketInfo := range buckets {
+			result = append(result, &models.ObjectNode{
+				Name: bucketInfo.Name,
+				Path: bucketInfo.Name,
+				Type: "bucket",
+			})
+		}
+		return result, nil
+	}
 
 	// 非递归列出对象（用于目录浏览）
 	objects, err := objPlugin.ListObjects(

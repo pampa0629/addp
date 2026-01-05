@@ -1,6 +1,0 @@
-{
-  "name": "builtin:postgresql-table",
-  "type": "builtin",
-  "builtin": "postgresql-table",
-  "priority": 100
-}

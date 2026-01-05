@@ -23,8 +23,7 @@ type ScanTask struct {
 	ScheduleType   string         `gorm:"size:32;not null" json:"schedule_type"` // manual/daily/weekly/monthly/cron
 	Schedule       string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
 	Enabled        bool           `gorm:"default:false" json:"enabled"`
-	Parameters     JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"`      // 扫描目标配置
-	ScheduleConfig JSONMap        `gorm:"type:jsonb" json:"schedule_config,omitempty"` // 原始调度配置（便于前端回显）
+	Parameters     JSONMap        `gorm:"type:jsonb" json:"parameters,omitempty"` // 扫描目标配置
 	LastRunAt      *time.Time     `json:"last_run_at,omitempty"`
 	NextRunAt      *time.Time     `json:"next_run_at,omitempty"`
 	CreatedBy      uint           `json:"created_by,omitempty"`

@@ -1,70 +1,72 @@
 <template>
   <div class="task-panel">
-    <div class="panel-header">
-      <h3>任务库</h3>
-      <el-button @click="refreshAll" size="small" :loading="loading" circle>
-        <el-icon><Refresh /></el-icon>
-      </el-button>
-    </div>
+    <ResourceTree
+      :tree-data="treeData"
+      :loading="loading"
+      title="任务库"
+      default-expand-all
+      empty-text="暂无任务"
+      :show-count="false"
+      card-shadow="never"
+      height="100%"
+      @refresh="refreshAll"
+    >
+      <!-- 自定义节点渲染 -->
+      <template #node="{ data }">
+        <div
+          class="tree-node"
+          :class="{'task-node': data.type === 'task', 'module-node': data.type === 'module'}"
+          :draggable="data.type === 'task'"
+          @dragstart="startDrag(data, $event)"
+        >
+          <!-- 模块节点 -->
+          <template v-if="data.type === 'module'">
+            <el-icon class="module-icon"><FolderOpened /></el-icon>
+            <span class="module-name">{{ data.label }}</span>
+            <el-badge
+              v-if="data.metadata?.taskCount"
+              :value="data.metadata.taskCount"
+              class="task-count-badge"
+            />
+          </template>
 
-    <div class="task-tree-container">
-      <el-tree
-        :data="treeData"
-        :props="treeProps"
-        node-key="id"
-        default-expand-all
-        :expand-on-click-node="false"
-        v-loading="loading"
-      >
-        <template #default="{ node, data }">
-          <div
-            class="tree-node"
-            :class="{'task-node': data.type === 'task', 'module-node': data.type === 'module'}"
-            :draggable="data.type === 'task'"
-            @dragstart="startDrag(data, $event)"
-          >
-            <!-- 模块节点 -->
-            <template v-if="data.type === 'module'">
-              <el-icon class="module-icon"><FolderOpened /></el-icon>
-              <span class="module-name">{{ data.label }}</span>
-              <el-badge :value="data.taskCount" :hidden="!data.taskCount" class="task-count-badge" />
-            </template>
-
-            <!-- 任务节点 -->
-            <template v-else-if="data.type === 'task'">
-              <el-icon class="drag-icon"><Rank /></el-icon>
-              <span class="task-name">{{ data.label }}</span>
-              <div class="task-tags" @click.stop>
-                <el-tag v-if="data.status" size="small" :type="getStatusColor(data.status)">
-                  {{ data.status }}
-                </el-tag>
-                <el-tag v-if="data.taskType" size="small" :type="getTaskTypeColor(data.taskType)">
-                  {{ data.taskType }}
-                </el-tag>
-              </div>
-            </template>
-          </div>
-        </template>
-      </el-tree>
-
-      <el-empty v-if="treeData.length === 0 && !loading" description="暂无任务" :image-size="80" />
-    </div>
+          <!-- 任务节点 -->
+          <template v-else-if="data.type === 'task'">
+            <el-icon class="drag-icon"><Rank /></el-icon>
+            <span class="task-name">{{ data.label }}</span>
+            <div class="task-tags" @click.stop>
+              <el-tag
+                v-if="data.metadata?.status"
+                size="small"
+                :type="getStatusColor(data.metadata.status)"
+              >
+                {{ data.metadata.status }}
+              </el-tag>
+              <el-tag
+                v-if="data.metadata?.taskType"
+                size="small"
+                :type="getTaskTypeColor(data.metadata.taskType)"
+              >
+                {{ data.metadata.taskType }}
+              </el-tag>
+            </div>
+          </template>
+        </div>
+      </template>
+    </ResourceTree>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Refresh, Rank, FolderOpened } from '@element-plus/icons-vue'
+import { Rank, FolderOpened } from '@element-plus/icons-vue'
+import { ResourceTree } from '@addp/common-frontend'
 import computeEnginesAPI from '../api/computeEngines'
 import modulesApi from '../api/modules'
 import { ElMessage } from 'element-plus'
 
 const loading = ref(false)
 const treeData = ref([])
-const treeProps = {
-  children: 'children',
-  label: 'label'
-}
 
 onMounted(async () => {
   await loadAllTasks()
@@ -110,27 +112,32 @@ async function loadEngineTasks(engine) {
 
     console.log(`引擎 ${identifier} 的任务:`, tasks)
 
-    // 构建树节点
+    // 构建子节点（任务列表）
     const children = tasks.map(task => ({
       id: `${identifier}-task-${task.id}`,
-      label: task.display_name || task.name || `任务 ${task.id}`,  // 优先使用中文显示名称
+      label: task.display_name || task.name || `任务 ${task.id}`,
       type: 'task',
-      uniqueIdentifier: identifier,
-      taskId: task.id,
-      taskType: task.type || null,
-      status: task.status || null,
-      enabled: task.enabled,
-      endpoint: task.endpoint || buildEndpointFallback(identifier, task),
-      method: 'POST',
-      parameters: task.parameters || {}
+      metadata: {
+        uniqueIdentifier: identifier,
+        taskId: task.id,
+        taskType: task.type || null,
+        status: task.status || null,
+        enabled: task.enabled,
+        endpoint: task.endpoint || buildEndpointFallback(identifier, task),
+        method: 'POST',
+        parameters: task.parameters || {}
+      }
     }))
 
+    // 返回模块节点
     return {
       id: identifier,
       label: engine.name,
       type: 'module',
-      uniqueIdentifier: identifier,
-      taskCount: children.length,
+      metadata: {
+        uniqueIdentifier: identifier,
+        taskCount: children.length
+      },
       children
     }
   } catch (error) {
@@ -141,8 +148,10 @@ async function loadEngineTasks(engine) {
       id: identifier,
       label: engine.name,
       type: 'module',
-      uniqueIdentifier: identifier,
-      taskCount: 0,
+      metadata: {
+        uniqueIdentifier: identifier,
+        taskCount: 0
+      },
       children: []
     }
   }
@@ -168,17 +177,17 @@ async function refreshAll() {
 
 // 拖拽任务到画布
 function startDrag(data, event) {
-  if (data.type !== 'task') return
+  if (data.type !== 'task' || !data.metadata) return
 
   const nodeData = {
-    uniqueIdentifier: data.uniqueIdentifier,  // 新增：unique_identifier
-    module: data.uniqueIdentifier.split('.')[0],  // 兼容旧字段
-    taskId: data.taskId,
+    uniqueIdentifier: data.metadata.uniqueIdentifier,
+    module: data.metadata.uniqueIdentifier.split('.')[0],
+    taskId: data.metadata.taskId,
     name: data.label,
-    type: data.taskType,
-    endpoint: data.endpoint,
-    method: data.method,
-    parameters: data.parameters
+    type: data.metadata.taskType,
+    endpoint: data.metadata.endpoint,
+    method: data.metadata.method,
+    parameters: data.metadata.parameters
   }
 
   console.log('拖拽任务数据:', nodeData)
@@ -219,25 +228,14 @@ function getStatusColor(status) {
   border-right: 1px solid #dcdfe6;
 }
 
-.panel-header {
+.task-panel :deep(.el-card) {
+  border: none;
+  border-right: 1px solid #dcdfe6;
+}
+
+.task-panel :deep(.el-card__header) {
   padding: 16px;
   border-bottom: 1px solid #dcdfe6;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.task-tree-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px;
 }
 
 /* 树节点样式 */
@@ -249,6 +247,7 @@ function getStatusColor(status) {
   padding: 4px 8px;
   border-radius: 4px;
   transition: all 0.3s;
+  width: 100%;
 }
 
 /* 模块节点 */
@@ -310,21 +309,25 @@ function getStatusColor(status) {
   flex-shrink: 0;
 }
 
-/* Element Plus Tree 样式覆盖 */
-:deep(.el-tree-node__content) {
+/* 覆盖 ResourceTree 的样式 */
+.task-panel :deep(.tree-container) {
+  padding: 8px;
+}
+
+.task-panel :deep(.el-tree-node__content) {
   height: auto !important;
   padding: 4px 0;
 }
 
-:deep(.el-tree-node__children) {
+.task-panel :deep(.el-tree-node__children) {
   overflow: visible;
 }
 
-:deep(.el-tree-node) {
+.task-panel :deep(.el-tree-node) {
   white-space: normal;
 }
 
-:deep(.el-tree-node__expand-icon) {
+.task-panel :deep(.el-tree-node__expand-icon) {
   color: #909399;
 }
 </style>

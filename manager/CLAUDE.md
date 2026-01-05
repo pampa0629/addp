@@ -173,11 +173,18 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 ### 预览插件文件
 
 **内置插件** (backend/internal/service/):
-- [preview_provider_postgres.go](backend/internal/service/preview_provider_postgres.go) - PostgreSQL 表/视图预览
-- [preview_provider_mysql.go](backend/internal/service/preview_provider_mysql.go) - MySQL 表预览
-- [preview_provider_mongodb.go](backend/internal/service/preview_provider_mongodb.go) - MongoDB 集合预览
-- [preview_provider_clickhouse.go](backend/internal/service/preview_provider_clickhouse.go) - ClickHouse 表预览
-- [preview_provider_shapefile.go](backend/internal/service/preview_provider_shapefile.go) - Shapefile 预览（复合流式处理）
+- [preview_provider_database.go](backend/internal/service/preview_provider_database.go) - **通用关系型数据库预览**（自动支持 PostgreSQL、MySQL、ClickHouse、Doris 等）
+- [preview_provider_file.go](backend/internal/service/preview_provider_file.go) - **通用文件表预览**（支持 CSV、Excel、Shapefile、GeoJSON 等）
+- [preview_provider_mongodb.go](backend/internal/service/preview_provider_mongodb.go) - MongoDB 集合预览（NoSQL 特殊处理）
+- [preview_provider_schema.go](backend/internal/service/preview_provider_schema.go) - Schema 节点预览
+- [builtin/init.go](backend/internal/service/builtin/init.go) - **插件工厂注册**（启动时自动注册所有内置插件）
+
+**插件配置** (backend/plugins/):
+- [providers/](backend/plugins/providers/) - 预览提供程序 JSON 配置（3 个文件）
+- [content/](backend/plugins/content/) - 内容处理器 JSON 配置（13 个文件）
+- [README.md](backend/plugins/README.md) - 插件系统架构说明
+
+**架构演进**：系统已从"每种数据库/格式独立实现"升级为"通用实现 + 声明式配置 + 工厂模式"，提高了可扩展性和维护性。
 
 **内容处理器** (backend/internal/service/):
 - [object_content_shapefile.go](backend/internal/service/object_content_shapefile.go) - Shapefile 多文件复合处理（.shp + .dbf + .shx）
@@ -305,7 +312,8 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 
 **相关文件**：
 - [preview_registry.go:1-120](backend/internal/service/preview_registry.go) - 预览注册表实现
-- [preview_provider_postgres.go:1-150](backend/internal/service/preview_provider_postgres.go) - PostgreSQL 插件参考实现
+- [preview_provider_database.go:1-223](backend/internal/service/preview_provider_database.go) - 通用数据库插件参考实现
+- [builtin/init.go](backend/internal/service/builtin/init.go) - 插件工厂注册示例
 
 ### 场景 3：调试数据预览失败问题
 

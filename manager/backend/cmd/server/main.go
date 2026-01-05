@@ -17,7 +17,6 @@ import (
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/addp/manager/internal/worker"
-	_ "github.com/addp/manager/internal/service/builtin" // 导入内置预览插件
 	"github.com/redis/go-redis/v9"
 
 	// 导入数据库插件以触发自动注册
@@ -114,14 +113,10 @@ func main() {
 
 	previewRegistry := service.NewPreviewRegistry()
 
-	// 注册内置预览插件（通过 init() 自动注册到全局注册表）
-	if err := service.RegisterBuiltinProviders(previewRegistry, metadataRepo, metaClient, cfg.MetaServiceURL, contentRegistry); err != nil {
-		logger.L().Error("注册内置预览插件失败", "error", err)
-		os.Exit(1)
-	}
-
-	// 加载外部插件（从配置目录）
-	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, cfg.PreviewPluginDir)
+	// 加载预览插件（从配置目录）
+	// 同时扫描 plugins/ 根目录（向后兼容）和 plugins/providers/ 子目录（新架构）
+	providerDirSpec := buildProviderDirSpec(pluginDirs)
+	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, providerDirSpec)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
 	// 初始化 services
@@ -232,5 +227,25 @@ func buildContentDirSpec(dirs []string) string {
 		contentDirs = append(contentDirs, filepath.Join(trimmed, "content"))
 	}
 	return strings.Join(contentDirs, ",")
+}
+
+// buildProviderDirSpec 构建 Provider 插件目录列表
+// 同时扫描根目录（向后兼容）和 providers/ 子目录（新架构）
+func buildProviderDirSpec(dirs []string) string {
+	if len(dirs) == 0 {
+		return ""
+	}
+	providerDirs := make([]string, 0, len(dirs)*2)
+	for _, dir := range dirs {
+		trimmed := strings.TrimSpace(dir)
+		if trimmed == "" {
+			continue
+		}
+		// 扫描根目录（向后兼容，目前已无文件）
+		providerDirs = append(providerDirs, trimmed)
+		// 扫描 providers/ 子目录（新架构）
+		providerDirs = append(providerDirs, filepath.Join(trimmed, "providers"))
+	}
+	return strings.Join(providerDirs, ",")
 }
 

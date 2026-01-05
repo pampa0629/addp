@@ -16,6 +16,16 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+
+	// 导入数据库插件以触发自动注册
+	_ "github.com/addp/common/engine/plugins/clickhouse"
+	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/minio"
+	_ "github.com/addp/common/engine/plugins/mongodb"
+	_ "github.com/addp/common/engine/plugins/mysql"
+	_ "github.com/addp/common/engine/plugins/postgresql"
+	_ "github.com/addp/common/engine/plugins/s3"
+	_ "github.com/addp/common/engine/plugins/spark_sql"
 )
 
 func main() {
@@ -52,6 +62,10 @@ func main() {
 	// 初始化 Service 层（传入 Redis 客户端用于事件订阅）
 	engineService := service.NewEngineService(db, cfg.SystemServiceURL, cfg.InternalAPIKey, redisClient)
 	scanService := service.NewScanService(db, engineService)
+
+	// 创建并注入去重服务
+	dedupService := service.NewScanDedupService(redisClient)
+	scanService.SetDedupService(dedupService)
 
 	// 注意：这里不启动 ScanTaskService 的 worker loop 和 cron，因为 worker 进程不需要这些
 	scanTaskService := service.NewScanTaskService(db, scanService, engineService, redisClient)

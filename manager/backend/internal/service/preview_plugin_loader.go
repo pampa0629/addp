@@ -13,14 +13,14 @@ import (
 )
 
 var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, string, *ObjectContentRegistry) (PreviewProvider, error){
-	"postgresql-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewPostgresPreviewProvider(repo), nil
+	"database-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewDatabaseTablePreviewProvider(repo), nil
 	},
-	"shapefile": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewShapefilePreviewProvider(), nil
+	"mongodb-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewMongoDBPreviewProvider(), nil
 	},
-	"csv": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewCSVPreviewProvider(), nil
+	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewFileTablePreviewProvider(), nil
 	},
 	"object-storage": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, metaServiceURL string, content *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewObjectStoragePreviewProvider(repo, metaClient, metaServiceURL, content), nil
@@ -31,11 +31,13 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 }
 
 var builtinProviderFactories = map[string]builtinProviderFactory{
-	"postgresql-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewPostgresPreviewProvider(repo), nil
+	"database-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
+		return NewDatabaseTablePreviewProvider(repo), nil
+	},
+	"mongodb-table": func(_ *repository.MetadataRepository) (PreviewProvider, error) {
+		return NewMongoDBPreviewProvider(), nil
 	},
 	"schema-node": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		// 注意: 这里无法获取 metaClient，所以使用 nil（旧的外部插件加载方式）
 		return NewSchemaPreviewProvider(repo, nil), nil
 	},
 }

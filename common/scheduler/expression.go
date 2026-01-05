@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -80,9 +79,7 @@ func (b *ExpressionBuilder) BuildFromScheduleConfig(config ScheduleConfig) (stri
 		return fmt.Sprintf("%d %d %s * *", minute, hour, field), scheduleConfig, nil
 
 	case "cron":
-		if config.Expr == "" {
-			return "", nil, errors.New("cron_expression 不能为空")
-		}
+		// 允许空的 cron 表达式（用于清除调度）
 		scheduleConfig["cron_expression"] = config.Expr
 		return config.Expr, scheduleConfig, nil
 

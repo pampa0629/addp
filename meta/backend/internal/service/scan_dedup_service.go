@@ -67,3 +67,34 @@ func (s *ScanDedupService) UpdateLastScanTime(ctx context.Context, engineID uint
 	key := fmt.Sprintf("meta:cache:scan_last_time:%d", engineID)
 	return s.redis.Set(ctx, key, time.Now().Format(time.RFC3339), 0).Err()
 }
+
+// GenerateSchemaLockKey 生成Schema级锁key
+// 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:schema:{schema_name}
+func (s *ScanDedupService) GenerateSchemaLockKey(tenantID, engineID uint, schemaName string) string {
+	return fmt.Sprintf("meta:scan:lock:tenant:%d:engine:%d:schema:%s",
+		tenantID, engineID, schemaName)
+}
+
+// GenerateBucketLockKey 生成Bucket级锁key
+// 格式: meta:scan:lock:tenant:{tenant_id}:engine:{engine_id}:bucket:{bucket_path}
+// 路径中的特殊字符会被清理（/ 和 : 替换为 _）
+func (s *ScanDedupService) GenerateBucketLockKey(tenantID, engineID uint, bucketPath string) string {
+	// 路径清理：去除特殊字符
+	cleanPath := bucketPath
+	cleanPath = replaceAll(cleanPath, "/", "_")
+	cleanPath = replaceAll(cleanPath, ":", "_")
+	return fmt.Sprintf("meta:scan:lock:tenant:%d:engine:%d:bucket:%s",
+		tenantID, engineID, cleanPath)
+}
+
+// replaceAll 辅助函数，替换字符串中的所有匹配
+func replaceAll(s, old, new string) string {
+	result := s
+	for i := 0; i < len(result); i++ {
+		if i+len(old) <= len(result) && result[i:i+len(old)] == old {
+			result = result[:i] + new + result[i+len(old):]
+			i += len(new) - 1
+		}
+	}
+	return result
+}

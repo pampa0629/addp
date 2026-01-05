@@ -120,3 +120,5 @@ server
 service/backend/cmd/server/server
 system/backend/cmd/server/server
 transfer/backend/cmd/server/server
+meta/backend/meta-worker
+manager/backend/manager-backend

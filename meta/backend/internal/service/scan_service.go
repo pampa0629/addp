@@ -41,6 +41,7 @@ type ScanService struct {
 	vectorService            *VectorEmbeddingService       // 向量嵌入服务（独立）
 	scanEventPublisher       *events.ScanEventPublisher    // 扫描事件发布器
 	metadataExtractor        *MetadataExtractor            // 元数据提取器
+	dedupService             *ScanDedupService             // 扫描去重服务（可选）
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -115,6 +116,11 @@ func (s *ScanService) SetConfig(cfg *config.Config) {
 // SetScanEventPublisher 注入扫描事件发布器
 func (s *ScanService) SetScanEventPublisher(publisher *events.ScanEventPublisher) {
 	s.scanEventPublisher = publisher
+}
+
+// SetDedupService 注入扫描去重服务
+func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
+	s.dedupService = dedupService
 }
 
 // EnableDocumentVectorization 为文档扫描启用向量化
@@ -855,7 +861,38 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
 		}
 
+		// 检查Schema级锁
+		ctx := context.Background()
+		var schemaLock string
+		if s.dedupService != nil {
+			schemaLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, schemaName)
+			if s.dedupService.CheckTaskExists(ctx, schemaLock) {
+				s.log.Info("Schema正在扫描中，跳过",
+					"engine_id", resourceID,
+					"schema", schemaName)
+				if reporter != nil {
+					reporter.Message(fmt.Sprintf("Schema %s 正在扫描中，跳过", schemaName))
+				}
+				completed++
+				continue
+			}
+
+			// 加Schema级锁
+			if err := s.dedupService.MarkTaskRunning(ctx, schemaLock, 2*time.Hour); err != nil {
+				s.log.Warn("加Schema级锁失败", "schema", schemaName, "error", err)
+			}
+		}
+
+		// 扫描Schema
 		schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schemaName, scanDepth)
+
+		// 扫描完成后清理锁
+		if s.dedupService != nil && schemaLock != "" {
+			if clearErr := s.dedupService.ClearTask(context.Background(), schemaLock); clearErr != nil {
+				s.log.Warn("清除Schema级锁失败", "schema", schemaName, "error", clearErr)
+			}
+		}
+
 		if err != nil {
 			s.log.Warn("Schema 扫描失败",
 				"engine_id", resourceID,

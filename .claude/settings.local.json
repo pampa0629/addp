@@ -101,7 +101,10 @@
       "Bash(then)",
       "Bash(else)",
       "Bash(fi)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8082/api/meta/object-storage/67/nodes?path=\" )",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8082/api/meta/object-storage/67/nodes\" )",
+      "Bash(__NEW_LINE__ curl -s -X POST \"http://localhost:8082/api/meta/scan/tasks/2/trigger\" )"
     ],
     "deny": [],
     "ask": []

@@ -18,61 +18,93 @@
           </div>
           <el-table
             ref="resourceTableRef"
-            :data="engines"
+            :data="filteredEngines"
             v-loading="loadingResources"
             highlight-current-row
             @row-click="handleSelectResource"
             height="600"
           >
-            <el-table-column type="index" label="#" width="50" />
-            <el-table-column prop="name" label="名称" width="150" />
-            <el-table-column prop="resource_type" label="类型" width="100">
+            <el-table-column label="引擎信息" min-width="220">
               <template #default="{ row }">
-                <el-tag>{{ row.resource_type }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="连接" width="60" align="center">
-              <template #default="{ row }">
-                <el-tooltip
-                  :content="getConnectionTooltip(row)"
-                  placement="top"
-                  :disabled="!row.connection_status"
-                >
-                  <el-icon :size="18" :color="getConnectionIconColor(row.connection_status)">
-                    <component :is="getConnectionIcon(row.connection_status)" />
-                  </el-icon>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-            <el-table-column label="Schema统计" width="120">
-              <template #default="{ row }">
-                <div>总数: {{ row.total_schemas || 0 }}</div>
-                <div style="color: #67C23A">已扫: {{ row.scanned_schemas || 0 }}</div>
-                <div style="color: #E6A23C">未扫: {{ row.unscanned_schemas || 0 }}</div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="scanned_at" label="上次扫描" width="150" />
-            <el-table-column label="定时计划" min-width="220">
-              <template #default="{ row }">
-                <div v-if="resourcePlanMap[row.id]" class="plan-summary">
-                  <div class="plan-summary__status">
-                    <el-tag :type="resourcePlanMap[row.id].enabled ? 'success' : 'info'" size="small">
-                      {{ resourcePlanMap[row.id].enabled ? '已启用' : '未启用' }}
-                    </el-tag>
-                    <span class="plan-summary__text">{{ resourcePlanMap[row.id].description }}</span>
+                <div class="engine-info">
+                  <!-- 第一行：类型标签 + 名称 -->
+                  <div class="engine-name">
+                    <el-tag size="small" class="engine-type">{{ row.resource_type }}</el-tag>
+                    <span class="name-text">{{ row.name }}</span>
                   </div>
-                  <div class="plan-summary__next" v-if="resourcePlanMap[row.id].nextRun">
-                    下次执行：{{ resourcePlanMap[row.id].nextRun }}
+
+                  <!-- 第二行：连接状态 -->
+                  <div class="engine-connection">
+                    <el-tooltip :content="getConnectionTooltip(row)" placement="top">
+                      <div class="connection-status">
+                        <el-icon :size="14" :color="getConnectionIconColor(row.connection_status)">
+                          <component :is="getConnectionIcon(row.connection_status)" />
+                        </el-icon>
+                        <span>{{ getConnectionStatusLabel(row.connection_status) }}</span>
+                      </div>
+                    </el-tooltip>
+                  </div>
+
+                  <!-- 第三行：Schema统计（tooltip显示） -->
+                  <el-tooltip placement="top">
+                    <template #content>
+                      总数: {{ row.total_schemas || 0 }}<br>
+                      已扫描: {{ row.scanned_schemas || 0 }}<br>
+                      未扫描: {{ row.unscanned_schemas || 0 }}
+                    </template>
+                    <div class="engine-stats">
+                      {{ row.total_schemas || 0 }}个Schema
+                      <span class="stat-scanned" v-if="row.scanned_schemas">({{ row.scanned_schemas }}已扫)</span>
+                      <span class="stat-unscanned" v-if="row.unscanned_schemas">/{{ row.unscanned_schemas }}未扫</span>
+                    </div>
+                  </el-tooltip>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态概览" width="180">
+              <template #default="{ row }">
+                <div class="status-overview">
+                  <!-- 调度状态 -->
+                  <div class="schedule-status">
+                    <el-tooltip
+                      v-if="resourcePlanMap[row.id]"
+                      :content="`${resourcePlanMap[row.id].description}\n下次执行：${resourcePlanMap[row.id].nextRun}`"
+                      placement="top"
+                    >
+                      <div class="schedule-indicator">
+                        <el-icon :color="resourcePlanMap[row.id].enabled ? '#67C23A' : '#909399'">
+                          <Clock />
+                        </el-icon>
+                        <span>{{ resourcePlanMap[row.id].enabled ? '调度已启用' : '调度未启用' }}</span>
+                      </div>
+                    </el-tooltip>
+                    <div v-else class="schedule-indicator schedule-none">
+                      <el-icon color="#C0C4CC"><Clock /></el-icon>
+                      <span>未配置调度</span>
+                    </div>
+                  </div>
+
+                  <!-- 上次扫描 -->
+                  <div class="last-scan" v-if="row.scanned_at">
+                    <span class="label">上次扫描：</span>
+                    <span class="time">{{ formatShortTime(row.scanned_at) }}</span>
                   </div>
                 </div>
-                <div v-else class="plan-summary plan-summary--empty">未配置</div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140">
+            <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
-                <el-button type="success" plain size="small" @click.stop="handleScheduleClick(row)">
-                  定时设置
-                </el-button>
+                <div class="engine-actions">
+                  <el-button
+                    type="success"
+                    size="default"
+                    plain
+                    @click.stop="handleScheduleClick(row)"
+                  >
+                    <el-icon><Clock /></el-icon>
+                    调度
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -88,18 +120,32 @@
         <div class="right-panel">
           <div class="panel-header">
             <h3>{{ rightPanelTitle }}</h3>
-            <div v-if="selectedResource" class="schema-actions">
-              <el-button @click="loadSchemas" :loading="loadingSchemas">
-                <el-icon><Refresh /></el-icon> 刷新
-              </el-button>
+            <div v-if="selectedResource" class="schema-actions-bar">
+              <!-- 选中提示 -->
+              <div v-if="selectedSchemas.length" class="selection-info">
+                已选中 <strong>{{ selectedSchemas.length }}</strong> 个{{ isObjectStorageType(selectedResource.resource_type) ? 'Bucket' : 'Schema' }}
+              </div>
+
+              <!-- 批量操作按钮 -->
               <el-button
                 type="primary"
+                size="default"
                 @click="handleBatchScan"
                 :disabled="!selectedSchemas.length"
                 :loading="scanning"
               >
                 <el-icon><Search /></el-icon>
-                批量扫描选中Schema ({{ selectedSchemas.length }})
+                批量扫描
+              </el-button>
+
+              <!-- 刷新按钮 -->
+              <el-button
+                @click="loadSchemas"
+                :loading="loadingSchemas"
+                size="default"
+              >
+                <el-icon><Refresh /></el-icon>
+                刷新
               </el-button>
             </div>
           </div>
@@ -118,27 +164,76 @@
               style="min-width: 720px"
             >
               <el-table-column type="selection" width="55" />
-              <el-table-column prop="name" label="Schema名称" width="200" />
-              <el-table-column label="扫描状态" width="120">
+              <el-table-column :label="schemaColumnLabel" width="250">
                 <template #default="{ row }">
-                  <el-tag
-                    :type="row.scan_status === '已扫描' ? 'success' : row.scan_status === '扫描中' ? 'warning' : 'info'"
-                  >
-                    {{ row.scan_status }}
-                  </el-tag>
+                  <div class="schema-info">
+                    <!-- 第一行：名称 + 状态标签 + 调度图标 -->
+                    <div class="schema-header">
+                      <span class="schema-name">{{ row.name }}</span>
+                      <el-tag
+                        size="small"
+                        :type="row.scan_status === '已扫描' ? 'success' : row.scan_status === '扫描中' ? 'warning' : 'info'"
+                      >
+                        {{ row.scan_status }}
+                      </el-tag>
+
+                      <!-- 调度状态图标 -->
+                      <el-tooltip
+                        v-if="getSchemaPlan(row)"
+                        :content="`独立调度：${getSchemaPlan(row).description}\n下次执行：${getSchemaPlan(row).nextRun}`"
+                        placement="top"
+                      >
+                        <el-icon color="#409EFF" :size="16" class="schedule-icon">
+                          <Clock />
+                        </el-icon>
+                      </el-tooltip>
+                      <el-tooltip
+                        v-else-if="hasEngineSchedule"
+                        :content="`继承引擎调度：${engineScheduleDesc}`"
+                        placement="top"
+                      >
+                        <el-icon color="#909399" :size="16" class="schedule-icon">
+                          <Link />
+                        </el-icon>
+                      </el-tooltip>
+                    </div>
+
+                    <!-- 第二行：次要信息（小字灰色） -->
+                    <div class="schema-details">
+                      <span v-if="row.table_count !== undefined">
+                        <el-icon :size="12"><Document /></el-icon>
+                        {{ row.table_count }}张表
+                      </span>
+                      <span v-if="row.scanned_at" class="detail-separator">·</span>
+                      <span v-if="row.scanned_at">
+                        上次扫描：{{ formatShortTime(row.scanned_at) }}
+                      </span>
+                    </div>
+                  </div>
                 </template>
               </el-table-column>
-              <el-table-column prop="table_count" label="表数量" width="100" />
-              <el-table-column prop="scanned_at" label="上次扫描" width="150" />
-              <el-table-column label="操作" width="150">
+              <el-table-column label="操作" width="240" fixed="right">
                 <template #default="{ row }">
-                  <el-button
-                    size="small"
-                    @click.stop="handleScanSchema(row)"
-                    :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
-                  >
-                    {{ row.scan_status === '已扫描' ? '重新扫描' : '扫描' }}
-                  </el-button>
+                  <div class="schema-actions">
+                    <el-button
+                      type="primary"
+                      size="default"
+                      @click.stop="handleScanSchema(row)"
+                      :loading="scanningSchemas[row.id ?? (row.schema_name || row.name)]"
+                    >
+                      <el-icon><Search /></el-icon>
+                      {{ row.scan_status === '已扫描' ? '重新扫描' : '扫描' }}
+                    </el-button>
+                    <el-button
+                      type="success"
+                      size="default"
+                      plain
+                      @click.stop="handleSchemaSchedule(row)"
+                    >
+                      <el-icon><Clock /></el-icon>
+                      调度
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -173,10 +268,27 @@
 
     <el-dialog
       v-model="scheduleDialogVisible"
-      title="定时扫描设置"
+      title="引擎定时扫描设置"
       width="600px"
       @close="resetScheduleForm"
     >
+      <!-- 继承关系统计 -->
+      <el-alert
+        v-if="inheritanceInfo && inheritanceInfo.independent > 0"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      >
+        当前引擎下共 {{ inheritanceInfo.total }} 个Schema/Bucket：
+        <ul style="margin: 8px 0 0 20px">
+          <li>{{ inheritanceInfo.independent }} 个已配置独立调度</li>
+          <li>{{ inheritanceInfo.inherited }} 个将继承引擎调度</li>
+        </ul>
+        <div style="margin-top: 8px; color: #909399">
+          引擎调度只会扫描未配置独立调度的Schema/Bucket
+        </div>
+      </el-alert>
+
       <ScheduleConfig v-model="scheduleCron" />
 
       <el-form label-width="100px" style="margin-top: 20px">
@@ -194,13 +306,58 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- Schema调度设置对话框 -->
+    <el-dialog
+      v-model="schemaScheduleDialogVisible"
+      :title="`${currentSchema?.name || ''} - 定时扫描设置`"
+      width="600px"
+    >
+      <!-- 继承说明 -->
+      <el-alert
+        v-if="hasEngineSchedule && !currentSchemaTask"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      >
+        当前继承引擎级调度：{{ engineScheduleDesc }}
+        <br />配置独立调度后将不再继承引擎设置
+      </el-alert>
+
+      <!-- 调度配置 -->
+      <ScheduleConfig v-model="schemaScheduleCron" />
+
+      <el-form label-width="100px" style="margin-top: 20px">
+        <el-form-item label="扫描深度">
+          <el-radio-group v-model="schemaScheduleDepth">
+            <el-radio value="basic">基础扫描（仅结构）</el-radio>
+            <el-radio value="deep">深度扫描（含数据统计）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="是否启用">
+          <el-switch v-model="schemaScheduleEnabled" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="schemaScheduleDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          @click="submitSchemaSchedule"
+          :loading="savingSchedule"
+        >
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, reactive, watch, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled } from '@element-plus/icons-vue'
+import { Search, Refresh, CircleCheck, CircleClose, Warning, QuestionFilled, Clock, Link, Document } from '@element-plus/icons-vue'
 import { ScheduleConfig, describeCron, decodeScheduleToForm } from '@common-ui'
 import metaApi from '../api/meta'
 
@@ -233,12 +390,25 @@ const savingSchedule = ref(false)
 const scheduleCron = ref('') // Cron 表达式
 const scheduleEnabled = ref(true) // 是否启用
 
+// Schema调度相关
+const schemaScheduleDialogVisible = ref(false)
+const currentSchema = ref(null)
+const currentSchemaTask = ref(null)
+const schemaScheduleCron = ref('')
+const schemaScheduleDepth = ref('deep')
+const schemaScheduleEnabled = ref(true)
+
 const leftPanelWidth = ref(560)
 const isResizing = ref(false)
 const minLeftPanelWidth = 440
 const minRightPanelWidth = 240
 let resizeStartX = 0
 let resizeStartWidth = leftPanelWidth.value
+
+// 计算属性：过滤后的引擎列表（当前不进行筛选，直接返回所有引擎）
+const filteredEngines = computed(() => {
+  return engines.value
+})
 
 const resourcePlanMap = computed(() => {
   const map = {}
@@ -266,12 +436,71 @@ const autoScheduleTask = computed(() => {
   )
 })
 
+// Schema调度相关computed
+const getSchemaPlan = (schema) => {
+  const schemaName = schema.schema_name || schema.name
+  const task = allScanTasks.value.find(task => {
+    if (task.engine_id !== selectedResource.value.id) return false
+    const params = task.parameters || {}
+    const schemas = params.schema_names || []
+    const paths = params.object_paths || []
+    // 精确匹配：该任务只扫描这一个schema/bucket
+    const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+    if (isObjectStorage) {
+      const path = schema.path || schema.name
+      return paths.length === 1 && paths[0] === path
+    } else {
+      return schemas.length === 1 && schemas[0] === schemaName
+    }
+  })
+
+  if (!task) return null
+
+  return {
+    enabled: task.enabled,
+    description: describeCron(task.schedule),
+    nextRun: task.next_run_at ? formatDateTime(task.next_run_at) : '',
+    taskId: task.id
+  }
+}
+
+const hasEngineSchedule = computed(() => {
+  return !!autoScheduleTask.value?.enabled
+})
+
+const engineScheduleDesc = computed(() => {
+  if (!autoScheduleTask.value) return ''
+  return describeCron(autoScheduleTask.value.schedule)
+})
+
+const inheritanceInfo = computed(() => {
+  if (!selectedResource.value || !schemas.value.length) return null
+
+  const allSchemas = schemas.value.length
+  const withOwnSchedule = schemas.value.filter(s => getSchemaPlan(s)).length
+  const inheritedCount = allSchemas - withOwnSchedule
+
+  return {
+    total: allSchemas,
+    independent: withOwnSchedule,
+    inherited: inheritedCount,
+    hasEngineSchedule: hasEngineSchedule.value
+  }
+})
+
 // 计算右侧面板标题（根据引擎类型显示 Schema 或 Bucket）
 const rightPanelTitle = computed(() => {
   if (!selectedResource.value) return 'Schema列表'
   const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
   const label = isObjectStorage ? 'Bucket列表' : 'Schema列表'
   return `${label} - ${selectedResource.value.name}`
+})
+
+// 计算表格列标题（根据引擎类型显示 Schema信息 或 Bucket信息）
+const schemaColumnLabel = computed(() => {
+  if (!selectedResource.value) return 'Schema信息'
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+  return isObjectStorage ? 'Bucket信息' : 'Schema信息'
 })
 
 // 加载引擎列表
@@ -663,10 +892,7 @@ const submitScheduleForm = async () => {
     return
   }
 
-  if (!scheduleCron.value) {
-    ElMessage.error('请配置调度计划')
-    return
-  }
+  // 允许 cron 为空（清除调度）
 
   savingSchedule.value = true
   try {
@@ -682,7 +908,7 @@ const submitScheduleForm = async () => {
       schedule_type: 'cron',  // 统一使用 cron 类型
       schedule_time: '',
       schedule_value: [],
-      schedule: scheduleCron.value,  // 直接使用 ScheduleConfig 生成的 Cron 表达式
+      schedule: scheduleCron.value,  // 允许为空字符串
       enabled: scheduleEnabled.value
     }
 
@@ -722,6 +948,86 @@ const handleScanSchema = async (schema) => {
   }
 }
 
+// Schema调度相关方法
+const handleSchemaSchedule = async (schema) => {
+  currentSchema.value = schema
+  const schemaName = schema.schema_name || schema.name
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+
+  // 查找该Schema的调度任务
+  currentSchemaTask.value = allScanTasks.value.find(task => {
+    if (task.engine_id !== selectedResource.value.id) return false
+    const params = task.parameters || {}
+    const schemas = params.schema_names || []
+    const paths = params.object_paths || []
+
+    if (isObjectStorage) {
+      const path = schema.path || schema.name
+      return paths.length === 1 && paths[0] === path
+    } else {
+      return schemas.length === 1 && schemas[0] === schemaName
+    }
+  })
+
+  // 预填表单
+  if (currentSchemaTask.value) {
+    schemaScheduleCron.value = currentSchemaTask.value.schedule || ''
+    schemaScheduleDepth.value = currentSchemaTask.value.parameters?.scan_depth || 'deep'
+    schemaScheduleEnabled.value = currentSchemaTask.value.enabled
+  } else {
+    // 默认继承引擎设置或使用默认值
+    schemaScheduleCron.value = autoScheduleTask.value?.schedule || '0 2 * * *'
+    schemaScheduleDepth.value = 'deep'
+    schemaScheduleEnabled.value = true
+  }
+
+  schemaScheduleDialogVisible.value = true
+}
+
+const submitSchemaSchedule = async () => {
+  if (!currentSchema.value) return
+
+  const schemaName = currentSchema.value.schema_name || currentSchema.value.name
+  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
+
+  savingSchedule.value = true
+  try {
+    const payload = {
+      name: `${selectedResource.value.name} - ${schemaName}`,
+      description: isObjectStorage
+        ? `Bucket ${schemaName} 的定时扫描`
+        : `Schema ${schemaName} 的定时扫描`,
+      schema_names: isObjectStorage ? [] : [schemaName],
+      object_paths: isObjectStorage ? [currentSchema.value.path || schemaName] : [],
+      scan_depth: schemaScheduleDepth.value,
+      schedule_type: 'cron',
+      schedule: schemaScheduleCron.value,
+      enabled: schemaScheduleEnabled.value
+    }
+
+    if (currentSchemaTask.value) {
+      // 更新现有任务
+      await metaApi.updateScanTask(
+        selectedResource.value.id,
+        currentSchemaTask.value.id,
+        payload
+      )
+      ElMessage.success('调度设置已更新')
+    } else {
+      // 创建新任务
+      await metaApi.createScanTask(selectedResource.value.id, payload)
+      ElMessage.success('调度设置已创建')
+    }
+
+    schemaScheduleDialogVisible.value = false
+    await loadScanTasks()
+  } catch (error) {
+    ElMessage.error('保存失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    savingSchedule.value = false
+  }
+}
+
 // 关闭扫描对话框
 const closeScanDialog = () => {
   showScanDialog.value = false
@@ -740,6 +1046,23 @@ function formatScheduleDescription(task) {
 function formatDateTime(datetime) {
   if (!datetime) return ''
   return new Date(datetime).toLocaleString('zh-CN')
+}
+
+// 格式化简短时间（只显示日期，完整时间在tooltip中）
+function formatShortTime(datetime) {
+  if (!datetime) return ''
+  const date = new Date(datetime)
+  const now = new Date()
+  const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return '今天'
+  if (diffDays === 1) return '昨天'
+  if (diffDays < 7) return `${diffDays}天前`
+
+  return date.toLocaleDateString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit'
+  })
 }
 
 watch(selectedResource, () => {
@@ -769,38 +1092,192 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 
-.left-panel {
-  flex: 0 0 auto;
-  padding-right: 12px;
-  border-right: 1px solid #f2f3f5;
-  box-sizing: border-box;
-}
-
-.plan-summary {
+/* ========== 引擎信息列 ========== */
+.engine-info {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.engine-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.engine-type {
+  flex-shrink: 0;
+}
+
+.name-text {
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+}
+
+.engine-connection {
+  display: flex;
+  align-items: center;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
   gap: 4px;
   font-size: 12px;
   color: #606266;
 }
 
-.plan-summary__status {
+.engine-stats {
+  font-size: 12px;
+  color: #909399;
+  cursor: help;
+}
+
+.stat-scanned {
+  color: #67C23A;
+  margin-left: 4px;
+}
+
+.stat-unscanned {
+  color: #E6A23C;
+  margin-left: 4px;
+}
+
+/* ========== 状态概览列 ========== */
+.status-overview {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
 }
 
-.plan-summary__text {
+.schedule-status {
+  display: flex;
+  align-items: center;
+}
+
+.schedule-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #606266;
+  cursor: help;
+}
+
+.schedule-none {
+  color: #C0C4CC;
+}
+
+.last-scan {
+  font-size: 12px;
+  color: #909399;
+}
+
+.last-scan .label {
+  color: #C0C4CC;
+}
+
+.last-scan .time {
   color: #606266;
 }
 
-.plan-summary__next {
-  color: #909399;
+/* ========== 引擎操作列 ========== */
+.engine-actions {
+  display: flex;
+  gap: 8px;
 }
 
-.plan-summary--empty {
+/* ========== Schema信息列 ========== */
+.schema-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.schema-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.schema-name {
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+}
+
+.schedule-icon {
+  cursor: help;
+  flex-shrink: 0;
+}
+
+.schema-details {
+  font-size: 12px;
   color: #909399;
-  font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.detail-separator {
+  color: #DCDFE6;
+}
+
+/* ========== Schema操作列 ========== */
+.schema-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ========== 批量操作栏 ========== */
+.schema-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.selection-info {
+  font-size: 14px;
+  color: #606266;
+  padding: 0 8px;
+}
+
+.selection-info strong {
+  color: #409EFF;
+  font-size: 16px;
+}
+
+/* ========== 表格整体优化 ========== */
+.left-panel :deep(.el-table) {
+  font-size: 13px;
+}
+
+.right-panel :deep(.el-table) {
+  font-size: 13px;
+}
+
+/* 高亮当前行 */
+.left-panel :deep(.el-table__row.current-row) {
+  background-color: #ecf5ff;
+}
+
+/* 按钮大小调整 */
+.engine-actions .el-button,
+.schema-actions .el-button {
+  min-width: 80px;
+}
+
+/* ========== 原有样式保留 ========== */
+.left-panel {
+  flex: 0 0 auto;
+  padding-right: 12px;
+  border-right: 1px solid #f2f3f5;
+  box-sizing: border-box;
 }
 
 .panel-resizer {
