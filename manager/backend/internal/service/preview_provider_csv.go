@@ -10,7 +10,6 @@ import (
 	csvParser "github.com/addp/common/format/csv"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type csvPreviewProvider struct {
@@ -49,20 +48,16 @@ func (p *csvPreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	// Create MinIO client
-	minioClient, bucket, err := p.createMinioClient(req.Engine)
+	// 使用统一的 MinIO 客户端创建函数
+	minioClient, connBucket, err := createMinioClientFromEngine(req.Engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
-	// 如果 connection_info 中没有指定 bucket,使用 schema 参数作为 bucket
-	if bucket == "" {
-		bucket = req.Schema
-	}
-
-	// 验证 bucket 不为空
-	if bucket == "" {
-		return nil, fmt.Errorf("bucket name is required")
+	// 使用统一的 bucket 解析函数
+	bucket, err := resolveBucket(connBucket, req.Schema)
+	if err != nil {
+		return nil, err
 	}
 
 	// Build full object path
@@ -151,32 +146,6 @@ func (p *csvPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (
 			},
 		},
 	}, nil
-}
-
-func (p *csvPreviewProvider) createMinioClient(resource *models.Engine) (*minio.Client, string, error) {
-	connInfo := resource.ConnectionInfo
-
-	endpoint, _ := connInfo["endpoint"].(string)
-	accessKey, _ := connInfo["access_key"].(string)
-	secretKey, _ := connInfo["secret_key"].(string)
-	useSSL, _ := connInfo["use_ssl"].(bool)
-	bucket, _ := connInfo["bucket"].(string)
-
-	// endpoint, accessKey, secretKey 是必需的
-	// bucket 可以为空(从 schema 参数获取)
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, "", fmt.Errorf("missing required connection info")
-	}
-
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-
-	return client, bucket, nil
 }
 
 func (p *csvPreviewProvider) detectDelimiter(filename string) rune {

@@ -111,6 +111,47 @@ func isMetaNotFoundError(err error) bool {
 		strings.Contains(errMsg, "record not found")
 }
 
+// createMinioClientFromEngine 从 Engine 创建 MinIO 客户端
+// 返回: MinIO 客户端、bucket 名称（可能为空）、错误
+func createMinioClientFromEngine(engine *models.Engine) (*minio.Client, string, error) {
+	connInfo := engine.ConnectionInfo
+
+	endpoint, _ := connInfo["endpoint"].(string)
+	accessKey, _ := connInfo["access_key"].(string)
+	secretKey, _ := connInfo["secret_key"].(string)
+	useSSL, _ := connInfo["use_ssl"].(bool)
+	bucket, _ := connInfo["bucket"].(string)
+
+	// endpoint, accessKey, secretKey 是必需的
+	// bucket 可以为空(从 schema 参数获取)
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, "", fmt.Errorf("missing required connection info")
+	}
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return client, bucket, nil
+}
+
+// resolveBucket 解析最终的 bucket 名称
+// 优先级: connection_info 中的 bucket > schema 参数
+func resolveBucket(connBucket, schemaParam string) (string, error) {
+	bucket := connBucket
+	if bucket == "" {
+		bucket = schemaParam
+	}
+	if bucket == "" {
+		return "", fmt.Errorf("bucket name is required")
+	}
+	return bucket, nil
+}
+
 func (p *objectStoragePreviewProvider) Supports(req *PreviewRequest) bool {
 	if req == nil || req.Engine == nil {
 		return false

@@ -11,7 +11,6 @@ import (
 	"github.com/addp/common/format/shapefile"
 	"github.com/addp/manager/internal/models"
 	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type shapefilePreviewProvider struct {
@@ -50,19 +49,16 @@ func (p *shapefilePreviewProvider) Supports(req *PreviewRequest) bool {
 }
 
 func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-	minioClient, bucket, err := p.createMinioClient(req.Engine)
+	// 使用统一的 MinIO 客户端创建函数
+	minioClient, connBucket, err := createMinioClientFromEngine(req.Engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create minio client: %w", err)
 	}
 
-	// 如果 connection_info 中没有指定 bucket,使用 schema 参数作为 bucket
-	if bucket == "" {
-		bucket = req.Schema
-	}
-
-	// 验证 bucket 不为空
-	if bucket == "" {
-		return nil, fmt.Errorf("bucket name is required")
+	// 使用统一的 bucket 解析函数
+	bucket, err := resolveBucket(connBucket, req.Schema)
+	if err != nil {
+		return nil, err
 	}
 
 	tempFile, err := p.downloadShapefile(ctx, minioClient, bucket, req.Schema, req.Table)
@@ -121,7 +117,7 @@ func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 
 		if feature.Geometry != nil {
 			row["geometry"] = map[string]interface{}{
-				"type": p.mapShapeType(int32(shapeType)),
+				"type": shapefile.MapShapeType(shapeType),
 			}
 		}
 
@@ -149,32 +145,6 @@ func (p *shapefilePreviewProvider) Preview(ctx context.Context, req *PreviewRequ
 			},
 		},
 	}, nil
-}
-
-func (p *shapefilePreviewProvider) createMinioClient(resource *models.Engine) (*minio.Client, string, error) {
-	connInfo := resource.ConnectionInfo
-
-	endpoint, _ := connInfo["endpoint"].(string)
-	accessKey, _ := connInfo["access_key"].(string)
-	secretKey, _ := connInfo["secret_key"].(string)
-	useSSL, _ := connInfo["use_ssl"].(bool)
-	bucket, _ := connInfo["bucket"].(string)
-
-	// endpoint, accessKey, secretKey 是必需的
-	// bucket 可以为空(从 schema 参数获取)
-	if endpoint == "" || accessKey == "" || secretKey == "" {
-		return nil, "", fmt.Errorf("missing required connection info")
-	}
-
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: useSSL,
-	})
-	if err != nil {
-		return nil, "", err
-	}
-
-	return client, bucket, nil
 }
 
 func (p *shapefilePreviewProvider) downloadShapefile(ctx context.Context, client *minio.Client, bucket, schema, table string) (string, error) {
@@ -244,39 +214,4 @@ func (p *shapefilePreviewProvider) downloadFile(ctx context.Context, client *min
 
 	_, err = io.Copy(destFile, object)
 	return err
-}
-
-func (p *shapefilePreviewProvider) mapShapeType(shapeType int32) string {
-	switch shapeType {
-	case 0:
-		return "Null"
-	case 1:
-		return "Point"
-	case 3:
-		return "Polyline"
-	case 5:
-		return "Polygon"
-	case 8:
-		return "MultiPoint"
-	case 11:
-		return "PointZ"
-	case 13:
-		return "PolylineZ"
-	case 15:
-		return "PolygonZ"
-	case 18:
-		return "MultiPointZ"
-	case 21:
-		return "PointM"
-	case 23:
-		return "PolylineM"
-	case 25:
-		return "PolygonM"
-	case 28:
-		return "MultiPointM"
-	case 31:
-		return "MultiPatch"
-	default:
-		return fmt.Sprintf("Unknown(%d)", shapeType)
-	}
 }

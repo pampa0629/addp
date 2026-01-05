@@ -100,7 +100,8 @@
       "Bash(if [ $? -eq 0 ])",
       "Bash(then)",
       "Bash(else)",
-      "Bash(fi)"
+      "Bash(fi)",
+      "Bash(git reset:*)"
     ],
     "deny": [],
     "ask": []
