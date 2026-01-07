@@ -101,7 +101,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/directories/*path", managerProxy.Handle)
 		api.Any("/preview/*path", managerProxy.Handle)
 		api.Any("/upload/*path", managerProxy.Handle)
-		api.Any("/data-explorer/*path", managerProxy.Handle)
+		api.Any("/explorer/*path", managerProxy.Handle)  // 新版数据探查 API
+		api.Any("/data-explorer/*path", managerProxy.Handle) // 旧版（保留向后兼容）
 		api.Any("/search/*path", managerProxy.Handle)
 
 		// Meta 模块路由（元数据、血缘）

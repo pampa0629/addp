@@ -1,0 +1,40 @@
+{
+  "module": "transfer",
+  "title": "数据传输模块",
+  "version": "0.0.20",
+  "categories": [
+    {
+      "name": "数据传输",
+      "description": "数据导入、导出、同步任务管理",
+      "apis": [
+        {
+          "name": "创建导入任务",
+          "method": "POST",
+          "path": "/api/transfer/import",
+          "description": "创建数据导入任务（支持 CSV、Excel、Shapefile 等格式）",
+          "auth": true,
+          "request": "{\n  \"name\": \"导入用户数据\",\n  \"source_type\": \"file\",\n  \"source_config\": {\n    \"file_path\": \"/uploads/users.csv\"\n  },\n  \"target_engine_id\": 1,\n  \"target_schema\": \"public\",\n  \"target_table\": \"users\"\n}",
+          "response": "{\n  \"task_id\": \"import_123\",\n  \"status\": \"pending\",\n  \"message\": \"导入任务已创建\"\n}"
+        },
+        {
+          "name": "获取任务列表",
+          "method": "GET",
+          "path": "/api/transfer/tasks",
+          "description": "获取数据传输任务列表（导入/导出/同步）",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20\ntask_type: 任务类型（可选：import、export、sync）",
+          "response": "[\n  {\n    \"id\": \"import_123\",\n    \"name\": \"导入用户数据\",\n    \"type\": \"import\",\n    \"status\": \"running\",\n    \"progress\": 45\n  }\n]"
+        },
+        {
+          "name": "获取任务状态",
+          "method": "GET",
+          "path": "/api/transfer/tasks/:task_id/status",
+          "description": "获取指定任务的执行状态和进度",
+          "auth": true,
+          "params": ":task_id - 任务ID",
+          "response": "{\n  \"task_id\": \"import_123\",\n  \"status\": \"running\",\n  \"progress\": 45,\n  \"processed_rows\": 4500,\n  \"total_rows\": 10000\n}"
+        }
+      ]
+    }
+  ]
+}

@@ -199,6 +199,33 @@ type ObjectStoragePlugin interface {
 	SupportsSSL() bool
 }
 
+// ============ NoSQL 数据库插件 ============
+
+// NoSQLPlugin NoSQL 数据库插件通用接口
+// 负责连接管理和基础元数据查询
+// Schema 推断由对应的 Parser 完成（如 DocCollectionParser）
+type NoSQLPlugin interface {
+	StoragePlugin
+
+	// ListDatabases 列出所有 Database
+	ListDatabases(ctx context.Context, connInfo ConnectionInfo) ([]DatabaseInfo, error)
+
+	// ListCollections 列出指定 Database 下的所有 Collection
+	ListCollections(ctx context.Context, connInfo ConnectionInfo, database string) ([]CollectionInfo, error)
+
+	// GetCollectionStats 获取 Collection 统计信息
+	GetCollectionStats(ctx context.Context, connInfo ConnectionInfo, database, collection string) (*CollectionStats, error)
+
+	// IsSystemDatabase 判断是否为系统 Database
+	IsSystemDatabase(databaseName string) bool
+
+	// CreateClient 创建数据库客户端
+	CreateClient(ctx context.Context, connInfo ConnectionInfo) (interface{}, error)
+
+	// CloseClient 关闭数据库客户端
+	CloseClient(ctx context.Context, client interface{}) error
+}
+
 // ============ 数据结构定义 ============
 
 // PoolConfig 连接池配置
@@ -238,6 +265,37 @@ type ColumnInfo struct {
 	IsNullable   bool   // 是否可为空
 	IsPrimaryKey bool   // 是否主键
 	Comment      string // 列注释
+}
+
+// DatabaseInfo Database 信息（NoSQL）
+type DatabaseInfo struct {
+	Name      string // 数据库名称
+	SizeBytes int64  // 存储大小（字节）
+}
+
+// CollectionInfo Collection 信息（NoSQL）
+type CollectionInfo struct {
+	Database      string // 所属数据库
+	Name          string // 集合名称
+	DocumentCount int64  // 文档数量
+	SizeBytes     int64  // 存储大小（字节）
+}
+
+// CollectionStats Collection 统计信息（NoSQL）
+type CollectionStats struct {
+	DocumentCount int64       // 文档数量
+	SizeBytes     int64       // 存储大小（字节）
+	IndexCount    int         // 索引数量
+	AvgDocSize    int64       // 平均文档大小（字节）
+	Indexes       []IndexInfo // 索引列表
+}
+
+// IndexInfo 索引信息（NoSQL）
+type IndexInfo struct {
+	Name      string   // 索引名称
+	Fields    []string // 索引字段
+	IsUnique  bool     // 是否唯一索引
+	IndexType string   // 索引类型（如 "btree", "hash", "text"）
 }
 
 // BucketInfo Bucket 信息

@@ -1,0 +1,68 @@
+{
+  "module": "meta",
+  "title": "元数据模块",
+  "version": "0.0.20",
+  "categories": [
+    {
+      "name": "元数据扫描",
+      "description": "元数据扫描、定时任务、对象存储管理",
+      "apis": [
+        {
+          "name": "自动扫描",
+          "method": "POST",
+          "path": "/api/meta/scan/auto",
+          "description": "自动扫描引擎的元数据信息（智能选择扫描策略）",
+          "auth": true,
+          "request": "{\n  \"engine_id\": 1,\n  \"scan_schemas\": true,\n  \"scan_tables\": true\n}",
+          "response": "{\n  \"scan_run_id\": 123,\n  \"status\": \"running\",\n  \"message\": \"扫描任务已启动\"\n}"
+        },
+        {
+          "name": "获取扫描任务列表",
+          "method": "GET",
+          "path": "/api/meta/scan/tasks",
+          "description": "获取定时扫描任务列表",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20",
+          "response": "[\n  {\n    \"id\": 1,\n    \"name\": \"每日扫描\",\n    \"engine_id\": 1,\n    \"cron_expr\": \"0 2 * * *\",\n    \"is_active\": true\n  }\n]"
+        },
+        {
+          "name": "创建扫描任务",
+          "method": "POST",
+          "path": "/api/meta/scan/tasks",
+          "description": "创建定时扫描任务",
+          "auth": true,
+          "request": "{\n  \"name\": \"每日扫描\",\n  \"engine_id\": 1,\n  \"cron_expr\": \"0 2 * * *\",\n  \"scan_config\": {\n    \"scan_schemas\": true,\n    \"scan_tables\": true\n  }\n}",
+          "response": "{\n  \"id\": 1,\n  \"message\": \"扫描任务创建成功\"\n}"
+        },
+        {
+          "name": "触发扫描任务",
+          "method": "POST",
+          "path": "/api/meta/scan/tasks/:task_id/trigger",
+          "description": "手动触发定时扫描任务",
+          "auth": true,
+          "params": ":task_id - 任务ID",
+          "response": "{\n  \"scan_run_id\": 456,\n  \"message\": \"扫描已触发\"\n}"
+        },
+        {
+          "name": "获取对象存储节点",
+          "method": "GET",
+          "path": "/api/meta/object-storage/:engine_id/nodes",
+          "description": "获取对象存储（MinIO/S3）的目录树结构",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "query": "path: 路径（可选，默认为根目录）",
+          "response": "{\n  \"nodes\": [\n    {\n      \"name\": \"images/\",\n      \"type\": \"folder\",\n      \"path\": \"images/\"\n    },\n    {\n      \"name\": \"photo.jpg\",\n      \"type\": \"file\",\n      \"size\": 102400\n    }\n  ]\n}"
+        },
+        {
+          "name": "获取表元数据",
+          "method": "GET",
+          "path": "/api/meta/metadata/tables",
+          "description": "获取数据库表的元数据信息",
+          "auth": true,
+          "query": "engine_id: 引擎ID (必填)\nschema: Schema名称 (可选)",
+          "response": "[\n  {\n    \"table_name\": \"users\",\n    \"schema\": \"public\",\n    \"row_count\": 1000,\n    \"size_bytes\": 65536,\n    \"comment\": \"用户表\"\n  }\n]"
+        }
+      ]
+    }
+  ]
+}

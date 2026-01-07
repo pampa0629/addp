@@ -6,17 +6,19 @@ import (
 )
 
 // Registry 是解析器的全局注册中心
-// 支持三种类型的解析器：
+// 支持四种类型的解析器：
 //  1. FileTableParser（文件表解析器）
 //  2. DBTableParser（数据库表解析器）
 //  3. ObjectInfoParser（对象信息解析器）
+//  4. DocCollectionParser（文档集合解析器）
 type Registry struct {
 	mu sync.RWMutex
 
 	// 新接口
-	fileTableParsers  map[FormatType]FileTableParser // key: FormatType (e.g., FormatCSV, FormatShapefile)
-	dbTableParsers    map[string]DBTableParser       // key: engine type (e.g., "postgresql", "mysql")
-	objectInfoParsers map[string]ObjectInfoParser    // key: content type (e.g., "image/jpeg", "application/pdf")
+	fileTableParsers      map[FormatType]FileTableParser  // key: FormatType (e.g., FormatCSV, FormatShapefile)
+	dbTableParsers        map[string]DBTableParser        // key: engine type (e.g., "postgresql", "mysql")
+	objectInfoParsers     map[string]ObjectInfoParser     // key: content type (e.g., "image/jpeg", "application/pdf")
+	docCollectionParsers  map[string]DocCollectionParser  // key: engine type (e.g., "mongodb", "couchdb")
 }
 
 var (
@@ -26,9 +28,10 @@ var (
 // NewRegistry 创建新的解析器注册中心
 func NewRegistry() *Registry {
 	return &Registry{
-		fileTableParsers:  make(map[FormatType]FileTableParser),
-		dbTableParsers:    make(map[string]DBTableParser),
-		objectInfoParsers: make(map[string]ObjectInfoParser),
+		fileTableParsers:     make(map[FormatType]FileTableParser),
+		dbTableParsers:       make(map[string]DBTableParser),
+		objectInfoParsers:    make(map[string]ObjectInfoParser),
+		docCollectionParsers: make(map[string]DocCollectionParser),
 	}
 }
 
@@ -219,6 +222,70 @@ func (r *Registry) ListContentTypes() []string {
 	types := make([]string, 0, len(r.objectInfoParsers))
 	for contentType := range r.objectInfoParsers {
 		types = append(types, contentType)
+	}
+
+	return types
+}
+
+// ============ DocCollectionParser 注册 ============
+
+// RegisterDocCollectionParser 注册文档集合解析器到全局注册中心
+func RegisterDocCollectionParser(parser DocCollectionParser) error {
+	return globalRegistry.RegisterDocParser(parser)
+}
+
+// RegisterDocParser 注册文档集合解析器
+func (r *Registry) RegisterDocParser(parser DocCollectionParser) error {
+	if parser == nil {
+		return fmt.Errorf("doc collection parser cannot be nil")
+	}
+
+	engineTypes := parser.SupportedEngineTypes()
+	if len(engineTypes) == 0 {
+		return fmt.Errorf("doc collection parser must support at least one engine type")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, engineType := range engineTypes {
+		r.docCollectionParsers[engineType] = parser
+	}
+
+	return nil
+}
+
+// GetDocCollectionParser 获取指定引擎类型的文档集合解析器
+func GetDocCollectionParser(engineType string) (DocCollectionParser, error) {
+	return globalRegistry.GetDocParser(engineType)
+}
+
+// GetDocParser 获取指定引擎类型的文档集合解析器
+func (r *Registry) GetDocParser(engineType string) (DocCollectionParser, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	parser, ok := r.docCollectionParsers[engineType]
+	if !ok {
+		return nil, fmt.Errorf("no doc collection parser registered for engine type: %s", engineType)
+	}
+
+	return parser, nil
+}
+
+// ListSupportedDocEngineTypes 列出所有已注册的文档集合引擎类型
+func ListSupportedDocEngineTypes() []string {
+	return globalRegistry.ListDocEngineTypes()
+}
+
+// ListDocEngineTypes 列出所有已注册的文档集合引擎类型
+func (r *Registry) ListDocEngineTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	types := make([]string, 0, len(r.docCollectionParsers))
+	for engineType := range r.docCollectionParsers {
+		types = append(types, engineType)
 	}
 
 	return types

@@ -149,8 +149,9 @@ const fetchTenants = async () => {
       page: currentPage.value,
       page_size: pageSize.value
     })
-    tenants.value = response
-    total.value = response.length
+    // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
+    tenants.value = response?.data || []
+    total.value = response?.total || 0
   } catch (error) {
     ElMessage.error('获取租户列表失败')
   } finally {

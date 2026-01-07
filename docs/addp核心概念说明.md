@@ -138,10 +138,41 @@ ADDP 采用基于 Docker 的微服务架构:
 **引擎** 是 ADDP 平台中所有数据源和计算资源的统一抽象。引擎代表一个可以存储数据或执行计算的外部系统(数据库、对象存储)或内部模块(空间计算引擎)。
 
 **核心属性**:
-- **引擎类型** (EngineType): 如 `postgresql`、`api.python-workflow`
+- **引擎类型** (EngineType): 如 `postgresql`、`mongodb`、`api.python-workflow` ⭐
 - **引擎分类** (EngineCategory): `standard` 或 `extension`
 - **连接信息** (ConnectionInfo): 数据库连接串、API 端点等
 - **能力声明** (Capabilities): 引擎支持的功能列表
+
+### 引擎插件系统架构
+
+ADDP 采用**三层接口架构**实现引擎插件化,支持灵活扩展:
+
+**第一层：EnginePlugin（基础接口）**
+- 所有引擎必须实现的基础接口
+- 方法: Type()、DisplayName()、EngineCategory()、DefaultPort()、TestConnection()、BuildConnectionString()等
+- 定义引擎的基本信息和连接测试能力
+
+**第二层：按功能分类的标记接口**
+- **StoragePlugin**: 存储引擎标记(支持元数据查询)
+  - 方法: SupportsMetadataQuery()
+- **ComputePlugin**: 计算引擎标记(支持算子/查询)
+  - 方法: GetSupportedOperators()、HealthCheckEndpoint()
+- **NoSQLPlugin**: NoSQL 数据库专用接口 ⭐
+  - 方法: ListDatabases()、ListCollections()、GetCollectionStats()、IsSystemDatabase()、CreateClient()、CloseClient()
+
+**第三层：按存储类型细分的功能接口**
+- **RelationalDBPlugin**: 关系型数据库(PostgreSQL、MySQL)
+  - 方法: ListSchemas()、ListTables()、ListColumns()、GetTableRowCount()、IsSystemSchema()
+- **ObjectStoragePlugin**: 对象存储(MinIO、S3)
+  - 方法: ListBuckets()、ListObjects()、GetObjectMetadata()、InferContentType()
+- **ConnectionPoolPlugin**: 连接池管理(用于关系型数据库)
+  - 方法: CreateConnectionPool()、GetDialect()
+
+**接口组合示例**:
+- **PostgreSQL**: EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
+- **MongoDB**: EnginePlugin + StoragePlugin + NoSQLPlugin ⭐
+- **MinIO**: EnginePlugin + StoragePlugin + ObjectStoragePlugin
+- **Python Workflow**: EnginePlugin + ComputePlugin
 
 ### 引擎分类
 下面按照不同维度分类，相互存在交叉。
@@ -170,10 +201,10 @@ ADDP 采用基于 Docker 的微服务架构:
 #### 2. 按来源分类
 
 **标准引擎 (Standard Engine)**:
-- 通过标准协议(JDBC、S3)访问的外部数据库/存储
+- 通过标准协议(JDBC、S3、MongoDB Wire Protocol)访问的外部数据库/存储
 - 由用户手动注册,需要填写连接信息
-- 示例: PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、MinIO、S3
-- 类型命名: 直接使用数据库名称(如 `postgresql`、`mysql`)
+- 示例: PostgreSQL、MySQL、Doris、ClickHouse、MongoDB ⭐、MinIO、S3、Spark SQL
+- 类型命名: 直接使用数据库名称(如 `postgresql`、`mysql`、`mongodb` ⭐)
 
 **扩展引擎 (Extension Engine / API Engine)**:
 - ADDP 平台内置的计算模块,通过 HTTP API 调用
@@ -264,38 +295,63 @@ GeoPandas 引擎:
 
 ### 支持的引擎列表
 
-**标准引擎**:
-- PostgreSQL - 关系型数据库,支持空间扩展(PostGIS)
-- MySQL - 关系型数据库
-- Doris - OLAP 分析型数据库
-- ClickHouse - 列式存储 OLAP 数据库
-- MongoDB - 文档型数据库
-- Apache Spark - 分布式 SQL 查询引擎
-- MinIO - 开源对象存储(S3 兼容)
-- S3 - AWS 对象存储
+ADDP 平台当前支持 **11 种**数据引擎:
 
-**扩展引擎**:
-- **Python Workflow** - 基于python的单节点工作流计算引擎
+**标准引擎** (8 种):
+- **PostgreSQL** - 关系型数据库,支持空间扩展(PostGIS)
+  - 接口: RelationalDBPlugin + ConnectionPoolPlugin
+  - 默认端口: 5432
+- **MySQL** - 关系型数据库
+  - 接口: RelationalDBPlugin + ConnectionPoolPlugin
+  - 默认端口: 3306
+- **Apache Doris** - HTAP 实时分析数据库
+  - 接口: RelationalDBPlugin + ConnectionPoolPlugin
+  - 默认端口: 9030
+- **ClickHouse** - 高性能列式存储 OLAP 数据库
+  - 接口: RelationalDBPlugin + ConnectionPoolPlugin
+  - 默认端口: 9000
+- **MongoDB** ⭐ - 文档型 NoSQL 数据库
+  - 接口: NoSQLPlugin
+  - 默认端口: 27017
+  - 特点: 采样推断 Schema,支持混合类型字段
+- **Apache Spark SQL** - 分布式 SQL 查询引擎
+  - 接口: ComputePlugin
+  - 默认端口: 10000
+- **MinIO** - 开源对象存储(S3 兼容)
+  - 接口: ObjectStoragePlugin
+  - 默认端口: 9000
+- **Amazon S3** - AWS 云对象存储
+  - 接口: ObjectStoragePlugin
+  - 默认端口: 443
+
+**扩展引擎** (3 种):
+- **Python Workflow** - 基于 Python 的单节点工作流计算引擎
   - 类型: `api.python-workflow`
-  - 能力: 算子工作流(多个空间和非空间算子)
+  - 能力: 空间和非空间算子工作流(21 个空间算子)
   - 适用场景: 中小规模空间数据分析(< 100 万行)
-- **Spark Workflow** - 基于spark的分布式工作流引擎，需要用户手动设置spark标准计算引擎支持
+- **Spark Workflow** - 基于 Spark 的分布式工作流引擎
   - 类型: `api.spark_workflow`
-  - 能力: 大规模数据处理
+  - 能力: 大规模分布式空间数据处理
   - 适用场景: 大规模数据分析(> 100 万行)
-- **Jupyter** - Notebook 执行引擎
-  - 类型: `api.jupyter`
-  - 能力: 交互式 Python Notebook
-  - 适用场景: Notebook 开发、数据探索
+- **Math Workflow** - 数学计算工作流引擎
+  - 类型: `api.math_workflow`
+  - 能力: 数学计算和建模
+  - 适用场景: 数学计算、统计分析
 
 ### 引擎插件系统
 
 ADDP 采用插件化架构支持新引擎扩展:
-- **插件位置**: `common/database/plugins/`
-- **接口定义**: `common/database/plugin/interface.go`
-- **插件注册**: 通过 `dbbridge` 自动加载
+- **插件位置**: `common/engine/plugins/` (具体引擎实现)
+- **接口定义**: `common/engine/plugin/interfaces.go` (三层接口架构)
+- **桥接层**: `common/dbbridge/bridge.go` (自动导入所有插件)
+- **插件注册**: 通过 `init()` 函数自动注册,零配置使用
 
-**新增引擎指南**: 参考 `docs/addp新增存储引擎指南.md`
+**新增引擎流程** (3 步):
+1. 在 `common/engine/plugins/<enginetype>/` 创建插件,实现对应接口
+2. 在 `common/dbbridge/bridge.go` 添加导入语句
+3. 构建测试和功能验证
+
+**新增引擎指南**: 参考 `docs/addp数据引擎扩展指南.md`
 
 ---
 
@@ -317,18 +373,114 @@ ADDP 采用插件化架构支持新引擎扩展:
 
 ### 元数据扫描
 
-**基础扫描 (Basic Scan)**:
-- 获取数据库/文件的基本结构信息
-- 扫描库名、表名、字段名、数据类型
-- 快速,资源占用少
-- 适合大量数据源的初步扫描
+**扫描机制**:
+ADDP 根据引擎类型自动选择合适的扫描方式:
 
-**深度扫描 (Deep Scan)**:
-- 在基础扫描基础上,分析数据内容
-- 统计记录数、字段分布、空值率、唯一值
-- 检测空间数据的边界框、坐标系
-- 耗时较长,资源占用大
-- 适合重要数据源的详细分析
+**关系型数据库扫描** (PostgreSQL、MySQL、ClickHouse、Doris):
+- 使用引擎插件的 `RelationalDBPlugin` 接口
+- 方法: ListSchemas() → ListTables() → ListColumns()
+- 查询 information_schema 或类似系统表获取元数据
+- 过滤系统 Schema (如 pg_catalog、information_schema)
+
+**NoSQL 数据库扫描** (MongoDB) ⭐:
+- 使用引擎插件的 `NoSQLPlugin` 接口
+- 方法: ListDatabases() → ListCollections() → GetCollectionStats()
+- 通过采样文档推断 Schema (默认采样 100 条)
+- 支持混合类型字段检测 (FieldTypeMixed)
+- 过滤系统数据库 (admin、local、config)
+
+**对象存储扫描** (MinIO、S3):
+- 使用引擎插件的 `ObjectStoragePlugin` 接口
+- 方法: ListBuckets() → ListObjects()
+- 扫描文件列表,提取基本信息(文件名、大小、类型)
+- 对支持的文件格式进行深度解析(后续说明)
+
+**扫描深度**:
+- **基础扫描 (Basic Scan)**: 获取数据库/文件的基本结构信息(库名、表名、字段名)
+  - 快速,资源占用少
+  - 适合大量数据源的初步扫描
+- **深度扫描 (Deep Scan)**: 在基础扫描基础上,分析数据内容
+  - 统计记录数、字段分布、空值率、唯一值
+  - 检测空间数据的边界框、坐标系
+  - 耗时较长,资源占用大
+  - 适合重要数据源的详细分析
+
+### 元数据解析（Parser 机制）
+
+ADDP 提供 **4 种 Parser 接口**,用于从不同数据源提取详细的表结构元数据:
+
+**1. FileTableParser（文件表解析器）**:
+- **用途**: 从文件中提取表格结构元数据
+- **支持格式**: CSV、Shapefile、GeoJSON、Excel、GeoPackage
+- **核心方法**: ParseTableInfo()、ReadPreview()
+- **输出**: TableInfo (包含字段定义、扩展信息如 SpatialInfo、CSVInfo 等)
+- **使用场景**: Meta 模块扫描对象存储中的文件,Manager 模块预览文件数据
+
+**2. DBTableParser（关系型数据库表解析器）**:
+- **用途**: 从关系型数据库表提取元数据
+- **支持引擎**: PostgreSQL、MySQL、ClickHouse、Doris
+- **核心方法**: ParseTableInfo()
+- **输出**: TableInfo
+- **使用场景**: Meta 模块扫描数据库表,Manager 模块预览表数据
+
+**3. DocCollectionParser（文档型数据库集合解析器）** ⭐:
+- **用途**: 从 MongoDB、CouchDB 等文档数据库采样推断 Schema
+- **支持引擎**: MongoDB
+- **核心方法**: ParseTableInfo()、ReadPreview()
+- **关键特性**:
+  - 采样文档推断 Schema (默认采样 100 条)
+  - 支持混合类型字段 (FieldTypeMixed)
+  - 字段出现率统计 (OccurrenceRate,用于灵活 Schema)
+  - 返回 DocCollectionInfo 扩展信息 (采样大小、索引列表)
+- **输出**: TableInfo (包含 DocCollectionInfo 扩展)
+- **使用场景**: Meta 模块扫描 MongoDB Collection,Manager 模块预览文档数据
+
+**4. ObjectInfoParser（对象信息解析器）**:
+- **用途**: 从对象存储文件提取扩展信息
+- **支持类型**: 图片 (JPEG、PNG、TIFF)、视频 (MP4、AVI)、文档 (PDF)
+- **核心方法**: ParseObjectInfo()
+- **输出**: ObjectInfo (包含扩展信息如 ImageInfo、VideoInfo、PDFInfo)
+- **使用场景**: Meta 模块提取图片/视频/PDF 的元数据 (分辨率、时长、页数等)
+
+**ExtensionInfo 扩展机制**:
+为不同数据源提供特定的扩展信息:
+- **SpatialInfo**: Shapefile、GeoJSON、PostGIS 表 (边界框、坐标系、要素数)
+- **CSVInfo**: CSV 文件 (分隔符、字符编码、是否有表头)
+- **ShapefileInfo**: Shapefile 文件 (.shp、.shx、.dbf、.prj 文件路径)
+- **GeoJSONInfo**: GeoJSON 文件 (CRS、要素类型)
+- **ExcelInfo**: Excel 文件 (工作表列表、活动工作表)
+- **ImageInfo**: 图片文件 (宽度、高度、格式、EXIF 信息)
+- **VideoInfo**: 视频文件 (时长、分辨率、编码格式)
+- **PDFInfo**: PDF 文件 (页数、作者、创建时间)
+- **DocCollectionInfo** ⭐: MongoDB Collection (采样信息、Schema 类型、索引)
+
+**统一数据结构 TableInfo**:
+无论是关系型表、文件表还是文档集合,都统一返回 TableInfo:
+```
+TableInfo {
+    Name       string           // 表名/集合名/文件名
+    RowCount   *int64           // 记录数/文档数
+    Fields     []FieldInfo      // 字段列表
+    PrimaryKey []string         // 主键字段 (MongoDB 为 ["_id"])
+    Extensions []ExtensionInfo  // 扩展信息 (根据数据源类型不同)
+}
+```
+
+**FieldType 统一类型系统**:
+所有 Parser 返回的字段类型都映射到统一的 FieldType:
+- 基础类型: string、int、bigint、float、decimal、bool、date、time、timestamp、bytes
+- 空间类型: geometry、point、linestring、polygon、multipoint
+- 复杂类型: json、array、uuid
+- 文档类型: mixed ⭐ (MongoDB 混合类型字段)
+
+**TypeMapper（类型映射器）**:
+实现原生类型 ↔ 通用类型的双向转换:
+- PostgreSQL types ↔ FieldType
+- MySQL types ↔ FieldType
+- MongoDB BSON types ↔ FieldType ⭐
+- Shapefile DBF types ↔ FieldType
+
+**详细说明**: 参考 `docs/addp数据格式扩展指南.md`
 
 ### 元数据索引
 
@@ -919,9 +1071,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 
 ## 文档版本
 
-- **版本**: v1.0
-- **更新日期**: 2025-12-29
+- **版本**: v1.1
+- **更新日期**: 2026-01-06
 - **作者**: ADDP 开发团队
+- **更新内容**: 更新引擎系统为三层架构,增加 MongoDB 和 4 种 Parser 说明
 
 ---
 
@@ -929,9 +1082,10 @@ Orchestrator 可以调用 Develop 模块的工作流任务作为一个步骤:
 
 - [ADDP 开发原则](addp开发原则.md)
 - [ADDP 配置介绍](addp配置介绍.md)
+- [ADDP 端口分配](addp端口分配.md)
 - [ADDP 部署和开发步骤](addp部署和开发步骤.md)
-- [ADDP 新增存储引擎指南](addp新增存储引擎指南.md)
-- [ADDP 数据类型扩展指南](addp数据类型扩展指南.md)
+- [ADDP 数据引擎扩展指南](addp数据引擎扩展指南.md) ⭐
+- [ADDP 数据格式扩展指南](addp数据格式扩展指南.md) ⭐
 - [ADDP 共享模块介绍](addp共享模块介绍.md)
 - [ADDP 技术栈规约](addp技术栈规约.md)
 - [System 模块详情](../system/CLAUDE.md)

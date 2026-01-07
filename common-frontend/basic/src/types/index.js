@@ -75,11 +75,26 @@ export const FormatType = {
 }
 
 /**
- * 资源类型
+ * 引擎类别类型（旧版本，重命名避免与 ResourceType 冲突）
+ * @deprecated 请使用更明确的命名
  */
-export const ResourceType = {
+export const ResourceCategoryType = {
   DATABASE: 'database',
   OBJECT_STORAGE: 'object_storage',
   FILE_SYSTEM: 'file_system',
   API: 'api'
 }
+
+// 导出 ResourceLocator 相关工具
+export {
+  ResourceType,
+  parseLocator,
+  buildLocator,
+  getPathString,
+  getFullName,
+  getLastSegment,
+  getParentLocator,
+  fromLegacyParams,
+  cloneLocator,
+  isLocatorEqual
+} from './resourceLocator.js'

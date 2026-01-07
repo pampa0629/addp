@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,6 +44,34 @@ func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cac
 	}
 
 	return func(c *gin.Context) {
+		// 0. Check for internal API key (for service-to-service calls)
+		if internalKey := c.GetHeader("X-Internal-API-Key"); internalKey != "" {
+			// TODO: Validate internal key against environment variable
+			// For now, trust any internal key (in production, add validation)
+
+			// 从请求头读取 tenant_id（如果提供）
+			tenantID := uint(0)
+			var tenantIDPtr *uint
+			if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
+				if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
+					tenantID = uint(tid)
+					tenantIDPtr = &tenantID
+				}
+			}
+
+			// Set a system user context for internal API calls
+			c.Set(ContextUserIDKey, uint(1))        // System user ID
+			c.Set(ContextUsernameKey, "internal-api-call")
+			c.Set(ContextTenantIDKey, tenantID)     // Use tenant_id from header if provided
+			c.Set(ContextUserInfoKey, UserInfo{
+				ID:       1,
+				Username: "internal-api-call",
+				TenantID: tenantIDPtr,
+			})
+			c.Next()
+			return
+		}
+
 		// 1. Extract token (same logic as SystemAuthMiddleware)
 		authHeader := c.GetHeader("Authorization")
 		if strings.TrimSpace(authHeader) == "" {

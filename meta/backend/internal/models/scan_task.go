@@ -56,6 +56,7 @@ type ScanTaskRun struct {
 	ProgressPercent float64    `gorm:"default:0" json:"progress_percent"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	DurationMs      int64      `gorm:"default:0" json:"duration_ms"` // 执行耗时（毫秒）
 	TriggerUserID   *uint      `json:"trigger_user_id,omitempty"`
 
 	CreatedAt       time.Time  `json:"created_at"`

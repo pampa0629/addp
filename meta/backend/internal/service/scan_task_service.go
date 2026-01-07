@@ -420,12 +420,19 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 	resp, err := s.scanService.ScanEngineWithDepth(run.EngineID, run.TenantID, params.SchemaNames, params.ObjectPaths, params.Token, scanDepth, reporter)
 	completeTime := time.Now()
 
+	// 计算执行耗时
+	var durationMs int64
+	if run.StartedAt != nil {
+		durationMs = completeTime.Sub(*run.StartedAt).Milliseconds()
+	}
+
 	if err != nil {
 		update := map[string]interface{}{
 			"status":           runStatusFailed,
 			"error_message":    err.Error(),
 			"progress_message": fmt.Sprintf("执行失败: %v", err),
 			"completed_at":     completeTime,
+			"duration_ms":      durationMs,
 			"updated_at":       time.Now(),
 		}
 		if dbErr := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", runID).Updates(update).Error; dbErr != nil {
@@ -438,8 +445,6 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 		"schemas_scanned": resp.SchemasScanned,
 		"tables_scanned":  resp.TablesScanned,
 		"fields_scanned":  resp.FieldsScanned,
-		"duration_ms":     resp.DurationMs,
-		"started_at":      resp.StartedAt,
 	}
 
 	update := map[string]interface{}{
@@ -447,6 +452,7 @@ func (s *ScanTaskService) executeRun(ctx context.Context, runID uint) error {
 		"result_summary":   result,
 		"progress_message": "执行完成",
 		"completed_at":     completeTime,
+		"duration_ms":      durationMs,
 		"progress_percent": 100.0,
 		"updated_at":       time.Now(),
 	}
@@ -1023,16 +1029,19 @@ type runProgressReporter struct {
 	service *ScanTaskService
 	runID   uint
 
-	total int
-	mu    sync.Mutex
-	stats map[string]int64
+	total         int
+	mu            sync.Mutex
+	stats         map[string]int64
+	lastFlushTime time.Time
+	updateCount   int // 记录累积的更新次数
 }
 
 func newRunProgressReporter(service *ScanTaskService, runID uint) *runProgressReporter {
 	return &runProgressReporter{
-		service: service,
-		runID:   runID,
-		stats:   make(map[string]int64),
+		service:       service,
+		runID:         runID,
+		stats:         make(map[string]int64),
+		lastFlushTime: time.Now(),
 	}
 }
 
@@ -1047,6 +1056,8 @@ func (r *runProgressReporter) SetTotal(total int) {
 
 func (r *runProgressReporter) Advance(label string, completed, total int, meta map[string]interface{}) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	r.total = total
 	for k, v := range meta {
 		switch val := v.(type) {
@@ -1058,16 +1069,31 @@ func (r *runProgressReporter) Advance(label string, completed, total int, meta m
 			r.stats[k] += int64(val)
 		}
 	}
-	progress := map[string]interface{}{
-		"progress_current": completed,
-		"progress_total":   total,
-		"progress_percent": calcProgressPercent(completed, total),
-		"progress_message": fmt.Sprintf("已完成 %d/%d，最新完成: %s", completed, total, label),
-		"result_summary":   cloneAnyMap(r.stats),
-	}
-	r.mu.Unlock()
 
-	r.service.updateRunProgress(r.runID, progress)
+	r.updateCount++
+
+	// 刷新条件（任意一个满足即刷新）：
+	// 1. 完成（100%）
+	// 2. 距离上次刷新 >= 5 秒
+	// 3. 积累了 >= 5 条更新
+	shouldFlush := completed == total ||
+		time.Since(r.lastFlushTime) >= 5*time.Second ||
+		r.updateCount >= 5
+
+	if shouldFlush {
+		progress := map[string]interface{}{
+			"progress_current": completed,
+			"progress_total":   total,
+			"progress_percent": calcProgressPercent(completed, total),
+			"progress_message": fmt.Sprintf("已完成 %d/%d，最新完成: %s", completed, total, label),
+			"result_summary":   cloneAnyMap(r.stats),
+		}
+		r.mu.Unlock()
+		r.service.updateRunProgress(r.runID, progress)
+		r.mu.Lock()
+		r.lastFlushTime = time.Now()
+		r.updateCount = 0
+	}
 }
 
 func (r *runProgressReporter) Message(message string) {

@@ -1,0 +1,67 @@
+{
+  "module": "manager",
+  "title": "数据管理模块",
+  "version": "0.0.20",
+  "categories": [
+    {
+      "name": "数据探查",
+      "description": "引擎列表、资源树、数据预览等功能",
+      "apis": [
+        {
+          "name": "获取引擎列表",
+          "method": "GET",
+          "path": "/api/explorer/engines",
+          "description": "获取数据探查可用的引擎列表",
+          "auth": true,
+          "response": "[\n  {\n    \"id\": 1,\n    \"name\": \"业务数据库\",\n    \"type\": \"postgresql\",\n    \"has_spatial\": true\n  }\n]"
+        },
+        {
+          "name": "获取资源树",
+          "method": "GET",
+          "path": "/api/explorer/tree/:engine_id",
+          "description": "获取引擎的资源树结构（schema、表、文件等）",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "response": "{\n  \"engine_id\": 1,\n  \"nodes\": [\n    {\n      \"id\": \"schema:public\",\n      \"label\": \"public\",\n      \"type\": \"schema\",\n      \"children\": [...]\n    }\n  ]\n}"
+        },
+        {
+          "name": "数据预览",
+          "method": "GET",
+          "path": "/api/explorer/preview",
+          "description": "预览各类数据资源（表数据、图片、视频、GeoJSON 等）",
+          "auth": true,
+          "query": "locator: 资源定位符 URI (必填)\n例如: db://72/public/users\n      minio://67/images/photo.jpg",
+          "response": "{\n  \"type\": \"table\",\n  \"columns\": [\"id\", \"name\", \"email\"],\n  \"rows\": [[1, \"张三\", \"zhang@example.com\"]],\n  \"total\": 100\n}"
+        },
+        {
+          "name": "全文搜索",
+          "method": "GET",
+          "path": "/api/search/fulltext",
+          "description": "跨引擎全文搜索数据资产（表名、字段名、注释等）",
+          "auth": true,
+          "query": "q: 搜索关键词 (必填)\npage: 页码，默认 1\npage_size: 每页数量，默认 20",
+          "response": "{\n  \"hits\": [\n    {\n      \"id\": \"table_123\",\n      \"type\": \"table\",\n      \"name\": \"用户表\",\n      \"engine_name\": \"MySQL主库\",\n      \"highlight\": \"包含<em>用户</em>信息\"\n    }\n  ],\n  \"total\": 15\n}"
+        },
+        {
+          "name": "获取 MVT 瓦片",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/tiles/:schema/:table/:z/:x/:y",
+          "description": "获取空间数据的 Mapbox Vector Tile（MVT）瓦片",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名\n:z - 缩放级别\n:x, :y - 瓦片坐标",
+          "response": "二进制 MVT 数据\nContent-Type: application/vnd.mapbox-vector-tile"
+        },
+        {
+          "name": "触发预缓存",
+          "method": "POST",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache",
+          "description": "触发空间数据快显缓存（预生成 MVT 瓦片到 MinIO）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "request": "{\n  \"min_zoom\": 0,\n  \"max_zoom\": 14,\n  \"priority\": \"high\"\n}",
+          "response": "{\n  \"task_id\": \"quickview_123\",\n  \"status\": \"pending\",\n  \"message\": \"预缓存任务已创建\"\n}"
+        }
+      ]
+    }
+  ]
+}

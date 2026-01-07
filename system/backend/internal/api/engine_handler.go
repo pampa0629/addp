@@ -48,8 +48,12 @@ func (h *EngineHandler) List(c *gin.Context) {
 	engineType := c.Query("engine_type")
 
 	userID, _ := commonapi.GetCurrentUserID(c)
-	engines, err := h.engineService.List(page, pageSize, engineType, userID)
-	commonapi.RespondOrError(c, engines, err)
+	engines, total, err := h.engineService.List(page, pageSize, engineType, userID)
+	if err != nil {
+		commonapi.RespondError(c, 500, err.Error())
+		return
+	}
+	commonapi.RespondPaginated(c, engines, total, page, pageSize)
 }
 
 func (h *EngineHandler) GetByID(c *gin.Context) {

@@ -130,6 +130,8 @@ func (p *MongoDBPlugin) DefaultDialect() string {
 	return "mongodb"
 }
 
-// 注意：MongoDB 不实现 ConnectionPoolPlugin 和 MetadataPlugin
-// 因为它不使用 GORM，且元数据查询方式与关系型数据库不同
-// 如需元数据查询，可以后续扩展专门的 MongoDB 元数据接口
+// SupportsMetadataQuery 实现 StoragePlugin 接口
+// MongoDB 支持元数据扫描
+func (p *MongoDBPlugin) SupportsMetadataQuery() bool {
+	return true
+}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/addp/common/engine/plugin"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -66,7 +67,7 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return nil, err
 	}
 
-	// 2. ✅ 重构后：直接使用 RelationalDBPlugin
+	// 2. 获取插件
 	p, err := plugin.Get(resource.EngineType)
 	if err != nil {
 		// 连接失败：触发System刷新状态（异步，不阻塞）
@@ -77,11 +78,21 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
 	}
 
-	relPlugin, ok := p.(plugin.RelationalDBPlugin)
-	if !ok {
-		return nil, fmt.Errorf("engine %s does not implement RelationalDBPlugin", resource.EngineType)
+	// 3. 尝试关系型数据库插件
+	if relPlugin, ok := p.(plugin.RelationalDBPlugin); ok {
+		return s.listRelationalSchemas(engineID, resource, relPlugin)
 	}
 
+	// 4. 尝试 NoSQL 数据库插件
+	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
+		return s.listNoSQLSchemas(engineID, resource, nosqlPlugin)
+	}
+
+	return nil, fmt.Errorf("engine %s does not implement RelationalDBPlugin or NoSQLPlugin", resource.EngineType)
+}
+
+// listRelationalSchemas 列出关系型数据库的 Schema
+func (s *ResourceDiscoveryService) listRelationalSchemas(engineID uint, resource *commonModels.Engine, relPlugin plugin.RelationalDBPlugin) ([]*models.SchemaInfo, error) {
 	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
 		ID:             resource.ID,
 		EngineType:     resource.EngineType,
@@ -96,7 +107,7 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
 
-	// 3. 获取Schema列表
+	// 获取Schema列表
 	schemasInfo, err := relPlugin.ListSchemas(context.Background(), db)
 	if err != nil {
 		// 连接成功但查询失败，也触发刷新
@@ -104,7 +115,7 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 		return nil, err
 	}
 
-	// 4. 成功：如果之前是offline，触发刷新状态为online
+	// 成功：如果之前是offline，触发刷新状态为online
 	if resource.ConnectionStatus == "offline" {
 		s.engineService.TriggerConnectionCheck(engineID)
 	}
@@ -114,6 +125,34 @@ func (s *ResourceDiscoveryService) ListAvailableSchemas(engineID, tenantID uint,
 	for _, info := range schemasInfo {
 		result = append(result, &models.SchemaInfo{
 			Name: info.Name,
+		})
+	}
+	return result, nil
+}
+
+// listNoSQLSchemas 列出 NoSQL 数据库的 Database（作为 Schema）
+func (s *ResourceDiscoveryService) listNoSQLSchemas(engineID uint, resource *commonModels.Engine, nosqlPlugin plugin.NoSQLPlugin) ([]*models.SchemaInfo, error) {
+	// 对于 NoSQL，Database 对应 Schema
+	databases, err := nosqlPlugin.ListDatabases(context.Background(), plugin.ConnectionInfo(resource.ConnectionInfo))
+	if err != nil {
+		// 连接失败：触发System刷新状态（异步，不阻塞）
+		s.engineService.TriggerConnectionCheck(engineID)
+		if resource.ConnectionStatus == "offline" && resource.CheckMessage != "" {
+			return nil, fmt.Errorf("资源离线: %s", resource.CheckMessage)
+		}
+		return nil, fmt.Errorf("failed to list databases: %w", err)
+	}
+
+	// 成功：如果之前是offline，触发刷新状态为online
+	if resource.ConnectionStatus == "offline" {
+		s.engineService.TriggerConnectionCheck(engineID)
+	}
+
+	// 转换并返回
+	var result []*models.SchemaInfo
+	for _, db := range databases {
+		result = append(result, &models.SchemaInfo{
+			Name: db.Name,
 		})
 	}
 

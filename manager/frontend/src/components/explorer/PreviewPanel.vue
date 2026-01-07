@@ -42,7 +42,7 @@
 
     <!-- 无预览数据 -->
     <div v-else-if="!previewData" class="empty-state">
-      <el-empty description="暂无数据" />
+      <el-empty :description="emptyDescription" />
     </div>
 
     <!-- 无可用预览组件 -->
@@ -345,6 +345,30 @@ const fileExtension = computed(() => {
   const path = props.selectedNode.path || props.selectedNode.label || ''
   const match = path.match(/\.([^.]+)$/)
   return match ? match[1].toUpperCase() : ''
+})
+
+// Generate appropriate empty data message based on node type
+const emptyDescription = computed(() => {
+  if (!props.selectedNode) return 'No data available'
+
+  const nodeType = (props.selectedNode.type || '').toLowerCase()
+
+  // MongoDB Database node
+  if (nodeType === 'database') {
+    return 'Expand database and select a collection to view data'
+  }
+
+  // Relational database Schema node
+  if (nodeType === 'schema') {
+    return 'Expand schema and select a table to view data'
+  }
+
+  // Object storage Bucket/Prefix node
+  if (nodeType === 'bucket' || nodeType === 'directory' || nodeType === 'prefix') {
+    return 'Expand directory and select an object to view data'
+  }
+
+  return 'No data available'
 })
 
 // 生成组件唯一 key

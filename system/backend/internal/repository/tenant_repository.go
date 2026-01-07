@@ -35,10 +35,18 @@ func (r *TenantRepository) GetByName(name string) (*models.Tenant, error) {
 	return &tenant, nil
 }
 
-func (r *TenantRepository) List(offset, limit int) ([]models.Tenant, error) {
+func (r *TenantRepository) List(offset, limit int) ([]models.Tenant, int64, error) {
 	var tenants []models.Tenant
+	var total int64
+
+	// 先获取总数
+	if err := r.db.Model(&models.Tenant{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 再获取分页数据
 	err := r.db.Offset(offset).Limit(limit).Order("created_at DESC").Find(&tenants).Error
-	return tenants, err
+	return tenants, total, err
 }
 
 func (r *TenantRepository) Update(tenant *models.Tenant) error {

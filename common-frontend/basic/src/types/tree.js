@@ -18,34 +18,10 @@ export const DEFAULT_NODE_ICONS = {
 }
 
 /**
- * 清理节点 ID 字符串（移除特殊字符）
- * @param {string} str - 原始字符串
- * @returns {string} 清理后的字符串
+ * @deprecated 使用 ResourceLocator URI 代替 makeNodeId
+ * 原 makeNodeId 和 sanitizeNodeId 函数已删除
+ * 请使用 parseLocator() 和 buildLocator() from '@addp/common-frontend'
  */
-export function sanitizeNodeId(str) {
-  return String(str)
-    .trim()
-    .replace(/[^a-zA-Z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-/**
- * 生成唯一节点 ID
- * @param {...any} parts - ID 组成部分
- * @returns {string} 唯一节点 ID
- */
-export function makeNodeId(...parts) {
-  const cleaned = parts
-    .filter((part) => part != null && String(part).length)
-    .map((part) => sanitizeNodeId(part))
-    .filter((part) => part.length)
-
-  if (cleaned.length === 0) {
-    return `node-${Math.random().toString(36).slice(2)}`
-  }
-
-  return cleaned.join('-')
-}
 
 /**
  * 扁平化树结构

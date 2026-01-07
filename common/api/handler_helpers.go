@@ -84,3 +84,15 @@ func RespondOrError(c *gin.Context, data interface{}, err error) {
 	}
 	RespondSuccess(c, data)
 }
+
+// RespondPaginated 返回分页响应
+func RespondPaginated(c *gin.Context, data interface{}, total int64, page, pageSize int) {
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	c.JSON(http.StatusOK, gin.H{
+		"data":        data,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
+	})
+}

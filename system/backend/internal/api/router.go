@@ -125,7 +125,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			{
 				logHandler := NewLogHandler(logService)
 				logs.GET("", logHandler.List)
-				logs.GET("/export", logHandler.Export) // 导出日志
+				logs.GET("/stats", logHandler.GetStats)   // 统计数据（新增）
+				logs.GET("/trends", logHandler.GetTrends) // 时间趋势（新增）
+				logs.GET("/export", logHandler.Export)    // 导出日志
 				logs.GET("/:id", logHandler.GetByID)
 			}
 

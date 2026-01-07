@@ -182,29 +182,30 @@ func (s *EngineService) GetByID(id uint, currentUserID uint) (*models.Engine, er
 	return s.sanitizeResource(engine), nil
 }
 
-func (s *EngineService) List(page, pageSize int, engineType string, currentUserID uint) ([]models.Engine, error) {
+func (s *EngineService) List(page, pageSize int, engineType string, currentUserID uint) ([]models.Engine, int64, error) {
 	offset := (page - 1) * pageSize
 
 	// 获取当前用户信息
 	currentUser, err := s.getCurrentUser(currentUserID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	var engines []models.Engine
+	var total int64
 
 	// SuperAdmin可以查看所有资源
 	if currentUser.UserType == models.UserTypeSuperAdmin {
-		engines, err = s.repo.List(offset, pageSize, engineType)
+		engines, total, err = s.repo.List(offset, pageSize, engineType)
 	} else {
 		if currentUser.TenantID == nil {
-			return nil, errors.New("当前用户未关联租户，无法访问资源")
+			return nil, 0, errors.New("当前用户未关联租户，无法访问资源")
 		}
-		engines, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, engineType)
+		engines, total, err = s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize, engineType)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// 脱敏敏感字段
@@ -213,7 +214,7 @@ func (s *EngineService) List(page, pageSize int, engineType string, currentUserI
 		sanitized = append(sanitized, *s.sanitizeResource(&engines[i]))
 	}
 
-	return sanitized, nil
+	return sanitized, total, nil
 }
 
 func (s *EngineService) Update(id uint, req *models.EngineUpdateRequest, currentUserID uint) (*models.Engine, error) {
@@ -338,10 +339,10 @@ func (s *EngineService) ListInternal(engineType string, tenantID uint) ([]models
 
 	if tenantID > 0 {
 		// 按租户过滤
-		engines, err = s.repo.ListByTenant(tenantID, 0, 9999, engineType)
+		engines, _, err = s.repo.ListByTenant(tenantID, 0, 9999, engineType)
 	} else {
 		// 返回所有资源
-		engines, err = s.repo.List(0, 9999, engineType)
+		engines, _, err = s.repo.List(0, 9999, engineType)
 	}
 
 	if err != nil {

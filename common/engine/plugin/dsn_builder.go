@@ -76,12 +76,18 @@ func ClickHouseStyleDSN(user, password, host string, port int, database string, 
 }
 
 // MongoDBStyleDSN 构建 MongoDB 风格的 DSN 字符串
-// 格式：mongodb://user:password@host:port/database
+// 格式：mongodb://user:password@host:port/?authSource=database
+// 使用 authSource 参数而不是路径数据库，避免绑定到特定数据库
 func MongoDBStyleDSN(user, password, host string, port int, database string) string {
-	if user != "" && password != "" {
-		return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s", user, password, host, port, database)
-	} else if user != "" {
-		return fmt.Sprintf("mongodb://%s@%s:%d/%s", user, host, port, database)
+	authSource := ""
+	if database != "" {
+		authSource = fmt.Sprintf("?authSource=%s", database)
 	}
-	return fmt.Sprintf("mongodb://%s:%d/%s", host, port, database)
+
+	if user != "" && password != "" {
+		return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s", user, password, host, port, authSource)
+	} else if user != "" {
+		return fmt.Sprintf("mongodb://%s@%s:%d/%s", user, host, port, authSource)
+	}
+	return fmt.Sprintf("mongodb://%s:%d/", host, port)
 }

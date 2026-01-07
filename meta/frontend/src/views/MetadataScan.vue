@@ -53,7 +53,7 @@
                       未扫描: {{ row.unscanned_schemas || 0 }}
                     </template>
                     <div class="engine-stats">
-                      {{ row.total_schemas || 0 }}个Schema
+                      {{ row.total_schemas || 0 }}个{{ getSchemaTerminology(row.resource_type) }}
                       <span class="stat-scanned" v-if="row.scanned_schemas">({{ row.scanned_schemas }}已扫)</span>
                       <span class="stat-unscanned" v-if="row.unscanned_schemas">/{{ row.unscanned_schemas }}未扫</span>
                     </div>
@@ -123,7 +123,7 @@
             <div v-if="selectedResource" class="schema-actions-bar">
               <!-- 选中提示 -->
               <div v-if="selectedSchemas.length" class="selection-info">
-                已选中 <strong>{{ selectedSchemas.length }}</strong> 个{{ isObjectStorageType(selectedResource.resource_type) ? 'Bucket' : 'Schema' }}
+                已选中 <strong>{{ selectedSchemas.length }}</strong> 个{{ getSchemaTerminology(selectedResource.resource_type) }}
               </div>
 
               <!-- 批量操作按钮 -->
@@ -279,13 +279,13 @@
         :closable="false"
         style="margin-bottom: 16px"
       >
-        当前引擎下共 {{ inheritanceInfo.total }} 个Schema/Bucket：
+        当前引擎下共 {{ inheritanceInfo.total }} 个{{ getSchemaTerminology(selectedResource.resource_type) }}：
         <ul style="margin: 8px 0 0 20px">
           <li>{{ inheritanceInfo.independent }} 个已配置独立调度</li>
           <li>{{ inheritanceInfo.inherited }} 个将继承引擎调度</li>
         </ul>
         <div style="margin-top: 8px; color: #909399">
-          引擎调度只会扫描未配置独立调度的Schema/Bucket
+          引擎调度只会扫描未配置独立调度的{{ getSchemaTerminology(selectedResource.resource_type) }}
         </div>
       </el-alert>
 
@@ -488,19 +488,18 @@ const inheritanceInfo = computed(() => {
   }
 })
 
-// 计算右侧面板标题（根据引擎类型显示 Schema 或 Bucket）
+// 计算右侧面板标题（根据引擎类型显示 Schema 或 Collection 或 Bucket）
 const rightPanelTitle = computed(() => {
   if (!selectedResource.value) return 'Schema列表'
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
-  const label = isObjectStorage ? 'Bucket列表' : 'Schema列表'
-  return `${label} - ${selectedResource.value.name}`
+  const terminology = getSchemaTerminology(selectedResource.value.resource_type)
+  return `${terminology}列表 - ${selectedResource.value.name}`
 })
 
-// 计算表格列标题（根据引擎类型显示 Schema信息 或 Bucket信息）
+// 计算表格列标题（根据引擎类型显示 Schema信息 或 Collection信息 或 Bucket信息）
 const schemaColumnLabel = computed(() => {
   if (!selectedResource.value) return 'Schema信息'
-  const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
-  return isObjectStorage ? 'Bucket信息' : 'Schema信息'
+  const terminology = getSchemaTerminology(selectedResource.value.resource_type)
+  return `${terminology}信息`
 })
 
 // 加载引擎列表
@@ -598,6 +597,24 @@ const isObjectStorageType = (resourceType) => {
   if (!resourceType) return false
   const type = resourceType.toLowerCase()
   return ['s3', 'minio', 'oss', 'object_storage', 'object-storage'].includes(type)
+}
+
+// 判断是否为 NoSQL 数据库类型
+const isNoSQLType = (resourceType) => {
+  if (!resourceType) return false
+  const type = resourceType.toLowerCase()
+  return ['mongodb'].includes(type)
+}
+
+// 获取 Schema/Collection/Bucket 的术语
+const getSchemaTerminology = (resourceType, plural = false) => {
+  if (isObjectStorageType(resourceType)) {
+    return plural ? 'Bucket' : 'Bucket'
+  }
+  if (isNoSQLType(resourceType)) {
+    return plural ? 'Collection' : 'Collection'
+  }
+  return plural ? 'Schema' : 'Schema'
 }
 
 // 加载Schema列表
@@ -833,12 +850,12 @@ const handleAutoScan = async () => {
 const handleBatchScan = async () => {
   if (!selectedSchemas.value.length) return
 
+  const terminology = getSchemaTerminology(selectedResource.value.resource_type)
   const isObjectStorage = isObjectStorageType(selectedResource.value.resource_type)
-  const targetLabel = isObjectStorage ? 'Bucket' : 'Schema'
 
   try {
     await ElMessageBox.confirm(
-      `将扫描 ${selectedSchemas.value.length} 个${targetLabel}，是否继续？`,
+      `将扫描 ${selectedSchemas.value.length} 个${terminology}，是否继续？`,
       `确认批量扫描`,
       { type: 'warning' }
     )
@@ -992,11 +1009,10 @@ const submitSchemaSchedule = async () => {
 
   savingSchedule.value = true
   try {
+    const terminology = getSchemaTerminology(selectedResource.value.resource_type)
     const payload = {
       name: `${selectedResource.value.name} - ${schemaName}`,
-      description: isObjectStorage
-        ? `Bucket ${schemaName} 的定时扫描`
-        : `Schema ${schemaName} 的定时扫描`,
+      description: `${terminology} ${schemaName} 的定时扫描`,
       schema_names: isObjectStorage ? [] : [schemaName],
       object_paths: isObjectStorage ? [currentSchema.value.path || schemaName] : [],
       scan_depth: schemaScheduleDepth.value,

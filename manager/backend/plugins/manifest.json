@@ -1,0 +1,134 @@
+{
+  "version": "1.0.0",
+  "description": "Manager 模块数据预览插件清单",
+  "plugin_directories": [
+    "providers",
+    "content"
+  ],
+  "providers": [
+    {
+      "file": "providers/010_relational.json",
+      "name": "builtin:database-table",
+      "description": "关系型数据库表预览",
+      "type": "builtin",
+      "priority": 100,
+      "enabled": true
+    },
+    {
+      "file": "providers/015_nosql_collection.json",
+      "name": "builtin:doc-collection",
+      "description": "NoSQL 文档数据库集合预览",
+      "type": "builtin",
+      "priority": 100,
+      "enabled": true
+    },
+    {
+      "file": "providers/020_builtin_object_storage.json",
+      "name": "builtin:object-storage",
+      "description": "对象存储预览",
+      "type": "builtin",
+      "priority": 80,
+      "enabled": true
+    },
+    {
+      "file": "providers/030_builtin_schema_node.json",
+      "name": "builtin:schema-node",
+      "description": "Schema 节点预览",
+      "type": "builtin",
+      "priority": 50,
+      "enabled": true
+    }
+  ],
+  "content_plugins": [
+    {
+      "file": "content/110_content_pdf.json",
+      "name": "content:pdf",
+      "description": "PDF 文件预览",
+      "priority": 110,
+      "enabled": true
+    },
+    {
+      "file": "content/111_content_docx.json",
+      "name": "content:docx",
+      "description": "Word 文档预览",
+      "priority": 111,
+      "enabled": true
+    },
+    {
+      "file": "content/112_content_pptx.json",
+      "name": "content:pptx",
+      "description": "PowerPoint 文档预览",
+      "priority": 112,
+      "enabled": true
+    },
+    {
+      "file": "content/113_content_wps.json",
+      "name": "content:wps",
+      "description": "WPS 文档预览",
+      "priority": 113,
+      "enabled": true
+    },
+    {
+      "file": "content/114_content_excel.json",
+      "name": "content:excel",
+      "description": "Excel 文件预览",
+      "priority": 114,
+      "enabled": true
+    },
+    {
+      "file": "content/120_content_image.json",
+      "name": "content:image",
+      "description": "图片文件预览",
+      "priority": 120,
+      "enabled": true
+    },
+    {
+      "file": "content/130_content_geojson.json",
+      "name": "content:geojson",
+      "description": "GeoJSON 文件预览",
+      "priority": 130,
+      "enabled": true
+    },
+    {
+      "file": "content/131_content_shapefile.json",
+      "name": "content:shapefile",
+      "description": "Shapefile 预览",
+      "priority": 131,
+      "enabled": true
+    },
+    {
+      "file": "content/140_content_json.json",
+      "name": "content:json",
+      "description": "JSON 文件预览",
+      "priority": 140,
+      "enabled": true
+    },
+    {
+      "file": "content/150_content_sqlite.json",
+      "name": "content:sqlite",
+      "description": "SQLite 数据库预览",
+      "priority": 150,
+      "enabled": true
+    },
+    {
+      "file": "content/160_content_markdown.json",
+      "name": "content:markdown",
+      "description": "Markdown 文件预览",
+      "priority": 160,
+      "enabled": true
+    },
+    {
+      "file": "content/190_content_text.json",
+      "name": "content:text",
+      "description": "文本文件预览",
+      "priority": 190,
+      "enabled": true
+    }
+  ],
+  "notes": [
+    "优先级数字越小，优先级越高",
+    "插件按优先级顺序尝试匹配",
+    "builtin 类型插件使用内置实现",
+    "command 类型插件调用外部命令"
+  ]
+}

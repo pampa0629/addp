@@ -44,8 +44,9 @@ export function useUserManagement() {
     loading.value = true
     try {
       const response = await usersAPI.list(page, pageSize)
-      users.value = response
-      return { success: true, data: response }
+      // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
+      users.value = response?.data || []
+      return { success: true, data: response?.data || [], total: response?.total || 0 }
     } catch (error) {
       ElMessage.error('加载用户列表失败')
       console.error(error)

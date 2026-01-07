@@ -614,8 +614,9 @@ const loadEngines = async () => {
   loading.value = true
   try {
     const response = await enginesAPI.list(currentPage.value, pageSize.value)
-    engines.value = response || []
-    total.value = (response || []).length
+    // 后端返回分页数据格式: { data: [], total: 123, page: 1, page_size: 10 }
+    engines.value = response?.data || []
+    total.value = response?.total || 0
   } catch (error) {
     ElMessage.error('加载引擎列表失败')
     console.error(error)

@@ -31,8 +31,12 @@ func (h *UserHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	userID, _ := commonapi.GetCurrentUserID(c)
 
-	users, err := h.userService.List(page, pageSize, userID)
-	commonapi.RespondOrError(c, users, err)
+	users, total, err := h.userService.List(page, pageSize, userID)
+	if err != nil {
+		commonapi.RespondError(c, 500, err.Error())
+		return
+	}
+	commonapi.RespondPaginated(c, users, total, page, pageSize)
 }
 
 func (h *UserHandler) GetByID(c *gin.Context) {

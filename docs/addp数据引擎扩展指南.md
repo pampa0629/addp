@@ -1,782 +1,327 @@
 # ADDP 数据引擎扩展指南
 
-本文档提供 ADDP 平台数据引擎扩展的完整指南,包括插件系统架构、实施步骤和各模块集成要点。
+本文档提供 ADDP 平台数据引擎扩展的完整指南，包括三层插件系统架构、实施步骤和参考实现。
 
 ---
 
 ## 📋 快速概览
 
-添加新数据引擎支持需要以下步骤:
+添加新数据引擎支持需要以下步骤：
 
-1. **创建数据库插件**（150-400 行代码）
-2. **注册插件到 DBBridge**（1 行代码）
-3. **添加扫描插件**（100-300 行代码）
-4. **添加预览插件**（50-150 行代码）
-5. **前端适配**（可选,根据特殊需求）
-6. **集成测试**（6-10 行代码）
+1. **创建引擎插件**（在 [common/engine/plugins/](../common/engine/plugins/)，100-400 行代码）
+2. **注册插件**（在 [common/dbbridge/bridge.go](../common/dbbridge/bridge.go)，1 行导入）
+3. **测试验证**（构建测试和功能验证）
 
-**总工作量：4-10 小时**
+**总工作量：2-6 小时**
 
 ---
 
 ## 🏗️ 架构概览
 
-ADDP 数据引擎支持基于三层插件化架构:
+ADDP 数据引擎基于三层插件化架构：
 
 ```
-┌──────────────────────────────────────────────────────┐
-│   应用层 (System/Manager/Meta/Transfer/Develop)      │
-│   - 调用 DBBridge/Meta/Manager 统一接口             │
-└────────────┬─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│   应用层 (System/Manager/Meta/Transfer/Develop)         │
+│   - 通过 common/dbbridge 或直接调用 plugin 接口         │
+└────────────┬──────────────────────────────────────────────┘
              │
-┌────────────▼─────────────────────────────────────────┐
-│   DBBridge Facade (common/dbbridge/)                 │
-│   - 数据库连接测试                                    │
-│   - 元数据查询入口                                    │
-│   - 自动导入所有数据库插件                            │
-└────────────┬─────────────────────────────────────────┘
+┌────────────▼──────────────────────────────────────────────┐
+│   DBBridge Facade (common/dbbridge/)                      │
+│   - 引擎连接测试、元数据查询入口                          │
+│   - 自动导入所有引擎插件                                  │
+└────────────┬──────────────────────────────────────────────┘
              │
-┌────────────▼─────────────────────────────────────────┐
-│   Database Plugin Registry (common/database/plugin/) │
-│   - 插件注册表（线程安全）                            │
-│   - 连接池管理                                        │
-│   - 类型映射工具                                      │
-└────────────┬─────────────────────────────────────────┘
+┌────────────▼──────────────────────────────────────────────┐
+│   三层接口架构 (common/engine/plugin/)                    │
+│                                                            │
+│   第一层：EnginePlugin（所有引擎的基础接口）               │
+│   ├─ Type(), DisplayName(), EngineCategory()             │
+│   ├─ TestConnection(), BuildConnectionString()           │
+│   └─ DefaultPort(), RequiredFields(), SensitiveFields()  │
+│                                                            │
+│   第二层：按功能分类的标记接口                             │
+│   ├─ StoragePlugin（存储引擎）                            │
+│   │   └─ SupportsMetadataQuery()                         │
+│   ├─ ComputePlugin（计算引擎）                            │
+│   │   └─ GetSupportedOperators(), HealthCheckEndpoint()  │
+│   └─ NoSQLPlugin（NoSQL 引擎）⭐新增                      │
+│       ├─ ListDatabases(), ListCollections()             │
+│       ├─ GetCollectionStats(), IsSystemDatabase()       │
+│       └─ CreateClient(), CloseClient()                  │
+│                                                            │
+│   第三层：按存储类型细分的功能接口                         │
+│   ├─ RelationalDBPlugin（关系型数据库）                   │
+│   │   ├─ ListSchemas(), ListTables(), ListColumns()      │
+│   │   ├─ GetTableRowCount(), IsSystemSchema()            │
+│   │   └─ ConnectionPoolPlugin（连接池管理）              │
+│   └─ ObjectStoragePlugin（对象存储）                      │
+│       ├─ ListBuckets(), ListObjects()                    │
+│       ├─ GetObjectMetadata(), InferContentType()         │
+│       └─ DefaultBucket(), SupportsSSL()                  │
+└───────────────────────────────────────────────────────────┘
              │
-┌────────────▼─────────────────────────────────────────┐
-│   具体数据库插件 (common/database/plugins/*)          │
-│   - PostgreSQL、MySQL、Doris、ClickHouse、MongoDB... │
-│   - 每个插件独立实现接口                              │
-└─────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────┐
-│   Meta 扫描系统 (meta/plugins/scanners/)             │
-│   - Scanner 插件（数据库元数据扫描）                  │
-│   - Extractor 插件（对象存储文件内容提取）            │
-└──────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────┐
-│   Manager 预览系统 (manager/service/preview_*)        │
-│   - PreviewProvider 插件（数据预览）                  │
-│   - 基于引擎类型动态选择预览实现                      │
-└──────────────────────────────────────────────────────┘
+┌────────────▼──────────────────────────────────────────────┐
+│   具体引擎插件 (common/engine/plugins/*)                  │
+│   - PostgreSQL、MySQL、Doris、ClickHouse（关系型）        │
+│   - MongoDB（NoSQL）⭐                                     │
+│   - MinIO、S3（对象存储）                                 │
+│   - Python Workflow、Spark Workflow、Math Workflow（计算）│
+└──────────────────────────────────────────────────────────┘
 ```
+
+**关键设计理念**：
+- **三层渐进**：第一层必须实现，第二三层按需选择
+- **接口组合**：一个插件可以实现多个接口（如 PostgreSQL 同时实现 StoragePlugin 和 RelationalDBPlugin）
+- **自动注册**：插件通过 `init()` 函数自动注册，零配置使用
+- **解耦合**：Meta、Manager、Transfer 共享 common/engine，无需重复实现
 
 ---
 
 ## 🗂️ 当前支持的数据引擎
 
-截至 **v0.0.18** (2025-12-25)，ADDP 平台支持 **8 种**数据引擎:
+截至 **v0.0.20** (2025-12-30)，ADDP 平台支持 **11 种**数据引擎：
 
 ### 关系型数据库 (OLTP/OLAP)
 
-| 数据库 | 类型 | 默认端口 | 驱动 | 用途 |
-|--------|------|----------|------|------|
-| **PostgreSQL** | OLTP | 5432 | github.com/lib/pq | 系统主数据库，存储用户、引擎、元数据等 |
-| **MySQL** | OLTP | 3306 | github.com/go-sql-driver/mysql | 通用关系型数据库 |
-| **Apache Doris** | HTAP | 9030 | go-sql-driver (MySQL兼容) | 实时分析数据库，支持OLAP查询 |
-| **ClickHouse** | OLAP | 9000 | github.com/ClickHouse/clickhouse-go/v2 | 高性能列式存储，适合大数据量分析 |
+| 数据库 | 类型 | 默认端口 | 接口实现 | 用途 |
+|--------|------|----------|----------|------|
+| **PostgreSQL** | OLTP | 5432 | RelationalDBPlugin + ConnectionPoolPlugin | 系统主数据库，支持 PostGIS 空间扩展 |
+| **MySQL** | OLTP | 3306 | RelationalDBPlugin + ConnectionPoolPlugin | 通用关系型数据库 |
+| **Apache Doris** | HTAP | 9030 | RelationalDBPlugin + ConnectionPoolPlugin | 实时分析数据库，支持 OLAP 查询 |
+| **ClickHouse** | OLAP | 9000 | RelationalDBPlugin + ConnectionPoolPlugin | 高性能列式存储，适合大数据量分析 |
 
-### NoSQL 数据库
+### NoSQL 数据库 ⭐
 
-| 数据库 | 类型 | 默认端口 | 驱动 | 用途 |
-|--------|------|----------|------|------|
-| **MongoDB** | 文档型 | 27017 | go.mongodb.org/mongo-driver | 文档型NoSQL数据库，支持灵活Schema |
-
-### 计算引擎
-
-| 引擎 | 类型 | 默认端口 | 驱动 | 用途 |
-|------|------|----------|------|------|
-| **Apache Spark** | 分布式计算 | 10000 | github.com/beltran/gohive | 大数据分布式查询引擎 |
+| 数据库 | 类型 | 默认端口 | 接口实现 | 用途 |
+|--------|------|----------|----------|------|
+| **MongoDB** | 文档型 | 27017 | NoSQLPlugin | 文档型数据库，灵活 Schema，支持采样推断 |
 
 ### 对象存储
 
-| 存储 | 类型 | 默认端口 | 驱动 | 用途 |
-|------|------|----------|------|------|
-| **MinIO** | 对象存储 | 9000 | github.com/minio/minio-go | S3兼容的对象存储，存储文件和二进制数据 |
-| **Amazon S3** | 对象存储 | 443 | github.com/minio/minio-go | AWS云对象存储 |
+| 存储 | 类型 | 默认端口 | 接口实现 | 用途 |
+|------|------|----------|----------|------|
+| **MinIO** | 对象存储 | 9000 | ObjectStoragePlugin | S3 兼容对象存储，存储文件和二进制数据 |
+| **Amazon S3** | 对象存储 | 443 | ObjectStoragePlugin | AWS 云对象存储 |
+
+### 计算引擎
+
+| 引擎 | 类型 | 默认端口 | 接口实现 | 用途 |
+|------|------|----------|----------|------|
+| **Python Workflow** | 工作流引擎 | 8300 | ComputePlugin | 基于 GeoPandas 的空间工作流计算 |
+| **Spark Workflow** | 工作流引擎 | 8400 | ComputePlugin | 分布式空间工作流计算 |
+| **Spark SQL** | SQL 引擎 | 10000 | ComputePlugin | 大数据分布式查询引擎 |
+| **Math Workflow** | 计算引擎 | 8500 | ComputePlugin | 数学计算工作流 |
 
 ---
 
 ## 🚀 实施步骤
 
-### 第一步：创建数据库插件 (Common 模块)
+### 步骤 1：创建引擎插件 (Common 模块)
 
-#### 1.1 创建插件目录
+#### 1.1 选择接口组合
+
+根据引擎类型，选择需要实现的接口：
+
+**关系型数据库**（PostgreSQL、MySQL、Doris、ClickHouse）：
+```
+EnginePlugin（必须）
+  + StoragePlugin（必须）
+  + RelationalDBPlugin（必须）
+  + ConnectionPoolPlugin（必须）
+```
+
+**NoSQL 数据库**（MongoDB）⭐：
+```
+EnginePlugin（必须）
+  + StoragePlugin（必须）
+  + NoSQLPlugin（必须）
+```
+
+**对象存储**（MinIO、S3）：
+```
+EnginePlugin（必须）
+  + StoragePlugin（必须）
+  + ObjectStoragePlugin（必须）
+```
+
+**计算引擎**（Python Workflow、Spark Workflow）：
+```
+EnginePlugin（必须）
+  + ComputePlugin（必须）
+```
+
+#### 1.2 创建插件目录和文件
 
 ```bash
-mkdir -p common/database/plugins/<dbtype>/
-cd common/database/plugins/<dbtype>/
+mkdir -p common/engine/plugins/<enginetype>/
+cd common/engine/plugins/<enginetype>/
+touch plugin.go
 ```
 
-#### 1.2 实现插件接口
+#### 1.3 实现插件接口
 
-创建 `plugin.go`，实现 `DatabasePlugin` 接口:
+创建 `plugin.go`，实现选定的接口。
+
+**核心接口清单**（详见 [common/engine/plugin/interfaces.go](../common/engine/plugin/interfaces.go)）：
+
+**EnginePlugin 接口**（所有引擎必须实现）：
+- `Type() string` - 引擎类型标识（如 "postgresql", "mongodb"）
+- `DisplayName() string` - 显示名称（如 "PostgreSQL", "MongoDB"）
+- `EngineCategory() string` - 引擎分类：`"standard"` 或 `"extension"`
+- `DefaultPort() int` - 默认端口
+- `RequiredFields() []string` - 必填字段列表（如 ["host", "user", "database"]）
+- `SensitiveFields() []string` - 敏感字段列表（如 ["password"]，需加密）
+- `GenerateCapabilities() string` - 能力声明（JSON 格式）
+- `ValidateConnectionInfo(connInfo) error` - 验证连接信息
+- `BuildConnectionString(connInfo) (string, error)` - 构建连接字符串
+- `TestConnection(ctx, connInfo) error` - 测试连接
+
+**RelationalDBPlugin 接口**（关系型数据库实现）：
+- `ListSchemas(ctx, db) ([]SchemaInfo, error)` - 列出所有 Schema/Database
+- `ListTables(ctx, db, schema) ([]TableInfo, error)` - 列出指定 Schema 下的所有表
+- `ListColumns(ctx, db, schema, table) ([]ColumnInfo, error)` - 列出表的所有列
+- `GetTableRowCount(ctx, db, schema, table) (int64, error)` - 获取表行数
+- `IsSystemSchema(schemaName) bool` - 判断是否为系统 Schema
+
+**NoSQLPlugin 接口**（NoSQL 数据库实现）⭐：
+- `ListDatabases(ctx, connInfo) ([]DatabaseInfo, error)` - 列出所有 Database
+- `ListCollections(ctx, connInfo, database) ([]CollectionInfo, error)` - 列出 Collection
+- `GetCollectionStats(ctx, connInfo, database, collection) (*CollectionStats, error)` - 获取统计信息
+- `IsSystemDatabase(databaseName) bool` - 判断是否为系统 Database
+- `CreateClient(ctx, connInfo) (interface{}, error)` - 创建客户端
+- `CloseClient(ctx, client) error` - 关闭客户端
+
+**ObjectStoragePlugin 接口**（对象存储实现）：
+- `ListBuckets(ctx, connInfo) ([]BucketInfo, error)` - 列出所有 Bucket
+- `ListObjects(ctx, connInfo, bucket, prefix, recursive) ([]ObjectInfo, error)` - 列出对象
+- `GetObjectMetadata(ctx, connInfo, bucket, key) (*ObjectInfo, error)` - 获取对象元数据
+- `InferContentType(objectKey) string` - 推断 MIME 类型
+- `DefaultBucket() string` - 默认 Bucket 名称
+- `SupportsSSL() bool` - 是否支持 SSL
+
+**ConnectionPoolPlugin 接口**（关系型数据库连接池）：
+- `CreateConnectionPool(connInfo, poolConfig) (*gorm.DB, error)` - 创建 GORM 连接池
+- `GetDialect() string` - 返回 GORM 方言名称
+
+**ComputePlugin 接口**（计算引擎实现）：
+- `GetSupportedOperators() []string` - 返回支持的算子列表
+- `HealthCheckEndpoint() string` - 健康检查端点
+
+#### 1.4 自动注册
+
+在 `plugin.go` 中添加 `init()` 函数，自动注册插件：
 
 ```go
-package <dbtype>
+package <enginetype>
 
 import (
-    "context"
-    "database/sql"
-    "fmt"
-    "time"
-
-    "github.com/addp/common/database/plugin"
-    _ "<driver_import>" // 导入数据库驱动
-    "<gorm_driver_import>" // 导入 GORM 驱动（如果支持）
-    "gorm.io/gorm"
+    "github.com/addp/common/engine/plugin"
 )
 
-type <DBType>Plugin struct{}
+type <EngineType>Plugin struct{}
 
-// init 函数自动注册插件
+// init 函数在包被导入时自动注册插件
 func init() {
-    plugin.Register(&<DBType>Plugin{})
+    plugin.Register(&<EngineType>Plugin{})
 }
 
-// ========== 实现 DatabasePlugin 接口（10个必须方法） ==========
-
-func (p *<DBType>Plugin) Type() string {
-    return "<dbtype>"
-}
-
-func (p *<DBType>Plugin) DisplayName() string {
-    return "<Display Name>"
-}
-
-func (p *<DBType>Plugin) EngineCategory() string {
-    // 选择：standard (标准引擎，如 PostgreSQL/MySQL) 或 extension (扩展引擎，如工作流引擎)
-    return "standard"
-}
-
-func (p *<DBType>Plugin) DefaultPort() int {
-    return <默认端口>
-}
-
-func (p *<DBType>Plugin) RequiredFields() []string {
-    return []string{"host", "user", "database"}
-}
-
-func (p *<DBType>Plugin) SensitiveFields() []string {
-    return []string{"password"}
-}
-
-func (p *<DBType>Plugin) GenerateCapabilities() string {
-    // compute 中不需要 "type" 字段，使用 dev_modes 标识开发方式
-    return `{"storage":[{"type":"relational_db","engine":"<dbtype>","supports_query":true}],"compute":[{"dev_modes":["sql"],"description":"SQL查询"}]}`
-}
-
-func (p *<DBType>Plugin) ValidateConnectionInfo(connInfo plugin.ConnectionInfo) error {
-    return plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
-}
-
-func (p *<DBType>Plugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-    host := plugin.NormalizeHost(plugin.GetString(connInfo, "host"))
-    port := plugin.GetInt(connInfo, "port")
-    if port == 0 {
-        port = p.DefaultPort()
-    }
-
-    user := plugin.GetString(connInfo, "user")
-    password := plugin.GetString(connInfo, "password")
-    database := plugin.GetString(connInfo, "database")
-
-    if host == "" || user == "" {
-        return "", fmt.Errorf("missing required connection info")
-    }
-
-    // 使用工具函数构建 DSN
-    return plugin.MySQLStyleDSN(user, password, host, port, database, map[string]string{
-        "parseTime": "true",
-        "timeout":   "10s",
-    }), nil
-}
-
-func (p *<DBType>Plugin) TestConnection(ctx context.Context, connInfo plugin.ConnectionInfo) error {
-    connStr, err := p.BuildConnectionString(connInfo)
-    if err != nil {
-        return fmt.Errorf("failed to build connection string: %w", err)
-    }
-
-    db, err := sql.Open("<driver_name>", connStr)
-    if err != nil {
-        return fmt.Errorf("failed to open connection: %w", err)
-    }
-    defer db.Close()
-
-    testCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-    defer cancel()
-
-    if err := db.PingContext(testCtx); err != nil {
-        return fmt.Errorf("failed to ping database: %w", err)
-    }
-
-    return nil
-}
-
-// ========== 实现可选接口（根据需要） ==========
-
-// ConnectionPoolPlugin 接口（SQL数据库推荐实现）
-func (p *<DBType>Plugin) CreateConnectionPool(connInfo plugin.ConnectionInfo, poolConfig *plugin.PoolConfig) (*gorm.DB, error) {
-    connStr, err := p.BuildConnectionString(connInfo)
-    if err != nil {
-        return nil, fmt.Errorf("failed to build connection string: %w", err)
-    }
-
-    db, err := gorm.Open(<gorm_driver>.Open(connStr), &gorm.Config{
-        DisableAutomaticPing: false,
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to create gorm connection: %w", err)
-    }
-
-    sqlDB, err := db.DB()
-    if err != nil {
-        return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
-    }
-
-    sqlDB.SetMaxOpenConns(poolConfig.MaxOpenConns)
-    sqlDB.SetMaxIdleConns(poolConfig.MaxIdleConns)
-    sqlDB.SetConnMaxLifetime(poolConfig.ConnMaxLifetime)
-
-    return db, nil
-}
-
-func (p *<DBType>Plugin) GetDialect() string {
-    return "<dialect_name>"
-}
-
-// MetadataPlugin 接口（元数据查询支持）
-// 参考 postgresql/plugin.go 实现
-func (p *<DBType>Plugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin.SchemaInfo, error) {
-    // 实现 schema 列表查询
-    var schemas []plugin.SchemaInfo
-    // ... 查询逻辑 ...
-    return schemas, nil
-}
-
-func (p *<DBType>Plugin) ListTables(ctx context.Context, db *gorm.DB, schema string) ([]plugin.TableInfo, error) {
-    // 实现表列表查询
-    var tables []plugin.TableInfo
-    // ... 查询逻辑 ...
-    return tables, nil
-}
-
-func (p *<DBType>Plugin) ListColumns(ctx context.Context, db *gorm.DB, schema, table string) ([]plugin.ColumnInfo, error) {
-    var columns []plugin.ColumnInfo
-    // ... 查询列信息 ...
-
-    // 使用通用类型映射工具
-    for i := range columns {
-        columns[i].StdType = plugin.MapToStandardType(columns[i].DataType)
-    }
-
-    return columns, nil
-}
-
-func (p *<DBType>Plugin) GetTableRowCount(ctx context.Context, db *gorm.DB, schema, table string) (int64, error) {
-    // 实现行数统计查询
-    var count int64
-    // ... 查询逻辑 ...
-    return count, nil
-}
+// ... 实现接口方法 ...
 ```
 
-#### 1.3 注册插件到 DBBridge
+#### 1.5 实现示例参考
 
-编辑 `common/dbbridge/bridge.go`，添加导入:
+**简单示例：MySQL**
+- 文件：[common/engine/plugins/mysql/plugin.go](../common/engine/plugins/mysql/plugin.go)
+- 实现接口：EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
+- 代码量：~290 行
 
-```go
-import (
-    _ "github.com/addp/common/database/plugins/postgresql"
-    _ "github.com/addp/common/database/plugins/mysql"
-    _ "github.com/addp/common/database/plugins/doris"
-    _ "github.com/addp/common/database/plugins/clickhouse"
-    _ "github.com/addp/common/database/plugins/<dbtype>" // 👈 添加这一行
-)
-```
+**复杂示例：MongoDB** ⭐
+- 文件：
+  - [common/engine/plugins/mongodb/plugin.go](../common/engine/plugins/mongodb/plugin.go)（基础接口）
+  - [common/engine/plugins/mongodb/nosql.go](../common/engine/plugins/mongodb/nosql.go)（NoSQLPlugin 实现）
+- 实现接口：EnginePlugin + StoragePlugin + NoSQLPlugin
+- 代码量：~380 行
+
+**对象存储示例：MinIO**
+- 文件：[common/engine/plugins/minio/plugin.go](../common/engine/plugins/minio/plugin.go)
+- 实现接口：EnginePlugin + StoragePlugin + ObjectStoragePlugin
+- 代码量：~350 行
+
+**计算引擎示例：Python Workflow**
+- 文件：[common/engine/plugins/python_workflow/plugin.go](../common/engine/plugins/python_workflow/plugin.go)
+- 实现接口：EnginePlugin + ComputePlugin
+- 代码量：~150 行
 
 ---
 
-### 第二步：创建扫描插件 (Meta 模块)
+### 步骤 2：注册插件到 DBBridge
 
-#### 2.1 创建扫描器目录
-
-```bash
-mkdir -p meta/plugins/scanners/<dbtype>/
-cd meta/plugins/scanners/<dbtype>/
-```
-
-#### 2.2 实现 Scanner 接口
-
-创建 `scanner.go`:
-
-```go
-package <dbtype>
-
-import (
-    "context"
-    "database/sql"
-    "fmt"
-
-    "github.com/addp/common/models"
-    "github.com/addp/meta/plugins"
-    _ "<driver_import>" // 导入数据库驱动
-)
-
-type Scanner struct {
-    db     *sql.DB
-    engine *models.Engine
-}
-
-// init 函数自动注册扫描器
-func init() {
-    plugins.RegisterScanner("<dbtype>", NewScanner)
-}
-
-func NewScanner(engine *models.Engine) (plugins.Scanner, error) {
-    // 使用 common/database/plugin 构建连接字符串
-    dbPlugin := plugin.Get("<dbtype>")
-    if dbPlugin == nil {
-        return nil, fmt.Errorf("database plugin not found for type: <dbtype>")
-    }
-
-    connStr, err := dbPlugin.BuildConnectionString(engine.ConnectionInfo)
-    if err != nil {
-        return nil, err
-    }
-
-    db, err := sql.Open("<driver_name>", connStr)
-    if err != nil {
-        return nil, err
-    }
-
-    // 测试连接
-    if err := db.Ping(); err != nil {
-        db.Close()
-        return nil, err
-    }
-
-    return &Scanner{
-        db:     db,
-        engine: engine,
-    }, nil
-}
-
-func (s *Scanner) Close() error {
-    if s.db != nil {
-        return s.db.Close()
-    }
-    return nil
-}
-
-func (s *Scanner) ListSchemas() ([]plugins.SchemaInfo, error) {
-    query := `SELECT schema_name FROM information_schema.schemata`
-    rows, err := s.db.Query(query)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-
-    var schemas []plugins.SchemaInfo
-    for rows.Next() {
-        var name string
-        if err := rows.Scan(&name); err != nil {
-            return nil, err
-        }
-        schemas = append(schemas, plugins.SchemaInfo{Name: name})
-    }
-    return schemas, rows.Err()
-}
-
-func (s *Scanner) ScanTables(schemaName string) ([]plugins.TableInfo, error) {
-    query := `
-        SELECT
-            table_name,
-            table_type,
-            table_comment,
-            table_rows,
-            data_length
-        FROM information_schema.tables
-        WHERE table_schema = ?
-    `
-
-    rows, err := s.db.Query(query, schemaName)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-
-    var tables []plugins.TableInfo
-    for rows.Next() {
-        var table plugins.TableInfo
-        var rowCount, sizeBytes sql.NullInt64
-        var tableType, comment sql.NullString
-
-        err := rows.Scan(
-            &table.Name,
-            &tableType,
-            &comment,
-            &rowCount,
-            &sizeBytes,
-        )
-        if err != nil {
-            return nil, err
-        }
-
-        if tableType.Valid {
-            table.Type = tableType.String
-        }
-        if comment.Valid {
-            table.Comment = comment.String
-        }
-        if rowCount.Valid {
-            table.RowCount = rowCount.Int64
-        }
-        if sizeBytes.Valid {
-            table.SizeBytes = sizeBytes.Int64
-        }
-
-        tables = append(tables, table)
-    }
-    return tables, rows.Err()
-}
-
-func (s *Scanner) ScanFields(schemaName, tableName string) ([]plugins.FieldInfo, error) {
-    query := `
-        SELECT
-            column_name,
-            ordinal_position,
-            data_type,
-            column_type,
-            is_nullable,
-            column_default,
-            column_comment,
-            column_key
-        FROM information_schema.columns
-        WHERE table_schema = ? AND table_name = ?
-        ORDER BY ordinal_position
-    `
-
-    rows, err := s.db.Query(query, schemaName, tableName)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
-
-    var fields []plugins.FieldInfo
-    for rows.Next() {
-        var field plugins.FieldInfo
-        var nullable, defaultValue, comment, columnKey sql.NullString
-
-        err := rows.Scan(
-            &field.Name,
-            &field.OrdinalPosition,
-            &field.DataType,
-            &field.ColumnType,
-            &nullable,
-            &defaultValue,
-            &comment,
-            &columnKey,
-        )
-        if err != nil {
-            return nil, err
-        }
-
-        field.IsNullable = nullable.Valid && nullable.String == "YES"
-        if defaultValue.Valid {
-            field.DefaultValue = defaultValue.String
-        }
-        if comment.Valid {
-            field.Comment = comment.String
-        }
-        if columnKey.Valid {
-            field.IsPrimaryKey = columnKey.String == "PRI"
-            field.IsUniqueKey = columnKey.String == "UNI"
-        }
-
-        fields = append(fields, field)
-    }
-    return fields, rows.Err()
-}
-```
-
-#### 2.3 注册扫描器
-
-编辑 `meta/plugins/scanners/register.go`:
+编辑 [common/dbbridge/bridge.go](../common/dbbridge/bridge.go)，添加导入语句：
 
 ```go
 import (
-    _ "github.com/addp/meta/plugins/scanners/postgresql"
-    _ "github.com/addp/meta/plugins/scanners/mysql"
-    _ "github.com/addp/meta/plugins/scanners/<dbtype>" // 👈 添加这一行
+    _ "github.com/addp/common/engine/plugins/postgresql"
+    _ "github.com/addp/common/engine/plugins/mysql"
+    _ "github.com/addp/common/engine/plugins/doris"
+    _ "github.com/addp/common/engine/plugins/clickhouse"
+    _ "github.com/addp/common/engine/plugins/mongodb"      // ⭐ MongoDB
+    _ "github.com/addp/common/engine/plugins/minio"
+    _ "github.com/addp/common/engine/plugins/s3"
+    _ "github.com/addp/common/engine/plugins/<enginetype>" // 👈 添加这一行
 )
 ```
 
----
-
-### 第三步：创建预览插件 (Manager 模块)
-
-#### 3.1 创建预览提供者文件
-
-创建 `manager/backend/internal/service/preview_provider_<dbtype>.go`:
-
-```go
-package service
-
-import (
-    "context"
-    "fmt"
-
-    "github.com/addp/manager/internal/models"
-    "github.com/addp/manager/internal/repository"
-)
-
-type <dbtype>PreviewProvider struct {
-    metadataRepo *repository.MetadataRepository
-    priority     int
-}
-
-// init 函数自动注册预览插件
-func init() {
-    RegisterPreviewProvider("<dbtype>", func(
-        metadataRepo *repository.MetadataRepository,
-        metaClient *commonClient.MetaClient,
-        metaServiceURL string,
-        contentRegistry *ObjectContentRegistry,
-    ) (PreviewProvider, error) {
-        return New<DBType>PreviewProvider(metadataRepo), nil
-    })
-}
-
-func New<DBType>PreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
-    return &<dbtype>PreviewProvider{
-        metadataRepo: metadataRepo,
-        priority:     100,
-    }
-}
-
-func (p *<dbtype>PreviewProvider) Name() string {
-    return "builtin:<dbtype>-table"
-}
-
-func (p *<dbtype>PreviewProvider) Priority() int {
-    return p.priority
-}
-
-func (p *<dbtype>PreviewProvider) Supports(req *PreviewRequest) bool {
-    if req == nil || req.Engine == nil {
-        return false
-    }
-    if req.Schema == "" || req.Table == "" {
-        return false
-    }
-
-    resourceType := sanitizeResourceType(req.Engine.EngineType)
-    return resourceType == "<dbtype>"
-}
-
-func (p *<dbtype>PreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
-    const maxRows = 50
-
-    // 查询数据预览
-    columns, rows, total, geometryColumns, err := p.metadataRepo.Query<DBType>TablePreview(
-        req.Engine,
-        req.Schema,
-        req.Table,
-        req.Page,
-        req.PageSize,
-        maxRows,
-    )
-    if err != nil {
-        return nil, fmt.Errorf("<dbtype> preview query failed: %w", err)
-    }
-
-    return &models.TablePreview{
-        Mode:            PreviewModeTable,
-        Columns:         columns,
-        Rows:            rows,
-        Total:           total,
-        Page:            req.Page,
-        PageSize:        req.PageSize,
-        GeometryColumns: geometryColumns,
-        EngineID:        req.Engine.ID,
-        Schema:          req.Schema,
-        Table:           req.Table,
-        EngineType:      req.Engine.EngineType,
-    }, nil
-}
-```
-
-#### 3.2 实现数据查询方法
-
-在 `manager/backend/internal/repository/metadata_repository.go` 添加查询方法:
-
-```go
-func (r *MetadataRepository) Query<DBType>TablePreview(
-    engine *models.Engine,
-    schemaName, tableName string,
-    page, pageSize, maxRows int,
-) ([]string, []map[string]interface{}, int64, []string, error) {
-    // 使用 common/database/plugin 创建连接
-    dbPlugin := plugin.Get("<dbtype>")
-    if dbPlugin == nil {
-        return nil, nil, 0, nil, fmt.Errorf("database plugin not found")
-    }
-
-    connStr, err := dbPlugin.BuildConnectionString(engine.ConnectionInfo)
-    if err != nil {
-        return nil, nil, 0, nil, err
-    }
-
-    db, err := sql.Open("<driver_name>", connStr)
-    if err != nil {
-        return nil, nil, 0, nil, err
-    }
-    defer db.Close()
-
-    // 构建查询
-    fullTableName := fmt.Sprintf("%s.%s", schemaName, tableName)
-    offset := (page - 1) * pageSize
-    query := fmt.Sprintf("SELECT * FROM %s LIMIT %d OFFSET %d", fullTableName, pageSize, offset)
-
-    rows, err := db.Query(query)
-    if err != nil {
-        return nil, nil, 0, nil, err
-    }
-    defer rows.Close()
-
-    // 获取列名
-    columns, err := rows.Columns()
-    if err != nil {
-        return nil, nil, 0, nil, err
-    }
-
-    // 读取数据行
-    var data []map[string]interface{}
-    for rows.Next() {
-        values := make([]interface{}, len(columns))
-        valuePtrs := make([]interface{}, len(columns))
-        for i := range values {
-            valuePtrs[i] = &values[i]
-        }
-
-        if err := rows.Scan(valuePtrs...); err != nil {
-            return nil, nil, 0, nil, err
-        }
-
-        row := make(map[string]interface{})
-        for i, col := range columns {
-            row[col] = values[i]
-        }
-        data = append(data, row)
-    }
-
-    // 查询总数
-    var total int64
-    countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", fullTableName)
-    db.QueryRow(countQuery).Scan(&total)
-
-    return columns, data, total, []string{}, nil
-}
-```
+导入后，插件的 `init()` 函数会自动执行，完成注册。
 
 ---
 
-### 第四步：前端适配（可选）
+### 步骤 3：测试验证
 
-大多数情况下，前端无需修改即可支持新数据引擎。如有特殊需求：
-
-#### 4.1 添加引擎类型图标
-
-编辑 `manager/frontend/src/views/DataExplorer.vue`:
-
-```vue
-<script setup>
-const getEngineIcon = (type) => {
-  const iconMap = {
-    postgresql: 'database',
-    mysql: 'database',
-    clickhouse: 'chart-column',
-    mongodb: 'leaf',
-    '<dbtype>': '<icon-name>', // 👈 添加图标映射
-    minio: 'box',
-    s3: 'cloud'
-  }
-  return iconMap[type?.toLowerCase()] || 'database'
-}
-</script>
-```
-
-#### 4.2 添加特殊预览逻辑（如需要）
-
-如果需要特殊的预览处理（如空间数据、二进制数据等），参考:
-- [manager/frontend/src/views/DataExplorer.vue](/manager/frontend/src/views/DataExplorer.vue) - 预览组件
-- [common-frontend/map/src/components/TablePreview.vue](/common-frontend/map/src/components/TablePreview.vue) - 通用表格预览组件
-
----
-
-### 第五步：集成测试
-
-#### 5.1 添加数据库插件测试
-
-编辑 `common/database/plugins/integration_test.go`:
-
-```go
-func Test<DBType>PluginRegistration(t *testing.T) {
-    p := plugin.Get("<dbtype>")
-    assert.NotNil(t, p, "<DBType> plugin should be registered")
-    assert.Equal(t, "<Display Name>", p.DisplayName())
-    assert.Equal(t, <默认端口>, p.DefaultPort())
-}
-```
-
-#### 5.2 运行测试
+#### 3.1 构建测试
 
 ```bash
 # 构建 common 模块
 cd common
 go build ./...
 
-# 运行数据库插件测试
-go test ./database/plugins/integration_test.go -v
-
-# 构建 meta 模块（扫描器）
-cd ../meta/backend
-go build ./...
-
-# 构建 manager 模块（预览）
-cd ../../manager/backend
-go build ./...
-
-# 重启开发环境验证
-cd ../..
-bash scripts/dev/restart.sh -all
+# 运行插件注册测试
+go test ./engine/plugin/... -v
 ```
 
-#### 5.3 功能验证
+#### 3.2 功能验证
 
-1. **连接测试**:
-   - 在 System 模块添加新引擎
-   - 测试连接是否成功
+**1. 连接测试**：
+```bash
+# 在 System 模块添加新引擎，测试连接
+cd system/backend
+bash ../../scripts/dev/restart.sh -system
 
-2. **元数据扫描**:
-   - 在 Manager 模块触发扫描
-   - 验证 Schema/Table/Field 是否正确提取
+# 通过 API 测试连接
+curl -X POST http://localhost:8080/api/engines/<engine_id>/test \
+  -H "Authorization: Bearer <token>"
+```
 
-3. **数据预览**:
-   - 在 Data Explorer 点击表
-   - 验证数据预览是否正常显示
+**2. 元数据扫描**（自动支持）：
+- **关系型数据库**：Meta 模块自动使用 `RelationalDBPlugin.ListSchemas/ListTables/ListColumns`
+- **NoSQL 数据库**：Meta 模块自动使用 `NoSQLPlugin.ListDatabases/ListCollections` ⭐
+- **对象存储**：Meta 模块自动使用 `ObjectStoragePlugin.ListBuckets/ListObjects`
 
-4. **跨模块集成**:
-   - Transfer 模块: 验证数据导入/导出
-   - Develop 模块: 验证 SQL 执行
-   - Service 模块: 验证数据服务发布
+**3. 数据预览**（自动支持）：
+- **关系型数据库**：Manager 模块自动使用 `RelationalDBPlugin` 查询数据
+- **NoSQL 数据库**：Manager 模块自动使用 `NoSQLPlugin` + `DocCollectionParser` ⭐
+- **对象存储**：Manager 模块自动使用 `ObjectStoragePlugin` + `FileTableParser`
+
+**4. 跨模块集成**：
+- Transfer 模块：自动支持新引擎作为数据源/目标
+- Develop 模块：根据 `capabilities` 自动支持 SQL/工作流/Notebook 开发
+- Service 模块：自动支持数据服务发布
 
 ---
 
 ## 🛠️ 常用工具函数
+
+ADDP 提供了丰富的工具函数简化插件开发（详见 [common/engine/plugin/helpers.go](../common/engine/plugin/helpers.go)）：
 
 ### 1. 连接信息提取
 
@@ -797,184 +342,102 @@ err := plugin.ValidateRequiredFields(connInfo, p.RequiredFields())
 ### 3. DSN 构建
 
 ```go
+// PostgreSQL 风格
+dsn := plugin.PostgreSQLStyleDSN(user, password, host, port, database, "disable")
+
 // MySQL 风格（MySQL、Doris、TiDB）
 dsn := plugin.MySQLStyleDSN(user, password, host, port, database, map[string]string{
     "parseTime": "true",
     "timeout":   "10s",
 })
 
-// PostgreSQL 风格
-dsn := plugin.PostgreSQLStyleDSN(user, password, host, port, database, "disable")
+// MongoDB 风格
+dsn := plugin.MongoDBStyleDSN(user, password, host, port, database)
 
 // ClickHouse 风格
 dsn := plugin.ClickHouseStyleDSN(user, password, host, port, database, map[string]string{
     "dial_timeout": "10s",
 })
-
-// MongoDB 风格
-dsn := plugin.MongoDBStyleDSN(user, password, host, port, database)
 ```
 
 ### 4. 类型映射
 
-```go
-// 使用通用映射表（推荐）
-stdType := plugin.MapToStandardType("varchar")  // 返回 "string"
-stdType := plugin.MapToStandardType("bigint")   // 返回 "integer"
-
-// 使用自定义映射表
-customMappings := []plugin.TypeMapping{
-    {DBTypes: []string{"hll", "bitmap"}, StdType: plugin.StdTypeBinary},
-}
-stdType := plugin.MapToStandardTypeWithCustom("hll", customMappings)
-```
+ADDP 提供了统一的类型映射工具，将各数据库的原生类型映射为标准类型（详见 [common/format/type_mapper.go](../common/format/type_mapper.go)）。
 
 ---
 
-## 📊 模块集成说明
+## 📊 模块自动集成说明
+
+添加新引擎插件后，各模块会**自动支持**新引擎，无需额外开发：
 
 ### System 模块
-
-**作用**: 引擎注册、连接测试、租户管理
-
-**集成点**:
-- `common/dbbridge/bridge.go`: 自动调用数据库插件的 `TestConnection()`
-- 前端无需修改，表单自动根据 `RequiredFields()` 生成
+- **引擎注册**：通过 API 创建引擎实例
+- **连接测试**：调用 `EnginePlugin.TestConnection()`
+- **能力发现**：读取 `GenerateCapabilities()` JSON
 
 ### Meta 模块
-
-**作用**: 元数据扫描、索引、向量化
-
-**集成点**:
-- Scanner 插件实现 `ListSchemas()`, `ScanTables()`, `ScanFields()`
-- 自动触发 Meilisearch 索引
-- 支持向量化（对象存储）
-
-**扫描深度**:
-- `basic`: 只列文件名/表名（不提取字段）
-- `deep`: 完整元数据提取（字段、类型、注释等）
+- **元数据扫描**：
+  - 关系型数据库：调用 `RelationalDBPlugin.ListSchemas/ListTables/ListColumns`
+  - NoSQL 数据库：调用 `NoSQLPlugin.ListDatabases/ListCollections` ⭐
+  - 对象存储：调用 `ObjectStoragePlugin.ListBuckets/ListObjects`
+- **索引同步**：自动同步到 Meilisearch 全文搜索引擎
 
 ### Manager 模块
-
-**作用**: 数据预览、文件预览、对象浏览
-
-**集成点**:
-- PreviewProvider 插件实现 `Preview()`
-- 前端 `DataExplorer.vue` 自动适配
-
-**预览模式**:
-- `PreviewModeTable`: 表格预览（关系数据库）
-- `PreviewModeObject`: 文件预览（对象存储）
-- `PreviewModeNode`: 目录/Schema 统计信息
+- **数据预览**：
+  - 关系型数据库：使用 `RelationalDBPlugin` 查询数据
+  - NoSQL 数据库：使用 `NoSQLPlugin` + `DocCollectionParser` 采样推断 ⭐
+  - 对象存储：使用 `ObjectStoragePlugin` + `FileTableParser` 解析文件
+- **MVT 瓦片**：自动支持 PostGIS 空间数据的矢量瓦片生成
 
 ### Transfer 模块
-
-**作用**: 数据导入、导出、同步
-
-**集成点**:
-- 自动从 Meta 获取表字段信息（`GetTableFieldDetails()`）
-- 使用 `common/database/plugin` 创建连接池
+- **数据导入/导出**：自动支持新引擎作为源或目标
+- **连接池管理**：复用 `ConnectionPoolPlugin` 创建的连接池
 
 ### Develop 模块
-
-**作用**: SQL 执行、GIS 工作流
-
-**集成点**:
-- 使用 `common/database/plugin` 创建连接
-- 支持所有实现 `ConnectionPoolPlugin` 的数据库
-
-### Service 模块
-
-**作用**: 数据服务发布、OGC 标准
-
-**集成点**:
-- MVT 服务需要空间元数据（PostgreSQL/PostGIS）
-- 通用数据查询服务支持所有 SQL 数据库
+- **SQL 查询**：根据 `dev_modes: ["query"]` 自动支持 SQL 工作台
+- **工作流**：根据 `dev_modes: ["workflow"]` 自动支持工作流编排
+- **Notebook**：根据 `dev_modes: ["notebook"]` 自动支持 Notebook 开发
 
 ---
 
 ## 📚 参考实现
 
-### 简单示例：MySQL 插件
+### 关系型数据库：PostgreSQL
+- **文件**：[common/engine/plugins/postgresql/plugin.go](../common/engine/plugins/postgresql/plugin.go)
+- **实现接口**：EnginePlugin + StoragePlugin + RelationalDBPlugin + ConnectionPoolPlugin
+- **特点**：
+  - 使用 GORM 连接池管理
+  - 查询 `information_schema` 获取元数据
+  - 支持 PostGIS 空间扩展检测
+  - 过滤系统 Schema（`pg_catalog`, `information_schema`）
 
-**特点**: 标准 SQL 数据库，使用 MySQL 协议
+### NoSQL 数据库：MongoDB ⭐
+- **文件**：
+  - [common/engine/plugins/mongodb/plugin.go](../common/engine/plugins/mongodb/plugin.go)
+  - [common/engine/plugins/mongodb/nosql.go](../common/engine/plugins/mongodb/nosql.go)
+- **实现接口**：EnginePlugin + StoragePlugin + NoSQLPlugin
+- **特点**：
+  - 使用 `mongo-driver` 官方驱动
+  - 采样文档推断 Schema（由 `DocCollectionParser` 完成）
+  - 过滤系统数据库（`admin`, `local`, `config`）
+  - 支持索引信息查询
 
-**文件**: [common/database/plugins/mysql/plugin.go](/common/database/plugins/mysql/plugin.go)
+### 对象存储：MinIO
+- **文件**：[common/engine/plugins/minio/plugin.go](../common/engine/plugins/minio/plugin.go)
+- **实现接口**：EnginePlugin + StoragePlugin + ObjectStoragePlugin
+- **特点**：
+  - S3 兼容协议
+  - 自动 MIME 类型推断（支持空间数据格式：shapefile、geojson）
+  - localhost 规范化处理
+  - 支持 SSL 配置
 
-**实现接口**:
-- DatabasePlugin（基础）
-- SQLDatabasePlugin（标记）
-- ConnectionPoolPlugin（连接池）
-- MetadataPlugin（元数据）
-
-**代码量**: ~290 行
-
-**扫描器**: [meta/plugins/scanners/mysql/scanner.go](/meta/plugins/scanners/mysql/scanner.go)
-
-**预览**: [manager/backend/internal/service/preview_provider_mysql.go](/manager/backend/internal/service/preview_provider_mysql.go)
-
----
-
-### 复杂示例：ClickHouse 插件
-
-**特点**: 列式存储，特殊的 Native 协议
-
-**文件**: [common/database/plugins/clickhouse/plugin.go](/common/database/plugins/clickhouse/plugin.go)
-
-**实现接口**:
-- DatabasePlugin（基础）
-- ConnectionPoolPlugin（连接池）
-- MetadataPlugin（元数据）
-
-**代码量**: ~320 行
-
-**扫描器**: [meta/plugins/scanners/clickhouse/scanner.go](/meta/plugins/scanners/clickhouse/scanner.go)
-
-**预览**: [manager/backend/internal/service/preview_provider_clickhouse.go](/manager/backend/internal/service/preview_provider_clickhouse.go)
-
----
-
-### 对象存储示例：S3 插件
-
-**特点**: 对象存储，支持文件元数据提取
-
-**文件**: [common/database/plugins/s3/plugin.go](/common/database/plugins/s3/plugin.go)
-
-**实现接口**:
-- DatabasePlugin（基础）
-- ObjectStoragePlugin（对象存储）
-
-**扫描器**: [meta/plugins/scanners/s3/scanner.go](/meta/plugins/scanners/s3/scanner.go) (实现 `ObjectStorageScanner` 接口)
-
-**提取器**: [meta/plugins/extractors/](/meta/plugins/extractors/) (根据文件类型自动选择)
-
----
-
-## ⚠️ 注意事项
-
-### 1. 安全性
-
-- **不要打印敏感信息**: 避免在日志中打印密码等敏感字段
-- **使用 SensitiveFields()**: 标记敏感字段供上层处理
-- **SQL 注入防护**: 使用参数化查询而非字符串拼接
-
-### 2. 错误处理
-
-- **使用 fmt.Errorf() 包装错误**: 保留错误链
-- **提供清晰的错误消息**: 帮助用户排查问题
-- **设置超时**: 避免长时间阻塞（推荐 10-30 秒）
-
-### 3. 性能优化
-
-- **使用统计信息而非实际查询**: 获取行数时优先使用 INFORMATION_SCHEMA
-- **避免 SELECT \***: 只查询需要的列
-- **合理设置连接池**: 参考 poolConfig 配置
-
-### 4. 兼容性
-
-- **支持多种字段名**: 如同时支持 `user` 和 `username`
-- **处理空密码**: 某些数据库（如 Doris）默认无密码
-- **处理默认值**: 如数据库名默认为 `default`
+### 计算引擎：Python Workflow
+- **文件**：[common/engine/plugins/python_workflow/plugin.go](../common/engine/plugins/python_workflow/plugin.go)
+- **实现接口**：EnginePlugin + ComputePlugin
+- **特点**：
+  - HTTP 健康检查
+  - 返回支持的空间/非空间算子列表
+  - JSON 格式连接信息
 
 ---
 
@@ -982,70 +445,63 @@ stdType := plugin.MapToStandardTypeWithCustom("hll", customMappings)
 
 ### TiDB
 
-```go
-// 驱动：github.com/go-sql-driver/mysql（与 MySQL 相同）
-// GORM 驱动：gorm.io/driver/mysql
-// 默认端口：4000
-// DSN 格式：与 MySQL 相同
+```
+驱动：github.com/go-sql-driver/mysql（与 MySQL 相同）
+GORM 驱动：gorm.io/driver/mysql
+默认端口：4000
+DSN 格式：与 MySQL 相同
 
-// TiDB 可直接复用 MySQL 插件代码，仅修改默认端口和名称
-func (p *TiDBPlugin) DefaultPort() int {
-    return 4000
-}
+实现建议：复用 MySQL 插件代码，仅修改默认端口和名称
 ```
 
 ### SQLite
 
-```go
-// 驱动：github.com/mattn/go-sqlite3
-// GORM 驱动：gorm.io/driver/sqlite
-// 默认端口：无（本地文件）
-// DSN 格式：文件路径
+```
+驱动：github.com/mattn/go-sqlite3
+GORM 驱动：gorm.io/driver/sqlite
+默认端口：无（本地文件）
+DSN 格式：文件路径
 
-func (p *SQLitePlugin) BuildConnectionString(connInfo plugin.ConnectionInfo) (string, error) {
-    filePath := plugin.GetString(connInfo, "file_path")
-    if filePath == "" {
-        return "", fmt.Errorf("missing file_path")
-    }
-    return filePath, nil
-}
+特殊处理：BuildConnectionString() 返回文件路径，RequiredFields() 包含 "file_path"
 ```
 
-### Redis（NoSQL）
+### Redis（NoSQL 缓存数据库）
 
-```go
-// 驱动：github.com/go-redis/redis/v9
-// 默认端口：6379
-// 不支持 GORM，不实现 ConnectionPoolPlugin
+```
+驱动：github.com/go-redis/redis/v9
+默认端口：6379
+不支持 GORM，不实现 ConnectionPoolPlugin
 
-func (p *RedisPlugin) EngineCategory() string {
-    return "standard"  // 标准引擎
-}
-
-// 注意：Redis 不支持标准 SQL，不实现 MetadataPlugin
-// 仅实现 DatabasePlugin 基础接口
+实现建议：
+- 实现 EnginePlugin + StoragePlugin + NoSQLPlugin
+- ListDatabases() 返回 Redis 的 16 个默认数据库
+- ListCollections() 使用 SCAN 命令列出 Key 前缀
+- 注意：Redis 不支持标准 SQL，仅实现元数据扫描
 ```
 
 ---
 
-## 📊 实施检查清单
+## ⚠️ 注意事项
 
-- [ ] 创建数据库插件目录 `common/database/plugins/<dbtype>/`
-- [ ] 实现 `DatabasePlugin` 基础接口（10 个方法）
-- [ ] 实现可选接口（ConnectionPoolPlugin / MetadataPlugin / ObjectStoragePlugin）
-- [ ] 在 `init()` 中注册插件：`plugin.Register(&<DBType>Plugin{})`
-- [ ] 在 `common/dbbridge/bridge.go` 添加导入
-- [ ] 创建 Scanner 插件 `meta/plugins/scanners/<dbtype>/scanner.go`
-- [ ] 在 `meta/plugins/scanners/register.go` 添加导入
-- [ ] 创建 PreviewProvider `manager/backend/internal/service/preview_provider_<dbtype>.go`
-- [ ] 实现查询方法 `Query<DBType>TablePreview()`（在 MetadataRepository）
-- [ ] 添加数据库插件测试
-- [ ] 使用 `plugin.MapToStandardType()` 处理类型映射
-- [ ] 清理 DEBUG 代码和敏感信息打印
-- [ ] 设置合理的连接超时（10-30 秒）
-- [ ] 更新 `docs/addp数据引擎扩展指南.md` 文档（数据库列表）
-- [ ] 本地测试：`go build ./...` 和 `go test ./...`
-- [ ] 集成测试：重启服务并测试连接/扫描/预览
+### 1. 安全性
+- **敏感信息**：在 `SensitiveFields()` 中声明敏感字段（如 password），System 模块会自动加密存储
+- **SQL 注入防护**：使用参数化查询，避免字符串拼接
+- **日志脱敏**：不要在日志中打印密码等敏感信息
+
+### 2. 错误处理
+- **错误包装**：使用 `fmt.Errorf("...: %w", err)` 保留错误链
+- **清晰消息**：提供用户友好的错误消息，帮助排查问题
+- **超时设置**：连接和查询设置合理超时（推荐 10-30 秒）
+
+### 3. 性能优化
+- **统计信息优先**：获取行数时优先使用数据库统计信息（如 `pg_stat_user_tables`）
+- **避免 SELECT \***：只查询需要的列
+- **连接池配置**：合理设置 `MaxOpenConns`、`MaxIdleConns`、`ConnMaxLifetime`
+
+### 4. 兼容性
+- **字段名灵活性**：同时支持 `user` 和 `username`（通过 `GetString(connInfo, "user")` 或 `GetString(connInfo, "username")`）
+- **空密码处理**：部分数据库（如 Doris）默认无密码，需处理空字符串
+- **默认值**：提供合理的默认值（如数据库名、端口）
 
 ---
 
@@ -1053,61 +509,51 @@ func (p *RedisPlugin) EngineCategory() string {
 
 ### 问题 1：插件未注册
 
-**症状**: `plugin.Get("<dbtype>")` 返回 nil
+**症状**：`plugin.Get("<dbtype>")` 返回 nil
 
-**解决方案**:
+**解决方案**：
 1. 确认 `init()` 函数调用了 `plugin.Register()`
-2. 确认在 `dbbridge/bridge.go` 中添加了 `import _ "..."`
-3. 重新编译 `go build ./...`
+2. 确认在 `common/dbbridge/bridge.go` 中添加了 `import _ "..."`
+3. 重新编译：`cd common && go build ./...`
 
 ### 问题 2：连接测试失败
 
-**症状**: TestConnection 返回超时或连接拒绝
+**症状**：`TestConnection` 返回超时或连接拒绝
 
-**解决方案**:
-1. 检查 DSN 格式是否正确（打印到日志查看）
+**解决方案**：
+1. 检查 DSN 格式是否正确（可打印到日志调试）
 2. 确认数据库服务正在运行
 3. 检查防火墙和网络配置
 4. 增加连接超时时间
 
-### 问题 3：类型映射错误
+### 问题 3：元数据扫描失败
 
-**症状**: 列类型显示为 "string" 而不是预期类型
+**症状**：Meta 模块扫描时报错 "plugin not found" 或 "method not implemented"
 
-**解决方案**:
-1. 检查数据库返回的原生类型名称（打印 `dataType` 调试）
-2. 确认使用了 `plugin.MapToStandardType()`
-3. 如需自定义映射，使用 `MapToStandardTypeWithCustom()`
+**解决方案**：
+1. 确认插件实现了对应接口（`RelationalDBPlugin` 或 `NoSQLPlugin` 或 `ObjectStoragePlugin`）
+2. 检查接口方法签名是否正确
+3. 重启 Meta Worker：`bash scripts/dev/restart.sh -meta`
 
-### 问题 4：扫描器未找到
+### 问题 4：预览不显示数据
 
-**症状**: Meta 扫描时报错 "scanner not found"
+**症状**：Manager 模块数据预览页面空白或报错
 
-**解决方案**:
-1. 确认在 `meta/plugins/scanners/register.go` 添加了导入
-2. 检查 `init()` 函数是否正确注册
-3. 重新编译 meta 模块
-
-### 问题 5：预览不显示数据
-
-**症状**: 数据预览页面空白或报错
-
-**解决方案**:
-1. 检查 PreviewProvider 是否正确注册（`RegisterPreviewProvider()`）
-2. 验证 `Supports()` 方法是否返回 true
-3. 检查查询方法是否正确返回数据
-4. 查看浏览器控制台错误
+**解决方案**：
+1. 确认插件实现了元数据查询接口
+2. 检查是否正确返回了 Schema/Table/Column 信息
+3. 查看浏览器控制台错误
 
 ---
 
 ## 🎓 学习资源
 
-- **Plugin 接口定义**: [common/database/plugin/interfaces.go](/common/database/plugin/interfaces.go)
-- **类型映射工具**: [common/database/plugin/type_mapper.go](/common/database/plugin/type_mapper.go)
-- **DSN 构建工具**: [common/database/plugin/dsn_builder.go](/common/database/plugin/dsn_builder.go)
-- **Scanner 接口**: [meta/plugins/interfaces.go](/meta/plugins/interfaces.go)
-- **PreviewProvider 接口**: [manager/backend/internal/service/preview_registry.go](/manager/backend/internal/service/preview_registry.go)
-- **完整示例**: [common/database/plugins/postgresql/plugin.go](/common/database/plugins/postgresql/plugin.go)
+- **接口定义**：[common/engine/plugin/interfaces.go](../common/engine/plugin/interfaces.go)
+- **工具函数**：[common/engine/plugin/helpers.go](../common/engine/plugin/helpers.go)
+- **DSN 构建**：[common/engine/plugin/dsn_builder.go](../common/engine/plugin/dsn_builder.go)
+- **完整示例**：[common/engine/plugins/postgresql/plugin.go](../common/engine/plugins/postgresql/plugin.go)
+- **MongoDB 示例**：[common/engine/plugins/mongodb/](../common/engine/plugins/mongodb/) ⭐
+- **类型映射**：[common/format/type_mapper.go](../common/format/type_mapper.go)
 
 ---
 
@@ -1115,12 +561,13 @@ func (p *RedisPlugin) EngineCategory() string {
 
 如果遇到问题，请：
 1. 查看已有插件实现作为参考
-2. 阅读 [docs/addp常见故障排查.md](/docs/addp常见故障排查.md)
+2. 阅读 [docs/addp常见故障排查.md](addp常见故障排查.md)
 3. 在项目仓库提交 Issue
 
 ---
 
 **祝你成功添加新的数据引擎支持！** 🎉
 
-**最后更新**: 2025-12-29
-**维护者**: ADDP 开发团队
+**最后更新**：2025-12-30
+**版本**：v0.0.20
+**维护者**：ADDP 开发团队

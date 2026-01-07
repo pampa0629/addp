@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	commonapi "github.com/addp/common/api"
 	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -21,8 +22,7 @@ func NewLogHandler(logService *service.LogService) *LogHandler {
 }
 
 func (h *LogHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, pageSize := commonapi.ParsePagination(c)
 
 	// 构建过滤条件
 	filters := &models.AuditLogFilters{
@@ -32,6 +32,8 @@ func (h *LogHandler) List(c *gin.Context) {
 		EntityType: c.Query("entity_type"),
 		Username:   c.Query("username"),
 		IPAddress:  c.Query("ip"),
+		ModuleName: c.Query("module_name"),
+		StatusCode: c.Query("status_code"),
 	}
 
 	// 用户ID过滤
@@ -44,40 +46,30 @@ func (h *LogHandler) List(c *gin.Context) {
 	}
 
 	// 获取当前用户ID
-	currentUserID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
+	currentUserID, _ := commonapi.GetCurrentUserID(c)
 
-	logs, total, err := h.logService.List(page, pageSize, filters, currentUserID.(uint))
+	logs, total, err := h.logService.List(page, pageSize, filters, currentUserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":  logs,
-		"total": total,
-		"page":  page,
-		"page_size": pageSize,
-	})
+	commonapi.RespondPaginated(c, logs, total, page, pageSize)
 }
 
 func (h *LogHandler) GetByID(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的日志ID"})
 		return
 	}
 
-	log, err := h.logService.GetByID(uint(id))
+	log, err := h.logService.GetByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "日志不存在"})
+		commonapi.RespondError(c, 404, "日志不存在")
 		return
 	}
 
-	c.JSON(http.StatusOK, log)
+	commonapi.RespondSuccess(c, log)
 }
 
 // Export 导出审计日志
@@ -92,6 +84,8 @@ func (h *LogHandler) Export(c *gin.Context) {
 		EntityType: c.Query("entity_type"),
 		Username:   c.Query("username"),
 		IPAddress:  c.Query("ip"),
+		ModuleName: c.Query("module_name"),
+		StatusCode: c.Query("status_code"),
 	}
 
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
@@ -103,16 +97,12 @@ func (h *LogHandler) Export(c *gin.Context) {
 	}
 
 	// 获取当前用户ID
-	currentUserID, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
+	currentUserID, _ := commonapi.GetCurrentUserID(c)
 
 	// 导出所有匹配的日志（不分页，限制最多 10000 条）
-	logs, _, err := h.logService.List(1, 10000, filters, currentUserID.(uint))
+	logs, _, err := h.logService.List(1, 10000, filters, currentUserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		commonapi.RespondError(c, 500, err.Error())
 		return
 	}
 
@@ -139,7 +129,7 @@ func (h *LogHandler) Export(c *gin.Context) {
 		// 写入表头
 		headers := []string{"ID", "用户ID", "用户名", "租户ID", "操作", "资源类型", "资源ID", "IP地址", "时间"}
 		if err := writer.Write(headers); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "导出失败"})
+			commonapi.RespondError(c, 500, "导出失败")
 			return
 		}
 
@@ -174,20 +164,25 @@ func (h *LogHandler) Export(c *gin.Context) {
 func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	var req models.AuditLogCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		commonapi.RespondError(c, 400, "无效的请求参数")
 		return
 	}
 
 	// 构建审计日志对象
 	auditLog := &models.AuditLog{
-		UserID:     req.UserID,
-		TenantID:   req.TenantID,
-		Action:     req.Action,
-		EntityType: req.EntityType,
-		EntityID:   req.EntityID,
-		Details:    req.Details,
-		IPAddress:  req.IPAddress,
-		ModuleName: req.ModuleName,
+		UserID:       req.UserID,
+		TenantID:     req.TenantID,
+		Action:       req.Action,
+		EntityType:   req.EntityType,
+		EntityID:     req.EntityID,
+		Details:      req.Details,
+		IPAddress:    req.IPAddress,
+		ModuleName:   req.ModuleName,
+		HTTPStatus:   req.HTTPStatus,   // 新增
+		DurationMs:   req.DurationMs,   // 新增
+		LogLevel:     req.LogLevel,     // 新增
+		ErrorMessage: req.ErrorMessage, // 新增
+		RequestID:    req.RequestID,    // 新增
 	}
 
 	// 设置用户名
@@ -197,9 +192,35 @@ func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 
 	// 创建日志
 	if err := h.logService.Create(auditLog); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建审计日志失败"})
+		commonapi.RespondError(c, 500, "创建审计日志失败")
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "审计日志已创建"})
+	commonapi.RespondCreated(c, gin.H{"message": "审计日志已创建"})
+}
+
+// GetStats 获取日志统计（新增）
+func (h *LogHandler) GetStats(c *gin.Context) {
+	currentUserID, _ := commonapi.GetCurrentUserID(c)
+
+	stats, err := h.logService.GetStats(currentUserID)
+	if err != nil {
+		commonapi.RespondError(c, 500, err.Error())
+		return
+	}
+
+	commonapi.RespondSuccess(c, stats)
+}
+
+// GetTrends 获取时间趋势（新增）
+func (h *LogHandler) GetTrends(c *gin.Context) {
+	currentUserID, _ := commonapi.GetCurrentUserID(c)
+
+	trends, err := h.logService.GetTrends(currentUserID)
+	if err != nil {
+		commonapi.RespondError(c, 500, err.Error())
+		return
+	}
+
+	commonapi.RespondSuccess(c, trends)
 }

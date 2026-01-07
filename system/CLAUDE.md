@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 多租户账号管理（超级管理员、租户管理员、普通用户）
 - 日志管理（审计日志存储和查询）
 - 引擎管理（标准库连接、扩展引擎连接等）
+- API 文档中心（ADDP 平台所有模块的 REST API 接口文档）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
 技术栈：

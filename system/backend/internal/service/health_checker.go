@@ -30,7 +30,7 @@ func (h *HealthChecker) CheckAllResourcesOnStartup() {
 	h.log.Info("开始检测所有资源健康状态...")
 
 	// 获取所有资源列表
-	engines, err := h.resourceService.repo.List(0, 9999, "")
+	engines, _, err := h.resourceService.repo.List(0, 9999, "")
 	if err != nil {
 		h.log.Error("获取引擎列表失败", "error", err)
 		return

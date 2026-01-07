@@ -195,7 +195,7 @@ const handlePageChange = async () => {
 const loadUsersData = async () => {
   const result = await loadUsers(currentPage.value, pageSize.value)
   if (result.success) {
-    total.value = result.data.length
+    total.value = result.total || 0
   }
 }
 

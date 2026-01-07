@@ -5,18 +5,17 @@ let previewAbortController = null
 
 export const dataExplorerAPI = {
   getEngines() {
-    return client.get('/data-explorer/engines')
+    return client.get('/explorer/engines')
   },
-  getTree(engineId) {
-    return client.get(`/data-explorer/engines/${engineId}/tree`)
+  getTree(engineId, expandDepth = 2) {
+    return client.get(`/explorer/tree/${engineId}`, {
+      params: { expand_depth: expandDepth }
+    })
   },
-  getLegacyTree() {
-    return client.get('/data-explorer/tree')
+  refreshNode(engineId, locator) {
+    return client.post(`/explorer/tree/${engineId}/refresh`, { locator })
   },
-  refreshNode(engineId, payload) {
-    return client.post(`/data-explorer/engines/${engineId}/refresh`, payload)
-  },
-  getPreview(params) {
+  getPreview(locator, page = 1, pageSize = 50) {
     // 取消之前未完成的预览请求
     if (previewAbortController) {
       previewAbortController.abort()
@@ -25,8 +24,8 @@ export const dataExplorerAPI = {
     // 创建新的取消控制器
     previewAbortController = new AbortController()
 
-    return client.get('/data-explorer/preview', {
-      params,
+    return client.get('/explorer/preview', {
+      params: { locator, page, page_size: pageSize },
       signal: previewAbortController.signal,
       timeout: 60000 // 空间数据预览可能需要更长时间（60秒）
     })

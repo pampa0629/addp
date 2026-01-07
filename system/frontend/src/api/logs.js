@@ -19,5 +19,15 @@ export const logsAPI = {
 
   getById: (id) => {
     return client.get(`/logs/${id}`)
+  },
+
+  // 统计数据（新增）
+  getStats: () => {
+    return client.get('/logs/stats')
+  },
+
+  // 时间趋势（新增）
+  getTrends: () => {
+    return client.get('/logs/trends')
   }
 }

@@ -1,7 +1,7 @@
 # ADDP API 设计规范
 
-版本：v1.1
-更新日期：2026-01-03（修订版）
+版本：v1.2
+更新日期：2026-01-06
 适用范围：ADDP 全平台所有模块（System、Manager、Meta、Transfer、Orchestrator、Develop、Service）
 
 ---
@@ -29,174 +29,155 @@
 
 ## 二、响应格式规范
 
-### 2.1 统一响应结构
+### 2.1 灵活响应策略（推荐）
 
-所有 API 响应统一使用以下 JSON 格式：
+ADDP 采用**灵活响应策略**，根据场景选择最合适的响应格式，避免过度包装，强调简洁高效。
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": <any>
-}
-```
+#### 核心原则
 
-**字段说明：**
-
-| 字段    | 类型   | 必填 | 说明                                      |
-|---------|--------|------|-------------------------------------------|
-| code    | int    | 是   | HTTP 状态码（200、400、404、500 等）      |
-| message | string | 是   | 提示信息（成功或失败原因，可直接展示给用户）|
-| data    | any    | 否   | 实际数据（成功时有值，失败时为 null）      |
+1. **HTTP 状态码语义优先** - 充分利用 HTTP 状态码表达请求结果
+2. **简单场景直接返回** - CRUD 操作直接返回数据或资源对象
+3. **复杂场景适度包装** - 列表查询包含分页信息，错误响应包含错误描述
+4. **避免信息冗余** - 不在响应体中重复 HTTP 状态码信息
 
 #### 设计决策说明
 
-本规范采用 `{code, message, data}` 的统一响应格式，主要基于以下考虑：
+**为什么采用灵活响应？**
+1. **简洁高效** - 减少不必要的包装层，降低响应体积
+2. **符合国际主流** - Google、Microsoft、GitHub 等公司的 API 都采用类似策略
+3. **充分利用 HTTP 语义** - HTTP 状态码已经表达了请求结果，无需在 body 中重复
+4. **前端易于处理** - 现代前端框架（Axios、Fetch）都能很好地处理 HTTP 状态码
 
-**为什么采用这种格式？**
-1. **国内开发习惯** - 国内大多数团队习惯这种格式，团队接受度高
-2. **前端统一处理** - 前端可以统一拦截器处理所有响应，无需判断HTTP状态码
-3. **向后兼容** - 与现有代码保持一致，降低迁移成本
-4. **便于调试** - 响应体中包含完整信息，便于日志记录和问题排查
+**与传统 `{code, message, data}` 包装格式的对比**：
 
-**与国际主流的差异**
-- ⚠️ **HTTP状态码冗余** - HTTP状态码已经表达了请求结果，响应体中再包含`code`存在信息重复
-- ⚠️ **RESTful原则** - 严格的RESTful设计通常只在错误响应中包含错误对象，成功响应直接返回数据
-- 📚 **国际标准** - Google、Microsoft、GitHub等公司的API通常采用更简洁的响应格式
-
-**国际主流做法示例**：
 ```json
-// 成功响应 - 200
+// 传统包装格式（冗余）
+{
+  "code": 200,
+  "message": "success",
+  "data": {"id": 1, "username": "admin"}
+}
+
+// 灵活响应（简洁，推荐）
 {
   "id": 1,
-  "name": "PostgreSQL",
-  "created_at": "2024-01-01T12:00:00Z"
+  "username": "admin"
 }
-
-// 错误响应 - 400
-{
-  "error": {
-    "message": "参数错误：用户名不能为空",
-    "code": "INVALID_ARGUMENT",
-    "details": [...]
-  }
-}
+// HTTP 200 状态码已经表达了成功
 ```
 
-**团队选择**
-- ✅ 当前项目采用 `{code, message, data}` 格式，适合内部使用和国内市场
-- 💡 未来对外开放API时，可考虑提供更符合国际标准的v2版本
-- 🎯 关键是保持一致性，避免同一项目中混用多种响应格式
+**适用场景**：
+- ✅ 内部 API 和外部开放 API 均适用
+- ✅ 快速迭代期保持灵活性
+- ✅ 符合 RESTful 最佳实践
+
+**参考实现**：System 模块已采用此策略，可作为其他模块的参考标准
 
 ### 2.2 成功响应示例
 
-**（1）查询单个资源**
+**（1）查询单个资源 - 直接返回对象**
 
 ```json
+// HTTP 200 OK
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "id": 1,
-    "name": "PostgreSQL 主库",
-    "engine_type": "postgresql",
-    "created_at": "2024-01-01T12:00:00Z"
-  }
+  "id": 1,
+  "name": "PostgreSQL 主库",
+  "engine_type": "postgresql",
+  "created_at": "2024-01-01T12:00:00Z"
 }
 ```
 
-**（2）查询列表（无分页）**
+**（2）创建资源 - 返回新创建的对象**
 
 ```json
+// HTTP 201 Created
 {
-  "code": 200,
-  "message": "success",
-  "data": [
-    {"id": 1, "name": "user1"},
-    {"id": 2, "name": "user2"}
-  ]
+  "id": 123,
+  "name": "新引擎",
+  "created_at": "2024-01-06T10:00:00Z"
 }
 ```
 
-**（3）查询列表（分页）**
+**（3）查询列表（无分页）- 直接返回数组**
 
 ```json
+// HTTP 200 OK
+[
+  {"id": 1, "name": "user1"},
+  {"id": 2, "name": "user2"}
+]
+```
+
+**（4）查询列表（分页）- 包含分页信息**
+
+```json
+// HTTP 200 OK
 {
-  "code": 200,
-  "message": "success",
   "data": [
     {"id": 1, "name": "user1"},
     {"id": 2, "name": "user2"}
   ],
-  "pagination": {
-    "total": 100,
-    "page": 1,
-    "page_size": 20,
-    "total_pages": 5
-  }
+  "total": 100,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 5
 }
 ```
 
-**（4）创建资源**
+**（5）更新资源 - 返回更新后的对象**
 
 ```json
+// HTTP 200 OK
 {
-  "code": 201,
-  "message": "创建成功",
-  "data": {
-    "id": 123,
-    "name": "新引擎"
-  }
+  "id": 1,
+  "name": "更新后的名称",
+  "updated_at": "2024-01-06T10:00:00Z"
 }
 ```
 
-**（5）更新/删除资源**
+**（6）删除资源 - 返回简洁消息（可选）**
 
 ```json
+// HTTP 200 OK
 {
-  "code": 200,
   "message": "删除成功"
 }
 ```
 
-或返回更新后的完整对象：
-
-```json
-{
-  "code": 200,
-  "message": "更新成功",
-  "data": {
-    "id": 1,
-    "name": "更新后的名称"
-  }
-}
-```
+或直接返回空响应（HTTP 204 No Content），但不推荐，因为前端处理不便
 
 ### 2.3 错误响应格式
 
+**使用简洁的 `{error}` 格式，HTTP 状态码表达错误类型：**
+
 ```json
+// HTTP 400 Bad Request
 {
-  "code": 400,
-  "message": "参数错误：用户名不能为空"
+  "error": "参数错误：用户名不能为空"
 }
 ```
 
-或包含详细信息（可选，生产环境可隐藏）：
+**可选：包含详细信息（开发/测试环境）**
 
 ```json
+// HTTP 500 Internal Server Error
 {
-  "code": 500,
-  "message": "数据库连接失败",
-  "error_detail": "connection timeout after 5s"
+  "error": "数据库连接失败",
+  "detail": "connection timeout after 5s"
 }
 ```
+
+**注意**：
+- 生产环境应隐藏 `detail` 字段，避免泄露敏感信息
+- HTTP 状态码已经表达了错误类型（400/401/403/404/500），无需在 body 中重复
+- 错误消息应该清晰、可读，可以直接展示给用户
 
 ### 2.4 分页响应格式
 
 **请求参数：**
 
 ```
-GET /api/v1/users?page=1&page_size=20
+GET /api/users?page=1&page_size=20
 ```
 
 | 参数      | 类型 | 默认值 | 说明                          |
@@ -207,16 +188,16 @@ GET /api/v1/users?page=1&page_size=20
 **响应格式：**
 
 ```json
+// HTTP 200 OK
 {
-  "code": 200,
-  "message": "success",
-  "data": [...],
-  "pagination": {
-    "total": 100,
-    "page": 1,
-    "page_size": 20,
-    "total_pages": 5
-  }
+  "data": [
+    {"id": 1, "name": "user1"},
+    {"id": 2, "name": "user2"}
+  ],
+  "total": 100,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 5
 }
 ```
 
@@ -224,6 +205,7 @@ GET /api/v1/users?page=1&page_size=20
 
 | 字段        | 类型 | 说明           |
 |-------------|------|----------------|
+| data        | array| 当前页的数据   |
 | total       | int  | 总记录数       |
 | page        | int  | 当前页码       |
 | page_size   | int  | 每页大小       |
@@ -286,11 +268,11 @@ DELETE /api/v1/tenants/:id/users/:uid   # 删除租户下的某个用户
 
 | 操作类型           | 推荐方案                           | 说明                                      |
 |--------------------|------------------------------------|-------------------------------------------|
-| 测试引擎连接       | POST /engines/:id/test             | 动作清晰，保留动词合理                    |
-| 创建前测试连接     | POST /engines/test                 | 临时操作，不创建资源，使用动词合理        |
+| 测试已有引擎       | POST /engines/:id/test             | 动作清晰，保留动词合理                    |
+| 创建前测试连接     | POST /engines/test-connection      | 临时操作，test-connection 比 test 更明确  |
 | 触发扫描任务       | POST /engines/:id/scan             | 触发动作，保留动词直观                    |
-| 修改密码           | PUT /users/:id/password            | 密码是用户的子资源，资源化合理            |
-| 导出日志           | GET /logs?format=csv&export=true   | 使用查询参数表示格式                      |
+| 修改密码           | PUT /users/:id/change-password     | change-password 比 password 语义更明确    |
+| 导出日志           | GET /logs/export?format=csv        | 独立操作，使用独立路径更直观              |
 | 批量删除           | POST /users/batch_delete           | 批量操作，使用动词清晰                    |
 | 用户登录           | POST /auth/login                   | 认证操作，保留动词（业界标准）            |
 | Token 刷新         | POST /auth/refresh                 | 认证操作，保留动词（业界标准）            |
@@ -300,19 +282,21 @@ DELETE /api/v1/tenants/:id/users/:uid   # 删除租户下的某个用户
 ```bash
 # ❌ 过度资源化 - 降低可读性
 POST /engines/:id/connection_tests         # 比 /test 更冗长，没有带来额外价值
-POST /scan_tasks                            # body需要传engine_id，不如 /engines/:id/scan 直观
+PUT /users/:id/password                    # 容易与 GET 混淆，不如 change-password 清晰
+GET /logs?format=csv&export=true           # 查询参数冗长，不如独立路径直观
 
 # ✅ 推荐做法 - 清晰直观
 POST /engines/:id/test                      # 一目了然：测试引擎连接
-POST /engines/:id/scan                      # 清楚明确：触发扫描
-PUT /users/:id/password                     # 资源化合理：密码是子资源
+POST /engines/test-connection               # 明确：创建前的临时测试
+PUT /users/:id/change-password              # 清晰：修改密码操作
+GET /logs/export                            # 直观：导出日志
 ```
 
 **例外场景（可保留动词）：**
 1. **认证相关** - `/auth/login`、`/auth/logout`、`/auth/refresh`（业界标准）
 2. **触发动作** - `/test`、`/scan`、`/execute`、`/deploy`（不创建持久资源的操作）
 3. **批量操作** - `/batch_delete`、`/batch_update`（涉及多个资源的操作）
-4. **特殊操作** - 当资源化会显著降低可读性时
+4. **语义明确性** - 当动词能显著提高可读性时（如 `change-password` vs `password`，`export` vs 查询参数）
 
 **GitHub API 案例参考：**
 - `POST /repos/:owner/:repo/merges` - 合并操作
@@ -320,25 +304,7 @@ PUT /users/:id/password                     # 资源化合理：密码是子资�
 - `PUT /repos/:owner/:repo/topics` - 更新主题
 
 **小结：**
-RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则和实用性之间取得平衡，让开发者能够快速理解和正确使用。
-
-### 3.6 当前需要调整的接口
-
-基于上述原则，以下是当前接口的迁移建议：
-
-| 当前接口                              | 建议调整为                                   | 优先级 |
-|---------------------------------------|----------------------------------------------|--------|
-| POST /api/engines/:id/test            | POST /api/v1/engines/:id/test                | 高     |
-| POST /api/engines/test                | POST /api/v1/engines/test                    | 高     |
-| POST /api/engines/:id/scan            | POST /api/v1/engines/:id/scan                | 高     |
-| PUT /api/users/:id/change-password    | PUT /api/v1/users/:id/password               | 中     |
-| GET /api/logs/export                  | GET /api/v1/logs?format=csv&export=true      | 中     |
-
-**迁移重点：**
-1. 主要是添加 `/v1` 版本前缀
-2. `change-password` 改为资源化的 `password`
-3. `export` 改为查询参数
-4. 保留 `test`、`scan` 等动词（根据3.5节原则）
+RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则和实用性之间取得平衡，让开发者能够快速理解和正确使用。**当资源化会降低可读性时，保留动词是更好的选择。**
 
 ---
 
@@ -377,14 +343,14 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 
 | 场景                     | 状态码 | 响应示例                                    |
 |--------------------------|--------|---------------------------------------------|
-| 用户名密码错误           | 401    | `{"code": 401, "message": "用户名或密码错误"}` |
-| Token 无效/过期          | 401    | `{"code": 401, "message": "未登录或 token 已过期"}` |
-| JSON 格式错误            | 400    | `{"code": 400, "message": "请求格式错误"}` |
-| 缺少必填参数             | 400    | `{"code": 400, "message": "缺少必填参数：用户名"}` |
-| 无权限访问资源           | 403    | `{"code": 403, "message": "无权访问该资源"}` |
-| 资源不存在               | 404    | `{"code": 404, "message": "引擎不存在"}` |
-| 用户名已存在             | 409    | `{"code": 409, "message": "用户名已存在"}` |
-| 数据库连接失败           | 500    | `{"code": 500, "message": "数据库连接失败"}` |
+| 用户名密码错误           | 401    | `{"error": "用户名或密码错误"}` |
+| Token 无效/过期          | 401    | `{"error": "未登录或 token 已过期"}` |
+| JSON 格式错误            | 400    | `{"error": "请求格式错误"}` |
+| 缺少必填参数             | 400    | `{"error": "缺少必填参数：用户名"}` |
+| 无权限访问资源           | 403    | `{"error": "无权访问该资源"}` |
+| 资源不存在               | 404    | `{"error": "引擎不存在"}` |
+| 用户名已存在             | 409    | `{"error": "用户名已存在"}` |
+| 数据库连接失败           | 500    | `{"error": "数据库连接失败"}` |
 
 **状态码选择要点：**
 - **401** - 用于所有认证失败的场景（登录失败、token无效、token过期）
@@ -394,10 +360,10 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 
 ### 4.3 错误处理原则
 
-1. **HTTP 状态码与响应 code 保持一致**
-2. **message 应清晰描述错误原因**，可直接展示给用户
-3. **生产环境可隐藏 error_detail**，避免泄露敏感信息
-4. **统一错误处理中间件**，避免每个 handler 重复处理
+1. **HTTP 状态码表达错误类型** - 充分利用 HTTP 语义，无需在 body 中重复
+2. **error 字段清晰描述错误原因** - 可直接展示给用户
+3. **生产环境可隐藏 detail 字段** - 避免泄露敏感信息
+4. **统一错误处理中间件** - 避免每个 handler 重复处理
 
 ---
 
@@ -405,17 +371,29 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 
 ### 5.1 版本策略
 
-**采用 URL 路径版本：**
+**支持 URL 路径版本，但当前阶段灵活使用：**
 
 ```
-/api/v1/users
-/api/v2/users
+/api/users       # 当前使用（v0.x 快速迭代期）
+/api/v1/users    # 项目稳定后使用（v1.0+）
+/api/v2/users    # 未来版本
 ```
 
-**优点：**
+**版本控制的优点：**
 - 直观明确
 - 支持同时运行多个版本
 - 便于网关路由和灰度发布
+
+**当前阶段（v0.x）策略：**
+- ✅ **暂不强制 `/v1` 前缀** - 保持 `/api/` 简洁路径
+- ✅ **灵活快速迭代** - 避免版本前缀增加的复杂度
+- ✅ **预留版本化能力** - 路由设计上支持未来添加版本前缀
+
+**为什么当前不强制版本前缀？**
+1. **快速迭代期** - 项目处于 v0.0.20，频繁破坏性变更
+2. **降低开发成本** - 前后端代码更简洁
+3. **保持灵活性** - 无需为每个变更考虑版本兼容
+4. **向前演进** - 项目稳定到 v1.0 时再统一添加
 
 ### 5.2 版本演进规则
 
@@ -423,13 +401,22 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 - **新增字段、新增接口** → 不需要升级版本（保持向后兼容）
 - **废弃接口**：标记为 `@deprecated`，在下一大版本移除
 
-### 5.3 当前版本
+### 5.3 未来版本化路线图
 
-**所有新接口统一使用 `/api/v1/` 前缀**
+**阶段 1（当前）- v0.x 快速迭代期：**
+- 使用 `/api/` 路径
+- 不考虑向后兼容
+- 可自由破坏性变更
 
-现有接口需逐步迁移：
-- `/api/users` → `/api/v1/users`
-- `/api/engines` → `/api/v1/engines`
+**阶段 2 - v1.0 稳定发布：**
+- 统一迁移到 `/api/v1/`
+- 开始遵守向后兼容原则
+- 破坏性变更通过 v2 版本
+
+**迁移策略：**
+1. 在路由设计上预留版本化能力（使用 Group 嵌套）
+2. v1.0 发布前统一添加 `/v1` 前缀
+3. 可选：保留旧路径一段时间以平滑过渡
 
 ---
 
@@ -595,38 +582,35 @@ X-API-Key: <app_api_key>
 **未认证（401）：**
 
 ```json
+// HTTP 401 Unauthorized
 {
-  "code": 401,
-  "message": "未登录或 token 已过期"
+  "error": "未登录或 token 已过期"
 }
 ```
 
 **权限不足（403）：**
 
 ```json
+// HTTP 403 Forbidden
 {
-  "code": 403,
-  "message": "无权访问该资源"
+  "error": "无权访问该资源"
 }
 ```
 
 ### 8.3 Token 刷新
 
 ```
-POST /api/v1/auth/refresh
+POST /api/auth/refresh
 Authorization: Bearer <expired_token>
 ```
 
 响应：
 
 ```json
+// HTTP 200 OK
 {
-  "code": 200,
-  "message": "success",
-  "data": {
-    "access_token": "new_jwt_token",
-    "token_type": "Bearer"
-  }
+  "access_token": "new_jwt_token",
+  "token_type": "Bearer"
 }
 ```
 
@@ -680,76 +664,97 @@ http://localhost:8081/swagger/index.html   # Manager 模块
 
 ### 10.1 新接口开发
 
-所有新开发的接口**必须**遵循本规范：
+所有新开发的接口**应当**遵循本规范：
 
-1. 使用 `/api/v1/` 前缀
-2. 采用统一响应格式（code + message + data）
-3. 遵循 RESTful 设计
+1. 当前阶段使用 `/api/` 路径（v0.x 快速迭代期）
+2. 采用灵活响应策略（简单场景直接返回，复杂场景适度包装）
+3. 遵循 RESTful 设计（可读性优先，合理使用动词）
 4. 使用 snake_case 命名
 5. 添加 Swagger 注释
+
+**参考实现**：System 模块的 API 设计可作为其他模块的参考标准
 
 ### 10.2 现有接口迁移
 
 **迁移策略：**
 
-1. **阶段 1（兼容过渡期）**：
-   - 新路由 `/api/v1/xxx` 遵循新规范
-   - 旧路由 `/api/xxx` 保留，逐步废弃
-   - 前端逐步切换到新接口
+**当前阶段（v0.x）**：
+- 优先参考 System 模块的实现
+- 逐步统一响应格式（灵活响应策略）
+- 不强制迁移路径（保持 `/api/`）
 
-2. **阶段 2（完全迁移）**：
-   - 移除旧路由
-   - 所有接口统一使用 `/api/v1/`
+**未来 v1.0 发布时**：
+- 统一添加 `/api/v1/` 前缀
+- 所有模块遵循一致的响应格式
+- 开始遵守向后兼容原则
 
 **优先级：**
-- 高频接口优先迁移（如用户、引擎、日志）
-- 内部接口可延后迁移
+- 高频接口优先统一格式（如用户、引擎、日志）
+- 内部接口可延后
 
 ### 10.3 共享响应处理
 
-在 `common/api` 模块中提供统一的响应方法：
+在 `common/api` 模块中提供统一的响应方法（参考 System 模块实现）：
 
 ```go
-// RespondSuccess 成功响应
+// RespondSuccess 成功响应 - 直接返回数据
 func RespondSuccess(c *gin.Context, data interface{}) {
-    c.JSON(http.StatusOK, gin.H{
-        "code":    200,
-        "message": "success",
-        "data":    data,
-    })
+    c.JSON(http.StatusOK, data)
 }
 
 // RespondCreated 创建成功响应
 func RespondCreated(c *gin.Context, data interface{}) {
-    c.JSON(http.StatusCreated, gin.H{
-        "code":    201,
-        "message": "创建成功",
-        "data":    data,
+    c.JSON(http.StatusCreated, data)
+}
+
+// RespondError 错误响应 - 简洁格式
+func RespondError(c *gin.Context, code int, message string) {
+    c.JSON(code, gin.H{
+        "error": message,
     })
 }
 
-// RespondError 错误响应
-func RespondError(c *gin.Context, code int, message string) {
-    c.JSON(code, gin.H{
-        "code":    code,
-        "message": message,
-    })
+// RespondOrError 智能响应 - 自动映射错误到 HTTP 状态码
+func RespondOrError(c *gin.Context, data interface{}, err error) {
+    if err != nil {
+        code := MapErrorToHTTPStatus(err)
+        RespondError(c, code, err.Error())
+        return
+    }
+    RespondSuccess(c, data)
 }
 
 // RespondPaginated 分页响应
 func RespondPaginated(c *gin.Context, data interface{}, total int64, page, pageSize int) {
     totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
     c.JSON(http.StatusOK, gin.H{
-        "code":    200,
-        "message": "success",
-        "data":    data,
-        "pagination": gin.H{
-            "total":       total,
-            "page":        page,
-            "page_size":   pageSize,
-            "total_pages": totalPages,
-        },
+        "data":        data,
+        "total":       total,
+        "page":        page,
+        "page_size":   pageSize,
+        "total_pages": totalPages,
     })
+}
+```
+
+**错误映射函数**：
+
+```go
+func MapErrorToHTTPStatus(err error) int {
+    switch {
+    case errors.Is(err, gorm.ErrRecordNotFound):
+        return http.StatusNotFound
+    case errors.Is(err, gorm.ErrDuplicatedKey):
+        return http.StatusConflict
+    case errors.Is(err, ErrBadRequest):
+        return http.StatusBadRequest
+    case errors.Is(err, ErrUnauthorized):
+        return http.StatusUnauthorized
+    case errors.Is(err, ErrForbidden):
+        return http.StatusForbidden
+    default:
+        return http.StatusInternalServerError
+    }
 }
 ```
 
@@ -776,7 +781,16 @@ func RespondPaginated(c *gin.Context, data interface{}, total int64, page, pageS
 
 ### Q2: 删除操作返回 200 还是 204？
 
-**A:** 推荐返回 200 + 成功消息，便于前端提示用户。204 不返回 body，前端不好处理。
+**A:** 推荐返回 **200 + 简洁消息**，便于前端提示用户。
+
+```json
+// HTTP 200 OK
+{
+  "message": "删除成功"
+}
+```
+
+204 不返回 body，虽然符合 HTTP 语义，但前端处理不便，推荐使用 200 + message。
 
 ### Q3: 用户名密码错误返回什么状态码？
 
@@ -790,20 +804,20 @@ func RespondPaginated(c *gin.Context, data interface{}, total int64, page, pageS
 **示例：**
 ```http
 # 用户名密码错误
-POST /api/v1/auth/login
-Response: 401 {"code": 401, "message": "用户名或密码错误"}
+POST /api/auth/login
+Response: 401 {"error": "用户名或密码错误"}
 
 # Token过期
-GET /api/v1/users
-Response: 401 {"code": 401, "message": "token已过期"}
+GET /api/users
+Response: 401 {"error": "token已过期"}
 
 # JSON格式错误
-POST /api/v1/users
-Response: 400 {"code": 400, "message": "JSON格式错误"}
+POST /api/users
+Response: 400 {"error": "JSON格式错误"}
 
 # 已登录但无权限
-GET /api/v1/admin/users
-Response: 403 {"code": 403, "message": "无权访问该资源"}
+GET /api/admin/users
+Response: 403 {"error": "无权访问该资源"}
 ```
 
 **注意：** 虽然国内一些项目将登录失败归为400（认为是"参数错误"），但这不符合HTTP标准语义。建议遵循RFC标准使用401。
@@ -811,17 +825,35 @@ Response: 403 {"code": 403, "message": "无权访问该资源"}
 ### Q4: 分页信息放在哪里？
 
 **A:** 与 `data` 平级，放在外层：
+
 ```json
+// HTTP 200 OK
 {
-  "code": 200,
   "data": [...],
-  "pagination": {...}
+  "total": 100,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 5
 }
 ```
 
+**不推荐**嵌套在 `pagination` 对象中，因为会增加一层结构。
+
 ### Q5: 是否需要细分业务错误码（如 10001、20001）？
 
-**A:** 当前不需要。使用 HTTP 状态码 + 清晰的 message 即可。后续如有需要可扩展。
+**A:** 当前不需要。使用 HTTP 状态码 + 清晰的 `error` 消息即可。
+
+**推荐做法**：
+```json
+{"error": "用户名已存在"}  // HTTP 409
+```
+
+**不推荐**：
+```json
+{"code": 10001, "message": "用户名已存在"}  // 增加复杂度
+```
+
+后续如有特殊需求（如多语言、详细错误追踪），可扩展。
 
 ### Q6: 如何处理批量操作？
 
@@ -852,28 +884,30 @@ Body: {"user_ids": [1, 2, 3]}
 
 | 操作     | 方法   | 路径                | 响应码 |
 |----------|--------|---------------------|--------|
-| 列表查询 | GET    | /api/v1/users       | 200    |
-| 创建     | POST   | /api/v1/users       | 201    |
-| 查询详情 | GET    | /api/v1/users/:id   | 200    |
-| 更新     | PUT    | /api/v1/users/:id   | 200    |
-| 删除     | DELETE | /api/v1/users/:id   | 200    |
+| 列表查询 | GET    | /api/users          | 200    |
+| 创建     | POST   | /api/users          | 201    |
+| 查询详情 | GET    | /api/users/:id      | 200    |
+| 更新     | PUT    | /api/users/:id      | 200    |
+| 删除     | DELETE | /api/users/:id      | 200    |
+
+注：当前阶段使用 `/api/` 路径，v1.0 后迁移到 `/api/v1/`
 
 ### B. 响应格式对照
 
-| 场景           | code | message     | data        | pagination |
-|----------------|------|-------------|-------------|------------|
-| 查询单个资源   | 200  | "success"   | {...}       | -          |
-| 查询列表       | 200  | "success"   | [...]       | -          |
-| 查询分页列表   | 200  | "success"   | [...]       | {...}      |
-| 创建成功       | 201  | "创建成功"  | {...}       | -          |
-| 更新成功       | 200  | "更新成功"  | {...} 或 -  | -          |
-| 删除成功       | 200  | "删除成功"  | -           | -          |
-| 参数格式错误   | 400  | "xxx错误"   | -           | -          |
-| 认证失败       | 401  | "认证失败"  | -           | -          |
-| 无权限         | 403  | "无权限"    | -           | -          |
-| 资源不存在     | 404  | "不存在"    | -           | -          |
-| 资源冲突       | 409  | "已存在"    | -           | -          |
-| 服务器错误     | 500  | "服务器错误"| -           | -          |
+| 场景           | HTTP状态 | 响应格式                                     |
+|----------------|----------|----------------------------------------------|
+| 查询单个资源   | 200      | `{id, name, ...}` 直接返回对象                |
+| 查询列表       | 200      | `[{...}, {...}]` 直接返回数组                 |
+| 查询分页列表   | 200      | `{data: [...], total, page, page_size, total_pages}` |
+| 创建成功       | 201      | `{id, name, ...}` 返回新创建的对象            |
+| 更新成功       | 200      | `{id, name, ...}` 返回更新后的对象            |
+| 删除成功       | 200      | `{message: "删除成功"}` 或空响应              |
+| 参数错误       | 400      | `{error: "xxx错误"}`                          |
+| 认证失败       | 401      | `{error: "认证失败"}`                         |
+| 无权限         | 403      | `{error: "无权限"}`                           |
+| 资源不存在     | 404      | `{error: "不存在"}`                           |
+| 资源冲突       | 409      | `{error: "已存在"}`                           |
+| 服务器错误     | 500      | `{error: "服务器错误"}`                       |
 
 ### C. 命名规范对照
 
@@ -887,12 +921,21 @@ Body: {"user_ids": [1, 2, 3]}
 
 ---
 
-**本规范最后更新：2026-01-03（v1.1修订版）**
+**本规范最后更新：2026-01-06（v1.2 修订版）**
 **适用版本：ADDP v0.0.20+**
 
-**主要修订内容：**
-1. 增加响应格式设计决策说明，明确与国际主流的差异
-2. 修正HTTP状态码使用错误（用户名密码错误改为401）
-3. 放宽资源化要求，强调可读性优先原则
-4. 增加命名规范的权衡说明
-5. 完善常见问题解答
+**主要修订内容（v1.2）：**
+1. **调整为灵活响应策略** - 简单 CRUD 直接返回数据，复杂场景适度包装，避免冗余
+2. **错误格式简化** - 使用简洁的 `{error: "..."}` 格式，充分利用 HTTP 状态码
+3. **暂不强制版本前缀** - 当前阶段（v0.x）保持 `/api/` 路径，v1.0 后统一迁移
+4. **承认动词路径的合理性** - 更新推荐做法，认可 `change-password`、`export`、`test-connection` 等实用路径
+5. **删除不合理的迁移建议** - System 模块当前实现已是最佳实践，无需调整
+6. **更新实施指南和常见问题** - 反映实际的灵活响应策略和实用主义原则
+
+**设计理念：**
+- 规范应反映实际的最佳实践，而非理想化的标准
+- 实用性优于教条主义，可读性优于完美一致性
+- 当前阶段（v0.x）优先保持灵活性，v1.0 后再统一标准化
+
+**参考实现：**
+System 模块已完整实现本规范，可作为其他模块的参考标准。

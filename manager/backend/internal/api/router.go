@@ -25,6 +25,7 @@ func SetupRouter(
 	engineRepo *repository.EngineRepository,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
+	metaClient *commonClient.MetaClient,
 	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
 ) *gin.Engine {
@@ -80,16 +81,23 @@ func SetupRouter(
 			configGroup.GET("/map", configHandler.GetMapConfig)
 		}
 
-		// 数据探查
-		explorer := api.Group("/data-explorer")
+		// 新版数据探查 API（基于 ResourceLocator URI）
+		explorerGroup := api.Group("/explorer")
 		{
-			handler := NewDataExplorerHandler(metadataService)
-			explorer.GET("/tree", handler.GetTree)
-			explorer.GET("/engines", handler.ListEngines)
-			explorer.GET("/engines/:id/tree", handler.GetResourceTree)
-			explorer.POST("/engines/:id/refresh", handler.RefreshNode)
-			explorer.GET("/preview", handler.PreviewTable)
-			explorer.GET("/video-stream", handler.VideoStream)
+			// 创建新服务
+			engineConnector := service.NewEngineConnector(engineRepo)
+			// 复用 metadataService 中已注册的预览插件 registry
+			previewRegistry := metadataService.PreviewRegistry()
+			previewResolver := service.NewPreviewResolver(previewRegistry, engineRepo, metaClient, engineConnector)
+			explorerService := service.NewExplorerService(engineRepo, metaClient, previewResolver)
+
+			explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
+
+			explorerGroup.GET("/engines", explorerHandler.ListEngines)
+			explorerGroup.GET("/tree/:engine_id", explorerHandler.GetTree)
+			explorerGroup.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
+			explorerGroup.GET("/preview", explorerHandler.Preview)
+			explorerGroup.GET("/video-stream", explorerHandler.VideoStream)
 		}
 
 		// 引擎管理

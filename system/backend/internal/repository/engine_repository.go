@@ -29,21 +29,30 @@ func (r *EngineRepository) GetByID(id uint) (*models.Engine, error) {
 	return &engine, nil
 }
 
-func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.Engine, error) {
+func (r *EngineRepository) List(offset, limit int, engineType string) ([]models.Engine, int64, error) {
 	var engines []models.Engine
+	var total int64
+
 	query := r.db.Where("is_active = ?", true)
 
 	if engineType != "" {
 		query = query.Where("engine_type = ?", engineType)
 	}
 
+	// 先获取总数
+	if err := query.Model(&models.Engine{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 再获取分页数据
 	err := query.Offset(offset).Limit(limit).Find(&engines).Error
-	return engines, err
+	return engines, total, err
 }
 
 // ListByTenant 查询指定租户的资源列表（包含内置资源）
-func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engineType string) ([]models.Engine, error) {
+func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engineType string) ([]models.Engine, int64, error) {
 	var engines []models.Engine
+	var total int64
 
 	// 查询条件：
 	// 1. 租户自己创建的资源（tenant_id = tenantID）
@@ -57,8 +66,14 @@ func (r *EngineRepository) ListByTenant(tenantID uint, offset, limit int, engine
 		query = query.Where("engine_type = ?", engineType)
 	}
 
+	// 先获取总数
+	if err := query.Model(&models.Engine{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// 再获取分页数据
 	err := query.Offset(offset).Limit(limit).Find(&engines).Error
-	return engines, err
+	return engines, total, err
 }
 
 func (r *EngineRepository) Update(engine *models.Engine) error {

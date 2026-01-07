@@ -32,6 +32,9 @@ const (
 	FieldTypeArray FieldType = "array" // 数组
 	FieldTypeUUID  FieldType = "uuid"  // UUID
 
+	// 文档数据库特有类型
+	FieldTypeMixed FieldType = "mixed" // 混合类型（文档数据库中同一字段有多种类型）
+
 	// 未知类型
 	FieldTypeUnknown FieldType = "unknown"
 )

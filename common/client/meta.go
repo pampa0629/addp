@@ -17,6 +17,7 @@ type MetaClient struct {
 	httpClient  *http.Client
 	authToken   string // JWT Token (用于用户认证的 API)
 	internalKey string // Internal API Key (用于服务间调用)
+	tenantID    *uint  // Tenant ID (用于服务间调用时指定租户)
 }
 
 // NewMetaClient 创建 Meta 客户端（用户认证方式）
@@ -41,11 +42,20 @@ func NewMetaClientWithInternalKey(baseURL, internalKey string) *MetaClient {
 	}
 }
 
+// SetTenantID 设置租户 ID（用于服务间调用）
+func (c *MetaClient) SetTenantID(tenantID *uint) {
+	c.tenantID = tenantID
+}
+
 // addAuth 添加认证头（根据客户端类型选择 JWT 或 Internal Key）
 func (c *MetaClient) addAuth(req *http.Request) {
 	if c.internalKey != "" {
 		// 服务间调用使用 Internal API Key
 		req.Header.Set("X-Internal-API-Key", c.internalKey)
+		// 如果设置了 tenantID，添加到请求头
+		if c.tenantID != nil {
+			req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", *c.tenantID))
+		}
 	} else if c.authToken != "" {
 		// 用户调用使用 JWT Token
 		req.Header.Set("Authorization", "Bearer "+c.authToken)

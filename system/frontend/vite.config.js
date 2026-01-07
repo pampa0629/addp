@@ -33,7 +33,14 @@ export default defineConfig({
       allow: [
         resolve(__dirname, '..'),
         resolve(__dirname, '../../common'),
-        resolve(__dirname, '../../common-frontend')
+        resolve(__dirname, '../../common-frontend'),
+        resolve(__dirname, '../../manager'),
+        resolve(__dirname, '../../meta'),
+        resolve(__dirname, '../../transfer'),
+        resolve(__dirname, '../../develop'),
+        resolve(__dirname, '../../service'),
+        resolve(__dirname, '../../orchestrator'),
+        resolve(__dirname, '../../gateway')
       ]
     },
     proxy: {

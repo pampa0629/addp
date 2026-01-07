@@ -1,177 +1,147 @@
 <template>
-  <div class="page-container">
-    <el-row :gutter="20">
-      <el-col :span="24">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>开发中心</span>
-              <el-tag type="info">API 文档</el-tag>
-            </div>
+  <div class="api-docs-container">
+    <!-- 头部 -->
+    <div class="api-docs-header">
+      <span class="title">API 文档</span>
+      <div class="header-actions">
+        <el-popover placement="bottom-end" :width="400" trigger="click">
+          <template #reference>
+            <el-button :icon="QuestionFilled" circle size="small" />
           </template>
-
-          <el-alert
-            title="API 基础信息"
-            type="info"
-            :closable="false"
-            style="margin-bottom: 20px"
-          >
-            <p><strong>Base URL:</strong> http://localhost:8080</p>
+          <div class="help-content">
+            <h4>ADDP 平台 API 文档</h4>
+            <p><strong>Base URL:</strong> http://localhost:8000 (Gateway 统一入口)</p>
             <p><strong>认证方式:</strong> Bearer Token (JWT)</p>
             <p><strong>Content-Type:</strong> application/json</p>
-          </el-alert>
+            <p><strong>说明:</strong> 涵盖 ADDP 平台所有模块的 REST API 接口</p>
+          </div>
+        </el-popover>
+        <el-tag type="info" size="small">平台级文档中心</el-tag>
+      </div>
+    </div>
 
-          <el-tabs v-model="activeTab" type="border-card">
-            <!-- 认证接口 -->
-            <el-tab-pane label="认证接口" name="auth">
-              <div class="api-section" v-for="api in authApis" :key="api.path">
-                <el-descriptions :title="api.name" :column="1" border>
-                  <el-descriptions-item label="请求方法">
-                    <el-tag :type="getMethodType(api.method)">{{ api.method }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="接口路径">
-                    <el-text type="primary">{{ api.path }}</el-text>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="功能说明">
-                    {{ api.description }}
-                  </el-descriptions-item>
-                  <el-descriptions-item label="是否需要认证">
-                    <el-tag :type="api.auth ? 'danger' : 'success'">
-                      {{ api.auth ? '需要' : '不需要' }}
-                    </el-tag>
-                  </el-descriptions-item>
-                </el-descriptions>
+    <!-- 主体：左侧导航 + 右侧内容 -->
+    <div class="api-docs-body">
+      <!-- 左侧导航树 -->
+      <div class="api-nav">
+        <el-tree
+          ref="treeRef"
+          :data="navTree"
+          :props="treeProps"
+          :expand-on-click-node="false"
+          :default-expanded-keys="['System']"
+          node-key="id"
+          highlight-current
+          @node-click="handleNodeClick"
+        >
+          <template #default="{ node, data }">
+            <span class="nav-node">
+              <el-tag v-if="data.method" :type="getMethodType(data.method)" size="small" class="method-tag">
+                {{ data.method }}
+              </el-tag>
+              <span class="nav-label" :title="node.label">{{ node.label }}</span>
+            </span>
+          </template>
+        </el-tree>
+      </div>
 
-                <div class="code-block" v-if="api.request">
-                  <div class="code-title">请求参数示例</div>
-                  <pre>{{ api.request }}</pre>
-                </div>
+      <!-- 右侧内容面板 -->
+      <div class="api-content">
+        <!-- API 详情展示 -->
+        <template v-if="selectedApi && !selectedApi.isRoute">
+          <div class="api-detail">
+            <div class="api-header">
+              <el-tag :type="getMethodType(selectedApi.api.method)" size="large">
+                {{ selectedApi.api.method }}
+              </el-tag>
+              <span class="api-path">{{ selectedApi.api.path }}</span>
+            </div>
 
-                <div class="code-block" v-if="api.response">
-                  <div class="code-title">响应示例</div>
-                  <pre>{{ api.response }}</pre>
-                </div>
-              </div>
-            </el-tab-pane>
+            <h3 class="api-name">{{ selectedApi.api.name }}</h3>
+            <p class="api-desc">{{ selectedApi.api.description }}</p>
 
-            <!-- 用户管理接口 -->
-            <el-tab-pane label="用户管理" name="users">
-              <div class="api-section" v-for="api in userApis" :key="api.path">
-                <el-descriptions :title="api.name" :column="1" border>
-                  <el-descriptions-item label="请求方法">
-                    <el-tag :type="getMethodType(api.method)">{{ api.method }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="接口路径">
-                    <el-text type="primary">{{ api.path }}</el-text>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="功能说明">
-                    {{ api.description }}
-                  </el-descriptions-item>
-                  <el-descriptions-item label="是否需要认证">
-                    <el-tag :type="api.auth ? 'danger' : 'success'">
-                      {{ api.auth ? '需要' : '不需要' }}
-                    </el-tag>
-                  </el-descriptions-item>
-                </el-descriptions>
+            <el-descriptions :column="1" border size="small" class="api-meta">
+              <el-descriptions-item label="是否需要认证">
+                <el-tag :type="selectedApi.api.auth ? 'danger' : 'success'" size="small">
+                  {{ selectedApi.api.auth ? '需要' : '不需要' }}
+                </el-tag>
+              </el-descriptions-item>
+            </el-descriptions>
 
-                <div class="code-block" v-if="api.params">
-                  <div class="code-title">路径参数</div>
-                  <pre>{{ api.params }}</pre>
-                </div>
+            <!-- 路径参数 -->
+            <div class="code-block" v-if="selectedApi.api.params">
+              <div class="code-title">路径参数</div>
+              <pre>{{ selectedApi.api.params }}</pre>
+            </div>
 
-                <div class="code-block" v-if="api.query">
-                  <div class="code-title">查询参数</div>
-                  <pre>{{ api.query }}</pre>
-                </div>
+            <!-- 查询参数 -->
+            <div class="code-block" v-if="selectedApi.api.query">
+              <div class="code-title">查询参数</div>
+              <pre>{{ selectedApi.api.query }}</pre>
+            </div>
 
-                <div class="code-block" v-if="api.request">
-                  <div class="code-title">请求参数示例</div>
-                  <pre>{{ api.request }}</pre>
-                </div>
+            <!-- 请求参数示例 -->
+            <div class="code-block" v-if="selectedApi.api.request">
+              <div class="code-title">请求参数示例</div>
+              <pre>{{ selectedApi.api.request }}</pre>
+            </div>
 
-                <div class="code-block" v-if="api.response">
-                  <div class="code-title">响应示例</div>
-                  <pre>{{ api.response }}</pre>
-                </div>
-              </div>
-            </el-tab-pane>
+            <!-- 响应示例 -->
+            <div class="code-block" v-if="selectedApi.api.response">
+              <div class="code-title">响应示例</div>
+              <pre>{{ selectedApi.api.response }}</pre>
+            </div>
+          </div>
+        </template>
 
-            <!-- 日志管理接口 -->
-            <el-tab-pane label="日志管理" name="logs">
-              <div class="api-section" v-for="api in logApis" :key="api.path">
-                <el-descriptions :title="api.name" :column="1" border>
-                  <el-descriptions-item label="请求方法">
-                    <el-tag :type="getMethodType(api.method)">{{ api.method }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="接口路径">
-                    <el-text type="primary">{{ api.path }}</el-text>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="功能说明">
-                    {{ api.description }}
-                  </el-descriptions-item>
-                  <el-descriptions-item label="是否需要认证">
-                    <el-tag type="danger">需要</el-tag>
-                  </el-descriptions-item>
-                </el-descriptions>
+        <!-- Gateway 路由特殊展示 -->
+        <template v-else-if="selectedApi && selectedApi.isRoute">
+          <div class="route-detail">
+            <h3 class="api-name">{{ selectedApi.api.name }}</h3>
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="路由前缀">
+                <el-text type="primary">{{ selectedApi.api.path }}</el-text>
+              </el-descriptions-item>
+              <el-descriptions-item label="目标服务">{{ selectedApi.api.target }}</el-descriptions-item>
+              <el-descriptions-item label="端口">{{ selectedApi.api.port }}</el-descriptions-item>
+              <el-descriptions-item label="说明">{{ selectedApi.api.description }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+        </template>
 
-                <div class="code-block" v-if="api.query">
-                  <div class="code-title">查询参数</div>
-                  <pre>{{ api.query }}</pre>
-                </div>
-
-                <div class="code-block" v-if="api.response">
-                  <div class="code-title">响应示例</div>
-                  <pre>{{ api.response }}</pre>
-                </div>
-              </div>
-            </el-tab-pane>
-
-            <!-- 资源管理接口 -->
-            <el-tab-pane label="引擎管理" name="engines">
-              <div class="api-section" v-for="api in resourceApis" :key="api.path">
-                <el-descriptions :title="api.name" :column="1" border>
-                  <el-descriptions-item label="请求方法">
-                    <el-tag :type="getMethodType(api.method)">{{ api.method }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="接口路径">
-                    <el-text type="primary">{{ api.path }}</el-text>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="功能说明">
-                    {{ api.description }}
-                  </el-descriptions-item>
-                  <el-descriptions-item label="是否需要认证">
-                    <el-tag type="danger">需要</el-tag>
-                  </el-descriptions-item>
-                </el-descriptions>
-
-                <div class="code-block" v-if="api.query">
-                  <div class="code-title">查询参数</div>
-                  <pre>{{ api.query }}</pre>
-                </div>
-
-                <div class="code-block" v-if="api.request">
-                  <div class="code-title">请求参数示例</div>
-                  <pre>{{ api.request }}</pre>
-                </div>
-
-                <div class="code-block" v-if="api.response">
-                  <div class="code-title">响应示例</div>
-                  <pre>{{ api.response }}</pre>
-                </div>
-              </div>
-            </el-tab-pane>
-          </el-tabs>
-        </el-card>
-      </el-col>
-    </el-row>
+        <!-- 未选择时显示空状态 -->
+        <template v-else>
+          <el-empty description="请在左侧选择一个 API" />
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { QuestionFilled } from '@element-plus/icons-vue'
 
-const activeTab = ref('auth')
+// 导入所有模块的 API 配置文件
+import systemManifest from '../../../docs/api-manifest.json'
+import managerManifest from '../../../../manager/docs/api-manifest.json'
+import metaManifest from '../../../../meta/docs/api-manifest.json'
+import transferManifest from '../../../../transfer/docs/api-manifest.json'
+import developManifest from '../../../../develop/docs/api-manifest.json'
+import serviceManifest from '../../../../service/docs/api-manifest.json'
+import orchestratorManifest from '../../../../orchestrator/docs/api-manifest.json'
+import gatewayManifest from '../../../../gateway/docs/api-manifest.json'
 
+const treeRef = ref(null)
+const selectedApi = ref(null)
+
+// 树形组件配置
+const treeProps = {
+  children: 'children',
+  label: 'label'
+}
+
+// HTTP 方法颜色映射
 const getMethodType = (method) => {
   const types = {
     'GET': 'success',
@@ -182,316 +152,172 @@ const getMethodType = (method) => {
   return types[method] || 'info'
 }
 
-// 认证接口
-const authApis = [
-  {
-    name: '用户注册',
-    method: 'POST',
-    path: '/api/auth/register',
-    description: '注册新用户账号',
-    auth: false,
-    request: `{
-  "username": "testuser",
-  "password": "password123",
-  "email": "test@example.com",
-  "full_name": "测试用户"
-}`,
-    response: `{
-  "id": 1,
-  "username": "testuser",
-  "email": "test@example.com",
-  "full_name": "测试用户",
-  "is_active": true,
-  "is_superuser": false,
-  "created_at": "2025-09-30T16:54:08.539068+08:00",
-  "updated_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '用户登录',
-    method: 'POST',
-    path: '/api/auth/login',
-    description: '用户登录获取访问令牌',
-    auth: false,
-    request: `{
-  "username": "admin",
-  "password": "admin123"
-}`,
-    response: `{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer"
-}`
-  }
-]
+// 构建导航树数据结构
+const navTree = computed(() => {
+  const modules = [
+    { manifest: systemManifest, name: 'System', label: 'System - 系统模块' },
+    { manifest: managerManifest, name: 'Manager', label: 'Manager - 数据管理' },
+    { manifest: metaManifest, name: 'Meta', label: 'Meta - 元数据' },
+    { manifest: transferManifest, name: 'Transfer', label: 'Transfer - 数据传输' },
+    { manifest: developManifest, name: 'Develop', label: 'Develop - 数据开发' },
+    { manifest: serviceManifest, name: 'Service', label: 'Service - 数据服务' },
+    { manifest: orchestratorManifest, name: 'Orchestrator', label: 'Orchestrator - 工作流编排' },
+    { manifest: gatewayManifest, name: 'Gateway', label: 'Gateway - 路由规则' }
+  ]
 
-// 用户管理接口
-const userApis = [
-  {
-    name: '获取当前用户信息',
-    method: 'GET',
-    path: '/api/users/me',
-    description: '获取当前登录用户的详细信息',
-    auth: true,
-    response: `{
-  "id": 1,
-  "username": "admin",
-  "email": "admin@test.com",
-  "full_name": "管理员",
-  "is_active": true,
-  "is_superuser": false,
-  "created_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '获取用户列表',
-    method: 'GET',
-    path: '/api/users',
-    description: '获取用户列表，支持分页',
-    auth: true,
-    query: `page: 页码，默认 1
-page_size: 每页数量，默认 10`,
-    response: `[
-  {
-    "id": 1,
-    "username": "admin",
-    "email": "admin@test.com",
-    "full_name": "管理员",
-    "is_active": true,
-    "is_superuser": false,
-    "created_at": "2025-09-30T16:54:08.539068+08:00"
-  }
-]`
-  },
-  {
-    name: '获取指定用户',
-    method: 'GET',
-    path: '/api/users/:id',
-    description: '根据用户 ID 获取用户详细信息',
-    auth: true,
-    params: ':id - 用户 ID',
-    response: `{
-  "id": 1,
-  "username": "admin",
-  "email": "admin@test.com",
-  "full_name": "管理员",
-  "is_active": true,
-  "is_superuser": false,
-  "created_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '更新用户信息',
-    method: 'PUT',
-    path: '/api/users/:id',
-    description: '更新指定用户的信息',
-    auth: true,
-    params: ':id - 用户 ID',
-    request: `{
-  "email": "newemail@test.com",
-  "full_name": "新名字",
-  "password": "newpassword123",  // 可选
-  "is_active": true
-}`,
-    response: `{
-  "id": 1,
-  "username": "admin",
-  "email": "newemail@test.com",
-  "full_name": "新名字",
-  "is_active": true,
-  "is_superuser": false,
-  "created_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '删除用户',
-    method: 'DELETE',
-    path: '/api/users/:id',
-    description: '删除指定用户',
-    auth: true,
-    params: ':id - 用户 ID',
-    response: `{
-  "message": "删除成功"
-}`
-  }
-]
+  return modules.map(mod => ({
+    id: mod.name,
+    label: mod.label,
+    children: (mod.manifest.categories || []).map(cat => ({
+      id: `${mod.name}-${cat.name}`,
+      label: cat.name,
+      children: (cat.apis || cat.routes || []).map((api, idx) => ({
+        id: `${mod.name}-${cat.name}-${idx}`,
+        label: api.name,
+        method: api.method,
+        api: api,
+        isRoute: !!cat.routes
+      }))
+    }))
+  }))
+})
 
-// 日志管理接口
-const logApis = [
-  {
-    name: '获取日志列表',
-    method: 'GET',
-    path: '/api/logs',
-    description: '获取审计日志列表，支持分页和用户过滤',
-    auth: true,
-    query: `page: 页码，默认 1
-page_size: 每页数量，默认 20
-user_id: 用户 ID（可选，用于过滤特定用户的日志）`,
-    response: `[
-  {
-    "id": 1,
-    "user_id": 1,
-    "username": "admin",
-    "action": "POST /api/auth/register",
-    "resource_type": "",
-    "engine_id": "",
-    "details": "",
-    "ip_address": "127.0.0.1",
-    "created_at": "2025-09-30T16:54:08.539068+08:00"
+// 点击节点
+const handleNodeClick = (data) => {
+  if (data.api) {
+    selectedApi.value = data
   }
-]`
-  },
-  {
-    name: '获取指定日志',
-    method: 'GET',
-    path: '/api/logs/:id',
-    description: '根据日志 ID 获取日志详细信息',
-    auth: true,
-    response: `{
-  "id": 1,
-  "user_id": 1,
-  "username": "admin",
-  "action": "POST /api/auth/register",
-  "resource_type": "",
-  "engine_id": "",
-  "details": "",
-  "ip_address": "127.0.0.1",
-  "created_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  }
-]
-
-// 引擎管理接口
-const resourceApis = [
-  {
-    name: '创建引擎',
-    method: 'POST',
-    path: '/api/engines',
-    description: '创建新的引擎配置',
-    auth: true,
-    request: `{
-  "name": "MySQL主库",
-  "engine_type": "mysql",
-  "connection_info": {
-    "host": "localhost",
-    "port": 3306,
-    "database": "mydb",
-    "username": "root"
-  },
-  "description": "生产环境MySQL数据库"
-}`,
-    response: `{
-  "id": 1,
-  "name": "MySQL主库",
-  "engine_type": "mysql",
-  "connection_info": {
-    "host": "localhost",
-    "port": 3306,
-    "database": "mydb",
-    "username": "root"
-  },
-  "description": "生产环境MySQL数据库",
-  "created_by": 1,
-  "is_active": true,
-  "created_at": "2025-09-30T16:54:08.539068+08:00",
-  "updated_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '获取引擎列表',
-    method: 'GET',
-    path: '/api/engines',
-    description: '获取引擎列表，支持分页和类型过滤',
-    auth: true,
-    query: `page: 页码，默认 1
-page_size: 每页数量，默认 10
-engine_type: 引擎类型（可选，如 postgresql、mysql、minio）`,
-    response: `[
-  {
-    "id": 1,
-    "name": "MySQL主库",
-    "engine_type": "mysql",
-    "connection_info": {...},
-    "description": "生产环境MySQL数据库",
-    "created_by": 1,
-    "is_active": true,
-    "created_at": "2025-09-30T16:54:08.539068+08:00"
-  }
-]`
-  },
-  {
-    name: '获取指定引擎',
-    method: 'GET',
-    path: '/api/engines/:id',
-    description: '根据引擎 ID 获取引擎详细信息',
-    auth: true,
-    response: `{
-  "id": 1,
-  "name": "MySQL主库",
-  "engine_type": "mysql",
-  "connection_info": {...},
-  "description": "生产环境MySQL数据库",
-  "created_by": 1,
-  "is_active": true,
-  "created_at": "2025-09-30T16:54:08.539068+08:00"
-}`
-  },
-  {
-    name: '更新引擎',
-    method: 'PUT',
-    path: '/api/engines/:id',
-    description: '更新指定引擎的配置',
-    auth: true,
-    request: `{
-  "name": "MySQL主库-更新",
-  "connection_info": {
-    "host": "newhost",
-    "port": 3306
-  },
-  "description": "更新后的描述",
-  "is_active": true
-}`,
-    response: `{
-  "id": 1,
-  "name": "MySQL主库-更新",
-  "engine_type": "mysql",
-  "connection_info": {...},
-  "description": "更新后的描述",
-  "is_active": true
-}`
-  },
-  {
-    name: '删除引擎',
-    method: 'DELETE',
-    path: '/api/engines/:id',
-    description: '删除指定引擎',
-    auth: true,
-    response: `{
-  "message": "删除成功"
-}`
-  }
-]
+}
 </script>
 
 <style scoped>
-.card-header {
+.api-docs-container {
+  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  margin: 20px;
+}
+
+.api-docs-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+}
+
+.api-docs-header .title {
+  font-size: 18px;
   font-weight: 600;
 }
 
-.api-section {
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #e8e8e8;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.api-section:last-child {
-  border-bottom: none;
+.help-content h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #303133;
 }
 
+.help-content p {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #606266;
+}
+
+.api-docs-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.api-nav {
+  width: 300px;
+  border-right: 1px solid #e8e8e8;
+  overflow-y: auto;
+  padding: 10px 0;
+  flex-shrink: 0;
+}
+
+.api-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.nav-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.method-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 0 4px;
+  height: 18px;
+  line-height: 16px;
+}
+
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* API 详情样式 */
+.api-detail,
+.route-detail {
+  max-width: 900px;
+}
+
+.api-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.api-path {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 15px;
+  color: #409eff;
+}
+
+.api-name {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.api-desc {
+  color: #606266;
+  margin: 0 0 20px 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.api-meta {
+  margin-bottom: 20px;
+}
+
+/* 代码块样式 */
 .code-block {
-  margin-top: 15px;
+  margin-top: 16px;
   background: #f5f7fa;
   border-radius: 4px;
   overflow: hidden;
@@ -501,7 +327,7 @@ engine_type: 引擎类型（可选，如 postgresql、mysql、minio）`,
   background: #e8e8e8;
   padding: 8px 15px;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   color: #606266;
 }
 
@@ -514,14 +340,25 @@ engine_type: 引擎类型（可选，如 postgresql、mysql、minio）`,
   font-size: 13px;
   line-height: 1.6;
   overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
+/* Element Plus 深度选择器自定义 */
 :deep(.el-descriptions__label) {
   width: 120px;
   font-weight: 600;
 }
 
-:deep(.el-alert p) {
-  margin: 5px 0;
+:deep(.el-tree-node__content) {
+  height: 32px;
+}
+
+:deep(.el-tree-node__expand-icon) {
+  font-size: 14px;
+}
+
+:deep(.el-empty) {
+  padding-top: 100px;
 }
 </style>

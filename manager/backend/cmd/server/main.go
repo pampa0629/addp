@@ -28,6 +28,9 @@ import (
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	_ "github.com/addp/common/engine/plugins/s3"
 	_ "github.com/addp/common/engine/plugins/spark_sql"
+
+	// 导入格式解析器以触发自动注册
+	_ "github.com/addp/common/format/document" // MongoDB/NoSQL collection parser
 )
 
 func main() {
@@ -51,7 +54,7 @@ func main() {
 	}
 
 	// 初始化 repositories
-	engineRepo := repository.NewEngineRepository(db)
+	engineRepo := repository.NewEngineRepository(db, cfg.EncryptionKey)
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 
@@ -150,7 +153,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, cacheManager, redisClient)
+	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, metaClient, cacheManager, redisClient)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）

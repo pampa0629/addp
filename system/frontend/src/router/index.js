@@ -44,14 +44,22 @@ const routes = [
         meta: { requiresAuth: true, title: '应用管理-addp' }
       },
       {
-        path: 'developer',
-        name: 'Developer',
+        path: 'docs',
+        name: 'ApiDocs',
         component: () => import('../views/Developer.vue'),
-        meta: { requiresAuth: true, title: '系统管理-addp' }
+        meta: { requiresAuth: true, title: 'API文档-addp' }
       },
       {
         path: 'dev',
-        redirect: '/developer'
+        redirect: '/docs'
+      },
+      {
+        path: 'developer',
+        redirect: '/docs'
+      },
+      {
+        path: 'api-docs',
+        redirect: '/docs'
       }
     ]
   }

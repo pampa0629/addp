@@ -286,7 +286,7 @@ const videoSrc = computed(() => {
   if (token) {
     params.set('token', token)
   }
-  return `/api/data-explorer/video-stream?${params.toString()}`
+  return `/api/explorer/video-stream?${params.toString()}`
 })
 
 const metadataForDetails = computed(() => {

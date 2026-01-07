@@ -105,15 +105,15 @@ func (s *TenantService) GetByID(id uint, currentUserID uint) (*models.Tenant, er
 	return s.tenantRepo.GetByID(id)
 }
 
-func (s *TenantService) List(page, pageSize int, currentUserID uint) ([]models.Tenant, error) {
+func (s *TenantService) List(page, pageSize int, currentUserID uint) ([]models.Tenant, int64, error) {
 	// 验证权限
 	currentUser, err := s.userRepo.GetByID(currentUserID)
 	if err != nil {
-		return nil, errors.New("当前用户不存在")
+		return nil, 0, errors.New("当前用户不存在")
 	}
 
 	if currentUser.UserType != models.UserTypeSuperAdmin {
-		return nil, errors.New("只有超级管理员可以查看租户列表")
+		return nil, 0, errors.New("只有超级管理员可以查看租户列表")
 	}
 
 	offset := (page - 1) * pageSize

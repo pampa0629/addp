@@ -122,28 +122,28 @@ func (s *UserService) GetByID(id uint, currentUserID uint) (*models.User, error)
 	return user, nil
 }
 
-func (s *UserService) List(page, pageSize int, currentUserID uint) ([]models.User, error) {
+func (s *UserService) List(page, pageSize int, currentUserID uint) ([]models.User, int64, error) {
 	offset := (page - 1) * pageSize
 
 	// 获取当前用户
 	currentUser, err := s.repo.GetByID(currentUserID)
 	if err != nil {
-		return nil, errors.New("当前用户不存在")
+		return nil, 0, errors.New("当前用户不存在")
 	}
 
 	// 超级管理员不查看普通用户列表，应该查看租户列表
 	if s.authSvc.IsSuperAdmin(currentUser) {
-		return []models.User{}, nil
+		return []models.User{}, 0, nil
 	}
 
 	// 租户管理员只能查看同租户的用户
 	if s.authSvc.IsTenantAdmin(currentUser) {
-		users, _, err := s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize)
-		return users, err
+		users, total, err := s.repo.ListByTenant(*currentUser.TenantID, offset, pageSize)
+		return users, total, err
 	}
 
 	// 普通用户只能查看自己
-	return []models.User{*currentUser}, nil
+	return []models.User{*currentUser}, 1, nil
 }
 
 func (s *UserService) Update(id uint, req *models.UserUpdateRequest, currentUserID uint) (*models.User, error) {

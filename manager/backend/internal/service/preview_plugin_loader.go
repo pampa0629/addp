@@ -16,8 +16,8 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 	"database-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo), nil
 	},
-	"mongodb-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewMongoDBPreviewProvider(), nil
+	"doc-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewDocCollectionPreviewProvider(), nil
 	},
 	"file-table": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewFileTablePreviewProvider(), nil
@@ -34,8 +34,8 @@ var builtinProviderFactories = map[string]builtinProviderFactory{
 	"database-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
 		return NewDatabaseTablePreviewProvider(repo), nil
 	},
-	"mongodb-table": func(_ *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewMongoDBPreviewProvider(), nil
+	"doc-collection": func(_ *repository.MetadataRepository) (PreviewProvider, error) {
+		return NewDocCollectionPreviewProvider(), nil
 	},
 	"schema-node": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
 		return NewSchemaPreviewProvider(repo, nil), nil

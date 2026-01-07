@@ -89,6 +89,39 @@ type ObjectBasicInfo struct {
 	ModifiedAt  time.Time // 最后修改时间
 }
 
+// ============ 文档数据库集合解析器 ============
+
+// DocCollectionParser 文档数据库集合解析器
+// 用于从 MongoDB、CouchDB 等文档数据库中提取 Collection 的元数据
+type DocCollectionParser interface {
+	// ParseTableInfo 从 Collection 中提取 TableInfo
+	// 通过采样文档推断 Schema，混合类型字段标记为 'mixed'
+	// 参数:
+	//   - ctx: 上下文
+	//   - client: 数据库客户端（由 Plugin.CreateClient() 创建）
+	//   - database: 数据库名称
+	//   - collection: 集合名称
+	//   - options: 解析选项（SampleSize 控制采样数量，默认 100）
+	// 返回: TableInfo（包含推断的字段定义和 DocCollectionInfo 扩展）
+	ParseTableInfo(ctx context.Context, client interface{}, database, collection string, options *ParseOptions) (*TableInfo, error)
+
+	// ReadPreview 读取 Collection 的预览数据
+	// 参数:
+	//   - ctx: 上下文
+	//   - client: 数据库客户端
+	//   - database: 数据库名称
+	//   - collection: 集合名称
+	//   - offset: 起始位置（从0开始）
+	//   - limit: 最多读取文档数
+	//   - options: 解析选项（可选）
+	// 返回: 文档列表（每条记录是字段名到值的映射）
+	ReadPreview(ctx context.Context, client interface{}, database, collection string, offset, limit int64, options *ParseOptions) ([]map[string]interface{}, error)
+
+	// SupportedEngineTypes 返回支持的引擎类型
+	// 例如: ["mongodb", "couchdb"]
+	SupportedEngineTypes() []string
+}
+
 // ============ 解析选项 ============
 
 // ParseOptions 解析选项

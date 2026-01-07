@@ -66,9 +66,9 @@
               <el-icon><Document /></el-icon>
               <span>日志审计</span>
             </el-menu-item>
-            <el-menu-item index="/developer" @click="handleMenuClick('system', 'developer')">
+            <el-menu-item index="/docs" @click="handleMenuClick('system', 'docs')">
               <el-icon><Monitor /></el-icon>
-              <span>开发中心</span>
+              <span>API 文档</span>
             </el-menu-item>
           </el-sub-menu>
         </el-menu>

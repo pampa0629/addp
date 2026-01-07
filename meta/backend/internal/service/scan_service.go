@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -29,6 +28,7 @@ type ScanService struct {
 	db                       *gorm.DB
 	repo                     *ScanRepository               // 数据访问层
 	dbScanService            *DatabaseScanService          // 数据库扫描服务
+	nosqlScanService         *NoSQLScanService             // NoSQL 数据库扫描服务
 	objectScanService        *ObjectStorageScanService     // 对象存储扫描服务
 	metadataQueryService     *MetadataQueryService         // 元数据查询服务（独立）
 	resourceDiscoveryService *ResourceDiscoveryService     // 资源发现服务（独立）
@@ -76,6 +76,9 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 
 	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
 	s.dbScanService = NewDatabaseScanService(db, log, nil, repo, spatialService, indexerService)
+
+	// 创建 NoSQLScanService（使用独立服务，无循环依赖）
+	s.nosqlScanService = NewNoSQLScanService(db, log, nil, repo, indexerService)
 
 	// 创建 ObjectStorageScanService（使用独立服务，无循环依赖）
 	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
@@ -301,22 +304,9 @@ func ensureNodeAggregate(stats map[uint]*nodeAggregate, node *models.MetaNode) *
 func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, error) {
 	startTime := time.Now()
 
-	// 创建扫描日志
-	scanLog := &models.ScanLog{
-		TenantID:  tenantID,
-		ScanType:  "auto",
-		ScanDepth: "deep",
-		Status:    "running",
-		StartedAt: &startTime,
-	}
-	if err := s.db.Create(scanLog).Error; err != nil {
-		return nil, fmt.Errorf("failed to create scan log: %w", err)
-	}
-
 	// 获取所有数据库资源
 	engines, err := s.engineService.GetEnginesByTenant(tenantID)
 	if err != nil {
-		s.updateScanLogFailed(scanLog, err.Error())
 		return nil, err
 	}
 
@@ -327,13 +317,12 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 
 	// 对每个资源进行扫描
 	for _, engine := range engines {
-		schemas, tables, fields, err := s.scanResource(engine, tenantID, scanLog.ID)
+		schemas, tables, fields, err := s.scanResource(engine, tenantID, 0)
 		if err != nil {
 			s.log.Warn("资源扫描失败",
 				"engine_id", engine.ID,
 				"resource_name", engine.Name,
 				"tenant_id", tenantID,
-				"scan_log_id", scanLog.ID,
 				"error", err,
 			)
 			continue
@@ -345,16 +334,8 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 		scannedResourceIDs = append(scannedResourceIDs, engine.ID)
 	}
 
-	// 更新扫描日志
 	completedAt := time.Now()
-	scanLog.EngineID = 0 // 多资源扫描，不关联特定资源
-	scanLog.Status = "success"
-	scanLog.SchemasScanned = totalSchemas
-	scanLog.TablesScanned = totalTables
-	scanLog.FieldsScanned = totalFields
-	scanLog.CompletedAt = &completedAt
-	scanLog.DurationMs = completedAt.Sub(startTime).Milliseconds()
-	s.db.Save(scanLog)
+	durationMs := completedAt.Sub(startTime).Milliseconds()
 
 	return &models.ScanResponse{
 		Status:         "success",
@@ -362,7 +343,7 @@ func (s *ScanService) AutoScanUnscanned(tenantID uint) (*models.ScanResponse, er
 		SchemasScanned: totalSchemas,
 		TablesScanned:  totalTables,
 		FieldsScanned:  totalFields,
-		DurationMs:     scanLog.DurationMs,
+		DurationMs:     durationMs,
 		StartedAt:      startTime.Format("2006-01-02 15:04:05"),
 	}, nil
 }
@@ -419,23 +400,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		scanDepth = "basic" // 无效值默认使用基础扫描
 	}
 
-	// 创建扫描日志
-	schemasJSON, _ := json.Marshal(schemaNames)
-	scanLog := &models.ScanLog{
-		EngineID:    engineID,
-		TenantID:      tenantID,
-		ScanType:      "manual",
-		ScanDepth:     scanDepth,
-		TargetSchemas: string(schemasJSON),
-		Status:        "running",
-		StartedAt:     &startTime,
-	}
-	if err := s.db.Create(scanLog).Error; err != nil {
-		return nil, fmt.Errorf("failed to create scan log: %w", err)
-	}
-
 	startFields := append(connectionLogFields(resource),
-		"scan_log_id", scanLog.ID,
 		"mode", "manual",
 		"scan_depth", scanDepth,
 	)
@@ -451,39 +416,45 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 
 	schemas, tables, fields := 0, 0, 0
 
-	if isObjectStorageType(resourceType) {
+	// 获取插件以判断类型
+	p, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		return nil, fmt.Errorf("unsupported engine type: %s", resource.EngineType)
+	}
+
+	// 根据插件类型路由到对应的扫描服务
+	if nosqlPlugin, ok := p.(plugin.NoSQLPlugin); ok {
+		// NoSQL 扫描（MongoDB、CouchDB 等）
+		schemas, tables, fields, err = s.scanNoSQLResourceWithReporter(nosqlPlugin, resource, tenantID, schemaNames, scanDepth, reporter)
+	} else if _, ok := p.(plugin.ObjectStoragePlugin); ok && isObjectStorageType(resourceType) {
+		// 对象存储扫描（MinIO、S3 等）
 		schemas, tables, fields, err = s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, schemaNames, scanDepth, reporter)
+	} else if _, ok := p.(plugin.RelationalDBPlugin); ok {
+		// 关系型数据库扫描（PostgreSQL、MySQL 等）
+		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, 0, scanDepth, reporter)
 	} else {
-		schemas, tables, fields, err = s.scanResourceSchemasWithReporter(resource, tenantID, schemaNames, scanLog.ID, scanDepth, reporter)
+		err = fmt.Errorf("plugin does not support metadata query")
 	}
 
 	if err != nil {
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
 		}
-		s.updateScanLogFailed(scanLog, err.Error())
 		if directRun != nil {
 			s.failImmediateRun(directRun, err)
 		}
 		return nil, err
 	}
 
-	// 更新扫描日志
 	completedAt := time.Now()
-	scanLog.Status = "success"
-	scanLog.SchemasScanned = schemas
-	scanLog.TablesScanned = tables
-	scanLog.FieldsScanned = fields
-	scanLog.CompletedAt = &completedAt
-	scanLog.DurationMs = completedAt.Sub(startTime).Milliseconds()
-	s.db.Save(scanLog)
+	durationMs := completedAt.Sub(startTime).Milliseconds()
 
 	finishFields := append(make([]any, 0, len(startFields)+6), startFields...)
 	finishFields = append(finishFields,
 		"schemas_scanned", schemas,
 		"tables_scanned", tables,
 		"fields_scanned", fields,
-		"duration_ms", scanLog.DurationMs,
+		"duration_ms", durationMs,
 	)
 	s.log.Info("资源扫描完成", finishFields...)
 
@@ -497,8 +468,6 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 			"schemas_scanned": schemas,
 			"tables_scanned":  tables,
 			"fields_scanned":  fields,
-			"duration_ms":     scanLog.DurationMs,
-			"started_at":      scanLog.StartedAt,
 		}
 		s.completeImmediateRun(directRun, resultSummary, completedAt)
 	} else {
@@ -511,8 +480,6 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 				"schemas_scanned": schemas,
 				"tables_scanned":  tables,
 				"fields_scanned":  fields,
-				"duration_ms":     scanLog.DurationMs,
-				"started_at":      scanLog.StartedAt,
 			}
 			s.completeImmediateRun(run, resultSummary, completedAt)
 		}
@@ -524,7 +491,7 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		SchemasScanned: schemas,
 		TablesScanned:  tables,
 		FieldsScanned:  fields,
-		DurationMs:     scanLog.DurationMs,
+		DurationMs:     durationMs,
 		StartedAt:      startTime.Format("2006-01-02 15:04:05"),
 	}, nil
 }
@@ -570,11 +537,20 @@ func (s *ScanService) failImmediateRun(run *models.ScanTaskRun, scanErr error) {
 	if run == nil {
 		return
 	}
+
+	// 计算执行耗时
+	completedAt := time.Now()
+	var durationMs int64
+	if run.StartedAt != nil {
+		durationMs = completedAt.Sub(*run.StartedAt).Milliseconds()
+	}
+
 	update := map[string]interface{}{
 		"status":           runStatusFailed,
 		"error_message":    scanErr.Error(),
 		"progress_message": fmt.Sprintf("执行失败: %v", scanErr),
-		"completed_at":     time.Now(),
+		"duration_ms":      durationMs,
+		"completed_at":     completedAt,
 		"updated_at":       time.Now(),
 	}
 	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
@@ -587,9 +563,16 @@ func (s *ScanService) completeImmediateRun(run *models.ScanTaskRun, summary mode
 		return
 	}
 
+	// 计算执行耗时
+	var durationMs int64
+	if run.StartedAt != nil {
+		durationMs = completedAt.Sub(*run.StartedAt).Milliseconds()
+	}
+
 	update := map[string]interface{}{
 		"status":           runStatusSuccess,
 		"result_summary":   summary,
+		"duration_ms":      durationMs,
 		"progress_message": "执行完成",
 		"progress_percent": 100.0,
 		"completed_at":     completedAt,
@@ -927,6 +910,131 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 	return totalSchemas, totalTables, totalFields, nil
 }
 
+// scanNoSQLResourceWithReporter 扫描 NoSQL 资源的指定数据库列表（带进度报告）
+func (s *ScanService) scanNoSQLResourceWithReporter(
+	nosqlPlugin plugin.NoSQLPlugin,
+	resource *commonModels.Engine,
+	tenantID uint,
+	databaseNames []string,
+	scanDepth string,
+	reporter ScanProgressReporter,
+) (int, int, int, error) {
+
+	resourceID := resource.ID
+	connInfo := plugin.ConnectionInfo(resource.ConnectionInfo)
+	ctx := context.Background()
+
+	startFields := append(connectionLogFields(resource),
+		"mode", "manual",
+		"scan_depth", scanDepth,
+	)
+
+	// 如果未指定数据库，列出所有数据库
+	if len(databaseNames) == 0 {
+		if reporter != nil {
+			reporter.Message("列出所有数据库...")
+		}
+
+		databasesInfo, err := nosqlPlugin.ListDatabases(ctx, connInfo)
+		if err != nil {
+			return 0, 0, 0, err
+		}
+
+		// 过滤系统数据库
+		for _, info := range databasesInfo {
+			if nosqlPlugin.IsSystemDatabase(info.Name) {
+				s.log.Debug("跳过系统数据库", "database", info.Name)
+				continue
+			}
+			databaseNames = append(databaseNames, info.Name)
+		}
+
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("已过滤系统数据库，待扫描 %d 个用户数据库", len(databaseNames)))
+		}
+	}
+
+	totalDatabases := 0
+	totalCollections := 0
+	totalFields := 0
+	total := len(databaseNames)
+	if reporter != nil {
+		reporter.SetTotal(total)
+	}
+	completed := 0
+
+	for _, databaseName := range databaseNames {
+		if reporter != nil {
+			reporter.Message(fmt.Sprintf("开始扫描数据库 %s", databaseName))
+		}
+
+		// 检查数据库级锁
+		var dbLock string
+		if s.dedupService != nil {
+			dbLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, databaseName)
+			if s.dedupService.CheckTaskExists(ctx, dbLock) {
+				s.log.Info("数据库正在扫描中，跳过",
+					"engine_id", resourceID,
+					"database", databaseName)
+				if reporter != nil {
+					reporter.Message(fmt.Sprintf("数据库 %s 正在扫描中，跳过", databaseName))
+				}
+				completed++
+				continue
+			}
+
+			// 加数据库级锁
+			if err := s.dedupService.MarkTaskRunning(ctx, dbLock, 2*time.Hour); err != nil {
+				s.log.Warn("加数据库级锁失败", "database", databaseName, "error", err)
+			}
+		}
+
+		// 扫描数据库
+		databases, collections, fields, err := s.nosqlScanService.ScanDatabase(
+			ctx, nosqlPlugin, resource, tenantID, databaseName, scanDepth,
+		)
+
+		// 扫描完成后清理锁
+		if s.dedupService != nil && dbLock != "" {
+			if clearErr := s.dedupService.ClearTask(ctx, dbLock); clearErr != nil {
+				s.log.Warn("清除数据库级锁失败", "database", databaseName, "error", clearErr)
+			}
+		}
+
+		if err != nil {
+			s.log.Warn("数据库扫描失败",
+				"engine_id", resourceID,
+				"tenant_id", tenantID,
+				"database", databaseName,
+				"error", err,
+			)
+			if reporter != nil {
+				reporter.Message(fmt.Sprintf("数据库 %s 扫描失败: %v", databaseName, err))
+			}
+			continue
+		}
+		totalDatabases += databases
+		totalCollections += collections
+		totalFields += fields
+
+		completed++
+		if reporter != nil {
+			reporter.Advance(databaseName, completed, total, map[string]interface{}{
+				"collections": collections,
+				"fields":      fields,
+			})
+		}
+	}
+
+	s.log.Info("指定数据库扫描完成", cloneLogFields(startFields,
+		"databases_scanned", totalDatabases,
+		"collections_scanned", totalCollections,
+		"fields_scanned", totalFields,
+	)...)
+
+	return totalDatabases, totalCollections, totalFields, nil
+}
+
 // scanSingleSchema 扫描单个Schema（表+字段）
 func (s *ScanService) scanObjectStorageResource(resource *commonModels.Engine, tenantID uint, objectPaths, fallback []string) (int, int, int, error) {
 	return s.scanObjectStorageResourceWithReporter(resource, tenantID, objectPaths, fallback, "deep", nil)
@@ -1147,18 +1255,6 @@ func (s *ScanService) ListAvailableSchemas(engineID, tenantID uint, token string
 // ListObjectStorageNodes 列出对象存储的节点结构（用于Manager模块）
 func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, token string) ([]*models.ObjectNode, error) {
 	return s.resourceDiscoveryService.ListObjectStorageNodes(engineID, tenantID, path, token)
-}
-
-// updateScanLogFailed 更新扫描日志为失败
-func (s *ScanService) updateScanLogFailed(scanLog *models.ScanLog, errorMsg string) {
-	now := time.Now()
-	scanLog.Status = "failed"
-	scanLog.ErrorMessage = errorMsg
-	scanLog.CompletedAt = &now
-	if scanLog.StartedAt != nil {
-		scanLog.DurationMs = now.Sub(*scanLog.StartedAt).Milliseconds()
-	}
-	s.db.Save(scanLog)
 }
 
 // ============================================================================

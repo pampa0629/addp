@@ -1,0 +1,39 @@
+{
+  "module": "develop",
+  "title": "数据开发模块",
+  "version": "0.0.20",
+  "categories": [
+    {
+      "name": "SQL 与工作流",
+      "description": "SQL 查询、工作流执行、算子管理",
+      "apis": [
+        {
+          "name": "执行 SQL 查询",
+          "method": "POST",
+          "path": "/api/develop/query/execute",
+          "description": "在线执行 SQL 查询",
+          "auth": true,
+          "request": "{\n  \"engine_id\": 1,\n  \"sql\": \"SELECT * FROM users LIMIT 10\",\n  \"save_history\": true\n}",
+          "response": "{\n  \"columns\": [\"id\", \"name\", \"email\"],\n  \"rows\": [[1, \"张三\", \"zhang@example.com\"]],\n  \"row_count\": 10,\n  \"execution_time\": 125\n}"
+        },
+        {
+          "name": "执行工作流",
+          "method": "POST",
+          "path": "/api/develop/workflow/execute",
+          "description": "执行 GIS 工作流（DAG 流程）",
+          "auth": true,
+          "request": "{\n  \"workflow_id\": 456,\n  \"engine_id\": 1,\n  \"parameters\": {\n    \"input_table\": \"roads\",\n    \"buffer_distance\": 100\n  }\n}",
+          "response": "{\n  \"execution_id\": \"exec_789\",\n  \"status\": \"running\",\n  \"message\": \"工作流已启动\"\n}"
+        },
+        {
+          "name": "获取算子列表",
+          "method": "GET",
+          "path": "/api/develop/operators",
+          "description": "获取可用的工作流算子（空间分析、数据处理等）",
+          "auth": true,
+          "response": "[\n  {\n    \"name\": \"buffer\",\n    \"category\": \"spatial\",\n    \"description\": \"缓冲区分析\",\n    \"parameters\": [\"distance\", \"unit\"]\n  }\n]"
+        }
+      ]
+    }
+  ]
+}

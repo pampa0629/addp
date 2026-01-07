@@ -33,8 +33,12 @@ func (h *TenantHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	userID, _ := commonapi.GetCurrentUserID(c)
 
-	tenants, err := h.tenantService.List(page, pageSize, userID)
-	commonapi.RespondOrError(c, tenants, err)
+	tenants, total, err := h.tenantService.List(page, pageSize, userID)
+	if err != nil {
+		commonapi.RespondError(c, 500, err.Error())
+		return
+	}
+	commonapi.RespondPaginated(c, tenants, total, page, pageSize)
 }
 
 func (h *TenantHandler) GetByID(c *gin.Context) {
