@@ -88,17 +88,17 @@ export default {
 
   // 获取指定引擎的Schema列表
   getSchemas(engineId) {
-    return client.get(`/meta/schemas/${engineId}`)
+    return client.get(`/meta/engines/${engineId}/schemas`)
   },
 
   // 获取指定引擎的可用Schema列表（未扫描的）
   listAvailableSchemas(engineId) {
-    return client.get(`/meta/schemas/${engineId}/available`)
+    return client.get(`/meta/engines/${engineId}/schemas/available`)
   },
 
   // 获取对象存储的节点列表
   listObjectStorageNodes(engineId, path = '') {
-    return client.get(`/meta/object-storage/${engineId}/nodes`, {
+    return client.get(`/meta/engines/${engineId}/storage/nodes`, {
       params: { path }
     })
   },

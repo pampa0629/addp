@@ -26,9 +26,8 @@ func (h *OperatorHandler) ListOperators(c *gin.Context) {
 	operators := h.operatorService.GetOperators()
 
 	c.JSON(http.StatusOK, gin.H{
-		"status":    "success",
-		"operators": operators,
-		"count":     len(operators),
+		"data":  operators,
+		"total": len(operators),
 	})
 }
 
@@ -41,8 +40,7 @@ func (h *OperatorHandler) ExecuteOperator(c *gin.Context) {
 	var req models.OperatorExecuteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"status":  "error",
-			"message": err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}
@@ -60,8 +58,7 @@ func (h *OperatorHandler) ExecuteOperator(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"status":  "error",
-			"message": err.Error(),
+			"error": err.Error(),
 		})
 		return
 	}

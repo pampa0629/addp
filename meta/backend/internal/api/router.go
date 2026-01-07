@@ -65,9 +65,9 @@ func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanS
 		api.GET("/engines", handler.GetEngines)
 
 		// Schema相关
-		api.GET("/schemas/:engine_id", handler.GetSchemas)
-		api.GET("/schemas/:engine_id/available", handler.ListAvailableSchemas)
-		api.GET("/object-storage/:engine_id/nodes", handler.ListObjectStorageNodes)
+		api.GET("/engines/:engine_id/schemas", handler.GetSchemas)
+		api.GET("/engines/:engine_id/schemas/available", handler.ListAvailableSchemas)
+		api.GET("/engines/:engine_id/storage/nodes", handler.ListObjectStorageNodes)
 
 		// 扫描相关
 		api.POST("/scan/auto", handler.AutoScan)

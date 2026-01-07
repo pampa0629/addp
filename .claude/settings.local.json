@@ -162,7 +162,13 @@
       "Bash(URL='http://localhost:8081/api/explorer/preview?locator=addp%3A%2F%2Fengine%2F59%2Fpath%2Fpublic.spatial_ref_sys%3Ftype%3Dtable&page=1&page_size=5')",
       "Bash(__NEW_LINE__ curl -s -X GET \"$URL\" -H \"Authorization: Bearer $TOKEN\")",
       "Bash(# 检查 .env 文件中的 business 数据库密码 grep \"\"BUSINESS.*PASSWORD\\\\|business.*password\"\" /Users/pampa/code/addp/.env /Users/pampa/code/addp/business/.env)",
-      "Bash(PGPASSWORD=system123 psql:*)"
+      "Bash(PGPASSWORD=system123 psql:*)",
+      "Bash(source:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc3NzA3MjQsImlhdCI6MTc2Nzc1OTkyNH0.AjnsmTBE7nreq0TCjnEByYsJQ4hL6m60k_ESVzv9epI\")",
+      "Bash(__NEW_LINE__ echo \"=== 测试 1: 新路径 GET /api/meta/engines/1/schemas ===\")",
+      "Bash(__NEW_LINE__ echo \"=== 测试 2: GET /api/meta/engines/1/schemas/available ===\")",
+      "Bash(__NEW_LINE__ echo -e \"\\\\n\\\\n=== 测试 3: GET /api/meta/operators \\(响应格式: {data, total}\\) ===\")",
+      "Bash(__NEW_LINE__ echo -e \"\\\\n\\\\n=== 测试 4: GET /api/meta/scan/runs \\(分页响应完整\\) ===\")"
     ],
     "deny": [],
     "ask": []

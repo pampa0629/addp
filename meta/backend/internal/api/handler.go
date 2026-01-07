@@ -174,7 +174,7 @@ func (h *Handler) AutoScan(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, result)
+	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
 // CreateManualScanRun 创建异步扫描运行
@@ -349,9 +349,17 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		return
 	}
 
+	totalPages := int64(0)
+	if limit > 0 {
+		totalPages = (total + int64(limit) - 1) / int64(limit)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"data":  runs,
-		"total": total,
+		"data":        runs,
+		"total":       total,
+		"page":        page,
+		"page_size":   limit,
+		"total_pages": totalPages,
 	})
 }
 

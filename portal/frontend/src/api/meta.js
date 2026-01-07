@@ -6,10 +6,10 @@ const unwrap = (promise, defaultValue) =>
 export const getEngines = () => unwrap(client.get('/meta/engines'), [])
 
 export const getSchemas = engineId =>
-  unwrap(client.get(`/meta/schemas/${engineId}`), [])
+  unwrap(client.get(`/meta/engines/${engineId}/schemas`), [])
 
 export const listAvailableSchemas = engineId =>
-  unwrap(client.get(`/meta/schemas/${engineId}/available`), [])
+  unwrap(client.get(`/meta/engines/${engineId}/schemas/available`), [])
 
 export const autoScan = () => client.post('/meta/scan/auto').then(res => res.data)
 
