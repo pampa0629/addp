@@ -26,11 +26,12 @@ func NewSchedulerService(archiveService *LogArchiveService, schedule string) *Sc
 func (s *SchedulerService) Start() error {
 	// 注册日志归档任务
 	_, err := s.cron.AddFunc(s.archiveSchedule, func() {
-		log.Println("开始执行日志归档任务...")
-		if err := s.archiveService.ArchiveOldLogs(); err != nil {
-			log.Printf("日志归档任务失败: %v", err)
+		log.Println("⏰ 开始执行日志归档任务...")
+		retentionDays := GetRetentionDaysFromEnv()
+		if err := s.archiveService.ArchiveOldLogsToCSV(retentionDays); err != nil {
+			log.Printf("❌ 日志归档任务失败: %v", err)
 		} else {
-			log.Println("日志归档任务完成")
+			log.Println("✅ 日志归档任务完成")
 		}
 	})
 

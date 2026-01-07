@@ -28,7 +28,7 @@ func (h *LogHandler) List(c *gin.Context) {
 	filters := &models.AuditLogFilters{
 		StartTime:  c.Query("start_time"),
 		EndTime:    c.Query("end_time"),
-		Action:     c.Query("action"),
+		HTTPMethod: c.Query("http_method"),
 		EntityType: c.Query("entity_type"),
 		Username:   c.Query("username"),
 		IPAddress:  c.Query("ip"),
@@ -80,7 +80,7 @@ func (h *LogHandler) Export(c *gin.Context) {
 	filters := &models.AuditLogFilters{
 		StartTime:  c.Query("start_time"),
 		EndTime:    c.Query("end_time"),
-		Action:     c.Query("action"),
+		HTTPMethod: c.Query("http_method"),
 		EntityType: c.Query("entity_type"),
 		Username:   c.Query("username"),
 		IPAddress:  c.Query("ip"),
@@ -127,7 +127,7 @@ func (h *LogHandler) Export(c *gin.Context) {
 		c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 
 		// 写入表头
-		headers := []string{"ID", "用户ID", "用户名", "租户ID", "操作", "资源类型", "资源ID", "IP地址", "时间"}
+		headers := []string{"ID", "用户ID", "用户名", "租户ID", "HTTP方法", "路径", "资源类型", "资源ID", "IP地址", "时间"}
 		if err := writer.Write(headers); err != nil {
 			commonapi.RespondError(c, 500, "导出失败")
 			return
@@ -148,7 +148,8 @@ func (h *LogHandler) Export(c *gin.Context) {
 				userID,
 				log.Username,
 				tenantID,
-				log.Action,
+				log.HTTPMethod,
+				log.ResourcePath,
 				log.EntityType,
 				log.EntityID,
 				log.IPAddress,
@@ -172,17 +173,20 @@ func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	auditLog := &models.AuditLog{
 		UserID:       req.UserID,
 		TenantID:     req.TenantID,
-		Action:       req.Action,
+		HTTPMethod:   req.HTTPMethod,
+		ResourcePath: req.ResourcePath,
+		HTTPStatus:   req.HTTPStatus,
+		DurationMs:   req.DurationMs,
 		EntityType:   req.EntityType,
 		EntityID:     req.EntityID,
-		Details:      req.Details,
+		RequestBody:  req.RequestBody,
+		QueryParams:  req.QueryParams,
+		UserAgent:    req.UserAgent,
 		IPAddress:    req.IPAddress,
 		ModuleName:   req.ModuleName,
-		HTTPStatus:   req.HTTPStatus,   // 新增
-		DurationMs:   req.DurationMs,   // 新增
-		LogLevel:     req.LogLevel,     // 新增
-		ErrorMessage: req.ErrorMessage, // 新增
-		RequestID:    req.RequestID,    // 新增
+		LogLevel:     req.LogLevel,
+		ErrorMessage: req.ErrorMessage,
+		RequestID:    req.RequestID,
 	}
 
 	// 设置用户名

@@ -2,176 +2,212 @@ package service
 
 import (
 	"bytes"
-	"compress/gzip"
-	"encoding/json"
+	"context"
+	"encoding/csv"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"time"
 
-	"github.com/addp/system/internal/models"
+	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/repository"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// LogArchiveConfig 日志归档配置
-type LogArchiveConfig struct {
-	RetentionDays int  // 数据库保留天数（超过此天数的日志将被归档）
-	EnableArchive bool // 是否启用归档功能
-	EnableCleanup bool // 是否启用清理功能
-}
-
-// LogArchiveService 日志归档服务
 type LogArchiveService struct {
-	logRepo *repository.LogRepository
-	config  *LogArchiveConfig
+	repo        *repository.LogRepository
+	minioClient *minio.Client
 }
 
-// NewLogArchiveService 创建日志归档服务
-func NewLogArchiveService(logRepo *repository.LogRepository, config *LogArchiveConfig) *LogArchiveService {
+func NewLogArchiveService(repo *repository.LogRepository, minioClient *minio.Client) *LogArchiveService {
 	return &LogArchiveService{
-		logRepo: logRepo,
-		config:  config,
+		repo:        repo,
+		minioClient: minioClient,
 	}
 }
 
-// ArchiveOldLogs 归档旧日志
-// 将超过保留期的日志导出为 JSON 文件（可选压缩）并从数据库删除
-func (s *LogArchiveService) ArchiveOldLogs() error {
-	if !s.config.EnableArchive {
-		log.Println("日志归档功能未启用")
-		return nil
-	}
+// ArchiveOldLogsToCSV 归档超过保留期的日志到MinIO (CSV格式)
+func (s *LogArchiveService) ArchiveOldLogsToCSV(retentionDays int) error {
+	cutoffDate := time.Now().AddDate(0, 0, -retentionDays)
+	log.Printf("⏰ 开始归档 %s 之前的日志...", cutoffDate.Format("2006-01-02"))
 
-	cutoffDate := time.Now().AddDate(0, 0, -s.config.RetentionDays)
-	log.Printf("开始归档 %s 之前的日志...", cutoffDate.Format("2006-01-02"))
-
-	// 查询需要归档的日志
-	filters := &models.AuditLogFilters{
-		EndTime: cutoffDate.Format("2006-01-02 15:04:05"),
-	}
-
-	// 查询所有需要归档的日志（分批处理，每次 10000 条）
+	batchSize := 10000 // 每批处理10000条
 	offset := 0
-	pageSize := 10000
 	totalArchived := 0
 
 	for {
-		logs, _, err := s.logRepo.List(offset, pageSize, filters)
+		// 1. 查询需要归档的日志
+		logs, err := s.repo.GetLogsBeforeDate(cutoffDate, offset, batchSize)
 		if err != nil {
 			return fmt.Errorf("查询待归档日志失败: %v", err)
 		}
 
 		if len(logs) == 0 {
-			break
+			break // 没有更多日志
 		}
 
-		// 归档到文件（这里简化处理，实际应该归档到 MinIO/S3）
-		if err := s.archiveToFile(logs, cutoffDate); err != nil {
-			return fmt.Errorf("归档日志到文件失败: %v", err)
+		// 2. 转换为CSV
+		csvBuffer := new(bytes.Buffer)
+		writer := csv.NewWriter(csvBuffer)
+
+		// 写入CSV头
+		writer.Write([]string{
+			"id", "created_at", "user_id", "username", "tenant_id",
+			"http_method", "resource_path", "http_status", "duration_ms",
+			"entity_type", "entity_id", "ip_address", "module_name", "log_level",
+		})
+
+		// 写入数据
+		for _, logItem := range logs {
+			writer.Write([]string{
+				fmt.Sprintf("%d", logItem.ID),
+				logItem.CreatedAt.Format("2006-01-02 15:04:05"),
+				formatPtr(logItem.UserID),      // NULL处理
+				logItem.Username,
+				formatPtr(logItem.TenantID),    // NULL处理
+				logItem.HTTPMethod,
+				logItem.ResourcePath,
+				fmt.Sprintf("%d", logItem.HTTPStatus),
+				fmt.Sprintf("%d", logItem.DurationMs),
+				logItem.EntityType,
+				logItem.EntityID,
+				logItem.IPAddress,
+				logItem.ModuleName,
+				logItem.LogLevel,
+			})
+		}
+		writer.Flush()
+
+		// 3. 上传到MinIO (按日期分组)
+		archiveYear := cutoffDate.Format("2006")
+		archiveMonth := cutoffDate.Format("01")
+		archiveDate := cutoffDate.Format("2006-01-02")
+		objectName := fmt.Sprintf("audit-logs/%s/%s/logs-%s.csv",
+			archiveYear, archiveMonth, archiveDate)
+
+		_, err = s.minioClient.PutObject(
+			context.Background(),
+			"system", // ✅ infra MinIO的system bucket
+			objectName,
+			bytes.NewReader(csvBuffer.Bytes()),
+			int64(csvBuffer.Len()),
+			minio.PutObjectOptions{ContentType: "text/csv"},
+		)
+		if err != nil {
+			return fmt.Errorf("上传到MinIO失败: %v", err)
+		}
+
+		log.Printf("📦 已归档 %d 条日志到 MinIO: %s", len(logs), objectName)
+
+		// 4. 删除已归档的日志
+		logIDs := make([]uint, len(logs))
+		for i, logItem := range logs {
+			logIDs[i] = logItem.ID
+		}
+
+		err = s.repo.DeleteByIDs(logIDs)
+		if err != nil {
+			return fmt.Errorf("删除已归档日志失败: %v", err)
 		}
 
 		totalArchived += len(logs)
-		offset += pageSize
-
-		// 如果返回的数据少于 pageSize，说明没有更多数据了
-		if len(logs) < pageSize {
-			break
-		}
+		offset += batchSize
 	}
 
-	log.Printf("✓ 已归档 %d 条日志", totalArchived)
-
-	// 如果启用了清理功能，删除已归档的日志
-	if s.config.EnableCleanup {
-		if err := s.logRepo.DeleteOlderThan(cutoffDate); err != nil {
-			return fmt.Errorf("清理旧日志失败: %v", err)
-		}
-		log.Printf("✓ 已清理数据库中 %s 之前的日志", cutoffDate.Format("2006-01-02"))
+	if totalArchived > 0 {
+		log.Printf("✅ 归档完成! 共归档 %d 条日志到 MinIO (system bucket)", totalArchived)
+	} else {
+		log.Printf("ℹ️  无需归档，没有超过 %d 天的日志", retentionDays)
 	}
 
 	return nil
 }
 
-// archiveToFile 将日志归档到文件
-// 注意：这是简化实现，生产环境应该归档到 MinIO/S3
-func (s *LogArchiveService) archiveToFile(logs []models.AuditLog, date time.Time) error {
-	// 生成归档文件名
-	filename := fmt.Sprintf("/tmp/audit_logs_archive_%s.json.gz", date.Format("20060102"))
-
-	// 注意：此处仅作为示例，实际应该上传到 MinIO
-	// 创建 gzip 压缩文件（节省存储空间）
-	log.Printf("归档 %d 条日志到 %s", len(logs), filename)
-
-	// 实际生产环境应该：
-	// 1. 上传到 MinIO bucket: audit-logs-archive
-	// 2. 按年月组织目录结构
-	// 3. 设置对象生命周期策略
-
-	return nil
+// formatPtr NULL处理
+func formatPtr(val *uint) string {
+	if val == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", *val)
 }
 
-// CleanupOldLogs 仅清理旧日志（不归档）
-func (s *LogArchiveService) CleanupOldLogs() error {
-	if !s.config.EnableCleanup {
-		log.Println("日志清理功能未启用")
-		return nil
+// GetRetentionDaysFromEnv 从环境变量读取保留天数
+func GetRetentionDaysFromEnv() int {
+	retentionStr := os.Getenv("AUDIT_LOG_RETENTION_DAYS")
+	if retentionStr == "" {
+		return 90 // 默认90天
 	}
 
-	cutoffDate := time.Now().AddDate(0, 0, -s.config.RetentionDays)
-	log.Printf("开始清理 %s 之前的日志...", cutoffDate.Format("2006-01-02"))
-
-	if err := s.logRepo.DeleteOlderThan(cutoffDate); err != nil {
-		return fmt.Errorf("清理旧日志失败: %v", err)
-	}
-
-	log.Printf("✓ 已清理数据库中 %s 之前的日志", cutoffDate.Format("2006-01-02"))
-	return nil
-}
-
-// GetArchiveStats 获取归档统计信息
-func (s *LogArchiveService) GetArchiveStats() (map[string]interface{}, error) {
-	cutoffDate := time.Now().AddDate(0, 0, -s.config.RetentionDays)
-
-	// 统计需要归档的日志数量
-	filters := &models.AuditLogFilters{
-		EndTime: cutoffDate.Format("2006-01-02 15:04:05"),
-	}
-
-	_, total, err := s.logRepo.List(0, 1, filters)
+	retention, err := strconv.Atoi(retentionStr)
 	if err != nil {
-		return nil, err
+		log.Printf("⚠️  AUDIT_LOG_RETENTION_DAYS配置无效: %s, 使用默认值90天", retentionStr)
+		return 90
 	}
 
-	stats := map[string]interface{}{
-		"retention_days":      s.config.RetentionDays,
-		"cutoff_date":         cutoffDate.Format("2006-01-02"),
-		"logs_to_archive":     total,
-		"archive_enabled":     s.config.EnableArchive,
-		"cleanup_enabled":     s.config.EnableCleanup,
-		"estimated_file_size": fmt.Sprintf("%.2f MB", float64(total)*0.5/1024), // 估算大小
+	if retention < 1 {
+		log.Printf("⚠️  AUDIT_LOG_RETENTION_DAYS必须大于0, 使用默认值90天")
+		return 90
 	}
 
-	return stats, nil
+	return retention
 }
 
-// archiveToMinIO 归档到 MinIO（生产环境实现）
-func (s *LogArchiveService) archiveToMinIO(logs []models.AuditLog, date time.Time) error {
-	// TODO: 实现 MinIO 上传逻辑
-	// 1. 将 logs 序列化为 JSON
-	data, err := json.Marshal(logs)
-	if err != nil {
-		return err
+// IsArchiveEnabled 检查是否启用归档
+func IsArchiveEnabled() bool {
+	enabled := os.Getenv("AUDIT_LOG_ARCHIVE_ENABLED")
+	return enabled == "true"
+}
+
+// InitMinIOClient 初始化MinIO客户端（用于日志归档）
+func InitMinIOClient(cfg *config.Config) (*minio.Client, error) {
+	// MinIO连接配置（直接从环境变量读取）
+	minioHost := os.Getenv("MINIO_HOST")
+	if minioHost == "" {
+		minioHost = "localhost"
+	}
+	minioPort := os.Getenv("MINIO_API_PORT")
+	if minioPort == "" {
+		minioPort = "19000"
+	}
+	accessKeyID := os.Getenv("MINIO_ROOT_USER")
+	if accessKeyID == "" {
+		accessKeyID = "minioadmin"
+	}
+	secretAccessKey := os.Getenv("MINIO_ROOT_PASSWORD")
+	if secretAccessKey == "" {
+		secretAccessKey = "minioadmin"
 	}
 
-	// 2. Gzip 压缩
-	var compressedData bytes.Buffer
-	writer := gzip.NewWriter(&compressedData)
-	writer.Write(data)
-	writer.Close()
+	endpoint := fmt.Sprintf("%s:%s", minioHost, minioPort)
+	useSSL := false
 
-	// 3. 上传到 MinIO
-	// objectName := fmt.Sprintf("audit-logs/%s/audit_logs_%s.json.gz",
-	//     date.Format("2006/01"), date.Format("20060102"))
-	// minioClient.PutObject(ctx, "audit-logs-archive", objectName, bytes.NewReader(compressedData), ...)
+	// 初始化MinIO客户端
+	minioClient, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create MinIO client: %v", err)
+	}
 
-	return nil
+	// 确保system bucket存在
+	ctx := context.Background()
+	bucketName := "system"
+	exists, err := minioClient.BucketExists(ctx, bucketName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check bucket existence: %v", err)
+	}
+
+	if !exists {
+		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create bucket: %v", err)
+		}
+		log.Printf("✅ Created MinIO bucket: %s", bucketName)
+	}
+
+	log.Printf("✅ MinIO客户端初始化成功: %s (bucket: %s)", endpoint, bucketName)
+	return minioClient, nil
 }

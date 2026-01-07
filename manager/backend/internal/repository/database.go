@@ -25,10 +25,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.Directory{},
 		&models.SearchHistory{},
-		&models.ManagedTable{},
-		&models.ManagedFile{},
 	)
 	if err != nil {
 		return nil, err

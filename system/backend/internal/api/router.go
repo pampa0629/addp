@@ -2,8 +2,8 @@ package api
 
 import (
 	"fmt"
-	"log"
 
+	"github.com/addp/common/logger"
 	"github.com/addp/common/middleware/ratelimit"
 	"github.com/addp/system/internal/config"
 	"github.com/addp/system/internal/middleware"
@@ -26,9 +26,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		})
-		log.Printf("✅ Redis 客户端已初始化: %s", redisAddr)
+		logger.L().Info("Redis 客户端已初始化", "addr", redisAddr)
 	} else {
-		log.Println("⚠️  Redis 未配置，资源变更事件通知功能将被禁用")
+		logger.L().Warn("Redis 未配置，资源变更事件通知功能将被禁用")
 	}
 
 	// CORS 中间件（基于白名单）
@@ -77,7 +77,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	taskProviderService := service.NewTaskProviderService(db)
 
 	// 日志中间件
-	router.Use(middleware.LoggerMiddleware(logService, userRepo))
+	router.Use(middleware.LoggerMiddleware(logService))
 
 	// 根路由
 	router.GET("/", func(c *gin.Context) {

@@ -126,61 +126,6 @@ func (s *MetadataService) callMeta(ctx context.Context, method, path string, que
 	return respBody, nil
 }
 
-// ScanResource 扫描资源的元数据（轻量级）
-func (s *MetadataService) ScanResource(engineID uint) (*models.MetadataScanResult, error) {
-	// 获取资源信息（优先从 System 服务获取解密后的连接信息）
-	resource, err := s.getResource(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get resource: %w", err)
-	}
-
-	var result models.MetadataScanResult
-
-	switch resource.EngineType {
-	case "postgresql":
-		// 扫描数据库表
-		tables, err := s.metadataRepo.ScanDatabaseTables(engineID, resource.ConnectionInfo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan database tables: %w", err)
-		}
-
-		// 保存或更新表元数据
-		if err := s.metadataRepo.SaveOrUpdateTables(tables); err != nil {
-			return nil, fmt.Errorf("failed to save table metadata: %w", err)
-		}
-
-		// 获取更新后的列表
-		allTables, err := s.metadataRepo.GetManagedTables(engineID, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tables: %w", err)
-		}
-
-		result.TotalItems = len(allTables)
-
-		managedCount := 0
-		items := make([]interface{}, len(allTables))
-		for i, table := range allTables {
-			if table.IsManaged {
-				managedCount++
-			}
-			items[i] = table
-		}
-
-		result.ManagedItems = managedCount
-		result.UnmanagedItems = result.TotalItems - managedCount
-		result.Items = items
-
-	case "minio":
-		// TODO: 对象存储扫描逻辑
-		return nil, fmt.Errorf("minio scanning not yet implemented")
-
-	default:
-		return nil, fmt.Errorf("unsupported resource type: %s", resource.EngineType)
-	}
-
-	return &result, nil
-}
-
 func (s *MetadataService) ListScanTasks(ctx context.Context, engineID uint, authHeader string) ([]models.MetaScanTask, error) {
 	body, err := s.callMeta(ctx, http.MethodGet, "/api/meta/scan/tasks", nil, nil, authHeader)
 	if err != nil {
@@ -396,34 +341,6 @@ func (s *MetadataService) CreateManualScanRun(ctx context.Context, engineID uint
 	}
 
 	return &resp.Data, nil
-}
-
-// GetTables 获取资源的表列表
-func (s *MetadataService) GetTables(engineID uint, isManaged *bool) ([]models.ManagedTable, error) {
-	return s.metadataRepo.GetManagedTables(engineID, isManaged)
-}
-
-// ManageTable 纳管表（提取详细元数据）
-func (s *MetadataService) ManageTable(tableID uint) error {
-	// 获取表信息  - 直接通过GetByID获取
-	table, err := s.metadataRepo.GetManagedTableByID(tableID)
-	if err != nil {
-		return fmt.Errorf("table not found: %w", err)
-	}
-
-	// 获取资源连接信息
-	resource, err := s.getResource(table.EngineID)
-	if err != nil {
-		return fmt.Errorf("failed to get resource: %w", err)
-	}
-
-	// 标记为已纳管并提取详细元数据
-	return s.metadataRepo.MarkTableAsManaged(tableID, resource.ConnectionInfo)
-}
-
-// UnmanageTable 取消纳管表
-func (s *MetadataService) UnmanageTable(tableID uint) error {
-	return s.metadataRepo.UnmarkTableAsManaged(tableID)
 }
 
 // PreviewTable 获取表数据预览

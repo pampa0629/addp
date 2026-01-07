@@ -48,13 +48,12 @@
       <el-tree
         v-else
         ref="treeRef"
-        :key="treeKey"
         :data="filteredTreeData"
         :props="treeProps"
         node-key="id"
         :highlight-current="true"
         :expand-on-click-node="expandOnClickNode"
-        :default-expanded-keys="computedExpandedKeys"
+        :expanded-keys="computedExpandedKeys"
         :current-node-key="currentNodeKey"
         :filter-node-method="currentFilterMethod"
         @node-click="handleNodeClick"
@@ -279,11 +278,6 @@ const computedExpandedKeys = computed(() => {
     return props.treeData.map((node) => node.id)
   }
   return []
-})
-
-// 树的 key（用于强制刷新）
-const treeKey = computed(() => {
-  return `tree-${computedExpandedKeys.value.join('|') || 'empty'}`
 })
 
 // 获取所有节点的 key

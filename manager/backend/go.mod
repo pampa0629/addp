@@ -7,7 +7,6 @@ toolchain go1.24.2
 require (
 	github.com/addp/common v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.11.0
-	github.com/go-sql-driver/mysql v1.9.3
 	github.com/hibiken/asynq v0.25.1
 	github.com/jackc/pgx/v5 v5.7.2
 	github.com/lib/pq v1.10.9
@@ -48,6 +47,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.27.0 // indirect
+	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/go-zookeeper/zk v1.0.4 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect

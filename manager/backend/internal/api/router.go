@@ -109,7 +109,6 @@ func SetupRouter(
 
 			// 元数据扫描和管理
 			metadataHandler := NewMetadataHandler(metadataService)
-			engines.POST("/:id/scan", metadataHandler.ScanResource)
 			engines.GET("/:id/scan-tasks", metadataHandler.ListScanTasks)
 			engines.POST("/:id/scan-tasks", metadataHandler.CreateScanTask)
 			engines.PUT("/:id/scan-tasks/:task_id", metadataHandler.UpdateScanTask)
@@ -118,19 +117,10 @@ func SetupRouter(
 			engines.GET("/:id/scan-runs", metadataHandler.ListScanRuns)
 			engines.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
 			engines.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
-			engines.GET("/:id/tables", metadataHandler.GetTables)
 
 			// 要素查询（用于表格与地图关联）
 			featureHandler := NewFeatureHandler(engineRepo, metadataRepo)
 			engines.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
-		}
-
-		// 表管理
-		tables := api.Group("/tables")
-		{
-			metadataHandler := NewMetadataHandler(metadataService)
-			tables.POST("/:id/manage", metadataHandler.ManageTable)
-			tables.POST("/:id/unmanage", metadataHandler.UnmanageTable)
 		}
 
 		searchGroup := api.Group("/search")

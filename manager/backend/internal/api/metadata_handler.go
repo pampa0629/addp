@@ -22,53 +22,6 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 	}
 }
 
-// ScanResource 扫描资源元数据
-// POST /api/engines/:id/scan
-func (h *MetadataHandler) ScanResource(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
-		return
-	}
-
-	result, err := h.metadataService.ScanResource(uint(id))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, result)
-}
-
-// GetTables 获取资源的表列表
-// GET /api/engines/:id/tables?managed=true/false
-func (h *MetadataHandler) GetTables(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
-		return
-	}
-
-	var isManaged *bool
-	if managedStr := c.Query("managed"); managedStr != "" {
-		managed := managedStr == "true"
-		isManaged = &managed
-	}
-
-	tables, err := h.metadataService.GetTables(uint(id), isManaged)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"data":  tables,
-		"total": len(tables),
-	})
-}
-
 // ListScanTasks 列出指定资源下的扫描任务
 func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
@@ -316,41 +269,6 @@ func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": run})
 }
 
-// ManageTable 纳管表
-// POST /api/tables/:id/manage
-func (h *MetadataHandler) ManageTable(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table id"})
-		return
-	}
-
-	if err := h.metadataService.ManageTable(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "table managed successfully"})
-}
-
-// UnmanageTable 取消纳管表
-// POST /api/tables/:id/unmanage
-func (h *MetadataHandler) UnmanageTable(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid table id"})
-		return
-	}
-
-	if err := h.metadataService.UnmanageTable(uint(id)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "table unmanaged successfully"})
-}
 func parseUintParam(c *gin.Context, key string) (uint, bool) {
 	value := c.Param(key)
 	if strings.TrimSpace(value) == "" {

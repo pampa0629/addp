@@ -110,6 +110,26 @@ func main() {
 		healthChecker.CheckAllResourcesOnStartup()
 	}()
 
+	// 启动日志归档定时任务（如果启用）
+	var scheduler *service.SchedulerService
+	if service.IsArchiveEnabled() {
+		// 初始化 MinIO 客户端
+		minioClient, err := service.InitMinIOClient(cfg)
+		if err != nil {
+			logger.L().Error("MinIO 客户端初始化失败，日志归档功能将被禁用", "error", err)
+		} else {
+			// 创建归档服务
+			logRepo := repository.NewLogRepository(db)
+			archiveService := service.NewLogArchiveService(logRepo, minioClient)
+
+			// 创建并启动调度器（每天凌晨2点执行）
+			scheduler = service.NewSchedulerService(archiveService, "0 2 * * *")
+			if err := scheduler.Start(); err != nil {
+				logger.L().Error("日志归档调度器启动失败", "error", err)
+			}
+		}
+	}
+
 	// 等待中断信号以优雅关闭服务器
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

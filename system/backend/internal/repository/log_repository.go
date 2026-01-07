@@ -79,9 +79,9 @@ func (r *LogRepository) applyFilters(query *gorm.DB, filters *models.AuditLogFil
 		query = query.Where("created_at <= ?", filters.EndTime)
 	}
 
-	// 操作类型过滤（支持模糊匹配）
-	if filters.Action != "" {
-		query = query.Where("action LIKE ?", filters.Action+"%")
+	// HTTP 方法过滤
+	if filters.HTTPMethod != "" {
+		query = query.Where("http_method = ?", filters.HTTPMethod)
 	}
 
 	// 资源类型过滤
@@ -300,4 +300,25 @@ func (r *LogRepository) GetActionDistribution(tenantID *uint, startTime time.Tim
 	var actions []ActionStats
 	err := query.Scan(&actions).Error
 	return actions, err
+}
+
+// ============================================
+// 日志归档方法（新增）
+// ============================================
+
+// GetLogsBeforeDate 查询指定日期之前的日志（用于归档）
+func (r *LogRepository) GetLogsBeforeDate(cutoffDate time.Time, offset, limit int) ([]models.AuditLog, error) {
+	var logs []models.AuditLog
+	err := r.db.Model(&models.AuditLog{}).
+		Where("created_at < ?", cutoffDate).
+		Order("created_at ASC").
+		Offset(offset).
+		Limit(limit).
+		Find(&logs).Error
+	return logs, err
+}
+
+// DeleteByIDs 批量删除日志（用于归档后清理）
+func (r *LogRepository) DeleteByIDs(logIDs []uint) error {
+	return r.db.Where("id IN ?", logIDs).Delete(&models.AuditLog{}).Error
 }

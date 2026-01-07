@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ResourceTree } from '@addp/common-frontend'
@@ -90,7 +90,9 @@ const treeChildren = computed(() => {
 
 // 计算属性：展开的节点 keys（转换为 ResourceTree 期望的格式）
 const expandedKeys = computed({
-  get: () => Array.from(store.expandedLocators),
+  get: () => {
+    return Array.from(store.expandedLocators)
+  },
   set: (keys) => {
     store.expandedLocators = new Set(keys)
   }
@@ -229,18 +231,21 @@ onMounted(async () => {
 
     // 2. 并行加载所有引擎的树结构（但不影响展开状态）
     if (store.engines.length > 0) {
-      // 收集初始需要展开的引擎节点 locators
-      const engineLocators = store.engines.map(engine =>
-        `addp://engine/${engine.id}/path/?type=database`
-      )
-
       // 并行加载所有引擎的树数据
       await Promise.all(
         store.engines.map(engine => store.loadTree(engine.id))
       )
 
-      // 一次性设置初始展开状态（只展开引擎层级）
-      store.expandedLocators = new Set(engineLocators)
+      // 等待DOM更新后，再设置初始展开状态（只展开引擎层级）
+      await nextTick()
+
+      // 收集初始需要展开的引擎节点 locators
+      const engineLocators = store.engines.map(engine =>
+        `addp://engine/${engine.id}/path/?type=database`
+      )
+
+      // 通过expandedKeys的set方法设置，触发双向绑定
+      expandedKeys.value = engineLocators
     }
   } catch (error) {
     ElMessage.error('初始化失败: ' + error.message)

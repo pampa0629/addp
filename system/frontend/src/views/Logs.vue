@@ -59,22 +59,13 @@
         </el-select>
       </el-form-item>
 
-      <el-form-item label="操作类型">
-        <el-select v-model="actionFilter" placeholder="全部操作" clearable @change="loadLogs" style="width: 130px">
+      <el-form-item label="HTTP方法">
+        <el-select v-model="methodFilter" placeholder="全部" clearable @change="loadLogs" style="width: 110px">
           <el-option label="全部" value="" />
-          <el-option label="创建 (POST)" value="POST" />
-          <el-option label="更新 (PUT)" value="PUT" />
-          <el-option label="删除 (DELETE)" value="DELETE" />
-          <el-option label="修改 (PATCH)" value="PATCH" />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item label="资源类型">
-        <el-select v-model="entityFilter" placeholder="全部资源" clearable @change="loadLogs" style="width: 120px">
-          <el-option label="全部" value="" />
-          <el-option label="用户" value="user" />
-          <el-option label="引擎" value="engine" />
-          <el-option label="租户" value="tenant" />
+          <el-option label="POST" value="POST" />
+          <el-option label="PUT" value="PUT" />
+          <el-option label="DELETE" value="DELETE" />
+          <el-option label="PATCH" value="PATCH" />
         </el-select>
       </el-form-item>
 
@@ -95,30 +86,42 @@
     <!-- 日志列表 -->
     <el-table :data="logs" v-loading="loading" stripe @row-click="showDetails">
       <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="module_name" label="模块" width="100" />
-      <el-table-column prop="username" label="用户" width="110" />
-      <el-table-column prop="action" label="操作" min-width="180" />
-      <el-table-column prop="entity_type" label="资源类型" width="110" />
-      <el-table-column label="状态码" width="90">
+
+      <!-- 操作: HTTP方法 + 路径 -->
+      <el-table-column label="操作" min-width="220">
         <template #default="{ row }">
-          <el-tag v-if="row.http_status" :type="getStatusType(row.http_status)" size="small">
+          <el-tag :type="getMethodType(row.http_method)" size="small" style="margin-right: 8px">
+            {{ row.http_method }}
+          </el-tag>
+          <span>{{ row.resource_path }}</span>
+        </template>
+      </el-table-column>
+
+      <el-table-column prop="username" label="用户" width="110" />
+
+      <!-- 状态码 (100%有数据,颜色标识) -->
+      <el-table-column label="状态" width="70">
+        <template #default="{ row }">
+          <el-tag :type="getStatusType(row.http_status)" size="small">
             {{ row.http_status }}
           </el-tag>
-          <span v-else style="color: #909399">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="耗时" width="80">
+
+      <!-- 耗时 (慢请求高亮) -->
+      <el-table-column label="耗时" width="80" sortable>
         <template #default="{ row }">
-          <span v-if="row.duration_ms !== null && row.duration_ms !== undefined">
+          <span :class="{ 'slow': row.duration_ms > 1000, 'warning': row.duration_ms > 500 }">
             {{ row.duration_ms }}ms
           </span>
-          <span v-else style="color: #909399">-</span>
         </template>
       </el-table-column>
-      <el-table-column prop="ip_address" label="IP地址" width="135" />
-      <el-table-column label="时间" width="165">
+
+      <el-table-column prop="ip_address" label="IP" width="130" />
+      <el-table-column prop="module_name" label="模块" width="90" />
+      <el-table-column label="时间" width="160" sortable>
         <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
+          {{ formatDateTime(row.created_at) }}
         </template>
       </el-table-column>
     </el-table>
@@ -136,41 +139,61 @@
     />
 
     <!-- 日志详情对话框 -->
-    <el-dialog v-model="detailsVisible" title="日志详情" width="900px">
+    <el-dialog v-model="detailsVisible" title="操作详情" width="800px">
       <el-descriptions :column="2" border v-if="currentLog">
+        <!-- 始终显示的字段 -->
         <el-descriptions-item label="日志ID">{{ currentLog.id }}</el-descriptions-item>
-        <el-descriptions-item label="请求ID">{{ currentLog.request_id || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="模块名称">{{ currentLog.module_name || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="用户">{{ currentLog.username || '未知' }}</el-descriptions-item>
-        <el-descriptions-item label="操作" :span="2">{{ currentLog.action }}</el-descriptions-item>
-        <el-descriptions-item label="资源类型">{{ currentLog.entity_type || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="资源ID">{{ currentLog.entity_id || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="HTTP状态码">
-          <el-tag v-if="currentLog.http_status" :type="getStatusType(currentLog.http_status)">
+        <el-descriptions-item label="请求ID">{{ currentLog.request_id }}</el-descriptions-item>
+
+        <!-- SuperAdmin标识 -->
+        <el-descriptions-item label="操作用户">
+          {{ currentLog.username || '未认证' }}
+          <el-tag v-if="currentLog.username === 'SuperAdmin'" type="danger" size="small" style="margin-left: 8px">
+            超管
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="所属租户">
+          {{ currentLog.tenant_id || '系统级操作' }}
+        </el-descriptions-item>
+
+        <!-- 操作和结果 -->
+        <el-descriptions-item label="操作">
+          <el-tag :type="getMethodType(currentLog.http_method)">
+            {{ currentLog.http_method }}
+          </el-tag>
+          <span style="margin-left: 8px">{{ currentLog.resource_path }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="结果">
+          <el-tag :type="getStatusType(currentLog.http_status)">
             {{ currentLog.http_status }}
           </el-tag>
-          <span v-else>-</span>
+          <span style="margin-left: 8px" :class="{ 'slow': currentLog.duration_ms > 1000, 'warning': currentLog.duration_ms > 500 }">
+            {{ currentLog.duration_ms }}ms
+          </span>
         </el-descriptions-item>
-        <el-descriptions-item label="请求耗时">
-          {{ currentLog.duration_ms !== null && currentLog.duration_ms !== undefined ? currentLog.duration_ms + 'ms' : '-' }}
+
+        <!-- 条件显示: 仅在有值时显示 -->
+        <el-descriptions-item v-if="currentLog.entity_type" label="操作资源" :span="2">
+          {{ currentLog.entity_type }} #{{ currentLog.entity_id }}
         </el-descriptions-item>
-        <el-descriptions-item label="日志级别">
-          <el-tag v-if="currentLog.log_level" :type="getLogLevelType(currentLog.log_level)">
-            {{ currentLog.log_level }}
-          </el-tag>
-          <span v-else>-</span>
+
+        <el-descriptions-item label="来源">
+          {{ currentLog.ip_address }} / {{ currentLog.module_name }}
         </el-descriptions-item>
-        <el-descriptions-item label="IP地址">{{ currentLog.ip_address }}</el-descriptions-item>
-        <el-descriptions-item label="操作时间" :span="2">{{ formatDate(currentLog.created_at) }}</el-descriptions-item>
-        <el-descriptions-item v-if="currentLog.error_message" label="错误信息" :span="2">
-          <div class="error-message">{{ currentLog.error_message }}</div>
+        <el-descriptions-item label="时间">
+          {{ formatDateTime(currentLog.created_at) }}
+        </el-descriptions-item>
+
+        <!-- 错误信息: 仅失败时显示 -->
+        <el-descriptions-item v-if="currentLog.http_status >= 400" label="错误信息" :span="2">
+          <div class="error-box">{{ currentLog.error_message || '无详细信息' }}</div>
         </el-descriptions-item>
       </el-descriptions>
 
-      <!-- 请求详情 -->
+      <!-- 请求详情: JSON展示 -->
       <el-divider>请求详情</el-divider>
-      <div v-if="currentLog?.details" class="code-block">
-        <pre>{{ formatJSON(currentLog.details) }}</pre>
+      <div v-if="currentLog?.request_body" class="code-block">
+        <pre>{{ formatJSON(currentLog.request_body) }}</pre>
       </div>
       <div v-else class="empty-text">无请求详情</div>
     </el-dialog>
@@ -194,8 +217,7 @@ const quickTimeRange = ref('')
 const dateRange = ref(null)
 const moduleFilter = ref('')
 const statusFilter = ref('')
-const actionFilter = ref('')
-const entityFilter = ref('')
+const methodFilter = ref('')
 const usernameFilter = ref('')
 const ipFilter = ref('')
 
@@ -203,8 +225,15 @@ const ipFilter = ref('')
 const detailsVisible = ref(false)
 const currentLog = ref(null)
 
-const formatDate = (dateString) => {
-  return new Date(dateString).toLocaleString('zh-CN')
+const formatDateTime = (dateString) => {
+  return new Date(dateString).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 }
 
 const formatJSON = (jsonStr) => {
@@ -219,20 +248,20 @@ const formatJSON = (jsonStr) => {
 // 根据HTTP状态码返回标签类型
 const getStatusType = (status) => {
   if (status >= 200 && status < 300) return 'success'
-  if (status >= 300 && status < 400) return 'info'
   if (status >= 400 && status < 500) return 'warning'
   if (status >= 500) return 'danger'
   return 'info'
 }
 
-// 根据日志级别返回标签类型
-const getLogLevelType = (level) => {
-  switch (level) {
-    case 'INFO': return 'info'
-    case 'WARN': return 'warning'
-    case 'ERROR': return 'danger'
-    default: return 'info'
+// 根据HTTP方法返回标签类型
+const getMethodType = (method) => {
+  const map = {
+    'POST': 'success',
+    'PUT': 'warning',
+    'DELETE': 'danger',
+    'PATCH': 'info',
   }
+  return map[method] || ''
 }
 
 // 快速时间范围处理
@@ -281,7 +310,6 @@ const handleQuickTimeChange = () => {
 
 // 日期范围变化处理
 const handleDateRangeChange = () => {
-  // 如果用户手动选择了日期范围，清空快速时间选择
   quickTimeRange.value = ''
   loadLogs()
 }
@@ -300,13 +328,11 @@ const formatDateToString = (date) => {
 const loadLogs = async () => {
   loading.value = true
   try {
-    // 构建查询参数
     const params = {
       page: currentPage.value,
       page_size: pageSize.value,
     }
 
-    // 添加过滤条件
     if (dateRange.value && dateRange.value.length === 2) {
       params.start_time = dateRange.value[0]
       params.end_time = dateRange.value[1]
@@ -317,11 +343,8 @@ const loadLogs = async () => {
     if (statusFilter.value) {
       params.status_code = statusFilter.value
     }
-    if (actionFilter.value) {
-      params.action = actionFilter.value
-    }
-    if (entityFilter.value) {
-      params.entity_type = entityFilter.value
+    if (methodFilter.value) {
+      params.http_method = methodFilter.value
     }
     if (usernameFilter.value) {
       params.username = usernameFilter.value
@@ -346,8 +369,7 @@ const resetFilters = () => {
   dateRange.value = null
   moduleFilter.value = ''
   statusFilter.value = ''
-  actionFilter.value = ''
-  entityFilter.value = ''
+  methodFilter.value = ''
   usernameFilter.value = ''
   ipFilter.value = ''
   currentPage.value = 1
@@ -360,12 +382,10 @@ const showDetails = (row) => {
 }
 
 const exportLogs = (format) => {
-  // 构建查询参数（与查询接口相同）
   const params = new URLSearchParams({
     format: format
   })
 
-  // 添加过滤条件
   if (dateRange.value && dateRange.value.length === 2) {
     params.append('start_time', dateRange.value[0])
     params.append('end_time', dateRange.value[1])
@@ -376,11 +396,8 @@ const exportLogs = (format) => {
   if (statusFilter.value) {
     params.append('status_code', statusFilter.value)
   }
-  if (actionFilter.value) {
-    params.append('action', actionFilter.value)
-  }
-  if (entityFilter.value) {
-    params.append('entity_type', entityFilter.value)
+  if (methodFilter.value) {
+    params.append('http_method', methodFilter.value)
   }
   if (usernameFilter.value) {
     params.append('username', usernameFilter.value)
@@ -389,16 +406,12 @@ const exportLogs = (format) => {
     params.append('ip', ipFilter.value)
   }
 
-  // 获取 token
   const token = localStorage.getItem('token')
-
-  // 创建下载链接
   const url = `/api/logs/export?${params.toString()}`
   const a = document.createElement('a')
   a.href = url
   a.download = `audit_logs_${new Date().toISOString().replace(/[:.]/g, '-')}.${format}`
 
-  // 使用 fetch 下载（支持 Authorization header）
   fetch(url, {
     headers: {
       'Authorization': `Bearer ${token}`
@@ -462,10 +475,24 @@ onMounted(() => {
   padding: 20px;
 }
 
-.error-message {
+.error-box {
   color: #f56c6c;
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
+  background-color: #fef0f0;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+/* ✅ 慢请求高亮样式 */
+.slow {
+  color: #F56C6C;
+  font-weight: bold;
+}
+
+.warning {
+  color: #E6A23C;
+  font-weight: 600;
 }
 </style>
