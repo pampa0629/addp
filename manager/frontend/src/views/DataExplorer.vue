@@ -2,20 +2,48 @@
   <div class="data-explorer">
     <div class="split-container" :style="{ gridTemplateColumns: treeWidth + 'px 8px 1fr' }">
       <!-- 左侧资源树 -->
-      <ResourceTree
-        :tree-data="treeChildren"
-        :loading="store.loadingEngines"
-        :refreshing-node-ids="refreshingNodeIds"
-        v-model:expanded-keys="expandedKeys"
-        :current-node-key="currentNodeKey"
-        :node-actions="nodeActions"
-        title="存储引擎"
-        @refresh="handleRefresh"
-        @node-click="handleNodeClick"
-        @node-action="handleNodeAction"
-        @node-expand="handleNodeExpand"
-        @node-collapse="handleNodeCollapse"
-      />
+      <div class="tree-container">
+        <!-- 加载状态：显示骨架屏 -->
+        <el-skeleton
+          v-if="store.loadingEngines"
+          :rows="8"
+          animated
+          class="skeleton-loader"
+        >
+          <template #template>
+            <el-skeleton-item variant="h3" style="width: 60%; margin-bottom: 20px;" />
+            <div style="padding: 14px;">
+              <el-skeleton-item variant="text" style="width: 40%; margin-bottom: 12px;" />
+              <el-skeleton-item variant="text" style="width: 60%; margin-left: 20px; margin-bottom: 12px;" />
+              <el-skeleton-item variant="text" style="width: 55%; margin-left: 20px; margin-bottom: 12px;" />
+            </div>
+            <div style="padding: 14px;">
+              <el-skeleton-item variant="text" style="width: 45%; margin-bottom: 12px;" />
+              <el-skeleton-item variant="text" style="width: 50%; margin-left: 20px; margin-bottom: 12px;" />
+            </div>
+            <div style="padding: 14px;">
+              <el-skeleton-item variant="text" style="width: 35%; margin-bottom: 12px;" />
+            </div>
+          </template>
+        </el-skeleton>
+
+        <!-- 正常状态：显示树 -->
+        <ResourceTree
+          v-else
+          :tree-data="treeChildren"
+          :loading="false"
+          :refreshing-node-ids="refreshingNodeIds"
+          v-model:expanded-keys="expandedKeys"
+          :current-node-key="currentNodeKey"
+          :node-actions="nodeActions"
+          title="存储引擎"
+          @refresh="handleRefresh"
+          @node-click="handleNodeClick"
+          @node-action="handleNodeAction"
+          @node-expand="handleNodeExpand"
+          @node-collapse="handleNodeCollapse"
+        />
+      </div>
 
       <!-- 可拖拽分隔器 -->
       <Splitter direction="horizontal" @resize="startTreeResize" />
@@ -196,8 +224,24 @@ const handleNavigate = (params) => {
 // 初始化
 onMounted(async () => {
   try {
-    // 只加载引擎列表，用户展开引擎时再懒加载内容
+    // 1. 加载引擎列表
     await store.loadEngines()
+
+    // 2. 并行加载所有引擎的树结构（但不影响展开状态）
+    if (store.engines.length > 0) {
+      // 收集初始需要展开的引擎节点 locators
+      const engineLocators = store.engines.map(engine =>
+        `addp://engine/${engine.id}/path/?type=database`
+      )
+
+      // 并行加载所有引擎的树数据
+      await Promise.all(
+        store.engines.map(engine => store.loadTree(engine.id))
+      )
+
+      // 一次性设置初始展开状态（只展开引擎层级）
+      store.expandedLocators = new Set(engineLocators)
+    }
   } catch (error) {
     ElMessage.error('初始化失败: ' + error.message)
   }
@@ -222,5 +266,15 @@ watch(() => route.query, (query) => {
   display: grid;
   gap: 0;
   overflow: hidden;
+}
+
+.tree-container {
+  height: 100%;
+  overflow: auto;
+}
+
+.skeleton-loader {
+  padding: 20px;
+  height: 100%;
 }
 </style>
