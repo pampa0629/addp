@@ -107,6 +107,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		// 算子路由：默认路由到 Manager 模块（Manager 有 embedding、mvt_tile_cache 算子）
 		api.Any("/operators", managerProxy.Handle)
 		api.Any("/operators/*path", managerProxy.Handle)
+		// 向量化任务历史查询路由（Manager 模块）
+		api.Any("/embedding/*path", managerProxy.Handle)
 
 		// Meta 模块路由（元数据、血缘）
 		api.Any("/meta/*path", metaProxy.Handle)

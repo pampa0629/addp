@@ -68,3 +68,29 @@ func (h *OperatorHandler) ExecuteOperator(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+// GetTaskStatus GET /api/manager/operators/tasks/:task_id
+func (h *OperatorHandler) GetTaskStatus(c *gin.Context) {
+	taskID := c.Param("task_id")
+
+	task, err := h.operatorService.GetTaskStatus(taskID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":     "success",
+		"task_id":    task.TaskID,
+		"task_status": string(task.Status),
+		"message":    task.Message,
+		"progress":   task.Progress,
+		"start_time": task.StartTime,
+		"end_time":   task.EndTime,
+		"result":     task.Result,
+		"error":      task.Error,
+	})
+}

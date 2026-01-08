@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/addp/manager/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"gorm.io/datatypes"
 )
 
 // EmbeddingService Manager 向量化服务
@@ -141,7 +143,14 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 		return nil, fmt.Errorf("failed to vectorize content: %w", err)
 	}
 
-	// 7. 存储向量（带去重）
+	// 7. 构建 metadata（用于搜索展示）
+	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, req.ObjectKey, objectInfo)
+	if err != nil {
+		s.log.Warn("Failed to build metadata, continuing without it", "error", err)
+		metadata = nil
+	}
+
+	// 8. 存储向量（带去重）
 	embeddingModel := &models.Embedding{
 		EngineID:      req.EngineID,
 		Bucket:        req.Bucket,
@@ -153,6 +162,7 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 		Model:         model,
 		FileSize:      objectInfo.Size,
 		ContentType:   objectInfo.ContentType,
+		Metadata:      metadata,
 		TenantID:      req.TenantID,
 	}
 
@@ -188,18 +198,42 @@ type EmbedDirectoryRequest struct {
 
 // EmbedDirectoryResult 目录批量向量化结果
 type EmbedDirectoryResult struct {
-	Total      int
-	Vectorized int
-	Skipped    int
-	Failed     int
-	Errors     []string
+	Total      int      `json:"total"`
+	Vectorized int      `json:"vectorized"`
+	Skipped    int      `json:"skipped"`
+	Failed     int      `json:"failed"`
+	Errors     []string `json:"errors,omitempty"`
 }
 
 // EmbedDirectory 批量向量化目录
 func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirectoryRequest) (*EmbedDirectoryResult, error) {
+	startTime := time.Now()
+
+	// 创建任务ID
+	taskID := fmt.Sprintf("embedding-%d-directory-%d", req.EngineID, time.Now().Unix())
+
+	// 创建任务记录
+	task := &models.EmbeddingTask{
+		TaskID:    taskID,
+		TaskType:  "directory",
+		EngineID:  req.EngineID,
+		Bucket:    req.Bucket,
+		Prefix:    req.Prefix,
+		Recursive: req.Recursive,
+		Status:    "running",
+		StartedAt: &startTime,
+		TenantID:  req.TenantID,
+	}
+	if err := s.vectorRepo.CreateTask(ctx, task); err != nil {
+		s.log.Warn("Failed to create task record", "error", err)
+		// 不因为任务记录创建失败而中断向量化流程
+	}
+
 	// 1. 列出目录下的所有对象
 	objects, err := s.listObjects(ctx, req.EngineID, req.Bucket, req.Prefix, req.Recursive)
 	if err != nil {
+		// 更新任务为失败
+		s.updateTaskFailed(ctx, taskID, startTime, fmt.Sprintf("failed to list objects: %v", err))
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
 
@@ -251,6 +285,11 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 
 	wg.Wait()
 
+	// 更新任务记录
+	completedAt := time.Now()
+	duration := completedAt.Sub(startTime).Milliseconds()
+	s.updateTaskCompleted(ctx, taskID, result.Total, result.Vectorized, result.Skipped, result.Failed, result.Errors, completedAt, duration)
+
 	s.log.Info("Directory vectorization completed",
 		"bucket", req.Bucket,
 		"prefix", req.Prefix,
@@ -261,6 +300,23 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 	)
 
 	return result, nil
+}
+
+// updateTaskCompleted 更新任务为完成状态
+func (s *EmbeddingService) updateTaskCompleted(ctx context.Context, taskID string, total, vectorized, skipped, failed int, errors []string, completedAt time.Time, duration int64) {
+	if err := s.vectorRepo.UpdateTaskResult(ctx, taskID, "completed", total, vectorized, skipped, failed, errors, completedAt, duration); err != nil {
+		s.log.Warn("Failed to update task result", "task_id", taskID, "error", err)
+	}
+}
+
+// updateTaskFailed 更新任务为失败状态
+func (s *EmbeddingService) updateTaskFailed(ctx context.Context, taskID string, startTime time.Time, errorMsg string) {
+	completedAt := time.Now()
+	duration := completedAt.Sub(startTime).Milliseconds()
+	errors := []string{errorMsg}
+	if err := s.vectorRepo.UpdateTaskResult(ctx, taskID, "failed", 0, 0, 0, 0, errors, completedAt, duration); err != nil {
+		s.log.Warn("Failed to update task as failed", "task_id", taskID, "error", err)
+	}
 }
 
 // EmbedBucketRequest Bucket 全量向量化请求
@@ -300,6 +356,16 @@ func (s *EmbeddingService) DeleteEmbeddings(ctx context.Context, engineID uint, 
 	}
 
 	return s.vectorRepo.DeleteEmbeddingsByFingerprints(ctx, fingerprints)
+}
+
+// ListEmbeddingTasks 查询任务列表
+func (s *EmbeddingService) ListEmbeddingTasks(ctx context.Context, engineID *uint, tenantID *uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
+	return s.vectorRepo.ListTasks(ctx, engineID, tenantID, page, pageSize)
+}
+
+// GetEmbeddingTask 查询单个任务
+func (s *EmbeddingService) GetEmbeddingTask(ctx context.Context, taskID string) (*models.EmbeddingTask, error) {
+	return s.vectorRepo.GetTask(ctx, taskID)
 }
 
 // ===== 内部辅助方法 =====
@@ -502,4 +568,44 @@ func (s *EmbeddingService) createMinioClient(engine *models.Engine) (*minio.Clie
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
 	})
+}
+
+// buildMetadata 构建向量的 metadata（用于搜索展示和定位）
+func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectInfo) (datatypes.JSON, error) {
+	// 获取引擎信息
+	engine, err := s.engineRepo.GetByID(engineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine: %w", err)
+	}
+
+	// 提取文件名（从 object_key 中获取最后一部分）
+	fileName := filepath.Base(objectKey)
+
+	// 计算相对路径（object_key 去掉文件名部分）
+	relativePath := objectKey
+	if dir := filepath.Dir(objectKey); dir != "." && dir != "/" {
+		relativePath = dir
+	} else {
+		relativePath = ""
+	}
+
+	// 构建 metadata
+	metadata := map[string]interface{}{
+		"engine_id":      engineID,
+		"engine_name":    engine.Name,
+		"engine_type":    engine.EngineType,
+		"bucket":         bucket,
+		"file_name":      fileName,
+		"relative_path":  relativePath,
+		"content_type":   objInfo.ContentType,
+		"last_modified":  objInfo.LastModified.Format(time.RFC3339),
+	}
+
+	// 转换为 JSON
+	jsonData, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	return jsonData, nil
 }

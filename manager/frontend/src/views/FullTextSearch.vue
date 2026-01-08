@@ -398,17 +398,41 @@ const isVectorMatch = (item = {}) => {
 }
 
 const navigateToDocument = (item = {}) => {
-  if (!item.engine_id) {
+  // 检查必需字段
+  const engineId = item.engine_id || item.resource_id
+  if (!engineId) {
     ElMessage.warning('缺少引擎信息，无法定位文档')
     return
   }
-  const schema = item.schema || item.bucket || ''
-  const objectPath = item.relative_path || ''
-  const query = {
-    engineId: String(item.engine_id),
-    schema,
-    objectPath
+
+  // 获取存储桶
+  const bucket = item.schema || item.bucket || ''
+  if (!bucket) {
+    ElMessage.warning('缺少存储桶信息，无法定位文档')
+    return
   }
+
+  // 获取对象路径：优先使用 asset_id (完整object_key)，其次用relative_path
+  let objectPath = item.asset_id || item.object_key || ''
+  if (!objectPath && item.relative_path) {
+    // 如果只有 relative_path，尝试组合 relative_path 和 file_name
+    const fileName = item.file_name || ''
+    objectPath = fileName ? `${item.relative_path}/${fileName}` : item.relative_path
+  }
+
+  if (!objectPath) {
+    ElMessage.warning('缺少对象路径信息，无法定位文档')
+    return
+  }
+
+  // 构建查询参数
+  const query = {
+    engineId: String(engineId),
+    bucket: bucket,
+    objectKey: objectPath  // 使用 objectKey 而不是 objectPath
+  }
+
+  console.log('[FullTextSearch] 定位到对象:', query)
   router.push({ path: '/data-explorer', query })
 }
 </script>

@@ -28,8 +28,13 @@ const routes = [
         name: 'FullTextSearch',
         component: () => import('../views/FullTextSearch.vue'),
         meta: { requiresAuth: true, title: '全文检索-addp' }
-      }
-      ,
+      },
+      {
+        path: 'vectorization-tasks',
+        name: 'VectorizationTasks',
+        component: () => import('../views/VectorizationTasks.vue'),
+        meta: { requiresAuth: true, title: '向量化任务-addp' }
+      },
       {
         path: 'spatial-preview',
         name: 'SpatialPreview',

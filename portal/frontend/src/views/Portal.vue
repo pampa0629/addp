@@ -80,6 +80,10 @@
               <el-icon><Document /></el-icon>
               <span>全文检索</span>
             </el-menu-item>
+            <el-menu-item index="/manager/vectorization-tasks">
+              <el-icon><List /></el-icon>
+              <span>向量化任务</span>
+            </el-menu-item>
           </el-sub-menu>
 
           <el-sub-menu index="meta">
@@ -369,6 +373,7 @@ const handleMenuSelect = (index) => {
     const managerPageMap = {
       'data-explorer': 'data-explorer',
       'fulltext-search': 'fulltext-search',
+      'vectorization-tasks': 'vectorization-tasks',
       '': 'data-explorer'
     }
 

@@ -86,7 +86,7 @@
 
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElNotification } from 'element-plus'
 import { MagicStick, Download } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
@@ -720,6 +720,9 @@ const handleVectorize = async () => {
   const node = props.selectedNode
   const nodeType = node.nodeType || node.type
 
+  // 创建通知实例
+  let notification = null
+
   try {
     // 解析 locator 提取参数
     const locator = node.locator || node.id
@@ -756,23 +759,171 @@ const handleVectorize = async () => {
     const responseData = response?.data || response
     console.log('向量化任务响应:', responseData)
 
-    // 显示成功消息
-    if (nodeType === 'object') {
-      ElMessage.success(`向量化任务已提交（文件：${params.object_key}）`)
-    } else {
-      ElMessage.success(`批量向量化任务已提交（${nodeType === 'bucket' ? 'Bucket' : '目录'}：${node.label}）`)
+    const taskId = responseData?.task_id
+    if (!taskId) {
+      ElMessage.success('向量化任务已提交')
+      return
     }
 
-    // 显示任务详情
-    if (responseData?.task_id) {
-      console.log('任务ID:', responseData.task_id)
-      console.log('任务状态:', responseData.task_status)
-      console.log('消息:', responseData.message)
-    }
+    // 显示进度通知
+    const targetName = nodeType === 'object'
+      ? params.object_key
+      : (nodeType === 'bucket' ? bucket : node.label)
+
+    notification = ElNotification({
+      title: '向量化进行中',
+      message: `正在向量化：${targetName}`,
+      type: 'info',
+      duration: 0, // 不自动关闭
+      position: 'bottom-right'
+    })
+
+    // 开始轮询任务状态
+    pollTaskStatus(taskId, notification, targetName, nodeType)
+
   } catch (error) {
     console.error('向量化失败:', error)
+    if (notification) {
+      notification.close()
+    }
     ElMessage.error('向量化失败: ' + (error.response?.data?.error || error.message))
   }
+}
+
+// 轮询任务状态
+const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAttempts = 30) => {
+  let attempts = 0
+  const pollInterval = 2000 // 2秒
+
+  const poll = async () => {
+    try {
+      attempts++
+
+      const response = await client.get(`/operators/tasks/${taskId}`)
+      const data = response?.data || response
+
+      console.log(`[轮询 ${attempts}/${maxAttempts}] 任务状态:`, data.task_status, data.message)
+
+      if (data.task_status === 'completed') {
+        // 任务成功完成
+        notification.close()
+
+        // 根据 result 显示详细信息
+        const result = data.result
+
+        // 单文件向量化
+        if (nodeType === 'object' || !result.total) {
+          // 检查是否跳过
+          if (result.skipped) {
+            ElNotification({
+              title: '向量化跳过',
+              message: `文件已经向量化，跳过：${targetName}\n原因：${result.skip_reason || '未修改'}`,
+              type: 'info',
+              duration: 5000,
+              position: 'bottom-right'
+            })
+            return
+          }
+          // 正常成功
+          ElNotification({
+            title: '向量化完成',
+            message: `向量化成功：${targetName}`,
+            type: 'success',
+            duration: 5000,
+            position: 'bottom-right'
+          })
+          return
+        }
+
+        // 批量向量化显示统计信息
+        const { total = 0, vectorized = 0, skipped = 0, failed = 0, errors = [] } = result
+        let successMessage = `向量化完成：${targetName}\n总计: ${total}, 成功: ${vectorized}, 跳过: ${skipped}, 失败: ${failed}`
+
+        // 如果有失败，显示错误详情
+        if (failed > 0 && errors.length > 0) {
+          successMessage += '\n\n失败详情：\n' + errors.slice(0, 5).join('\n')
+          if (errors.length > 5) {
+            successMessage += `\n... 还有 ${errors.length - 5} 个错误`
+          }
+        }
+
+        ElNotification({
+          title: failed > 0 ? '向量化完成（有失败）' : '向量化完成',
+          message: successMessage,
+          type: failed > 0 ? 'warning' : 'success',
+          duration: failed > 0 ? 10000 : 5000,
+          position: 'bottom-right'
+        })
+        return
+      }
+
+      if (data.task_status === 'failed') {
+        // 任务失败
+        notification.close()
+        ElNotification({
+          title: '向量化失败',
+          message: data.error || data.message || '未知错误',
+          type: 'error',
+          duration: 8000,
+          position: 'bottom-right'
+        })
+        return
+      }
+
+      // 任务仍在运行
+      if (data.task_status === 'running' || data.task_status === 'pending') {
+        if (attempts >= maxAttempts) {
+          // 达到最大轮询次数
+          notification.close()
+          ElNotification({
+            title: '向量化超时',
+            message: `任务执行时间过长，请稍后在数据库中查看结果`,
+            type: 'warning',
+            duration: 6000,
+            position: 'bottom-right'
+          })
+          return
+        }
+
+        // 继续轮询
+        setTimeout(poll, pollInterval)
+        return
+      }
+
+    } catch (error) {
+      console.error('轮询任务状态失败:', error)
+
+      if (error.response?.status === 404) {
+        // 任务不存在（可能已被清理）
+        notification.close()
+        ElNotification({
+          title: '任务已完成',
+          message: '任务可能已完成，请在数据库中查看结果',
+          type: 'info',
+          duration: 5000,
+          position: 'bottom-right'
+        })
+        return
+      }
+
+      // 其他错误，继续轮询
+      if (attempts < maxAttempts) {
+        setTimeout(poll, pollInterval)
+      } else {
+        notification.close()
+        ElNotification({
+          title: '状态查询失败',
+          message: '无法获取任务状态，请稍后查看结果',
+          type: 'warning',
+          duration: 5000,
+          position: 'bottom-right'
+        })
+      }
+    }
+  }
+
+  // 开始第一次轮询
+  setTimeout(poll, pollInterval)
 }
 
 const handlePageChange = (page) => {

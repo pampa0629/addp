@@ -13,6 +13,7 @@ import (
 type OperatorService struct {
 	cacheManager     *CacheManager
 	embeddingService *EmbeddingService
+	taskTracker      *TaskTracker
 }
 
 // NewOperatorService 创建算子服务
@@ -20,6 +21,7 @@ func NewOperatorService(cacheManager *CacheManager, embeddingService *EmbeddingS
 	return &OperatorService{
 		cacheManager:     cacheManager,
 		embeddingService: embeddingService,
+		taskTracker:      NewTaskTracker(),
 	}
 }
 
@@ -147,6 +149,10 @@ func (s *OperatorService) executeEmbeddingOperator(
 		response.TaskStatus = "running"
 		response.Message = "向量化任务已开始执行"
 
+		// 创建任务追踪
+		s.taskTracker.CreateTask(taskID, "向量化任务已开始")
+		s.taskTracker.UpdateStatus(taskID, TaskStatusRunning, "正在向量化...")
+
 		// 根据范围执行不同的向量化操作
 		// 使用 context.Background() 避免 HTTP 请求结束后 context 被取消
 		go func() {
@@ -154,13 +160,16 @@ func (s *OperatorService) executeEmbeddingOperator(
 			bgCtx := context.Background()
 
 			var err error
+			var result interface{}
+
 			switch scope {
 			case "object":
 				objectKey, ok := params["object_key"].(string)
 				if !ok || objectKey == "" {
+					s.taskTracker.SetTaskError(taskID, fmt.Errorf("参数 object_key 无效"))
 					return
 				}
-				_, err = s.embeddingService.EmbedObject(bgCtx, EmbedObjectRequest{
+				result, err = s.embeddingService.EmbedObject(bgCtx, EmbedObjectRequest{
 					EngineID:  engineID,
 					Bucket:    bucket,
 					ObjectKey: objectKey,
@@ -174,7 +183,7 @@ func (s *OperatorService) executeEmbeddingOperator(
 					// 默认为 true
 					recursive = true
 				}
-				_, err = s.embeddingService.EmbedDirectory(bgCtx, EmbedDirectoryRequest{
+				result, err = s.embeddingService.EmbedDirectory(bgCtx, EmbedDirectoryRequest{
 					EngineID:  engineID,
 					Bucket:    bucket,
 					Prefix:    prefix,
@@ -183,22 +192,37 @@ func (s *OperatorService) executeEmbeddingOperator(
 				})
 
 			case "bucket":
-				_, err = s.embeddingService.EmbedBucket(bgCtx, EmbedBucketRequest{
+				result, err = s.embeddingService.EmbedBucket(bgCtx, EmbedBucketRequest{
 					EngineID: engineID,
 					Bucket:   bucket,
 					TenantID: &tenantID,
 				})
 
 			default:
+				s.taskTracker.SetTaskError(taskID, fmt.Errorf("未知的 scope: %s", scope))
 				return
 			}
 
 			if err != nil {
-				// 这里可以记录错误日志或更新任务状态
+				// 任务失败
+				s.taskTracker.SetTaskError(taskID, err)
 				fmt.Printf("向量化任务失败: %v\n", err)
+			} else {
+				// 任务成功
+				s.taskTracker.SetTaskResult(taskID, result)
+				s.taskTracker.UpdateStatus(taskID, TaskStatusCompleted, "向量化完成")
 			}
 		}()
 	}
 
 	return response, nil
+}
+
+// GetTaskStatus 获取任务状态
+func (s *OperatorService) GetTaskStatus(taskID string) (*TaskInfo, error) {
+	task, ok := s.taskTracker.GetTask(taskID)
+	if !ok {
+		return nil, fmt.Errorf("任务不存在: %s", taskID)
+	}
+	return task, nil
 }

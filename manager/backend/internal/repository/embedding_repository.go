@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -130,9 +131,11 @@ func (r *EmbeddingRepository) BatchUpsertEmbeddings(ctx context.Context, embeddi
 }
 
 // GetByFingerprint 根据指纹查询向量（用于去重检查）
+// 注意：不查询 embedding 字段，避免 pgvector 类型 Scan 错误
 func (r *EmbeddingRepository) GetByFingerprint(ctx context.Context, fingerprint string, modality string) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
+		Select("id", "engine_id", "bucket", "object_key", "fingerprint", "data_updated_at", "modality", "model", "file_size", "content_type", "metadata", "tenant_id", "created_at", "updated_at").
 		Where("fingerprint = ? AND modality = ?", fingerprint, modality).
 		First(&emb).Error
 
@@ -280,4 +283,80 @@ func vectorToString(v []float32) string {
 	}
 	result += "]"
 	return result
+}
+
+// ===== 任务记录相关方法 =====
+
+// CreateTask 创建任务记录
+func (r *EmbeddingRepository) CreateTask(ctx context.Context, task *models.EmbeddingTask) error {
+	return r.db.WithContext(ctx).Create(task).Error
+}
+
+// UpdateTask 更新任务记录
+func (r *EmbeddingRepository) UpdateTask(ctx context.Context, taskID string, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).
+		Model(&models.EmbeddingTask{}).
+		Where("task_id = ?", taskID).
+		Updates(updates).Error
+}
+
+// GetTask 根据任务ID查询任务
+func (r *EmbeddingRepository) GetTask(ctx context.Context, taskID string) (*models.EmbeddingTask, error) {
+	var task models.EmbeddingTask
+	err := r.db.WithContext(ctx).
+		Where("task_id = ?", taskID).
+		First(&task).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	return &task, err
+}
+
+// ListTasks 分页查询任务列表
+func (r *EmbeddingRepository) ListTasks(ctx context.Context, engineID *uint, tenantID *uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.EmbeddingTask{})
+
+	if engineID != nil {
+		query = query.Where("engine_id = ?", *engineID)
+	}
+	if tenantID != nil {
+		query = query.Where("tenant_id = ?", *tenantID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var tasks []*models.EmbeddingTask
+	err := query.
+		Order("created_at DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&tasks).Error
+
+	return tasks, total, err
+}
+
+// UpdateTaskResult 更新任务执行结果
+func (r *EmbeddingRepository) UpdateTaskResult(ctx context.Context, taskID string, status string, total, vectorized, skipped, failed int, errors []string, completedAt time.Time, duration int64) error {
+	errorsJSON, err := json.Marshal(errors)
+	if err != nil {
+		return fmt.Errorf("failed to marshal errors: %w", err)
+	}
+
+	return r.db.WithContext(ctx).
+		Model(&models.EmbeddingTask{}).
+		Where("task_id = ?", taskID).
+		Updates(map[string]interface{}{
+			"status":       status,
+			"total":        total,
+			"vectorized":   vectorized,
+			"skipped":      skipped,
+			"failed":       failed,
+			"errors":       errorsJSON,
+			"completed_at": completedAt,
+			"duration":     duration,
+		}).Error
 }

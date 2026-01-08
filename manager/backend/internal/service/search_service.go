@@ -507,13 +507,17 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 				doc.ResourceID = *item.Record.EngineID
 			}
 			if meta := item.Record.Metadata; meta != nil {
-				assignString(meta, "title", &doc.Title)
+				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
 				assignString(meta, "file_name", &doc.FileName)
-				assignString(meta, "resource_name", &doc.ResourceName)
-				assignString(meta, "resource_type", &doc.EngineType)
+				assignString(meta, "engine_name", &doc.ResourceName)   // 引擎名称
+				assignString(meta, "engine_type", &doc.EngineType)     // 引擎类型
 				assignString(meta, "bucket", &doc.Bucket)
 				assignString(meta, "relative_path", &doc.RelativePath)
+
+				// 如果有标题字段也读取（用于未来扩展）
+				assignString(meta, "title", &doc.Title)
 				assignString(meta, "content_preview", &doc.ContentPreview)
+
 				doc.Metadata = meta
 			}
 

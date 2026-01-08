@@ -346,10 +346,178 @@ onMounted(async () => {
   }
 })
 
-// 监听路由变化
-watch(() => route.query, (query) => {
-  // TODO: 根据路由参数选择节点
-  console.log('路由参数变化:', query)
+// 监听路由变化，根据参数自动定位和选中对象
+watch(() => route.query, async (query) => {
+  console.log('[DataExplorer] 路由参数变化:', query)
+
+  if (!query.engineId || !query.bucket) {
+    return
+  }
+
+  try {
+    const engineId = parseInt(query.engineId)
+    const bucket = query.bucket
+    const objectKey = query.objectKey || ''
+
+    // 1. 等待引擎列表加载完成
+    // 如果还没有加载引擎，先等待加载
+    if (store.engines.length === 0) {
+      console.log('[DataExplorer] 等待引擎列表加载...')
+      await store.loadEngines()
+    }
+
+    // 2. 确保引擎存在
+    const engine = store.engines.find(e => e.id === engineId)
+    if (!engine) {
+      console.warn('[DataExplorer] 引擎未找到:', engineId, '可用引擎:', store.engines.map(e => ({ id: e.id, name: e.name })))
+      ElMessage.warning(`引擎 ${engineId} 未找到`)
+      return
+    }
+
+    console.log('[DataExplorer] 找到引擎:', engine.name)
+
+    // 3. 构建目标节点的 locator
+    let targetLocator
+    if (objectKey) {
+      // 定位到具体对象
+      targetLocator = `addp://engine/${engineId}/path/${bucket}/${objectKey}?type=file`
+    } else {
+      // 只定位到 bucket
+      targetLocator = `addp://engine/${engineId}/path/${bucket}?type=bucket`
+    }
+
+    console.log('[DataExplorer] 目标 locator:', targetLocator)
+
+    // 4. 直接选中并加载预览（不依赖树展开）
+    console.log('[DataExplorer] 选中节点并加载预览...')
+    store.selectNode(targetLocator)
+    await store.loadPreview(targetLocator, 1)
+
+    // 5. 计算目标路径深度，加载足够深的树
+    const pathParts = objectKey.split('/').filter(p => p)
+    // 深度 = bucket (1层) + 中间目录层数 + 文件本身 (1层)
+    const requiredDepth = 1 + pathParts.length
+    console.log('[DataExplorer] 目标路径深度:', requiredDepth, '路径:', objectKey)
+
+    // 加载引擎树（确保深度足够）
+    await store.loadTree(engineId, requiredDepth)
+
+    // 🔍 调试：检查实际加载的树节点 locator 和 id
+    const engineTree = store.engineTrees[engineId]
+    const expandKeys = []
+
+    if (engineTree) {
+      console.log('[DataExplorer] 树根节点:', {
+        id: engineTree.id,
+        locator: engineTree.locator,
+        label: engineTree.label,
+        childrenCount: engineTree.children?.length
+      })
+
+      // 添加引擎节点（使用实际的 id）
+      expandKeys.push(engineTree.id)
+
+      // 检查并添加 bucket 节点
+      const bucketNode = engineTree.children?.find(c => c.label === bucket)
+      if (bucketNode) {
+        console.log('[DataExplorer] Bucket 节点:', {
+          id: bucketNode.id,
+          locator: bucketNode.locator,
+          label: bucketNode.label,
+          childrenCount: bucketNode.children?.length
+        })
+
+        // 添加 bucket 节点（使用实际的 id）
+        expandKeys.push(bucketNode.id)
+
+        // 检查并添加 image 目录节点
+        if (pathParts.length > 1) {
+          // 需要展开中间目录
+          let currentNode = bucketNode
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            const dirName = pathParts[i]
+            const dirNode = currentNode.children?.find(c => c.label === dirName)
+            if (dirNode) {
+              console.log(`[DataExplorer] 目录节点 ${dirName}:`, {
+                id: dirNode.id,
+                locator: dirNode.locator,
+                label: dirNode.label,
+                childrenCount: dirNode.children?.length
+              })
+              expandKeys.push(dirNode.id)
+              currentNode = dirNode
+            } else {
+              console.warn(`[DataExplorer] 未找到目录节点: ${dirName}`)
+              break
+            }
+          }
+        }
+      } else {
+        console.warn(`[DataExplorer] 未找到 bucket 节点: ${bucket}`)
+      }
+    }
+
+    console.log('[DataExplorer] 需要展开的路径 (使用 id):', expandKeys)
+
+    // 6. 展开路径上的所有节点（使用从树中提取的实际 locator）
+    console.log('[DataExplorer] 当前已展开节点:', Array.from(store.expandedLocators))
+    expandedKeys.value = [...new Set([...expandedKeys.value, ...expandKeys])]
+    console.log('[DataExplorer] 更新后已展开节点:', Array.from(store.expandedLocators))
+    console.log('[DataExplorer] expandedKeys 计算属性值:', expandedKeys.value)
+
+    // 8. 等待 DOM 更新
+    await nextTick()
+
+    console.log('[DataExplorer] DOM 更新后，expandedKeys:', expandedKeys.value)
+
+    // 详细检查 treeChildren 的结构
+    const engineNode67 = treeChildren.value.find(n => n.engineId === 67)
+    if (engineNode67) {
+      console.log('[DataExplorer] 引擎 67 节点详情:', {
+        label: engineNode67.label,
+        locator: engineNode67.locator,
+        loaded: engineNode67.loaded,
+        childrenCount: engineNode67.children?.length,
+        children: engineNode67.children?.map(c => ({
+          label: c.label,
+          locator: c.locator || c.id,
+          type: c.type,
+          childrenCount: c.children?.length
+        }))
+      })
+
+      // 检查 addp bucket 节点
+      const addpBucket = engineNode67.children?.find(c => c.label === 'addp')
+      if (addpBucket) {
+        console.log('[DataExplorer] addp bucket 详情:', {
+          label: addpBucket.label,
+          locator: addpBucket.locator || addpBucket.id,
+          childrenCount: addpBucket.children?.length,
+          children: addpBucket.children?.map(c => ({
+            label: c.label,
+            locator: c.locator || c.id
+          }))
+        })
+      }
+    }
+
+    // 🔍 强制触发响应式更新
+    console.log('[DataExplorer] 强制触发更新...')
+    store.expandedLocators = new Set(expandedKeys.value)
+    await nextTick()
+
+    // 再次等待，确保 ResourceTree 组件完成渲染
+    setTimeout(() => {
+      console.log('[DataExplorer] 最终 expandedKeys:', expandedKeys.value)
+      console.log('[DataExplorer] 最终 store.expandedLocators:', Array.from(store.expandedLocators))
+    }, 100)
+
+    console.log('[DataExplorer] 成功定位到对象')
+    ElMessage.success('已定位到目标对象')
+  } catch (error) {
+    console.error('[DataExplorer] 定位失败:', error)
+    ElMessage.error('定位失败: ' + error.message)
+  }
 }, { immediate: true })
 </script>
 

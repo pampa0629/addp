@@ -47,6 +47,10 @@
             <el-icon><Document /></el-icon>
             <span>全文检索</span>
           </el-menu-item>
+          <el-menu-item index="/vectorization-tasks">
+            <el-icon><List /></el-icon>
+            <span>向量化任务</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -68,7 +72,8 @@ import {
   ArrowDown,
   SwitchButton,
   Search,
-  Document
+  Document,
+  List
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

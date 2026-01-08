@@ -26,6 +26,8 @@ export const useExplorerStore = defineStore('explorer', {
 
     // 每个引擎的资源树（按 engineId 索引）
     engineTrees: {},
+    // 记录每个引擎已加载的深度
+    engineTreeDepths: {},
     loadingEngineId: null,
 
     // 节点选择
@@ -146,16 +148,23 @@ export const useExplorerStore = defineStore('explorer', {
 
     /**
      * 加载资源树（懒加载某个引擎的内容）
+     * @param {number} engineId - 引擎 ID
+     * @param {number} expandDepth - 展开深度（默认 2，设置 -1 表示无限深度）
+     * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
      */
-    async loadTree(engineId, expandDepth = 2) {
-      // 如果已经加载过，直接返回缓存
-      if (this.engineTrees[engineId]) {
+    async loadTree(engineId, expandDepth = 2, forceRefresh = false) {
+      const cachedDepth = this.engineTreeDepths[engineId] || 0
+
+      // 如果已经加载过，且当前缓存深度 >= 需要的深度，直接返回缓存
+      if (!forceRefresh && this.engineTrees[engineId] && cachedDepth >= expandDepth) {
+        console.log(`[ExplorerStore] 使用缓存（引擎 ${engineId}，已缓存深度 ${cachedDepth}）`)
         return this.engineTrees[engineId]
       }
 
       this.loadingEngineId = engineId
 
       try {
+        console.log(`[ExplorerStore] 加载引擎树（引擎 ${engineId}，深度 ${expandDepth}）`)
         const response = await client.get(`/explorer/tree/${engineId}`, {
           params: { expand_depth: expandDepth }
         })
@@ -163,6 +172,7 @@ export const useExplorerStore = defineStore('explorer', {
 
         // 存储到引擎树缓存中
         this.engineTrees[engineId] = tree
+        this.engineTreeDepths[engineId] = expandDepth
 
         return tree
       } catch (error) {

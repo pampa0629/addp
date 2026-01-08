@@ -74,6 +74,15 @@ func SetupRouter(
 		{
 			operators.GET("", operatorHandler.ListOperators)              // 获取算子列表
 			operators.POST("/:name/execute", operatorHandler.ExecuteOperator) // 执行算子
+			operators.GET("/tasks/:task_id", operatorHandler.GetTaskStatus)   // 查询任务状态
+		}
+
+		// 向量化任务历史查询 API
+		embeddingTasksGroup := api.Group("/embedding/tasks")
+		{
+			taskHandler := NewEmbeddingTaskHandler(embeddingService)
+			embeddingTasksGroup.GET("", taskHandler.ListTasks)          // 查询任务列表
+			embeddingTasksGroup.GET("/:task_id", taskHandler.GetTask)   // 查询任务详情
 		}
 
 		configGroup := api.Group("/config")
