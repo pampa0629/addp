@@ -10,12 +10,10 @@ import (
 	"time"
 
 	"github.com/addp/common/engine/plugin"
-	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
@@ -38,7 +36,6 @@ type ScanService struct {
 	indexer                  *search.Indexer
 	indexerService           *IndexerService               // 索引服务（独立）
 	spatialService           *SpatialMetadataService       // 空间元数据服务（独立）
-	vectorService            *VectorEmbeddingService       // 向量嵌入服务（独立）
 	scanEventPublisher       *events.ScanEventPublisher    // 扫描事件发布器
 	metadataExtractor        *MetadataExtractor            // 元数据提取器
 	dedupService             *ScanDedupService             // 扫描去重服务（可选）
@@ -83,9 +80,6 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	// 创建 ObjectStorageScanService（使用独立服务，无循环依赖）
 	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
 
-	// 创建 VectorEmbeddingService（依赖 ObjectStorageScanService 获取对象内容）
-	s.vectorService = NewVectorEmbeddingService(log, s.objectScanService)
-
 	// 创建 MetadataQueryService（提供元数据查询接口）
 	s.metadataQueryService = NewMetadataQueryService(db, spatialService, log)
 
@@ -124,20 +118,6 @@ func (s *ScanService) SetScanEventPublisher(publisher *events.ScanEventPublisher
 // SetDedupService 注入扫描去重服务
 func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	s.dedupService = dedupService
-}
-
-// EnableDocumentVectorization 为文档扫描启用向量化
-func (s *ScanService) EnableDocumentVectorization(store *vectorstore.PgVectorStore, embedder embedding.MultiModalEmbedder, timeout time.Duration) {
-	if s.vectorService != nil {
-		s.vectorService.EnableDocumentVectorization(store, embedder, timeout)
-	}
-}
-
-// DisableDocumentVectorization 关闭文档向量化能力
-func (s *ScanService) DisableDocumentVectorization() {
-	if s.vectorService != nil {
-		s.vectorService.DisableDocumentVectorization()
-	}
 }
 
 // verifyResourceAccess 验证租户是否有权限访问资源

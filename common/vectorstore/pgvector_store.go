@@ -23,18 +23,21 @@ var (
 )
 
 type Record struct {
-	ID        string
-	ObjectID  string
-	AssetID   string
-	TenantID  *uint
-	EngineID  *uint
-	Modality  embedding.Modality
-	Model     string
-	Vector    []float32
-	Metadata  map[string]any
-	Dimension int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            string
+	EngineID      *uint
+	Bucket        string
+	ObjectKey     string
+	Fingerprint   string
+	DataUpdatedAt *time.Time
+	TenantID      *uint
+	Modality      embedding.Modality
+	Model         string
+	Vector        []float32
+	Metadata      map[string]any
+	FileSize      int64
+	ContentType   string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 type QueryOptions struct {
@@ -73,7 +76,7 @@ func NewPgVectorStore(ctx context.Context, cfg config.VectorDBConfig) (*PgVector
 		cfg.Schema = "vector_store"
 	}
 	if cfg.Table == "" {
-		cfg.Table = "document_embeddings"
+		cfg.Table = "embeddings"
 	}
 	if cfg.Dimension <= 0 {
 		return nil, fmt.Errorf("vectorstore: dimension must be positive (got %d)", cfg.Dimension)
@@ -125,28 +128,36 @@ func (s *PgVectorStore) initSchema(ctx context.Context) error {
 
 	tableIdent := pgx.Identifier{s.cfg.Schema, s.cfg.Table}
 	createTableSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-    id TEXT PRIMARY KEY,
-    object_id TEXT NOT NULL,
-    asset_id TEXT,
-    tenant_id BIGINT,
-    engine_id BIGINT,
-    modality TEXT NOT NULL,
-    model TEXT NOT NULL,
+    id SERIAL PRIMARY KEY,
+    engine_id INTEGER NOT NULL,
+    bucket VARCHAR(255) NOT NULL,
+    object_key TEXT NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    data_updated_at TIMESTAMPTZ,
     embedding vector(%d) NOT NULL,
-    dimension INT NOT NULL,
+    modality VARCHAR(20) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    file_size BIGINT,
+    content_type VARCHAR(255),
     metadata JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (object_id, modality, model)
+    tenant_id INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uk_embeddings_fingerprint UNIQUE (fingerprint, modality)
 )`, tableIdent.Sanitize(), s.cfg.Dimension)
 
 	if _, err := conn.Exec(ctx, createTableSQL); err != nil {
 		return fmt.Errorf("vectorstore: create table: %w", err)
 	}
 
-	uniqueIdxName := sanitizeIdent(fmt.Sprintf("%s_%s_object_model_uq", s.cfg.Schema, s.cfg.Table))
-	if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s ON %s (object_id, modality, model)`, uniqueIdxName, tableIdent.Sanitize())); err != nil {
-		return fmt.Errorf("vectorstore: ensure unique index: %w", err)
+	fingerprintIdxName := sanitizeIdent(fmt.Sprintf("%s_%s_fingerprint_idx", s.cfg.Schema, s.cfg.Table))
+	if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (fingerprint)`, fingerprintIdxName, tableIdent.Sanitize())); err != nil {
+		return fmt.Errorf("vectorstore: ensure fingerprint index: %w", err)
+	}
+
+	engineBucketIdxName := sanitizeIdent(fmt.Sprintf("%s_%s_engine_bucket_idx", s.cfg.Schema, s.cfg.Table))
+	if _, err := conn.Exec(ctx, fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (engine_id, bucket)`, engineBucketIdxName, tableIdent.Sanitize())); err != nil {
+		return fmt.Errorf("vectorstore: ensure engine_bucket index: %w", err)
 	}
 
 	tenantIdxName := sanitizeIdent(fmt.Sprintf("%s_%s_tenant_idx", s.cfg.Schema, s.cfg.Table))
@@ -171,9 +182,6 @@ func (s *PgVectorStore) Upsert(ctx context.Context, record Record) (*Record, err
 	if record.ID == "" {
 		record.ID = uuid.NewString()
 	}
-	if record.Dimension == 0 {
-		record.Dimension = len(record.Vector)
-	}
 	record.CreatedAt = now
 	record.UpdatedAt = now
 
@@ -183,36 +191,39 @@ func (s *PgVectorStore) Upsert(ctx context.Context, record Record) (*Record, err
 	}
 
 	tableIdent := pgx.Identifier{s.cfg.Schema, s.cfg.Table}
-	sql := fmt.Sprintf(`INSERT INTO %s (id, object_id, asset_id, tenant_id, engine_id, modality, model, embedding, dimension, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12)
-ON CONFLICT (object_id, modality, model) DO UPDATE
+	sql := fmt.Sprintf(`INSERT INTO %s (engine_id, bucket, object_key, fingerprint, data_updated_at, tenant_id, modality, model, embedding, file_size, content_type, metadata, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14)
+ON CONFLICT (fingerprint, modality) DO UPDATE
 SET embedding = EXCLUDED.embedding,
-    dimension = EXCLUDED.dimension,
+    data_updated_at = EXCLUDED.data_updated_at,
     metadata = EXCLUDED.metadata,
-    asset_id = EXCLUDED.asset_id,
+    file_size = EXCLUDED.file_size,
+    content_type = EXCLUDED.content_type,
     tenant_id = EXCLUDED.tenant_id,
-    engine_id = EXCLUDED.engine_id,
     updated_at = EXCLUDED.updated_at
 RETURNING id, created_at, updated_at`, tableIdent.Sanitize())
 
 	vectorParam := pgvector.NewVector(padded)
 
 	row := s.pool.QueryRow(ctx, sql,
-		record.ID,
-		record.ObjectID,
-		nullString(record.AssetID),
-		toNullableInt(record.TenantID),
 		toNullableInt(record.EngineID),
+		record.Bucket,
+		record.ObjectKey,
+		record.Fingerprint,
+		record.DataUpdatedAt,
+		toNullableInt(record.TenantID),
 		string(record.Modality),
 		record.Model,
 		vectorParam,
-		record.Dimension,
+		record.FileSize,
+		nullString(record.ContentType),
 		string(metadataJSON),
 		record.CreatedAt,
 		record.UpdatedAt,
 	)
 
-	if err := row.Scan(&record.ID, &record.CreatedAt, &record.UpdatedAt); err != nil {
+	var returnedID int
+	if err := row.Scan(&returnedID, &record.CreatedAt, &record.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("vectorstore: upsert scan: %w", err)
 	}
 
@@ -282,7 +293,7 @@ func (s *PgVectorStore) QuerySimilar(ctx context.Context, vector []float32, opts
 		argIndex++
 	}
 
-	query := fmt.Sprintf(`SELECT id, object_id, asset_id, tenant_id, engine_id, modality, model, metadata, dimension,
+	query := fmt.Sprintf(`SELECT id, engine_id, bucket, object_key, fingerprint, data_updated_at, tenant_id, modality, model, metadata, file_size, content_type,
        embedding <=> $1::vector AS distance,
        created_at, updated_at
 FROM %s
@@ -301,21 +312,24 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 	results := make([]SearchResult, 0)
 	for rows.Next() {
 		var (
-			id        string
-			objectID  string
-			assetID   *string
-			tenantID  *int64
-			engineID  *int64
-			modality  string
-			model     string
-			metadata  []byte
-			dimension int
-			distance  float64
-			createdAt time.Time
-			updatedAt time.Time
+			id            int
+			engineID      *int64
+			bucket        string
+			objectKey     string
+			fingerprint   string
+			dataUpdatedAt *time.Time
+			tenantID      *int64
+			modality      string
+			model         string
+			metadata      []byte
+			fileSize      int64
+			contentType   *string
+			distance      float64
+			createdAt     time.Time
+			updatedAt     time.Time
 		)
 
-		if err := rows.Scan(&id, &objectID, &assetID, &tenantID, &engineID, &modality, &model, &metadata, &dimension, &distance, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &engineID, &bucket, &objectKey, &fingerprint, &dataUpdatedAt, &tenantID, &modality, &model, &metadata, &fileSize, &contentType, &distance, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("vectorstore: query scan: %w", err)
 		}
 
@@ -324,14 +338,17 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 		}
 
 		rec := Record{
-			ID:        id,
-			ObjectID:  objectID,
-			AssetID:   derefString(assetID),
-			Modality:  embedding.Modality(modality),
-			Model:     model,
-			Dimension: dimension,
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			ID:            fmt.Sprintf("%d", id),
+			Bucket:        bucket,
+			ObjectKey:     objectKey,
+			Fingerprint:   fingerprint,
+			DataUpdatedAt: dataUpdatedAt,
+			Modality:      embedding.Modality(modality),
+			Model:         model,
+			FileSize:      fileSize,
+			ContentType:   derefString(contentType),
+			CreatedAt:     createdAt,
+			UpdatedAt:     updatedAt,
 		}
 		if tenantID != nil {
 			val := uint(*tenantID)

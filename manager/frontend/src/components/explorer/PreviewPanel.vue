@@ -3,9 +3,21 @@
     <template #header>
       <div class="panel-header">
         <span>{{ title }}</span>
-        <div v-if="showDownloadControl" class="panel-actions">
+        <div class="panel-actions">
+          <!-- 向量化按钮 -->
+          <el-button
+            v-if="showVectorizeButton"
+            size="small"
+            type="success"
+            @click="handleVectorize"
+          >
+            <el-icon><MagicStick /></el-icon>
+            {{ vectorizeButtonText }}
+          </el-button>
+
+          <!-- 下载按钮 -->
           <el-tooltip
-            v-if="downloadDisabled && downloadTip"
+            v-if="showDownloadControl && downloadDisabled && downloadTip"
             :content="downloadTip"
             placement="bottom"
           >
@@ -22,7 +34,7 @@
             </span>
           </el-tooltip>
           <el-button
-            v-else
+            v-else-if="showDownloadControl"
             size="small"
             type="primary"
             :loading="downloading"
@@ -75,7 +87,10 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { MagicStick, Download } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
+import { parseLocator } from '@addp/common-frontend'
+import client from '@/api/client'
 
 const props = defineProps({
   selectedNode: {
@@ -664,6 +679,101 @@ const title = computed(() => {
 
   return `${node.label || ''} - 数据预览`
 })
+
+// 判断是否显示向量化按钮（仅 MinIO/S3 的对象、目录、Bucket）
+const showVectorizeButton = computed(() => {
+  if (!props.selectedNode) return false
+  if (!props.previewData) return false
+
+  const node = props.selectedNode
+  const nodeType = node.nodeType || node.type
+
+  // 检查预览模式（对象存储的节点预览模式是 'object' 或 'node'）
+  const previewMode = props.previewData.mode || ''
+  if (previewMode !== 'object' && previewMode !== 'node') {
+    return false
+  }
+
+  // 支持 object、directory、bucket 类型
+  return ['object', 'directory', 'bucket'].includes(nodeType)
+})
+
+// 向量化按钮文本
+const vectorizeButtonText = computed(() => {
+  if (!props.selectedNode) return '向量化'
+
+  const nodeType = props.selectedNode.nodeType || props.selectedNode.type
+
+  if (nodeType === 'object') {
+    return '向量化'
+  } else if (nodeType === 'directory' || nodeType === 'bucket') {
+    return '批量向量化'
+  }
+
+  return '向量化'
+})
+
+// 处理向量化按钮点击
+const handleVectorize = async () => {
+  if (!props.selectedNode) return
+
+  const node = props.selectedNode
+  const nodeType = node.nodeType || node.type
+
+  try {
+    // 解析 locator 提取参数
+    const locator = node.locator || node.id
+    const loc = parseLocator(locator)
+    const engineId = loc.engineId
+    const bucket = loc.path[0]
+
+    // 构建请求参数
+    const params = {
+      engine_id: engineId,
+      bucket: bucket
+    }
+
+    // 根据节点类型设置不同的参数
+    if (nodeType === 'object') {
+      params.scope = 'object'
+      params.object_key = loc.path.slice(1).join('/')
+    } else if (nodeType === 'directory') {
+      params.scope = 'directory'
+      params.prefix = loc.path.slice(1).join('/') + '/'
+      params.recursive = true
+    } else if (nodeType === 'bucket') {
+      params.scope = 'bucket'
+    }
+
+    // 调用后端 API
+    const response = await client.post('/operators/embedding/execute', {
+      operator_name: 'embedding',
+      params: params,
+      execute_now: true
+    })
+
+    // 获取响应数据
+    const responseData = response?.data || response
+    console.log('向量化任务响应:', responseData)
+
+    // 显示成功消息
+    if (nodeType === 'object') {
+      ElMessage.success(`向量化任务已提交（文件：${params.object_key}）`)
+    } else {
+      ElMessage.success(`批量向量化任务已提交（${nodeType === 'bucket' ? 'Bucket' : '目录'}：${node.label}）`)
+    }
+
+    // 显示任务详情
+    if (responseData?.task_id) {
+      console.log('任务ID:', responseData.task_id)
+      console.log('任务状态:', responseData.task_status)
+      console.log('消息:', responseData.message)
+    }
+  } catch (error) {
+    console.error('向量化失败:', error)
+    ElMessage.error('向量化失败: ' + (error.response?.data?.error || error.message))
+  }
+}
 
 const handlePageChange = (page) => {
   emit('page-change', page)

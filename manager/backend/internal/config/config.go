@@ -4,12 +4,10 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	commonConfig "github.com/addp/common/config"
 )
-
-type VectorDBConfig = commonConfig.VectorDBConfig
-type EmbeddingServiceConfig = commonConfig.EmbeddingServiceConfig
 
 type Config struct {
 	commonConfig.BaseConfig
@@ -27,14 +25,20 @@ type Config struct {
 	MeilisearchDocumentIndex string
 	MeilisearchAssetIndex    string
 
-	// 向量数据库配置（PgVector）
-	VectorDB VectorDBConfig
+	// Manager 向量化配置（按需触发）
+	EmbeddingService struct {
+		BaseURL string
+		APIKey  string
+		Timeout time.Duration
+		Models  map[string]string // text, image, video
+	}
 
-	// 在线向量化服务配置
-	EmbeddingService EmbeddingServiceConfig
-
-	// 向量检索阈值配置
-	VectorSearchMaxDistance float64
+	VectorConfig struct {
+		Dimension        int     // 向量维度
+		MaxDistance      float64 // 搜索相似度阈值（余弦距离）
+		MaxFileSizeMB    int     // 向量化最大文件大小
+		BatchConcurrency int     // 批量向量化并发数
+	}
 
 	// Redis 配置（用于资源变更事件同步）
 	RedisHost     string
@@ -120,55 +124,28 @@ func Load() *Config {
 		commonConfig.LoadLocalConfig(&cfg.BaseConfig)
 	}
 
-	defaultHost := cfg.DBHost
-	if defaultHost == "" {
-		defaultHost = "localhost"
-	}
-	defaultPort := cfg.DBPort
-	if defaultPort == "" {
-		defaultPort = "5432"
-	}
-	defaultUser := cfg.DBUser
-	if defaultUser == "" {
-		defaultUser = "addp"
-	}
-	defaultPassword := cfg.DBPassword
-	if defaultPassword == "" {
-		defaultPassword = "addp_password"
+	// 加载 Manager 向量化配置（按需触发）
+	cfg.EmbeddingService.BaseURL = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_BASE_URL", "")
+	cfg.EmbeddingService.APIKey = commonConfig.GetEnv("MANAGER_EMBEDDING_SERVICE_API_KEY", "")
+	cfg.EmbeddingService.Timeout = commonConfig.GetEnvDuration("MANAGER_EMBEDDING_SERVICE_TIMEOUT", "15s")
+	cfg.EmbeddingService.Models = map[string]string{
+		"text":  commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_TEXT", "qwen2.5-vl-embedding"),
+		"image": commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_IMAGE", "qwen2.5-vl-embedding"),
+		"video": commonConfig.GetEnv("MANAGER_EMBEDDING_MODEL_VIDEO", "qwen2.5-vl-embedding"),
 	}
 
-	cfg.VectorDB = VectorDBConfig{
-		Host:      commonConfig.GetEnv("VECTOR_DB_HOST", defaultHost),
-		Port:      commonConfig.GetEnv("VECTOR_DB_PORT", defaultPort),
-		Name:      commonConfig.GetEnv("VECTOR_DB_NAME", "addp_vectors"),
-		User:      commonConfig.GetEnv("VECTOR_DB_USER", defaultUser),
-		Password:  commonConfig.GetEnv("VECTOR_DB_PASSWORD", defaultPassword),
-		Schema:    commonConfig.GetEnv("VECTOR_DB_SCHEMA", "vector_store"),
-		Table:     commonConfig.GetEnv("VECTOR_DB_TABLE", "document_embeddings"),
-		Dimension: commonConfig.GetEnvInt("VECTOR_DB_DIMENSION", 1024),
-		SSLMode:   commonConfig.GetEnv("VECTOR_DB_SSL_MODE", "disable"),
-	}
+	cfg.VectorConfig.Dimension = commonConfig.GetEnvInt("MANAGER_VECTOR_DIMENSION", 1024)
 
-	maxDistanceStr := strings.TrimSpace(commonConfig.GetEnv("VECTOR_SEARCH_MAX_DISTANCE", "0.35"))
-	if maxDistanceStr == "" {
-		maxDistanceStr = "0.35"
-	}
-	if val, err := strconv.ParseFloat(maxDistanceStr, 64); err != nil || val <= 0 {
-		log.Printf("⚠️  Invalid VECTOR_SEARCH_MAX_DISTANCE=%q, fallback to 0.35", maxDistanceStr)
-		cfg.VectorSearchMaxDistance = 0.35
+	// 解析 MaxDistance（浮点数）
+	maxDistanceStr := commonConfig.GetEnv("MANAGER_VECTOR_SEARCH_MAX_DISTANCE", "0.35")
+	if maxDistance, err := strconv.ParseFloat(maxDistanceStr, 64); err == nil && maxDistance > 0 {
+		cfg.VectorConfig.MaxDistance = maxDistance
 	} else {
-		cfg.VectorSearchMaxDistance = val
+		cfg.VectorConfig.MaxDistance = 0.35
 	}
 
-	cfg.EmbeddingService = EmbeddingServiceConfig{
-		BaseURL:    strings.TrimSpace(commonConfig.GetEnv("EMBEDDING_SERVICE_BASE_URL", "")),
-		APIKey:     commonConfig.GetEnv("EMBEDDING_SERVICE_API_KEY", ""),
-		TextModel:  commonConfig.GetEnv("EMBEDDING_MODEL_TEXT", "bge-large-zh"),
-		ImageModel: commonConfig.GetEnv("EMBEDDING_MODEL_IMAGE", "clip-ViT-B-32"),
-		AudioModel: commonConfig.GetEnv("EMBEDDING_MODEL_AUDIO", "whisper-small"),
-		VideoModel: commonConfig.GetEnv("EMBEDDING_MODEL_VIDEO", "internvideo2-6b"),
-		Timeout:    commonConfig.GetEnvDuration("EMBEDDING_SERVICE_TIMEOUT", "15s"),
-	}
+	cfg.VectorConfig.MaxFileSizeMB = commonConfig.GetEnvInt("MANAGER_VECTOR_MAX_FILE_SIZE_MB", 10)
+	cfg.VectorConfig.BatchConcurrency = commonConfig.GetEnvInt("MANAGER_VECTOR_BATCH_CONCURRENCY", 5)
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

@@ -8,7 +8,7 @@ Meta 模块是 ADDP 平台的**元数据管理中枢**，负责以下核心功�
 2. **定时调度** - 支持定时扫描任务（基于 Cron 表达式），自动更新元数据
 3. **元数据存储** - 将扫描结果存储到 `metadata.meta_node`（层级节点）和 `metadata.meta_item`（数据项）表
 4. **全文检索索引** - 将元数据同步到 Meilisearch，支持全文搜索
-5. **文档向量化** - 支持文档内容的多模态向量化（文本、图片、音频、视频），存储到 pgvector（实验性功能）
+5. **文档嵌入** - 支持文档内容的多模态嵌入（文本、图片、音频、视频），存储到 pgvector（实验性功能）
 6. **扫描事件发布** - 扫描完成后发布 Redis 事件，通知其他模块（如 Manager）刷新缓存
 
 ## 关键架构
@@ -48,7 +48,7 @@ ScanService (扫描执行器)
      ├─ 列出对象: objPlugin.ListObjects(ctx, connInfo, bucket, prefix, recursive)
      ├─ 创建/更新 MetaItem（Object）
      ├─ 提取文件元数据（扩展名、MIME、文件大小）
-     ├─ 文档内容向量化（可选，需配置 Embedding Service）
+     ├─ 文档内容嵌入（可选，需配置 Embedding Service）
      └─ 索引到 Meilisearch
   ↓
 元数据持久化（PostgreSQL metadata schema）
@@ -59,8 +59,8 @@ ScanService (扫描执行器)
   ├─ metadata_nodes_index
   └─ metadata_items_index
   ↓
-向量化存储（PgVector, 可选）
-  └─ metadata.document_embeddings
+嵌入存储（PgVector, 可选）
+  └─ metadata.embeddings
   ↓
 事件发布（Redis）
   └─ meta:events:scan_completed
@@ -170,7 +170,7 @@ ScanTaskService 启动
 - `daily` - 每日任务（指定时间）
 - `weekly` - 每周任务（指定星期几和时间）
 
-### 文档向量化架构（实验性）
+### 文档嵌入架构（实验性）
 
 ```
 对象存储扫描
@@ -185,20 +185,20 @@ ScanTaskService 启动
   ├─ 音频 Embedding（whisper + text embedding）
   └─ 视频 Embedding（frame sampling + image embedding）
   ↓
-存储到 PgVector（metadata.document_embeddings）
+存储到 PgVector（metadata.embeddings）
   ├─ object_key（文件路径）
   ├─ embedding（向量，1536 维）
   ├─ modality（模态类型：text/image/audio/video）
   └─ metadata（提取的元数据 JSONB）
 ```
 
-**向量化配置**（需在 .env 中启用）：
+**嵌入配置**（需在 .env 中启用）：
 ```bash
 META_EMBEDDING_SERVICE_BASE_URL=http://embedding-service:8080
 META_EMBEDDING_SERVICE_API_KEY=your_api_key
 META_VECTOR_DB_HOST=postgres
 META_VECTOR_DB_SCHEMA=metadata
-META_VECTOR_DB_TABLE=document_embeddings
+META_VECTOR_DB_TABLE=embeddings
 ```
 
 ### 依赖的其他模块
@@ -218,7 +218,7 @@ META_VECTOR_DB_TABLE=document_embeddings
   - `meta_item` 表（数据项）
   - `scan_task` 表（扫描任务定义）
   - `scan_task_run` 表（任务运行记录）
-  - `document_embeddings` 表（向量嵌入，可选）
+  - `embeddings` 表（向量嵌入，可选）
 - **Redis Key 前缀**:
   - `meta:cache:engine:{id}` - 存储引擎缓存
   - `meta:events:scan_completed` - 扫描完成事件频道
@@ -448,14 +448,14 @@ curl -H "Authorization: Bearer <token>" \
 - [scan_service_new.go:300-500](backend/internal/service/scan_service_new.go) - 数据库扫描详细日志
 - [scan_service_new.go:700-900](backend/internal/service/scan_service_new.go) - 对象存储扫描详细日志
 
-### 场景 4：启用文档向量化功能
+### 场景 4：启用文档嵌入功能
 
-**需求描述**：对上传到对象存储的文档（PDF、图片、文本）进行向量化，支持语义搜索
+**需求描述**：对上传到对象存储的文档（PDF、图片、文本）进行嵌入，支持语义搜索
 
 **前置条件**：
 - 部署 OpenAI-compatible Embedding Service（如 text-embeddings-inference）
 - PostgreSQL 已安装 pgvector 扩展
-- 确保 Meta 后端有足够内存处理向量计算
+- 确保 Meta 后端有足够内存处理嵌入计算
 
 **配置步骤**：
 
@@ -479,7 +479,7 @@ curl -H "Authorization: Bearer <token>" \
    META_VECTOR_DB_PASSWORD=your_password
    META_VECTOR_DB_DBNAME=addp
    META_VECTOR_DB_SCHEMA=metadata
-   META_VECTOR_DB_TABLE=document_embeddings
+   META_VECTOR_DB_TABLE=embeddings
    META_VECTOR_DB_DIMENSION=1536
    ```
 
@@ -492,7 +492,7 @@ curl -H "Authorization: Bearer <token>" \
    CREATE EXTENSION IF NOT EXISTS vector;
 
    -- 创建向量表（由 Meta 服务自动创建，也可手动创建）
-   CREATE TABLE IF NOT EXISTS metadata.document_embeddings (
+   CREATE TABLE IF NOT EXISTS metadata.embeddings (
        id SERIAL PRIMARY KEY,
        object_key TEXT NOT NULL UNIQUE,
        embedding vector(1536) NOT NULL,
@@ -502,7 +502,7 @@ curl -H "Authorization: Bearer <token>" \
    );
 
    -- 创建向量索引（加速相似度搜索）
-   CREATE INDEX ON metadata.document_embeddings
+   CREATE INDEX ON metadata.embeddings
    USING ivfflat (embedding vector_cosine_ops)
    WITH (lists = 100);
    ```
@@ -511,12 +511,12 @@ curl -H "Authorization: Bearer <token>" \
    ```bash
    bash scripts/dev/restart.sh -meta
 
-   # 查看日志确认向量化启用
+   # 查看日志确认嵌入启用
    grep "VECTOR INIT" logs/meta-backend.log
-   # 应输出：✅ [VECTOR INIT] Document vectorization ENABLED!
+   # 应输出：✅ [VECTOR INIT] Document embedding ENABLED!
    ```
 
-4. **触发对象存储扫描**（自动向量化）：
+4. **触发对象存储扫描**（自动嵌入）：
    ```bash
    curl -X POST http://localhost:8082/api/v1/manual-scan \
      -H "Authorization: Bearer <token>" \
@@ -528,32 +528,32 @@ curl -H "Authorization: Bearer <token>" \
      }'
    ```
 
-5. **验证向量化结果**：
+5. **验证嵌入结果**：
    ```sql
-   -- 查看向量化的文档数量
-   SELECT COUNT(*) FROM metadata.document_embeddings;
+   -- 查看嵌入的文档数量
+   SELECT COUNT(*) FROM metadata.embeddings;
 
    -- 查看具体向量记录
    SELECT object_key, modality, metadata
-   FROM metadata.document_embeddings
+   FROM metadata.embeddings
    LIMIT 10;
 
    -- 测试语义搜索（查找与某个文档相似的文档）
    SELECT object_key,
-          1 - (embedding <=> (SELECT embedding FROM metadata.document_embeddings WHERE object_key = 'test.pdf' LIMIT 1)) AS similarity
-   FROM metadata.document_embeddings
+          1 - (embedding <=> (SELECT embedding FROM metadata.embeddings WHERE object_key = 'test.pdf' LIMIT 1)) AS similarity
+   FROM metadata.embeddings
    ORDER BY similarity DESC
    LIMIT 10;
    ```
 
 **注意事项**：
-- 向量化是 **CPU/内存密集** 操作，大量文档会消耗大量资源
-- 默认只向量化 **可提取内容的文档**（插件支持的格式）
-- 向量化失败不会阻塞扫描流程（只记录日志警告）
+- 嵌入是 **CPU/内存密集** 操作，大量文档会消耗大量资源
+- 默认只嵌入 **可提取内容的文档**（插件支持的格式）
+- 嵌入失败不会阻塞扫描流程（只记录日志警告）
 
 **相关文件**：
-- [scan_service_new.go:86-100](backend/internal/service/scan_service_new.go) - 向量化启用入口
-- [scan_service_new.go:800-1000](backend/internal/service/scan_service_new.go) - 对象向量化逻辑
+- [scan_service_new.go:86-100](backend/internal/service/scan_service_new.go) - 嵌入启用入口
+- [scan_service_new.go:800-1000](backend/internal/service/scan_service_new.go) - 对象嵌入逻辑
 - [common/embedding/](../common/embedding/) - Embedding 客户端实现
 - [common/vectorstore/](../common/vectorstore/) - PgVector 存储实现
 

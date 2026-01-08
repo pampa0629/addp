@@ -4,15 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
-	"github.com/addp/common/embedding"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
-	"github.com/addp/common/vectorstore"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
@@ -38,11 +35,6 @@ func main() {
 
 	// 加载配置
 	cfg := config.LoadConfig()
-
-	// 立即检查向量化配置（在InitLogger之前）
-	fmt.Printf("🔍 [EARLY CHECK] Embedding BaseURL: %s (len=%d)\n", cfg.EmbeddingService.BaseURL, len(cfg.EmbeddingService.BaseURL))
-	fmt.Printf("🔍 [EARLY CHECK] API Key length: %d\n", len(cfg.EmbeddingService.APIKey))
-	fmt.Printf("🔍 [EARLY CHECK] Vector DB: %s:%s/%s\n", cfg.VectorDB.Host, cfg.VectorDB.Port, cfg.VectorDB.Schema)
 
 	// 重新初始化日志（支持动态级别/格式，并写入日志文件）
 	commonConfig.InitLogger("meta-backend.log", &commonConfig.LoggerOptions{
@@ -119,49 +111,6 @@ func main() {
 		scanEventPublisher := events.NewScanEventPublisher(redisClient, logger.L())
 		scanService.SetScanEventPublisher(scanEventPublisher)
 		logger.L().Info("扫描事件发布器已初始化")
-	}
-
-	var pgVectorStore *vectorstore.PgVectorStore
-	baseURL := strings.TrimSpace(cfg.EmbeddingService.BaseURL)
-	fmt.Printf("🔍 [VECTOR INIT] BaseURL check: %s (empty=%v)\n", baseURL, baseURL == "")
-	if baseURL != "" {
-		fmt.Printf("🔄 [VECTOR INIT] Starting vector store init...\n")
-		store, err := vectorstore.NewPgVectorStore(context.Background(), cfg.VectorDB)
-		if err != nil {
-			fmt.Printf("❌ [VECTOR INIT] Vector store failed: %v\n", err)
-		} else {
-			fmt.Printf("✅ [VECTOR INIT] Vector store success!\n")
-			models := map[embedding.Modality]string{
-				embedding.ModalityText:     cfg.EmbeddingService.TextModel,
-				embedding.ModalityDocument: cfg.EmbeddingService.TextModel,
-				embedding.ModalityImage:    cfg.EmbeddingService.ImageModel,
-				embedding.ModalityAudio:    cfg.EmbeddingService.AudioModel,
-				embedding.ModalityVideo:    cfg.EmbeddingService.VideoModel,
-			}
-			fmt.Printf("🔄 [VECTOR INIT] Starting embedding client init...\n")
-			client, err := embedding.NewHTTPEmbeddingClient(embedding.ServiceConfig{
-				BaseURL: cfg.EmbeddingService.BaseURL,
-				APIKey:  cfg.EmbeddingService.APIKey,
-				Timeout: cfg.EmbeddingService.Timeout,
-				Models:  models,
-			})
-			if err != nil {
-				fmt.Printf("❌ [VECTOR INIT] Embedding client failed: %v\n", err)
-				store.Close()
-			} else {
-				fmt.Printf("✅ [VECTOR INIT] Embedding client success!\n")
-				scanService.EnableDocumentVectorization(store, client, cfg.EmbeddingService.Timeout)
-				pgVectorStore = store
-				fmt.Printf("🎉 [VECTOR INIT] Document vectorization ENABLED! Schema=%s Table=%s Dim=%d\n",
-					cfg.VectorDB.Schema, cfg.VectorDB.Table, cfg.VectorDB.Dimension)
-			}
-		}
-	} else {
-		fmt.Printf("⚠️ [VECTOR INIT] BaseURL is empty, vectorization disabled\n")
-	}
-
-	if pgVectorStore != nil {
-		defer pgVectorStore.Close()
 	}
 
 	taskService := service.NewScanTaskService(db, scanService, engineService, redisClient)

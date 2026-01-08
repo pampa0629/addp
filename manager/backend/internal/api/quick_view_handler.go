@@ -1,24 +1,29 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/addp/common/logger"
+	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // QuickViewHandler 快显API处理器
 type QuickViewHandler struct {
-	service *service.QuickViewService
+	service     *service.QuickViewService
+	redisClient *redis.Client // Redis 客户端用于查询进度
 }
 
 // NewQuickViewHandler 创建快显处理器
-func NewQuickViewHandler(service *service.QuickViewService) *QuickViewHandler {
+func NewQuickViewHandler(service *service.QuickViewService, redisClient *redis.Client) *QuickViewHandler {
 	return &QuickViewHandler{
-		service: service,
+		service:     service,
+		redisClient: redisClient,
 	}
 }
 
@@ -87,7 +92,7 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	})
 }
 
-// GetQuickViewStatus 获取快显状态
+// GetQuickViewStatus 获取快显状态（包含实时进度）
 // GET /api/engines/:id/spatial/:schema/:table/quick-view/status
 func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	// 1. 解析路径参数
@@ -108,7 +113,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 		}
 	}
 
-	// 3. 查询状态
+	// 3. 查询数据库中的状态
 	qv, err := h.service.GetStatus(c.Request.Context(), tenantID, uint(engineID), schema, table)
 	if err != nil {
 		logger.L().Error("Failed to get quick view status", "error", err)
@@ -116,7 +121,41 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, qv)
+	// 4. 如果状态是 generating，尝试从 Redis 获取实时进度
+	var progress *mvt.QuickViewProgress
+	if qv.Status == "generating" && h.redisClient != nil && qv.Fingerprint != "" {
+		tracker := mvt.NewProgressTracker(h.redisClient, qv.Fingerprint)
+		progress, _ = tracker.GetProgress(context.Background())
+	}
+
+	// 5. 合并响应
+	response := gin.H{
+		"id":               qv.ID,
+		"engine_id":        qv.EngineID,
+		"schema_name":      qv.SchemaName,
+		"table_name":       qv.Table,
+		"status":           qv.Status,
+		"error_message":    qv.ErrorMessage,
+		"min_zoom":         qv.MinZoom,
+		"max_zoom":         qv.MaxZoom,
+		"actual_max_zoom":  qv.ActualMaxZoom,
+		"total_tiles":      qv.TotalTiles,
+		"cached_tiles":     qv.CachedTiles,
+		"fingerprint":      qv.Fingerprint,
+		"extent":           qv.Extent,
+		"extent_srid":      qv.ExtentSRID,
+		"started_at":       qv.StartedAt,
+		"completed_at":     qv.CompletedAt,
+		"created_at":       qv.CreatedAt,
+		"updated_at":       qv.UpdatedAt,
+	}
+
+	// 如果有进度信息，添加到响应中
+	if progress != nil {
+		response["progress"] = progress
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // ClearQuickView 清除快显缓存
@@ -149,6 +188,72 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Quick view cleared successfully",
+	})
+}
+
+// CancelQuickView 取消快显生成任务
+// POST /api/engines/:id/spatial/:schema/:table/pre-cache/cancel
+func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
+	// 1. 解析路径参数
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	schema := c.Param("schema")
+	table := c.Param("table")
+
+	// 2. 获取租户ID
+	tenantID := uint(1) // TODO: 从JWT或context中获取
+	if val, exists := c.Get("tenant_id"); exists {
+		if tid, ok := val.(uint); ok {
+			tenantID = tid
+		}
+	}
+
+	// 3. 取消任务
+	if err := h.service.CancelQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
+		logger.L().Error("Failed to cancel quick view", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Quick view task cancelled successfully",
+	})
+}
+
+// ResumeQuickView 恢复快显生成任务
+// POST /api/engines/:id/spatial/:schema/:table/pre-cache/resume
+func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
+	// 1. 解析路径参数
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	schema := c.Param("schema")
+	table := c.Param("table")
+
+	// 2. 获取租户ID
+	tenantID := uint(1) // TODO: 从JWT或context中获取
+	if val, exists := c.Get("tenant_id"); exists {
+		if tid, ok := val.(uint); ok {
+			tenantID = tid
+		}
+	}
+
+	// 3. 恢复任务
+	if err := h.service.ResumeQuickView(c.Request.Context(), tenantID, uint(engineID), schema, table); err != nil {
+		logger.L().Error("Failed to resume quick view", "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Quick view task resumed successfully",
 	})
 }
 

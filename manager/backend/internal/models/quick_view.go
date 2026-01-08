@@ -16,7 +16,7 @@ type QuickView struct {
 	Table      string         `gorm:"column:table_name;not null;size:255" json:"table_name"`
 
 	// 快显状态
-	Status       string `gorm:"not null;default:'none';index:idx_quick_view_status" json:"status"` // none, generating, ready, failed
+	Status       string `gorm:"not null;default:'none';index:idx_quick_view_status" json:"status"` // none, generating, ready, failed, cancelled
 	ErrorMessage string `gorm:"type:text" json:"error_message,omitempty"`
 
 	// 缓存配置

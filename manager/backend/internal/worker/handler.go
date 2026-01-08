@@ -12,14 +12,16 @@ import (
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/hibiken/asynq"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
 // TaskHandler 任务处理器
 type TaskHandler struct {
-	db              *gorm.DB
+	db               *gorm.DB
 	quickViewService *mvt.QuickViewService
-	cfg             *config.Config
+	cfg              *config.Config
+	redisClient      *redis.Client // Redis 客户端用于进度跟踪
 }
 
 // NewTaskHandler 创建任务处理器
@@ -54,16 +56,25 @@ func NewTaskHandler(db *gorm.DB, cfg *config.Config) *TaskHandler {
 		logger.L().Error("Failed to create QuickViewService", "error", err)
 	}
 
+	// 创建 Redis 客户端（用于进度跟踪）
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort),
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+
 	logger.L().Info("TaskHandler 初始化完成",
 		"system_url", cfg.SystemServiceURL,
 		"has_api_key", cfg.InternalAPIKey != "",
 		"auth_mode", "internal_key",
-		"minio_endpoint", cfg.MinioEndpoint)
+		"minio_endpoint", cfg.MinioEndpoint,
+		"redis_addr", fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort))
 
 	return &TaskHandler{
-		db:              db,
+		db:               db,
 		quickViewService: quickViewService,
-		cfg:             cfg,
+		cfg:              cfg,
+		redisClient:      redisClient,
 	}
 }
 
@@ -88,9 +99,12 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		logger.L().Error("Failed to update status to generating", "error", err)
 	}
 
-	// 2. 执行快显缓存生成（使用混合入队模式）
+	// 2. 创建进度跟踪器
+	progressTracker := mvt.NewProgressTracker(h.redisClient, payload.Fingerprint)
+
+	// 3. 执行快显缓存生成（使用混合入队模式）
 	result, err := h.quickViewService.GenerateMixed(ctx, mvt.QuickViewConfig{
-		EngineID:  payload.EngineID,
+		EngineID:    payload.EngineID,
 		TenantID:    payload.TenantID,
 		Schema:      payload.SchemaName,
 		Table:       payload.TableName,
@@ -102,15 +116,33 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		MaxZoom:     payload.MaxZoom,
 		Concurrency: payload.Concurrency,
 		Fingerprint: payload.Fingerprint,
-	})
+	}, progressTracker)
 
 	if err != nil {
 		// 更新状态为 failed
 		h.updateQuickViewStatus(payload, "failed", err.Error(), nil)
+		// 更新进度为失败
+		progressTracker.UpdateProgress(ctx, &mvt.QuickViewProgress{
+			Status:       "failed",
+			ErrorMessage: err.Error(),
+		})
 		return fmt.Errorf("quick view generation failed: %w", err)
 	}
 
-	// 3. 更新状态为 ready
+	// 4. 检查任务是否已被取消
+	var currentQV models.QuickView
+	err = h.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		payload.TenantID, payload.EngineID, payload.SchemaName, payload.TableName).
+		First(&currentQV).Error
+
+	if err == nil && currentQV.Status == "cancelled" {
+		logger.L().Info("任务已被取消，不更新为 ready 状态",
+			"engine_id", payload.EngineID,
+			"table", fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName))
+		return nil
+	}
+
+	// 5. 更新状态为 ready
 	if err := h.updateQuickViewStatus(payload, "ready", "", result); err != nil {
 		logger.L().Error("Failed to update status to ready", "error", err)
 	}

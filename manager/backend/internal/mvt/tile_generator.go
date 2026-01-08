@@ -138,6 +138,63 @@ func (g *TileGenerator) buildMVTQuery(
 	return spatial.BuildMVTQuery(schema, table, geomColumn, []string{}, z, x, y, opt, primaryKey)
 }
 
+// VerifySRID 验证表中几何列的 SRID 是否与期望的 SRID 一致
+// 返回: (actualSRID, error)
+func (g *TileGenerator) VerifySRID(
+	ctx context.Context,
+	engineID, tenantID uint,
+	schema, table, geomColumn string,
+	expectedSRID int,
+) (int, error) {
+	// 1. 获取资源连接信息
+	resource, err := g.resourceService.GetEngine(engineID, tenantID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get resource: %w", err)
+	}
+
+	// 2. 构建连接字符串
+	connStr, err := commonModels.BuildConnectionString(resource)
+	if err != nil {
+		return 0, fmt.Errorf("failed to build connection string: %w", err)
+	}
+
+	// 3. 连接数据库
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer db.Close()
+
+	// 4. 查询几何列的 SRID
+	query := fmt.Sprintf(`
+		SELECT ST_SRID("%s")
+		FROM "%s"."%s"
+		WHERE "%s" IS NOT NULL
+		LIMIT 1
+	`, geomColumn, schema, table, geomColumn)
+
+	var actualSRID int
+	err = db.QueryRowContext(ctx, query).Scan(&actualSRID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("表中没有非空几何数据，无法验证 SRID")
+		}
+		return 0, fmt.Errorf("failed to query SRID: %w", err)
+	}
+
+	// 5. 验证 SRID 是否匹配
+	if actualSRID != expectedSRID {
+		return actualSRID, fmt.Errorf("SRID 不匹配: 元数据记录为 %d，但表中实际为 %d", expectedSRID, actualSRID)
+	}
+
+	logger.L().Info("✅ SRID 验证通过",
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"geom_column", geomColumn,
+		"srid", actualSRID)
+
+	return actualSRID, nil
+}
+
 // GetSpatialExtent 获取空间表的范围（WGS84）
 func (g *TileGenerator) GetSpatialExtent(
 	ctx context.Context,

@@ -1,9 +1,7 @@
 import request from './client'
 
 /**
- * Pre-Cache API - 预缓存管理
- *
- * Note: 路由已更新为 /pre-cache，旧路由 /quick-view 保留作为别名（向后兼容）
+ * Pre-Cache API - 预缓存管理（快显）
  */
 export const quickViewAPI = {
   /**

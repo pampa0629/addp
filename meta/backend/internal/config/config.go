@@ -1,15 +1,11 @@
 package config
 
 import (
-	"strings"
 	"time"
 
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 )
-
-type VectorDBConfig = commonConfig.VectorDBConfig
-type EmbeddingServiceConfig = commonConfig.EmbeddingServiceConfig
 
 type Config struct {
 	commonConfig.BaseConfig
@@ -34,12 +30,6 @@ type Config struct {
 	MeilisearchMasterKey     string
 	MeilisearchAssetIndex    string
 	MeilisearchDocumentIndex string
-
-	// 向量数据库配置（PgVector）
-	VectorDB VectorDBConfig
-
-	// 在线向量化服务配置
-	EmbeddingService EmbeddingServiceConfig
 
 	// Redis 配置（用于资源变更事件同步和任务队列）
 	RedisHost     string
@@ -118,45 +108,6 @@ func LoadConfig() *Config {
 	cfg.ConcurrentTasks = commonConfig.GetEnvInt("CONCURRENT_TASKS", 10)
 	cfg.MaxRetries = commonConfig.GetEnvInt("MAX_RETRIES", 3)
 	cfg.RetryDelay = commonConfig.GetEnvDuration("RETRY_DELAY", "30s")
-
-	defaultHost := cfg.DBHost
-	if defaultHost == "" {
-		defaultHost = "localhost"
-	}
-	defaultPort := cfg.DBPort
-	if defaultPort == "" {
-		defaultPort = "5432"
-	}
-	defaultUser := cfg.DBUser
-	if defaultUser == "" {
-		defaultUser = "addp"
-	}
-	defaultPassword := cfg.DBPassword
-	if defaultPassword == "" {
-		defaultPassword = "addp_password"
-	}
-
-	cfg.VectorDB = VectorDBConfig{
-		Host:      commonConfig.GetEnv("VECTOR_DB_HOST", defaultHost),
-		Port:      commonConfig.GetEnv("VECTOR_DB_PORT", defaultPort),
-		Name:      commonConfig.GetEnv("VECTOR_DB_NAME", "addp_vectors"),
-		User:      commonConfig.GetEnv("VECTOR_DB_USER", defaultUser),
-		Password:  commonConfig.GetEnv("VECTOR_DB_PASSWORD", defaultPassword),
-		Schema:    commonConfig.GetEnv("VECTOR_DB_SCHEMA", "vector_store"),
-		Table:     commonConfig.GetEnv("VECTOR_DB_TABLE", "document_embeddings"),
-		Dimension: commonConfig.GetEnvInt("VECTOR_DB_DIMENSION", 1024),
-		SSLMode:   commonConfig.GetEnv("VECTOR_DB_SSL_MODE", "disable"),
-	}
-
-	cfg.EmbeddingService = EmbeddingServiceConfig{
-		BaseURL:    strings.TrimSpace(commonConfig.GetEnv("EMBEDDING_SERVICE_BASE_URL", "")),
-		APIKey:     commonConfig.GetEnv("EMBEDDING_SERVICE_API_KEY", ""),
-		TextModel:  commonConfig.GetEnv("EMBEDDING_MODEL_TEXT", "bge-large-zh"),
-		ImageModel: commonConfig.GetEnv("EMBEDDING_MODEL_IMAGE", "clip-ViT-B-32"),
-		AudioModel: commonConfig.GetEnv("EMBEDDING_MODEL_AUDIO", "whisper-small"),
-		VideoModel: commonConfig.GetEnv("EMBEDDING_MODEL_VIDEO", "internvideo2-6b"),
-		Timeout:    commonConfig.GetEnvDuration("EMBEDDING_SERVICE_TIMEOUT", "15s"),
-	}
 
 	return cfg
 }

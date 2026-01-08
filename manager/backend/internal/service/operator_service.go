@@ -11,13 +11,15 @@ import (
 
 // OperatorService 算子服务
 type OperatorService struct {
-	cacheManager *CacheManager
+	cacheManager     *CacheManager
+	embeddingService *EmbeddingService
 }
 
 // NewOperatorService 创建算子服务
-func NewOperatorService(cacheManager *CacheManager) *OperatorService {
+func NewOperatorService(cacheManager *CacheManager, embeddingService *EmbeddingService) *OperatorService {
 	return &OperatorService{
-		cacheManager: cacheManager,
+		cacheManager:     cacheManager,
+		embeddingService: embeddingService,
 	}
 }
 
@@ -40,6 +42,8 @@ func (s *OperatorService) ExecuteOperator(
 	switch operatorName {
 	case "mvt_tile_cache":
 		return s.executeMVTTileCacheOperator(ctx, tenantID, userID, params, executeNow, taskName)
+	case "embedding":
+		return s.executeEmbeddingOperator(ctx, tenantID, userID, params, executeNow, taskName)
 	default:
 		return nil, fmt.Errorf("未知的算子: %s", operatorName)
 	}
@@ -91,6 +95,109 @@ func (s *OperatorService) executeMVTTileCacheOperator(
 		// 这里需要调用CacheService的相关方法
 		response.TaskStatus = "running"
 		response.Message = "MVT瓦片缓存任务已创建并开始执行"
+	}
+
+	return response, nil
+}
+
+// executeEmbeddingOperator 执行向量化算子
+func (s *OperatorService) executeEmbeddingOperator(
+	ctx context.Context,
+	tenantID uint,
+	userID uint,
+	params map[string]interface{},
+	executeNow bool,
+	taskName string,
+) (*models.OperatorExecuteResponse, error) {
+	// 解析参数
+	engineIDFloat, ok := params["engine_id"].(float64)
+	if !ok {
+		return nil, fmt.Errorf("参数 engine_id 必须为数字")
+	}
+	engineID := uint(engineIDFloat)
+
+	bucket, ok := params["bucket"].(string)
+	if !ok || bucket == "" {
+		return nil, fmt.Errorf("参数 bucket 必须为非空字符串")
+	}
+
+	scope, _ := params["scope"].(string)
+	if scope == "" {
+		scope = "object"
+	}
+
+	// 构建任务名称
+	if taskName == "" {
+		taskName = fmt.Sprintf("向量化-%s-%s", bucket, scope)
+	}
+
+	// 创建任务ID
+	taskID := fmt.Sprintf("embedding-%d-%s-%d", engineID, scope, time.Now().Unix())
+
+	response := &models.OperatorExecuteResponse{
+		Status:     "success",
+		TaskID:     taskID,
+		TaskStatus: "pending",
+		Message:    "向量化任务已创建",
+		CreatedAt:  time.Now().Format(time.RFC3339),
+	}
+
+	// 如果立即执行
+	if executeNow {
+		response.TaskStatus = "running"
+		response.Message = "向量化任务已开始执行"
+
+		// 根据范围执行不同的向量化操作
+		// 使用 context.Background() 避免 HTTP 请求结束后 context 被取消
+		go func() {
+			// 创建独立的 context，不受 HTTP 请求生命周期影响
+			bgCtx := context.Background()
+
+			var err error
+			switch scope {
+			case "object":
+				objectKey, ok := params["object_key"].(string)
+				if !ok || objectKey == "" {
+					return
+				}
+				_, err = s.embeddingService.EmbedObject(bgCtx, EmbedObjectRequest{
+					EngineID:  engineID,
+					Bucket:    bucket,
+					ObjectKey: objectKey,
+					TenantID:  &tenantID,
+				})
+
+			case "directory":
+				prefix, _ := params["prefix"].(string)
+				recursive, _ := params["recursive"].(bool)
+				if recursive == false {
+					// 默认为 true
+					recursive = true
+				}
+				_, err = s.embeddingService.EmbedDirectory(bgCtx, EmbedDirectoryRequest{
+					EngineID:  engineID,
+					Bucket:    bucket,
+					Prefix:    prefix,
+					Recursive: recursive,
+					TenantID:  &tenantID,
+				})
+
+			case "bucket":
+				_, err = s.embeddingService.EmbedBucket(bgCtx, EmbedBucketRequest{
+					EngineID: engineID,
+					Bucket:   bucket,
+					TenantID: &tenantID,
+				})
+
+			default:
+				return
+			}
+
+			if err != nil {
+				// 这里可以记录错误日志或更新任务状态
+				fmt.Printf("向量化任务失败: %v\n", err)
+			}
+		}()
 	}
 
 	return response, nil

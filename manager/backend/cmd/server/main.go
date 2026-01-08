@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
 	"github.com/addp/manager/internal/worker"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
 	// 导入数据库插件以触发自动注册
@@ -57,6 +60,7 @@ func main() {
 	engineRepo := repository.NewEngineRepository(db, cfg.EncryptionKey)
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
+	embeddingRepo := repository.NewEmbeddingRepository(db)
 
 	logger.L().Info("Manager 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
@@ -146,14 +150,35 @@ func main() {
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 
-	// 初始化 Quick View 服务（依赖 Redis 和数据库）
-	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient)
+	// 初始化 MinIO 客户端（用于瓦片存储和删除）
+	minioClient, err := minio.New(cfg.MinioEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
+		Secure: cfg.MinioUseSSL,
+	})
+	if err != nil {
+		log.Fatalf("❌ Failed to create MinIO client: %v", err)
+	}
+
+	// MinIO Bucket 名称（与 Worker 保持一致）
+	minioBucket := "manager-mvt-tiles"
+
+	// 初始化 Quick View 服务（依赖 Redis、MinIO 和数据库）
+	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient)
+
+	// 初始化向量化服务（Manager 模块的按需向量化）
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, engineRepo, cfg, logger.L())
+	if err != nil {
+		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
+		embeddingService = nil // 设置为 nil，允许服务继续启动
+	} else {
+		logger.L().Info("向量化服务已初始化（支持单对象、目录、Bucket 三级向量化）")
+	}
 
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, metaClient, cacheManager, redisClient)
+	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）

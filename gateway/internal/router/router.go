@@ -95,7 +95,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/engines/*path", systemProxy.Handle)
 		api.Any("/applications/*path", systemProxy.Handle)
 
-		// Manager 模块路由（配置、数据源、目录、预览、搜索）
+		// Manager 模块路由（配置、数据源、目录、预览、搜索、算子）
 		api.Any("/config/*path", managerProxy.Handle)
 		api.Any("/datasources/*path", managerProxy.Handle)
 		api.Any("/directories/*path", managerProxy.Handle)
@@ -104,6 +104,9 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/explorer/*path", managerProxy.Handle)  // 新版数据探查 API
 		api.Any("/data-explorer/*path", managerProxy.Handle) // 旧版（保留向后兼容）
 		api.Any("/search/*path", managerProxy.Handle)
+		// 算子路由：默认路由到 Manager 模块（Manager 有 embedding、mvt_tile_cache 算子）
+		api.Any("/operators", managerProxy.Handle)
+		api.Any("/operators/*path", managerProxy.Handle)
 
 		// Meta 模块路由（元数据、血缘）
 		api.Any("/meta/*path", metaProxy.Handle)
@@ -112,7 +115,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/lineage/*path", metaProxy.Handle)
 		api.Any("/scan/*path", metaProxy.Handle)
 
-		// Transfer 模块路由（任务、传输、本地引擎）
+		// Transfer 模块路由（任务、传输、本地引擎、算子）
 		api.Any("/tasks", transferProxy.Handle)
 		api.Any("/tasks/*path", transferProxy.Handle)
 		api.Any("/executions", transferProxy.Handle)
@@ -121,8 +124,6 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/local-engines", transferProxy.Handle)
 		api.Any("/local-engines/*path", transferProxy.Handle)
 		api.Any("/system-engines", transferProxy.Handle)
-		api.Any("/operators", transferProxy.Handle)
-		api.Any("/operators/*path", transferProxy.Handle)
 		api.Any("/transforms", transferProxy.Handle)
 		api.Any("/transforms/*path", transferProxy.Handle)
 		api.Any("/mappings/*path", transferProxy.Handle)

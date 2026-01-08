@@ -82,34 +82,48 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_status ON system.api_keys(status);
 -- ==================== Manager 模块 ====================
 CREATE SCHEMA IF NOT EXISTS manager;
 
-CREATE TABLE IF NOT EXISTS manager.data_sources (
+-- 搜索历史表（用于记录用户搜索行为，由 Manager 模块管理）
+-- 注意：Manager 不再管理元数据表（managed_table, managed_file 等），统一使用 Meta 模块
+
+-- 搜索历史表
+CREATE TABLE IF NOT EXISTS manager.search_histories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL,
-    connection_info JSONB NOT NULL,
-    status VARCHAR(20) DEFAULT 'active',
-    created_by INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    tenant_id INT NOT NULL,
+    user_id INT NOT NULL,
+    query_text VARCHAR(512) NOT NULL,
+    result_count INT DEFAULT 0,
+    searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS manager.directories (
+CREATE INDEX IF NOT EXISTS idx_search_histories_tenant ON manager.search_histories(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_search_histories_user ON manager.search_histories(user_id);
+CREATE INDEX IF NOT EXISTS idx_search_histories_searched_at ON manager.search_histories(searched_at DESC);
+
+-- 向量嵌入表（多模态向量化）
+CREATE TABLE IF NOT EXISTS manager.embeddings (
     id SERIAL PRIMARY KEY,
-    name TEXT,
-    parent_id BIGINT REFERENCES manager.directories(id) ON DELETE CASCADE,
-    path TEXT,
-    type TEXT,
-    size BIGINT,
-    mime_type TEXT,
-    storage_id BIGINT,
-    created_by BIGINT,
+    engine_id INT NOT NULL,
+    bucket VARCHAR(255) NOT NULL,
+    object_key TEXT NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    data_updated_at TIMESTAMP,
+    embedding vector(1024) NOT NULL,
+    modality VARCHAR(20) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    file_size BIGINT,
+    content_type VARCHAR(255),
+    metadata JSONB,
+    tenant_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(parent_id, name)
+    UNIQUE (fingerprint, modality)
 );
 
-CREATE INDEX IF NOT EXISTS idx_directories_parent ON manager.directories(parent_id);
-CREATE INDEX IF NOT EXISTS idx_directories_path ON manager.directories(path);
+CREATE INDEX IF NOT EXISTS idx_embeddings_engine_bucket ON manager.embeddings(engine_id, bucket);
+CREATE INDEX IF NOT EXISTS idx_embeddings_fingerprint_modality ON manager.embeddings(fingerprint, modality);
+CREATE INDEX IF NOT EXISTS idx_embeddings_tenant ON manager.embeddings(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_data_updated_at ON manager.embeddings(data_updated_at);
 
 -- 快显任务表
 CREATE TABLE IF NOT EXISTS manager.quick_view (
@@ -156,32 +170,10 @@ CREATE TABLE IF NOT EXISTS manager.quick_view (
 CREATE INDEX IF NOT EXISTS idx_quick_view_status ON manager.quick_view(status);
 CREATE INDEX IF NOT EXISTS idx_quick_view_fingerprint ON manager.quick_view(fingerprint);
 
-CREATE TABLE IF NOT EXISTS manager.data_source_permissions (
-    id SERIAL PRIMARY KEY,
-    data_source_id INTEGER REFERENCES manager.data_sources(id) ON DELETE CASCADE,
-    user_id INTEGER,
-    group_id INTEGER,
-    permission VARCHAR(20) NOT NULL, -- 'none', 'read', 'write', 'admin'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS manager.directory_permissions (
-    id SERIAL PRIMARY KEY,
-    directory_id INTEGER REFERENCES manager.directories(id) ON DELETE CASCADE,
-    user_id INTEGER,
-    group_id INTEGER,
-    permission VARCHAR(20) NOT NULL,
-    inherited BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- ==================== Meta 模块 ====================
 CREATE SCHEMA IF NOT EXISTS metadata;
 
-DROP TABLE IF EXISTS metadata.fields CASCADE;
-DROP TABLE IF EXISTS metadata.lineage CASCADE;
-DROP TABLE IF EXISTS metadata.datasets CASCADE;
-
+-- 元数据节点表（schema、bucket、prefix 等层级结构）
 CREATE TABLE IF NOT EXISTS metadata.meta_node (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
@@ -192,19 +184,13 @@ CREATE TABLE IF NOT EXISTS metadata.meta_node (
     depth INT NOT NULL DEFAULT 0,
     path TEXT,
     full_name TEXT,
-    status VARCHAR(32) DEFAULT 'active',
-    scan_status VARCHAR(32) DEFAULT '未扫描',
-    last_scan_at TIMESTAMP WITH TIME ZONE,
-    auto_scan_enabled BOOLEAN DEFAULT false,
-    auto_scan_cron VARCHAR(128),
-    next_scan_at TIMESTAMP WITH TIME ZONE,
+    scan_status VARCHAR(20) DEFAULT '未扫描',
+    scanned_at TIMESTAMP WITH TIME ZONE,
+    scan_error TEXT,
     item_count INT DEFAULT 0,
     total_size_bytes BIGINT DEFAULT 0,
-    error_message TEXT,
     attributes JSONB DEFAULT '{}'::JSONB,
-    sync_version BIGINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
     UNIQUE (engine_id, name, parent_node_id),
     CHECK (depth >= 0)
@@ -214,6 +200,7 @@ CREATE INDEX IF NOT EXISTS idx_meta_node_engine ON metadata.meta_node(engine_id)
 CREATE INDEX IF NOT EXISTS idx_meta_node_parent ON metadata.meta_node(parent_node_id);
 CREATE INDEX IF NOT EXISTS idx_meta_node_type ON metadata.meta_node(node_type);
 
+-- 元数据条目表（table、object 等具体数据项）
 CREATE TABLE IF NOT EXISTS metadata.meta_item (
     id BIGSERIAL PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
@@ -223,17 +210,12 @@ CREATE TABLE IF NOT EXISTS metadata.meta_item (
     name VARCHAR(255) NOT NULL,
     full_name TEXT,
     fingerprint VARCHAR(64) NOT NULL,
-    status VARCHAR(32) DEFAULT 'active',
-    meta_schema_version INTEGER DEFAULT 1,
     row_count BIGINT,
     size_bytes BIGINT,
-    object_size_bytes BIGINT,
-    last_modified_at TIMESTAMP WITH TIME ZONE,
+    data_updated_at TIMESTAMP WITH TIME ZONE,
+    scanned_at TIMESTAMP WITH TIME ZONE,
     attributes JSONB DEFAULT '{}'::JSONB,
-    sync_version BIGINT DEFAULT 0,
-    source VARCHAR(64),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMP WITH TIME ZONE,
     UNIQUE (node_id, name)
 );
@@ -242,69 +224,59 @@ CREATE INDEX IF NOT EXISTS idx_meta_item_node ON metadata.meta_item(node_id);
 CREATE INDEX IF NOT EXISTS idx_meta_item_type ON metadata.meta_item(item_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_item_fingerprint ON metadata.meta_item(fingerprint);
 
-CREATE TABLE IF NOT EXISTS metadata.meta_json_schema (
+-- 扫描任务定义表（手动或定时扫描任务）
+CREATE TABLE IF NOT EXISTS metadata.scan_tasks (
     id BIGSERIAL PRIMARY KEY,
-    target VARCHAR(32) NOT NULL,
-    version INTEGER NOT NULL,
-    definition JSONB NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (target, version)
-);
-
-CREATE TABLE IF NOT EXISTS metadata.meta_change_log (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT,
-    engine_id BIGINT,
-    node_id BIGINT,
-    item_id BIGINT,
-    change_type VARCHAR(64) NOT NULL,
-    change_source VARCHAR(64),
-    payload JSONB,
-    sync_version BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (node_id) REFERENCES metadata.meta_node(id) ON DELETE SET NULL,
-    FOREIGN KEY (item_id) REFERENCES metadata.meta_item(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS metadata.meta_node_type_dict (
-    type_code VARCHAR(64) PRIMARY KEY,
-    category VARCHAR(64),
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS metadata.meta_node_child_rule (
-    parent_type VARCHAR(64) NOT NULL,
-    child_type VARCHAR(64) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (parent_type, child_type),
-    FOREIGN KEY (parent_type) REFERENCES metadata.meta_node_type_dict(type_code) ON DELETE CASCADE,
-    FOREIGN KEY (child_type) REFERENCES metadata.meta_node_type_dict(type_code) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS metadata.scan_logs (
-    id BIGSERIAL PRIMARY KEY,
-    engine_id BIGINT NOT NULL,
-    schema_id BIGINT,
     tenant_id BIGINT NOT NULL,
-    scan_type VARCHAR(50) NOT NULL,
-    scan_depth VARCHAR(20),
-    target_schemas TEXT,
-    status VARCHAR(20) NOT NULL,
+    engine_id BIGINT NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    schedule_type VARCHAR(32) NOT NULL,
+    schedule VARCHAR(128),
+    enabled BOOLEAN DEFAULT false,
+    parameters JSONB DEFAULT '{}'::JSONB,
+    last_run_at TIMESTAMP WITH TIME ZONE,
+    next_run_at TIMESTAMP WITH TIME ZONE,
+    created_by BIGINT,
+    updated_by BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_tasks_tenant ON metadata.scan_tasks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scan_tasks_engine ON metadata.scan_tasks(engine_id);
+CREATE INDEX IF NOT EXISTS idx_scan_tasks_enabled ON metadata.scan_tasks(enabled);
+
+-- 扫描任务执行记录表
+CREATE TABLE IF NOT EXISTS metadata.scan_task_runs (
+    id BIGSERIAL PRIMARY KEY,
+    task_id BIGINT REFERENCES metadata.scan_tasks(id) ON DELETE SET NULL,
+    tenant_id BIGINT NOT NULL,
+    engine_id BIGINT NOT NULL,
+    name VARCHAR(180),
+    storage_type VARCHAR(64),
+    trigger_type VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL,
     error_message TEXT,
-    schemas_scanned INT DEFAULT 0,
-    tables_scanned INT DEFAULT 0,
-    fields_scanned INT DEFAULT 0,
+    parameters JSONB DEFAULT '{}'::JSONB,
+    result_summary JSONB DEFAULT '{}'::JSONB,
+    progress_total INT DEFAULT 0,
+    progress_current INT DEFAULT 0,
+    progress_message VARCHAR(255),
+    progress_percent DECIMAL(5,2) DEFAULT 0,
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     duration_ms BIGINT DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    trigger_user_id BIGINT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_scan_logs_engine ON metadata.scan_logs(engine_id);
-CREATE INDEX IF NOT EXISTS idx_scan_logs_tenant ON metadata.scan_logs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_scan_logs_status ON metadata.scan_logs(status);
+CREATE INDEX IF NOT EXISTS idx_scan_task_runs_task ON metadata.scan_task_runs(task_id);
+CREATE INDEX IF NOT EXISTS idx_scan_task_runs_tenant ON metadata.scan_task_runs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scan_task_runs_engine ON metadata.scan_task_runs(engine_id);
+CREATE INDEX IF NOT EXISTS idx_scan_task_runs_status ON metadata.scan_task_runs(status);
 
 -- ==================== Transfer 模块 ====================
 CREATE SCHEMA IF NOT EXISTS transfer;
@@ -402,12 +374,8 @@ END;
 $$ language 'plpgsql';
 
 -- Manager 模块触发器
-DROP TRIGGER IF EXISTS update_data_sources_updated_at ON manager.data_sources;
-CREATE TRIGGER update_data_sources_updated_at BEFORE UPDATE ON manager.data_sources
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_directories_updated_at ON manager.directories;
-CREATE TRIGGER update_directories_updated_at BEFORE UPDATE ON manager.directories
+DROP TRIGGER IF EXISTS update_embeddings_updated_at ON manager.embeddings;
+CREATE TRIGGER update_embeddings_updated_at BEFORE UPDATE ON manager.embeddings
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_quick_view_updated_at ON manager.quick_view;
@@ -420,12 +388,12 @@ CREATE TRIGGER update_applications_updated_at BEFORE UPDATE ON system.applicatio
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Meta 模块触发器
-DROP TRIGGER IF EXISTS update_meta_node_updated_at ON metadata.meta_node;
-CREATE TRIGGER update_meta_node_updated_at BEFORE UPDATE ON metadata.meta_node
+DROP TRIGGER IF EXISTS update_scan_tasks_updated_at ON metadata.scan_tasks;
+CREATE TRIGGER update_scan_tasks_updated_at BEFORE UPDATE ON metadata.scan_tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_meta_item_updated_at ON metadata.meta_item;
-CREATE TRIGGER update_meta_item_updated_at BEFORE UPDATE ON metadata.meta_item
+DROP TRIGGER IF EXISTS update_scan_task_runs_updated_at ON metadata.scan_task_runs;
+CREATE TRIGGER update_scan_task_runs_updated_at BEFORE UPDATE ON metadata.scan_task_runs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Transfer 模块触发器
@@ -434,20 +402,6 @@ CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON transfer.tasks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ==================== 创建视图 ====================
-
--- 数据源统计视图
-CREATE OR REPLACE VIEW manager.data_source_stats AS
-SELECT
-    ds.id,
-    ds.name,
-    ds.type,
-    ds.status,
-    COUNT(DISTINCT d.id) as file_count,
-    COALESCE(SUM(d.size), 0) as total_size
-FROM manager.data_sources ds
-LEFT JOIN manager.directories d ON d.created_by = ds.id
-WHERE d.type = 'file' OR d.type IS NULL
-GROUP BY ds.id, ds.name, ds.type, ds.status;
 
 -- 任务执行统计视图
 CREATE OR REPLACE VIEW transfer.task_execution_stats AS

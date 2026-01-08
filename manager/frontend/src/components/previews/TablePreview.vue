@@ -24,14 +24,44 @@
             :loading="quickViewLoading"
             @click="handleQuickView"
           >
-            {{ quickViewStatus === 'completed' ? '预缓存已启用' : quickViewStatus === 'generating' ? '生成中...' : '启用预缓存' }}
+            {{ getQuickViewButtonText() }}
           </el-button>
+
+          <!-- 模式指示器 -->
+          <el-tag v-if="showMap" :type="useGeoJSONMode ? 'info' : 'success'" size="small">
+            {{ useGeoJSONMode ? 'GeoJSON 模式' : 'MVT 瓦片模式' }}
+          </el-tag>
+
+          <!-- Progress Display -->
+          <div v-if="quickViewStatus === 'generating' && quickViewProgress" class="progress-info">
+            <span class="progress-text">
+              {{ quickViewProgress.tiles_processed }} / {{ quickViewProgress.tiles_total_estimate }} 瓦片
+            </span>
+            <span class="progress-text">
+              已用时 {{ formatTime(quickViewProgress.elapsed_seconds) }}
+            </span>
+            <span v-if="quickViewProgress.estimated_remaining_seconds > 0" class="progress-text">
+              预计剩余 {{ formatTime(quickViewProgress.estimated_remaining_seconds) }}
+            </span>
+          </div>
         </template>
       </div>
 
-      <!-- 统一使用 MVT 瓦片预览（所有空间表）-->
+      <!-- 动态切换地图渲染模式 -->
       <div v-if="showMap" class="map-container" :style="{ height: mapHeight + 'px' }">
+        <!-- GeoJSON 模式（瓦片未就绪时使用） -->
+        <GeoJSONPreview
+          v-if="useGeoJSONMode"
+          ref="mapRef"
+          :engine-id="engineId"
+          :schema="schema"
+          :table="table"
+          :geom="activeGeometryColumn"
+        />
+
+        <!-- MVT 瓦片模式（瓦片已就绪） -->
         <VectorTilePreview
+          v-else
           ref="mapRef"
           :resource-id="engineId"
           :schema="schema"
@@ -85,6 +115,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { useResizable } from '@/composables/useResizable'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
+import GeoJSONPreview from '@/components/map/GeoJSONPreview.vue'
 import { dataExplorerAPI } from '@/api/dataExplorer'
 import { quickViewAPI } from '@/api/quickView'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -116,6 +147,7 @@ const pageSize = ref(10)
 // Pre-Cache state
 const quickViewLoading = ref(false)
 const quickViewStatus = ref('none') // 'none' | 'generating' | 'completed' | 'failed'
+const quickViewProgress = ref(null) // 存储实时进度数据
 let quickViewPollingTimer = null
 
 const columns = computed(() => props.data?.columns || [])
@@ -125,6 +157,15 @@ const geometryColumns = computed(() => props.data?.geometry_columns || [])
 
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
+
+// 地图渲染模式选择（自动切换）
+// - quickViewStatus 为 'ready' 或 'completed' → 使用 MVT 瓦片模式（高性能）
+// - quickViewStatus 为 'none' 或 'generating' → 使用 GeoJSON 模式（轻量级）
+const useGeoJSONMode = computed(() => {
+  const status = quickViewStatus.value
+  // MVT 瓦片未就绪时使用 GeoJSON
+  return status === 'none' || status === 'generating' || status === 'cancelled' || status === 'failed'
+})
 
 // 资源信息（用于 MVT 预览）
 const engineId = computed(() => props.data?.engineId)
@@ -286,9 +327,17 @@ const fetchQuickViewStatus = async () => {
   try {
     const response = await quickViewAPI.getQuickViewStatus(engineId.value, schema.value, table.value)
     const status = response.data?.status
+    const progress = response.data?.progress // 提取进度数据
 
     if (status) {
       quickViewStatus.value = status
+
+      // 保存进度数据（只在 generating 状态下有效）
+      if (status === 'generating' && progress) {
+        quickViewProgress.value = progress
+      } else {
+        quickViewProgress.value = null
+      }
 
       // 如果状态变为完成或失败，停止轮询
       if (status === 'completed' || status === 'failed') {
@@ -305,6 +354,7 @@ const fetchQuickViewStatus = async () => {
     // 如果返回404，说明还没有预缓存记录
     if (error.response?.status === 404) {
       quickViewStatus.value = 'none'
+      quickViewProgress.value = null
     }
     // 其他错误不处理，避免频繁弹窗
   }
@@ -316,7 +366,7 @@ const startQuickViewPolling = () => {
 
   quickViewPollingTimer = setInterval(() => {
     fetchQuickViewStatus()
-  }, 3000) // 每3秒查询一次
+  }, 2000) // 每2秒查询一次（用户要求）
 }
 
 // 停止轮询
@@ -324,6 +374,37 @@ const stopQuickViewPolling = () => {
   if (quickViewPollingTimer) {
     clearInterval(quickViewPollingTimer)
     quickViewPollingTimer = null
+  }
+}
+
+// 获取按钮文本（根据状态和进度）
+const getQuickViewButtonText = () => {
+  if (quickViewStatus.value === 'completed') {
+    return '预缓存已启用'
+  }
+  if (quickViewStatus.value === 'generating') {
+    if (quickViewProgress.value && quickViewProgress.value.progress_percent !== undefined) {
+      return `生成中... ${quickViewProgress.value.progress_percent.toFixed(1)}%`
+    }
+    return '生成中...'
+  }
+  return '启用预缓存'
+}
+
+// 格式化时间（秒数转为可读格式）
+const formatTime = (seconds) => {
+  if (!seconds || seconds < 0) return '0秒'
+
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${secs}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${secs}秒`
+  } else {
+    return `${secs}秒`
   }
 }
 
@@ -444,5 +525,20 @@ body.is-resizing .map-splitter::after {
 .pagination .tip {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+.progress-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.progress-text {
+  padding: 4px 8px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  white-space: nowrap;
 }
 </style>

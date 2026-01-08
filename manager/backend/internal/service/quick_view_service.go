@@ -8,8 +8,11 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
+	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/worker"
+	"github.com/minio/minio-go/v7"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -20,6 +23,9 @@ type QuickViewService struct {
 	taskQueue    *worker.TaskQueue
 	systemClient *commonClient.SystemClient
 	metaClient   *commonClient.MetaClient
+	minioClient  *minio.Client
+	minioBucket  string
+	redisClient  *redis.Client
 }
 
 // NewQuickViewService 创建快显服务
@@ -28,12 +34,18 @@ func NewQuickViewService(
 	taskQueue *worker.TaskQueue,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
+	minioClient *minio.Client,
+	minioBucket string,
+	redisClient *redis.Client,
 ) *QuickViewService {
 	return &QuickViewService{
 		repo:         repository.NewQuickViewRepository(db),
 		taskQueue:    taskQueue,
 		systemClient: systemClient,
 		metaClient:   metaClient,
+		minioClient:  minioClient,
+		minioBucket:  minioBucket,
+		redisClient:  redisClient,
 	}
 }
 
@@ -316,15 +328,148 @@ func (s *QuickViewService) ClearQuickView(
 		return fmt.Errorf("failed to get quick view: %w", err)
 	}
 
-	// 2. TODO: 删除MinIO中的瓦片
-	// 需要MinIO客户端删除 {fingerprint}/tiles/ 目录下的所有文件
+	// 2. 删除 MinIO 中的瓦片
+	if s.minioClient != nil && qv.Fingerprint != "" {
+		prefix := fmt.Sprintf("mvt-tiles/%s/", qv.Fingerprint)
 
-	// 3. 删除数据库记录
+		// 列出所有对象
+		objectsCh := s.minioClient.ListObjects(ctx, s.minioBucket, minio.ListObjectsOptions{
+			Prefix:    prefix,
+			Recursive: true,
+		})
+
+		// 删除所有对象
+		deletedCount := 0
+		for object := range objectsCh {
+			if object.Err != nil {
+				logger.L().Warn("Error listing object for deletion", "error", object.Err, "prefix", prefix)
+				continue
+			}
+
+			if err := s.minioClient.RemoveObject(ctx, s.minioBucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
+				logger.L().Warn("Failed to delete object", "error", err, "key", object.Key)
+				continue
+			}
+
+			deletedCount++
+		}
+
+		logger.L().Info("Deleted tiles from MinIO",
+			"fingerprint", qv.Fingerprint,
+			"deleted_count", deletedCount)
+	}
+
+	// 3. 删除 Redis 进度
+	if s.redisClient != nil && qv.Fingerprint != "" {
+		progressTracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
+		if err := progressTracker.DeleteProgress(ctx); err != nil {
+			logger.L().Warn("Failed to delete progress from Redis", "error", err, "fingerprint", qv.Fingerprint)
+		}
+	}
+
+	// 4. 删除数据库记录
 	if err := s.repo.Delete(qv.ID); err != nil {
 		return fmt.Errorf("failed to delete quick view: %w", err)
 	}
 
 	logger.L().Info("Quick view cleared",
+		"engine_id", engineID,
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"fingerprint", qv.Fingerprint)
+
+	return nil
+}
+
+// CancelQuickView 取消快显生成任务
+func (s *QuickViewService) CancelQuickView(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+) error {
+	// 1. 获取快显记录
+	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("快显记录不存在")
+		}
+		return fmt.Errorf("failed to get quick view: %w", err)
+	}
+
+	// 2. 检查状态是否为 generating
+	if qv.Status != "generating" {
+		return fmt.Errorf("只有 generating 状态的任务可以取消，当前状态: %s", qv.Status)
+	}
+
+	// 3. 更新状态为 cancelled
+	// 注意：Worker 会通过 context 取消检测到任务被取消
+	if err := s.repo.UpdateStatus(qv.ID, "cancelled", "用户取消任务"); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	logger.L().Info("Quick view cancelled",
+		"engine_id", engineID,
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"fingerprint", qv.Fingerprint)
+
+	return nil
+}
+
+// ResumeQuickView 恢复快显生成任务（增量生成）
+func (s *QuickViewService) ResumeQuickView(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+) error {
+	// 1. 获取快显记录
+	qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("快显记录不存在")
+		}
+		return fmt.Errorf("failed to get quick view: %w", err)
+	}
+
+	// 2. 检查状态是否为 cancelled 或 failed
+	if qv.Status != "cancelled" && qv.Status != "failed" {
+		return fmt.Errorf("只有 cancelled 或 failed 状态的任务可以恢复，当前状态: %s", qv.Status)
+	}
+
+	// 3. 从Meta获取空间元数据（确保数据仍然有效）
+	spatialMeta, err := s.getSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
+	if err != nil {
+		return fmt.Errorf("failed to get spatial metadata: %w", err)
+	}
+
+	// 4. 更新状态为 generating
+	if err := s.repo.UpdateStatus(qv.ID, "generating", ""); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// 5. 重新入队任务（使用原有的配置）
+	payload := worker.QuickViewTaskPayload{
+		TenantID:        tenantID,
+		EngineID:        engineID,
+		SchemaName:      schema,
+		TableName:       table,
+		GeomColumn:      spatialMeta.GeomColumn,
+		SRID:            spatialMeta.SRID,
+		PrimaryKey:      spatialMeta.PrimaryKey,
+		Extent:          spatialMeta.Extent,
+		MinZoom:         *qv.MinZoom,
+		MaxZoom:         qv.MaxZoom,
+		Concurrency:     20, // 使用默认并发数
+		StopThresholdMs: 300,
+		StopThresholdKB: 100,
+		Fingerprint:     qv.Fingerprint,
+	}
+
+	if err := s.taskQueue.EnqueueQuickViewTask(ctx, payload); err != nil {
+		// 恢复失败，状态改回原状态
+		s.repo.UpdateStatus(qv.ID, qv.Status, err.Error())
+		return fmt.Errorf("failed to enqueue task: %w", err)
+	}
+
+	logger.L().Info("Quick view resumed",
 		"engine_id", engineID,
 		"table", fmt.Sprintf("%s.%s", schema, table),
 		"fingerprint", qv.Fingerprint)

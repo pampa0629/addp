@@ -70,6 +70,7 @@ import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
 import { useResizable } from '@/composables/useResizable'
 import { useExplorerStore } from '@/stores/explorer'
+import client from '@/api/client'
 
 // 树形面板宽度
 const { size: treeWidth, startResize: startTreeResize } = useResizable(320, 220, 600, 'horizontal')
@@ -78,10 +79,39 @@ const route = useRoute()
 const router = useRouter()
 const store = useExplorerStore()
 
-// 节点操作
-const nodeActions = ref([
-  { id: 'refresh', label: '刷新', icon: 'Refresh' }
-])
+// 节点操作（根据节点类型动态生成）
+const nodeActions = computed(() => {
+  return [
+    // 刷新操作（所有节点都支持）
+    {
+      id: 'refresh',
+      name: 'refresh',
+      label: '刷新',
+      icon: 'Refresh',
+      visible: () => true
+    },
+    // 向量化操作（仅 MinIO/S3 的单个对象）
+    {
+      id: 'embedding',
+      name: 'embedding',
+      label: '向量化',
+      icon: 'MagicStick',
+      visible: (node) => {
+        return (node.engineType === 'minio' || node.engineType === 's3') && node.type === 'object'
+      }
+    },
+    // 批量向量化操作（MinIO/S3 的目录或 Bucket）
+    {
+      id: 'embedding-batch',
+      name: 'embedding-batch',
+      label: '批量向量化',
+      icon: 'Files',
+      visible: (node) => {
+        return (node.engineType === 'minio' || node.engineType === 's3') && (node.type === 'directory' || node.type === 'bucket')
+      }
+    }
+  ]
+})
 
 // 计算属性：树的根节点（引擎列表）
 const treeChildren = computed(() => {
@@ -170,16 +200,80 @@ const handleNodeClick = async (node) => {
   }
 }
 
-// 事件处理：节点操作（action 是字符串，如 'refresh'）
+// 事件处理：节点操作（action 是字符串，如 'refresh'、'vectorize'）
 const handleNodeAction = async ({ node, action }) => {
-  if (action === 'refresh') {
-    const locator = node.locator || node.id
+  const locator = node.locator || node.id
 
+  if (action === 'refresh') {
     try {
       await store.refreshNode(locator)
       ElMessage.success('刷新成功')
     } catch (error) {
       ElMessage.error('刷新失败: ' + error.message)
+    }
+    return
+  }
+
+  if (action === 'embedding' || action === 'embedding-batch') {
+    // 只支持 MinIO/S3 对象存储
+    if (node.engineType !== 'minio' && node.engineType !== 's3') {
+      ElMessage.warning('向量化功能仅支持对象存储（MinIO/S3）')
+      return
+    }
+
+    try {
+      // 解析 locator 提取参数
+      const loc = parseLocator(locator)
+      const engineId = loc.engineId
+      const bucket = loc.path[0] // 第一个路径段是 bucket
+
+      // 构建请求参数
+      const params = {
+        engine_id: engineId,
+        bucket: bucket
+      }
+
+      // 根据节点类型设置不同的参数
+      if (action === 'embedding') {
+        // 单个对象向量化
+        if (node.type !== 'object') {
+          ElMessage.warning('该操作仅适用于单个文件')
+          return
+        }
+        params.scope = 'object'
+        params.object_key = loc.path.slice(1).join('/') // bucket 后面的所有路径段
+      } else {
+        // 批量向量化
+        if (node.type === 'directory') {
+          params.scope = 'directory'
+          params.prefix = loc.path.slice(1).join('/') + '/' // bucket 后面的路径作为前缀
+          params.recursive = true
+        } else if (node.type === 'bucket') {
+          params.scope = 'bucket'
+        } else {
+          ElMessage.warning('批量向量化仅适用于目录或 Bucket')
+          return
+        }
+      }
+
+      // 调用后端 API
+      const response = await client.post('/operators/embedding/execute', {
+        operator_name: 'embedding',
+        params: params,
+        execute_now: true
+      })
+
+      // 显示成功消息
+      if (action === 'embedding') {
+        ElMessage.success(`向量化任务已提交（文件：${params.object_key}）`)
+      } else {
+        ElMessage.success(`批量向量化任务已提交（${node.type === 'bucket' ? 'Bucket' : '目录'}：${node.label}）`)
+      }
+
+      console.log('向量化任务响应:', response.data)
+    } catch (error) {
+      console.error('向量化失败:', error)
+      ElMessage.error('向量化失败: ' + (error.response?.data?.error || error.message))
     }
   }
 }

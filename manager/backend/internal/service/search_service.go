@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/embedding"
 	"github.com/addp/common/logger"
 	"github.com/addp/common/vectorstore"
@@ -106,15 +107,15 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:           logger.With("component", "manager_fulltext_search"),
 		models: map[embedding.Modality]string{
-			embedding.ModalityText:     cfg.EmbeddingService.TextModel,
-			embedding.ModalityDocument: cfg.EmbeddingService.TextModel,
-			embedding.ModalityImage:    cfg.EmbeddingService.ImageModel,
-			embedding.ModalityAudio:    cfg.EmbeddingService.AudioModel,
-			embedding.ModalityVideo:    cfg.EmbeddingService.VideoModel,
+			embedding.ModalityText:     cfg.EmbeddingService.Models["text"],
+			embedding.ModalityDocument: cfg.EmbeddingService.Models["text"],
+			embedding.ModalityImage:    cfg.EmbeddingService.Models["image"],
+			embedding.ModalityAudio:    cfg.EmbeddingService.Models["text"], // 暂用 text 模型
+			embedding.ModalityVideo:    cfg.EmbeddingService.Models["video"],
 		},
 		embeddingTimeout:  cfg.EmbeddingService.Timeout,
 		vectorTopK:        10,
-		vectorMaxDistance: cfg.VectorSearchMaxDistance,
+		vectorMaxDistance: cfg.VectorConfig.MaxDistance,
 	}
 	if svc.embeddingTimeout <= 0 {
 		svc.embeddingTimeout = 15 * time.Second
@@ -157,7 +158,20 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 }
 
 func (s *FullTextSearchService) initVectorComponents(cfg *config.Config) error {
-	store, err := vectorstore.NewPgVectorStore(context.Background(), cfg.VectorDB)
+	// 构造向量数据库配置（向量表在 manager schema 中）
+	vectorDBConfig := commonConfig.VectorDBConfig{
+		Host:      cfg.DBHost,
+		Port:      cfg.DBPort,
+		Name:      cfg.DBName,
+		User:      cfg.DBUser,
+		Password:  cfg.DBPassword,
+		Schema:    "manager", // 向量表在 manager schema
+		Table:     "embeddings",
+		Dimension: cfg.VectorConfig.Dimension,
+		SSLMode:   "disable",
+	}
+
+	store, err := vectorstore.NewPgVectorStore(context.Background(), vectorDBConfig)
 	if err != nil {
 		return fmt.Errorf("init vector store: %w", err)
 	}
@@ -200,8 +214,8 @@ func (s *FullTextSearchService) initVectorComponents(cfg *config.Config) error {
 	s.textEmbedder = client
 	s.models = models
 	s.log.Info("向量检索能力已启用",
-		"vector_schema", cfg.VectorDB.Schema,
-		"vector_table", cfg.VectorDB.Table,
+		"vector_schema", vectorDBConfig.Schema,
+		"vector_table", vectorDBConfig.Table,
 		"text_model", textModel,
 	)
 	return nil
@@ -479,8 +493,8 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 
 		for _, item := range results {
 			doc := VectorDocument{
-				DocumentID: item.Record.ObjectID,
-				AssetID:    item.Record.AssetID,
+				DocumentID: item.Record.Fingerprint,
+				AssetID:    item.Record.ObjectKey,
 				Model:      item.Record.Model,
 				Modality:   string(item.Record.Modality),
 				Distance:   item.Distance,
@@ -597,7 +611,7 @@ func buildSearchResultPreview(results []vectorstore.SearchResult, limit int) []m
 	for i := 0; i < limit; i++ {
 		item := results[i]
 		preview = append(preview, map[string]any{
-			"document_id": item.Record.ObjectID,
+			"document_id": item.Record.Fingerprint,
 			"modality":    string(item.Record.Modality),
 			"model":       item.Record.Model,
 			"distance":    item.Distance,
