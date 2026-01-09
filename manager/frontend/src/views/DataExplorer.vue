@@ -459,13 +459,52 @@ watch(() => route.query, async (query) => {
 
     console.log('[DataExplorer] 需要展开的路径 (使用 id):', expandKeys)
 
-    // 6. 展开路径上的所有节点（使用从树中提取的实际 locator）
+    // 6. 查找目标文件节点的实际 ID
+    let targetNodeId = null
+    if (objectKey && pathParts.length > 0) {
+      // 定位到文件
+      const bucketNode = engineTree.children?.find(c => c.label === bucket)
+      if (bucketNode) {
+        let currentNode = bucketNode
+        // 遍历到最后一个目录
+        for (let i = 0; i < pathParts.length - 1; i++) {
+          const dirName = pathParts[i]
+          const dirNode = currentNode.children?.find(c => c.label === dirName)
+          if (dirNode) {
+            currentNode = dirNode
+          } else {
+            break
+          }
+        }
+        // 找到目标文件
+        const fileName = pathParts[pathParts.length - 1]
+        const fileNode = currentNode.children?.find(c => c.label === fileName)
+        if (fileNode) {
+          targetNodeId = fileNode.id
+          console.log('[DataExplorer] 找到目标文件节点:', {
+            label: fileNode.label,
+            id: fileNode.id,
+            locator: fileNode.locator
+          })
+        } else {
+          console.warn('[DataExplorer] 未找到目标文件节点:', fileName)
+        }
+      }
+    }
+
+    // 7. 展开路径上的所有节点（使用从树中提取的实际 id）
     console.log('[DataExplorer] 当前已展开节点:', Array.from(store.expandedLocators))
     expandedKeys.value = [...new Set([...expandedKeys.value, ...expandKeys])]
     console.log('[DataExplorer] 更新后已展开节点:', Array.from(store.expandedLocators))
     console.log('[DataExplorer] expandedKeys 计算属性值:', expandedKeys.value)
 
-    // 8. 等待 DOM 更新
+    // 8. 如果找到了目标文件节点，更新 selectedLocator 为正确的 id
+    if (targetNodeId) {
+      console.log('[DataExplorer] 更新 selectedLocator 为:', targetNodeId)
+      store.selectNode(targetNodeId)
+    }
+
+    // 9. 等待 DOM 更新
     await nextTick()
 
     console.log('[DataExplorer] DOM 更新后，expandedKeys:', expandedKeys.value)

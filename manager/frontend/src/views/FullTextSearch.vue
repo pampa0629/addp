@@ -401,14 +401,20 @@ const navigateToDocument = (item = {}) => {
   // 检查必需字段
   const engineId = item.engine_id || item.resource_id
   if (!engineId) {
-    ElMessage.warning('缺少引擎信息，无法定位文档')
+    ElMessage.warning({
+      message: `文档 "${item.file_name || '未命名'}" 的引擎信息缺失，无法定位。这可能是过期的索引数据。`,
+      duration: 5000
+    })
     return
   }
 
   // 获取存储桶
   const bucket = item.schema || item.bucket || ''
   if (!bucket) {
-    ElMessage.warning('缺少存储桶信息，无法定位文档')
+    ElMessage.warning({
+      message: `文档 "${item.file_name || '未命名'}" 缺少存储桶信息，无法定位`,
+      duration: 5000
+    })
     return
   }
 
@@ -421,7 +427,10 @@ const navigateToDocument = (item = {}) => {
   }
 
   if (!objectPath) {
-    ElMessage.warning('缺少对象路径信息，无法定位文档')
+    ElMessage.warning({
+      message: `文档 "${item.file_name || '未命名'}" 缺少对象路径信息，无法定位`,
+      duration: 5000
+    })
     return
   }
 

@@ -236,7 +236,18 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc4OTUyMzcsImlhdCI6MTc2Nzg4NDQzN30.eChY8wxl9j8RtTj2Co8CE8n1JRpuKoct79Rbolh-H28\")",
       "Bash(__NEW_LINE__ echo \"=== 测试 1: 通过 Manager 直接访问 ===\")",
       "Bash(__NEW_LINE__ echo -e \"\\\\n=== 测试 2: 通过 Gateway 访问 ===\")",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc4OTU4OTksImlhdCI6MTc2Nzg4NTA5OX0.nNucbv9k0P-hEgO0vCbAilmcULMvggRx7nYEE7BJl-M\")",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8081/api/search/fulltext?q=开会&page=1&page_size=5\" )",
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc4OTU4OTksImlhdCI6MTc2Nzg4NTA5OX0.nNucbv9k0P-hEgO0vCbAilmcULMvggRx7nYEE7BJl-M')",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8081/api/search/fulltext?q=开会&page=1&page_size=5\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(/tmp/test_meilisearch.sh)",
+      "Bash(/tmp/delete_duplicate.sh:*)",
+      "Bash(/tmp/test_fix.sh:*)",
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc5MzE4MDMsImlhdCI6MTc2NzkyMTAwM30.4IpHRQ6x2_4BKHdHMej6yqdJy30cRHJWlF587xaR2MI')",
+      "Bash(__NEW_LINE__ echo \"=== 测试全文搜索 API ===\")",
+      "Bash(/tmp/test_search.sh:*)",
+      "Bash(AUTH_HEADER='Authorization: Bearer addp-meilisearch-dev-key-change-in-prod')"
     ],
     "deny": [],
     "ask": []
