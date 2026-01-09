@@ -452,13 +452,17 @@ const updateTreeState = () => {
 }
 
 onMounted(() => {
-  nextTick(updateTreeState)
+  if (hasTreeData.value) {
+    nextTick(updateTreeState)
+  }
 })
 
 watch(
   () => props.expandedKeys,
   () => {
-    nextTick(updateTreeState)
+    if (hasTreeData.value) {
+      nextTick(updateTreeState)
+    }
   },
   { deep: true }
 )
@@ -466,7 +470,9 @@ watch(
 watch(
   () => props.treeData,
   () => {
-    nextTick(updateTreeState)
+    if (hasTreeData.value) {
+      nextTick(updateTreeState)
+    }
   },
   { deep: true }
 )
