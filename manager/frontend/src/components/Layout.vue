@@ -43,9 +43,9 @@
             <el-icon><Search /></el-icon>
             <span>数据探查</span>
           </el-menu-item>
-          <el-menu-item index="/fulltext-search">
+          <el-menu-item index="/data-retrieval">
             <el-icon><Document /></el-icon>
-            <span>全文检索</span>
+            <span>数据检索</span>
           </el-menu-item>
           <el-menu-item index="/vectorization-tasks">
             <el-icon><List /></el-icon>

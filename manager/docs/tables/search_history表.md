@@ -2,11 +2,11 @@
 
 ## 一、表结构概览
 
-`manager.search_history` 表是 Manager 模块的搜索历史表，记录用户的全文检索历史。支持按用户隔离，提供快速访问历史搜索的功能。
+`manager.search_history` 表是 Manager 模块的搜索历史表，记录用户的数据检索历史（全文检索 + 向量检索）。支持按用户隔离，提供快速访问历史搜索的功能。
 
 ### 核心功能
 
-- **搜索历史记录**：记录用户的所有全文检索查询
+- **搜索历史记录**：记录用户的所有数据检索查询（包括全文检索和向量检索）
 - **按用户隔离**：每个用户只能查看自己的搜索历史
 - **去重机制**：同一用户的相同查询只保留一条记录（更新时间）
 - **快速访问**：提供历史搜索列表，支持快速重复搜索
@@ -98,32 +98,36 @@
 
 ---
 
-### 3.4 GET /api/search/fulltext - 全文检索（自动记录历史）
+### 3.4 GET /api/search - 混合检索（自动记录历史）
 
-**功能**：执行全文检索，自动记录到搜索历史
+**功能**：执行混合检索（全文检索 + 向量检索），自动记录到搜索历史
 
 **查询参数**：
-- `q`：搜索关键词
-- `type`：资源类型过滤（table、file、all）
-- `engine_id`：按引擎过滤
-- `limit`：结果数量
+- `q`：搜索关键词（必填）
+- `page`：页码，默认 1
+- `page_size`：每页数量，默认 10
 
 **响应**：
 
 ```json
 {
-  "results": [
-    {
-      "id": 1,
-      "name": "cities",
-      "type": "table",
-      "engine_name": "业务数据库",
-      "full_name": "public.cities",
-      "highlight": "包含<em>城市</em>数据"
-    }
-  ],
-  "total": 1,
-  "query": "城市数据"
+  "data": {
+    "total": 15,
+    "page": 1,
+    "page_size": 10,
+    "results": [
+      {
+        "document_id": "abc123",
+        "file_name": "城市数据.csv",
+        "engine_name": "业务数据库",
+        "score": 0.95,
+        "highlights": {
+          "content": ["包含<mark>城市</mark>相关信息"]
+        }
+      }
+    ],
+    "vector_hits": [...]
+  }
 }
 ```
 
@@ -136,7 +140,7 @@
 ### 4.1 自动记录机制
 
 **触发时机**：
-- 用户执行全文检索（/api/search/fulltext）
+- 用户执行混合检索（/api/search）
 - 查询字符串非空
 - 查询成功（有结果或无结果都记录）
 
@@ -164,11 +168,11 @@ DO UPDATE SET updated_at = NOW();
 
 ```bash
 # 搜索"城市数据"
-curl -X GET "http://localhost:8081/api/search/fulltext?q=城市数据&limit=10" \
+curl -X GET "http://localhost:8081/api/search?q=城市数据&page=1&page_size=10" \
   -H "Authorization: Bearer $TOKEN"
 
 # 再次搜索相同内容，只会更新 updated_at
-curl -X GET "http://localhost:8081/api/search/fulltext?q=城市数据&limit=10" \
+curl -X GET "http://localhost:8081/api/search?q=城市数据&page=1&page_size=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

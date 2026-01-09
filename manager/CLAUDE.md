@@ -7,7 +7,7 @@ Manager 模块是 ADDP 平台的**数据管理中枢**，负责以下核心功�
 1. **存储引擎管理** - 管理多类型数据库和对象存储的连接配置（8种引擎：PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 2. **数据探查与预览** - 提供统一的数据预览能力，支持结构化数据、空间数据、文档、图片等多种格式
 3. **元数据查询与展示** - 与 Meta 模块集成，展示数据目录树、表结构、文件属性等元数据信息
-4. **全文检索** - 基于 Meilisearch 的资产全文搜索，支持数据表、对象存储文件等
+4. **数据检索** - 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索），支持数据表、对象存储文件等
 5. **空间数据可视化** - 提供 MVT（矢量瓦片）服务，支持大规模空间数据的地图渲染（含三层缓存架构）
 
 ## 关键架构
@@ -141,7 +141,7 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 | 表之间关系 | 数据库架构.md | 外键、关联、数据流 |
 | API端点详情 | 对应单表文档 | API、接口、请求响应 |
 | 目录树管理 | directories表 | 文件夹、路径、目录结构 |
-| 搜索历史 | search_history表 | 全文检索、历史记录 |
+| 搜索历史 | search_history表 | 数据检索、混合检索、历史记录 |
 | 空间快显 | quick_view表 | 瓦片缓存、MVT、预缓存 |
 
 ### 架构说明
@@ -152,7 +152,7 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 详细的表结构和API说明文档：
 
 - [directories表](docs/tables/directories表.md) - 目录结构表,文件系统风格的树形结构
-- [search_history表](docs/tables/search_history表.md) - 搜索历史表,记录用户全文检索历史
+- [search_history表](docs/tables/search_history表.md) - 搜索历史表,记录用户数据检索历史（全文检索 + 向量检索）
 - [quick_view表](docs/tables/quick_view表.md) - 快显任务表,空间数据瓦片预缓存
 
 **重要**：修改表结构或API时，必须同步更新对应的单表文档。
@@ -167,7 +167,7 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 - [mvt_service.go](backend/internal/service/mvt_service.go) - **MVT 瓦片生成服务**（实时执行 ST_AsMVT 查询）
 - [unified_mvt_service.go](backend/internal/service/unified_mvt_service.go) - **统一 MVT 服务**（三层缓存穿透架构）
 - [quick_view_service.go](backend/internal/service/quick_view_service.go) - **快速预览缓存服务**（批量生成/持久化存储）
-- [search_service.go](backend/internal/service/search_service.go) - **全文检索服务**（Meilisearch 集成）
+- [search_service.go](backend/internal/service/search_service.go) - **混合检索服务**（Meilisearch + 向量数据库）
 - [engine_cache.go](backend/internal/service/engine_cache.go) - **存储引擎缓存服务**（Redis 事件订阅自动刷新）
 
 ### 预览插件文件
@@ -209,7 +209,7 @@ Manager 需要连接用户配置的多个数据库，采用 **动态连接池** 
 - [frontend/src/views/Preview.vue](frontend/src/views/Preview.vue) - 数据预览组件
 - [frontend/src/views/DataSources.vue](frontend/src/views/DataSources.vue) - 存储引擎管理界面
 - [frontend/src/views/Metadata.vue](frontend/src/views/Metadata.vue) - 元数据查看界面
-- [frontend/src/views/FullTextSearch.vue](frontend/src/views/FullTextSearch.vue) - 全文检索界面
+- [frontend/src/views/DataRetrieval.vue](frontend/src/views/DataRetrieval.vue) - 数据检索界面（混合检索：全文 + 向量）
 - [frontend/src/views/SpatialPreview.vue](frontend/src/views/SpatialPreview.vue) - 空间数据地图预览
 
 ### 配置文件
@@ -522,7 +522,7 @@ Manager 模块依赖：
 ├─ System 模块 (必须) - 获取解密的存储引擎连接信息
 ├─ Meta 模块 (可选) - 查询元数据节点和数据项
 ├─ Redis (必须) - 缓存 + 任务队列 + 事件订阅
-└─ Meilisearch (可选) - 全文检索功能
+└─ Meilisearch (可选) - 混合检索功能（全文检索 + 向量检索）
 
 被依赖：
 ├─ Portal 模块 - 提供数据探查 iframe 入口

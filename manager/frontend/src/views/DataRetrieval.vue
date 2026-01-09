@@ -1,9 +1,9 @@
 <template>
-  <div class="fulltext-search">
+  <div class="data-retrieval">
     <el-card class="search-card">
       <div class="search-header">
-        <h2>全文检索</h2>
-        <p class="search-subtitle">支持按标题、文件名、正文内容等关键词快速定位文档</p>
+        <h2>数据检索</h2>
+        <p class="search-subtitle">支持关键词全文检索与向量语义检索，智能定位数据资产</p>
       </div>
       <el-form class="search-form" @submit.prevent="handleSearch">
         <el-form-item class="search-input">
@@ -61,8 +61,9 @@
                     </el-scrollbar>
                   </div>
                 </el-popover>
-                <el-button class="search-button" type="primary" :loading="loading" @click="handleSearch">
-                  搜索
+                <el-button class="search-button" type="primary" size="large" :loading="loading" @click="handleSearch">
+                  <el-icon><Search /></el-icon>
+                  <span>搜索</span>
                 </el-button>
               </div>
             </template>
@@ -159,7 +160,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock } from '@element-plus/icons-vue'
+import { Document, Clock, Search } from '@element-plus/icons-vue'
 import searchAPI from '@/api/search'
 
 const router = useRouter()
@@ -189,7 +190,8 @@ const loadHistory = async () => {
   historyLoading.value = true
   try {
     const response = await searchAPI.history({ limit: historyLimit })
-    const items = response.data?.data?.items
+    // API client 已经自动提取了第一层 data，所以这里直接用 response.data
+    const items = response.data?.items
     if (Array.isArray(items)) {
       historyItems.value = items.map((item) => ({
         id: item.id,
@@ -201,7 +203,7 @@ const loadHistory = async () => {
       historyItems.value = []
     }
   } catch (error) {
-    console.error('[FullTextSearch] 加载搜索历史失败', error)
+    console.error('[DataRetrieval] 加载搜索历史失败', error)
     if (historyVisible.value) {
       ElMessage.error('加载搜索历史失败')
     }
@@ -234,7 +236,7 @@ const removeHistoryItem = async (item = {}) => {
     ElMessage.success('已删除所选历史')
     await loadHistory()
   } catch (error) {
-    console.error('[FullTextSearch] 删除搜索历史失败', error)
+    console.error('[DataRetrieval] 删除搜索历史失败', error)
     ElMessage.error('删除历史失败')
   }
 }
@@ -258,7 +260,7 @@ const handleClearHistory = async () => {
     historyItems.value = []
     ElMessage.success('已清除全部历史')
   } catch (error) {
-    console.error('[FullTextSearch] 清除搜索历史失败', error)
+    console.error('[DataRetrieval] 清除搜索历史失败', error)
     ElMessage.error('清除历史失败')
   }
 }
@@ -291,7 +293,7 @@ const fetchResults = async () => {
       page: page.value,
       page_size: pageSize.value
     }
-    const response = await searchAPI.fullText(params)
+    const response = await searchAPI.search(params)
     // API client 已经自动提取了第一层 data，所以这里直接用 response.data
     const payload = response.data || {}
     results.value = Array.isArray(payload.results) ? payload.results : []
@@ -301,7 +303,7 @@ const fetchResults = async () => {
     hasSearched.value = true
   } catch (error) {
     hasSearched.value = true
-    console.error('[FullTextSearch] 搜索失败', error)
+    console.error('[DataRetrieval] 搜索失败', error)
     const message = error.response?.data?.error || error.message
     ElMessage.error(`搜索失败：${message}`)
   } finally {
@@ -353,7 +355,7 @@ const getSnippet = (item = {}) => {
 }
 
 const formatResource = (item = {}) => {
-  const name = item.resource_name || ''
+  const name = item.engine_name || ''
   const id = item.engine_id
   if (name) {
     return name
@@ -418,12 +420,19 @@ const navigateToDocument = (item = {}) => {
     return
   }
 
-  // 获取对象路径：优先使用 asset_id (完整object_key)，其次用relative_path
-  let objectPath = item.asset_id || item.object_key || ''
-  if (!objectPath && item.relative_path) {
-    // 如果只有 relative_path，尝试组合 relative_path 和 file_name
-    const fileName = item.file_name || ''
-    objectPath = fileName ? `${item.relative_path}/${fileName}` : item.relative_path
+  // 获取对象路径
+  // 注意：asset_id 可能是 document_id (fingerprint)，不能用于路径
+  // 优先使用 relative_path（Meilisearch 返回的完整路径），其次用 object_key
+  let objectPath = item.relative_path || item.object_key || ''
+
+  // 如果 relative_path 只是目录路径，需要拼接文件名
+  if (objectPath && item.file_name && !objectPath.endsWith(item.file_name)) {
+    objectPath = `${objectPath}/${item.file_name}`.replace(/\/+/g, '/')
+  }
+
+  // 如果都没有，尝试从 asset_id 获取（但要排除看起来像 fingerprint 的值）
+  if (!objectPath && item.asset_id && item.asset_id.length < 100) {
+    objectPath = item.asset_id
   }
 
   if (!objectPath) {
@@ -441,13 +450,13 @@ const navigateToDocument = (item = {}) => {
     objectKey: objectPath  // 使用 objectKey 而不是 objectPath
   }
 
-  console.log('[FullTextSearch] 定位到对象:', query)
+  console.log('[DataRetrieval] 定位到对象:', query)
   router.push({ path: '/data-explorer', query })
 }
 </script>
 
 <style scoped>
-.fulltext-search {
+.data-retrieval {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -482,10 +491,16 @@ const navigateToDocument = (item = {}) => {
   font-size: 16px;
 }
 
+.search-input :deep(.el-input-group__append) {
+  border-left: none;
+  background-color: transparent;
+  padding: 0 16px;
+}
+
 .search-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 48px;
 }
 
 .history-trigger {
@@ -506,7 +521,22 @@ const navigateToDocument = (item = {}) => {
 }
 
 .search-button {
-  margin-left: 4px;
+  min-width: 100px;
+  height: 40px;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.search-button:hover {
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.search-button :deep(.el-icon) {
+  margin-right: 4px;
+  font-size: 18px;
 }
 
 .history-popover {

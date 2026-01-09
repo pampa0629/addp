@@ -34,13 +34,13 @@
           "response": "{\n  \"type\": \"table\",\n  \"columns\": [\"id\", \"name\", \"email\"],\n  \"rows\": [[1, \"张三\", \"zhang@example.com\"]],\n  \"total\": 100\n}"
         },
         {
-          "name": "全文搜索",
+          "name": "混合检索",
           "method": "GET",
-          "path": "/api/search/fulltext",
-          "description": "跨引擎全文搜索数据资产（表名、字段名、注释等）",
+          "path": "/api/search",
+          "description": "跨引擎混合检索（全文检索 + 向量语义检索）数据资产",
           "auth": true,
-          "query": "q: 搜索关键词 (必填)\npage: 页码，默认 1\npage_size: 每页数量，默认 20",
-          "response": "{\n  \"hits\": [\n    {\n      \"id\": \"table_123\",\n      \"type\": \"table\",\n      \"name\": \"用户表\",\n      \"engine_name\": \"MySQL主库\",\n      \"highlight\": \"包含<em>用户</em>信息\"\n    }\n  ],\n  \"total\": 15\n}"
+          "query": "q: 搜索关键词 (必填)\npage: 页码，默认 1\npage_size: 每页数量，默认 10",
+          "response": "{\n  \"data\": {\n    \"total\": 15,\n    \"page\": 1,\n    \"page_size\": 10,\n    \"results\": [\n      {\n        \"document_id\": \"abc123\",\n        \"file_name\": \"城市数据.csv\",\n        \"engine_name\": \"业务数据库\",\n        \"score\": 0.95,\n        \"highlights\": {...}\n      }\n    ],\n    \"vector_hits\": [...]\n  }\n}"
         },
         {
           "name": "获取 MVT 瓦片",

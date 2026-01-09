@@ -42,8 +42,8 @@ type AssetRecord struct {
 	AssetID       string                 `json:"asset_id"`
 	TenantID      uint                   `json:"tenant_id"`
 	EngineID      uint                   `json:"engine_id"`
-	ResourceName  string                 `json:"resource_name,omitempty"`
-	ResourceType  string                 `json:"resource_type,omitempty"`
+	EngineName    string                 `json:"engine_name,omitempty"`
+	EngineType    string                 `json:"engine_type,omitempty"`
 	AssetType     string                 `json:"asset_type"`
 	Name          string                 `json:"name"`
 	FullName      string                 `json:"full_name,omitempty"`
@@ -68,8 +68,8 @@ type DocumentRecord struct {
 	AssetID        string                 `json:"asset_id"`
 	TenantID       uint                   `json:"tenant_id"`
 	EngineID       uint                   `json:"engine_id"`
-	ResourceName   string                 `json:"resource_name,omitempty"`
-	ResourceType   string                 `json:"resource_type,omitempty"`
+	EngineName     string                 `json:"engine_name,omitempty"`
+	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	RelativePath   string                 `json:"relative_path,omitempty"`
 	FileName       string                 `json:"file_name"`
@@ -162,7 +162,7 @@ func (i *Indexer) ensureIndexes() error {
 	_, err = assetIndex.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
 		"engine_id",
-		"resource_type",
+		"engine_type",
 		"asset_type",
 		"schema",
 		"bucket",
@@ -211,7 +211,7 @@ func (i *Indexer) ensureIndexes() error {
 		_, err = docIndex.UpdateFilterableAttributes(&[]string{
 			"tenant_id",
 			"engine_id",
-			"resource_type",
+			"engine_type",
 			"document_type",
 			"bucket",
 		})
@@ -241,9 +241,9 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"id":                 record.AssetID, // Meilisearch 主键
 		"asset_id":           record.AssetID,
 		"tenant_id":          record.TenantID,
-		"engine_id":        record.EngineID,
-		"resource_name":      record.ResourceName,
-		"resource_type":      record.ResourceType,
+		"engine_id":          record.EngineID,
+		"engine_name":        record.EngineName,
+		"engine_type":        record.EngineType,
 		"asset_type":         record.AssetType,
 		"name":               record.Name,
 		"full_name":          record.FullName,
@@ -290,9 +290,9 @@ func (i *Indexer) IndexDocument(ctx context.Context, record *DocumentRecord) err
 		"document_id":     record.DocumentID,
 		"asset_id":        record.AssetID,
 		"tenant_id":       record.TenantID,
-		"engine_id":     record.EngineID,
-		"resource_name":   record.ResourceName,
-		"resource_type":   record.ResourceType,
+		"engine_id":       record.EngineID,
+		"engine_name":     record.EngineName,
+		"engine_type":     record.EngineType,
 		"bucket":          record.Bucket,
 		"relative_path":   record.RelativePath,
 		"file_name":       record.FileName,

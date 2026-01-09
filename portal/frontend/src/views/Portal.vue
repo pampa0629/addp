@@ -76,9 +76,9 @@
               <el-icon><Search /></el-icon>
               <span>数据探查</span>
             </el-menu-item>
-            <el-menu-item index="/manager/fulltext-search">
+            <el-menu-item index="/manager/data-retrieval">
               <el-icon><Document /></el-icon>
-              <span>全文检索</span>
+              <span>数据检索</span>
             </el-menu-item>
             <el-menu-item index="/manager/vectorization-tasks">
               <el-icon><List /></el-icon>
@@ -372,7 +372,7 @@ const handleMenuSelect = (index) => {
     // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
     const managerPageMap = {
       'data-explorer': 'data-explorer',
-      'fulltext-search': 'fulltext-search',
+      'data-retrieval': 'data-retrieval',
       'vectorization-tasks': 'vectorization-tasks',
       '': 'data-explorer'
     }

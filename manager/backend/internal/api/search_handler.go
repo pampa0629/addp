@@ -13,21 +13,22 @@ import (
 )
 
 type SearchHandler struct {
-	searchService  *service.FullTextSearchService
+	searchService  *service.HybridSearchService
 	historyService *service.SearchHistoryService
 }
 
-func NewSearchHandler(searchService *service.FullTextSearchService, historyService *service.SearchHistoryService) *SearchHandler {
+func NewSearchHandler(searchService *service.HybridSearchService, historyService *service.SearchHistoryService) *SearchHandler {
 	return &SearchHandler{
 		searchService:  searchService,
 		historyService: historyService,
 	}
 }
 
-func (h *SearchHandler) FullTextSearch(c *gin.Context) {
+// Search 执行混合检索（全文检索 + 向量语义检索）
+func (h *SearchHandler) Search(c *gin.Context) {
 	if h.searchService == nil || !h.searchService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "full text search not configured",
+			"error": "hybrid search not configured",
 		})
 		return
 	}
@@ -44,11 +45,11 @@ func (h *SearchHandler) FullTextSearch(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 	result, err := h.searchService.SearchDocuments(c.Request.Context(), tenantID, query, page, pageSize)
 	if err != nil {
-		if errors.Is(err, service.ErrFullTextSearchDisabled) {
+		if errors.Is(err, service.ErrSearchDisabled) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 			return
 		}
-		logger.L().Error("全文检索失败", "error", err)
+		logger.L().Error("混合检索失败", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -62,7 +63,7 @@ func (h *SearchHandler) FullTextSearch(c *gin.Context) {
 	}
 
 	// 调试日志
-	logger.L().Info("全文搜索返回",
+	logger.L().Info("混合检索返回",
 		"query", query,
 		"total", result.Total,
 		"results_count", len(result.Hits),

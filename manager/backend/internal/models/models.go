@@ -27,7 +27,7 @@ func (Engine) TableName() string {
 	return "system.engines"
 }
 
-// SearchHistory 记录用户的全文检索历史，按用户隔离
+// SearchHistory 记录用户的数据检索历史（全文检索 + 向量检索），按用户隔离
 type SearchHistory struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"user_id" gorm:"uniqueIndex:idx_search_history_user_query,priority:1;not null"`

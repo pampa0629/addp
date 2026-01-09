@@ -18,7 +18,7 @@ func SetupRouter(
 	cfg *config.Config,
 	engineService *service.EngineService,
 	metadataService *service.MetadataService,
-	searchService *service.FullTextSearchService,
+	searchService *service.HybridSearchService,
 	historyService *service.SearchHistoryService,
 	unifiedMVTService *service.UnifiedMVTService,
 	quickViewService *service.QuickViewService,
@@ -136,7 +136,7 @@ func SetupRouter(
 		searchGroup := api.Group("/search")
 		{
 			handler := NewSearchHandler(searchService, historyService)
-			searchGroup.GET("/fulltext", handler.FullTextSearch)
+			searchGroup.GET("", handler.Search)  // 混合检索（全文 + 向量）
 			searchGroup.GET("/history", handler.ListHistory)
 			searchGroup.DELETE("/history/:id", handler.DeleteHistoryItem)
 			searchGroup.DELETE("/history", handler.ClearHistory)

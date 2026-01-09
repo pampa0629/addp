@@ -101,9 +101,8 @@ func Load() *Config {
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX",
-		commonConfig.GetEnv("META_DOCUMENT_INDEX", "asset-documents"))
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "metadata-assets")
+	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX", "meta-documents")
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "meta-assets")
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

@@ -247,7 +247,17 @@
       "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc5MzE4MDMsImlhdCI6MTc2NzkyMTAwM30.4IpHRQ6x2_4BKHdHMej6yqdJy30cRHJWlF587xaR2MI')",
       "Bash(__NEW_LINE__ echo \"=== 测试全文搜索 API ===\")",
       "Bash(/tmp/test_search.sh:*)",
-      "Bash(AUTH_HEADER='Authorization: Bearer addp-meilisearch-dev-key-change-in-prod')"
+      "Bash(AUTH_HEADER='Authorization: Bearer addp-meilisearch-dev-key-change-in-prod')",
+      "Bash(__NEW_LINE__ echo \"=== 查看搜索返回的完整字段 ===\")",
+      "Bash(/tmp/test_search_after_migration.sh:*)",
+      "Bash(__NEW_LINE__ curl -s -X DELETE \"http://localhost:17700/indexes/asset-documents\" )",
+      "Bash(__NEW_LINE__ echo \"\")",
+      "Bash(__NEW_LINE__ curl -s -X DELETE \"http://localhost:17700/indexes/meta\" )",
+      "Bash(__NEW_LINE__ curl -s -X DELETE \"http://localhost:17700/indexes/develop\" )",
+      "Bash(for index in develop manager meta meta-assets meta-documents)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njc5NTA0MzUsImlhdCI6MTc2NzkzOTYzNX0.eMw6LDg1vx3BAv1IN4hSlNVzJbE5R1OLhVA7N2Nx1ig\":*)",
+      "Bash(__NEW_LINE__ echo \"=== 测试 1: 调用新的混合检索 API ===\")",
+      "Bash(__NEW_LINE__ curl -s -X GET \"http://localhost:8081/api/search?q=测试&page=1&page_size=5\" -H \"Authorization: Bearer $TOKEN\")"
     ],
     "deny": [],
     "ask": []

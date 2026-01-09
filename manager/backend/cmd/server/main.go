@@ -130,9 +130,9 @@ func main() {
 	engineService := service.NewEngineService(engineRepo)
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
 	metadataService := service.NewMetadataService(metadataRepo, engineRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
-	searchService, err := service.NewFullTextSearchService(cfg)
+	searchService, err := service.NewHybridSearchService(cfg)
 	if err != nil {
-		logger.L().Error("初始化全文检索服务失败", "error", err)
+		logger.L().Error("初始化混合检索服务失败", "error", err)
 		os.Exit(1)
 	}
 	defer searchService.Close()

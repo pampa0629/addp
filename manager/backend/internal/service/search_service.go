@@ -18,16 +18,16 @@ import (
 )
 
 var (
-	// ErrFullTextSearchDisabled 在未配置搜索引擎时返回
-	ErrFullTextSearchDisabled = errors.New("full text search is not configured")
+	// ErrSearchDisabled 在未配置搜索引擎时返回
+	ErrSearchDisabled = errors.New("hybrid search is not configured")
 )
 
 const (
 	queryEmbeddingRuneLimit = 3500
 )
 
-// FullTextSearchService 提供全文检索能力
-type FullTextSearchService struct {
+// HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
+type HybridSearchService struct {
 	client            *meilisearch.Client
 	documentIndex     string
 	assetIndex        string
@@ -41,13 +41,13 @@ type FullTextSearchService struct {
 	vectorMaxDistance float64
 }
 
-// FullTextDocument 表示检索结果中的单个文档
-type FullTextDocument struct {
+// SearchDocument 表示检索结果中的单个文档（混合检索的统一格式）
+type SearchDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id"`
 	Score          float64                `json:"score"`
-	ResourceID     uint                   `json:"engine_id"`
-	ResourceName   string                 `json:"resource_name,omitempty"`
+	EngineID       uint                   `json:"engine_id"`
+	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
@@ -75,14 +75,14 @@ type VectorDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id,omitempty"`
 	TenantID       uint                   `json:"tenant_id,omitempty"`
-	ResourceID     uint                   `json:"engine_id,omitempty"`
+	EngineID       uint                   `json:"engine_id,omitempty"`
 	Score          float64                `json:"score"`
 	Distance       float64                `json:"distance"`
 	Model          string                 `json:"model"`
 	Modality       string                 `json:"modality"`
 	Title          string                 `json:"title,omitempty"`
 	FileName       string                 `json:"file_name,omitempty"`
-	ResourceName   string                 `json:"resource_name,omitempty"`
+	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	RelativePath   string                 `json:"relative_path,omitempty"`
@@ -90,22 +90,22 @@ type VectorDocument struct {
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
 
-// FullTextSearchResult 总体响应结构
-type FullTextSearchResult struct {
-	Total      int                `json:"total"`
-	Page       int                `json:"page"`
-	PageSize   int                `json:"page_size"`
-	Hits       []FullTextDocument `json:"results"`
-	VectorHits []VectorDocument   `json:"vector_hits,omitempty"`
+// SearchResult 混合检索总体响应结构
+type SearchResult struct {
+	Total      int              `json:"total"`
+	Page       int              `json:"page"`
+	PageSize   int              `json:"page_size"`
+	Hits       []SearchDocument `json:"results"`
+	VectorHits []VectorDocument `json:"vector_hits,omitempty"`
 }
 
-// NewFullTextSearchService 构建全文检索服务
-func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error) {
-	svc := &FullTextSearchService{
+// NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
+func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
+	svc := &HybridSearchService{
 		documentIndex: strings.TrimSpace(cfg.MeilisearchDocumentIndex),
 		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
 		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
-		log:           logger.With("component", "manager_fulltext_search"),
+		log:           logger.With("component", "manager_hybrid_search"),
 		models: map[embedding.Modality]string{
 			embedding.ModalityText:     cfg.EmbeddingService.Models["text"],
 			embedding.ModalityDocument: cfg.EmbeddingService.Models["text"],
@@ -125,7 +125,7 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 	}
 
 	if !svc.enabled {
-		svc.log.Info("Meilisearch 未配置，全文检索功能已禁用")
+		svc.log.Info("Meilisearch 未配置，混合检索功能已禁用")
 		return svc, nil
 	}
 
@@ -141,7 +141,7 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 		return nil, fmt.Errorf("failed to initialize indexes: %w", err)
 	}
 
-	svc.log.Info("全文检索服务已启用",
+	svc.log.Info("混合检索服务已启用",
 		"document_index", svc.documentIndex,
 		"asset_index", svc.assetIndex,
 		"url", cfg.MeilisearchURL,
@@ -157,7 +157,7 @@ func NewFullTextSearchService(cfg *config.Config) (*FullTextSearchService, error
 	return svc, nil
 }
 
-func (s *FullTextSearchService) initVectorComponents(cfg *config.Config) error {
+func (s *HybridSearchService) initVectorComponents(cfg *config.Config) error {
 	// 构造向量数据库配置（向量表在 manager schema 中）
 	vectorDBConfig := commonConfig.VectorDBConfig{
 		Host:      cfg.DBHost,
@@ -222,7 +222,7 @@ func (s *FullTextSearchService) initVectorComponents(cfg *config.Config) error {
 }
 
 // initIndexes 初始化 Meilisearch 索引配置
-func (s *FullTextSearchService) initIndexes() error {
+func (s *HybridSearchService) initIndexes() error {
 	// 配置文档索引
 	docIndex := s.client.Index(s.documentIndex)
 
@@ -243,7 +243,7 @@ func (s *FullTextSearchService) initIndexes() error {
 	_, err = docIndex.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
 		"engine_id",
-		"resource_type",
+		"engine_type",
 		"document_type",
 		"bucket",
 	})
@@ -265,21 +265,21 @@ func (s *FullTextSearchService) initIndexes() error {
 	return nil
 }
 
-// Enabled 返回全文检索是否可用
-func (s *FullTextSearchService) Enabled() bool {
+// Enabled 返回混合检索是否可用
+func (s *HybridSearchService) Enabled() bool {
 	return s != nil && s.enabled && s.client != nil && s.documentIndex != ""
 }
 
-// SearchDocuments 执行全文检索
-func (s *FullTextSearchService) SearchDocuments(
+// SearchDocuments 执行混合检索（全文检索 + 向量检索）
+func (s *HybridSearchService) SearchDocuments(
 	ctx context.Context,
 	tenantID *uint,
 	query string,
 	page int,
 	pageSize int,
-) (*FullTextSearchResult, error) {
+) (*SearchResult, error) {
 	if !s.Enabled() {
-		return nil, ErrFullTextSearchDisabled
+		return nil, ErrSearchDisabled
 	}
 
 	query = strings.TrimSpace(query)
@@ -325,11 +325,11 @@ func (s *FullTextSearchService) SearchDocuments(
 	}
 
 	// 解析结果
-	result := &FullTextSearchResult{
+	result := &SearchResult{
 		Total:    int(resp.EstimatedTotalHits),
 		Page:     page,
 		PageSize: pageSize,
-		Hits:     make([]FullTextDocument, 0, len(resp.Hits)),
+		Hits:     make([]SearchDocument, 0, len(resp.Hits)),
 	}
 
 	for _, hit := range resp.Hits {
@@ -359,7 +359,7 @@ func (s *FullTextSearchService) SearchDocuments(
 				if _, ok := existing[vdoc.DocumentID]; ok {
 					continue
 				}
-				converted := vectorDocumentToFullText(vdoc)
+				converted := vectorDocumentToSearchDocument(vdoc)
 				result.Hits = append(result.Hits, converted)
 				existing[converted.DocumentID] = struct{}{}
 			}
@@ -369,7 +369,7 @@ func (s *FullTextSearchService) SearchDocuments(
 	return result, nil
 }
 
-func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
+func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, query string) ([]VectorDocument, error) {
 	if s.vectorStore == nil || s.textEmbedder == nil {
 		return nil, nil
 	}
@@ -504,12 +504,12 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 				doc.TenantID = *item.Record.TenantID
 			}
 			if item.Record.EngineID != nil {
-				doc.ResourceID = *item.Record.EngineID
+				doc.EngineID = *item.Record.EngineID
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
 				assignString(meta, "file_name", &doc.FileName)
-				assignString(meta, "engine_name", &doc.ResourceName)   // 引擎名称
+				assignString(meta, "engine_name", &doc.EngineName)   // 引擎名称
 				assignString(meta, "engine_type", &doc.EngineType)     // 引擎类型
 				assignString(meta, "bucket", &doc.Bucket)
 				assignString(meta, "relative_path", &doc.RelativePath)
@@ -580,7 +580,7 @@ func (s *FullTextSearchService) vectorSearch(ctx context.Context, tenantID *uint
 }
 
 // Close 释放底层资源
-func (s *FullTextSearchService) Close() {
+func (s *HybridSearchService) Close() {
 	if s.vectorStore != nil {
 		s.vectorStore.Close()
 	}
@@ -680,7 +680,7 @@ func getStringFromMeta(meta map[string]interface{}, key string) string {
 	return ""
 }
 
-func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
+func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	meta := v.Metadata
 	fileName := v.FileName
 	if fileName == "" {
@@ -707,12 +707,12 @@ func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
 
 	contentType := getStringFromMeta(meta, "content_type")
 
-	doc := FullTextDocument{
+	doc := SearchDocument{
 		DocumentID:   v.DocumentID,
 		AssetID:      v.AssetID,
 		Score:        v.Score,
-		ResourceID:   v.ResourceID,
-		ResourceName: v.ResourceName,
+		EngineID:     v.EngineID,
+		EngineName:   v.EngineName,
 		EngineType:   v.EngineType,
 		Bucket:       bucket,
 		RelativePath:   relativePath,
@@ -732,14 +732,14 @@ func vectorDocumentToFullText(v VectorDocument) FullTextDocument {
 	return doc
 }
 
-// mapMeilisearchHit 将 Meilisearch 搜索结果映射为 FullTextDocument
-func mapMeilisearchHit(hit interface{}) FullTextDocument {
+// mapMeilisearchHit 将 Meilisearch 搜索结果映射为 SearchDocument
+func mapMeilisearchHit(hit interface{}) SearchDocument {
 	hitMap, ok := hit.(map[string]interface{})
 	if !ok {
-		return FullTextDocument{}
+		return SearchDocument{}
 	}
 
-	doc := FullTextDocument{}
+	doc := SearchDocument{}
 
 	// 基础字段
 	if val, ok := hitMap["document_id"].(string); ok {
@@ -749,12 +749,12 @@ func mapMeilisearchHit(hit interface{}) FullTextDocument {
 		doc.AssetID = val
 	}
 	if val, ok := hitMap["engine_id"].(float64); ok {
-		doc.ResourceID = uint(val)
+		doc.EngineID = uint(val)
 	}
-	if val, ok := hitMap["resource_name"].(string); ok {
-		doc.ResourceName = val
+	if val, ok := hitMap["engine_name"].(string); ok {
+		doc.EngineName = val
 	}
-	if val, ok := hitMap["resource_type"].(string); ok {
+	if val, ok := hitMap["engine_type"].(string); ok {
 		doc.EngineType = val
 	}
 	if val, ok := hitMap["bucket"].(string); ok {

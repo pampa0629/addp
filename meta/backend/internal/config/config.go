@@ -94,9 +94,8 @@ func LoadConfig() *Config {
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "metadata-assets")
-	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX",
-		commonConfig.GetEnv("META_DOCUMENT_INDEX", "asset-documents"))
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "meta-assets")
+	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX", "meta-documents")
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

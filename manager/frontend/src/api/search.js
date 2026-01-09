@@ -1,8 +1,9 @@
 import client from './client'
 
 export const searchAPI = {
-  fullText(params) {
-    return client.get('/search/fulltext', { params })
+  // 混合检索（全文检索 + 向量检索）
+  search(params) {
+    return client.get('/search', { params })
   },
 
   history(params) {
