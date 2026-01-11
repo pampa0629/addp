@@ -6,6 +6,7 @@
 
 import geopandas as gpd
 from .base import (
+    OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
@@ -65,6 +66,7 @@ def get_bounds(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 GET_AREA_METADATA = OperatorMetadata(
     name="get_area",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.PROPERTIES,
     description="计算面积",
     brief_description="计算面几何的面积,常用于土地统计和资源核算",
@@ -108,6 +110,7 @@ GET_AREA_METADATA = OperatorMetadata(
 
 GET_LENGTH_METADATA = OperatorMetadata(
     name="get_length",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.PROPERTIES,
     description="计算长度",
     brief_description="计算线几何的长度,常用于道路统计和网络分析",
@@ -151,6 +154,7 @@ GET_LENGTH_METADATA = OperatorMetadata(
 
 GET_BOUNDS_METADATA = OperatorMetadata(
     name="get_bounds",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.PROPERTIES,
     description="获取边界框",
     brief_description="获取几何对象的边界框坐标(minx, miny, maxx, maxy),常用于范围查询",

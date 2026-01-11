@@ -749,7 +749,7 @@ const handleVectorize = async () => {
     }
 
     // 调用后端 API
-    const response = await client.post('/operators/embedding/execute', {
+    const response = await client.post('/embedding', {
       operator_name: 'embedding',
       params: params,
       execute_now: true
@@ -799,7 +799,7 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
     try {
       attempts++
 
-      const response = await client.get(`/operators/tasks/${taskId}`)
+      const response = await client.get(`/embedding/tasks/${taskId}`)
       const data = response?.data || response
 
       console.log(`[轮询 ${attempts}/${maxAttempts}] 任务状态:`, data.task_status, data.message)

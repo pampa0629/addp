@@ -168,7 +168,7 @@ def get_operators():
 # 即时执行 (供 Develop 使用)
 # ========================================
 
-@app.route('/api/spatial/workflow', methods=['POST'])
+@app.route('/api/workflow', methods=['POST'])
 def execute_workflow_endpoint():
     """
     即时执行工作流
@@ -249,7 +249,7 @@ def execute_workflow_endpoint():
         }), 500
 
 
-@app.route('/api/spatial/operators/<operator_name>/execute', methods=['POST'])
+@app.route('/api/operators/<operator_name>/execute', methods=['POST'])
 def execute_operator_endpoint(operator_name):
     """
     执行单个算子
@@ -297,7 +297,7 @@ def execute_operator_endpoint(operator_name):
 # 执行状态查询
 # ========================================
 
-@app.route('/api/spatial/executions/<execution_id>', methods=['GET'])
+@app.route('/api/executions/<execution_id>', methods=['GET'])
 def get_execution_status(execution_id):
     """
     查询执行状态
@@ -353,6 +353,12 @@ def register_to_system():
     capabilities = {
         "compute": [{
             "dev_modes": ["workflow"],
+            "api_endpoints": {
+                "operators": "/api/operators",
+                "execute": "/api/operators/:name/execute",
+                "workflow": "/api/workflow",
+                "executions": "/api/executions/:id"
+            },
             "engine": "spark",
             "scale": "distributed",
             "features": ["big_data", "distributed"],

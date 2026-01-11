@@ -13,8 +13,8 @@ import (
 )
 
 var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRepository, *commonClient.MetaClient, string, *ObjectContentRegistry) (PreviewProvider, error){
-	"database-table": func(repo *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
-		return NewDatabaseTablePreviewProvider(repo), nil
+	"database-table": func(repo *repository.MetadataRepository, metaClient *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
+		return NewDatabaseTablePreviewProvider(repo, metaClient), nil
 	},
 	"doc-collection": func(_ *repository.MetadataRepository, _ *commonClient.MetaClient, _ string, _ *ObjectContentRegistry) (PreviewProvider, error) {
 		return NewDocCollectionPreviewProvider(), nil
@@ -32,7 +32,7 @@ var builtinProviderFactoriesWithContent = map[string]func(*repository.MetadataRe
 
 var builtinProviderFactories = map[string]builtinProviderFactory{
 	"database-table": func(repo *repository.MetadataRepository) (PreviewProvider, error) {
-		return NewDatabaseTablePreviewProvider(repo), nil
+		return NewDatabaseTablePreviewProvider(repo, nil), nil
 	},
 	"doc-collection": func(_ *repository.MetadataRepository) (PreviewProvider, error) {
 		return NewDocCollectionPreviewProvider(), nil

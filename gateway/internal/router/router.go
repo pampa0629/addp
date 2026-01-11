@@ -89,10 +89,25 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	api.Use(rateLimiterMiddleware.Handler())     // 限流
 	api.Use(accessLoggerMiddleware.Handler())    // 访问日志
 	{
-		// System 模块路由（用户、日志、资源、应用管理）
+		// Manager 模块的空间数据 API（必须在 System 的 /engines 路由之前注册，避免冲突）
+		api.Any("/engines/:id/spatial/*path", managerProxy.Handle)
+		api.Any("/engines/:id/features/*path", managerProxy.Handle)
+		api.Any("/engines/:id/scan-tasks", managerProxy.Handle)
+		api.Any("/engines/:id/scan-tasks/*path", managerProxy.Handle)
+		api.Any("/engines/:id/scan-runs", managerProxy.Handle)
+		api.Any("/engines/:id/scan-runs/*path", managerProxy.Handle)
+
+		// System 模块的具体 /engines 路由（不能使用 /engines/*path 通配符，会和上面冲突）
+		api.Any("/engines", systemProxy.Handle)
+		api.Any("/engines/:id", systemProxy.Handle)
+		api.Any("/engines/:id/test", systemProxy.Handle)
+		api.Any("/engines/:id/schemas", systemProxy.Handle)
+		api.Any("/engines/:id/tables", systemProxy.Handle)
+		api.Any("/engines/test-connection", systemProxy.Handle)
+
+		// System 模块的其他路由（用户、日志、应用管理）
 		api.Any("/users/*path", systemProxy.Handle)
 		api.Any("/logs/*path", systemProxy.Handle)
-		api.Any("/engines/*path", systemProxy.Handle)
 		api.Any("/applications/*path", systemProxy.Handle)
 
 		// Manager 模块路由（配置、数据源、目录、预览、搜索、算子）
@@ -104,9 +119,6 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		api.Any("/explorer/*path", managerProxy.Handle)  // 新版数据探查 API
 		api.Any("/data-explorer/*path", managerProxy.Handle) // 旧版（保留向后兼容）
 		api.Any("/search/*path", managerProxy.Handle)
-		// 算子路由：默认路由到 Manager 模块（Manager 有 embedding、mvt_tile_cache 算子）
-		api.Any("/operators", managerProxy.Handle)
-		api.Any("/operators/*path", managerProxy.Handle)
 		// 向量化任务历史查询路由（Manager 模块）
 		api.Any("/embedding/*path", managerProxy.Handle)
 

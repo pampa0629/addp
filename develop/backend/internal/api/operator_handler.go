@@ -43,7 +43,7 @@ func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
 // @Summary 获取指定模块的算子列表
 // @Tags Operator
 // @Produce json
-// @Param module path string true "模块名称" Enums(python, meta, transfer, manager, spark)
+// @Param module path string true "模块名称（任务提供者或工作流引擎）"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/develop/operators/modules/{module} [get]
 func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
@@ -67,7 +67,7 @@ func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 // @Summary 根据引擎类型获取算子列表
 // @Tags Operator
 // @Produce json
-// @Param engineType path string true "引擎类型" Enums(api.python-workflow, api.spark_workflow)
+// @Param engineType path string true "工作流引擎类型（动态从 system 获取）"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/develop/operators/engine-types/{engineType} [get]
 func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {

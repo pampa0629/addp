@@ -1,31 +1,14 @@
 package models
 
 import (
-	"database/sql/driver"
-	"encoding/json"
 	"time"
 
 	commonModels "github.com/addp/common/models"
 )
 
-// Engine 直接映射到 system.engines 表
-type Engine struct {
-	ID             uint           `json:"id" gorm:"primaryKey"`
-	Name           string         `json:"name"`
-	EngineType     string         `json:"engine_type"` // postgresql, minio
-	ConnectionInfo ConnectionInfo `json:"connection_info" gorm:"type:jsonb"`
-	Description    string         `json:"description"`
-	CreatedBy      *uint          `json:"created_by"`
-	TenantID       *uint          `json:"tenant_id"`
-	IsActive       bool           `json:"is_active" gorm:"default:true"`
-	CreatedAt      time.Time      `json:"created_at"`
-	UpdatedAt      time.Time      `json:"updated_at"`
-}
-
-// TableName 指定表名为 system.engines
-func (Engine) TableName() string {
-	return "system.engines"
-}
+// 直接使用 Common 模块的类型，避免重复定义
+type Engine = commonModels.Engine
+type ConnectionInfo = commonModels.ConnectionInfo
 
 // SearchHistory 记录用户的数据检索历史（全文检索 + 向量检索），按用户隔离
 type SearchHistory struct {
@@ -35,21 +18,6 @@ type SearchHistory struct {
 	Query     string    `json:"query" gorm:"size:512;not null;uniqueIndex:idx_search_history_user_query,priority:2"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// ConnectionInfo 存储连接信息
-type ConnectionInfo map[string]interface{}
-
-func (c ConnectionInfo) Value() (driver.Value, error) {
-	return json.Marshal(c)
-}
-
-func (c *ConnectionInfo) Scan(value interface{}) error {
-	bytes, ok := value.([]byte)
-	if !ok {
-		return nil
-	}
-	return json.Unmarshal(bytes, c)
 }
 
 // JSONMap is now imported from common/models
@@ -136,6 +104,7 @@ type MetaItemLite struct {
 type TablePreview struct {
 	Mode            string                   `json:"mode"`
 	Columns         []string                 `json:"columns"`
+	ColumnMetadata  []ColumnMetadata         `json:"column_metadata,omitempty"` // 列元数据（类型、是否可空、主键等）
 	Rows            []map[string]interface{} `json:"rows"`
 	Total           int                      `json:"total"`
 	Page            int                      `json:"page"`
@@ -147,6 +116,15 @@ type TablePreview struct {
 	Schema     string `json:"schema,omitempty"`     // Schema name for MVT API
 	Table      string `json:"table,omitempty"`      // Table name for MVT API
 	EngineType string `json:"engineType,omitempty"` // Engine type (e.g., "postgresql")
+}
+
+// ColumnMetadata 列元数据
+type ColumnMetadata struct {
+	ColumnName   string `json:"column_name"`    // 列名
+	DataType     string `json:"data_type"`      // 数据类型（如 varchar, int4, geometry）
+	IsNullable   bool   `json:"is_nullable"`    // 是否可为空
+	IsPrimaryKey bool   `json:"is_primary_key"` // 是否主键
+	Comment      string `json:"comment"`        // 列注释
 }
 
 type ObjectPreview struct {

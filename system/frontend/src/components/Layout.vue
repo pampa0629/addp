@@ -66,6 +66,10 @@
               <el-icon><Document /></el-icon>
               <span>日志审计</span>
             </el-menu-item>
+            <el-menu-item index="/cleanup" @click="handleMenuClick('system', 'cleanup')">
+              <el-icon><Delete /></el-icon>
+              <span>垃圾清理</span>
+            </el-menu-item>
             <el-menu-item index="/docs" @click="handleMenuClick('system', 'docs')">
               <el-icon><Monitor /></el-icon>
               <span>API 文档</span>
@@ -96,7 +100,8 @@ import {
   DataAnalysis,
   HomeFilled,
   Monitor,
-  Key
+  Key,
+  Delete
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 

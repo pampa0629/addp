@@ -20,7 +20,7 @@ func (c SQLExecutionConfig) GetType() string {
 type WorkflowExecutionConfig struct {
 	Type       string `json:"type"`        // "workflow"
 	EngineID   uint   `json:"engine_id"`   // 工作流引擎 ID
-	EngineType string `json:"engine_type"` // "api.python-workflow" | "api.spark_workflow"
+	EngineType string `json:"engine_type"` // 工作流引擎类型（动态从 system 获取）
 
 	// 引擎特定配置（可选）
 	EngineSpecific map[string]interface{} `json:"engine_specific,omitempty"`

@@ -11,6 +11,7 @@ import os
 import requests
 from sqlalchemy import create_engine
 from .base import (
+    OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
@@ -205,6 +206,7 @@ def save(data: gpd.GeoDataFrame, params: Dict[str, Any]) -> Dict[str, Any]:
 
 LOAD_METADATA = OperatorMetadata(
     name="load",
+    type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据加载",
     brief_description="从数据库表、文件或GeoJSON对象加载空间数据,支持多种数据源",
@@ -300,6 +302,7 @@ LOAD_METADATA = OperatorMetadata(
 
 SAVE_METADATA = OperatorMetadata(
     name="save",
+    type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据保存",
     brief_description="将空间数据保存到数据库表或文件,支持多种输出格式",

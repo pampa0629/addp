@@ -2,32 +2,8 @@
   "module": "meta",
   "title": "元数据模块",
   "version": "0.0.21",
-  "lastUpdate": "2026-01-07",
+  "lastUpdate": "2026-01-09",
   "categories": [
-    {
-      "name": "算子管理",
-      "description": "元数据扫描算子",
-      "apis": [
-        {
-          "name": "获取算子列表",
-          "method": "GET",
-          "path": "/api/meta/operators",
-          "description": "获取所有可用的元数据扫描算子",
-          "auth": true,
-          "response": "{\n  \"data\": [\n    {\n      \"id\": \"scan_basic\",\n      \"name\": \"基础扫描\",\n      \"type\": \"scan\",\n      \"category\": \"元数据管理\"\n    }\n  ],\n  \"total\": 2\n}"
-        },
-        {
-          "name": "执行算子",
-          "method": "POST",
-          "path": "/api/meta/operators/:name/execute",
-          "description": "执行指定的算子",
-          "auth": true,
-          "params": ":name - 算子名称",
-          "request": "{\n  \"params\": {\n    \"engine_id\": 1,\n    \"schema_names\": [\"public\"]\n  },\n  \"execute_now\": true\n}",
-          "response": "{\n  \"task_id\": \"task_12345\",\n  \"task_status\": \"running\",\n  \"result\": {...}\n}"
-        }
-      ]
-    },
     {
       "name": "引擎和Schema管理",
       "description": "引擎资源、Schema列表查询",

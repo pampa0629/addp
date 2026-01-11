@@ -1,9 +1,15 @@
 -- 全域数据平台数据库初始化脚本
 -- 为各个模块创建独立的 schema
 --
+-- 重要变更（2026-01-09）:
+-- - 所有表结构由各模块的 GORM AutoMigrate 创建
+-- - 本脚本仅负责：扩展安装、Schema 创建、触发器函数
+-- - 旧版 CREATE TABLE 语句已移除，请参考各模块的 models 定义
+--
 -- 空间数据与向量扩展支持:
 -- - PostGIS: 空间数据类型和空间函数 (geometry, geography等)
 -- - pgvector: 向量嵌入和相似度搜索 (vector类型, 支持多模态AI应用)
+--   * manager schema: Manager 模块专用（向量嵌入表）
 
 -- ==================== PostGIS 扩展 ====================
 -- PostGIS 扩展预装于 PostGIS 镜像中
@@ -12,359 +18,42 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 CREATE EXTENSION IF NOT EXISTS postgis_topology;
 
--- ==================== pgvector 扩展 ====================
--- pgvector 扩展已通过自定义 Docker 镜像预装 (Dockerfile.postgres)
--- (从源码编译 v0.8.0,支持向量检索和相似度搜索)
--- 用于多模态向量检索、相似度搜索、最近邻查询等场景
-CREATE EXTENSION IF NOT EXISTS vector;
+-- ==================== 创建 Schema ====================
+-- 所有表由各模块的 GORM AutoMigrate 自动创建
+-- 各模块启动时会自动创建和迁移表结构
 
--- ==================== System 模块 ====================
+-- System 模块 (用户、租户、引擎、应用、API密钥)
 CREATE SCHEMA IF NOT EXISTS system;
 
--- 应用管理表（Application Management）
-CREATE TABLE IF NOT EXISTS system.applications (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-
-    -- 所属租户
-    tenant_id INTEGER NOT NULL,
-
-    -- 权限配置
-    allowed_services TEXT[],                    -- 允许访问的服务列表
-    rate_limit_per_minute INTEGER DEFAULT 60,   -- 限流配置（每分钟请求数）
-
-    -- 状态
-    status VARCHAR(50) DEFAULT 'active',        -- active/suspended/revoked
-
-    -- 审计
-    created_by INTEGER,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    deleted_at TIMESTAMP,
-
-    UNIQUE(tenant_id, name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_applications_tenant ON system.applications(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_applications_status ON system.applications(status);
-
--- API Key 管理表
-CREATE TABLE IF NOT EXISTS system.api_keys (
-    id SERIAL PRIMARY KEY,
-    application_id INTEGER NOT NULL REFERENCES system.applications(id) ON DELETE CASCADE,
-
-    -- API Key（只存储 hash）
-    key_prefix VARCHAR(20) NOT NULL,            -- "addp_live_" 前缀（明文存储，用于识别）
-    key_hash VARCHAR(64) NOT NULL,              -- SHA256 hash（用于验证）
-
-    -- 元数据
-    name VARCHAR(255),                          -- Key 名称（便于识别多个 Key）
-    last_used_at TIMESTAMP,                     -- 最后使用时间
-
-    -- 生命周期
-    expires_at TIMESTAMP,                       -- 过期时间
-    status VARCHAR(50) DEFAULT 'active',        -- active/revoked
-
-    -- 审计
-    created_by INTEGER,
-    created_at TIMESTAMP DEFAULT NOW(),
-    revoked_at TIMESTAMP,
-    revoked_by INTEGER,
-
-    UNIQUE(key_hash)
-);
-
-CREATE INDEX IF NOT EXISTS idx_api_keys_application ON system.api_keys(application_id);
-CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON system.api_keys(key_hash);
-CREATE INDEX IF NOT EXISTS idx_api_keys_status ON system.api_keys(status);
-
--- ==================== Manager 模块 ====================
+-- Manager 模块 (搜索历史、向量嵌入、快显缓存)
 CREATE SCHEMA IF NOT EXISTS manager;
 
--- 搜索历史表（用于记录用户搜索行为，由 Manager 模块管理）
--- 注意：Manager 不再管理元数据表（managed_table, managed_file 等），统一使用 Meta 模块
+-- Manager 模块需要使用 pgvector 扩展来存储向量嵌入
+-- 在 manager schema 中创建 vector 扩展，使 vector 类型可用
+CREATE EXTENSION IF NOT EXISTS vector SCHEMA manager;
 
--- 搜索历史表
-CREATE TABLE IF NOT EXISTS manager.search_histories (
-    id SERIAL PRIMARY KEY,
-    tenant_id INT NOT NULL,
-    user_id INT NOT NULL,
-    query_text VARCHAR(512) NOT NULL,
-    result_count INT DEFAULT 0,
-    searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_search_histories_tenant ON manager.search_histories(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_search_histories_user ON manager.search_histories(user_id);
-CREATE INDEX IF NOT EXISTS idx_search_histories_searched_at ON manager.search_histories(searched_at DESC);
-
--- 向量嵌入表（多模态向量化）
-CREATE TABLE IF NOT EXISTS manager.embeddings (
-    id SERIAL PRIMARY KEY,
-    engine_id INT NOT NULL,
-    bucket VARCHAR(255) NOT NULL,
-    object_key TEXT NOT NULL,
-    fingerprint VARCHAR(64) NOT NULL,
-    data_updated_at TIMESTAMP,
-    embedding vector(1024) NOT NULL,
-    modality VARCHAR(20) NOT NULL,
-    model VARCHAR(100) NOT NULL,
-    file_size BIGINT,
-    content_type VARCHAR(255),
-    metadata JSONB,
-    tenant_id INT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (fingerprint, modality)
-);
-
-CREATE INDEX IF NOT EXISTS idx_embeddings_engine_bucket ON manager.embeddings(engine_id, bucket);
-CREATE INDEX IF NOT EXISTS idx_embeddings_fingerprint_modality ON manager.embeddings(fingerprint, modality);
-CREATE INDEX IF NOT EXISTS idx_embeddings_tenant ON manager.embeddings(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_embeddings_data_updated_at ON manager.embeddings(data_updated_at);
-
--- 快显任务表
-CREATE TABLE IF NOT EXISTS manager.quick_view (
-    id SERIAL PRIMARY KEY,
-    tenant_id INT NOT NULL,
-    engine_id INT NOT NULL,
-    schema_name VARCHAR(255) NOT NULL,
-    table_name VARCHAR(255) NOT NULL,
-
-    -- 快显状态
-    status VARCHAR(50) NOT NULL DEFAULT 'none', -- 'none', 'generating', 'ready', 'failed'
-    error_message TEXT,
-
-    -- 缓存配置
-    min_zoom INT, -- 自动计算得到（不设默认值）
-    max_zoom INT DEFAULT 18,
-    actual_max_zoom INT, -- 实际生成到第几层
-
-    -- 统计信息
-    total_tiles INT DEFAULT 0,
-    cached_tiles INT DEFAULT 0,
-    last_zoom_avg_time_ms FLOAT, -- 最后一层的平均生成时间
-    last_zoom_avg_size_kb FLOAT, -- 最后一层的平均瓦片大小
-
-    -- 停止条件配置
-    stop_threshold_time_ms FLOAT DEFAULT 300,
-    stop_threshold_size_kb FLOAT DEFAULT 100,
-
-    -- 指纹（用于 MinIO 路径）
-    fingerprint VARCHAR(64) NOT NULL,
-
-    -- 空间范围（存储快照，避免依赖 meta）
-    extent JSONB, -- [minLng, minLat, maxLng, maxLat]
-
-    -- 时间戳
-    started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(tenant_id, engine_id, schema_name, table_name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_quick_view_status ON manager.quick_view(status);
-CREATE INDEX IF NOT EXISTS idx_quick_view_fingerprint ON manager.quick_view(fingerprint);
-
--- ==================== Meta 模块 ====================
+-- Meta 模块 (元数据节点、元数据条目、扫描任务)
 CREATE SCHEMA IF NOT EXISTS metadata;
 
--- 元数据节点表（schema、bucket、prefix 等层级结构）
-CREATE TABLE IF NOT EXISTS metadata.meta_node (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    engine_id BIGINT NOT NULL,
-    parent_node_id BIGINT REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
-    node_type VARCHAR(64) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    depth INT NOT NULL DEFAULT 0,
-    path TEXT,
-    full_name TEXT,
-    scan_status VARCHAR(20) DEFAULT '未扫描',
-    scanned_at TIMESTAMP WITH TIME ZONE,
-    scan_error TEXT,
-    item_count INT DEFAULT 0,
-    total_size_bytes BIGINT DEFAULT 0,
-    attributes JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE (engine_id, name, parent_node_id),
-    CHECK (depth >= 0)
-);
-
-CREATE INDEX IF NOT EXISTS idx_meta_node_engine ON metadata.meta_node(engine_id);
-CREATE INDEX IF NOT EXISTS idx_meta_node_parent ON metadata.meta_node(parent_node_id);
-CREATE INDEX IF NOT EXISTS idx_meta_node_type ON metadata.meta_node(node_type);
-
--- 元数据条目表（table、object 等具体数据项）
-CREATE TABLE IF NOT EXISTS metadata.meta_item (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    engine_id BIGINT NOT NULL,
-    node_id BIGINT NOT NULL REFERENCES metadata.meta_node(id) ON DELETE CASCADE,
-    item_type VARCHAR(64) NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    full_name TEXT,
-    fingerprint VARCHAR(64) NOT NULL,
-    row_count BIGINT,
-    size_bytes BIGINT,
-    data_updated_at TIMESTAMP WITH TIME ZONE,
-    scanned_at TIMESTAMP WITH TIME ZONE,
-    attributes JSONB DEFAULT '{}'::JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE,
-    UNIQUE (node_id, name)
-);
-
-CREATE INDEX IF NOT EXISTS idx_meta_item_node ON metadata.meta_item(node_id);
-CREATE INDEX IF NOT EXISTS idx_meta_item_type ON metadata.meta_item(item_type);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_item_fingerprint ON metadata.meta_item(fingerprint);
-
--- 扫描任务定义表（手动或定时扫描任务）
-CREATE TABLE IF NOT EXISTS metadata.scan_tasks (
-    id BIGSERIAL PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    engine_id BIGINT NOT NULL,
-    name VARCHAR(128) NOT NULL,
-    description VARCHAR(512),
-    schedule_type VARCHAR(32) NOT NULL,
-    schedule VARCHAR(128),
-    enabled BOOLEAN DEFAULT false,
-    parameters JSONB DEFAULT '{}'::JSONB,
-    last_run_at TIMESTAMP WITH TIME ZONE,
-    next_run_at TIMESTAMP WITH TIME ZONE,
-    created_by BIGINT,
-    updated_by BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE
-);
-
-CREATE INDEX IF NOT EXISTS idx_scan_tasks_tenant ON metadata.scan_tasks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_scan_tasks_engine ON metadata.scan_tasks(engine_id);
-CREATE INDEX IF NOT EXISTS idx_scan_tasks_enabled ON metadata.scan_tasks(enabled);
-
--- 扫描任务执行记录表
-CREATE TABLE IF NOT EXISTS metadata.scan_task_runs (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT REFERENCES metadata.scan_tasks(id) ON DELETE SET NULL,
-    tenant_id BIGINT NOT NULL,
-    engine_id BIGINT NOT NULL,
-    name VARCHAR(180),
-    storage_type VARCHAR(64),
-    trigger_type VARCHAR(32) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    error_message TEXT,
-    parameters JSONB DEFAULT '{}'::JSONB,
-    result_summary JSONB DEFAULT '{}'::JSONB,
-    progress_total INT DEFAULT 0,
-    progress_current INT DEFAULT 0,
-    progress_message VARCHAR(255),
-    progress_percent DECIMAL(5,2) DEFAULT 0,
-    started_at TIMESTAMP WITH TIME ZONE,
-    completed_at TIMESTAMP WITH TIME ZONE,
-    duration_ms BIGINT DEFAULT 0,
-    trigger_user_id BIGINT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_scan_task_runs_task ON metadata.scan_task_runs(task_id);
-CREATE INDEX IF NOT EXISTS idx_scan_task_runs_tenant ON metadata.scan_task_runs(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_scan_task_runs_engine ON metadata.scan_task_runs(engine_id);
-CREATE INDEX IF NOT EXISTS idx_scan_task_runs_status ON metadata.scan_task_runs(status);
-
--- ==================== Transfer 模块 ====================
+-- Transfer 模块 (数据传输任务、执行记录、字段映射)
 CREATE SCHEMA IF NOT EXISTS transfer;
 
--- 任务表
-CREATE TABLE IF NOT EXISTS transfer.tasks (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    type VARCHAR(50) NOT NULL, -- 'import', 'export', 'sync'
-    mode VARCHAR(20) DEFAULT 'batch', -- 'batch', 'stream', 'micro-batch'
-    source_id BIGINT, -- 关联 system.engines
-    target_id BIGINT, -- 关联 system.engines
-    config JSONB NOT NULL,
-    schedule VARCHAR(100), -- Cron 表达式
-    batch_size INTEGER DEFAULT 1000,
-    max_parallelism INTEGER DEFAULT 1,
-    retry_policy JSONB,
-    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'running', 'success', 'failed', 'paused'
-    progress NUMERIC(5,2) DEFAULT 0,
-    last_execution_id BIGINT,
-    created_by BIGINT,
-    tenant_id BIGINT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+-- Develop 模块 (SQL脚本、空间任务、执行结果)
+CREATE SCHEMA IF NOT EXISTS develop;
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON transfer.tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_type ON transfer.tasks(type);
-CREATE INDEX IF NOT EXISTS idx_tasks_tenant ON transfer.tasks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_source ON transfer.tasks(source_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_target ON transfer.tasks(target_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_last_execution ON transfer.tasks(last_execution_id);
+-- Orchestrator 模块 (工作流编排)
+CREATE SCHEMA IF NOT EXISTS orchestrator;
 
--- 任务执行记录表
-CREATE TABLE IF NOT EXISTS transfer.task_executions (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
-    status TEXT NOT NULL, -- 'pending', 'running', 'success', 'failed', 'cancelled'
-    start_time TIMESTAMP NOT NULL,
-    end_time TIMESTAMP,
-    records_read BIGINT DEFAULT 0,
-    records_written BIGINT DEFAULT 0,
-    bytes_read BIGINT DEFAULT 0,
-    bytes_written BIGINT DEFAULT 0,
-    error_msg TEXT,
-    logs TEXT,
-    checkpoint_offset BIGINT DEFAULT 0,
-    checkpoint_state JSONB,
-    trigger_type VARCHAR(50), -- 'manual', 'schedule', 'api'
-    trigger_by BIGINT
-);
+-- Gateway 模块 (API访问日志)
+CREATE SCHEMA IF NOT EXISTS gateway;
 
-CREATE INDEX IF NOT EXISTS idx_executions_task ON transfer.task_executions(task_id);
-CREATE INDEX IF NOT EXISTS idx_executions_status ON transfer.task_executions(status);
-CREATE INDEX IF NOT EXISTS idx_executions_start_time ON transfer.task_executions(start_time);
+-- Copilot 模块 (AI对话、会话管理)
+CREATE SCHEMA IF NOT EXISTS copilot;
 
--- 字段映射表
-CREATE TABLE IF NOT EXISTS transfer.data_mappings (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT NOT NULL REFERENCES transfer.tasks(id) ON DELETE CASCADE,
-    source_field VARCHAR(255) NOT NULL,
-    target_field VARCHAR(255) NOT NULL,
-    transform VARCHAR(500),
-    default_value TEXT,
-    field_type VARCHAR(50),
-    format VARCHAR(100),
-    nullable BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_mappings_task ON transfer.data_mappings(task_id);
-
--- Checkpoint 表（用于断点续传）
-CREATE TABLE IF NOT EXISTS transfer.checkpoints (
-    id BIGSERIAL PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    execution_id BIGINT NOT NULL,
-    "offset" BIGINT NOT NULL,
-    partition_id VARCHAR(255),
-    state JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_checkpoint_task_exec ON transfer.checkpoints(task_id, execution_id);
-CREATE INDEX IF NOT EXISTS idx_checkpoint_partition ON transfer.checkpoints(partition_id);
-
--- ==================== 创建更新时间戳触发器 ====================
+-- ==================== 创建更新时间戳触发器函数 ====================
+-- 此函数用于自动更新 updated_at 字段
+-- 各模块的 AutoMigrate 可能会创建表，但不会创建触发器
+-- 因此在这里预先定义触发器函数，模块代码可以引用
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -373,261 +62,38 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Manager 模块触发器
-DROP TRIGGER IF EXISTS update_embeddings_updated_at ON manager.embeddings;
-CREATE TRIGGER update_embeddings_updated_at BEFORE UPDATE ON manager.embeddings
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- ==================== 注释 ====================
+COMMENT ON SCHEMA system IS 'System 模块：用户、租户、引擎、应用、API密钥等核心系统数据';
+COMMENT ON SCHEMA manager IS 'Manager 模块：搜索历史、向量嵌入、快显缓存等数据管理功能';
+COMMENT ON SCHEMA metadata IS 'Meta 模块：元数据节点、元数据条目、扫描任务等元数据服务';
+COMMENT ON SCHEMA transfer IS 'Transfer 模块：数据传输任务、执行记录、字段映射等';
+COMMENT ON SCHEMA develop IS 'Develop 模块：SQL脚本、空间任务、执行结果等开发工作台功能';
+COMMENT ON SCHEMA orchestrator IS 'Orchestrator 模块：工作流编排相关表';
+COMMENT ON SCHEMA gateway IS 'Gateway 模块：API访问日志等网关功能';
+COMMENT ON SCHEMA copilot IS 'Copilot 模块：AI对话、会话管理、上下文处理';
 
-DROP TRIGGER IF EXISTS update_quick_view_updated_at ON manager.quick_view;
-CREATE TRIGGER update_quick_view_updated_at BEFORE UPDATE ON manager.quick_view
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+COMMENT ON FUNCTION update_updated_at_column() IS '触发器函数：自动更新 updated_at 时间戳';
 
--- System 模块触发器
-DROP TRIGGER IF EXISTS update_applications_updated_at ON system.applications;
-CREATE TRIGGER update_applications_updated_at BEFORE UPDATE ON system.applications
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Meta 模块触发器
-DROP TRIGGER IF EXISTS update_scan_tasks_updated_at ON metadata.scan_tasks;
-CREATE TRIGGER update_scan_tasks_updated_at BEFORE UPDATE ON metadata.scan_tasks
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_scan_task_runs_updated_at ON metadata.scan_task_runs;
-CREATE TRIGGER update_scan_task_runs_updated_at BEFORE UPDATE ON metadata.scan_task_runs
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Transfer 模块触发器
-DROP TRIGGER IF EXISTS update_tasks_updated_at ON transfer.tasks;
-CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON transfer.tasks
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- ==================== 创建视图 ====================
-
--- 任务执行统计视图
-CREATE OR REPLACE VIEW transfer.task_execution_stats AS
-SELECT
-    t.id as task_id,
-    t.name as task_name,
-    COUNT(e.id) as total_executions,
-    COUNT(CASE WHEN e.status = 'success' THEN 1 END) as success_count,
-    COUNT(CASE WHEN e.status = 'failed' THEN 1 END) as failed_count,
-    MAX(e.end_time) as last_execution_time,
-    AVG(EXTRACT(EPOCH FROM (e.end_time - e.start_time))) as avg_duration_seconds
-FROM transfer.tasks t
-LEFT JOIN transfer.task_executions e ON e.task_id = t.id
-GROUP BY t.id, t.name;
-
--- ==================== 插入示例数据（可选）====================
-
--- Manager: 示例数据源
--- INSERT INTO manager.data_sources (name, type, connection_info, created_by) VALUES
--- ('Sample MySQL', 'mysql', '{"host": "localhost", "port": 3306, "database": "test"}', 1);
-
--- Meta: 示例数据集
--- INSERT INTO metadata.datasets (name, type, source_id, description) VALUES
--- ('users_table', 'table', 1, 'User information table');
-
--- Transfer: 示例任务
--- INSERT INTO transfer.tasks (name, type, config, created_by) VALUES
--- ('Daily User Sync', 'sync', '{"batch_size": 1000}', 1);
-
--- ==================== Develop 模块 (SQL 开发工作台) ====================
-CREATE SCHEMA IF NOT EXISTS develop;
-
--- SQL 脚本表
-CREATE TABLE IF NOT EXISTS develop.scripts (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    sql_content TEXT NOT NULL,
-    engine_id INTEGER NOT NULL REFERENCES system.engines(id),
-    version INTEGER DEFAULT 1,
-    status VARCHAR(20) DEFAULT 'draft',  -- draft, published, archived
-    created_by INTEGER NOT NULL REFERENCES system.users(id),
-    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP,
-    CONSTRAINT unique_script_name_per_tenant UNIQUE(tenant_id, name, deleted_at)
-);
-
-CREATE INDEX IF NOT EXISTS idx_develop_scripts_tenant ON develop.scripts(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_develop_scripts_status ON develop.scripts(status);
-CREATE INDEX IF NOT EXISTS idx_develop_scripts_engine ON develop.scripts(engine_id);
-CREATE INDEX IF NOT EXISTS idx_develop_scripts_created_by ON develop.scripts(created_by);
-
--- 脚本版本历史表
-CREATE TABLE IF NOT EXISTS develop.script_versions (
-    id SERIAL PRIMARY KEY,
-    script_id INTEGER NOT NULL REFERENCES develop.scripts(id) ON DELETE CASCADE,
-    version INTEGER NOT NULL,
-    sql_content TEXT NOT NULL,
-    change_description TEXT,
-    created_by INTEGER NOT NULL REFERENCES system.users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_script_version UNIQUE(script_id, version)
-);
-
-CREATE INDEX IF NOT EXISTS idx_develop_versions_script ON develop.script_versions(script_id);
-
--- 执行记录表
-CREATE TABLE IF NOT EXISTS develop.executions (
-    id SERIAL PRIMARY KEY,
-    script_id INTEGER REFERENCES develop.scripts(id) ON DELETE SET NULL,
-    engine_id INTEGER NOT NULL REFERENCES system.engines(id),
-    sql_content TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL,  -- running, success, failed, timeout
-    rows_affected INTEGER,
-    execution_time_ms INTEGER,
-    error_message TEXT,
-    executed_by INTEGER NOT NULL REFERENCES system.users(id),
-    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
-    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_develop_executions_script ON develop.executions(script_id);
-CREATE INDEX IF NOT EXISTS idx_develop_executions_tenant ON develop.executions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_develop_executions_started ON develop.executions(started_at DESC);
-CREATE INDEX IF NOT EXISTS idx_develop_executions_status ON develop.executions(status);
-
--- 脚本依赖关系表
-CREATE TABLE IF NOT EXISTS develop.script_dependencies (
-    id SERIAL PRIMARY KEY,
-    script_id INTEGER NOT NULL REFERENCES develop.scripts(id) ON DELETE CASCADE,
-    depends_on_script_id INTEGER NOT NULL REFERENCES develop.scripts(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_dependency UNIQUE(script_id, depends_on_script_id),
-    CONSTRAINT no_self_dependency CHECK (script_id != depends_on_script_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_develop_deps_script ON develop.script_dependencies(script_id);
-CREATE INDEX IF NOT EXISTS idx_develop_deps_depends ON develop.script_dependencies(depends_on_script_id);
-
--- 空间任务定义表（GIS 工作流任务）
-CREATE TABLE IF NOT EXISTS develop.spatial_tasks (
-    id SERIAL PRIMARY KEY,
-    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
-    name VARCHAR(128) NOT NULL,
-    description TEXT,
-    workflow_def JSONB NOT NULL,       -- DAG 定义（算子链）
-    input_schema JSONB,                -- 参数定义（参数化）
-    output_schema JSONB,               -- 输出定义
-    schedule VARCHAR(100),             -- Cron 表达式（可选）
-    status VARCHAR(20) DEFAULT 'active',
-    last_execution_id UUID,
-    last_execution_status VARCHAR(20),
-    last_execution_started_at TIMESTAMP,
-    last_execution_finished_at TIMESTAMP,
-    created_by INTEGER REFERENCES system.users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP,
-    CONSTRAINT unique_spatial_task_name_per_tenant UNIQUE(tenant_id, name, deleted_at)
-);
-
-CREATE INDEX IF NOT EXISTS idx_spatial_tasks_tenant ON develop.spatial_tasks(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spatial_tasks_status ON develop.spatial_tasks(status);
-CREATE INDEX IF NOT EXISTS idx_spatial_tasks_created_by ON develop.spatial_tasks(created_by);
-
--- 空间任务执行实例表（GIS 任务执行历史）
-CREATE TABLE IF NOT EXISTS develop.spatial_executions (
-    id SERIAL PRIMARY KEY,
-    task_id INTEGER REFERENCES develop.spatial_tasks(id) ON DELETE SET NULL,
-    task_name VARCHAR(255),                -- 冗余任务名（方便查询）
-    status VARCHAR(20) NOT NULL,           -- pending, running, success, failed, timeout
-    inputs JSONB,                          -- 输入参数
-    result_table VARCHAR(255),             -- 结果表名（spatial_execution_results_<exec_id>）
-    result_count INTEGER,                  -- 结果记录数
-    error_message TEXT,
-    logs TEXT,                             -- 执行日志
-    execution_time_ms INTEGER,             -- 执行时间（毫秒）
-    trigger_type VARCHAR(50),              -- manual, schedule, orchestrator, api
-    trigger_by INTEGER REFERENCES system.users(id),
-    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
-    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    completed_at TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_spatial_executions_task_id ON develop.spatial_executions(task_id);
-CREATE INDEX IF NOT EXISTS idx_spatial_executions_tenant_id ON develop.spatial_executions(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spatial_executions_status ON develop.spatial_executions(status);
-CREATE INDEX IF NOT EXISTS idx_spatial_executions_started_at ON develop.spatial_executions(started_at DESC);
-
--- 空间执行结果表（Develop 即时执行结果）
-CREATE TABLE IF NOT EXISTS develop.spatial_execution_results (
-    id SERIAL PRIMARY KEY,
-    execution_id UUID NOT NULL,
-    task_id INTEGER REFERENCES develop.spatial_tasks(id) ON DELETE SET NULL,
-    tenant_id INTEGER NOT NULL REFERENCES system.tenants(id),
-    geom GEOMETRY(GEOMETRY, 4326),        -- 空间字段
-    properties JSONB,                     -- 属性数据
-    created_by INTEGER REFERENCES system.users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_tenant ON develop.spatial_execution_results(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_execution ON develop.spatial_execution_results(execution_id);
-CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_geom ON develop.spatial_execution_results USING GIST(geom);
-CREATE INDEX IF NOT EXISTS idx_spatial_exec_results_task ON develop.spatial_execution_results(task_id);
-
--- Develop 模块触发器
-DROP TRIGGER IF EXISTS update_scripts_updated_at ON develop.scripts;
-CREATE TRIGGER update_scripts_updated_at BEFORE UPDATE ON develop.scripts
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_spatial_tasks_updated_at ON develop.spatial_tasks;
-CREATE TRIGGER update_spatial_tasks_updated_at BEFORE UPDATE ON develop.spatial_tasks
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
--- Note: Orchestrator schema is initialized separately via scripts/init-orchestrator.sql
--- This is handled by infra-init-db.sh script
-
--- ==================== Orchestrator 模块 ====================
-CREATE SCHEMA IF NOT EXISTS orchestrator;
-
--- ==================== Gateway 模块 ====================
-CREATE SCHEMA IF NOT EXISTS gateway;
-
--- API 访问日志表
-CREATE TABLE IF NOT EXISTS gateway.api_access_logs (
-    id BIGSERIAL PRIMARY KEY,
-
-    -- API Key 信息
-    application_id INTEGER,                    -- 关联 system.applications
-    api_key_prefix VARCHAR(20),                -- Key 前缀（用于识别）
-
-    -- 请求信息
-    service_name VARCHAR(255),                 -- 目标服务（system, manager, meta等）
-    request_method VARCHAR(10),                -- GET, POST, PUT, DELETE
-    request_path TEXT,                         -- 请求路径
-    request_params JSONB,                      -- 请求参数（query + body）
-
-    -- 响应信息
-    response_status INTEGER,                   -- HTTP 状态码
-    response_time_ms INTEGER,                  -- 响应时间（毫秒）
-
-    -- 性能指标
-    cache_hit BOOLEAN DEFAULT FALSE,           -- 是否缓存命中
-    rate_limited BOOLEAN DEFAULT FALSE,        -- 是否被限流
-
-    -- 时间戳
-    accessed_at TIMESTAMP DEFAULT NOW(),
-
-    -- 索引优化
-    CONSTRAINT chk_response_status CHECK (response_status >= 100 AND response_status < 600)
-);
-
--- 索引：按应用查询
-CREATE INDEX IF NOT EXISTS idx_access_logs_application ON gateway.api_access_logs(application_id, accessed_at DESC);
-
--- 索引：按时间查询（用于清理和统计）
-CREATE INDEX IF NOT EXISTS idx_access_logs_accessed_at ON gateway.api_access_logs(accessed_at DESC);
-
--- 索引：按服务查询
-CREATE INDEX IF NOT EXISTS idx_access_logs_service ON gateway.api_access_logs(service_name, accessed_at DESC);
-
--- 索引：限流统计
-CREATE INDEX IF NOT EXISTS idx_access_logs_rate_limited ON gateway.api_access_logs(rate_limited, accessed_at DESC) WHERE rate_limited = TRUE;
+-- ==================== 表创建说明 ====================
+-- 所有表由各模块的 GORM AutoMigrate 自动创建和迁移
+--
+-- 各模块数据库初始化位置:
+-- - System:      system/backend/internal/repository/database.go
+-- - Manager:     manager/backend/internal/repository/database.go
+-- - Meta:        meta/backend/internal/repository/database.go
+-- - Transfer:    transfer/backend/cmd/server/main.go
+-- - Develop:     develop/backend/internal/repository/database.go
+-- - Service:     service/backend/internal/repository/database.go
+-- - Orchestrator: (待实现)
+-- - Gateway:     gateway/backend/internal/repository/database.go
+-- - Copilot:     copilot/backend/database.py (SQLAlchemy)
+--
+-- 如需查看表结构定义，请参考各模块的 internal/models/ 目录
+-- 例如:
+-- - System 模块表: system/backend/internal/models/*.go
+-- - Manager 模块表: manager/backend/internal/models/*.go
+-- - Meta 模块表: meta/backend/internal/models/*.go
+--
+-- 旧版本 CREATE TABLE 语句已备份至: init-postgresql.sql.bak.<date>
 
 COMMIT;

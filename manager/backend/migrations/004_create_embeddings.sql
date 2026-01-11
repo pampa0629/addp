@@ -1,3 +1,13 @@
+-- ⚠️ 此脚本已废弃（2026-01-09）
+-- 表结构现已由 GORM AutoMigrate 管理
+-- 见：manager/backend/internal/models/embedding.go
+-- 见：manager/backend/internal/repository/database.go
+--
+-- 保留此文件作为参考文档，了解向量嵌入表的设计思路和索引配置
+-- 实际表创建由 Manager 模块启动时的 AutoMigrate 自动执行
+--
+-- ==================== 原始脚本内容（仅供参考） ====================
+
 -- 创建向量嵌入表（在 manager schema）
 -- 用于存储多模态对象（文本、图片、视频、音频、文档）的向量嵌入
 -- 迁移说明：向量化功能从 Meta 模块迁移到 Manager 模块

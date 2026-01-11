@@ -131,7 +131,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// ========== 启动清理服务 ==========
-	cleanupService := service.NewCleanupService(db, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, redisClient, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,
@@ -142,6 +142,21 @@ func main() {
 	}
 	defer cleanupService.Stop(context.Background())
 	logger.L().Info("清理服务已启动", "retention_days", 90)
+
+	// 订阅清理事件（如果 Redis 可用）
+	if redisClient != nil {
+		if err := cleanupService.SubscribeCleanupEvents(context.Background()); err != nil {
+			logger.L().Warn("订阅清理事件失败", "error", err)
+		} else {
+			logger.L().Info("已订阅垃圾数据清理事件")
+		}
+
+		if err := cleanupService.SubscribeEngineDeletedEvent(context.Background()); err != nil {
+			logger.L().Warn("订阅引擎删除事件失败", "error", err)
+		} else {
+			logger.L().Info("已订阅引擎删除事件")
+		}
+	}
 	// ===================================
 
 	// 设置路由

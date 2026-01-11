@@ -73,6 +73,42 @@
       <div v-if="showMap" class="map-splitter" @mousedown="startMapResize"></div>
     </template>
 
+    <!-- 表头信息栏 -->
+    <div class="table-info-bar">
+      <div class="info-left">
+        <!-- 空间数据表标识 -->
+        <el-tag v-if="hasGeometry" type="danger" size="large" class="spatial-badge">
+          <el-icon><Location /></el-icon>
+          空间数据表
+        </el-tag>
+        <!-- 普通表标识 -->
+        <el-tag v-else size="large" class="table-badge">
+          <el-icon><Collection /></el-icon>
+          数据表
+        </el-tag>
+      </div>
+
+      <div class="info-right">
+        <el-tag size="small" class="info-tag">
+          <el-icon><Coin /></el-icon>
+          {{ engineTypeName }}
+        </el-tag>
+        <el-tag v-if="hasGeometry" size="small" type="warning" class="geometry-tag">
+          <el-icon><Location /></el-icon>
+          几何列: {{ geometryColumns.join(', ') }}
+        </el-tag>
+        <el-tag size="small" type="info" class="info-tag">
+          总计 {{ total.toLocaleString() }} 行
+        </el-tag>
+        <el-tag size="small" type="success" class="info-tag">
+          {{ displayRange }}
+        </el-tag>
+        <el-tag size="small" class="info-tag">
+          {{ displayColumns.length }} 列
+        </el-tag>
+      </div>
+    </div>
+
     <!-- 表格区域（保持原有分页逻辑）-->
     <div class="table-wrapper">
       <el-table
@@ -89,9 +125,22 @@
           v-for="col in displayColumns"
           :key="col"
           :prop="col"
-          :label="col"
           show-overflow-tooltip
-        />
+        >
+          <template #header>
+            <div class="column-header">
+              <span class="column-name">{{ col }}</span>
+              <el-tooltip
+                v-if="getColumnMetadata(col)"
+                :content="getColumnTooltipContent(col)"
+                placement="top"
+                :show-after="300"
+              >
+                <el-icon class="column-info-icon"><InfoFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -112,6 +161,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Collection, Coin, InfoFilled, Location } from '@element-plus/icons-vue'
 import { useMapConfig } from '@/composables/useMapConfig'
 import { useResizable } from '@/composables/useResizable'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
@@ -186,6 +236,54 @@ const displayColumns = computed(() => {
   const filtered = columns.value.filter((col) => !geometrySet.has(col))
   return filtered.length > 0 ? filtered : columns.value
 })
+
+// 表头信息栏相关计算属性
+const engineTypeName = computed(() => {
+  const type = props.data?.engineType || ''
+  const typeMap = {
+    postgresql: 'PostgreSQL',
+    mysql: 'MySQL',
+    doris: 'Apache Doris',
+    clickhouse: 'ClickHouse',
+    mongodb: 'MongoDB',
+    spark: 'Apache Spark'
+  }
+  return typeMap[type.toLowerCase()] || type || '未知引擎'
+})
+
+const displayRange = computed(() => {
+  if (total.value === 0) return '无数据'
+  const start = (currentPage.value - 1) * pageSize.value + 1
+  const end = Math.min(currentPage.value * pageSize.value, total.value)
+  return `显示 ${start.toLocaleString()}-${end.toLocaleString()} 行`
+})
+
+// 列元数据相关
+const columnMetadata = computed(() => props.data?.column_metadata || [])
+
+// 根据列名获取列元数据
+const getColumnMetadata = (columnName) => {
+  return columnMetadata.value.find(meta => meta.column_name === columnName)
+}
+
+// 生成列的 Tooltip 内容
+const getColumnTooltipContent = (columnName) => {
+  const meta = getColumnMetadata(columnName)
+  if (!meta) return ''
+
+  const parts = [
+    `列名: ${meta.column_name}`,
+    `类型: ${meta.data_type}`,
+    `可空: ${meta.is_nullable ? '是' : '否'}`,
+    `主键: ${meta.is_primary_key ? '是' : '否'}`
+  ]
+
+  if (meta.comment) {
+    parts.push(`注释: ${meta.comment}`)
+  }
+
+  return parts.join('\n')
+}
 
 // 生成行键
 const tableData = computed(() => {
@@ -503,6 +601,98 @@ onUnmounted(() => {
 .map-splitter:hover::after,
 body.is-resizing .map-splitter::after {
   background: var(--el-color-primary);
+}
+
+.table-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, var(--el-fill-color) 0%, var(--el-fill-color-light) 100%);
+  border-radius: 4px;
+  border-left: 3px solid var(--el-color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.info-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spatial-badge {
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spatial-badge .el-icon {
+  font-size: 16px;
+}
+
+.table-badge {
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-badge .el-icon {
+  font-size: 16px;
+}
+
+.info-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.info-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.info-tag .el-icon {
+  font-size: 14px;
+}
+
+.geometry-tag {
+  font-weight: 600;
+  padding: 6px 10px;
+}
+
+.geometry-tag .el-icon {
+  font-size: 14px;
+}
+
+.column-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
+
+.column-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.column-info-icon {
+  font-size: 14px;
+  color: var(--el-color-info);
+  cursor: help;
+  transition: color 0.2s;
+}
+
+.column-info-icon:hover {
+  color: var(--el-color-primary);
 }
 
 .table-wrapper {

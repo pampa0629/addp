@@ -1,3 +1,13 @@
+-- ⚠️ 此脚本已废弃（2026-01-09）
+-- 表结构现已由 GORM AutoMigrate 管理
+-- 见：manager/backend/internal/models/embedding.go (EmbeddingTask 结构体)
+-- 见：manager/backend/internal/repository/database.go
+--
+-- 保留此文件作为参考文档，了解向量化任务表的设计思路
+-- 实际表创建由 Manager 模块启动时的 AutoMigrate 自动执行
+--
+-- ==================== 原始脚本内容（仅供参考） ====================
+
 -- 006_create_embedding_tasks.sql
 -- 创建向量化任务执行记录表
 

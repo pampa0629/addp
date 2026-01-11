@@ -4,9 +4,11 @@ Math Workflow Engine - API 服务
 实现 ADDP 工作流计算引擎的 5 个标准接口：
 1. GET /health - 健康检查
 2. GET /api/operators - 获取算子列表
-3. POST /api/spatial/workflow - 执行工作流（DAG）
-4. POST /api/spatial/operators/<name>/execute - 执行单个算子
-5. GET /api/spatial/executions/<execution_id> - 查询执行状态（可选）
+3. POST /api/workflow - 执行工作流（DAG）
+4. POST /api/operators/<name>/execute - 执行单个算子
+5. GET /api/executions/<execution_id> - 查询执行状态（可选）
+
+注意：引擎层面使用通用 API 路径，不包含领域特定前缀（如 spatial）
 """
 
 from flask import Flask, request, jsonify
@@ -117,7 +119,7 @@ def get_operators():
     }), 200
 
 
-@app.route('/api/spatial/workflow', methods=['POST'])
+@app.route('/api/workflow', methods=['POST'])
 def execute_workflow():
     """
     执行工作流（关键接口，支持 DAG）
@@ -193,7 +195,7 @@ def execute_workflow():
         )), 500
 
 
-@app.route('/api/spatial/operators/<name>/execute', methods=['POST'])
+@app.route('/api/operators/<name>/execute', methods=['POST'])
 def execute_operator(name):
     """
     执行单个算子
@@ -266,7 +268,7 @@ def execute_operator(name):
         )), 500
 
 
-@app.route('/api/spatial/executions/<execution_id>', methods=['GET'])
+@app.route('/api/executions/<execution_id>', methods=['GET'])
 def get_execution_status(execution_id):
     """
     查询执行状态（可选接口，简化版直接返回已完成）
@@ -295,74 +297,78 @@ def get_execution_status(execution_id):
 # ============ 自动注册到 System Backend ============
 
 def register_to_system():
-    """引擎启动时自动注册到 System Backend"""
+    """
+    向 System Backend 自注册（创建或更新引擎记录）
+    """
+    import requests
     import json
 
-    time.sleep(5)  # 等待引擎完全启动
-
     system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
-    internal_api_key = os.getenv('INTERNAL_API_KEY', '')
+    api_key = os.getenv('INTERNAL_API_KEY', '')
+
+    # 读取自身配置
     port = int(os.getenv('PORT', 8097))
     protocol = os.getenv('PROTOCOL', 'http')
 
-    # 构建引擎 URL（host 将由 System 自动填充）
-    engine_url = f"{protocol}://localhost:{port}"
-
-    registration_data = {
-        "name": "Math Workflow 计算引擎",
-        "engine_type": "math_workflow",
-        "is_builtin": True,
-        "description": "基于 Python 的数学计算工作流引擎，支持基本数学运算",
-        "capabilities": {
-            "compute": [{
-                "dev_modes": ["workflow"],
-                "features": ["math_operations", "workflow_execution"],
-                "description": "支持加减乘除等基本数学运算的工作流执行"
-            }]
-        },
-        "connection_info": {
-            "protocol": protocol,
-            "host": "localhost",
-            "port": port,
-            "api_url": engine_url
-        }
+    # 生成 capabilities
+    capabilities = {
+        "compute": [{
+            "dev_modes": ["workflow"],
+            "api_endpoints": {
+                "operators": "/api/operators",
+                "execute": "/api/operators/:name/execute",
+                "workflow": "/api/workflow",
+                "executions": "/api/executions/:id"
+            },
+            "features": ["math_operations", "workflow_execution"],
+            "description": "支持加减乘除等基本数学运算的工作流执行"
+        }]
     }
 
-    # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
-    proxies = {
-        'http': None,
-        'https': None
+    # 构建注册请求
+    payload = {
+        "engine_type": "math_workflow",
+        "name": "Math Workflow 计算引擎",
+        "description": "基于 Python 的数学计算工作流引擎，支持基本数学运算",
+        "connection_info": {
+            "protocol": protocol,
+            "port": port
+            # host 由 System 自动填充
+        },
+        "capabilities": json.dumps(capabilities)
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Internal-API-Key": api_key
     }
 
     try:
-        logger.info(f"📤 尝试注册到 System Backend: {system_url}")
-        logger.info(f"📦 Payload: {json.dumps(registration_data, ensure_ascii=False)}")
-        logger.info(f"🔑 API Key length: {len(internal_api_key)}")
+        # 禁用代理，直接连接到 System Backend（避免系统代理干扰）
+        proxies = {
+            'http': None,
+            'https': None
+        }
 
         response = requests.post(
-            f"{system_url}/internal/registry/capabilities",
-            json=registration_data,
-            headers={"X-Internal-API-Key": internal_api_key},
+            f"{system_url}/internal/engines/register",
+            json=payload,
+            headers=headers,
             proxies=proxies,
             timeout=10
         )
 
-        logger.info(f"📥 收到响应: status={response.status_code}, body={response.text[:500]}")
-
-        if response.status_code == 200:
-            logger.info("✅ Math Workflow Engine 注册成功")
+        if response.status_code == 202:
+            result = response.json()
+            engine_id = result.get('engine_id')
+            logger.info(f"✅ Successfully registered to System Backend (Engine ID: {engine_id})")
             return True
         else:
-            logger.warning(f"⚠️  注册失败: HTTP {response.status_code}, {response.text}")
+            logger.warning(f"⚠️  Failed to register: {response.status_code} - {response.text}")
             return False
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ 网络请求异常: {type(e).__name__}: {e}")
-        return False
     except Exception as e:
-        logger.error(f"❌ 注册异常: {e}")
-        import traceback
-        logger.error(f"详细堆栈:\n{traceback.format_exc()}")
+        logger.warning(f"⚠️  Failed to register to System: {e}")
         return False
 
 

@@ -9,6 +9,7 @@ import geopandas as gpd
 import pandas as pd
 from simpleeval import simple_eval
 from .base import (
+    OperatorType,
     OperatorMetadata,
     OperatorParam,
     OperatorCategory,
@@ -36,6 +37,7 @@ def add_field(input_gdf: gpd.GeoDataFrame, field_name: str, value: Any = None) -
 
 ADD_FIELD_METADATA = OperatorMetadata(
     name="add_field",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="添加新字段",
     brief_description="向 GeoDataFrame 添加新字段并赋值,常用于数据准备和分类标注",
@@ -121,6 +123,7 @@ def calculate_field(input_gdf: gpd.GeoDataFrame, field_name: str, expression: st
 
 CALCULATE_FIELD_METADATA = OperatorMetadata(
     name="calculate_field",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段计算（表达式）",
     brief_description="基于表达式计算新字段或更新已有字段,常用于派生指标和数据转换",
@@ -199,6 +202,7 @@ def rename_fields(input_gdf: gpd.GeoDataFrame, field_mapping: Dict[str, str]) ->
 
 RENAME_FIELDS_METADATA = OperatorMetadata(
     name="rename_fields",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="批量重命名字段",
     brief_description="批量修改字段名称,常用于数据标准化和命名规范统一",
@@ -272,6 +276,7 @@ def drop_fields(input_gdf: gpd.GeoDataFrame, field_names: List[str]) -> gpd.GeoD
 
 DROP_FIELDS_METADATA = OperatorMetadata(
     name="drop_fields",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="删除字段",
     brief_description="批量删除不需要的字段,常用于数据清洗和减少存储空间",
@@ -354,6 +359,7 @@ def type_cast(input_gdf: gpd.GeoDataFrame, field: str, target_type: str) -> gpd.
 
 TYPE_CAST_METADATA = OperatorMetadata(
     name="type_cast",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段类型转换",
     brief_description="转换字段数据类型,常用于数据清洗和类型匹配",
@@ -433,6 +439,7 @@ def fill_null(input_gdf: gpd.GeoDataFrame, field: str, fill_value: Any) -> gpd.G
 
 FILL_NULL_METADATA = OperatorMetadata(
     name="fill_null",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="填充空值",
     brief_description="填充字段中的 NULL/NaN 值,常用于数据清洗和缺失值处理",
@@ -531,6 +538,7 @@ def normalize_field(input_gdf: gpd.GeoDataFrame, field: str, method: str = 'minm
 
 NORMALIZE_FIELD_METADATA = OperatorMetadata(
     name="normalize_field",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段归一化",
     brief_description="将数值字段归一化到标准范围,常用于数据分析和机器学习",
@@ -612,6 +620,7 @@ def encode_categorical(input_gdf: gpd.GeoDataFrame, field: str) -> gpd.GeoDataFr
 
 ENCODE_CATEGORICAL_METADATA = OperatorMetadata(
     name="encode_categorical",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="分类编码",
     brief_description="将分类字段编码为数字,常用于机器学习和数据分析",
@@ -685,6 +694,7 @@ def bin_field(input_gdf: gpd.GeoDataFrame, field: str, bins: Union[int, List[flo
 
 BIN_FIELD_METADATA = OperatorMetadata(
     name="bin_field",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.ATTRIBUTE_CALCULATION,
     description="字段分箱",
     brief_description="将连续数值字段分箱为离散区间,常用于数据分级和可视化",

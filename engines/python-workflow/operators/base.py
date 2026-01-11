@@ -9,6 +9,13 @@ from typing import Any, Dict, List, Optional, Callable
 from enum import Enum
 
 
+class OperatorType(str, Enum):
+    """算子类型枚举"""
+    SPATIAL = "spatial"          # 空间算子（涉及几何处理、空间关系）
+    NON_SPATIAL = "non_spatial"  # 非空间算子（纯属性操作、筛选）
+    GENERAL = "general"          # 通用算子（I/O、格式转换）
+
+
 class OperatorCategory(str, Enum):
     """算子分类枚举"""
     DATA_IO = "数据I/O"
@@ -46,6 +53,7 @@ class OperatorMetadata(BaseModel):
     使用 Pydantic 提供类型安全和自动验证
     """
     name: str = Field(description="算子唯一标识符")
+    type: OperatorType = Field(description="算子类型")
     category: OperatorCategory = Field(description="算子分类")
     description: str = Field(description="算子简要描述")
     brief_description: str = Field(description="简短说明（一句话）")
@@ -85,6 +93,7 @@ class OperatorMetadata(BaseModel):
         # 构建基础字典
         legacy_dict = {
             'function': self.function,
+            'type': self.type.value,  # 添加算子类型
             'param_schema': param_schema,
             'category': self.category.value,
             'description': self.description,

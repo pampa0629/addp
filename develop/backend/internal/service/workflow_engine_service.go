@@ -18,8 +18,21 @@ import (
 	"github.com/google/uuid"
 )
 
+// EngineCapabilities 引擎能力声明结构（用于解析 JSONB）
+type EngineCapabilities struct {
+	Compute []ComputeCapability `json:"compute"`
+}
+
+// ComputeCapability 计算能力定义
+type ComputeCapability struct {
+	DevModes     []string               `json:"dev_modes"`
+	APIEndpoints map[string]interface{} `json:"api_endpoints"`
+	Features     []string               `json:"features,omitempty"`
+	Description  string                 `json:"description,omitempty"`
+}
+
 // WorkflowEngineService 工作流执行引擎服务
-// 支持多种工作流引擎（Python Workflow、Spark Workflow）
+// 支持动态发现的工作流引擎，通过引擎的 capabilities 配置调用相应的 API
 type WorkflowEngineService struct {
 	systemClient *commonClient.SystemClient
 	httpClient   *http.Client
@@ -50,6 +63,51 @@ type WorkflowResponse struct {
 	Error       string                 `json:"error,omitempty"`
 }
 
+// getAPIEndpoint 从引擎的 capabilities 中提取 API 端点
+// 如果未配置，返回默认值（向后兼容旧版本引擎）
+func getAPIEndpoint(engine *commonModels.Engine, endpointType string) string {
+	// 检查 Capabilities 是否为空
+	if engine.Capabilities == nil || *engine.Capabilities == "" {
+		log.Printf("⚠️  引擎 %s 的 capabilities 为空，使用默认路径", engine.Name)
+		return getDefaultEndpoint(endpointType)
+	}
+
+	// 解析 JSONB 字符串
+	var caps EngineCapabilities
+	if err := json.Unmarshal([]byte(*engine.Capabilities), &caps); err != nil {
+		log.Printf("⚠️  引擎 %s 的 capabilities 解析失败: %v，使用默认路径", engine.Name, err)
+		return getDefaultEndpoint(endpointType)
+	}
+
+	// 尝试从 Compute[0].APIEndpoints 中获取
+	if len(caps.Compute) > 0 && caps.Compute[0].APIEndpoints != nil {
+		compute := caps.Compute[0]
+		if endpoint, ok := compute.APIEndpoints[endpointType].(string); ok && endpoint != "" {
+			return endpoint
+		}
+	}
+
+	// 未配置，返回默认路径
+	log.Printf("⚠️  引擎 %s 未配置 api_endpoints.%s，使用默认路径（建议更新引擎配置）", engine.Name, endpointType)
+	return getDefaultEndpoint(endpointType)
+}
+
+// getDefaultEndpoint 返回默认的 API 端点（向后兼容）
+func getDefaultEndpoint(endpointType string) string {
+	switch endpointType {
+	case "operators":
+		return "/api/operators"
+	case "execute":
+		return "/api/operators/:name/execute"
+	case "workflow":
+		return "/api/workflow"
+	case "executions":
+		return "/api/executions/:id"
+	default:
+		return ""
+	}
+}
+
 // ExecuteWorkflow 执行工作流（支持 JSONB 配置）
 func (s *WorkflowEngineService) ExecuteWorkflow(
 	ctx context.Context,
@@ -69,26 +127,19 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
 
-	// 3. 根据引擎类型分发执行
-	switch config.EngineType {
-	case "api.python-workflow":
-		return s.executeViaPythonWorkflow(ctx, engine, workflowDef, inputData)
-
-	case "api.spark_workflow":
-		// 从 engine_specific 提取 Spark 集群 ID
-		sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64)
-		if !ok {
-			return nil, errors.New("Spark 工作流引擎缺少 spark_cluster_id 配置")
-		}
+	// 3. 检查是否需要 Spark 运行时（从 engine_specific 判断）
+	if sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64); ok {
+		// Spark 工作流引擎（需要目标 Spark 集群）
 		return s.executeViaSparkWorkflow(ctx, engine, uint(sparkClusterID), workflowDef, inputData)
-
-	default:
-		return nil, fmt.Errorf("不支持的工作流引擎: %s", config.EngineType)
 	}
+
+	// 4. 通用工作流引擎（自带运行时：python_workflow、math_workflow 等）
+	return s.executeViaGenericWorkflow(ctx, engine, workflowDef, inputData)
 }
 
-// executeViaPythonWorkflow 通过 Python Workflow 引擎执行（自带运行时）
-func (s *WorkflowEngineService) executeViaPythonWorkflow(
+// executeViaGenericWorkflow 通过通用工作流引擎执行（自带运行时）
+// 支持 python_workflow、math_workflow 等所有自带运行时的工作流引擎
+func (s *WorkflowEngineService) executeViaGenericWorkflow(
 	ctx context.Context,
 	engine *commonModels.Engine,
 	workflowDef map[string]interface{},
@@ -97,10 +148,12 @@ func (s *WorkflowEngineService) executeViaPythonWorkflow(
 	// 从引擎 ConnectionInfo 提取 API URL
 	apiURL, ok := engine.ConnectionInfo["api_url"].(string)
 	if !ok || apiURL == "" {
-		return nil, errors.New("Python Workflow 引擎缺少 api_url 配置")
+		return nil, fmt.Errorf("工作流引擎 %s 缺少 api_url 配置", engine.Name)
 	}
 
-	url := fmt.Sprintf("%s/api/spatial/workflow", apiURL)
+	// 动态获取 workflow API 端点
+	endpoint := getAPIEndpoint(engine, "workflow")
+	url := fmt.Sprintf("%s%s", apiURL, endpoint)
 
 	// 构造请求体
 	req := WorkflowRequest{
@@ -120,12 +173,12 @@ func (s *WorkflowEngineService) executeViaPythonWorkflow(
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	log.Printf("🚀 Develop: 调用 Python Workflow 引擎 (url=%s)", url)
+	log.Printf("🚀 Develop: 调用通用工作流引擎 %s (url=%s)", engine.Name, url)
 
 	// 执行请求
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("调用 Python Workflow 引擎失败: %w", err)
+		return nil, fmt.Errorf("调用工作流引擎 %s 失败: %w", engine.Name, err)
 	}
 	defer resp.Body.Close()
 
@@ -144,7 +197,7 @@ func (s *WorkflowEngineService) executeViaPythonWorkflow(
 		return &workflowResp, fmt.Errorf("工作流执行失败 (status=%d): %s", resp.StatusCode, workflowResp.Error)
 	}
 
-	log.Printf("✅ Develop: Python Workflow 引擎执行成功 (execution_id=%s)", workflowResp.ExecutionID)
+	log.Printf("✅ Develop: 工作流引擎 %s 执行成功 (execution_id=%s)", engine.Name, workflowResp.ExecutionID)
 	return &workflowResp, nil
 }
 
@@ -168,7 +221,9 @@ func (s *WorkflowEngineService) executeViaSparkWorkflow(
 		return nil, errors.New("Spark 工作流引擎缺少 api_url 配置")
 	}
 
-	url := fmt.Sprintf("%s/api/spatial/workflow/execute", workflowAPIURL)
+	// 动态获取 workflow API 端点
+	endpoint := getAPIEndpoint(engine, "workflow")
+	url := fmt.Sprintf("%s%s", workflowAPIURL, endpoint)
 
 	// 3. 构造请求体（包含目标 Spark 集群信息）
 	requestBody := map[string]interface{}{
@@ -238,7 +293,8 @@ func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, pythonWorkf
 	}
 
 	// 发送请求到 Python Workflow Engine
-	url := fmt.Sprintf("%s/api/spatial/operators/%s/execute", pythonWorkflowEngineURL, operatorName)
+	// 注意：此函数为向后兼容接口，使用默认端点路径
+	url := fmt.Sprintf("%s/api/operators/%s/execute", pythonWorkflowEngineURL, operatorName)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -282,7 +338,8 @@ func (s *WorkflowEngineService) ExecuteOperator(ctx context.Context, pythonWorkf
 // ListOperators 获取所有算子列表（向后兼容）
 func (s *WorkflowEngineService) ListOperators(ctx context.Context, pythonWorkflowEngineURL string) ([]commonModels.OperatorMetadata, error) {
 	// 发送请求到 Python Workflow Engine
-	url := fmt.Sprintf("%s/api/spatial/operators", pythonWorkflowEngineURL)
+	// 注意：此函数为向后兼容接口，使用默认端点路径
+	url := fmt.Sprintf("%s/api/operators", pythonWorkflowEngineURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -317,7 +374,8 @@ func (s *WorkflowEngineService) ListOperators(ctx context.Context, pythonWorkflo
 // GetTaskStatus 查询执行状态（向后兼容）
 func (s *WorkflowEngineService) GetTaskStatus(ctx context.Context, pythonWorkflowEngineURL string, executionID string) (map[string]interface{}, error) {
 	// 发送请求到 Python Workflow Engine
-	url := fmt.Sprintf("%s/api/spatial/executions/%s", pythonWorkflowEngineURL, executionID)
+	// 注意：此函数为向后兼容接口，使用默认端点路径
+	url := fmt.Sprintf("%s/api/executions/%s", pythonWorkflowEngineURL, executionID)
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

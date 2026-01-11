@@ -208,6 +208,12 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 		fmt.Printf("[DEBUG] context 不是 *gin.Context 类型\n")
 	}
 
+	// 设置租户 ID（仅当使用服务级别的内部 API client 时）
+	// 使用 JWT token 创建的客户端会从 token 中自动提取 tenant_id
+	if metaClient == p.metaClient && metaClient != nil {
+		metaClient.SetTenantID(req.TenantID)
+	}
+
 	var item *models.MetaItemLite
 	var node *models.MetaNodeLite
 

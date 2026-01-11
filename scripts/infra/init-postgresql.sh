@@ -225,11 +225,12 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
     if [ "$SKIP_PGVECTOR" = false ]; then
         echo -e "${YELLOW}▶ 安装 pgvector 扩展（向量检索支持）${NC}"
 
-        PGVECTOR_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "0")
+        # Check if pgvector extension exists in manager schema
+        PGVECTOR_CHECK=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT COUNT(*) FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname='vector' AND n.nspname='manager';" 2>/dev/null | tr -d '[:space:]' || echo "0")
 
         if [ "${PGVECTOR_CHECK}" = "1" ]; then
             PGVECTOR_VERSION=$(docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -t -c "SELECT extversion FROM pg_extension WHERE extname='vector';" 2>/dev/null | tr -d '[:space:]' || echo "Unknown")
-            echo -e "  ${GREEN}✓ pgvector 已安装 (${PGVECTOR_VERSION})${NC}"
+            echo -e "  ${GREEN}✓ pgvector 已安装在 manager schema (${PGVECTOR_VERSION})${NC}"
         else
             echo -e "  ${YELLOW}pgvector 未安装，开始安装...${NC}"
 
@@ -265,9 +266,9 @@ if [ "$SKIP_EXTENSIONS" = false ]; then
                 echo -e "  ${GREEN}✓ pgvector 包安装完成${NC}"
             fi
 
-            # Create extension
-            docker exec "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "CREATE EXTENSION IF NOT EXISTS vector;" >/dev/null 2>&1
-            echo -e "  ${GREEN}✓ pgvector 扩展创建完成${NC}"
+            # Create extension in manager schema (not in public schema)
+            # Note: The extension is created in init-postgresql.sql with schema specification
+            echo -e "  ${GREEN}✓ pgvector 包安装完成（扩展将由 init-postgresql.sql 创建）${NC}"
         fi
     else
         echo -e "${YELLOW}⚠  跳过 pgvector 扩展安装 (SKIP_PGVECTOR=true)${NC}"

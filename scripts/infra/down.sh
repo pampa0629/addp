@@ -17,22 +17,22 @@ cd "${PROJECT_ROOT}"
 
 usage() {
   cat <<EOF
-Usage: bash scripts/infra/down.sh [--rm]
+Usage: bash scripts/infra/down.sh [-v|--volumes]
 
 Options:
-  --rm   在停止后移除对应容器（不删除命名卷与数据）
+  -v, --volumes   同时删除数据卷（警告：会删除所有数据）
 
 说明：
-  默认仅执行 stop：postgres redis minio。
-  使用 --rm 追加 docker compose rm -f <服务> 以清理容器。
+  默认执行 docker compose down：停止并删除容器、网络，但保留数据卷。
+  使用 -v 或 --volumes 会同时删除数据卷（PostgreSQL、Redis、MinIO、Meilisearch 的所有数据将丢失）。
 EOF
 }
 
-REMOVE=false
+REMOVE_VOLUMES=false
 if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
   usage; exit 0
-elif [[ ${1:-} == "--rm" ]]; then
-  REMOVE=true
+elif [[ ${1:-} == "-v" || ${1:-} == "--volumes" ]]; then
+  REMOVE_VOLUMES=true
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -42,12 +42,13 @@ if ! docker compose version >/dev/null 2>&1; then
   echo -e "${RED}✗ docker compose 不可用${NC}"; exit 1
 fi
 
-echo -e "${YELLOW}▶ 停止基础设施容器: postgres, redis, minio, meilisearch${NC}"
-docker compose -f docker-compose.infra.yml stop postgres redis minio meilisearch
-
-if [[ "$REMOVE" == true ]]; then
-  echo -e "${YELLOW}▶ 清理容器（不删除数据卷）${NC}"
-  docker compose -f docker-compose.infra.yml rm -f postgres redis minio meilisearch || true
+if [[ "$REMOVE_VOLUMES" == true ]]; then
+  echo -e "${RED}⚠️  警告：即将删除所有数据卷，所有数据将丢失！${NC}"
+  echo -e "${YELLOW}▶ 停止并删除基础设施容器和数据卷${NC}"
+  docker compose -f docker-compose.infra.yml down -v
+else
+  echo -e "${YELLOW}▶ 停止并删除基础设施容器（保留数据卷）${NC}"
+  docker compose -f docker-compose.infra.yml down
 fi
 
 echo -e "${GREEN}✓ 完成${NC}"

@@ -7,7 +7,7 @@ GeoPandas 算子模块
 模块化重构后的算子按功能分类管理。
 """
 
-from .base import OperatorMetadata, OperatorParam, OperatorCategory, OutputPort
+from .base import OperatorMetadata, OperatorParam, OperatorCategory, OperatorType, OutputPort
 
 # 导入所有空间算子实现
 from .io_operators import load, save
@@ -121,7 +121,7 @@ def list_operators():
             "id": name,
             "name": name,
             "display_name": meta['description'],
-            "type": "spatial",
+            "type": meta.get('type', 'general'),  # 从元数据读取类型，默认为 general
             "category": meta['category'],
             "description": meta['description'],
             "module": "python",
@@ -153,6 +153,7 @@ __all__ = [
     'OperatorMetadata',
     'OperatorParam',
     'OperatorCategory',
+    'OperatorType',
     'OutputPort',
 
     # I/O 算子

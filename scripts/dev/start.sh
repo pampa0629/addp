@@ -16,6 +16,7 @@ show_usage() {
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
   echo "  -python-workflow    只启动 Python Workflow Engine"
+  echo "  -math-workflow      只启动 Math Workflow Engine"
   echo "  -spark-workflow 只启动 Spark 工作流引擎"
   echo "  -jupyter      只启动 Jupyter Engine"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
@@ -32,6 +33,7 @@ show_usage() {
   echo "  $0 -manager       # 启动 Manager + System"
   echo "  $0 -develop       # 启动 Develop + System + Python Workflow"
   echo "  $0 -python-workflow     # 只启动 Python Workflow Engine"
+  echo "  $0 -math-workflow       # 只启动 Math Workflow Engine"
   echo "  $0 -spark-workflow  # 启动 Spark 工作流引擎"
   echo "  $0 -jupyter       # 只启动 Jupyter Engine"
   exit 1
@@ -88,7 +90,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-python-workflow|-spark-workflow|-jupyter|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -210,6 +212,9 @@ else
       ;;
     python-workflow)
       START_PYTHON_WORKFLOW=true
+      ;;
+    math-workflow)
+      START_MATH_WORKFLOW=true
       ;;
     spark-workflow)
       START_SPARK_WORKFLOW=true
@@ -935,6 +940,110 @@ else
 fi
 
 # ============================================================
+# Step 4.2: Start Math Workflow Engine (Python service)
+# ============================================================
+
+if [ "$START_MATH_WORKFLOW" = true ] || [ "$START_ALL" = true ]; then
+  echo -e "${BLUE}Step 4.2/5: 启动 Math Workflow Engine${NC}"
+
+# 检查并创建虚拟环境（幂等）
+NEED_INSTALL=false
+if [ ! -d "engines/math-workflow/venv" ]; then
+    echo "首次启动，创建 Python 虚拟环境..."
+    cd engines/math-workflow
+    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
+    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
+        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
+        /opt/homebrew/bin/python3 -m venv venv
+    else
+        python3 -m venv venv
+    fi
+    NEED_INSTALL=true
+else
+    # 检查关键依赖是否已安装
+    if ! ./engines/math-workflow/venv/bin/python -c "import flask" &> /dev/null; then
+        echo "检测到虚拟环境缺少依赖，重新安装..."
+        cd engines/math-workflow
+        NEED_INSTALL=true
+    else
+        echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+fi
+
+if [ "$NEED_INSTALL" = true ]; then
+    # 使用 pip 安装依赖
+    echo "使用 pip 安装依赖..."
+
+    # 构建 pip 安装命令（支持镜像源配置）
+    PIP_CMD="./venv/bin/pip install"
+    if [ -n "$PIP_INDEX_URL" ]; then
+        echo "  使用镜像源: $PIP_INDEX_URL"
+        PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+        if [ -n "$PIP_TRUSTED_HOST" ]; then
+            PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+        fi
+    fi
+
+    # 升级 pip 并安装依赖
+    $PIP_CMD --upgrade pip
+    $PIP_CMD -r requirements.txt
+
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ Python 依赖安装完成${NC}"
+    else
+        echo -e "${RED}✗ Python 依赖安装失败${NC}"
+        exit 1
+    fi
+    cd ../..
+fi
+
+# 启动 Math Workflow Engine
+if check_service_running "math-workflow-engine" "8097"; then
+  echo "启动 Math Workflow Engine..."
+  cd engines/math-workflow
+
+  # 设置环境变量
+  export PORT=8097
+  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:8080"}
+  export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+
+  # 直接使用虚拟环境的 Python
+  ./venv/bin/python api_server.py > ../../logs/math-workflow-engine.log 2> ../../logs/math-workflow-engine-stderr.log &
+  MATH_WORKFLOW_PID=$!
+  echo $MATH_WORKFLOW_PID > ../../.dev-pids/math-workflow-engine.pid
+  cd ../..
+
+  echo -e "${GREEN}✓ Math Workflow Engine 已启动 (PID: $MATH_WORKFLOW_PID)${NC}"
+
+  # 等待服务就绪
+  echo -n "  等待服务就绪"
+  MAX_WAIT=60
+  WAIT_COUNT=0
+  while ! curl -s http://localhost:8097/health > /dev/null 2>&1; do
+    sleep 1
+    echo -n "."
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+      echo -e " ${RED}✗${NC}"
+      echo -e "${RED}✗ Math Workflow Engine 启动超时（60秒）${NC}"
+      echo -e "${YELLOW}查看日志: tail -f logs/math-workflow-engine.log${NC}"
+      echo -e "${YELLOW}或检查错误: tail -f logs/math-workflow-engine-stderr.log${NC}"
+      exit 1
+    fi
+  done
+  echo -e " ${GREEN}✓${NC}"
+  echo -e "${GREEN}✓ Math Workflow Engine 就绪 (http://localhost:8097)${NC}"
+else
+  MATH_WORKFLOW_PID=$(cat .dev-pids/math-workflow-engine.pid 2>/dev/null)
+  echo -e "${GREEN}✓ Math Workflow Engine 已在运行 (PID: $MATH_WORKFLOW_PID)${NC}"
+fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 4.2/5: 跳过 Math Workflow Engine${NC}"
+  echo ""
+fi
+
+# ============================================================
 # Step 4.5: Start Spark 工作流引擎 (Python service)
 # ============================================================
 if [ "$START_SPARK_WORKFLOW" = true ]; then
@@ -1612,6 +1721,7 @@ echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
+echo "  Math Workflow Engine: logs/math-workflow-engine.log"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"
 echo "  Jupyter Engine: logs/jupyter-engine.log"
 echo "  Gateway:  logs/gateway.log"

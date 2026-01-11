@@ -60,11 +60,19 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 
 	// Auto-migrate models if provided
 	if len(models) > 0 {
-		log.Printf("🔄 Running auto-migration for %d models...", len(models))
-		if err := db.AutoMigrate(models...); err != nil {
-			return nil, fmt.Errorf("failed to auto-migrate models: %w", err)
+		log.Printf("[Migration] 🚀 Starting AutoMigrate for %d models in schema '%s'", len(models), cfg.Schema)
+
+		// Migrate each model individually for better error reporting
+		for i, model := range models {
+			modelName := fmt.Sprintf("%T", model)
+			log.Printf("[Migration]    ▶ [%d/%d] Migrating: %s", i+1, len(models), modelName)
+
+			if err := db.AutoMigrate(model); err != nil {
+				return nil, fmt.Errorf("failed to auto-migrate %s: %w", modelName, err)
+			}
 		}
-		log.Printf("✅ Auto-migration completed successfully")
+
+		log.Printf("[Migration] ✅ AutoMigrate completed successfully for schema '%s'", cfg.Schema)
 	}
 
 	return db, nil

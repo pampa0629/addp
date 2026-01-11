@@ -1,5 +1,12 @@
 package models
 
+import (
+	commonModels "github.com/addp/common/models"
+)
+
+// 直接使用 Common 模块的类型，避免重复定义
+type JSONMap = commonModels.JSONMap
+
 // ScanRequest 扫描请求
 type ScanRequest struct {
 	EngineID    uint     `json:"engine_id" binding:"required"` // 资源ID
@@ -130,6 +137,7 @@ type MetaItemLite struct {
 // SpatialMetadataResponse 空间元数据响应（用于 Manager MVT 瓦片生成）
 type SpatialMetadataResponse struct {
 	GeometryColumn string                   `json:"geometry_column"`
+	GeometryTypes  []string                 `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
 	SRID           int                      `json:"srid"`
 	ExtentSRID     int                      `json:"extent_srid"`
 	Extent         []float64                `json:"extent"` // [minLng, minLat, maxLng, maxLat]

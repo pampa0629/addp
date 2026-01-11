@@ -781,6 +781,25 @@ func (s *EngineService) checkDuplicateResource(req *models.EngineCreateRequest, 
 		}
 	}
 
+	// 检查 3: 针对 S3/MinIO，检查连接信息（endpoint）
+	if strings.ToLower(req.EngineType) == "s3" || strings.ToLower(req.EngineType) == "minio" {
+		endpoint, _ := req.ConnectionInfo["endpoint"].(string)
+		if endpoint != "" {
+			// 查找同一租户下是否已有相同endpoint的S3引擎
+			engines, _, err := s.repo.ListByTenant(tenantID, 0, 1000, "s3")
+			if err == nil {
+				for _, engine := range engines {
+					if existingEndpoint, ok := engine.ConnectionInfo["endpoint"].(string); ok {
+						if existingEndpoint == endpoint {
+							return fmt.Errorf("对象存储连接 %s 已注册（资源名称: %s），不能重复注册",
+								endpoint, engine.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

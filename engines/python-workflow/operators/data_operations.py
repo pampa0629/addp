@@ -7,7 +7,7 @@
 import geopandas as gpd
 from typing import Dict, List, Union, Any
 from .base import (
-    OperatorMetadata, OperatorParam, OperatorCategory, register_operator, OutputPort
+    OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
 from .geometric_operators import buffer, centroid
 
@@ -137,6 +137,7 @@ def batch_centroid(gdf_list: List[gpd.GeoDataFrame]) -> List[gpd.GeoDataFrame]:
 
 CLIP_METADATA = OperatorMetadata(
     name="clip",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="裁剪几何",
     brief_description="用掩膜图层裁剪输入图层,保留掩膜范围内的部分,常用于研究区提取",
@@ -189,6 +190,7 @@ CLIP_METADATA = OperatorMetadata(
 
 VORONOI_METADATA = OperatorMetadata(
     name="voronoi",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="泰森多边形",
     brief_description="生成点集的泰森多边形(Voronoi图),常用于服务范围划分和最近邻分析",
@@ -232,6 +234,7 @@ VORONOI_METADATA = OperatorMetadata(
 
 SPLIT_BY_AREA_METADATA = OperatorMetadata(
     name="split_by_area",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="按面积分割",
     brief_description="按面积阈值将数据分割为大小两组,常用于数据分类和质量检查",
@@ -299,6 +302,7 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
 
 DISSOLVE_METADATA = OperatorMetadata(
     name="dissolve",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="融合几何",
     brief_description="按属性字段分组并融合几何,常用于边界合并和统计汇总",
@@ -351,6 +355,7 @@ DISSOLVE_METADATA = OperatorMetadata(
 
 BATCH_BUFFER_METADATA = OperatorMetadata(
     name="batch_buffer",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="批量缓冲",
     brief_description="对同一图层使用多个缓冲距离批量生成缓冲区,常用于多级影响范围分析",
@@ -412,6 +417,7 @@ BATCH_BUFFER_METADATA = OperatorMetadata(
 
 BATCH_CENTROID_METADATA = OperatorMetadata(
     name="batch_centroid",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.DATA_OPERATION,
     description="批量质心",
     brief_description="批量计算多个图层的质心,常用于多数据源的中心点提取",

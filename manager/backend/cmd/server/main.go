@@ -50,22 +50,35 @@ func main() {
 	})
 
 	// 初始化数据库
+	log.Println("🔍 [DEBUG] 开始初始化数据库...")
 	db, err := repository.InitDatabase(cfg)
 	if err != nil {
 		logger.L().Error("数据库初始化失败", "error", err)
 		os.Exit(1)
 	}
+	log.Println("🔍 [DEBUG] 数据库初始化完成")
 
 	// 初始化 repositories
+	log.Println("🔍 [DEBUG] 开始初始化 repositories...")
 	engineRepo := repository.NewEngineRepository(db, cfg.EncryptionKey)
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
+	log.Println("🔍 [DEBUG] Repositories 初始化完成")
 
+	log.Printf("🔍 [DEBUG] cfg.EnableMetaIntegration=%v, cfg.InternalAPIKey=%s, cfg.MetaServiceURL=%s",
+		cfg.EnableMetaIntegration,
+		func() string { if cfg.InternalAPIKey != "" { return "***set***" } else { return "empty" } }(),
+		cfg.MetaServiceURL,
+	)
+	log.Println("🔍 [DEBUG] 即将输出 Manager 配置加载完成日志...")
 	logger.L().Info("Manager 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
+		"enable_meta_integration", cfg.EnableMetaIntegration,
 		"internal_api_key_set", cfg.InternalAPIKey != "",
+		"meta_service_url", cfg.MetaServiceURL,
 	)
+	log.Println("🔍 [DEBUG] Manager 配置加载完成日志已输出")
 
 	// 初始化 Redis 客户端（可选，用于资源变更事件同步）
 	var redisClient *redis.Client

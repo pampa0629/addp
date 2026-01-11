@@ -4,35 +4,71 @@
   "version": "0.0.20",
   "categories": [
     {
-      "name": "数据传输",
-      "description": "数据导入、导出、同步任务管理",
+      "name": "任务管理",
+      "description": "数据传输任务的创建、启动、停止、查询等管理功能",
       "apis": [
         {
-          "name": "创建导入任务",
+          "name": "创建传输任务",
           "method": "POST",
-          "path": "/api/transfer/import",
-          "description": "创建数据导入任务（支持 CSV、Excel、Shapefile 等格式）",
+          "path": "/api/tasks",
+          "description": "创建数据传输任务（支持批量传输和流式传输）",
           "auth": true,
-          "request": "{\n  \"name\": \"导入用户数据\",\n  \"source_type\": \"file\",\n  \"source_config\": {\n    \"file_path\": \"/uploads/users.csv\"\n  },\n  \"target_engine_id\": 1,\n  \"target_schema\": \"public\",\n  \"target_table\": \"users\"\n}",
-          "response": "{\n  \"task_id\": \"import_123\",\n  \"status\": \"pending\",\n  \"message\": \"导入任务已创建\"\n}"
+          "request": "{\n  \"name\": \"任务名称\",\n  \"source_id\": 1,\n  \"target_id\": 2,\n  \"type\": \"sync\",\n  \"mode\": \"batch\",\n  \"batch_size\": 1000,\n  \"max_parallelism\": 2,\n  \"config\": {\n    \"source_table\": \"users\",\n    \"target_table\": \"users_backup\"\n  }\n}",
+          "response": "{\n  \"id\": 123,\n  \"name\": \"任务名称\",\n  \"status\": \"pending\",\n  \"created_at\": \"2025-01-09T10:00:00Z\"\n}"
         },
         {
           "name": "获取任务列表",
           "method": "GET",
-          "path": "/api/transfer/tasks",
-          "description": "获取数据传输任务列表（导入/导出/同步）",
+          "path": "/api/tasks",
+          "description": "获取数据传输任务列表",
           "auth": true,
-          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20\ntask_type: 任务类型（可选：import、export、sync）",
-          "response": "[\n  {\n    \"id\": \"import_123\",\n    \"name\": \"导入用户数据\",\n    \"type\": \"import\",\n    \"status\": \"running\",\n    \"progress\": 45\n  }\n]"
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20\ntype: 任务类型（可选：sync、import、export）\nstatus: 任务状态（可选：pending、running、completed、failed）",
+          "response": "{\n  \"data\": [...],\n  \"total\": 50,\n  \"page\": 1,\n  \"page_size\": 20\n}"
         },
         {
-          "name": "获取任务状态",
+          "name": "获取任务详情",
           "method": "GET",
-          "path": "/api/transfer/tasks/:task_id/status",
-          "description": "获取指定任务的执行状态和进度",
+          "path": "/api/tasks/:id",
+          "description": "获取指定任务的详细信息",
           "auth": true,
-          "params": ":task_id - 任务ID",
-          "response": "{\n  \"task_id\": \"import_123\",\n  \"status\": \"running\",\n  \"progress\": 45,\n  \"processed_rows\": 4500,\n  \"total_rows\": 10000\n}"
+          "params": ":id - 任务ID",
+          "response": "{\n  \"id\": 123,\n  \"name\": \"任务名称\",\n  \"type\": \"sync\",\n  \"mode\": \"batch\",\n  \"status\": \"running\",\n  \"progress\": 45,\n  \"created_at\": \"2025-01-09T10:00:00Z\"\n}"
+        },
+        {
+          "name": "启动任务",
+          "method": "POST",
+          "path": "/api/tasks/:id/start",
+          "description": "启动指定的传输任务",
+          "auth": true,
+          "params": ":id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"任务已启动\"\n}"
+        },
+        {
+          "name": "停止任务",
+          "method": "POST",
+          "path": "/api/tasks/:id/stop",
+          "description": "停止正在运行的任务",
+          "auth": true,
+          "params": ":id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"任务已停止\"\n}"
+        },
+        {
+          "name": "暂停任务",
+          "method": "POST",
+          "path": "/api/tasks/:id/pause",
+          "description": "暂停正在运行的任务",
+          "auth": true,
+          "params": ":id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"任务已暂停\"\n}"
+        },
+        {
+          "name": "恢复任务",
+          "method": "POST",
+          "path": "/api/tasks/:id/resume",
+          "description": "恢复已暂停的任务",
+          "auth": true,
+          "params": ":id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"任务已恢复\"\n}"
         }
       ]
     }

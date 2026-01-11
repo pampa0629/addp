@@ -202,6 +202,9 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		return nil, fmt.Errorf("meta client not initialized, cannot query spatial metadata")
 	}
 
+	// 设置租户 ID（用于服务间调用时的租户隔离）
+	s.metaClient.SetTenantID(&tenantID)
+
 	// 通过 Meta API 查询空间元数据
 	spatialMeta, err := s.metaClient.GetTableSpatialMetadata(engineID, schema, table)
 	if err != nil {

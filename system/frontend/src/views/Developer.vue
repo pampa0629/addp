@@ -131,6 +131,10 @@ import developManifest from '../../../../develop/docs/api-manifest.json'
 import serviceManifest from '../../../../service/docs/api-manifest.json'
 import orchestratorManifest from '../../../../orchestrator/docs/api-manifest.json'
 import gatewayManifest from '../../../../gateway/docs/api-manifest.json'
+// 导入工作流引擎的 API 配置文件
+import pythonWorkflowManifest from '../../../../engines/python-workflow/docs/api-manifest.json'
+import sparkWorkflowManifest from '../../../../engines/spark-workflow/docs/api-manifest.json'
+import mathWorkflowManifest from '../../../../engines/math-workflow/docs/api-manifest.json'
 
 const treeRef = ref(null)
 const selectedApi = ref(null)
@@ -162,7 +166,11 @@ const navTree = computed(() => {
     { manifest: developManifest, name: 'Develop', label: 'Develop - 数据开发' },
     { manifest: serviceManifest, name: 'Service', label: 'Service - 数据服务' },
     { manifest: orchestratorManifest, name: 'Orchestrator', label: 'Orchestrator - 工作流编排' },
-    { manifest: gatewayManifest, name: 'Gateway', label: 'Gateway - 路由规则' }
+    { manifest: gatewayManifest, name: 'Gateway', label: 'Gateway - 路由规则' },
+    // 工作流计算引擎
+    { manifest: pythonWorkflowManifest, name: 'PythonWorkflow', label: 'Python Workflow - Python 计算引擎' },
+    { manifest: sparkWorkflowManifest, name: 'SparkWorkflow', label: 'Spark Workflow - Spark 计算引擎' },
+    { manifest: mathWorkflowManifest, name: 'MathWorkflow', label: 'Math Workflow - 数学计算引擎' }
   ]
 
   return modules.map(mod => ({

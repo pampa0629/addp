@@ -223,7 +223,7 @@ func (s *OperatorDiscoveryService) GetOperatorsByModule(ctx context.Context, mod
 		return s.fetchOperatorsFromModule(ctx, module, url)
 	}
 
-	// 动态引擎（python, spark, math-workflow 等）
+	// 动态工作流引擎
 	// 从缓存的算子列表中过滤
 	allOperators, err := s.DiscoverAllOperators(ctx)
 	if err != nil {

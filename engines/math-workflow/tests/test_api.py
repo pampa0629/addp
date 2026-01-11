@@ -87,9 +87,9 @@ class TestSingleOperatorExecution:
     """单算子执行端点测试"""
 
     def test_execute_add(self, client):
-        """测试 POST /api/spatial/operators/add/execute"""
+        """测试 POST /api/operators/add/execute"""
         response = client.post(
-            '/api/spatial/operators/add/execute',
+            '/api/operators/add/execute',
             json={'params': {'a': 5, 'b': 3}},
             content_type='application/json'
         )
@@ -105,7 +105,7 @@ class TestSingleOperatorExecution:
     def test_execute_divide(self, client):
         """测试除法算子"""
         response = client.post(
-            '/api/spatial/operators/divide/execute',
+            '/api/operators/divide/execute',
             json={'params': {'a': 10, 'b': 2}},
             content_type='application/json'
         )
@@ -117,7 +117,7 @@ class TestSingleOperatorExecution:
     def test_execute_average(self, client):
         """测试平均值算子"""
         response = client.post(
-            '/api/spatial/operators/average/execute',
+            '/api/operators/average/execute',
             json={'params': {'values': [1, 2, 3, 4, 5]}},
             content_type='application/json'
         )
@@ -129,7 +129,7 @@ class TestSingleOperatorExecution:
     def test_operator_not_found(self, client):
         """测试算子不存在"""
         response = client.post(
-            '/api/spatial/operators/unknown/execute',
+            '/api/operators/unknown/execute',
             json={'params': {}},
             content_type='application/json'
         )
@@ -143,7 +143,7 @@ class TestSingleOperatorExecution:
     def test_missing_params(self, client):
         """测试缺少参数"""
         response = client.post(
-            '/api/spatial/operators/add/execute',
+            '/api/operators/add/execute',
             json={},  # 缺少 params
             content_type='application/json'
         )
@@ -157,7 +157,7 @@ class TestSingleOperatorExecution:
     def test_invalid_params(self, client):
         """测试无效参数"""
         response = client.post(
-            '/api/spatial/operators/add/execute',
+            '/api/operators/add/execute',
             json={'params': {'a': 5}},  # 缺少 b 参数
             content_type='application/json'
         )
@@ -171,7 +171,7 @@ class TestSingleOperatorExecution:
     def test_divide_by_zero(self, client):
         """测试除零错误"""
         response = client.post(
-            '/api/spatial/operators/divide/execute',
+            '/api/operators/divide/execute',
             json={'params': {'a': 10, 'b': 0}},
             content_type='application/json'
         )
@@ -206,7 +206,7 @@ class TestWorkflowExecution:
         }
 
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={'workflow_def': workflow_def},
             content_type='application/json'
         )
@@ -233,7 +233,7 @@ class TestWorkflowExecution:
         }
 
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={'workflow_def': workflow_def},
             content_type='application/json'
         )
@@ -255,7 +255,7 @@ class TestWorkflowExecution:
         }
 
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={'workflow_def': workflow_def},
             content_type='application/json'
         )
@@ -268,7 +268,7 @@ class TestWorkflowExecution:
     def test_missing_workflow_def(self, client):
         """测试缺少 workflow_def"""
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={},
             content_type='application/json'
         )
@@ -286,7 +286,7 @@ class TestWorkflowExecution:
         }
 
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={'workflow_def': workflow_def},
             content_type='application/json'
         )
@@ -304,7 +304,7 @@ class TestWorkflowExecution:
         }
 
         response = client.post(
-            '/api/spatial/workflow',
+            '/api/workflow',
             json={'workflow_def': workflow_def},
             content_type='application/json'
         )
@@ -320,8 +320,8 @@ class TestExecutionStatusEndpoint:
     """执行状态查询端点测试"""
 
     def test_get_execution_status(self, client):
-        """测试 GET /api/spatial/executions/{execution_id}"""
-        response = client.get('/api/spatial/executions/test-uuid-1234')
+        """测试 GET /api/executions/{execution_id}"""
+        response = client.get('/api/executions/test-uuid-1234')
 
         assert response.status_code == 200
 

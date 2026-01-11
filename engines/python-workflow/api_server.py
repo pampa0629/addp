@@ -157,7 +157,7 @@ def get_operators():
 # 即时执行（供 Develop 使用）
 # ========================================
 
-@app.route('/api/spatial/workflow', methods=['POST'])
+@app.route('/api/workflow', methods=['POST'])
 def execute_workflow_endpoint():
     """
     即时执行工作流
@@ -251,7 +251,7 @@ def execute_workflow_endpoint():
         return jsonify(response), 500
 
 
-@app.route('/api/spatial/operators/<operator_name>/execute', methods=['POST'])
+@app.route('/api/operators/<operator_name>/execute', methods=['POST'])
 def execute_operator_endpoint(operator_name):
     """
     执行单个算子
@@ -353,14 +353,14 @@ def execute_operator_endpoint(operator_name):
 # 任务管理（供 Orchestrator 使用）
 # ========================================
 
-# 注意：这里的"任务"指的是保存到 develop.spatial_tasks 的 GIS 任务定义
+# 注意：这里的"任务"指的是保存到 develop.dev_items 的工作流任务定义
 # 实际存储在 Develop Backend 的 PostgreSQL 中
-# 这里提供的 API 只是占位符，实际查询会通过 Develop Backend 转发
+# 这些 API 已废弃，实际查询会通过 Develop Backend 转发
 
-@app.route('/api/spatial/tasks', methods=['GET'])
+@app.route('/api/tasks', methods=['GET'])
 def list_tasks():
     """
-    列出所有 GIS 任务
+    列出所有工作流任务（已废弃）
     供 Orchestrator 动态发现任务使用
 
     Query Params:
@@ -374,7 +374,7 @@ def list_tasks():
             "tasks": [
                 {
                     "id": 1,
-                    "name": "北京 POI 缓冲区分析",
+                    "name": "数据处理工作流",
                     "description": "...",
                     "workflow_def": {...},
                     "input_schema": {...}
@@ -385,7 +385,7 @@ def list_tasks():
             "page_size": 20
         }
     """
-    # 注意：实际实现应该查询 develop.spatial_tasks 表
+    # 注意：实际实现应该查询 develop.dev_items 表
     # 这里返回空列表作为占位符
     tenant_id = request.args.get('tenant_id', type=int)
     page = request.args.get('page', 1, type=int)
@@ -399,14 +399,14 @@ def list_tasks():
         "total": 0,
         "page": page,
         "page_size": page_size,
-        "message": "Task list should be queried from develop.spatial_tasks via Develop Backend"
+        "message": "Task list should be queried from develop.dev_items via Develop Backend"
     }), 200
 
 
-@app.route('/api/spatial/tasks', methods=['POST'])
+@app.route('/api/tasks', methods=['POST'])
 def create_task():
     """
-    创建 GIS 任务
+    创建工作流任务（已废弃）
     供 Develop 模块"保存为任务"功能使用
 
     Request Body:
@@ -436,12 +436,12 @@ def create_task():
 
         logger.info(f"Creating task: {data.get('name')}")
 
-        # 注意：实际实现应该写入 develop.spatial_tasks 表
+        # 注意：实际实现应该写入 develop.dev_items 表
         # 这里返回占位符响应
         return jsonify({
             "status": "success",
             "task_id": 1,  # 实际应返回数据库生成的ID
-            "message": "Task should be saved to develop.spatial_tasks via Develop Backend"
+            "message": "Task should be saved to develop.dev_items via Develop Backend"
         }), 201
 
     except Exception as e:
@@ -452,17 +452,17 @@ def create_task():
         }), 500
 
 
-@app.route('/api/spatial/tasks/<int:task_id>/execute', methods=['POST'])
+@app.route('/api/tasks/<int:task_id>/execute', methods=['POST'])
 def execute_task(task_id):
     """
-    执行 GIS 任务
+    执行工作流任务（已废弃）
     供 Orchestrator 执行已保存的任务使用
 
     Request Body:
         {
             "inputs": {
-                "poi_location": {...},
-                "buffer_distance": 0.001
+                "data_location": {...},
+                "param_value": 100
             }
         }
 
@@ -479,17 +479,17 @@ def execute_task(task_id):
         logger.info(f"Executing task {task_id} with inputs")
 
         # 注意：实际实现应该：
-        # 1. 从 develop.spatial_tasks 查询任务定义
+        # 1. 从 develop.dev_items 查询任务定义
         # 2. 使用 inputs 填充 workflow_def 中的参数模板
         # 3. 调用 execute_workflow
-        # 4. 将结果写入 develop.spatial_execution_results（PostGIS 空间表）
+        # 4. 将结果写入 develop.dev_executions
 
         execution_id = str(uuid.uuid4())
 
         return jsonify({
             "status": "success",
             "execution_id": execution_id,
-            "message": "Task execution should query develop.spatial_tasks and save to PostGIS"
+            "message": "Task execution should query develop.dev_items and save to dev_executions"
         }), 200
 
     except Exception as e:
@@ -504,7 +504,7 @@ def execute_task(task_id):
 # 执行状态查询
 # ========================================
 
-@app.route('/api/spatial/executions/<execution_id>', methods=['GET'])
+@app.route('/api/executions/<execution_id>', methods=['GET'])
 def get_execution_status(execution_id):
     """
     查询执行状态
@@ -558,6 +558,13 @@ def register_to_system():
     capabilities = {
         "compute": [{
             "dev_modes": ["workflow"],
+            "api_endpoints": {
+                "operators": "/api/operators",
+                "execute": "/api/operators/:name/execute",
+                "workflow": "/api/workflow",
+                "tasks": "/api/tasks",
+                "executions": "/api/executions/:id"
+            },
             "supported_formats": ["geojson", "wkt", "csv", "parquet"],
             "features": ["dag", "memory_efficient", "batch", "pandas", "numpy", "scipy"],
             "description": "Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"

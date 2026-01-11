@@ -285,6 +285,9 @@ func (s *MetadataQueryService) GetNodeItems(tenantID, nodeID uint) ([]models.Met
 func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, schema, table string) (*models.SpatialMetadataResponse, error) {
 	var item models.MetaItem
 
+	fmt.Printf("🔍 [GetTableSpatialMetadata Service] Querying with tenantID=%d, engineID=%d, schema=%s, table=%s\n",
+		tenantID, engineID, schema, table)
+
 	// 查询表元数据
 	err := s.db.Where("tenant_id = ? AND engine_id = ? AND item_type = ? AND name = ?", tenantID, engineID, "table", table).
 		Where("attributes->>'schema' = ?", schema).
@@ -315,6 +318,15 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 			for i, v := range extent {
 				if f, ok := v.(float64); ok {
 					spatialMeta.Extent[i] = f
+				}
+			}
+		}
+		// 提取 geometry_types
+		if geomTypes, ok := spatialData["geometry_types"].([]interface{}); ok {
+			spatialMeta.GeometryTypes = make([]string, 0, len(geomTypes))
+			for _, v := range geomTypes {
+				if s, ok := v.(string); ok {
+					spatialMeta.GeometryTypes = append(spatialMeta.GeometryTypes, s)
 				}
 			}
 		}

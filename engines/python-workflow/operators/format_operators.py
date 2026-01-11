@@ -7,6 +7,7 @@
 import geopandas as gpd
 from typing import List, Dict
 from .base import (
+    OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
@@ -53,6 +54,7 @@ def export_to_wkt(input_gdf: gpd.GeoDataFrame) -> List[str]:
 
 LOAD_FROM_WKT_METADATA = OperatorMetadata(
     name="load_from_wkt",
+    type=OperatorType.GENERAL,
     category=OperatorCategory.FORMAT_CONVERSION,
     description="WKT → GeoDataFrame",
     brief_description="从WKT文本列表创建GeoDataFrame,常用于文本格式几何数据导入",
@@ -120,6 +122,7 @@ LOAD_FROM_WKT_METADATA = OperatorMetadata(
 
 EXPORT_TO_WKT_METADATA = OperatorMetadata(
     name="export_to_wkt",
+    type=OperatorType.GENERAL,
     category=OperatorCategory.FORMAT_CONVERSION,
     description="GeoDataFrame → WKT",
     brief_description="将GeoDataFrame的几何导出为WKT文本列表,常用于数据交换",

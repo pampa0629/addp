@@ -44,6 +44,11 @@ func (p *schemaPreviewProvider) Supports(req *PreviewRequest) bool {
 func (p *schemaPreviewProvider) Preview(ctx context.Context, req *PreviewRequest) (*models.TablePreview, error) {
 	_ = ctx
 
+	// 设置租户 ID（用于服务间调用时的租户隔离）
+	if p.metaClient != nil {
+		p.metaClient.SetTenantID(req.TenantID)
+	}
+
 	node, err := p.metadataRepo.GetNodeByName(req.Engine.ID, req.Schema, p.metaClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node info: %w", err)

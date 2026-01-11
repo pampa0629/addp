@@ -7,6 +7,7 @@
 from typing import Any, List, Dict, Union
 import geopandas as gpd
 from .base import (
+    OperatorType,
     OperatorMetadata,
     OperatorParam,
     OperatorCategory,
@@ -53,6 +54,7 @@ def filter_by_attribute(input_gdf: gpd.GeoDataFrame, field: str, operator: str, 
 
 FILTER_BY_ATTRIBUTE_METADATA = OperatorMetadata(
     name="filter_by_attribute",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="属性条件筛选",
     brief_description="根据属性字段条件筛选要素,常用于数据过滤和条件查询",
@@ -141,6 +143,7 @@ def sort_by_field(input_gdf: gpd.GeoDataFrame, field: str, ascending: bool = Tru
 
 SORT_BY_FIELD_METADATA = OperatorMetadata(
     name="sort_by_field",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="按字段排序",
     brief_description="根据指定字段对数据排序,常用于数据展示和排名分析",
@@ -221,6 +224,7 @@ def select_top_n(input_gdf: gpd.GeoDataFrame, field: str, n: int, ascending: boo
 
 SELECT_TOP_N_METADATA = OperatorMetadata(
     name="select_top_n",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="选择 Top N",
     brief_description="选择排名前 N 的记录,常用于排名分析和数据筛选",
@@ -308,6 +312,7 @@ def drop_duplicates(input_gdf: gpd.GeoDataFrame, field_names: List[str] = None, 
 
 DROP_DUPLICATES_METADATA = OperatorMetadata(
     name="drop_duplicates",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="去重",
     brief_description="删除重复记录,常用于数据清洗和唯一性保证",
@@ -392,6 +397,7 @@ def sample(input_gdf: gpd.GeoDataFrame, n: int = None, frac: float = None, rando
 
 SAMPLE_METADATA = OperatorMetadata(
     name="sample",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="随机采样",
     brief_description="随机抽取指定数量或比例的记录,常用于数据探索和测试",
@@ -479,6 +485,7 @@ def filter_by_geometry_type(input_gdf: gpd.GeoDataFrame, geom_type: str) -> gpd.
 
 FILTER_BY_GEOMETRY_TYPE_METADATA = OperatorMetadata(
     name="filter_by_geometry_type",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="按几何类型过滤",
     brief_description="筛选指定几何类型的要素,常用于数据分类和类型检查",
@@ -548,6 +555,7 @@ def drop_null_geometry(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 DROP_NULL_GEOMETRY_METADATA = OperatorMetadata(
     name="drop_null_geometry",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="删除空几何",
     brief_description="删除几何为空的记录,常用于数据清洗和质量控制",
@@ -619,6 +627,7 @@ def random_split(input_gdf: gpd.GeoDataFrame, train_ratio: float = 0.8, random_s
 
 RANDOM_SPLIT_METADATA = OperatorMetadata(
     name="random_split",
+    type=OperatorType.NON_SPATIAL,
     category=OperatorCategory.FILTER_OPERATION,
     description="随机分割数据集",
     brief_description="将数据集随机分割为训练集和测试集,常用于机器学习数据准备",

@@ -51,9 +51,8 @@ func SetupRouter(
 		})
 	})
 
-	// 创建算子Handler (需要在API路由组之前创建,以便在API中使用)
-	operatorService := service.NewOperatorService(cacheManager, embeddingService)
-	operatorHandler := NewOperatorHandler(operatorService)
+	// 创建任务追踪器（用于向量化任务状态管理）
+	taskTracker := service.NewTaskTracker()
 
 	// API 路由组
 	api := router.Group("/api")
@@ -69,20 +68,22 @@ func SetupRouter(
 		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
-		// 算子API (统一算子接口)
-		operators := api.Group("/operators")
-		{
-			operators.GET("", operatorHandler.ListOperators)              // 获取算子列表
-			operators.POST("/:name/execute", operatorHandler.ExecuteOperator) // 执行算子
-			operators.GET("/tasks/:task_id", operatorHandler.GetTaskStatus)   // 查询任务状态
-		}
+		// 向量化 API（新版，替代算子 API）
+		embeddingHandler := NewEmbeddingHandler(embeddingService, taskTracker)
+		api.POST("/embedding", embeddingHandler.CreateEmbedding) // 创建向量化任务
 
-		// 向量化任务历史查询 API
+		// 向量化任务查询 API
 		embeddingTasksGroup := api.Group("/embedding/tasks")
 		{
+			embeddingTasksGroup.GET("/:task_id", embeddingHandler.GetEmbeddingTaskStatus) // 查询实时任务状态
+		}
+
+		// 向量化任务历史记录 API
+		embeddingHistoryGroup := api.Group("/embedding/history")
+		{
 			taskHandler := NewEmbeddingTaskHandler(embeddingService)
-			embeddingTasksGroup.GET("", taskHandler.ListTasks)          // 查询任务列表
-			embeddingTasksGroup.GET("/:task_id", taskHandler.GetTask)   // 查询任务详情
+			embeddingHistoryGroup.GET("", taskHandler.ListTasks)          // 查询历史任务列表
+			embeddingHistoryGroup.GET("/:task_id", taskHandler.GetTask)   // 查询历史任务详情
 		}
 
 		configGroup := api.Group("/config")

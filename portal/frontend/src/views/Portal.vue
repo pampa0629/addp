@@ -183,6 +183,10 @@
               <el-icon><Document /></el-icon>
               <span>日志审计</span>
             </el-menu-item>
+            <el-menu-item index="/system/cleanup">
+              <el-icon><Delete /></el-icon>
+              <span>垃圾清理</span>
+            </el-menu-item>
             <el-menu-item index="/system/docs">
               <el-icon><Monitor /></el-icon>
               <span>API 文档</span>
@@ -296,7 +300,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit, Key, Notebook } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit, Key, Notebook, Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()

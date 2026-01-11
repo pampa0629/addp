@@ -46,6 +46,7 @@ type MetadataTree struct {
 // SpatialMetadata 空间元数据（用于 MVT 瓦片生成）
 type SpatialMetadata struct {
 	GeometryColumn string    `json:"geometry_column"`
+	GeometryTypes  []string  `json:"geometry_types,omitempty"` // 几何类型列表，如 ["ST_MultiPolygon"]
 	SRID           int       `json:"srid"`
 	ExtentSRID     int       `json:"extent_srid"`
 	Extent         []float64 `json:"extent"`

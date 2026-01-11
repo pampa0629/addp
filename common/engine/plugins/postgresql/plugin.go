@@ -233,7 +233,30 @@ func (p *PostgreSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema s
 		fullTableName := fmt.Sprintf("%s.%s", schema, tables[i].TableName)
 		err := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&rowCount).Error
 		if err == nil && rowCount.Valid {
-			tables[i].RowCount = rowCount.Int64
+			// 如果 reltuples = -1，说明表从未 ANALYZE，主动触发 ANALYZE 更新统计信息
+			if rowCount.Int64 == -1 {
+				// 执行 ANALYZE（采样分析，快速）
+				analyzeQuery := fmt.Sprintf("ANALYZE %s.%s",
+					db.Statement.Quote(schema),
+					db.Statement.Quote(tables[i].TableName))
+				analyzeErr := db.WithContext(ctx).Exec(analyzeQuery).Error
+				if analyzeErr == nil {
+					// ANALYZE 成功后重新读取 reltuples
+					var updatedCount sql.NullInt64
+					rereadErr := db.WithContext(ctx).Raw(countQuery, fullTableName).Scan(&updatedCount).Error
+					if rereadErr == nil && updatedCount.Valid {
+						tables[i].RowCount = updatedCount.Int64
+					} else {
+						// 读取失败，保持 -1
+						tables[i].RowCount = rowCount.Int64
+					}
+				} else {
+					// ANALYZE 失败（可能是权限问题），保持 -1
+					tables[i].RowCount = rowCount.Int64
+				}
+			} else {
+				tables[i].RowCount = rowCount.Int64
+			}
 		}
 	}
 

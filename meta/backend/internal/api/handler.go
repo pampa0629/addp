@@ -874,6 +874,9 @@ func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
 		return
 	}
 
+	fmt.Printf("🔍 [GetTableSpatialMetadata Handler] tenantID=%d, engineID=%d, schema=%s, table=%s\n",
+		tenantID, engineID, schema, table)
+
 	spatialMeta, err := h.scanService.GetTableSpatialMetadata(tenantID, uint(engineID), schema, table)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

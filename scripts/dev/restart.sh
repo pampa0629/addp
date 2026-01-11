@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-python-workflow] [-copilot] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -17,6 +17,7 @@ show_usage() {
   echo "  -service     强制重新编译 Service 模块"
   echo "  -gateway     强制重新编译 Gateway 模块"
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
+  echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
@@ -59,7 +60,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-python-workflow|-copilot|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -79,6 +80,7 @@ has_go_module_params() {
     for module in "${FORCE_BUILD_MODULES[@]}"; do
         # Python 服务列表
         if [[ "$module" != "python-workflow" &&
+              "$module" != "math-workflow" &&
               "$module" != "copilot" &&
               "$module" != "spark-workflow" &&
               "$module" != "jupyter" ]]; then
@@ -169,6 +171,12 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "copilot" ]; then
       # Copilot 是 Python 服务，不需要编译，只需清理虚拟环境
       echo "  标记 Copilot Backend 需要重启（无需编译）"
+    elif [ "$module" = "python-workflow" ]; then
+      # Python Workflow Engine 是 Python 服务，不需要编译
+      echo "  标记 Python Workflow Engine 需要重启（无需编译）"
+    elif [ "$module" = "math-workflow" ]; then
+      # Math Workflow Engine 是 Python 服务，不需要编译
+      echo "  标记 Math Workflow Engine 需要重启（无需编译）"
     elif [ "$module" = "spark-workflow" ]; then
       # Spark 工作流 Engine 是 Python 服务，不需要编译
       echo "  标记 Spark 工作流 Engine 需要重启（无需编译）"
@@ -183,6 +191,12 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     if [ "$module" = "gateway" ]; then
       rm -f .dev-bins/addp-gateway 2>/dev/null || true
     elif [ "$module" = "copilot" ]; then
+      # Python 服务无二进制文件
+      :
+    elif [ "$module" = "python-workflow" ]; then
+      # Python 服务无二进制文件
+      :
+    elif [ "$module" = "math-workflow" ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "spark-workflow" ]; then
@@ -200,6 +214,12 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     if [ "$module" = "gateway" ]; then
       (cd gateway && go clean -cache 2>/dev/null) || true
     elif [ "$module" = "copilot" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
+    elif [ "$module" = "python-workflow" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
+    elif [ "$module" = "math-workflow" ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "spark-workflow" ]; then

@@ -1,0 +1,110 @@
+{
+  "module": "python-workflow",
+  "title": "Python Workflow 计算引擎",
+  "version": "1.0.0",
+  "lastUpdate": "2026-01-09",
+  "categories": [
+    {
+      "name": "健康检查",
+      "description": "引擎健康状态和依赖信息",
+      "apis": [
+        {
+          "name": "健康检查",
+          "method": "GET",
+          "path": "/health",
+          "description": "检查 Python Workflow 引擎的健康状态、版本信息和依赖版本",
+          "auth": false,
+          "response": "{\n  \"status\": \"healthy\",\n  \"service\": \"python-workflow-engine\",\n  \"version\": \"1.0.0\",\n  \"uptime\": 3600,\n  \"operators_count\": 42,\n  \"dependencies\": {\n    \"geopandas\": \"0.14.1\",\n    \"pandas\": \"2.1.4\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "算子管理",
+      "description": "算子列表查询和元数据获取",
+      "apis": [
+        {
+          "name": "获取算子列表",
+          "method": "GET",
+          "path": "/api/operators",
+          "description": "获取所有可用的空间和非空间算子列表（42个算子：24个空间算子 + 18个非空间算子）",
+          "auth": false,
+          "query": "category: 按分类过滤（可选）",
+          "response": "{\n  \"status\": \"success\",\n  \"operators\": [\n    {\n      \"name\": \"buffer\",\n      \"display_name\": \"缓冲区分析\",\n      \"category\": \"geometric\",\n      \"description\": \"对几何对象创建缓冲区\",\n      \"inputs\": [...],\n      \"outputs\": [...],\n      \"params\": [...]\n    }\n  ],\n  \"count\": 42\n}"
+        }
+      ]
+    },
+    {
+      "name": "工作流执行",
+      "description": "工作流即时执行和单算子执行",
+      "apis": [
+        {
+          "name": "执行工作流",
+          "method": "POST",
+          "path": "/api/spatial/workflow",
+          "description": "即时执行完整的工作流（供 Develop 模块使用）",
+          "auth": false,
+          "request": "{\n  \"workflow_def\": {\n    \"tasks\": [\n      {\n        \"id\": \"task1\",\n        \"operator\": \"buffer\",\n        \"params\": {\"distance\": 100}\n      }\n    ]\n  },\n  \"input_data\": {}\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"execution_id\": \"uuid-...\",\n  \"final_result\": \"...\",\n  \"all_results\": {...},\n  \"execution_time_ms\": 123.45\n}"
+        },
+        {
+          "name": "执行单个算子",
+          "method": "POST",
+          "path": "/api/spatial/operators/:operator_name/execute",
+          "description": "执行单个算子（供快速测试使用）",
+          "auth": false,
+          "params": ":operator_name - 算子名称",
+          "request": "{\n  \"params\": {\n    \"distance\": 100,\n    \"input_data\": {...}\n  }\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"execution_id\": \"uuid-...\",\n  \"result\": \"...\",\n  \"execution_time_ms\": 12.34\n}"
+        }
+      ]
+    },
+    {
+      "name": "任务管理",
+      "description": "工作流任务的创建、查询和执行",
+      "apis": [
+        {
+          "name": "获取任务列表",
+          "method": "GET",
+          "path": "/api/spatial/tasks",
+          "description": "获取所有工作流任务列表",
+          "auth": false,
+          "response": "{\n  \"status\": \"success\",\n  \"tasks\": [\n    {\n      \"id\": 1,\n      \"name\": \"空间分析任务\",\n      \"workflow_def\": {...},\n      \"created_at\": \"2026-01-09T10:00:00Z\"\n    }\n  ],\n  \"count\": 5\n}"
+        },
+        {
+          "name": "创建任务",
+          "method": "POST",
+          "path": "/api/spatial/tasks",
+          "description": "创建新的工作流任务",
+          "auth": false,
+          "request": "{\n  \"name\": \"空间分析任务\",\n  \"workflow_def\": {\n    \"tasks\": [...]\n  }\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"task_id\": 1,\n  \"message\": \"任务创建成功\"\n}"
+        },
+        {
+          "name": "执行任务",
+          "method": "POST",
+          "path": "/api/spatial/tasks/:task_id/execute",
+          "description": "执行指定的工作流任务",
+          "auth": false,
+          "params": ":task_id - 任务ID",
+          "request": "{\n  \"input_data\": {}\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"execution_id\": \"uuid-...\",\n  \"message\": \"任务执行已启动\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "执行状态查询",
+      "description": "查询工作流执行状态和结果",
+      "apis": [
+        {
+          "name": "查询执行状态",
+          "method": "GET",
+          "path": "/api/spatial/executions/:execution_id",
+          "description": "查询工作流执行的状态和结果",
+          "auth": false,
+          "params": ":execution_id - 执行ID",
+          "response": "{\n  \"status\": \"success\",\n  \"execution\": {\n    \"id\": \"uuid-...\",\n    \"status\": \"completed\",\n    \"result\": {...},\n    \"execution_time_ms\": 123.45\n  }\n}"
+        }
+      ]
+    }
+  ]
+}

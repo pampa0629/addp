@@ -7,6 +7,7 @@
 import geopandas as gpd
 from typing import List
 from .base import (
+    OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
@@ -144,6 +145,7 @@ def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 BUFFER_METADATA = OperatorMetadata(
     name="buffer",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,常用于影响范围分析和邻域查询",
@@ -205,6 +207,7 @@ BUFFER_METADATA = OperatorMetadata(
 
 INTERSECTION_METADATA = OperatorMetadata(
     name="intersection",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="几何相交",
     brief_description="计算两个几何图层的空间交集,提取重叠区域,常用于叠加分析",
@@ -256,6 +259,7 @@ INTERSECTION_METADATA = OperatorMetadata(
 
 UNION_METADATA = OperatorMetadata(
     name="union",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="几何合并",
     brief_description="将多个图层的几何对象合并为一个图层,常用于数据整合和范围叠加",
@@ -304,6 +308,7 @@ UNION_METADATA = OperatorMetadata(
 
 CENTROID_METADATA = OperatorMetadata(
     name="centroid",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="计算质心",
     brief_description="计算几何对象的质心(中心点),常用于位置标注和点化处理",
@@ -347,6 +352,7 @@ CENTROID_METADATA = OperatorMetadata(
 
 DIFFERENCE_METADATA = OperatorMetadata(
     name="difference",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="几何差集",
     brief_description="计算两个图层的几何差集(A-B),保留A中不与B重叠的部分",
@@ -399,6 +405,7 @@ DIFFERENCE_METADATA = OperatorMetadata(
 
 SIMPLIFY_METADATA = OperatorMetadata(
     name="simplify",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="简化几何",
     brief_description="简化几何对象的顶点数量,减小数据量,常用于地图制图和性能优化",
@@ -460,6 +467,7 @@ SIMPLIFY_METADATA = OperatorMetadata(
 
 CONVEX_HULL_METADATA = OperatorMetadata(
     name="convex_hull",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="凸包",
     brief_description="计算几何对象的最小凸包(凸多边形),常用于范围分析和形状概括",
@@ -503,6 +511,7 @@ CONVEX_HULL_METADATA = OperatorMetadata(
 
 ENVELOPE_METADATA = OperatorMetadata(
     name="envelope",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.GEOMETRIC,
     description="最小外接矩形",
     brief_description="计算几何对象的最小外接矩形(MBR),常用于快速范围查询和空间索引",

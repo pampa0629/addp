@@ -257,7 +257,7 @@ const handleNodeAction = async ({ node, action }) => {
       }
 
       // 调用后端 API
-      const response = await client.post('/operators/embedding/execute', {
+      const response = await client.post('/embedding', {
         operator_name: 'embedding',
         params: params,
         execute_now: true

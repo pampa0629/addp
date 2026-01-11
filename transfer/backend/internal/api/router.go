@@ -67,17 +67,6 @@ func SetupRouter(
 	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	transformHandler := NewTransformHandler()
 
-	// 创建算子Handler
-	operatorService := service.NewOperatorService(taskService)
-	operatorHandler := NewOperatorHandler(operatorService)
-
-	// 算子API (统一算子接口)
-	operators := protected.Group("/operators")
-	{
-		operators.GET("", operatorHandler.ListOperators)              // 获取算子列表
-		operators.POST("/:name/execute", operatorHandler.ExecuteOperator) // 执行算子
-	}
-
 	// 任务管理路由
 	tasks := protected.Group("/tasks")
 	{

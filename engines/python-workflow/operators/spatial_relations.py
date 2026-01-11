@@ -6,7 +6,7 @@
 
 import geopandas as gpd
 from .base import (
-    OperatorMetadata, OperatorParam, OperatorCategory, register_operator
+    OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator
 )
 
 
@@ -72,6 +72,7 @@ def distance_to(input_gdf: gpd.GeoDataFrame, target_geom: gpd.GeoDataFrame) -> g
 
 CONTAINS_METADATA = OperatorMetadata(
     name="contains",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.SPATIAL_RELATION,
     description="包含判断",
     brief_description="判断图层A的几何是否包含图层B的几何,常用于点在面内判断",
@@ -124,6 +125,7 @@ CONTAINS_METADATA = OperatorMetadata(
 
 INTERSECTS_METADATA = OperatorMetadata(
     name="intersects",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.SPATIAL_RELATION,
     description="相交判断",
     brief_description="判断两个图层的几何是否相交(包括接触),常用于空间关系过滤",
@@ -176,6 +178,7 @@ INTERSECTS_METADATA = OperatorMetadata(
 
 DISTANCE_TO_METADATA = OperatorMetadata(
     name="distance_to",
+    type=OperatorType.SPATIAL,
     category=OperatorCategory.SPATIAL_RELATION,
     description="距离计算",
     brief_description="计算几何对象到目标几何的最短距离,常用于邻近度分析和缓冲区计算",

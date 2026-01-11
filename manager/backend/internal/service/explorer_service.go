@@ -172,13 +172,17 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 	allNodes := make([]*commonModels.MetaNode, 0, len(tree.TopNodes)+len(tree.ChildNodes)+len(tree.Items))
 
 	// 添加顶层节点（数据库/Schema/Bucket）
+	// 创建新实例以避免指针共享导致的循环引用
 	for i := range tree.TopNodes {
-		allNodes = append(allNodes, &tree.TopNodes[i])
+		node := tree.TopNodes[i]
+		allNodes = append(allNodes, &node)
 	}
 
 	// 添加子节点（中间层容器）
+	// 创建新实例以避免指针共享导致的循环引用
 	for i := range tree.ChildNodes {
-		allNodes = append(allNodes, &tree.ChildNodes[i])
+		node := tree.ChildNodes[i]
+		allNodes = append(allNodes, &node)
 	}
 
 	// 将 Items 转换为 MetaNode（叶子节点：表/集合/对象）

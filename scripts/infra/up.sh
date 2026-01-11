@@ -118,10 +118,10 @@ port_used_by_container() {
 legacy_override="docker-compose.override.autogen.yml"
 [ -f "$legacy_override" ] && echo -e "${YELLOW}发现历史覆盖文件 $legacy_override，将忽略该文件（推荐删除）。${NC}"
 
-# PostgreSQL（固定 5432）
+# PostgreSQL（固定 15432）
 if [ "$(check_port "$PG_PORT")" = "busy" ]; then
-  if port_used_by_container "$PG_PORT" "postgres"; then
-    echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 已由 postgres 容器使用${NC}"
+  if port_used_by_container "$PG_PORT" "addp-postgres"; then
+    echo -e "  ${GREEN}✓ PostgreSQL 端口 ${PG_PORT} 已由 addp-postgres 容器使用${NC}"
   else
     echo -e "  ${RED}✗ PostgreSQL 端口 ${PG_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${PG_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
@@ -132,10 +132,10 @@ else
   ALL_SERVICES_RUNNING=false
 fi
 
-# Redis（固定 6379）
+# Redis（固定 16379）
 if [ "$(check_port "$REDIS_PORT")" = "busy" ]; then
-  if port_used_by_container "$REDIS_PORT" "redis"; then
-    echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 已由 redis 容器使用${NC}"
+  if port_used_by_container "$REDIS_PORT" "addp-redis"; then
+    echo -e "  ${GREEN}✓ Redis 端口 ${REDIS_PORT} 已由 addp-redis 容器使用${NC}"
   else
     echo -e "  ${RED}✗ Redis 端口 ${REDIS_PORT} 被其他进程占用${NC}"
     echo -e "    建议：使用 lsof -nP -i :${REDIS_PORT} 查占用并释放，或临时调整 docker-compose.yml 端口映射。"
@@ -146,10 +146,10 @@ else
   ALL_SERVICES_RUNNING=false
 fi
 
-# MinIO（固定 9000/9001）
+# MinIO（固定 19000/19001）
 if [ "$(check_port "$MINIO_API_PORT")" = "busy" ] || [ "$(check_port "$MINIO_CONSOLE_PORT")" = "busy" ]; then
-  if port_used_by_container "$MINIO_API_PORT" "minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "minio"; then
-    echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 minio 容器使用${NC}"
+  if port_used_by_container "$MINIO_API_PORT" "addp-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "addp-minio"; then
+    echo -e "  ${GREEN}✓ MinIO 端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT} 已由 addp-minio 容器使用${NC}"
   elif port_used_by_container "$MINIO_API_PORT" "business-minio" || port_used_by_container "$MINIO_CONSOLE_PORT" "business-minio"; then
     echo -e "  ${RED}✗ 检测到 business-minio 使用了系统保留端口 ${MINIO_API_PORT}/${MINIO_CONSOLE_PORT}${NC}"
     echo -e "    请到 business/.env 将 BUSINESS_MINIO_API_PORT/BUSINESS_MINIO_CONSOLE_PORT 改为 9002/9003，然后重启 business。"

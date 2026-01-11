@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/engine/plugin"
 	commonModels "github.com/addp/common/models"
@@ -17,13 +18,15 @@ import (
 // 自动支持所有实现了 RelationalDBPlugin 的数据库（PostgreSQL、MySQL、ClickHouse、Doris、MongoDB 等）
 type DatabaseTablePreviewProvider struct {
 	metadataRepo *repository.MetadataRepository
+	metaClient   *commonClient.MetaClient
 	priority     int
 }
 
 // NewDatabaseTablePreviewProvider 创建通用数据库表预览 Provider
-func NewDatabaseTablePreviewProvider(metadataRepo *repository.MetadataRepository) PreviewProvider {
+func NewDatabaseTablePreviewProvider(metadataRepo *repository.MetadataRepository, metaClient *commonClient.MetaClient) PreviewProvider {
 	return &DatabaseTablePreviewProvider{
 		metadataRepo: metadataRepo,
+		metaClient:   metaClient,
 		priority:     100, // 高优先级
 	}
 }
@@ -75,16 +78,49 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		tableName = strings.TrimPrefix(req.Table, req.Schema+".")
 	}
 
-	// 3. 获取列信息（自动使用正确的 plugin）
-	columns, err := dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list columns: %w", err)
-	}
+	// 3. 尝试从 Meta 获取列元数据（优先使用 Meta，包含更准确的几何类型）
+	columnMetadata, geometryColumns, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
+	var columnNames []string
+	var columns []plugin.ColumnInfo
 
-	// 提取列名
-	columnNames := make([]string, len(columns))
-	for i, col := range columns {
-		columnNames[i] = col.ColumnName
+	if metaErr == nil && len(columnMetadata) > 0 {
+		// Meta 元数据可用，使用 Meta 的数据
+		columnNames = make([]string, len(columnMetadata))
+		for i, meta := range columnMetadata {
+			columnNames[i] = meta.ColumnName
+		}
+		// 仍需要从数据库获取列信息用于查询构建（必须获取，否则 PostgreSQL 查询会失败）
+		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list columns for query construction: %w", err)
+		}
+	} else {
+		// Meta 不可用或无数据，回退到数据库插件
+		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list columns: %w", err)
+		}
+
+		// 提取列名
+		columnNames = make([]string, len(columns))
+		for i, col := range columns {
+			columnNames[i] = col.ColumnName
+		}
+
+		// 检测几何列
+		geometryColumns = p.detectGeometryColumns(req.Engine.EngineType, columns)
+
+		// 转换列元数据
+		columnMetadata = make([]models.ColumnMetadata, len(columns))
+		for i, col := range columns {
+			columnMetadata[i] = models.ColumnMetadata{
+				ColumnName:   col.ColumnName,
+				DataType:     col.DataType,
+				IsNullable:   col.IsNullable,
+				IsPrimaryKey: col.IsPrimaryKey,
+				Comment:      col.Comment,
+			}
+		}
 	}
 
 	// 4. 获取总行数（自动使用正确的 plugin）
@@ -120,12 +156,10 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		return nil, fmt.Errorf("failed to query data: %w", err)
 	}
 
-	// 7. 检测几何列（仅 PostgreSQL + PostGIS）
-	geometryColumns := p.detectGeometryColumns(req.Engine.EngineType, columns)
-
 	return &models.TablePreview{
 		Mode:            PreviewModeTable,
 		Columns:         columnNames,
+		ColumnMetadata:  columnMetadata,
 		Rows:            rows,
 		Total:           int(totalCount),
 		Page:            page,
@@ -219,4 +253,78 @@ func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
 	default:
 		return false
 	}
+}
+
+// getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）
+func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
+	ctx context.Context,
+	tenantID *uint,
+	engineID uint,
+	schema, table string,
+) ([]models.ColumnMetadata, []string, error) {
+	// 检查 MetaClient 是否可用
+	if p.metaClient == nil {
+		return nil, nil, fmt.Errorf("meta client not available")
+	}
+
+	// 设置租户 ID（用于服务间调用时的租户隔离）
+	p.metaClient.SetTenantID(tenantID)
+
+	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
+	spatialMeta, err := p.metaClient.GetTableSpatialMetadata(engineID, schema, table)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
+	}
+
+	// 如果没有字段信息，返回错误
+	if len(spatialMeta.Fields) == 0 {
+		return nil, nil, fmt.Errorf("no field metadata in Meta")
+	}
+
+	// 转换字段信息为 ColumnMetadata
+	columnMetadata := make([]models.ColumnMetadata, len(spatialMeta.Fields))
+	geometryColumns := []string{}
+
+	for i, field := range spatialMeta.Fields {
+		dataType := field.DataType
+
+		// 对于几何列，使用 spatial_metadata 中的几何类型信息来丰富 data_type
+		if field.Name == spatialMeta.GeometryColumn && spatialMeta.GeometryColumn != "" {
+			// 将几何列添加到列表
+			geometryColumns = append(geometryColumns, field.Name)
+
+			// 使用更精确的几何类型描述
+			// 例如: "GEOMETRY(MULTIPOLYGON, 4326)" 而不是 "USER-DEFINED"
+			if len(spatialMeta.Extent) > 0 {
+				// 尝试从 geometry_types 中提取具体的几何类型
+				geomType := ""
+				if len(spatialMeta.GeometryTypes) > 0 {
+					// Meta 存储格式如 "ST_MultiPolygon"，需要转换为 "MULTIPOLYGON"
+					rawType := spatialMeta.GeometryTypes[0]
+					if strings.HasPrefix(rawType, "ST_") {
+						geomType = strings.ToUpper(strings.TrimPrefix(rawType, "ST_"))
+					} else {
+						geomType = strings.ToUpper(rawType)
+					}
+				}
+
+				// 构建完整的几何类型描述
+				if geomType != "" {
+					dataType = fmt.Sprintf("GEOMETRY(%s, %d)", geomType, spatialMeta.SRID)
+				} else {
+					dataType = fmt.Sprintf("GEOMETRY(SRID %d)", spatialMeta.SRID)
+				}
+			}
+		}
+
+		columnMetadata[i] = models.ColumnMetadata{
+			ColumnName:   field.Name,
+			DataType:     dataType,
+			IsNullable:   true,  // Meta 当前不存储 nullable 信息，默认为 true
+			IsPrimaryKey: field.IsPrimaryKey,
+			Comment:      "", // Meta 当前不存储 comment 信息
+		}
+	}
+
+	return columnMetadata, geometryColumns, nil
 }

@@ -75,6 +75,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	registryService := service.NewRegistryService(engineRepo)
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
+	cleanupOrchestratorService := service.NewCleanupOrchestratorService(redisClient)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService))
@@ -170,6 +171,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 				applications.POST("/:id/keys", appHandler.GenerateAPIKey)
 				applications.GET("/:id/keys", appHandler.ListAPIKeys)
 				applications.DELETE("/:id/keys/:key_id", appHandler.RevokeAPIKey)
+			}
+
+			// 垃圾数据清理管理（仅租户管理员）
+			cleanup := protected.Group("/admin/cleanup")
+			{
+				cleanupHandler := NewCleanupHandler(cleanupOrchestratorService)
+				cleanup.POST("/scan", cleanupHandler.CreateScanTask)
+				cleanup.GET("/tasks/:task_id", cleanupHandler.GetTaskStatus)
+				cleanup.POST("/execute", cleanupHandler.CreateExecuteTask)
+				cleanup.GET("/history", cleanupHandler.GetTaskHistory)
 			}
 		}
 	}
