@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/manager/internal/repository"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -18,16 +18,16 @@ import (
 // 3. 连接测试
 // 4. 连接缓存（避免重复连接）
 type EngineConnector struct {
-	engineRepo *repository.EngineRepository
-	mu         sync.RWMutex
-	connections map[uint]*gorm.DB // engineID -> connection
+	systemClient *commonClient.SystemClient
+	mu           sync.RWMutex
+	connections  map[uint]*gorm.DB // engineID -> connection
 }
 
 // NewEngineConnector 创建引擎连接管理器
-func NewEngineConnector(engineRepo *repository.EngineRepository) *EngineConnector {
+func NewEngineConnector(systemClient *commonClient.SystemClient) *EngineConnector {
 	return &EngineConnector{
-		engineRepo:  engineRepo,
-		connections: make(map[uint]*gorm.DB),
+		systemClient: systemClient,
+		connections:  make(map[uint]*gorm.DB),
 	}
 }
 
@@ -65,17 +65,18 @@ func (c *EngineConnector) GetConnection(engineID uint) (*gorm.DB, error) {
 		delete(c.connections, engineID)
 	}
 
-	// 获取引擎信息
-	engine, err := c.engineRepo.GetByID(engineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+	// 通过 SystemClient 获取引擎信息
+	if c.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
 	}
 
-	// 转换为 commonModels.Engine
-	commonEngine := convertManagerEngineToCommon(engine)
+	engine, err := c.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
+	}
 
 	// 创建连接
-	conn, err := c.createConnection(commonEngine)
+	conn, err := c.createConnection(engine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}

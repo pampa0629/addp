@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -153,15 +154,17 @@ func Load() *Config {
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
 
 	// MinIO 配置（用于 MVT 瓦片存储）
-	// 注意：Manager 模块使用系统 infra MinIO (9000)，不是业务 MinIO (9002)
-	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", "localhost:9000"))
+	// 注意：Manager 模块使用系统 infra MinIO，端口从 MINIO_API_PORT 读取
+	minioPort := commonConfig.GetEnv("MINIO_API_PORT", "9000")
+	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
+	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", defaultEndpoint))
 	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
 	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// MVT 预缓存配置
 	cfg.PreCache = PreCacheConfig{
-		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 5000),
+		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 3000),
 		MinDurationForCacheMS: commonConfig.GetEnvInt("PRE_CACHE_MIN_DURATION_MS", 100),
 		MinSizeForCacheKB:     commonConfig.GetEnvInt("PRE_CACHE_MIN_SIZE_KB", 50),
 		MaxZoom:               commonConfig.GetEnvInt("PRE_CACHE_MAX_ZOOM", 18),

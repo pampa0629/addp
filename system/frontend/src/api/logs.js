@@ -14,20 +14,20 @@ export const logsAPI = {
       if (userId) params.user_id = userId
     }
 
-    return client.get('/logs', { params })
+    return client.get('/system/logs', { params })
   },
 
   getById: (id) => {
-    return client.get(`/logs/${id}`)
+    return client.get(`/system/logs/${id}`)
   },
 
   // 统计数据（新增）
   getStats: () => {
-    return client.get('/logs/stats')
+    return client.get('/system/logs/stats')
   },
 
   // 时间趋势（新增）
   getTrends: () => {
-    return client.get('/logs/trends')
+    return client.get('/system/logs/trends')
   }
 }

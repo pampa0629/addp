@@ -23,7 +23,6 @@ import (
 
 type MetadataService struct {
 	metadataRepo   *repository.MetadataRepository
-	engineRepo   *repository.EngineRepository
 	systemClient   *commonClient.SystemClient
 	metaClient     *commonClient.MetaClient
 	previews       *PreviewRegistry
@@ -34,7 +33,7 @@ type MetadataService struct {
 
 var ErrEngineAccessDenied = errors.New("engine not accessible for current tenant")
 
-func NewMetadataService(metadataRepo *repository.MetadataRepository, engineRepo *repository.EngineRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
+func NewMetadataService(metadataRepo *repository.MetadataRepository, systemClient *commonClient.SystemClient, metaClient *commonClient.MetaClient, previewRegistry *PreviewRegistry, contentRegistry *ObjectContentRegistry, metaServiceURL string) *MetadataService {
 	pr := previewRegistry
 	if pr == nil {
 		pr = NewPreviewRegistry()
@@ -48,7 +47,6 @@ func NewMetadataService(metadataRepo *repository.MetadataRepository, engineRepo 
 	}
 	return &MetadataService{
 		metadataRepo:   metadataRepo,
-		engineRepo:   engineRepo,
 		systemClient:   systemClient,
 		metaClient:     metaClient,
 		previews:       pr,
@@ -394,14 +392,18 @@ func resourceAccessible(resource *models.Engine, tenantID *uint) bool {
 	return *resource.TenantID == *tenantID
 }
 
-// getResource 优先通过 System 服务获取解密后的资源信息，失败时回退到本地数据库
+// getResource 通过 System 服务获取解密后的资源信息
 func (s *MetadataService) getResource(engineID uint) (*models.Engine, error) {
-	if s.systemClient != nil {
-		if sysResource, err := s.systemClient.GetEngine(engineID); err == nil {
-			return convertResource(sysResource), nil
-		}
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
 	}
-	return s.engineRepo.GetByID(engineID)
+
+	sysResource, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
+	}
+
+	return convertResource(sysResource), nil
 }
 
 func (s *MetadataService) getResourceForTenant(engineID uint, tenantID *uint) (*models.Engine, error) {

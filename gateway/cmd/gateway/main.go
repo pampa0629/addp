@@ -27,7 +27,7 @@ func main() {
 	r := router.SetupRouter(cfg)
 
 	// 启动服务器
-	logger.L().Info("Gateway 123服务启动", "addr", cfg.Port)
+	logger.L().Info("Gateway 服务启动", "addr", cfg.Port)
 	if err := r.Run(cfg.Port); err != nil {
 		logger.L().Error("Gateway 服务启动失败", "error", err)
 		os.Exit(1)

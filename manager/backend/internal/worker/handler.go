@@ -183,8 +183,6 @@ func (h *TaskHandler) updateQuickViewStatus(
 				MaxZoom:     payload.MaxZoom,
 				Fingerprint: payload.Fingerprint,
 				Extent:      payload.Extent,
-				StopThresholdTimeMs: payload.StopThresholdMs,
-				StopThresholdSizeKB: payload.StopThresholdKB,
 			}
 
 			if status == "generating" {
@@ -213,8 +211,6 @@ func (h *TaskHandler) updateQuickViewStatus(
 		updates["actual_max_zoom"] = result.ActualMaxZoom
 		updates["total_tiles"] = result.TotalTiles
 		updates["cached_tiles"] = result.CachedTiles
-		updates["last_zoom_avg_time_ms"] = result.LastZoomAvgTimeMs
-		updates["last_zoom_avg_size_kb"] = result.LastZoomAvgSizeKB
 		updates["completed_at"] = gorm.Expr("NOW()")
 	}
 

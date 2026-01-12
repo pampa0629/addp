@@ -11,7 +11,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
-	"github.com/addp/manager/internal/repository"
 )
 
 // PreviewResolver 数据预览解析器
@@ -23,16 +22,16 @@ import (
 //
 // 注意：重命名自 PreviewOrchestrator，避免与 Orchestrator 模块混淆
 type PreviewResolver struct {
-	registry      *PreviewRegistry
-	engineRepo    *repository.EngineRepository
-	metaClient    *commonClient.MetaClient
+	registry        *PreviewRegistry
+	systemClient    *commonClient.SystemClient
+	metaClient      *commonClient.MetaClient
 	engineConnector *EngineConnector
 }
 
 // NewPreviewResolver 创建预览解析器
 func NewPreviewResolver(
 	registry *PreviewRegistry,
-	engineRepo *repository.EngineRepository,
+	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
 	engineConnector *EngineConnector,
 ) *PreviewResolver {
@@ -40,12 +39,12 @@ func NewPreviewResolver(
 		registry = NewPreviewRegistry()
 	}
 	if engineConnector == nil {
-		engineConnector = NewEngineConnector(engineRepo)
+		engineConnector = NewEngineConnector(systemClient)
 	}
 
 	return &PreviewResolver{
 		registry:        registry,
-		engineRepo:      engineRepo,
+		systemClient:    systemClient,
 		metaClient:      metaClient,
 		engineConnector: engineConnector,
 	}
@@ -141,8 +140,12 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
 
-	// 2. 获取引擎信息
-	engine, err := r.engineRepo.GetByID(loc.EngineID)
+	// 2. 通过 SystemClient 获取引擎信息
+	if r.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := r.systemClient.GetEngine(loc.EngineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get engine: %w", err)
 	}
@@ -152,13 +155,10 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 转换为 commonModels.Engine
-	commonEngine := convertManagerEngineToCommon(engine)
-
 	// 3. 构建请求
 	req := &PreviewResolverRequest{
 		Locator: loc,
-		Engine:  commonEngine,
+		Engine:  engine,
 		Pagination: &Pagination{
 			Page:     page,
 			PageSize: pageSize,

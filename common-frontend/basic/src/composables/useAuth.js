@@ -494,7 +494,7 @@ export function createAuthAPI(client, options = {}) {
 
   const baseAPI = {
     login: (username, password) => {
-      return client.post('/auth/login', { username, password })
+      return client.post('/login', { username, password })
     },
 
     getCurrentUser: () => {
@@ -512,7 +512,7 @@ export function createAuthAPI(client, options = {}) {
   // 如果需要注册功能，添加 register 方法
   if (includeRegister) {
     baseAPI.register = (data) => {
-      return client.post('/auth/register', data)
+      return client.post('/register', data)
     }
   }
 

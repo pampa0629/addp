@@ -7,8 +7,30 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-    }
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@common-map': resolve(__dirname, '../../common-frontend/map/src')
+    },
+    dedupe: ['ol', 'vue']
+  },
+  optimizeDeps: {
+    include: [
+      'ol',
+      'ol/layer/Tile',
+      'ol/layer/VectorTile',
+      'ol/layer/Vector',
+      'ol/source/XYZ',
+      'ol/source/VectorTile',
+      'ol/source/Vector',
+      'ol/format/MVT',
+      'ol/format/GeoJSON',
+      'ol/style/Style',
+      'ol/style/Fill',
+      'ol/style/Stroke',
+      'ol/style/Circle',
+      'ol/Overlay',
+      'ol/interaction',
+      'ol/control'
+    ]
   },
   server: {
     port: 5174,

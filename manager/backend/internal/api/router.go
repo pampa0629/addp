@@ -16,13 +16,11 @@ import (
 
 func SetupRouter(
 	cfg *config.Config,
-	engineService *service.EngineService,
 	metadataService *service.MetadataService,
 	searchService *service.HybridSearchService,
 	historyService *service.SearchHistoryService,
 	unifiedMVTService *service.UnifiedMVTService,
 	quickViewService *service.QuickViewService,
-	engineRepo *repository.EngineRepository,
 	metadataRepo *repository.MetadataRepository,
 	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
@@ -55,7 +53,7 @@ func SetupRouter(
 	taskTracker := service.NewTaskTracker()
 
 	// API 路由组
-	api := router.Group("/api")
+	api := router.Group("/api/manager")
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {
 		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
@@ -68,22 +66,17 @@ func SetupRouter(
 		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
-		// 向量化 API（新版，替代算子 API）
+		// 向量化 API
 		embeddingHandler := NewEmbeddingHandler(embeddingService, taskTracker)
+		taskHandler := NewEmbeddingTaskHandler(embeddingService)
+
 		api.POST("/embedding", embeddingHandler.CreateEmbedding) // 创建向量化任务
 
-		// 向量化任务查询 API
+		// 向量化任务 API（RESTful 风格）
 		embeddingTasksGroup := api.Group("/embedding/tasks")
 		{
-			embeddingTasksGroup.GET("/:task_id", embeddingHandler.GetEmbeddingTaskStatus) // 查询实时任务状态
-		}
-
-		// 向量化任务历史记录 API
-		embeddingHistoryGroup := api.Group("/embedding/history")
-		{
-			taskHandler := NewEmbeddingTaskHandler(embeddingService)
-			embeddingHistoryGroup.GET("", taskHandler.ListTasks)          // 查询历史任务列表
-			embeddingHistoryGroup.GET("/:task_id", taskHandler.GetTask)   // 查询历史任务详情
+			embeddingTasksGroup.GET("", taskHandler.ListTasks)                            // 查询任务列表
+			embeddingTasksGroup.GET("/:task_id", embeddingHandler.GetEmbeddingTaskStatus) // 查询任务状态（内存）
 		}
 
 		configGroup := api.Group("/config")
@@ -92,46 +85,30 @@ func SetupRouter(
 			configGroup.GET("/map", configHandler.GetMapConfig)
 		}
 
-		// 新版数据探查 API（基于 ResourceLocator URI）
-		explorerGroup := api.Group("/explorer")
-		{
-			// 创建新服务
-			engineConnector := service.NewEngineConnector(engineRepo)
-			// 复用 metadataService 中已注册的预览插件 registry
-			previewRegistry := metadataService.PreviewRegistry()
-			previewResolver := service.NewPreviewResolver(previewRegistry, engineRepo, metaClient, engineConnector)
-			explorerService := service.NewExplorerService(engineRepo, metaClient, previewResolver)
+		// 数据探查 API（Manager 核心功能，直接挂在 /api/manager 下）
+		engineConnector := service.NewEngineConnector(systemClient)
+		previewRegistry := metadataService.PreviewRegistry()
+		previewResolver := service.NewPreviewResolver(previewRegistry, systemClient, metaClient, engineConnector)
+		explorerService := service.NewExplorerService(systemClient, metaClient, previewResolver)
+		explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
 
-			explorerHandler := NewExplorerHandler(explorerService, previewResolver, metadataService)
+		api.GET("/engines", explorerHandler.ListEngines)       // 获取可用引擎列表（只读）
+		api.GET("/tree/:engine_id", explorerHandler.GetTree)
+		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
+		api.GET("/preview", explorerHandler.Preview)
+		api.GET("/video-stream", explorerHandler.VideoStream)
 
-			explorerGroup.GET("/engines", explorerHandler.ListEngines)
-			explorerGroup.GET("/tree/:engine_id", explorerHandler.GetTree)
-			explorerGroup.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
-			explorerGroup.GET("/preview", explorerHandler.Preview)
-			explorerGroup.GET("/video-stream", explorerHandler.VideoStream)
-		}
-
-		// 引擎管理
+		// ============================================================
+		// 空间数据服务路由组
+		// 注意：Manager 不负责引擎管理（创建、更新、删除），仅提供数据访问服务
+		// 引擎管理由 System 模块负责，Manager 通过 SystemClient 查询引擎信息
+		// ============================================================
 		engines := api.Group("/engines")
 		{
-			engineHandler := NewEngineHandler(engineService)
-			engines.GET("", engineHandler.List)
-			engines.GET("/:id", engineHandler.GetByID)
-
-			// 元数据扫描和管理
-			metadataHandler := NewMetadataHandler(metadataService)
-			engines.GET("/:id/scan-tasks", metadataHandler.ListScanTasks)
-			engines.POST("/:id/scan-tasks", metadataHandler.CreateScanTask)
-			engines.PUT("/:id/scan-tasks/:task_id", metadataHandler.UpdateScanTask)
-			engines.DELETE("/:id/scan-tasks/:task_id", metadataHandler.DeleteScanTask)
-			engines.POST("/:id/scan-tasks/:task_id/trigger", metadataHandler.TriggerScanTask)
-			engines.GET("/:id/scan-runs", metadataHandler.ListScanRuns)
-			engines.GET("/:id/scan-runs/:run_id", metadataHandler.GetScanRun)
-			engines.POST("/:id/scan-runs/manual", metadataHandler.CreateManualScanRun)
-
 			// 要素查询（用于表格与地图关联）
-			featureHandler := NewFeatureHandler(engineRepo, metadataRepo)
-			engines.GET("/:id/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
+			featureHandler := NewFeatureHandler(systemClient, metadataRepo)
+			engines.GET("/:id/spatial/features/:feature_id/centroid", featureHandler.GetFeatureCentroid)
+			engines.GET("/:id/spatial/features/:feature_id/geometry", featureHandler.GetFeatureGeometry)
 		}
 
 		searchGroup := api.Group("/search")

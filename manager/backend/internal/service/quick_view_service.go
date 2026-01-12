@@ -7,13 +7,13 @@ import (
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/worker"
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -81,7 +81,13 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	}
 
 	// 2.5 获取表记录数（从 pg_stat_user_tables，高性能）
-	recordCount, err := s.getTableRecordCount(ctx, params.EngineID, params.SchemaName, params.TableName)
+	recordCount, err := spatial.QueryTableRowCount(
+		ctx,
+		s.systemClient,
+		params.EngineID,
+		params.SchemaName,
+		params.TableName,
+	)
 	if err != nil {
 		logger.L().Warn("⚠️  Failed to get record count, will use default MaxZoom",
 			"error", err)
@@ -120,8 +126,6 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		Fingerprint:         fingerprint,
 		Extent:              spatialMeta.Extent,
 		ExtentSRID:          spatialMeta.ExtentSRID,
-		StopThresholdTimeMs: 300,
-		StopThresholdSizeKB: 100,
 	}
 
 	// 检查是否已存在记录
@@ -156,8 +160,6 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		MinZoom:         minZoom,
 		MaxZoom:         params.MaxZoom,
 		Concurrency:     params.Concurrency,
-		StopThresholdMs: 300,
-		StopThresholdKB: 100,
 		Fingerprint:     fingerprint,
 	}
 
@@ -218,59 +220,8 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		ExtentSRID:  spatialMeta.ExtentSRID,
 		Extent:      spatialMeta.Extent,
 		PrimaryKey:  spatialMeta.PrimaryKey,
-		RecordCount: 0, // 初始为 0，由 getTableRecordCount 填充
+		RecordCount: 0, // 初始为 0，由 QueryTableRowCount 填充
 	}, nil
-}
-
-// getTableRecordCount 获取表记录数
-// 优先从元数据获取，如果没有则从 pg_stat_user_tables 查询（高性能，无需 COUNT）
-func (s *QuickViewService) getTableRecordCount(
-	ctx context.Context,
-	resourceID uint,
-	schema, table string,
-) (int64, error) {
-	// 1. 先从 SystemClient 获取资源连接信息
-	if s.systemClient == nil {
-		return 0, fmt.Errorf("system client not initialized")
-	}
-
-	resource, err := s.systemClient.GetEngine(resourceID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get resource: %w", err)
-	}
-
-	// 2. 构建业务数据库连接
-	connStr, err := commonModels.BuildConnectionString(resource)
-	if err != nil {
-		return 0, fmt.Errorf("failed to build connection string: %w", err)
-	}
-
-	// 3. 连接业务数据库
-	db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
-	if err != nil {
-		return 0, fmt.Errorf("failed to connect to business database: %w", err)
-	}
-	sqlDB, _ := db.DB()
-	defer sqlDB.Close()
-
-	// 4. 从 pg_stat_user_tables 查询（性能最优，无需 COUNT）
-	var recordCount int64
-	query := `
-		SELECT COALESCE(n_live_tup, 0)
-		FROM pg_stat_user_tables
-		WHERE schemaname = $1 AND relname = $2
-	`
-	err = db.Raw(query, schema, table).Scan(&recordCount).Error
-	if err != nil {
-		logger.L().Warn("Failed to get record count from pg_stat_user_tables",
-			"schema", schema, "table", table, "error", err)
-		return 0, err
-	}
-
-	logger.L().Info("📊 从 pg_stat_user_tables 获取记录数",
-		"schema", schema, "table", table, "count", recordCount)
-
-	return recordCount, nil
 }
 
 // GetStatus 获取快显状态
@@ -461,8 +412,6 @@ func (s *QuickViewService) ResumeQuickView(
 		MinZoom:         *qv.MinZoom,
 		MaxZoom:         qv.MaxZoom,
 		Concurrency:     20, // 使用默认并发数
-		StopThresholdMs: 300,
-		StopThresholdKB: 100,
 		Fingerprint:     qv.Fingerprint,
 	}
 
@@ -485,9 +434,8 @@ func (s *QuickViewService) IncrementCachedTiles(
 	ctx context.Context,
 	tenantID, engineID uint,
 	schema, table string,
-	avgTimeMs, avgSizeKB float64,
 ) error {
-	return s.repo.IncrementCachedTiles(tenantID, engineID, schema, table, avgTimeMs, avgSizeKB)
+	return s.repo.IncrementCachedTiles(tenantID, engineID, schema, table)
 }
 
 // calculateFingerprint 计算表的指纹（用于 MinIO 路径）

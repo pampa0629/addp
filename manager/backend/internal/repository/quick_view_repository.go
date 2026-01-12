@@ -78,8 +78,6 @@ func (r *QuickViewRepository) UpdateResult(id uint, result UpdateResultParams) e
 		"actual_max_zoom":         result.ActualMaxZoom,
 		"total_tiles":             result.TotalTiles,
 		"cached_tiles":            result.CachedTiles,
-		"last_zoom_avg_time_ms":   result.LastZoomAvgTimeMs,
-		"last_zoom_avg_size_kb":   result.LastZoomAvgSizeKB,
 		"completed_at":            gorm.Expr("NOW()"),
 	}
 
@@ -91,8 +89,6 @@ type UpdateResultParams struct {
 	ActualMaxZoom     int
 	TotalTiles        int
 	CachedTiles       int
-	LastZoomAvgTimeMs float64
-	LastZoomAvgSizeKB float64
 }
 
 // ListAll 列出所有快显任务
@@ -188,16 +184,13 @@ func (r *QuickViewRepository) DeleteByTable(tenantID, engineID uint, schema, tab
 func (r *QuickViewRepository) IncrementCachedTiles(
 	tenantID, engineID uint,
 	schema, table string,
-	avgTimeMs, avgSizeKB float64,
 ) error {
 	// 原子性更新
 	return r.db.Model(&models.QuickView{}).
 		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
 			tenantID, engineID, schema, table).
 		Updates(map[string]interface{}{
-			"cached_tiles":          gorm.Expr("cached_tiles + 1"),
-			"last_zoom_avg_time_ms": avgTimeMs,
-			"last_zoom_avg_size_kb": avgSizeKB,
+			"cached_tiles": gorm.Expr("cached_tiles + 1"),
 		}).Error
 }
 

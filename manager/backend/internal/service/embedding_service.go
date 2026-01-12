@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/addp/common/embedding"
+	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
@@ -29,7 +30,7 @@ import (
 // 4. 向量化状态查询
 type EmbeddingService struct {
 	vectorRepo      *repository.EmbeddingRepository
-	engineRepo      *repository.EngineRepository
+	systemClient    *commonClient.SystemClient
 	embeddingClient embedding.MultiModalEmbedder
 	cfg             *config.Config
 	log             *slog.Logger
@@ -38,7 +39,7 @@ type EmbeddingService struct {
 // NewEmbeddingService 创建向量化服务
 func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
-	engineRepo *repository.EngineRepository,
+	systemClient *commonClient.SystemClient,
 	cfg *config.Config,
 	log *slog.Logger,
 ) (*EmbeddingService, error) {
@@ -62,7 +63,7 @@ func NewEmbeddingService(
 
 	return &EmbeddingService{
 		vectorRepo:      vectorRepo,
-		engineRepo:      engineRepo,
+		systemClient:    systemClient,
 		embeddingClient: embeddingClient,
 		cfg:             cfg,
 		log:             log,
@@ -379,10 +380,14 @@ type ObjectInfo struct {
 
 // getObjectInfo 获取对象元数据
 func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, bucket, objectKey string) (*ObjectInfo, error) {
-	// 获取引擎信息
-	engine, err := s.engineRepo.GetByID(engineID)
+	// 通过 SystemClient 获取引擎信息
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
 	// 创建 MinIO 客户端
@@ -406,9 +411,14 @@ func (s *EmbeddingService) getObjectInfo(ctx context.Context, engineID uint, buc
 
 // listObjects 列出目录下的所有对象
 func (s *EmbeddingService) listObjects(ctx context.Context, engineID uint, bucket, prefix string, recursive bool) ([]string, error) {
-	engine, err := s.engineRepo.GetByID(engineID)
+	// 通过 SystemClient 获取引擎信息
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
 	minioClient, err := s.createMinioClient(engine)
@@ -444,10 +454,14 @@ func (s *EmbeddingService) embedObjectContent(
 	modality embedding.Modality,
 	objInfo *ObjectInfo,
 ) ([]float32, string, error) {
-	// 获取引擎信息
-	engine, err := s.engineRepo.GetByID(engineID)
+	// 通过 SystemClient 获取引擎信息
+	if s.systemClient == nil {
+		return nil, "", fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get engine: %w", err)
+		return nil, "", fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
 	// 创建 MinIO 客户端
@@ -552,7 +566,7 @@ func (s *EmbeddingService) detectModality(contentType, objectKey string) embeddi
 }
 
 // createMinioClient 创建 MinIO 客户端
-func (s *EmbeddingService) createMinioClient(engine *models.Engine) (*minio.Client, error) {
+func (s *EmbeddingService) createMinioClient(engine *commonModels.Engine) (*minio.Client, error) {
 	connInfo := engine.ConnectionInfo
 
 	endpoint, _ := connInfo["endpoint"].(string)
@@ -572,10 +586,14 @@ func (s *EmbeddingService) createMinioClient(engine *models.Engine) (*minio.Clie
 
 // buildMetadata 构建向量的 metadata（用于搜索展示和定位）
 func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, bucket, objectKey string, objInfo *ObjectInfo) (datatypes.JSON, error) {
-	// 获取引擎信息
-	engine, err := s.engineRepo.GetByID(engineID)
+	// 通过 SystemClient 获取引擎信息
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
 	// 提取文件名（从 object_key 中获取最后一部分）

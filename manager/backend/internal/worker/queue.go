@@ -51,8 +51,6 @@ type QuickViewTaskPayload struct {
 	MinZoom           int     `json:"min_zoom"`
 	MaxZoom           int     `json:"max_zoom"`
 	Concurrency       int     `json:"concurrency"`
-	StopThresholdMs   float64 `json:"stop_threshold_ms"`
-	StopThresholdKB   float64 `json:"stop_threshold_kb"`
 	Fingerprint       string  `json:"fingerprint"`
 }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/mvt"
@@ -13,17 +14,17 @@ import (
 // ✅ 重构：复用 mvt.TileGenerator，消除重复代码
 type MVTService struct {
 	metadataRepo  *repository.MetadataRepository
-	engineRepo    *repository.EngineRepository
+	systemClient  *commonClient.SystemClient
 	tileGenerator *mvt.TileGenerator // ✅ 复用底层实现
 }
 
-func NewMVTService(meta *repository.MetadataRepository, res *repository.EngineRepository) *MVTService {
-	// 创建 TileGenerator（通过 EngineService 适配器获取引擎信息）
-	tileGen := mvt.NewTileGenerator(&engineServiceAdapter{engineRepo: res})
+func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient) *MVTService {
+	// 创建 TileGenerator（通过 SystemClient 适配器获取引擎信息）
+	tileGen := mvt.NewTileGenerator(&engineServiceAdapter{systemClient: systemClient})
 
 	return &MVTService{
 		metadataRepo:  meta,
-		engineRepo:    res,
+		systemClient:  systemClient,
 		tileGenerator: tileGen,
 	}
 }
@@ -40,11 +41,18 @@ func (s *MVTService) GetTile(
 	srid int,
 ) ([]byte, error) {
 	// 1. 验证租户权限
-	res, err := s.engineRepo.GetByID(resourceID)
+	if s.systemClient == nil {
+		return nil, ErrEngineAccessDenied
+	}
+
+	res, err := s.systemClient.GetEngine(resourceID)
 	if err != nil {
 		return nil, err
 	}
-	if !resourceAccessible(res, tenantID) {
+
+	// 转换为 manager/internal/models.Engine 以使用 resourceAccessible 函数
+	managerEngine := convertResource(res)
+	if !resourceAccessible(managerEngine, tenantID) {
 		return nil, ErrEngineAccessDenied
 	}
 
@@ -141,32 +149,20 @@ func (s *MVTService) Close() error {
 }
 
 // ============================================================================
-// 适配器：将 EngineRepository 适配为 mvt.ResourceService 接口
+// 适配器：将 SystemClient 适配为 mvt.ResourceService 接口
 // ============================================================================
 
 type engineServiceAdapter struct {
-	engineRepo *repository.EngineRepository
+	systemClient *commonClient.SystemClient
 }
 
 func (a *engineServiceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
-	// EngineRepository.GetByID 返回 manager/internal/models.Engine
-	// 需要转换为 common/models.Engine
-	managerEngine, err := a.engineRepo.GetByID(engineID)
-	if err != nil {
-		return nil, err
+	if a.systemClient == nil {
+		return nil, ErrEngineAccessDenied
 	}
 
-	// 将 manager 的 Engine 模型转换为 common 的 Engine 模型
-	// ConnectionInfo 需要类型转换（两个包定义的相同底层类型）
-	return &commonModels.Engine{
-		ID:             managerEngine.ID,
-		TenantID:       managerEngine.TenantID,
-		Name:           managerEngine.Name,
-		EngineType:     managerEngine.EngineType,
-		ConnectionInfo: commonModels.ConnectionInfo(managerEngine.ConnectionInfo),
-		Description:    managerEngine.Description,
-		IsActive:       managerEngine.IsActive,
-	}, nil
+	// SystemClient.GetEngine 直接返回 *commonModels.Engine
+	return a.systemClient.GetEngine(engineID)
 }
 
 // Note: access policy and ErrEngineAccessDenied are defined in metadata_service.go

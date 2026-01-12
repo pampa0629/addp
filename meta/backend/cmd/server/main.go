@@ -131,7 +131,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// ========== 启动清理服务 ==========
-	cleanupService := service.NewCleanupService(db, redisClient, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, redisClient, systemClient, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,

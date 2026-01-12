@@ -56,15 +56,17 @@ func CalculateMinZoomFromExtent(extent []float64, extentSRID int) int {
 	targetRatio := 0.5
 	zoom := math.Log2(360 / (maxDim / targetRatio))
 
-	// 向下取整，确保数据完全可见
-	minZoom := int(math.Floor(zoom))
+	// 向下取整，然后 -2，让用户在更低层级也能看到数据
+	minZoom := int(math.Floor(zoom)) - 2
 
-	// 4. 限制范围：3-10
+	// 4. 限制范围：3-18
+	// 下限3：避免过小的zoom导致全球视图
+	// 上限18：MVT瓦片系统的最大zoom层级
 	if minZoom < 3 {
 		minZoom = 3
 	}
-	if minZoom > 10 {
-		minZoom = 10
+	if minZoom > 18 {
+		minZoom = 18
 	}
 
 	return minZoom

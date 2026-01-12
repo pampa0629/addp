@@ -3,98 +3,98 @@ import client from './client'
 export const managerAPI = {
   // 获取数据源列表
   getDataSources(page = 1, pageSize = 10) {
-    return client.get('/datasources', {
+    return client.get('/manager/datasources', {
       params: { page, pageSize }
     })
   },
 
   // 获取数据源详情
   getDataSource(id) {
-    return client.get(`/datasources/${id}`)
+    return client.get(`/manager/datasources/${id}`)
   },
 
   // 同步数据源（从 System 模块的 engines 同步）
   syncDataSources() {
-    return client.post('/datasources/sync')
+    return client.post('/manager/datasources/sync')
   },
 
   // 删除数据源
   deleteDataSource(id) {
-    return client.delete(`/datasources/${id}`)
+    return client.delete(`/manager/datasources/${id}`)
   },
 
   // 测试数据源连接
   testDataSource(id) {
-    return client.post(`/datasources/${id}/test`)
+    return client.post(`/manager/datasources/${id}/test`)
   },
 
   // 获取目录列表
   getDirectories(params) {
-    return client.get('/directories', { params })
+    return client.get('/manager/directories', { params })
   },
 
   // 创建目录
   createDirectory(data) {
-    return client.post('/directories', data)
+    return client.post('/manager/directories', data)
   },
 
   // 更新目录
   updateDirectory(id, data) {
-    return client.put(`/directories/${id}`, data)
+    return client.put(`/manager/directories/${id}`, data)
   },
 
   // 删除目录
   deleteDirectory(id) {
-    return client.delete(`/directories/${id}`)
+    return client.delete(`/manager/directories/${id}`)
   },
 
   // 预览数据
   previewData(params) {
-    return client.get('/preview', { params })
+    return client.get('/manager/preview', { params })
   },
 
   // 上传文件
   uploadFile(formData, config) {
-    return client.post('/upload', formData, config)
+    return client.post('/manager/upload', formData, config)
   },
 
   // 元数据扫描和管理
   // 扫描数据源元数据
   scanDataSource(dataSourceId) {
-    return client.post(`/datasources/${dataSourceId}/scan`)
+    return client.post(`/manager/datasources/${dataSourceId}/scan`)
   },
 
   // 扫描任务管理
   getScanTasks(dataSourceId) {
-    return client.get(`/datasources/${dataSourceId}/scan-tasks`)
+    return client.get(`/manager/datasources/${dataSourceId}/scan-tasks`)
   },
 
   createScanTask(dataSourceId, payload) {
-    return client.post(`/datasources/${dataSourceId}/scan-tasks`, payload)
+    return client.post(`/manager/datasources/${dataSourceId}/scan-tasks`, payload)
   },
 
   updateScanTask(dataSourceId, taskId, payload) {
-    return client.put(`/datasources/${dataSourceId}/scan-tasks/${taskId}`, payload)
+    return client.put(`/manager/datasources/${dataSourceId}/scan-tasks/${taskId}`, payload)
   },
 
   deleteScanTask(dataSourceId, taskId) {
-    return client.delete(`/datasources/${dataSourceId}/scan-tasks/${taskId}`)
+    return client.delete(`/manager/datasources/${dataSourceId}/scan-tasks/${taskId}`)
   },
 
   triggerScanTask(dataSourceId, taskId) {
-    return client.post(`/datasources/${dataSourceId}/scan-tasks/${taskId}/trigger`)
+    return client.post(`/manager/datasources/${dataSourceId}/scan-tasks/${taskId}/trigger`)
   },
 
   createManualScanRun(dataSourceId, payload) {
-    return client.post(`/datasources/${dataSourceId}/scan-runs/manual`, payload)
+    return client.post(`/manager/datasources/${dataSourceId}/scan-runs/manual`, payload)
   },
 
   getScanRuns(dataSourceId, params = {}) {
-    return client.get(`/datasources/${dataSourceId}/scan-runs`, { params })
+    return client.get(`/manager/datasources/${dataSourceId}/scan-runs`, { params })
   },
 
   getScanRun(dataSourceId, runId) {
-    return client.get(`/datasources/${dataSourceId}/scan-runs/${runId}`)
+    return client.get(`/manager/datasources/${dataSourceId}/scan-runs/${runId}`)
   },
 
   // 获取数据源的表列表
@@ -103,16 +103,16 @@ export const managerAPI = {
     if (isManaged !== null) {
       params.managed = isManaged
     }
-    return client.get(`/datasources/${dataSourceId}/tables`, { params })
+    return client.get(`/manager/datasources/${dataSourceId}/tables`, { params })
   },
 
   // 纳管表（提取详细元数据）
   manageTable(tableId) {
-    return client.post(`/tables/${tableId}/manage`)
+    return client.post(`/manager/tables/${tableId}/manage`)
   },
 
   // 取消纳管表
   unmanageTable(tableId) {
-    return client.post(`/tables/${tableId}/unmanage`)
+    return client.post(`/manager/tables/${tableId}/unmanage`)
   }
 }

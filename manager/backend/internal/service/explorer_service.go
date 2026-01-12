@@ -9,7 +9,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
 	"github.com/addp/manager/internal/models"
-	"github.com/addp/manager/internal/repository"
 )
 
 // ExplorerService 数据探查服务
@@ -18,7 +17,7 @@ import (
 // 2. 调用 PreviewResolver 提供数据预览
 // 3. 管理节点刷新
 type ExplorerService struct {
-	engineRepo   *repository.EngineRepository
+	systemClient *commonClient.SystemClient
 	metaClient   *commonClient.MetaClient
 	treeBuilder  *resource.TreeBuilder
 	previewResolver *PreviewResolver
@@ -26,7 +25,7 @@ type ExplorerService struct {
 
 // NewExplorerService 创建数据探查服务
 func NewExplorerService(
-	engineRepo *repository.EngineRepository,
+	systemClient *commonClient.SystemClient,
 	metaClient *commonClient.MetaClient,
 	previewResolver *PreviewResolver,
 ) *ExplorerService {
@@ -34,7 +33,7 @@ func NewExplorerService(
 	treeBuilder := resource.NewTreeBuilder(&metaClientAdapter{client: metaClient})
 
 	return &ExplorerService{
-		engineRepo:      engineRepo,
+		systemClient:    systemClient,
 		metaClient:      metaClient,
 		treeBuilder:     treeBuilder,
 		previewResolver: previewResolver,
@@ -50,19 +49,20 @@ func NewExplorerService(
 //
 // 返回: 资源树根节点
 func (s *ExplorerService) GetTree(ctx context.Context, tenantID *uint, engineID uint, expandDepth int) (*resource.TreeNode, error) {
-	// 1. 获取引擎信息
-	managerEngine, err := s.engineRepo.GetByID(engineID)
+	// 1. 通过 SystemClient 获取引擎信息
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
 	// 验证租户权限
-	if tenantID != nil && managerEngine.TenantID != nil && *managerEngine.TenantID != *tenantID {
+	if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
 		return nil, ErrEngineAccessDenied
 	}
-
-	// 转换为 commonModels.Engine
-	engine := convertManagerEngineToCommon(managerEngine)
 
 	// 2. 尝试从 Meta 获取资源树（可选，失败不影响功能）
 	metaNodes, err := s.getMetaNodes(ctx, engineID, expandDepth, tenantID)
@@ -96,11 +96,16 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 		return nil, fmt.Errorf("invalid locator: %w", err)
 	}
 
-	// 2. 验证引擎权限
-	engine, err := s.engineRepo.GetByID(loc.EngineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get engine: %w", err)
+	// 2. 通过 SystemClient 验证引擎权限
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
 	}
+
+	engine, err := s.systemClient.GetEngine(loc.EngineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
+	}
+
 	if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
 		return nil, ErrEngineAccessDenied
 	}
@@ -122,8 +127,7 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	for _, node := range metaNodes {
 		if node.ID == *loc.MetaID {
 			// 构建树节点并返回
-			commonEngine := convertManagerEngineToCommon(engine)
-			tree, err := s.treeBuilder.BuildFromMeta(commonEngine, []*commonModels.MetaNode{node}, 1)
+			tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node tree: %w", err)
 			}
@@ -134,21 +138,62 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	return nil, fmt.Errorf("node not found: %s", locatorURI)
 }
 
+// ListEngines 获取引擎列表（用于前端显示）
+func (s *ExplorerService) ListEngines(ctx context.Context, tenantID *uint) ([]*commonModels.Engine, error) {
+	logger.L().Info("获取引擎列表")
+
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	// 准备参数
+	var tid uint
+	if tenantID != nil {
+		tid = *tenantID
+	}
+
+	// 通过 SystemClient 获取引擎列表（空字符串表示不过滤引擎类型）
+	engines, err := s.systemClient.ListEngines("", tid)
+	if err != nil {
+		logger.L().Error("获取引擎列表失败", "error", err)
+		return nil, fmt.Errorf("failed to list engines: %w", err)
+	}
+
+	// 转换为指针切片
+	result := make([]*commonModels.Engine, len(engines))
+	for i := range engines {
+		result[i] = &engines[i]
+	}
+
+	logger.L().Info("获取引擎列表成功", "count", len(result))
+	return result, nil
+}
+
 // GetEngineList 获取可用于探查的引擎列表
 func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine, error) {
-	// 使用 ListAllActive 获取引擎列表
-	engines, err := s.engineRepo.ListAllActive(tenantID)
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	// 准备参数
+	var tid uint
+	if tenantID != nil {
+		tid = *tenantID
+	}
+
+	// 通过 SystemClient 获取引擎列表（空字符串表示不过滤引擎类型）
+	engines, err := s.systemClient.ListEngines("", tid)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list engines: %w", err)
 	}
 
-	// 转换为 commonModels.Engine 切片
-	commonEngines := make([]*commonModels.Engine, len(engines))
+	// 转换为指针切片
+	result := make([]*commonModels.Engine, len(engines))
 	for i := range engines {
-		commonEngines[i] = convertManagerEngineToCommon(&engines[i])
+		result[i] = &engines[i]
 	}
 
-	return commonEngines, nil
+	return result, nil
 }
 
 // 内部辅助方法

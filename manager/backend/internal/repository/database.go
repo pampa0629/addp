@@ -26,10 +26,12 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Initialize database with auto-migration
 	// 添加 Embedding 和 EmbeddingTask 模型（向量化功能）
+	// 添加 QuickView 模型（MVT预缓存）
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
 		&models.Embedding{},     // 向量嵌入表
 		&models.EmbeddingTask{}, // 向量化任务表
+		&models.QuickView{},     // MVT预缓存任务表
 	)
 	if err != nil {
 		return nil, err
@@ -46,8 +48,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(20)                  // 最大空闲连接数 (连接复用)
 	sqlDB.SetConnMaxLifetime(10 * time.Minute) // 连接最大生命周期
 
-	// Set search_path to allow access to manager, metadata, system schemas
-	db.Exec(fmt.Sprintf("SET search_path TO %s,metadata,system", cfg.DBSchema))
+	// Set search_path to manager schema only
+	// Access to metadata and system schemas should be done via MetaClient and SystemClient
+	db.Exec(fmt.Sprintf("SET search_path TO %s", cfg.DBSchema))
 
 	// 创建向量索引（IVFFlat 索引需要表中有数据才能创建，启动时可能失败）
 	if err := createVectorIndexes(db); err != nil {

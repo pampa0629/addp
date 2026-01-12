@@ -136,12 +136,39 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 }
 
 // GetEmbeddingTaskStatus GET /api/embedding/tasks/:task_id
-// 查询向量化任务状态
+// 查询向量化任务状态（优先查内存中的实时状态，不存在则查数据库历史记录）
 func (h *EmbeddingHandler) GetEmbeddingTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
 
+	// 1. 优先查询内存中的实时任务状态
 	task, ok := h.taskTracker.GetTask(taskID)
-	if !ok {
+	if ok {
+		// 返回实时任务状态（正在运行的任务）
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "success",
+			"task_id":     task.TaskID,
+			"task_status": string(task.Status),
+			"message":     task.Message,
+			"progress":    task.Progress,
+			"start_time":  task.StartTime,
+			"end_time":    task.EndTime,
+			"result":      task.Result,
+			"error":       task.Error,
+		})
+		return
+	}
+
+	// 2. 内存中没有，查询数据库中的历史记录
+	dbTask, err := h.embeddingService.GetEmbeddingTask(c.Request.Context(), taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  "error",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	if dbTask == nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"status":  "error",
 			"message": "任务不存在",
@@ -149,15 +176,9 @@ func (h *EmbeddingHandler) GetEmbeddingTaskStatus(c *gin.Context) {
 		return
 	}
 
+	// 返回数据库中的历史任务
 	c.JSON(http.StatusOK, gin.H{
-		"status":      "success",
-		"task_id":     task.TaskID,
-		"task_status": string(task.Status),
-		"message":     task.Message,
-		"progress":    task.Progress,
-		"start_time":  task.StartTime,
-		"end_time":    task.EndTime,
-		"result":      task.Result,
-		"error":       task.Error,
+		"status": "success",
+		"data":   dbTask,
 	})
 }

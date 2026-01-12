@@ -2,7 +2,34 @@
   <el-card shadow="never" class="preview-panel">
     <template #header>
       <div class="panel-header">
-        <span>{{ title }}</span>
+        <div class="header-left">
+          <span class="header-title">{{ title }}</span>
+          <!-- 表格空间信息 -->
+          <div v-if="showTableInfo" class="table-info">
+            <!-- 空间标签（带 tooltip）-->
+            <el-tooltip
+              v-if="hasGeometry"
+              :content="spatialInfoTooltip"
+              placement="bottom"
+              :show-after="300"
+              raw-content
+            >
+              <el-tag type="danger" size="small" class="info-badge">
+                <el-icon><Location /></el-icon>
+                空间
+              </el-tag>
+            </el-tooltip>
+            <!-- 普通表标签 -->
+            <el-tag v-else size="small" class="info-badge">
+              <el-icon><Collection /></el-icon>
+              数据表
+            </el-tag>
+            <!-- 总行数 -->
+            <el-tag v-if="tableTotal > 0" size="small" type="info">
+              总计 {{ tableTotal.toLocaleString() }} 行
+            </el-tag>
+          </div>
+        </div>
         <div class="panel-actions">
           <!-- 向量化按钮 -->
           <el-button
@@ -87,7 +114,7 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
-import { MagicStick, Download } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
@@ -680,6 +707,47 @@ const title = computed(() => {
   return `${node.label || ''} - 数据预览`
 })
 
+// 表格信息相关计算属性
+const showTableInfo = computed(() => {
+  return previewMode.value === 'table' && props.previewData
+})
+
+const tableTotal = computed(() => {
+  return props.previewData?.total || 0
+})
+
+const hasGeometry = computed(() => {
+  const geometryColumns = props.previewData?.geometry_columns || []
+  return geometryColumns.length > 0
+})
+
+const spatialInfoTooltip = computed(() => {
+  if (!hasGeometry.value) return ''
+
+  const parts = []
+  const geometryColumns = props.previewData?.geometry_columns || []
+  const srid = props.previewData?.srid || 0
+  const extent = props.previewData?.extent || []
+
+  // 几何列
+  if (geometryColumns.length > 0) {
+    parts.push(`几何列: ${geometryColumns.join(', ')}`)
+  }
+
+  // SRID
+  if (srid > 0) {
+    parts.push(`SRID: ${srid}`)
+  }
+
+  // 空间范围
+  if (extent && extent.length === 4) {
+    const [minX, minY, maxX, maxY] = extent
+    parts.push(`空间范围:\n  minX: ${minX}\n  minY: ${minY}\n  maxX: ${maxX}\n  maxY: ${maxY}`)
+  }
+
+  return parts.join('\n')
+})
+
 // 判断是否显示向量化按钮（仅 MinIO/S3 的对象、目录、Bucket）
 const showVectorizeButton = computed(() => {
   if (!props.selectedNode) return false
@@ -749,7 +817,7 @@ const handleVectorize = async () => {
     }
 
     // 调用后端 API
-    const response = await client.post('/embedding', {
+    const response = await client.post('/manager/embedding', {
       operator_name: 'embedding',
       params: params,
       execute_now: true
@@ -799,7 +867,7 @@ const pollTaskStatus = async (taskId, notification, targetName, nodeType, maxAtt
     try {
       attempts++
 
-      const response = await client.get(`/embedding/tasks/${taskId}`)
+      const response = await client.get(`/manager/embedding/tasks/${taskId}`)
       const data = response?.data || response
 
       console.log(`[轮询 ${attempts}/${maxAttempts}] 任务状态:`, data.task_status, data.message)
@@ -955,6 +1023,34 @@ const handleNavigate = (path) => {
   justify-content: space-between;
   font-weight: 600;
   gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.header-title {
+  white-space: nowrap;
+}
+
+.table-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.info-badge .el-icon {
+  font-size: 14px;
 }
 
 .panel-actions {

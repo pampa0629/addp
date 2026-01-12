@@ -136,7 +136,7 @@ export const useExplorerStore = defineStore('explorer', {
     async loadEngines() {
       this.loadingEngines = true
       try {
-        const response = await client.get('/explorer/engines')
+        const response = await client.get('/manager/engines')
         this.engines = response.data || []
       } catch (error) {
         console.error('加载引擎列表失败:', error)
@@ -165,7 +165,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         console.log(`[ExplorerStore] 加载引擎树（引擎 ${engineId}，深度 ${expandDepth}）`)
-        const response = await client.get(`/explorer/tree/${engineId}`, {
+        const response = await client.get(`/manager/tree/${engineId}`, {
           params: { expand_depth: expandDepth }
         })
         const tree = response.data.tree
@@ -191,7 +191,7 @@ export const useExplorerStore = defineStore('explorer', {
 
       try {
         const loc = parseLocator(locator)
-        await client.post(`/explorer/tree/${loc.engineId}/refresh`, null, {
+        await client.post(`/manager/tree/${loc.engineId}/refresh`, null, {
           params: { locator }
         })
 
@@ -215,7 +215,7 @@ export const useExplorerStore = defineStore('explorer', {
       this.pagination.page = page
 
       try {
-        const response = await client.get('/explorer/preview', {
+        const response = await client.get('/manager/preview', {
           params: {
             locator,
             page,

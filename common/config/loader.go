@@ -124,7 +124,7 @@ type BaseConfig struct {
 
 // LoadSharedConfig 从 System 服务获取共享配置
 func LoadSharedConfig(systemURL string, target *BaseConfig) error {
-	url := fmt.Sprintf("%s/internal/config", systemURL)
+	url := fmt.Sprintf("%s/api/internal/config", systemURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
@@ -189,11 +189,14 @@ func LoadSharedConfig(systemURL string, target *BaseConfig) error {
 // LoadLocalConfig 从本地环境变量加载配置（降级方案）
 func LoadLocalConfig(target *BaseConfig) {
 	target.JWTSecret = GetEnv("JWT_SECRET", "")
-	target.DBHost = GetEnv("DB_HOST", "localhost")
-	target.DBPort = GetEnv("DB_PORT", "5432")
-	target.DBUser = GetEnv("DB_USER", "addp")
-	target.DBPassword = GetEnv("DB_PASSWORD", "addp_password")
-	target.DBName = GetEnv("DB_NAME", "addp")
+
+	// 优先使用 POSTGRES_* 变量（.env 中的标准变量），fallback 到 DB_* 变量
+	target.DBHost = GetEnv("POSTGRES_HOST", GetEnv("DB_HOST", "localhost"))
+	target.DBPort = GetEnv("POSTGRES_PORT", GetEnv("DB_PORT", "15432"))
+	target.DBUser = GetEnv("POSTGRES_USER", GetEnv("DB_USER", "addp"))
+	target.DBPassword = GetEnv("POSTGRES_PASSWORD", GetEnv("DB_PASSWORD", "addp_password"))
+	target.DBName = GetEnv("POSTGRES_DB", GetEnv("DB_NAME", "addp"))
+
 	target.EncryptionKey = LoadEncryptionKey()
 	target.InternalAPIKey = GetEnv("INTERNAL_API_KEY", "")
 	target.AMapKey = GetEnv("AMAP_KEY", "")

@@ -59,9 +59,9 @@ func (c *SystemClient) GetEngine(engineID uint) (*models.Engine, error) {
 	var url string
 	// 如果使用内部 API Key，调用内部 API
 	if c.internalKey != "" {
-		url = fmt.Sprintf("%s/internal/engines/%d", c.baseURL, engineID)
+		url = fmt.Sprintf("%s/api/internal/engines/%d", c.baseURL, engineID)
 	} else {
-		url = fmt.Sprintf("%s/api/engines/%d", c.baseURL, engineID)
+		url = fmt.Sprintf("%s/api/system/engines/%d", c.baseURL, engineID)
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -96,9 +96,9 @@ func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.E
 	var url string
 	// 如果使用内部 API Key，调用内部 API
 	if c.internalKey != "" {
-		url = fmt.Sprintf("%s/internal/engines", c.baseURL)
+		url = fmt.Sprintf("%s/api/internal/engines", c.baseURL)
 	} else {
-		url = fmt.Sprintf("%s/api/engines", c.baseURL)
+		url = fmt.Sprintf("%s/api/system/engines", c.baseURL)
 	}
 
 	queryAdded := false
@@ -150,9 +150,9 @@ func (c *SystemClient) CreateEngine(payload map[string]interface{}) (*models.Eng
 
 	var url string
 	if c.internalKey != "" {
-		url = fmt.Sprintf("%s/internal/engines", c.baseURL)
+		url = fmt.Sprintf("%s/api/internal/engines", c.baseURL)
 	} else {
-		url = fmt.Sprintf("%s/api/engines", c.baseURL)
+		url = fmt.Sprintf("%s/api/system/engines", c.baseURL)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
@@ -189,7 +189,7 @@ func (c *SystemClient) RegisterCapability(req *models.CapabilityRegistrationRequ
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/internal/registry/capabilities", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/registry/capabilities", c.baseURL)
 	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -214,7 +214,7 @@ func (c *SystemClient) RegisterCapability(req *models.CapabilityRegistrationRequ
 
 // ListCapabilities 查询能力列表（支持过滤）
 func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.Engine, error) {
-	url := fmt.Sprintf("%s/internal/registry/capabilities", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/registry/capabilities", c.baseURL)
 
 	// 添加查询参数
 	if len(filters) > 0 {
@@ -254,7 +254,7 @@ func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.En
 
 // GetCapabilityByIdentifier 根据 unique_identifier 查询能力
 func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Engine, error) {
-	url := fmt.Sprintf("%s/internal/registry/capabilities/%s", c.baseURL, identifier)
+	url := fmt.Sprintf("%s/api/internal/registry/capabilities/%s", c.baseURL, identifier)
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -285,7 +285,7 @@ func (c *SystemClient) GetCapabilityByIdentifier(identifier string) (*models.Eng
 
 // ListComputeEngines 查询所有具有计算能力的引擎
 func (c *SystemClient) ListComputeEngines(filters map[string]string) ([]*models.Engine, error) {
-	url := fmt.Sprintf("%s/internal/registry/compute-engines", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/registry/compute-engines", c.baseURL)
 
 	// 添加查询参数（如果需要）
 	if len(filters) > 0 {
@@ -332,7 +332,7 @@ func (c *SystemClient) ListEnginesByCapability(tenantID uint, storageTypes []str
 		return nil, fmt.Errorf("capability filtering requires internal API key")
 	}
 
-	url := fmt.Sprintf("%s/internal/engines", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/engines", c.baseURL)
 
 	// 构建查询参数
 	queryParams := []string{}
@@ -408,7 +408,7 @@ func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, erro
 
 // ListTaskProviders 查询所有启用的任务提供者
 func (c *SystemClient) ListTaskProviders() ([]*models.TaskProvider, error) {
-	url := fmt.Sprintf("%s/internal/task-providers", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/task-providers", c.baseURL)
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -439,7 +439,7 @@ func (c *SystemClient) ListTaskProviders() ([]*models.TaskProvider, error) {
 
 // GetTaskProvider 根据 module_name 查询任务提供者
 func (c *SystemClient) GetTaskProvider(moduleName string) (*models.TaskProvider, error) {
-	url := fmt.Sprintf("%s/internal/task-providers/%s", c.baseURL, moduleName)
+	url := fmt.Sprintf("%s/api/internal/task-providers/%s", c.baseURL, moduleName)
 
 	httpReq, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -486,7 +486,7 @@ type TableInfo struct {
 
 // ListSchemas 列出指定资源的所有Schema/Database
 func (c *SystemClient) ListSchemas(engineID uint) ([]SchemaInfo, error) {
-	url := fmt.Sprintf("%s/api/engines/%d/schemas", c.baseURL, engineID)
+	url := fmt.Sprintf("%s/api/system/engines/%d/schemas", c.baseURL, engineID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -520,7 +520,7 @@ func (c *SystemClient) ListSchemas(engineID uint) ([]SchemaInfo, error) {
 
 // ListTables 列出指定资源和Schema下的所有表
 func (c *SystemClient) ListTables(engineID uint, schema string) ([]TableInfo, error) {
-	url := fmt.Sprintf("%s/api/engines/%d/tables", c.baseURL, engineID)
+	url := fmt.Sprintf("%s/api/system/engines/%d/tables", c.baseURL, engineID)
 	if schema != "" {
 		url += "?schema=" + schema
 	}
@@ -559,7 +559,7 @@ func (c *SystemClient) ListTables(engineID uint, schema string) ([]TableInfo, er
 
 // ListWorkflowEngines 获取支持 workflow 的计算引擎
 func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, error) {
-	endpoint := fmt.Sprintf("%s/internal/engines?tenant_id=%d", c.baseURL, tenantID)
+	endpoint := fmt.Sprintf("%s/api/internal/engines?tenant_id=%d", c.baseURL, tenantID)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -602,7 +602,7 @@ func (c *SystemClient) ListWorkflowEngines(tenantID uint) ([]models.Engine, erro
 
 // ListSparkRuntimes 获取所有 Apache Spark 运行时
 func (c *SystemClient) ListSparkRuntimes(tenantID uint) ([]models.Engine, error) {
-	endpoint := fmt.Sprintf("%s/internal/engines?tenant_id=%d&engine_type=spark", c.baseURL, tenantID)
+	endpoint := fmt.Sprintf("%s/api/internal/engines?tenant_id=%d&engine_type=spark", c.baseURL, tenantID)
 
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -685,7 +685,7 @@ func (c *SystemClient) DoRequest(method, url string, payload interface{}, result
 
 // CreateAuditLog 创建审计日志（跨模块调用）
 func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
-	url := fmt.Sprintf("%s/internal/audit-logs", c.baseURL)
+	url := fmt.Sprintf("%s/api/internal/audit-logs", c.baseURL)
 
 	// 脱敏敏感信息
 	if log.Details != "" {

@@ -318,8 +318,6 @@ func (s *UnifiedMVTService) persistToMinIO(
 			resourceID,
 			schema,
 			table,
-			durationMs,
-			tileSizeKB,
 		)
 		if err != nil {
 			// 不阻塞，仅记录日志

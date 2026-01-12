@@ -36,6 +36,7 @@
           v-model:expanded-keys="expandedKeys"
           :current-node-key="currentNodeKey"
           :node-actions="nodeActions"
+          :expand-on-click-node="true"
           title="存储引擎"
           @refresh="handleRefresh"
           @node-click="handleNodeClick"
@@ -257,7 +258,7 @@ const handleNodeAction = async ({ node, action }) => {
       }
 
       // 调用后端 API
-      const response = await client.post('/embedding', {
+      const response = await client.post('/manager/embedding', {
         operator_name: 'embedding',
         params: params,
         execute_now: true

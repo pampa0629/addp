@@ -79,7 +79,7 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	}
 
 	// 3. 尝试从 Meta 获取列元数据（优先使用 Meta，包含更准确的几何类型）
-	columnMetadata, geometryColumns, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
+	columnMetadata, geometryColumns, srid, extent, metaErr := p.getColumnMetadataFromMeta(ctx, req.TenantID, req.Engine.ID, req.Schema, tableName)
 	var columnNames []string
 	var columns []plugin.ColumnInfo
 
@@ -170,6 +170,9 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		Schema:     req.Schema,
 		Table:      req.Table,
 		EngineType: req.Engine.EngineType,
+		// Spatial metadata (for spatial data preview)
+		SRID:   srid,
+		Extent: extent,
 	}, nil
 }
 
@@ -191,18 +194,22 @@ func (p *DatabaseTablePreviewProvider) queryData(
 	var query string
 	switch strings.ToLower(engineType) {
 	case "postgresql":
-		// PostgreSQL: 处理空间字段（ST_AsGeoJSON）
+		// PostgreSQL: 处理空间字段（ST_AsText 转为 WKT 格式，更易读）
 		selectColumns := make([]string, len(columns))
 		for i, col := range columns {
 			if p.isSpatialType(col.DataType) {
-				// 空间字段：转换为 GeoJSON
-				selectColumns[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", col.ColumnName, col.ColumnName)
+				// 空间字段：转换为 WKT 格式（如 MULTIPOLYGON (((120.175...）））
+				selectColumns[i] = fmt.Sprintf("ST_AsText(%s) AS %s", col.ColumnName, col.ColumnName)
+				// 调试日志：记录空间字段转换
+				fmt.Printf("[DEBUG] 检测到空间列: %s, 类型: %s, 使用 ST_AsText 转换\n", col.ColumnName, col.DataType)
 			} else {
 				selectColumns[i] = col.ColumnName
 			}
 		}
 		query = fmt.Sprintf("SELECT %s FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",
 			strings.Join(selectColumns, ", "), schema, table, limit, offset)
+		// 调试日志：记录生成的 SQL 查询
+		fmt.Printf("[DEBUG] PostgreSQL 查询: %s\n", query)
 
 	case "mysql", "doris":
 		// MySQL/Doris: 使用反引号
@@ -247,12 +254,14 @@ func (p *DatabaseTablePreviewProvider) detectGeometryColumns(engineType string, 
 
 // isSpatialType 判断是否为空间类型
 func (p *DatabaseTablePreviewProvider) isSpatialType(dataType string) bool {
-	switch strings.ToLower(dataType) {
-	case "geometry", "geography":
-		return true
-	default:
-		return false
-	}
+	dataTypeLower := strings.ToLower(dataType)
+	// 支持完整匹配和前缀匹配
+	// 例如: "geometry", "geography", "GEOMETRY(MULTIPOLYGON, 4326)", "USER-DEFINED"
+	return dataTypeLower == "geometry" ||
+		dataTypeLower == "geography" ||
+		strings.HasPrefix(dataTypeLower, "geometry(") ||
+		strings.HasPrefix(dataTypeLower, "geography(") ||
+		dataTypeLower == "user-defined" // PostGIS 几何类型有时显示为 USER-DEFINED
 }
 
 // getColumnMetadataFromMeta 从 Meta 服务获取列元数据（包含准确的几何类型）
@@ -261,10 +270,10 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	tenantID *uint,
 	engineID uint,
 	schema, table string,
-) ([]models.ColumnMetadata, []string, error) {
+) ([]models.ColumnMetadata, []string, int, []float64, error) {
 	// 检查 MetaClient 是否可用
 	if p.metaClient == nil {
-		return nil, nil, fmt.Errorf("meta client not available")
+		return nil, nil, 0, nil, fmt.Errorf("meta client not available")
 	}
 
 	// 设置租户 ID（用于服务间调用时的租户隔离）
@@ -273,12 +282,12 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 	// 调用 Meta API 获取表的空间元数据（包含字段列表和几何信息）
 	spatialMeta, err := p.metaClient.GetTableSpatialMetadata(engineID, schema, table)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
+		return nil, nil, 0, nil, fmt.Errorf("failed to get spatial metadata from Meta: %w", err)
 	}
 
 	// 如果没有字段信息，返回错误
 	if len(spatialMeta.Fields) == 0 {
-		return nil, nil, fmt.Errorf("no field metadata in Meta")
+		return nil, nil, 0, nil, fmt.Errorf("no field metadata in Meta")
 	}
 
 	// 转换字段信息为 ColumnMetadata
@@ -326,5 +335,6 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 		}
 	}
 
-	return columnMetadata, geometryColumns, nil
+	// 返回 SRID 和 Extent（用于前端显示）
+	return columnMetadata, geometryColumns, spatialMeta.SRID, spatialMeta.Extent, nil
 }

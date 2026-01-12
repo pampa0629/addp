@@ -87,20 +87,28 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	// 使用 ST_AsGeoJSON 直接生成 GeoJSON 格式的几何
+	// 注意：必须在子查询中先计算 row_number()，不能在聚合函数内使用窗口函数
+	// COALESCE 确保空结果返回空数组而不是 null
 	query := fmt.Sprintf(`
 		SELECT jsonb_build_object(
 			'type', 'FeatureCollection',
-			'features', jsonb_agg(
-				jsonb_build_object(
-					'type', 'Feature',
-					'id', row_number() OVER (),
-					'geometry', ST_AsGeoJSON(%s)::jsonb,
-					'properties', to_jsonb(row.*) - '%s'
-				)
+			'features', COALESCE(
+				jsonb_agg(
+					jsonb_build_object(
+						'type', 'Feature',
+						'id', row.row_id,
+						'geometry', ST_AsGeoJSON(row.%s)::jsonb,
+						'properties', to_jsonb(row.*) - '%s' - 'row_id'
+					)
+				),
+				'[]'::jsonb
 			)
 		) as geojson
 		FROM (
-			SELECT * FROM %s.%s
+			SELECT
+				row_number() OVER () as row_id,
+				*
+			FROM %s.%s
 			ORDER BY ctid
 			LIMIT %d OFFSET %d
 		) row
@@ -114,6 +122,13 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 		return
 	}
 
+	// 调试：打印查询结果的前 200 个字符
+	if len(geojsonStr) > 200 {
+		logger.L().Debug("GeoJSON query result (first 200 chars)", "result", geojsonStr[:200])
+	} else {
+		logger.L().Debug("GeoJSON query result", "result", geojsonStr)
+	}
+
 	// 7. 解析并返回 GeoJSON
 	var geojson map[string]interface{}
 	if err := json.Unmarshal([]byte(geojsonStr), &geojson); err != nil {
@@ -121,6 +136,8 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid geojson"})
 		return
 	}
+
+	logger.L().Debug("GeoJSON parsed successfully", "type", geojson["type"], "features_count", len(geojson["features"].([]interface{})))
 
 	c.Header("Content-Type", "application/geo+json")
 	c.JSON(http.StatusOK, geojson)
@@ -188,23 +205,34 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 		return
 	}
 
-	// 查询范围和 SRID
+	// 查询范围
 	extentQuery := fmt.Sprintf(`
 		SELECT
-			ST_XMin(ST_Extent(ST_Transform(%s, 4326))) as min_lng,
-			ST_YMin(ST_Extent(ST_Transform(%s, 4326))) as min_lat,
-			ST_XMax(ST_Extent(ST_Transform(%s, 4326))) as max_lng,
-			ST_YMax(ST_Extent(ST_Transform(%s, 4326))) as max_lat,
-			ST_SRID(%s) as srid
-		FROM %s.%s
-	`, geomColumn, geomColumn, geomColumn, geomColumn, geomColumn, schema, table)
+			ST_XMin(extent) as min_lng,
+			ST_YMin(extent) as min_lat,
+			ST_XMax(extent) as max_lng,
+			ST_YMax(extent) as max_lat
+		FROM (
+			SELECT ST_Extent(ST_Transform(%s, 4326)) as extent
+			FROM %s.%s
+		) subquery
+	`, geomColumn, schema, table)
 
 	var minLng, minLat, maxLng, maxLat float64
-	err = db.Raw(extentQuery).Row().Scan(&minLng, &minLat, &maxLng, &maxLat, &metadata.SRID)
+	err = db.Raw(extentQuery).Row().Scan(&minLng, &minLat, &maxLng, &maxLat)
 	if err != nil {
 		logger.L().Error("Failed to query extent", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query extent failed"})
 		return
+	}
+
+	// 单独查询原始 SRID (所有几何应该有相同的 SRID)
+	sridQuery := fmt.Sprintf("SELECT ST_SRID(%s) FROM %s.%s LIMIT 1", geomColumn, schema, table)
+	err = db.Raw(sridQuery).Scan(&metadata.SRID).Error
+	if err != nil {
+		logger.L().Error("Failed to query SRID", "error", err)
+		// SRID 查询失败不是致命错误，继续
+		metadata.SRID = 0
 	}
 
 	metadata.Extent = []float64{minLng, minLat, maxLng, maxLat}

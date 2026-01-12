@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	"github.com/addp/meta/internal/models"
@@ -18,6 +19,7 @@ import (
 type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
+	systemClient    *commonClient.SystemClient
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
@@ -42,7 +44,7 @@ func DefaultCleanupConfig() CleanupConfig {
 }
 
 // NewCleanupService 创建清理服务
-func NewCleanupService(db *gorm.DB, redisClient *redis.Client, config CleanupConfig) *CleanupService {
+func NewCleanupService(db *gorm.DB, redisClient *redis.Client, systemClient *commonClient.SystemClient, config CleanupConfig) *CleanupService {
 	if config.RetentionDays == 0 {
 		config.RetentionDays = 90
 	}
@@ -53,6 +55,7 @@ func NewCleanupService(db *gorm.DB, redisClient *redis.Client, config CleanupCon
 	return &CleanupService{
 		db:              db,
 		redis:           redisClient,
+		systemClient:    systemClient,
 		log:             logger.With("component", "cleanup_service"),
 		retentionDays:   config.RetentionDays,
 		cleanupInterval: config.CleanupInterval,
@@ -431,37 +434,73 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 func (s *CleanupService) scanInvalidEngines(ctx context.Context, tenantID uint) ([]models.InvalidEngineDetail, error) {
 	var details []models.InvalidEngineDetail
 
-	query := `
-		SELECT
-			mn.engine_id,
-			COUNT(DISTINCT mn.id) as affected_nodes,
-			COUNT(DISTINCT mi.id) as affected_items
-		FROM metadata.meta_node mn
-		LEFT JOIN metadata.meta_item mi ON mn.id = mi.node_id
-		LEFT JOIN system.engines e ON mn.engine_id = e.id
-		WHERE (e.id IS NULL OR e.is_active = false)
-	`
+	// 如果 SystemClient 未配置，跳过检查
+	if s.systemClient == nil {
+		s.log.Warn("SystemClient 未配置，跳过无效引擎检查")
+		return details, nil
+	}
+
+	// 1. 从 System API 获取所有引擎（包括活跃和非活跃）
+	allEngines, err := s.systemClient.ListEngines("", tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("获取引擎列表失败: %w", err)
+	}
+
+	// 2. 构建有效引擎 ID 集合（只包含活跃的引擎）
+	validEngineIDs := make(map[uint]string) // engine_id -> engine_name
+	for _, engine := range allEngines {
+		if engine.IsActive {
+			validEngineIDs[engine.ID] = engine.Name
+		}
+	}
+
+	// 3. 查询数据库中所有 meta_node 和 meta_item 按 engine_id 分组的统计
+	type engineStats struct {
+		EngineID      uint
+		AffectedNodes int64
+		AffectedItems int64
+	}
+
+	var stats []engineStats
+	query := s.db.Table("metadata.meta_node mn").
+		Select("mn.engine_id, COUNT(DISTINCT mn.id) as affected_nodes, COUNT(DISTINCT mi.id) as affected_items").
+		Joins("LEFT JOIN metadata.meta_item mi ON mn.id = mi.node_id").
+		Group("mn.engine_id")
 
 	if tenantID > 0 {
-		query += fmt.Sprintf(" AND mn.tenant_id = %d", tenantID)
+		query = query.Where("mn.tenant_id = ?", tenantID)
 	}
 
-	query += " GROUP BY mn.engine_id"
-
-	rows, err := s.db.Raw(query).Rows()
-	if err != nil {
-		return nil, err
+	if err := query.Scan(&stats).Error; err != nil {
+		return nil, fmt.Errorf("查询引擎统计失败: %w", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var detail models.InvalidEngineDetail
-		if err := rows.Scan(&detail.EngineID, &detail.AffectedNodes, &detail.AffectedItems); err != nil {
-			return nil, err
+	// 4. 在应用层过滤出无效的引擎（不在有效引擎集合中的）
+	for _, stat := range stats {
+		if engineName, exists := validEngineIDs[stat.EngineID]; !exists {
+			// 引擎 ID 不在有效列表中（已删除或禁用）
+			details = append(details, models.InvalidEngineDetail{
+				EngineID:      stat.EngineID,
+				EngineName:    fmt.Sprintf("Engine#%d", stat.EngineID),
+				AffectedNodes: int(stat.AffectedNodes),
+				AffectedItems: int(stat.AffectedItems),
+				Reason:        "引擎已删除或禁用",
+			})
+		} else {
+			// 引擎存在但可能被禁用，检查 allEngines 列表
+			for _, engine := range allEngines {
+				if engine.ID == stat.EngineID && !engine.IsActive {
+					details = append(details, models.InvalidEngineDetail{
+						EngineID:      stat.EngineID,
+						EngineName:    engineName,
+						AffectedNodes: int(stat.AffectedNodes),
+						AffectedItems: int(stat.AffectedItems),
+						Reason:        "引擎已禁用",
+					})
+					break
+				}
+			}
 		}
-		detail.Reason = "引擎已删除或禁用"
-		detail.EngineName = fmt.Sprintf("Engine#%d", detail.EngineID)
-		details = append(details, detail)
 	}
 
 	return details, nil
@@ -679,18 +718,49 @@ func (s *CleanupService) executeHardDelete(ctx context.Context, tenantID uint) (
 func (s *CleanupService) getInvalidEngineIDs(ctx context.Context, tenantID uint) []uint {
 	var ids []uint
 
-	query := `
-		SELECT DISTINCT mn.engine_id
-		FROM metadata.meta_node mn
-		LEFT JOIN system.engines e ON mn.engine_id = e.id
-		WHERE e.id IS NULL OR e.is_active = false
-	`
-
-	if tenantID > 0 {
-		query += fmt.Sprintf(" AND mn.tenant_id = %d", tenantID)
+	// 如果 SystemClient 未配置，返回空列表
+	if s.systemClient == nil {
+		s.log.Warn("SystemClient 未配置，无法获取无效引擎列表")
+		return ids
 	}
 
-	s.db.Raw(query).Scan(&ids)
+	// 1. 从 System API 获取所有引擎
+	allEngines, err := s.systemClient.ListEngines("", tenantID)
+	if err != nil {
+		s.log.Error("获取引擎列表失败", "error", err)
+		return ids
+	}
+
+	// 2. 构建有效引擎 ID 集合（只包含活跃的引擎）
+	validEngineIDs := make(map[uint]bool)
+	for _, engine := range allEngines {
+		if engine.IsActive {
+			validEngineIDs[engine.ID] = true
+		}
+	}
+
+	// 3. 从数据库查询所有 meta_node 中的唯一 engine_id
+	var allEngineIDsInDB []uint
+	query := s.db.Table("metadata.meta_node").
+		Select("DISTINCT engine_id").
+		Where("deleted_at IS NULL")
+
+	if tenantID > 0 {
+		query = query.Where("tenant_id = ?", tenantID)
+	}
+
+	if err := query.Scan(&allEngineIDsInDB).Error; err != nil {
+		s.log.Error("查询数据库引擎ID失败", "error", err)
+		return ids
+	}
+
+	// 4. 过滤出无效的引擎 ID（不在有效引擎集合中的）
+	for _, engineID := range allEngineIDsInDB {
+		if !validEngineIDs[engineID] {
+			ids = append(ids, engineID)
+		}
+	}
+
 	return ids
 }
 

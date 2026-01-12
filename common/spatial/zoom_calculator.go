@@ -5,25 +5,25 @@ import (
 )
 
 // CalculateMaxZoomByRecordCount 根据记录数计算最大缩放级别
-// 目标：确保在 maxZoom 层级，每个瓦片的平均记录数低于 targetRecordsPerTile
+// 目标：找到最大的 zoom 层级，使得在该层级每个瓦片的平均记录数不超过 targetRecordsPerTile
 //
 // 参数：
 //   - recordCount: 表的总记录数
-//   - targetRecordsPerTile: 单个瓦片的目标记录数（阈值），推荐 1000
+//   - targetRecordsPerTile: 单个瓦片的目标记录数（阈值），默认 3000，推荐范围 1000-5000
 //   - extent: 数据范围 [minX, minY, maxX, maxY]
 //   - srid: 空间参考系 ID
 //
 // 返回：
 //   - 计算出的最大缩放级别（最大不超过 18）
+//
+// 算法逻辑：
+//   - zoom 越高，瓦片越多，每瓦片平均记录数越少
+//   - 从 minZoom 开始向高 zoom 遍历，找到第一个满足条件的层级
+//   - 返回该层级作为 maxZoom（不再继续遍历到 18）
 func CalculateMaxZoomByRecordCount(recordCount int64, targetRecordsPerTile int, extent [4]float64, srid int) int {
 	// 1. 边界情况
 	if recordCount <= 0 {
 		return 18 // 无数据或未知，返回默认最大值
-	}
-
-	if recordCount < int64(targetRecordsPerTile) {
-		// 数据量很小，直接返回最大 zoom
-		return 18
 	}
 
 	// 2. 计算数据范围的面积（平方度）
@@ -38,6 +38,7 @@ func CalculateMaxZoomByRecordCount(recordCount int64, targetRecordsPerTile int, 
 	minZoom := CalculateMinZoomFromExtent(extent[:], srid)
 
 	// 4. 从 minZoom 开始，逐层计算每瓦片平均记录数
+	// 找到第一个满足 "平均记录数 <= 阈值" 的层级
 	for z := minZoom; z <= 18; z++ {
 		// 计算该层级覆盖数据范围的瓦片数
 		tileCount := calculateTileCountAtZoom(extent, z, srid)
@@ -49,16 +50,15 @@ func CalculateMaxZoomByRecordCount(recordCount int64, targetRecordsPerTile int, 
 		// 估算每个瓦片的平均记录数
 		avgRecordsPerTile := float64(recordCount) / float64(tileCount)
 
-		// 如果平均记录数低于阈值,返回上一个层级(即最后一个高于阈值的层级)
-		if avgRecordsPerTile < float64(targetRecordsPerTile) {
-			if z > minZoom {
-				return z - 1 // 返回上一个层级
-			}
-			return minZoom // 边界情况:至少返回minZoom
+		// 如果平均记录数低于或等于阈值，说明找到了第一个满足条件的层级
+		// 返回该层级作为 maxZoom
+		if avgRecordsPerTile <= float64(targetRecordsPerTile) {
+			return z
 		}
 	}
 
-	// 5. 如果所有层级都超过阈值，返回最大值
+	// 5. 如果所有层级都超过阈值（数据量非常大），仍然返回 18
+	// 用户可以根据实际情况调整 minZoom 和 maxZoom
 	return 18
 }
 

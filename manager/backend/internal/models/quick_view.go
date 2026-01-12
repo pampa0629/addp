@@ -25,14 +25,8 @@ type QuickView struct {
 	ActualMaxZoom *int `gorm:"" json:"actual_max_zoom,omitempty"` // 实际生成到第几层
 
 	// 统计信息
-	TotalTiles          int      `gorm:"default:0" json:"total_tiles"`
-	CachedTiles         int      `gorm:"default:0" json:"cached_tiles"`
-	LastZoomAvgTimeMs   *float64 `gorm:"" json:"last_zoom_avg_time_ms,omitempty"`
-	LastZoomAvgSizeKB   *float64 `gorm:"" json:"last_zoom_avg_size_kb,omitempty"`
-
-	// 停止条件配置
-	StopThresholdTimeMs float64 `gorm:"default:300" json:"stop_threshold_time_ms"`
-	StopThresholdSizeKB float64 `gorm:"default:100" json:"stop_threshold_size_kb"`
+	TotalTiles  int `gorm:"default:0" json:"total_tiles"`
+	CachedTiles int `gorm:"default:0" json:"cached_tiles"`
 
 	// 指纹（用于 MinIO 路径）
 	Fingerprint string `gorm:"not null;size:64;index:idx_quick_view_fingerprint" json:"fingerprint"`

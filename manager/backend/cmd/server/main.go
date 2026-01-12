@@ -60,7 +60,6 @@ func main() {
 
 	// 初始化 repositories
 	log.Println("🔍 [DEBUG] 开始初始化 repositories...")
-	engineRepo := repository.NewEngineRepository(db, cfg.EncryptionKey)
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
@@ -139,10 +138,9 @@ func main() {
 	service.LoadPreviewPlugins(previewRegistry, metadataRepo, metaClient, contentRegistry, cfg.MetaServiceURL, providerDirSpec)
 	logger.L().Info("数据预览: 已激活预览插件", "providers", previewRegistry.Providers())
 
-	// 初始化 services
-	engineService := service.NewEngineService(engineRepo)
+	// 初始化 services（注意：Manager 不负责引擎管理，引擎信息通过 SystemClient 获取）
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepo)
-	metadataService := service.NewMetadataService(metadataRepo, engineRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
+	metadataService := service.NewMetadataService(metadataRepo, systemClient, metaClient, previewRegistry, contentRegistry, cfg.MetaServiceURL)
 	searchService, err := service.NewHybridSearchService(cfg)
 	if err != nil {
 		logger.L().Error("初始化混合检索服务失败", "error", err)
@@ -151,7 +149,7 @@ func main() {
 	defer searchService.Close()
 
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
-	mvtService := service.NewMVTService(metadataRepo, engineRepo)
+	mvtService := service.NewMVTService(metadataRepo, systemClient)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		service.NewSpatialPreviewService(redisClient),
 		mvtService,
@@ -173,13 +171,13 @@ func main() {
 	}
 
 	// MinIO Bucket 名称（与 Worker 保持一致）
-	minioBucket := "manager-mvt-tiles"
+	minioBucket := "manager"
 
 	// 初始化 Quick View 服务（依赖 Redis、MinIO 和数据库）
 	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient)
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, engineRepo, cfg, logger.L())
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, cfg, logger.L())
 	if err != nil {
 		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
 		embeddingService = nil // 设置为 nil，允许服务继续启动
@@ -191,7 +189,7 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, engineService, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, engineRepo, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService)
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Manager 服务的外部访问 URL（供 Orchestrator 调用）

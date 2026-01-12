@@ -77,49 +77,6 @@ func calculateTotalTiles(extent []float64, zoom int) int {
 	return (maxX - minX + 1) * (maxY - minY + 1)
 }
 
-// calculateOptimalMinZoom 根据空间范围自动计算最优起始缩放级别
-// extent: [minLng, minLat, maxLng, maxLat] WGS84坐标
-// 返回: 建议的起始 zoom level
-func CalculateOptimalMinZoom(extent []float64) int {
-	if len(extent) != 4 {
-		return 6 // 默认值
-	}
-
-	// 计算范围跨度（度）
-	lngSpan := extent[2] - extent[0]
-	latSpan := extent[3] - extent[1]
-
-	// 取最大跨度
-	maxSpan := math.Max(lngSpan, latSpan)
-
-	// 根据跨度确定起始zoom
-	// 全球范围（180度）→ zoom 0
-	// 大陆级（50-180度）→ zoom 2
-	// 国家级（10-50度）→ zoom 4
-	// 省级（1-10度）→ zoom 6
-	// 城市级（0.1-1度）→ zoom 8
-	// 区县级（0.01-0.1度）→ zoom 10
-	// 街道级（0.001-0.01度）→ zoom 12
-	// 小范围（<0.001度）→ zoom 14
-
-	switch {
-	case maxSpan >= 50:
-		return 2
-	case maxSpan >= 10:
-		return 4
-	case maxSpan >= 1:
-		return 6
-	case maxSpan >= 0.1:
-		return 8
-	case maxSpan >= 0.01:
-		return 10
-	case maxSpan >= 0.001:
-		return 12
-	default:
-		return 14
-	}
-}
-
 // gzipCompress 压缩数据为 gzip 格式
 func gzipCompress(data []byte) ([]byte, error) {
 	if len(data) == 0 {
@@ -138,34 +95,4 @@ func gzipCompress(data []byte) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-// gzipDecompress 解压缩 gzip 数据
-func gzipDecompress(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return []byte{}, nil
-	}
-
-	gz, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("gzip reader error: %w", err)
-	}
-	defer gz.Close()
-
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(gz); err != nil {
-		return nil, fmt.Errorf("gzip read error: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-// bytesToKB 字节转换为 KB
-func bytesToKB(bytes int64) float64 {
-	return float64(bytes) / 1024.0
-}
-
-// msToSeconds 毫秒转换为秒
-func msToSeconds(ms float64) float64 {
-	return ms / 1000.0
 }
