@@ -33,6 +33,30 @@ export const quickViewAPI = {
   },
 
   /**
+   * 更新显示模式偏好
+   */
+  updatePreferredMode(engineId, schema, table, preferredMode) {
+    return request.patch(
+      `/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/mode`,
+      { preferred_mode: preferredMode }
+    )
+  },
+
+  /**
+   * 取消预缓存生成
+   */
+  cancelQuickView(engineId, schema, table) {
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/cancel`)
+  },
+
+  /**
+   * 恢复预缓存生成
+   */
+  resumeQuickView(engineId, schema, table) {
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/resume`)
+  },
+
+  /**
    * 列出所有预缓存任务
    */
   listQuickViewTasks(params = {}) {

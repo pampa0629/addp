@@ -145,6 +145,7 @@ func SetupRouter(
 		// Pre-Cache 路由
 		engines.POST("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.TriggerQuickView)
 		engines.GET("/:id/spatial/:schema/:table/pre-cache/status", quickViewHandler.GetQuickViewStatus)
+		engines.PATCH("/:id/spatial/:schema/:table/pre-cache/mode", quickViewHandler.UpdatePreferredMode)
 		engines.POST("/:id/spatial/:schema/:table/pre-cache/cancel", quickViewHandler.CancelQuickView)
 		engines.POST("/:id/spatial/:schema/:table/pre-cache/resume", quickViewHandler.ResumeQuickView)
 		engines.DELETE("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.ClearQuickView)

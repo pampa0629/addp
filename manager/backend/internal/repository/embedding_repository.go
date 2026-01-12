@@ -37,11 +37,11 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 			embedding.Fingerprint, embedding.Modality, len(embedding.Embedding))
 
 		// 使用 fmt.Sprintf 构建完整 SQL，避免 GORM 参数绑定问题
-		// 使用 public.vector 全限定名确保找到 vector 类型
+		// 使用 vector 类型（通过 search_path=manager 自动解析）
 		sql := fmt.Sprintf(`
 			INSERT INTO manager.embeddings
 			(engine_id, bucket, object_key, fingerprint, data_updated_at, embedding, modality, model, file_size, content_type, metadata, tenant_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, '%s'::public.vector, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, '%s'::vector, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, vectorStr)
 
 		err := r.db.WithContext(ctx).Exec(sql,
@@ -79,11 +79,11 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 
 	vectorStr := vectorToString(embedding.Embedding)
 	// 使用 fmt.Sprintf 构建完整 SQL，避免 GORM 参数绑定问题
-	// 使用 public.vector 全限定名确保找到 vector 类型
+	// 使用 vector 类型（通过 search_path=manager 自动解析）
 	sql := fmt.Sprintf(`
 		UPDATE manager.embeddings
 		SET engine_id = ?, bucket = ?, object_key = ?, fingerprint = ?, data_updated_at = ?,
-		    embedding = '%s'::public.vector, modality = ?, model = ?, file_size = ?, content_type = ?,
+		    embedding = '%s'::vector, modality = ?, model = ?, file_size = ?, content_type = ?,
 		    metadata = ?, tenant_id = ?, updated_at = ?
 		WHERE id = ?
 	`, vectorStr)

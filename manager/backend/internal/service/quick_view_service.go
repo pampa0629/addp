@@ -443,3 +443,33 @@ func (s *QuickViewService) IncrementCachedTiles(
 func calculateFingerprint(engineID uint, schema, table string) string {
 	return commonModels.GenerateTableFingerprint(engineID, schema, table)
 }
+
+// UpdatePreferredMode 更新用户偏好的显示模式
+func (s *QuickViewService) UpdatePreferredMode(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+	preferredMode string,
+) error {
+	// 1. 验证 preferredMode 参数
+	if preferredMode != "geojson" && preferredMode != "mvt" {
+		return fmt.Errorf("invalid preferred_mode: %s, must be 'geojson' or 'mvt'", preferredMode)
+	}
+
+	// 2. 调用 Repository 更新
+	err := s.repo.UpdatePreferredMode(tenantID, engineID, schema, table, preferredMode)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("quick view record not found for engine_id=%d, schema=%s, table=%s",
+				engineID, schema, table)
+		}
+		return fmt.Errorf("failed to update preferred mode: %w", err)
+	}
+
+	logger.L().Info("Preferred mode updated",
+		"engine_id", engineID,
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"preferred_mode", preferredMode)
+
+	return nil
+}

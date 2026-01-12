@@ -739,6 +739,10 @@ func inferContentType(objectPath, contentType string) string {
 		return "image/png"
 	case ".jpg", ".jpeg":
 		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
 	case ".json":
 		return "application/json"
 	case ".geojson":
@@ -747,6 +751,22 @@ func inferContentType(objectPath, contentType string) string {
 		return "application/x-esri-shapefile"
 	case ".txt", ".log":
 		return "text/plain"
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".webm":
+		return "video/webm"
+	case ".flv":
+		return "video/x-flv"
+	case ".wmv":
+		return "video/x-ms-wmv"
+	case ".m4v":
+		return "video/x-m4v"
 	}
 
 	if contentType != "" {

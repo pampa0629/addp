@@ -16,8 +16,9 @@ type QuickView struct {
 	Table      string         `gorm:"column:table_name;not null;size:255" json:"table_name"`
 
 	// 快显状态
-	Status       string `gorm:"not null;default:'none';index:idx_quick_view_status" json:"status"` // none, generating, ready, failed, cancelled
-	ErrorMessage string `gorm:"type:text" json:"error_message,omitempty"`
+	Status        string `gorm:"not null;default:'none';index:idx_quick_view_status" json:"status"` // none, generating, ready, failed, cancelled
+	PreferredMode string `gorm:"default:'mvt';size:20" json:"preferred_mode"` // 用户偏好的显示模式：geojson | mvt
+	ErrorMessage  string `gorm:"type:text" json:"error_message,omitempty"`
 
 	// 缓存配置
 	MinZoom       *int `gorm:"" json:"min_zoom,omitempty"`       // 自动计算得到

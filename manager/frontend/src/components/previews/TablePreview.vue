@@ -3,37 +3,92 @@
     <!-- 地图预览控制和地图区域 -->
     <template v-if="hasGeometry">
       <div class="map-controls">
+        <!-- 左侧：地图预览开关 -->
         <div class="toggle-wrapper">
           <span class="toggle-label">地图预览</span>
           <el-switch v-model="showMap" size="small" />
         </div>
+
+        <!-- 右侧：预缓存控制 + 模式切换 -->
         <template v-if="showMap">
-          <!-- Pre-Cache Button -->
-          <el-button
-            type="primary"
-            size="small"
-            :loading="quickViewLoading"
-            @click="handleQuickView"
-          >
-            {{ getQuickViewButtonText() }}
-          </el-button>
+          <div class="pre-cache-controls">
+            <!-- 状态：none - 未预缓存 -->
+            <el-button
+              v-if="quickViewStatus === 'none'"
+              type="primary"
+              size="small"
+              :loading="quickViewLoading"
+              @click="handleQuickView"
+            >
+              🚀 启用预缓存
+            </el-button>
 
-          <!-- 模式指示器 -->
-          <el-tag v-if="showMap" :type="useGeoJSONMode ? 'info' : 'success'" size="small">
-            {{ useGeoJSONMode ? 'GeoJSON 模式' : 'MVT 瓦片模式' }}
-          </el-tag>
+            <!-- 状态：generating - 生成中 -->
+            <template v-else-if="quickViewStatus === 'generating'">
+              <!-- 横向进度条 -->
+              <div class="progress-bar-wrapper">
+                <el-progress
+                  :percentage="quickViewProgress?.progress_percent || 0"
+                  :format="() => `${(quickViewProgress?.progress_percent || 0).toFixed(1)}%`"
+                  :stroke-width="20"
+                />
+              </div>
 
-          <!-- Progress Display -->
-          <div v-if="quickViewStatus === 'generating' && quickViewProgress" class="progress-info">
-            <span class="progress-text">
-              {{ quickViewProgress.tiles_processed }} / {{ quickViewProgress.tiles_total_estimate }} 瓦片
-            </span>
-            <span class="progress-text">
-              已用时 {{ formatTime(quickViewProgress.elapsed_seconds) }}
-            </span>
-            <span v-if="quickViewProgress.estimated_remaining_seconds > 0" class="progress-text">
-              预计剩余 {{ formatTime(quickViewProgress.estimated_remaining_seconds) }}
-            </span>
+              <!-- 进度详情 -->
+              <div v-if="quickViewProgress" class="progress-info">
+                <span class="progress-text">
+                  {{ quickViewProgress.tiles_processed }} / {{ quickViewProgress.tiles_total_estimate }} 瓦片
+                </span>
+                <span class="progress-text">
+                  已用时 {{ formatTime(quickViewProgress.elapsed_seconds) }}
+                </span>
+                <span v-if="quickViewProgress.estimated_remaining_seconds > 0" class="progress-text">
+                  预计剩余 {{ formatTime(quickViewProgress.estimated_remaining_seconds) }}
+                </span>
+              </div>
+
+              <!-- 取消按钮 -->
+              <el-button type="warning" size="small" @click="handleCancelQuickView">
+                ⏸️ 取消
+              </el-button>
+            </template>
+
+            <!-- 状态：ready - 已完成 -->
+            <template v-else-if="quickViewStatus === 'ready'">
+              <el-tag type="success" size="large">✅ 已预缓存</el-tag>
+              <el-button type="danger" size="small" @click="handleClearQuickView">
+                🗑️ 删除缓存
+              </el-button>
+            </template>
+
+            <!-- 状态：failed - 失败 -->
+            <template v-else-if="quickViewStatus === 'failed'">
+              <el-tag type="danger" size="large">❌ 生成失败</el-tag>
+              <el-button type="primary" size="small" @click="handleQuickView">
+                🔄 重新生成
+              </el-button>
+            </template>
+
+            <!-- 状态：cancelled - 已取消 -->
+            <template v-else-if="quickViewStatus === 'cancelled'">
+              <el-tag type="info" size="large">⏸️ 已取消</el-tag>
+              <el-button type="primary" size="small" @click="handleQuickView">
+                🔄 重新生成
+              </el-button>
+            </template>
+          </div>
+
+          <!-- 模式切换 Toggle 开关 -->
+          <div class="mode-switch-wrapper">
+            <el-switch
+              v-model="userSelectedMode"
+              :disabled="!canUseMVT"
+              active-value="mvt"
+              inactive-value="geojson"
+              active-text="⚡ MVT"
+              inactive-text="🔵 GeoJSON"
+              @change="handleModeSwitch"
+            />
           </div>
         </template>
       </div>
@@ -169,9 +224,15 @@ const pageSize = ref(10)
 
 // Pre-Cache state
 const quickViewLoading = ref(false)
-const quickViewStatus = ref('none') // 'none' | 'generating' | 'completed' | 'failed'
+const quickViewStatus = ref('none') // 'none' | 'generating' | 'ready' | 'failed'
 const quickViewProgress = ref(null) // 存储实时进度数据
 let quickViewPollingTimer = null
+
+// 用户偏好的显示模式（从 API 响应中初始化）
+const preferredMode = ref('mvt')
+
+// 用户当前选择的显示模式（用于 Toggle 开关双向绑定）
+const userSelectedMode = ref('mvt')
 
 const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
@@ -183,14 +244,105 @@ const extent = computed(() => props.data?.extent || [])
 const hasGeometry = computed(() => geometryColumns.value.length > 0)
 const activeGeometryColumn = computed(() => geometryColumns.value[0] || '')
 
-// 地图渲染模式选择（自动切换）
-// - quickViewStatus 为 'ready' 或 'completed' → 使用 MVT 瓦片模式（高性能）
-// - quickViewStatus 为 'none' 或 'generating' → 使用 GeoJSON 模式（轻量级）
+// 地图渲染模式选择（支持用户偏好 + 自动切换）
 const useGeoJSONMode = computed(() => {
   const status = quickViewStatus.value
-  // MVT 瓦片未就绪时使用 GeoJSON
-  return status === 'none' || status === 'generating' || status === 'cancelled' || status === 'failed'
+
+  // 预缓存未完成，强制 GeoJSON 模式
+  if (status === 'none' || status === 'generating' || status === 'cancelled' || status === 'failed') {
+    return true
+  }
+
+  // 预缓存已完成，根据用户选择
+  if (status === 'ready') {
+    return userSelectedMode.value === 'geojson'
+  }
+
+  return true
 })
+
+// 是否允许使用 MVT 模式
+const canUseMVT = computed(() => {
+  return quickViewStatus.value === 'ready'
+})
+
+// 处理模式切换
+const handleModeSwitch = async (newMode) => {
+  if (!canUseMVT.value && newMode === 'mvt') {
+    ElMessage.warning('预缓存未完成，无法切换到 MVT 模式')
+    userSelectedMode.value = 'geojson'
+    return
+  }
+
+  try {
+    await quickViewAPI.updatePreferredMode(engineId.value, schema.value, table.value, newMode)
+    preferredMode.value = newMode
+    ElMessage.success(`已切换到 ${newMode === 'mvt' ? 'MVT 瓦片' : 'GeoJSON'} 模式`)
+  } catch (error) {
+    console.error('切换显示模式失败:', error)
+    ElMessage.error('切换显示模式失败: ' + (error.response?.data?.error || error.message))
+    userSelectedMode.value = newMode === 'mvt' ? 'geojson' : 'mvt'
+  }
+}
+
+// 删除预缓存
+const handleClearQuickView = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '删除预缓存后，地图将切换到 GeoJSON 模式，确认删除？',
+      '确认删除',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+
+    quickViewLoading.value = true
+    await quickViewAPI.clearQuickView(engineId.value, schema.value, table.value)
+
+    quickViewStatus.value = 'none'
+    quickViewProgress.value = null
+    preferredMode.value = 'geojson'
+    userSelectedMode.value = 'geojson'
+
+    stopQuickViewPolling()
+    ElMessage.success('预缓存已删除')
+  } catch (error) {
+    if (error === 'cancel') return
+    console.error('删除预缓存失败:', error)
+    ElMessage.error('删除预缓存失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 取消预缓存生成
+const handleCancelQuickView = async () => {
+  try {
+    await ElMessageBox.confirm('确认取消预缓存生成任务？', '确认取消', {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+
+    quickViewLoading.value = true
+    await quickViewAPI.cancelQuickView(engineId.value, schema.value, table.value)
+
+    quickViewStatus.value = 'cancelled'
+    quickViewProgress.value = null
+    stopQuickViewPolling()
+
+    ElMessage.success('已取消预缓存生成')
+  } catch (error) {
+    if (error === 'cancel') return
+    console.error('取消预缓存失败:', error)
+    ElMessage.error('取消预缓存失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    quickViewLoading.value = false
+  }
+}
 
 // 资源信息（用于 MVT 预览）
 const engineId = computed(() => props.data?.engineId)
@@ -418,10 +570,10 @@ const handleQuickView = async () => {
             <div style="margin-bottom: 16px;">
               <strong style="font-size: 14px;">缩放层级配置：</strong>
             </div>
-            <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 12px;">
-              <div style="flex: 1;">
-                <label style="display: block; margin-bottom: 6px; color: #606266; font-size: 13px;">
-                  最小缩放层级 (MinZoom)
+            <div style="margin-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <label style="color: #606266; font-size: 13px; white-space: nowrap; min-width: 150px;">
+                  最小层级 (MinZoom)
                 </label>
                 <input
                   id="min-zoom-input"
@@ -429,12 +581,12 @@ const handleQuickView = async () => {
                   value="${calculatedMin}"
                   min="0"
                   max="22"
-                  style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+                  style="flex: 1; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
                 />
               </div>
-              <div style="flex: 1;">
-                <label style="display: block; margin-bottom: 6px; color: #606266; font-size: 13px;">
-                  最大缩放层级 (MaxZoom)
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <label style="color: #606266; font-size: 13px; white-space: nowrap; min-width: 150px;">
+                  最大层级 (MaxZoom)
                 </label>
                 <input
                   id="max-zoom-input"
@@ -442,7 +594,7 @@ const handleQuickView = async () => {
                   value="${calculatedMax}"
                   min="0"
                   max="22"
-                  style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+                  style="flex: 1; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
                 />
               </div>
             </div>
@@ -525,6 +677,7 @@ const fetchQuickViewStatus = async () => {
     const response = await quickViewAPI.getQuickViewStatus(engineId.value, schema.value, table.value)
     const status = response?.status
     const progress = response?.progress // 提取进度数据
+    const mode = response?.preferred_mode // 新增：读取用户偏好模式
 
     if (status) {
       quickViewStatus.value = status
@@ -536,22 +689,42 @@ const fetchQuickViewStatus = async () => {
         quickViewProgress.value = null
       }
 
+      // 新增：初始化用户偏好模式
+      if (mode) {
+        preferredMode.value = mode
+        userSelectedMode.value = mode
+      } else {
+        // 如果后端未返回，根据状态推断
+        if (status === 'ready') {
+          preferredMode.value = 'mvt'
+          userSelectedMode.value = 'mvt'
+        } else {
+          preferredMode.value = 'geojson'
+          userSelectedMode.value = 'geojson'
+        }
+      }
+
       // 如果状态变为完成或失败，停止轮询
-      if (status === 'completed' || status === 'failed') {
+      if (status === 'ready' || status === 'failed') {
         stopQuickViewPolling()
 
-        if (status === 'completed') {
+        if (status === 'ready') {
           ElMessage.success('预缓存生成完成')
         } else if (status === 'failed') {
           ElMessage.error('预缓存生成失败')
+          preferredMode.value = 'geojson'
+          userSelectedMode.value = 'geojson'
         }
       }
     }
   } catch (error) {
+    console.error('Failed to fetch quick view status:', error)
     // 如果返回404，说明还没有预缓存记录
     if (error.response?.status === 404) {
       quickViewStatus.value = 'none'
       quickViewProgress.value = null
+      preferredMode.value = 'geojson'
+      userSelectedMode.value = 'geojson'
     }
     // 其他错误不处理，避免频繁弹窗
   }
@@ -576,7 +749,7 @@ const stopQuickViewPolling = () => {
 
 // 获取按钮文本（根据状态和进度）
 const getQuickViewButtonText = () => {
-  if (quickViewStatus.value === 'completed') {
+  if (quickViewStatus.value === 'ready') {
     return '预缓存已启用'
   }
   if (quickViewStatus.value === 'generating') {
@@ -770,6 +943,39 @@ body.is-resizing .map-splitter::after {
   background: var(--el-fill-color-light);
   border-radius: 4px;
   white-space: nowrap;
+}
+
+/* 预缓存控制区 */
+.pre-cache-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+/* 进度条容器 */
+.progress-bar-wrapper {
+  min-width: 200px;
+  max-width: 300px;
+  flex: 1;
+}
+
+/* 模式切换容器 */
+.mode-switch-wrapper {
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  border-left: 1px solid var(--el-border-color);
+}
+
+.mode-switch-wrapper .el-switch {
+  --el-switch-on-color: var(--el-color-success);
+  --el-switch-off-color: var(--el-color-primary);
+}
+
+.mode-switch-wrapper .el-switch.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
 

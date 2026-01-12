@@ -241,3 +241,25 @@ func (r *QuickViewRepository) GetFingerprint(tenantID, engineID uint, schema, ta
 
 	return qv.Fingerprint, nil
 }
+
+// UpdatePreferredMode 更新用户偏好的显示模式
+func (r *QuickViewRepository) UpdatePreferredMode(
+	tenantID, engineID uint,
+	schema, table string,
+	preferredMode string,
+) error {
+	result := r.db.Model(&models.QuickView{}).
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+			tenantID, engineID, schema, table).
+		Update("preferred_mode", preferredMode)
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}

@@ -155,7 +155,44 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		return nil, ErrEngineAccessDenied
 	}
 
-	// 3. 构建请求
+	// 3. 尝试从 Meta 获取元数据（对于对象存储）
+	var metaNode *commonModels.MetaNode
+	var metaItem *commonModels.MetaItem
+	if r.metaClient != nil && engine.EngineType == "minio" {
+		// 对于对象存储，尝试获取元数据
+		if len(loc.Path) > 0 {
+			bucketName := loc.Path[0]
+			if len(loc.Path) > 1 {
+				// 对象路径：bucket/path/to/file.ext
+				objectPath := strings.Join(loc.Path[1:], "/")
+				item, err := r.metaClient.GetItemByPath(loc.EngineID, bucketName, objectPath)
+				if err == nil && item != nil {
+					metaItem = item
+					logger.L().Debug("从 Meta 获取到对象元数据",
+						"bucket", bucketName,
+						"path", objectPath,
+						"size_bytes", item.SizeBytes)
+				} else {
+					logger.L().Debug("未从 Meta 获取到对象元数据",
+						"bucket", bucketName,
+						"path", objectPath,
+						"error", err)
+				}
+			} else {
+				// Bucket 或 Prefix 路径
+				nodePath := bucketName
+				node, err := r.metaClient.GetNodeByPath(loc.EngineID, nodePath)
+				if err == nil && node != nil {
+					metaNode = node
+					logger.L().Debug("从 Meta 获取到节点元数据",
+						"path", nodePath,
+						"total_size_bytes", node.TotalSizeBytes)
+				}
+			}
+		}
+	}
+
+	// 4. 构建请求
 	req := &PreviewResolverRequest{
 		Locator: loc,
 		Engine:  engine,
@@ -166,7 +203,25 @@ func (r *PreviewResolver) PreviewFromURI(ctx context.Context, locatorURI string,
 		TenantID: tenantID,
 	}
 
-	// 4. 执行预览
+	// 设置元数据（如果有）
+	if metaNode != nil {
+		req.Metadata = metaNode
+	} else if metaItem != nil {
+		// 将 MetaItem 转换为 MetaNode 格式
+		sizeBytes := int64(0)
+		if metaItem.SizeBytes != nil {
+			sizeBytes = *metaItem.SizeBytes
+		}
+		req.Metadata = &commonModels.MetaNode{
+			ID:             metaItem.ID,
+			EngineID:       metaItem.EngineID,
+			Path:           metaItem.FullName,
+			ItemCount:      1,
+			TotalSizeBytes: sizeBytes,
+		}
+	}
+
+	// 5. 执行预览
 	return r.Preview(ctx, req)
 }
 

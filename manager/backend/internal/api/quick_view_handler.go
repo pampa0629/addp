@@ -35,6 +35,11 @@ type TriggerQuickViewRequest struct {
 	Priority    string `json:"priority"`      // "critical", "default", "low"
 }
 
+// UpdatePreferredModeRequest 更新显示模式偏好请求
+type UpdatePreferredModeRequest struct {
+	PreferredMode string `json:"preferred_mode" binding:"required,oneof=geojson mvt"`
+}
+
 // TriggerQuickView 触发快显缓存生成
 // POST /api/engines/:id/spatial/:schema/:table/quick-view
 func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
@@ -135,6 +140,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 		"schema_name":      qv.SchemaName,
 		"table_name":       qv.Table,
 		"status":           qv.Status,
+		"preferred_mode":   qv.PreferredMode,
 		"error_message":    qv.ErrorMessage,
 		"min_zoom":         qv.MinZoom,
 		"max_zoom":         qv.MaxZoom,
@@ -325,4 +331,63 @@ func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// UpdatePreferredMode 更新用户偏好的显示模式
+// PATCH /api/manager/engines/:id/spatial/:schema/:table/pre-cache/mode
+func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
+	// 1. 解析路径参数
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	schema := c.Param("schema")
+	table := c.Param("table")
+
+	if schema == "" || table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		return
+	}
+
+	// 2. 解析请求体
+	var req UpdatePreferredModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body: " + err.Error()})
+		return
+	}
+
+	// 3. 获取租户ID
+	tenantID := uint(1)
+	if val, exists := c.Get("tenant_id"); exists {
+		if tid, ok := val.(uint); ok {
+			tenantID = tid
+		}
+	}
+
+	// 4. 调用服务层更新
+	if err := h.service.UpdatePreferredMode(
+		c.Request.Context(),
+		tenantID,
+		uint(engineID),
+		schema,
+		table,
+		req.PreferredMode,
+	); err != nil {
+		logger.L().Error("Failed to update preferred mode", "error", err)
+		statusCode := http.StatusInternalServerError
+		if err.Error() == "quick view record not found" {
+			statusCode = http.StatusNotFound
+		} else if err.Error() == "invalid preferred_mode" {
+			statusCode = http.StatusBadRequest
+		}
+		c.JSON(statusCode, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Preferred mode updated successfully",
+		"preferred_mode": req.PreferredMode,
+	})
 }

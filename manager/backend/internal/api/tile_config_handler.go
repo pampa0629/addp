@@ -209,7 +209,22 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 		}
 	}
 
-	// 6. 计算预估瓦片总数和平均记录数
+	// 6. 对 minZoom 进行后处理（在 maxZoom 计算完成后）
+	// 先用原始 minZoom 计算 maxZoom（确保 maxZoom 基于正确的起点）
+	// 然后再对 minZoom 减 2，让用户在更低层级也能看到数据
+	originalMinZoom := minZoom
+	minZoom = minZoom - 2
+	if minZoom < 3 {
+		minZoom = 3
+	}
+
+	logger.L().Info("Adjusted MinZoom for display",
+		"original_min_zoom", originalMinZoom,
+		"adjusted_min_zoom", minZoom,
+		"max_zoom", maxZoom,
+		"table", table)
+
+	// 7. 计算预估瓦片总数和平均记录数
 	var estimatedTiles int
 	var avgRecordsPerTile float64
 

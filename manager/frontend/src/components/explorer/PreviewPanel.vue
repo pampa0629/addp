@@ -29,6 +29,20 @@
               总计 {{ tableTotal.toLocaleString() }} 行
             </el-tag>
           </div>
+          <!-- 对象存储元数据信息 -->
+          <div v-if="showObjectInfo" class="object-info">
+            <!-- 文件类型标签（带 tooltip 显示详细信息）-->
+            <el-tooltip
+              :content="objectMetadataTooltip"
+              placement="bottom"
+              :show-after="300"
+              raw-content
+            >
+              <el-tag size="small" type="primary" class="info-badge clickable">
+                {{ objectFileTypeLabel }}
+              </el-tag>
+            </el-tooltip>
+          </div>
         </div>
         <div class="panel-actions">
           <!-- 向量化按钮 -->
@@ -748,6 +762,307 @@ const spatialInfoTooltip = computed(() => {
   return parts.join('\n')
 })
 
+// 对象存储元数据相关计算属性
+const showObjectInfo = computed(() => {
+  return (previewMode.value === 'object' || previewMode.value === 'node') &&
+         props.previewData?.object &&
+         props.previewData.object.node_type === 'object'
+})
+
+const objectSizeBytes = computed(() => {
+  return objectData.value?.size_bytes || 0
+})
+
+const objectContentType = computed(() => {
+  return objectData.value?.content_type || ''
+})
+
+const objectFileTypeLabel = computed(() => {
+  const contentType = objectContentType.value
+  const path = objectData.value?.path || ''
+
+  // 从 content_type 推断文件类型
+  if (contentType.startsWith('image/')) {
+    const format = contentType.split('/')[1].toUpperCase()
+    return `图片 (${format})`
+  } else if (contentType.includes('pdf')) {
+    return 'PDF 文档'
+  } else if (contentType.includes('json')) {
+    return 'JSON 文件'
+  } else if (contentType.includes('text')) {
+    return '文本文件'
+  } else if (contentType.includes('video')) {
+    return '视频文件'
+  } else if (contentType.includes('audio')) {
+    return '音频文件'
+  }
+
+  // 从文件扩展名推断
+  const ext = path.split('.').pop()?.toUpperCase()
+  if (ext) {
+    return `${ext} 文件`
+  }
+
+  return '文件'
+})
+
+// 图片尺寸信息（从 attributes 或 extracted_metadata 中提取）
+const objectImageDimensions = computed(() => {
+  if (!objectContentType.value.startsWith('image/')) {
+    return null
+  }
+
+  const attributes = objectData.value?.attributes || {}
+  const extracted = objectData.value?.extracted_metadata || attributes.extracted_metadata || {}
+
+  // 尝试从多个可能的位置获取宽高信息
+  let width = extracted.width || extracted.Width || attributes.width || attributes.Width
+  let height = extracted.height || extracted.Height || attributes.height || attributes.Height
+
+  if (width && height) {
+    return `${width} × ${height}`
+  }
+
+  return null
+})
+
+// 对象元数据 Tooltip 内容（统一显示所有元数据信息）
+const objectMetadataTooltip = computed(() => {
+  const parts = []
+  const contentType = objectContentType.value
+  const path = objectData.value?.path || ''
+  const attributes = objectData.value?.attributes || {}
+  const extracted = objectData.value?.extracted_metadata || attributes.extracted_metadata || {}
+
+  // 图片特有信息
+  if (contentType.startsWith('image/')) {
+    // 图片尺寸（宽 高）
+    const width = extracted.width || extracted.Width || attributes.width || attributes.Width
+    const height = extracted.height || extracted.Height || attributes.height || attributes.Height
+    if (width && height) {
+      parts.push(`宽 ${width} 高 ${height}`)
+    }
+
+    // 文件大小
+    if (objectSizeBytes.value > 0) {
+      parts.push(`文件大小: ${formatFileSize(objectSizeBytes.value)}`)
+    }
+
+    // 图片格式
+    const format = extracted.format || extracted.Format || attributes.format || attributes.image_format
+    if (format && format !== contentType.split('/')[1]) {
+      parts.push(`格式: ${format}`)
+    }
+
+    // 颜色模式
+    const colorMode = extracted.mode || extracted.Mode || attributes.mode || attributes.color_mode
+    if (colorMode) {
+      parts.push(`颜色模式: ${colorMode}`)
+    }
+
+    // DPI
+    const dpi = extracted.dpi || extracted.DPI || attributes.dpi
+    if (dpi) {
+      parts.push(`DPI: ${dpi}`)
+    }
+  }
+
+  // 视频特有信息
+  if (contentType.includes('video')) {
+    // 尝试从 custom_attrs.video_metadata 中获取视频元数据
+    const videoMeta = extracted.custom_attrs?.video_metadata?.data ||
+                      extracted.custom_attrs?.video_metadata ||
+                      attributes.video_metadata?.data ||
+                      attributes.video_metadata || {}
+
+    // 文件大小
+    if (objectSizeBytes.value > 0) {
+      parts.push(`文件大小: ${formatFileSize(objectSizeBytes.value)}`)
+    }
+
+    // 视频尺寸（宽 × 高）
+    const width = videoMeta.width || videoMeta.video_width ||
+                  extracted.width || extracted.Width || attributes.width || attributes.Width ||
+                  extracted.video_width || attributes.video_width
+    const height = videoMeta.height || videoMeta.video_height ||
+                   extracted.height || extracted.Height || attributes.height || attributes.Height ||
+                   extracted.video_height || attributes.video_height
+    const resolution = videoMeta.resolution || videoMeta.video_resolution ||
+                       extracted.resolution || extracted.Resolution || attributes.resolution
+
+    if (width && height) {
+      parts.push(`分辨率: ${width} × ${height}`)
+    } else if (resolution && typeof resolution === 'string') {
+      parts.push(`分辨率: ${resolution}`)
+    }
+
+    // 时长
+    const duration = videoMeta.duration || videoMeta.duration_seconds || videoMeta.total_duration ||
+                     extracted.duration || extracted.Duration || attributes.duration
+    if (duration) {
+      const durationStr = formatDuration(duration)
+      parts.push(`时长: ${durationStr}`)
+    }
+
+    // 视频编码（codec）
+    const videoCodec = videoMeta.codec || videoMeta.video_codec ||
+                       extracted.video_codec || extracted.VideoCodec || attributes.video_codec ||
+                       extracted.codec || extracted.Codec || attributes.codec
+    if (videoCodec) {
+      parts.push(`视频编码: ${videoCodec}`)
+    }
+
+    // 音频编码
+    const audioCodec = videoMeta.audio_codec || videoMeta.audio_format ||
+                       extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec
+    if (audioCodec) {
+      parts.push(`音频编码: ${audioCodec}`)
+    }
+
+    // 帧率
+    const fps = videoMeta.frame_rate || videoMeta.fps ||
+                extracted.fps || extracted.FPS || attributes.fps || extracted.frame_rate
+    if (fps) {
+      parts.push(`帧率: ${fps} fps`)
+    }
+
+    // 比特率
+    const bitrate = videoMeta.bitrate || videoMeta.bit_rate ||
+                    extracted.bitrate || extracted.Bitrate || attributes.bitrate
+    if (bitrate) {
+      const bitrateStr = formatBitrate(bitrate)
+      parts.push(`比特率: ${bitrateStr}`)
+    }
+  }
+
+  // 音频特有信息
+  if (contentType.includes('audio')) {
+    // 时长
+    const duration = extracted.duration || extracted.Duration || attributes.duration
+    if (duration) {
+      const durationStr = formatDuration(duration)
+      parts.push(`时长: ${durationStr}`)
+    }
+
+    // 音频编码
+    const audioCodec = extracted.audio_codec || extracted.AudioCodec || attributes.audio_codec ||
+                       extracted.codec || extracted.Codec || attributes.codec
+    if (audioCodec) {
+      parts.push(`音频编码: ${audioCodec}`)
+    }
+
+    // 采样率
+    const sampleRate = extracted.sample_rate || extracted.SampleRate || attributes.sample_rate
+    if (sampleRate) {
+      parts.push(`采样率: ${sampleRate} Hz`)
+    }
+
+    // 比特率
+    const bitrate = extracted.bitrate || extracted.Bitrate || attributes.bitrate
+    if (bitrate) {
+      const bitrateStr = formatBitrate(bitrate)
+      parts.push(`比特率: ${bitrateStr}`)
+    }
+  }
+
+  // PDF 特有信息
+  if (contentType.includes('pdf')) {
+    const pages = extracted.pages || extracted.Pages || attributes.pages || attributes.page_count
+    if (pages) {
+      parts.push(`页数: ${pages}`)
+    }
+
+    const author = extracted.author || extracted.Author || attributes.author
+    if (author) {
+      parts.push(`作者: ${author}`)
+    }
+
+    const title = extracted.title || extracted.Title || attributes.title
+    if (title) {
+      parts.push(`标题: ${title}`)
+    }
+
+    const creator = extracted.creator || extracted.Creator || attributes.creator
+    if (creator) {
+      parts.push(`创建工具: ${creator}`)
+    }
+  }
+
+  // 最后修改时间
+  if (objectLastModified.value) {
+    parts.push(`最后修改: ${objectLastModified.value}`)
+  }
+
+  return parts.join('\n')
+})
+
+// 格式化视频时长（秒转为 HH:MM:SS）
+const formatDuration = (seconds) => {
+  if (typeof seconds === 'string') {
+    seconds = parseFloat(seconds)
+  }
+  if (isNaN(seconds) || seconds < 0) {
+    return '未知'
+  }
+
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  } else {
+    return `${minutes}:${String(secs).padStart(2, '0')}`
+  }
+}
+
+// 格式化比特率（转为 Kbps 或 Mbps）
+const formatBitrate = (bitrate) => {
+  if (typeof bitrate === 'string') {
+    bitrate = parseFloat(bitrate)
+  }
+  if (isNaN(bitrate) || bitrate < 0) {
+    return '未知'
+  }
+
+  const k = 1000 // 使用 1000 而不是 1024
+  if (bitrate < k) {
+    return `${bitrate.toFixed(0)} bps`
+  } else if (bitrate < k * k) {
+    return `${(bitrate / k).toFixed(2)} Kbps`
+  } else {
+    return `${(bitrate / (k * k)).toFixed(2)} Mbps`
+  }
+}
+
+const objectLastModified = computed(() => {
+  const lastModified = objectData.value?.last_modified
+  if (!lastModified) return null
+
+  try {
+    const date = new Date(lastModified)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  } catch (e) {
+    return null
+  }
+})
+
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
 // 判断是否显示向量化按钮（仅 MinIO/S3 的对象、目录、Bucket）
 const showVectorizeButton = computed(() => {
   if (!props.selectedNode) return false
@@ -816,12 +1131,8 @@ const handleVectorize = async () => {
       params.scope = 'bucket'
     }
 
-    // 调用后端 API
-    const response = await client.post('/manager/embedding', {
-      operator_name: 'embedding',
-      params: params,
-      execute_now: true
-    })
+    // 调用后端 API（直接发送参数，不嵌套）
+    const response = await client.post('/manager/embedding', params)
 
     // 获取响应数据
     const responseData = response?.data || response
@@ -1042,11 +1353,21 @@ const handleNavigate = (path) => {
   gap: 8px;
 }
 
+.object-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .info-badge {
   display: flex;
   align-items: center;
   gap: 4px;
   font-weight: 600;
+}
+
+.info-badge.clickable {
+  cursor: help;
 }
 
 .info-badge .el-icon {

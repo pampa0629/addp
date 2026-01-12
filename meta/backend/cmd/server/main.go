@@ -27,6 +27,9 @@ import (
 	_ "github.com/addp/common/engine/plugins/postgresql"
 	_ "github.com/addp/common/engine/plugins/s3"
 	_ "github.com/addp/common/engine/plugins/spark_sql"
+
+	// 导入 format 解析器以触发自动注册（图片、PDF、CSV 等）
+	_ "github.com/addp/common/format/builtin"
 )
 
 func main() {

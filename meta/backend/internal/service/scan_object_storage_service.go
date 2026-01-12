@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
@@ -192,7 +193,7 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 		}
 
 		// 转换为 format.ObjectMetadata 格式
-		metas := s.convertToObjectMetadata(objects, bucketName, prefix, isDeepScan, engineID, resource.ConnectionInfo)
+		metas := s.convertToObjectMetadata(objects, bucketName, prefix, isDeepScan, engineID, resource)
 
 		bucketNode, ok := bucketNodes[bucketName]
 		if !ok {
@@ -328,7 +329,7 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 	bucket, prefix string,
 	isDeepScan bool,
 	engineID uint,
-	connInfo commonModels.ConnectionInfo,
+	resource *commonModels.Engine,
 ) []format.ObjectMetadata {
 	metas := make([]format.ObjectMetadata, 0, len(objects))
 
@@ -352,16 +353,194 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 			LastModified: &obj.LastModified,
 		}
 
-		// 深度扫描时提取元数据
-		if isDeepScan && s.metadataExtractor != nil {
-			// 这里可以调用 metadataExtractor 提取详细元数据
-			// 但为了简化，暂时跳过（可以在后续增强）
+		// 深度扫描时提取元数据（仅针对图片，且文件大小<100MB）
+		if isDeepScan && s.shouldExtractMetadata(obj.ContentType, obj.Size) {
+			s.log.Info("尝试提取图片元数据",
+				"key", obj.Key,
+				"content_type", obj.ContentType,
+				"size", obj.Size)
+			if extractedMeta := s.extractObjectMetadataInline(context.Background(), resource, bucket, obj.Key, obj.ContentType, obj.Size, obj.LastModified, obj.ETag); extractedMeta != nil {
+				s.log.Info("成功提取图片元数据",
+					"key", obj.Key,
+					"width", extractedMeta.CustomAttrs["width"],
+					"height", extractedMeta.CustomAttrs["height"])
+				meta.ExtractedMetadata = extractedMeta
+			} else {
+				s.log.Warn("提取图片元数据失败", "key", obj.Key)
+			}
 		}
 
 		metas = append(metas, meta)
 	}
 
 	return metas
+}
+
+// shouldExtractMetadata 判断是否应该在扫描时提取元数据
+func (s *ObjectStorageScanService) shouldExtractMetadata(contentType string, sizeBytes int64) bool {
+	// 只对图片类型进行提取
+	if !strings.HasPrefix(contentType, "image/") {
+		s.log.Debug("跳过非图片类型", "content_type", contentType)
+		return false
+	}
+
+	// 限制文件大小（100MB）
+	const maxSizeForExtraction = 100 * 1024 * 1024
+	if sizeBytes > maxSizeForExtraction {
+		s.log.Debug("文件过大，跳过元数据提取", "size", sizeBytes)
+		return false
+	}
+
+	return true
+}
+
+// extractObjectMetadataInline 内联提取对象元数据（在扫描时调用）
+func (s *ObjectStorageScanService) extractObjectMetadataInline(
+	ctx context.Context,
+	resource *commonModels.Engine,
+	bucket, key, contentType string,
+	size int64,
+	lastModified time.Time,
+	etag string,
+) *format.ExtractedMetadata {
+	// 获取对象信息解析器
+	s.log.Debug("正在获取对象信息解析器", "content_type", contentType, "key", key)
+	parser, err := format.GetObjectInfoParser(contentType)
+	if err != nil {
+		s.log.Debug("获取解析器失败，尝试通配符匹配",
+			"content_type", contentType,
+			"error", err,
+			"key", key)
+		// 支持通配符匹配（如 "image/*"）
+		if strings.HasPrefix(contentType, "image/") {
+			s.log.Debug("尝试使用 image/* 通配符", "key", key)
+			parser, err = format.GetObjectInfoParser("image/*")
+			if err != nil {
+				s.log.Warn("通配符解析器也失败",
+					"content_type", contentType,
+					"error", err,
+					"key", key)
+				return nil
+			}
+			s.log.Debug("成功获取 image/* 解析器", "key", key)
+		} else {
+			s.log.Debug("无可用的元数据解析器",
+				"content_type", contentType,
+				"key", key)
+			return nil
+		}
+	} else {
+		s.log.Debug("成功获取解析器", "content_type", contentType, "key", key)
+	}
+
+	// 获取或创建 MinIO 客户端
+	s.objectClientMu.Lock()
+	client, ok := s.objectClients[resource.ID]
+	if !ok {
+		// 创建新客户端
+		var createErr error
+		client, createErr = s.createMinIOClient(resource.ConnectionInfo)
+		if createErr != nil {
+			s.objectClientMu.Unlock()
+			s.log.Warn("创建对象存储客户端失败",
+				"engine_id", resource.ID,
+				"error", createErr)
+			return nil
+		}
+		s.objectClients[resource.ID] = client
+	}
+	s.objectClientMu.Unlock()
+
+	// 只读取前 16KB 用于元数据提取（对于图片足够了）
+	const headerSize = 16 * 1024
+	opts := minio.GetObjectOptions{}
+	if size > headerSize {
+		// 使用 Range 请求只获取头部
+		opts.SetRange(0, headerSize-1)
+	}
+
+	// 获取对象内容
+	obj, err := client.GetObject(ctx, bucket, key, opts)
+	if err != nil {
+		s.log.Warn("获取对象内容失败",
+			"bucket", bucket,
+			"key", key,
+			"error", err)
+		return nil
+	}
+	defer obj.Close()
+
+	// 构建基础信息
+	basicInfo := format.ObjectBasicInfo{
+		Key:         key,
+		SizeBytes:   size,
+		ContentType: contentType,
+		ETag:        etag,
+		ModifiedAt:  lastModified,
+	}
+
+	// 调用解析器提取元数据
+	objectInfo, err := parser.ParseObjectInfo(ctx, obj, basicInfo)
+	if err != nil {
+		s.log.Debug("提取对象元数据失败",
+			"bucket", bucket,
+			"key", key,
+			"error", err)
+		return nil
+	}
+
+	// 转换为 ExtractedMetadata
+	extractedMeta := &format.ExtractedMetadata{
+		BasicInfo: format.BasicMetadata{
+			FileName:     filepath.Base(key),
+			FileType:     contentType,
+			Size:         size,
+			ContentType:  contentType,
+			LastModified: lastModified,
+			ETag:         etag,
+		},
+		CustomAttrs: make(map[string]interface{}),
+	}
+
+	// 提取 ImageInfo
+	if imageInfo := objectInfo.GetImageInfo(); imageInfo != nil {
+		extractedMeta.CustomAttrs["width"] = imageInfo.Width
+		extractedMeta.CustomAttrs["height"] = imageInfo.Height
+		extractedMeta.CustomAttrs["format"] = imageInfo.Format
+		extractedMeta.CustomAttrs["color_space"] = imageInfo.ColorSpace
+		if imageInfo.BitDepth > 0 {
+			extractedMeta.CustomAttrs["bit_depth"] = imageInfo.BitDepth
+		}
+		if imageInfo.HasAlpha {
+			extractedMeta.CustomAttrs["has_alpha"] = true
+		}
+	}
+
+	s.log.Debug("成功提取对象元数据",
+		"bucket", bucket,
+		"key", key,
+		"attrs", extractedMeta.CustomAttrs)
+
+	return extractedMeta
+}
+
+// createMinIOClient 创建 MinIO 客户端
+func (s *ObjectStorageScanService) createMinIOClient(connInfo commonModels.ConnectionInfo) (*minio.Client, error) {
+	endpoint := getStringFromConn(connInfo, "endpoint")
+	accessKey := getStringFromConn(connInfo, "access_key")
+	secretKey := getStringFromConn(connInfo, "secret_key")
+	useSSL := getBoolFromConn(connInfo, "use_ssl")
+
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("missing required fields: endpoint, access_key, secret_key")
+	}
+
+	opts := &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: useSSL,
+	}
+
+	return minio.New(endpoint, opts)
 }
 
 // splitObjectPath 分割对象路径为 bucket 和 prefix

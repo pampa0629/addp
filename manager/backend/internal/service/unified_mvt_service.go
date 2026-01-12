@@ -107,6 +107,12 @@ func (s *UnifiedMVTService) GetTile(
 				maxZoom = 18 // 默认值
 			}
 
+			// 对 minZoom 进行后处理（与 tile_config_handler 保持一致）
+			minZoom = minZoom - 2
+			if minZoom < 3 {
+				minZoom = 3
+			}
+
 			// 验证 zoom 是否低于 minZoom（返回空瓦片）
 			if z < minZoom {
 				logger.L().Info("Zoom 层级过低，返回空瓦片",

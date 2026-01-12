@@ -365,7 +365,9 @@
       "Bash(__NEW_LINE_51a8c631238dc070__ bash /tmp/analyze_result.sh)",
       "Bash(PGPASSWORD=p@ssw0rd psql:*)",
       "Bash(PGPASSWORD=123456 psql:*)",
-      "Bash(PGPASSWORD=postgresPassword psql:*)"
+      "Bash(PGPASSWORD=postgresPassword psql:*)",
+      "Bash(PGPASSWORD=addp_pass psql:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NjgyMzAyNDEsImlhdCI6MTc2ODIxOTQ0MX0.YxXn9hELfBRIP66vkgoIrXFnC8_TwdnWM69HplV3ids\")"
     ],
     "deny": [],
     "ask": [],

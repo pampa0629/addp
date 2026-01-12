@@ -56,14 +56,14 @@ func CalculateMinZoomFromExtent(extent []float64, extentSRID int) int {
 	targetRatio := 0.5
 	zoom := math.Log2(360 / (maxDim / targetRatio))
 
-	// 向下取整，然后 -2，让用户在更低层级也能看到数据
-	minZoom := int(math.Floor(zoom)) - 2
+	// 向下取整（不减 2，用于后续 maxZoom 计算）
+	minZoom := int(math.Floor(zoom))
 
-	// 4. 限制范围：3-18
-	// 下限3：避免过小的zoom导致全球视图
+	// 4. 限制范围：1-18
+	// 下限1：后续会减 2，避免过度限制
 	// 上限18：MVT瓦片系统的最大zoom层级
-	if minZoom < 3 {
-		minZoom = 3
+	if minZoom < 1 {
+		minZoom = 1
 	}
 	if minZoom > 18 {
 		minZoom = 18
@@ -109,6 +109,12 @@ func transformToGeographic(minX, minY, maxX, maxY float64, srid int) (float64, f
 func ShouldGenerateTileAtZoom(z int, extent []float64, extentSRID int) bool {
 	minZoom := CalculateMinZoomFromExtent(extent, extentSRID)
 	maxZoom := 18 // 固定最大 zoom
+
+	// 对 minZoom 进行后处理（与其他地方保持一致）
+	minZoom = minZoom - 2
+	if minZoom < 3 {
+		minZoom = 3
+	}
 
 	return z >= minZoom && z <= maxZoom
 }
