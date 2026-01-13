@@ -45,6 +45,8 @@ type SearchDocument struct {
 	DocumentID     string                 `json:"document_id"`
 	AssetID        string                 `json:"asset_id"`
 	Score          float64                `json:"score"`
+	MatchMethods   []string               `json:"match_methods,omitempty"`   // 检索方式: ["keyword", "vector", "hybrid"]
+	VectorDistance float64                `json:"vector_distance,omitempty"` // 向量距离（如果有向量匹配）
 	EngineID       uint                   `json:"engine_id"`
 	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
@@ -349,36 +351,48 @@ func (s *HybridSearchService) SearchDocuments(
 		Hits:     make([]SearchDocument, 0, len(resp.Hits)),
 	}
 
+	// 标记全文检索结果为 keyword 匹配
 	for _, hit := range resp.Hits {
 		doc := mapMeilisearchHit(hit)
+		doc.MatchMethods = []string{"keyword"}
 		result.Hits = append(result.Hits, doc)
 	}
 
-	// 向量检索 (保持不变)
+	// 向量检索
 	if s.vectorStore != nil && s.textEmbedder != nil {
 		vectorHits, err := s.vectorSearch(ctx, tenantID, query)
 		if err != nil {
 			s.log.Warn("向量检索失败，已忽略", "error", err)
 		} else {
 			result.VectorHits = vectorHits
-			// 合并去重逻辑
-			existing := make(map[string]struct{}, len(result.Hits))
-			for _, doc := range result.Hits {
-				if doc.DocumentID == "" {
-					continue
+			// 合并去重逻辑：检查是否已通过关键词检索到
+			existing := make(map[string]int, len(result.Hits)) // document_id -> index in result.Hits
+			for idx, doc := range result.Hits {
+				if doc.DocumentID != "" {
+					existing[doc.DocumentID] = idx
 				}
-				existing[doc.DocumentID] = struct{}{}
 			}
+
 			for _, vdoc := range vectorHits {
 				if vdoc.DocumentID == "" {
 					continue
 				}
-				if _, ok := existing[vdoc.DocumentID]; ok {
-					continue
+				if idx, found := existing[vdoc.DocumentID]; found {
+					// 该文档已通过关键词检索到，合并检索方式
+					result.Hits[idx].MatchMethods = append(result.Hits[idx].MatchMethods, "vector")
+					result.Hits[idx].VectorDistance = vdoc.Distance
+					// 保留关键词检索的 Score，但添加向量距离信息
+					s.log.Debug("文档通过混合检索匹配",
+						"document_id", vdoc.DocumentID,
+						"keyword_score", result.Hits[idx].Score,
+						"vector_distance", vdoc.Distance,
+					)
+				} else {
+					// 仅通过向量检索到，添加为新结果
+					converted := vectorDocumentToSearchDocument(vdoc)
+					result.Hits = append(result.Hits, converted)
+					existing[converted.DocumentID] = len(result.Hits) - 1
 				}
-				converted := vectorDocumentToSearchDocument(vdoc)
-				result.Hits = append(result.Hits, converted)
-				existing[converted.DocumentID] = struct{}{}
 			}
 		}
 	}
@@ -725,13 +739,15 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	contentType := getStringFromMeta(meta, "content_type")
 
 	doc := SearchDocument{
-		DocumentID:   v.DocumentID,
-		AssetID:      v.AssetID,
-		Score:        v.Score,
-		EngineID:     v.EngineID,
-		EngineName:   v.EngineName,
-		EngineType:   v.EngineType,
-		Bucket:       bucket,
+		DocumentID:     v.DocumentID,
+		AssetID:        v.AssetID,
+		Score:          v.Score,
+		MatchMethods:   []string{"vector"},        // 标记为向量匹配
+		VectorDistance: v.Distance,                // 保存向量距离
+		EngineID:       v.EngineID,
+		EngineName:     v.EngineName,
+		EngineType:     v.EngineType,
+		Bucket:         bucket,
 		RelativePath:   relativePath,
 		FileName:       fileName,
 		DocumentType:   v.Modality,

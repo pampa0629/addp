@@ -300,9 +300,22 @@ check_service_running() {
     if [ -n "$port" ]; then
         if lsof -ti :$port > /dev/null 2>&1; then
             local occupying_pid=$(lsof -ti :$port)
-            echo -e "${RED}✗ 端口 $port 已被占用 (PID: $occupying_pid)${NC}"
-            echo -e "${RED}✗ 无法启动 ${service_name}，请先停止占用端口的进程${NC}"
-            echo -e "${YELLOW}提示: 运行 'bash scripts/dev/stop.sh' 停止所有服务${NC}"
+            local proc_cmd=$(ps -p $occupying_pid -o command= 2>/dev/null || echo "")
+
+            # 检查是否是 ADDP 相关进程
+            if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab)"; then
+                echo -e "${RED}✗ 端口 $port 已被 ADDP 进程占用 (PID: $occupying_pid)${NC}"
+                echo -e "${YELLOW}  进程: $(echo "$proc_cmd" | cut -c1-80)${NC}"
+                echo -e "${RED}✗ 无法启动 ${service_name}，可能是旧进程未清理${NC}"
+                echo -e "${YELLOW}提示: 运行 'bash scripts/dev/stop.sh' 停止所有服务${NC}"
+            else
+                echo -e "${RED}✗ 端口 $port 已被非 ADDP 进程占用 (PID: $occupying_pid)${NC}"
+                echo -e "${YELLOW}  进程: $(echo "$proc_cmd" | cut -c1-80)${NC}"
+                echo -e "${RED}✗ 无法启动 ${service_name}${NC}"
+                echo -e "${YELLOW}解决方案:${NC}"
+                echo -e "${YELLOW}  选项 A: 关闭占用端口的进程 (kill $occupying_pid)${NC}"
+                echo -e "${YELLOW}  选项 B: 修改 .env 中的端口配置并重新启动${NC}"
+            fi
             return 1
         fi
     fi
@@ -472,8 +485,11 @@ echo ""
 if [ "$START_SYSTEM_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 2/7: 启动 System Backend${NC}"
 
+  # 获取端口配置（从环境变量读取，默认 8180）
+  SYSTEM_PORT=${SYSTEM_BACKEND_PORT:-8180}
+
   # 检查服务是否已在运行
-  if check_service_running "system" "8080"; then
+  if check_service_running "system" "$SYSTEM_PORT"; then
     build_service "system" "system/backend"
     .dev-bins/addp-system > logs/system-backend.log 2> logs/system-backend-stderr.log &
     SYSTEM_PID=$!
@@ -483,7 +499,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
     echo "等待 System Backend 就绪..."
     MAX_WAIT=60
     WAIT_COUNT=0
-    until curl -f http://localhost:8080/health > /dev/null 2>&1; do
+    until curl -f http://localhost:${SYSTEM_PORT}/health > /dev/null 2>&1; do
       echo -n "."
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -493,7 +509,7 @@ if [ "$START_SYSTEM_BACKEND" = true ]; then
         exit 1
       fi
     done
-    echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID)${NC}"
+    echo -e "${GREEN}✓ System Backend 就绪 (PID: $SYSTEM_PID, 端口: $SYSTEM_PORT)${NC}"
   else
     # 服务已运行，从 PID 文件读取 PID
     SYSTEM_PID=$(cat .dev-pids/system.pid 2>/dev/null)
@@ -1673,7 +1689,7 @@ echo ""
 echo "服务地址:"
 echo "  Portal FE:    http://localhost:${PORTAL_FE_PORT}"
 echo "  Gateway:  http://localhost:8000"
-echo "  System:   http://localhost:8080"
+echo "  System:   http://localhost:${SYSTEM_BACKEND_PORT:-8180}"
 echo "  Manager:  http://localhost:8081"
 echo "  Meta:     http://localhost:8082"
 echo "  Transfer: http://localhost:8083"

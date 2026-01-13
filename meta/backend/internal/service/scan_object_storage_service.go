@@ -343,9 +343,11 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
 
 		// 构建 ObjectMetadata
+		// 重要：Path 字段不应包含 bucket，只保存相对于 bucket 的路径
+		// 这样 GenerateObjectFingerprint(engineID, bucket, path) 才能正确计算指纹
 		meta := format.ObjectMetadata{
 			Bucket:       bucket,
-			Path:         bucket + "/" + obj.Key,
+			Path:         obj.Key,        // ✅ 只保存相对路径，不包含 bucket
 			RelativePath: relativePath,
 			NodeType:     "object",
 			FileType:     ext,
@@ -962,10 +964,10 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			attrs["last_modified_at"] = meta.LastModified
 		}
 
-		// 生成fingerprint - 使用meta.Path（包含bucket前缀）
-		// 注意：meta.Path已经包含bucket前缀（如"addp/2024东北高斯三维.mov"）
-		// GenerateObjectFingerprint会再添加bucket，结果是"addp/addp/2024东北高斯三维.mov"
-		// 这是历史设计，为了保持兼容性，我们继续使用这种方式
+		// 生成fingerprint - 按照标准规范计算
+		// meta.Path 不包含 bucket（如 "image/开会.jpg"）
+		// GenerateObjectFingerprint 将计算 SHA256("{engineID}:{bucket}/{path}")
+		// 例如：SHA256("9:addp/image/开会.jpg")
 		fingerprint := commonModels.GenerateObjectFingerprint(engineID, meta.Bucket, meta.Path)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true

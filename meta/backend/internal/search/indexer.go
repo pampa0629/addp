@@ -41,6 +41,7 @@ type FieldRecord struct {
 type AssetRecord struct {
 	// ===== 基础字段（所有资产，基础扫描即写） =====
 	AssetID       string                 `json:"asset_id"`
+	DocumentID    string                 `json:"document_id,omitempty"` // 文件SHA256指纹（对象特有）
 	TenantID      uint                   `json:"tenant_id"`
 	EngineID      uint                   `json:"engine_id"`
 	EngineName    string                 `json:"engine_name,omitempty"`
@@ -117,6 +118,16 @@ func NewIndexer(cfg *config.Config) (*Indexer, error) {
 // Enabled 判断是否启用了索引功能
 func (i *Indexer) Enabled() bool {
 	return i != nil && i.enabled && i.client != nil
+}
+
+// AssetIndexName 返回资产索引名称
+func (i *Indexer) AssetIndexName() string {
+	return i.assetIndex
+}
+
+// Client 返回 Meilisearch 客户端（用于高级操作）
+func (i *Indexer) Client() *meilisearch.Client {
+	return i.client
 }
 
 // ensureIndexes 确保 Meilisearch 索引存在并配置正确
@@ -196,6 +207,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 	doc := map[string]interface{}{
 		"id":              record.AssetID, // Meilisearch 主键
 		"asset_id":        record.AssetID,
+		"document_id":     record.DocumentID, // 文件指纹（用于混合检索去重）
 		"tenant_id":       record.TenantID,
 		"engine_id":       record.EngineID,
 		"engine_name":     record.EngineName,

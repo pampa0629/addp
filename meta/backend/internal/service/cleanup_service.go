@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
 	"github.com/addp/meta/internal/models"
+	"github.com/addp/meta/internal/search"
+	"github.com/meilisearch/meilisearch-go"
+	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
@@ -20,6 +24,8 @@ type CleanupService struct {
 	db              *gorm.DB
 	redis           *redis.Client
 	systemClient    *commonClient.SystemClient
+	indexer         *search.Indexer
+	minioClient     *minio.Client
 	log             *slog.Logger
 	retentionDays   int
 	cleanupInterval time.Duration
@@ -44,7 +50,14 @@ func DefaultCleanupConfig() CleanupConfig {
 }
 
 // NewCleanupService 创建清理服务
-func NewCleanupService(db *gorm.DB, redisClient *redis.Client, systemClient *commonClient.SystemClient, config CleanupConfig) *CleanupService {
+func NewCleanupService(
+	db *gorm.DB,
+	redisClient *redis.Client,
+	systemClient *commonClient.SystemClient,
+	indexer *search.Indexer,
+	minioClient *minio.Client,
+	config CleanupConfig,
+) *CleanupService {
 	if config.RetentionDays == 0 {
 		config.RetentionDays = 90
 	}
@@ -56,6 +69,8 @@ func NewCleanupService(db *gorm.DB, redisClient *redis.Client, systemClient *com
 		db:              db,
 		redis:           redisClient,
 		systemClient:    systemClient,
+		indexer:         indexer,
+		minioClient:     minioClient,
 		log:             logger.With("component", "cleanup_service"),
 		retentionDays:   config.RetentionDays,
 		cleanupInterval: config.CleanupInterval,
@@ -427,6 +442,42 @@ func (s *CleanupService) ScanGarbage(ctx context.Context, tenantID uint) (*model
 	}
 	stats.DuplicateFingerprints.Count = duplicateCount
 
+	// 6. 扫描 Meilisearch 垃圾（新增）
+	if s.indexer != nil && s.indexer.Enabled() {
+		meilisearchStats, err := s.scanMeilisearchGarbage(ctx, tenantID)
+		if err != nil {
+			s.log.Error("扫描 Meilisearch 垃圾失败", "error", err)
+			// 不中断整体扫描流程
+		} else {
+			stats.MeilisearchIndexes.Count = meilisearchStats.TotalCount
+			stats.MeilisearchIndexes.ByType = meilisearchStats.ByType
+			if len(meilisearchStats.Samples) > 10 {
+				stats.MeilisearchIndexes.Sample = meilisearchStats.Samples[:10]
+			} else {
+				stats.MeilisearchIndexes.Sample = meilisearchStats.Samples
+			}
+		}
+	}
+
+	// 7. 扫描 MinIO 垃圾（新增）
+	if s.minioClient != nil {
+		minioStats, err := s.scanMinIOGarbage(ctx, tenantID)
+		if err != nil {
+			s.log.Error("扫描 MinIO 垃圾失败", "error", err)
+			// 不中断整体扫描流程
+		} else {
+			stats.MinIOFiles.Count = minioStats.TotalCount
+			stats.MinIOFiles.TotalSizeBytes = minioStats.TotalSizeBytes
+			stats.MinIOFiles.TotalSizeMB = minioStats.TotalSizeMB
+			stats.MinIOFiles.ByBucket = minioStats.ByBucket
+			if len(minioStats.Samples) > 10 {
+				stats.MinIOFiles.Sample = minioStats.Samples[:10]
+			} else {
+				stats.MinIOFiles.Sample = minioStats.Samples
+			}
+		}
+	}
+
 	return stats, nil
 }
 
@@ -614,14 +665,57 @@ func (s *CleanupService) scanDuplicateFingerprints(ctx context.Context, tenantID
 
 // ExecuteCleanup 执行清理
 func (s *CleanupService) ExecuteCleanup(ctx context.Context, tenantID uint, deleteType string) (*models.MetaCleanupExecuteResult, error) {
+	result := &models.MetaCleanupExecuteResult{}
+
+	// 根据删除类型执行数据库清理
+	var dbResult *models.MetaCleanupExecuteResult
+	var err error
+
 	switch deleteType {
 	case events.DeleteTypeSoft:
-		return s.executeSoftDelete(ctx, tenantID)
+		dbResult, err = s.executeSoftDelete(ctx, tenantID)
 	case events.DeleteTypeHard:
-		return s.executeHardDelete(ctx, tenantID)
+		dbResult, err = s.executeHardDelete(ctx, tenantID)
 	default:
 		return nil, fmt.Errorf("unknown delete type: %s", deleteType)
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 合并数据库清理结果
+	result.DeletedNodes = dbResult.DeletedNodes
+	result.DeletedItems = dbResult.DeletedItems
+	result.DeletedFingerprints = dbResult.DeletedFingerprints
+	result.Errors = append(result.Errors, dbResult.Errors...)
+
+	// 执行 Meilisearch 清理（新增）
+	if s.indexer != nil && s.indexer.Enabled() {
+		deletedCount, err := s.executeMeilisearchCleanup(ctx, tenantID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("清理 Meilisearch 失败: %v", err))
+			s.log.Error("清理 Meilisearch 失败", "error", err)
+		} else {
+			result.DeletedMeilisearchIndexes = deletedCount
+			s.log.Info("Meilisearch 清理完成", "deleted_count", deletedCount)
+		}
+	}
+
+	// 执行 MinIO 清理（新增）
+	if s.minioClient != nil {
+		minioResult, err := s.executeMinIOCleanup(ctx, tenantID)
+		if err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("清理 MinIO 失败: %v", err))
+			s.log.Error("清理 MinIO 失败", "error", err)
+		} else {
+			result.DeletedMinIOFiles = minioResult.DeletedFiles
+			result.FreedSpaceMB = minioResult.FreedSpaceMB
+			s.log.Info("MinIO 清理完成", "deleted_files", minioResult.DeletedFiles, "freed_mb", minioResult.FreedSpaceMB)
+		}
+	}
+
+	return result, nil
 }
 
 // executeSoftDelete 执行软删除
@@ -845,7 +939,7 @@ func (s *CleanupService) handleEngineDeleted(ctx context.Context, message redis.
 
 	s.log.Info("收到Engine删除事件", "engine_id", event.EngineID, "tenant_id", event.TenantID)
 
-	// 软删除关联的MetaNode
+	// 1. 软删除关联的MetaNode
 	nodeResult := s.db.Where("engine_id = ?", event.EngineID).Delete(&models.MetaNode{})
 	if nodeResult.Error != nil {
 		s.log.Error("软删除MetaNode失败", "error", nodeResult.Error, "engine_id", event.EngineID)
@@ -853,12 +947,32 @@ func (s *CleanupService) handleEngineDeleted(ctx context.Context, message redis.
 		s.log.Info("软删除MetaNode完成", "engine_id", event.EngineID, "count", nodeResult.RowsAffected)
 	}
 
-	// 软删除关联的MetaItem
+	// 2. 软删除关联的MetaItem
 	itemResult := s.db.Where("engine_id = ?", event.EngineID).Delete(&models.MetaItem{})
 	if itemResult.Error != nil {
 		s.log.Error("软删除MetaItem失败", "error", itemResult.Error, "engine_id", event.EngineID)
 	} else {
 		s.log.Info("软删除MetaItem完成", "engine_id", event.EngineID, "count", itemResult.RowsAffected)
+	}
+
+	// 3. 删除 Meilisearch 索引（新增）
+	if s.indexer != nil && s.indexer.Enabled() {
+		filterStr := fmt.Sprintf("engine_id = %d", event.EngineID)
+		if event.TenantID > 0 {
+			filterStr = fmt.Sprintf("%s AND tenant_id = %d", filterStr, event.TenantID)
+		}
+
+		task, err := s.indexer.Client().Index(s.indexer.AssetIndexName()).DeleteDocumentsByFilter(filterStr)
+		if err != nil {
+			s.log.Error("删除 Meilisearch 索引失败", "engine_id", event.EngineID, "error", err)
+		} else {
+			s.log.Info("Meilisearch 索引已删除", "engine_id", event.EngineID, "task_uid", task.TaskUID)
+		}
+	}
+
+	// 4. 删除 MinIO MVT 瓦片（新增）
+	if s.minioClient != nil {
+		s.deleteMinIOMVTByEngine(ctx, event.TenantID, event.EngineID)
 	}
 }
 
@@ -869,3 +983,513 @@ func convertToMap(v interface{}) map[string]interface{} {
 	json.Unmarshal(data, &result)
 	return result
 }
+
+// ========== Meilisearch 清理相关方法 ==========
+
+// MeilisearchGarbageStats - Meilisearch 垃圾统计（内部使用）
+type MeilisearchGarbageStats struct {
+	TotalCount int
+	ByType     map[string]int
+	Samples    []models.MeilisearchRecordInfo
+}
+
+// scanMeilisearchGarbage 扫描 Meilisearch 中的垃圾索引
+func (s *CleanupService) scanMeilisearchGarbage(ctx context.Context, tenantID uint) (*MeilisearchGarbageStats, error) {
+	stats := &MeilisearchGarbageStats{
+		ByType:  make(map[string]int),
+		Samples: []models.MeilisearchRecordInfo{},
+	}
+
+	// 1. 获取无效引擎ID列表
+	invalidEngineIDs := s.getInvalidEngineIDs(ctx, tenantID)
+	if len(invalidEngineIDs) == 0 {
+		return stats, nil
+	}
+
+	// 2. 构建过滤条件: (engine_id = X OR engine_id = Y) AND tenant_id = Z
+	engineFilters := make([]string, len(invalidEngineIDs))
+	for i, id := range invalidEngineIDs {
+		engineFilters[i] = fmt.Sprintf("engine_id = %d", id)
+	}
+
+	filterStr := fmt.Sprintf("(%s)", strings.Join(engineFilters, " OR "))
+	if tenantID > 0 {
+		filterStr = fmt.Sprintf("%s AND tenant_id = %d", filterStr, tenantID)
+	}
+
+	// 3. 查询 assets 索引（包含表、对象、文档）
+	searchReq := &meilisearch.SearchRequest{
+		Limit:  1000, // 获取总数
+		Filter: filterStr,
+	}
+
+	resp, err := s.indexer.Client().Index(s.indexer.AssetIndexName()).Search("", searchReq)
+	if err != nil {
+		s.log.Error("扫描 Meilisearch 索引失败", "error", err)
+		return stats, err
+	}
+
+	// 4. 统计并提取样本
+	stats.TotalCount = int(resp.EstimatedTotalHits)
+
+	for i, hit := range resp.Hits {
+		hitMap := hit.(map[string]interface{})
+		assetType := getString(hitMap, "asset_type")
+
+		// 按类型统计
+		stats.ByType[assetType]++
+
+		// 收集样本（最多10条）
+		if i < 10 {
+			stats.Samples = append(stats.Samples, models.MeilisearchRecordInfo{
+				AssetID:   getString(hitMap, "asset_id"),
+				AssetType: assetType,
+				EngineID:  getUint(hitMap, "engine_id"),
+				TenantID:  getUint(hitMap, "tenant_id"),
+				Name:      getString(hitMap, "name"),
+				Reason:    "引擎已删除或禁用",
+			})
+		}
+	}
+
+	return stats, nil
+}
+
+// executeMeilisearchCleanup 执行 Meilisearch 清理
+func (s *CleanupService) executeMeilisearchCleanup(ctx context.Context, tenantID uint) (int, error) {
+	// 1. 获取无效引擎ID列表
+	invalidEngineIDs := s.getInvalidEngineIDs(ctx, tenantID)
+	if len(invalidEngineIDs) == 0 {
+		return 0, nil
+	}
+
+	// 2. 构建过滤条件
+	engineFilters := make([]string, len(invalidEngineIDs))
+	for i, id := range invalidEngineIDs {
+		engineFilters[i] = fmt.Sprintf("engine_id = %d", id)
+	}
+
+	filterStr := fmt.Sprintf("(%s)", strings.Join(engineFilters, " OR "))
+	if tenantID > 0 {
+		filterStr = fmt.Sprintf("%s AND tenant_id = %d", filterStr, tenantID)
+	}
+
+	// 3. 先查询记录数（用于统计）
+	searchReq := &meilisearch.SearchRequest{
+		Limit:  0,
+		Filter: filterStr,
+	}
+
+	resp, err := s.indexer.Client().Index(s.indexer.AssetIndexName()).Search("", searchReq)
+	if err != nil {
+		return 0, fmt.Errorf("查询待删除记录失败: %w", err)
+	}
+
+	count := int(resp.EstimatedTotalHits)
+	if count == 0 {
+		return 0, nil
+	}
+
+	// 4. 执行批量删除
+	task, err := s.indexer.Client().Index(s.indexer.AssetIndexName()).DeleteDocumentsByFilter(filterStr)
+	if err != nil {
+		return 0, fmt.Errorf("删除索引记录失败: %w", err)
+	}
+
+	s.log.Info("Meilisearch 索引清理完成",
+		"index", s.indexer.AssetIndexName(),
+		"tenant_id", tenantID,
+		"engine_ids", invalidEngineIDs,
+		"deleted_count", count,
+		"task_uid", task.TaskUID,
+	)
+
+	return count, nil
+}
+
+// getString 从 map 中安全获取字符串
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key]; ok {
+		if str, ok := v.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+// getUint 从 map 中安全获取 uint
+func getUint(m map[string]interface{}, key string) uint {
+	if v, ok := m[key]; ok {
+		switch val := v.(type) {
+		case float64:
+			return uint(val)
+		case int64:
+			return uint(val)
+		case int:
+			return uint(val)
+		case uint:
+			return val
+		}
+	}
+	return 0
+}
+
+// ========== MinIO 清理相关方法 ==========
+
+// MinIOGarbageStats - MinIO 垃圾统计（内部使用）
+type MinIOGarbageStats struct {
+	TotalCount     int
+	TotalSizeBytes int64
+	TotalSizeMB    float64
+	ByBucket       map[string]int
+	Samples        []models.MinIOFileInfo
+}
+
+// scanMinIOGarbage 扫描 MinIO 中的垃圾文件
+func (s *CleanupService) scanMinIOGarbage(ctx context.Context, tenantID uint) (*MinIOGarbageStats, error) {
+	stats := &MinIOGarbageStats{
+		ByBucket: make(map[string]int),
+		Samples:  []models.MinIOFileInfo{},
+	}
+
+	if s.minioClient == nil {
+		s.log.Warn("MinIO 客户端未配置，跳过 MinIO 垃圾扫描")
+		return stats, nil
+	}
+
+	// 1. 获取无效引擎ID列表
+	invalidEngineIDs := s.getInvalidEngineIDs(ctx, tenantID)
+
+	// 2. 查询 manager.quick_view 表获取无效引擎的 fingerprint
+	invalidFingerprints := s.getInvalidFingerprints(ctx, invalidEngineIDs)
+	invalidFingerprintSet := make(map[string]bool)
+	for _, fp := range invalidFingerprints {
+		invalidFingerprintSet[fp] = true
+	}
+
+	// 3. 扫描 System bucket（审计日志，30天保留策略）
+	systemStats := s.scanMinIOBucket(ctx, "system", func(key string, size int64, modified time.Time) (bool, string) {
+		// 路径格式: audit-logs/{year}/{month}/logs-{date}.csv
+		if strings.HasPrefix(key, "audit-logs/") {
+			if time.Since(modified) > 30*24*time.Hour {
+				return true, "超过30天"
+			}
+		}
+		return false, ""
+	})
+	stats.TotalCount += systemStats.TotalCount
+	stats.TotalSizeBytes += systemStats.TotalSizeBytes
+	stats.ByBucket["system"] = systemStats.TotalCount
+	stats.Samples = append(stats.Samples, systemStats.Samples...)
+
+	// 4. 扫描 Manager bucket（MVT 瓦片，基于 fingerprint）
+	managerStats := s.scanMinIOBucket(ctx, "manager", func(key string, size int64, modified time.Time) (bool, string) {
+		// 路径格式: mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz
+		if strings.HasPrefix(key, "mvt-tiles/") {
+			parts := strings.Split(key, "/")
+			if len(parts) >= 2 {
+				fingerprint := parts[1]
+				if invalidFingerprintSet[fingerprint] {
+					return true, "引擎已删除"
+				}
+			}
+		}
+		return false, ""
+	})
+	stats.TotalCount += managerStats.TotalCount
+	stats.TotalSizeBytes += managerStats.TotalSizeBytes
+	stats.ByBucket["manager"] = managerStats.TotalCount
+	stats.Samples = append(stats.Samples, managerStats.Samples...)
+
+	// 5. 计算总大小（MB）
+	stats.TotalSizeMB = float64(stats.TotalSizeBytes) / (1024 * 1024)
+
+	return stats, nil
+}
+
+// getInvalidFingerprints 查询 manager.quick_view 表获取无效引擎的 fingerprint
+func (s *CleanupService) getInvalidFingerprints(ctx context.Context, invalidEngineIDs []uint) []string {
+	if len(invalidEngineIDs) == 0 {
+		return []string{}
+	}
+
+	var fingerprints []string
+
+	// 查询 manager.quick_view 表
+	err := s.db.Table("manager.quick_view").
+		Where("engine_id IN ?", invalidEngineIDs).
+		Distinct("fingerprint").
+		Pluck("fingerprint", &fingerprints).Error
+
+	if err != nil {
+		s.log.Error("查询 manager.quick_view fingerprint 失败", "error", err)
+		return []string{}
+	}
+
+	s.log.Debug("获取无效引擎的 fingerprint",
+		"engine_ids", invalidEngineIDs,
+		"fingerprint_count", len(fingerprints))
+
+	return fingerprints
+}
+
+// scanMinIOBucket 扫描指定 bucket 的垃圾文件
+func (s *CleanupService) scanMinIOBucket(ctx context.Context, bucket string, isGarbage func(key string, size int64, modified time.Time) (bool, string)) *MinIOGarbageStats {
+	stats := &MinIOGarbageStats{
+		ByBucket: make(map[string]int),
+		Samples:  []models.MinIOFileInfo{},
+	}
+
+	// 列出 bucket 中的所有对象
+	objectCh := s.minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Recursive: true,
+	})
+
+	for object := range objectCh {
+		if object.Err != nil {
+			s.log.Error("列出对象失败", "bucket", bucket, "error", object.Err)
+			continue
+		}
+
+		// 判断是否为垃圾文件
+		if isGarbage, reason := isGarbage(object.Key, object.Size, object.LastModified); isGarbage {
+			stats.TotalCount++
+			stats.TotalSizeBytes += object.Size
+
+			// 收集样本（最多10条）
+			if len(stats.Samples) < 10 {
+				stats.Samples = append(stats.Samples, models.MinIOFileInfo{
+					Bucket:   bucket,
+					Key:      object.Key,
+					Size:     object.Size,
+					Modified: object.LastModified,
+					Reason:   reason,
+				})
+			}
+		}
+	}
+
+	return stats
+}
+
+// MinIOCleanupResult - MinIO 清理结果（内部使用）
+type MinIOCleanupResult struct {
+	DeletedFiles int
+	FreedSpaceMB float64
+}
+
+// executeMinIOCleanup 执行 MinIO 清理
+func (s *CleanupService) executeMinIOCleanup(ctx context.Context, tenantID uint) (*MinIOCleanupResult, error) {
+	result := &MinIOCleanupResult{}
+
+	if s.minioClient == nil {
+		s.log.Warn("MinIO 客户端未配置，跳过 MinIO 清理")
+		return result, nil
+	}
+
+	// 1. 获取无效引擎ID列表
+	invalidEngineIDs := s.getInvalidEngineIDs(ctx, tenantID)
+
+	// 2. 查询 manager.quick_view 表获取无效引擎的 fingerprint
+	invalidFingerprints := s.getInvalidFingerprints(ctx, invalidEngineIDs)
+	invalidFingerprintSet := make(map[string]bool)
+	for _, fp := range invalidFingerprints {
+		invalidFingerprintSet[fp] = true
+	}
+
+	var totalFreedBytes int64
+
+	// 3. 清理 System bucket（审计日志）
+	systemDeleted, systemFreed := s.deleteMinIOBucketObjects(ctx, "system", func(key string, size int64, modified time.Time) bool {
+		// 路径格式: audit-logs/{year}/{month}/logs-{date}.csv
+		if strings.HasPrefix(key, "audit-logs/") {
+			if time.Since(modified) > 30*24*time.Hour {
+				return true
+			}
+		}
+		return false
+	})
+	result.DeletedFiles += systemDeleted
+	totalFreedBytes += systemFreed
+
+	// 4. 清理 Manager bucket（MVT 瓦片）
+	managerDeleted, managerFreed := s.deleteMinIOBucketObjects(ctx, "manager", func(key string, size int64, modified time.Time) bool {
+		// 路径格式: mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz
+		if strings.HasPrefix(key, "mvt-tiles/") {
+			parts := strings.Split(key, "/")
+			if len(parts) >= 2 {
+				fingerprint := parts[1]
+				if invalidFingerprintSet[fingerprint] {
+					return true
+				}
+			}
+		}
+		return false
+	})
+	result.DeletedFiles += managerDeleted
+	totalFreedBytes += managerFreed
+
+	// 5. 计算释放的空间（MB）
+	result.FreedSpaceMB = float64(totalFreedBytes) / (1024 * 1024)
+
+	s.log.Info("MinIO 清理完成",
+		"tenant_id", tenantID,
+		"deleted_files", result.DeletedFiles,
+		"freed_space_mb", result.FreedSpaceMB)
+
+	return result, nil
+}
+
+// deleteMinIOBucketObjects 删除指定 bucket 中的垃圾文件
+func (s *CleanupService) deleteMinIOBucketObjects(ctx context.Context, bucket string, shouldDelete func(key string, size int64, modified time.Time) bool) (int, int64) {
+	var deletedCount int
+	var freedBytes int64
+	var objectsToDelete []string
+
+	// 列出 bucket 中的所有对象
+	objectCh := s.minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Recursive: true,
+	})
+
+	for object := range objectCh {
+		if object.Err != nil {
+			s.log.Error("列出对象失败", "bucket", bucket, "error", object.Err)
+			continue
+		}
+
+		// 判断是否需要删除
+		if shouldDelete(object.Key, object.Size, object.LastModified) {
+			objectsToDelete = append(objectsToDelete, object.Key)
+			freedBytes += object.Size
+		}
+	}
+
+	// 批量删除对象
+	if len(objectsToDelete) > 0 {
+		objectsCh := make(chan minio.ObjectInfo)
+
+		// 启动 goroutine 发送对象列表
+		go func() {
+			defer close(objectsCh)
+			for _, key := range objectsToDelete {
+				objectsCh <- minio.ObjectInfo{Key: key}
+			}
+		}()
+
+		// 执行批量删除
+		errorCh := s.minioClient.RemoveObjects(ctx, bucket, objectsCh, minio.RemoveObjectsOptions{})
+		for err := range errorCh {
+			if err.Err != nil {
+				s.log.Error("删除对象失败", "bucket", bucket, "key", err.ObjectName, "error", err.Err)
+			} else {
+				deletedCount++
+			}
+		}
+
+		s.log.Info("MinIO bucket 清理完成",
+			"bucket", bucket,
+			"deleted_count", deletedCount,
+			"freed_bytes", freedBytes)
+	}
+
+	return deletedCount, freedBytes
+}
+
+// deleteMinIOMVTByEngine 删除指定引擎的 MVT 瓦片（自动清理）
+func (s *CleanupService) deleteMinIOMVTByEngine(ctx context.Context, tenantID uint, engineID uint) {
+	if s.minioClient == nil {
+		s.log.Warn("MinIO 客户端未配置，跳过 MVT 瓦片清理")
+		return
+	}
+
+	// 1. 查询 manager.quick_view 表获取该引擎的所有 fingerprint
+	var fingerprints []string
+	err := s.db.Table("manager.quick_view").
+		Where("engine_id = ?", engineID).
+		Distinct("fingerprint").
+		Pluck("fingerprint", &fingerprints).Error
+
+	if err != nil {
+		s.log.Error("查询 manager.quick_view fingerprint 失败", "engine_id", engineID, "error", err)
+		return
+	}
+
+	if len(fingerprints) == 0 {
+		s.log.Debug("未找到需要清理的 MVT 瓦片", "engine_id", engineID)
+		return
+	}
+
+	s.log.Info("开始清理引擎 MVT 瓦片", "engine_id", engineID, "fingerprint_count", len(fingerprints))
+
+	// 2. 遍历每个 fingerprint，删除对应的 MVT 瓦片目录
+	var totalDeleted int
+	var totalFreedBytes int64
+
+	for _, fingerprint := range fingerprints {
+		deleted, freed := s.deleteMinIOMVTByFingerprint(ctx, fingerprint)
+		totalDeleted += deleted
+		totalFreedBytes += freed
+	}
+
+	s.log.Info("引擎 MVT 瓦片清理完成",
+		"engine_id", engineID,
+		"deleted_files", totalDeleted,
+		"freed_mb", float64(totalFreedBytes)/(1024*1024))
+}
+
+// deleteMinIOMVTByFingerprint 删除指定 fingerprint 的 MVT 瓦片
+func (s *CleanupService) deleteMinIOMVTByFingerprint(ctx context.Context, fingerprint string) (int, int64) {
+	bucket := "manager"
+	prefix := fmt.Sprintf("mvt-tiles/%s/", fingerprint)
+
+	var deletedCount int
+	var freedBytes int64
+	var objectsToDelete []string
+
+	// 列出该 fingerprint 下的所有对象
+	objectCh := s.minioClient.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+
+	for object := range objectCh {
+		if object.Err != nil {
+			s.log.Error("列出对象失败", "bucket", bucket, "prefix", prefix, "error", object.Err)
+			continue
+		}
+
+		objectsToDelete = append(objectsToDelete, object.Key)
+		freedBytes += object.Size
+	}
+
+	// 批量删除对象
+	if len(objectsToDelete) > 0 {
+		objectsCh := make(chan minio.ObjectInfo)
+
+		// 启动 goroutine 发送对象列表
+		go func() {
+			defer close(objectsCh)
+			for _, key := range objectsToDelete {
+				objectsCh <- minio.ObjectInfo{Key: key}
+			}
+		}()
+
+		// 执行批量删除
+		errorCh := s.minioClient.RemoveObjects(ctx, bucket, objectsCh, minio.RemoveObjectsOptions{})
+		for err := range errorCh {
+			if err.Err != nil {
+				s.log.Error("删除 MVT 瓦片失败", "key", err.ObjectName, "error", err.Err)
+			} else {
+				deletedCount++
+			}
+		}
+
+		s.log.Info("MVT 瓦片已删除",
+			"fingerprint", fingerprint,
+			"deleted_count", deletedCount,
+			"freed_bytes", freedBytes)
+	}
+
+	return deletedCount, freedBytes
+}
+

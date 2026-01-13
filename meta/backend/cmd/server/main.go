@@ -16,6 +16,8 @@ import (
 	"github.com/addp/meta/internal/search"
 	"github.com/addp/meta/internal/service"
 	"github.com/addp/meta/internal/worker"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
 	// 导入数据库插件以触发自动注册
@@ -98,6 +100,24 @@ func main() {
 		logger.L().Info("SystemClient 已初始化", "system_url", cfg.SystemServiceURL)
 	}
 
+	// 初始化 MinIO 客户端（Infra MinIO，用于清理）
+	var minioClient *minio.Client
+	if cfg.MinioEndpoint != "" {
+		var err error
+		minioClient, err = minio.New(cfg.MinioEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
+			Secure: cfg.MinioUseSSL,
+		})
+		if err != nil {
+			logger.L().Warn("MinIO 客户端初始化失败，MinIO 清理功能将被禁用", "error", err)
+			minioClient = nil
+		} else {
+			logger.L().Info("MinIO 客户端已初始化", "endpoint", cfg.MinioEndpoint)
+		}
+	} else {
+		logger.L().Warn("MinIO 未配置，MinIO 清理功能将被禁用")
+	}
+
 	searchIndexer, err := search.NewIndexer(cfg)
 	if err != nil {
 		logger.L().Warn("搜索索引器初始化失败，搜索功能将被禁用", "error", err)
@@ -134,7 +154,7 @@ func main() {
 	defer taskService.Stop(context.Background())
 
 	// ========== 启动清理服务 ==========
-	cleanupService := service.NewCleanupService(db, redisClient, systemClient, service.CleanupConfig{
+	cleanupService := service.NewCleanupService(db, redisClient, systemClient, searchIndexer, minioClient, service.CleanupConfig{
 		Enabled:         true,
 		RetentionDays:   90,
 		CleanupInterval: 24 * time.Hour,

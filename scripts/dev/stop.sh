@@ -107,11 +107,22 @@ stop_services_concurrent() {
 
   # Phase 6: 按端口清理残留进程（处理手动启动的进程）
   echo -e "${YELLOW}检查端口占用...${NC}"
-  for port in 8080 8081 8082 8083 8084 8085 8086 8087 8088 8097 8098 8099 5170 5173 5174 5175 5176 5177 5178; do
+  for port in 8180 8081 8082 8083 8084 8085 8086 8087 8088 8097 8098 8099 5170 5173 5174 5175 5176 5177 5178 5180; do
     pid=$(lsof -ti :$port 2>/dev/null || true)
     if [ -n "$pid" ]; then
-      echo "  发现端口 $port 被占用 (PID: $pid)，强制清理..."
-      kill -9 $pid 2>/dev/null || true
+      # 获取进程的命令行信息
+      proc_cmd=$(ps -p $pid -o command= 2>/dev/null || echo "")
+
+      # 检查是否是 ADDP 相关进程（Go 二进制、vite、python workflow/copilot、jupyter）
+      if echo "$proc_cmd" | grep -qE "(addp-|go run|vite|api_server\.py|uvicorn|jupyter.*lab)"; then
+        echo "  发现端口 $port 被 ADDP 进程占用 (PID: $pid)，强制清理..."
+        echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
+        kill -9 $pid 2>/dev/null || true
+      else
+        echo -e "${YELLOW}  ⚠️  端口 $port 被非 ADDP 进程占用 (PID: $pid)，跳过清理${NC}"
+        echo "    进程: $(echo "$proc_cmd" | cut -c1-80)"
+        echo "    如需使用此端口，请手动关闭该进程或修改 ADDP 端口配置"
+      fi
     fi
   done
 

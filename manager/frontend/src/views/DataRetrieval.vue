@@ -105,7 +105,10 @@
               <el-tag v-if="item.document_type" type="success" size="small">
                 {{ item.document_type }}
               </el-tag>
-              <el-tag v-if="isVectorMatch(item)" type="warning" size="small" effect="dark">
+              <el-tag v-if="isHybridMatch(item)" type="danger" size="small" effect="dark">
+                🔥 关键词+向量
+              </el-tag>
+              <el-tag v-else-if="isVectorMatch(item)" type="warning" size="small" effect="dark">
                 🔍 向量匹配
               </el-tag>
             </div>
@@ -126,9 +129,9 @@
             <span v-if="item.relative_path">路径：{{ item.relative_path }}</span>
             <span v-if="item.last_modified">更新：{{ formatDate(item.last_modified) }}</span>
             <span v-if="item.file_size">大小：{{ formatSize(item.file_size) }}</span>
-            <span v-if="item.score !== undefined && item.score > 0" class="vector-score">
+            <span v-if="hasVectorMatch(item)" class="vector-score">
               <el-tag type="warning" size="small" effect="plain">
-                向量相似度：{{ formatScore(item.score) }}
+                向量相似度：{{ formatVectorScore(item.vector_distance) }}
               </el-tag>
             </span>
           </div>
@@ -394,9 +397,30 @@ const formatScore = (score) => {
   return `${percentage}%`
 }
 
+const formatVectorScore = (distance) => {
+  if (distance === undefined || distance === null) return ''
+  // 向量距离转换为相似度百分比
+  // distance 越小越相似，通常 distance <= 1
+  // 使用公式: similarity = (1 - distance) * 100%
+  const similarity = Math.max(0, Math.min(100, (1 - distance) * 100))
+  return `${similarity.toFixed(1)}%`
+}
+
 const isVectorMatch = (item = {}) => {
-  // 检查是否有向量相似度分数
-  return item.score !== undefined && item.score > 0
+  // 检查是否包含向量匹配（包括纯向量和混合匹配）
+  return Array.isArray(item.match_methods) && item.match_methods.includes('vector')
+}
+
+const isHybridMatch = (item = {}) => {
+  // 检查是否为混合匹配（同时包含关键词和向量）
+  return Array.isArray(item.match_methods) &&
+         item.match_methods.includes('keyword') &&
+         item.match_methods.includes('vector')
+}
+
+const hasVectorMatch = (item = {}) => {
+  // 检查是否有向量匹配，并且有 vector_distance 字段
+  return isVectorMatch(item) && item.vector_distance !== undefined && item.vector_distance !== null
 }
 
 const navigateToDocument = (item = {}) => {
