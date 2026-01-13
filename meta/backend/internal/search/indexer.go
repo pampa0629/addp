@@ -17,12 +17,11 @@ import (
 
 // Indexer 封装 Meilisearch 操作
 type Indexer struct {
-	client        *meilisearch.Client
-	assetIndex    string
-	documentIndex string
-	enabled       bool
-	mu            sync.RWMutex
-	log           *slog.Logger
+	client     *meilisearch.Client
+	assetIndex string
+	enabled    bool
+	mu         sync.RWMutex
+	log        *slog.Logger
 }
 
 // FieldRecord 用于索引字段信息
@@ -37,67 +36,58 @@ type FieldRecord struct {
 	IsUniqueKey     bool   `json:"is_unique_key,omitempty"`
 }
 
-// AssetRecord 描述结构化或对象资产
+// AssetRecord 统一资产记录（包含表、对象、文档内容）
+// 基础扫描只填充基本字段，深度扫描填充完整内容
 type AssetRecord struct {
+	// ===== 基础字段（所有资产，基础扫描即写） =====
 	AssetID       string                 `json:"asset_id"`
 	TenantID      uint                   `json:"tenant_id"`
 	EngineID      uint                   `json:"engine_id"`
 	EngineName    string                 `json:"engine_name,omitempty"`
 	EngineType    string                 `json:"engine_type,omitempty"`
-	AssetType     string                 `json:"asset_type"`
+	AssetType     string                 `json:"asset_type"` // "table" | "object"
 	Name          string                 `json:"name"`
 	FullName      string                 `json:"full_name,omitempty"`
-	Schema        string                 `json:"schema,omitempty"`
-	TableType     string                 `json:"table_type,omitempty"`
-	Bucket        string                 `json:"bucket,omitempty"`
-	Path          string                 `json:"path,omitempty"`
-	RelativePath  string                 `json:"relative_path,omitempty"`
 	Description   string                 `json:"description,omitempty"`
 	Tags          []string               `json:"tags,omitempty"`
-	RowCount      *int64                 `json:"row_count,omitempty"`
-	SizeBytes     *int64                 `json:"size_bytes,omitempty"`
-	DataUpdatedAt *time.Time             `json:"data_updated_at,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-	Fields        []FieldRecord          `json:"fields,omitempty"`
-	UpdatedAt     time.Time              `json:"updated_at"`
-}
 
-// DocumentRecord 描述可全文搜索的文档数据
-type DocumentRecord struct {
-	DocumentID     string                 `json:"document_id"`
-	AssetID        string                 `json:"asset_id"`
-	TenantID       uint                   `json:"tenant_id"`
-	EngineID       uint                   `json:"engine_id"`
-	EngineName     string                 `json:"engine_name,omitempty"`
-	EngineType     string                 `json:"engine_type,omitempty"`
-	Bucket         string                 `json:"bucket,omitempty"`
-	RelativePath   string                 `json:"relative_path,omitempty"`
-	FileName       string                 `json:"file_name"`
-	FilePath       string                 `json:"file_path,omitempty"`
-	DocumentType   string                 `json:"document_type,omitempty"`
-	Title          string                 `json:"title,omitempty"`
-	Author         string                 `json:"author,omitempty"`
-	Keywords       []string               `json:"keywords,omitempty"`
-	Content        string                 `json:"content"`
-	ContentPreview string                 `json:"content_preview,omitempty"`
-	ContentType    string                 `json:"content_type,omitempty"`
-	FileSize       int64                  `json:"file_size,omitempty"`
-	WordCount      int                    `json:"word_count,omitempty"`
-	PageCount      int                    `json:"page_count,omitempty"`
-	LastModified   *time.Time             `json:"last_modified,omitempty"`
-	CreatedDate    *time.Time             `json:"created_date,omitempty"`
-	ModifiedDate   *time.Time             `json:"modified_date,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	// ===== 表特有字段 =====
+	Schema        string         `json:"schema,omitempty"`
+	TableType     string         `json:"table_type,omitempty"`
+	Fields        []FieldRecord  `json:"fields,omitempty"`
+	RowCount      *int64         `json:"row_count,omitempty"`
+
+	// ===== 对象特有字段 =====
+	Bucket        string     `json:"bucket,omitempty"`
+	Path          string     `json:"path,omitempty"`
+	RelativePath  string     `json:"relative_path,omitempty"`
+	SizeBytes     *int64     `json:"size_bytes,omitempty"`
+	ContentType   string     `json:"content_type,omitempty"`
+	DataUpdatedAt *time.Time `json:"data_updated_at,omitempty"`
+
+	// ===== 文档内容字段（深度扫描才写） =====
+	Content        string     `json:"content,omitempty"`          // 全文内容
+	ContentPreview string     `json:"content_preview,omitempty"`  // 内容预览
+	DocumentType   string     `json:"document_type,omitempty"`    // pdf/docx/txt
+	Title          string     `json:"title,omitempty"`
+	Author         string     `json:"author,omitempty"`
+	Keywords       []string   `json:"keywords,omitempty"`
+	WordCount      int        `json:"word_count,omitempty"`
+	PageCount      int        `json:"page_count,omitempty"`
+	CreatedDate    *time.Time `json:"created_date,omitempty"`
+	ModifiedDate   *time.Time `json:"modified_date,omitempty"`
+
+	// ===== 通用字段 =====
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 // NewIndexer 创建索引器（若未配置 Meilisearch URL，则返回禁用状态）
 func NewIndexer(cfg *config.Config) (*Indexer, error) {
 	idx := &Indexer{
-		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
-		documentIndex: strings.TrimSpace(cfg.MeilisearchDocumentIndex),
-		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
-		log:           logger.With("component", "meta_indexer"),
+		assetIndex: strings.TrimSpace(cfg.MeilisearchAssetIndex),
+		enabled:    strings.TrimSpace(cfg.MeilisearchURL) != "",
+		log:        logger.With("component", "meta_indexer"),
 	}
 
 	if !idx.enabled {
@@ -119,7 +109,6 @@ func NewIndexer(cfg *config.Config) (*Indexer, error) {
 
 	idx.log.Info("Meilisearch 索引器已启用",
 		"asset_index", idx.assetIndex,
-		"document_index", idx.documentIndex,
 	)
 
 	return idx, nil
@@ -145,14 +134,19 @@ func (i *Indexer) ensureIndexes() error {
 	// 配置资产索引
 	assetIndex := i.client.Index(i.assetIndex)
 
-	// 设置可搜索字段
+	// 设置可搜索字段（按权重排序）
 	_, err = assetIndex.UpdateSearchableAttributes(&[]string{
-		"name",
-		"full_name",
-		"description",
-		"tags",
-		"fields.name",    // 嵌套字段搜索
-		"fields.comment",
+		"name",               // 文件名/表名 - 最高权重
+		"title",              // 文档标题
+		"full_name",          // 完整路径名
+		"content_preview",    // 内容预览（中等权重）
+		"description",        // 描述
+		"tags",               // 标签
+		"content",            // 全文内容（权重较低但范围广）
+		"fields.name",        // 表字段名
+		"fields.comment",     // 字段注释
+		"keywords",           // 关键词
+		"author",             // 作者
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update asset searchable attributes: %w", err)
@@ -163,10 +157,11 @@ func (i *Indexer) ensureIndexes() error {
 		"tenant_id",
 		"engine_id",
 		"engine_type",
-		"asset_type",
+		"asset_type",     // 可过滤表/对象
 		"schema",
 		"bucket",
 		"table_type",
+		"document_type",  // 可过滤文档类型
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update asset filterable attributes: %w", err)
@@ -174,61 +169,22 @@ func (i *Indexer) ensureIndexes() error {
 
 	// 设置可排序字段
 	_, err = assetIndex.UpdateSortableAttributes(&[]string{
-		"last_modified",
+		"data_updated_at",
 		"size_bytes",
 		"row_count",
+		"word_count",
+		"page_count",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update asset sortable attributes: %w", err)
 	}
 
-	// 配置文档索引
-	if i.documentIndex != "" {
-		// 确保文档索引存在并设置主键
-		_, err := i.client.CreateIndex(&meilisearch.IndexConfig{
-			Uid:        i.documentIndex,
-			PrimaryKey: "id",
-		})
-		// 忽略索引已存在的错误
-		if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
-			return fmt.Errorf("failed to create document index: %w", err)
-		}
-
-		docIndex := i.client.Index(i.documentIndex)
-
-		_, err = docIndex.UpdateSearchableAttributes(&[]string{
-			"title",
-			"file_name",
-			"content",
-			"content_preview",
-			"keywords",
-			"author",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to update document searchable attributes: %w", err)
-		}
-
-		_, err = docIndex.UpdateFilterableAttributes(&[]string{
-			"tenant_id",
-			"engine_id",
-			"engine_type",
-			"document_type",
-			"bucket",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to update document filterable attributes: %w", err)
-		}
-	}
-
-	i.log.Info("索引配置已更新",
-		"asset_index", i.assetIndex,
-		"document_index", i.documentIndex,
-	)
+	i.log.Info("索引配置已更新", "index", i.assetIndex)
 
 	return nil
 }
 
-// IndexAsset 写入/更新资产信息
+// IndexAsset 写入/更新资产信息（包含表、对象和文档内容）
 func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 	if !i.Enabled() || record == nil || record.AssetID == "" {
 		return nil
@@ -238,28 +194,40 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 
 	// 将 record 转换为 map (Meilisearch 需要主键字段)
 	doc := map[string]interface{}{
-		"id":                 record.AssetID, // Meilisearch 主键
-		"asset_id":           record.AssetID,
-		"tenant_id":          record.TenantID,
-		"engine_id":          record.EngineID,
-		"engine_name":        record.EngineName,
-		"engine_type":        record.EngineType,
-		"asset_type":         record.AssetType,
-		"name":               record.Name,
-		"full_name":          record.FullName,
-		"schema":             record.Schema,
-		"table_type":         record.TableType,
-		"bucket":             record.Bucket,
-		"path":               record.Path,
-		"relative_path":      record.RelativePath,
-		"description":        record.Description,
-		"tags":               record.Tags,
-		"row_count":          record.RowCount,
-		"size_bytes":         record.SizeBytes,
-		"data_updated_at":    record.DataUpdatedAt,
-		"metadata":           record.Metadata,
-		"fields":             record.Fields,
-		"updated_at":         record.UpdatedAt,
+		"id":              record.AssetID, // Meilisearch 主键
+		"asset_id":        record.AssetID,
+		"tenant_id":       record.TenantID,
+		"engine_id":       record.EngineID,
+		"engine_name":     record.EngineName,
+		"engine_type":     record.EngineType,
+		"asset_type":      record.AssetType,
+		"name":            record.Name,
+		"full_name":       record.FullName,
+		"schema":          record.Schema,
+		"table_type":      record.TableType,
+		"bucket":          record.Bucket,
+		"path":            record.Path,
+		"relative_path":   record.RelativePath,
+		"description":     record.Description,
+		"tags":            record.Tags,
+		"row_count":       record.RowCount,
+		"size_bytes":      record.SizeBytes,
+		"content_type":    record.ContentType,
+		"data_updated_at": record.DataUpdatedAt,
+		"metadata":        record.Metadata,
+		"fields":          record.Fields,
+		// 文档内容字段（深度扫描才有）
+		"content":         record.Content,
+		"content_preview": record.ContentPreview,
+		"document_type":   record.DocumentType,
+		"title":           record.Title,
+		"author":          record.Author,
+		"keywords":        record.Keywords,
+		"word_count":      record.WordCount,
+		"page_count":      record.PageCount,
+		"created_date":    record.CreatedDate,
+		"modified_date":   record.ModifiedDate,
+		"updated_at":      record.UpdatedAt,
 	}
 
 	// 单条写入
@@ -271,77 +239,8 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 
 	i.log.Debug("资产已索引",
 		"asset_id", record.AssetID,
-		"task_uid", task.TaskUID,
-	)
-
-	return nil
-}
-
-// IndexDocument 写入/更新文档全文索引
-func (i *Indexer) IndexDocument(ctx context.Context, record *DocumentRecord) error {
-	if !i.Enabled() || i.documentIndex == "" {
-		return nil
-	}
-
-	record.UpdatedAt = time.Now().UTC()
-
-	doc := map[string]interface{}{
-		"id":              record.DocumentID, // Meilisearch 主键
-		"document_id":     record.DocumentID,
-		"asset_id":        record.AssetID,
-		"tenant_id":       record.TenantID,
-		"engine_id":       record.EngineID,
-		"engine_name":     record.EngineName,
-		"engine_type":     record.EngineType,
-		"bucket":          record.Bucket,
-		"relative_path":   record.RelativePath,
-		"file_name":       record.FileName,
-		"file_path":       record.FilePath,
-		"document_type":   record.DocumentType,
-		"title":           record.Title,
-		"author":          record.Author,
-		"keywords":        record.Keywords,
-		"content":         record.Content,
-		"content_preview": record.ContentPreview,
-		"content_type":    record.ContentType,
-		"file_size":       record.FileSize,
-		"word_count":      record.WordCount,
-		"page_count":      record.PageCount,
-		"last_modified":   record.LastModified,
-		"created_date":    record.CreatedDate,
-		"modified_date":   record.ModifiedDate,
-		"metadata":        record.Metadata,
-		"updated_at":      record.UpdatedAt,
-	}
-
-	index := i.client.Index(i.documentIndex)
-	task, err := index.AddDocuments([]map[string]interface{}{doc})
-	if err != nil {
-		return fmt.Errorf("failed to index document: %w", err)
-	}
-
-	i.log.Debug("文档已索引",
-		"document_id", record.DocumentID,
-		"task_uid", task.TaskUID,
-	)
-
-	return nil
-}
-
-// DeleteDocument 按 ID 删除文档索引
-func (i *Indexer) DeleteDocument(ctx context.Context, documentID string) error {
-	if !i.Enabled() || i.documentIndex == "" || documentID == "" {
-		return nil
-	}
-
-	index := i.client.Index(i.documentIndex)
-	task, err := index.DeleteDocument(documentID)
-	if err != nil {
-		return fmt.Errorf("failed to delete document %s: %w", documentID, err)
-	}
-
-	i.log.Info("文档已删除",
-		"document_id", documentID,
+		"asset_type", record.AssetType,
+		"name", record.Name,
 		"task_uid", task.TaskUID,
 	)
 
@@ -386,17 +285,6 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bu
 		"path", relativePath,
 		"task_uid", task.TaskUID,
 	)
-
-	// 删除文档索引中的记录
-	if i.documentIndex != "" {
-		docIndex := i.client.Index(i.documentIndex)
-		task, err := docIndex.DeleteDocumentsByFilter(filterStr)
-		if err != nil {
-			i.log.Warn("删除文档索引失败", "error", err)
-		} else {
-			i.log.Info("对象文档已删除", "task_uid", task.TaskUID)
-		}
-	}
 
 	return nil
 }

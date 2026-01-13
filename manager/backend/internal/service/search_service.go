@@ -29,7 +29,6 @@ const (
 // HybridSearchService 提供混合检索能力（全文检索 + 向量语义检索）
 type HybridSearchService struct {
 	client            *meilisearch.Client
-	documentIndex     string
 	assetIndex        string
 	enabled           bool
 	log               *slog.Logger
@@ -102,7 +101,6 @@ type SearchResult struct {
 // NewHybridSearchService 构建混合检索服务（全文检索 + 向量检索）
 func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 	svc := &HybridSearchService{
-		documentIndex: strings.TrimSpace(cfg.MeilisearchDocumentIndex),
 		assetIndex:    strings.TrimSpace(cfg.MeilisearchAssetIndex),
 		enabled:       strings.TrimSpace(cfg.MeilisearchURL) != "",
 		log:           logger.With("component", "manager_hybrid_search"),
@@ -142,7 +140,6 @@ func NewHybridSearchService(cfg *config.Config) (*HybridSearchService, error) {
 	}
 
 	svc.log.Info("混合检索服务已启用",
-		"document_index", svc.documentIndex,
 		"asset_index", svc.assetIndex,
 		"url", cfg.MeilisearchURL,
 	)
@@ -223,51 +220,71 @@ func (s *HybridSearchService) initVectorComponents(cfg *config.Config) error {
 
 // initIndexes 初始化 Meilisearch 索引配置
 func (s *HybridSearchService) initIndexes() error {
-	// 配置文档索引
-	docIndex := s.client.Index(s.documentIndex)
+	// 确保资产索引存在（如果 Meta 模块已创建则忽略错误）
+	_, err := s.client.CreateIndex(&meilisearch.IndexConfig{
+		Uid:        s.assetIndex,
+		PrimaryKey: "id",
+	})
+	// 忽略索引已存在的错误
+	if err != nil && !strings.Contains(err.Error(), "index_already_exists") {
+		return fmt.Errorf("failed to create asset index: %w", err)
+	}
 
-	// 设置可搜索字段 (按权重排序)
-	_, err := docIndex.UpdateSearchableAttributes(&[]string{
-		"title",           // 最高权重
-		"file_name",       // 次高权重
-		"content_preview", // 次高权重
-		"content",         // 正文内容
-		"metadata.description",
-		"metadata.tags",
+	// 配置统一资产索引（存储表、对象、文档元数据和内容）
+	assetIdx := s.client.Index(s.assetIndex)
+
+	// 设置可搜索字段（按权重排序，与 Meta 模块保持一致）
+	_, err = assetIdx.UpdateSearchableAttributes(&[]string{
+		"name",               // 文件名/表名 - 最高权重
+		"title",              // 文档标题
+		"full_name",          // 完整路径名
+		"content_preview",    // 内容预览（中等权重）
+		"description",        // 描述
+		"tags",               // 标签
+		"content",            // 全文内容（权重较低但范围广）
+		"fields.name",        // 表字段名
+		"fields.comment",     // 字段注释
+		"keywords",           // 关键词
+		"author",             // 作者
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update searchable attributes: %w", err)
 	}
 
 	// 设置可过滤字段
-	_, err = docIndex.UpdateFilterableAttributes(&[]string{
+	_, err = assetIdx.UpdateFilterableAttributes(&[]string{
 		"tenant_id",
 		"engine_id",
 		"engine_type",
-		"document_type",
+		"asset_type",     // 可过滤表/对象
+		"schema",
 		"bucket",
+		"table_type",
+		"document_type",  // 可过滤文档类型
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update filterable attributes: %w", err)
 	}
 
 	// 设置可排序字段
-	_, err = docIndex.UpdateSortableAttributes(&[]string{
-		"created_date",
-		"last_modified",
-		"file_size",
+	_, err = assetIdx.UpdateSortableAttributes(&[]string{
+		"data_updated_at",
+		"size_bytes",
+		"row_count",
+		"word_count",
+		"page_count",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update sortable attributes: %w", err)
 	}
 
-	s.log.Info("索引配置已更新", "index", s.documentIndex)
+	s.log.Info("索引配置已更新", "index", s.assetIndex)
 	return nil
 }
 
 // Enabled 返回混合检索是否可用
 func (s *HybridSearchService) Enabled() bool {
-	return s != nil && s.enabled && s.client != nil && s.documentIndex != ""
+	return s != nil && s.enabled && s.client != nil && s.assetIndex != ""
 }
 
 // SearchDocuments 执行混合检索（全文检索 + 向量检索）
@@ -309,7 +326,7 @@ func (s *HybridSearchService) SearchDocuments(
 	searchReq := &meilisearch.SearchRequest{
 		Query:                 query,
 		Filter:                filter,
-		AttributesToHighlight: []string{"title", "file_name", "content", "content_preview", "metadata.tags", "metadata.summary"},
+		AttributesToHighlight: []string{"name", "title", "full_name", "content_preview", "description", "tags", "keywords", "author"},
 		HighlightPreTag:       "<mark>",
 		HighlightPostTag:      "</mark>",
 		Offset:                int64(offset),
@@ -317,8 +334,8 @@ func (s *HybridSearchService) SearchDocuments(
 		ShowMatchesPosition:   false,
 	}
 
-	// 执行搜索
-	index := s.client.Index(s.documentIndex)
+	// 执行搜索 - 使用统一资产索引（包含表、对象、文档元数据和内容）
+	index := s.client.Index(s.assetIndex)
 	resp, err := index.Search(query, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute search: %w", err)
@@ -767,8 +784,15 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 			doc.ObjectKey = fmt.Sprintf("%s/%s", doc.Bucket, strings.TrimLeft(val, "/"))
 		}
 	}
-	if val, ok := hitMap["file_name"].(string); ok {
+	// meta-assets 使用 name 字段存储文件名
+	if val, ok := hitMap["name"].(string); ok {
 		doc.FileName = val
+	}
+	// 兼容旧的 file_name 字段（如果存在）
+	if doc.FileName == "" {
+		if val, ok := hitMap["file_name"].(string); ok {
+			doc.FileName = val
+		}
 	}
 	if val, ok := hitMap["document_type"].(string); ok {
 		doc.DocumentType = val

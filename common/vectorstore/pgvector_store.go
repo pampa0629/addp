@@ -414,6 +414,11 @@ func buildDSN(cfg config.VectorDBConfig) string {
 	if cfg.SSLMode != "" {
 		query.Set("sslmode", cfg.SSLMode)
 	}
+	// 设置 search_path，确保能找到 vector 类型和表
+	// 格式: schema,public（包含当前schema和public以兼容标准类型）
+	if cfg.Schema != "" {
+		query.Set("search_path", fmt.Sprintf("%s,public", cfg.Schema))
+	}
 	u.RawQuery = query.Encode()
 	return u.String()
 }

@@ -21,10 +21,9 @@ type Config struct {
 	EnableMetaIntegration bool
 
 	// Meilisearch 配置
-	MeilisearchURL           string
-	MeilisearchMasterKey     string
-	MeilisearchDocumentIndex string
-	MeilisearchAssetIndex    string
+	MeilisearchURL        string
+	MeilisearchMasterKey  string
+	MeilisearchAssetIndex string
 
 	// Manager 向量化配置（按需触发）
 	EmbeddingService struct {
@@ -102,8 +101,7 @@ func Load() *Config {
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX", "meta-documents")
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "meta-assets")
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "assets")
 
 	// 设置 BaseConfig 字段
 	cfg.SystemServiceURL = systemURL

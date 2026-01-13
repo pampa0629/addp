@@ -84,11 +84,10 @@ func (s *IndexerService) IndexTableAsset(resource *commonModels.Engine, tenantID
 	}
 }
 
-// IndexObjectAsset 索引对象资产到 Meilisearch
-// 注意：此方法不包含向量化逻辑，向量化应该在外部处理
-func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta format.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) *search.DocumentRecord {
+// IndexObjectAsset 索引对象资产到 Meilisearch（统一索引）
+func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantID, engineID uint, meta format.ObjectMetadata, relativePath, fullName string, item *models.MetaItem) {
 	if s.indexer == nil || !s.indexer.Enabled() || resource == nil || item == nil {
-		return nil
+		return
 	}
 
 	attributes := copyJSONMap(item.Attributes)
@@ -113,7 +112,11 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	}
 	delete(metadata, "plain_text")
 
-	// 索引资产记录
+	// 准备文档内容字段
+	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
+	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
+
+	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
 		TenantID:      tenantID,
@@ -129,6 +132,9 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		Metadata:      metadata,
 		SizeBytes:     item.SizeBytes,
 		DataUpdatedAt: meta.LastModified,
+		// 文档内容字段（深度扫描才有）
+		Content:        truncatedContent,
+		ContentPreview: contentPreview,
 	}
 
 	if len(tags) > 0 {
@@ -138,81 +144,42 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		assetRecord.Description = desc
 	}
 
-	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
-		s.log.Warn("索引对象元数据失败", "fingerprint", item.Fingerprint, "bucket", meta.Bucket, "path", meta.Path, "error", err)
-	}
-
-	// 构建文档记录用于后续向量化（在外部处理）
-	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
-	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
-	docMetadata := cloneInterfaceMap(metadata)
-
-	docRecord := &search.DocumentRecord{
-		DocumentID:     item.Fingerprint,
-		AssetID:        item.Fingerprint,
-		TenantID:       tenantID,
-		EngineID:       engineID,
-		EngineName:     resource.Name,
-		EngineType:     resource.EngineType,
-		Bucket:         meta.Bucket,
-		RelativePath:   relativePath,
-		FileName:       item.Name,
-		FilePath:       meta.Path,
-		Content:        truncatedContent,
-		ContentPreview: contentPreview,
-		FileSize:       meta.SizeBytes,
-		Metadata:       docMetadata,
-	}
-
+	// 提取文档元数据
 	if meta.ExtractedMetadata != nil {
-		if basic := meta.ExtractedMetadata.BasicInfo; basic.FileName != "" {
-			docRecord.FileName = basic.FileName
-		}
 		if basic := meta.ExtractedMetadata.BasicInfo; basic.ContentType != "" {
-			docRecord.ContentType = basic.ContentType
+			assetRecord.ContentType = basic.ContentType
 		}
-		if basic := meta.ExtractedMetadata.BasicInfo; !basic.LastModified.IsZero() {
-			lm := basic.LastModified
-			docRecord.LastModified = &lm
-		} else if meta.LastModified != nil {
-			docRecord.LastModified = meta.LastModified
-		}
-	}
-	if docRecord.LastModified == nil && meta.LastModified != nil {
-		docRecord.LastModified = meta.LastModified
 	}
 
 	if value := getStringFromMap(metadata, "document_type"); value != "" {
-		docRecord.DocumentType = value
+		assetRecord.DocumentType = value
 	}
 	if value := getStringFromMap(metadata, "title"); value != "" {
-		docRecord.Title = value
+		assetRecord.Title = value
 	}
 	if value := getStringFromMap(metadata, "author"); value != "" {
-		docRecord.Author = value
+		assetRecord.Author = value
 	}
 	if keywords := extractStringSlice(metadata["keywords"]); len(keywords) > 0 {
-		docRecord.Keywords = keywords
+		assetRecord.Keywords = keywords
 	}
 	if wc := intFromInterface(metadata["word_count"]); wc > 0 {
-		docRecord.WordCount = wc
+		assetRecord.WordCount = wc
 	}
 	if pc := intFromInterface(metadata["page_count"]); pc > 0 {
-		docRecord.PageCount = pc
+		assetRecord.PageCount = pc
 	}
 	if created := extractTimePtr(metadata["created_date"]); created != nil {
-		docRecord.CreatedDate = created
+		assetRecord.CreatedDate = created
 	}
 	if modified := extractTimePtr(metadata["modified_date"]); modified != nil {
-		docRecord.ModifiedDate = modified
+		assetRecord.ModifiedDate = modified
 	}
 
-	if err := s.indexer.IndexDocument(context.Background(), docRecord); err != nil {
-		s.log.Warn("索引文档内容失败", "fingerprint", item.Fingerprint, "error", err)
+	// 统一索引（包含基础资产信息和文档内容）
+	if err := s.indexer.IndexAsset(context.Background(), assetRecord); err != nil {
+		s.log.Warn("索引对象资产失败", "fingerprint", item.Fingerprint, "bucket", meta.Bucket, "path", meta.Path, "error", err)
 	}
-
-	// 返回文档记录，以便外部可以进行向量化
-	return docRecord
 }
 
 // DeleteTablesFromIndex 从索引中删除表

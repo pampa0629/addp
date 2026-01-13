@@ -26,10 +26,9 @@ type Config struct {
 	ExtentSamplePercent  int // Extent 计算采样百分比（1-100）
 
 	// Meilisearch 配置
-	MeilisearchURL           string
-	MeilisearchMasterKey     string
-	MeilisearchAssetIndex    string
-	MeilisearchDocumentIndex string
+	MeilisearchURL        string
+	MeilisearchMasterKey  string
+	MeilisearchAssetIndex string
 
 	// Redis 配置（用于资源变更事件同步和任务队列）
 	RedisHost     string
@@ -94,8 +93,7 @@ func LoadConfig() *Config {
 
 	cfg.MeilisearchURL = resolveMeilisearchURL()
 	cfg.MeilisearchMasterKey = commonConfig.GetEnv("MEILISEARCH_MASTER_KEY", "")
-	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "meta-assets")
-	cfg.MeilisearchDocumentIndex = commonConfig.GetEnv("MEILISEARCH_DOCUMENT_INDEX", "meta-documents")
+	cfg.MeilisearchAssetIndex = commonConfig.GetEnv("MEILISEARCH_ASSET_INDEX", "assets")
 
 	// Redis 配置
 	cfg.RedisHost = commonConfig.GetEnv("REDIS_HOST", "localhost")

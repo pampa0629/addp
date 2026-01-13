@@ -334,9 +334,10 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 	metas := make([]format.ObjectMetadata, 0, len(objects))
 
 	for _, obj := range objects {
-		// 计算相对路径（去掉 prefix）
-		relativePath := strings.TrimPrefix(obj.Key, prefix)
-		relativePath = strings.TrimPrefix(relativePath, "/")
+		// 相对路径：相对于 bucket 根目录的完整路径（不受扫描prefix影响）
+		// 例如：对象Key="image/开会.jpg" → relativePath="image/开会.jpg"
+		// 这样前端可以正确构造locator: addp://engine/ID/path/BUCKET/image/开会.jpg
+		relativePath := strings.TrimPrefix(obj.Key, "/")
 
 		// 推断文件类型
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
