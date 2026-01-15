@@ -20,7 +20,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 在微服务架构中，如果没有 Gateway：
 
 ```
-客户端 → System (8080)
+客户端 → System (8180) # 直接访问宿主机端口
 客户端 → Manager (8081)
 客户端 → Meta (8082)
 客户端 → Transfer (8083)
@@ -35,7 +35,7 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 有了 Gateway：
 
 ```
-客户端 → Gateway (8000) → System (8080)
+客户端 → Gateway (8000) → System (8180)
                         → Manager (8081)
                         → Meta (8082)
                         → Transfer (8083)
@@ -267,13 +267,13 @@ gateway/
 
 5. 代理转发
    ↓
-   [Proxy] 重写 URL: http://localhost:8080/api/auth/login
+   [Proxy] 重写 URL: http://system-backend:8180/api/auth/login
    [Proxy] 复制请求头: Content-Type, Authorization...
    [Proxy] 复制请求体: {"username": "admin", ...}
 
 6. 发送到 System 服务
    ↓
-   POST http://localhost:8080/api/auth/login
+   POST http://system-backend:8180/api/auth/login
 
 7. System 服务处理
    ↓
@@ -301,7 +301,7 @@ gateway/
   │ /api/auth/login             │
   │              │               │
   │              │────POST──────→│
-  │              │ http://system:8080/api/auth/login
+  │              │ http://system:8180/api/auth/login
   │              │               │
   │              │               │ 验证用户
   │              │               │ 生成 Token
@@ -320,10 +320,10 @@ gateway/
 
 | 路径前缀 | 目标服务 | 端口 | 说明 |
 |---------|---------|------|------|
-| `/api/auth/*` | System | 8080 | 用户认证 |
-| `/api/users/*` | System | 8080 | 用户管理 |
-| `/api/logs/*` | System | 8080 | 日志管理 |
-| `/api/engines/*` | System | 8080 | 引擎管理 |
+| `/api/auth/*` | System | 8180 | 用户认证 |
+| `/api/users/*` | System | 8180 | 用户管理 |
+| `/api/logs/*` | System | 8180 | 日志管理 |
+| `/api/engines/*` | System | 8180 | 引擎管理 |
 | `/api/datasources/*` | Manager | 8081 | 数据源管理 |
 | `/api/directories/*` | Manager | 8081 | 目录管理 |
 | `/api/preview/*` | Manager | 8081 | 数据预览 |
@@ -341,11 +341,11 @@ Gateway 使用 **前缀匹配**：
 ```
 请求: GET /api/users/123
 匹配: /api/users/*
-代理到: http://localhost:8080/api/users/123
+代理到: http://system-backend:8180/api/users/123
 
 请求: POST /api/auth/login
 匹配: /api/auth/*
-代理到: http://localhost:8080/api/auth/login
+代理到: http://system-backend:8180/api/auth/login
 
 请求: GET /api/datasources?type=mysql
 匹配: /api/datasources/*
@@ -356,18 +356,21 @@ Gateway 使用 **前缀匹配**：
 
 ### 1. 与 System 模块集成
 
-**System 服务不需要修改**，继续监听 8080 端口。
+**System 服务监听 8180 端口**。
 
 ```go
-// System 配置不变
-PORT=8080
+// System 配置
+PORT=8180
 ```
 
 Gateway 通过配置知道 System 的地址：
 
 ```go
-// Gateway 配置
-SYSTEM_SERVICE_URL=http://localhost:8080
+// Gateway 配置（Docker环境 - 容器间通信）
+SYSTEM_SERVICE_URL=http://system-backend:8180
+
+// Gateway 配置（本地开发 - 宿主机访问）
+SYSTEM_SERVICE_URL=http://localhost:8180
 ```
 
 ### 2. 前端集成
@@ -378,7 +381,7 @@ SYSTEM_SERVICE_URL=http://localhost:8080
 
 ```javascript
 // frontend/src/api/client.js
-const BASE_URL = 'http://localhost:8080';
+const BASE_URL = 'http://localhost:8180';
 
 axios.post(`${BASE_URL}/api/auth/login`, {...});
 ```
@@ -418,7 +421,7 @@ curl -X POST http://localhost:8000/api/auth/login \
   -d '{"username":"admin","password":"admin123"}'
 
 # Gateway 日志
-[GIN] POST /api/auth/login → 代理到 http://localhost:8080/api/auth/login
+[GIN] POST /api/auth/login → 代理到 http://system-backend:8180/api/auth/login
 
 # System 日志
 [GIN] POST /api/auth/login → 处理登录请求 → 返回 Token
@@ -440,7 +443,7 @@ curl http://localhost:8000/api/users?page=1&page_size=10 \
 # Gateway 处理流程
 1. 接收请求: GET /api/users?page=1&page_size=10
 2. 匹配路由: /api/users/* → systemProxy
-3. 构建目标URL: http://localhost:8080/api/users?page=1&page_size=10
+3. 构建目标URL: http://system-backend:8180/api/users?page=1&page_size=10
 4. 复制请求头: Authorization: Bearer <token>
 5. 发送到 System
 6. 接收 System 响应
@@ -477,11 +480,17 @@ curl http://localhost:8000/api/datasources \
 # Gateway 端口
 PORT=8000
 
-# 后端服务地址
-SYSTEM_SERVICE_URL=http://localhost:8080
-MANAGER_SERVICE_URL=http://localhost:8081
-META_SERVICE_URL=http://localhost:8082
-TRANSFER_SERVICE_URL=http://localhost:8083
+# 后端服务地址（Docker环境 - 容器间通信）
+SYSTEM_SERVICE_URL=http://system-backend:8180
+MANAGER_SERVICE_URL=http://manager-backend:8081
+META_SERVICE_URL=http://meta-backend:8082
+TRANSFER_SERVICE_URL=http://transfer-backend:8083
+
+# 后端服务地址（本地开发 - 宿主机访问）
+# SYSTEM_SERVICE_URL=http://localhost:8180
+# MANAGER_SERVICE_URL=http://localhost:8081
+# META_SERVICE_URL=http://localhost:8082
+# TRANSFER_SERVICE_URL=http://localhost:8083
 
 # 运行环境
 ENV=development  # development / production

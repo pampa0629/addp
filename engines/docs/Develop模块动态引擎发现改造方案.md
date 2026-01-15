@@ -316,7 +316,7 @@ SPARK_WORKFLOW_ENGINE_URL=http://spark-workflow-engine:8098    # ❌ 移除
 
 **添加**:
 ```bash
-SYSTEM_SERVICE_URL=http://system-backend:8080  # ✅ 新增
+SYSTEM_SERVICE_URL=http://system-backend:8180  # ✅ 新增
 ```
 
 ---

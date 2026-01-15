@@ -26,7 +26,7 @@ bash scripts/infra/up.sh
 bash scripts/dev/start.sh -system
 ```
 
-- 后端: http://localhost:8080
+- 后端: http://localhost:8180
 - 前端: http://localhost:5173
 
 ### 方式 2: Docker 部署

@@ -315,6 +315,38 @@ func (s *ObjectStorageScanService) scanObjectStoragePathsWithPlugin(
 		}
 	}
 
+	// 更新所有子目录节点的统计信息和扫描状态
+	// 遍历 nodeStats 中的所有节点，更新那些不是 bucket 的节点
+	for nodeID, agg := range nodeStats {
+		// 跳过 bucket 节点（已在上面处理）
+		if agg.node.NodeType == "bucket" {
+			continue
+		}
+
+		// 更新子目录节点的统计信息和扫描状态
+		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"已扫描"
+		now := time.Now()
+		if err := s.db.Model(agg.node).Updates(map[string]interface{}{
+			"item_count":       agg.itemCount,
+			"total_size_bytes": agg.totalSize,
+			"scan_status":      "已扫描",
+			"scanned_at":       now,
+		}).Error; err != nil {
+			s.log.Warn("更新子目录节点统计信息失败",
+				"node_id", nodeID,
+				"node_name", agg.node.Name,
+				"error", err,
+			)
+		} else {
+			s.log.Debug("成功更新子目录节点统计",
+				"node_id", nodeID,
+				"node_name", agg.node.Name,
+				"item_count", agg.itemCount,
+				"total_size", agg.totalSize,
+			)
+		}
+	}
+
 	s.log.Info("对象存储路径扫描完成",
 		"buckets", totalBuckets,
 		"objects", totalObjects,
@@ -335,20 +367,14 @@ func (s *ObjectStorageScanService) convertToObjectMetadata(
 
 	for _, obj := range objects {
 		// 相对路径：相对于 bucket 根目录的完整路径（不受扫描prefix影响）
-		// 例如：对象Key="image/开会.jpg" → relativePath="image/开会.jpg"
-		// 这样前端可以正确构造locator: addp://engine/ID/path/BUCKET/image/开会.jpg
-		relativePath := strings.TrimPrefix(obj.Key, "/")
-
 		// 推断文件类型
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(obj.Key)), ".")
 
 		// 构建 ObjectMetadata
-		// 重要：Path 字段不应包含 bucket，只保存相对于 bucket 的路径
-		// 这样 GenerateObjectFingerprint(engineID, bucket, path) 才能正确计算指纹
+		// 重要：Path 字段保存对象的完整Key（相对于bucket的路径）
 		meta := format.ObjectMetadata{
 			Bucket:       bucket,
 			Path:         obj.Key,        // ✅ 只保存相对路径，不包含 bucket
-			RelativePath: relativePath,
 			NodeType:     "object",
 			FileType:     ext,
 			SizeBytes:    obj.Size,
@@ -774,6 +800,38 @@ func (s *ObjectStorageScanService) scanObjectStoragePaths(
 		}
 	}
 
+	// 更新所有子目录节点的统计信息和扫描状态
+	// 遍历 nodeStats 中的所有节点，更新那些不是 bucket 的节点
+	for nodeID, agg := range nodeStats {
+		// 跳过 bucket 节点（已在上面处理）
+		if agg.node.NodeType == "bucket" {
+			continue
+		}
+
+		// 更新子目录节点的统计信息和扫描状态
+		// 说明：扫描 bucket 时会遍历所有子目录，所以子目录的扫描状态也应该是"已扫描"
+		now := time.Now()
+		if err := s.db.Model(agg.node).Updates(map[string]interface{}{
+			"item_count":       agg.itemCount,
+			"total_size_bytes": agg.totalSize,
+			"scan_status":      "已扫描",
+			"scanned_at":       now,
+		}).Error; err != nil {
+			s.log.Warn("更新子目录节点统计信息失败",
+				"node_id", nodeID,
+				"node_name", agg.node.Name,
+				"error", err,
+			)
+		} else {
+			s.log.Debug("成功更新子目录节点统计",
+				"node_id", nodeID,
+				"node_name", agg.node.Name,
+				"item_count", agg.itemCount,
+				"total_size", agg.totalSize,
+			)
+		}
+	}
+
 	s.log.Info("对象存储路径扫描完成",
 		"buckets", totalBuckets,
 		"objects", totalObjects,
@@ -832,7 +890,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 			pathSoFar := strings.Join(prefixSegments[:idx+1], "/")
 			attrs := models.JSONMap{
 				"bucket": bucketNode.Name,
-				"path":   pathSoFar,
+				"path":   pathSoFar + "/", // ✅ 路径规范：目录路径必须以 / 结尾
 			}
 			childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
 			if err != nil {
@@ -868,13 +926,12 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		currentParent := basePrefixNode
 
 		// 然后处理相对路径（相对于scanPathPrefix）
-		trimmed := sanitizeObjectPath(meta.RelativePath)
+		trimmed := sanitizeObjectPath(meta.Path)
 
 		// 调试日志：记录每个meta对象的处理
 		s.log.Info("处理meta对象",
 			"meta.NodeType", meta.NodeType,
 			"meta.Path", meta.Path,
-			"meta.RelativePath", meta.RelativePath,
 			"trimmed", trimmed,
 			"scanPathPrefix", scanPathPrefix,
 			"basePrefixNode", basePrefixNode.Name)
@@ -927,7 +984,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 				fullName := composeNodeFullName(segment, currentParent, "/")
 				attrs := models.JSONMap{
 					"bucket": meta.Bucket,
-					"path":   strings.Join(segmentsToProcess[:idx+1], "/"),
+					"path":   strings.Join(segmentsToProcess[:idx+1], "/") + "/", // ✅ 路径规范：目录路径必须以 / 结尾
 				}
 				childNode, err := s.repo.UpsertNode(tenantID, engineID, currentParent, "prefix", segment, fullName, attrs)
 				if err != nil {
@@ -953,22 +1010,24 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		}
 
 		// 构建基础属性
+		// 按照路径统一规范：拆分为 bucket、path（目录，以/结尾）、name（文件名）
+		dir, name := commonModels.SplitObjectPath(meta.Path)
 		attrs := models.JSONMap{
-			"bucket":        meta.Bucket,
-			"path":          meta.Path,
-			"relative_path": trimmed,
-			"file_type":     meta.FileType,
-			"object_count":  meta.ObjectCount,
+			"bucket":       meta.Bucket,
+			"path":         dir,  // 目录路径（以 / 结尾）
+			"name":         name, // 文件名
+			"file_type":    meta.FileType,
+			"object_count": meta.ObjectCount,
 		}
 		if meta.LastModified != nil {
 			attrs["last_modified_at"] = meta.LastModified
 		}
 
-		// 生成fingerprint - 按照标准规范计算
-		// meta.Path 不包含 bucket（如 "image/开会.jpg"）
-		// GenerateObjectFingerprint 将计算 SHA256("{engineID}:{bucket}/{path}")
-		// 例如：SHA256("9:addp/image/开会.jpg")
-		fingerprint := commonModels.GenerateObjectFingerprint(engineID, meta.Bucket, meta.Path)
+		// 生成fingerprint - 两步计算方式
+		// 步骤1: 使用已拆分的 dir 和 name 拼接 full_name (bucket/path+name)
+		// 步骤2: 计算指纹 SHA256(engineID:fullName)
+		fullName := commonModels.JoinObjectPath(meta.Bucket, dir, name)
+		fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 		if scannedFingerprints != nil {
 			scannedFingerprints[fingerprint] = true
 		}
@@ -1024,7 +1083,8 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		// Scanner返回的RelativePath是相对于扫描路径的，不是相对于bucket的
 		// 例如：扫描 addp/shapefile 时，文件 shapefile/示例数据.shp 的 RelativePath 是 "示例数据.shp"
 		// 我们需要加上 scanPathPrefix 来得到完整路径
-		fullName := meta.Bucket
+		// 注意：这里重新计算 fullName 用于 UpsertItem，与前面计算指纹的 fullName 不同
+		fullName = meta.Bucket
 		if scanPathPrefix != "" && trimmed != "" {
 			// 扫描子目录：bucket/scanPathPrefix/relativePath
 			fullName = meta.Bucket + "/" + scanPathPrefix + "/" + trimmed
@@ -1040,7 +1100,7 @@ func (s *ObjectStorageScanService) persistObjectMetas(
 		// Debug logging (using INFO to ensure it shows)
 		s.log.Info("计算fullName和父节点",
 			"meta.Bucket", meta.Bucket,
-			"meta.RelativePath", meta.RelativePath,
+			"meta.Path", meta.Path,
 			"trimmed", trimmed,
 			"scanPathPrefix", scanPathPrefix,
 			"calculated_fullName", fullName,

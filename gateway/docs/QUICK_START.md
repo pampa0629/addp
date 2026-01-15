@@ -14,7 +14,7 @@ Gateway 就像一个**智能前台**：
 ### 测试 1: 直接访问 System 服务
 
 ```bash
-curl http://localhost:8080/
+curl http://localhost:8180/
 ```
 
 返回：
@@ -36,7 +36,7 @@ curl http://localhost:8000/
 {
   "message": "全域数据平台 API Gateway",
   "services": {
-    "system": "http://localhost:8080",
+    "system": "http://localhost:8180",
     "manager": "http://localhost:8081",
     "meta": "http://localhost:8082",
     "transfer": "http://localhost:8083"
@@ -59,7 +59,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 1. 请求到达 Gateway:8000
 2. Gateway 看到路径是 `/api/auth/login`
 3. 根据路由规则：`/api/auth/*` → System 服务
-4. Gateway 转发请求到 `http://localhost:8080/api/auth/login`
+4. Gateway 转发请求到 `http://system-backend:8180/api/auth/login`
 5. System 处理登录，返回 Token
 6. Gateway 把响应原样返回给客户端
 
@@ -94,7 +94,7 @@ System 处理请求，耗时 67ms
 **没有 Gateway**：
 ```
 前端需要配置多个地址：
-- System:  http://localhost:8080
+- System:  http://localhost:8180
 - Manager: http://localhost:8081
 - Meta:    http://localhost:8082
 - Transfer:http://localhost:8083
@@ -120,8 +120,8 @@ POST /api/datasources    → 创建数据源
 GET  /api/metadata       → 查询元数据
 
 实际路由：
-POST /api/auth/login      → System:8080
-GET  /api/users          → System:8080
+POST /api/auth/login      → System:8180
+GET  /api/users          → System:8180
 POST /api/datasources    → Manager:8081
 GET  /api/metadata       → Meta:8082
 ```
@@ -145,7 +145,7 @@ api.Any("/api/newservice/*path", newServiceProxy.Handle)
 ```go
 // 1. 配置服务地址
 type Config struct {
-    SystemURL  string  // http://localhost:8080
+    SystemURL  string  // http://system-backend:8180
     ManagerURL string  // http://localhost:8081
 }
 
@@ -156,7 +156,7 @@ systemProxy := NewProxy(config.SystemURL)
 router.Any("/api/auth/*path", func(c *gin.Context) {
     // 获取原始请求: POST /api/auth/login
     targetURL := config.SystemURL + c.Request.URL.Path
-    // 构建目标: http://localhost:8080/api/auth/login
+    // 构建目标: http://system-backend:8180/api/auth/login
 
     // 转发请求（包含所有 Header、Body）
     resp := http.Post(targetURL, body, headers)
@@ -177,10 +177,10 @@ router.Any("/api/auth/*path", func(c *gin.Context) {
 2. Gateway 解析
    路径: /api/auth/login
    匹配: /api/auth/* → systemProxy
-   目标: http://localhost:8080/api/auth/login
+   目标: http://system-backend:8180/api/auth/login
 
 3. Gateway → System
-   POST http://localhost:8080/api/auth/login
+   POST http://system-backend:8180/api/auth/login
    Header: Content-Type: application/json (复制)
    Body: {"username":"admin","password":"admin123"} (复制)
 
@@ -216,7 +216,7 @@ gateway/
 
 现在只有 System 服务：
 ```
-Gateway:8000 → System:8080 ✅
+Gateway:8000 → System:8180 ✅
              → Manager:8081 ❌ (服务不存在，返回 502)
              → Meta:8082 ❌
              → Transfer:8083 ❌
@@ -226,7 +226,7 @@ Gateway:8000 → System:8080 ✅
 
 启动 Manager 后：
 ```
-Gateway:8000 → System:8080 ✅
+Gateway:8000 → System:8180 ✅
              → Manager:8081 ✅ (新服务自动可用)
              → Meta:8082 ❌
              → Transfer:8083 ❌
@@ -238,7 +238,7 @@ Gateway:8000 → System:8080 ✅
 
 所有服务部署后：
 ```
-Gateway:8000 → System:8080 ✅
+Gateway:8000 → System:8180 ✅
              → Manager:8081 ✅
              → Meta:8082 ✅
              → Transfer:8083 ✅

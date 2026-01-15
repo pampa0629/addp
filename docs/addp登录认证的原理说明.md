@@ -55,7 +55,7 @@ Vue Router 触发
 【前端】authStore.login(username, password)
     ↓
 【前端】authAPI.login(username, password)
-    └─→ POST http://localhost:8080/api/auth/login
+    └─→ POST http://localhost:8180/api/auth/login
         Body: {
           "username": "admin",
           "password": "123456"
@@ -83,7 +83,7 @@ Vue Router 触发
     └─ localStorage.setItem('token', access_token)
     ↓
 【前端】authStore.fetchUser()
-    └─→ GET http://localhost:8080/api/users/me
+    └─→ GET http://localhost:8180/api/users/me
         Headers: {
           "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
         }
@@ -156,7 +156,7 @@ Vue Router 触发
 【前端】HTTP 响应拦截器 createRefreshInterceptor()
     ├─ 检测到 401 状态码
     ├─ 标记 isRefreshing = true
-    └─→ POST http://localhost:8080/api/auth/refresh
+    └─→ POST http://localhost:8180/api/auth/refresh
         Headers: {
           "Authorization": "Bearer <old_expired_token>"
         }
@@ -187,7 +187,7 @@ Vue Router 触发
 
 - 访问地址：`http://localhost:5178/develop/editor`
 - 登录页面：`/develop/login`
-- 后端 API：依然是 **System 后端** `http://localhost:8080/api/auth/login`
+- 后端 API：依然是 **System 后端** `http://localhost:8180/api/auth/login`
 - 业务 API：Develop 后端 `http://localhost:8085/api/develop/*`
 
 **关键点**：
@@ -215,7 +215,7 @@ Vue Router 触发
 用户在 Portal Login.vue 输入用户名/密码
     ↓
 【Portal】authStore.login(username, password)
-    └─→ POST http://localhost:8080/api/auth/login
+    └─→ POST http://localhost:8180/api/auth/login
     ↓
 【System 后端】返回 JWT Token
     ↓

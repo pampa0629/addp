@@ -39,11 +39,11 @@ Gateway 根据 URL 路径前缀自动路由请求：
 
 | 请求路径 | 目标服务 | 服务地址 | 用途 |
 |---------|---------|---------|-----|
-| `/api/auth/*` | System | http://localhost:8080 | 用户认证 |
-| `/api/users/*` | System | http://localhost:8080 | 用户管理 |
-| `/api/tenants/*` | System | http://localhost:8080 | 租户管理 |
-| `/api/engines/*` | System | http://localhost:8080 | 引擎管理 |
-| `/api/logs/*` | System | http://localhost:8080 | 日志查询 |
+| `/api/auth/*` | System | http://localhost:8180 | 用户认证 |
+| `/api/users/*` | System | http://localhost:8180 | 用户管理 |
+| `/api/tenants/*` | System | http://localhost:8180 | 租户管理 |
+| `/api/engines/*` | System | http://localhost:8180 | 引擎管理 |
+| `/api/logs/*` | System | http://localhost:8180 | 日志查询 |
 | `/api/datasources/*` | Manager | http://localhost:8081 | 数据源管理 |
 | `/api/directories/*` | Manager | http://localhost:8081 | 目录管理 |
 | `/api/preview/*` | Manager | http://localhost:8081 | 数据预览 |
@@ -62,7 +62,7 @@ Gateway 根据 URL 路径前缀自动路由请求：
 GATEWAY_PORT=8000
 
 # 后端服务地址
-SYSTEM_SERVICE_URL=http://localhost:8080
+SYSTEM_SERVICE_URL=http://localhost:8180
 MANAGER_SERVICE_URL=http://localhost:8081
 META_SERVICE_URL=http://localhost:8082
 TRANSFER_SERVICE_URL=http://localhost:8083
@@ -104,7 +104,7 @@ curl http://localhost:8000/api/metadata/tables
 **直接访问服务**:
 ```bash
 # 也可以直接访问各个服务
-curl http://localhost:8080/api/auth/login    # System
+curl http://localhost:8180/api/auth/login    # System
 curl http://localhost:8081/api/datasources   # Manager
 curl http://localhost:8082/api/metadata      # Meta
 ```

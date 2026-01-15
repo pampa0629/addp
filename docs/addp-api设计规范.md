@@ -654,7 +654,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 各模块应提供 Swagger UI 访问入口：
 
 ```
-http://localhost:8080/swagger/index.html   # System 模块
+http://localhost:8180/swagger/index.html   # System 模块
 http://localhost:8081/swagger/index.html   # Manager 模块
 ```
 

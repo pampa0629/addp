@@ -439,7 +439,7 @@ docker exec -it addp-infra-redis redis-cli
 
 # 6. 测试存储引擎连接（通过 System 模块）
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/engines/1/test-connection
+  http://localhost:8180/api/v1/engines/1/test-connection
 ```
 
 **关键日志位置**：

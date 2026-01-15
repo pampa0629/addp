@@ -69,7 +69,7 @@ bash scripts/dev/stop.sh
 # 访问服务
 # - Portal: http://localhost:5170
 # - Gateway: http://localhost:8000
-# - System Backend: http://localhost:8080
+# - System Backend: http://localhost:8180
 ```
 
 **特点**：
@@ -226,7 +226,7 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 | **Nginx Gateway** | - | **80** | **统一入口 (推荐)** |
 | **Portal** | **5170** | **5170** | Portal 前端 |
 | Gateway | 8000 | 8000 | API 网关 |
-| System Backend | 8080 | 8080 | 认证、用户管理 |
+| System Backend | 8180 | 8180 | 认证、用户管理 |
 | Manager Backend | 8081 | 8081 | 数据管理 |
 | Meta Backend | 8082 | 8082 | 元数据服务 |
 | Transfer Backend | 8083 | 8083 | 数据传输 |

@@ -83,7 +83,7 @@ bash scripts/dev/upgrade-go.sh 1.23
    - **智能跳过**: 如果基础设施已运行,自动跳过此步骤
    - **重启提示**: 提示用户如何手动重启基础设施
 3. **Step 2-7**: 启动后端服务(依赖顺序启动)
-   - System Backend (8080) - 其他服务依赖它
+   - System Backend (8180) - 其他服务依赖它
    - Manager Backend (8081)
    - Meta Backend (8082)
    - Transfer Backend (8083)
@@ -189,7 +189,7 @@ bash scripts/dev/upgrade-go.sh 1.24
 ```
 基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
   ↓
-System Backend (8080) - 配置中心,认证服务
+System Backend (8180) - 配置中心,认证服务
   ↓
 Manager Backend (8081) + Meta Backend (8082) (并行启动)
   ↓
@@ -267,7 +267,7 @@ tail -f logs/system-backend.log
 bash scripts/infra/status.sh
 
 # 3. 检查端口占用
-lsof -i :8080  # System backend
+lsof -i :8180  # System backend
 lsof -i :5433  # PostgreSQL
 
 # 4. 手动重启单个服务
@@ -282,7 +282,7 @@ go run cmd/server/main.go
 ps aux | grep "go run"
 
 # 2. 手动测试健康检查
-curl http://localhost:8080/health
+curl http://localhost:8180/health
 
 # 3. 查看服务日志
 cat logs/system-backend.log

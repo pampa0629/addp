@@ -1,156 +1,424 @@
-### ⚠️ 对象路径命名规范 (重要)
+# ADDP 路径字段统一规范
 
-**为确保系统各模块数据一致性,ADDP 平台对对象存储的 bucket 和 path 有严格的命名约定:**
+## 一、对象存储 (MinIO/S3)
 
-#### 1. Bucket (存储桶)
+### 字段定义
 
-**定义**: 存储桶名称,不包含路径分隔符
+**示例**: `addp/image/开会.jpg`
 
-**规范**:
-- ✅ 正确: `addp`、`business-data`、`system-files`
-- ❌ 错误: `addp/image`、`business-data/2024`
+- **bucket**: `addp` (存储桶名称，不含路径分隔符)
+- **path**: `image/` (目录路径，以 `/` 结尾，不含 bucket 和文件名)
+- **name**: `开会.jpg` (文件名)
+- **full_name**: `addp/image/开会.jpg` (完整路径，拼接规则: `bucket + "/" + path + name`)
 
-#### 2. Path (对象路径)
+### 指纹计算（两步方式）
 
-**定义**: 对象在桶内的相对路径,**不包含** bucket 名称
-
-**字段别名**:
-- `path`: 对象存储引擎和元数据模块中使用
-- `object_key`: 向量化服务和检索服务中使用
-- `relative_path`: 前端显示和 API 返回中使用
-
-**规范**:
-- ✅ 正确: `image/开会.jpg`、`data/2024/report.pdf`、`shapefile/cities.shp`
-- ❌ 错误: `addp/image/开会.jpg`、`/image/开会.jpg`
-
-**注意事项**:
-- path 以 `/` 分隔目录层级,但不以 `/` 开头
-- path 不包含 bucket 名称(避免重复)
-
-#### 3. Full Path (完整路径)
-
-**定义**: 完整的对象路径,仅用于**显示目的**
-
-**格式**: `{bucket}/{path}`
-
-**示例**:
-- `addp/image/开会.jpg`
-- `business-data/2024/report.pdf`
-
-**使用场景**:
-- 前端界面显示完整路径
-- 日志记录
-- 错误消息
-
-**禁止场景**:
-- ❌ 不要用于存储到数据库 (应分别存储 bucket 和 path)
-- ❌ 不要用于 fingerprint 计算
-- ❌ 不要用于 API 参数传递
-
-#### 4. Fingerprint (数据指纹)
-
-**定义**: 对象的唯一标识符,用于去重和数据血缘追踪
-
-**计算公式**:
 ```go
-fingerprint = SHA256("{engineID}:{bucket}/{path}")
+// 步骤1: 计算 full_name
+fullName := commonModels.JoinObjectPath(bucket, path, name)
+// "addp" + "/" + "image/" + "开会.jpg" → "addp/image/开会.jpg"
+
+// 步骤2: 计算指纹
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// SHA256("9:addp/image/开会.jpg")
+// 结果: 43788d99024bc40b4b7d19ed651f68014d18fa0199a1fb8d471cffb9897b67e4
 ```
 
-**标准函数**: `commonModels.GenerateObjectFingerprint(engineID, bucket, path)`
+### 常见错误
 
-**示例**:
+❌ **错误示例**:
 ```go
-// 正确示例
+// 错误1: path 包含 bucket
+path := "addp/image/"  // ❌ 错误
+// 应该是 "image/"
+
+// 错误2: path 不以 / 结尾
+path := "image"  // ❌ 错误
+// 应该是 "image/"
+
+// 错误3: 使用已删除的便利函数
+fingerprint := commonModels.GenerateObjectFingerprint(...)  // ❌ 已删除
+```
+
+✅ **正确示例**:
+```go
+// 方式1: 已知目录和文件名
+bucket := "addp"
+path := "image/"
+name := "开会.jpg"
+fullName := commonModels.JoinObjectPath(bucket, path, name)
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+
+// 方式2: 从完整路径拆分
+fullPath := "image/开会.jpg"
+dir, name := commonModels.SplitObjectPath(fullPath)
+// dir = "image/", name = "开会.jpg"
+fullName := commonModels.JoinObjectPath(bucket, dir, name)
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+```
+
+## 二、数据库表
+
+### 字段定义
+
+**示例**: `system.engines`
+
+- **schema**: `system` (数据库模式名)
+- **table**: `engines` (表名)
+- **full_name**: `system.engines` (拼接规则: `schema + "." + table`)
+
+### 指纹计算（两步方式）
+
+```go
+// 步骤1: 计算 full_name
+fullName := fmt.Sprintf("%s.%s", schema, table)
+// "public" + "." + "buildings" → "public.buildings"
+
+// 步骤2: 计算指纹
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// SHA256("2:public.buildings")
+```
+
+## 三、文件系统
+
+### 字段定义
+
+**示例**: `/data/image/开会.jpg`
+
+- **path**: `/data/image/` (目录路径，以 `/` 结尾)
+- **name**: `开会.jpg` (文件名)
+- **full_name**: `/data/image/开会.jpg` (拼接规则: `path + name`)
+
+### 指纹计算（两步方式）
+
+```go
+// 步骤1: 计算 full_name
+fullName := path + name
+// "/data/image/" + "users.csv" → "/data/image/users.csv"
+
+// 步骤2: 计算指纹
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// SHA256("3:/data/image/users.csv")
+```
+
+## 四、通用原则
+
+1. **full_name 按需拼接**: 动态生成，不冗余存储（除非查询性能必需）
+2. **path 语义统一**: 表示目录路径（含 `/` 结尾），不含文件名
+3. **name 语义统一**: 表示文件名或表名，不含路径
+4. **指纹统一两步**: 先计算 full_name，再调用 `GenerateItemFingerprint`
+
+## 五、ResourceLocator 资源定位符规范
+
+### 5.1 定义
+
+ResourceLocator 是 ADDP 平台中用于唯一标识任何资源的统一定位符，采用 `addp://` 协议 URI 格式。
+
+```go
+type ResourceLocator struct {
+    EngineID uint         `json:"engine_id"`          // 引擎 ID
+    Path     []string     `json:"path"`               // 资源路径（数组）
+    Type     ResourceType `json:"type"`               // 资源类型
+    MetaID   *uint        `json:"meta_id,omitempty"`  // 可选：Meta 节点 ID
+}
+```
+
+**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}&meta_id={meta_id}`
+
+### 5.2 Path 字段语义
+
+**重要**: ResourceLocator 的 `Path` 字段包含**从 bucket/schema 到 name 的完整路径**，与存储层的字段拆分规范不同。
+
+| 存储层 | 拆分规范 | ResourceLocator.Path |
+|--------|---------|---------------------|
+| 对象存储 | bucket + path + name | `["bucket", "path_segment", ..., "name"]` |
+| 数据库表 | schema + table | `["schema", "table"]` |
+| 文件系统 | path + name | `["path_segment", ..., "name"]` |
+
+### 5.3 为什么 Path 包含 bucket/schema？
+
+1. **唯一标识**: 一个 MinIO 引擎可能有多个 bucket（如 addp、gischain、manager），如果 Path 不包含 bucket，则无法区分：
+   - `addp/image/test.jpg` 和 `gischain/image/test.jpg`
+
+2. **与 full_name 一致**: `Path.join("/")` 或 `Path.join(".")` 等于 `full_name`，便于计算和理解
+
+3. **无需额外查询**: 所有路径信息都在 Path 中，无需查询 attributes 获取 bucket
+
+4. **统一简单**: 所有资源类型使用相同的逻辑，无需特殊判断
+
+### 5.4 不同资源类型的示例
+
+#### 对象存储 (MinIO/S3)
+
+**数据库存储**（按照字段拆分规范）:
+```json
+{
+  "full_name": "addp/image/开会.jpg",
+  "name": "开会.jpg",
+  "attributes": {
+    "bucket": "addp",
+    "path": "image/",
+    "name": "开会.jpg"
+  }
+}
+```
+
+**ResourceLocator**:
+```go
+ResourceLocator{
+    EngineID: 9,
+    Path:     []string{"addp", "image", "开会.jpg"},  // 包含 bucket
+    Type:     "object",
+    MetaID:   &456,
+}
+```
+
+**URI**: `addp://engine/9/path/addp/image/开会.jpg?type=object&meta_id=456`
+
+#### 数据库表 (PostgreSQL)
+
+**数据库存储**:
+```json
+{
+  "full_name": "public.users",
+  "name": "users"
+}
+```
+
+**ResourceLocator**:
+```go
+ResourceLocator{
+    EngineID: 8,
+    Path:     []string{"public", "users"},  // schema + table
+    Type:     "table",
+    MetaID:   &123,
+}
+```
+
+**URI**: `addp://engine/8/path/public/users?type=table&meta_id=123`
+
+#### 文件系统
+
+**数据库存储**:
+```json
+{
+  "full_name": "/data/image/users.csv",
+  "name": "users.csv",
+  "attributes": {
+    "path": "/data/image/",
+    "name": "users.csv"
+  }
+}
+```
+
+**ResourceLocator**:
+```go
+ResourceLocator{
+    EngineID: 3,
+    Path:     []string{"data", "image", "users.csv"},  // 完整路径
+    Type:     "object",
+    MetaID:   &789,
+}
+```
+
+**URI**: `addp://engine/3/path/data/image/users.csv?type=object&meta_id=789`
+
+### 5.5 Path 构建规则
+
+在 TreeBuilder 中，从 MetaNode 构建 ResourceLocator 时：
+
+```go
+// 对象存储: full_name = "addp/image/开会.jpg"
+path := parsePath(fullName, "object")
+// path = ["addp", "image", "开会.jpg"]
+
+// 数据库表: full_name = "public.users"
+path := parsePath(fullName, "table")
+// path = ["public", "users"]
+```
+
+`parsePath` 函数根据资源类型使用不同的分隔符：
+- 对象存储：使用 `/` 分隔
+- 数据库表：使用 `.` 分隔
+
+### 5.6 对比总结
+
+| 层次 | Bucket/Schema | 目录路径 | 文件名/表名 | 完整路径 |
+|------|--------------|---------|-----------|---------|
+| **存储层字段** | `bucket` 字段 | `path` 字段 | `name` 字段 | `full_name` |
+| **ResourceLocator** | Path[0] | Path[1...n-1] | Path[n] | Path.join("/") |
+
+**关键区别**：
+- 存储层将路径拆分为独立字段（bucket、path、name），便于查询和索引
+- ResourceLocator 将路径合并为数组（Path），便于唯一标识和路由
+
+## 六、Common 模块工具函数
+
+### 核心指纹函数
+
+```go
+// GenerateItemFingerprint 是唯一的指纹计算函数
+// 所有存储类型都使用此函数
+func GenerateItemFingerprint(resID uint, identifier string) string {
+    data := fmt.Sprintf("%d:%s", resID, identifier)
+    hash := sha256.Sum256([]byte(data))
+    return hex.EncodeToString(hash[:])
+}
+```
+
+### 路径工具函数
+
+```go
+// 拆分完整路径为目录和文件名
+dir, name := commonModels.SplitObjectPath("image/sub/开会.jpg")
+// dir = "image/sub/", name = "开会.jpg"
+
+// 拼接完整对象路径
+fullName := commonModels.JoinObjectPath(bucket, path, name)
+// "addp" + "/" + "image/" + "开会.jpg" → "addp/image/开会.jpg"
+```
+
+### 验证函数
+
+```go
+// 验证存储桶名称 (不能包含路径分隔符)
+err := commonModels.ValidateBucketName(bucket)
+
+// 验证目录路径 (必须以/结尾，对象存储不能以/开头)
+err := commonModels.ValidateDirectoryPath(path, true)  // true表示对象存储
+```
+
+## 六、影响范围
+
+### 1. Common 模块
+
+**修改内容**:
+- `models/fingerprint.go`:
+  - 删除 `GenerateObjectFingerprint`、`GenerateTableFingerprint`、`GenerateFileFingerprint`
+  - 保留 `GenerateItemFingerprint`（核心函数）
+  - 保留 `SplitObjectPath`、`JoinObjectPath`（工具函数）
+  - 保留 `ValidateBucketName`、`ValidateDirectoryPath`（验证函数）
+
+### 2. Meta 模块 (元数据扫描)
+
+**修改内容**:
+- `scan_object_storage_service.go`: 使用两步指纹计算，删除 `RelativePath` 字段和 `relative_path` 属性
+- `scan_repository.go`: 改为两步指纹计算
+- `scan_metadata_extractor.go`: 改为两步指纹计算
+- `search/indexer.go`: `DeleteObjects` 参数从 `relativePath` 改为 `path`
+
+**数据库变更**:
+```sql
+-- metadata.meta_item 表的 attributes
+-- 删除 relative_path 和 object_key 字段
+UPDATE metadata.meta_item
+SET attributes = attributes - 'relative_path' - 'object_key'
+WHERE attributes ? 'relative_path' OR attributes ? 'object_key';
+```
+
+### 3. Manager 模块 (向量化和检索)
+
+**修改内容**:
+- `embedding_service.go`: 改为两步指纹计算（2处）
+- `quick_view_service.go`: 改为两步指纹计算
+- `unified_mvt_service.go`: 改为两步指纹计算
+
+**数据库说明**:
+- `manager.embeddings` 表已使用 `path + name` 拆分结构（无需修改表结构）
+
+### 4. Meilisearch 索引
+
+**修改内容**:
+- `indexer.go`: 删除 `RelativePath` 字段，只保留 `Path` 字段（目录路径）
+
+**索引重建**:
+- 清空现有索引数据
+- 使用新的字段结构重新扫描和索引
+
+## 七、迁移检查清单
+
+在新功能开发或修改时，务必检查:
+
+- [ ] 使用两步方式计算指纹（先 full_name，再 GenerateItemFingerprint）
+- [ ] 对象存储：bucket、path、name 是否正确分离
+- [ ] path 字段是否以 `/` 结尾
+- [ ] path 字段是否不包含 bucket（应剔除）
+- [ ] 数据库表设计是否分别存储 bucket、path、name（避免冗余）
+- [ ] API 参数是否使用 bucket + path + name 而非单个 object_key
+- [ ] 从旧代码迁移时，是否使用 `SplitObjectPath` 拆分完整路径
+- [ ] 不使用已删除的便利函数（GenerateObjectFingerprint 等）
+
+## 八、数据库表字段对照
+
+| 模块 | 表名 | Bucket字段 | 目录字段 | 文件名字段 | 完整路径 |
+|------|------|-----------|---------|----------|---------|
+| Meta | metadata.meta_item | attributes.bucket | 无 (通过NodeID) | Name | FullName |
+| Meta | metadata.meta_node | 无 | Path (层级路径) | Name | FullName |
+| Manager | manager.embeddings | Bucket | Path | Name | 拼接生成 |
+| Meilisearch | assets索引 | bucket | path (目录) | name | full_name |
+
+## 九、指纹计算示例汇总
+
+### 对象存储
+
+```go
+// 示例1：对象存储文件
 engineID := uint(9)
 bucket := "addp"
-path := "image/开会.jpg"
-fingerprint := commonModels.GenerateObjectFingerprint(engineID, bucket, path)
-// 计算: SHA256("9:addp/image/开会.jpg")
-// 结果: 43788d99024bc40b4b7d19ed651f68014d18fa0199a1fb8d471cffb9897b67e4
+path := "image/"
+name := "开会.jpg"
 
-// 错误示例 (path 包含 bucket)
-path := "addp/image/开会.jpg"  // ❌ 错误！
-fingerprint := commonModels.GenerateObjectFingerprint(engineID, bucket, path)
-// 计算: SHA256("9:addp/addp/image/开会.jpg")  // bucket 重复！
-// 结果: abe230a7d1a1d256fec6293f884442d47f2cd7714e018e869e78763c9eaf146d  // 与正确结果不同
+fullName := commonModels.JoinObjectPath(bucket, path, name)
+// fullName = "addp/image/开会.jpg"
+
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// fingerprint = SHA256("9:addp/image/开会.jpg")
+// = "43788d99024bc40b4b7d19ed651f68014d18fa0199a1fb8d471cffb9897b67e4"
 ```
 
-#### 5. 影响范围
+### 数据库表
 
-**该约定影响的功能和模块**:
-
-1. **Meta 模块 (元数据扫描)**:
-   - 扫描对象存储时,必须正确设置 bucket 和 path
-   - 计算 fingerprint 并写入 `metadata.meta_item` 表
-   - 写入 Meilisearch 索引时,包含正确的 document_id
-
-2. **Manager 模块 (向量化和检索)**:
-   - 向量化时使用 bucket 和 object_key 计算 fingerprint
-   - 混合检索通过 document_id 去重合并结果
-   - 必须与 Meta 模块的 fingerprint 保持一致
-
-3. **向量数据库 (manager.embeddings)**:
-   - fingerprint 字段作为主键
-   - object_key 字段存储不包含 bucket 的相对路径
-
-4. **Meilisearch (全文检索)**:
-   - document_id 字段用于混合检索去重
-   - 必须与向量数据库的 fingerprint 一致
-
-5. **Common 模块 (指纹计算)**:
-   - `common/models/fingerprint.go` 提供标准函数
-   - 所有模块必须使用统一函数,禁止自行计算
-
-#### 6. 开发检查清单
-
-**新功能开发时,务必检查**:
-
-- [ ] 存储对象元数据时,bucket 和 path 是否正确分离
-- [ ] path 字段是否包含了 bucket (应剔除)
-- [ ] fingerprint 是否使用 `GenerateObjectFingerprint` 标准函数
-- [ ] fingerprint 计算的 bucket 和 path 参数是否正确
-- [ ] 数据库表设计是否分别存储 bucket 和 path (避免存储 full_path)
-- [ ] API 参数是否使用 bucket + object_key 而非 full_path
-
-#### 7. 常见错误案例
-
-❌ **错误案例 1: path 包含 bucket**
 ```go
-// Meta 扫描时错误地设置 path
-meta := format.ObjectMetadata{
-    Bucket: "addp",
-    Path:   "addp/image/开会.jpg",  // ❌ path 包含了 bucket
-}
-fingerprint := commonModels.GenerateObjectFingerprint(engineID, meta.Bucket, meta.Path)
-// 结果: SHA256("9:addp/addp/image/开会.jpg")  // bucket 重复
+// 示例2：数据库表
+engineID := uint(2)
+schema := "public"
+table := "buildings"
+
+fullName := fmt.Sprintf("%s.%s", schema, table)
+// fullName = "public.buildings"
+
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// fingerprint = SHA256("2:public.buildings")
 ```
 
-✅ **正确做法**:
+### 文件系统
+
 ```go
-meta := format.ObjectMetadata{
-    Bucket: "addp",
-    Path:   "image/开会.jpg",  // ✅ path 不包含 bucket
-}
-fingerprint := commonModels.GenerateObjectFingerprint(engineID, meta.Bucket, meta.Path)
-// 结果: SHA256("9:addp/image/开会.jpg")
+// 示例3：文件系统
+engineID := uint(3)
+path := "/data/image/"
+name := "users.csv"
+
+fullName := path + name
+// fullName = "/data/image/users.csv"
+
+fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
+// fingerprint = SHA256("3:/data/image/users.csv")
 ```
 
-❌ **错误案例 2: 使用 full_path 存储**
-```sql
--- 错误的表设计
-CREATE TABLE objects (
-    id SERIAL PRIMARY KEY,
-    full_path TEXT NOT NULL  -- ❌ 存储 "addp/image/开会.jpg"
-);
-```
+## 十、常见问题 (FAQ)
 
-✅ **正确做法**:
-```sql
--- 正确的表设计
-CREATE TABLE objects (
-    id SERIAL PRIMARY KEY,
-    bucket VARCHAR(255) NOT NULL,      -- ✅ 存储 "addp"
-    path TEXT NOT NULL,                 -- ✅ 存储 "image/开会.jpg"
-    fingerprint VARCHAR(64) NOT NULL    -- ✅ 使用标准函数计算
-);
-```
+**Q: 为什么删除便利函数？**
+A: 简化概念，统一为两步计算方式，减少函数数量和参数混淆。
+
+**Q: 如何从旧代码迁移？**
+A: 查找所有 `GenerateObjectFingerprint` 等函数调用，改为两步方式（参考上面示例）。
+
+**Q: 指纹会改变吗？**
+A: 不会。两步方式计算的结果与便利函数完全一致，只是调用方式不同。
+
+**Q: full_name 是否需要存储？**
+A: 优先动态拼接。只有在查询性能关键时才考虑冗余存储。
+
+**Q: attributes 中还能保留旧字段吗？**
+A: 代码支持兼容读取，但新扫描不再写入 `relative_path` 和 `object_key`。建议执行清理 SQL。

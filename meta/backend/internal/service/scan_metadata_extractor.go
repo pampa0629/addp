@@ -96,7 +96,11 @@ func (e *MetadataExtractor) ExtractEnhancedMetadataWithCache(
 ) models.JSONMap {
 	// 生成 fingerprint 以查找已有记录 - 使用传入的 fullPath 确保一致性
 	bucket, _ := baseAttrs["bucket"].(string)
-	fingerprint := commonModels.GenerateObjectFingerprint(engineID, bucket, fullPath)
+	// 拆分完整路径为目录和文件名
+	dir, name := commonModels.SplitObjectPath(fullPath)
+	// 两步计算方式：先拼接 full_name，再计算指纹
+	fullName := commonModels.JoinObjectPath(bucket, dir, name)
+	fingerprint := commonModels.GenerateItemFingerprint(engineID, fullName)
 
 	// 查找已有的 meta_item 记录
 	var existingItem models.MetaItem

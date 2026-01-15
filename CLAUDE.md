@@ -111,7 +111,7 @@
 3. **访问应用**:
    - Portal 统一入口: http://localhost:5170
    - API Gateway: http://localhost:8000
-   - System Backend: http://localhost:8080
+   - System Backend: http://localhost:8180
 
 详细步骤: [docs/addp部署和开发步骤.md](docs/addp部署和开发步骤.md)
 
@@ -160,7 +160,7 @@ bash scripts/dev/restart.sh
 
 - **Portal**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
-- **System Backend**: 8080
+- **System Backend**: 8180
 - **PostgreSQL**: 15432 (system)
 - **Redis**: 16379
 - **MinIO**: 19000-19001 (system) / 9002-9003 (business)

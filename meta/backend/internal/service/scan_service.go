@@ -1142,7 +1142,7 @@ func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) [
 			continue
 		}
 
-		relative := sanitizeObjectPath(meta.RelativePath)
+		relative := sanitizeObjectPath(meta.Path)
 		trimmed := relative
 		if base != "" {
 			switch {
@@ -1170,8 +1170,8 @@ func filterObjectMetasForDepth(metas []format.ObjectMetadata, basePath string) [
 	return filtered
 }
 
-func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, relativePath string) error {
-	clean := sanitizeObjectPath(relativePath)
+func (s *ScanService) clearObjectMetadataUnderPath(tenantID, engineID uint, bucketNode *models.MetaNode, bucketName, path string) error {
+	clean := sanitizeObjectPath(path)
 	if s.indexerService != nil {
 		s.indexerService.DeleteObjectsFromIndex(tenantID, engineID, bucketName, clean)
 	}

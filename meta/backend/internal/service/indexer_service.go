@@ -116,6 +116,10 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 	truncatedContent := truncateRunes(plainText, documentContentRuneLimit)
 	contentPreview := previewText(truncatedContent, documentPreviewRuneLimit)
 
+	// 拆分meta.Path为目录和文件名
+	// meta.Path 是完整路径（如 "image/开会.jpg"）
+	dir, _ := commonModels.SplitObjectPath(meta.Path)
+
 	// 构建统一的资产记录（包含文档内容字段）
 	assetRecord := &search.AssetRecord{
 		AssetID:       item.Fingerprint,
@@ -127,8 +131,7 @@ func (s *IndexerService) IndexObjectAsset(resource *commonModels.Engine, tenantI
 		Name:          item.Name,
 		FullName:      fullName,
 		Bucket:        meta.Bucket,
-		Path:          meta.Path,
-		RelativePath:  relativePath,
+		Path:          dir, // 只存储目录路径（如 "image/"）
 		Metadata:      metadata,
 		SizeBytes:     item.SizeBytes,
 		DataUpdatedAt: meta.LastModified,
@@ -193,12 +196,12 @@ func (s *IndexerService) DeleteTablesFromIndex(tenantID, engineID uint, schemaNa
 }
 
 // DeleteObjectsFromIndex 从索引中删除对象
-func (s *IndexerService) DeleteObjectsFromIndex(tenantID, engineID uint, bucketName, relativePath string) {
+func (s *IndexerService) DeleteObjectsFromIndex(tenantID, engineID uint, bucketName, path string) {
 	if s.indexer == nil || !s.indexer.Enabled() || bucketName == "" {
 		return
 	}
-	if err := s.indexer.DeleteObjects(context.Background(), tenantID, engineID, bucketName, relativePath); err != nil {
-		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", relativePath, "error", err)
+	if err := s.indexer.DeleteObjects(context.Background(), tenantID, engineID, bucketName, path); err != nil {
+		s.log.Warn("删除对象索引失败", "bucket", bucketName, "path", path, "error", err)
 	}
 }
 

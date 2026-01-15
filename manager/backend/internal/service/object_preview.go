@@ -15,6 +15,7 @@ import (
 	"time"
 
 	commonClient "github.com/addp/common/client"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
 	"github.com/gin-gonic/gin"
@@ -370,9 +371,12 @@ func (p *objectStoragePreviewProvider) Preview(ctx context.Context, req *Preview
 	preview.Object.ContentType = canonicalContentType
 
 	if p.content != nil && objectPath != "" {
+		// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
+		dir, name := commonModels.SplitObjectPath(objectPath)
 		req := &ObjectContentRequest{
 			Bucket:      bucket,
-			Path:        objectPath,
+			Path:        dir,  // 目录路径（以 / 结尾）
+			Name:        name, // 文件名
 			Extension:   defaultExtension(objectPath),
 			ContentType: canonicalContentType,
 			Size:        stat.Size,

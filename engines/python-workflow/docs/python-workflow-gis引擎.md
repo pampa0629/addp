@@ -827,7 +827,7 @@ curl -X POST http://localhost:8090/api/spatial/workflow \
   -d '{"tasks": [{"id": "t1", "operator": "buffer", "params": {...}}]}'
 
 # 验证 System 注册
-curl http://localhost:8080/internal/registry/capabilities | \
+curl http://localhost:8180/internal/registry/capabilities | \
   jq '.[] | select(.unique_identifier == "python-workflow.engine.default")'
 ```
 

@@ -112,7 +112,7 @@ bash scripts/dev/stop.sh
 [Step 1] 启动基础设施 (调用 scripts/infra/up.sh)
   ↓
 [Step 2-7] 启动后端服务（按依赖顺序）
-  - System Backend (8080)
+  - System Backend (8180)
   - Manager Backend (8081) + Meta Backend (8082)
   - Transfer Backend (8083) + Workers
   - Orchestrator Backend (8084)
@@ -283,7 +283,7 @@ bash scripts/local/start.sh
 # 访问服务
 # - Portal (推荐): http://localhost:80
 # - Gateway:        http://localhost:8000
-# - System Backend: http://localhost:8080
+# - System Backend: http://localhost:8180
 
 # 查看状态和资源使用
 bash scripts/local/status.sh
@@ -348,7 +348,7 @@ bash scripts/prod/stop.sh --remove
   - PostgreSQL, Redis, MinIO, Meilisearch
   - 等待就绪（调用 wait-infra.sh）
   ↓
-[2/5] System Backend (8080)
+[2/5] System Backend (8180)
   - 配置中心、认证服务
   - 等待健康检查通过
   ↓
@@ -462,7 +462,7 @@ bash scripts/build/build-images.sh
 bash scripts/local/start.sh
 
 # 3. 测试功能
-curl http://localhost:8080/health
+curl http://localhost:8180/health
 
 # 4. 查看状态
 bash scripts/local/status.sh
@@ -513,7 +513,7 @@ bash scripts/prod/health-check.sh
 
 ```bash
 # 检查端口占用
-lsof -i :8080
+lsof -i :8180
 lsof -i :5433
 
 # 杀死占用进程或修改 .env 配置
@@ -537,7 +537,7 @@ docker logs redis
 tail -f logs/system-backend.log
 
 # 手动测试健康端点
-curl http://localhost:8080/health
+curl http://localhost:8180/health
 ```
 
 ### Q4: Docker 镜像不存在？

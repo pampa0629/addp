@@ -72,7 +72,7 @@ bash scripts/local/start.sh
 # 访问服务
 # - Portal (推荐): http://localhost:80
 # - Gateway:        http://localhost:8000
-# - System Backend: http://localhost:8080
+# - System Backend: http://localhost:8180
 ```
 
 ### 脚本说明
@@ -152,7 +152,7 @@ bash scripts/local/status.sh
 
   ✓ Portal (Recommended):  http://localhost:80
   ✓ Gateway:               http://localhost:8000
-  ✓ System Backend:        http://localhost:8080
+  ✓ System Backend:        http://localhost:8180
 
 Infrastructure:
   ✓ PostgreSQL:            localhost:5433
@@ -199,7 +199,7 @@ meilisearch   (port 7700)  - Meilisearch 全文搜索
 
 ```
 后端服务:
-  system-backend       (port 8080)
+  system-backend       (port 8180)
   manager-backend      (port 8081)
   meta-backend         (port 8082)
   transfer-backend     (port 8083)
@@ -271,7 +271,7 @@ bash scripts/build/build-images.sh
 ```bash
 # 查看端口占用
 lsof -i :5433  # PostgreSQL
-lsof -i :8080  # System Backend
+lsof -i :8180  # System Backend
 lsof -i :80    # Nginx
 
 # 解决方法
@@ -402,7 +402,7 @@ docker compose -f docker-compose.yml ps system-backend
 
 ## 注意事项
 
-1. **端口冲突**: 确保所需端口未被占用 (特别是 80, 5433, 6379, 8000, 8080)
+1. **端口冲突**: 确保所需端口未被占用 (特别是 80, 5433, 6379, 8000, 8180)
 2. **资源消耗**: 完整平台需要较多资源,建议至少 8GB RAM
 3. **首次启动**: 首次启动需要初始化数据库,可能需要 1-2 分钟
 4. **网络隔离**: 所有服务在 `addp-network` 网络中,与主机隔离

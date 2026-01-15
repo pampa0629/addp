@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
@@ -19,6 +21,26 @@ import (
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
+
+// @title Transfer API
+// @version 1.0
+// @description ADDP Transfer模块API文档 - 数据传输服务
+// @description 提供数据导入、导出、同步等功能
+
+// @contact.name ADDP API Support
+// @contact.url https://github.com/addp/addp
+// @contact.email support@addp.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8083
+// @BasePath /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT Token认证，格式为: Bearer {token}
 
 func main() {
 	// 设置本地时区为 Asia/Shanghai (CST)
@@ -35,6 +57,25 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
+
+	// 初始化结构化日志
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logFile := filepath.Join("logs", "transfer-backend.log")
+	logger.Init(logger.Options{
+		Level:          logLevel,
+		Format:         "json",
+		FilePath:       logFile,
+		AddSource:      true,
+		RedirectStdLog: true,
+	})
+	logger.L().Info("transfer backend starting",
+		"version", "0.0.20",
+		"log_level", logLevel,
+		"log_file", logFile,
+	)
 
 	// 连接数据库
 	db, err := connectDatabase(cfg)

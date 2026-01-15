@@ -351,13 +351,13 @@ func (h *TenantHandler) Create(c *gin.Context) {
 
 ```bash
 # SuperAdmin 登录获取 Token
-TOKEN=$(curl -X POST http://localhost:8080/api/auth/login \
+TOKEN=$(curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}' \
   | jq -r '.access_token')
 
 # 创建新租户
-curl -X POST http://localhost:8080/api/tenants \
+curl -X POST http://localhost:8180/api/tenants \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -400,7 +400,7 @@ curl -X POST http://localhost:8080/api/tenants \
 ### 7.2 查询租户列表
 
 ```bash
-curl http://localhost:8080/api/tenants?page=1&page_size=20 \
+curl http://localhost:8180/api/tenants?page=1&page_size=20 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -409,7 +409,7 @@ curl http://localhost:8080/api/tenants?page=1&page_size=20 \
 ### 7.3 更新租户信息
 
 ```bash
-curl -X PUT http://localhost:8080/api/tenants/3 \
+curl -X PUT http://localhost:8180/api/tenants/3 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -423,7 +423,7 @@ curl -X PUT http://localhost:8080/api/tenants/3 \
 ### 7.4 禁用租户
 
 ```bash
-curl -X PUT http://localhost:8080/api/tenants/3 \
+curl -X PUT http://localhost:8180/api/tenants/3 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -441,7 +441,7 @@ curl -X PUT http://localhost:8080/api/tenants/3 \
 ### 7.5 删除租户
 
 ```bash
-curl -X DELETE http://localhost:8080/api/tenants/3 \
+curl -X DELETE http://localhost:8180/api/tenants/3 \
   -H "Authorization: Bearer $TOKEN"
 ```
 

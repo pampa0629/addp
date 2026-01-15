@@ -60,8 +60,7 @@ type AssetRecord struct {
 
 	// ===== 对象特有字段 =====
 	Bucket        string     `json:"bucket,omitempty"`
-	Path          string     `json:"path,omitempty"`
-	RelativePath  string     `json:"relative_path,omitempty"`
+	Path          string     `json:"path,omitempty"` // 目录路径（如 "image/"）
 	SizeBytes     *int64     `json:"size_bytes,omitempty"`
 	ContentType   string     `json:"content_type,omitempty"`
 	DataUpdatedAt *time.Time `json:"data_updated_at,omitempty"`
@@ -150,6 +149,7 @@ func (i *Indexer) ensureIndexes() error {
 		"name",               // 文件名/表名 - 最高权重
 		"title",              // 文档标题
 		"full_name",          // 完整路径名
+		"path",               // 目录路径（用于路径搜索）
 		"content_preview",    // 内容预览（中等权重）
 		"description",        // 描述
 		"tags",               // 标签
@@ -218,8 +218,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 		"schema":          record.Schema,
 		"table_type":      record.TableType,
 		"bucket":          record.Bucket,
-		"path":            record.Path,
-		"relative_path":   record.RelativePath,
+		"path":            record.Path, // 目录路径
 		"description":     record.Description,
 		"tags":            record.Tags,
 		"row_count":       record.RowCount,
@@ -260,7 +259,7 @@ func (i *Indexer) IndexAsset(ctx context.Context, record *AssetRecord) error {
 }
 
 // DeleteObjects 删除指定 Bucket/路径下的对象索引
-func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bucket, relativePath string) error {
+func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bucket, path string) error {
 	if !i.Enabled() {
 		return nil
 	}
@@ -276,9 +275,9 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bu
 		filters = append(filters, fmt.Sprintf("bucket = '%s'", escapeFilterValue(bucket)))
 	}
 
-	if relativePath != "" {
-		// 支持前缀匹配
-		filters = append(filters, fmt.Sprintf("relative_path ^= '%s'", escapeFilterValue(relativePath)))
+	if path != "" {
+		// path 是目录路径（以/结尾），使用前缀匹配
+		filters = append(filters, fmt.Sprintf("path ^= '%s'", escapeFilterValue(path)))
 	}
 
 	filterStr := strings.Join(filters, " AND ")
@@ -294,7 +293,7 @@ func (i *Indexer) DeleteObjects(ctx context.Context, tenantID, engineID uint, bu
 		"tenant_id", tenantID,
 		"engine_id", engineID,
 		"bucket", bucket,
-		"path", relativePath,
+		"path", path,
 		"task_uid", task.TaskUID,
 	)
 

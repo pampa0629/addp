@@ -34,7 +34,7 @@ if [ -f ./business/.env ]; then
 fi
 
 # 配置参数
-SYSTEM_API_URL="${SYSTEM_SERVICE_URL:-http://localhost:8080}"
+SYSTEM_API_URL="${SYSTEM_SERVICE_URL:-http://localhost:8180}"
 ADMIN_USERNAME="${DEFAULT_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${DEFAULT_ADMIN_PASSWORD:-123456}"
 

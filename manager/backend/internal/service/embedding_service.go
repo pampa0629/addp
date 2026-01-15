@@ -74,7 +74,8 @@ func NewEmbeddingService(
 type EmbedObjectRequest struct {
 	EngineID  uint
 	Bucket    string
-	ObjectKey string
+	Path      string // 目录路径（以/结尾）
+	Name      string // 文件名
 	TenantID  *uint
 }
 
@@ -90,11 +91,15 @@ type EmbedObjectResult struct {
 
 // EmbedObject 向量化单个对象（带去重检查）
 func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectRequest) (*EmbedObjectResult, error) {
-	// 1. 生成指纹
-	fingerprint := commonModels.GenerateObjectFingerprint(req.EngineID, req.Bucket, req.ObjectKey)
+	// 拼接完整路径用于操作
+	fullPath := req.Path + req.Name
+
+	// 1. 生成指纹 - 两步计算方式
+	fullName := commonModels.JoinObjectPath(req.Bucket, req.Path, req.Name)
+	fingerprint := commonModels.GenerateItemFingerprint(req.EngineID, fullName)
 
 	// 2. 获取对象元数据
-	objectInfo, err := s.getObjectInfo(ctx, req.EngineID, req.Bucket, req.ObjectKey)
+	objectInfo, err := s.getObjectInfo(ctx, req.EngineID, req.Bucket, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get object info: %w", err)
 	}
@@ -106,7 +111,7 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 	}
 
 	// 4. 确定模态类型
-	modality := s.detectModality(objectInfo.ContentType, req.ObjectKey)
+	modality := s.detectModality(objectInfo.ContentType, req.Name)
 
 	// 5. 检查是否已向量化且未过期
 	existing, err := s.vectorRepo.GetByFingerprint(ctx, fingerprint, string(modality))
@@ -119,7 +124,7 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 		if !objectInfo.LastModified.After(*existing.DataUpdatedAt) {
 			s.log.Info("Object not modified, skipping vectorization",
 				"fingerprint", fingerprint,
-				"object_key", req.ObjectKey,
+				"full_path", fullPath,
 				"data_updated_at", existing.DataUpdatedAt,
 				"last_modified", objectInfo.LastModified,
 			)
@@ -132,20 +137,20 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 		}
 		s.log.Info("Object modified, re-vectorizing",
 			"fingerprint", fingerprint,
-			"object_key", req.ObjectKey,
+			"full_path", fullPath,
 			"old_data_updated_at", existing.DataUpdatedAt,
 			"new_last_modified", objectInfo.LastModified,
 		)
 	}
 
 	// 6. 获取对象内容并向量化
-	vector, model, err := s.embedObjectContent(ctx, req.EngineID, req.Bucket, req.ObjectKey, modality, objectInfo)
+	vector, model, err := s.embedObjectContent(ctx, req.EngineID, req.Bucket, fullPath, modality, objectInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to vectorize content: %w", err)
 	}
 
 	// 7. 构建 metadata（用于搜索展示）
-	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, req.ObjectKey, objectInfo)
+	metadata, err := s.buildMetadata(ctx, req.EngineID, req.Bucket, fullPath, objectInfo)
 	if err != nil {
 		s.log.Warn("Failed to build metadata, continuing without it", "error", err)
 		metadata = nil
@@ -155,7 +160,8 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 	embeddingModel := &models.Embedding{
 		EngineID:      req.EngineID,
 		Bucket:        req.Bucket,
-		ObjectKey:     req.ObjectKey,
+		Path:          req.Path,
+		Name:          req.Name,
 		Fingerprint:   fingerprint,
 		DataUpdatedAt: &objectInfo.LastModified,
 		Embedding:     vector,
@@ -173,7 +179,7 @@ func (s *EmbeddingService) EmbedObject(ctx context.Context, req EmbedObjectReque
 
 	s.log.Info("Object vectorized successfully",
 		"fingerprint", fingerprint,
-		"object_key", req.ObjectKey,
+		"full_path", fullPath,
 		"modality", modality,
 		"model", model,
 		"vector_dimension", len(vector),
@@ -261,10 +267,14 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			// 拆分完整路径为目录和文件名
+			dir, name := commonModels.SplitObjectPath(objectKey)
+
 			objReq := EmbedObjectRequest{
 				EngineID:  req.EngineID,
 				Bucket:    req.Bucket,
-				ObjectKey: objectKey,
+				Path:      dir,
+				Name:      name,
 				TenantID:  req.TenantID,
 			}
 
@@ -353,7 +363,10 @@ func (s *EmbeddingService) DeleteEmbeddings(ctx context.Context, engineID uint, 
 	// 删除指定对象的向量（通过指纹）
 	fingerprints := make([]string, len(objectKeys))
 	for i, objectKey := range objectKeys {
-		fingerprints[i] = commonModels.GenerateObjectFingerprint(engineID, bucket, objectKey)
+		dir, name := commonModels.SplitObjectPath(objectKey)
+		// 两步计算方式：先拼接 full_name，再计算指纹
+		fullName := commonModels.JoinObjectPath(bucket, dir, name)
+		fingerprints[i] = commonModels.GenerateItemFingerprint(engineID, fullName)
 	}
 
 	return s.vectorRepo.DeleteEmbeddingsByFingerprints(ctx, fingerprints)
@@ -596,25 +609,17 @@ func (s *EmbeddingService) buildMetadata(ctx context.Context, engineID uint, buc
 		return nil, fmt.Errorf("failed to get engine from system: %w", err)
 	}
 
-	// 提取文件名（从 object_key 中获取最后一部分）
-	fileName := filepath.Base(objectKey)
+	// 按照路径统一规范拆分：path（目录，以/结尾）、name（文件名）
+	path, name := commonModels.SplitObjectPath(objectKey)
 
-	// 计算相对路径（object_key 去掉文件名部分）
-	relativePath := objectKey
-	if dir := filepath.Dir(objectKey); dir != "." && dir != "/" {
-		relativePath = dir
-	} else {
-		relativePath = ""
-	}
-
-	// 构建 metadata
+	// 构建 metadata（符合路径统一规范）
 	metadata := map[string]interface{}{
 		"engine_id":      engineID,
 		"engine_name":    engine.Name,
 		"engine_type":    engine.EngineType,
 		"bucket":         bucket,
-		"file_name":      fileName,
-		"relative_path":  relativePath,
+		"path":           path,        // 目录路径（以 / 结尾）
+		"name":           name,        // 文件名
 		"content_type":   objInfo.ContentType,
 		"last_modified":  objInfo.LastModified.Format(time.RFC3339),
 	}

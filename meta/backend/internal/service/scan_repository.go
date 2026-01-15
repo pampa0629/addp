@@ -329,20 +329,33 @@ func (r *ScanRepository) generateFingerprint(
 	attrs models.JSONMap,
 ) (string, error) {
 	if attrs != nil {
-		// 对象存储：使用 bucket/path
+		// 对象存储：使用 bucket/path+name
 		if bucket, ok := attrs["bucket"].(string); ok {
-			path := ""
-			if p, ok := attrs["path"].(string); ok {
-				path = p
-			} else if rp, ok := attrs["relative_path"].(string); ok {
-				path = rp
+			// 优先从 name 字段获取文件名（新规范）
+			fileName := ""
+			if n, ok := attrs["name"].(string); ok {
+				fileName = n
 			}
-			return commonModels.GenerateObjectFingerprint(engineID, bucket, path), nil
+
+			// 获取目录路径
+			dir := ""
+			if p, ok := attrs["path"].(string); ok {
+				dir = p // path 已经是目录路径（以 / 结尾）
+			} else if rp, ok := attrs["relative_path"].(string); ok {
+				// 兼容旧数据：relative_path 包含完整路径，需要拆分
+				dir, fileName = commonModels.SplitObjectPath(rp)
+			}
+
+			// 两步计算指纹：先拼接 full_name，再计算指纹
+			fullName := commonModels.JoinObjectPath(bucket, dir, fileName)
+			return commonModels.GenerateItemFingerprint(engineID, fullName), nil
 		}
 
 		// 关系数据库：使用 schema.table
 		if schema, ok := attrs["schema_name"].(string); ok {
-			return commonModels.GenerateTableFingerprint(engineID, schema, name), nil
+			// 两步计算指纹：先拼接 full_name，再计算指纹
+			fullName := fmt.Sprintf("%s.%s", schema, name)
+			return commonModels.GenerateItemFingerprint(engineID, fullName), nil
 		}
 
 		// 其他类型：使用 fullName

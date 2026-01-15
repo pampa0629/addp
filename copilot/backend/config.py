@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     # 外部服务 URL
-    system_service_url: str = "http://localhost:8080"
+    system_service_url: str = "http://localhost:8180"
     meta_service_url: str = "http://localhost:8082"
     develop_service_url: str = "http://localhost:8085"
 

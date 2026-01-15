@@ -263,7 +263,15 @@ const hasTreeData = computed(() => {
 // 树属性配置
 const treeProps = {
   label: 'label',
-  children: 'children'
+  children: 'children',
+  isLeaf: (data, node) => {
+    // 如果节点有 hasChildren 字段，使用它来判断
+    if (data.hasChildren !== undefined) {
+      return !data.hasChildren
+    }
+    // 否则根据 children 数组判断
+    return !data.children || data.children.length === 0
+  }
 }
 
 // 计算展开的节点
@@ -409,6 +417,7 @@ const updateTreeState = () => {
   if (tree.store && computedExpandedKeys.value?.length > 0) {
     console.log('[ResourceTree] 开始强制展开节点...')
     let expandedCount = 0
+    let notFoundCount = 0
 
     for (const key of computedExpandedKeys.value) {
       const node = tree.store.getNode(key)
@@ -419,11 +428,15 @@ const updateTreeState = () => {
           expandedCount++
         }
       } else {
-        console.warn('[ResourceTree] 未找到节点:', key)
+        // 节点未找到可能是因为还没加载（懒加载场景），只记录 debug 信息
+        notFoundCount++
+        if (import.meta.env.DEV) {
+          console.debug('[ResourceTree] 节点未加载或不存在:', key)
+        }
       }
     }
 
-    console.log(`[ResourceTree] 已展开 ${expandedCount} 个节点`)
+    console.log(`[ResourceTree] 已展开 ${expandedCount} 个节点${notFoundCount > 0 ? `, ${notFoundCount} 个节点未加载` : ''}`)
   }
 
   // 设置当前选中的节点
@@ -531,9 +544,17 @@ const handleNodeDblclick = (event, node, data) => {
     selection.removeAllRanges()
   }
 
-  const tree = treeRef.value
-  if (tree && node && tree.store) {
-    tree.store.toggleExpand(node)
+  // 切换节点展开/折叠状态
+  if (node) {
+    const willExpand = !node.expanded
+    node.expanded = willExpand
+
+    // 触发对应的展开/折叠事件，让父组件可以处理（例如懒加载数据）
+    if (willExpand) {
+      handleNodeExpand(data)
+    } else {
+      handleNodeCollapse(data)
+    }
   }
 
   emit('node-dblclick', data)

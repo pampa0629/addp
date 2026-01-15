@@ -612,7 +612,7 @@ command: >
 1. 使用 `spark-class` 前台启动 Thrift Server
 2. 添加 `tail -f /dev/null` 保持容器运行
 3. 添加 healthcheck 检测服务可用性
-4. Spark Master Web UI 端口改为 8088（避免与 System 8080 冲突）
+4. Spark Master Web UI 端口改为 8088（避免与 System 8180 冲突）
 5. 添加资源限制（避免 OOM）
 
 ### 资源配置优化

@@ -57,7 +57,7 @@ func resolveMeilisearchURL() string {
 }
 
 func LoadConfig() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
+	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
 
 	cfg := &Config{
 		ServerPort:        commonConfig.GetEnv("SERVER_PORT", "8082"),

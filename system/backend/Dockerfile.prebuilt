@@ -13,7 +13,7 @@ COPY dist/${BUILD_TYPE}-${GOOS}-${BUILD_ARCH}/system ./server
 RUN chmod +x ./server
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 8180
 
 # 运行
 CMD ["./server"]

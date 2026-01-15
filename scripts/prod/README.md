@@ -43,7 +43,7 @@ cd /path/to/addp
    
 [2/5] System Backend
    ↓
-   - System Backend (8080)
+   - System Backend (8180)
    ↓
    等待 System Backend 健康检查通过
    
@@ -74,7 +74,7 @@ cd /path/to/addp
 
 ### 健康检查机制
 
-- **System Backend**: 检查 `http://localhost:8080/health`（最多等待 60 秒）
+- **System Backend**: 检查 `http://localhost:8180/health`（最多等待 60 秒）
 - **其他后端**: 检查各自的 `/health` 端点（每个服务最多等待 30 秒）
 - **超时处理**: 任何服务启动超时会输出日志并退出
 
@@ -213,7 +213,7 @@ ADDP 服务健康检查
   ✓ Meilisearch (7700)
 
 后端服务:
-  ✓ System Backend (8080)
+  ✓ System Backend (8180)
   ✓ Manager Backend (8081)
   ✓ Meta Backend (8082)
   ✓ Transfer Backend (8083)
@@ -437,13 +437,13 @@ docker-compose -f docker-compose.infra.yml restart
 
 **错误信息**:
 ```
-Error: port 8080 is already in use
+Error: port 8180 is already in use
 ```
 
 **解决方法**:
 ```bash
 # 检查占用端口的进程
-lsof -i :8080
+lsof -i :8180
 
 # 杀死进程或修改端口配置
 kill -9 <PID>

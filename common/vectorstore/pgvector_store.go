@@ -26,7 +26,8 @@ type Record struct {
 	ID            string
 	EngineID      *uint
 	Bucket        string
-	ObjectKey     string
+	Path          string // 目录路径（以/结尾）
+	Name          string // 文件名
 	Fingerprint   string
 	DataUpdatedAt *time.Time
 	TenantID      *uint
@@ -191,8 +192,8 @@ func (s *PgVectorStore) Upsert(ctx context.Context, record Record) (*Record, err
 	}
 
 	tableIdent := pgx.Identifier{s.cfg.Schema, s.cfg.Table}
-	sql := fmt.Sprintf(`INSERT INTO %s (engine_id, bucket, object_key, fingerprint, data_updated_at, tenant_id, modality, model, embedding, file_size, content_type, metadata, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14)
+	sql := fmt.Sprintf(`INSERT INTO %s (engine_id, bucket, path, name, fingerprint, data_updated_at, tenant_id, modality, model, embedding, file_size, content_type, metadata, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14, $15)
 ON CONFLICT (fingerprint, modality) DO UPDATE
 SET embedding = EXCLUDED.embedding,
     data_updated_at = EXCLUDED.data_updated_at,
@@ -208,7 +209,8 @@ RETURNING id, created_at, updated_at`, tableIdent.Sanitize())
 	row := s.pool.QueryRow(ctx, sql,
 		toNullableInt(record.EngineID),
 		record.Bucket,
-		record.ObjectKey,
+		record.Path,
+		record.Name,
 		record.Fingerprint,
 		record.DataUpdatedAt,
 		toNullableInt(record.TenantID),
@@ -293,7 +295,7 @@ func (s *PgVectorStore) QuerySimilar(ctx context.Context, vector []float32, opts
 		argIndex++
 	}
 
-	query := fmt.Sprintf(`SELECT id, engine_id, bucket, object_key, fingerprint, data_updated_at, tenant_id, modality, model, metadata, file_size, content_type,
+	query := fmt.Sprintf(`SELECT id, engine_id, bucket, path, name, fingerprint, data_updated_at, tenant_id, modality, model, metadata, file_size, content_type,
        embedding <=> $1::vector AS distance,
        created_at, updated_at
 FROM %s
@@ -315,7 +317,8 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 			id            int
 			engineID      *int64
 			bucket        string
-			objectKey     string
+			path          string
+			name          string
 			fingerprint   string
 			dataUpdatedAt *time.Time
 			tenantID      *int64
@@ -329,7 +332,7 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 			updatedAt     time.Time
 		)
 
-		if err := rows.Scan(&id, &engineID, &bucket, &objectKey, &fingerprint, &dataUpdatedAt, &tenantID, &modality, &model, &metadata, &fileSize, &contentType, &distance, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &engineID, &bucket, &path, &name, &fingerprint, &dataUpdatedAt, &tenantID, &modality, &model, &metadata, &fileSize, &contentType, &distance, &createdAt, &updatedAt); err != nil {
 			return nil, fmt.Errorf("vectorstore: query scan: %w", err)
 		}
 
@@ -340,7 +343,8 @@ LIMIT $%d`, tableIdent.Sanitize(), strings.Join(whereClauses, " AND "), argIndex
 		rec := Record{
 			ID:            fmt.Sprintf("%d", id),
 			Bucket:        bucket,
-			ObjectKey:     objectKey,
+			Path:          path,
+			Name:          name,
 			Fingerprint:   fingerprint,
 			DataUpdatedAt: dataUpdatedAt,
 			Modality:      embedding.Modality(modality),

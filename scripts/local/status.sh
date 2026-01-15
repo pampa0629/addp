@@ -80,9 +80,9 @@ else
 fi
 
 if [ "$SYSTEM_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} System Backend:        http://localhost:8080"
+    echo -e "  ${GREEN}✓${NC} System Backend:        http://localhost:8180"
 else
-    echo -e "  ${RED}✗${NC} System Backend:        http://localhost:8080 ${YELLOW}(not running)${NC}"
+    echo -e "  ${RED}✗${NC} System Backend:        http://localhost:8180 ${YELLOW}(not running)${NC}"
 fi
 
 echo ""

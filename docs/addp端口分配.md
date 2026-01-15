@@ -69,7 +69,7 @@ make ports-validate
 | **Nginx Gateway**     | **80**   | **80**      | **统一入口 (推荐)**        |
 | **Portal Frontend**   | **5170** | **5170**    | **Portal UI (通过 Nginx)** |
 | Gateway               | 8000     | 8000        | API Gateway (后端路由)     |
-| System Backend        | 8080     | 8080        | 认证、用户、日志           |
+| System Backend        | 8180     | 8180        | 认证、用户、日志 (统一使用8180避免端口冲突) |
 | System Frontend       | 5173     | 8090        | 独立访问                   |
 | Manager Backend       | 8081     | 8081        | 数据源、文件               |
 | Manager Frontend      | 5174     | 8091        | 独立访问                   |

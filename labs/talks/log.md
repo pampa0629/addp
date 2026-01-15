@@ -274,7 +274,7 @@ POSTGRES_DB=addp
 
 ```bash
 ENABLE_SERVICE_INTEGRATION=true      # 启用配置中心
-SYSTEM_SERVICE_URL=http://localhost:8080
+SYSTEM_SERVICE_URL=http://localhost:8180
 MANAGER_SERVICE_URL=http://localhost:8081
 META_SERVICE_URL=http://localhost:8082
 TRANSFER_SERVICE_URL=http://localhost:8083
@@ -463,7 +463,7 @@ LOG_COMPRESS=true         # 是否压缩旧日志
 **API示例**:
 
 ```bash
-curl -X POST http://localhost:8080/internal/config/reload \
+curl -X POST http://localhost:8180/internal/config/reload \
   -H "X-API-Key: ${INTERNAL_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"log_level": "debug"}'

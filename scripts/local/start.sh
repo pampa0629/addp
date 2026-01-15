@@ -180,7 +180,7 @@ echo -e "${YELLOW}⏳ Waiting for key services to be healthy...${NC}"
 
 # Wait for System Backend (critical)
 if docker compose -f docker-compose.yml ps system-backend | grep -q "Up"; then
-    wait_for_health "http://localhost:8080/health" "System Backend" 120
+    wait_for_health "http://localhost:8180/health" "System Backend" 120
 fi
 
 # Wait for Gateway
@@ -211,7 +211,7 @@ echo ""
 echo -e "${GREEN}Access URLs:${NC}"
 echo -e "  ${CYAN}Portal (Recommended):${NC} http://localhost:80"
 echo -e "  ${CYAN}Gateway:${NC}              http://localhost:8000"
-echo -e "  ${CYAN}System Backend:${NC}       http://localhost:8080"
+echo -e "  ${CYAN}System Backend:${NC}       http://localhost:8180"
 echo ""
 
 echo -e "${GREEN}Infrastructure:${NC}"

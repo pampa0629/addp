@@ -321,7 +321,7 @@ export function createAuthStoreConfig(storeName, authAPI, options = {}) {
  *
  * const [onFulfilled, onRejected] = createRefreshInterceptor(useAuthStore(), {
  *   moduleName: 'Manager',
- *   systemBaseURL: 'http://localhost:8080'
+ *   systemBaseURL: 'http://localhost:8180'
  * })
  *
  * client.interceptors.response.use(onFulfilled, onRejected)
@@ -534,8 +534,8 @@ export function createAPIClient(getAuthStore, options = {}) {
     extractData = true,
     enableRefresh = true,
     systemBaseURL = import.meta.env?.DEV
-      ? 'http://localhost:8080'
-      : `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8080`,
+      ? 'http://localhost:8180'
+      : `${typeof window !== 'undefined' ? window.location.protocol : 'http:'}//${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:8180`,
     onRefreshFailed = () => {
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem('token')

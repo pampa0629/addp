@@ -441,7 +441,9 @@ func (s *QuickViewService) IncrementCachedTiles(
 // calculateFingerprint 计算表的指纹（用于 MinIO 路径）
 // 使用 common 模块的统一算法：SHA256(engineID:schema.table)
 func calculateFingerprint(engineID uint, schema, table string) string {
-	return commonModels.GenerateTableFingerprint(engineID, schema, table)
+	// 两步计算方式：先拼接 full_name，再计算指纹
+	fullName := fmt.Sprintf("%s.%s", schema, table)
+	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
 // UpdatePreferredMode 更新用户偏好的显示模式

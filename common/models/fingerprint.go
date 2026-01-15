@@ -4,67 +4,109 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // GenerateItemFingerprint 生成meta_item的唯一指纹
-// 用于去重和数据血缘追踪
 //
-// 指纹计算规则:
-//   - 基于 engineID + identifier 的 SHA256 哈希
-//   - identifier 是数据项的唯一标识，不同存储类型格式不同
+// 这是ADDP平台唯一的指纹计算函数，所有存储类型统一使用此函数。
+//
+// 指纹计算规则（两步计算）:
+//   步骤1: 计算 full_name (identifier)
+//     - 对象存储: bucket/path+name (如 "addp/image/开会.jpg")
+//     - 数据库表: schema.table (如 "public.buildings")
+//     - 文件系统: path+name (如 "/data/image/users.csv")
+//   步骤2: 基于 engineID + identifier 的 SHA256 哈希
+//     - 公式: SHA256(fmt.Sprintf("%d:%s", engineID, identifier))
+//
+// 推荐用法:
+//   // 对象存储
+//   fullName := JoinObjectPath(bucket, path, name)
+//   fingerprint := GenerateItemFingerprint(engineID, fullName)
+//
+//   // 数据库表
+//   fullName := fmt.Sprintf("%s.%s", schema, table)
+//   fingerprint := GenerateItemFingerprint(engineID, fullName)
+//
+//   // 文件系统
+//   fullName := path + name
+//   fingerprint := GenerateItemFingerprint(engineID, fullName)
+//
+// 特性:
 //   - 同一数据项的指纹始终不变，无论数据内容如何变化
-//
-// 适用场景:
-//   - 对象存储: identifier = "bucket/object_path" (如 "addp/开会.jpg")
-//   - 关系数据库: identifier = "schema.table" (如 "public.users")
-//   - 文件系统: identifier = "file_path" (如 "/data/file.csv")
+//   - 用于去重、变更检测、数据血缘追踪
 func GenerateItemFingerprint(resID uint, identifier string) string {
 	data := fmt.Sprintf("%d:%s", resID, identifier)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
 
-// GenerateObjectFingerprint 为对象存储生成指纹
+// ValidateBucketName 验证存储桶名称
+// bucket 不能包含路径分隔符
+func ValidateBucketName(bucket string) error {
+	if strings.Contains(bucket, "/") {
+		return fmt.Errorf("bucket不能包含路径分隔符: %s", bucket)
+	}
+	if bucket == "" {
+		return fmt.Errorf("bucket不能为空")
+	}
+	return nil
+}
+
+// ValidateDirectoryPath 验证目录路径
+// 对象存储路径规则:
+//   - path以/结尾（空字符串表示根目录）
+//   - path不以/开头（相对路径）
+//   - path不包含bucket名称
+//
+// 文件系统路径规则:
+//   - path以/结尾
+//   - path可以以/开头（绝对路径）
+func ValidateDirectoryPath(path string, isObjectStorage bool) error {
+	if path != "" && !strings.HasSuffix(path, "/") {
+		return fmt.Errorf("目录路径必须以/结尾: %s", path)
+	}
+	if isObjectStorage && strings.HasPrefix(path, "/") {
+		return fmt.Errorf("对象存储的相对路径不能以/开头: %s", path)
+	}
+	return nil
+}
+
+// SplitObjectPath 拆分完整对象路径为目录和文件名
 //
 // 参数:
-//   - resID: 引擎ID（来自 system.engines 表）
+//   - fullPath: 完整路径（如 "image/开会.jpg" 或 "开会.jpg"）
+//
+// 返回:
+//   - dir: 目录路径（以/结尾，如 "image/"）
+//   - name: 文件名（如 "开会.jpg"）
+//
+// 示例:
+//   dir, name := SplitObjectPath("image/sub/开会.jpg")  // "image/sub/", "开会.jpg"
+//   dir, name := SplitObjectPath("开会.jpg")           // "", "开会.jpg"
+func SplitObjectPath(fullPath string) (dir, name string) {
+	idx := strings.LastIndex(fullPath, "/")
+	if idx == -1 {
+		// 没有目录分隔符，整个是文件名
+		return "", fullPath
+	}
+	// 目录部分包含末尾的/
+	return fullPath[:idx+1], fullPath[idx+1:]
+}
+
+// JoinObjectPath 拼接完整对象路径
+//
+// 参数:
 //   - bucket: 存储桶名称
-//   - objectPath: 对象路径（相对于bucket根目录）
+//   - path: 目录路径（以/结尾）
+//   - name: 文件名
+//
+// 返回:
+//   - fullName: 完整路径（如 "addp/image/开会.jpg"）
 //
 // 示例:
-//   fingerprint := GenerateObjectFingerprint(1, "addp", "documents/report.pdf")
-//   // SHA256("1:addp/documents/report.pdf")
-func GenerateObjectFingerprint(resID uint, bucket, objectPath string) string {
-	identifier := fmt.Sprintf("%s/%s", bucket, objectPath)
-	return GenerateItemFingerprint(resID, identifier)
-}
-
-// GenerateTableFingerprint 为关系数据库表生成指纹
-//
-// 参数:
-//   - resID: 引擎ID（来自 system.engines 表）
-//   - schema: 模式名称（如 "public", "metadata"）
-//   - tableName: 表名称
-//
-// 示例:
-//   fingerprint := GenerateTableFingerprint(2, "public", "buildings")
-//   // SHA256("2:public.buildings")
-//
-// 注意: 表数据变化不会改变指纹，指纹只依赖表的物理位置
-func GenerateTableFingerprint(resID uint, schema, tableName string) string {
-	identifier := fmt.Sprintf("%s.%s", schema, tableName)
-	return GenerateItemFingerprint(resID, identifier)
-}
-
-// GenerateFileFingerprint 为文件系统文件生成指纹
-//
-// 参数:
-//   - resID: 引擎ID（来自 system.engines 表）
-//   - filePath: 文件路径（绝对路径）
-//
-// 示例:
-//   fingerprint := GenerateFileFingerprint(3, "/data/exports/users.csv")
-//   // SHA256("3:/data/exports/users.csv")
-func GenerateFileFingerprint(resID uint, filePath string) string {
-	return GenerateItemFingerprint(resID, filePath)
+//   fullName := JoinObjectPath("addp", "image/", "开会.jpg")  // "addp/image/开会.jpg"
+//   fullName := JoinObjectPath("addp", "", "开会.jpg")        // "addp/开会.jpg"
+func JoinObjectPath(bucket, path, name string) string {
+	return fmt.Sprintf("%s/%s%s", bucket, path, name)
 }

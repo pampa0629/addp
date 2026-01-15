@@ -547,7 +547,7 @@ def register_to_system():
     import requests
     import json
 
-    system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8080')
+    system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8180')
     api_key = os.getenv('INTERNAL_API_KEY', '')
 
     # 读取自身配置

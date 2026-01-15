@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
+	"github.com/mattn/go-sqlite3" // SQLite driver
 
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
@@ -449,26 +450,45 @@ func (r *SpatiaLiteReader) loadSpatiaLiteExtension(ctx context.Context) error {
 	}
 	defer conn.Close()
 
-	candidates := make([]string, 0, 5)
+	candidates := make([]string, 0, 10)
+
+	// 1. 优先使用用户配置的扩展路径
 	if r.extensionPath != "" {
 		candidates = append(candidates, r.extensionPath)
 	}
+
+	// 2. 尝试从环境变量读取
+	if envPath := os.Getenv("SPATIALITE_EXTENSION_PATH"); envPath != "" {
+		candidates = append(candidates, envPath)
+	}
+
+	// 3. 兜底：尝试几个最常见的路径
 	candidates = append(candidates,
-		"mod_spatialite",
-		"mod_spatialite.so",
-		"mod_spatialite.dylib",
-		"mod_spatialite.dll",
+		"/opt/homebrew/lib/mod_spatialite.dylib",  // macOS ARM (M1/M2/M3)
+		"/usr/local/lib/mod_spatialite.dylib",     // macOS Intel
+		"mod_spatialite",                          // 系统动态库搜索路径
 	)
 
-	// Note: LoadExtension requires CGO to be enabled at compile time.
-	// When CGO_ENABLED=0 (for static compilation), we skip extension loading
-	// and rely on built-in SQLite without SpatiaLite functions.
-	// This may cause errors if geometry columns are queried.
+	// 尝试加载 SpatiaLite 扩展
+	var lastErr error
+	for _, extPath := range candidates {
+		err := conn.Raw(func(driverConn interface{}) error {
+			sqliteConn, ok := driverConn.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("failed to cast to SQLiteConn")
+			}
+			return sqliteConn.LoadExtension(extPath, "sqlite3_modspatialite_init")
+		})
 
-	// Skip extension loading warning (not an error - allows basic SQLite operations)
-	fmt.Printf("WARNING: SpatiaLite extension loading skipped (CGO disabled). Geometry functions may not work.\n")
-	r.extensionLoaded = false
-	return nil
+		if err == nil {
+			fmt.Printf("INFO: SpatiaLite extension loaded successfully from %s\n", extPath)
+			r.extensionLoaded = true
+			return nil
+		}
+		lastErr = err
+	}
+
+	return fmt.Errorf("failed to load SpatiaLite extension (tried %v): %w", candidates, lastErr)
 }
 
 func mapSpatiaLiteGeomType(code int) string {

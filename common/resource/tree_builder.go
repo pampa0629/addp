@@ -11,13 +11,14 @@ import (
 // TreeNode 统一的树节点结构
 // 用于在各模块间传递资源树数据（Manager、Meta、Service、Orchestrator）
 type TreeNode struct {
-	ID       string                 `json:"id"`       // 节点唯一标识（使用 locator 的值）
-	Locator  string                 `json:"locator"`  // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
-	Label    string                 `json:"label"`    // 显示标签（节点名称）
-	Type     string                 `json:"type"`     // 节点类型 (schema/table/bucket/directory/object)
-	Icon     string                 `json:"icon"`     // 图标名称
-	Metadata map[string]interface{} `json:"metadata"` // 元数据（meta_id、item_count、scanned_at 等）
-	Children []*TreeNode            `json:"children"` // 子节点
+	ID          string                 `json:"id"`           // 节点唯一标识（使用 locator 的值）
+	Locator     string                 `json:"locator"`      // ResourceLocator URI (addp://engine/1/path/public/users?type=table)
+	Label       string                 `json:"label"`        // 显示标签（节点名称）
+	Type        string                 `json:"type"`         // 节点类型 (schema/table/bucket/directory/object)
+	Icon        string                 `json:"icon"`         // 图标名称
+	Metadata    map[string]interface{} `json:"metadata"`     // 元数据（meta_id、item_count、scanned_at 等）
+	Children    []*TreeNode            `json:"children"`     // 子节点
+	HasChildren bool                   `json:"hasChildren"`  // 是否有子节点（用于显示展开图标）
 }
 
 // TreeBuilder 资源树构建器
@@ -61,17 +62,25 @@ func NewTreeBuilder(metaClient MetaClient) *TreeBuilder {
 func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.MetaNode, expandDepth int) (*TreeNode, error) {
 	// 创建引擎根节点
 	rootLocator := buildEngineRootLocator(engine.ID)
+
+	// 引擎根节点的 Children 处理：
+	// - 如果有 metaNodes，初始化为空数组（后续会填充）
+	// - 如果没有 metaNodes，设置为空数组表示确实没有子节点
+	hasChildren := len(metaNodes) > 0
+	children := []*TreeNode{} // 引擎根节点在构建时会立即填充子节点，所以这里初始化为空数组
+
 	root := &TreeNode{
-		ID:       rootLocator,
-		Locator:  rootLocator,
-		Label:    engine.Name,
-		Type:     "engine",
-		Icon:     getEngineIcon(engine.EngineType),
+		ID:      rootLocator,
+		Locator: rootLocator,
+		Label:   engine.Name,
+		Type:    "engine",
+		Icon:    getEngineIcon(engine.EngineType),
 		Metadata: map[string]interface{}{
 			"engine_id":   engine.ID,
 			"engine_type": engine.EngineType,
 		},
-		Children: []*TreeNode{},
+		Children:    children,
+		HasChildren: hasChildren,
 	}
 
 	// 构建节点 ID 到 TreeNode 的映射
@@ -123,14 +132,22 @@ func (b *TreeBuilder) BuildFromEngine(engine *models.Engine, builder CustomTreeB
 // 返回: 树节点
 func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[string]interface{}) *TreeNode {
 	locatorURI := loc.ToURI()
+
+	// 从metadata中提取item_count判断是否有子节点
+	hasChildren := false
+	if itemCount, ok := metadata["item_count"].(int); ok && itemCount > 0 {
+		hasChildren = true
+	}
+
 	return &TreeNode{
-		ID:       locatorURI,
-		Locator:  locatorURI,
-		Label:    loc.LastSegment(),
-		Type:     string(loc.Type),
-		Icon:     getIconByType(string(loc.Type)),
-		Metadata: metadata,
-		Children: []*TreeNode{},
+		ID:          locatorURI,
+		Locator:     locatorURI,
+		Label:       loc.LastSegment(),
+		Type:        string(loc.Type),
+		Icon:        getIconByType(string(loc.Type)),
+		Metadata:    metadata,
+		Children:    []*TreeNode{},
+		HasChildren: hasChildren,
 	}
 }
 
@@ -138,10 +155,16 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 
 // convertMetaNode 递归转换 MetaNode 为 TreeNode
 func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNode) *TreeNode {
+	// 统一处理：直接使用 parsePath 解析 FullName
+	// - PostgreSQL: "public.users" → ["public", "users"]
+	// - MinIO: "addp/image/file.jpg" → ["addp", "image", "file.jpg"]
+	// Path 包含完整路径，可以唯一标识资源
+	path := parsePath(node.FullName, node.NodeType)
+
 	// 构建 ResourceLocator
 	loc := &ResourceLocator{
 		EngineID: engine.ID,
-		Path:     parsePath(node.FullName, node.NodeType),
+		Path:     path,
 		Type:     convertNodeType(node.NodeType),
 		MetaID:   &node.ID,
 	}
@@ -163,14 +186,22 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	}
 
 	locatorURI := loc.ToURI()
+
+	// 根据ItemCount判断是否有子节点
+	hasChildren := node.ItemCount > 0
+
+	// Children 字段始终初始化为空数组
+	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
+	// 前端会根据 hasChildren=true && children.length=0 判断需要懒加载
 	treeNode := &TreeNode{
-		ID:       locatorURI,
-		Locator:  locatorURI,
-		Label:    node.Name,
-		Type:     node.NodeType,
-		Icon:     getIconByType(node.NodeType),
-		Metadata: metadata,
-		Children: []*TreeNode{},
+		ID:          locatorURI,
+		Locator:     locatorURI,
+		Label:       node.Name,
+		Type:        node.NodeType,
+		Icon:        getIconByType(node.NodeType),
+		Metadata:    metadata,
+		Children:    []*TreeNode{},
+		HasChildren: hasChildren,
 	}
 
 	// 递归处理子节点（注意：这里假设 MetaNode 有 Children 字段）

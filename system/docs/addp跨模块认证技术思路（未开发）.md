@@ -68,7 +68,7 @@
 **认证中心化设计**：
 
 1. **统一登录接口**（`system/backend/internal/api/auth_handler.go`）：
-   - 所有模块调用 `POST http://localhost:8080/api/auth/login`
+   - 所有模块调用 `POST http://localhost:8180/api/auth/login`
    - System 管理唯一的用户表（`system.users`）
    - System 使用统一的 `JWT_SECRET` 生成 token
 
@@ -76,7 +76,7 @@
    ```javascript
    // 所有模块都创建独立的 systemClient 指向 System
    const systemClient = axios.create({
-     baseURL: 'http://localhost:8080/api'  // 指向 System
+     baseURL: 'http://localhost:8180/api'  // 指向 System
    })
 
    export const authAPI = createAuthAPI(systemClient)

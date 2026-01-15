@@ -43,7 +43,7 @@
    - 创建独立的 `<module>/frontend/` 目录
    - 从 `system/frontend/` 复制结构 (Vue 3 + Pinia + Element Plus)
    - 创建 `api/client.js` 指向模块后端
-   - 创建 `api/auth.js` 指向 System 后端 (8080) 进行认证
+   - 创建 `api/auth.js` 指向 System 后端 (8180) 进行认证
    - 从 System 模块复制 auth store 模式 (独立副本,非共享)
    - 在 `vite.config.js` 中设置唯一的开发端口 (System: 5173, Manager: 5174 等)
    - 配置路由基础路径 (例如 Manager 模块的 `/manager/`)
@@ -203,9 +203,9 @@ npm run dev
 
 **开发模式** (直接后端连接):
 
-- System 前端 → System 后端 (localhost:8080)
+- System 前端 → System 后端 (localhost:8180)
 - Manager 前端 → Manager 后端 (localhost:8081)
-- 认证请求 → System 后端 (localhost:8080)
+- 认证请求 → System 后端 (localhost:8180)
 
 **生产模式** (通过 Gateway):
 
@@ -229,7 +229,7 @@ npm run dev
    - `index.html`: 更新标题
    - `src/router/index.js`: 将基础路径设置为 `/meta/`
    - `src/api/client.js`: 将 baseURL 指向 meta 后端 (8082)
-   - 保持 `src/api/auth.js` 指向 System 后端 (8080)
+   - 保持 `src/api/auth.js` 指向 System 后端 (8180)
 3. **配置 common-frontend 别名** (根据模块需求选择):
 
    对于**无地图功能**的模块 (System, Meta, Transfer):

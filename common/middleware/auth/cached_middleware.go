@@ -29,13 +29,13 @@ import (
 // Performance improvement: 90%+ reduction in System service calls (when cache hit rate > 90%)
 //
 // Parameters:
-// - systemURL: System service base URL (e.g., "http://localhost:8080")
+// - systemURL: System service base URL (e.g., "http://localhost:8180")
 // - redisClient: Initialized Redis client
 // - cacheTTL: Time-to-live for cached user info (recommended: 5 minutes)
 //
 // Usage:
 //   redisClient := redis.NewClient(&redis.Options{...})
-//   router.Use(auth.CachedSystemAuthMiddleware("http://localhost:8080", redisClient, 5*time.Minute))
+//   router.Use(auth.CachedSystemAuthMiddleware("http://localhost:8180", redisClient, 5*time.Minute))
 func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cacheTTL time.Duration) gin.HandlerFunc {
 	baseURL := strings.TrimSuffix(systemURL, "/")
 	meEndpoint := baseURL + "/api/system/users/me"

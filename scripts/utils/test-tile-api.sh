@@ -21,7 +21,7 @@ read -sp "密码: " PASSWORD
 echo ""
 PASSWORD=${PASSWORD:-xx123zzm}
 
-RESPONSE=$(curl -s http://localhost:8080/api/auth/login \
+RESPONSE=$(curl -s http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
 

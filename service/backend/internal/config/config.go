@@ -29,7 +29,7 @@ type Config struct {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
+	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
 	managerURL := commonConfig.GetEnv("MANAGER_SERVICE_URL", "http://localhost:8081")
 	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
 

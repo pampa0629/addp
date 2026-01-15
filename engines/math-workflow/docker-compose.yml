@@ -7,7 +7,7 @@ services:
     ports:
       - "8097:8097"
     environment:
-      - SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-http://system-backend:8080}
+      - SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-http://system-backend:8180}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENGINE_URL=${ENGINE_URL:-http://math-workflow-engine:8097}
       - PORT=8097

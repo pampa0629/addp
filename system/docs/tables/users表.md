@@ -491,7 +491,7 @@ err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 ### 8.1 登录获取 Token
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/login \
+curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -515,7 +515,7 @@ curl -X POST http://localhost:8080/api/auth/login \
 ```bash
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
-curl -X POST http://localhost:8080/api/users \
+curl -X POST http://localhost:8180/api/users \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -532,7 +532,7 @@ curl -X POST http://localhost:8080/api/users \
 ### 8.3 查询用户列表
 
 ```bash
-curl http://localhost:8080/api/users?page=1&page_size=10 \
+curl http://localhost:8180/api/users?page=1&page_size=10 \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -541,7 +541,7 @@ curl http://localhost:8080/api/users?page=1&page_size=10 \
 ### 8.4 获取当前用户信息
 
 ```bash
-curl http://localhost:8080/api/users/me \
+curl http://localhost:8180/api/users/me \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -550,7 +550,7 @@ curl http://localhost:8080/api/users/me \
 ### 8.5 修改密码
 
 ```bash
-curl -X PUT http://localhost:8080/api/users/2/change-password \
+curl -X PUT http://localhost:8180/api/users/2/change-password \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

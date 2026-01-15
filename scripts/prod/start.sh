@@ -35,7 +35,7 @@ docker compose -f docker-compose.yml up -d system-backend
 echo -e "${YELLOW}等待 System Backend 就绪...${NC}"
 timeout=60
 counter=0
-until curl -f http://localhost:8080/health > /dev/null 2>&1; do
+until curl -f http://localhost:8180/health > /dev/null 2>&1; do
   sleep 2
   counter=$((counter + 2))
   if [ $counter -ge $timeout ]; then
@@ -157,7 +157,7 @@ docker compose -f docker-compose.yml ps --format "table {{.Service}}\t{{.State}}
 
 echo ""
 echo -e "${YELLOW}API 端点:${NC}"
-echo -e "  System Backend:         http://localhost:8080"
+echo -e "  System Backend:         http://localhost:8180"
 echo -e "  Manager Backend:        http://localhost:8081"
 echo -e "  Meta Backend:           http://localhost:8082"
 echo -e "  Transfer Backend:       http://localhost:8083"

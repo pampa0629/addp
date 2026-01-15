@@ -40,7 +40,7 @@ func Load() *Config {
 	return &Config{
 		Port:               port,
 		Env:                getEnv("ENV", "development"),
-		SystemServiceURL:   getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		SystemServiceURL:   getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
 		ManagerServiceURL:  getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),
 		MetaServiceURL:     getEnv("META_SERVICE_URL", "http://localhost:8082"),
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),

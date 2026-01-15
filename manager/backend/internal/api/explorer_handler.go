@@ -72,12 +72,8 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 
 	logger.L().Info("获取资源树成功", "engine_id", engineID, "children_count", len(tree.Children))
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": gin.H{
-			"tree":      tree,
-			"engine_id": engineID,
-		},
-	})
+	// 根据 API 设计规范：查询单个资源直接返回对象
+	c.JSON(http.StatusOK, tree)
 }
 
 // RefreshNode 刷新指定节点
@@ -160,9 +156,8 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 
 	logger.L().Info("数据预览成功", "locator", locatorURI, "preview_type", result.PreviewType)
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": result,
-	})
+	// 根据 API 设计规范：查询单个资源直接返回对象
+	c.JSON(http.StatusOK, result)
 }
 
 // ListEngines 获取可用引擎列表
@@ -184,6 +179,119 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": engines,
+	})
+}
+
+// GetNodeChildren 获取节点的子节点（增量加载）
+// GET /api/manager/tree/:engine_id/node?locator=addp://engine/1/path/bucket1?type=bucket&expand_depth=1
+func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
+	tenantID := tenantIDFromContext(c)
+
+	// 解析 engine_id
+	engineIDStr := c.Param("engine_id")
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		logger.L().Warn("无效的 engine_id", "engine_id", engineIDStr)
+		commonAPI.BadRequestError(c, "Invalid engine_id")
+		return
+	}
+
+	// 解析 locator
+	locatorURI := c.Query("locator")
+	if locatorURI == "" {
+		commonAPI.BadRequestError(c, "Missing locator parameter")
+		return
+	}
+
+	// 解析 expand_depth（默认 1）
+	expandDepth := 1
+	if depthStr := c.Query("expand_depth"); depthStr != "" {
+		depth, err := strconv.Atoi(depthStr)
+		if err == nil {
+			expandDepth = depth
+		}
+	}
+
+	logger.L().Info("获取节点子节点", "engine_id", engineID, "locator", locatorURI, "expand_depth", expandDepth)
+
+	// 调用 ExplorerService
+	result, err := h.explorerService.GetNodeChildren(c.Request.Context(), tenantID, uint(engineID), locatorURI, expandDepth)
+	if err != nil {
+		if err == service.ErrEngineAccessDenied {
+			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			return
+		}
+		logger.L().Error("获取节点子节点失败", "error", err)
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+
+	logger.L().Info("获取节点子节点成功", "children_count", len(result.Children))
+
+	// 根据 API 设计规范：直接返回对象
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"parent_locator": locatorURI,
+		"children":       result.Children,
+	})
+}
+
+// SearchNodes 搜索资源树节点
+// GET /api/manager/tree/:engine_id/search?q=data&node_types=table,schema&limit=50
+func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
+	tenantID := tenantIDFromContext(c)
+
+	// 解析 engine_id
+	engineIDStr := c.Param("engine_id")
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		logger.L().Warn("无效的 engine_id", "engine_id", engineIDStr)
+		commonAPI.BadRequestError(c, "Invalid engine_id")
+		return
+	}
+
+	// 解析搜索关键词
+	keyword := c.Query("q")
+	if keyword == "" || len(keyword) < 2 {
+		commonAPI.BadRequestError(c, "Search keyword must be at least 2 characters")
+		return
+	}
+
+	// 解析节点类型过滤（可选）
+	nodeTypesStr := c.Query("node_types")
+	var nodeTypes []string
+	if nodeTypesStr != "" {
+		nodeTypes = strings.Split(nodeTypesStr, ",")
+	}
+
+	// 解析返回数量限制
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	logger.L().Info("搜索资源树节点", "engine_id", engineID, "keyword", keyword, "limit", limit)
+
+	// 调用 ExplorerService
+	results, total, err := h.explorerService.SearchNodes(c.Request.Context(), tenantID, uint(engineID), keyword, nodeTypes, limit)
+	if err != nil {
+		if err == service.ErrEngineAccessDenied {
+			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			return
+		}
+		logger.L().Error("搜索节点失败", "error", err)
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+
+	logger.L().Info("搜索节点成功", "results_count", len(results), "total", total)
+
+	// 返回搜索结果
+	c.JSON(http.StatusOK, gin.H{
+		"keyword": keyword,
+		"total":   total,
+		"results": results,
 	})
 }
 

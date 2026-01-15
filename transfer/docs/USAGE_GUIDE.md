@@ -45,7 +45,7 @@ npm run dev
 
 ```bash
 # 1. 登录获取 Token
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}' | jq -r '.token')
 
@@ -134,12 +134,12 @@ curl -H "Authorization: Bearer $TOKEN" \
 
 ```bash
 # 登录
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}' | jq -r '.token')
 
 # 创建 PostgreSQL 源数据库
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -156,7 +156,7 @@ curl -X POST http://localhost:8080/api/engines \
 # 记录返回的 ID，例如 {"id": 1, ...}
 
 # 创建 MinIO 目标存储
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -265,7 +265,7 @@ mc cat myminio/exports/active_users.csv | head -n 10
 
 ```bash
 # 创建 MinIO 源存储（假设文件已上传到 imports/users.csv）
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -282,7 +282,7 @@ curl -X POST http://localhost:8080/api/engines \
 # 记录 ID: 3
 
 # 创建 MySQL 目标数据库
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -411,7 +411,7 @@ curl -X POST http://localhost:8083/api/tasks \
 
 ```bash
 # 创建 S3 源
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -512,7 +512,7 @@ curl -X POST http://localhost:8083/api/tasks \
 # 服务配置
 PORT=8083
 DB_SCHEMA=transfer
-SYSTEM_SERVICE_URL=http://localhost:8080
+SYSTEM_SERVICE_URL=http://localhost:8180
 ENABLE_SERVICE_INTEGRATION=true
 INTERNAL_API_KEY=dev-internal-key
 
@@ -687,7 +687,7 @@ curl -X POST http://localhost:8083/api/executions/$EXECUTION_ID/retry \
 ```bash
 # 检查数据源配置
 curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/engines/$ENGINE_ID | jq .connection_info
+  http://localhost:8180/api/engines/$ENGINE_ID | jq .connection_info
 
 # 测试数据库连接（以 PostgreSQL 为例）
 psql -h localhost -p 5432 -U user -d database

@@ -32,7 +32,7 @@ services:
     image: ${REGISTRY:-localhost:5001}/addp-system-backend:${IMAGE_TAG:-latest}
     container_name: system-backend
     environment:
-      - PORT=8080
+      - SERVER_ADDR=:8180  # System Backend 端口
       - JWT_SECRET=${JWT_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
@@ -45,7 +45,7 @@ services:
       - SUPER_ADMIN_PASSWORD=${SUPER_ADMIN_PASSWORD:-20251001#SuperAdmin}
       - SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL:-superadmin@addp.com}
       # 内置引擎服务 URL（Docker 环境使用服务名）
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - META_SERVICE_URL=http://meta-backend:8082
       - TRANSFER_SERVICE_URL=http://transfer-backend:8083
       - MANAGER_SERVICE_URL=http://manager-backend:8081
@@ -54,12 +54,12 @@ services:
       - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
       - GIN_MODE=release
     ports:
-      - "8080:8080"
+      - "8180:8180"
     networks:
       - addp-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8180/health"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -89,7 +89,7 @@ services:
       - DB_USER=${POSTGRES_USER:-addp}
       - DB_PASSWORD=${POSTGRES_PASSWORD:-addp_password}
       - DB_NAME=${POSTGRES_DB:-addp}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -132,7 +132,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10
@@ -187,7 +187,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -230,7 +230,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=10
@@ -281,7 +281,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -324,7 +324,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - CONCURRENT_TASKS=15
@@ -375,7 +375,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - ENABLE_SERVICE_INTEGRATION=true
       - GIN_MODE=release
@@ -413,7 +413,7 @@ services:
     environment:
       - PORT=8085
       - ENV=production
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - PYTHON_WORKFLOW_ENGINE_URL=http://python-workflow-engine:8099
       - JUPYTER_ENGINE_URL=http://jupyter-engine:8097
       - ENABLE_SERVICE_INTEGRATION=true
@@ -461,7 +461,7 @@ services:
     environment:
       - PORT=8086
       - ENV=production
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - MANAGER_SERVICE_URL=http://manager-backend:8081
       - META_SERVICE_URL=http://meta-backend:8082
       - ENABLE_SERVICE_INTEGRATION=true
@@ -500,7 +500,7 @@ services:
     container_name: copilot-backend
     environment:
       - PORT=8087
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -541,7 +541,7 @@ services:
       - JUPYTER_PORT=8088
       - API_PORT=8097
       - JUPYTER_ENABLE_LAB=yes
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     ports:
@@ -579,7 +579,7 @@ services:
     container_name: python-workflow-engine
     environment:
       - PORT=8099
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
@@ -613,7 +613,7 @@ services:
     container_name: spark-workflow-engine
     environment:
       - PORT=8098
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - POSTGRES_HOST=postgres
@@ -647,7 +647,7 @@ services:
     container_name: gateway
     environment:
       - PORT=8000
-      - SYSTEM_SERVICE_URL=http://system-backend:8080
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
       - MANAGER_SERVICE_URL=http://manager-backend:8081
       - META_SERVICE_URL=http://meta-backend:8082
       - TRANSFER_SERVICE_URL=http://transfer-backend:8083

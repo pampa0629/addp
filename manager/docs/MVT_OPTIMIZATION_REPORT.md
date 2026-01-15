@@ -148,7 +148,7 @@
 所有服务已成功重启并验证:
 
 - ✅ **Manager Backend**: http://localhost:8081 (PID: 97277)
-- ✅ **System Backend**: http://localhost:8080 (PID: 97267)
+- ✅ **System Backend**: http://localhost:8180 (PID: 97267)
 - ✅ **Gateway**: http://localhost:8000 (PID: 97363)
 - ✅ **Portal Frontend**: http://localhost:5170 (PID: 97396)
 - ✅ **Manager Frontend**: http://localhost:5174 (PID: 97447)

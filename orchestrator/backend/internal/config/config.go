@@ -51,7 +51,7 @@ func LoadConfig() *Config {
 		DBName:     getEnv("POSTGRES_DB", "addp"),
 		DBSchema:   "orchestrator",
 
-		SystemServiceURL: getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		SystemServiceURL: getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
 		InternalAPIKey:   getEnv("INTERNAL_API_KEY", ""),
 
 		TransferServiceURL: getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),

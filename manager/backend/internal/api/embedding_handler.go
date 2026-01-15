@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -85,11 +86,14 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 
 		switch req.Scope {
 		case "object":
+			// 拆分 ObjectKey 为 Path 和 Name
+			path, name := commonModels.SplitObjectPath(req.ObjectKey)
 			result, err = h.embeddingService.EmbedObject(bgCtx, service.EmbedObjectRequest{
-				EngineID:  req.EngineID,
-				Bucket:    req.Bucket,
-				ObjectKey: req.ObjectKey,
-				TenantID:  &tenantID,
+				EngineID: req.EngineID,
+				Bucket:   req.Bucket,
+				Path:     path,
+				Name:     name,
+				TenantID: &tenantID,
 			})
 
 		case "directory":

@@ -1,6 +1,7 @@
 package writers
 
 import (
+	"github.com/addp/common/spatial"
 	"github.com/addp/transfer/plugins/utils"
 	"context"
 	"database/sql"
@@ -43,7 +44,7 @@ func NewJDBCWriter(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
 
 	batchSize := config.BatchSize
 	if batchSize <= 0 {
-		batchSize = 1000
+		batchSize = 5000 // 提高默认批次大小from 1000 → 5000 (性能优化)
 	}
 
 	writeMode := jdbcConfig.WriteMode
@@ -103,6 +104,12 @@ func (w *JDBCWriter) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// 优化连接池配置（性能优化）
+	db.SetMaxOpenConns(20)       // 最大打开连接数（支持并行写入）
+	db.SetMaxIdleConns(10)       // 最大空闲连接数
+	db.SetConnMaxLifetime(0)     // 连接最大生命周期（0=无限制）
+	db.SetConnMaxIdleTime(0)     // 连接最大空闲时间（0=无限制）
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
@@ -282,14 +289,8 @@ func (w *JDBCWriter) initializeMetadata(batch *pipeline.DataBatch) error {
 func (w *JDBCWriter) detectGeometryColumns() {
 	candidates := make(map[string]geometryColumnMeta)
 
-	fmt.Printf("DEBUG: JDBC Writer - detectGeometryColumns called, schema=%v, config.GeometryColumns=%v\n",
-		w.schema != nil, w.config.GeometryColumns)
-
 	if w.schema != nil {
-		fmt.Printf("DEBUG: JDBC Writer - Schema has %d fields\n", len(w.schema.Fields))
 		for _, field := range w.schema.Fields {
-			fmt.Printf("DEBUG: JDBC Writer - Field: name=%s, type=%s, spatialType=%s, srid=%d\n",
-				field.Name, field.Type, field.SpatialType, field.SRID)
 			if strings.EqualFold(field.Type, "geometry") {
 				meta := geometryColumnMeta{
 					SRID:        field.SRID,
@@ -299,14 +300,11 @@ func (w *JDBCWriter) detectGeometryColumns() {
 					meta.SRID = w.config.SRID
 				}
 				candidates[field.Name] = meta
-				fmt.Printf("DEBUG: JDBC Writer - Added geometry candidate: %s (type=%s, srid=%d)\n",
-					field.Name, meta.SpatialType, meta.SRID)
 			}
 		}
 	}
 
 	if len(candidates) == 0 && len(w.config.GeometryColumns) > 0 {
-		fmt.Printf("DEBUG: JDBC Writer - No candidates from schema, using config.GeometryColumns\n")
 		for _, name := range w.config.GeometryColumns {
 			candidates[name] = geometryColumnMeta{
 				SRID: w.config.SRID,
@@ -315,7 +313,6 @@ func (w *JDBCWriter) detectGeometryColumns() {
 	}
 
 	if len(candidates) == 0 {
-		fmt.Printf("DEBUG: JDBC Writer - No geometry columns detected\n")
 		return
 	}
 
@@ -324,13 +321,10 @@ func (w *JDBCWriter) detectGeometryColumns() {
 		for candidate, meta := range candidates {
 			if strings.EqualFold(candidate, col) {
 				w.geometryColumns[col] = meta
-				fmt.Printf("DEBUG: JDBC Writer - Final geometry column: %s -> type=%s, srid=%d\n",
-					col, meta.SpatialType, meta.SRID)
 				break
 			}
 		}
 	}
-	fmt.Printf("DEBUG: JDBC Writer - Total geometry columns detected: %d\n", len(w.geometryColumns))
 }
 
 func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch) error {
@@ -411,11 +405,9 @@ func (w *JDBCWriter) buildPostgresInsert() string {
 			if meta.SRID > 0 {
 				placeholders[i] = fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromWKB(%s), %d) END",
 					placeholder, placeholder, meta.SRID)
-				fmt.Printf("DEBUG: JDBC Writer - Using ST_SetSRID(ST_GeomFromWKB(...), %d) for column %s\n", meta.SRID, col)
 			} else {
 				placeholders[i] = fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE ST_GeomFromWKB(%s) END",
 					placeholder, placeholder)
-				fmt.Printf("DEBUG: JDBC Writer - Using ST_GeomFromWKB for column %s (no SRID)\n", col)
 			}
 		} else {
 			placeholders[i] = placeholder
@@ -565,13 +557,11 @@ func (w *JDBCWriter) prepareValue(column string, value interface{}) (interface{}
 			return nil, nil
 		}
 
-		fmt.Printf("DEBUG: JDBC Writer - prepareValue called for geometry column %s, value type: %T\n", column, value)
 
 		switch v := value.(type) {
 		case []byte:
-			fmt.Printf("DEBUG: JDBC Writer - Got []byte geometry data, length: %d bytes\n", len(v))
-			// 检测并转换 GPKG WKB 格式为标准 WKB
-			standardWKB, err := w.convertToStandardWKB(v)
+			// 检测并转换 GPKG WKB 格式为标准 WKB（使用 common/spatial 共享函数）
+			standardWKB, err := spatial.ConvertToStandardWKB(v)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert WKB for column %s: %w", column, err)
 			}
@@ -604,134 +594,13 @@ func (w *JDBCWriter) prepareValue(column string, value interface{}) (interface{}
 		}
 	}
 
+	// 清理字符串中的 null 字节（PostgreSQL UTF8 编码不支持 0x00）
+	if str, ok := value.(string); ok {
+		// 移除 null 字节，避免 "invalid byte sequence for encoding UTF8" 错误
+		return strings.ReplaceAll(str, "\x00", ""), nil
+	}
+
 	return value, nil
-}
-
-// convertToStandardWKB 将 GPKG WKB 或扩展 WKB 转换为标准 ISO WKB
-// GPKG WKB 格式: [GP 2字节magic][标志字节][envelope字节][标准WKB]
-// 详见: http://www.geopackage.org/spec/#gpb_format
-func (w *JDBCWriter) convertToStandardWKB(data []byte) ([]byte, error) {
-	if len(data) < 8 {
-		// 太短，可能不是有效的 WKB
-		fmt.Printf("DEBUG: JDBC Writer - WKB data too short: %d bytes\n", len(data))
-		return data, nil
-	}
-
-	// 打印前8个字节用于调试
-	fmt.Printf("DEBUG: JDBC Writer - WKB header bytes: %02X %02X %02X %02X %02X %02X %02X %02X (len=%d)\n",
-		data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], len(data))
-
-	// 检测 GPKG WKB magic bytes: "GP" (0x47 0x50)
-	if data[0] == 0x47 && data[1] == 0x50 {
-		fmt.Printf("DEBUG: JDBC Writer - Detected GPKG WKB format!\n")
-		// GPKG WKB 格式检测
-		// Byte 2: version (0x00)
-		// Byte 3: flags (包含 envelope type 和 byte order)
-		// Byte 4-7: SRID (little-endian)
-
-		if len(data) < 8 {
-			return nil, fmt.Errorf("GPKG WKB too short: %d bytes", len(data))
-		}
-
-		flags := data[3]
-		envelopeType := (flags >> 1) & 0x07 // bits 1-3
-
-		// 计算 envelope 大小
-		envelopeSize := 0
-		switch envelopeType {
-		case 0: // 无 envelope
-			envelopeSize = 0
-		case 1: // XY envelope
-			envelopeSize = 32 // 4 doubles
-		case 2: // XYZ envelope
-			envelopeSize = 48 // 6 doubles
-		case 3: // XYM envelope
-			envelopeSize = 48 // 6 doubles
-		case 4: // XYZM envelope
-			envelopeSize = 64 // 8 doubles
-		default:
-			return nil, fmt.Errorf("unknown GPKG envelope type: %d", envelopeType)
-		}
-
-		// GPKG header: 8 bytes + envelope
-		gpkgHeaderSize := 8 + envelopeSize
-		if len(data) < gpkgHeaderSize {
-			return nil, fmt.Errorf("GPKG WKB incomplete: expected %d bytes, got %d", gpkgHeaderSize, len(data))
-		}
-
-		// 提取标准 WKB (跳过 GPKG header)
-		standardWKB := data[gpkgHeaderSize:]
-
-		fmt.Printf("DEBUG: JDBC Writer - Converted GPKG WKB to standard WKB (header size: %d, total: %d -> %d bytes)\n",
-			gpkgHeaderSize, len(data), len(standardWKB))
-
-		return standardWKB, nil
-	}
-
-	// 检查是否是包含 ISO 扩展标志的 WKB
-	// SpatiaLite ST_AsBinary() 可能返回带有 ISO SQL/MM 标志的 WKB
-	// 格式: [字节序 1字节][类型码 4字节][坐标数据...]
-	// ISO WKB 类型码: 基本类型 + 1000 (Z), + 2000 (M), + 3000 (ZM)
-	if len(data) >= 5 {
-		byteOrder := data[0]
-		var geomType uint32
-
-		if byteOrder == 0x00 { // 大端
-			geomType = uint32(data[1])<<24 | uint32(data[2])<<16 | uint32(data[3])<<8 | uint32(data[4])
-		} else { // 小端
-			geomType = uint32(data[1]) | uint32(data[2])<<8 | uint32(data[3])<<16 | uint32(data[4])<<24
-		}
-
-		fmt.Printf("DEBUG: JDBC Writer - Detected geometry type: 0x%08X (%d)\n", geomType, geomType)
-
-		// 检查是否包含 ISO 维度标志 (值 > 7 表示可能是 ISO WKB)
-		// 标准几何类型: 1=Point, 2=LineString, 3=Polygon, 4=MultiPoint, 5=MultiLineString, 6=MultiPolygon, 7=GeometryCollection
-		// ISO WKB: 基本类型 + 1000 (Z), 2000 (M), 3000 (ZM), 或者十六进制 0x80000000, 0x40000000 等标志位
-		if geomType > 7 {
-			var baseType uint32
-
-			// 尝试 ISO 十进制模式 (类型 + 1000/2000/3000)
-			if geomType >= 1000 && geomType < 4000 {
-				baseType = geomType % 1000
-				fmt.Printf("DEBUG: JDBC Writer - ISO WKB decimal pattern detected: %d -> base type %d\n",
-					geomType, baseType)
-			} else {
-				// 尝试位标志模式 (0x80000000=Z, 0x40000000=M, 0x20000000=SRID)
-				baseType = geomType & 0x000000FF // 保留低8位
-				fmt.Printf("DEBUG: JDBC Writer - Stripping bit flags from type 0x%08X to 0x%08X (%d)\n",
-					geomType, baseType, baseType)
-			}
-
-			// 验证基本类型是否合法 (1-7)
-			if baseType >= 1 && baseType <= 7 {
-				fmt.Printf("DEBUG: JDBC Writer - Converting geometry type %d to base type %d\n", geomType, baseType)
-
-				// 创建新的 WKB 数据,替换类型码
-				result := make([]byte, len(data))
-				copy(result, data)
-
-				if byteOrder == 0x00 { // 大端
-					result[1] = 0
-					result[2] = 0
-					result[3] = 0
-					result[4] = byte(baseType)
-				} else { // 小端
-					result[1] = byte(baseType)
-					result[2] = 0
-					result[3] = 0
-					result[4] = 0
-				}
-
-				return result, nil
-			} else {
-				fmt.Printf("DEBUG: JDBC Writer - Invalid base type %d, returning as-is\n", baseType)
-			}
-		}
-	}
-
-	// 不是 GPKG WKB 也不需要清理标志,直接返回
-	fmt.Printf("DEBUG: JDBC Writer - Not GPKG WKB (magic bytes: %02X %02X), returning as-is\n", data[0], data[1])
-	return data, nil
 }
 
 func (w *JDBCWriter) mapFieldToSQLType(field pipeline.Field, hasGeometry bool, meta geometryColumnMeta) string {

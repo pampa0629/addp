@@ -253,7 +253,9 @@ func (s *UnifiedMVTService) GetTile(
 // calculateFingerprint 计算表的 fingerprint（内部使用，对前端透明）
 // 使用 common 模块的统一算法：SHA256(engineID:schema.table)
 func (s *UnifiedMVTService) calculateFingerprint(engineID uint, schema, table string) string {
-	return commonModels.GenerateTableFingerprint(engineID, schema, table)
+	// 两步计算方式：先拼接 full_name，再计算指纹
+	fullName := fmt.Sprintf("%s.%s", schema, table)
+	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
 // persistToMinIO 持久化瓦片到 MinIO（异步执行，不阻塞响应）

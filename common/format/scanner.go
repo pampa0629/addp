@@ -92,8 +92,7 @@ type ObjectNode struct {
 // ObjectMetadata 扫描后的对象存储元数据
 type ObjectMetadata struct {
 	Bucket            string
-	Path              string
-	RelativePath      string
+	Path              string // 对象的完整Key（相对于bucket的路径）
 	NodeType          string
 	FileType          string
 	SizeBytes         int64

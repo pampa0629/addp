@@ -25,7 +25,8 @@ import (
 // ObjectContentRequest 描述对象内容的上下文信息。
 type ObjectContentRequest struct {
 	Bucket      string
-	Path        string
+	Path        string // 目录路径（以 / 结尾），不含文件名
+	Name        string // 文件名
 	Extension   string
 	ContentType string
 	Size        int64
@@ -104,8 +105,12 @@ func buildPreviewMetadata(req *ObjectContentRequest, limit int64) map[string]int
 	if req == nil {
 		return map[string]interface{}{}
 	}
+
+	// 按照路径统一规范：path 是目录路径（以/结尾），name 是文件名
 	metadata := map[string]interface{}{
-		"path":       req.Path,
+		"bucket":     req.Bucket,
+		"path":       req.Path,  // 目录路径（以 / 结尾）
+		"name":       req.Name,  // 文件名
 		"size_bytes": req.Size,
 		"limit":      limit,
 	}
@@ -567,6 +572,7 @@ func (h *excelContentHandler) Handle(ctx context.Context, req *ObjectContentRequ
 	if req != nil {
 		metadata["size_bytes"] = req.Size
 		metadata["path"] = req.Path
+		metadata["name"] = req.Name
 	}
 
 	return &models.ObjectPreviewContent{
@@ -669,7 +675,7 @@ func (h *sqliteContentHandler) HandleStream(ctx context.Context, req *ObjectCont
 		return nil, false, fmt.Errorf("关闭 SQLite 临时文件失败: %w", err)
 	}
 
-	logger.L().Info("SQLite 预览: 流式下载完成", "path", req.Path, "size_bytes", written, "tmp_path", tmpPath)
+	logger.L().Info("SQLite 预览: 流式下载完成", "path", req.Path+req.Name, "size_bytes", written, "tmp_path", tmpPath)
 
 	// 解析 SQLite 数据库
 	return h.parseSQLiteDatabase(ctx, tmpPath, req)
@@ -827,7 +833,8 @@ type commandContentHandler struct {
 }
 
 type commandContentPayload struct {
-	Path        string `json:"path"`
+	Path        string `json:"path"`        // 目录路径（以 / 结尾）
+	Name        string `json:"name"`        // 文件名
 	Extension   string `json:"extension"`
 	ContentType string `json:"content_type"`
 	Size        int64  `json:"size"`
@@ -844,6 +851,7 @@ func (h *commandContentHandler) Handle(ctx context.Context, req *ObjectContentRe
 
 	payload := commandContentPayload{
 		Path:        req.Path,
+		Name:        req.Name,
 		Extension:   req.Extension,
 		ContentType: req.ContentType,
 		Size:        req.Size,

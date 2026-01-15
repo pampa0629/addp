@@ -149,6 +149,15 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			transferGroup.Any("/executions/*path", transferProxy.Handle)
 			transferGroup.Any("/connections", transferProxy.Handle)
 			transferGroup.Any("/connections/*path", transferProxy.Handle)
+			transferGroup.Any("/local-engines", transferProxy.Handle)
+			transferGroup.Any("/local-engines/*path", transferProxy.Handle)
+			transferGroup.Any("/system-engines", transferProxy.Handle)
+			transferGroup.Any("/system-engines/*path", transferProxy.Handle)
+			transferGroup.Any("/object-storage/*path", transferProxy.Handle)
+			transferGroup.Any("/transforms", transferProxy.Handle)
+			transferGroup.Any("/transforms/*path", transferProxy.Handle)
+			transferGroup.Any("/mappings", transferProxy.Handle)
+			transferGroup.Any("/mappings/*path", transferProxy.Handle)
 		}
 
 		// ============ Develop 模块 ============

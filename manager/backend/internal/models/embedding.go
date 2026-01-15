@@ -12,7 +12,8 @@ type Embedding struct {
 	ID            uint           `gorm:"primaryKey" json:"id"`
 	EngineID      uint           `gorm:"not null;index:idx_engine_bucket" json:"engine_id"`               // 引擎ID（来自 system.engines）
 	Bucket        string         `gorm:"size:255;not null;index:idx_engine_bucket" json:"bucket"`         // 存储桶名称
-	ObjectKey     string         `gorm:"type:text;not null" json:"object_key"`                            // 对象路径（相对于bucket）
+	Path          string         `gorm:"type:text;not null" json:"path"`                                  // 目录路径（以/结尾，不含bucket和文件名）
+	Name          string         `gorm:"size:255;not null" json:"name"`                                   // 文件名
 	Fingerprint   string         `gorm:"size:64;not null;uniqueIndex:idx_fingerprint_modality" json:"fingerprint"` // 数据指纹（使用 common.models.GenerateObjectFingerprint）
 	DataUpdatedAt *time.Time     `gorm:"index" json:"data_updated_at"`                                    // 对象的最后修改时间（从 MinIO LastModified）
 	Embedding     []float32      `gorm:"type:vector(1024);not null" json:"-"`                             // 向量嵌入（维度 1024，不返回给前端）

@@ -96,7 +96,7 @@ PostgreSQL, MinIO (存储层)
 
 ```bash
 # scheduler/.env
-SYSTEM_API_URL=http://system:8080
+SYSTEM_API_URL=http://system:8180
 TRANSFER_API_URL=http://transfer:8083
 META_API_URL=http://meta:8082
 MANAGER_API_URL=http://manager:8081
@@ -353,7 +353,7 @@ type Config struct {
     WorkerTaskQueue  string `env:"WORKER_TASK_QUEUE" default:"addp-scheduler"`
 
     // 各模块 API 地址（运行时依赖）
-    SystemAPIURL   string `env:"SYSTEM_API_URL" default:"http://system:8080"`
+    SystemAPIURL   string `env:"SYSTEM_API_URL" default:"http://system:8180"`
     TransferAPIURL string `env:"TRANSFER_API_URL" default:"http://transfer:8083"`
     MetaAPIURL     string `env:"META_API_URL" default:"http://meta:8082"`
     ManagerAPIURL  string `env:"MANAGER_API_URL" default:"http://manager:8081"`
@@ -367,7 +367,7 @@ scheduler:
   environment:
     - PORT=8090
     - TEMPORAL_HOST_PORT=temporal-server:7233
-    - SYSTEM_API_URL=http://system:8080
+    - SYSTEM_API_URL=http://system:8180
     - TRANSFER_API_URL=http://transfer:8083
     - META_API_URL=http://meta:8082
     - MANAGER_API_URL=http://manager:8081
@@ -416,7 +416,7 @@ Docker Network: addp-network (bridge)
 │  Scheduler (scheduler:8090)                              │
 │  出站连接：                                               │
 │  ├── temporal-server:7233 (gRPC) - 连接 Temporal        │
-│  ├── system:8080 (HTTP)          - 调用 System API      │
+│  ├── system:8180 (HTTP)          - 调用 System API      │
 │  ├── transfer:8083 (HTTP)        - 调用 Transfer API    │
 │  ├── meta:8082 (HTTP)            - 调用 Meta API        │
 │  └── manager:8081 (HTTP)         - 调用 Manager API     │
@@ -469,7 +469,7 @@ Docker Network: addp-network (bridge)
   - meta:8082 ← scheduler:*, portal:*
 
 允许出站：
-  - scheduler → system:8080, transfer:8083, meta:8082, manager:8081
+  - scheduler → system:8180, transfer:8083, meta:8082, manager:8081
   - transfer-worker → redis:6379, postgres:5432, minio:9000
   - meta-worker → redis:6379, postgres:5432
 
@@ -708,7 +708,7 @@ Worker 特征：
     └── Temporal Server (7233) - 依赖 PostgreSQL
 
 3️⃣  核心服务层
-    ├── System API (8080) - 依赖 PostgreSQL
+    ├── System API (8180) - 依赖 PostgreSQL
     ├── Transfer API (8083) - 依赖 Redis, PostgreSQL
     ├── Meta API (8082) - 依赖 Redis, PostgreSQL
     └── Manager API (8081) - 依赖 Redis, PostgreSQL

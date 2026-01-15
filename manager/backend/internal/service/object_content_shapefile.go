@@ -39,14 +39,9 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 	}
 	defer os.RemoveAll(tmpDir)
 
-	rawExt := filepath.Ext(req.Path)
-	baseName := strings.TrimSuffix(filepath.Base(req.Path), rawExt)
-	if baseName == "" {
-		baseName = strings.TrimSuffix(req.Path, rawExt)
-	}
-	if baseName == "" {
-		baseName = strings.TrimSuffix(filepath.Base(req.Path), req.Extension)
-	}
+	// 从 req.Name 获取文件名（不含扩展名）
+	rawExt := filepath.Ext(req.Name)
+	baseName := strings.TrimSuffix(req.Name, rawExt)
 	if baseName == "" {
 		baseName = "shapefile"
 	}
@@ -56,11 +51,13 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		return nil, false, fmt.Errorf("下载 shapefile 主文件失败: %w", err)
 	}
 
+	// 构建完整路径用于下载同级文件
+	fullPath := req.Path + req.Name
 	requiredExts := []string{".shx", ".dbf"}
 	missing := make([]string, 0, len(requiredExts))
 	for _, ext := range requiredExts {
 		target := filepath.Join(tmpDir, baseName+ext)
-		if err := downloadSiblingToFile(req.Path, ext, siblingProvider, target); err != nil {
+		if err := downloadSiblingToFile(fullPath, ext, siblingProvider, target); err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
 				missing = append(missing, ext)
 				continue
@@ -79,8 +76,8 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		}, false, nil
 	}
 
-	prjText, _ := downloadSiblingText(req.Path, ".prj", siblingProvider)
-	cpgText, _ := downloadSiblingText(req.Path, ".cpg", siblingProvider)
+	prjText, _ := downloadSiblingText(fullPath, ".prj", siblingProvider)
+	cpgText, _ := downloadSiblingText(fullPath, ".cpg", siblingProvider)
 
 	// 使用 common/format/shapefile 的 Reader
 	reader, err := shapefile.Open(shpPath)
@@ -120,7 +117,7 @@ func (h *shapefileContentHandler) HandleCompositeStream(ctx context.Context, req
 		// 使用 common/format/shapefile 的 ShapeToGeoJSON 转换几何为 GeoJSON
 		geometry, err := shapefile.ShapeToGeoJSON(feature.Geometry)
 		if err != nil {
-			logger.L().Warn("Shapefile 预览: 几何转换失败", "path", req.Path, "error", err)
+			logger.L().Warn("Shapefile 预览: 几何转换失败", "path", req.Path+req.Name, "error", err)
 			continue
 		}
 

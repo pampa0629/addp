@@ -47,6 +47,14 @@ export const useExplorerStore = defineStore('explorer', {
     pagination: {
       page: 1,
       pageSize: 20
+    },
+
+    // 新增：节点级缓存（增量加载）
+    nodeChildrenCache: {}, // { 'locator': { children: [...], timestamp: 123 } }
+    searchResultsCache: {}, // { 'engineId:keyword': { results: [...], timestamp: 123 } }
+    cacheConfig: {
+      maxAge: 5 * 60 * 1000, // 5分钟过期
+      maxSize: 100
     }
   }),
 
@@ -137,6 +145,8 @@ export const useExplorerStore = defineStore('explorer', {
       this.loadingEngines = true
       try {
         const response = await client.get('/manager/engines')
+        // API 客户端已经通过 extractData 提取了 response.data
+        // 后端返回 { data: engines }，这里的 response 就是 { data: engines }
         this.engines = response.data || []
       } catch (error) {
         console.error('加载引擎列表失败:', error)
@@ -149,7 +159,9 @@ export const useExplorerStore = defineStore('explorer', {
     /**
      * 加载资源树（懒加载某个引擎的内容）
      * @param {number} engineId - 引擎 ID
-     * @param {number} expandDepth - 展开深度（默认 2，设置 -1 表示无限深度）
+     * @param {number} expandDepth - 展开深度
+     *   - 2: 只加载到目录层（bucket + directory），适合初始加载
+     *   - -1: 加载所有深度（包括对象），用于完整视图
      * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
      */
     async loadTree(engineId, expandDepth = 2, forceRefresh = false) {
@@ -168,7 +180,10 @@ export const useExplorerStore = defineStore('explorer', {
         const response = await client.get(`/manager/tree/${engineId}`, {
           params: { expand_depth: expandDepth }
         })
-        const tree = response.data.tree
+        console.log('[ExplorerStore] API 响应:', response)
+        // 后端直接返回 tree 对象（符合 API 规范）
+        // API 客户端的 extractData 已提取了 response.data
+        const tree = response
 
         // 存储到引擎树缓存中
         this.engineTrees[engineId] = tree
@@ -222,10 +237,11 @@ export const useExplorerStore = defineStore('explorer', {
             page_size: this.pagination.pageSize
           }
         })
-        // 后端返回 PreviewResult: {preview_type, data: TablePreview, metadata}
-        // 前端预览插件期望直接收到 TablePreview 格式 (包含 mode, object, columns 等)
-        // 所以这里提取内层的 data 字段
-        this.previewData = response.data?.data || response.data
+        // 后端直接返回 PreviewResult 对象（符合 API 规范）
+        // API 客户端的 extractData 已提取了 response.data
+        // PreviewResult: {preview_type, data: TablePreview, metadata}
+        // 前端预览插件期望直接收到 TablePreview 格式，所以需要提取 response.data
+        this.previewData = response.data
         return this.previewData
       } catch (error) {
         console.error('加载预览失败:', error)
@@ -246,14 +262,18 @@ export const useExplorerStore = defineStore('explorer', {
      * 展开节点
      */
     expandNode(locator) {
-      this.expandedLocators.add(locator)
+      // 使用替换 Set 的方式确保响应式更新
+      this.expandedLocators = new Set([...this.expandedLocators, locator])
     },
 
     /**
      * 折叠节点
      */
     collapseNode(locator) {
-      this.expandedLocators.delete(locator)
+      // 使用替换 Set 的方式确保响应式更新
+      const newSet = new Set(this.expandedLocators)
+      newSet.delete(locator)
+      this.expandedLocators = newSet
     },
 
     /**
@@ -274,6 +294,139 @@ export const useExplorerStore = defineStore('explorer', {
       this.selectedLocator = null
       this.previewData = null
       this.pagination.page = 1
+    },
+
+    /**
+     * 增量加载节点子节点（新增）
+     * @param {string} locator - 父节点的 ResourceLocator URI
+     * @param {number} expandDepth - 展开深度（默认 1 = 只加载直接子节点）
+     * @param {boolean} forceRefresh - 是否强制刷新（忽略缓存）
+     */
+    async loadNodeChildren(locator, expandDepth = 1, forceRefresh = false) {
+      // 1. 检查缓存
+      if (!forceRefresh && this.nodeChildrenCache[locator]) {
+        const cache = this.nodeChildrenCache[locator]
+        if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
+          console.log(`[ExplorerStore] 使用节点缓存: ${locator}`)
+          return cache.children
+        }
+      }
+
+      // 2. 解析 locator
+      const loc = parseLocator(locator)
+
+      try {
+        console.log(`[ExplorerStore] 增量加载子节点: ${locator}, 深度: ${expandDepth}`)
+
+        // 3. 调用后端 API
+        const response = await client.get(`/manager/tree/${loc.engineId}/node`, {
+          params: { locator, expand_depth: expandDepth }
+        })
+        // API 客户端已经通过 extractData 提取了 response.data
+        // 后端返回 { parent_locator: ..., children: [...] }
+        const children = response.children || []
+
+        // 4. 更新缓存
+        this.nodeChildrenCache[locator] = {
+          children,
+          timestamp: Date.now()
+        }
+
+        // 5. 更新引擎树（增量更新）
+        if (this.engineTrees[loc.engineId]) {
+          this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
+            children,
+            loaded: true
+          })
+        }
+
+        console.log(`[ExplorerStore] 增量加载成功: ${children.length} 个子节点`)
+        return children
+      } catch (error) {
+        console.error('增量加载子节点失败:', error)
+        throw error
+      }
+    },
+
+    /**
+     * 搜索资源树节点（新增）
+     * @param {number} engineId - 引擎 ID
+     * @param {string} keyword - 搜索关键词
+     * @param {string[]|null} nodeTypes - 节点类型过滤（可选）
+     * @param {number} limit - 返回数量限制
+     */
+    async searchNodes(engineId, keyword, nodeTypes = null, limit = 50) {
+      if (!keyword || keyword.length < 2) {
+        return []
+      }
+
+      // 生成缓存 key
+      const cacheKey = `${engineId}:${keyword}:${nodeTypes?.join(',') || ''}`
+
+      // 检查缓存
+      if (this.searchResultsCache[cacheKey]) {
+        const cache = this.searchResultsCache[cacheKey]
+        if (Date.now() - cache.timestamp < this.cacheConfig.maxAge) {
+          console.log(`[ExplorerStore] 使用搜索缓存: ${cacheKey}`)
+          return cache.results
+        }
+      }
+
+      try {
+        console.log(`[ExplorerStore] 搜索节点: 引擎 ${engineId}, 关键词 "${keyword}"`)
+
+        const params = { q: keyword, limit }
+        if (nodeTypes) {
+          params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
+        }
+
+        const response = await client.get(`/manager/tree/${engineId}/search`, { params })
+        // API 客户端已经通过 extractData 提取了 response.data
+        // 后端返回 { keyword: ..., total: ..., results: [...] }
+        const results = response.results || []
+        const total = response.total || 0
+
+        // 更新缓存
+        this.searchResultsCache[cacheKey] = {
+          results,
+          total,
+          timestamp: Date.now()
+        }
+
+        console.log(`[ExplorerStore] 搜索成功: 找到 ${results.length}/${total} 个结果`)
+        return results
+      } catch (error) {
+        console.error('搜索节点失败:', error)
+        throw error
+      }
+    },
+
+    /**
+     * 更新树节点（辅助方法）
+     * 在树中查找指定 locator 的节点并更新其属性
+     * @param {Object} tree - 树根节点
+     * @param {string} locator - 要更新的节点 locator
+     * @param {Object} updates - 要更新的属性
+     */
+    updateTreeNode(tree, locator, updates) {
+      if (!tree || !locator) return false
+
+      if (tree.locator === locator) {
+        // 找到目标节点，更新属性
+        Object.assign(tree, updates)
+        return true
+      }
+
+      // 递归查找子节点
+      if (tree.children && tree.children.length > 0) {
+        for (const child of tree.children) {
+          if (this.updateTreeNode(child, locator, updates)) {
+            return true
+          }
+        }
+      }
+
+      return false
     }
   }
 })
@@ -297,3 +450,4 @@ function findNodeByLocator(tree, locator) {
 
   return null
 }
+ 

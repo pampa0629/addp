@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/addp/common/spatial"
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/plugins/utils"
 )
@@ -293,8 +294,8 @@ func (w *PostgresCOPYWriter) prepareValueForCOPY(column string, value interface{
 
 		switch v := value.(type) {
 		case []byte:
-			// 检测并转换 GPKG WKB 格式为标准 WKB
-			standardWKB, err := w.convertToStandardWKB(v)
+			// 检测并转换 GPKG WKB 格式为标准 WKB（使用 common/spatial 共享函数）
+			standardWKB, err := spatial.ConvertToStandardWKB(v)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert WKB for column %s: %w", column, err)
 			}
@@ -323,65 +324,6 @@ func (w *PostgresCOPYWriter) prepareValueForCOPY(column string, value interface{
 	}
 
 	return value, nil
-}
-
-// convertToStandardWKB 将 GPKG WKB 转换为标准 ISO WKB
-// GPKG WKB 格式: [GP 2字节magic][标志字节][envelope字节][标准WKB]
-// 详见: http://www.geopackage.org/spec/#gpb_format
-func (w *PostgresCOPYWriter) convertToStandardWKB(data []byte) ([]byte, error) {
-	if len(data) < 8 {
-		// 太短，可能不是有效的 WKB
-		return data, nil
-	}
-
-	// 检测 GPKG WKB magic bytes: "GP" (0x47 0x50)
-	if data[0] == 0x47 && data[1] == 0x50 {
-		// GPKG WKB 格式检测
-		// Byte 2: version (0x00)
-		// Byte 3: flags (包含 envelope type 和 byte order)
-		// Byte 4-7: SRID (little-endian)
-
-		if len(data) < 8 {
-			return nil, fmt.Errorf("GPKG WKB too short: %d bytes", len(data))
-		}
-
-		flags := data[3]
-		envelopeType := (flags >> 1) & 0x07 // bits 1-3
-
-		// 计算 envelope 大小
-		envelopeSize := 0
-		switch envelopeType {
-		case 0: // 无 envelope
-			envelopeSize = 0
-		case 1: // XY envelope
-			envelopeSize = 32 // 4 doubles
-		case 2: // XYZ envelope
-			envelopeSize = 48 // 6 doubles
-		case 3: // XYM envelope
-			envelopeSize = 48 // 6 doubles
-		case 4: // XYZM envelope
-			envelopeSize = 64 // 8 doubles
-		default:
-			return nil, fmt.Errorf("unknown GPKG envelope type: %d", envelopeType)
-		}
-
-		// GPKG header: 8 bytes + envelope
-		gpkgHeaderSize := 8 + envelopeSize
-		if len(data) < gpkgHeaderSize {
-			return nil, fmt.Errorf("GPKG WKB incomplete: expected %d bytes, got %d", gpkgHeaderSize, len(data))
-		}
-
-		// 提取标准 WKB (跳过 GPKG header)
-		standardWKB := data[gpkgHeaderSize:]
-
-		fmt.Printf("DEBUG: Converted GPKG WKB to standard WKB (header size: %d, total: %d -> %d bytes)\n",
-			gpkgHeaderSize, len(data), len(standardWKB))
-
-		return standardWKB, nil
-	}
-
-	// 不是 GPKG WKB，直接返回（可能已经是标准 WKB）
-	return data, nil
 }
 
 // initializeMetadata 初始化元数据

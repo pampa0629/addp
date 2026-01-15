@@ -45,7 +45,7 @@ import { createAuthAPI } from '@common-ui'
 
 // ✅ 正确: 创建专用的 System 客户端用于认证
 const systemClient = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8080/api' : '/api',
+  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api' : '/api',
   timeout: 10000
 })
 
@@ -67,7 +67,7 @@ export const authAPI = {
 ```
 
 **为什么需要独立客户端?**
-- 认证请求必须发送到 System 后端 (端口 8080)
+- 认证请求必须发送到 System 后端 (端口 8180)
 - 模块自己的 `client` 指向自己的后端 (例如 Meta → 8082)
 - 混用会导致登录时出现 404 错误
 

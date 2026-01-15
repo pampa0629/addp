@@ -112,7 +112,7 @@ func Load() *Config {
 
 	return &Config{
 		Env:                     env,
-		ServerAddr:              getEnv("SERVER_ADDR", ":8080"),
+		ServerAddr:              getEnv("SERVER_ADDR", ":8180"),
 		DatabaseURL:             "", // PostgreSQL 不使用此字段
 		JWTSecret:               jwtSecret,
 		EncryptionKey:           encryptionKey,
@@ -142,7 +142,7 @@ func Load() *Config {
 		RedisDB:       getEnvAsInt("REDIS_DB", 0),
 
 		// 内置引擎服务 URL
-		SystemServiceURL:      getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		SystemServiceURL:      getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
 		MetaServiceURL:        getEnv("META_SERVICE_URL", "http://localhost:8082"),
 		TransferServiceURL:    getEnv("TRANSFER_SERVICE_URL", "http://localhost:8083"),
 		ManagerServiceURL:     getEnv("MANAGER_SERVICE_URL", "http://localhost:8081"),

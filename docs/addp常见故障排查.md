@@ -217,7 +217,7 @@ const response = await dataExplorerAPI.getPreview(params)
 
 3. **curl 能正常工作的原因**
    - curl 默认不使用系统代理（除非显式指定 `-x` 参数）
-   - 所以 curl 可以直接连接到 localhost:8080
+   - 所以 curl 可以直接连接到 localhost:8180
 
 #### 关键证据
 
@@ -238,11 +238,11 @@ Port: 17890
 手动测试对比：
 ```bash
 # Python requests - 失败（走代理）
-$ python -c "import requests; print(requests.get('http://localhost:8080/health').status_code)"
+$ python -c "import requests; print(requests.get('http://localhost:8180/health').status_code)"
 502
 
 # curl - 成功（不走代理）
-$ curl http://localhost:8080/health
+$ curl http://localhost:8180/health
 {"status":"ok"}
 ```
 

@@ -147,7 +147,7 @@ dev-python-workflow: ## 开发模式运行 Python Workflow Engine
 		./venv/bin/pip install --quiet -r requirements.txt; \
 	fi && \
 	export PORT=8099 && \
-	export SYSTEM_SERVICE_URL=http://localhost:8080 && \
+	export SYSTEM_SERVICE_URL=http://localhost:8180 && \
 	export POSTGRES_HOST=localhost && \
 	export POSTGRES_PORT=5432 && \
 	export POSTGRES_USER=addp && \
@@ -170,7 +170,7 @@ dev-all: ## 本地开发模式启动全部后端与前端服务
 
 dev-health: ## 检查开发模式服务健康状态
 	@echo "$(GREEN)检查服务健康状态...$(NC)"
-	@curl -sf http://localhost:8080/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
+	@curl -sf http://localhost:8180/health > /dev/null && echo "  $(GREEN)✓ System healthy$(NC)" || echo "  $(RED)✗ System unhealthy$(NC)"
 	@curl -sf http://localhost:8081/health > /dev/null && echo "  $(GREEN)✓ Manager healthy$(NC)" || echo "  $(RED)✗ Manager unhealthy$(NC)"
 	@curl -sf http://localhost:8082/health > /dev/null && echo "  $(GREEN)✓ Meta healthy$(NC)" || echo "  $(RED)✗ Meta unhealthy$(NC)"
 	@curl -sf http://localhost:8099/health > /dev/null && echo "  $(GREEN)✓ Python Workflow Engine healthy$(NC)" || echo "  $(RED)✗ Python Workflow Engine unhealthy$(NC)"
@@ -313,7 +313,7 @@ up: ## 启动 System 模块（基础服务）
 	@docker compose -f docker-compose.yml up -d system-backend system-frontend
 	@echo "$(GREEN)System 模块已启动！$(NC)"
 	@echo "$(YELLOW)访问地址:$(NC)"
-	@echo "  - System Backend:  http://localhost:8080"
+	@echo "  - System Backend:  http://localhost:8180"
 	@echo "  - System Frontend: http://localhost:8090"
 
 up-full: ## 启动所有服务（完整平台）
@@ -363,7 +363,7 @@ status: ## 显示所有服务状态
 	@echo ""
 	@echo "$(YELLOW)服务访问地址:$(NC)"
 	@echo "  - Gateway:          http://localhost:8000  (未实现)"
-	@echo "  - System Backend:   http://localhost:8080"
+	@echo "  - System Backend:   http://localhost:8180"
 	@echo "  - System Frontend:  http://localhost:8090"
 	@echo "  - Manager Backend:  http://localhost:8081  (未实现)"
 	@echo "  - Manager Frontend: http://localhost:8091  (未实现)"
@@ -480,7 +480,7 @@ fmt: ## 格式化代码
 health: ## 检查所有服务健康状态
 	@echo "$(GREEN)检查服务健康状态...$(NC)"
 	@echo "System Backend:"
-	@curl -s http://localhost:8080/health || echo "$(RED)  ✗ 不可用$(NC)"
+	@curl -s http://localhost:8180/health || echo "$(RED)  ✗ 不可用$(NC)"
 	@echo ""
 	@echo "PostgreSQL:"
 	@docker compose -f docker-compose.infra.yml exec postgres pg_isready -U addp > /dev/null 2>&1 && echo "  $(GREEN)✓ 正常$(NC)" || echo "  $(RED)✗ 不可用$(NC)"
@@ -609,7 +609,7 @@ prod-status: ## 显示所有服务状态和访问地址
 	@echo ""
 	@echo "$(YELLOW)API 端点:$(NC)"
 	@echo "  Gateway API:            http://localhost:8000/api"
-	@echo "  System Backend:         http://localhost:8080"
+	@echo "  System Backend:         http://localhost:8180"
 	@echo "  Manager Backend:        http://localhost:8081"
 	@echo "  Meta Backend:           http://localhost:8082"
 	@echo "  Transfer Backend:       http://localhost:8083"

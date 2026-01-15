@@ -94,6 +94,8 @@ func SetupRouter(
 
 		api.GET("/engines", explorerHandler.ListEngines)       // 获取可用引擎列表（只读）
 		api.GET("/tree/:engine_id", explorerHandler.GetTree)
+		api.GET("/tree/:engine_id/node", explorerHandler.GetNodeChildren)    // 增量加载子节点
+		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)      // 搜索节点
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/video-stream", explorerHandler.VideoStream)

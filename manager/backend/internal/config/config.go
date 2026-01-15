@@ -79,7 +79,7 @@ func resolveMeilisearchURL() string {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
+	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
 	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
 
 	rawPluginDir := commonConfig.GetEnv("PREVIEW_PLUGIN_DIR", "")

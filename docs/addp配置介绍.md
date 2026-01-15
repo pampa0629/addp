@@ -62,7 +62,7 @@ connStr, err := commonModels.BuildConnectionString(engine)
 # Manager/Meta/Transfer .env
 PORT=8081                          # 模块特定端口
 DB_SCHEMA=manager                  # 模块特定 schema
-SYSTEM_SERVICE_URL=http://localhost:8080
+SYSTEM_SERVICE_URL=http://localhost:8180
 ENABLE_SERVICE_INTEGRATION=true    # 启用配置中心
 
 # 共享配置 (JWT_SECRET, DB 连接) 从 System 获取
@@ -109,7 +109,7 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 | **Nginx Gateway**    | **80**   | **80**      | **统一入口 (推荐)** |
 | **Portal Frontend**  | **5170** | **5170**    | **Portal UI (通过 Nginx)**     |
 | Gateway              | 8000     | 8000        | API Gateway (后端路由) |
-| System Backend       | 8080     | 8080        | 认证、用户、日志             |
+| System Backend       | 8180     | 8180        | 认证、用户、日志             |
 | System Frontend      | 5173     | 8090        | 独立访问             |
 | Manager Backend      | 8081     | 8081        | 数据源、文件           |
 | Manager Frontend     | 5174     | 8091        | 独立访问             |
@@ -177,12 +177,12 @@ DEFAULT_ADMIN_EMAIL=admin@addp.com
 
 ```bash
 # 使用超级管理员登录
-curl -X POST http://localhost:8080/api/auth/login \
+curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
 
 # 使用租户管理员登录
-curl -X POST http://localhost:8080/api/auth/login \
+curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```

@@ -85,7 +85,7 @@
         </el-table-column>
         <el-table-column prop="last_execution_status" label="最后执行状态" width="140">
           <template #default="{ row }">
-            <el-tag :type="getLastExecutionTagType(row.last_execution_status)">
+            <el-tag :type="getExecutionTagType(row.last_execution_status)">
               {{ getLastExecutionLabel(row.last_execution_status) }}
             </el-tag>
           </template>
@@ -159,7 +159,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { describeCron } from '@common-ui'
+import { formatDate, formatSchedule, getModeLabel, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType } from '@/utils/formatters'
 
 const router = useRouter()
 
@@ -330,90 +330,6 @@ const isRunning = (task) => task.status === 'running'
 const canStartSchedule = (task) => ['pending', 'paused'].includes(task.status)
 const canPauseSchedule = (task) => ['scheduled', 'running'].includes(task.status)
 const canDeleteManual = (task) => isRunning(task)
-
-const getModeLabel = (mode) => {
-  const labels = {
-    batch: '批处理',
-    stream: '流式',
-    'micro-batch': '微批处理'
-  }
-  return labels[mode] || mode
-}
-
-const getTaskStatusLabel = (task) => {
-  if (isManualTask(task)) {
-    const manualLabels = {
-      pending: '未执行',
-      running: '执行中',
-      stopped: '已停止',
-      completed: '已完成'
-    }
-    return manualLabels[task.status] || '未执行'
-  }
-
-  if (['scheduled', 'running'].includes(task.status)) {
-    return '已启动'
-  }
-  if (['pending', 'paused'].includes(task.status)) {
-    return '未启动'
-  }
-  if (task.status === 'stopped') {
-    return '已停止'
-  }
-  return '未启动'
-}
-
-const getTaskStatusTagType = (task) => {
-  const label = getTaskStatusLabel(task)
-  const types = {
-    未执行: 'info',
-    执行中: 'primary',
-    已暂停: 'warning',
-    已停止: 'info',
-    已完成: 'success',
-    已启动: 'primary',
-    未启动: 'info',
-    失败: 'danger'
-  }
-  return types[label] || ''
-}
-
-const getLastExecutionLabel = (status) => {
-  if (!status || status === 'pending') {
-    return '未执行'
-  }
-  if (status === 'running') {
-    return '执行中'
-  }
-  if (status === 'success') {
-    return '成功'
-  }
-  if (status === 'failed' || status === 'cancelled') {
-    return '失败'
-  }
-  return status
-}
-
-const getLastExecutionTagType = (status) => {
-  const label = getLastExecutionLabel(status)
-  const types = {
-    未执行: 'info',
-    执行中: 'primary',
-    成功: 'success',
-    失败: 'danger'
-  }
-  return types[label] || 'info'
-}
-
-const formatDate = (dateStr) => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
-}
-
-const formatSchedule = (cron) => {
-  if (!cron) return '手动执行'
-  return describeCron(cron)
-}
 
 // 初始化
 onMounted(() => {

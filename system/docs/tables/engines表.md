@@ -611,7 +611,7 @@ GET /internal/registry/compute-engines
 ### 9.1 创建 Standard 引擎（PostgreSQL）
 
 ```bash
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -639,7 +639,7 @@ curl -X POST http://localhost:8080/api/engines \
 ### 9.2 创建 Extension 引擎（Python Workflow）
 
 ```bash
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -670,7 +670,7 @@ curl -X POST http://localhost:8080/api/engines \
 ### 9.3 测试连接
 
 ```bash
-curl -X POST http://localhost:8080/api/engines/1/test \
+curl -X POST http://localhost:8180/api/engines/1/test \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -690,7 +690,7 @@ curl -X POST http://localhost:8080/api/engines/1/test \
 ### 9.4 查询计算引擎（内部 API）
 
 ```bash
-curl http://localhost:8080/internal/registry/compute-engines
+curl http://localhost:8180/internal/registry/compute-engines
 ```
 
 **响应示例**：

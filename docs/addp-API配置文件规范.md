@@ -228,7 +228,7 @@ A: Gateway 路由不属于标准 API，可以使用特殊的字段：
           "name": "System 系统管理",
           "path": "/api/system/*",
           "target": "System Backend",
-          "port": "8080",
+          "port": "8180",
           "description": "用户认证、日志审计、引擎配置"
         }
       ]

@@ -7,11 +7,12 @@ services:
       dockerfile: Dockerfile
     container_name: addp-system-backend
     ports:
-      - "8080:8080"
+      - "8180:8180"
     volumes:
       - ./data:/app/data
     environment:
       - ENV=production
+      - SERVER_ADDR=:8180
       - DATABASE_URL=/app/data/system.db
       - JWT_SECRET=your-secret-key-change-in-production
     restart: unless-stopped

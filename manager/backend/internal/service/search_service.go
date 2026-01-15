@@ -52,8 +52,8 @@ type SearchDocument struct {
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
 	Schema         string                 `json:"schema,omitempty"`
-	RelativePath   string                 `json:"relative_path,omitempty"`
-	ObjectKey      string                 `json:"object_key,omitempty"`
+	Path           string                 `json:"path,omitempty"`      // 目录路径（以 / 结尾）
+	Name           string                 `json:"name,omitempty"`      // 文件名或表名
 	FileName       string                 `json:"file_name"`
 	DocumentType   string                 `json:"document_type,omitempty"`
 	Title          string                 `json:"title,omitempty"`
@@ -86,7 +86,8 @@ type VectorDocument struct {
 	EngineName     string                 `json:"engine_name,omitempty"`
 	EngineType     string                 `json:"engine_type,omitempty"`
 	Bucket         string                 `json:"bucket,omitempty"`
-	RelativePath   string                 `json:"relative_path,omitempty"`
+	Path           string                 `json:"path,omitempty"`      // 目录路径（以 / 结尾）
+	Name           string                 `json:"name,omitempty"`      // 文件名
 	ContentPreview string                 `json:"content_preview,omitempty"`
 	Metadata       map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -523,9 +524,11 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 		)
 
 		for _, item := range results {
+			// 拼接完整路径作为AssetID
+			fullPath := item.Record.Path + item.Record.Name
 			doc := VectorDocument{
 				DocumentID: item.Record.Fingerprint,
-				AssetID:    item.Record.ObjectKey,
+				AssetID:    fullPath,
 				Model:      item.Record.Model,
 				Modality:   string(item.Record.Modality),
 				Distance:   item.Distance,
@@ -539,11 +542,11 @@ func (s *HybridSearchService) vectorSearch(ctx context.Context, tenantID *uint, 
 			}
 			if meta := item.Record.Metadata; meta != nil {
 				// 从 metadata 中提取展示信息（字段名与 embedding_service.buildMetadata 对应）
-				assignString(meta, "file_name", &doc.FileName)
+				assignString(meta, "name", &doc.Name)            // 文件名
 				assignString(meta, "engine_name", &doc.EngineName)   // 引擎名称
 				assignString(meta, "engine_type", &doc.EngineType)     // 引擎类型
 				assignString(meta, "bucket", &doc.Bucket)
-				assignString(meta, "relative_path", &doc.RelativePath)
+				assignString(meta, "path", &doc.Path)            // 目录路径
 
 				// 如果有标题字段也读取（用于未来扩展）
 				assignString(meta, "title", &doc.Title)
@@ -713,22 +716,33 @@ func getStringFromMeta(meta map[string]interface{}, key string) string {
 
 func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 	meta := v.Metadata
-	fileName := v.FileName
-	if fileName == "" {
-		fileName = getStringFromMeta(meta, "file_name")
-	}
-	if fileName == "" {
-		fileName = v.DocumentID
-	}
 
 	bucket := v.Bucket
 	if bucket == "" {
 		bucket = getStringFromMeta(meta, "bucket")
 	}
 
-	relativePath := v.RelativePath
-	if relativePath == "" {
-		relativePath = getStringFromMeta(meta, "relative_path")
+	// 从向量文档中获取路径和名称信息
+	path := v.Path
+	if path == "" {
+		path = getStringFromMeta(meta, "path")
+	}
+
+	name := v.Name
+	if name == "" {
+		name = getStringFromMeta(meta, "name")
+	}
+
+	// 构建 fileName（优先使用 name，然后是 FileName 字段，最后是 file_name metadata）
+	fileName := name
+	if fileName == "" {
+		fileName = v.FileName
+	}
+	if fileName == "" {
+		fileName = getStringFromMeta(meta, "file_name")
+	}
+	if fileName == "" {
+		fileName = v.DocumentID
 	}
 
 	contentPreview := v.ContentPreview
@@ -748,7 +762,8 @@ func vectorDocumentToSearchDocument(v VectorDocument) SearchDocument {
 		EngineName:     v.EngineName,
 		EngineType:     v.EngineType,
 		Bucket:         bucket,
-		RelativePath:   relativePath,
+		Path:           path,
+		Name:           name,
 		FileName:       fileName,
 		DocumentType:   v.Modality,
 		ContentPreview: contentPreview,
@@ -794,15 +809,14 @@ func mapMeilisearchHit(hit interface{}) SearchDocument {
 		doc.Bucket = val
 		doc.Schema = val // bucket 等价于 schema
 	}
-	if val, ok := hitMap["relative_path"].(string); ok {
-		doc.RelativePath = val
-		if doc.Bucket != "" {
-			doc.ObjectKey = fmt.Sprintf("%s/%s", doc.Bucket, strings.TrimLeft(val, "/"))
-		}
+	// 读取目录路径（以 / 结尾）
+	if val, ok := hitMap["path"].(string); ok {
+		doc.Path = val
 	}
 	// meta-assets 使用 name 字段存储文件名
 	if val, ok := hitMap["name"].(string); ok {
-		doc.FileName = val
+		doc.Name = val
+		doc.FileName = val // 保持兼容性
 	}
 	// 兼容旧的 file_name 字段（如果存在）
 	if doc.FileName == "" {

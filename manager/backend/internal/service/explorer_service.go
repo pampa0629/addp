@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
@@ -117,16 +118,29 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 	}
 
 	// 4. 重新获取节点信息
-	metaNodes, err := s.getMetaNodes(ctx, loc.EngineID, 1, tenantID) // 只获取当前节点的子节点
+	// 使用 -1 获取所有节点，确保能找到目标节点
+	metaNodes, err := s.getMetaNodes(ctx, loc.EngineID, -1, tenantID)
 	if err != nil {
 		logger.L().Warn("刷新节点失败", "locator", locatorURI, "error", err)
 		return nil, fmt.Errorf("failed to refresh node: %w", err)
 	}
 
 	// 5. 查找对应的节点
+	// 如果是 engine 根节点（没有 meta_id），返回整个树
+	if loc.MetaID == nil {
+		logger.L().Info("刷新引擎根节点", "engine_id", loc.EngineID)
+		// 构建完整的树结构
+		tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, 2)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build engine tree: %w", err)
+		}
+		return tree, nil
+	}
+
+	// 查找具体的节点（有 meta_id）
 	for _, node := range metaNodes {
 		if node.ID == *loc.MetaID {
-			// 构建树节点并返回
+			// 构建树节点并返回（只构建该节点及其直接子节点）
 			tree, err := s.treeBuilder.BuildFromMeta(engine, []*commonModels.MetaNode{node}, 1)
 			if err != nil {
 				return nil, fmt.Errorf("failed to build node tree: %w", err)
@@ -196,6 +210,166 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 	return result, nil
 }
 
+// GetNodeChildren 获取节点的子节点（增量加载）
+// 参数:
+//   - ctx: 上下文
+//   - tenantID: 租户 ID
+//   - engineID: 引擎 ID
+//   - locatorURI: 父节点的 ResourceLocator URI
+//   - expandDepth: 展开深度（1=直接子节点，-1=全部展开）
+//
+// 返回: 包含父节点 locator 和子节点列表的结构
+func (s *ExplorerService) GetNodeChildren(ctx context.Context, tenantID *uint, engineID uint, locatorURI string, expandDepth int) (*resource.TreeNode, error) {
+	// 1. 解析 Locator
+	loc, err := resource.ParseURI(locatorURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid locator: %w", err)
+	}
+
+	// 2. 通过 SystemClient 验证引擎权限
+	if s.systemClient == nil {
+		return nil, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine from system: %w", err)
+	}
+
+	// 验证租户权限
+	if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
+		return nil, ErrEngineAccessDenied
+	}
+
+	// 3. 从 Meta 获取元数据节点
+	// 这里我们获取所有节点，然后在内存中过滤出目标节点的子节点
+	// TODO: 优化为直接从 Meta 获取指定节点的子节点
+	nodeDepth := len(loc.Path) // 节点深度 = 路径段数
+	metaNodes, err := s.getMetaNodes(ctx, engineID, expandDepth+nodeDepth, tenantID)
+	if err != nil {
+		logger.L().Warn("获取 Meta 节点失败", "locator", locatorURI, "error", err)
+		return nil, fmt.Errorf("failed to get meta nodes: %w", err)
+	}
+
+	// 4. 使用 TreeBuilder 构建完整树
+	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, expandDepth+nodeDepth)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tree: %w", err)
+	}
+
+	// 5. 在树中查找目标节点
+	targetNode := s.findNodeByLocator(tree, locatorURI)
+	if targetNode == nil {
+		return nil, fmt.Errorf("node not found: %s", locatorURI)
+	}
+
+	logger.L().Info("获取节点子节点成功",
+		"engine_id", engineID,
+		"locator", locatorURI,
+		"children_count", len(targetNode.Children))
+
+	return targetNode, nil
+}
+
+// SearchNodes 搜索资源树节点
+// 参数:
+//   - ctx: 上下文
+//   - tenantID: 租户 ID
+//   - engineID: 引擎 ID
+//   - keyword: 搜索关键词
+//   - nodeTypes: 节点类型过滤（可选）
+//   - limit: 返回数量限制
+//
+// 返回: 搜索结果列表和总数
+func (s *ExplorerService) SearchNodes(ctx context.Context, tenantID *uint, engineID uint, keyword string, nodeTypes []string, limit int) ([]*resource.TreeNode, int, error) {
+	// 1. 验证引擎权限
+	if s.systemClient == nil {
+		return nil, 0, fmt.Errorf("system client not available")
+	}
+
+	engine, err := s.systemClient.GetEngine(engineID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get engine from system: %w", err)
+	}
+
+	if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
+		return nil, 0, ErrEngineAccessDenied
+	}
+
+	// 2. 从 Meta 获取所有节点（不限制深度）
+	metaNodes, err := s.getMetaNodes(ctx, engineID, -1, tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get meta nodes: %w", err)
+	}
+
+	// 3. 使用 TreeBuilder 构建完整树
+	tree, err := s.treeBuilder.BuildFromMeta(engine, metaNodes, -1)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to build tree: %w", err)
+	}
+
+	// 4. 在树中搜索节点（简单实现：遍历所有节点）
+	// TODO: 使用专门的 TreeSearchService 实现更高效的搜索
+	results := make([]*resource.TreeNode, 0)
+	s.searchInTree(tree, keyword, nodeTypes, &results)
+
+	// 5. 限制返回数量
+	total := len(results)
+	if limit > 0 && limit < total {
+		results = results[:limit]
+	}
+
+	logger.L().Info("搜索节点成功",
+		"engine_id", engineID,
+		"keyword", keyword,
+		"total", total,
+		"returned", len(results))
+
+	return results, total, nil
+}
+
+// findNodeByLocator 在树中查找指定 locator 的节点（递归）
+func (s *ExplorerService) findNodeByLocator(node *resource.TreeNode, locator string) *resource.TreeNode {
+	if node.Locator == locator {
+		return node
+	}
+
+	for _, child := range node.Children {
+		if found := s.findNodeByLocator(child, locator); found != nil {
+			return found
+		}
+	}
+
+	return nil
+}
+
+// searchInTree 在树中递归搜索节点
+func (s *ExplorerService) searchInTree(node *resource.TreeNode, keyword string, nodeTypes []string, results *[]*resource.TreeNode) {
+	// 检查节点类型过滤
+	typeMatch := len(nodeTypes) == 0
+	if !typeMatch {
+		for _, nt := range nodeTypes {
+			if node.Type == nt {
+				typeMatch = true
+				break
+			}
+		}
+	}
+
+	// 检查关键词匹配（忽略大小写）
+	keywordLower := strings.ToLower(keyword)
+	labelMatch := strings.Contains(strings.ToLower(node.Label), keywordLower)
+
+	if typeMatch && labelMatch {
+		*results = append(*results, node)
+	}
+
+	// 递归搜索子节点
+	for _, child := range node.Children {
+		s.searchInTree(child, keyword, nodeTypes, results)
+	}
+}
+
 // 内部辅助方法
 
 // getMetaNodes 从 Meta 模块获取节点列表
@@ -213,57 +387,76 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 		return nil, fmt.Errorf("failed to get metadata tree: %w", err)
 	}
 
-	// 合并 TopNodes、ChildNodes 和 Items（转换为 MetaNode）
+	// 合并 TopNodes、ChildNodes
+	// 注意：根据 expandDepth 决定是否包含 Items
 	allNodes := make([]*commonModels.MetaNode, 0, len(tree.TopNodes)+len(tree.ChildNodes)+len(tree.Items))
 
 	// 添加顶层节点（数据库/Schema/Bucket）
-	// 创建新实例以避免指针共享导致的循环引用
 	for i := range tree.TopNodes {
 		node := tree.TopNodes[i]
 		allNodes = append(allNodes, &node)
 	}
 
-	// 添加子节点（中间层容器）
-	// 创建新实例以避免指针共享导致的循环引用
+	// 添加子节点（中间层容器），根据 expandDepth 过滤
 	for i := range tree.ChildNodes {
 		node := tree.ChildNodes[i]
-		allNodes = append(allNodes, &node)
+		// 如果设置了 expandDepth，只包含深度 <= expandDepth 的节点
+		// -1 表示不限制深度
+		if expandDepth == -1 || node.Depth <= expandDepth {
+			allNodes = append(allNodes, &node)
+		}
 	}
 
 	// 将 Items 转换为 MetaNode（叶子节点：表/集合/对象）
-	for i := range tree.Items {
-		item := &tree.Items[i]
-		// 将 MetaItem 转换为 MetaNode
-		node := &commonModels.MetaNode{
-			ID:             item.ID,
-			TenantID:       item.TenantID,
-			EngineID:       item.EngineID,
-			ParentNodeID:   &item.NodeID, // Item 的 NodeID 是其父节点
-			NodeType:       item.ItemType,
-			Name:           item.Name,
-			FullName:       item.FullName,
-			Depth:          2, // Items 通常是第二层（database → collection）
-			Path:           item.FullName,
-			ScanStatus:     "completed",
-			ItemCount:      0, // Items 没有子项
-			TotalSizeBytes: 0,
-			Attributes:     item.Attributes,
+	// 只有当 expandDepth == -1 或者足够大时才包含 Items
+	includeItems := expandDepth == -1 || expandDepth >= 3 // 对象存储的对象通常在第3层
+	if includeItems {
+		for i := range tree.Items {
+			item := &tree.Items[i]
+
+			// 动态计算 Depth：根据 full_name 中的分隔符数量
+			// - 对象存储: bucket/dir/file → depth=3
+			// - 数据库表: schema.table → depth=2
+			depth := calculateItemDepth(item.ItemType, item.FullName, item.Attributes)
+
+			// 再次检查深度
+			if expandDepth != -1 && depth > expandDepth {
+				continue
+			}
+
+			// 将 MetaItem 转换为 MetaNode
+			node := &commonModels.MetaNode{
+				ID:             item.ID,
+				TenantID:       item.TenantID,
+				EngineID:       item.EngineID,
+				ParentNodeID:   &item.NodeID, // Item 的 NodeID 是其父节点
+				NodeType:       item.ItemType,
+				Name:           item.Name,
+				FullName:       item.FullName,
+				Depth:          depth, // 动态计算深度，不再硬编码
+				Path:           item.FullName,
+				ScanStatus:     "completed",
+				ItemCount:      0, // Items 没有子项
+				TotalSizeBytes: 0,
+				Attributes:     item.Attributes,
+			}
+			if item.RowCount != nil {
+				node.ItemCount = int(*item.RowCount)
+			}
+			if item.SizeBytes != nil {
+				node.TotalSizeBytes = *item.SizeBytes
+			}
+			allNodes = append(allNodes, node)
 		}
-		if item.RowCount != nil {
-			node.ItemCount = int(*item.RowCount)
-		}
-		if item.SizeBytes != nil {
-			node.TotalSizeBytes = *item.SizeBytes
-		}
-		allNodes = append(allNodes, node)
 	}
 
 	logger.L().Info("从 Meta 获取节点成功",
 		"engine_id", engineID,
+		"expand_depth", expandDepth,
 		"top_nodes", len(tree.TopNodes),
 		"child_nodes", len(tree.ChildNodes),
 		"items", len(tree.Items),
-		"total", len(allNodes))
+		"filtered_nodes", len(allNodes))
 
 	return allNodes, nil
 }
@@ -298,6 +491,33 @@ func getEngineIcon(engineType string) string {
 		return icon
 	}
 	return "Database"
+}
+
+// calculateItemDepth 动态计算 Item 的深度
+// 根据 ItemType 和 FullName 计算节点在树中的深度
+func calculateItemDepth(itemType, fullName string, attributes commonModels.JSONMap) int {
+	// 对象存储类型（object）：根据路径中的斜杠数量计算
+	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
+	if itemType == "object" {
+		segments := strings.Split(strings.Trim(fullName, "/"), "/")
+		return len(segments)
+	}
+
+	// 数据库表类型（table）：根据点号数量计算
+	// 例如: "public.users" → depth=2 (schema=1, table=2)
+	if itemType == "table" {
+		segments := strings.Split(fullName, ".")
+		return len(segments)
+	}
+
+	// MongoDB 集合类型（collection）：通常是 database.collection
+	if itemType == "collection" {
+		segments := strings.Split(fullName, ".")
+		return len(segments)
+	}
+
+	// 默认深度为 2（大多数情况下 Items 在第二层）
+	return 2
 }
 
 // metaClientAdapter 适配器：将 MetaClient 适配为 TreeBuilder 的 MetaClient 接口

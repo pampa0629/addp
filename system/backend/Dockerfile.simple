@@ -13,6 +13,6 @@ COPY server .
 # 创建数据目录
 RUN mkdir -p /app/data
 
-EXPOSE 8080
+EXPOSE 8180
 
 CMD ["./server"]

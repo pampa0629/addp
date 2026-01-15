@@ -553,7 +553,7 @@ curl -H "Authorization: Bearer <token>" \
 
 # 4. 检查引擎配置（如果提示 engine not found）
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/engines?resource_type=compute_engine
+  http://localhost:8180/api/v1/engines?resource_type=compute_engine
 
 # 5. 手动测试目标模块 API（如果任务创建失败）
 # 例如测试 Meta 模块的扫描 API
@@ -585,7 +585,7 @@ curl -X POST http://localhost:8082/api/v1/manual-scan \
 
 1. **在 System 模块注册引擎** (无需修改 Orchestrator 代码):
    ```bash
-   curl -X POST http://localhost:8080/api/v1/engines \
+   curl -X POST http://localhost:8180/api/v1/engines \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/json" \
      -d '{
@@ -855,13 +855,13 @@ curl -H "Authorization: Bearer <token>" \
 
 ```bash
 # 1. 在 System 模块注册引擎（参考场景 5）
-curl -X POST http://localhost:8080/api/v1/engines \
+curl -X POST http://localhost:8180/api/v1/engines \
   -H "Authorization: Bearer <token>" \
   -d @new-engine.json
 
 # 2. 验证引擎注册
 curl -H "Authorization: Bearer <token>" \
-  "http://localhost:8080/api/v1/engines?resource_type=compute_engine"
+  "http://localhost:8180/api/v1/engines?resource_type=compute_engine"
 
 # 3. 在编排中使用新引擎
 curl -X POST http://localhost:8084/api/v1/orchestrations \
@@ -892,7 +892,7 @@ grep "execution_id=<execution_id>" logs/orchestrator-backend.log
 
 # 4. 检查引擎配置（如果提示 engine not found）
 curl -H "Authorization: Bearer <token>" \
-  http://localhost:8080/api/v1/engines/<engine_id>
+  http://localhost:8180/api/v1/engines/<engine_id>
 
 # 5. 手动测试目标模块 API（复现错误）
 curl -X POST http://<module_url>/api/v1/tasks \

@@ -91,6 +91,7 @@ import { localEnginesAPI } from "../api/localEngines"
 import { Plus, Edit, Delete, Upload, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { StorageEngineForm } from '@common-ui'
+import { formatDate } from '@/utils/formatters'
 
 const engines = ref([])
 const loading = ref(false)
@@ -142,11 +143,6 @@ const getResourceTypeColor = (type) => {
     'sqlite': 'info'
   }
   return colorMap[type] || ''
-}
-
-const formatDate = (dateString) => {
-  if (!dateString) return '-'
-  return new Date(dateString).toLocaleString('zh-CN')
 }
 
 const loadResources = async () => {

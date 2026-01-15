@@ -50,7 +50,7 @@ func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *r
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
 		if systemURL == "" {
-			systemURL = "http://localhost:8080"
+			systemURL = "http://localhost:8180"
 		}
 	}
 	if internalKey == "" {

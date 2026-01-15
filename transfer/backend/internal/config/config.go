@@ -25,7 +25,7 @@ type Config struct {
 }
 
 func Load() *Config {
-	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8080")
+	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
 
 	cfg := &Config{
 		Port:            commonConfig.GetEnv("PORT", "8083"),

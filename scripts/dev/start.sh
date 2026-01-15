@@ -348,7 +348,13 @@ build_service() {
 
     echo "  🔨 编译 ${binary_name}..."
 
-    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/server/main.go) || {
+    # Transfer 模块需要启用 SQLite 扩展加载支持
+    local build_tags=""
+    if [[ "$name" == "transfer" ]]; then
+        build_tags="-tags sqlite_load_extension"
+    fi
+
+    (cd "$src_dir" && go build $build_tags -o "${PROJECT_ROOT}/${binary_path}" cmd/server/main.go) || {
         echo "  ✗ 编译失败: ${name}"
         return 1
     }
@@ -377,7 +383,13 @@ build_worker() {
 
     echo "  🔨 编译 ${binary_name}..."
 
-    (cd "$src_dir" && go build -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
+    # Transfer 模块需要启用 SQLite 扩展加载支持
+    local build_tags=""
+    if [[ "$name" == "transfer" ]]; then
+        build_tags="-tags sqlite_load_extension"
+    fi
+
+    (cd "$src_dir" && go build $build_tags -o "${PROJECT_ROOT}/${binary_path}" cmd/worker/main.go) || {
         echo "  ✗ 编译失败: ${name} worker"
         return 1
     }
@@ -421,6 +433,39 @@ if [ -f "${ROOT_DIR}/.env" ]; then
   # shellcheck source=/dev/null
   source "${ROOT_DIR}/.env"
   set +a
+fi
+
+# 验证和提示 SpatiaLite 扩展配置（用于 Transfer 模块）
+if [ -n "${SPATIALITE_EXTENSION_PATH}" ]; then
+  # 用户在 .env 中配置了路径，验证是否有效
+  if [ -f "${SPATIALITE_EXTENSION_PATH}" ]; then
+    echo "✓ 使用 SpatiaLite 扩展: ${SPATIALITE_EXTENSION_PATH}"
+  else
+    echo "⚠️  警告: .env 中配置的 SPATIALITE_EXTENSION_PATH 文件不存在: ${SPATIALITE_EXTENSION_PATH}"
+    echo "   Transfer 模块将尝试使用代码中的兜底路径"
+  fi
+else
+  # 用户未配置，检测系统中是否存在，并给出提示
+  detected_path=""
+  for candidate_path in \
+    "/opt/homebrew/lib/mod_spatialite.dylib" \
+    "/usr/local/lib/mod_spatialite.dylib" \
+    "/usr/lib/x86_64-linux-gnu/mod_spatialite.so" \
+    "/usr/lib64/mod_spatialite.so"; do
+    if [ -f "$candidate_path" ]; then
+      detected_path="$candidate_path"
+      break
+    fi
+  done
+
+  if [ -n "$detected_path" ]; then
+    echo "💡 提示: 检测到 SpatiaLite 扩展在 ${detected_path}"
+    echo "   Transfer 模块将使用代码兜底路径自动加载"
+    echo "   如需明确指定，可在 .env 中添加: SPATIALITE_EXTENSION_PATH=${detected_path}"
+  else
+    echo "ℹ️  未检测到 SpatiaLite 扩展，Transfer 模块的 SpatiaLite 读取功能可能不可用"
+    echo "   如需支持 SpatiaLite，请安装: brew install libspatialite (macOS)"
+  fi
 fi
 
 echo "🚀 启动 ADDP 开发环境"
@@ -910,7 +955,7 @@ if check_service_running "python-workflow-engine" "8099"; then
 
   # 设置环境变量（注意端口改为 8099）
   export PORT=8099
-  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export SYSTEM_SERVICE_URL=http://localhost:8180
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export POSTGRES_HOST=localhost
   export POSTGRES_PORT=15432
@@ -1020,7 +1065,7 @@ if check_service_running "math-workflow-engine" "8097"; then
 
   # 设置环境变量
   export PORT=8097
-  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:8080"}
+  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:8180"}
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python
@@ -1152,7 +1197,7 @@ if check_service_running "spark-workflow-engine" "8098"; then
 
   # 设置环境变量（注意端口改为 8098）
   export PORT=8098
-  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export SYSTEM_SERVICE_URL=http://localhost:8180
   export DEVELOP_SERVICE_URL=http://localhost:8085
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
@@ -1286,7 +1331,7 @@ if check_service_running "jupyter-engine" "8088"; then
   # 设置环境变量
   export API_PORT=8097
   export JUPYTER_PORT=8088
-  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export SYSTEM_SERVICE_URL=http://localhost:8180
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 启动 API Server（后台）
@@ -1433,7 +1478,7 @@ if check_service_running "copilot-backend" "8087"; then
 
   # 设置环境变量
   export PORT=8087
-  export SYSTEM_SERVICE_URL=http://localhost:8080
+  export SYSTEM_SERVICE_URL=http://localhost:8180
   export META_SERVICE_URL=http://localhost:8082
   export DEVELOP_SERVICE_URL=http://localhost:8085
   export DATABASE_URL=postgresql://addp:addp_password@localhost:15432/addp

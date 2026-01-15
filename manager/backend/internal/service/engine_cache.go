@@ -37,7 +37,7 @@ func NewEngineCacheService(systemURL, internalKey string, redisClient *redis.Cli
 	if systemURL == "" {
 		systemURL = os.Getenv("SYSTEM_SERVICE_URL")
 		if systemURL == "" {
-			systemURL = "http://localhost:8080"
+			systemURL = "http://localhost:8180"
 		}
 	}
 	if internalKey == "" {

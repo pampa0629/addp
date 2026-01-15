@@ -298,7 +298,7 @@ cd system/backend
 bash ../../scripts/dev/restart.sh -system
 
 # 通过 API 测试连接
-curl -X POST http://localhost:8080/api/engines/<engine_id>/test \
+curl -X POST http://localhost:8180/api/engines/<engine_id>/test \
   -H "Authorization: Bearer <token>"
 ```
 

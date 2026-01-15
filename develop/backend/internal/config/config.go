@@ -71,7 +71,7 @@ func Load() *Config {
 		DBSchema:         "develop",
 
 		// System 服务集成
-		SystemServiceURL:         getEnv("SYSTEM_SERVICE_URL", "http://localhost:8080"),
+		SystemServiceURL:         getEnv("SYSTEM_SERVICE_URL", "http://localhost:8180"),
 		EnableServiceIntegration: getEnvAsBool("ENABLE_SERVICE_INTEGRATION", true),
 		EncryptionKey:            encryptionKey,
 		InternalAPIKey:           internalAPIKey,

@@ -40,14 +40,15 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 		// 使用 vector 类型（通过 search_path=manager 自动解析）
 		sql := fmt.Sprintf(`
 			INSERT INTO manager.embeddings
-			(engine_id, bucket, object_key, fingerprint, data_updated_at, embedding, modality, model, file_size, content_type, metadata, tenant_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, '%s'::vector, ?, ?, ?, ?, ?, ?, ?, ?)
+			(engine_id, bucket, path, name, fingerprint, data_updated_at, embedding, modality, model, file_size, content_type, metadata, tenant_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, '%s'::vector, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, vectorStr)
 
 		err := r.db.WithContext(ctx).Exec(sql,
 			embedding.EngineID,
 			embedding.Bucket,
-			embedding.ObjectKey,
+			embedding.Path,
+			embedding.Name,
 			embedding.Fingerprint,
 			embedding.DataUpdatedAt,
 			// vectorStr 已经在 SQL 中，这里移除
@@ -82,7 +83,7 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 	// 使用 vector 类型（通过 search_path=manager 自动解析）
 	sql := fmt.Sprintf(`
 		UPDATE manager.embeddings
-		SET engine_id = ?, bucket = ?, object_key = ?, fingerprint = ?, data_updated_at = ?,
+		SET engine_id = ?, bucket = ?, path = ?, name = ?, fingerprint = ?, data_updated_at = ?,
 		    embedding = '%s'::vector, modality = ?, model = ?, file_size = ?, content_type = ?,
 		    metadata = ?, tenant_id = ?, updated_at = ?
 		WHERE id = ?
@@ -91,7 +92,8 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 	err = r.db.WithContext(ctx).Exec(sql,
 		embedding.EngineID,
 		embedding.Bucket,
-		embedding.ObjectKey,
+		embedding.Path,
+		embedding.Name,
 		embedding.Fingerprint,
 		embedding.DataUpdatedAt,
 		// vectorStr 已经在 SQL 中，这里移除
@@ -135,7 +137,7 @@ func (r *EmbeddingRepository) BatchUpsertEmbeddings(ctx context.Context, embeddi
 func (r *EmbeddingRepository) GetByFingerprint(ctx context.Context, fingerprint string, modality string) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Select("id", "engine_id", "bucket", "object_key", "fingerprint", "data_updated_at", "modality", "model", "file_size", "content_type", "metadata", "tenant_id", "created_at", "updated_at").
+		Select("id", "engine_id", "bucket", "path", "name", "fingerprint", "data_updated_at", "modality", "model", "file_size", "content_type", "metadata", "tenant_id", "created_at", "updated_at").
 		Where("fingerprint = ? AND modality = ?", fingerprint, modality).
 		First(&emb).Error
 
@@ -146,11 +148,11 @@ func (r *EmbeddingRepository) GetByFingerprint(ctx context.Context, fingerprint 
 }
 
 // GetEmbedding 查询单个向量
-func (r *EmbeddingRepository) GetEmbedding(ctx context.Context, engineID uint, bucket, objectKey string, modality string) (*models.Embedding, error) {
+func (r *EmbeddingRepository) GetEmbedding(ctx context.Context, engineID uint, bucket, path, name string, modality string) (*models.Embedding, error) {
 	var emb models.Embedding
 	err := r.db.WithContext(ctx).
-		Where("engine_id = ? AND bucket = ? AND object_key = ? AND modality = ?",
-			engineID, bucket, objectKey, modality).
+		Where("engine_id = ? AND bucket = ? AND path = ? AND name = ? AND modality = ?",
+			engineID, bucket, path, name, modality).
 		First(&emb).Error
 
 	if err == gorm.ErrRecordNotFound {

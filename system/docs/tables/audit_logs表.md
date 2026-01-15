@@ -260,7 +260,7 @@ Authorization: Bearer <jwt_token>
 **操作**:
 
 ```bash
-curl -X POST http://localhost:8080/api/engines \
+curl -X POST http://localhost:8180/api/engines \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -292,7 +292,7 @@ curl -X POST http://localhost:8080/api/engines \
 **操作**:
 
 ```bash
-curl -X PUT http://localhost:8080/api/users/3 \
+curl -X PUT http://localhost:8180/api/users/3 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"full_name": "新名字"}'
@@ -320,7 +320,7 @@ curl -X PUT http://localhost:8080/api/users/3 \
 **操作**:
 
 ```bash
-curl -X DELETE http://localhost:8080/api/tenants/2 \
+curl -X DELETE http://localhost:8180/api/tenants/2 \
   -H "Authorization: Bearer $SUPERADMIN_TOKEN"
 ```
 
@@ -348,7 +348,7 @@ curl -X DELETE http://localhost:8080/api/tenants/2 \
 ```bash
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 
-curl "http://localhost:8080/api/logs?page=1&page_size=20" \
+curl "http://localhost:8180/api/logs?page=1&page_size=20" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -357,7 +357,7 @@ curl "http://localhost:8080/api/logs?page=1&page_size=20" \
 ### 7.2 查询指定用户的操作日志
 
 ```bash
-curl "http://localhost:8080/api/logs?user_id=2&page=1&page_size=50" \
+curl "http://localhost:8180/api/logs?user_id=2&page=1&page_size=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

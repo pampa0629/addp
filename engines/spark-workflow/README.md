@@ -85,7 +85,7 @@ vi .env
 ```
 
 关键配置项:
-- `SYSTEM_SERVICE_URL`: System Backend URL (默认 http://localhost:8080)
+- `SYSTEM_SERVICE_URL`: System Backend URL (默认 http://localhost:8180)
 - `SPARK_MODE`: local (开发) 或 remote (生产)
 - `PORT`: Flask API Server 端口 (默认 8098)
 

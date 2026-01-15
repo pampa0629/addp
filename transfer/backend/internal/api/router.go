@@ -7,6 +7,8 @@ import (
 	"github.com/addp/common/middleware/audit"
 	commonAuth "github.com/addp/common/middleware/auth"
 	commonCors "github.com/addp/common/middleware/cors"
+	"github.com/addp/common/middleware/logging"
+	"github.com/addp/common/middleware/requestid"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -26,6 +28,8 @@ func SetupRouter(
 
 	// 全局中间件
 	router.Use(commonCors.CORS())
+	router.Use(requestid.RequestIDMiddleware()) // Request ID 追踪
+	router.Use(logging.LoggingMiddleware())     // 结构化日志记录
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {

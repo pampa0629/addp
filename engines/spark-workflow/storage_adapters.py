@@ -65,7 +65,7 @@ class DatabaseAdapter:
     @staticmethod
     def get_engine_from_system(engine_id: int) -> dict:
         """从System Backend获取资源信息"""
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
         response = requests.get(f'{system_url}/api/engines/{engine_id}')
         if response.status_code != 200:
             raise ValueError(f"Failed to get engine {engine_id}")
@@ -229,7 +229,7 @@ class FileAdapter:
 
         # 从System获取MinIO/S3资源配置
         try:
-            system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+            system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
             response = requests.get(f'{system_url}/api/engines/{engine_id}')
             if response.status_code == 200:
                 engine = response.json()

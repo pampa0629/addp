@@ -330,12 +330,12 @@ DEFAULT_ADMIN_EMAIL=admin@addp.com
 
 ```bash
 # 使用超级管理员登录
-curl -X POST http://localhost:8080/api/auth/login \
+curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
 
 # 使用租户管理员登录
-curl -X POST http://localhost:8080/api/auth/login \
+curl -X POST http://localhost:8180/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "123456"}'
 ```

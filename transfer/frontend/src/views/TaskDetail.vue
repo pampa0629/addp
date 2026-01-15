@@ -134,8 +134,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
-import { describeCron } from '@common-ui'
 import { systemEnginesAPI } from '@/api/systemEngines'
+import { formatDate, formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 
 const route = useRoute()
 const router = useRouter()
@@ -276,86 +276,6 @@ const retryExecution = async (id) => {
   await executionAPI.retry(id)
   ElMessage.success('重试已提交')
   loadTask()
-}
-
-const getTaskStatusLabel = (taskData) => {
-  if (!taskData) return '未执行'
-  if (!taskData.schedule) {
-    const labels = {
-      pending: '未执行',
-      running: '执行中',
-      stopped: '已停止',
-      completed: '已完成'
-    }
-    return labels[taskData.status] || '未执行'
-  }
-  if (['scheduled', 'running'].includes(taskData.status)) return '已启动'
-  if (['pending', 'paused'].includes(taskData.status)) return '未启动'
-  if (taskData.status === 'stopped') return '已停止'
-  return '未启动'
-}
-
-const getTaskStatusTagType = (taskData) => {
-  const label = getTaskStatusLabel(taskData)
-  const types = {
-    未执行: 'info',
-    执行中: 'primary',
-    已停止: 'info',
-    已完成: 'success',
-    已启动: 'primary',
-    未启动: 'info'
-  }
-  return types[label] || ''
-}
-
-const getLastExecutionLabel = (status) => {
-  if (!status || status === 'pending') return '未执行'
-  if (status === 'running') return '执行中'
-  if (status === 'success') return '成功'
-  if (status === 'failed' || status === 'cancelled') return '失败'
-  return status
-}
-
-const getExecutionTagType = (status) => {
-  const label = getLastExecutionLabel(status)
-  const types = {
-    未执行: 'info',
-    执行中: 'primary',
-    成功: 'success',
-    失败: 'danger'
-  }
-  return types[label] || 'info'
-}
-
-const getExecutionLabel = (status) => {
-  const label = getLastExecutionLabel(status)
-  return label === '未执行' ? '待开始' : label
-}
-
-const formatDate = (date) => {
-  if (!date) return '-'
-  try {
-    const d = new Date(date)
-    // 检查是否为有效日期
-    if (isNaN(d.getTime())) return '-'
-
-    // 使用更明确的格式化（避免年份错误）
-    const year = d.getFullYear()
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    const hours = String(d.getHours()).padStart(2, '0')
-    const minutes = String(d.getMinutes()).padStart(2, '0')
-    const seconds = String(d.getSeconds()).padStart(2, '0')
-
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-  } catch (e) {
-    return '-'
-  }
-}
-
-const formatSchedule = (cron) => {
-  if (!cron) return '手动执行'
-  return describeCron(cron)
 }
 
 const toLower = (value) => (value || '').toString().toLowerCase()

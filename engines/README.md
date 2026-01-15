@@ -119,7 +119,7 @@ POST /api/{module}/operators/:name/execute
 
 引擎启动时应自动注册到System资源中心:
 
-**注册端点**: `POST http://system-backend:8080/internal/registry/capabilities`
+**注册端点**: `POST http://system-backend:8180/internal/registry/capabilities`
 
 **注册数据格式**:
 ```json

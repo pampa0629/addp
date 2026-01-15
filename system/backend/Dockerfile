@@ -11,6 +11,6 @@ RUN chmod +x ./server
 
 ENV TZ=Asia/Shanghai
 
-EXPOSE 8080
+EXPOSE 8180
 
 CMD ["./server"]

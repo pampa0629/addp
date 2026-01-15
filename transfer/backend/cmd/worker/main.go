@@ -4,20 +4,24 @@ import (
     "context"
     "fmt"
     "log"
+    "os"
     "os/signal"
+    "path/filepath"
     "syscall"
     "time"
 
+	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
+	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
     "github.com/addp/transfer/internal/config"
     "github.com/addp/transfer/internal/logging"
-    "github.com/addp/transfer/plugins"
     "github.com/addp/transfer/internal/repository"
     "github.com/addp/transfer/internal/service"
 	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
 	"github.com/addp/transfer/pkg/pipeline"
+	"github.com/addp/transfer/pkg/plugin_loader"
 	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
@@ -38,6 +42,25 @@ func main() {
 	// 加载配置
 	cfg := config.Load()
 
+	// 初始化结构化日志
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logFile := filepath.Join("logs", "transfer-worker.log")
+	logger.Init(logger.Options{
+		Level:          logLevel,
+		Format:         "json",
+		FilePath:       logFile,
+		AddSource:      true,
+		RedirectStdLog: true,
+	})
+	logger.L().Info("transfer worker starting",
+		"version", "0.0.20",
+		"log_level", logLevel,
+		"log_file", logFile,
+	)
+
 	// 连接数据库
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -47,12 +70,20 @@ func main() {
 	// 初始化 Pipeline 组件
 	registry := pipeline.NewConnectorRegistry()
 
-	// 注册所有连接器
-	if err := plugins.RegisterAllConnectors(registry); err != nil {
-		log.Fatalf("注册连接器失败: %v", err)
+	// 动态加载插件（替换硬编码的 init() 注册）
+	// Worker 从项目根目录启动，所以路径相对于 addp/
+	pluginConfigPath := filepath.Join("transfer", "backend", "config", "plugins.yaml")
+	loader, err := plugin_loader.NewPluginLoader(pluginConfigPath)
+	if err != nil {
+		log.Fatalf("❌ 插件加载器初始化失败: %v", err)
 	}
-	log.Printf("✅ 已注册连接器 - Readers: %v, Writers: %v",
-		registry.ListReaders(), registry.ListWriters())
+
+	if err := loader.LoadPlugins(registry); err != nil {
+		log.Fatalf("❌ 插件加载失败: %v", err)
+	}
+
+	readers, writers := loader.ListEnabledPlugins()
+	log.Printf("✅ 已动态加载插件 - Readers: %v, Writers: %v", readers, writers)
 
     // 创建 logger 和 engine config
     // Wrap a stdout text handler with DB appender so logs are persisted per execution
@@ -68,8 +99,42 @@ func main() {
 	taskQueue := worker.NewTaskQueue(redisAddr, cfg.RedisPassword)
 	defer taskQueue.Close()
 
-	// 初始化 Service 层（传入 taskQueue）
-	taskService := service.NewTaskService(db, engine, cfg, taskQueue)
+	// 创建 Repository 层
+	taskRepo := repository.NewTaskRepository(db)
+	executionRepo := repository.NewExecutionRepository(db)
+	mappingRepo := repository.NewMappingRepository(db)
+
+	// 创建 SystemClient（用于执行引擎）
+	var systemClient *commonClient.SystemClient
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" {
+		if cfg.InternalAPIKey != "" {
+			systemClient = commonClient.NewSystemClientWithInternalKey(
+				cfg.SystemServiceURL,
+				cfg.InternalAPIKey,
+			)
+			log.Printf("✅ SystemClient initialized with internal API key: %s", cfg.SystemServiceURL)
+		} else {
+			log.Printf("⚠️  SystemClient not initialized - no internal API key configured")
+		}
+	}
+
+	// 初始化 Service 层
+	// 1. 创建 ExecutionEngineService (负责任务执行)
+	executionEngineService := service.NewExecutionEngineService(
+		engine,
+		taskRepo,
+		executionRepo,
+		mappingRepo,
+		systemClient,
+		cfg,
+	)
+
+	// 设置引擎组件以启用并行执行支持
+	executionEngineService.SetEngineComponents(registry, stateManager)
+	log.Printf("✅ 并行执行引擎已启用（支持多 Writer 并行）")
+
+	// 2. 创建 TaskService (负责任务 CRUD，传入 executionEngineService)
+	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)
 	executionService := service.NewExecutionService(db)
 
 	// 创建任务处理器
@@ -99,9 +164,7 @@ func main() {
 	mux := asynq.NewServeMux()
 	taskHandler.RegisterHandlers(mux)
 
-	// 创建定时调度器（需要先创建 repository）
-	taskRepo := repository.NewTaskRepository(db)
-	executionRepo := repository.NewExecutionRepository(db)
+	// 创建定时调度器
 	scheduler := worker.NewScheduler(taskRepo, executionRepo, taskQueue)
 	if err := scheduler.Start(context.Background()); err != nil {
 		log.Fatalf("定时调度器启动失败: %v", err)

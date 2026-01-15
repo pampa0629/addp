@@ -13,6 +13,23 @@ export const dataExplorerAPI = {
       params: { expand_depth: expandDepth }
     })
   },
+
+  // 获取节点的子节点（增量加载）
+  getNodeChildren(engineId, locator, expandDepth = 1) {
+    return client.get(`/manager/tree/${engineId}/node`, {
+      params: { locator, expand_depth: expandDepth }
+    })
+  },
+
+  // 搜索资源树节点
+  searchNodes(engineId, keyword, nodeTypes = null, limit = 50) {
+    const params = { q: keyword, limit }
+    if (nodeTypes) {
+      params.node_types = Array.isArray(nodeTypes) ? nodeTypes.join(',') : nodeTypes
+    }
+    return client.get(`/manager/tree/${engineId}/search`, { params })
+  },
+
   refreshNode(engineId, locator) {
     return client.post(`/manager/tree/${engineId}/refresh`, { locator })
   },

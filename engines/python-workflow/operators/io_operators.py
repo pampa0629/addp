@@ -35,7 +35,7 @@ def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
 
     if source_type == 'table':
         # 1. 从 System API 获取引擎连接信息
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
         response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
@@ -79,7 +79,7 @@ def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
 
     elif source_type == 'file':
         # 从对象存储加载文件
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
         response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
@@ -129,7 +129,7 @@ def save(data: gpd.GeoDataFrame, params: Dict[str, Any]) -> Dict[str, Any]:
 
     if target_type == 'table':
         # 1. 从 System API 获取引擎连接信息
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8080')
+        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
         response = requests.get(f'{system_url}/api/engines/{engine_id}')
 
         if response.status_code != 200:
