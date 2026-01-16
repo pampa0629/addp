@@ -74,6 +74,7 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, error) {
 	// 查询所有启用定时调度的任务
 	filters := map[string]interface{}{
+		"enabled":      true, // 已启用的任务
 		"has_schedule": true, // 有 schedule 字段的任务
 	}
 
@@ -82,15 +83,7 @@ func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, erro
 		return nil, err
 	}
 
-	// 过滤出有效的定时任务
-	var scheduledTasks []models.Task
-	for _, task := range tasks {
-		if task.Schedule != "" && (task.Status == models.TaskStatusScheduled || task.Status == models.TaskStatusRunning) {
-			scheduledTasks = append(scheduledTasks, task)
-		}
-	}
-
-	return scheduledTasks, nil
+	return tasks, nil
 }
 
 // registerTask 注册单个定时任务
@@ -132,12 +125,8 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 	}
 
 	if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-		"status":                     models.TaskStatusRunning,
-		"progress":                   0,
-		"last_execution_id":          execution.ID,
-		"last_execution_status":      models.ExecutionStatusRunning,
-		"last_execution_started_at":  now,
-		"last_execution_finished_at": nil,
+		"status":   models.TaskStatusRunning,
+		"progress": 0,
 	}); err != nil {
 		log.Printf("❌ 更新任务状态失败 - TaskID: %d, Error: %v", task.ID, err)
 	}
@@ -146,15 +135,13 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, execution.ID, task.TenantID); err != nil {
 		log.Printf("❌ 任务入队失败 - TaskID: %d, Error: %v", task.ID, err)
 		// 更新执行状态为失败
-		finishedAt := time.Now()
 		if err := s.executionRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error()); err != nil {
 			log.Printf("❌ 更新执行状态失败 - ExecutionID: %d, Error: %v", execution.ID, err)
 		}
+		// 回滚任务状态为空闲
 		if err := s.taskRepo.UpdateFields(task.ID, map[string]interface{}{
-			"status":                     models.TaskStatusScheduled,
-			"last_execution_status":      models.ExecutionStatusFailed,
-			"last_execution_finished_at": finishedAt,
-			"progress":                   0,
+			"status":   models.TaskStatusIdle,
+			"progress": 0,
 		}); err != nil {
 			log.Printf("❌ 回滚任务状态失败 - TaskID: %d, Error: %v", task.ID, err)
 		}

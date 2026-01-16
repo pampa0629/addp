@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
@@ -114,32 +113,13 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		s.logger.Warn("failed to update execution status", "error", err)
 	}
 
-	// 选择执行引擎：根据任务配置的并行度
+	// 选择执行引擎：暂时禁用并行引擎（MaxParallelism 字段已删除）
 	var executeErr error
 	var metrics *pipeline.Metrics
-	useParallel := task.MaxParallelism > 1 && s.parallelEngine != nil
+	useParallel := false // 暂时禁用并行引擎
 
 	if useParallel {
-		s.logger.Info("using parallel execution engine",
-			"task_id", taskID,
-			"max_parallelism", task.MaxParallelism)
-
-		// 动态调整并行 Writer 数量
-		if s.parallelEngine != nil {
-			// 重新创建并行引擎以使用新的配置
-			parallelConfig := &pipeline.ParallelEngineConfig{
-				EngineConfig: pipeline.DefaultEngineConfig(),
-				NumReaders:   1,
-				NumWriters:   int(task.MaxParallelism),
-			}
-			s.parallelEngine = pipeline.NewParallelExecutionEngine(
-				s.registry,
-				s.stateManager,
-				s.logger,
-				parallelConfig,
-			)
-		}
-
+		// 并行引擎逻辑（暂时不使用）
 		// 使用并行引擎执行
 		executeErr = s.parallelEngine.Execute(ctx, execTask)
 
@@ -184,18 +164,10 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
 
-	finishedAt := time.Now()
-	finalStatus := models.TaskStatusCompleted
-	if task.Schedule != "" {
-		finalStatus = models.TaskStatusScheduled
-	}
-
+	// 任务执行完成，恢复为空闲状态
 	if err := s.taskRepo.UpdateFields(taskID, map[string]interface{}{
-		"status":                     finalStatus,
-		"progress":                   100.0,
-		"last_execution_id":          executionID,
-		"last_execution_status":      models.ExecutionStatusSuccess,
-		"last_execution_finished_at": finishedAt,
+		"status":   models.TaskStatusIdle,
+		"progress": 100.0,
 	}); err != nil {
 		s.logger.Warn("failed to update task after successful execution", "error", err, "task_id", taskID)
 	}
@@ -320,7 +292,7 @@ func (s *ExecutionEngineService) buildExecutionTask(
 			Config: targetConfig,
 		},
 		Transforms: transforms,
-		Mode:       s.mapTaskMode(task.Mode),
+		Mode:       pipeline.ModeBatch, // 统一使用批处理模式
 	}, nil
 }
 
@@ -396,44 +368,38 @@ func (s *ExecutionEngineService) inferConnectorType(config map[string]interface{
 	return "unknown"
 }
 
-// mapTaskMode 映射任务模式
-func (s *ExecutionEngineService) mapTaskMode(mode models.TaskMode) pipeline.ReaderMode {
-	switch mode {
-	case models.TaskModeStream:
-		return pipeline.ModeStream
-	case models.TaskModeMicroBatch:
-		return pipeline.ModeMicroBatch
-	default:
-		return pipeline.ModeBatch
-	}
-}
-
 // updateExecutionError 更新执行错误
 func (s *ExecutionEngineService) updateExecutionError(task *models.Task, executionID uint, execErr error) {
 	if execErr == nil {
 		return
 	}
 
+	// 更新execution记录为failed（关键操作，失败时记录ERROR）
 	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
-		s.logger.Warn("failed to mark execution as failed", "error", err, "execution_id", executionID)
+		s.logger.Error("CRITICAL: failed to mark execution as failed - status inconsistency may occur",
+			"error", err,
+			"execution_id", executionID,
+			"task_id", task.ID)
+		// 即使execution更新失败，也继续更新task状态，避免两边都失败
+	} else {
+		s.logger.Info("execution marked as failed", "execution_id", executionID)
 	}
 
-	finishedAt := time.Now()
-	finalStatus := models.TaskStatusStopped
-	if task.Schedule != "" {
-		finalStatus = models.TaskStatusScheduled
-	}
-
+	// 任务执行失败，恢复为空闲状态
 	updates := map[string]interface{}{
-		"status":                     finalStatus,
-		"last_execution_id":          executionID,
-		"last_execution_status":      models.ExecutionStatusFailed,
-		"last_execution_finished_at": finishedAt,
-		"progress":                   0,
+		"status":   models.TaskStatusIdle,
+		"progress": 0,
 	}
 
 	if err := s.taskRepo.UpdateFields(task.ID, updates); err != nil {
-		s.logger.Warn("failed to update task after execution error", "error", err, "task_id", task.ID)
+		s.logger.Error("CRITICAL: failed to update task after execution error - status inconsistency may occur",
+			"error", err,
+			"task_id", task.ID,
+			"execution_id", executionID)
+	} else {
+		s.logger.Info("task status updated after execution failure",
+			"task_id", task.ID,
+			"status", "idle")
 	}
 }
 

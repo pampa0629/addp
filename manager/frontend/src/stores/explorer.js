@@ -334,10 +334,17 @@ export const useExplorerStore = defineStore('explorer', {
 
         // 5. 更新引擎树（增量更新）
         if (this.engineTrees[loc.engineId]) {
-          this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
+          const updated = this.updateTreeNode(this.engineTrees[loc.engineId], locator, {
             children,
             loaded: true
           })
+
+          if (updated) {
+            // 强制触发 Vue 3 响应式更新：重新赋值整个 engineTrees
+            // 这样 computed getter (engineNodes) 会重新计算
+            this.engineTrees = { ...this.engineTrees }
+            console.log(`[ExplorerStore] 已触发响应式更新`)
+          }
         }
 
         console.log(`[ExplorerStore] 增量加载成功: ${children.length} 个子节点`)

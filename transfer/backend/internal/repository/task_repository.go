@@ -78,8 +78,13 @@ func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, pag
 	if status, ok := filters["status"].(models.TaskStatus); ok {
 		query = query.Where("status = ?", status)
 	}
-	if mode, ok := filters["mode"].(models.TaskMode); ok {
-		query = query.Where("mode = ?", mode)
+	// 支持根据 enabled 状态过滤（用于调度器加载定时任务）
+	if enabled, ok := filters["enabled"].(bool); ok {
+		query = query.Where("enabled = ?", enabled)
+	}
+	// 支持筛选有 schedule 的任务
+	if hasSchedule, ok := filters["has_schedule"].(bool); ok && hasSchedule {
+		query = query.Where("schedule IS NOT NULL AND schedule != ''")
 	}
 
 	// 计算总数
@@ -109,6 +114,28 @@ func (r *TaskRepository) GetRunningTasks(tenantID uint) ([]models.Task, error) {
 	return r.ListByStatus(tenantID, models.TaskStatusRunning)
 }
 
+// GetTaskWithLastExecution 获取任务及其最后一次执行记录
+func (r *TaskRepository) GetTaskWithLastExecution(taskID uint) (*models.Task, *models.TaskExecution, error) {
+	var task models.Task
+	if err := r.db.First(&task, taskID).Error; err != nil {
+		return nil, nil, err
+	}
+
+	var lastExecution models.TaskExecution
+	err := r.db.Where("task_id = ?", taskID).
+		Order("start_time DESC").
+		First(&lastExecution).Error
+
+	if err == gorm.ErrRecordNotFound {
+		return &task, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &task, &lastExecution, nil
+}
+
 // GetStatistics 获取任务统计信息
 func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, error) {
 	var stats models.TaskStatistics
@@ -116,39 +143,83 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 	// 总任务数
 	r.db.Model(&models.Task{}).Where("tenant_id = ?", tenantID).Count(&stats.TotalTasks)
 
-	// 各状态任务数
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusPending).
-		Count(&stats.PendingTasks)
-
+	// 执行中的任务数
 	r.db.Model(&models.Task{}).
 		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusRunning).
 		Count(&stats.RunningTasks)
 
+	// 空闲任务数（复用 pending_tasks 字段）
 	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusCompleted).
+		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusIdle).
+		Count(&stats.PendingTasks)
+
+	// 定时任务：已启动数量（复用 success_tasks 字段）
+	r.db.Model(&models.Task{}).
+		Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, true).
 		Count(&stats.SuccessTasks)
 
+	// 定时任务：未启动数量（复用 failed_tasks 字段）
 	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusStopped).
+		Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, false).
 		Count(&stats.FailedTasks)
 
-	// 最后执行状态统计
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND (last_execution_status = '' OR last_execution_status IS NULL)", tenantID).
-		Count(&stats.NotExecutedTasks)
+	// 最后执行状态统计（从 task_executions 表获取）
+	// 未执行过的任务数
+	var executedTaskIDs []uint
+	r.db.Model(&models.TaskExecution{}).
+		Select("DISTINCT task_id").
+		Pluck("task_id", &executedTaskIDs)
+	if len(executedTaskIDs) > 0 {
+		r.db.Model(&models.Task{}).
+			Where("tenant_id = ? AND id NOT IN ?", tenantID, executedTaskIDs).
+			Count(&stats.NotExecutedTasks)
+	} else {
+		stats.NotExecutedTasks = stats.TotalTasks
+	}
 
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusRunning).
-		Count(&stats.LastRunningTasks)
+	// 最后执行状态为 running 的任务数
+	var runningTaskIDs []uint
+	r.db.Raw(`
+		SELECT DISTINCT ON (task_id) task_id
+		FROM transfer.task_executions
+		WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
+		ORDER BY task_id, start_time DESC
+	`, tenantID).Pluck("task_id", &runningTaskIDs)
 
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusSuccess).
-		Count(&stats.LastSuccessTasks)
+	if len(runningTaskIDs) > 0 {
+		r.db.Model(&models.TaskExecution{}).
+			Where("task_id IN ? AND status = ?", runningTaskIDs, models.ExecutionStatusRunning).
+			Group("task_id").
+			Count(&stats.LastRunningTasks)
+	}
 
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND last_execution_status = ?", tenantID, models.ExecutionStatusFailed).
-		Count(&stats.LastFailedTasks)
+	// 最后执行成功的任务数
+	var successTaskIDs []uint
+	r.db.Raw(`
+		SELECT task_id
+		FROM (
+			SELECT DISTINCT ON (task_id) task_id, status
+			FROM transfer.task_executions
+			WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
+			ORDER BY task_id, start_time DESC
+		) latest_executions
+		WHERE status = ?
+	`, tenantID, models.ExecutionStatusSuccess).Pluck("task_id", &successTaskIDs)
+	stats.LastSuccessTasks = int64(len(successTaskIDs))
+
+	// 最后执行失败的任务数
+	var failedTaskIDs []uint
+	r.db.Raw(`
+		SELECT task_id
+		FROM (
+			SELECT DISTINCT ON (task_id) task_id, status
+			FROM transfer.task_executions
+			WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
+			ORDER BY task_id, start_time DESC
+		) latest_executions
+		WHERE status = ?
+	`, tenantID, models.ExecutionStatusFailed).Pluck("task_id", &failedTaskIDs)
+	stats.LastFailedTasks = int64(len(failedTaskIDs))
 
 	// 总执行次数
 	r.db.Model(&models.TaskExecution{}).

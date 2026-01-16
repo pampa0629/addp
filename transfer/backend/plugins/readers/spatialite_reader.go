@@ -24,6 +24,7 @@ type SpatiaLiteReader struct {
 	where           string
 	batchSize       int
 	offset          int64
+	lastRowID       int64 // 记录最后读取的ROWID，用于游标分页
 	columns         []string
 	geomCols        map[string]geomMeta
 	schema          *pipeline.Schema
@@ -35,7 +36,7 @@ type SpatiaLiteReader struct {
 
 // SpatiaLiteConfig 配置
 type SpatiaLiteConfig struct {
-	FilePath       string   `json:"file_path"`       // .sqlite / .db 文件路径
+	FullName       string   `json:"full_name"`       // .sqlite / .db 文件完整路径
 	Table          string   `json:"table"`           // 表名（与 Query 二选一）
 	Query          string   `json:"query"`           // 自定义查询（需自行确保几何列已 AsBinary）
 	WhereClause    string   `json:"where_clause"`    // WHERE 条件
@@ -78,11 +79,11 @@ func (r *SpatiaLiteReader) Open(ctx context.Context, config pipeline.ConnectorCo
 	r.extensionLoaded = false
 	r.geomFunc = ""
 
-	if slc.FilePath == "" {
-		return fmt.Errorf("file_path is required")
+	if slc.FullName == "" {
+		return fmt.Errorf("full_name is required")
 	}
 
-	db, err := sql.Open("sqlite3", slc.FilePath)
+	db, err := sql.Open("sqlite3", slc.FullName)
 	if err != nil {
 		return fmt.Errorf("failed to open spatialite db: %w", err)
 	}
@@ -160,7 +161,8 @@ func (r *SpatiaLiteReader) Read(ctx context.Context) (*pipeline.DataBatch, error
 		if err != nil {
 			return nil, err
 		}
-		r.columns = cols
+		// 添加ROWID到列名列表
+		r.columns = append([]string{"_rowid"}, cols...)
 	}
 
 	var batchRows []map[string]interface{}
@@ -169,6 +171,13 @@ func (r *SpatiaLiteReader) Read(ctx context.Context) (*pipeline.DataBatch, error
 		if err != nil {
 			return nil, err
 		}
+
+		// 提取并更新lastRowID
+		if rowid, ok := row["_rowid"].(int64); ok {
+			r.lastRowID = rowid
+			delete(row, "_rowid") // 删除ROWID字段，不返回给用户
+		}
+
 		batchRows = append(batchRows, row)
 	}
 
@@ -223,8 +232,8 @@ func (r *SpatiaLiteReader) buildSelectQueryForTable(table, where string, geomCol
 	// 读取表结构以拿到所有列
 	cols, _ := r.fetchTableColumns(table)
 	if len(cols) == 0 {
-		// 回退到 SELECT *
-		q := fmt.Sprintf("SELECT * FROM %s", table)
+		// 回退到 SELECT ROWID, *
+		q := fmt.Sprintf("SELECT ROWID as _rowid, * FROM %s", table)
 		if strings.TrimSpace(where) != "" {
 			q += " WHERE " + where
 		}
@@ -238,7 +247,9 @@ func (r *SpatiaLiteReader) buildSelectQueryForTable(table, where string, geomCol
 	}
 
 	// 对几何列使用 ST_AsBinary/AsBinary 函数
-	projected := make([]string, 0, len(cols))
+	projected := make([]string, 0, len(cols)+1)
+	// 首先添加ROWID
+	projected = append(projected, "ROWID as _rowid")
 	for _, c := range cols {
 		if _, isGeom := lowerGeomCols[strings.ToLower(c)]; isGeom {
 			geomExpr := r.buildGeometryExpression(c)
@@ -257,8 +268,24 @@ func (r *SpatiaLiteReader) buildSelectQueryForTable(table, where string, geomCol
 }
 
 func (r *SpatiaLiteReader) buildPaginatedQuery() string {
-	// SQLite 支持 LIMIT / OFFSET	re
-	return fmt.Sprintf("%s LIMIT %d OFFSET %d", r.baseQuery, r.batchSize, r.offset)
+	// 使用ROWID游标分页，避免OFFSET性能问题
+	// ROWID是SQLite的隐式主键，查询效率高
+	if r.lastRowID == 0 {
+		// 第一次查询：直接使用baseQuery + ORDER BY ROWID LIMIT n
+		return fmt.Sprintf("%s ORDER BY ROWID LIMIT %d", r.baseQuery, r.batchSize)
+	}
+
+	// 后续查询：添加 WHERE ROWID > lastRowID
+	// 需要在baseQuery的WHERE子句中添加ROWID条件
+	if strings.Contains(strings.ToUpper(r.baseQuery), " WHERE ") {
+		// baseQuery已经有WHERE子句，添加AND ROWID > lastRowID
+		return fmt.Sprintf("%s AND ROWID > %d ORDER BY ROWID LIMIT %d",
+			r.baseQuery, r.lastRowID, r.batchSize)
+	} else {
+		// baseQuery没有WHERE子句，添加WHERE ROWID > lastRowID
+		return fmt.Sprintf("%s WHERE ROWID > %d ORDER BY ROWID LIMIT %d",
+			r.baseQuery, r.lastRowID, r.batchSize)
+	}
 }
 
 func (r *SpatiaLiteReader) buildGeometryExpression(column string) string {

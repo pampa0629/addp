@@ -2581,7 +2581,7 @@ const buildConnectorConfigFromResource = (resource) => {
   if (['spatialite', 'sqlite'].includes(type)) {
     return {
       type: 'spatialite',
-      file_path: conn.file_path || '',
+      full_name: conn.full_name || '',
       engine_type: resource.engine_type,
       connection_info: conn
     }

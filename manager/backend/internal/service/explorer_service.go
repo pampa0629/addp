@@ -409,7 +409,8 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 
 	// 将 Items 转换为 MetaNode（叶子节点：表/集合/对象）
 	// 只有当 expandDepth == -1 或者足够大时才包含 Items
-	includeItems := expandDepth == -1 || expandDepth >= 3 // 对象存储的对象通常在第3层
+	// 修正阈值：数据库表在 depth=2，对象存储对象在 depth=3
+	includeItems := expandDepth == -1 || expandDepth >= 2
 	if includeItems {
 		for i := range tree.Items {
 			item := &tree.Items[i]

@@ -52,12 +52,8 @@
           </el-form-item>
           <el-form-item label="状态">
             <el-select v-model="searchForm.status" placeholder="请选择" clearable class="search-select">
-              <el-option label="未执行" value="pending" />
+              <el-option label="空闲" value="idle" />
               <el-option label="执行中" value="running" />
-              <el-option label="已启动" value="scheduled" />
-              <el-option label="已暂停" value="paused" />
-              <el-option label="已完成" value="completed" />
-              <el-option label="已停止" value="stopped" />
             </el-select>
           </el-form-item>
           <el-form-item>
@@ -71,28 +67,11 @@
       <el-table :data="tasks" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="name" label="任务名称" min-width="200" />
-        <el-table-column prop="mode" label="模式" width="120">
-          <template #default="{ row }">
-            {{ getModeLabel(row.mode) }}
-          </template>
-        </el-table-column>
         <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="getTaskStatusTagType(row)">
               {{ getTaskStatusLabel(row) }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="last_execution_status" label="最后执行状态" width="140">
-          <template #default="{ row }">
-            <el-tag :type="getExecutionTagType(row.last_execution_status)">
-              {{ getLastExecutionLabel(row.last_execution_status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="last_execution_finished_at" label="最后执行时间" width="180">
-          <template #default="{ row }">
-            {{ formatDate(row.last_execution_finished_at || row.last_execution_started_at) }}
           </template>
         </el-table-column>
         <el-table-column prop="schedule" label="调度" min-width="200">
@@ -159,7 +138,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { formatDate, formatSchedule, getModeLabel, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType } from '@/utils/formatters'
+import { formatDate, formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 
 const router = useRouter()
 
@@ -327,9 +306,9 @@ const handleDelete = async (task) => {
 // 辅助函数
 const isManualTask = (task) => !task.schedule
 const isRunning = (task) => task.status === 'running'
-const canStartSchedule = (task) => ['pending', 'paused'].includes(task.status)
-const canPauseSchedule = (task) => ['scheduled', 'running'].includes(task.status)
-const canDeleteManual = (task) => isRunning(task)
+const canStartSchedule = (task) => !task.enabled
+const canPauseSchedule = (task) => task.enabled
+const canDeleteManual = (task) => !isRunning(task)
 
 // 初始化
 onMounted(() => {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/models"
@@ -126,8 +125,8 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 		return nil, fmt.Errorf("failed to create execution: %w", err)
 	}
 
-	// 更新任务状态为 pending
-	s.taskRepo.UpdateStatus(oldExecution.TaskID, models.TaskStatusPending)
+	// 更新任务状态为 running（重试时立即开始执行）
+	s.taskRepo.UpdateStatus(oldExecution.TaskID, models.TaskStatusRunning)
 
 	// TODO: 将任务提交到队列
 
@@ -153,21 +152,10 @@ func (s *ExecutionService) CancelExecution(ctx context.Context, id, tenantID uin
 		return fmt.Errorf("failed to cancel execution: %w", err)
 	}
 
-	task, err := s.taskRepo.GetByID(execution.TaskID)
-	if err != nil {
-		return fmt.Errorf("failed to load task: %w", err)
-	}
-
-	finalStatus := models.TaskStatusStopped
-	if task.Schedule != "" {
-		finalStatus = models.TaskStatusScheduled
-	}
-
+	// 取消执行后，恢复任务为空闲状态
 	if err := s.taskRepo.UpdateFields(execution.TaskID, map[string]interface{}{
-		"status":                     finalStatus,
-		"last_execution_id":          id,
-		"last_execution_status":      models.ExecutionStatusFailed,
-		"last_execution_finished_at": time.Now(),
+		"status":   models.TaskStatusIdle,
+		"progress": 0,
 	}); err != nil {
 		return fmt.Errorf("failed to update task after cancellation: %w", err)
 	}

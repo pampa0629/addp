@@ -111,7 +111,7 @@
         <!-- Spatialite 源配置 -->
         <template v-if="sourceType === 'spatialite' || sourceType === 'spatialite_parallel'">
           <el-form-item label="Spatialite 文件路径">
-            <el-input v-model="sourceConfig.file_path" placeholder="/path/to/your/data.sqlite" />
+            <el-input v-model="sourceConfig.full_name" placeholder="/path/to/your/data.sqlite" />
           </el-form-item>
           <el-form-item label="表名">
             <el-input v-model="sourceConfig.table" placeholder="table_name" />
@@ -265,7 +265,7 @@ const form = ref({
 
 // 源配置
 const sourceConfig = ref({
-  file_path: '',
+  full_name: '',
   table: '',
   geometry_field: '',
   where_clause: '',
@@ -337,7 +337,7 @@ const configPreview = computed(() => {
 const buildSourceConfig = () => {
   if (sourceType.value === 'spatialite' || sourceType.value === 'spatialite_parallel') {
     const config = {
-      file_path: sourceConfig.value.file_path,
+      full_name: sourceConfig.value.full_name,
       table: sourceConfig.value.table
     }
     if (sourceConfig.value.geometry_field) {
@@ -447,7 +447,7 @@ const handleDataScaleChange = (scale) => {
 const handleSourceTypeChange = () => {
   // 清空配置
   sourceConfig.value = {
-    file_path: '',
+    full_name: '',
     table: '',
     geometry_field: '',
     where_clause: '',
@@ -525,7 +525,7 @@ const loadTask = async () => {
     form.value = {
       name: task.name,
       description: task.description,
-      mode: task.mode || task.execution_mode,
+      mode: task.execution_mode || 'batch', // 从 execution_mode 推断（task.mode 已删除）
       batch_size: task.source_config?.batch_size || 1000,
       write_batch_size: task.target_config?.batch_size || 1000,
       schedule: task.schedule || '',

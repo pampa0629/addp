@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod download:*)",
+      "Bash(go run:*)",
+      "Bash(brew list:*)",
+      "Bash(SPATIALITE_EXTENSION_PATH=/opt/homebrew/lib/mod_spatialite.dylib go run:*)",
+      "Bash(go mod tidy:*)"
+    ]
+  }
+}

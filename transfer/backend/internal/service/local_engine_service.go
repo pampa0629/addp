@@ -451,10 +451,10 @@ func (s *LocalEngineService) ListFields(id, tenantID uint, table string) ([]map[
 }
 
 func (s *LocalEngineService) testSpatiaLite(connInfo models.JSONMap) error {
-    filePath, _ := connInfo["file_path"].(string)
-    if filePath == "" { return fmt.Errorf("missing required field: file_path") }
+    fullName, _ := connInfo["full_name"].(string)
+    if fullName == "" { return fmt.Errorf("missing required field: full_name") }
 
-    db, err := sql.Open("sqlite3", filePath)
+    db, err := sql.Open("sqlite3", fullName)
     if err != nil { return fmt.Errorf("failed to open sqlite: %w", err) }
     defer db.Close()
 
@@ -470,10 +470,10 @@ func (s *LocalEngineService) testSpatiaLite(connInfo models.JSONMap) error {
 }
 
 func (s *LocalEngineService) listSQLiteTables(connInfo models.JSONMap) ([]string, error) {
-    filePath, _ := connInfo["file_path"].(string)
-    if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
+    fullName, _ := connInfo["full_name"].(string)
+    if fullName == "" { return nil, fmt.Errorf("missing required field: full_name") }
 
-    db, err := sql.Open("sqlite3", filePath)
+    db, err := sql.Open("sqlite3", fullName)
     if err != nil { return nil, fmt.Errorf("failed to open sqlite: %w", err) }
     defer db.Close()
 
@@ -513,10 +513,10 @@ func (s *LocalEngineService) listSQLiteTables(connInfo models.JSONMap) ([]string
 }
 
 func (s *LocalEngineService) listSQLiteFields(connInfo models.JSONMap, table string) ([]map[string]interface{}, error) {
-    filePath, _ := connInfo["file_path"].(string)
-    if filePath == "" { return nil, fmt.Errorf("missing required field: file_path") }
+    fullName, _ := connInfo["full_name"].(string)
+    if fullName == "" { return nil, fmt.Errorf("missing required field: full_name") }
 
-    db, err := sql.Open("sqlite3", filePath)
+    db, err := sql.Open("sqlite3", fullName)
     if err != nil { return nil, fmt.Errorf("failed to open sqlite: %w", err) }
     defer db.Close()
 

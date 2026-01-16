@@ -24,7 +24,8 @@
       const nodeType = (object.node_type || '').toLowerCase()
 
       if (mode === 'node') {
-        return ['directory', 'prefix', 'bucket', 'schema'].includes(nodeType)
+        // 只处理对象存储的容器节点（不包括 schema，schema 由 table-preview 处理）
+        return ['directory', 'prefix', 'bucket'].includes(nodeType)
       }
 
       if (mode !== 'object') {

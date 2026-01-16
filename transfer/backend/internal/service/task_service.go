@@ -57,31 +57,24 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 
 	// 构建任务对象
 	task := &models.Task{
-		Name:           req.Name,
-		Description:    req.Description,
-		Type:           req.Type,
-		Mode:           req.Mode,
-		SourceID:       req.SourceID,
-		TargetID:       req.TargetID,
-		Config:         req.Config,
-		Schedule:       req.Schedule,
-		BatchSize:      req.BatchSize,
-		MaxParallelism: req.MaxParallelism,
-		Status:         models.TaskStatusPending,
-		Progress:       0,
-		TenantID:       tenantID,
-		CreatedBy:      &userID,
+		Name:        req.Name,
+		Description: req.Description,
+		Type:        req.Type,
+		SourceID:    req.SourceID,
+		TargetID:    req.TargetID,
+		Config:      req.Config,
+		Schedule:    req.Schedule,
+		BatchSize:   req.BatchSize,
+		Status:      models.TaskStatusIdle,
+		Progress:    0,
+		Enabled:     req.Schedule != "", // 有 schedule 的任务默认不启用，需要用户手动启动
+		TenantID:    tenantID,
+		CreatedBy:   &userID,
 	}
 
 	// 设置默认值
-	if task.Mode == "" {
-		task.Mode = models.TaskModeBatch
-	}
 	if task.BatchSize == 0 {
 		task.BatchSize = 1000
-	}
-	if task.MaxParallelism == 0 {
-		task.MaxParallelism = 1
 	}
 
 	// 创建任务
@@ -147,11 +140,8 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	if req.BatchSize != nil {
 		task.BatchSize = *req.BatchSize
 	}
-	if req.MaxParallelism != nil {
-		task.MaxParallelism = *req.MaxParallelism
-	}
-	if req.Status != nil {
-		task.Status = *req.Status
+	if req.Enabled != nil {
+		task.Enabled = *req.Enabled
 	}
 
 	if err := s.taskRepo.Update(task); err != nil {
@@ -254,12 +244,8 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 
 		// 4. 原子更新任务状态（在同一事务中）
 		updates := map[string]interface{}{
-			"status":                     models.TaskStatusRunning,
-			"progress":                   0,
-			"last_execution_id":          execution.ID,
-			"last_execution_status":      models.ExecutionStatusRunning,
-			"last_execution_started_at":  now,
-			"last_execution_finished_at": nil,
+			"status":   models.TaskStatusRunning,
+			"progress": 0,
 		}
 
 		if err := tx.Model(task).Updates(updates).Error; err != nil {
@@ -280,21 +266,12 @@ func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) 
 			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
 
 			// 回滚：标记执行失败
-			finishedAt := time.Now()
 			s.execRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error())
 
-			// 回滚：恢复任务状态
-			finalStatus := models.TaskStatusPending
-			task, _ := s.taskRepo.GetByID(id)
-			if task != nil && task.Schedule != "" {
-				finalStatus = models.TaskStatusScheduled
-			}
-
+			// 回滚：恢复任务状态为空闲
 			if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
-				"status":                     finalStatus,
-				"last_execution_status":      models.ExecutionStatusFailed,
-				"last_execution_finished_at": finishedAt,
-				"progress":                   0,
+				"status":   models.TaskStatusIdle,
+				"progress": 0,
 			}); err != nil {
 				s.logger.Warn("failed to rollback task state after enqueue failure", "error", err, "task_id", id)
 			}
@@ -321,19 +298,17 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 		return fmt.Errorf("task is not running")
 	}
 
-	now := time.Now()
-
-	if task.LastExecutionID != nil {
-		if err := s.execRepo.FinishExecution(*task.LastExecutionID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
+	// 查询最后一次执行记录
+	lastExecution, err := s.execRepo.GetLatestByTaskID(id)
+	if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
+		if err := s.execRepo.FinishExecution(lastExecution.ID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
 			s.logger.Warn("failed to finish execution when stopping task", "error", err, "task_id", id)
 		}
 	}
 
 	updates := map[string]interface{}{
-		"status":                     models.TaskStatusStopped,
-		"last_execution_status":      models.ExecutionStatusFailed,
-		"last_execution_finished_at": now,
-		"progress":                   0,
+		"status":   models.TaskStatusIdle,
+		"progress": 0,
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
@@ -344,7 +319,7 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 	return nil
 }
 
-// PauseTask 暂停任务
+// PauseTask 暂停任务（暂停定时调度）
 func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
@@ -356,17 +331,20 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	}
 
 	updates := map[string]interface{}{
-		"status":   models.TaskStatusPaused,
-		"progress": 0,
+		"enabled": false,
 	}
 
-	if task.Status == models.TaskStatusRunning && task.LastExecutionID != nil {
-		now := time.Now()
-		if err := s.execRepo.FinishExecution(*task.LastExecutionID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
-			s.logger.Warn("failed to finish execution when pausing task", "error", err, "task_id", id)
+	// 如果任务正在运行，需要停止当前执行
+	if task.Status == models.TaskStatusRunning {
+		// 查询最后一次执行记录
+		lastExecution, err := s.execRepo.GetLatestByTaskID(id)
+		if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
+			if err := s.execRepo.FinishExecution(lastExecution.ID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
+				s.logger.Warn("failed to finish execution when pausing task", "error", err, "task_id", id)
+			}
 		}
-		updates["last_execution_status"] = models.ExecutionStatusFailed
-		updates["last_execution_finished_at"] = now
+		updates["status"] = models.TaskStatusIdle
+		updates["progress"] = 0
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
@@ -377,7 +355,7 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	return nil
 }
 
-// ResumeTask 恢复任务
+// ResumeTask 恢复任务（恢复定时调度）
 func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
@@ -388,13 +366,12 @@ func (s *TaskService) ResumeTask(ctx context.Context, id, tenantID uint) error {
 		return fmt.Errorf("manual tasks do not support resume")
 	}
 
-	if task.Status != models.TaskStatusPaused && task.Status != models.TaskStatusPending {
-		return fmt.Errorf("task cannot be resumed from current status")
+	if task.Enabled {
+		return fmt.Errorf("task is already enabled")
 	}
 
 	updates := map[string]interface{}{
-		"status":   models.TaskStatusScheduled,
-		"progress": 0,
+		"enabled": true,
 	}
 
 	if err := s.taskRepo.UpdateFields(id, updates); err != nil {

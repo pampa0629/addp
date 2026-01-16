@@ -283,7 +283,7 @@ export const inferConnectorTypeForWorker = (config) => {
   if (explicit) return explicit
   if (config.driver) return 'jdbc'
   if (config.bucket || config.endpoint || config.file_name || config.file_type) return 's3'
-  if (config.path || config.directory || config.file_path) return 'file'
+  if (config.path || config.directory || config.file_path || config.full_name) return 'file'
   if (config.topic) return 'kafka'
   return 'unknown'
 }

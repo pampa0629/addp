@@ -182,7 +182,7 @@ func (r *SpatiaLiteParallelReader) worker(ctx context.Context, workerID int) {
 	defer r.wg.Done()
 
 	// 每个 worker 创建独立的数据库连接（SQLite 读并发安全）
-	db, err := sql.Open("sqlite3", r.config.FilePath)
+	db, err := sql.Open("sqlite3", r.config.FullName)
 	if err != nil {
 		r.errChan <- fmt.Errorf("worker %d: failed to open db: %w", workerID, err)
 		return

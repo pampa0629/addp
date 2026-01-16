@@ -199,11 +199,12 @@ func (p *DatabaseTablePreviewProvider) queryData(
 		for i, col := range columns {
 			if p.isSpatialType(col.DataType) {
 				// 空间字段：转换为 WKT 格式（如 MULTIPOLYGON (((120.175...）））
-				selectColumns[i] = fmt.Sprintf("ST_AsText(%s) AS %s", col.ColumnName, col.ColumnName)
+				selectColumns[i] = fmt.Sprintf("ST_AsText(\"%s\") AS \"%s\"", col.ColumnName, col.ColumnName)
 				// 调试日志：记录空间字段转换
 				fmt.Printf("[DEBUG] 检测到空间列: %s, 类型: %s, 使用 ST_AsText 转换\n", col.ColumnName, col.DataType)
 			} else {
-				selectColumns[i] = col.ColumnName
+				// 普通字段：列名加双引号，确保大小写敏感
+				selectColumns[i] = fmt.Sprintf("\"%s\"", col.ColumnName)
 			}
 		}
 		query = fmt.Sprintf("SELECT %s FROM \"%s\".\"%s\" LIMIT %d OFFSET %d",

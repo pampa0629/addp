@@ -180,42 +180,62 @@ const handleNodeClick = async (node) => {
     return
   }
 
-  // 如果是目录类型节点（directory/bucket/prefix），点击时切换展开状态
-  const isDirLike = ['directory', 'bucket', 'prefix'].includes(node.type)
-  console.log('[ExplorerTree] 目录类型检查:', { isDirLike, nodeType: node.type })
+  // 如果是容器类型节点（directory/bucket/prefix/schema/database），点击时切换展开状态
+  const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
+  console.log('[ExplorerTree] 容器类型检查:', { isDirLike, nodeType: node.type })
 
   if (isDirLike) {
-    // 切换展开状态
+    // 检查节点是否需要加载子节点
+    const needsLoading = (!node.children || node.children.length === 0 || !node.loaded) && node.hasChildren
     const isExpanded = store.expandedLocators.has(locator)
-    console.log('[ExplorerTree] 当前展开状态:', isExpanded)
 
+    console.log('[ExplorerTree] 节点状态:', {
+      isExpanded,
+      needsLoading,
+      hasChildren: node.hasChildren,
+      childrenCount: node.children?.length || 0,
+      loaded: node.loaded
+    })
+
+    // 如果节点已展开但还没有加载子节点，先加载子节点
+    if (isExpanded && needsLoading) {
+      console.log('[ExplorerTree] 节点已展开但未加载子节点，触发加载:', node.label)
+      try {
+        const loc = parseLocator(locator)
+        if (loc && loc.engineId) {
+          // 强制刷新，绕过缓存，确保从后端加载数据
+          await store.loadNodeChildren(locator, 1, true)
+        }
+      } catch (error) {
+        console.error('加载子节点失败:', error)
+        ElMessage.error('加载子节点失败: ' + error.message)
+      }
+      return
+    }
+
+    // 如果节点已展开且已加载子节点，折叠它
     if (isExpanded) {
       console.log('[ExplorerTree] 折叠节点:', node.label)
       store.collapseNode(locator)
-    } else {
-      console.log('[ExplorerTree] 展开节点:', node.label)
-      // 展开节点（会触发 handleNodeExpand 进行增量加载）
-      store.expandNode(locator)
+      return
+    }
 
-      // 如果节点未加载子节点，触发增量加载
-      const needsLoading = !node.children || node.children.length === 0 || !node.loaded
-      console.log('[ExplorerTree] 需要加载:', needsLoading, {
-        hasChildren: !!node.children,
-        childrenCount: node.children?.length || 0,
-        loaded: node.loaded
-      })
+    // 节点未展开，展开它
+    console.log('[ExplorerTree] 展开节点:', node.label)
+    store.expandNode(locator)
 
-      if (needsLoading) {
-        try {
-          const loc = parseLocator(locator)
-          if (loc && loc.engineId) {
-            console.log('[ExplorerTree] 点击加载子节点:', node.label)
-            await store.loadNodeChildren(locator, 1)
-          }
-        } catch (error) {
-          console.error('加载子节点失败:', error)
-          ElMessage.error('加载子节点失败: ' + error.message)
+    // 如果需要加载子节点，触发加载
+    if (needsLoading) {
+      try {
+        const loc = parseLocator(locator)
+        if (loc && loc.engineId) {
+          console.log('[ExplorerTree] 点击加载子节点:', node.label)
+          // 强制刷新，绕过缓存，确保从后端加载数据
+          await store.loadNodeChildren(locator, 1, true)
         }
+      } catch (error) {
+        console.error('加载子节点失败:', error)
+        ElMessage.error('加载子节点失败: ' + error.message)
       }
     }
   }
@@ -325,8 +345,8 @@ const handleNodeExpand = async (node) => {
   }
 
   // 🚀 优化：使用增量加载替代全量重载
-  // 如果是目录节点且未加载子节点，使用增量加载
-  const isDirLike = ['directory', 'bucket', 'prefix'].includes(node.type)
+  // 如果是容器节点且未加载子节点，使用增量加载
+  const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
   const needsLoading = isDirLike && (!node.children || node.children.length === 0 || !node.loaded)
 
   console.log('[ExplorerTree] 增量加载检查:', {
@@ -343,7 +363,8 @@ const handleNodeExpand = async (node) => {
         console.log('[ExplorerTree] 增量加载子节点:', node.label, 'engine:', loc.engineId)
 
         // ⚡ 关键改进：只加载该节点的子节点，不重新加载整个树
-        await store.loadNodeChildren(locator, 1)
+        // 强制刷新，绕过缓存，确保从后端加载数据
+        await store.loadNodeChildren(locator, 1, true)
 
         console.log('[ExplorerTree] 增量加载完成')
       }

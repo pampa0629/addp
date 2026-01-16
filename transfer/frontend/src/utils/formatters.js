@@ -38,39 +38,32 @@ export const getTaskTypeLabel = (type) => {
   return labels[type] || type
 }
 
-// 任务状态标签（考虑手动任务和定时任务的区别）
+// 任务状态标签（简化版）
 export const getTaskStatusLabel = (task) => {
-  if (!task) return '未执行'
+  if (!task) return '未知'
 
   // 手动任务（无 schedule）
   if (!task.schedule) {
-    const labels = {
-      pending: '未执行',
-      running: '执行中',
-      stopped: '已停止',
-      completed: '已完成'
-    }
-    return labels[task.status] || '未执行'
+    return task.status === 'running' ? '执行中' : '空闲'
   }
 
   // 定时任务（有 schedule）
-  if (['scheduled', 'running'].includes(task.status)) return '已启动'
-  if (['pending', 'paused'].includes(task.status)) return '未启动'
-  if (task.status === 'stopped') return '已停止'
-  return '未启动'
+  if (task.status === 'running') {
+    return '执行中'
+  }
+  return task.enabled ? '已启动' : '未启动'
 }
 
 export const getTaskStatusTagType = (task) => {
   const label = getTaskStatusLabel(task)
   const types = {
-    未执行: 'info',
     执行中: 'primary',
-    已停止: 'info',
-    已完成: 'success',
-    已启动: 'primary',
-    未启动: 'info'
+    空闲: 'info',
+    已启动: 'success',
+    未启动: 'info',
+    未知: 'info'
   }
-  return types[label] || ''
+  return types[label] || 'info'
 }
 
 // 执行状态标签
@@ -96,14 +89,4 @@ export const getExecutionTagType = (status) => {
 export const getExecutionLabel = (status) => {
   const label = getLastExecutionLabel(status)
   return label === '未执行' ? '待开始' : label
-}
-
-// 模式标签
-export const getModeLabel = (mode) => {
-  const labels = {
-    batch: '批处理',
-    stream: '流式',
-    'micro-batch': '微批处理'
-  }
-  return labels[mode] || mode
 }

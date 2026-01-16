@@ -73,25 +73,12 @@ const (
 	TaskTypeSync   TaskType = "sync"   // 同步
 )
 
-// TaskStatus 任务状态
+// TaskStatus 任务状态（简化版）
 type TaskStatus string
 
 const (
-	TaskStatusPending   TaskStatus = "pending"   // 未执行/未启动
-	TaskStatusRunning   TaskStatus = "running"   // 执行中
-	TaskStatusPaused    TaskStatus = "paused"    // 暂停（视为未启动）
-	TaskStatusStopped   TaskStatus = "stopped"   // 已停止
-	TaskStatusScheduled TaskStatus = "scheduled" // 已启动（定时任务）
-	TaskStatusCompleted TaskStatus = "completed" // 已完成（手动任务）
-)
-
-// TaskMode 任务模式
-type TaskMode string
-
-const (
-	TaskModeBatch      TaskMode = "batch"       // 批处理模式
-	TaskModeStream     TaskMode = "stream"      // 流式模式
-	TaskModeMicroBatch TaskMode = "micro-batch" // 微批次模式
+	TaskStatusIdle    TaskStatus = "idle"    // 空闲（未执行或执行完成）
+	TaskStatusRunning TaskStatus = "running" // 执行中
 )
 
 // JSONMap is now imported from common/models
@@ -100,28 +87,22 @@ type JSONMap = commonModels.JSONMap
 
 // Task 传输任务
 type Task struct {
-	ID                      uint            `gorm:"primaryKey" json:"id"`
-	Name                    string          `gorm:"type:varchar(255);not null" json:"name"`
-	Description             string          `gorm:"type:text" json:"description"`
-	Type                    TaskType        `gorm:"type:varchar(50);not null" json:"type"`
-	Mode                    TaskMode        `gorm:"type:varchar(20);default:'batch'" json:"mode"`
-	SourceID                *uint           `gorm:"index" json:"source_id,omitempty"`  // 源数据源 ID（关联 system.engines）
-	TargetID                *uint           `gorm:"index" json:"target_id,omitempty"`  // 目标数据源 ID
-	Config                  JSONMap         `gorm:"type:jsonb;not null" json:"config"` // 任务配置
-	Schedule                string          `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
-	BatchSize               int             `gorm:"default:1000" json:"batch_size"`    // 批大小
-	MaxParallelism          int             `gorm:"default:1" json:"max_parallelism"`  // 最大并行度
-	RetryPolicy             JSONMap         `gorm:"type:jsonb" json:"retry_policy"`    // 重试策略
-	Status                  TaskStatus      `gorm:"type:varchar(20);default:'pending';index" json:"status"`
-	Progress                float64         `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
-	LastExecutionID         *uint           `gorm:"index" json:"last_execution_id,omitempty"`
-	LastExecutionStatus     ExecutionStatus `gorm:"type:varchar(20)" json:"last_execution_status"`
-	LastExecutionStartedAt  *time.Time      `json:"last_execution_started_at,omitempty"`
-	LastExecutionFinishedAt *time.Time      `json:"last_execution_finished_at,omitempty"`
-	CreatedBy               *uint           `json:"created_by,omitempty"`
-	TenantID                uint            `gorm:"not null;index" json:"tenant_id"`
-	CreatedAt               time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt               time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	Name        string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description string     `gorm:"type:text" json:"description"`
+	Type        TaskType   `gorm:"type:varchar(50);not null" json:"type"`
+	SourceID    *uint      `gorm:"index" json:"source_id,omitempty"`  // 源数据源 ID（关联 system.engines）
+	TargetID    *uint      `gorm:"index" json:"target_id,omitempty"`  // 目标数据源 ID
+	Config      JSONMap    `gorm:"type:jsonb;not null" json:"config"` // 任务配置
+	Schedule    string     `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
+	BatchSize   int        `gorm:"default:1000" json:"batch_size"`    // 批大小
+	Enabled     bool       `gorm:"default:false;index" json:"enabled"` // 任务启用状态（用于定时任务）
+	Status      TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	Progress    float64    `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
+	CreatedBy   *uint      `json:"created_by,omitempty"`
+	TenantID    uint       `gorm:"not null;index" json:"tenant_id"`
+	CreatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // TableName 指定表名
@@ -192,28 +173,25 @@ func (DataMapping) TableName() string {
 
 // CreateTaskRequest 创建任务请求
 type CreateTaskRequest struct {
-	Name           string                 `json:"name" binding:"required"`
-	Description    string                 `json:"description"`
-	Type           TaskType               `json:"type" binding:"required"`
-	Mode           TaskMode               `json:"mode"`
-	SourceID       *uint                  `json:"source_id"`
-	TargetID       *uint                  `json:"target_id"`
-	Config         map[string]interface{} `json:"config" binding:"required"`
-	Schedule       string                 `json:"schedule"`
-	BatchSize      int                    `json:"batch_size"`
-	MaxParallelism int                    `json:"max_parallelism"`
-	Mappings       []DataMapping          `json:"mappings"`
+	Name        string                 `json:"name" binding:"required"`
+	Description string                 `json:"description"`
+	Type        TaskType               `json:"type" binding:"required"`
+	SourceID    *uint                  `json:"source_id"`
+	TargetID    *uint                  `json:"target_id"`
+	Config      map[string]interface{} `json:"config" binding:"required"`
+	Schedule    string                 `json:"schedule"`
+	BatchSize   int                    `json:"batch_size"`
+	Mappings    []DataMapping          `json:"mappings"`
 }
 
 // UpdateTaskRequest 更新任务请求
 type UpdateTaskRequest struct {
-	Name           *string                `json:"name"`
-	Description    *string                `json:"description"`
-	Config         map[string]interface{} `json:"config"`
-	Schedule       *string                `json:"schedule"`
-	BatchSize      *int                   `json:"batch_size"`
-	MaxParallelism *int                   `json:"max_parallelism"`
-	Status         *TaskStatus            `json:"status"`
+	Name        *string                `json:"name"`
+	Description *string                `json:"description"`
+	Config      map[string]interface{} `json:"config"`
+	Schedule    *string                `json:"schedule"`
+	BatchSize   *int                   `json:"batch_size"`
+	Enabled     *bool                  `json:"enabled"`
 }
 
 // ListTasksRequest 查询任务列表请求

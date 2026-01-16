@@ -379,7 +379,9 @@
       "Bash(brew list:*)",
       "Bash(go env:*)",
       "Bash(PGPASSWORD=addp123456 psql:*)",
-      "Bash(pwdx:*)"
+      "Bash(pwdx:*)",
+      "Bash(sqlite3:*)",
+      "Bash(PGPASSWORD=addp_system psql:*)"
     ],
     "deny": [],
     "ask": [],

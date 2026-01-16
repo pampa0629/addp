@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/twpayne/go-geom/encoding/wkb"
@@ -594,13 +595,40 @@ func (w *JDBCWriter) prepareValue(column string, value interface{}) (interface{}
 		}
 	}
 
-	// 清理字符串中的 null 字节（PostgreSQL UTF8 编码不支持 0x00）
+	// 清理字符串中的无效字符（PostgreSQL UTF8 编码要求严格）
 	if str, ok := value.(string); ok {
-		// 移除 null 字节，避免 "invalid byte sequence for encoding UTF8" 错误
-		return strings.ReplaceAll(str, "\x00", ""), nil
+		return cleanStringForPostgres(str), nil
+	}
+
+	// 处理 []byte 类型的文本数据（SQLite 有时会返回 []byte 而不是 string）
+	// 注意：几何列已在上面处理，这里只处理文本类型的 []byte
+	if b, ok := value.([]byte); ok {
+		str := string(b)
+		return cleanStringForPostgres(str), nil
 	}
 
 	return value, nil
+}
+
+// cleanStringForPostgres 清理字符串使其符合 PostgreSQL UTF8 编码要求
+func cleanStringForPostgres(s string) string {
+	// 移除 null 字节
+	s = strings.ReplaceAll(s, "\x00", "")
+
+	// 移除所有无效的 UTF8 字符
+	if !utf8.ValidString(s) {
+		// 逐个字符检查，只保留有效的 UTF8 字符
+		var buf strings.Builder
+		buf.Grow(len(s))
+		for _, r := range s {
+			if r != utf8.RuneError {
+				buf.WriteRune(r)
+			}
+		}
+		return buf.String()
+	}
+
+	return s
 }
 
 func (w *JDBCWriter) mapFieldToSQLType(field pipeline.Field, hasGeometry bool, meta geometryColumnMeta) string {

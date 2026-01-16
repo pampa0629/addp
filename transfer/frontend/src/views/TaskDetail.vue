@@ -38,21 +38,12 @@
       <el-descriptions :column="2" border>
         <el-descriptions-item label="任务ID">{{ task.id }}</el-descriptions-item>
         <el-descriptions-item label="任务名称">{{ task.name }}</el-descriptions-item>
-        <el-descriptions-item label="执行模式">{{ task.mode }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="getTaskStatusTagType(task)">{{ getTaskStatusLabel(task) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="最后执行状态">
-          <el-tag :type="getExecutionTagType(task.last_execution_status)">
-            {{ getLastExecutionLabel(task.last_execution_status) }}
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="最后执行时间">
-          {{ formatDate(task.last_execution_finished_at || task.last_execution_started_at) }}
-        </el-descriptions-item>
         <el-descriptions-item label="批量大小">{{ task.batch_size }}</el-descriptions-item>
         <el-descriptions-item label="定时调度">{{ formatSchedule(task.schedule) }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间" :span="2">
+        <el-descriptions-item label="创建时间">
           {{ formatDate(task.created_at) }}
         </el-descriptions-item>
         <el-descriptions-item label="描述" :span="2">
@@ -145,12 +136,10 @@ const executions = ref([])
 const mappings = ref([])
 const isManualTask = computed(() => !task.value?.schedule)
 const canStartSchedule = computed(() => {
-  const status = task.value?.status
-  return !!status && ['pending', 'paused'].includes(status)
+  return !task.value?.enabled
 })
 const canPauseSchedule = computed(() => {
-  const status = task.value?.status
-  return !!status && ['scheduled', 'running'].includes(status)
+  return task.value?.enabled
 })
 const canEditTask = computed(() => {
   const status = task.value?.status
@@ -468,7 +457,7 @@ const inferConnectorTypeForWorker = (config) => {
   if (explicit) return explicit
   if (config.driver) return 'jdbc'
   if (config.bucket || config.endpoint || config.file_name || config.file_type) return 's3'
-  if (config.path || config.directory || config.file_path) return 'file'
+  if (config.path || config.directory || config.file_path || config.full_name) return 'file'
   if (config.topic) return 'kafka'
   return 'unknown'
 }

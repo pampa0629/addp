@@ -18,7 +18,23 @@
   register({
     name: 'table',
     component,
-    canHandle: (data = {}) => (data.mode || '').toLowerCase() === 'table',
+    canHandle: (data = {}) => {
+      const mode = (data.mode || '').toLowerCase()
+      const object = data.object || {}
+      const nodeType = (object.node_type || '').toLowerCase()
+
+      // 处理表数据
+      if (mode === 'table') {
+        return true
+      }
+
+      // 处理数据库 schema/database 节点（PostgreSQL、MySQL等）
+      if (mode === 'node' && ['schema', 'database'].includes(nodeType)) {
+        return true
+      }
+
+      return false
+    },
     priority: 100
   })
 
