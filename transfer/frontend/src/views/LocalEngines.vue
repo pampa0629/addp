@@ -135,14 +135,14 @@ const getResourceTypeLabel = (type) => {
 const getResourceTypeColor = (type) => {
   const colorMap = {
     'postgresql': 'primary',
-    'mysql': '',
+    'mysql': 'success',
     'minio': 'warning',
     's3': 'success',
     'oss': 'info',
     'spatialite': 'info',
     'sqlite': 'info'
   }
-  return colorMap[type] || ''
+  return colorMap[type] || 'info'
 }
 
 const loadResources = async () => {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -147,6 +148,15 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 	if err != nil {
 		if err == service.ErrEngineAccessDenied {
 			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			return
+		}
+		// 检查是否为表不存在错误（使用 errors.As 处理包装后的错误）
+		var tableNotFoundErr *service.TableNotFoundError
+		if errors.As(err, &tableNotFoundErr) {
+			logger.L().Warn("表不存在", "error", tableNotFoundErr.Error())
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": tableNotFoundErr.Error(),
+			})
 			return
 		}
 		logger.L().Error("数据预览失败", "error", err)

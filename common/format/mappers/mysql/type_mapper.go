@@ -36,9 +36,9 @@ func (m *TypeMapper) ToCommon(mysqlType string) format.FieldType {
 
 	// 浮点类型
 	case "float":
-		return format.FieldTypeFloat
+		return format.FieldTypeFloat // 4字节单精度
 	case "double", "real":
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // 8字节双精度
 	case "decimal", "numeric":
 		return format.FieldTypeDecimal
 
@@ -57,6 +57,20 @@ func (m *TypeMapper) ToCommon(mysqlType string) format.FieldType {
 	// 二进制类型
 	case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
 		return format.FieldTypeBytes
+
+	// 地理空间类型
+	case "geometry":
+		return format.FieldTypeGeometry
+	case "point":
+		return format.FieldTypePoint
+	case "linestring":
+		return format.FieldTypeLineString
+	case "polygon":
+		return format.FieldTypePolygon
+	case "multipoint":
+		return format.FieldTypeMultiPoint
+	case "multilinestring", "multipolygon", "geometrycollection":
+		return format.FieldTypeGeometry
 
 	// 复杂类型
 	case "json":
@@ -77,7 +91,9 @@ func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) 
 	case format.FieldTypeBigInt:
 		return "BIGINT", 0, 0
 	case format.FieldTypeFloat:
-		return "DOUBLE", 0, 0
+		return "FLOAT", 0, 0 // 4字节单精度
+	case format.FieldTypeDouble:
+		return "DOUBLE", 0, 0 // 8字节双精度
 	case format.FieldTypeDecimal:
 		return "DECIMAL", 10, 2 // 默认 (10,2)
 	case format.FieldTypeBool:
@@ -90,6 +106,16 @@ func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) 
 		return "DATETIME", 0, 0
 	case format.FieldTypeBytes:
 		return "BLOB", 0, 0
+	case format.FieldTypeGeometry:
+		return "GEOMETRY", 0, 0
+	case format.FieldTypePoint:
+		return "POINT", 0, 0
+	case format.FieldTypeLineString:
+		return "LINESTRING", 0, 0
+	case format.FieldTypePolygon:
+		return "POLYGON", 0, 0
+	case format.FieldTypeMultiPoint:
+		return "MULTIPOINT", 0, 0
 	case format.FieldTypeJSON:
 		return "JSON", 0, 0
 	case format.FieldTypeUUID:

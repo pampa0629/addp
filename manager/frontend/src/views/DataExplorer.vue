@@ -84,7 +84,9 @@ const handleNodeSelect = async ({ node, locator }) => {
       await store.loadPreview(locator, 1)
     } catch (error) {
       console.error('加载预览失败:', error)
-      ElMessage.error('加载预览失败: ' + error.message)
+      // 提取后端返回的错误信息（优先使用 response.data.error，否则使用 error.message）
+      const errorMessage = error.response?.data?.error || error.message
+      ElMessage.error(errorMessage)
     }
   }
 }

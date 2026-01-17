@@ -161,8 +161,9 @@ func (r *SpatiaLiteReader) Read(ctx context.Context) (*pipeline.DataBatch, error
 		if err != nil {
 			return nil, err
 		}
-		// 添加ROWID到列名列表
-		r.columns = append([]string{"_rowid"}, cols...)
+		// buildSelectQueryForTable 已经在 SELECT 列表中包含了 ROWID as _rowid，
+		// 所以 rows.Columns() 返回的列名已经包含 _rowid，无需再次添加
+		r.columns = cols
 	}
 
 	var batchRows []map[string]interface{}
@@ -233,7 +234,8 @@ func (r *SpatiaLiteReader) buildSelectQueryForTable(table, where string, geomCol
 	cols, _ := r.fetchTableColumns(table)
 	if len(cols) == 0 {
 		// 回退到 SELECT ROWID, *
-		q := fmt.Sprintf("SELECT ROWID as _rowid, * FROM %s", table)
+		// 重要：使用 quoteIdentSQLite 保留标识符大小写
+		q := fmt.Sprintf("SELECT ROWID as _rowid, * FROM %s", quoteIdentSQLite(table))
 		if strings.TrimSpace(where) != "" {
 			q += " WHERE " + where
 		}
@@ -355,10 +357,19 @@ func (r *SpatiaLiteReader) inferSchema(ctx context.Context) (*pipeline.Schema, e
 			Type:     mapSQLiteType(upperDBType),
 			Nullable: true,
 		}
-		if meta, ok := geom[name]; ok {
-			f.Type = "geometry"
-			f.SpatialType = meta.SpatialType
-			f.SRID = meta.SRID
+
+		// 大小写不敏感地查找几何列元数据
+		// SpatiaLite中geometry_columns表的列名可能是全小写(smgeometry)
+		// 而PRAGMA table_info返回的列名可能是混合大小写(SmGeometry)
+		for geomColName, meta := range geom {
+			if strings.EqualFold(geomColName, name) {
+				f.Type = "geometry"
+				f.SpatialType = meta.SpatialType
+				f.SRID = meta.SRID
+				fmt.Printf("DEBUG SpatiaLite Reader: 设置几何字段 %s (匹配 %s), SRID=%d, SpatialType=%s\n",
+					name, geomColName, meta.SRID, meta.SpatialType)
+				break
+			}
 		}
 		fields = append(fields, f)
 	}
@@ -384,10 +395,15 @@ func (r *SpatiaLiteReader) inferSchemaFromTable(ctx context.Context, table strin
 			Type:     mapSQLiteType(strings.ToUpper(c.dataType)),
 			Nullable: !c.notNull,
 		}
-		if meta, ok := geom[c.name]; ok {
-			f.Type = "geometry"
-			f.SpatialType = meta.SpatialType
-			f.SRID = meta.SRID
+
+		// 大小写不敏感地查找几何列元数据
+		for geomColName, meta := range geom {
+			if strings.EqualFold(geomColName, c.name) {
+				f.Type = "geometry"
+				f.SpatialType = meta.SpatialType
+				f.SRID = meta.SRID
+				break
+			}
 		}
 		fields = append(fields, f)
 	}
@@ -419,7 +435,9 @@ func (r *SpatiaLiteReader) detectGeometryColumns(ctx context.Context, table stri
 		if err := rows.Scan(&col, &srid, &gtype); err != nil {
 			return result, err
 		}
-		result[col] = geomMeta{SRID: srid, SpatialType: mapSpatiaLiteGeomType(gtype)}
+		spatialType := mapSpatiaLiteGeomType(gtype)
+		result[col] = geomMeta{SRID: srid, SpatialType: spatialType}
+		fmt.Printf("DEBUG SpatiaLite Reader: detectGeometryColumns - 列=%s, SRID=%d, SpatialType=%s\n", col, srid, spatialType)
 	}
 	return result, nil
 }

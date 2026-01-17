@@ -87,22 +87,21 @@ type JSONMap = commonModels.JSONMap
 
 // Task 传输任务
 type Task struct {
-	ID          uint       `gorm:"primaryKey" json:"id"`
-	Name        string     `gorm:"type:varchar(255);not null" json:"name"`
-	Description string     `gorm:"type:text" json:"description"`
-	Type        TaskType   `gorm:"type:varchar(50);not null" json:"type"`
-	SourceID    *uint      `gorm:"index" json:"source_id,omitempty"`  // 源数据源 ID（关联 system.engines）
-	TargetID    *uint      `gorm:"index" json:"target_id,omitempty"`  // 目标数据源 ID
-	Config      JSONMap    `gorm:"type:jsonb;not null" json:"config"` // 任务配置
-	Schedule    string     `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
-	BatchSize   int        `gorm:"default:1000" json:"batch_size"`    // 批大小
-	Enabled     bool       `gorm:"default:false;index" json:"enabled"` // 任务启用状态（用于定时任务）
-	Status      TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
-	Progress    float64    `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
-	CreatedBy   *uint      `json:"created_by,omitempty"`
-	TenantID    uint       `gorm:"not null;index" json:"tenant_id"`
-	CreatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
+	Description      string     `gorm:"type:text" json:"description"`
+	Type             TaskType   `gorm:"type:varchar(50);not null" json:"type"`
+	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"` // 任务配置（包含 source 和 target）
+	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
+	BatchSize        int        `gorm:"default:1000" json:"batch_size"`    // 批大小
+	Enabled          bool       `gorm:"default:false;index" json:"enabled"` // 任务启用状态（用于定时任务）
+	AutoScanMetadata bool       `gorm:"default:true" json:"auto_scan_metadata"` // 任务完成后自动扫描元数据
+	Status           TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	Progress         float64    `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
+	CreatedBy        *uint      `json:"created_by,omitempty"`
+	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
+	CreatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
 // TableName 指定表名
@@ -173,25 +172,25 @@ func (DataMapping) TableName() string {
 
 // CreateTaskRequest 创建任务请求
 type CreateTaskRequest struct {
-	Name        string                 `json:"name" binding:"required"`
-	Description string                 `json:"description"`
-	Type        TaskType               `json:"type" binding:"required"`
-	SourceID    *uint                  `json:"source_id"`
-	TargetID    *uint                  `json:"target_id"`
-	Config      map[string]interface{} `json:"config" binding:"required"`
-	Schedule    string                 `json:"schedule"`
-	BatchSize   int                    `json:"batch_size"`
-	Mappings    []DataMapping          `json:"mappings"`
+	Name             string                 `json:"name" binding:"required"`
+	Description      string                 `json:"description"`
+	Type             TaskType               `json:"type" binding:"required"`
+	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target 配置
+	Schedule         string                 `json:"schedule"`
+	BatchSize        int                    `json:"batch_size"`
+	AutoScanMetadata *bool                  `json:"auto_scan_metadata"` // 任务完成后自动扫描元数据（默认 true）
+	Mappings         []DataMapping          `json:"mappings"`
 }
 
 // UpdateTaskRequest 更新任务请求
 type UpdateTaskRequest struct {
-	Name        *string                `json:"name"`
-	Description *string                `json:"description"`
-	Config      map[string]interface{} `json:"config"`
-	Schedule    *string                `json:"schedule"`
-	BatchSize   *int                   `json:"batch_size"`
-	Enabled     *bool                  `json:"enabled"`
+	Name             *string                `json:"name"`
+	Description      *string                `json:"description"`
+	Config           map[string]interface{} `json:"config"`
+	Schedule         *string                `json:"schedule"`
+	BatchSize        *int                   `json:"batch_size"`
+	Enabled          *bool                  `json:"enabled"`
+	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
 }
 
 // ListTasksRequest 查询任务列表请求

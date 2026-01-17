@@ -87,7 +87,7 @@ const getTypeColor = (type) => {
     'minio': 'warning',
     'mysql': 'success'
   }
-  return colorMap[type] || ''
+  return colorMap[type] || 'info'
 }
 
 const getStatusLabel = (status) => {
@@ -105,7 +105,7 @@ const getStatusColor = (status) => {
     'inactive': 'info',
     'error': 'danger'
   }
-  return colorMap[status] || ''
+  return colorMap[status] || 'info'
 }
 
 const formatDate = (dateString) => {

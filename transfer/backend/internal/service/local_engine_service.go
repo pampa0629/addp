@@ -15,6 +15,10 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/events"
+	"github.com/addp/common/format"
+	_ "github.com/addp/common/format/mappers/mysql"
+	_ "github.com/addp/common/format/mappers/postgresql"
+	_ "github.com/addp/common/format/mappers/spatialite"
 	commonLogger "github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	commonUtils "github.com/addp/common/utils"
@@ -538,6 +542,9 @@ func (s *LocalEngineService) listSQLiteFields(connInfo models.JSONMap, table str
     }
     if grows != nil { grows.Close() }
 
+    // 获取 SpatiaLite TypeMapper
+    spatialiteMapper := format.GetTypeMapper("spatialite")
+
     type fieldRow struct{ cid int; name, ctype string; notnull int; dflt interface{}; pk int }
     var out []map[string]interface{}
     for rows.Next() {
@@ -545,11 +552,26 @@ func (s *LocalEngineService) listSQLiteFields(connInfo models.JSONMap, table str
         var name, ctype string
         var dflt interface{}
         if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil { return nil, err }
+
+        // 计算标准化类型
+        var standardType string
+        if geomCols[name] {
+            // 几何字段
+            standardType = "geometry"
+        } else if spatialiteMapper != nil {
+            // 使用 TypeMapper 转换
+            ft := spatialiteMapper.ToCommon(ctype)
+            standardType = string(ft)
+        } else {
+            standardType = "string"  // 默认
+        }
+
         f := map[string]interface{}{
-            "name":       name,
-            "data_type":  ctype,
-            "nullable":   notnull == 0,
-            "primary_key": pk == 1,
+            "name":         name,
+            "data_type":    ctype,
+            "standard_type": standardType,  // 添加标准化类型
+            "nullable":     notnull == 0,
+            "primary_key":  pk == 1,
         }
         if geomCols[name] { f["is_geometry"] = true }
         out = append(out, f)
@@ -620,7 +642,9 @@ func (s *LocalEngineService) listPostgresFields(connInfo models.JSONMap, table s
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
     rows, err := db.QueryContext(ctx, `
-      SELECT column_name, data_type, udt_name,
+      SELECT column_name,
+             CASE WHEN data_type='USER-DEFINED' THEN udt_name ELSE data_type END AS data_type,
+             udt_name,
              is_nullable='YES' AS nullable,
              (SELECT COUNT(*)>0 FROM information_schema.table_constraints tc
               JOIN information_schema.key_column_usage kcu
@@ -632,21 +656,38 @@ func (s *LocalEngineService) listPostgresFields(connInfo models.JSONMap, table s
       ORDER BY ordinal_position`, schema, name)
     if err != nil { return nil, err }
     defer rows.Close()
+
+    // 获取 PostgreSQL TypeMapper
+    pgMapper := format.GetTypeMapper("postgresql")
+
     var out []map[string]interface{}
     for rows.Next() {
         var col, dataType, udt string
         var nullable, pk bool
         if err := rows.Scan(&col, &dataType, &udt, &nullable, &pk); err != nil { return nil, err }
+
+        // 计算标准化类型
+        var standardType string
+        if pgMapper != nil {
+            ft := pgMapper.ToCommon(dataType)
+            standardType = string(ft)
+        } else {
+            standardType = "string"  // 默认
+        }
+
         field := map[string]interface{}{
-            "name": col,
-            "data_type": dataType,
-            "column_type": udt,
-            "nullable": nullable,
-            "primary_key": pk,
+            "name":         col,
+            "data_type":    dataType,
+            "column_type":  udt,
+            "standard_type": standardType,  // 添加标准化类型
+            "nullable":     nullable,
+            "primary_key":  pk,
         }
         // 检测 PostGIS 空间类型
-        if strings.EqualFold(dataType, "USER-DEFINED") &&
-           (strings.EqualFold(udt, "geometry") || strings.EqualFold(udt, "geography")) {
+        if strings.Contains(strings.ToLower(standardType), "geometry") ||
+           strings.Contains(strings.ToLower(standardType), "point") ||
+           strings.Contains(strings.ToLower(standardType), "polygon") ||
+           strings.Contains(strings.ToLower(standardType), "linestring") {
             field["is_geometry"] = true
         }
         out = append(out, field)
@@ -712,17 +753,32 @@ func (s *LocalEngineService) listMySQLFields(connInfo models.JSONMap, table stri
       ORDER BY ordinal_position`, table)
     if err != nil { return nil, err }
     defer rows.Close()
+
+    // 获取 MySQL TypeMapper
+    mysqlMapper := format.GetTypeMapper("mysql")
+
     var out []map[string]interface{}
     for rows.Next() {
         var col, dataType, colType string
         var nullable, pk bool
         if err := rows.Scan(&col, &dataType, &colType, &nullable, &pk); err != nil { return nil, err }
+
+        // 计算标准化类型
+        var standardType string
+        if mysqlMapper != nil {
+            ft := mysqlMapper.ToCommon(dataType)
+            standardType = string(ft)
+        } else {
+            standardType = "string"  // 默认
+        }
+
         out = append(out, map[string]interface{}{
-            "name": col,
-            "data_type": dataType,
-            "column_type": colType,
-            "nullable": nullable,
-            "primary_key": pk,
+            "name":         col,
+            "data_type":    dataType,
+            "column_type":  colType,
+            "standard_type": standardType,  // 添加标准化类型
+            "nullable":     nullable,
+            "primary_key":  pk,
         })
     }
     return out, nil

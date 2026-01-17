@@ -60,6 +60,9 @@ func NewParallelExecutionEngine(
 
 // Execute 并行执行数据传输任务
 func (e *ParallelExecutionEngine) Execute(ctx context.Context, task *ExecutionTask) error {
+	// 重置指标收集器（避免保留上次执行的数据）
+	e.metricsCollector.Reset()
+
 	e.logger.Info("starting parallel execution",
 		"task_id", task.TaskID,
 		"execution_id", task.ExecutionID,

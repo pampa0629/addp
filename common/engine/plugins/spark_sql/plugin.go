@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/addp/common/engine/plugin"
@@ -252,7 +253,9 @@ func (p *SparkSQLPlugin) ListSchemas(ctx context.Context, db *gorm.DB) ([]plugin
 
 		// 获取每个数据库的表数量
 		var tableCount int
-		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.information_schema.tables WHERE table_schema = ?", dbName)
+		// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.information_schema.tables WHERE table_schema = ?",
+			quoteSparkIdentifier(dbName))
 		db.WithContext(ctx).Raw(countQuery, dbName).Scan(&tableCount)
 
 		schemas = append(schemas, plugin.SchemaInfo{
@@ -269,7 +272,8 @@ func (p *SparkSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema str
 	var tables []plugin.TableInfo
 
 	// 切换到指定数据库
-	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", quoteSparkIdentifier(schema))).Error; err != nil {
 		return nil, fmt.Errorf("failed to use database: %w", err)
 	}
 
@@ -296,7 +300,9 @@ func (p *SparkSQLPlugin) ListTables(ctx context.Context, db *gorm.DB, schema str
 
 		// 尝试获取行数（使用DESCRIBE EXTENDED可能会更准确）
 		var count sql.NullInt64
-		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s LIMIT 1", schema, tableName)
+		// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+		countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s LIMIT 1",
+			quoteSparkIdentifier(schema), quoteSparkIdentifier(tableName))
 		db.WithContext(ctx).Raw(countQuery).Scan(&count)
 		if count.Valid {
 			tableInfo.RowCount = count.Int64
@@ -313,12 +319,14 @@ func (p *SparkSQLPlugin) ListColumns(ctx context.Context, db *gorm.DB, schema, t
 	var columns []plugin.ColumnInfo
 
 	// 切换到指定数据库
-	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", schema)).Error; err != nil {
+	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+	if err := db.WithContext(ctx).Exec(fmt.Sprintf("USE %s", quoteSparkIdentifier(schema))).Error; err != nil {
 		return nil, fmt.Errorf("failed to use database: %w", err)
 	}
 
 	// 使用 DESCRIBE 命令
-	query := fmt.Sprintf("DESCRIBE %s", table)
+	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+	query := fmt.Sprintf("DESCRIBE %s", quoteSparkIdentifier(table))
 	rows, err := db.WithContext(ctx).Raw(query).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe table: %w", err)
@@ -363,11 +371,19 @@ func (p *SparkSQLPlugin) GetTableRowCount(ctx context.Context, db *gorm.DB, sche
 	}
 
 	// 执行COUNT查询
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", table)
+	// 重要：使用 quoteSparkIdentifier 保留标识符大小写
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", quoteSparkIdentifier(table))
 	err := db.WithContext(ctx).Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to get row count: %w", err)
 	}
 
 	return count, nil
+}
+
+// quoteSparkIdentifier 为 Spark SQL 标识符添加反引号以保留大小写
+func quoteSparkIdentifier(identifier string) string {
+	// Spark SQL 使用反引号（backtick）引用标识符
+	// 转义标识符中的反引号（使用双反引号）
+	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
 }

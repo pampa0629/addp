@@ -30,7 +30,7 @@ Charlie,28,92.1,true`
 	expectedTypes := map[string]format.FieldType{
 		"name":   format.FieldTypeString,
 		"age":    format.FieldTypeInt,
-		"score":  format.FieldTypeFloat,
+		"score":  format.FieldTypeDouble, // CSV 浮点数默认为双精度
 		"active": format.FieldTypeBool,
 	}
 

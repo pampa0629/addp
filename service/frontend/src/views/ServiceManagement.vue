@@ -214,10 +214,10 @@ const getServiceTypeColor = (type) => {
     wfs: 'primary',
     wmts: 'warning',
     ogc_api: 'info',
-    data_api: '',
+    data_api: 'info',
     rest: 'danger'
   }
-  return colors[type] || ''
+  return colors[type] || 'info'
 }
 
 const formatServiceType = (type) => {
@@ -238,7 +238,7 @@ const getStatusColor = (status) => {
     inactive: 'info',
     error: 'danger'
   }
-  return colors[status] || ''
+  return colors[status] || 'info'
 }
 
 const formatStatus = (status) => {

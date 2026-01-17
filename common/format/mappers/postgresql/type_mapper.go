@@ -38,9 +38,9 @@ func (m *TypeMapper) ToCommon(pgType string) format.FieldType {
 
 	// 浮点类型
 	case "real", "float4":
-		return format.FieldTypeFloat
+		return format.FieldTypeFloat // 4字节单精度
 	case "double precision", "float8":
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // 8字节双精度
 	case "numeric", "decimal":
 		return format.FieldTypeDecimal
 
@@ -95,7 +95,9 @@ func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) 
 	case format.FieldTypeBigInt:
 		return "BIGINT", 0, 0
 	case format.FieldTypeFloat:
-		return "DOUBLE PRECISION", 0, 0
+		return "REAL", 0, 0 // 4字节单精度
+	case format.FieldTypeDouble:
+		return "DOUBLE PRECISION", 0, 0 // 8字节双精度
 	case format.FieldTypeDecimal:
 		return "NUMERIC", 0, 0
 	case format.FieldTypeBool:

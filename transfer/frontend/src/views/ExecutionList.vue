@@ -47,7 +47,7 @@ const viewDetail = (id) => {
 
 const getStatusType = (status) => {
   const types = { pending: 'info', running: 'primary', success: 'success', failed: 'danger' }
-  return types[status] || ''
+  return types[status] || 'info'
 }
 
 onMounted(() => {

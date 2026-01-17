@@ -60,8 +60,6 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		Name:        req.Name,
 		Description: req.Description,
 		Type:        req.Type,
-		SourceID:    req.SourceID,
-		TargetID:    req.TargetID,
 		Config:      req.Config,
 		Schedule:    req.Schedule,
 		BatchSize:   req.BatchSize,
@@ -70,6 +68,13 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		Enabled:     req.Schedule != "", // 有 schedule 的任务默认不启用，需要用户手动启动
 		TenantID:    tenantID,
 		CreatedBy:   &userID,
+	}
+
+	// 处理 auto_scan_metadata 字段
+	if req.AutoScanMetadata != nil {
+		task.AutoScanMetadata = *req.AutoScanMetadata
+	} else {
+		task.AutoScanMetadata = true // 默认为 true
 	}
 
 	// 设置默认值
@@ -142,6 +147,9 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	}
 	if req.Enabled != nil {
 		task.Enabled = *req.Enabled
+	}
+	if req.AutoScanMetadata != nil {
+		task.AutoScanMetadata = *req.AutoScanMetadata
 	}
 
 	if err := s.taskRepo.Update(task); err != nil {

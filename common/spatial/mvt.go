@@ -102,12 +102,12 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
     }
 
     // Optionally simplify before transform for coarse zoom levels
-    simplify := "ST_Transform(t." + geomCol + ", 3857)"
+    simplify := "ST_Transform(t." + qGeom + ", 3857)"
     // SRID 必须直接内联到 SQL 中，不能作为参数（PostGIS 限制）
     args := []interface{}{z, x, y, opt.Layer, opt.Extent, opt.Buffer}
     if opt.Simplify {
         tol := SimplifyTolerance(z)
-        simplify = fmt.Sprintf("ST_Transform(ST_SimplifyPreserveTopology(t.%s, %f), 3857)", geomCol, tol)
+        simplify = fmt.Sprintf("ST_Transform(ST_SimplifyPreserveTopology(t.%s, %f), 3857)", qGeom, tol)
     }
 
     sql := fmt.Sprintf(`

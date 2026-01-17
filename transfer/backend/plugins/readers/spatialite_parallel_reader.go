@@ -97,8 +97,11 @@ func (r *SpatiaLiteParallelReader) Open(ctx context.Context, config pipeline.Con
 // calculatePartitions 根据表大小和分区键计算分区范围
 func (r *SpatiaLiteParallelReader) calculatePartitions(ctx context.Context) error {
 	// 获取分区键的最小值和最大值
+	// 重要：使用 quoteIdentSQLite 保留标识符大小写
 	query := fmt.Sprintf("SELECT MIN(%s), MAX(%s), COUNT(*) FROM %s",
-		r.config.PartitionKey, r.config.PartitionKey, r.config.Table)
+		quoteIdentSQLite(r.config.PartitionKey),
+		quoteIdentSQLite(r.config.PartitionKey),
+		quoteIdentSQLite(r.config.Table))
 
 	if r.config.WhereClause != "" {
 		query += " WHERE " + r.config.WhereClause

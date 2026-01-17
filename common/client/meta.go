@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -294,4 +295,44 @@ func (c *MetaClient) GetMetaNode(nodeID uint) (*models.MetaNode, error) {
 	}
 
 	return result.Data, nil
+}
+
+// TriggerScanEngine 触发引擎元数据扫描
+func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) error {
+	urlStr := fmt.Sprintf("%s/api/meta/scan/engine", c.baseURL)
+
+	scanReq := map[string]interface{}{
+		"engine_id":  engineID,
+		"scan_type":  "auto",
+		"scan_depth": "basic",
+	}
+	if len(schemaNames) > 0 {
+		scanReq["schema_names"] = schemaNames
+	}
+
+	body, err := json.Marshal(scanReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scan request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	return nil
 }

@@ -24,51 +24,44 @@
 | `name` | VARCHAR(255) | NOT NULL | 任务名称 |
 | `description` | TEXT | | 任务描述 |
 | `type` | VARCHAR(50) | NOT NULL | 任务类型：import/export/sync |
-| `mode` | VARCHAR(20) | DEFAULT 'batch' | 执行模式：batch/stream/micro-batch |
-| `source_id` | INTEGER | INDEXED | 源数据源 ID（system.engines） |
-| `target_id` | INTEGER | INDEXED | 目标数据源 ID |
-| `config` | JSONB | NOT NULL | 任务配置 |
+| `config` | JSONB | NOT NULL | 任务配置（包含 source 和 target） |
 | `schedule` | VARCHAR(100) | | Cron 表达式 |
 | `batch_size` | INTEGER | DEFAULT 1000 | 批大小 |
-| `max_parallelism` | INTEGER | DEFAULT 1 | 最大并行度 |
-| `retry_policy` | JSONB | | 重试策略 |
-| `status` | VARCHAR(20) | DEFAULT 'pending', INDEXED | 任务状态 |
+| `status` | VARCHAR(20) | DEFAULT 'idle', INDEXED | 任务状态 |
 | `progress` | NUMERIC(5,2) | DEFAULT 0 | 进度（0-100） |
-| `last_execution_id` | INTEGER | | 最后执行记录 ID |
-| `last_execution_status` | VARCHAR(20) | | 最后执行状态 |
+| `enabled` | BOOLEAN | DEFAULT false, INDEXED | 是否启用（用于定时任务） |
 | `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
+| `created_by` | INTEGER | | 创建人 ID |
 | `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
 | `updated_at` | TIMESTAMP | DEFAULT NOW() | 更新时间 |
 
-### 2.2 JSON 字段结构
+### 2.2 config 字段结构
 
-**config 字段（任务配置）**：
+**config 字段包含 source 和 target 配置**：
+
 ```json
 {
   "source": {
-    "type": "table",
-    "schema": "public",
-    "table": "source_cities"
+    "scope": "system",          // "system" | "local"
+    "engine_id": 1,             // 如果 scope = "system"，系统引擎 ID
+    "local_engine_id": 3,       // 如果 scope = "local"，本地引擎 ID
+    "type": "table",            // 数据源类型
+    "table": "public.cities",   // 表名
+    "filter": "population > 1000000"
   },
   "target": {
+    "scope": "system",
+    "engine_id": 8,
     "type": "table",
-    "schema": "public",
-    "table": "target_cities"
-  },
-  "filter": "population > 1000000",
-  "incremental": true,
-  "incremental_column": "updated_at"
+    "table": "public.target_cities",
+    "create_table": true
+  }
 }
 ```
 
-**retry_policy 字段**：
-```json
-{
-  "max_retries": 3,
-  "retry_interval": 60,
-  "backoff_factor": 2
-}
-```
+**系统引擎 vs 本地引擎**：
+- **系统引擎**：引用 `system.engines` 表中的引擎（多租户共享）
+- **本地引擎**：引用 `transfer.local_engines` 表中的引擎（租户私有）
 
 ---
 
@@ -81,10 +74,18 @@
 {
   "name": "导入城市数据",
   "type": "import",
-  "mode": "batch",
-  "source_id": 1,
-  "target_id": 2,
-  "config": {...},
+  "config": {
+    "source": {
+      "scope": "system",
+      "engine_id": 1,
+      "table": "public.source_cities"
+    },
+    "target": {
+      "scope": "system",
+      "engine_id": 2,
+      "table": "public.target_cities"
+    }
+  },
   "schedule": "0 2 * * *",
   "batch_size": 5000
 }
@@ -104,4 +105,6 @@
 
 - [task_executions表](./task_executions表.md) - 执行记录表
 - [data_mappings表](./data_mappings表.md) - 字段映射表
+- [local_engines表](./local_engines表.md) - 本地引擎表
 - [数据库架构](../数据库架构.md) - Transfer 模块架构
+

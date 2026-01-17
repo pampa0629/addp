@@ -103,6 +103,54 @@ func (t *FieldMappingTransform) Apply(ctx context.Context, batch *DataBatch) (*D
 	}
 
 	batch.Rows = newRows
+
+	// 更新 Schema 以反映字段映射和类型变更
+	if batch.Schema != nil && len(batch.Schema.Fields) > 0 {
+		newFields := make([]Field, 0, len(t.mappings))
+
+		// 创建源字段名到源Field的映射，保留原始的空间类型信息
+		sourceFieldMap := make(map[string]Field)
+		for _, field := range batch.Schema.Fields {
+			sourceFieldMap[field.Name] = field
+		}
+
+		for _, mapping := range t.mappings {
+			// 从源schema中查找对应字段，保留其元数据（特别是几何类型信息）
+			sourceField, exists := sourceFieldMap[mapping.Source]
+
+			newField := Field{
+				Name:     mapping.Target,
+				Type:     mapping.Type,
+				Nullable: true,
+			}
+
+			// 如果映射指定了类型，使用映射的类型
+			if mapping.Type != "" {
+				newField.Type = mapping.Type
+			} else if exists {
+				// 否则继承源字段的类型
+				newField.Type = sourceField.Type
+			}
+
+			// 保留几何字段的关键元数据（SRID、SpatialType等）
+			if exists && strings.EqualFold(sourceField.Type, "geometry") {
+				newField.Type = "geometry"
+				newField.SRID = sourceField.SRID
+				newField.SpatialType = sourceField.SpatialType
+			}
+
+			// 如果mapping的Type明确指定为geometry，也要保留几何元数据
+			if strings.EqualFold(mapping.Type, "geometry") && exists {
+				newField.SRID = sourceField.SRID
+				newField.SpatialType = sourceField.SpatialType
+			}
+
+			newFields = append(newFields, newField)
+		}
+
+		batch.Schema.Fields = newFields
+	}
+
 	return batch, nil
 }
 

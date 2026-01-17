@@ -24,8 +24,8 @@ func TestTypeMappingPostgreSQLToCommon(t *testing.T) {
 		{"integer", format.FieldTypeInt},
 		{"int", format.FieldTypeInt},
 		{"bigint", format.FieldTypeBigInt},
-		{"real", format.FieldTypeFloat},
-		{"double precision", format.FieldTypeFloat},
+		{"real", format.FieldTypeFloat},               // 4字节单精度
+		{"double precision", format.FieldTypeDouble},  // 8字节双精度
 		{"numeric", format.FieldTypeDecimal},
 		{"numeric(10,2)", format.FieldTypeDecimal},
 		{"boolean", format.FieldTypeBool},
@@ -66,8 +66,8 @@ func TestTypeMappingMySQLToCommon(t *testing.T) {
 		{"varchar", format.FieldTypeString},
 		{"int", format.FieldTypeInt},
 		{"bigint", format.FieldTypeBigInt},
-		{"float", format.FieldTypeFloat},
-		{"double", format.FieldTypeFloat},
+		{"float", format.FieldTypeFloat},     // 4字节单精度
+		{"double", format.FieldTypeDouble},   // 8字节双精度
 		{"decimal", format.FieldTypeDecimal},
 		{"datetime", format.FieldTypeTimestamp},
 		{"json", format.FieldTypeJSON},
@@ -119,7 +119,8 @@ func TestTypeMappingCommonToPostgreSQL(t *testing.T) {
 		{format.FieldTypeString, "TEXT"},
 		{format.FieldTypeInt, "INTEGER"},
 		{format.FieldTypeBigInt, "BIGINT"},
-		{format.FieldTypeFloat, "DOUBLE PRECISION"},
+		{format.FieldTypeFloat, "REAL"},               // 4字节单精度
+		{format.FieldTypeDouble, "DOUBLE PRECISION"},  // 8字节双精度
 		{format.FieldTypeDecimal, "NUMERIC"},
 		{format.FieldTypeBool, "BOOLEAN"},
 		{format.FieldTypeDate, "DATE"},
@@ -152,8 +153,9 @@ func TestTypeMappingCommonToShapefileDBF(t *testing.T) {
 		{format.FieldTypeString, 'C', 254, 0},
 		{format.FieldTypeInt, 'N', 18, 0},
 		{format.FieldTypeBigInt, 'N', 18, 0},
-		{format.FieldTypeFloat, 'F', 20, 8},
-		{format.FieldTypeDecimal, 'F', 20, 8},
+		{format.FieldTypeFloat, 'F', 13, 6},    // 单精度
+		{format.FieldTypeDouble, 'F', 20, 8},   // 双精度
+		{format.FieldTypeDecimal, 'N', 20, 8},  // 高精度小数用 Numeric
 		{format.FieldTypeBool, 'L', 1, 0},
 		{format.FieldTypeDate, 'D', 8, 0},
 		{format.FieldTypeUnknown, 'C', 254, 0},

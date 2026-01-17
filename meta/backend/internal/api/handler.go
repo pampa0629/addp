@@ -499,15 +499,13 @@ func (h *Handler) ScanEngine(c *gin.Context) {
 		return
 	}
 
-	// 提取JWT token
+	// 提取JWT token（服务间调用时 token 可为空，因为使用 X-Internal-API-Key 认证）
 	token := c.GetHeader("Authorization")
-	if token == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization token"})
-		return
-	}
 	if len(token) > 7 && token[:7] == "Bearer " {
 		token = token[7:]
 	}
+	// 注意：不强制要求 token，服务间调用通过 X-Internal-API-Key 认证（middleware 已处理）
+	// tenantID 已从 middleware 提取（line 494），用于多租户数据过滤
 
 	result, err := h.scanService.ScanEngine(req.EngineID, tenantID, req.SchemaNames, req.ObjectPaths, token)
 	if err != nil {

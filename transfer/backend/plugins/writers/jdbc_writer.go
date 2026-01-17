@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strings"
 	"unicode/utf8"
 
@@ -210,7 +211,8 @@ func (w *JDBCWriter) flushBuffer(ctx context.Context) error {
 		}
 
 		if _, err := tx.ExecContext(ctx, insertSQL, allValues...); err != nil {
-			return fmt.Errorf("failed to batch insert rows: %w", err)
+			// 批量插入失败，尝试逐条插入以定位问题记录
+			return w.insertRowByRow(ctx, tx, w.buffer, err)
 		}
 	} else {
 		// 分批插入，避免超过参数限制
@@ -239,7 +241,9 @@ func (w *JDBCWriter) flushBuffer(ctx context.Context) error {
 			}
 
 			if _, err := tx.ExecContext(ctx, insertSQL, values...); err != nil {
-				return fmt.Errorf("failed to batch insert rows (chunk %d-%d): %w", i, end, err)
+				// 分批插入失败，尝试逐条插入以定位问题记录
+				log.Printf("⚠️  分批插入失败 (chunk %d-%d)，尝试逐条插入...\n", i, end)
+				return w.insertRowByRow(ctx, tx, batchRows, err)
 			}
 		}
 	}
@@ -254,6 +258,15 @@ func (w *JDBCWriter) flushBuffer(ctx context.Context) error {
 
 func (w *JDBCWriter) initializeMetadata(batch *pipeline.DataBatch) error {
 	w.schema = batch.Schema
+
+	log.Printf("DEBUG: initializeMetadata - schema非空: %v\n", w.schema != nil)
+	if w.schema != nil {
+		log.Printf("DEBUG: schema.Fields数量: %d\n", len(w.schema.Fields))
+		for _, field := range w.schema.Fields {
+			log.Printf("DEBUG: 字段 %s: Type=%s, SRID=%d, SpatialType=%s\n",
+				field.Name, field.Type, field.SRID, field.SpatialType)
+		}
+	}
 
 	if len(batch.Rows) == 0 {
 		return fmt.Errorf("cannot infer columns from empty batch")
@@ -283,7 +296,9 @@ func (w *JDBCWriter) initializeMetadata(batch *pipeline.DataBatch) error {
 		}
 	}
 
+	log.Printf("DEBUG: 列名列表: %v\n", w.columns)
 	w.detectGeometryColumns()
+	log.Printf("DEBUG: geometryColumns数量: %d\n", len(w.geometryColumns))
 	return nil
 }
 
@@ -297,8 +312,11 @@ func (w *JDBCWriter) detectGeometryColumns() {
 					SRID:        field.SRID,
 					SpatialType: field.SpatialType,
 				}
+				log.Printf("DEBUG: 检测到几何字段 %s: SRID=%d (schema), SpatialType=%s\n",
+					field.Name, field.SRID, field.SpatialType)
 				if meta.SRID == 0 {
 					meta.SRID = w.config.SRID
+					log.Printf("DEBUG: SRID为0，使用配置中的SRID=%d\n", w.config.SRID)
 				}
 				candidates[field.Name] = meta
 			}
@@ -322,6 +340,8 @@ func (w *JDBCWriter) detectGeometryColumns() {
 		for candidate, meta := range candidates {
 			if strings.EqualFold(candidate, col) {
 				w.geometryColumns[col] = meta
+				log.Printf("DEBUG: 设置几何列 %s: SRID=%d, SpatialType=%s\n",
+					col, meta.SRID, meta.SpatialType)
 				break
 			}
 		}
@@ -566,7 +586,14 @@ func (w *JDBCWriter) prepareValue(column string, value interface{}) (interface{}
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert WKB for column %s: %w", column, err)
 			}
-			return standardWKB, nil
+
+			// 修复只有3个点的环（SpatiaLite允许3点环，但PostGIS要求至少4点）
+			fixedWKB, err := spatial.FixInvalidRings(standardWKB)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fix invalid rings for column %s: %w", column, err)
+			}
+
+			return fixedWKB, nil
 		case string:
 			trimmed := strings.TrimSpace(v)
 			if trimmed == "" {
@@ -738,4 +765,95 @@ func (w *JDBCWriter) buildConnectionString(config JDBCWriterConfig) (string, err
 	default:
 		return "", fmt.Errorf("unsupported driver: %s", config.Driver)
 	}
+}
+
+// insertRowByRow 批量插入失败时，逐条插入以定位问题记录
+func (w *JDBCWriter) insertRowByRow(ctx context.Context, tx *sql.Tx, rows []map[string]interface{}, batchErr error) error {
+	log.Printf("⚠️  批量插入失败，开始逐条插入以定位问题记录...\n")
+	log.Printf("原始错误: %v\n", batchErr)
+	log.Printf("待插入记录数: %d\n\n", len(rows))
+
+	// 构建单行插入SQL
+	singleInsertSQL := w.buildBatchInsertSQL(1)
+
+	failedRows := []map[string]interface{}{}
+	successCount := 0
+	firstRealError := batchErr
+
+	for idx, row := range rows {
+		// 为每条记录创建一个保存点，这样即使插入失败也不会中止整个事务
+		savepointName := fmt.Sprintf("sp_%d", idx)
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("SAVEPOINT %s", savepointName)); err != nil {
+			log.Printf("⚠️  创建保存点失败: %v\n", err)
+			continue
+		}
+
+		// 准备单行数据
+		values := make([]interface{}, 0, len(w.columns))
+		for _, col := range w.columns {
+			var original interface{}
+			if row != nil {
+				original = row[col]
+			}
+			prepared, err := w.prepareValue(col, original)
+			if err != nil {
+				return fmt.Errorf("记录 #%d 准备数据失败 (字段 %s): %w", idx, col, err)
+			}
+			values = append(values, prepared)
+		}
+
+		// 尝试插入单行
+		if _, err := tx.ExecContext(ctx, singleInsertSQL, values...); err != nil {
+			// 回滚到保存点，避免事务中止
+			tx.ExecContext(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", savepointName))
+
+			log.Printf("❌ 记录 #%d 插入失败:\n", idx)
+
+			// 输出关键字段信息帮助定位
+			keyFields := []string{"SmID", "id", "ID", "rowid", "ROWID", "fid", "FID", "ogc_fid"}
+			for _, keyField := range keyFields {
+				if val, ok := row[keyField]; ok {
+					log.Printf("   %s: %v\n", keyField, val)
+				}
+			}
+
+			// 输出几何字段信息
+			for col, meta := range w.geometryColumns {
+				if geomVal, ok := row[col]; ok {
+					if geomBytes, ok := geomVal.([]byte); ok {
+						log.Printf("   几何字段 %s: WKB长度=%d bytes, SRID=%d, SpatialType=%s\n",
+							col, len(geomBytes), meta.SRID, meta.SpatialType)
+						log.Printf("   WKB前32字节: %x\n", geomBytes[:min(32, len(geomBytes))])
+					}
+				}
+			}
+
+			log.Printf("   错误: %v\n\n", err)
+
+			// 记录第一个真实错误（不是"transaction is aborted"）
+			if firstRealError == batchErr {
+				firstRealError = err
+			}
+
+			failedRows = append(failedRows, row)
+		} else {
+			// 成功插入，释放保存点
+			tx.ExecContext(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", savepointName))
+			successCount++
+		}
+	}
+
+	if len(failedRows) > 0 {
+		return fmt.Errorf("批量插入失败: 成功 %d 条，失败 %d 条。首个失败原因: %v",
+			successCount, len(failedRows), firstRealError)
+	}
+
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

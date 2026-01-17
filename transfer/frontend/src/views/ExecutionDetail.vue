@@ -169,7 +169,7 @@ const getStatusType = (status) => {
     success: 'success',
     failed: 'danger'
   }
-  return types[status] || ''
+  return types[status] || 'info'
 }
 
 onMounted(() => {

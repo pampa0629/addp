@@ -118,6 +118,20 @@ func main() {
 		}
 	}
 
+	// 创建 MetaClient（用于元数据扫描）
+	var metaClient *commonClient.MetaClient
+	if cfg.EnableIntegration && cfg.MetaServiceURL != "" {
+		if cfg.InternalAPIKey != "" {
+			metaClient = commonClient.NewMetaClientWithInternalKey(
+				cfg.MetaServiceURL,
+				cfg.InternalAPIKey,
+			)
+			log.Printf("✅ MetaClient initialized: %s", cfg.MetaServiceURL)
+		} else {
+			log.Printf("⚠️  MetaClient not initialized - no internal API key configured")
+		}
+	}
+
 	// 初始化 Service 层
 	// 1. 创建 ExecutionEngineService (负责任务执行)
 	executionEngineService := service.NewExecutionEngineService(
@@ -126,6 +140,7 @@ func main() {
 		executionRepo,
 		mappingRepo,
 		systemClient,
+		metaClient,
 		cfg,
 	)
 

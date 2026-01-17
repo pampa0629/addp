@@ -210,9 +210,9 @@ const getNodeTypeColor = (type) => {
     database: 'warning',
     bucket: 'info',
     directory: 'info',
-    object: ''
+    object: 'info'
   }
-  return colorMap[type] || ''
+  return colorMap[type] || 'info'
 }
 
 // 工具函数：获取匹配类型标签

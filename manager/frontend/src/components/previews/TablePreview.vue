@@ -364,6 +364,12 @@ const displayColumns = computed(() => {
 // 列元数据相关
 const columnMetadata = computed(() => props.data?.column_metadata || [])
 
+// 获取主键列名（从 column_metadata 中查找 is_primary_key 为 true 的列）
+const primaryKeyColumn = computed(() => {
+  const pkColumn = columnMetadata.value.find(meta => meta.is_primary_key)
+  return pkColumn ? pkColumn.column_name : null
+})
+
 // 根据列名获取列元数据
 const getColumnMetadata = (columnName) => {
   return columnMetadata.value.find(meta => meta.column_name === columnName)
@@ -439,9 +445,16 @@ const handleRowClick = async (row) => {
 
   // MVT 预览模式下，通过 API 查询要素完整几何并高亮显示
   if (hasGeometry.value && showMap.value && mapRef.value) {
-    const featureId = row.id || row.ID || row._id || row.uuid
+    // 从 column_metadata 中获取真正的主键列名
+    const pkColumn = primaryKeyColumn.value
+    if (!pkColumn) {
+      console.warn('数据表缺少主键定义，无法定位到地图')
+      return
+    }
+
+    const featureId = row[pkColumn]
     if (!featureId) {
-      console.warn('表格行缺少主键ID，无法定位到地图')
+      console.warn(`表格行缺少主键值 (${pkColumn})，无法定位到地图`)
       return
     }
 
@@ -453,7 +466,7 @@ const handleRowClick = async (row) => {
         table.value,
         featureId,
         activeGeometryColumn.value,
-        'id'  // 主键列名，可根据实际情况调整
+        pkColumn  // 使用真正的主键列名
       )
 
       // 注意：createAPIClient 默认 extractData=true，已自动提取了 response.data
@@ -474,10 +487,17 @@ const handleFeatureClick = (featureId) => {
   console.log('handleFeatureClick called with featureId:', featureId)
   console.log('Current tableData:', tableData.value)
 
+  // 从 column_metadata 中获取真正的主键列名
+  const pkColumn = primaryKeyColumn.value
+  if (!pkColumn) {
+    console.warn('数据表缺少主键定义，无法定位表格行')
+    return
+  }
+
   // 在当前页查找对应的行
   const targetRow = tableData.value.find(row => {
-    const rowId = row.id || row.ID || row._id || row.uuid
-    console.log('Comparing row id:', rowId, 'with featureId:', featureId)
+    const rowId = row[pkColumn]
+    console.log(`Comparing row ${pkColumn}:`, rowId, 'with featureId:', featureId)
     return String(rowId) === String(featureId)
   })
 

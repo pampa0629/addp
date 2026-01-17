@@ -183,8 +183,8 @@
 
     <!-- SpatiaLite / SQLite (file-based) -->
     <template v-else-if="formState.engine_type === 'spatialite' || formState.engine_type === 'sqlite'">
-      <el-form-item label="文件路径" prop="connection_info.file_path">
-        <el-input v-model="formState.connection_info.file_path" placeholder="/path/to/data.sqlite 或 .spatialite" />
+      <el-form-item label="文件路径" prop="connection_info.full_name">
+        <el-input v-model="formState.connection_info.full_name" placeholder="/path/to/data.sqlite 或 .spatialite" />
       </el-form-item>
       <div class="field-hint">
         该连接器读取本地 SQLite 数据库（建议为 SpatiaLite 扩展），任务执行节点需要能访问该文件路径。
@@ -455,7 +455,7 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
     }
   } else if (form.engine_type === 'spatialite' || form.engine_type === 'sqlite') {
     form.connection_info = {
-      file_path: original.file_path ?? ''
+      full_name: original.full_name ?? ''
     }
   } else if (form.engine_type === 'spark') {
     form.connection_info = {
@@ -617,7 +617,7 @@ const rules = {
   'connection_info.endpoint': [{ required: true, message: '请输入端点地址', trigger: 'blur' }],
   'connection_info.access_key': [{ required: true, message: '请输入 Access Key', trigger: 'blur' }],
   'connection_info.secret_key': [{ required: true, message: '请输入 Secret Key', trigger: 'blur' }],
-  'connection_info.file_path': [{ required: true, message: '请输入文件路径', trigger: 'blur' }]
+  'connection_info.full_name': [{ required: true, message: '请输入文件路径', trigger: 'blur' }]
 }
 
 const computedRules = computed(() => {
@@ -697,7 +697,7 @@ const computedRules = computed(() => {
     return {
       engine_type: rules.engine_type,
       name: rules.name,
-      'connection_info.file_path': rules['connection_info.file_path']
+      'connection_info.full_name': rules['connection_info.full_name']
     }
   }
 

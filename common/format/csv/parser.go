@@ -262,7 +262,7 @@ func (p *Parser) inferColumnType(rows [][]string, colIndex int) format.FieldType
 		return format.FieldTypeInt
 	}
 	if float64(floatCount+intCount) >= threshold {
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // CSV 中的浮点数默认为双精度
 	}
 	if float64(dateCount) >= threshold {
 		return format.FieldTypeTimestamp

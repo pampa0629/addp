@@ -116,6 +116,9 @@ func (e *ExecutionEngine) Execute(ctx context.Context, task *ExecutionTask) erro
 	// 清空之前的日志
 	e.logBuffer.Clear()
 
+	// 重置指标收集器（避免保留上次执行的数据）
+	e.metricsCollector.Reset()
+
 	e.logger.Info("starting execution",
 		"task_id", task.TaskID,
 		"execution_id", task.ExecutionID,
@@ -212,6 +215,7 @@ func (e *ExecutionEngine) streamProcess(
 		batchCount     int64 = 0
 		sequenceNumber int64 = 0
 		isStreamMode         = reader.Mode() == ModeStream || reader.Mode() == ModeMicroBatch
+		lastLogTime          = time.Now() // 上次输出日志的时间
 	)
 
 	for {
@@ -288,20 +292,32 @@ func (e *ExecutionEngine) streamProcess(
 			}
 		}
 
-		// 7. 日志记录（每 100 批次）
-		if batchCount%100 == 0 {
+		// 7. 日志记录（每 10 批次或每 5 秒，取较早者）
+		now := time.Now()
+		shouldLog := batchCount%10 == 0 || now.Sub(lastLogTime) >= 5*time.Second
+
+		if shouldLog {
+			recordsRead := e.metricsCollector.GetRecordsRead()
+			recordsWritten := e.metricsCollector.GetRecordsWritten()
+			duration := e.metricsCollector.GetDuration()
+			qps := e.metricsCollector.GetQPS()
+
 			e.logger.Info("processing progress",
 				"batch_count", batchCount,
-				"records_read", e.metricsCollector.GetRecordsRead(),
-				"records_written", e.metricsCollector.GetRecordsWritten(),
+				"records_read", recordsRead,
+				"records_written", recordsWritten,
+				"qps", fmt.Sprintf("%.0f", qps),
+				"duration", duration.Round(time.Second).String(),
 			)
-			e.logBuffer.Append("INFO", fmt.Sprintf("Progress: Processed %d batches, %d records read, %d records written",
-				batchCount, e.metricsCollector.GetRecordsRead(), e.metricsCollector.GetRecordsWritten()))
+			e.logBuffer.Append("INFO", fmt.Sprintf("Progress: Batch %d | Records: %d read, %d written | QPS: %.0f | Duration: %s",
+				batchCount, recordsRead, recordsWritten, qps, duration.Round(time.Second).String()))
 
 			// 调用进度回调
 			if e.progressCallback != nil {
 				e.progressCallback(e.logBuffer.String(), e.metricsCollector.GetMetrics())
 			}
+
+			lastLogTime = now
 		}
 	}
 

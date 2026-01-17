@@ -26,6 +26,7 @@ type ExecutionEngineService struct {
 	execRepo       *repository.ExecutionRepository
 	mappingRepo    *repository.MappingRepository
 	systemClient   *commonClient.SystemClient
+	metaClient     *commonClient.MetaClient
 	cfg            *config.Config
 	logger         *slog.Logger
 }
@@ -37,6 +38,7 @@ func NewExecutionEngineService(
 	execRepo *repository.ExecutionRepository,
 	mappingRepo *repository.MappingRepository,
 	systemClient *commonClient.SystemClient,
+	metaClient *commonClient.MetaClient,
 	cfg *config.Config,
 ) *ExecutionEngineService {
 	// 获取引擎内部组件以创建并行引擎
@@ -50,6 +52,7 @@ func NewExecutionEngineService(
 		execRepo:     execRepo,
 		mappingRepo:  mappingRepo,
 		systemClient: systemClient,
+		metaClient:   metaClient,
 		cfg:          cfg,
 		logger:       logger.With("component", "execution_engine_service"),
 	}
@@ -173,6 +176,12 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	}
 
 	s.logger.Info("task executed successfully", "task_id", taskID, "records", metrics.RecordsWritten)
+
+	// 如果任务配置了自动扫描元数据，触发 Meta 模块扫描
+	if task.AutoScanMetadata {
+		s.triggerMetadataScan(task)
+	}
+
 	return nil
 }
 
@@ -186,13 +195,13 @@ func (s *ExecutionEngineService) buildExecutionTask(
 	config := task.Config
 
 	// 获取 source 配置（支持从 System 获取资源配置）
-	sourceConfig, err := s.resolveConnectorConfig(config, "source", task.SourceID)
+	sourceConfig, err := s.resolveConnectorConfig(config, "source")
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve source config: %w", err)
 	}
 
 	// 获取 target 配置（支持从 System 获取资源配置）
-	targetConfig, err := s.resolveConnectorConfig(config, "target", task.TargetID)
+	targetConfig, err := s.resolveConnectorConfig(config, "target")
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve target config: %w", err)
 	}
@@ -438,66 +447,123 @@ func (s *ExecutionEngineService) GetResourceConfig(ctx context.Context, engineID
 	return resource, nil
 }
 
-// resolveConnectorConfig 解析连接器配置（优先从 System 获取，否则使用 task.config）
+// resolveConnectorConfig 解析连接器配置（从 config 中读取 engine_id/local_engine_id）
 func (s *ExecutionEngineService) resolveConnectorConfig(
 	taskConfig models.JSONMap,
 	configKey string, // "source" 或 "target"
-	engineID *uint,
 ) (map[string]interface{}, error) {
-	// 情况1：如果提供了 engine_id，从 System 获取资源配置
-	if engineID != nil && *engineID > 0 {
-		resource, err := s.GetResourceConfig(context.Background(), *engineID)
-		if err != nil {
-			s.logger.Warn("failed to get resource from System, falling back to task config",
-				"engine_id", *engineID, "error", err)
-			// 如果获取失败，尝试从 task.config 中读取
-		} else {
-			// 成功获取资源配置，转换为连接器配置
-			connectorConfig, err := s.resourceToConnectorConfig(resource)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert resource to connector config: %w", err)
-			}
-
-			// 合并 task.config 中的额外配置（如 query, table 等）
-			if taskConnectorConfig, ok := taskConfig[configKey].(map[string]interface{}); ok {
-				s.logger.Info("merging task config", "configKey", configKey, "resource_type", resource.EngineType)
-				for k, v := range taskConnectorConfig {
-					// 不覆盖资源配置中的连接信息
-					if k != "host" && k != "port" && k != "user" && k != "password" &&
-						k != "database" && k != "driver" && k != "endpoint" &&
-						k != "access_key" && k != "secret_key" && k != "bucket" {
-
-						// 特殊处理：将 path/scope 映射到 file_name/prefix（用于 S3 Writer）
-						if k == "path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
-							s.logger.Info("mapping path to file_name", "value", v)
-							connectorConfig["file_name"] = v
-						} else if k == "scope" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
-							s.logger.Debug("ignoring scope for S3/MinIO target", "value", v)
-							// scope对于对象存储不是目录，忽略
-						} else if k == "format" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
-							// 将 format 映射到 file_type（S3Writer 期望的字段名）
-							s.logger.Info("mapping format to file_type", "value", v)
-							connectorConfig["file_type"] = v
-						} else {
-							s.logger.Debug("adding config", "key", k, "value", v)
-							connectorConfig[k] = v
-						}
-					}
-				}
-			}
-
-			s.logger.Info("final connector config", "config", connectorConfig)
-			return connectorConfig, nil
-		}
-	}
-
-	// 情况2：从 task.config 中读取配置（传统方式）
+	// 从 task.config 中读取 source/target 配置
 	connectorConfig, ok := taskConfig[configKey].(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("invalid %s config in task", configKey)
 	}
 
+	// 检查 scope 字段，判断是系统引擎还是本地引擎
+	scope, _ := connectorConfig["scope"].(string)
+
+	switch scope {
+	case "system":
+		// 从 System 模块获取引擎配置
+		if engineIDFloat, ok := connectorConfig["engine_id"].(float64); ok {
+			engineID := uint(engineIDFloat)
+			return s.resolveSystemEngine(engineID, connectorConfig)
+		}
+		// 如果没有 engine_id，直接返回配置
+		return connectorConfig, nil
+
+	case "local":
+		// 从 transfer.local_engines 获取本地引擎配置
+		if localEngineIDFloat, ok := connectorConfig["local_engine_id"].(float64); ok {
+			localEngineID := uint(localEngineIDFloat)
+			return s.resolveLocalEngine(localEngineID, connectorConfig)
+		}
+		// 如果没有 local_engine_id，直接返回配置
+		return connectorConfig, nil
+
+	default:
+		// 没有 scope 或其他情况，直接使用配置
+		return connectorConfig, nil
+	}
+}
+
+// resolveSystemEngine 从 System 模块获取引擎配置
+func (s *ExecutionEngineService) resolveSystemEngine(engineID uint, taskConfig map[string]interface{}) (map[string]interface{}, error) {
+	resource, err := s.GetResourceConfig(context.Background(), engineID)
+	if err != nil {
+		s.logger.Warn("failed to get resource from System, using task config",
+			"engine_id", engineID, "error", err)
+		return taskConfig, nil
+	}
+
+	// 转换为连接器配置
+	connectorConfig, err := s.resourceToConnectorConfig(resource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert resource to connector config: %w", err)
+	}
+
+	// 合并 task.config 中的额外配置（如 query, table 等）
+	s.logger.Info("merging task config", "resource_type", resource.EngineType)
+	for k, v := range taskConfig {
+		// 不覆盖资源配置中的连接信息
+		if k != "host" && k != "port" && k != "user" && k != "password" &&
+			k != "database" && k != "driver" && k != "endpoint" &&
+			k != "access_key" && k != "secret_key" && k != "bucket" &&
+			k != "scope" && k != "engine_id" {
+
+			// 特殊处理：将 path/scope 映射到 file_name/prefix（用于 S3 Writer）
+			if k == "path" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				s.logger.Info("mapping path to file_name", "value", v)
+				connectorConfig["file_name"] = v
+			} else if k == "format" && (resource.EngineType == "minio" || resource.EngineType == "s3") {
+				// 将 format 映射到 file_type（S3Writer 期望的字段名）
+				s.logger.Info("mapping format to file_type", "value", v)
+				connectorConfig["file_type"] = v
+			} else {
+				s.logger.Debug("adding config", "key", k, "value", v)
+				connectorConfig[k] = v
+			}
+		}
+	}
+
+	s.logger.Info("final connector config", "config", connectorConfig)
 	return connectorConfig, nil
+}
+
+// resolveLocalEngine 从 transfer.local_engines 获取本地引擎配置
+func (s *ExecutionEngineService) resolveLocalEngine(localEngineID uint, taskConfig map[string]interface{}) (map[string]interface{}, error) {
+	// 直接使用 taskConfig 中的配置（本地引擎的连接信息已经在 config 中）
+	// 本地引擎的完整配置在创建任务时已经存储在 config.source/target.connection_info 中
+	if connInfo, ok := taskConfig["connection_info"].(map[string]interface{}); ok {
+		// 合并连接信息到顶层配置
+		for k, v := range connInfo {
+			taskConfig[k] = v
+		}
+	}
+
+	// 将 engine_type 映射到 type 字段（用于注册表查找）
+	if engineType, ok := taskConfig["engine_type"].(string); ok {
+		// 根据 engine_type 映射到对应的连接器类型
+		switch engineType {
+		case "spatialite", "sqlite":
+			taskConfig["type"] = "spatialite"
+		case "postgresql", "mysql":
+			taskConfig["type"] = "jdbc"
+			taskConfig["driver"] = engineType
+		case "s3", "minio":
+			taskConfig["type"] = "s3"
+		default:
+			// 其他类型直接使用 engine_type 作为 type
+			taskConfig["type"] = engineType
+		}
+
+		s.logger.Info("mapped engine_type to connector type",
+			"local_engine_id", localEngineID,
+			"engine_type", engineType,
+			"connector_type", taskConfig["type"])
+	}
+
+	s.logger.Info("using local engine config", "local_engine_id", localEngineID, "config", taskConfig)
+	return taskConfig, nil
 }
 
 // resourceToConnectorConfig 将 Resource 转换为连接器配置
@@ -713,5 +779,61 @@ func ensureGeometryMappings(fieldMappings *[]pipeline.FieldMapping, geometryFiel
 			Target: field,
 		})
 		existing[lower] = struct{}{}
+	}
+}
+
+// triggerMetadataScan 触发元数据扫描
+func (s *ExecutionEngineService) triggerMetadataScan(task *models.Task) {
+	// 如果 metaClient 未初始化，跳过
+	if s.metaClient == nil {
+		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
+		return
+	}
+
+	// 从 task.Config.target 中提取 engine_id
+	targetConfig, ok := task.Config["target"].(map[string]interface{})
+	if !ok {
+		s.logger.Warn("invalid target config, skipping metadata scan", "task_id", task.ID)
+		return
+	}
+
+	// 获取 engine_id（可能是 engine_id 或 local_engine_id）
+	var engineID uint
+	if engineIDFloat, ok := targetConfig["engine_id"].(float64); ok {
+		engineID = uint(engineIDFloat)
+	} else if localEngineIDFloat, ok := targetConfig["local_engine_id"].(float64); ok {
+		// 本地引擎暂不支持元数据扫描（因为 Meta 模块目前只管理系统引擎）
+		s.logger.Info("local engine detected, skipping metadata scan", "task_id", task.ID, "local_engine_id", uint(localEngineIDFloat))
+		return
+	} else {
+		s.logger.Warn("no engine_id found in target config, skipping metadata scan", "task_id", task.ID)
+		return
+	}
+
+	// 提取 schema_names（如果有的话）
+	var schemaNames []string
+	if schema, ok := targetConfig["schema"].(string); ok && schema != "" {
+		schemaNames = []string{schema}
+	} else if database, ok := targetConfig["database"].(string); ok && database != "" {
+		// 对于某些数据库，database 字段等同于 schema
+		schemaNames = []string{database}
+	}
+
+	// 调用 Meta 模块的扫描 API
+	s.logger.Info("triggering metadata scan",
+		"task_id", task.ID,
+		"engine_id", engineID,
+		"schema_names", schemaNames)
+
+	if err := s.metaClient.TriggerScanEngine(engineID, schemaNames); err != nil {
+		// 元数据扫描失败不影响任务本身的成功状态
+		s.logger.Error("failed to trigger metadata scan",
+			"error", err,
+			"task_id", task.ID,
+			"engine_id", engineID)
+	} else {
+		s.logger.Info("metadata scan triggered successfully",
+			"task_id", task.ID,
+			"engine_id", engineID)
 	}
 }

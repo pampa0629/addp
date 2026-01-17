@@ -592,12 +592,14 @@ func inferFieldType(value interface{}) format.FieldType {
 		return format.FieldTypeInt
 	case uint, uint8, uint16, uint32, uint64:
 		return format.FieldTypeBigInt
-	case float32, float64:
-		return format.FieldTypeFloat
+	case float32:
+		return format.FieldTypeFloat // 单精度浮点数
+	case float64:
+		return format.FieldTypeDouble // 双精度浮点数
 	case json.Number:
 		str := v.String()
 		if strings.Contains(str, ".") {
-			return format.FieldTypeFloat
+			return format.FieldTypeDouble // JSON 数字默认为双精度
 		}
 		return format.FieldTypeInt
 	case string:
@@ -630,13 +632,20 @@ func mergeFieldType(current, next format.FieldType) format.FieldType {
 
 	// 数值类型合并
 	if isNumericType(current) && isNumericType(next) {
-		if current == format.FieldTypeFloat || next == format.FieldTypeFloat {
-			return format.FieldTypeFloat
-		}
+		// 优先级: Decimal > Double > Float > BigInt > Int
 		if current == format.FieldTypeDecimal || next == format.FieldTypeDecimal {
 			return format.FieldTypeDecimal
 		}
-		return format.FieldTypeFloat
+		if current == format.FieldTypeDouble || next == format.FieldTypeDouble {
+			return format.FieldTypeDouble
+		}
+		if current == format.FieldTypeFloat || next == format.FieldTypeFloat {
+			return format.FieldTypeFloat
+		}
+		if current == format.FieldTypeBigInt || next == format.FieldTypeBigInt {
+			return format.FieldTypeBigInt
+		}
+		return format.FieldTypeInt
 	}
 
 	// 时间/日期混合为字符串
@@ -650,7 +659,7 @@ func mergeFieldType(current, next format.FieldType) format.FieldType {
 
 func isNumericType(t format.FieldType) bool {
 	switch t {
-	case format.FieldTypeInt, format.FieldTypeBigInt, format.FieldTypeFloat, format.FieldTypeDecimal:
+	case format.FieldTypeInt, format.FieldTypeBigInt, format.FieldTypeFloat, format.FieldTypeDouble, format.FieldTypeDecimal:
 		return true
 	default:
 		return false

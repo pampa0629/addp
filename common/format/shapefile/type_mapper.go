@@ -46,8 +46,12 @@ func (m *TypeMapper) FromCommon(commonType format.FieldType) (string, int, int) 
 		return "C", 254, 0 // Character, 最大254字节
 	case format.FieldTypeInt, format.FieldTypeBigInt:
 		return "N", 18, 0 // Numeric, 18位整数
-	case format.FieldTypeFloat, format.FieldTypeDecimal:
-		return "F", 20, 8 // Float, 20位总长度，8位小数
+	case format.FieldTypeFloat:
+		return "F", 13, 6 // Float, 单精度，13位总长度，6位小数
+	case format.FieldTypeDouble:
+		return "F", 20, 8 // Float, 双精度，20位总长度，8位小数
+	case format.FieldTypeDecimal:
+		return "N", 20, 8 // Numeric, 高精度小数
 	case format.FieldTypeBool:
 		return "L", 1, 0 // Logical
 	case format.FieldTypeDate:

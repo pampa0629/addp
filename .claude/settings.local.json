@@ -381,7 +381,15 @@
       "Bash(PGPASSWORD=addp123456 psql:*)",
       "Bash(pwdx:*)",
       "Bash(sqlite3:*)",
-      "Bash(PGPASSWORD=addp_system psql:*)"
+      "Bash(PGPASSWORD=addp_system psql:*)",
+      "Bash(go mod init:*)",
+      "Bash(for port in 8180 8081 8082 8083 8084 8085 8086)",
+      "Bash(pip3 install:*)",
+      "Bash(go mod edit:*)",
+      "Bash(PGPASSWORD=admin_password psql:*)",
+      "Bash(PGPASSWORD=$POSTGRES_PASSWORD psql:*)",
+      "Bash(/tmp/trigger_and_watch.sh)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": [],

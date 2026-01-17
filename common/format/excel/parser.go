@@ -262,7 +262,7 @@ func mapExcelTypeToFieldType(excelType string) format.FieldType {
 	case "int":
 		return format.FieldTypeInt
 	case "float":
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // Excel 中的浮点数为双精度
 	case "bool":
 		return format.FieldTypeBool
 	case "date":

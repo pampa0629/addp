@@ -504,6 +504,11 @@
                   <el-switch v-model="targetConfig.create_table" />
                   <div class="hint">PostgreSQL：若表不存在，根据字段映射自动建表</div>
                 </el-form-item>
+
+                <el-form-item label="自动扫描元数据">
+                  <el-switch v-model="taskForm.auto_scan_metadata" />
+                  <div class="hint">任务完成后自动扫描目标引擎的元数据，更新数据目录</div>
+                </el-form-item>
               </el-form>
             </div>
 
@@ -743,8 +748,7 @@ const taskForm = ref({
   batch_size: 1000,
   max_parallelism: 4,
   schedule: '',
-  source_id: null,
-  target_id: null
+  auto_scan_metadata: true
 })
 
 const sourceConnectorType = ref('postgresql')
@@ -789,15 +793,26 @@ const selectedTargetFormat = ref('csv')
 const selectedGeometryField = ref('')
 const selectedGeometryFieldsMulti = ref([])
 
-const spatialTypeKeywords = ['geometry', 'geography', 'point', 'linestring', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geom', 'geog', 'shape', 'multipolygonz', 'multipolygonm']
+// 几何类型关键词列表（用于后端未返回 standard_type 时的备用判断）
+const spatialTypeKeywords = ['geometry', 'geography', 'point', 'linestring', 'polygon', 'multipoint', 'multilinestring', 'multipolygon', 'geometrycollection']
 
+// 判断字段是否为空间几何类型
+// 优先使用后端返回的 standard_type（标准化类型），这是最准确的判断方式
 const isSpatialField = (field) => {
   if (!field) return false
-  const name = (typeof field === 'string' ? field : field.name || '').toLowerCase()
+
+  // 1. 优先使用后端返回的 standard_type（最准确）
+  const standardType = (field.standard_type || field.StandardType || '').toLowerCase()
+  if (standardType) {
+    return spatialTypeKeywords.includes(standardType)
+  }
+
+  // 2. 备用方案：基于 data_type 判断（不再使用字段名！）
   const dataType = (field.data_type || field.DataType || '').toLowerCase()
   const columnType = (field.column_type || field.ColumnType || '').toLowerCase()
-  const combined = `${name} ${dataType} ${columnType}`
-  return spatialTypeKeywords.some(keyword => combined.includes(keyword))
+  const typeString = `${dataType} ${columnType}`
+
+  return spatialTypeKeywords.some(keyword => typeString.includes(keyword))
 }
 
 const spatialSourceFields = computed(() => {
@@ -828,7 +843,7 @@ watch(
 
     // 必须已选择数据源
     const hasResource = sourceIsSystem.value
-      ? !!taskForm.value.source_id
+      ? !!selectedSourceOption.value
       : !!selectedSourceLocalResource.value
 
     if (!hasResource) {
@@ -883,7 +898,7 @@ watch(
     }
 
     // 必须已选择数据源
-    if (!taskForm.value.target_id) {
+    if (!selectedTargetOption.value) {
       console.log('自动获取目标字段: 尚未选择数据源,跳过')
       return
     }
@@ -1124,6 +1139,7 @@ const openSystemEngines = () => {
 
 const removeConnectionFields = (config) => {
   const keys = [
+    // 数据库连接字段
     'type',
     'driver',
     'host',
@@ -1132,11 +1148,21 @@ const removeConnectionFields = (config) => {
     'password',
     'database',
     'sslmode',
+    // 对象存储连接字段
     'endpoint',
     'access_key',
     'secret_key',
     'bucket',
     'use_ssl',
+    'path',           // 对象存储路径
+    'format',         // 文件格式
+    'headers',        // CSV headers
+    'delimiter',      // CSV 分隔符
+    'compression',    // 压缩格式
+    'overwrite',      // 是否覆盖
+    // 文件系统字段
+    'full_name',      // 文件全路径（应该只在 connection_info 里）
+    // 引擎相关字段
     'engine_type',
     'connection_info',
     'local_engine_id',
@@ -1538,10 +1564,7 @@ watch(
 watch(selectedSourceOption, (option) => {
   availableSourceTables.value = []
   if (option?.origin === 'system') {
-    taskForm.value.source_id = option.resource.id
     removeConnectionFields(sourceConfig.value)
-  } else {
-    taskForm.value.source_id = null
   }
   sourceFieldDetails.value = []
   sourceFields.value = []
@@ -1555,10 +1578,7 @@ watch(selectedSourceOption, (option) => {
 watch(selectedTargetOption, (option) => {
   availableTargetTables.value = []
   if (option?.origin === 'system') {
-    taskForm.value.target_id = option.resource.id
     removeConnectionFields(targetConfig.value)
-  } else {
-    taskForm.value.target_id = null
   }
 
   const type = (option?.resource?.engine_type || '').toLowerCase()
@@ -1636,7 +1656,6 @@ watch(targetConnectorType, (newType, oldType) => {
 })
 
 const handleSourceTypeChange = () => {
-  taskForm.value.source_id = null
   selectedSourceValue.value = null
   sourceConfig.value = {}
   availableSourceTables.value = []
@@ -1650,7 +1669,6 @@ const handleSourceTypeChange = () => {
 }
 
 const handleTargetTypeChange = () => {
-  taskForm.value.target_id = null
   selectedTargetValue.value = null
   targetConfig.value = {}
   targetFieldDetails.value = []
@@ -1847,9 +1865,7 @@ const loadTaskForEdit = async () => {
       mode: taskData.mode || 'batch',
       batch_size: taskData.batch_size || 1000,
       max_parallelism: taskData.max_parallelism || 1,
-      schedule: taskData.schedule || '',
-      source_id: taskData.source_id ?? null,
-      target_id: taskData.target_id ?? null
+      schedule: taskData.schedule || ''
     }
 
     const taskConfig = taskData.config || {}
@@ -1857,7 +1873,7 @@ const loadTaskForEdit = async () => {
     const rawTargetConfig = { ...(taskConfig.target || {}) }
 
     const sourceScope = (rawSourceConfig.scope || '').toLowerCase()
-    const sourceSystemId = normalizeId(taskData.source_id ?? rawSourceConfig.system_engine_id)
+    const sourceSystemId = normalizeId(rawSourceConfig.engine_id)
     const sourceLocalId = normalizeId(rawSourceConfig.local_engine_id)
 
     if (sourceScope === 'system' || sourceSystemId) {
@@ -1869,7 +1885,6 @@ const loadTaskForEdit = async () => {
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
-      taskForm.value.source_id = sourceSystemId || null
     } else if (sourceScope === 'local' || sourceLocalId) {
       const localResource = localResources.value.find(res => res.id === sourceLocalId) || null
       if (sourceLocalId && !localResource) {
@@ -1879,17 +1894,15 @@ const loadTaskForEdit = async () => {
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceLocalId ? `local:${sourceLocalId}` : null
-      taskForm.value.source_id = null
     } else {
       const resolvedType = normalizeConnectorType(rawSourceConfig.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
       selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
-      taskForm.value.source_id = sourceSystemId || null
     }
 
     const targetScope = (rawTargetConfig.scope || '').toLowerCase()
-    const targetSystemId = normalizeId(taskData.target_id ?? rawTargetConfig.system_engine_id)
+    const targetSystemId = normalizeId(rawTargetConfig.engine_id)
     const targetLocalId = normalizeId(rawTargetConfig.local_engine_id)
 
     if (targetScope === 'system' || targetSystemId) {
@@ -1902,7 +1915,6 @@ const loadTaskForEdit = async () => {
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
       selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
-      taskForm.value.target_id = targetSystemId || null
     } else if (targetScope === 'local' || targetLocalId) {
       const localResource = localResources.value.find(res => res.id === targetLocalId) || null
       if (targetLocalId && !localResource) {
@@ -1913,14 +1925,12 @@ const loadTaskForEdit = async () => {
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
       selectedTargetValue.value = targetLocalId ? `local:${targetLocalId}` : null
-      taskForm.value.target_id = null
     } else {
       const resolvedTypeRaw = normalizeConnectorType(rawTargetConfig.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
       selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
-      taskForm.value.target_id = targetSystemId || null
     }
 
     syncSelectedFormatFromConfig()
@@ -1994,7 +2004,7 @@ const loadTaskForEdit = async () => {
 }
 
 const handleLoadSourceTables = async () => {
-  if (!taskForm.value.source_id && !selectedSourceLocalResource.value) {
+  if (!selectedSourceOption.value && !selectedSourceLocalResource.value) {
     ElMessage.warning('请先选择源数据源')
     return
   }
@@ -2007,7 +2017,7 @@ const handleLoadSourceTables = async () => {
       }
       const token = localStorage.getItem('token')
       const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
-        params: { engine_id: taskForm.value.source_id },
+        params: { engine_id: selectedSourceOption.value?.resource?.id },
         headers: { Authorization: `Bearer ${token}` }
       })
       if (response.data && Array.isArray(response.data)) {
@@ -2042,7 +2052,7 @@ const handleLoadTargetTables = async () => {
     return
   }
 
-  if (!taskForm.value.target_id) {
+  if (!selectedTargetOption.value) {
     ElMessage.warning('请先选择数据源')
     return
   }
@@ -2055,7 +2065,7 @@ const handleLoadTargetTables = async () => {
   try {
     const token = localStorage.getItem('token')
     const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
-      params: { engine_id: taskForm.value.target_id },
+      params: { engine_id: selectedTargetOption.value?.resource?.id },
       headers: { Authorization: `Bearer ${token}` }
     })
 
@@ -2092,7 +2102,7 @@ const handleTargetTableChange = (newTable) => {
 const handleFetchFields = async (type) => {
   const isSource = type === 'source'
   const useSystem = isSource ? sourceIsSystem.value : targetIsSystem.value
-  const resourceId = isSource ? taskForm.value.source_id : taskForm.value.target_id
+  const resourceId = isSource ? selectedSourceOption.value?.resource?.id : selectedTargetOption.value?.resource?.id
   const localResource = isSource ? selectedSourceLocalResource.value : selectedTargetLocalResource.value
   const tableName = isSource ? sourceConfig.value.table : targetConfig.value.table
   const connectorType = isSource ? sourceConnectorType.value : targetConnectorType.value
@@ -2140,6 +2150,7 @@ const handleFetchFields = async (type) => {
               name: field.name || '',
               data_type: field.data_type || '',
               column_type: field.column_type || '',
+              standard_type: field.standard_type || '',  // 添加标准化类型字段
               default_value: field.default_value || '',
               comment: field.comment || '',
               is_nullable: field.is_nullable,
@@ -2176,7 +2187,8 @@ const handleFetchFields = async (type) => {
             targetFieldDetails.value = response.data.map(field => ({
               name: field.name || '',
               data_type: field.data_type || '',
-              column_type: field.column_type || ''
+              column_type: field.column_type || '',
+              standard_type: field.standard_type || ''  // 添加标准化类型字段
             }))
             targetFields.value = targetFieldDetails.value.map(field => field.name).filter(Boolean)
           } else {
@@ -2211,6 +2223,7 @@ const handleFetchFields = async (type) => {
             name: field.name || '',
             data_type: field.data_type || field.DataType || '',
             column_type: field.column_type || field.ColumnType || '',
+            standard_type: field.standard_type || field.StandardType || '',  // 添加标准化类型
             nullable: (field.nullable ?? field.is_nullable) !== false
           }))
           sourceFields.value = sourceFieldDetails.value.map(f => f.name).filter(Boolean)
@@ -2228,7 +2241,8 @@ const handleFetchFields = async (type) => {
           targetFieldDetails.value = data.map(field => ({
             name: field.name || '',
             data_type: field.data_type || field.DataType || '',
-            column_type: field.column_type || field.ColumnType || ''
+            column_type: field.column_type || field.ColumnType || '',
+            standard_type: field.standard_type || field.StandardType || ''  // 添加标准化类型
           }))
           targetFields.value = targetFieldDetails.value.map(f => f.name).filter(Boolean)
           ElMessage.success(`已加载 ${targetFields.value.length} 个目标字段`)
@@ -2315,7 +2329,7 @@ const autoFetchAndMapFields = async () => {
     if (sourceFields.value.length === 0) {
       console.log('源字段为空,尝试自动获取...')
 
-      if (sourceIsSystem.value && taskForm.value.source_id && sourceConfig.value.table) {
+      if (sourceIsSystem.value && selectedSourceOption.value && sourceConfig.value.table) {
         console.log('系统资源 + 表模式,获取源字段')
         await handleFetchFields('source')
       } else if (
@@ -2332,7 +2346,7 @@ const autoFetchAndMapFields = async () => {
       } else {
         console.log('缺少必要参数,无法获取源字段:', {
           isSystem: sourceIsSystem.value,
-          resourceId: taskForm.value.source_id,
+          resourceId: selectedSourceOption.value?.resource?.id,
           localResource: !!selectedSourceLocalResource.value,
           table: sourceConfig.value.table,
           queryType: sourceConfig.value.queryType
@@ -2356,7 +2370,7 @@ const autoFetchAndMapFields = async () => {
       console.log('目标配置信息:', {
         isSystem: targetIsSystem.value,
         connectorType: targetConnectorType.value,
-        resourceId: taskForm.value.target_id,
+        resourceId: selectedTargetOption.value?.resource?.id,
         localResource: selectedTargetLocalResource.value?.id,
         localResourceType: selectedTargetLocalResource.value?.engine_type,
         table: targetConfig.value.table,
@@ -2444,18 +2458,36 @@ const autoFetchAndMapFields = async () => {
 const performAutoMatch = () => {
   const newMappings = []
 
-  // 辅助函数：检测字段是否为几何类型
+  // 辅助函数：检测字段类型（优先使用后端标准化类型）
   const detectFieldType = (sourceField) => {
-    // 检查源字段详情
+    // 1. 优先使用源字段的标准化类型
     const sourceDetail = sourceFieldDetails.value.find(f => f.name === sourceField)
+    if (sourceDetail?.standard_type) {
+      // 如果是几何类型，统一返回 'geometry'
+      if (isSpatialField(sourceDetail)) {
+        return 'geometry'
+      }
+      // 其他类型直接返回标准化类型
+      return sourceDetail.standard_type
+    }
+
+    // 2. 备用：检查目标字段的标准化类型
+    const targetDetail = targetFieldDetails.value.find(f => f.name === sourceField)
+    if (targetDetail?.standard_type) {
+      if (isSpatialField(targetDetail)) {
+        return 'geometry'
+      }
+      return targetDetail.standard_type
+    }
+
+    // 3. 最后的备用方案：基于字段详情推断（兼容旧数据）
     if (sourceDetail && isSpatialField(sourceDetail)) {
       return 'geometry'
     }
-    // 检查目标字段详情
-    const targetDetail = targetFieldDetails.value.find(f => f.name === sourceField)
     if (targetDetail && isSpatialField(targetDetail)) {
       return 'geometry'
     }
+
     return 'string'
   }
 
@@ -2639,21 +2671,31 @@ const handleSubmit = async () => {
 
     if (selectedSourceOption.value?.origin === 'system') {
       config.source.scope = 'system'
-      if (taskForm.value.source_id) {
-        config.source.system_engine_id = taskForm.value.source_id
+      const engineId = selectedSourceOption.value?.resource?.id
+      if (!engineId) {
+        ElMessage.warning('源数据源配置错误：缺少引擎ID')
+        submitting.value = false
+        return
       }
+      config.source.engine_id = engineId
       delete config.source.local_engine_id
       delete config.source.local_resource_name
       removeConnectionFields(config.source)
     } else if (selectedSourceLocalResource.value) {
       const localResource = selectedSourceLocalResource.value
-      taskForm.value.source_id = null
+      // 先清理不需要的字段，避免冗余
+      const cleanConfig = { ...config.source }
+      delete cleanConfig.full_name  // full_name应该只在connection_info里
+      delete cleanConfig.engine_type
+      delete cleanConfig.connection_info
+
       config.source = {
-        ...buildConnectorConfigFromResource(localResource),
-        ...config.source,
+        ...cleanConfig,
         scope: 'local',
         local_engine_id: localResource.id,
-        local_resource_name: localResource.name
+        local_resource_name: localResource.name,
+        engine_type: localResource.engine_type,
+        connection_info: localResource.connection_info
       }
     } else {
       ElMessage.warning('请选择源数据源')
@@ -2663,21 +2705,31 @@ const handleSubmit = async () => {
 
     if (selectedTargetOption.value?.origin === 'system') {
       config.target.scope = 'system'
-      if (taskForm.value.target_id) {
-        config.target.system_engine_id = taskForm.value.target_id
+      const engineId = selectedTargetOption.value?.resource?.id
+      if (!engineId) {
+        ElMessage.warning('目标数据源配置错误：缺少引擎ID')
+        submitting.value = false
+        return
       }
+      config.target.engine_id = engineId
       delete config.target.local_engine_id
       delete config.target.local_resource_name
       removeConnectionFields(config.target)
     } else if (selectedTargetLocalResource.value) {
       const localResource = selectedTargetLocalResource.value
-      taskForm.value.target_id = null
+      // 先清理不需要的字段，避免冗余
+      const cleanConfig = { ...config.target }
+      delete cleanConfig.full_name  // full_name应该只在connection_info里
+      delete cleanConfig.engine_type
+      delete cleanConfig.connection_info
+
       config.target = {
-        ...buildConnectorConfigFromResource(localResource),
-        ...config.target,
+        ...cleanConfig,
         scope: 'local',
         local_engine_id: localResource.id,
-        local_resource_name: localResource.name
+        local_resource_name: localResource.name,
+        engine_type: localResource.engine_type,
+        connection_info: localResource.connection_info
       }
     } else {
       ElMessage.warning('请选择目标数据源')

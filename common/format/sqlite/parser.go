@@ -48,7 +48,7 @@ func mapSQLiteTypeToFieldType(sqliteType string) format.FieldType {
 	case contains(upperType, "BLOB"):
 		return format.FieldTypeBytes
 	case contains(upperType, "REAL") || contains(upperType, "FLOA") || contains(upperType, "DOUB"):
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // SQLite REAL 是 8 字节双精度
 	case contains(upperType, "DATE") || contains(upperType, "TIME"):
 		return format.FieldTypeTimestamp
 	case contains(upperType, "BOOL"):

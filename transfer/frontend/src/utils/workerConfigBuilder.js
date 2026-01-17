@@ -300,7 +300,7 @@ export const buildWorkerConfigFromTask = (task, mappings, systemResourceMap) => 
   // 解析源配置
   const resolveConnectorConfig = (key) => {
     const rawConfig = cloneDeep(baseConfig[key] || {})
-    const fallbackId = key === 'source' ? toNumber(task.source_id) : toNumber(task.target_id)
+    const fallbackId = toNumber(rawConfig.engine_id)
 
     let resource = null
     const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.engine_id)
@@ -387,8 +387,6 @@ export const buildWorkerConfigFromTask = (task, mappings, systemResourceMap) => 
     task_id: task.id,
     name: task.name,
     description: task.description,
-    source_id: task.source_id ?? null,
-    target_id: task.target_id ?? null,
     schedule: task.schedule || '',
     mode: mapTaskModeForWorker(task.mode),
     batch_size: task.batch_size,

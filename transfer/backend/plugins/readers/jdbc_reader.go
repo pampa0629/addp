@@ -1,7 +1,6 @@
 package readers
 
 import (
-	"github.com/addp/transfer/plugins/utils"
 	"context"
 	"database/sql"
 	"fmt"
@@ -10,8 +9,9 @@ import (
 	"time"
 
 	"github.com/addp/transfer/pkg/pipeline"
+	"github.com/addp/transfer/plugins/utils"
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 // JDBCReader JDBC 数据读取器
@@ -26,6 +26,7 @@ type JDBCReader struct {
 	mode         pipeline.ReaderMode
 	lastReadAt   time.Time
 	pollInterval time.Duration
+	driver       string // 数据库驱动类型
 }
 
 // JDBCConfig JDBC 连接配置
@@ -114,6 +115,7 @@ func (r *JDBCReader) Open(ctx context.Context, config pipeline.ConnectorConfig) 
 	}
 
 	r.db = db
+	r.driver = jdbcConfig.Driver // 保存驱动类型用于标识符引用
 
 	// 构建查询语句
 	if jdbcConfig.Query != "" {
@@ -259,7 +261,9 @@ func shouldPreserveBinary(dbType string) bool {
 
 // buildSelectQuery 构建 SELECT 查询
 func (r *JDBCReader) buildSelectQuery(config JDBCConfig) string {
-	query := fmt.Sprintf("SELECT * FROM %s", config.Table)
+	// 使用数据库特定的标识符引用方式保留大小写
+	quotedTable := r.quoteIdentifier(config.Table)
+	query := fmt.Sprintf("SELECT * FROM %s", quotedTable)
 
 	if config.WhereClause != "" {
 		query += " WHERE " + config.WhereClause
@@ -270,6 +274,20 @@ func (r *JDBCReader) buildSelectQuery(config JDBCConfig) string {
 	}
 
 	return query
+}
+
+// quoteIdentifier 根据数据库类型引用标识符以保留大小写
+func (r *JDBCReader) quoteIdentifier(identifier string) string {
+	switch strings.ToLower(r.driver) {
+	case "postgres", "postgresql":
+		return pq.QuoteIdentifier(identifier)
+	case "mysql":
+		// MySQL 使用反引号
+		return fmt.Sprintf("`%s`", strings.ReplaceAll(identifier, "`", "``"))
+	default:
+		// 未知数据库类型，保守策略：不加引号
+		return identifier
+	}
 }
 
 // buildPaginatedQuery 构建分页查询

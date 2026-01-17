@@ -113,8 +113,37 @@ func (s *ExplorerService) RefreshNode(ctx context.Context, tenantID *uint, locat
 
 	// 3. 触发 Meta 扫描（异步）
 	if s.metaClient != nil {
-		// TODO: 调用 Meta 的扫描接口刷新节点
-		logger.L().Info("触发 Meta 扫描", "locator", locatorURI)
+		// 设置租户 ID（用于服务间调用时的租户隔离）
+		s.metaClient.SetTenantID(tenantID)
+
+		// 根据节点类型决定扫描范围
+		var schemaNames []string
+
+		switch loc.Type {
+		case resource.TypeTable:
+			// 表节点：扫描该表所在的 schema
+			if len(loc.Path) > 0 {
+				schemaNames = []string{loc.Path[0]}
+				logger.L().Info("触发 Schema 级扫描（表节点）", "engine_id", loc.EngineID, "schema", loc.Path[0])
+			}
+		case resource.TypeSchema:
+			// Schema 节点：扫描该 schema
+			if len(loc.Path) > 0 {
+				schemaNames = []string{loc.Path[0]}
+				logger.L().Info("触发 Schema 级扫描（Schema 节点）", "engine_id", loc.EngineID, "schema", loc.Path[0])
+			}
+		default:
+			// 其他类型（数据库、引擎根节点、对象存储等）：扫描整个引擎
+			logger.L().Info("触发引擎级扫描", "engine_id", loc.EngineID, "type", loc.Type)
+		}
+
+		// 调用 Meta 扫描 API
+		if err := s.metaClient.TriggerScanEngine(loc.EngineID, schemaNames); err != nil {
+			// 扫描失败不中断流程，只记录警告
+			logger.L().Warn("触发 Meta 扫描失败", "error", err)
+		} else {
+			logger.L().Info("Meta 扫描已触发", "engine_id", loc.EngineID, "schemas", schemaNames)
+		}
 	}
 
 	// 4. 重新获取节点信息

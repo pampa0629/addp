@@ -249,7 +249,7 @@ func mapToFieldType(bsonType string) format.FieldType {
 	case "int64":
 		return format.FieldTypeInt
 	case "float64":
-		return format.FieldTypeFloat
+		return format.FieldTypeDouble // MongoDB 的 float64 映射为双精度
 	case "bool":
 		return format.FieldTypeBool
 	case "datetime":

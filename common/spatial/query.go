@@ -9,6 +9,7 @@ import (
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/lib/pq"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -60,8 +61,9 @@ func QueryTableRowCount(
 	defer sqlDB.Close()
 
 	// 4. 查询记录数（使用 COUNT(*) 精确查询）
+	// 重要：使用 pq.QuoteIdentifier 保留标识符大小写
 	var count int64
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schema), pq.QuoteIdentifier(table))
 	err = db.Raw(query).Scan(&count).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to query record count: %w", err)

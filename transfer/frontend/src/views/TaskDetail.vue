@@ -429,7 +429,7 @@ const sanitizeConnectorForWorker = (connector) => {
 const resolveConnectorConfigForWorker = (key) => {
   const taskConfig = cloneDeep(task.value?.config || {})
   const rawConfig = cloneDeep(taskConfig[key] || {})
-  const fallbackId = key === 'source' ? toNumber(task.value?.source_id) : toNumber(task.value?.target_id)
+  const fallbackId = toNumber(rawConfig.engine_id)
 
   let resource = null
   const embeddedId = toNumber(rawConfig.system_engine_id || rawConfig.engine_id)
@@ -645,8 +645,6 @@ const buildWorkerConfig = () => {
     task_id: task.value.id,
     name: task.value.name,
     description: task.value.description,
-    source_id: task.value.source_id ?? null,
-    target_id: task.value.target_id ?? null,
     schedule: task.value.schedule || '',
     mode: mapTaskModeForWorker(task.value.mode),
     batch_size: task.value.batch_size,
@@ -759,7 +757,7 @@ const addItem = (items, label, value, span) => {
 
 const buildConnectorDetails = (role) => {
   const config = task.value?.config?.[role] || {}
-  const fallbackId = role === 'source' ? task.value?.source_id : task.value?.target_id
+  const fallbackId = toNumber(config.engine_id)
   const items = []
 
   const scope = inferScope(config, fallbackId)

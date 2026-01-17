@@ -89,6 +89,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	// 使用 ST_AsGeoJSON 直接生成 GeoJSON 格式的几何
 	// 注意：必须在子查询中先计算 row_number()，不能在聚合函数内使用窗口函数
 	// COALESCE 确保空结果返回空数组而不是 null
+	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
 	query := fmt.Sprintf(`
 		SELECT jsonb_build_object(
 			'type', 'FeatureCollection',
@@ -97,7 +98,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 					jsonb_build_object(
 						'type', 'Feature',
 						'id', row.row_id,
-						'geometry', ST_AsGeoJSON(row.%s)::jsonb,
+						'geometry', ST_AsGeoJSON(row."%s")::jsonb,
 						'properties', to_jsonb(row.*) - '%s' - 'row_id'
 					)
 				),
@@ -108,7 +109,7 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 			SELECT
 				row_number() OVER () as row_id,
 				*
-			FROM %s.%s
+			FROM "%s"."%s"
 			ORDER BY ctid
 			LIMIT %d OFFSET %d
 		) row
@@ -198,7 +199,8 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	var metadata Metadata
 
 	// 查询记录数
-	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", schema, table)
+	// 重要：使用双引号括起 schema 和表名以保留大小写
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM "%s"."%s"`, schema, table)
 	if err := db.Raw(countQuery).Scan(&metadata.Count).Error; err != nil {
 		logger.L().Error("Failed to query count", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query count failed"})
@@ -206,6 +208,7 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	}
 
 	// 查询范围
+	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
 	extentQuery := fmt.Sprintf(`
 		SELECT
 			ST_XMin(extent) as min_lng,
@@ -213,8 +216,8 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 			ST_XMax(extent) as max_lng,
 			ST_YMax(extent) as max_lat
 		FROM (
-			SELECT ST_Extent(ST_Transform(%s, 4326)) as extent
-			FROM %s.%s
+			SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
+			FROM "%s"."%s"
 		) subquery
 	`, geomColumn, schema, table)
 
@@ -227,7 +230,8 @@ func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	}
 
 	// 单独查询原始 SRID (所有几何应该有相同的 SRID)
-	sridQuery := fmt.Sprintf("SELECT ST_SRID(%s) FROM %s.%s LIMIT 1", geomColumn, schema, table)
+	// 重要：使用双引号括起列名、表名和 schema 名以保留大小写
+	sridQuery := fmt.Sprintf(`SELECT ST_SRID("%s") FROM "%s"."%s" LIMIT 1`, geomColumn, schema, table)
 	err = db.Raw(sridQuery).Scan(&metadata.SRID).Error
 	if err != nil {
 		logger.L().Error("Failed to query SRID", "error", err)

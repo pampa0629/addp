@@ -1,7 +1,9 @@
 package spatial
 
 import (
+	"encoding/binary"
 	"fmt"
+	"log"
 )
 
 // ConvertToStandardWKB 将 GPKG WKB 或扩展 WKB 转换为标准 ISO WKB
@@ -136,6 +138,228 @@ func cleanISOWKBFlags(data []byte) ([]byte, error) {
 		result[2] = 0
 		result[3] = 0
 		result[4] = 0
+	}
+
+	return result, nil
+}
+
+// FixInvalidRings 修复WKB中只有3个点的polygon环
+// 对于只有3个点的环，复制第一个点作为第四个点来形成闭环
+// 这样可以让SpatiaLite的数据兼容PostGIS的严格要求（环至少4个点）
+func FixInvalidRings(data []byte) ([]byte, error) {
+	if len(data) < 9 {
+		// WKB太短，直接返回
+		return data, nil
+	}
+
+	byteOrder := data[0]
+	var order binary.ByteOrder
+	if byteOrder == 0x00 { // Big Endian
+		order = binary.BigEndian
+	} else { // Little Endian
+		order = binary.LittleEndian
+	}
+
+	geomType := order.Uint32(data[1:5])
+
+	// 处理ISO WKB标志，获取基本类型
+	baseType := geomType
+	if geomType >= 1000 && geomType < 4000 {
+		baseType = geomType % 1000
+	} else if geomType > 7 {
+		baseType = geomType & 0xFF
+	}
+
+	// 只处理Polygon(3)和MultiPolygon(6)
+	if baseType != 3 && baseType != 6 {
+		return data, nil
+	}
+
+	if baseType == 3 {
+		// 单个Polygon
+		return fixPolygon(data, order)
+	} else {
+		// MultiPolygon
+		return fixMultiPolygon(data, order)
+	}
+}
+
+// fixPolygon 修复单个Polygon的环
+func fixPolygon(data []byte, order binary.ByteOrder) ([]byte, error) {
+	if len(data) < 9 {
+		return data, nil
+	}
+
+	// data[0] = byteOrder, data[1:5] = geomType
+	offset := 5
+
+	if offset+4 > len(data) {
+		return data, nil
+	}
+
+	numRings := order.Uint32(data[offset : offset+4])
+	offset += 4
+
+	var result []byte
+	result = append(result, data[:offset]...) // 复制header和numRings
+
+	hasInvalidRing := false
+
+	for i := uint32(0); i < numRings; i++ {
+		if offset+4 > len(data) {
+			// 数据不足，复制剩余部分
+			result = append(result, data[offset:]...)
+			break
+		}
+
+		numPoints := order.Uint32(data[offset : offset+4])
+		pointsStart := offset + 4
+		pointsSize := int(numPoints) * 16 // 每个点16字节 (2个double)
+		pointsEnd := pointsStart + pointsSize
+
+		if pointsEnd > len(data) {
+			// 数据不足，复制剩余部分
+			result = append(result, data[offset:]...)
+			break
+		}
+
+		if numPoints == 3 {
+			// 只有3个点，需要修复
+			hasInvalidRing = true
+
+			// 写入新的点数：4
+			newNumPoints := make([]byte, 4)
+			order.PutUint32(newNumPoints, 4)
+			result = append(result, newNumPoints...)
+
+			// 复制原来的3个点
+			result = append(result, data[pointsStart:pointsEnd]...)
+
+			// 复制第一个点作为第四个点（闭合环）
+			firstPoint := data[pointsStart : pointsStart+16]
+			result = append(result, firstPoint...)
+
+			log.Printf("⚠️  修复了一个只有3个点的环，复制第一个点作为第四个点以形成闭环")
+		} else {
+			// 点数正常，直接复制
+			result = append(result, data[offset:pointsEnd]...)
+		}
+
+		offset = pointsEnd
+	}
+
+	// 复制剩余数据（如果有）
+	if offset < len(data) {
+		result = append(result, data[offset:]...)
+	}
+
+	if hasInvalidRing {
+		log.Printf("✓ Polygon修复完成，新WKB长度: %d bytes (原长度: %d bytes)", len(result), len(data))
+	}
+
+	return result, nil
+}
+
+// fixMultiPolygon 修复MultiPolygon中的所有Polygon
+func fixMultiPolygon(data []byte, order binary.ByteOrder) ([]byte, error) {
+	if len(data) < 9 {
+		return data, nil
+	}
+
+	// data[0] = byteOrder, data[1:5] = geomType
+	offset := 5
+
+	if offset+4 > len(data) {
+		return data, nil
+	}
+
+	numPolygons := order.Uint32(data[offset : offset+4])
+	offset += 4
+
+	var result []byte
+	result = append(result, data[:offset]...) // 复制header和numPolygons
+
+	totalInvalidRings := 0
+
+	for p := uint32(0); p < numPolygons; p++ {
+		if offset+5 > len(data) {
+			// 数据不足，复制剩余部分
+			result = append(result, data[offset:]...)
+			break
+		}
+
+		// 每个polygon有自己的byteOrder和geomType
+		polyByteOrder := data[offset]
+		var polyOrder binary.ByteOrder
+		if polyByteOrder == 0x00 {
+			polyOrder = binary.BigEndian
+		} else {
+			polyOrder = binary.LittleEndian
+		}
+
+		// 复制polygon的byteOrder和geomType
+		result = append(result, data[offset:offset+5]...)
+		offset += 5
+
+		if offset+4 > len(data) {
+			result = append(result, data[offset:]...)
+			break
+		}
+
+		numRings := polyOrder.Uint32(data[offset : offset+4])
+		offset += 4
+
+		// 写入numRings
+		result = append(result, data[offset-4:offset]...)
+
+		for r := uint32(0); r < numRings; r++ {
+			if offset+4 > len(data) {
+				result = append(result, data[offset:]...)
+				break
+			}
+
+			numPoints := polyOrder.Uint32(data[offset : offset+4])
+			pointsStart := offset + 4
+			pointsSize := int(numPoints) * 16
+			pointsEnd := pointsStart + pointsSize
+
+			if pointsEnd > len(data) {
+				result = append(result, data[offset:]...)
+				break
+			}
+
+			if numPoints == 3 {
+				// 只有3个点，需要修复
+				totalInvalidRings++
+
+				// 写入新的点数：4
+				newNumPoints := make([]byte, 4)
+				polyOrder.PutUint32(newNumPoints, 4)
+				result = append(result, newNumPoints...)
+
+				// 复制原来的3个点
+				result = append(result, data[pointsStart:pointsEnd]...)
+
+				// 复制第一个点作为第四个点
+				firstPoint := data[pointsStart : pointsStart+16]
+				result = append(result, firstPoint...)
+			} else {
+				// 点数正常，直接复制
+				result = append(result, data[offset:pointsEnd]...)
+			}
+
+			offset = pointsEnd
+		}
+	}
+
+	// 复制剩余数据
+	if offset < len(data) {
+		result = append(result, data[offset:]...)
+	}
+
+	if totalInvalidRings > 0 {
+		log.Printf("✓ MultiPolygon修复完成，共修复 %d 个无效环，新WKB长度: %d bytes (原长度: %d bytes)",
+			totalInvalidRings, len(result), len(data))
 	}
 
 	return result, nil

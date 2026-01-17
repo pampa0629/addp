@@ -12,7 +12,8 @@ const (
 	FieldTypeString    FieldType = "string"
 	FieldTypeInt       FieldType = "int"       // 整数 (int32/int64)
 	FieldTypeBigInt    FieldType = "bigint"    // 大整数 (int64)
-	FieldTypeFloat     FieldType = "float"     // 浮点数 (float32/float64)
+	FieldTypeFloat     FieldType = "float"     // 单精度浮点数 (float32, 4字节)
+	FieldTypeDouble    FieldType = "double"    // 双精度浮点数 (float64, 8字节)
 	FieldTypeDecimal   FieldType = "decimal"   // 高精度小数
 	FieldTypeBool      FieldType = "bool"      // 布尔值
 	FieldTypeDate      FieldType = "date"      // 日期 (YYYY-MM-DD)
@@ -200,7 +201,7 @@ func (m *TypeMapping) CommonToShapefileDBF(commonType FieldType) (dbfType byte, 
 // IsNumeric 判断字段类型是否为数值类型
 func IsNumeric(fieldType FieldType) bool {
 	switch fieldType {
-	case FieldTypeInt, FieldTypeBigInt, FieldTypeFloat, FieldTypeDecimal:
+	case FieldTypeInt, FieldTypeBigInt, FieldTypeFloat, FieldTypeDouble, FieldTypeDecimal:
 		return true
 	default:
 		return false

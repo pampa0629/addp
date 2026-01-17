@@ -24,9 +24,9 @@
               <el-icon><Collection /></el-icon>
               数据表
             </el-tag>
-            <!-- 总行数 -->
+            <!-- 总行数 / 预览行数 -->
             <el-tag v-if="tableTotal > 0" size="small" type="info">
-              总计 {{ tableTotal.toLocaleString() }} 行
+              {{ tableTotalText }}
             </el-tag>
           </div>
           <!-- 对象存储元数据信息 -->
@@ -728,6 +728,20 @@ const showTableInfo = computed(() => {
 
 const tableTotal = computed(() => {
   return props.previewData?.total || 0
+})
+
+const tableTotalText = computed(() => {
+  const total = tableTotal.value
+  const rows = props.previewData?.rows || []
+  const rowCount = rows.length
+
+  // 如果预览行数小于总行数，说明只是预览了部分数据
+  if (rowCount < total) {
+    return `预览 ${rowCount.toLocaleString()} 行（共 ${total.toLocaleString()} 行）`
+  }
+
+  // 否则显示总计
+  return `总计 ${total.toLocaleString()} 行`
 })
 
 const hasGeometry = computed(() => {

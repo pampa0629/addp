@@ -182,7 +182,8 @@ func (r *GeoPackageReader) Mode() pipeline.ReaderMode {
 
 // buildSelectQuery 构建 SELECT 查询
 func (r *GeoPackageReader) buildSelectQuery(config GeoPackageConfig) string {
-	query := fmt.Sprintf("SELECT * FROM %s", config.Table)
+	// 重要：使用 quoteIdentSQLite 保留标识符大小写（GeoPackage 基于 SQLite）
+	query := fmt.Sprintf("SELECT * FROM %s", quoteIdentSQLite(config.Table))
 
 	if config.WhereClause != "" {
 		query += " WHERE " + config.WhereClause

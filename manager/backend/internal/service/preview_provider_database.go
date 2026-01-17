@@ -92,12 +92,26 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 		// 仍需要从数据库获取列信息用于查询构建（必须获取，否则 PostgreSQL 查询会失败）
 		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
 		if err != nil {
+			// 检查是否为表不存在错误
+			if p.isTableNotFoundError(err) {
+				return nil, &TableNotFoundError{
+					Schema: req.Schema,
+					Table:  tableName,
+				}
+			}
 			return nil, fmt.Errorf("failed to list columns for query construction: %w", err)
 		}
 	} else {
 		// Meta 不可用或无数据，回退到数据库插件
 		columns, err = dbbridge.ListColumns(ctx, commonResource, db, req.Schema, tableName)
 		if err != nil {
+			// 检查是否为表不存在错误
+			if p.isTableNotFoundError(err) {
+				return nil, &TableNotFoundError{
+					Schema: req.Schema,
+					Table:  tableName,
+				}
+			}
 			return nil, fmt.Errorf("failed to list columns: %w", err)
 		}
 
@@ -126,12 +140,14 @@ func (p *DatabaseTablePreviewProvider) Preview(ctx context.Context, req *Preview
 	// 4. 获取总行数（自动使用正确的 plugin）
 	totalCount, err := dbbridge.GetTableRowCount(ctx, commonResource, db, req.Schema, tableName)
 	if err != nil {
+		// 检查是否为表不存在错误
+		if p.isTableNotFoundError(err) {
+			return nil, &TableNotFoundError{
+				Schema: req.Schema,
+				Table:  tableName,
+			}
+		}
 		return nil, fmt.Errorf("failed to get row count: %w", err)
-	}
-
-	// 限制最大行数
-	if totalCount > int64(maxRows) {
-		totalCount = int64(maxRows)
 	}
 
 	// 5. 计算分页参数
@@ -338,4 +354,31 @@ func (p *DatabaseTablePreviewProvider) getColumnMetadataFromMeta(
 
 	// 返回 SRID 和 Extent（用于前端显示）
 	return columnMetadata, geometryColumns, spatialMeta.SRID, spatialMeta.Extent, nil
+}
+
+// TableNotFoundError 表不存在错误
+type TableNotFoundError struct {
+	Schema string
+	Table  string
+}
+
+func (e *TableNotFoundError) Error() string {
+	return fmt.Sprintf("表 '%s.%s' 不存在或已被删除，请点击刷新按钮同步最新状态", e.Schema, e.Table)
+}
+
+// isTableNotFoundError 检查错误是否为表不存在错误
+func (p *DatabaseTablePreviewProvider) isTableNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	// 检查常见的"表不存在"错误信息
+	return strings.Contains(errMsg, "does not exist") ||
+		strings.Contains(errMsg, "doesn't exist") ||
+		strings.Contains(errMsg, "not exist") ||
+		strings.Contains(errMsg, "not found") ||
+		strings.Contains(errMsg, "unknown table") ||
+		strings.Contains(errMsg, "no such table") ||
+		strings.Contains(errMsg, "relation") && strings.Contains(errMsg, "does not exist")
 }
