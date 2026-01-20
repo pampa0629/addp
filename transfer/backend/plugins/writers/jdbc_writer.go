@@ -44,8 +44,6 @@ type JDBCWriter struct {
 	columns         []string
 	buffer          []map[string]interface{}
 	batchSize       int
-	writeMode       string
-	conflictKey     string
 	config          JDBCWriterConfig
 	driver          string
 	geometryColumns map[string]geometryColumnMeta
@@ -69,17 +67,10 @@ func NewJDBCWriter(config pipeline.ConnectorConfig) (pipeline.Writer, error) {
 		batchSize = 10000 // 提高默认批次大小: 1000 → 5000 → 10000（性能优化）
 	}
 
-	writeMode := jdbcConfig.WriteMode
-	if writeMode == "" {
-		writeMode = "insert"
-	}
-
 	return &JDBCWriter{
-		batchSize:   batchSize,
-		buffer:      make([]map[string]interface{}, 0, batchSize),
-		writeMode:   writeMode,
-		conflictKey: jdbcConfig.ConflictKey,
-		config:      jdbcConfig,
+		batchSize: batchSize,
+		buffer:    make([]map[string]interface{}, 0, batchSize),
+		config:    jdbcConfig,
 	}, nil
 }
 
@@ -92,19 +83,17 @@ type JDBCWriterConfig struct {
 	Username         string   `json:"username"`
 	Password         string   `json:"password"`
 	Table            string   `json:"table"`
-	WriteMode        string   `json:"write_mode"`   // insert, upsert, replace
-	ConflictKey      string   `json:"conflict_key"` // upsert 时的唯一键
 	SSLMode          string   `json:"ssl_mode"`
 	ConnectionString string   `json:"connection_string"`
 	SRID             int      `json:"srid"`
 	GeometryColumns  []string `json:"geometry_columns"`
 
-	// 主键配置（新增）
+	// 主键配置
 	CreatePrimaryKey    bool     `json:"create_primary_key"`     // 是否创建主键，默认 true
 	PrimaryKeyName      string   `json:"primary_key_name"`       // 主键约束名（可选，覆盖元数据）
 	ForcePrimaryKey     []string `json:"force_primary_key"`      // 强制指定主键字段（覆盖元数据）
 
-	// 空间索引配置（新增）
+	// 空间索引配置
 	CreateSpatialIndex  bool     `json:"create_spatial_index"`   // 是否创建空间索引，默认 true
 	SpatialIndexName    string   `json:"spatial_index_name"`     // 空间索引名（可选）
 }
@@ -417,6 +406,13 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 		return nil
 	}
 
+	// 覆盖模式：删除已存在的表，确保表结构与字段映射一致
+	dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", w.qualifiedTableName())
+	if _, err := w.db.ExecContext(ctx, dropSQL); err != nil {
+		return fmt.Errorf("failed to drop table %s: %w", w.table, err)
+	}
+	fmt.Printf("✨ Dropped table %s (覆盖模式)\n", w.table)
+
 	// 提取主键信息（用于后续创建和标记 NOT NULL）
 	var primaryKey *primaryKeyInfo
 	fmt.Printf("🔍 ensureTable: CreatePrimaryKey=%v\n", w.config.CreatePrimaryKey)
@@ -511,14 +507,6 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 
 	log.Printf("✅ 表结构创建成功: %s (主键和空间索引将在导入后添加)\n", w.table)
 
-	// 处理 write_mode: replace
-	if w.writeMode == "replace" {
-		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s", w.qualifiedTableName())
-		if _, err := w.db.ExecContext(ctx, truncateSQL); err != nil {
-			return fmt.Errorf("failed to truncate table %s: %w", w.table, err)
-		}
-	}
-
 	w.tableEnsured = true
 	return nil
 }
@@ -554,35 +542,8 @@ func (w *JDBCWriter) buildPostgresInsert() string {
 	columnsStr := strings.Join(columns, ", ")
 	valuesStr := strings.Join(placeholders, ", ")
 
-	switch w.writeMode {
-	case "upsert":
-		if w.conflictKey == "" {
-			return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-				w.qualifiedTableName(), columnsStr, valuesStr)
-		}
-
-		updateClauses := make([]string, 0, len(w.columns))
-		for _, col := range w.columns {
-			if strings.EqualFold(col, w.conflictKey) {
-				continue
-			}
-			quoted := w.quoteIdentifier(col)
-			updateClauses = append(updateClauses,
-				fmt.Sprintf("%s = EXCLUDED.%s", quoted, quoted))
-		}
-
-		return fmt.Sprintf(
-			"INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s",
-			w.qualifiedTableName(),
-			columnsStr,
-			valuesStr,
-			w.quoteIdentifier(w.conflictKey),
-			strings.Join(updateClauses, ", "),
-		)
-	default:
-		return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-			w.qualifiedTableName(), columnsStr, valuesStr)
-	}
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		w.qualifiedTableName(), columnsStr, valuesStr)
 }
 
 func (w *JDBCWriter) buildGenericInsert() string {
@@ -593,30 +554,8 @@ func (w *JDBCWriter) buildGenericInsert() string {
 	}
 	valuesStr := strings.Join(placeholders, ", ")
 
-	switch w.writeMode {
-	case "upsert":
-		updateClauses := make([]string, 0, len(w.columns))
-		for _, col := range w.columns {
-			if col == w.conflictKey {
-				continue
-			}
-			updateClauses = append(updateClauses,
-				fmt.Sprintf("%s = VALUES(%s)", col, col))
-		}
-		return fmt.Sprintf(
-			"INSERT INTO %s (%s) VALUES (%s) ON DUPLICATE KEY UPDATE %s",
-			w.table,
-			columns,
-			valuesStr,
-			strings.Join(updateClauses, ", "),
-		)
-	case "replace":
-		return fmt.Sprintf("REPLACE INTO %s (%s) VALUES (%s)",
-			w.table, columns, valuesStr)
-	default:
-		return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
-			w.table, columns, valuesStr)
-	}
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		w.table, columns, valuesStr)
 }
 
 func (w *JDBCWriter) parameterPlaceholder(index int) string {

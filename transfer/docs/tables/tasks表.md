@@ -52,8 +52,7 @@
     "scope": "system",
     "engine_id": 8,
     "type": "table",
-    "table": "public.target_cities",
-    "create_table": true
+    "table": "public.target_cities"
   }
 }
 ```

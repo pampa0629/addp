@@ -428,7 +428,6 @@ func TestGeoPackagePostGISRoundTrip(t *testing.T) {
 			"table":          "test_features",
 			"geometry_field": "geom",
 			"srid":           4326,
-			"create_table":   true,
 		},
 		BatchSize: 100,
 	}
@@ -645,7 +644,6 @@ func TestMultiFormatPipeline(t *testing.T) {
 			"file_path":      gpkgPath,
 			"table":          "routes",
 			"geometry_field": "geom",
-			"create_table":   true,
 		},
 	)
 	if err != nil {

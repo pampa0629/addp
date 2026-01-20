@@ -60,7 +60,6 @@ Transfer 模块针对 **Spatialite → PostgreSQL/PostGIS** 千万级数据导�
       "table": "public.poi_imported",
       "batch_size": 10000,
       "max_connections": 4,
-      "create_table": true,
       "srid": 4326,
       "geometry_columns": ["geom"]
     }
@@ -71,7 +70,6 @@ Transfer 模块针对 **Spatialite → PostgreSQL/PostGIS** 千万级数据导�
 **参数说明**:
 - `batch_size`: COPY 批次大小（建议 10,000-50,000）
 - `max_connections`: 连接池大小（建议 4-8,取决于 PostgreSQL `max_connections`）
-- `create_table`: 自动建表（首次导入时设为 `true`）
 - `srid`: 目标几何列 SRID（默认 4326,需与源数据一致）
 
 **COPY vs INSERT 性能对比**:
@@ -136,7 +134,6 @@ Transfer 模块针对 **Spatialite → PostgreSQL/PostGIS** 千万级数据导�
       "table": "spatial.poi_points_imported",
       "batch_size": 20000,
       "max_connections": 8,
-      "create_table": true,
       "srid": 4326,
       "geometry_columns": ["geom"]
     },
@@ -343,7 +340,6 @@ curl -X POST http://localhost:8083/api/tasks \
         "table": "spatial.poi",
         "batch_size": 10000,
         "max_connections": 4,
-        "create_table": true,
         "srid": 4326
       },
       "batch_size": 10000

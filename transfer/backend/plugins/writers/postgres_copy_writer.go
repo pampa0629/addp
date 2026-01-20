@@ -47,9 +47,6 @@ type PostgresCOPYConfig struct {
 	SRID             int      `json:"srid"`
 	GeometryColumns  []string `json:"geometry_columns"`
 
-	// 写入模式配置
-	WriteMode string `json:"write_mode"` // insert, replace（COPY 不支持 upsert）
-
 	// 主键和索引配置
 	CreatePrimaryKey   bool     `json:"create_primary_key"`   // 是否创建主键（默认 true）
 	CreateSpatialIndex bool     `json:"create_spatial_index"` // 是否创建空间索引（默认 true）
@@ -76,21 +73,6 @@ func NewPostgresCOPYWriter(config pipeline.ConnectorConfig) (pipeline.Writer, er
 
 	if cfg.MaxConnections <= 0 {
 		cfg.MaxConnections = 4
-	}
-
-	// 设置默认写入模式为 insert
-	if cfg.WriteMode == "" {
-		cfg.WriteMode = "insert"
-	}
-
-	// COPY 协议不支持 upsert，如果配置了 upsert 则返回错误
-	if cfg.WriteMode == "upsert" {
-		return nil, fmt.Errorf("PostgresCOPYWriter does not support upsert mode, please use JDBCWriter instead or change write_mode to 'insert' or 'replace'")
-	}
-
-	// 验证 WriteMode 有效性
-	if cfg.WriteMode != "insert" && cfg.WriteMode != "replace" {
-		return nil, fmt.Errorf("invalid write_mode '%s', must be 'insert' or 'replace'", cfg.WriteMode)
 	}
 
 	cfg.UseCOPY = true // 强制使用 COPY
@@ -443,21 +425,15 @@ func (w *PostgresCOPYWriter) detectGeometryColumns() {
 	fmt.Printf("DEBUG: Final geometry columns: %d detected\n", len(w.geometryColumns))
 }
 
-// ensureTable 确保表存在
+// ensureTable 确保表存在（覆盖模式：DROP + CREATE）
 func (w *PostgresCOPYWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch) error {
-	// 处理 write_mode: replace - 无论表是否需要创建，都先清空数据
-	// 这个操作要在 CreateTable 检查之前，确保 replace 模式始终生效
-	if w.config.WriteMode == "replace" && !w.tableEnsured {
-		truncateSQL := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", w.qualifiedTableName())
-		if _, err := w.db.ExecContext(ctx, truncateSQL); err != nil {
-			// 如果表不存在，忽略错误（后续会创建表）
-			if !strings.Contains(err.Error(), "does not exist") {
-				return fmt.Errorf("failed to truncate table %s: %w", w.table, err)
-			}
-			fmt.Printf("INFO: Table %s does not exist, will create it\n", w.table)
-		} else {
-			fmt.Printf("✨ Truncated table %s for replace mode\n", w.table)
+	// 覆盖模式：删除已存在的表，确保表结构与字段映射一致
+	if !w.tableEnsured {
+		dropSQL := fmt.Sprintf("DROP TABLE IF EXISTS %s CASCADE", w.qualifiedTableName())
+		if _, err := w.db.ExecContext(ctx, dropSQL); err != nil {
+			return fmt.Errorf("failed to drop table %s: %w", w.table, err)
 		}
+		fmt.Printf("✨ Dropped table %s (覆盖模式)\n", w.table)
 	}
 
 	// 自动创建表（默认行为）
@@ -699,6 +675,18 @@ func (w *PostgresCOPYWriter) executePostImportTasks(ctx context.Context) error {
 		fmt.Printf("ℹ️  PostgresCOPYWriter: 无待创建的主键\n")
 	}
 
+	// 创建空间索引
+	if w.config.CreateSpatialIndex && len(w.geometryColumns) > 0 {
+		if err := w.addSpatialIndexes(ctx); err != nil {
+			fmt.Printf("❌ PostgresCOPYWriter: 空间索引创建失败: %v\n", err)
+			// 空间索引创建失败不影响数据导入，仅记录警告
+		}
+	} else if len(w.geometryColumns) == 0 {
+		fmt.Printf("ℹ️  PostgresCOPYWriter: 无空间字段，跳过空间索引创建\n")
+	} else {
+		fmt.Printf("ℹ️  PostgresCOPYWriter: 空间索引创建已禁用\n")
+	}
+
 	w.postImportTasksExecuted = true
 	return nil
 }
@@ -740,6 +728,50 @@ func (w *PostgresCOPYWriter) addPrimaryKeyConstraint(ctx context.Context, pk *pr
 	}
 
 	fmt.Printf("✅ PostgresCOPYWriter: 主键约束创建成功: %v\n", pk.Columns)
+	return nil
+}
+
+// addSpatialIndexes 为所有空间字段创建 GIST 索引（导入后）
+func (w *PostgresCOPYWriter) addSpatialIndexes(ctx context.Context) error {
+	if len(w.geometryColumns) == 0 {
+		return nil
+	}
+
+	_, tableName := splitTableName(w.table)
+	successCount := 0
+
+	for columnName := range w.geometryColumns {
+		// 生成索引名：{table}_{column}_idx
+		indexName := fmt.Sprintf("%s_%s_idx", tableName, columnName)
+
+		// CREATE INDEX USING GIST
+		createIndexSQL := fmt.Sprintf("CREATE INDEX %s ON %s USING GIST (%s)",
+			w.quoteIdentifier(indexName),
+			w.qualifiedTableName(),
+			w.quoteIdentifier(columnName))
+
+		fmt.Printf("🗺️  PostgresCOPYWriter: 创建空间索引: %s (列: %s)\n", indexName, columnName)
+
+		if _, err := w.db.ExecContext(ctx, createIndexSQL); err != nil {
+			// 容错：索引已存在
+			if strings.Contains(err.Error(), "already exists") {
+				fmt.Printf("⚠️  PostgresCOPYWriter: 空间索引已存在: %s\n", indexName)
+				successCount++
+				continue
+			}
+			// 其他错误记录但不中断
+			fmt.Printf("⚠️  PostgresCOPYWriter: 空间索引创建失败 (%s): %v\n", columnName, err)
+			continue
+		}
+
+		fmt.Printf("✅ PostgresCOPYWriter: 空间索引创建成功: %s\n", indexName)
+		successCount++
+	}
+
+	if successCount > 0 {
+		fmt.Printf("✅ PostgresCOPYWriter: 成功创建/检查 %d/%d 个空间索引\n", successCount, len(w.geometryColumns))
+	}
+
 	return nil
 }
 

@@ -255,22 +255,13 @@ func (s *ExecutionEngineService) buildExecutionTask(
 	targetType := s.inferConnectorType(targetConfig)
 
 	// 性能优化：对于 PostgreSQL 目标，自动选择高性能 COPY Writer（性能提升10倍）
-	// 条件：1) 目标是 JDBC/PostgreSQL  2) 写入模式是 INSERT 或 REPLACE（COPY 不支持 UPSERT）
 	if targetType == "jdbc" {
 		if driver, ok := targetConfig["driver"].(string); ok && driver == "postgresql" {
-			writeMode, _ := targetConfig["write_mode"].(string)
-			if writeMode == "" || writeMode == "insert" || writeMode == "replace" {
-				targetType = "postgres_copy"
-				s.logger.Info("auto-selected PostgresCOPYWriter for performance optimization",
-					"original_type", "jdbc",
-					"new_type", "postgres_copy",
-					"write_mode", writeMode,
-					"performance_gain", "10x faster than INSERT")
-			} else {
-				s.logger.Info("keeping JDBC writer due to write_mode",
-					"write_mode", writeMode,
-					"reason", "PostgresCOPYWriter only supports insert/replace, not upsert")
-			}
+			targetType = "postgres_copy"
+			s.logger.Info("auto-selected PostgresCOPYWriter for performance optimization",
+				"original_type", "jdbc",
+				"new_type", "postgres_copy",
+				"performance_gain", "10x faster than INSERT")
 		}
 	}
 
@@ -842,6 +833,9 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.Task) {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
 		return
 	}
+
+	// 设置租户 ID（关键：Meta 模块需要 tenant_id 来插入 meta_node）
+	s.metaClient.SetTenantID(&task.TenantID)
 
 	// 从 task.Config.target 中提取 engine_id
 	targetConfig, ok := task.Config["target"].(map[string]interface{})

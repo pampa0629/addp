@@ -103,7 +103,6 @@ create_task() {
       "table": "public.${TEST_TABLE}",
       "batch_size": ${batch_size},
       "max_connections": ${num_workers},
-      "create_table": true,
       "srid": 4326,
       "geometry_columns": ["geom"]
     },

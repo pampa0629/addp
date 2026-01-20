@@ -1242,12 +1242,6 @@ const prepareSourceConfigForDisplay = (rawConfig, connectorType) => {
 const prepareTargetConfigForDisplay = (rawConfig, connectorType) => {
   const sanitized = sanitizeConfigForDisplay(rawConfig)
 
-  // 将后端的 write_mode 映射回前端的 mode
-  if (sanitized.write_mode) {
-    sanitized.mode = sanitized.write_mode
-    delete sanitized.write_mode
-  }
-
   if (!('path' in sanitized) && typeof sanitized.file_name === 'string') {
     sanitized.path = sanitized.file_name
   }
@@ -2720,12 +2714,6 @@ const handleSubmit = async () => {
       ElMessage.warning('请选择目标数据源')
       submitting.value = false
       return
-    }
-
-    // 映射字段名：mode → write_mode（后端期望 write_mode）
-    if (config.target.mode) {
-      config.target.write_mode = config.target.mode
-      delete config.target.mode
     }
 
     const data = {
