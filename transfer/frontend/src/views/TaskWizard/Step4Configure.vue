@@ -61,39 +61,22 @@
         </div>
       </el-form-item>
 
+      <el-form-item v-if="scheduleMode === 'cron'" label="定时任务启用">
+        <el-switch v-model="wizardState.enabled.value" />
+        <span class="form-hint">启用后定时任务将按计划自动执行</span>
+      </el-form-item>
+
       <!-- 高级选项 -->
       <el-divider content-position="left">高级选项</el-divider>
 
-      <el-form-item label="批量大小">
+      <el-form-item label="批处理大小">
         <el-input-number
-          v-model="batchSize"
+          v-model="wizardState.batchSize.value"
           :min="100"
-          :max="10000"
+          :max="50000"
           :step="100"
         />
-        <span class="form-hint">每批处理的记录数</span>
-      </el-form-item>
-
-      <el-form-item label="并发度">
-        <el-input-number
-          v-model="concurrency"
-          :min="1"
-          :max="10"
-        />
-        <span class="form-hint">并行执行的线程数</span>
-      </el-form-item>
-
-      <el-form-item label="失败重试">
-        <el-switch v-model="enableRetry" />
-        <span class="form-hint">任务失败时自动重试</span>
-      </el-form-item>
-
-      <el-form-item v-if="enableRetry" label="重试次数">
-        <el-input-number
-          v-model="retryCount"
-          :min="1"
-          :max="5"
-        />
+        <span class="form-hint">单次读写的记录数（推荐：小数据 1000，中等数据 5000，大数据 10000）</span>
       </el-form-item>
     </el-form>
   </div>
@@ -111,10 +94,6 @@ const props = defineProps({
 
 const formRef = ref(null)
 const scheduleMode = ref('once')
-const batchSize = ref(1000)
-const concurrency = ref(1)
-const enableRetry = ref(false)
-const retryCount = ref(3)
 
 const cronPresets = [
   { label: '每小时', value: '0 0 * * * *' },

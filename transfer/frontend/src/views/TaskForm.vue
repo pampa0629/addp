@@ -188,10 +188,6 @@
           <el-form-item label="目标表">
             <el-input v-model="targetConfig.table" placeholder="schema.table_name (如 spatial.poi)" />
           </el-form-item>
-          <el-form-item label="自动建表">
-            <el-switch v-model="targetConfig.create_table" />
-            <span class="param-hint">首次导入时启用</span>
-          </el-form-item>
           <el-form-item label="SRID">
             <el-input-number v-model="targetConfig.srid" :min="0" :max="9999" />
             <span class="param-hint">几何坐标系，常用: 4326 (WGS84)、3857 (Web Mercator)</span>
@@ -285,7 +281,6 @@ const targetConfig = ref({
   username: 'business',
   password: 'business_password',
   table: 'spatial.imported_data',
-  create_table: true,
   srid: 4326,
   geometry_column: 'geom'
 })
@@ -309,16 +304,10 @@ const configPreview = computed(() => {
     name: form.value.name || '未命名任务',
     description: form.value.description,
     source_config: {
-      type: performanceMode.value === 'high-performance' && sourceType.value === 'spatialite'
-        ? 'spatialite_parallel'
-        : sourceType.value,
       config: buildSourceConfig(),
       batch_size: form.value.batch_size
     },
     target_config: {
-      type: performanceMode.value === 'high-performance' && targetType.value === 'postgresql'
-        ? 'postgres_copy'
-        : targetType.value,
       config: buildTargetConfig(),
       batch_size: form.value.write_batch_size
     },
@@ -337,6 +326,7 @@ const configPreview = computed(() => {
 const buildSourceConfig = () => {
   if (sourceType.value === 'spatialite' || sourceType.value === 'spatialite_parallel') {
     const config = {
+      engine_type: 'spatialite',
       full_name: sourceConfig.value.full_name,
       table: sourceConfig.value.table
     }
@@ -356,6 +346,7 @@ const buildSourceConfig = () => {
 
   if (sourceType.value === 'postgresql' || sourceType.value === 'mysql') {
     return {
+      engine_type: sourceType.value,
       driver: sourceType.value,
       host: sourceConfig.value.host,
       port: sourceConfig.value.port,
@@ -373,13 +364,14 @@ const buildSourceConfig = () => {
 const buildTargetConfig = () => {
   if (targetType.value === 'postgresql' || targetType.value === 'postgres_copy') {
     const config = {
+      engine_type: 'postgresql',
+      driver: 'postgresql',
       host: targetConfig.value.host,
       port: targetConfig.value.port,
       database: targetConfig.value.database,
       username: targetConfig.value.username,
       password: targetConfig.value.password,
       table: targetConfig.value.table,
-      create_table: targetConfig.value.create_table,
       srid: targetConfig.value.srid
     }
     if (targetConfig.value.geometry_column) {

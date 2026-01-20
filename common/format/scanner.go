@@ -38,11 +38,12 @@ type SchemaInfo struct {
 // ScannerTableInfo 表信息（Scanner 专用）
 // 注意：这是旧的扫描器结构体，新代码应使用 TableInfo (info.go)
 type ScannerTableInfo struct {
-	Name      string
-	Type      string
-	Comment   string
-	RowCount  int64
-	SizeBytes int64
+	Name         string
+	Type         string
+	Comment      string
+	RowCount     int64
+	SizeBytes    int64
+	LastModified *time.Time // 表的最后修改时间（用于增量扫描判断）
 }
 
 // ScannerFieldInfo 字段信息（Scanner 专用）

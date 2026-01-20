@@ -339,8 +339,7 @@ const mergeTaskConnectorConfig = (base, extra, resourceType) => {
     'bucket',
     'connection_info',
     'scope',
-    'system_engine_id',
-    'local_engine_id',
+    'engine_id',
     'local_resource_name',
     'resource_type'
   ])
@@ -382,7 +381,7 @@ const sanitizeConnectorForWorker = (connector) => {
     if (value === undefined) {
       return
     }
-    if (['scope', 'system_engine_id', 'local_engine_id', 'local_resource_name', 'resource_type'].includes(key)) {
+    if (['scope', 'engine_id', 'local_resource_name', 'resource_type'].includes(key)) {
       return
     }
     sanitized[key] = value
@@ -453,12 +452,69 @@ const inferConnectorTypeForWorker = (config) => {
   if (!config || typeof config !== 'object') {
     return 'unknown'
   }
+
+  // 优先使用 connector_type（数据库存储的标准字段）
+  if (config.connector_type) {
+    const connectorType = toLower(config.connector_type)
+    switch (connectorType) {
+      case 'spatialite':
+      case 'sqlite':
+        return 'spatialite'
+      case 'postgresql':
+      case 'mysql':
+        return 'jdbc'
+      case 's3':
+      case 'minio':
+      case 'oss':
+        return 's3'
+      case 'kafka':
+        return 'kafka'
+      case 'csv':
+      case 'geojson':
+      case 'shapefile':
+      case 'geopackage':
+        return 'file'
+      default:
+        return connectorType
+    }
+  }
+
+  // 后备 1：使用 engine_type
+  if (config.engine_type) {
+    const engineType = toLower(config.engine_type)
+    switch (engineType) {
+      case 'spatialite':
+      case 'sqlite':
+        return 'spatialite'
+      case 'postgresql':
+      case 'mysql':
+        return 'jdbc'
+      case 's3':
+      case 'minio':
+      case 'oss':
+        return 's3'
+      case 'kafka':
+        return 'kafka'
+      case 'csv':
+      case 'geojson':
+      case 'shapefile':
+      case 'geopackage':
+        return 'file'
+      default:
+        return engineType
+    }
+  }
+
+  // 后备 2：使用 type 字段
   const explicit = toLower(config.type)
   if (explicit) return explicit
+
+  // 最后：根据配置字段推断
   if (config.driver) return 'jdbc'
   if (config.bucket || config.endpoint || config.file_name || config.file_type) return 's3'
   if (config.path || config.directory || config.file_path || config.full_name) return 'file'
   if (config.topic) return 'kafka'
+
   return 'unknown'
 }
 
@@ -551,8 +607,7 @@ const buildFieldMappingsForWorker = (rawMappings, sourceConfigResolved, targetCo
     type: item.field_type || '',
     format: item.format || '',
     default_value: item.default_value === undefined ? '' : item.default_value,
-    nullable: item.nullable !== undefined ? !!item.nullable : true,
-    transform: item.transform || ''
+    nullable: item.nullable !== undefined ? !!item.nullable : true
   }))
 
   const geometryFromTarget = extractGeometryFieldsForWorker(targetConfigResolved)
@@ -663,48 +718,33 @@ const buildWorkerConfig = () => {
   }
 }
 
-const copyToClipboard = async (text) => {
-  // 尝试使用现代 Clipboard API
-  if (navigator?.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return
-    } catch (err) {
-      console.warn('Clipboard API 失败，尝试降级方案:', err)
-      // 降级到 execCommand
-    }
-  }
-
-  // 降级方案：使用 document.execCommand
+const copyToClipboard = (text) => {
+  // 先尝试使用 document.execCommand (更兼容 iframe 环境)
   const textarea = document.createElement('textarea')
   textarea.value = text
   textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  textarea.style.top = '-9999px'
-  textarea.style.opacity = '0'
-  textarea.setAttribute('readonly', '')
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.width = '2em'
+  textarea.style.height = '2em'
+  textarea.style.padding = '0'
+  textarea.style.border = 'none'
+  textarea.style.outline = 'none'
+  textarea.style.boxShadow = 'none'
+  textarea.style.background = 'transparent'
   document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
 
   try {
-    textarea.focus()
-    textarea.select()
-
-    // 兼容 iOS
-    const range = document.createRange()
-    range.selectNodeContents(textarea)
-    const selection = window.getSelection()
-    if (selection) {
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
-    textarea.setSelectionRange(0, textarea.value.length)
-
     const successful = document.execCommand('copy')
-    if (!successful) {
-      throw new Error('execCommand 返回 false')
-    }
-  } finally {
     document.body.removeChild(textarea)
+    if (!successful) {
+      throw new Error('复制失败')
+    }
+  } catch (err) {
+    document.body.removeChild(textarea)
+    throw err
   }
 }
 
@@ -743,8 +783,6 @@ const inferScope = (config, fallbackId) => {
   const raw = toLower(config.scope)
   if (raw) return raw
   if (fallbackId !== undefined && fallbackId !== null) return 'system'
-  if (config.system_engine_id !== undefined && config.system_engine_id !== null) return 'system'
-  if (config.local_engine_id !== undefined && config.local_engine_id !== null) return 'local'
   if (config.connection_info) return 'local'
   return ''
 }
@@ -776,7 +814,7 @@ const buildConnectorDetails = (role) => {
     addItem(items, '数据源', labelParts.length ? labelParts.join(' / ') : '未配置')
     addItem(items, '连接类型', getConnectorTypeLabel(resourceType))
   } else if (scope === 'local') {
-    const resourceId = config.local_engine_id
+    const resourceId = config.engine_id
     const resourceName = config.local_resource_name
     const labelParts = []
     if (resourceName) labelParts.push(resourceName)
@@ -877,8 +915,20 @@ const targetDetails = computed(() => buildConnectorDetails('target'))
 
 const formattedConfig = computed(() => {
   try {
-    const workerConfig = buildWorkerConfig()
-    return JSON.stringify(workerConfig, null, 2)
+    // 显示数据库中存储的原始任务配置，而不是解析后的 Worker 配置
+    const originalTaskConfig = {
+      task_id: task.value.id,
+      name: task.value.name,
+      description: task.value.description,
+      schedule: task.value.schedule || '',
+      mode: task.value.mode || 'batch',
+      batch_size: task.value.batch_size,
+      retry_policy: task.value.retry_policy || null,
+      source_config: task.value.config?.source || {},
+      target_config: task.value.config?.target || {},
+      mappings: mappings.value || []
+    }
+    return JSON.stringify(originalTaskConfig, null, 2)
   } catch (error) {
     console.error('格式化配置失败:', error)
     return '{}'
@@ -889,13 +939,13 @@ const openJsonDialog = () => {
   jsonDialogVisible.value = true
 }
 
-const handleCopyJson = async () => {
+const handleCopyJson = () => {
   try {
-    await copyToClipboard(formattedConfig.value)
+    copyToClipboard(formattedConfig.value)
     ElMessage.success('已复制到剪贴板')
   } catch (error) {
     console.error('复制失败:', error)
-    ElMessage.error('复制失败，请重试')
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 

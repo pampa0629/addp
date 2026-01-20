@@ -575,7 +575,7 @@ func extractBearerToken(c *gin.Context) (string, bool) {
 }
 
 // GetTables 获取资源的表列表（用于Transfer模块字段选择）
-// GET /api/metadata/tables?engine_id=1
+// GET /api/metadata/tables?engine_id=1&schema=public
 func (h *Handler) GetTables(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -591,34 +591,64 @@ func (h *Handler) GetTables(c *gin.Context) {
 		return
 	}
 
-	// 获取该资源下的所有表
-	tables, err := h.scanService.GetTablesByResource(uint(engineID), tenantID)
+	schema := c.Query("schema") // 可选的 schema 参数
+
+	// 获取表列表（支持按 schema 过滤）
+	var tables []models.MetaItem
+	if schema != "" {
+		// 按 schema 过滤
+		tables, err = h.scanService.GetTablesBySchema(uint(engineID), tenantID, schema)
+	} else {
+		// 获取该资源下的所有表
+		tables, err = h.scanService.GetTablesByResource(uint(engineID), tenantID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 调试：打印前3个表的信息到标准输出
-	fmt.Printf("[GetTables] Found %d tables\n", len(tables))
+	fmt.Printf("[GetTables] Found %d tables (schema=%s)\n", len(tables), schema)
 	for i, table := range tables {
 		if i < 3 {
-			fmt.Printf("[GetTables] Table %d: Name=%s, FullName='%s'\n", i, table.Name, table.FullName)
+			rowCount := int64(0)
+			if table.RowCount != nil {
+				rowCount = *table.RowCount
+			}
+			fmt.Printf("[GetTables] Table %d: Name=%s, FullName='%s', RowCount=%d\n",
+				i, table.Name, table.FullName, rowCount)
 		}
 	}
 
-	// 返回表名列表（优先使用 FullName，如果为空则使用 Name）
-	tableNames := make([]string, len(tables))
+	// 返回表详细信息列表（包含行数、大小等元数据）
+	type TableInfo struct {
+		Name      string `json:"name"`
+		FullName  string `json:"full_name,omitempty"`
+		RowCount  int64  `json:"row_count"`
+		SizeBytes int64  `json:"size_bytes"`
+		Comment   string `json:"comment,omitempty"`
+	}
+
+	tableList := make([]TableInfo, len(tables))
 	for i, table := range tables {
-		// FullName 包含 schema 前缀（如 sales.orders），适用于 PostgreSQL
-		// 如果 FullName 为空，则回退到 Name（用于向后兼容）
-		if table.FullName != "" {
-			tableNames[i] = table.FullName
-		} else {
-			tableNames[i] = table.Name
+		info := TableInfo{
+			Name:     table.Name,
+			FullName: table.FullName,
 		}
+		if table.RowCount != nil {
+			info.RowCount = *table.RowCount
+		}
+		if table.SizeBytes != nil {
+			info.SizeBytes = *table.SizeBytes
+		}
+		// comment 可能在 Attributes 中
+		if comment, ok := table.Attributes["comment"].(string); ok {
+			info.Comment = comment
+		}
+		tableList[i] = info
 	}
 
-	c.JSON(http.StatusOK, tableNames)
+	c.JSON(http.StatusOK, gin.H{"data": tableList})
 }
 
 // GetTableFields 获取表的字段列表（用于Transfer模块字段映射）

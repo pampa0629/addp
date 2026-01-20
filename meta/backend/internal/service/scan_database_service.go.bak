@@ -145,12 +145,11 @@ func (s *DatabaseScanService) scanTables(
 	tables := make([]format.ScannerTableInfo, len(pluginTables))
 	for i, t := range pluginTables {
 		tables[i] = format.ScannerTableInfo{
-			Name:         t.TableName,
-			Type:         "BASE TABLE", // plugin.TableInfo 没有 Type 字段，默认为 BASE TABLE
-			Comment:      "",           // plugin.TableInfo 没有 Comment 字段
-			RowCount:     t.RowCount,
-			SizeBytes:    t.SizeBytes,
-			LastModified: t.LastModified, // 表的最后修改时间（用于增量扫描判断）
+			Name:      t.TableName,
+			Type:      "BASE TABLE", // plugin.TableInfo 没有 Type 字段，默认为 BASE TABLE
+			Comment:   "",           // plugin.TableInfo 没有 Comment 字段
+			RowCount:  t.RowCount,
+			SizeBytes: t.SizeBytes,
 		}
 	}
 
@@ -202,7 +201,7 @@ func (s *DatabaseScanService) scanTables(
 		rowCount := tableInfo.RowCount
 		sizeBytes := tableInfo.SizeBytes
 
-		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, tableInfo.LastModified)
+		item, err := s.repo.UpsertItem(tenantID, engineID, schemaNode, "table", tableInfo.Name, fullName, attrs, &rowCount, &sizeBytes, nil)
 		if err != nil {
 			s.log.Error("表元数据持久化失败",
 				"schema", schemaName,
@@ -275,32 +274,12 @@ func (s *DatabaseScanService) scanTableDetails(
 			"table", tableInfo.Name,
 			"field_count", len(fields),
 		)
-	// 提取主键信息
-	primaryKeyColumns := []string{}
-	for _, field := range fields {
-		if field.IsPrimaryKey {
-			primaryKeyColumns = append(primaryKeyColumns, field.Name)
-		}
-	}
-
-	// 如果有主键，查询主键约束名
-	var primaryKeyName string
-	if len(primaryKeyColumns) > 0 {
-		primaryKeyName, _ = s.queryPrimaryKeyName(ctx, db, schemaName, tableInfo.Name)
-	}
-
-
 
 		attrs = models.JSONMap{
 			"schema":        schemaName,
 			"table_type":    tableInfo.Type,
 			"table_comment": tableInfo.Comment,
 			"fields":        buildFieldAttributes(fields),
-		"table_metadata": map[string]interface{}{
-			"primary_key":      primaryKeyColumns,
-			"primary_key_name": primaryKeyName,
-			"has_primary_key":  len(primaryKeyColumns) > 0,
-		},
 		}
 
 		// 扫描空间元数据（仅 PostgreSQL）
@@ -415,19 +394,6 @@ func shouldUpdateTable(existingItem *models.MetaItem, tableInfo format.ScannerTa
 		return true
 	}
 
-	// 表的修改时间变化（优先判断）
-	// 如果表有 LastModified 且数据库中有 DataUpdatedAt，则比较时间戳
-	if tableInfo.LastModified != nil && existingItem.DataUpdatedAt != nil {
-		if tableInfo.LastModified.After(*existingItem.DataUpdatedAt) {
-			return true // 表有更新，需要重新扫描
-		}
-		// 表的 LastModified 早于或等于上次扫描时间，且有时间戳记录，说明表未变化
-		// 即使行数/大小有差异也可能是统计信息不准确，跳过扫描
-		return false
-	}
-
-	// 如果没有时间戳信息，降级到行数/大小比较（传统逻辑）
-
 	// 行数变化
 	if existingItem.RowCount != nil && *existingItem.RowCount != tableInfo.RowCount {
 		return true
@@ -445,27 +411,4 @@ func shouldUpdateTable(existingItem *models.MetaItem, tableInfo format.ScannerTa
 	}
 
 	return false
-}
-
-// queryPrimaryKeyName 查询主键约束名称
-func (s *DatabaseScanService) queryPrimaryKeyName(
-	ctx context.Context,
-	db *gorm.DB,
-	schema, table string,
-) (string, error) {
-	query := `
-		SELECT constraint_name
-		FROM information_schema.table_constraints
-		WHERE table_schema = $1 AND table_name = $2
-		  AND constraint_type = 'PRIMARY KEY'
-		LIMIT 1
-	`
-
-	var constraintName string
-	err := db.WithContext(ctx).Raw(query, schema, table).Scan(&constraintName).Error
-	if err != nil {
-		return "", err
-	}
-
-	return constraintName, nil
 }

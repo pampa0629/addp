@@ -64,15 +64,6 @@ func (t LocalTime) Value() (driver.Value, error) {
 	return t.Time, nil
 }
 
-// TaskType 任务类型
-type TaskType string
-
-const (
-	TaskTypeImport TaskType = "import" // 导入
-	TaskTypeExport TaskType = "export" // 导出
-	TaskTypeSync   TaskType = "sync"   // 同步
-)
-
 // TaskStatus 任务状态（简化版）
 type TaskStatus string
 
@@ -90,7 +81,6 @@ type Task struct {
 	ID               uint       `gorm:"primaryKey" json:"id"`
 	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
 	Description      string     `gorm:"type:text" json:"description"`
-	Type             TaskType   `gorm:"type:varchar(50);not null" json:"type"`
 	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"` // 任务配置（包含 source 和 target）
 	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
 	BatchSize        int        `gorm:"default:1000" json:"batch_size"`    // 批大小
@@ -151,13 +141,12 @@ func (e *TaskExecution) Duration() time.Duration {
 	return e.EndTime.Time.Sub(e.StartTime.Time)
 }
 
-// DataMapping 数据映射配置
-type DataMapping struct {
+// FieldMapping 字段映射配置
+type FieldMapping struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	TaskID       uint      `gorm:"not null;index" json:"task_id"`
 	SourceField  string    `gorm:"type:varchar(255);not null" json:"source_field"`
 	TargetField  string    `gorm:"type:varchar(255);not null" json:"target_field"`
-	Transform    string    `gorm:"type:varchar(500)" json:"transform,omitempty"` // 转换函数
 	DefaultValue string    `gorm:"type:text" json:"default_value,omitempty"`     // 默认值
 	FieldType    string    `gorm:"type:varchar(50)" json:"field_type,omitempty"` // 字段类型
 	Format       string    `gorm:"type:varchar(100)" json:"format,omitempty"`    // 格式（日期等）
@@ -166,20 +155,19 @@ type DataMapping struct {
 }
 
 // TableName 指定表名
-func (DataMapping) TableName() string {
-	return "transfer.data_mappings"
+func (FieldMapping) TableName() string {
+	return "transfer.field_mappings"
 }
 
 // CreateTaskRequest 创建任务请求
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
-	Type             TaskType               `json:"type" binding:"required"`
 	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target 配置
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`
 	AutoScanMetadata *bool                  `json:"auto_scan_metadata"` // 任务完成后自动扫描元数据（默认 true）
-	Mappings         []DataMapping          `json:"mappings"`
+	Mappings         []FieldMapping         `json:"mappings"`
 }
 
 // UpdateTaskRequest 更新任务请求
@@ -195,7 +183,6 @@ type UpdateTaskRequest struct {
 
 // ListTasksRequest 查询任务列表请求
 type ListTasksRequest struct {
-	Type     *TaskType   `form:"type"`
 	Status   *TaskStatus `form:"status"`
 	Page     int         `form:"page" binding:"min=1"`
 	PageSize int         `form:"page_size" binding:"min=1,max=100"`
@@ -217,22 +204,20 @@ type TaskStatistics struct {
 	TotalBytes       int64 `json:"total_bytes"`
 }
 
-// CreateDataMappingRequest 创建数据映射请求
-type CreateDataMappingRequest struct {
+// CreateFieldMappingRequest 创建字段映射请求
+type CreateFieldMappingRequest struct {
 	SourceField  string `json:"source_field" binding:"required"`
 	TargetField  string `json:"target_field" binding:"required"`
-	Transform    string `json:"transform"`
 	DefaultValue string `json:"default_value"`
 	FieldType    string `json:"field_type"`
 	Format       string `json:"format"`
 	Nullable     bool   `json:"nullable"`
 }
 
-// UpdateDataMappingRequest 更新数据映射请求
-type UpdateDataMappingRequest struct {
+// UpdateFieldMappingRequest 更新字段映射请求
+type UpdateFieldMappingRequest struct {
 	SourceField  *string `json:"source_field"`
 	TargetField  *string `json:"target_field"`
-	Transform    *string `json:"transform"`
 	DefaultValue *string `json:"default_value"`
 	FieldType    *string `json:"field_type"`
 	Format       *string `json:"format"`

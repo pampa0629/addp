@@ -81,7 +81,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 	s.objectScanService = NewObjectStorageScanService(db, log, repo, metadataExtractor, indexerService)
 
 	// 创建 MetadataQueryService（提供元数据查询接口）
-	s.metadataQueryService = NewMetadataQueryService(db, spatialService, log)
+	s.metadataQueryService = NewMetadataQueryService(db, spatialService, engineService, log)
 
 	// 创建 ResourceDiscoveryService（提供资源发现接口）
 	s.resourceDiscoveryService = NewResourceDiscoveryService(db, engineService, log)
@@ -118,6 +118,11 @@ func (s *ScanService) SetScanEventPublisher(publisher *events.ScanEventPublisher
 // SetDedupService 注入扫描去重服务
 func (s *ScanService) SetDedupService(dedupService *ScanDedupService) {
 	s.dedupService = dedupService
+
+	// 启动时清理所有残留的扫描锁（防止上次服务异常退出时的锁未清理）
+	if dedupService != nil {
+		s.cleanupStaleScanLocks()
+	}
 }
 
 // verifyResourceAccess 验证租户是否有权限访问资源
@@ -143,6 +148,68 @@ func (s *ScanService) verifyResourceAccess(engineID, tenantID uint, token string
 	}
 
 	return nil
+}
+
+// cleanupStaleScanLocks 清理所有残留的扫描锁
+// 在服务启动时调用，清理上次服务异常退出时未清理的锁
+func (s *ScanService) cleanupStaleScanLocks() {
+	if s.dedupService == nil {
+		return
+	}
+
+	ctx := context.Background()
+
+	// 1. 查询所有状态为"扫描中"的节点
+	var staleNodes []models.MetaNode
+	if err := s.db.Where("scan_status = ?", "扫描中").Find(&staleNodes).Error; err != nil {
+		s.log.Warn("查询残留扫描节点失败", "error", err)
+		return
+	}
+
+	if len(staleNodes) == 0 {
+		s.log.Info("无残留扫描锁，跳过清理")
+		return
+	}
+
+	s.log.Info("开始清理残留扫描锁", "stale_nodes_count", len(staleNodes))
+
+	cleanedCount := 0
+	for _, node := range staleNodes {
+		// 2. 生成锁的 key
+		lockKey := s.dedupService.GenerateSchemaLockKey(node.TenantID, node.EngineID, node.Name)
+
+		// 3. 清理 Redis 锁
+		if err := s.dedupService.ClearTask(ctx, lockKey); err != nil {
+			s.log.Warn("清理残留锁失败",
+				"node_id", node.ID,
+				"engine_id", node.EngineID,
+				"schema", node.Name,
+				"error", err)
+			continue
+		}
+
+		// 4. 重置节点状态为"未扫描"
+		if err := s.db.Model(&node).Updates(map[string]interface{}{
+			"scan_status": "未扫描",
+			"scanned_at":  nil,
+		}).Error; err != nil {
+			s.log.Warn("重置节点状态失败",
+				"node_id", node.ID,
+				"error", err)
+			continue
+		}
+
+		cleanedCount++
+		s.log.Info("清理残留锁成功",
+			"node_id", node.ID,
+			"engine_id", node.EngineID,
+			"tenant_id", node.TenantID,
+			"schema", node.Name)
+	}
+
+	s.log.Info("残留扫描锁清理完成",
+		"total", len(staleNodes),
+		"cleaned", cleanedCount)
 }
 
 // publishScanCompletedEvent 发布扫描完成事件（异步）
@@ -820,65 +887,74 @@ func (s *ScanService) scanResourceSchemasWithReporter(resource *commonModels.Eng
 	completed := 0
 
 	for _, schemaName := range schemaNames {
-		if reporter != nil {
-			reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schemaName))
-		}
-
-		// 检查Schema级锁
-		ctx := context.Background()
-		var schemaLock string
-		if s.dedupService != nil {
-			schemaLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, schemaName)
-			if s.dedupService.CheckTaskExists(ctx, schemaLock) {
-				s.log.Info("Schema正在扫描中，跳过",
-					"engine_id", resourceID,
-					"schema", schemaName)
-				if reporter != nil {
-					reporter.Message(fmt.Sprintf("Schema %s 正在扫描中，跳过", schemaName))
-				}
-				completed++
-				continue
-			}
-
-			// 加Schema级锁
-			if err := s.dedupService.MarkTaskRunning(ctx, schemaLock, 2*time.Hour); err != nil {
-				s.log.Warn("加Schema级锁失败", "schema", schemaName, "error", err)
-			}
-		}
-
-		// 扫描Schema
-		schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schemaName, scanDepth)
-
-		// 扫描完成后清理锁
-		if s.dedupService != nil && schemaLock != "" {
-			if clearErr := s.dedupService.ClearTask(context.Background(), schemaLock); clearErr != nil {
-				s.log.Warn("清除Schema级锁失败", "schema", schemaName, "error", clearErr)
-			}
-		}
-
-		if err != nil {
-			s.log.Warn("Schema 扫描失败",
-				"engine_id", resourceID,
-				"tenant_id", tenantID,
-				"schema", schemaName,
-				"error", err,
-			)
+		// 使用匿名函数包装每次循环，确保 defer 在每次循环结束时执行
+		func(schema string) {
 			if reporter != nil {
-				reporter.Message(fmt.Sprintf("Schema %s 扫描失败: %v", schemaName, err))
+				reporter.Message(fmt.Sprintf("开始扫描 Schema %s", schema))
 			}
-			continue
-		}
-		totalSchemas += schemas
-		totalTables += tables
-		totalFields += fields
 
-		completed++
-		if reporter != nil {
-			reporter.Advance(schemaName, completed, total, map[string]interface{}{
-				"tables": tables,
-				"fields": fields,
-			})
-		}
+			// 检查Schema级锁
+			ctx := context.Background()
+			var schemaLock string
+			lockAcquired := false
+
+			if s.dedupService != nil {
+				schemaLock = s.dedupService.GenerateSchemaLockKey(tenantID, resourceID, schema)
+				if s.dedupService.CheckTaskExists(ctx, schemaLock) {
+					s.log.Info("Schema正在扫描中，跳过",
+						"engine_id", resourceID,
+						"schema", schema)
+					if reporter != nil {
+						reporter.Message(fmt.Sprintf("Schema %s 正在扫描中，跳过", schema))
+					}
+					completed++
+					return
+				}
+
+				// 加Schema级锁
+				if err := s.dedupService.MarkTaskRunning(ctx, schemaLock, 2*time.Hour); err != nil {
+					s.log.Warn("加Schema级锁失败", "schema", schema, "error", err)
+				} else {
+					lockAcquired = true
+				}
+
+				// 使用 defer 确保锁在任何情况下都会被清理（包括 panic）
+				defer func() {
+					if lockAcquired && schemaLock != "" {
+						if clearErr := s.dedupService.ClearTask(context.Background(), schemaLock); clearErr != nil {
+							s.log.Warn("清除Schema级锁失败", "schema", schema, "error", clearErr)
+						}
+					}
+				}()
+			}
+
+			// 扫描Schema
+			schemas, tables, fields, err := s.dbScanService.ScanSchema(context.Background(), resource, tenantID, resourceID, schema, scanDepth)
+
+			if err != nil {
+				s.log.Warn("Schema 扫描失败",
+					"engine_id", resourceID,
+					"tenant_id", tenantID,
+					"schema", schema,
+					"error", err,
+				)
+				if reporter != nil {
+					reporter.Message(fmt.Sprintf("Schema %s 扫描失败: %v", schema, err))
+				}
+				return
+			}
+			totalSchemas += schemas
+			totalTables += tables
+			totalFields += fields
+
+			completed++
+			if reporter != nil {
+				reporter.Advance(schema, completed, total, map[string]interface{}{
+					"tables": tables,
+					"fields": fields,
+				})
+			}
+		}(schemaName)
 	}
 
 	s.log.Info("指定 Schema 扫描完成", cloneLogFields(startFields,
@@ -1244,6 +1320,11 @@ func (s *ScanService) ListObjectStorageNodes(engineID, tenantID uint, path, toke
 // GetTablesByResource 获取资源下所有的表（用于Transfer模块）
 func (s *ScanService) GetTablesByResource(engineID, tenantID uint) ([]models.MetaItem, error) {
 	return s.metadataQueryService.GetTablesByResource(engineID, tenantID)
+}
+
+// GetTablesBySchema 获取指定 schema 下的表列表（用于Transfer模块）
+func (s *ScanService) GetTablesBySchema(engineID, tenantID uint, schemaName string) ([]models.MetaItem, error) {
+	return s.metadataQueryService.GetTablesBySchema(engineID, tenantID, schemaName)
 }
 
 // GetTableFields 获取表的字段名列表（用于Transfer模块）

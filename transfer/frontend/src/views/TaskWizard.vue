@@ -500,11 +500,6 @@
                   </el-select>
                 </el-form-item>
 
-                <el-form-item label="自动创建表">
-                  <el-switch v-model="targetConfig.create_table" />
-                  <div class="hint">PostgreSQL：若表不存在，根据字段映射自动建表</div>
-                </el-form-item>
-
                 <el-form-item label="自动扫描元数据">
                   <el-switch v-model="taskForm.auto_scan_metadata" />
                   <div class="hint">任务完成后自动扫描目标引擎的元数据，更新数据目录</div>
@@ -1165,9 +1160,7 @@ const removeConnectionFields = (config) => {
     // 引擎相关字段
     'engine_type',
     'connection_info',
-    'local_engine_id',
-    'local_resource_name',
-    'system_engine_id'
+    'local_resource_name'
   ]
   keys.forEach((key) => {
     if (key in config) {
@@ -1873,64 +1866,62 @@ const loadTaskForEdit = async () => {
     const rawTargetConfig = { ...(taskConfig.target || {}) }
 
     const sourceScope = (rawSourceConfig.scope || '').toLowerCase()
-    const sourceSystemId = normalizeId(rawSourceConfig.engine_id)
-    const sourceLocalId = normalizeId(rawSourceConfig.local_engine_id)
+    const sourceEngineId = normalizeId(rawSourceConfig.engine_id)
 
-    if (sourceScope === 'system' || sourceSystemId) {
-      const systemResource = systemResources.value.find(res => res.id === sourceSystemId) || null
-      if (sourceSystemId && !systemResource) {
+    if (sourceScope === 'system' || (sourceEngineId && !sourceScope)) {
+      const systemResource = systemResources.value.find(res => res.id === sourceEngineId) || null
+      if (sourceEngineId && !systemResource) {
         ElMessage.warning('未找到源数据源，请重新选择')
       }
       const resolvedType = normalizeConnectorType(systemResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
-      selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
-    } else if (sourceScope === 'local' || sourceLocalId) {
-      const localResource = localResources.value.find(res => res.id === sourceLocalId) || null
-      if (sourceLocalId && !localResource) {
+      selectedSourceValue.value = sourceEngineId ? `system:${sourceEngineId}` : null
+    } else if (sourceScope === 'local') {
+      const localResource = localResources.value.find(res => res.id === sourceEngineId) || null
+      if (sourceEngineId && !localResource) {
         ElMessage.warning('未找到本地源存储引擎，请重新选择')
       }
       const resolvedType = normalizeConnectorType(localResource?.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
-      selectedSourceValue.value = sourceLocalId ? `local:${sourceLocalId}` : null
+      selectedSourceValue.value = sourceEngineId ? `local:${sourceEngineId}` : null
     } else {
       const resolvedType = normalizeConnectorType(rawSourceConfig.engine_type, rawSourceConfig)
       sourceConnectorType.value = resolvedType
       sourceConfig.value = prepareSourceConfigForDisplay(rawSourceConfig, resolvedType)
-      selectedSourceValue.value = sourceSystemId ? `system:${sourceSystemId}` : null
+      selectedSourceValue.value = sourceEngineId ? `system:${sourceEngineId}` : null
     }
 
     const targetScope = (rawTargetConfig.scope || '').toLowerCase()
-    const targetSystemId = normalizeId(rawTargetConfig.engine_id)
-    const targetLocalId = normalizeId(rawTargetConfig.local_engine_id)
+    const targetEngineId = normalizeId(rawTargetConfig.engine_id)
 
-    if (targetScope === 'system' || targetSystemId) {
-      const systemResource = systemResources.value.find(res => res.id === targetSystemId) || null
-      if (targetSystemId && !systemResource) {
+    if (targetScope === 'system' || (targetEngineId && !targetScope)) {
+      const systemResource = systemResources.value.find(res => res.id === targetEngineId) || null
+      if (targetEngineId && !systemResource) {
         ElMessage.warning('未找到目标数据源，请重新选择')
       }
       const resolvedTypeRaw = normalizeConnectorType(systemResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
-      selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
-    } else if (targetScope === 'local' || targetLocalId) {
-      const localResource = localResources.value.find(res => res.id === targetLocalId) || null
-      if (targetLocalId && !localResource) {
+      selectedTargetValue.value = targetEngineId ? `system:${targetEngineId}` : null
+    } else if (targetScope === 'local') {
+      const localResource = localResources.value.find(res => res.id === targetEngineId) || null
+      if (targetEngineId && !localResource) {
         ElMessage.warning('未找到本地目标存储引擎，请重新选择')
       }
       const resolvedTypeRaw = normalizeConnectorType(localResource?.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
-      selectedTargetValue.value = targetLocalId ? `local:${targetLocalId}` : null
+      selectedTargetValue.value = targetEngineId ? `local:${targetEngineId}` : null
     } else {
       const resolvedTypeRaw = normalizeConnectorType(rawTargetConfig.engine_type, rawTargetConfig)
       const resolvedType = ['csv', 'json'].includes(resolvedTypeRaw) ? 's3' : resolvedTypeRaw
       targetConnectorType.value = resolvedType
       targetConfig.value = prepareTargetConfigForDisplay(rawTargetConfig, resolvedType)
-      selectedTargetValue.value = targetSystemId ? `system:${targetSystemId}` : null
+      selectedTargetValue.value = targetEngineId ? `system:${targetEngineId}` : null
     }
 
     syncSelectedFormatFromConfig()
@@ -1969,7 +1960,6 @@ const loadTaskForEdit = async () => {
         id: item.id,
         source_field: item.source_field,
         target_field: item.target_field,
-        transform: item.transform || '',
         default_value: item.default_value || '',
         field_type: item.field_type || 'string',
         format: item.format || '',
@@ -2069,8 +2059,10 @@ const handleLoadTargetTables = async () => {
       headers: { Authorization: `Bearer ${token}` }
     })
 
-    if (response.data && Array.isArray(response.data)) {
-      availableTargetTables.value = response.data.map(item => item.name || item)
+    // 后端返回 { data: [...] }，axios response.data 就是 { data: [...] }
+    const tableList = Array.isArray(response.data?.data) ? response.data.data : (response.data || [])
+    if (Array.isArray(tableList) && tableList.length > 0) {
+      availableTargetTables.value = tableList.map(item => item.name || item)
       ElMessage.success(`已加载 ${availableTargetTables.value.length} 个表`)
     } else {
       ElMessage.warning('未找到可用的表，请确认元数据模块已扫描该数据源')
@@ -2498,7 +2490,6 @@ const performAutoMatch = () => {
         source_field: sourceField,
         target_field: sourceField,
         field_type: detectFieldType(sourceField),
-        transform: '',
         format: '',
         default_value: '',
         nullable: true
@@ -2517,7 +2508,6 @@ const performAutoMatch = () => {
           source_field: sourceField,
           target_field: targetField,
           field_type: detectFieldType(sourceField),
-          transform: '',
           format: '',
           default_value: '',
           nullable: true
@@ -2539,7 +2529,6 @@ const performAutoMatch = () => {
           source_field: sourceField,
           target_field: sourceField,
           field_type: detectFieldType(sourceField),
-          transform: '',
           format: '',
           default_value: '',
           nullable: true
@@ -2562,7 +2551,6 @@ const performAutoMatch = () => {
         source_field: sourceField,
         target_field: sourceField,
         field_type: detectFieldType(sourceField),
-        transform: '',
         format: '',
         default_value: '',
         nullable: true
@@ -2588,7 +2576,7 @@ const buildConnectorConfigFromResource = (resource) => {
     const portValue = conn.port
     const port = typeof portValue === 'number' ? portValue : Number(portValue) || 0
     return {
-      type: 'jdbc',
+      engine_type: type,
       driver: type,
       host: conn.host || '',
       port,
@@ -2601,7 +2589,7 @@ const buildConnectorConfigFromResource = (resource) => {
 
   if (['s3', 'minio', 'oss'].includes(type)) {
     return {
-      type: 's3',
+      engine_type: resource.engine_type,
       endpoint: conn.endpoint || '',
       access_key: conn.access_key || '',
       secret_key: conn.secret_key || '',
@@ -2612,9 +2600,8 @@ const buildConnectorConfigFromResource = (resource) => {
 
   if (['spatialite', 'sqlite'].includes(type)) {
     return {
-      type: 'spatialite',
-      full_name: conn.full_name || '',
       engine_type: resource.engine_type,
+      full_name: conn.full_name || '',
       connection_info: conn
     }
   }
@@ -2678,7 +2665,6 @@ const handleSubmit = async () => {
         return
       }
       config.source.engine_id = engineId
-      delete config.source.local_engine_id
       delete config.source.local_resource_name
       removeConnectionFields(config.source)
     } else if (selectedSourceLocalResource.value) {
@@ -2692,7 +2678,7 @@ const handleSubmit = async () => {
       config.source = {
         ...cleanConfig,
         scope: 'local',
-        local_engine_id: localResource.id,
+        engine_id: localResource.id,
         local_resource_name: localResource.name,
         engine_type: localResource.engine_type,
         connection_info: localResource.connection_info
@@ -2712,7 +2698,6 @@ const handleSubmit = async () => {
         return
       }
       config.target.engine_id = engineId
-      delete config.target.local_engine_id
       delete config.target.local_resource_name
       removeConnectionFields(config.target)
     } else if (selectedTargetLocalResource.value) {
@@ -2726,7 +2711,7 @@ const handleSubmit = async () => {
       config.target = {
         ...cleanConfig,
         scope: 'local',
-        local_engine_id: localResource.id,
+        engine_id: localResource.id,
         local_resource_name: localResource.name,
         engine_type: localResource.engine_type,
         connection_info: localResource.connection_info

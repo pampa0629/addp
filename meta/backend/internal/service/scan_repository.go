@@ -67,8 +67,8 @@ func (r *ScanRepository) UpsertNode(
 	}
 
 	// 查询现有节点（包括软删除的记录）
-	// 【优化】去掉 node_type 条件，简化唯一性约束为 (tenant_id, engine_id, parent_node_id, name)
-	query := r.db.Unscoped().Where("engine_id = ? AND tenant_id = ? AND name = ?", engineID, tenantID, name)
+	// 唯一性约束：(tenant_id, engine_id, parent_node_id, name, node_type)
+	query := r.db.Unscoped().Where("engine_id = ? AND tenant_id = ? AND name = ? AND node_type = ?", engineID, tenantID, name, nodeType)
 	if parentID == nil {
 		query = query.Where("parent_node_id IS NULL")
 	} else {

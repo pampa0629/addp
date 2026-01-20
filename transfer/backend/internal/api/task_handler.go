@@ -305,15 +305,15 @@ func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// CreateDataMapping 创建字段映射
+// CreateFieldMapping 创建字段映射
 // POST /api/tasks/:id/mappings
-func (h *TaskHandler) CreateDataMapping(c *gin.Context) {
+func (h *TaskHandler) CreateFieldMapping(c *gin.Context) {
 	taskID, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return
 	}
 
-	var req models.CreateDataMappingRequest
+	var req models.CreateFieldMappingRequest
 	if !commonAPI.BindJSON(c, &req) {
 		return
 	}
@@ -349,9 +349,9 @@ func (h *TaskHandler) GetTaskMappings(c *gin.Context) {
 	c.JSON(http.StatusOK, mappings)
 }
 
-// DeleteDataMapping 删除字段映射
+// DeleteFieldMapping 删除字段映射
 // DELETE /api/mappings/:id
-func (h *TaskHandler) DeleteDataMapping(c *gin.Context) {
+func (h *TaskHandler) DeleteFieldMapping(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
 	if !ok {
 		return

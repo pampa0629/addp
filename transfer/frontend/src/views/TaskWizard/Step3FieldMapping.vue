@@ -10,10 +10,10 @@
     </div>
 
     <el-table :data="wizardState.fieldMappings.value" border style="margin-top: 20px">
-      <el-table-column label="源字段" width="250">
+      <el-table-column label="源字段" width="200">
         <template #default="{ row, $index }">
           <el-select
-            v-model="row.sourceField"
+            v-model="row.source_field"
             placeholder="选择源字段"
             filterable
             @change="handleMappingChange($index)"
@@ -28,10 +28,10 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="目标字段" width="250">
+      <el-table-column label="目标字段" width="200">
         <template #default="{ row, $index }">
           <el-select
-            v-model="row.targetField"
+            v-model="row.target_field"
             placeholder="选择目标字段"
             filterable
             allow-create
@@ -47,16 +47,17 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="数据类型" width="150">
+      <el-table-column label="数据类型" width="140">
         <template #default="{ row, $index }">
           <el-select
-            v-model="row.fieldType"
+            v-model="row.field_type"
             placeholder="类型"
             @change="handleMappingChange($index)"
           >
             <el-option label="字符串" value="string" />
             <el-option label="整数" value="integer" />
-            <el-option label="浮点" value="float" />
+            <el-option label="单精度浮点" value="float" />
+            <el-option label="双精度浮点" value="double" />
             <el-option label="布尔" value="boolean" />
             <el-option label="日期" value="date" />
             <el-option label="时间戳" value="timestamp" />
@@ -65,12 +66,31 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="格式/默认值" width="200">
+      <el-table-column label="默认值" width="150">
+        <template #default="{ row, $index }">
+          <el-input
+            v-model="row.default_value"
+            placeholder="默认值"
+            @input="handleMappingChange($index)"
+          />
+        </template>
+      </el-table-column>
+
+      <el-table-column label="格式" width="140">
         <template #default="{ row, $index }">
           <el-input
             v-model="row.format"
-            placeholder="格式或默认值"
+            placeholder="如: 2006-01-02"
             @input="handleMappingChange($index)"
+          />
+        </template>
+      </el-table-column>
+
+      <el-table-column label="可为空" width="90" align="center">
+        <template #default="{ row, $index }">
+          <el-switch
+            v-model="row.nullable"
+            @change="handleMappingChange($index)"
           />
         </template>
       </el-table-column>

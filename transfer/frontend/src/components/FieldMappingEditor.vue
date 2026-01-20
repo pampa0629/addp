@@ -5,7 +5,7 @@
         配置源字段到目标字段的映射关系
       </template>
       <div>
-        <p>系统已自动进行同名匹配。您可以手动调整映射关系、添加转换函数或设置默认值。</p>
+        <p>系统已自动进行同名匹配。您可以手动调整映射关系或设置默认值。</p>
         <p v-if="autoCreateMode" style="color: #67C23A; margin-top: 5px;">
           <el-icon><Check /></el-icon>
           目标为对象存储，将自动创建目标字段（所有源字段都会导出到文件）
@@ -72,36 +72,14 @@
             <el-select v-model="row.field_type" placeholder="类型" size="small">
               <el-option label="字符串" value="string" />
               <el-option label="整数" value="integer" />
-              <el-option label="浮点数" value="float" />
+              <el-option label="单精度浮点" value="float" />
+              <el-option label="双精度浮点" value="double" />
               <el-option label="布尔" value="boolean" />
               <el-option label="日期" value="date" />
               <el-option label="时间戳" value="timestamp" />
               <el-option label="JSON" value="json" />
               <el-option label="空间" value="geometry" />
             </el-select>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="转换函数" width="160">
-          <template #default="{ row }">
-            <el-select v-model="row.transform" placeholder="无" clearable size="small">
-              <el-option label="转大写" value="upper" />
-              <el-option label="转小写" value="lower" />
-              <el-option label="去空格" value="trim" />
-              <el-option label="格式化日期" value="format_date" />
-              <el-option label="转时间戳" value="to_timestamp" />
-              <el-option label="转整数" value="to_int" />
-              <el-option label="转浮点数" value="to_float" />
-              <el-option label="JSON 解析" value="parse_json" />
-              <el-option label="JSON 序列化" value="stringify_json" />
-            </el-select>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="格式" width="140">
-          <template #default="{ row }">
-            <el-input v-model="row.format" placeholder="如: 2006-01-02" size="small"
-              v-if="['format_date', 'to_timestamp'].includes(row.transform)" />
           </template>
         </el-table-column>
 
@@ -221,7 +199,6 @@ const handleAutoMatch = () => {
         source_field: sourceField,
         target_field: sourceField,
         field_type: fieldType,
-        transform: '',
         format: '',
         default_value: '',
         nullable: true
@@ -245,7 +222,6 @@ const handleAutoMatch = () => {
           source_field: sourceField,
           target_field: targetField,
           field_type: fieldType,
-          transform: '',
           format: '',
           default_value: '',
           nullable: true
@@ -274,7 +250,6 @@ const handleAddMapping = () => {
     source_field: '',
     target_field: '',
     field_type: 'string',
-    transform: '',
     format: '',
     default_value: '',
     nullable: true

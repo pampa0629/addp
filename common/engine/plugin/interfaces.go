@@ -252,10 +252,11 @@ type SchemaInfo struct {
 
 // TableInfo 表信息
 type TableInfo struct {
-	Schema    string // 所属 Schema
-	TableName string // 表名
-	RowCount  int64  // 行数（估算值）
-	SizeBytes int64  // 表大小（字节）
+	Schema       string     // 所属 Schema
+	TableName    string     // 表名
+	RowCount     int64      // 行数（估算值）
+	SizeBytes    int64      // 表大小（字节）
+	LastModified *time.Time // 表的最后修改时间（用于增量扫描）
 }
 
 // ColumnInfo 列信息

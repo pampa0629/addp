@@ -188,10 +188,6 @@
           <el-form-item label="目标表">
             <el-input v-model="targetConfig.table" placeholder="schema.table_name (如 spatial.poi)" />
           </el-form-item>
-          <el-form-item label="自动建表">
-            <el-switch v-model="targetConfig.create_table" />
-            <span class="param-hint">首次导入时启用</span>
-          </el-form-item>
           <el-form-item label="SRID">
             <el-input-number v-model="targetConfig.srid" :min="0" :max="9999" />
             <span class="param-hint">几何坐标系，常用: 4326 (WGS84)、3857 (Web Mercator)</span>
@@ -285,7 +281,6 @@ const targetConfig = ref({
   username: 'business',
   password: 'business_password',
   table: 'spatial.imported_data',
-  create_table: true,
   srid: 4326,
   geometry_column: 'geom'
 })
@@ -379,7 +374,6 @@ const buildTargetConfig = () => {
       username: targetConfig.value.username,
       password: targetConfig.value.password,
       table: targetConfig.value.table,
-      create_table: targetConfig.value.create_table,
       srid: targetConfig.value.srid
     }
     if (targetConfig.value.geometry_column) {

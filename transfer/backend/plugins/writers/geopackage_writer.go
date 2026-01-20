@@ -27,7 +27,6 @@ type GeoPackageWriterConfig struct {
 	Table         string `json:"table"`           // 表名
 	GeometryField string `json:"geometry_field"`  // 几何字段名
 	SRID          int    `json:"srid"`            // 空间参考系统 ID
-	CreateTable   bool   `json:"create_table"`    // 是否自动创建表
 }
 
 // NewGeoPackageWriter 创建 GeoPackage Writer

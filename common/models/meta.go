@@ -60,3 +60,37 @@ type Field struct {
 	DataType     string `json:"data_type"`
 	IsPrimaryKey bool   `json:"is_primary_key,omitempty"`
 }
+
+// SchemaWithStatus Schema 元数据（带扫描状态）
+type SchemaWithStatus struct {
+	ID             uint   `json:"id"`
+	SchemaName     string `json:"schema_name"`
+	ScanStatus     string `json:"scan_status"`
+	ScannedAt      string `json:"scanned_at,omitempty"`
+	TableCount     int    `json:"table_count"`
+	TotalSizeBytes int64  `json:"total_size_bytes"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+}
+
+// TableInfo 表元数据信息
+type TableInfo struct {
+	Name      string `json:"name"`
+	FullName  string `json:"full_name,omitempty"`
+	Schema    string `json:"schema,omitempty"`
+	RowCount  int64  `json:"row_count"`
+	SizeBytes int64  `json:"size_bytes"`
+	Comment   string `json:"comment,omitempty"`
+}
+
+// FieldInfo 字段详细信息
+type FieldInfo struct {
+	Name           string `json:"name"`
+	DataType       string `json:"data_type"`
+	IsPrimaryKey   bool   `json:"is_primary_key,omitempty"`
+	IsNullable     bool   `json:"is_nullable,omitempty"`
+	DefaultValue   string `json:"default_value,omitempty"`
+	Comment        string `json:"comment,omitempty"`
+	IsSpatial      bool   `json:"is_spatial,omitempty"`
+	GeometryType   string `json:"geometry_type,omitempty"`
+	SRID           int    `json:"srid,omitempty"`
+}

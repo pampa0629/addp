@@ -49,7 +49,6 @@ type FieldMapping struct {
 	Type         string      // 目标类型（string, int, float, bool, datetime）
 	Format       string      // 格式（用于日期等）
 	DefaultValue interface{} // 默认值
-	Transform    string      // 转换函数（可选）
 }
 
 // FieldMappingTransform 字段映射转换器
@@ -313,8 +312,26 @@ func convertType(value interface{}, targetType, format string) (interface{}, err
 		return strconv.ParseInt(valueStr, 10, 64)
 
 	case "float":
+		// 单精度浮点数 (float32)
+		if v, ok := value.(float32); ok {
+			return v, nil
+		}
+		if v, ok := value.(float64); ok {
+			return float32(v), nil
+		}
+		f64, err := strconv.ParseFloat(valueStr, 32)
+		if err != nil {
+			return nil, err
+		}
+		return float32(f64), nil
+
+	case "double":
+		// 双精度浮点数 (float64)
 		if v, ok := value.(float64); ok {
 			return v, nil
+		}
+		if v, ok := value.(float32); ok {
+			return float64(v), nil
 		}
 		return strconv.ParseFloat(valueStr, 64)
 

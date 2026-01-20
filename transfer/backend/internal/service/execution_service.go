@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/models"
@@ -114,9 +115,11 @@ func (s *ExecutionService) RetryExecution(ctx context.Context, id, tenantID, use
 	s.logger.Info("retrying execution", "execution_id", id, "task_id", oldExecution.TaskID)
 
 	// 创建新的执行记录
+	now := time.Now()
 	newExecution := &models.TaskExecution{
 		TaskID:      oldExecution.TaskID,
 		Status:      models.ExecutionStatusPending,
+		StartTime:   models.LocalTime{Time: now},
 		TriggerType: "retry",
 		TriggerBy:   &userID,
 	}

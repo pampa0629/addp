@@ -72,20 +72,22 @@ func (s *MVTService) GetTile(
 		logger.L().Warn("Failed to get db pool for primary key query",
 			"error", err,
 			"engine_id", resourceID)
-		// 使用默认主键
-		return s.generateTileWithPK(ctx, resourceID, tid, schema, table, geomCol, cols, z, x, y, srid, "id")
+		// 无主键时传空字符串，让 BuildMVTQuery 跳过 ID 列
+		return s.generateTileWithPK(ctx, resourceID, tid, schema, table, geomCol, cols, z, x, y, srid, "")
 	}
 
 	primaryKey, err := s.tileGenerator.GetPrimaryKeyColumn(ctx, db, schema, table)
 	if err != nil {
-		logger.L().Warn("Failed to get primary key, using 'id' as fallback",
+		logger.L().Warn("Failed to get primary key, will generate MVT without ID column",
 			"error", err,
 			"schema", schema,
 			"table", table)
-		primaryKey = "id"
+		primaryKey = ""
 	}
 	if primaryKey == "" {
-		primaryKey = "id"
+		logger.L().Info("Table has no primary key, MVT will not include feature ID",
+			"schema", schema,
+			"table", table)
 	}
 
 	// 4. 如果未指定列，查询所有列

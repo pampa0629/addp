@@ -5,7 +5,7 @@
 
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createTask, validateTaskConfig } from '@/api/transfer'
+import { taskAPI } from '@/api/tasks'
 
 export function useTaskWizardState() {
   // ===== 状态定义 =====
@@ -13,20 +13,26 @@ export function useTaskWizardState() {
   const taskName = ref('')
   const taskDescription = ref('')
   const schedule = ref('')
+  const enabled = ref(false) // 定时任务启用状态
+  const batchSize = ref(1000) // 批大小，默认 1000
 
   // Source 配置
-  const sourceType = ref('postgresql')
   const sourceConfig = ref({})
   const sourceEngineID = ref(null)
+  const sourceScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const sourceSchema = ref('')
   const sourceTable = ref('')
+  const sourceType = ref('postgresql') // postgresql, mysql, spatialite, s3
+  const sourceQueryMode = ref('table') // table, sql
+  const sourceSQLQuery = ref('') // SQL 查询语句
 
   // Target 配置
-  const targetType = ref('postgresql')
   const targetConfig = ref({})
   const targetEngineID = ref(null)
+  const targetScope = ref('system') // 'system' 或 'local'，默认为 'system'
   const targetSchema = ref('')
   const targetTable = ref('')
+  const targetType = ref('postgresql') // postgresql, mysql, s3
 
   // 字段映射
   const fieldMappings = ref([])
@@ -53,27 +59,71 @@ export function useTaskWizardState() {
   })
 
   const taskConfig = computed(() => {
-    return {
+    // 构建 source 配置
+    const sourceConfigObj = {
+      scope: sourceScope.value,
+      engine_id: sourceEngineID.value,
+      connector_type: sourceType.value,
+      ...sourceConfig.value
+    }
+
+    // 构建 target 配置
+    const targetConfigObj = {
+      scope: targetScope.value,
+      engine_id: targetEngineID.value,
+      connector_type: targetType.value,
+      ...targetConfig.value
+    }
+
+    // 根据后端 CreateTaskRequest 结构构建请求
+    const config = {
       name: taskName.value,
       description: taskDescription.value,
+      config: {
+        source: sourceConfigObj,
+        target: targetConfigObj
+      },
       schedule: schedule.value,
-      source: {
-        type: sourceType.value,
-        engine_id: sourceEngineID.value,
-        schema: sourceSchema.value,
-        table: sourceTable.value,
-        ...sourceConfig.value
-      },
-      target: {
-        type: targetType.value,
-        engine_id: targetEngineID.value,
-        schema: targetSchema.value,
-        table: targetTable.value,
-        ...targetConfig.value
-      },
+      enabled: schedule.value ? enabled.value : false, // 只有设置了定时任务才考虑 enabled
+      batch_size: batchSize.value,
       mappings: fieldMappings.value,
-      transforms: transforms.value
+      auto_scan_metadata: true // 默认自动扫描元数据
     }
+
+    // Source 配置：根据查询模式添加不同字段
+    if (sourceQueryMode.value === 'sql') {
+      config.config.source.query_type = 'sql'
+      config.config.source.query = sourceSQLQuery.value
+    } else {
+      config.config.source.query_type = 'table'
+      config.config.source.schema = sourceSchema.value
+      config.config.source.table = sourceTable.value
+    }
+
+    // Target 配置：根据目标类型添加不同字段
+    if (targetType.value === 's3') {
+      // 对象存储配置
+      const s3Config = targetConfig.value || {}
+      config.config.target.output_format = s3Config.outputFormat || 'csv'
+      config.config.target.output_path = s3Config.outputPath || ''
+
+      // CSV 专用选项
+      if (s3Config.outputFormat === 'csv') {
+        config.config.target.csv_headers = s3Config.csvHeaders !== false
+        config.config.target.csv_delimiter = s3Config.csvDelimiter || ','
+      }
+
+      // 空间格式需要几何字段
+      if (['geojson', 'shapefile'].includes(s3Config.outputFormat) && s3Config.geometryField) {
+        config.config.target.geometry_field = s3Config.geometryField
+      }
+    } else {
+      // 数据库配置
+      config.config.target.schema = targetSchema.value
+      config.config.target.table = targetTable.value
+    }
+
+    return config
   })
 
   // ===== 方法 =====
@@ -100,8 +150,12 @@ export function useTaskWizardState() {
   // Source 配置
   function updateSource(config) {
     sourceEngineID.value = config.engineID
-    sourceSchema.value = config.schema
-    sourceTable.value = config.table
+    sourceScope.value = config.scope || 'system'
+    sourceSchema.value = config.schema || ''
+    sourceTable.value = config.table || ''
+    sourceType.value = config.sourceType || 'postgresql'
+    sourceQueryMode.value = config.queryMode || 'table'
+    sourceSQLQuery.value = config.sqlQuery || ''
     sourceConfig.value = config.extra || {}
   }
 
@@ -116,8 +170,10 @@ export function useTaskWizardState() {
   // Target 配置
   function updateTarget(config) {
     targetEngineID.value = config.engineID
-    targetSchema.value = config.schema
-    targetTable.value = config.table
+    targetScope.value = config.scope || 'system'
+    targetSchema.value = config.schema || ''
+    targetTable.value = config.table || ''
+    targetType.value = config.targetType || 'postgresql'
     targetConfig.value = config.extra || {}
   }
 
@@ -130,11 +186,12 @@ export function useTaskWizardState() {
     if (sourceFields.value.length === 0) return
 
     fieldMappings.value = sourceFields.value.map(field => ({
-      sourceField: field.name,
-      targetField: field.name, // 默认同名映射
-      fieldType: field.type,
-      format: null,
-      defaultValue: null
+      source_field: field.name,
+      target_field: field.name, // 默认同名映射
+      field_type: field.standard_type || field.data_type || 'string',
+      format: '',
+      default_value: '',
+      nullable: true
     }))
   }
 
@@ -144,11 +201,12 @@ export function useTaskWizardState() {
 
   function addFieldMapping() {
     fieldMappings.value.push({
-      sourceField: '',
-      targetField: '',
-      fieldType: 'string',
-      format: null,
-      defaultValue: null
+      source_field: '',
+      target_field: '',
+      field_type: 'string',
+      format: '',
+      default_value: '',
+      nullable: true
     })
   }
 
@@ -168,19 +226,93 @@ export function useTaskWizardState() {
   // 提交任务
   async function submitTask() {
     try {
-      // 验证配置
-      const validation = await validateTaskConfig(taskConfig.value)
-      if (!validation.valid) {
-        ElMessage.error(validation.message || '任务配置验证失败')
-        return false
-      }
-
       // 创建任务
-      await createTask(taskConfig.value)
+      await taskAPI.create(taskConfig.value)
       ElMessage.success('任务创建成功')
       return true
     } catch (error) {
-      ElMessage.error(error.message || '任务创建失败')
+      const message = error.response?.data?.message || error.message || '任务创建失败'
+      ElMessage.error(message)
+      return false
+    }
+  }
+
+  // 从任务详情加载数据（编辑模式）
+  function loadFromTask(task) {
+    if (!task) return
+
+    // 基本信息
+    taskName.value = task.name || ''
+    taskDescription.value = task.description || ''
+    schedule.value = task.schedule || ''
+    enabled.value = task.enabled || false
+    batchSize.value = task.batch_size || 1000
+
+    // Source 配置
+    if (task.config?.source) {
+      const source = task.config.source
+      sourceEngineID.value = source.engine_id || null
+      sourceScope.value = source.scope || 'system'
+      sourceSchema.value = source.schema || ''
+      sourceTable.value = source.table || ''
+      sourceType.value = source.connector_type || 'postgresql'
+      sourceQueryMode.value = source.query_type || 'table'
+      sourceSQLQuery.value = source.query || ''
+
+      // 额外的 source 配置
+      const extraSourceFields = { ...source }
+      delete extraSourceFields.scope
+      delete extraSourceFields.engine_id
+      delete extraSourceFields.connector_type
+      delete extraSourceFields.schema
+      delete extraSourceFields.table
+      delete extraSourceFields.query_type
+      delete extraSourceFields.query
+      sourceConfig.value = extraSourceFields
+    }
+
+    // Target 配置
+    if (task.config?.target) {
+      const target = task.config.target
+      targetEngineID.value = target.engine_id || null
+      targetScope.value = target.scope || 'system'
+      targetSchema.value = target.schema || ''
+      targetTable.value = target.table || ''
+      targetType.value = target.connector_type || 'postgresql'
+
+      // 额外的 target 配置
+      const extraTargetFields = { ...target }
+      delete extraTargetFields.scope
+      delete extraTargetFields.engine_id
+      delete extraTargetFields.connector_type
+      delete extraTargetFields.schema
+      delete extraTargetFields.table
+      targetConfig.value = extraTargetFields
+    }
+
+    // 字段映射
+    if (Array.isArray(task.mappings)) {
+      fieldMappings.value = task.mappings.map(m => ({
+        source_field: m.source_field || '',
+        target_field: m.target_field || '',
+        field_type: m.field_type || 'string',
+        format: m.format || '',
+        default_value: m.default_value || '',
+        nullable: m.nullable !== false
+      }))
+    }
+  }
+
+  // 更新任务
+  async function updateTask(taskId) {
+    try {
+      // 更新任务
+      await taskAPI.update(taskId, taskConfig.value)
+      ElMessage.success('任务更新成功')
+      return true
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || '任务更新失败'
+      ElMessage.error(message)
       return false
     }
   }
@@ -191,13 +323,21 @@ export function useTaskWizardState() {
     taskName.value = ''
     taskDescription.value = ''
     schedule.value = ''
+    enabled.value = false
+    batchSize.value = 1000
     sourceEngineID.value = null
+    sourceScope.value = 'system'
     sourceSchema.value = ''
     sourceTable.value = ''
+    sourceType.value = 'postgresql'
+    sourceQueryMode.value = 'table'
+    sourceSQLQuery.value = ''
     sourceConfig.value = {}
     targetEngineID.value = null
+    targetScope.value = 'system'
     targetSchema.value = ''
     targetTable.value = ''
+    targetType.value = 'postgresql'
     targetConfig.value = {}
     fieldMappings.value = []
     sourceFields.value = []
@@ -211,12 +351,22 @@ export function useTaskWizardState() {
     taskName,
     taskDescription,
     schedule,
+    enabled,
+    batchSize,
+    sourceConfig,
     sourceEngineID,
+    sourceScope,
     sourceSchema,
     sourceTable,
+    sourceType,
+    sourceQueryMode,
+    sourceSQLQuery,
+    targetConfig,
     targetEngineID,
+    targetScope,
     targetSchema,
     targetTable,
+    targetType,
     fieldMappings,
     sourceFields,
     targetFields,
@@ -240,7 +390,9 @@ export function useTaskWizardState() {
     removeFieldMapping,
     addTransform,
     removeTransform,
+    loadFromTask,
     submitTask,
+    updateTask,
     reset
   }
 }

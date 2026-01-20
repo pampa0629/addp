@@ -374,13 +374,46 @@ func (r *SpatiaLiteReader) inferSchema(ctx context.Context) (*pipeline.Schema, e
 		fields = append(fields, f)
 	}
 
-	return &pipeline.Schema{
+	schema := &pipeline.Schema{
 		Fields: fields,
 		Metadata: map[string]interface{}{
 			"source_type": "spatialite",
 			"table":       r.table,
 		},
-	}, nil
+	}
+
+	// 如果有表名，提取主键信息（即使使用自定义 Query）
+	if r.table != "" {
+		cols, err := r.fetchTableInfo(ctx, r.table)
+		if err == nil {
+			primaryKeyColumns := []string{}
+			for _, c := range cols {
+				if c.pk > 0 {
+					primaryKeyColumns = append(primaryKeyColumns, c.name)
+				}
+			}
+			if len(primaryKeyColumns) > 0 {
+				fmt.Printf("📋 SpatiaLite Reader 检测到主键: %v\n", primaryKeyColumns)
+				schema.PrimaryKey = &pipeline.PrimaryKey{
+					Columns: primaryKeyColumns,
+					Name:    "", // SQLite 默认无命名
+				}
+
+				// 同时填充旧格式（向后兼容）
+				pkCols := make([]interface{}, len(primaryKeyColumns))
+				for i, col := range primaryKeyColumns {
+					pkCols[i] = col
+				}
+				schema.Metadata["table_metadata"] = map[string]interface{}{
+					"has_primary_key":  true,
+					"primary_key":      pkCols,
+					"primary_key_name": "",
+				}
+			}
+		}
+	}
+
+	return schema, nil
 }
 
 func (r *SpatiaLiteReader) inferSchemaFromTable(ctx context.Context, table string, geom map[string]geomMeta) (*pipeline.Schema, error) {
@@ -388,6 +421,21 @@ func (r *SpatiaLiteReader) inferSchemaFromTable(ctx context.Context, table strin
 	if err != nil {
 		return nil, err
 	}
+
+	// 提取主键信息
+	primaryKeyColumns := []string{}
+	primaryKeyName := ""
+	for _, c := range cols {
+		if c.pk > 0 {
+			primaryKeyColumns = append(primaryKeyColumns, c.name)
+		}
+	}
+
+	// SQLite 主键约束名默认为空（无命名），PostgreSQL 会自动生成
+	if len(primaryKeyColumns) > 0 {
+		fmt.Printf("📋 SpatiaLite Reader 检测到主键: %v\n", primaryKeyColumns)
+	}
+
 	fields := make([]pipeline.Field, 0, len(cols))
 	for _, c := range cols {
 		f := pipeline.Field{
@@ -407,13 +455,43 @@ func (r *SpatiaLiteReader) inferSchemaFromTable(ctx context.Context, table strin
 		}
 		fields = append(fields, f)
 	}
-	return &pipeline.Schema{
-		Fields: fields,
-		Metadata: map[string]interface{}{
-			"source_type": "spatialite",
-			"table":       table,
-		},
-	}, nil
+
+	// 构建 metadata，包含主键信息
+	metadata := map[string]interface{}{
+		"source_type": "spatialite",
+		"table":       table,
+	}
+
+	// 添加表级主键信息（符合 JDBC Writer 的 extractPrimaryKeyFromMetadata 期望格式）
+	if len(primaryKeyColumns) > 0 {
+		// 转换为 []interface{} 以符合 metadata 类型
+		pkCols := make([]interface{}, len(primaryKeyColumns))
+		for i, col := range primaryKeyColumns {
+			pkCols[i] = col
+		}
+
+		metadata["table_metadata"] = map[string]interface{}{
+			"has_primary_key":   true,
+			"primary_key":       pkCols,
+			"primary_key_name":  primaryKeyName, // SQLite 默认无命名
+		}
+	}
+
+	// 构建 Schema
+	schema := &pipeline.Schema{
+		Fields:   fields,
+		Metadata: metadata,
+	}
+
+	// 填充主键信息（新格式）
+	if len(primaryKeyColumns) > 0 {
+		schema.PrimaryKey = &pipeline.PrimaryKey{
+			Columns: primaryKeyColumns,
+			Name:    primaryKeyName, // SQLite 默认为空
+		}
+	}
+
+	return schema, nil
 }
 
 // --- metadata helpers ---
@@ -561,6 +639,7 @@ type tableCol struct {
 	name     string
 	dataType string
 	notNull  bool
+	pk       int // 主键序号（0=非主键，1=单主键或复合主键第1列，2=复合主键第2列...）
 }
 
 func (r *SpatiaLiteReader) fetchTableInfo(ctx context.Context, table string) ([]tableCol, error) {
@@ -581,7 +660,7 @@ func (r *SpatiaLiteReader) fetchTableInfo(ctx context.Context, table string) ([]
 		if err := rows.Scan(&cid, &name, &dtype, &notNull, &dflt, &pk); err != nil {
 			return nil, err
 		}
-		out = append(out, tableCol{name: name, dataType: dtype, notNull: notNull != 0})
+		out = append(out, tableCol{name: name, dataType: dtype, notNull: notNull != 0, pk: pk})
 	}
 	return out, nil
 }

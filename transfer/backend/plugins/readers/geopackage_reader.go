@@ -238,6 +238,7 @@ func (r *GeoPackageReader) inferSchema(ctx context.Context) (*pipeline.Schema, e
 	defer rows.Close()
 
 	fields := make([]pipeline.Field, 0)
+	primaryKeyColumns := []string{}
 
 	for rows.Next() {
 		var cid int
@@ -248,6 +249,11 @@ func (r *GeoPackageReader) inferSchema(ctx context.Context) (*pipeline.Schema, e
 
 		if err := rows.Scan(&cid, &name, &dataType, &notNull, &dfltValue, &pk); err != nil {
 			return nil, err
+		}
+
+		// 收集主键列
+		if pk > 0 {
+			primaryKeyColumns = append(primaryKeyColumns, name)
 		}
 
 		field := pipeline.Field{
@@ -265,13 +271,36 @@ func (r *GeoPackageReader) inferSchema(ctx context.Context) (*pipeline.Schema, e
 		fields = append(fields, field)
 	}
 
-	return &pipeline.Schema{
+	schema := &pipeline.Schema{
 		Fields: fields,
 		Metadata: map[string]interface{}{
 			"source_type": "geopackage",
 			"table":       r.table,
 		},
-	}, nil
+	}
+
+	// 填充主键信息（新格式）
+	if len(primaryKeyColumns) > 0 {
+		fmt.Printf("📋 GeoPackage Reader 检测到主键: %v\n", primaryKeyColumns)
+
+		schema.PrimaryKey = &pipeline.PrimaryKey{
+			Columns: primaryKeyColumns,
+			Name:    "", // GeoPackage/SQLite 无命名约束
+		}
+
+		// 同时填充旧格式（向后兼容）
+		pkCols := make([]interface{}, len(primaryKeyColumns))
+		for i, col := range primaryKeyColumns {
+			pkCols[i] = col
+		}
+		schema.Metadata["table_metadata"] = map[string]interface{}{
+			"has_primary_key":  true,
+			"primary_key":      pkCols,
+			"primary_key_name": "",
+		}
+	}
+
+	return schema, nil
 }
 
 // inferGeometryType 推断几何类型

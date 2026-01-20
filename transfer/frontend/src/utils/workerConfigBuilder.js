@@ -56,7 +56,7 @@ export const resourceToConnectorForWorker = (resource) => {
   const connector = {}
 
   if (type === 'postgresql' || type === 'mysql') {
-    connector.type = 'jdbc'
+    connector.engine_type = type
     connector.driver = type
     if (conn.host) connector.host = conn.host
     const port = toNumber(conn.port)
@@ -68,7 +68,7 @@ export const resourceToConnectorForWorker = (resource) => {
     const sslMode = conn.ssl_mode || conn.sslmode
     if (sslMode) connector.ssl_mode = sslMode
   } else if (isS3Type(type)) {
-    connector.type = 's3'
+    connector.engine_type = type
     if (conn.endpoint) connector.endpoint = conn.endpoint
     if (conn.access_key) connector.access_key = conn.access_key
     if (conn.secret_key) connector.secret_key = conn.secret_key
@@ -95,8 +95,7 @@ export const mergeTaskConnectorConfig = (base, extra, resourceType) => {
     'bucket',
     'connection_info',
     'scope',
-    'system_engine_id',
-    'local_engine_id',
+    'engine_id',
     'local_resource_name',
     'resource_type'
   ])
@@ -138,15 +137,15 @@ export const sanitizeConnectorForWorker = (connector) => {
     if (value === undefined) {
       return
     }
-    if (['scope', 'system_engine_id', 'local_engine_id', 'local_resource_name', 'resource_type'].includes(key)) {
+    if (['scope', 'engine_id', 'local_resource_name', 'resource_type', 'type'].includes(key)) {
       return
     }
     sanitized[key] = value
   })
 
-  const type = toLower(sanitized.type || sanitized.driver)
+  const type = toLower(sanitized.engine_type || sanitized.driver)
   if (type === 'jdbc' || type === 'postgresql' || type === 'mysql') {
-    if (!sanitized.type) sanitized.type = 'jdbc'
+    if (!sanitized.engine_type && type !== 'jdbc') sanitized.engine_type = type
     if (!sanitized.driver && type !== 'jdbc') sanitized.driver = type
     if (!sanitized.username && sanitized.user) {
       sanitized.username = sanitized.user
@@ -172,7 +171,7 @@ export const sanitizeConnectorForWorker = (connector) => {
   }
 
   if (type === 's3' || isS3Type(type)) {
-    sanitized.type = 's3'
+    if (!sanitized.engine_type) sanitized.engine_type = 's3'
     sanitized.use_ssl = sanitized.use_ssl !== undefined ? !!sanitized.use_ssl : false
     if (sanitized.path && !sanitized.file_name) {
       sanitized.file_name = sanitized.path
@@ -257,8 +256,7 @@ export const buildFieldMappingsForWorker = (rawMappings, sourceConfigResolved, t
     type: item.field_type || '',
     format: item.format || '',
     default_value: item.default_value === undefined ? '' : item.default_value,
-    nullable: item.nullable !== undefined ? !!item.nullable : true,
-    transform: item.transform || ''
+    nullable: item.nullable !== undefined ? !!item.nullable : true
   }))
 
   const geometryFromTarget = extractGeometryFieldsForWorker(targetConfigResolved)
@@ -275,16 +273,49 @@ export const buildFieldMappingsForWorker = (rawMappings, sourceConfigResolved, t
 
 // ============ 类型推断 ============
 
+// inferConnectorTypeForWorker - 从配置推断连接器类型（仅用于前端逻辑判断）
+// 注意：发送给后端的配置中不需要包含 type，后端会根据 engine_type 自动推断
 export const inferConnectorTypeForWorker = (config) => {
   if (!config || typeof config !== 'object') {
     return 'unknown'
   }
+
+  // 优先使用 engine_type
+  if (config.engine_type) {
+    const engineType = toLower(config.engine_type)
+    switch (engineType) {
+      case 'spatialite':
+      case 'sqlite':
+        return 'spatialite'
+      case 'postgresql':
+      case 'mysql':
+        return 'jdbc'
+      case 's3':
+      case 'minio':
+      case 'oss':
+        return 's3'
+      case 'kafka':
+        return 'kafka'
+      case 'csv':
+      case 'geojson':
+      case 'shapefile':
+      case 'geopackage':
+        return 'file'
+      default:
+        return engineType
+    }
+  }
+
+  // 后备：使用 type 字段
   const explicit = toLower(config.type)
   if (explicit) return explicit
+
+  // 最后：根据配置字段推断
   if (config.driver) return 'jdbc'
   if (config.bucket || config.endpoint || config.file_name || config.file_type) return 's3'
   if (config.path || config.directory || config.file_path || config.full_name) return 'file'
   if (config.topic) return 'kafka'
+
   return 'unknown'
 }
 
@@ -393,12 +424,10 @@ export const buildWorkerConfigFromTask = (task, mappings, systemResourceMap) => 
     max_parallelism: task.max_parallelism,
     retry_policy: task.retry_policy || null,
     source_config: {
-      type: inferConnectorTypeForWorker(sourceConfigResolved),
       batch_size: task.batch_size,
       config: sourceConfigResolved
     },
     target_config: {
-      type: inferConnectorTypeForWorker(targetConfigResolved),
       config: targetConfigResolved
     },
     transforms: transformsList

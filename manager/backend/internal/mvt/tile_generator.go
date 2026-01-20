@@ -124,14 +124,25 @@ func (g *TileGenerator) buildMVTQuery(
 	primaryKey string,
 ) (string, []interface{}) {
 	// 使用 common/spatial.BuildMVTQuery 统一实现
-	// 快显缓存不需要 simplify（速度更重要）和列选择（保留所有列）
+	// ✅ 根据 zoom 级别动态启用简化：
+	//   - z < 10: 简化几何，减少数据量，防止浏览器崩溃
+	//   - z >= 10: 保留完整精度，提供详细展示
+	simplify := z < 10
+
 	opt := spatial.MVTOptions{
 		Layer:    table,
 		Extent:   4096,
 		Buffer:   64,
 		SRID:     srid,
-		Simplify: false, // 缓存阶段不简化，保留完整精度
+		Simplify: simplify,
 	}
+
+	if simplify {
+		logger.L().Debug("🔧 启用几何简化",
+			"z", z,
+			"tolerance", spatial.SimplifyTolerance(z))
+	}
+
 	return spatial.BuildMVTQuery(schema, table, geomColumn, []string{}, z, x, y, opt, primaryKey)
 }
 

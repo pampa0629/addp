@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/common/format"
 	_ "github.com/addp/common/format/mappers/mysql"
 	_ "github.com/addp/common/format/mappers/postgresql"
@@ -19,15 +21,17 @@ type MetadataQueryService struct {
 	db             *gorm.DB
 	repo           *ScanRepository
 	spatialService *SpatialMetadataService
+	engineService  *EngineService
 	log            *slog.Logger
 }
 
 // NewMetadataQueryService 创建元数据查询服务
-func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService, log *slog.Logger) *MetadataQueryService {
+func NewMetadataQueryService(db *gorm.DB, spatialService *SpatialMetadataService, engineService *EngineService, log *slog.Logger) *MetadataQueryService {
 	return &MetadataQueryService{
 		db:             db,
 		repo:           NewScanRepository(db),
 		spatialService: spatialService,
+		engineService:  engineService,
 		log:            log,
 	}
 }
@@ -58,6 +62,30 @@ func (s *MetadataQueryService) GetTablesByResource(engineID, tenantID uint) ([]m
 	// 使用 Select 明确选择字段，确保 FullName 被加载
 	err = s.db.Select("*").
 		Where("tenant_id = ? AND node_id IN (?) AND deleted_at IS NULL", tenantID, nodeIDs).
+		Order("name").
+		Find(&items).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+// GetTablesBySchema 获取指定 schema 下的表列表
+func (s *MetadataQueryService) GetTablesBySchema(engineID, tenantID uint, schemaName string) ([]models.MetaItem, error) {
+	// 先查询对应的 schema 节点
+	var node models.MetaNode
+	err := s.db.Where("tenant_id = ? AND engine_id = ? AND name = ? AND parent_node_id IS NULL",
+		tenantID, engineID, schemaName).
+		First(&node).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// 查询该 schema 节点下的所有表
+	var items []models.MetaItem
+	err = s.db.Select("*").
+		Where("tenant_id = ? AND node_id = ? AND deleted_at IS NULL", tenantID, node.ID).
 		Order("name").
 		Find(&items).Error
 	if err != nil {
@@ -110,8 +138,9 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 		First(&item).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			s.log.Info("表未在元数据中找到（可能是新表）", "tableName", tableName)
-			return []TableFieldInfo{}, fmt.Errorf("table '%s' not found in metadata", tableName)
+			s.log.Info("表未在元数据中找到，尝试从数据库动态查询", "tableName", tableName)
+			// 动态从数据库查询字段信息
+			return s.queryFieldsFromDatabase(engineID, tableName, tenantID)
 		}
 		s.log.Error("查询 meta_item 失败", "error", err)
 		return nil, fmt.Errorf("查询表元数据失败: %w", err)
@@ -158,6 +187,87 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 	}
 
 	return fieldInfos, nil
+}
+
+// queryFieldsFromDatabase 从数据库动态查询表的字段信息
+func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
+	s.log.Info("开始从数据库动态查询字段", "engineID", engineID, "tableName", tableName)
+
+	// 1. 获取引擎连接信息
+	resource, err := s.engineService.GetEngine(engineID, tenantID)
+	if err != nil {
+		s.log.Error("获取引擎连接信息失败", "error", err)
+		return nil, fmt.Errorf("获取引擎连接信息失败: %w", err)
+	}
+
+	// 2. 获取插件
+	p, err := plugin.Get(resource.EngineType)
+	if err != nil {
+		s.log.Error("获取插件失败", "engineType", resource.EngineType, "error", err)
+		return nil, fmt.Errorf("获取插件失败: %w", err)
+	}
+
+	// 3. 检查是否是关系型数据库插件
+	relPlugin, ok := p.(plugin.RelationalDBPlugin)
+	if !ok {
+		return nil, fmt.Errorf("引擎 %s 不支持关系型数据库查询", resource.EngineType)
+	}
+
+	// 4. 获取数据库连接
+	db, err := plugin.GetOrCreatePoolFromFactory(&plugin.Engine{
+		ID:             resource.ID,
+		EngineType:     resource.EngineType,
+		ConnectionInfo: plugin.ConnectionInfo(resource.ConnectionInfo),
+	}, nil)
+	if err != nil {
+		s.log.Error("创建数据库连接失败", "error", err)
+		return nil, fmt.Errorf("创建数据库连接失败: %w", err)
+	}
+
+	// 5. 解析表名（支持 schema.table 格式）
+	schemaName, tablePart := parseTableName(tableName)
+	if schemaName == "" {
+		schemaName = "public" // 默认 schema
+	}
+
+	s.log.Info("解析表名", "原始表名", tableName, "schema", schemaName, "table", tablePart)
+
+	// 6. 查询字段信息
+	pluginColumns, err := relPlugin.ListColumns(context.Background(), db, schemaName, tablePart)
+	if err != nil {
+		s.log.Error("查询字段失败", "schema", schemaName, "table", tablePart, "error", err)
+		return nil, fmt.Errorf("查询表字段失败: %w", err)
+	}
+
+	s.log.Info("从数据库查询到字段", "count", len(pluginColumns))
+
+	// 7. 转换为 TableFieldInfo 格式
+	fieldInfos := make([]TableFieldInfo, 0, len(pluginColumns))
+	for i, col := range pluginColumns {
+		info := TableFieldInfo{
+			Name:            col.ColumnName,
+			DataType:        col.DataType,
+			ColumnType:      col.DataType, // 使用 DataType 作为 ColumnType
+			StandardType:    standardizeFieldType(col.DataType, col.DataType),
+			Comment:         col.Comment,
+			IsNullable:      col.IsNullable,
+			IsPrimaryKey:    col.IsPrimaryKey,
+			IsUniqueKey:     false, // 插件暂不返回 unique key 信息
+			OrdinalPosition: i + 1,
+		}
+		fieldInfos = append(fieldInfos, info)
+	}
+
+	return fieldInfos, nil
+}
+
+// parseTableName 解析表名，支持 schema.table 格式
+func parseTableName(tableName string) (schema, table string) {
+	parts := strings.SplitN(tableName, ".", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "", parts[0]
 }
 
 // ============================================================================

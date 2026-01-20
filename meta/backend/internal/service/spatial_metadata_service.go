@@ -154,15 +154,28 @@ func (s *SpatialMetadataService) calculateExtent(db *sql.DB, schema, table, geom
 		samplePercent = s.config.ExtentSamplePercent
 	}
 
+	// 3. 检查是否有空间索引
+	hasIndex, indexName, err := s.checkSpatialIndex(db, schema, table, geomColumn)
+	if err != nil {
+		s.log.Warn("Failed to check spatial index, assuming no index", "error", err)
+		hasIndex = false
+	}
+
 	var extentQuery string
 
-	// 3. 根据行数选择计算策略
+	// 4. 根据表大小选择计算策略
+	// 注意：即使有空间索引，ST_Extent() 聚合函数仍需扫描所有行
+	// 对于超大表（>100万行），无论是否有索引都应使用采样避免 OOM
 	if rowCount > int64(largeTableThreshold) {
-		// 大表：使用采样（TABLESAMPLE + LIMIT）
-		s.log.Info("Large table detected, using sampling for extent calculation",
+		// 大表：使用采样避免性能问题和内存溢出
+		logMsg := "Large table detected, using sampling for extent calculation"
+		if hasIndex {
+			logMsg = "Large table with spatial index, still using sampling to avoid OOM"
+		}
+		s.log.Info(logMsg,
 			"schema", schema, "table", table, "rows", rowCount,
+			"has_index", hasIndex, "index_name", indexName,
 			"sample_percent", samplePercent)
-
 		extentQuery = fmt.Sprintf(`
 			SELECT
 				ST_XMin(extent) as min_lng,
@@ -173,14 +186,22 @@ func (s *SpatialMetadataService) calculateExtent(db *sql.DB, schema, table, geom
 				SELECT ST_Extent(ST_Transform("%s", 4326)) as extent
 				FROM (
 					SELECT "%s" FROM "%s"."%s"
-					WHERE "%s" IS NOT NULL
 					TABLESAMPLE SYSTEM (%d)
+					WHERE "%s" IS NOT NULL
 					LIMIT 10000
 				) AS sample
 			) t
-		`, geomColumn, geomColumn, schema, table, geomColumn, samplePercent)
+		`, geomColumn, geomColumn, schema, table, samplePercent, geomColumn)
 	} else {
-		// 小表：完整计算
+		// 小表：完整计算（性能可接受）
+		logMsg := "Small table, using full extent calculation"
+		if hasIndex {
+			logMsg = "Small table with spatial index, using full extent calculation"
+		}
+		s.log.Info(logMsg,
+			"schema", schema, "table", table, "rows", rowCount,
+			"has_index", hasIndex)
+
 		extentQuery = fmt.Sprintf(`
 			SELECT
 				ST_XMin(extent) as min_lng,
@@ -196,8 +217,21 @@ func (s *SpatialMetadataService) calculateExtent(db *sql.DB, schema, table, geom
 	}
 
 	var minLng, minLat, maxLng, maxLat sql.NullFloat64
-	err = db.QueryRow(extentQuery).Scan(&minLng, &minLat, &maxLng, &maxLat)
+
+	// 设置查询超时（大表采样：30秒，小表完整计算：5分钟）
+	timeout := 5 * time.Minute
+	if rowCount > int64(largeTableThreshold) {
+		timeout = 30 * time.Second // 采样应该很快
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	err = db.QueryRowContext(ctx, extentQuery).Scan(&minLng, &minLat, &maxLng, &maxLat)
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("extent calculation timeout after %v: table too large (%d rows)", timeout, rowCount)
+		}
 		return nil, fmt.Errorf("failed to calculate extent: %w", err)
 	}
 

@@ -103,6 +103,7 @@ func main() {
 	taskRepo := repository.NewTaskRepository(db)
 	executionRepo := repository.NewExecutionRepository(db)
 	mappingRepo := repository.NewMappingRepository(db)
+	localEngineRepo := repository.NewLocalEngineRepository(db)
 
 	// 创建 SystemClient（用于执行引擎）
 	var systemClient *commonClient.SystemClient
@@ -139,6 +140,7 @@ func main() {
 		taskRepo,
 		executionRepo,
 		mappingRepo,
+		localEngineRepo,
 		systemClient,
 		metaClient,
 		cfg,

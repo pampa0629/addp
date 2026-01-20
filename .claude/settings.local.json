@@ -389,7 +389,11 @@
       "Bash(PGPASSWORD=admin_password psql:*)",
       "Bash(PGPASSWORD=$POSTGRES_PASSWORD psql:*)",
       "Bash(/tmp/trigger_and_watch.sh)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(PGPASSWORD=\"password\" psql:*)",
+      "Bash(PGPASSWORD=\"addp_dev\" psql:*)",
+      "Bash(redis-cli:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njg3OTMzNTEsImlhdCI6MTc2ODc4MjU1MX0.YLd5szymr6tSmXga76ihmaqdMJ2iNTZOnxUEtQ9bt5s\")"
     ],
     "deny": [],
     "ask": [],

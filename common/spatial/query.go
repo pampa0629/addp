@@ -60,9 +60,24 @@ func QueryTableRowCount(
 	}
 	defer sqlDB.Close()
 
-	// 4. 查询记录数（使用 COUNT(*) 精确查询）
+	// 4. 查询记录数（优先使用统计估算值，回退到 COUNT(*））
 	// 重要：使用 pq.QuoteIdentifier 保留标识符大小写
 	var count int64
+
+	// 4.1 优先使用 pg_stat_user_tables 的估算值（几乎瞬时，适用于大表）
+	estimateQuery := `
+		SELECT n_live_tup
+		FROM pg_stat_user_tables
+		WHERE schemaname = $1 AND relname = $2
+	`
+	err = db.Raw(estimateQuery, schema, table).Scan(&count).Error
+
+	// 如果统计信息可用且 > 0，直接返回
+	if err == nil && count > 0 {
+		return count, nil
+	}
+
+	// 4.2 回退：使用 COUNT(*) 精确查询（可能很慢）
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pq.QuoteIdentifier(schema), pq.QuoteIdentifier(table))
 	err = db.Raw(query).Scan(&count).Error
 	if err != nil {

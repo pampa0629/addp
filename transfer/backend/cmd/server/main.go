@@ -184,7 +184,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.Task{},
 		&models.TaskExecution{},
-		&models.DataMapping{},
+		&models.FieldMapping{},
 		&models.LocalEngine{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释
 	)

@@ -53,13 +53,12 @@ func NewTaskService(
 
 // CreateTask 创建任务
 func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequest, tenantID, userID uint) (*models.Task, error) {
-	s.logger.Info("creating task", "name", req.Name, "type", req.Type, "tenant_id", tenantID)
+	s.logger.Info("creating task", "name", req.Name, "tenant_id", tenantID)
 
 	// 构建任务对象
 	task := &models.Task{
 		Name:        req.Name,
 		Description: req.Description,
-		Type:        req.Type,
 		Config:      req.Config,
 		Schedule:    req.Schedule,
 		BatchSize:   req.BatchSize,
@@ -196,9 +195,6 @@ func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.
 	}
 
 	filters := make(map[string]interface{})
-	if req.Type != nil {
-		filters["type"] = *req.Type
-	}
 	if req.Status != nil {
 		filters["status"] = *req.Status
 	}
@@ -400,8 +396,8 @@ func (s *TaskService) GetStatistics(ctx context.Context, tenantID uint) (*models
 	return s.taskRepo.GetStatistics(tenantID)
 }
 
-// CreateMapping 创建数据映射
-func (s *TaskService) CreateMapping(ctx context.Context, taskID uint, req *models.CreateDataMappingRequest, tenantID, userID uint) (*models.DataMapping, error) {
+// CreateMapping 创建字段映射
+func (s *TaskService) CreateMapping(ctx context.Context, taskID uint, req *models.CreateFieldMappingRequest, tenantID, userID uint) (*models.FieldMapping, error) {
 	// 验证任务存在且属于该租户
 	task, err := s.taskRepo.GetByID(taskID)
 	if err != nil {
@@ -411,11 +407,10 @@ func (s *TaskService) CreateMapping(ctx context.Context, taskID uint, req *model
 		return nil, fmt.Errorf("task not found or access denied")
 	}
 
-	mapping := models.DataMapping{
+	mapping := models.FieldMapping{
 		TaskID:       taskID,
 		SourceField:  req.SourceField,
 		TargetField:  req.TargetField,
-		Transform:    req.Transform,
 		DefaultValue: req.DefaultValue,
 		FieldType:    req.FieldType,
 		Format:       req.Format,
@@ -423,15 +418,15 @@ func (s *TaskService) CreateMapping(ctx context.Context, taskID uint, req *model
 	}
 
 	// 使用 CreateBatch 创建单个映射
-	if err := s.mappingRepo.CreateBatch([]models.DataMapping{mapping}); err != nil {
+	if err := s.mappingRepo.CreateBatch([]models.FieldMapping{mapping}); err != nil {
 		return nil, fmt.Errorf("failed to create mapping: %w", err)
 	}
 
 	return &mapping, nil
 }
 
-// GetTaskMappings 获取任务的所有映射
-func (s *TaskService) GetTaskMappings(ctx context.Context, taskID, tenantID uint) ([]*models.DataMapping, error) {
+// GetTaskMappings 获取任务的所有字段映射
+func (s *TaskService) GetTaskMappings(ctx context.Context, taskID, tenantID uint) ([]*models.FieldMapping, error) {
 	// 验证任务存在且属于该租户
 	task, err := s.taskRepo.GetByID(taskID)
 	if err != nil {
@@ -447,7 +442,7 @@ func (s *TaskService) GetTaskMappings(ctx context.Context, taskID, tenantID uint
 	}
 
 	// 转换为指针数组
-	result := make([]*models.DataMapping, len(mappings))
+	result := make([]*models.FieldMapping, len(mappings))
 	for i := range mappings {
 		result[i] = &mappings[i]
 	}

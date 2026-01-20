@@ -72,9 +72,6 @@ func (r *TaskRepository) List(tenantID uint, filters map[string]interface{}, pag
 	query := r.db.Model(&models.Task{}).Where("tenant_id = ?", tenantID)
 
 	// 应用过滤条件
-	if taskType, ok := filters["type"].(models.TaskType); ok {
-		query = query.Where("type = ?", taskType)
-	}
 	if status, ok := filters["status"].(models.TaskStatus); ok {
 		query = query.Where("status = ?", status)
 	}
@@ -391,13 +388,13 @@ func NewMappingRepository(db *gorm.DB) *MappingRepository {
 }
 
 // CreateBatch 批量创建字段映射
-func (r *MappingRepository) CreateBatch(mappings []models.DataMapping) error {
+func (r *MappingRepository) CreateBatch(mappings []models.FieldMapping) error {
 	return r.db.Create(&mappings).Error
 }
 
 // GetByTaskID 根据任务 ID 获取字段映射
-func (r *MappingRepository) GetByTaskID(taskID uint) ([]models.DataMapping, error) {
-	var mappings []models.DataMapping
+func (r *MappingRepository) GetByTaskID(taskID uint) ([]models.FieldMapping, error) {
+	var mappings []models.FieldMapping
 	err := r.db.Where("task_id = ?", taskID).
 		Order("id ASC").
 		Find(&mappings).Error
@@ -407,14 +404,14 @@ func (r *MappingRepository) GetByTaskID(taskID uint) ([]models.DataMapping, erro
 // DeleteByTaskID 删除任务的所有字段映射
 func (r *MappingRepository) DeleteByTaskID(taskID uint) error {
 	return r.db.Where("task_id = ?", taskID).
-		Delete(&models.DataMapping{}).Error
+		Delete(&models.FieldMapping{}).Error
 }
 
 // UpdateBatch 更新任务的字段映射（先删除再创建）
-func (r *MappingRepository) UpdateBatch(taskID uint, mappings []models.DataMapping) error {
+func (r *MappingRepository) UpdateBatch(taskID uint, mappings []models.FieldMapping) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		// 删除旧映射
-		if err := tx.Where("task_id = ?", taskID).Delete(&models.DataMapping{}).Error; err != nil {
+		if err := tx.Where("task_id = ?", taskID).Delete(&models.FieldMapping{}).Error; err != nil {
 			return err
 		}
 

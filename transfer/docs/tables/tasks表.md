@@ -43,8 +43,7 @@
 {
   "source": {
     "scope": "system",          // "system" | "local"
-    "engine_id": 1,             // 如果 scope = "system"，系统引擎 ID
-    "local_engine_id": 3,       // 如果 scope = "local"，本地引擎 ID
+    "engine_id": 1,             // 引擎 ID（根据 scope 从不同表查询）
     "type": "table",            // 数据源类型
     "table": "public.cities",   // 表名
     "filter": "population > 1000000"
@@ -60,8 +59,8 @@
 ```
 
 **系统引擎 vs 本地引擎**：
-- **系统引擎**：引用 `system.engines` 表中的引擎（多租户共享）
-- **本地引擎**：引用 `transfer.local_engines` 表中的引擎（租户私有）
+- **系统引擎** (`scope: "system"`)：使用 `engine_id` 引用 `system.engines` 表中的引擎（多租户共享）
+- **本地引擎** (`scope: "local"`)：使用 `engine_id` 引用 `transfer.local_engines` 表中的引擎（租户私有）
 
 ---
 

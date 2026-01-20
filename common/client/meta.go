@@ -336,3 +336,112 @@ func (c *MetaClient) TriggerScanEngine(engineID uint, schemaNames []string) erro
 
 	return nil
 }
+
+// GetSchemas 获取引擎的 schema 列表
+func (c *MetaClient) GetSchemas(engineID uint) ([]models.SchemaWithStatus, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/engines/%d/schemas", c.baseURL, engineID)
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Data []models.SchemaWithStatus `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Data, nil
+}
+
+// GetTables 获取引擎的表列表（支持按 schema 过滤）
+func (c *MetaClient) GetTables(engineID uint, schema string) ([]models.TableInfo, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/metadata/tables?engine_id=%d", c.baseURL, engineID)
+	if schema != "" {
+		urlStr += "&schema=" + url.QueryEscape(schema)
+	}
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Data []models.TableInfo `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Data, nil
+}
+
+// GetTableFields 获取表的字段列表
+func (c *MetaClient) GetTableFields(engineID uint, schema, tableName string, includeDetails bool) ([]models.FieldInfo, error) {
+	urlStr := fmt.Sprintf("%s/api/meta/metadata/fields?engine_id=%d&table_name=%s",
+		c.baseURL, engineID, url.QueryEscape(tableName))
+	if schema != "" {
+		urlStr += "&schema=" + url.QueryEscape(schema)
+	}
+	if includeDetails {
+		urlStr += "&include_details=true"
+	}
+
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("meta api returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var result struct {
+		Data []models.FieldInfo `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Data, nil
+}

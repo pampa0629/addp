@@ -99,6 +99,18 @@ type Schema struct {
 
 	// Metadata schema 元数据
 	Metadata map[string]interface{}
+
+	// PrimaryKey 主键约束信息
+	PrimaryKey *PrimaryKey `json:"primary_key,omitempty"`
+}
+
+// PrimaryKey 主键约束信息
+type PrimaryKey struct {
+	// Columns 主键字段列表（支持复合主键）
+	Columns []string `json:"columns"`
+
+	// Name 约束名（可选）
+	Name string `json:"name,omitempty"`
 }
 
 // Field 字段定义
