@@ -14,6 +14,7 @@ import (
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"github.com/addp/transfer/pkg/pipeline"
+	"github.com/addp/transfer/pkg/postprocessor"
 )
 
 // ExecutionEngineService 执行引擎服务，负责任务执行的核心逻辑
@@ -179,6 +180,14 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	}
 
 	s.logger.Info("task executed successfully", "task_id", taskID, "records", metrics.RecordsWritten)
+
+	// ===== 后处理集成点 =====
+	// 在 Writer.Close() 之后，triggerMetadataScan() 之前调用
+	if err := s.executePostProcessing(ctx, task, execTask); err != nil {
+		s.logger.Warn("post-processing failed", "error", err)
+		// 后处理失败不影响任务成功
+	}
+	// ===== 后处理集成点结束 =====
 
 	// 如果任务配置了自动扫描元数据，触发 Meta 模块扫描
 	if task.AutoScanMetadata {
@@ -885,4 +894,213 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.Task) {
 			"task_id", task.ID,
 			"engine_id", engineID)
 	}
+}
+
+// executePostProcessing 执行后处理任务
+// 在数据传输完成后，根据目标引擎类型执行相应的优化任务（主键、索引、统计）
+func (s *ExecutionEngineService) executePostProcessing(
+	ctx context.Context,
+	task *models.Task,
+	execTask *pipeline.ExecutionTask,
+) error {
+	s.logger.Debug("checking if post-processing is needed", "task_id", task.ID)
+
+	// 1. 判断是否应该执行后处理（仅数据库 Writer）
+	writerType := s.inferConnectorType(execTask.TargetConfig.Config)
+	if !s.shouldRunPostProcessing(writerType) {
+		s.logger.Debug("post-processing not needed for writer type", "writer_type", writerType)
+		return nil
+	}
+
+	// 2. 获取引擎类型
+	engineType, err := s.getEngineType(task.Config)
+	if err != nil {
+		s.logger.Warn("failed to get engine type", "error", err)
+		return fmt.Errorf("failed to get engine type: %w", err)
+	}
+
+	// 3. 检查是否有对应的后处理器
+	if !postprocessor.GlobalRegistry().HasPostProcessor(engineType) {
+		s.logger.Debug("no postprocessor for engine", "engine", engineType)
+		return nil
+	}
+
+	s.logger.Info("starting post-processing", "engine_type", engineType, "task_id", task.ID)
+
+	// 4. 构建后处理器配置
+	ppConfig, err := s.buildPostProcessorConfig(task, execTask, engineType)
+	if err != nil {
+		return fmt.Errorf("failed to build postprocessor config: %w", err)
+	}
+
+	// 5. 创建后处理器
+	pp, err := postprocessor.GlobalRegistry().NewPostProcessor(ppConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create postprocessor: %w", err)
+	}
+	defer pp.Close()
+
+	// 6. 初始化后处理器
+	if err := pp.Initialize(ctx, ppConfig); err != nil {
+		return fmt.Errorf("failed to initialize postprocessor: %w", err)
+	}
+
+	// 7. 执行后处理任务
+	if err := pp.Execute(ctx); err != nil {
+		return fmt.Errorf("post-processing failed: %w", err)
+	}
+
+	s.logger.Info("post-processing completed successfully", "engine_type", engineType, "task_id", task.ID)
+	return nil
+}
+
+// getEngineType 从任务配置中获取引擎类型
+func (s *ExecutionEngineService) getEngineType(taskConfig map[string]interface{}) (string, error) {
+	targetConfig, ok := taskConfig["target"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid target config")
+	}
+
+	// 优先使用直接指定的 engine_type（如果有）
+	if engineType, ok := targetConfig["engine_type"].(string); ok && engineType != "" {
+		return engineType, nil
+	}
+
+	// 否则通过 engine_id 查询 System 模块
+	engineIDFloat, ok := targetConfig["engine_id"].(float64)
+	if !ok {
+		return "", fmt.Errorf("engine_id not found in target config")
+	}
+
+	engineInfo, err := s.systemClient.GetEngine(uint(engineIDFloat))
+	if err != nil {
+		return "", fmt.Errorf("failed to get engine info from System module: %w", err)
+	}
+
+	return engineInfo.EngineType, nil
+}
+
+// buildPostProcessorConfig 构建后处理器配置
+func (s *ExecutionEngineService) buildPostProcessorConfig(
+	task *models.Task,
+	execTask *pipeline.ExecutionTask,
+	engineType string,
+) (postprocessor.PostProcessorConfig, error) {
+	targetConfig := execTask.TargetConfig.Config
+
+	// 提取表名
+	tableName, ok := targetConfig["table"].(string)
+	if !ok {
+		return postprocessor.PostProcessorConfig{}, fmt.Errorf("table name not found in target config")
+	}
+
+	config := postprocessor.PostProcessorConfig{
+		EngineType:       engineType,
+		TableName:        tableName,
+		ConnectionConfig: targetConfig,
+
+		// 默认启用所有任务
+		CreatePrimaryKey:   true,
+		CreateSpatialIndex: true,
+		UpdateStatistics:   true,
+	}
+
+	// 从 Writer 配置提取开关
+	if val, ok := targetConfig["create_primary_key"].(bool); ok {
+		config.CreatePrimaryKey = val
+	}
+	if val, ok := targetConfig["create_spatial_index"].(bool); ok {
+		config.CreateSpatialIndex = val
+	}
+
+	// 提取主键配置
+	if forcePK, ok := targetConfig["force_primary_key"].([]interface{}); ok {
+		config.ForcePrimaryKey = make([]string, 0, len(forcePK))
+		for _, v := range forcePK {
+			if pkCol, ok := v.(string); ok {
+				config.ForcePrimaryKey = append(config.ForcePrimaryKey, pkCol)
+			}
+		}
+	}
+	if pkName, ok := targetConfig["primary_key_name"].(string); ok {
+		config.PrimaryKeyName = pkName
+	}
+
+	// 提取索引配置
+	if indexType, ok := targetConfig["index_type"].(string); ok {
+		config.IndexType = indexType
+	}
+	if indexPrefix, ok := targetConfig["spatial_index_prefix"].(string); ok {
+		config.SpatialIndexPrefix = indexPrefix
+	}
+
+	// 提取空间列配置
+	config.GeometryColumns = s.extractGeometryColumns(targetConfig)
+
+	return config, nil
+}
+
+// shouldRunPostProcessing 判断是否应该执行后处理
+func (s *ExecutionEngineService) shouldRunPostProcessing(writerType string) bool {
+	// 数据库类型的 Writer 需要后处理
+	dbWriterTypes := []string{
+		"postgresql", "postgres", "postgres_copy",
+		"mysql", "jdbc",
+		"doris", "clickhouse",
+	}
+
+	writerTypeLower := strings.ToLower(writerType)
+	for _, t := range dbWriterTypes {
+		if writerTypeLower == t {
+			return true
+		}
+	}
+
+	return false
+}
+
+// extractGeometryColumns 从配置中提取空间列信息
+func (s *ExecutionEngineService) extractGeometryColumns(config map[string]interface{}) map[string]postprocessor.GeometryColumnMetadata {
+	result := make(map[string]postprocessor.GeometryColumnMetadata)
+
+	// 从 geometry_columns 配置提取
+	if geomCols, ok := config["geometry_columns"].([]interface{}); ok {
+		for _, col := range geomCols {
+			if colName, ok := col.(string); ok && colName != "" {
+				// 默认 SRID
+				srid := 4326
+				if configSRID, ok := config["srid"].(float64); ok {
+					srid = int(configSRID)
+				} else if configSRID, ok := config["srid"].(int); ok {
+					srid = configSRID
+				}
+
+				result[colName] = postprocessor.GeometryColumnMetadata{
+					ColumnName:  colName,
+					SRID:        srid,
+					SpatialType: "Geometry", // 默认类型
+				}
+			}
+		}
+	}
+
+	// 从 geometry_field 配置提取（单个几何字段）
+	if geomField, ok := config["geometry_field"].(string); ok && geomField != "" {
+		if _, exists := result[geomField]; !exists {
+			srid := 4326
+			if configSRID, ok := config["srid"].(float64); ok {
+				srid = int(configSRID)
+			} else if configSRID, ok := config["srid"].(int); ok {
+				srid = configSRID
+			}
+
+			result[geomField] = postprocessor.GeometryColumnMetadata{
+				ColumnName:  geomField,
+				SRID:        srid,
+				SpatialType: "Geometry",
+			}
+		}
+	}
+
+	return result
 }

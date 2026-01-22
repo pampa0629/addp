@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	commonmodels "github.com/addp/common/models"
 )
 
 // QuickView 快显模型
@@ -36,11 +38,14 @@ type QuickView struct {
 	Extent     JSONFloatArray `gorm:"type:jsonb" json:"extent"`                               // [minLng, minLat, maxLng, maxLat]
 	ExtentSRID int            `gorm:"column:extent_srid;default:4326" json:"extent_srid,omitempty"` // extent 的坐标系
 
+	// 优化配置（v2.0 新增）
+	OptimizationConfig *commonmodels.OptimizationConfig `gorm:"type:jsonb" json:"optimization_config,omitempty"`
+
 	// 时间戳
 	StartedAt   *time.Time `gorm:"" json:"started_at,omitempty"`
 	CompletedAt *time.Time `gorm:"" json:"completed_at,omitempty"`
-	CreatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt   time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	CreatedAt   time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt   time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // TableName 指定表名

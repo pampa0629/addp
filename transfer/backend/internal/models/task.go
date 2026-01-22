@@ -90,13 +90,13 @@ type Task struct {
 	Progress         float64    `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
 	CreatedBy        *uint      `json:"created_by,omitempty"`
 	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
-	CreatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt        time.Time  `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	CreatedAt        time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt        time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-// TableName 指定表名
+// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
 func (Task) TableName() string {
-	return "transfer.tasks"
+	return "tasks"
 }
 
 // ExecutionStatus 执行状态
@@ -128,9 +128,9 @@ type TaskExecution struct {
 	TriggerBy        *uint           `json:"trigger_by,omitempty"`
 }
 
-// TableName 指定表名
+// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
 func (TaskExecution) TableName() string {
-	return "transfer.task_executions"
+	return "task_executions"
 }
 
 // Duration 返回执行时长
@@ -151,12 +151,12 @@ type FieldMapping struct {
 	FieldType    string    `gorm:"type:varchar(50)" json:"field_type,omitempty"` // 字段类型
 	Format       string    `gorm:"type:varchar(100)" json:"format,omitempty"`    // 格式（日期等）
 	Nullable     bool      `gorm:"default:true" json:"nullable"`                 // 是否可为空
-	CreatedAt    time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
-// TableName 指定表名
+// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
 func (FieldMapping) TableName() string {
-	return "transfer.field_mappings"
+	return "field_mappings"
 }
 
 // CreateTaskRequest 创建任务请求

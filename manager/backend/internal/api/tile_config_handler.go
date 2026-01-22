@@ -172,20 +172,28 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 			"table", table)
 	} else if len(extent) == 4 {
 		// 动态计算 maxZoom（基于记录数和数据范围）
-		var err error
-		recordCount, err = spatial.QueryTableRowCount(
+		// 从 Meta API 获取表记录数（而不是直接查询 PostgreSQL）
+		// 尝试从 Meta API 获取空间元数据（包含 row_count）
+		spatialMeta, err := h.quickViewService.GetSpatialMetadataFromMeta(
 			c.Request.Context(),
-			h.systemClient,
+			tenantID,
 			uint(engineID),
 			schema,
 			table,
 		)
 		if err != nil {
-			logger.L().Warn("Failed to get record count, using default maxZoom",
+			logger.L().Warn("Failed to get spatial metadata from Meta, using default maxZoom",
 				"error", err,
 				"table", table,
 				"default_max_zoom", maxZoom)
-		} else if recordCount > 0 {
+		} else {
+			recordCount = spatialMeta.RecordCount
+			logger.L().Info("Got record count from Meta API",
+				"record_count", recordCount,
+				"table", table)
+		}
+
+		if recordCount > 0 {
 			// 使用智能计算函数
 			calculatedMaxZoom := spatial.CalculateMaxZoomByRecordCount(
 				recordCount,
@@ -201,7 +209,7 @@ func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 
 			maxZoom = calculatedMaxZoom
 
-			logger.L().Info("Calculated MaxZoom based on record count",
+			logger.L().Info("Calculated MaxZoom based on record count from Meta",
 				"record_count", recordCount,
 				"target_records_per_tile", h.cfg.PreCache.TargetRecordsPerTile,
 				"calculated_max_zoom", maxZoom,

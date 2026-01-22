@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	commonAPI "github.com/addp/common/api"
+	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
@@ -296,11 +297,17 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
+	// 添加调试日志
+	logger.L().Info("getting task statistics", "tenant_id", tenantID)
+
 	stats, err := h.taskService.GetStatistics(c.Request.Context(), tenantID)
 	if err != nil {
 		commonAPI.InternalServerError(c, err.Error())
 		return
 	}
+
+	// 记录统计结果
+	logger.L().Info("task statistics retrieved", "tenant_id", tenantID, "total_tasks", stats.TotalTasks)
 
 	c.JSON(http.StatusOK, stats)
 }

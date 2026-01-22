@@ -187,12 +187,220 @@
       />
       <div class="tip">最多展示前 50 行数据</div>
     </div>
+
+    <!-- 优化配置对话框 -->
+    <el-dialog
+      v-model="showOptimizationDialog"
+      title="预缓存配置"
+      width="650px"
+      :close-on-click-modal="false"
+    >
+      <el-form v-if="tileConfigData" label-width="180px">
+        <!-- 数据信息 -->
+        <el-divider>数据信息</el-divider>
+        <el-form-item label="记录数">
+          <span>{{ tileConfigData.record_count?.toLocaleString() || '未知' }} 条</span>
+        </el-form-item>
+        <el-form-item label="空间范围">
+          <span>{{ formatExtentValue(tileConfigData.extent) }}</span>
+        </el-form-item>
+        <el-form-item label="坐标系">
+          <span>SRID {{ tileConfigData.srid || 4326 }}</span>
+        </el-form-item>
+        <el-form-item label="预估瓦片数">
+          <span>{{ tileConfigData.estimated_tiles?.toLocaleString() || '未知' }} 个</span>
+        </el-form-item>
+
+        <!-- 缩放层级配置 -->
+        <el-divider>缩放层级配置</el-divider>
+        <el-form-item label="最小层级 (MinZoom)">
+          <input
+            id="config-min-zoom-input"
+            type="number"
+            :value="tileConfigData.min_zoom"
+            min="0"
+            max="22"
+            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+          />
+        </el-form-item>
+        <el-form-item label="最大层级 (MaxZoom)">
+          <input
+            id="config-max-zoom-input"
+            type="number"
+            :value="tileConfigData.max_zoom"
+            min="0"
+            max="22"
+            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+          />
+        </el-form-item>
+
+        <!-- 优化选项（可折叠） -->
+        <el-divider content-position="left">
+          <span style="cursor: pointer; user-select: none;" @click="optimizationExpanded = !optimizationExpanded">
+            优化选项
+            <el-icon style="margin-left: 4px;">
+              <component :is="optimizationExpanded ? 'ArrowDown' : 'ArrowRight'" />
+            </el-icon>
+          </span>
+        </el-divider>
+
+        <!-- 优化选项内容（可折叠） -->
+        <template v-if="optimizationExpanded">
+          <!-- 属性优化 -->
+          <el-form-item label="属性优化">
+            <el-switch v-model="optimizationConfig.attribute_pruning.enabled" />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              低层级仅返回主键，减少数据量
+            </span>
+          </el-form-item>
+          <el-form-item
+            v-if="optimizationConfig.attribute_pruning.enabled"
+            label="属性分界层级"
+          >
+            <el-input-number
+              v-model="optimizationConfig.attribute_pruning.zoom_threshold"
+              :min="0"
+              :max="18"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              z0-z{{ optimizationConfig.attribute_pruning.zoom_threshold }}: 仅主键 |
+              z{{ optimizationConfig.attribute_pruning.zoom_threshold + 1 }}+: 全部属性
+            </span>
+          </el-form-item>
+
+          <!-- 瓦片大小阈值 -->
+          <el-divider>瓦片大小阈值</el-divider>
+          <el-form-item label="不优化阈值 (MB)">
+            <el-input-number
+              v-model="optimizationConfig.tile_size_thresholds.no_optimization_mb"
+              :min="0.5"
+              :max="10"
+              :step="0.5"
+              :precision="1"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              小于此值不进行任何优化（默认 2MB）
+            </span>
+          </el-form-item>
+          <el-form-item label="停止优化阈值 (MB)">
+            <el-input-number
+              v-model="optimizationConfig.tile_size_thresholds.stop_optimization_mb"
+              :min="1"
+              :max="20"
+              :step="0.5"
+              :precision="1"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              达到此值后跳过几何优化（默认 5MB）
+            </span>
+          </el-form-item>
+
+          <!-- 优化参数（高级） -->
+          <el-divider>优化参数（高级）</el-divider>
+          <el-collapse>
+          <!-- Extent 优化 -->
+          <el-collapse-item title="1. 瓦片分辨率优化" name="extent">
+            <el-form-item label="模糊度">
+              <el-radio-group v-model="optimizationConfig.extent_optimization.blur_level">
+                <el-radio :label="1">清晰（Extent: 4096）</el-radio>
+                <el-radio :label="2">适中（Extent: 2048，推荐）</el-radio>
+                <el-radio :label="4">模糊（Extent: 1024）</el-radio>
+              </el-radio-group>
+              <div style="color: #909399; font-size: 12px; margin-top: 8px;">
+                模糊度越高，瓦片越小，但边界越不精细
+              </div>
+            </el-form-item>
+          </el-collapse-item>
+
+          <!-- 对象采样 -->
+          <el-collapse-item title="2. 对象采样优化" name="sampling">
+            <el-form-item label="面/线保留策略">
+              <div style="margin-bottom: 16px;">
+                <label style="font-size: 13px;">面积/长度占比：</label>
+                <el-slider
+                  v-model="optimizationConfig.sampling.polygon_line.cumulative_size_ratio"
+                  :min="0.5"
+                  :max="1.0"
+                  :step="0.05"
+                  :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
+                />
+                <span style="color: #909399; font-size: 12px;">
+                  保留累计占总面积/长度 {{ (optimizationConfig.sampling.polygon_line.cumulative_size_ratio * 100).toFixed(0) }}% 的对象（默认 80%）
+                </span>
+              </div>
+
+              <div>
+                <label style="font-size: 13px;">对象数量占比：</label>
+                <el-slider
+                  v-model="optimizationConfig.sampling.polygon_line.max_feature_count_ratio"
+                  :min="0.3"
+                  :max="1.0"
+                  :step="0.05"
+                  :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
+                />
+                <span style="color: #909399; font-size: 12px;">
+                  最多保留 {{ (optimizationConfig.sampling.polygon_line.max_feature_count_ratio * 100).toFixed(0) }}% 的对象数量（默认 60%）
+                </span>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="点保留比例">
+              <el-slider
+                v-model="optimizationConfig.sampling.point.sample_ratio"
+                :min="0.3"
+                :max="1.0"
+                :step="0.05"
+                :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
+              />
+              <span style="color: #909399; font-size: 12px;">
+                随机保留 {{ (optimizationConfig.sampling.point.sample_ratio * 100).toFixed(0) }}% 的点对象（默认 60%）
+              </span>
+            </el-form-item>
+          </el-collapse-item>
+
+          <!-- 几何优化 -->
+          <el-collapse-item title="3. 几何简化优化" name="simplification">
+            <el-form-item label="简化倍数">
+              <el-radio-group v-model="optimizationConfig.simplification.tolerance_multiplier">
+                <el-radio :label="2">2倍简化</el-radio>
+                <el-radio :label="4">4倍简化（推荐）</el-radio>
+                <el-radio :label="8">8倍简化</el-radio>
+              </el-radio-group>
+              <div style="color: #909399; font-size: 12px; margin-top: 8px;">
+                简化倍数越高，边界越平滑，瓦片越小，但细节越少
+              </div>
+            </el-form-item>
+
+            <el-form-item label="简化算法">
+              <el-radio-group v-model="optimizationConfig.simplification.algorithm">
+                <el-radio label="visvalingam">Visvalingam（保留重要拐点，推荐）</el-radio>
+                <el-radio label="douglas_peucker">Douglas-Peucker（保守，保证拓扑）</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </el-collapse-item>
+          </el-collapse>
+
+          <!-- 预估信息 -->
+          <el-alert type="info" style="margin-top: 20px;" :closable="false">
+            <strong>优化流程</strong>（自动执行，按顺序）<br/>
+            瓦片分辨率优化 → 对象采样 → 几何简化<br/>
+            每步检查大小，满足条件则停止
+          </el-alert>
+        </template>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="resetOptimizationConfig">恢复默认</el-button>
+        <el-button @click="handleOptimizationConfigCancel">取消</el-button>
+        <el-button type="primary" @click="handleOptimizationConfigConfirm">开始生成</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, ArrowDown, ArrowRight } from '@element-plus/icons-vue'
 import { useResizable } from '@/composables/useResizable'
 import VectorTilePreview from '@/components/map/VectorTilePreview.vue'
 import GeoJSONPreview from '@/components/map/GeoJSONPreview.vue'
@@ -233,6 +441,40 @@ const preferredMode = ref('mvt')
 
 // 用户当前选择的显示模式（用于 Toggle 开关双向绑定）
 const userSelectedMode = ref('mvt')
+
+// 优化配置对话框状态
+const showOptimizationDialog = ref(false)
+const tileConfigData = ref(null) // 存储 getTileConfig 的结果
+const optimizationExpanded = ref(false) // 优化选项折叠状态（默认收起）
+
+// 优化配置（默认值）
+const optimizationConfig = ref({
+  version: '2.0',
+  attribute_pruning: {
+    enabled: true,
+    zoom_threshold: 8
+  },
+  tile_size_thresholds: {
+    no_optimization_mb: 2.0,
+    stop_optimization_mb: 5.0
+  },
+  extent_optimization: {
+    blur_level: 2 // 1: 清晰(4096), 2: 适中(2048), 4: 模糊(1024)
+  },
+  sampling: {
+    polygon_line: {
+      cumulative_size_ratio: 0.8,
+      max_feature_count_ratio: 0.6
+    },
+    point: {
+      sample_ratio: 0.6
+    }
+  },
+  simplification: {
+    tolerance_multiplier: 4.0, // 2: 保守, 4: 平衡, 8: 激进
+    algorithm: 'visvalingam' // visvalingam | douglas_peucker
+  }
+})
 
 const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
@@ -528,7 +770,7 @@ const handlePageChange = (page) => {
   emit('page-change', page)
 }
 
-// Pre-Cache 处理函数 (两步式：先预览配置，再确认生成)
+// Pre-Cache 处理函数 (获取配置并显示对话框)
 const handleQuickView = async () => {
   if (!engineId.value || !schema.value || !table.value) {
     ElMessage.warning('缺少必要参数，无法启用预缓存')
@@ -547,143 +789,114 @@ const handleQuickView = async () => {
     // 注意: createAPIClient 默认 extractData=true，已自动提取 response.data
     const tileConfig = await quickViewAPI.getTileConfig(engineId.value, schema.value, table.value)
 
-    // 步骤2: 使用 MessageBox 让用户确认或修改配置
-    const {
-      min_zoom: calculatedMin,
-      max_zoom: calculatedMax,
-      extent,
-      srid,
-      record_count: recordCount,
-      estimated_tiles: estimatedTiles,
-      avg_records_per_tile: avgRecordsPerTile
-    } = tileConfig
+    // 保存配置数据
+    tileConfigData.value = tileConfig
 
-    // 格式化空间范围
-    const formatExtent = (ext) => {
-      if (!ext || ext.length !== 4) return '未知'
-      return `[${ext[0].toFixed(2)}, ${ext[1].toFixed(2)}, ${ext[2].toFixed(2)}, ${ext[3].toFixed(2)}]`
+    // 步骤2: 显示优化配置对话框
+    showOptimizationDialog.value = true
+  } catch (error) {
+    console.error('获取瓦片配置失败:', error)
+    ElMessage.error(error.response?.data?.error || '获取瓦片配置失败')
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 处理优化配置对话框的确认
+const handleOptimizationConfigConfirm = async () => {
+  try {
+    // 获取用户输入的缩放层级
+    const minZoomInput = document.getElementById('config-min-zoom-input')
+    const maxZoomInput = document.getElementById('config-max-zoom-input')
+
+    if (!minZoomInput || !maxZoomInput) {
+      ElMessage.error('配置项加载失败')
+      return
     }
 
-    // 格式化数字
-    const formatNumber = (num) => {
-      if (!num) return '未知'
-      return num.toLocaleString()
+    const minZoom = parseInt(minZoomInput.value, 10)
+    const maxZoom = parseInt(maxZoomInput.value, 10)
+
+    // 验证缩放层级
+    if (isNaN(minZoom) || isNaN(maxZoom)) {
+      ElMessage.error('请输入有效的缩放层级')
+      return
     }
 
-    // 创建自定义输入对话框
-    const result = await new Promise((resolve, reject) => {
-      const messageBox = ElMessageBox({
-        title: '确认预缓存配置',
-        message: `
-          <div style="text-align: left; line-height: 1.8;">
-            <div style="margin-bottom: 16px;">
-              <strong style="font-size: 14px;">数据信息：</strong><br>
-              <span style="margin-left: 16px;">• 记录数: ${formatNumber(recordCount)} 条</span><br>
-              <span style="margin-left: 16px;">• 空间范围: ${formatExtent(extent)}</span><br>
-              <span style="margin-left: 16px;">• 坐标系: SRID ${srid || 4326}</span>
-            </div>
-            <div style="margin-bottom: 16px;">
-              <strong style="font-size: 14px;">建议配置：</strong><br>
-              <span style="margin-left: 16px;">• 预估瓦片数: ${formatNumber(estimatedTiles)} 个</span><br>
-              ${avgRecordsPerTile ? `<span style="margin-left: 16px;">• MaxZoom 层级平均: ${avgRecordsPerTile.toFixed(0)} 条/瓦片</span><br>` : ''}
-            </div>
-            <div style="margin-bottom: 16px;">
-              <strong style="font-size: 14px;">缩放层级配置：</strong>
-            </div>
-            <div style="margin-bottom: 12px;">
-              <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                <label style="color: #606266; font-size: 13px; white-space: nowrap; min-width: 150px;">
-                  最小层级 (MinZoom)
-                </label>
-                <input
-                  id="min-zoom-input"
-                  type="number"
-                  value="${calculatedMin}"
-                  min="0"
-                  max="22"
-                  style="flex: 1; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
-                />
-              </div>
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <label style="color: #606266; font-size: 13px; white-space: nowrap; min-width: 150px;">
-                  最大层级 (MaxZoom)
-                </label>
-                <input
-                  id="max-zoom-input"
-                  type="number"
-                  value="${calculatedMax}"
-                  min="0"
-                  max="22"
-                  style="flex: 1; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
-                />
-              </div>
-            </div>
-            <div style="color: #909399; font-size: 12px; margin-top: 8px;">
-              提示：层级范围 0-22，可设置相同值以生成单一层级瓦片
-            </div>
-          </div>
-        `,
-        confirmButtonText: '开始生成',
-        cancelButtonText: '取消',
-        dangerouslyUseHTMLString: true,
-        beforeClose: (action, instance, done) => {
-          if (action === 'confirm') {
-            const minInput = document.getElementById('min-zoom-input')
-            const maxInput = document.getElementById('max-zoom-input')
-            const minValue = parseInt(minInput.value, 10)
-            const maxValue = parseInt(maxInput.value, 10)
+    if (minZoom < 0 || maxZoom < 0 || minZoom > 22 || maxZoom > 22) {
+      ElMessage.error('缩放层级必须在 0-22 之间')
+      return
+    }
 
-            if (isNaN(minValue) || isNaN(maxValue)) {
-              ElMessage.error('请输入有效的数字')
-              return
-            }
+    if (minZoom > maxZoom) {
+      ElMessage.error('最小层级不能大于最大层级')
+      return
+    }
 
-            if (minValue < 0 || maxValue < 0 || minValue > 22 || maxValue > 22) {
-              ElMessage.error('层级范围必须在 0-22 之间')
-              return
-            }
-
-            if (minValue > maxValue) {
-              ElMessage.error('MinZoom 不能大于 MaxZoom')
-              return
-            }
-
-            resolve({ minZoom: minValue, maxZoom: maxValue })
-            done()
-          } else {
-            reject('cancel')
-            done()
-          }
-        }
-      })
-    })
-
-    const { minZoom, maxZoom } = result
-
-    // 步骤3: 提交任务到后端
+    // 提交任务
     await quickViewAPI.triggerQuickView(engineId.value, schema.value, table.value, {
       min_zoom: minZoom,
       max_zoom: maxZoom,
       concurrency: 10,
-      priority: 'default'
+      priority: 'default',
+      optimization_config: optimizationConfig.value
     })
 
     quickViewStatus.value = 'generating'
     ElMessage.success(`预缓存任务已启动 (z${minZoom}-z${maxZoom})，正在后台生成`)
 
+    // 关闭对话框
+    showOptimizationDialog.value = false
+
     // 开始轮询状态
     startQuickViewPolling()
   } catch (error) {
-    // 用户取消操作
-    if (error === 'cancel') {
-      ElMessage.info('已取消预缓存')
-      return
-    }
     console.error('启用预缓存失败:', error)
     ElMessage.error(error.response?.data?.error || '启用预缓存失败')
-  } finally {
-    quickViewLoading.value = false
   }
+}
+
+// 处理优化配置对话框的取消
+const handleOptimizationConfigCancel = () => {
+  showOptimizationDialog.value = false
+}
+
+// 重置优化配置到默认值
+const resetOptimizationConfig = () => {
+  optimizationConfig.value = {
+    version: '2.0',
+    attribute_pruning: {
+      enabled: true,
+      zoom_threshold: 8
+    },
+    tile_size_thresholds: {
+      no_optimization_mb: 2.0,
+      stop_optimization_mb: 5.0
+    },
+    extent_optimization: {
+      blur_level: 2
+    },
+    sampling: {
+      polygon_line: {
+        cumulative_size_ratio: 0.8,
+        max_feature_count_ratio: 0.6
+      },
+      point: {
+        sample_ratio: 0.6
+      }
+    },
+    simplification: {
+      tolerance_multiplier: 4.0,
+      algorithm: 'visvalingam'
+    }
+  }
+  ElMessage.success('已恢复默认配置')
+}
+
+// 格式化空间范围
+const formatExtentValue = (extent) => {
+  if (!extent || extent.length !== 4) return '未知'
+  return `[${extent[0].toFixed(2)}, ${extent[1].toFixed(2)}, ${extent[2].toFixed(2)}, ${extent[3].toFixed(2)}]`
 }
 
 // 获取预缓存状态
@@ -809,10 +1022,15 @@ watch(
   { immediate: true }
 )
 
-onMounted(() => {
+onMounted(async () => {
   // 初始化时获取预缓存状态
   if (hasGeometry.value && engineId.value && schema.value && table.value) {
-    fetchQuickViewStatus()
+    await fetchQuickViewStatus()
+
+    // 如果状态是 generating，自动启动轮询
+    if (quickViewStatus.value === 'generating') {
+      startQuickViewPolling()
+    }
   }
 })
 

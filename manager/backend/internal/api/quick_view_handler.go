@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
+	commonmodels "github.com/addp/common/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -29,10 +30,11 @@ func NewQuickViewHandler(service *service.QuickViewService, redisClient *redis.C
 
 // TriggerQuickViewRequest 触发快显请求
 type TriggerQuickViewRequest struct {
-	MinZoom     *int   `json:"min_zoom"`      // 可选
-	MaxZoom     int    `json:"max_zoom"`      // 默认18
-	Concurrency int    `json:"concurrency"`   // 默认10
-	Priority    string `json:"priority"`      // "critical", "default", "low"
+	MinZoom            *int                                `json:"min_zoom"`              // 可选
+	MaxZoom            int                                 `json:"max_zoom"`              // 默认18
+	Concurrency        int                                 `json:"concurrency"`           // 默认10
+	Priority           string                              `json:"priority"`              // "critical", "default", "low"
+	OptimizationConfig *commonmodels.OptimizationConfig    `json:"optimization_config,omitempty"` // v2.0 优化配置
 }
 
 // UpdatePreferredModeRequest 更新显示模式偏好请求
@@ -75,14 +77,15 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 
 	// 4. 调用服务层
 	params := service.TriggerQuickViewParams{
-		TenantID:    tenantID,
-		EngineID:  uint(engineID),
-		SchemaName:  schema,
-		TableName:   table,
-		MinZoom:     req.MinZoom,
-		MaxZoom:     req.MaxZoom,
-		Concurrency: req.Concurrency,
-		Priority:    req.Priority,
+		TenantID:           tenantID,
+		EngineID:           uint(engineID),
+		SchemaName:         schema,
+		TableName:          table,
+		MinZoom:            req.MinZoom,
+		MaxZoom:            req.MaxZoom,
+		Concurrency:        req.Concurrency,
+		Priority:           req.Priority,
+		OptimizationConfig: req.OptimizationConfig, // v2.0 传递优化配置
 	}
 
 	if err := h.service.TriggerQuickView(c.Request.Context(), params); err != nil {

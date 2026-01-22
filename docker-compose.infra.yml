@@ -17,11 +17,25 @@ services:
     # 如需使用本地镜像，设置环境变量: POSTGRES_IMAGE=addp-postgres-pgvector:latest
     image: ${POSTGRES_IMAGE:-pampa0629/addp-postgres:15-arm64}
     container_name: addp-postgres
+    # 优化 PostgreSQL 内存配置，支持 MVT 瓦片生成
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=128MB
+      - -c
+      - max_connections=100
+      - -c
+      - timezone=Asia/Shanghai
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

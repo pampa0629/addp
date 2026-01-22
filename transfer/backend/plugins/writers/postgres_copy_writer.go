@@ -28,10 +28,6 @@ type PostgresCOPYWriter struct {
 	txn             *sql.Tx
 	mu              sync.Mutex
 	totalWritten    int64
-
-	// 主键和索引管理（导入后添加）
-	pendingPrimaryKey       *primaryKeyInfo
-	postImportTasksExecuted bool
 }
 
 // PostgresCOPYConfig COPY Writer 配置
@@ -270,17 +266,6 @@ func (w *PostgresCOPYWriter) Flush(ctx context.Context) error {
 
 // Close 关闭连接
 func (w *PostgresCOPYWriter) Close() error {
-	fmt.Printf("🔒 PostgresCOPYWriter Close() called, postImportTasksExecuted=%v\n", w.postImportTasksExecuted)
-
-	// 执行导入后任务（主键、索引等）
-	if !w.postImportTasksExecuted && w.db != nil {
-		ctx := context.Background()
-		if err := w.executePostImportTasks(ctx); err != nil {
-			// 导入后任务失败，记录错误但不阻断关闭流程
-			fmt.Printf("❌ PostgresCOPYWriter: 导入后任务执行失败: %v\n", err)
-		}
-	}
-
 	if w.stmt != nil {
 		w.stmt.Close()
 	}
@@ -448,29 +433,6 @@ func (w *PostgresCOPYWriter) ensureTable(ctx context.Context, batch *pipeline.Da
 		}
 	}
 
-	// 提取主键信息（用于导入后创建约束）
-	var primaryKey *primaryKeyInfo
-	fmt.Printf("🔍 PostgresCOPYWriter ensureTable: CreatePrimaryKey=%v\n", w.config.CreatePrimaryKey)
-	if w.config.CreatePrimaryKey {
-		if len(w.config.ForcePrimaryKey) > 0 {
-			primaryKey = &primaryKeyInfo{
-				Columns: w.config.ForcePrimaryKey,
-				Name:    w.config.PrimaryKeyName,
-			}
-			fmt.Printf("📋 使用配置中的强制主键: %v (将在导入后创建)\n", primaryKey.Columns)
-		} else {
-			fmt.Printf("🔎 调用 extractPrimaryKeyFromMetadata...\n")
-			primaryKey = w.extractPrimaryKeyFromMetadata(batch)
-			if primaryKey != nil {
-				fmt.Printf("✅ 检测到主键: %v\n", primaryKey.Columns)
-			} else {
-				fmt.Printf("⚠️ 未检测到主键\n")
-			}
-		}
-		w.pendingPrimaryKey = primaryKey
-		fmt.Printf("💾 设置 pendingPrimaryKey: %+v\n", primaryKey)
-	}
-
 	columnDefs := make([]string, 0, len(w.columns))
 	for _, col := range w.columns {
 		field := fieldMap[col]
@@ -585,193 +547,5 @@ func (w *PostgresCOPYWriter) buildConnectionString(config PostgresCOPYConfig) (s
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		config.Host, config.Port, config.Username, config.Password, config.Database, sslMode), nil
-}
-
-// extractPrimaryKeyFromMetadata 从元数据中提取主键信息（支持四级降级）
-func (w *PostgresCOPYWriter) extractPrimaryKeyFromMetadata(batch *pipeline.DataBatch) *primaryKeyInfo {
-	if batch.Schema == nil {
-		return nil
-	}
-
-	// Level 0: 从 Schema.PrimaryKey 提取（新格式，最高优先级）
-	if batch.Schema.PrimaryKey != nil && len(batch.Schema.PrimaryKey.Columns) > 0 {
-		fmt.Printf("📋 PostgresCOPYWriter: 从 Schema.PrimaryKey 提取主键: %v (约束名: %s)\n",
-			batch.Schema.PrimaryKey.Columns, batch.Schema.PrimaryKey.Name)
-		return &primaryKeyInfo{
-			Columns: batch.Schema.PrimaryKey.Columns,
-			Name:    batch.Schema.PrimaryKey.Name,
-		}
-	}
-
-	// 以下是向后兼容逻辑
-	if batch.Schema.Metadata == nil {
-		return nil
-	}
-
-	metadata := batch.Schema.Metadata
-
-	// Level 1: 从 table_metadata 提取（旧格式，向后兼容）
-	if tableMeta, ok := metadata["table_metadata"].(map[string]interface{}); ok {
-		if hasPK, _ := tableMeta["has_primary_key"].(bool); hasPK {
-			columns := []string{}
-
-			// 提取主键列
-			if pkCols, ok := tableMeta["primary_key"].([]interface{}); ok {
-				for _, col := range pkCols {
-					if colName, ok := col.(string); ok {
-						columns = append(columns, colName)
-					}
-				}
-			}
-
-			if len(columns) > 0 {
-				pkName, _ := tableMeta["primary_key_name"].(string)
-				fmt.Printf("📋 PostgresCOPYWriter: 从 table_metadata 提取主键: %v (约束名: %s)\n", columns, pkName)
-				return &primaryKeyInfo{
-					Columns: columns,
-					Name:    pkName,
-				}
-			}
-		}
-	}
-
-	// Level 2: 从 fields 推断（降级方案）
-	columns := []string{}
-	if fields, ok := metadata["fields"].([]interface{}); ok {
-		for _, f := range fields {
-			if field, ok := f.(map[string]interface{}); ok {
-				if isPK, _ := field["is_primary_key"].(bool); isPK {
-					if name, ok := field["name"].(string); ok {
-						columns = append(columns, name)
-					}
-				}
-			}
-		}
-	}
-
-	if len(columns) > 0 {
-		fmt.Printf("📋 PostgresCOPYWriter: 从 fields 推断主键: %v\n", columns)
-		return &primaryKeyInfo{
-			Columns: columns,
-			Name:    "", // 未记录约束名
-		}
-	}
-
-	fmt.Printf("⚠️  PostgresCOPYWriter: 未找到主键信息\n")
-	return nil
-}
-
-// executePostImportTasks 执行导入后的任务（主键、索引等）
-func (w *PostgresCOPYWriter) executePostImportTasks(ctx context.Context) error {
-	fmt.Printf("🔧 PostgresCOPYWriter: 执行导入后任务...\n")
-
-	// 创建主键约束
-	if w.pendingPrimaryKey != nil && len(w.pendingPrimaryKey.Columns) > 0 {
-		if err := w.addPrimaryKeyConstraint(ctx, w.pendingPrimaryKey); err != nil {
-			fmt.Printf("❌ PostgresCOPYWriter: 主键约束创建失败: %v\n", err)
-			return err
-		}
-	} else {
-		fmt.Printf("ℹ️  PostgresCOPYWriter: 无待创建的主键\n")
-	}
-
-	// 创建空间索引
-	if w.config.CreateSpatialIndex && len(w.geometryColumns) > 0 {
-		if err := w.addSpatialIndexes(ctx); err != nil {
-			fmt.Printf("❌ PostgresCOPYWriter: 空间索引创建失败: %v\n", err)
-			// 空间索引创建失败不影响数据导入，仅记录警告
-		}
-	} else if len(w.geometryColumns) == 0 {
-		fmt.Printf("ℹ️  PostgresCOPYWriter: 无空间字段，跳过空间索引创建\n")
-	} else {
-		fmt.Printf("ℹ️  PostgresCOPYWriter: 空间索引创建已禁用\n")
-	}
-
-	w.postImportTasksExecuted = true
-	return nil
-}
-
-// addPrimaryKeyConstraint 添加主键约束（导入后）
-func (w *PostgresCOPYWriter) addPrimaryKeyConstraint(ctx context.Context, pk *primaryKeyInfo) error {
-	if pk == nil || len(pk.Columns) == 0 {
-		return nil
-	}
-
-	// 生成约束名
-	_, tableName := splitTableName(w.table)
-	constraintName := pk.Name
-	if constraintName == "" {
-		constraintName = fmt.Sprintf("%s_pkey", tableName)
-	}
-
-	// 引用列名
-	quotedColumns := w.quoteIdentifiers(pk.Columns)
-
-	// ALTER TABLE ADD PRIMARY KEY
-	alterSQL := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s PRIMARY KEY (%s)",
-		w.qualifiedTableName(),
-		w.quoteIdentifier(constraintName),
-		strings.Join(quotedColumns, ", "))
-
-	fmt.Printf("🔑 PostgresCOPYWriter: 添加主键约束: %s\n", constraintName)
-
-	if _, err := w.db.ExecContext(ctx, alterSQL); err != nil {
-		// 容错：主键已存在或数据有重复
-		if strings.Contains(err.Error(), "already exists") ||
-			strings.Contains(err.Error(), "multiple primary keys") {
-			fmt.Printf("⚠️  PostgresCOPYWriter: 主键约束已存在: %s\n", constraintName)
-			return nil
-		} else if strings.Contains(err.Error(), "duplicate") {
-			return fmt.Errorf("数据包含重复值，无法创建主键: %w", err)
-		}
-		return err
-	}
-
-	fmt.Printf("✅ PostgresCOPYWriter: 主键约束创建成功: %v\n", pk.Columns)
-	return nil
-}
-
-// addSpatialIndexes 为所有空间字段创建 GIST 索引（导入后）
-func (w *PostgresCOPYWriter) addSpatialIndexes(ctx context.Context) error {
-	if len(w.geometryColumns) == 0 {
-		return nil
-	}
-
-	_, tableName := splitTableName(w.table)
-	successCount := 0
-
-	for columnName := range w.geometryColumns {
-		// 生成索引名：{table}_{column}_idx
-		indexName := fmt.Sprintf("%s_%s_idx", tableName, columnName)
-
-		// CREATE INDEX USING GIST
-		createIndexSQL := fmt.Sprintf("CREATE INDEX %s ON %s USING GIST (%s)",
-			w.quoteIdentifier(indexName),
-			w.qualifiedTableName(),
-			w.quoteIdentifier(columnName))
-
-		fmt.Printf("🗺️  PostgresCOPYWriter: 创建空间索引: %s (列: %s)\n", indexName, columnName)
-
-		if _, err := w.db.ExecContext(ctx, createIndexSQL); err != nil {
-			// 容错：索引已存在
-			if strings.Contains(err.Error(), "already exists") {
-				fmt.Printf("⚠️  PostgresCOPYWriter: 空间索引已存在: %s\n", indexName)
-				successCount++
-				continue
-			}
-			// 其他错误记录但不中断
-			fmt.Printf("⚠️  PostgresCOPYWriter: 空间索引创建失败 (%s): %v\n", columnName, err)
-			continue
-		}
-
-		fmt.Printf("✅ PostgresCOPYWriter: 空间索引创建成功: %s\n", indexName)
-		successCount++
-	}
-
-	if successCount > 0 {
-		fmt.Printf("✅ PostgresCOPYWriter: 成功创建/检查 %d/%d 个空间索引\n", successCount, len(w.geometryColumns))
-	}
-
-	return nil
 }
 

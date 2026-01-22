@@ -21,7 +21,7 @@ type Checkpoint struct {
 	Offset      int64                  `gorm:"not null" json:"offset"`
 	PartitionID string                 `gorm:"type:varchar(255)" json:"partition_id"`
 	State       map[string]interface{} `gorm:"type:jsonb" json:"state"`
-	CreatedAt   time.Time              `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	CreatedAt   time.Time              `gorm:"autoCreateTime" json:"created_at"`
 }
 
 // TableName 指定表名

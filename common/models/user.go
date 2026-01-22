@@ -22,8 +22,8 @@ type User struct {
 	UserType     UserType  `gorm:"type:varchar(20);default:'user';not null" json:"user_type"` // 用户类型
 	TenantID     *uint     `gorm:"index" json:"tenant_id"`                                     // 租户ID (SuperAdmin没有租户)
 	IsSuperuser  bool      `gorm:"default:false" json:"is_superuser"`                          // 保留以兼容旧代码
-	CreatedAt    time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt    time.Time `gorm:"default:CURRENT_TIMESTAMP" json:"updated_at"`
+	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt    time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 // 实现 UserInterface 接口

@@ -76,7 +76,7 @@ func SetupRouter(
 	{
 		tasks.POST("", taskHandler.CreateTask)                           // 创建任务
 		tasks.GET("", taskHandler.ListTasks)                             // 获取任务列表
-		tasks.GET("/statistics", taskHandler.GetTaskStatistics)          // 获取任务统计
+		tasks.GET("/statistics", taskHandler.GetTaskStatistics)          // 获取任务统计（必须在 /:id 之前）
 		tasks.GET("/:id", taskHandler.GetTask)                           // 获取任务详情
 		tasks.PUT("/:id", taskHandler.UpdateTask)                        // 更新任务
 		tasks.DELETE("/:id", taskHandler.DeleteTask)                     // 删除任务

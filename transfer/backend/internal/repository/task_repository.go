@@ -138,57 +138,56 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 	var stats models.TaskStatistics
 
 	// 总任务数
-	r.db.Model(&models.Task{}).Where("tenant_id = ?", tenantID).Count(&stats.TotalTasks)
+	var totalTasks int64
+	if err := r.db.Raw("SELECT COUNT(*) FROM tasks WHERE tenant_id = ?", tenantID).Scan(&totalTasks).Error; err != nil {
+		return nil, err
+	}
+	stats.TotalTasks = totalTasks
 
 	// 执行中的任务数
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusRunning).
-		Count(&stats.RunningTasks)
+	var runningTasks int64
+	r.db.Raw("SELECT COUNT(*) FROM tasks WHERE tenant_id = ? AND status = ?", tenantID, models.TaskStatusRunning).Scan(&runningTasks)
+	stats.RunningTasks = runningTasks
 
 	// 空闲任务数（复用 pending_tasks 字段）
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND status = ?", tenantID, models.TaskStatusIdle).
-		Count(&stats.PendingTasks)
+	var pendingTasks int64
+	r.db.Raw("SELECT COUNT(*) FROM tasks WHERE tenant_id = ? AND status = ?", tenantID, models.TaskStatusIdle).Scan(&pendingTasks)
+	stats.PendingTasks = pendingTasks
 
 	// 定时任务：已启动数量（复用 success_tasks 字段）
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, true).
-		Count(&stats.SuccessTasks)
+	var successTasks int64
+	r.db.Raw("SELECT COUNT(*) FROM tasks WHERE tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, true).Scan(&successTasks)
+	stats.SuccessTasks = successTasks
 
 	// 定时任务：未启动数量（复用 failed_tasks 字段）
-	r.db.Model(&models.Task{}).
-		Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, false).
-		Count(&stats.FailedTasks)
+	var failedTasks int64
+	r.db.Raw("SELECT COUNT(*) FROM tasks WHERE tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND enabled = ?", tenantID, false).Scan(&failedTasks)
+	stats.FailedTasks = failedTasks
 
 	// 最后执行状态统计（从 task_executions 表获取）
 	// 未执行过的任务数
-	var executedTaskIDs []uint
-	r.db.Model(&models.TaskExecution{}).
-		Select("DISTINCT task_id").
-		Pluck("task_id", &executedTaskIDs)
-	if len(executedTaskIDs) > 0 {
-		r.db.Model(&models.Task{}).
-			Where("tenant_id = ? AND id NOT IN ?", tenantID, executedTaskIDs).
-			Count(&stats.NotExecutedTasks)
-	} else {
-		stats.NotExecutedTasks = stats.TotalTasks
-	}
+	var notExecutedTasks int64
+	r.db.Raw(`
+		SELECT COUNT(*)
+		FROM tasks
+		WHERE tenant_id = ?
+		AND id NOT IN (SELECT DISTINCT task_id FROM task_executions)
+	`, tenantID).Scan(&notExecutedTasks)
+	stats.NotExecutedTasks = notExecutedTasks
 
 	// 最后执行状态为 running 的任务数
 	var runningTaskIDs []uint
 	r.db.Raw(`
-		SELECT DISTINCT ON (task_id) task_id
-		FROM transfer.task_executions
-		WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
-		ORDER BY task_id, start_time DESC
-	`, tenantID).Pluck("task_id", &runningTaskIDs)
-
-	if len(runningTaskIDs) > 0 {
-		r.db.Model(&models.TaskExecution{}).
-			Where("task_id IN ? AND status = ?", runningTaskIDs, models.ExecutionStatusRunning).
-			Group("task_id").
-			Count(&stats.LastRunningTasks)
-	}
+		SELECT task_id
+		FROM (
+			SELECT DISTINCT ON (task_id) task_id, status
+			FROM task_executions
+			WHERE task_id IN (SELECT id FROM tasks WHERE tenant_id = ?)
+			ORDER BY task_id, start_time DESC
+		) latest_executions
+		WHERE status = ?
+	`, tenantID, models.ExecutionStatusRunning).Pluck("task_id", &runningTaskIDs)
+	stats.LastRunningTasks = int64(len(runningTaskIDs))
 
 	// 最后执行成功的任务数
 	var successTaskIDs []uint
@@ -196,8 +195,8 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 		SELECT task_id
 		FROM (
 			SELECT DISTINCT ON (task_id) task_id, status
-			FROM transfer.task_executions
-			WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
+			FROM task_executions
+			WHERE task_id IN (SELECT id FROM tasks WHERE tenant_id = ?)
 			ORDER BY task_id, start_time DESC
 		) latest_executions
 		WHERE status = ?
@@ -210,8 +209,8 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 		SELECT task_id
 		FROM (
 			SELECT DISTINCT ON (task_id) task_id, status
-			FROM transfer.task_executions
-			WHERE task_id IN (SELECT id FROM transfer.tasks WHERE tenant_id = ?)
+			FROM task_executions
+			WHERE task_id IN (SELECT id FROM tasks WHERE tenant_id = ?)
 			ORDER BY task_id, start_time DESC
 		) latest_executions
 		WHERE status = ?
@@ -219,17 +218,30 @@ func (r *TaskRepository) GetStatistics(tenantID uint) (*models.TaskStatistics, e
 	stats.LastFailedTasks = int64(len(failedTaskIDs))
 
 	// 总执行次数
-	r.db.Model(&models.TaskExecution{}).
-		Joins("JOIN transfer.tasks ON transfer.task_executions.task_id = transfer.tasks.id").
-		Where("transfer.tasks.tenant_id = ?", tenantID).
-		Count(&stats.TotalExecutions)
+	var totalExecutions int64
+	r.db.Raw(`
+		SELECT COUNT(*)
+		FROM task_executions
+		JOIN tasks ON task_executions.task_id = tasks.id
+		WHERE tasks.tenant_id = ?
+	`, tenantID).Scan(&totalExecutions)
+	stats.TotalExecutions = totalExecutions
 
 	// 总处理记录数和字节数
-	r.db.Model(&models.TaskExecution{}).
-		Select("COALESCE(SUM(records_written), 0) as total_records, COALESCE(SUM(bytes_written), 0) as total_bytes").
-		Joins("JOIN transfer.tasks ON transfer.task_executions.task_id = transfer.tasks.id").
-		Where("transfer.tasks.tenant_id = ?", tenantID).
-		Scan(&stats)
+	var result struct {
+		TotalRecords int64 `json:"total_records"`
+		TotalBytes   int64 `json:"total_bytes"`
+	}
+	r.db.Raw(`
+		SELECT
+			COALESCE(SUM(records_written), 0) as total_records,
+			COALESCE(SUM(bytes_written), 0) as total_bytes
+		FROM task_executions
+		JOIN tasks ON task_executions.task_id = tasks.id
+		WHERE tasks.tenant_id = ?
+	`, tenantID).Scan(&result)
+	stats.TotalRecords = result.TotalRecords
+	stats.TotalBytes = result.TotalBytes
 
 	return &stats, nil
 }
@@ -350,15 +362,15 @@ func (r *ExecutionRepository) ListAllExecutions(tenantID uint, filters map[strin
 	var total int64
 
 	query := r.db.Model(&models.TaskExecution{}).
-		Joins("JOIN transfer.tasks ON transfer.task_executions.task_id = transfer.tasks.id").
-		Where("transfer.tasks.tenant_id = ?", tenantID)
+		Joins("JOIN tasks ON task_executions.task_id = tasks.id").
+		Where("tasks.tenant_id = ?", tenantID)
 
 	// 应用过滤条件
 	if status, ok := filters["status"].(string); ok && status != "" {
-		query = query.Where("transfer.task_executions.status = ?", status)
+		query = query.Where("task_executions.status = ?", status)
 	}
 	if taskID, ok := filters["task_id"].(uint); ok && taskID > 0 {
-		query = query.Where("transfer.task_executions.task_id = ?", taskID)
+		query = query.Where("task_executions.task_id = ?", taskID)
 	}
 
 	// 计算总数
@@ -368,10 +380,10 @@ func (r *ExecutionRepository) ListAllExecutions(tenantID uint, filters map[strin
 
 	// 分页查询，选择 task_executions 的所有字段
 	offset := (page - 1) * pageSize
-	err := query.Select("transfer.task_executions.*").
+	err := query.Select("task_executions.*").
 		Offset(offset).
 		Limit(pageSize).
-		Order("transfer.task_executions.start_time DESC").
+		Order("task_executions.start_time DESC").
 		Find(&executions).Error
 
 	return executions, total, err

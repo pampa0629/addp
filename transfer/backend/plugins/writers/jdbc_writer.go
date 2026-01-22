@@ -8,9 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/addp/transfer/pkg/pipeline"
@@ -22,20 +20,6 @@ type geometryColumnMeta struct {
 	SRID        int
 	SpatialType string
 }
-
-// primaryKeyInfo 主键信息
-type primaryKeyInfo struct {
-	Columns []string  // 主键字段列表
-	Name    string    // 主键约束名
-}
-
-// spatialIndexInfo 空间索引信息
-type spatialIndexInfo struct {
-	ColumnName string
-	IndexName  string
-	SRID       int
-}
-
 
 // JDBCWriter JDBC 数据写入器
 type JDBCWriter struct {
@@ -49,10 +33,6 @@ type JDBCWriter struct {
 	geometryColumns map[string]geometryColumnMeta
 	schema          *pipeline.Schema
 	tableEnsured    bool
-
-	// 导入后优化任务相关
-	postImportTasksExecuted bool              // 是否已执行导入后优化任务（主键、索引、ANALYZE）
-	pendingPrimaryKey       *primaryKeyInfo   // 待添加的主键信息
 }
 
 // NewJDBCWriter 创建 JDBC Writer
@@ -193,33 +173,9 @@ func (w *JDBCWriter) Flush(ctx context.Context) error {
 	return w.flushBuffer(ctx)
 }
 
-// Close 关闭连接并执行导入后任务（主键、空间索引、ANALYZE）
+// Close 关闭连接
 func (w *JDBCWriter) Close() error {
-	if f, err := os.OpenFile("/tmp/jdbc_writer_debug.log", os.O_APPEND|os.O_WRONLY, 0644); err == nil {
-		fmt.Fprintf(f, "[%s] Close() called, table=%s, postImportTasksExecuted=%v, pendingPrimaryKey=%+v\n",
-			time.Now().Format("2006-01-02 15:04:05"), w.table, w.postImportTasksExecuted, w.pendingPrimaryKey)
-		f.Close()
-	}
-
-	fmt.Printf("🚪 JDBC Writer Close() 被调用 (table: %s, postImportTasksExecuted: %v)\n", w.table, w.postImportTasksExecuted)
-
-	// 执行导入后任务
-	if !w.postImportTasksExecuted {
-		fmt.Printf("🔄 准备执行导入后任务...\n")
-
-		if f, err := os.OpenFile("/tmp/jdbc_writer_debug.log", os.O_APPEND|os.O_WRONLY, 0644); err == nil {
-			fmt.Fprintf(f, "[%s] Executing post-import tasks\n", time.Now().Format("2006-01-02 15:04:05"))
-			f.Close()
-		}
-
-		w.executePostImportTasks(context.Background())
-	} else {
-		fmt.Printf("⏭️  导入后任务已执行，跳过\n")
-	}
-
-	// 关闭数据库连接
 	if w.db != nil {
-		fmt.Printf("🔌 关闭数据库连接\n")
 		return w.db.Close()
 	}
 	return nil
@@ -413,36 +369,6 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 	}
 	fmt.Printf("✨ Dropped table %s (覆盖模式)\n", w.table)
 
-	// 提取主键信息（用于后续创建和标记 NOT NULL）
-	var primaryKey *primaryKeyInfo
-	fmt.Printf("🔍 ensureTable: CreatePrimaryKey=%v\n", w.config.CreatePrimaryKey)
-	if w.config.CreatePrimaryKey {
-		if len(w.config.ForcePrimaryKey) > 0 {
-			primaryKey = &primaryKeyInfo{
-				Columns: w.config.ForcePrimaryKey,
-				Name:    w.config.PrimaryKeyName,
-			}
-			fmt.Printf("📋 使用配置中的强制主键: %v (将在导入后创建)\n", primaryKey.Columns)
-		} else {
-			fmt.Printf("🔎 调用 extractPrimaryKeyFromMetadata...\n")
-			primaryKey = w.extractPrimaryKeyFromMetadata(batch)
-			if primaryKey != nil && w.config.PrimaryKeyName != "" {
-				primaryKey.Name = w.config.PrimaryKeyName
-			}
-			if primaryKey != nil {
-				fmt.Printf("📋 从元数据提取主键: %v (将在导入后创建)\n", primaryKey.Columns)
-			} else {
-				fmt.Printf("⚠️  extractPrimaryKeyFromMetadata 返回 nil\n")
-			}
-		}
-
-		// 保存主键信息供 Close() 使用
-		w.pendingPrimaryKey = primaryKey
-		fmt.Printf("💾 设置 pendingPrimaryKey: %+v\n", primaryKey)
-	} else {
-		fmt.Printf("⏭️  CreatePrimaryKey=false, 跳过主键提取\n")
-	}
-
 	// 构建字段映射
 	fieldMap := make(map[string]pipeline.Field)
 	if batch.Schema != nil {
@@ -451,7 +377,7 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 		}
 	}
 
-	// 构建列定义（不含主键约束）
+	// 构建列定义
 	columnDefs := make([]string, 0, len(w.columns))
 	for _, col := range w.columns {
 		field := fieldMap[col]
@@ -461,23 +387,10 @@ func (w *JDBCWriter) ensureTable(ctx context.Context, batch *pipeline.DataBatch)
 			sqlType = "TEXT"
 		}
 
-		// 检查是否为主键字段
-		isPrimaryKeyColumn := false
-		if primaryKey != nil {
-			for _, pkCol := range primaryKey.Columns {
-				if strings.EqualFold(pkCol, col) {
-					isPrimaryKeyColumn = true
-					break
-				}
-			}
-		}
-
 		definition := fmt.Sprintf("%s %s", w.quoteIdentifier(col), sqlType)
 
-		// NOT NULL 约束（主键字段必须 NOT NULL）
+		// NOT NULL 约束
 		if field.Name != "" && !field.Nullable {
-			definition += " NOT NULL"
-		} else if isPrimaryKeyColumn {
 			definition += " NOT NULL"
 		}
 
@@ -919,242 +832,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-// executePostImportTasks 执行数据导入后的优化任务
-func (w *JDBCWriter) executePostImportTasks(ctx context.Context) {
-	if w.postImportTasksExecuted {
-		return
-	}
-	defer func() {
-		w.postImportTasksExecuted = true
-	}()
-
-	if !w.isPostgres() {
-		return
-	}
-
-	log.Printf("\n🔧 开始执行导入后优化任务...\n")
-
-	// 任务 1: 创建主键约束
-	if w.config.CreatePrimaryKey && w.pendingPrimaryKey != nil {
-		if err := w.addPrimaryKeyConstraint(ctx); err != nil {
-			log.Printf("❌ 主键约束创建失败: %v\n", err)
-		} else {
-			log.Printf("✅ 主键约束创建成功: %v\n", w.pendingPrimaryKey.Columns)
-		}
-	}
-
-	// 任务 2: 创建空间索引
-	if w.config.CreateSpatialIndex {
-		if err := w.createSpatialIndexesPostImport(ctx); err != nil {
-			log.Printf("❌ 空间索引创建失败: %v\n", err)
-		}
-	}
-
-	// 任务 3: 更新统计信息
-	analyzeSQL := fmt.Sprintf("ANALYZE %s", w.qualifiedTableName())
-	if _, err := w.db.ExecContext(ctx, analyzeSQL); err != nil {
-		log.Printf("⚠️  ANALYZE 执行失败: %v\n", err)
-	} else {
-		log.Printf("✅ 统计信息更新成功\n")
-	}
-
-	log.Printf("🎉 导入后优化任务完成\n\n")
-}
-
-// addPrimaryKeyConstraint 添加主键约束（导入后）
-func (w *JDBCWriter) addPrimaryKeyConstraint(ctx context.Context) error {
-	if w.pendingPrimaryKey == nil || len(w.pendingPrimaryKey.Columns) == 0 {
-		return nil
-	}
-
-	pk := w.pendingPrimaryKey
-
-	// 引用列名
-	quotedColumns := make([]string, len(pk.Columns))
-	for i, col := range pk.Columns {
-		quotedColumns[i] = w.quoteIdentifier(col)
-	}
-
-	// 确定约束名
-	constraintName := pk.Name
-	if constraintName == "" {
-		_, tableName := splitTableName(w.table)
-		constraintName = fmt.Sprintf("%s_pkey", tableName)
-	}
-
-	// ALTER TABLE ADD PRIMARY KEY
-	alterSQL := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s PRIMARY KEY (%s)",
-		w.qualifiedTableName(),
-		w.quoteIdentifier(constraintName),
-		strings.Join(quotedColumns, ", "))
-
-	log.Printf("🔑 添加主键约束: %s\n", constraintName)
-
-	if _, err := w.db.ExecContext(ctx, alterSQL); err != nil {
-		// 容错：主键已存在或数据有重复
-		if strings.Contains(err.Error(), "already exists") {
-			log.Printf("⚠️  主键约束已存在: %s\n", constraintName)
-			return nil
-		} else if strings.Contains(err.Error(), "duplicate") {
-			return fmt.Errorf("数据包含重复值，无法创建主键: %w", err)
-		}
-		return err
-	}
-
-	return nil
-}
-
-// createSpatialIndexesPostImport 创建空间索引（导入后）
-func (w *JDBCWriter) createSpatialIndexesPostImport(ctx context.Context) error {
-	// 提取空间索引信息
-	indexes := w.extractSpatialIndexInfoFromCache()
-	if len(indexes) == 0 {
-		log.Printf("ℹ️  未检测到空间列，跳过空间索引创建\n")
-		return nil
-	}
-
-	// 逐个创建空间索引
-	for _, idx := range indexes {
-		// 验证几何列是否存在
-		found := false
-		for _, col := range w.columns {
-			if strings.EqualFold(col, idx.ColumnName) {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			log.Printf("⚠️  几何列 %s 不存在于表中，跳过索引创建\n", idx.ColumnName)
-			continue
-		}
-
-		indexSQL := w.buildSpatialIndexSQL(idx)
-
-		log.Printf("🗺️  创建空间索引: %s (列: %s, SRID: %d)\n",
-			idx.IndexName, idx.ColumnName, idx.SRID)
-
-		if _, err := w.db.ExecContext(ctx, indexSQL); err != nil {
-			if strings.Contains(err.Error(), "already exists") {
-				log.Printf("⚠️  空间索引 %s 已存在，跳过\n", idx.IndexName)
-			} else {
-				log.Printf("❌ 空间索引创建失败: %v\n", err)
-			}
-		} else {
-			log.Printf("✅ 空间索引创建成功: %s\n", idx.IndexName)
-		}
-	}
-
-	return nil
-}
-
-// extractPrimaryKeyFromMetadata 从元数据中提取主键信息（支持四级降级）
-func (w *JDBCWriter) extractPrimaryKeyFromMetadata(batch *pipeline.DataBatch) *primaryKeyInfo {
-	if batch.Schema == nil {
-		return nil
-	}
-
-	// Level 0: 从 Schema.PrimaryKey 提取（新格式，最高优先级）
-	if batch.Schema.PrimaryKey != nil && len(batch.Schema.PrimaryKey.Columns) > 0 {
-		fmt.Printf("📋 从 Schema.PrimaryKey 提取主键: %v (约束名: %s)\n",
-			batch.Schema.PrimaryKey.Columns, batch.Schema.PrimaryKey.Name)
-		return &primaryKeyInfo{
-			Columns: batch.Schema.PrimaryKey.Columns,
-			Name:    batch.Schema.PrimaryKey.Name,
-		}
-	}
-
-	// 以下是向后兼容逻辑
-	if batch.Schema.Metadata == nil {
-		return nil
-	}
-
-	metadata := batch.Schema.Metadata
-
-	// Level 1: 从 table_metadata 提取（旧格式，向后兼容）
-	if tableMeta, ok := metadata["table_metadata"].(map[string]interface{}); ok {
-		if hasPK, _ := tableMeta["has_primary_key"].(bool); hasPK {
-			columns := []string{}
-
-			// 提取主键列
-			if pkCols, ok := tableMeta["primary_key"].([]interface{}); ok {
-				for _, col := range pkCols {
-					if colName, ok := col.(string); ok {
-						columns = append(columns, colName)
-					}
-				}
-			}
-
-			if len(columns) > 0 {
-				pkName, _ := tableMeta["primary_key_name"].(string)
-				log.Printf("📋 从 table_metadata 提取主键: %v (约束名: %s)\n", columns, pkName)
-				return &primaryKeyInfo{
-					Columns: columns,
-					Name:    pkName,
-				}
-			}
-		}
-	}
-
-	// Level 2: 从 fields 推断（降级方案）
-	columns := []string{}
-	if fields, ok := metadata["fields"].([]interface{}); ok {
-		for _, f := range fields {
-			if field, ok := f.(map[string]interface{}); ok {
-				if isPK, _ := field["is_primary_key"].(bool); isPK {
-					if name, ok := field["name"].(string); ok {
-						columns = append(columns, name)
-					}
-				}
-			}
-		}
-	}
-
-	if len(columns) > 0 {
-		log.Printf("📋 从 fields 推断主键: %v\n", columns)
-		return &primaryKeyInfo{
-			Columns: columns,
-			Name:    "", // 未记录约束名
-		}
-	}
-
-	log.Printf("⚠️  未找到主键信息\n")
-	return nil
-}
-
-// extractSpatialIndexInfoFromCache 从缓存的几何列信息提取空间索引信息
-func (w *JDBCWriter) extractSpatialIndexInfoFromCache() []spatialIndexInfo {
-	indexes := []spatialIndexInfo{}
-
-	if len(w.geometryColumns) == 0 {
-		return indexes
-	}
-
-	for col, meta := range w.geometryColumns {
-		_, tableName := splitTableName(w.table)
-		indexName := fmt.Sprintf("idx_%s_%s", tableName, col)
-
-		if w.config.SpatialIndexName != "" {
-			indexName = w.config.SpatialIndexName
-		}
-
-		indexes = append(indexes, spatialIndexInfo{
-			ColumnName: col,
-			IndexName:  indexName,
-			SRID:       meta.SRID,
-		})
-
-		log.Printf("📍 检测到几何列: %s，将创建空间索引\n", col)
-	}
-
-	return indexes
-}
-
-// buildSpatialIndexSQL 构建空间索引 SQL
-func (w *JDBCWriter) buildSpatialIndexSQL(idx spatialIndexInfo) string {
-	return fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s USING GIST (%s)",
-		w.quoteIdentifier(idx.IndexName),
-		w.qualifiedTableName(),
-		w.quoteIdentifier(idx.ColumnName))
-}
-

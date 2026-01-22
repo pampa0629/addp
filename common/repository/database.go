@@ -7,6 +7,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"github.com/addp/common/utils"
 )
 
 // DatabaseConfig holds database connection configuration
@@ -29,8 +31,9 @@ func InitDatabase(cfg DatabaseConfig, models ...interface{}) (*gorm.DB, error) {
 
 	// Build DSN
 	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
+		utils.GetTimezone(),
 	)
 
 	// Add search_path if schema is specified

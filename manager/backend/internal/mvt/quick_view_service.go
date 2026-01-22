@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/addp/common/logger"
+	commonModels "github.com/addp/common/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
@@ -24,18 +27,19 @@ type QuickViewService struct {
 
 // QuickViewConfig 快显配置
 type QuickViewConfig struct {
-	EngineID    uint
-	TenantID    uint
-	Schema      string
-	Table       string
-	GeomColumn  string
-	SRID        int
-	PrimaryKey  string
-	Extent      []float64 // [minLng, minLat, maxLng, maxLat]
-	MinZoom     int       // 自动计算或指定
-	MaxZoom     int
-	Concurrency int
-	Fingerprint string
+	EngineID           uint
+	TenantID           uint
+	Schema             string
+	Table              string
+	GeomColumn         string
+	SRID               int
+	PrimaryKey         string
+	Extent             []float64                           // [minLng, minLat, maxLng, maxLat]
+	MinZoom            int                                 // 自动计算或指定
+	MaxZoom            int
+	Concurrency        int
+	Fingerprint        string
+	OptimizationConfig *commonModels.OptimizationConfig    // v2.0 优化配置
 }
 
 // MinIOConfig MinIO 配置
@@ -179,6 +183,59 @@ func (s *QuickViewService) GenerateMixed(
 	jobs := make(chan TileCoord, cfg.Concurrency*2) // 缓冲区为并发数的2倍
 	results := make(chan *tileResult, cfg.Concurrency*4)
 
+	// 3.5 启动独立的进度监控 goroutine（定期更新已用时，即使没有瓦片完成）
+	progressDone := make(chan struct{})
+	var processedTilesCount int32 // 原子计数器
+	var currentZoom int32 = int32(cfg.MinZoom)
+
+	if progressTracker != nil {
+		logger.L().Info("🚀 启动进度监控 goroutine，每 2 秒更新一次")
+		go func() {
+			ticker := time.NewTicker(2 * time.Second) // 每 2 秒强制更新一次进度
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ticker.C:
+					// 读取当前进度（原子操作）
+					processedCount := int(atomic.LoadInt32(&processedTilesCount))
+					currentZ := int(atomic.LoadInt32(&currentZoom))
+
+					progressPercent := 0.0
+					if totalTaskCount > 0 {
+						progressPercent = float64(processedCount) / float64(totalTaskCount) * 100
+					}
+
+					// 强制更新进度（包括已用时）
+					err := progressTracker.UpdateProgress(ctx, &QuickViewProgress{
+						Status:             "running",
+						CurrentZoom:        currentZ,
+						MaxZoom:            cfg.MaxZoom,
+						TilesProcessed:     processedCount,
+						TilesTotalEstimate: totalTaskCount,
+						ProgressPercent:    progressPercent,
+					})
+
+					if err != nil {
+						logger.L().Warn("进度监控 goroutine 更新失败", "error", err)
+					} else {
+						logger.L().Info("🔄 进度监控定时更新",
+							"processed", processedCount,
+							"total", totalTaskCount,
+							"percent", fmt.Sprintf("%.1f%%", progressPercent))
+					}
+
+				case <-progressDone:
+					logger.L().Info("✅ 进度监控 goroutine 已停止")
+					return
+				case <-ctx.Done():
+					logger.L().Info("⚠️  进度监控 goroutine 被取消")
+					return
+				}
+			}
+		}()
+	}
+
 	// 4. 每层统计数据（线程安全）
 	type zoomStats struct {
 		sync.Mutex
@@ -306,9 +363,73 @@ func (s *QuickViewService) GenerateMixed(
 	// 7. 处理结果并实时统计
 	processedTiles := 0
 	processedPerZoom := make(map[int]int) // 记录每层实际处理完成的瓦片数
-	lastProgressUpdate := 0 // 上次更新进度时的瓦片数
+	lastProgressUpdate := 0               // 上次更新进度时的瓦片数
+	lastProgressUpdateTime := time.Now()  // 上次更新进度的时间
+
+	// 计算动态更新阈值：每千分之一瓦片数更新一次（对应前端 0.1% 精度）
+	updateThreshold := int(math.Ceil(float64(totalTaskCount) * 0.001))
+	if updateThreshold < 1 {
+		updateThreshold = 1 // 至少处理 1 个瓦片才更新
+	}
 
 	for result := range results {
+		// 检查任务是否被取消（优先检查context）
+		select {
+		case <-ctx.Done():
+			logger.L().Warn("⚠️  瓦片生成被context取消",
+				"processed", processedTiles,
+				"total", totalTaskCount,
+				"progress", fmt.Sprintf("%.1f%%", float64(processedTiles)/float64(totalTaskCount)*100))
+
+			// 更新进度为已取消
+			if progressTracker != nil {
+				progressTracker.UpdateProgress(ctx, &QuickViewProgress{
+					Status:             "cancelled",
+					CurrentZoom:        result.coord.Z,
+					MaxZoom:            cfg.MaxZoom,
+					TilesProcessed:     processedTiles,
+					TilesTotalEstimate: totalTaskCount,
+					ProgressPercent:    float64(processedTiles) / float64(totalTaskCount) * 100,
+				})
+				// 停止进度监控 goroutine
+				close(progressDone)
+			}
+
+			// 返回取消错误
+			return nil, context.Canceled
+		default:
+			// 继续处理
+		}
+
+		// 每100个瓦片检查一次Redis取消标志（避免频繁查询Redis）
+		if processedTiles%100 == 0 && progressTracker != nil {
+			if progressTracker.IsCancelled(ctx) {
+				logger.L().Warn("⚠️  瓦片生成被用户取消（Redis标志）",
+					"processed", processedTiles,
+					"total", totalTaskCount,
+					"progress", fmt.Sprintf("%.1f%%", float64(processedTiles)/float64(totalTaskCount)*100))
+
+				// 更新进度为已取消
+				progressTracker.UpdateProgress(ctx, &QuickViewProgress{
+					Status:             "cancelled",
+					CurrentZoom:        result.coord.Z,
+					MaxZoom:            cfg.MaxZoom,
+					TilesProcessed:     processedTiles,
+					TilesTotalEstimate: totalTaskCount,
+					ProgressPercent:    float64(processedTiles) / float64(totalTaskCount) * 100,
+				})
+
+				// 清除取消标志
+				progressTracker.ClearCancelFlag(ctx)
+
+				// 停止进度监控 goroutine
+				close(progressDone)
+
+				// 返回取消错误
+				return nil, fmt.Errorf("task cancelled by user")
+			}
+		}
+
 		stats := statsMap[result.coord.Z]
 		stats.Lock()
 
@@ -332,8 +453,20 @@ func (s *QuickViewService) GenerateMixed(
 		processedTiles++
 		processedPerZoom[result.coord.Z]++
 
-		// 每 100 个瓦片更新一次进度
-		if progressTracker != nil && (processedTiles-lastProgressUpdate >= 100 || processedTiles == totalTaskCount) {
+		// 更新原子计数器，供进度监控 goroutine 使用
+		atomic.StoreInt32(&processedTilesCount, int32(processedTiles))
+		atomic.StoreInt32(&currentZoom, int32(result.coord.Z))
+
+		// 进度更新策略：满足以下任一条件即更新
+		// 1. 每处理 threshold 个瓦片（千分之一总量，对应 0.1% 精度）
+		// 2. 距离上次更新超过 3 秒
+		// 3. 处理完所有瓦片
+		timeSinceLastUpdate := time.Since(lastProgressUpdateTime)
+		shouldUpdate := processedTiles-lastProgressUpdate >= updateThreshold ||
+			timeSinceLastUpdate >= 3*time.Second ||
+			processedTiles == totalTaskCount
+
+		if progressTracker != nil && shouldUpdate {
 			progressPercent := float64(processedTiles) / float64(totalTaskCount) * 100
 			progressTracker.UpdateProgress(ctx, &QuickViewProgress{
 				Status:             "running",
@@ -344,6 +477,7 @@ func (s *QuickViewService) GenerateMixed(
 				ProgressPercent:    progressPercent,
 			})
 			lastProgressUpdate = processedTiles
+			lastProgressUpdateTime = time.Now()
 		}
 
 		if processedTiles%100 == 0 {
@@ -356,6 +490,11 @@ func (s *QuickViewService) GenerateMixed(
 	logger.L().Info("✅ 所有瓦片处理完成",
 		"total_processed", processedTiles,
 		"expected", totalTaskCount)
+
+	// 停止进度监控 goroutine
+	if progressTracker != nil {
+		close(progressDone)
+	}
 
 	// 8. 汇总结果
 	result := &GenerateResult{}
@@ -469,16 +608,17 @@ func (s *QuickViewService) processTile(
 
 	// 2. 瓦片不存在，生成瓦片
 	params := TileGenerationParams{
-		EngineID:   cfg.EngineID,
-		TenantID:   cfg.TenantID,
-		Schema:     cfg.Schema,
-		Table:      cfg.Table,
-		GeomColumn: cfg.GeomColumn,
-		SRID:       cfg.SRID,
-		PrimaryKey: cfg.PrimaryKey,
-		Z:          coord.Z,
-		X:          coord.X,
-		Y:          coord.Y,
+		EngineID:           cfg.EngineID,
+		TenantID:           cfg.TenantID,
+		Schema:             cfg.Schema,
+		Table:              cfg.Table,
+		GeomColumn:         cfg.GeomColumn,
+		SRID:               cfg.SRID,
+		PrimaryKey:         cfg.PrimaryKey,
+		Z:                  coord.Z,
+		X:                  coord.X,
+		Y:                  coord.Y,
+		OptimizationConfig: cfg.OptimizationConfig, // v2.0 传递优化配置
 	}
 
 	mvtData, err := s.tileGen.GenerateTile(ctx, params)

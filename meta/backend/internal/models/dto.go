@@ -143,6 +143,7 @@ type SpatialMetadataResponse struct {
 	Extent         []float64                `json:"extent"` // [minLng, minLat, maxLng, maxLat]
 	PrimaryKey     string                   `json:"primary_key"`
 	Fields         []FieldInfo              `json:"fields"`
+	RowCount       int64                    `json:"row_count"` // 表记录数（从 meta_item.row_count 获取）
 }
 
 // FieldInfo 字段信息

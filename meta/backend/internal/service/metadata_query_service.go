@@ -481,6 +481,11 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 		}
 	}
 
+	// 提取表记录数（从 meta_item.row_count）
+	if item.RowCount != nil {
+		spatialMeta.RowCount = *item.RowCount
+	}
+
 	return spatialMeta, nil
 }
 

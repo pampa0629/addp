@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	commonModels "github.com/addp/common/models"
 	"github.com/hibiken/asynq"
 )
 
@@ -40,18 +41,19 @@ func NewTaskQueue(redisAddr, redisPassword string) *TaskQueue {
 
 // QuickViewTaskPayload 快显任务载荷
 type QuickViewTaskPayload struct {
-	TenantID          uint    `json:"tenant_id"`
-	EngineID          uint    `json:"engine_id"`
-	SchemaName        string  `json:"schema_name"`
-	TableName         string  `json:"table_name"`
-	GeomColumn        string  `json:"geom_column"`
-	SRID              int     `json:"srid"`
-	PrimaryKey        string  `json:"primary_key"`
-	Extent            []float64 `json:"extent"` // [minLng, minLat, maxLng, maxLat]
-	MinZoom           int     `json:"min_zoom"`
-	MaxZoom           int     `json:"max_zoom"`
-	Concurrency       int     `json:"concurrency"`
-	Fingerprint       string  `json:"fingerprint"`
+	TenantID           uint                                  `json:"tenant_id"`
+	EngineID           uint                                  `json:"engine_id"`
+	SchemaName         string                                `json:"schema_name"`
+	TableName          string                                `json:"table_name"`
+	GeomColumn         string                                `json:"geom_column"`
+	SRID               int                                   `json:"srid"`
+	PrimaryKey         string                                `json:"primary_key"`
+	Extent             []float64                             `json:"extent"` // [minLng, minLat, maxLng, maxLat]
+	MinZoom            int                                   `json:"min_zoom"`
+	MaxZoom            int                                   `json:"max_zoom"`
+	Concurrency        int                                   `json:"concurrency"`
+	Fingerprint        string                                `json:"fingerprint"`
+	OptimizationConfig *commonModels.OptimizationConfig      `json:"optimization_config,omitempty"` // v2.0
 }
 
 // EnqueueQuickViewTask 将快显任务加入队列

@@ -94,3 +94,46 @@ func (pt *ProgressTracker) DeleteProgress(ctx context.Context) error {
 func (pt *ProgressTracker) SetStartTime(t time.Time) {
 	pt.startTime = t
 }
+
+// getCancelKey 获取取消标志的 Redis key
+func (pt *ProgressTracker) getCancelKey() string {
+	return fmt.Sprintf("manager:quick_view_cancel:%s", pt.fingerprint)
+}
+
+// SetCancelled 设置取消标志
+func (pt *ProgressTracker) SetCancelled(ctx context.Context) error {
+	key := pt.getCancelKey()
+	// 设置取消标志，TTL 1小时（足够长，确保Worker能检测到）
+	err := pt.redisClient.Set(ctx, key, "1", 1*time.Hour).Err()
+	if err != nil {
+		return fmt.Errorf("redis set cancel flag: %w", err)
+	}
+
+	logger.L().Info("Cancel flag set in Redis",
+		"fingerprint", pt.fingerprint,
+		"key", key)
+
+	return nil
+}
+
+// IsCancelled 检查是否被取消
+func (pt *ProgressTracker) IsCancelled(ctx context.Context) bool {
+	key := pt.getCancelKey()
+	val, err := pt.redisClient.Get(ctx, key).Result()
+	if err == redis.Nil {
+		// Key 不存在，表示未取消
+		return false
+	}
+	if err != nil {
+		logger.L().Warn("Failed to check cancel flag", "error", err)
+		return false
+	}
+
+	return val == "1"
+}
+
+// ClearCancelFlag 清除取消标志
+func (pt *ProgressTracker) ClearCancelFlag(ctx context.Context) error {
+	key := pt.getCancelKey()
+	return pt.redisClient.Del(ctx, key).Err()
+}

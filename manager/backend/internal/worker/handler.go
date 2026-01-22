@@ -104,18 +104,19 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 
 	// 3. 执行快显缓存生成（使用混合入队模式）
 	result, err := h.quickViewService.GenerateMixed(ctx, mvt.QuickViewConfig{
-		EngineID:    payload.EngineID,
-		TenantID:    payload.TenantID,
-		Schema:      payload.SchemaName,
-		Table:       payload.TableName,
-		GeomColumn:  payload.GeomColumn,
-		SRID:        payload.SRID,
-		PrimaryKey:  payload.PrimaryKey,
-		Extent:      payload.Extent,
-		MinZoom:     payload.MinZoom,
-		MaxZoom:     payload.MaxZoom,
-		Concurrency: payload.Concurrency,
-		Fingerprint: payload.Fingerprint,
+		EngineID:           payload.EngineID,
+		TenantID:           payload.TenantID,
+		Schema:             payload.SchemaName,
+		Table:              payload.TableName,
+		GeomColumn:         payload.GeomColumn,
+		SRID:               payload.SRID,
+		PrimaryKey:         payload.PrimaryKey,
+		Extent:             payload.Extent,
+		MinZoom:            payload.MinZoom,
+		MaxZoom:            payload.MaxZoom,
+		Concurrency:        payload.Concurrency,
+		Fingerprint:        payload.Fingerprint,
+		OptimizationConfig: payload.OptimizationConfig, // v2.0 传递优化配置
 	}, progressTracker)
 
 	if err != nil {
@@ -205,6 +206,11 @@ func (h *TaskHandler) updateQuickViewStatus(
 
 	if errorMsg != "" {
 		updates["error_message"] = errorMsg
+	}
+
+	// 状态变为 generating 时，设置 started_at
+	if status == "generating" {
+		updates["started_at"] = gorm.Expr("NOW()")
 	}
 
 	if result != nil {

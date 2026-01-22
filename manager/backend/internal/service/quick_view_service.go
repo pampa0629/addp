@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
-	"github.com/addp/common/spatial"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
@@ -51,14 +51,15 @@ func NewQuickViewService(
 
 // TriggerQuickViewParams 触发快显参数
 type TriggerQuickViewParams struct {
-	TenantID   uint
-	EngineID uint
-	SchemaName string
-	TableName  string
-	MinZoom    *int    // 可选，不指定则自动计算
-	MaxZoom    int     // 默认18
-	Concurrency int    // 默认10
-	Priority   string  // "critical", "default", "low"
+	TenantID           uint
+	EngineID           uint
+	SchemaName         string
+	TableName          string
+	MinZoom            *int                                // 可选，不指定则自动计算
+	MaxZoom            int                                 // 默认18
+	Concurrency        int                                 // 默认10
+	Priority           string                              // "critical", "default", "low"
+	OptimizationConfig *commonModels.OptimizationConfig    // v2.0 优化配置
 }
 
 // TriggerQuickView 触发快显缓存生成
@@ -75,25 +76,12 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 
 	// 2. 从Meta获取空间元数据（通过SystemClient或直接查询meta数据库）
 	// 这里需要调用Meta的API或直接查询meta_item表
-	spatialMeta, err := s.getSpatialMetadataFromMeta(ctx, params.TenantID, params.EngineID, params.SchemaName, params.TableName)
+	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		return fmt.Errorf("failed to get spatial metadata: %w", err)
 	}
 
-	// 2.5 获取表记录数（从 pg_stat_user_tables，高性能）
-	recordCount, err := spatial.QueryTableRowCount(
-		ctx,
-		s.systemClient,
-		params.EngineID,
-		params.SchemaName,
-		params.TableName,
-	)
-	if err != nil {
-		logger.L().Warn("⚠️  Failed to get record count, will use default MaxZoom",
-			"error", err)
-		recordCount = 0
-	}
-	spatialMeta.RecordCount = recordCount
+	// 注意：spatialMeta.RecordCount 已经从 Meta API 获取，无需再查询 PostgreSQL
 
 	// 3. 计算fingerprint（使用 engine_id + schema + table 的组合）
 	fingerprint := calculateFingerprint(params.EngineID, params.SchemaName, params.TableName)
@@ -115,17 +103,21 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 	}
 
 	// 7. 创建或更新快显记录
+	now := time.Now()
 	qv := models.QuickView{
-		TenantID:            params.TenantID,
-		EngineID:            params.EngineID,
-		SchemaName:          params.SchemaName,
-		Table:               params.TableName,
-		Status:              "generating",
-		MinZoom:             &minZoom,
-		MaxZoom:             params.MaxZoom,
-		Fingerprint:         fingerprint,
-		Extent:              spatialMeta.Extent,
-		ExtentSRID:          spatialMeta.ExtentSRID,
+		TenantID:           params.TenantID,
+		EngineID:           params.EngineID,
+		SchemaName:         params.SchemaName,
+		Table:              params.TableName,
+		Status:             "generating",
+		PreferredMode:      "mvt",                     // 默认使用 MVT 模式
+		MinZoom:            &minZoom,
+		MaxZoom:            params.MaxZoom,
+		Fingerprint:        fingerprint,
+		Extent:             spatialMeta.Extent,
+		ExtentSRID:         spatialMeta.ExtentSRID,
+		OptimizationConfig: params.OptimizationConfig, // v2.0 保存优化配置
+		StartedAt:          &now,                      // 设置任务开始时间
 	}
 
 	// 检查是否已存在记录
@@ -137,6 +129,10 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 			return fmt.Errorf("failed to get existing quick view: %w", err)
 		}
 		qv.ID = existingQV.ID
+		// 保留用户之前设置的 PreferredMode
+		if existingQV.PreferredMode != "" {
+			qv.PreferredMode = existingQV.PreferredMode
+		}
 		if err := s.repo.Update(&qv); err != nil {
 			return fmt.Errorf("failed to update quick view: %w", err)
 		}
@@ -149,18 +145,19 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 
 	// 8. 入队任务
 	payload := worker.QuickViewTaskPayload{
-		TenantID:        params.TenantID,
-		EngineID:        params.EngineID,
-		SchemaName:      params.SchemaName,
-		TableName:       params.TableName,
-		GeomColumn:      spatialMeta.GeomColumn,
-		SRID:            spatialMeta.SRID,
-		PrimaryKey:      spatialMeta.PrimaryKey,
-		Extent:          spatialMeta.Extent,
-		MinZoom:         minZoom,
-		MaxZoom:         params.MaxZoom,
-		Concurrency:     params.Concurrency,
-		Fingerprint:     fingerprint,
+		TenantID:           params.TenantID,
+		EngineID:           params.EngineID,
+		SchemaName:         params.SchemaName,
+		TableName:          params.TableName,
+		GeomColumn:         spatialMeta.GeomColumn,
+		SRID:               spatialMeta.SRID,
+		PrimaryKey:         spatialMeta.PrimaryKey,
+		Extent:             spatialMeta.Extent,
+		MinZoom:            minZoom,
+		MaxZoom:            params.MaxZoom,
+		Concurrency:        params.Concurrency,
+		Fingerprint:        fingerprint,
+		OptimizationConfig: params.OptimizationConfig, // v2.0 传递优化配置
 	}
 
 	if params.Priority != "" {
@@ -194,8 +191,8 @@ type SpatialMetadataResult struct {
 	RecordCount int64 // 表记录数
 }
 
-// getSpatialMetadataFromMeta 从Meta模块获取空间元数据
-func (s *QuickViewService) getSpatialMetadataFromMeta(
+// GetSpatialMetadataFromMeta 从Meta模块获取空间元数据（公开方法，供 API Handler 调用）
+func (s *QuickViewService) GetSpatialMetadataFromMeta(
 	ctx context.Context,
 	tenantID, engineID uint,
 	schema, table string,
@@ -220,7 +217,7 @@ func (s *QuickViewService) getSpatialMetadataFromMeta(
 		ExtentSRID:  spatialMeta.ExtentSRID,
 		Extent:      spatialMeta.Extent,
 		PrimaryKey:  spatialMeta.PrimaryKey,
-		RecordCount: 0, // 初始为 0，由 QueryTableRowCount 填充
+		RecordCount: spatialMeta.RowCount, // 从 Meta API 获取的表记录数
 	}, nil
 }
 
@@ -355,9 +352,19 @@ func (s *QuickViewService) CancelQuickView(
 	}
 
 	// 3. 更新状态为 cancelled
-	// 注意：Worker 会通过 context 取消检测到任务被取消
 	if err := s.repo.UpdateStatus(qv.ID, "cancelled", "用户取消任务"); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// 4. 设置 Redis 取消标志，通知 Worker 停止生成
+	if s.redisClient != nil && qv.Fingerprint != "" {
+		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
+		if err := tracker.SetCancelled(ctx); err != nil {
+			logger.L().Warn("Failed to set cancel flag in Redis, but status updated",
+				"error", err,
+				"fingerprint", qv.Fingerprint)
+			// 不返回错误，因为数据库状态已经更新
+		}
 	}
 
 	logger.L().Info("Quick view cancelled",
@@ -389,14 +396,31 @@ func (s *QuickViewService) ResumeQuickView(
 	}
 
 	// 3. 从Meta获取空间元数据（确保数据仍然有效）
-	spatialMeta, err := s.getSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
+	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
 	if err != nil {
 		return fmt.Errorf("failed to get spatial metadata: %w", err)
 	}
 
-	// 4. 更新状态为 generating
-	if err := s.repo.UpdateStatus(qv.ID, "generating", ""); err != nil {
+	// 4. 更新状态为 generating 并设置 started_at
+	err = s.repo.GetDB().Model(&models.QuickView{}).
+		Where("id = ?", qv.ID).
+		Updates(map[string]interface{}{
+			"status":       "generating",
+			"error_message": "",
+			"started_at":    gorm.Expr("NOW()"),
+		}).Error
+	if err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	// 4.5 清除 Redis 取消标志（如果存在）
+	if s.redisClient != nil && qv.Fingerprint != "" {
+		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
+		if err := tracker.ClearCancelFlag(ctx); err != nil {
+			logger.L().Warn("Failed to clear cancel flag in Redis",
+				"error", err,
+				"fingerprint", qv.Fingerprint)
+		}
 	}
 
 	// 5. 重新入队任务（使用原有的配置）

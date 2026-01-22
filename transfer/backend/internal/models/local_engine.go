@@ -16,7 +16,7 @@ type LocalEngine struct {
 	UpdatedAt      time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-// TableName 指定表名
+// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
 func (LocalEngine) TableName() string {
-	return "transfer.local_engines"
+	return "local_engines"
 }

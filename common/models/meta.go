@@ -52,6 +52,7 @@ type SpatialMetadata struct {
 	Extent         []float64 `json:"extent"`
 	PrimaryKey     string    `json:"primary_key"`
 	Fields         []Field   `json:"fields"`
+	RowCount       int64     `json:"row_count"` // 表记录数（从 Meta 服务获取）
 }
 
 // Field 字段信息

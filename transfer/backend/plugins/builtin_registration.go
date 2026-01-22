@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"github.com/addp/transfer/pkg/postprocessor"
 	"github.com/addp/transfer/plugins/readers"
 	"github.com/addp/transfer/plugins/writers"
 )
@@ -30,4 +31,9 @@ func init() {
 	// 对象存储
 	MustRegisterConnector("s3", nil, writers.NewS3Writer)
 	MustRegisterConnector("minio", nil, writers.NewS3Writer)
+
+	// 后处理器（PostProcessor）
+	// 负责数据导入后的优化任务：主键创建、空间索引创建、统计更新
+	postprocessor.MustRegisterPostProcessor("postgresql", postprocessor.NewPostgresPostProcessor)
+	postprocessor.MustRegisterPostProcessor("postgres", postprocessor.NewPostgresPostProcessor) // 别名
 }
