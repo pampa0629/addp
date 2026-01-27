@@ -78,6 +78,46 @@ export GOTOOLCHAIN="local"
 source "${SCRIPT_DIR}/../utils/colors.sh"
 
 # ============================================================
+# Python 版本选择函数
+# ============================================================
+# 智能选择 Python 版本：优先 Python 3.11（兼容所有依赖）
+# 避免 Python 3.13（NumPy/pydantic 等包兼容性问题）
+select_python() {
+  # 1. 优先：python3.11 命令（最明确）
+  if command -v python3.11 &> /dev/null; then
+    echo "python3.11"
+    return
+  fi
+
+  # 2. 检查系统 python3 版本
+  if command -v python3 &> /dev/null; then
+    PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+    case $PYTHON_VERSION in
+      3.11*)
+        echo "python3"
+        return
+        ;;
+      3.12*)
+        echo "python3"
+        return
+        ;;
+    esac
+  fi
+
+  # 3. 降级：使用任何可用的 python3（可能是 3.13，会有警告）
+  if command -v python3 &> /dev/null; then
+    echo -e "${YELLOW}⚠️  警告：使用 Python $PYTHON_VERSION，部分依赖可能编译失败${NC}" >&2
+    echo -e "${YELLOW}   推荐安装 Python 3.11: brew install python@3.11${NC}" >&2
+    echo "python3"
+    return
+  fi
+
+  # 4. 失败：未找到 Python
+  echo -e "${RED}❌ 未找到 Python 3.11+，请先安装 Python${NC}" >&2
+  exit 1
+}
+
+# ============================================================
 # 模块选择逻辑
 # ============================================================
 
@@ -895,13 +935,11 @@ NEED_INSTALL=false
 if [ ! -d "engines/python-workflow/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
     cd engines/python-workflow
-    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
-    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
+    # 使用智能 Python 选择（优先 3.11）
+    SELECTED_PYTHON=$(select_python)
+    PYTHON_VER=$($SELECTED_PYTHON --version)
+    echo "  使用 $PYTHON_VER"
+    $SELECTED_PYTHON -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
@@ -1012,13 +1050,11 @@ NEED_INSTALL=false
 if [ ! -d "engines/math-workflow/venv" ]; then
     echo "首次启动，创建 Python 虚拟环境..."
     cd engines/math-workflow
-    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
-    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
+    # 使用智能 Python 选择（优先 3.11）
+    SELECTED_PYTHON=$(select_python)
+    PYTHON_VER=$($SELECTED_PYTHON --version)
+    echo "  使用 $PYTHON_VER"
+    $SELECTED_PYTHON -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
@@ -1423,13 +1459,11 @@ if [ "$START_COPILOT_BACKEND" = true ]; then
   if [ ! -d "copilot/backend/venv" ]; then
     echo "首次启动 Copilot，创建 Python 虚拟环境..."
     cd copilot/backend
-    # 优先使用 Homebrew Python（避免 Anaconda SSL 问题）
-    if command -v /opt/homebrew/bin/python3 &> /dev/null; then
-        echo "  使用 Homebrew Python $(/opt/homebrew/bin/python3 --version)"
-        /opt/homebrew/bin/python3 -m venv venv
-    else
-        python3 -m venv venv
-    fi
+    # 使用智能 Python 选择（优先 3.11）
+    SELECTED_PYTHON=$(select_python)
+    PYTHON_VER=$($SELECTED_PYTHON --version)
+    echo "  使用 $PYTHON_VER"
+    $SELECTED_PYTHON -m venv venv
     NEED_INSTALL=true
 else
     # 检查关键依赖是否已安装
