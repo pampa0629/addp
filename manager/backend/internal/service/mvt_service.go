@@ -18,9 +18,10 @@ type MVTService struct {
 	tileGenerator *mvt.TileGenerator // ✅ 复用底层实现
 }
 
-func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient) *MVTService {
+func NewMVTService(meta *repository.MetadataRepository, systemClient *commonClient.SystemClient, maxDBConns int) *MVTService {
 	// 创建 TileGenerator（通过 SystemClient 适配器获取引擎信息）
-	tileGen := mvt.NewTileGenerator(&engineServiceAdapter{systemClient: systemClient})
+	// 传入连接池配置（实时生成瓦片也需要合理的连接池大小）
+	tileGen := mvt.NewTileGenerator(&engineServiceAdapter{systemClient: systemClient}, maxDBConns)
 
 	return &MVTService{
 		metadataRepo:  meta,

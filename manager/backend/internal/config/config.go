@@ -68,6 +68,7 @@ type PreCacheConfig struct {
 	// 生成配置
 	MaxZoom     int // 全局最大 zoom 层级
 	Concurrency int // 并发协程数
+	MaxDBConns  int // 数据库最大连接数（默认等于 Concurrency）
 }
 
 func resolveMeilisearchURL() string {
@@ -161,13 +162,29 @@ func Load() *Config {
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// MVT 预缓存配置
+	concurrency := commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10)
+	maxDBConns := commonConfig.GetEnvInt("PRE_CACHE_MAX_DB_CONNS", 0)
+
+	// 如果没有指定 MaxDBConns，默认等于 Concurrency
+	if maxDBConns == 0 {
+		maxDBConns = concurrency
+	}
+
 	cfg.PreCache = PreCacheConfig{
 		TargetRecordsPerTile:  commonConfig.GetEnvInt("PRE_CACHE_TARGET_RECORDS", 3000),
 		MinDurationForCacheMS: commonConfig.GetEnvInt("PRE_CACHE_MIN_DURATION_MS", 100),
 		MinSizeForCacheKB:     commonConfig.GetEnvInt("PRE_CACHE_MIN_SIZE_KB", 50),
 		MaxZoom:               commonConfig.GetEnvInt("PRE_CACHE_MAX_ZOOM", 18),
-		Concurrency:           commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10),
+		Concurrency:           concurrency,
+		MaxDBConns:            maxDBConns,
 	}
+
+	// 🔍 日志：记录 MVT 预缓存配置（特别关注并发数和连接池）
+	log.Printf("📋 Manager Config: MVT 预缓存配置")
+	log.Printf("   PRE_CACHE_CONCURRENCY (并发数): %d", cfg.PreCache.Concurrency)
+	log.Printf("   PRE_CACHE_MAX_DB_CONNS (数据库连接池): %d", cfg.PreCache.MaxDBConns)
+	log.Printf("   PRE_CACHE_MAX_ZOOM: %d", cfg.PreCache.MaxZoom)
+	log.Printf("   PRE_CACHE_TARGET_RECORDS: %d", cfg.PreCache.TargetRecordsPerTile)
 
 	return cfg
 }

@@ -188,6 +188,139 @@
       <div class="tip">最多展示前 50 行数据</div>
     </div>
 
+    <!-- 准备状态检查对话框 (新增) -->
+    <el-dialog
+      v-model="showPreparationDialog"
+      title="⚡ 预缓存配置"
+      width="70%"
+      :close-on-click-modal="false"
+    >
+      <!-- 部分1: 准备状态检查结果（非进行中时显示）-->
+      <div v-if="!preparationInProgress" class="preparation-status-section">
+        <!-- 加载中 ... -->
+        <div v-if="preparationCheckResult === null" class="preparation-loading">
+          <el-skeleton animated :rows="5" />
+          <p style="text-align: center; margin-top: 12px; color: #909399;">
+            正在检查准备状态...
+          </p>
+        </div>
+
+        <!-- 检查通过 ✅ -->
+        <div v-else-if="preparationCheckResult?.overall_status === 'passed'">
+          <el-alert
+            type="success"
+            title="✅ 准备已完成"
+            description="所有准备条件已满足，可以开始生成瓦片"
+            :closable="false"
+            style="margin-bottom: 16px;"
+          />
+
+          <!-- 显示检查通过的详情（可选）-->
+          <el-collapse>
+            <el-collapse-item title="查看检查详情" name="1">
+              <el-table :data="preparationCheckResult.checks" size="small" style="width: 100%;">
+                <el-table-column prop="name" label="检查项" width="150">
+                  <template #default="{ row }">
+                    <span v-if="row.name === 'materialized_view'">📊 物化视图</span>
+                    <span v-else-if="row.name === 'spatial_index'">🗂️ 空间索引</span>
+                    <span v-else-if="row.name === 'analyze'">📈 统计信息</span>
+                    <span v-else>{{ row.name }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="status" label="状态" width="100">
+                  <template #default="{ row }">
+                    <el-tag v-if="row.status === 'passed'" type="success">✅ 通过</el-tag>
+                    <el-tag v-else-if="row.status === 'skipped'" type="info">⏭️ 跳过</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="message" label="说明" />
+              </el-table>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <!-- 检查失败 ❌ -->
+        <div v-else-if="preparationCheckResult?.overall_status === 'failed'">
+          <el-alert
+            type="error"
+            :title="`⚠️ 准备检查失败 (${preparationCheckResult.checks?.filter(c => c.status === 'failed').length || 0} 项未满足)`"
+            description="需要执行准备工作来创建必要的数据库对象"
+            :closable="false"
+            style="margin-bottom: 16px;"
+          />
+
+          <!-- 失败项详情 -->
+          <el-table :data="preparationCheckResult.checks" size="small" style="width: 100%; margin-bottom: 12px;">
+            <el-table-column prop="name" label="检查项" width="150">
+              <template #default="{ row }">
+                <span v-if="row.name === 'materialized_view'">📊 物化视图</span>
+                <span v-else-if="row.name === 'spatial_index'">🗂️ 空间索引</span>
+                <span v-else-if="row.name === 'analyze'">📈 统计信息</span>
+                <span v-else>{{ row.name }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag v-if="row.status === 'passed'" type="success">✅ 通过</el-tag>
+                <el-tag v-else-if="row.status === 'failed'" type="danger">❌ 失败</el-tag>
+                <el-tag v-else type="info">⏭️ 跳过</el-tag>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="message" label="说明" />
+          </el-table>
+
+          <!-- 提示信息 -->
+          <el-alert
+            type="info"
+            title="💡 后端可自动准备"
+            description="点击下方'准备预缓存'按钮，系统将自动创建物化视图、空间索引和更新统计信息"
+            :closable="false"
+          />
+        </div>
+      </div>
+
+      <!-- 部分2: 准备工作进行中 -->
+      <div v-if="preparationInProgress" class="preparation-progress-section">
+        <el-alert
+          type="info"
+          title="🔧 准备工作进行中"
+          description="后台正在创建物化视图、空间索引和更新统计信息，请耐心等待..."
+          :closable="false"
+          style="margin-bottom: 16px;"
+        />
+        <el-progress :percentage="50" style="margin-bottom: 12px;" />
+        <p style="text-align: center; color: #606266; font-size: 14px;">
+          处理中... 请勿关闭此对话框
+        </p>
+      </div>
+
+      <!-- 底部按钮区 -->
+      <template #footer>
+        <el-button @click="showPreparationDialog = false">关闭</el-button>
+
+        <!-- 诊断失败时：显示"准备"按钮 -->
+        <el-button
+          v-if="preparationCheckResult?.overall_status === 'failed' && !preparationInProgress"
+          type="warning"
+          :loading="preparationInProgress"
+          @click="handlePrepareForCreateMVT"
+        >
+          🔧 准备预缓存
+        </el-button>
+
+        <!-- 诊断通过时：显示"生成"按钮 -->
+        <el-button
+          v-if="preparationCheckResult?.overall_status === 'passed' && !preparationInProgress"
+          type="primary"
+          @click="handleStartGeneration"
+        >
+          🚀 生成
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 优化配置对话框 -->
     <el-dialog
       v-model="showOptimizationDialog"
@@ -244,9 +377,46 @@
           </span>
         </el-divider>
 
-        <!-- 优化选项内容（可折叠） -->
+        <!-- 优化选项内容（可折叠）- v3.0: 仅保留属性优化和大小限制 -->
         <template v-if="optimizationExpanded">
+          <!-- Extent 分层优化配置 -->
+          <el-divider>Extent 分层优化</el-divider>
+          <el-form-item label="Max Zoom Extent">
+            <el-input-number
+              v-model="optimizationConfig.extent_optimization.max_zoom_extent"
+              :min="256"
+              :max="4096"
+              :step="256"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              最大 Zoom 层的 Extent（默认 2048，通常无需修改）
+            </span>
+          </el-form-item>
+          <el-form-item label="其他层 Extent">
+            <el-input-number
+              v-model="optimizationConfig.extent_optimization.base_extent"
+              :min="256"
+              :max="4096"
+              :step="256"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              其他层的基础 Extent（默认 1024，可根据数据密度调整）
+            </span>
+          </el-form-item>
+          <el-form-item label="最小 Extent">
+            <el-input-number
+              v-model="optimizationConfig.extent_optimization.min_extent"
+              :min="64"
+              :max="1024"
+              :step="64"
+            />
+            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+              动态减半的最小 Extent（默认 256，低于此值不再减半）
+            </span>
+          </el-form-item>
+
           <!-- 属性优化 -->
+          <el-divider>属性优化</el-divider>
           <el-form-item label="属性优化">
             <el-switch v-model="optimizationConfig.attribute_pruning.enabled" />
             <span style="margin-left: 12px; color: #909399; font-size: 12px;">
@@ -269,122 +439,27 @@
           </el-form-item>
 
           <!-- 瓦片大小阈值 -->
-          <el-divider>瓦片大小阈值</el-divider>
-          <el-form-item label="不优化阈值 (MB)">
+          <el-divider>瓦片大小限制</el-divider>
+          <el-form-item label="最大大小 (MB)">
             <el-input-number
-              v-model="optimizationConfig.tile_size_thresholds.no_optimization_mb"
+              v-model="optimizationConfig.tile_size_thresholds.max_size_mb"
               :min="0.5"
-              :max="10"
-              :step="0.5"
-              :precision="1"
-            />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
-              小于此值不进行任何优化（默认 2MB）
-            </span>
-          </el-form-item>
-          <el-form-item label="停止优化阈值 (MB)">
-            <el-input-number
-              v-model="optimizationConfig.tile_size_thresholds.stop_optimization_mb"
-              :min="1"
               :max="20"
               :step="0.5"
               :precision="1"
             />
             <span style="margin-left: 12px; color: #909399; font-size: 12px;">
-              达到此值后跳过几何优化（默认 5MB）
+              瓦片大小超过此值时，自动降低分辨率直到符合要求（默认 5MB）
             </span>
           </el-form-item>
 
-          <!-- 优化参数（高级） -->
-          <el-divider>优化参数（高级）</el-divider>
-          <el-collapse>
-          <!-- Extent 优化 -->
-          <el-collapse-item title="1. 瓦片分辨率优化" name="extent">
-            <el-form-item label="模糊度">
-              <el-radio-group v-model="optimizationConfig.extent_optimization.blur_level">
-                <el-radio :label="1">清晰（Extent: 4096）</el-radio>
-                <el-radio :label="2">适中（Extent: 2048，推荐）</el-radio>
-                <el-radio :label="4">模糊（Extent: 1024）</el-radio>
-              </el-radio-group>
-              <div style="color: #909399; font-size: 12px; margin-top: 8px;">
-                模糊度越高，瓦片越小，但边界越不精细
-              </div>
-            </el-form-item>
-          </el-collapse-item>
-
-          <!-- 对象采样 -->
-          <el-collapse-item title="2. 对象采样优化" name="sampling">
-            <el-form-item label="面/线保留策略">
-              <div style="margin-bottom: 16px;">
-                <label style="font-size: 13px;">面积/长度占比：</label>
-                <el-slider
-                  v-model="optimizationConfig.sampling.polygon_line.cumulative_size_ratio"
-                  :min="0.5"
-                  :max="1.0"
-                  :step="0.05"
-                  :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
-                />
-                <span style="color: #909399; font-size: 12px;">
-                  保留累计占总面积/长度 {{ (optimizationConfig.sampling.polygon_line.cumulative_size_ratio * 100).toFixed(0) }}% 的对象（默认 80%）
-                </span>
-              </div>
-
-              <div>
-                <label style="font-size: 13px;">对象数量占比：</label>
-                <el-slider
-                  v-model="optimizationConfig.sampling.polygon_line.max_feature_count_ratio"
-                  :min="0.3"
-                  :max="1.0"
-                  :step="0.05"
-                  :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
-                />
-                <span style="color: #909399; font-size: 12px;">
-                  最多保留 {{ (optimizationConfig.sampling.polygon_line.max_feature_count_ratio * 100).toFixed(0) }}% 的对象数量（默认 60%）
-                </span>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="点保留比例">
-              <el-slider
-                v-model="optimizationConfig.sampling.point.sample_ratio"
-                :min="0.3"
-                :max="1.0"
-                :step="0.05"
-                :format-tooltip="(val) => `${(val * 100).toFixed(0)}%`"
-              />
-              <span style="color: #909399; font-size: 12px;">
-                随机保留 {{ (optimizationConfig.sampling.point.sample_ratio * 100).toFixed(0) }}% 的点对象（默认 60%）
-              </span>
-            </el-form-item>
-          </el-collapse-item>
-
-          <!-- 几何优化 -->
-          <el-collapse-item title="3. 几何简化优化" name="simplification">
-            <el-form-item label="简化倍数">
-              <el-radio-group v-model="optimizationConfig.simplification.tolerance_multiplier">
-                <el-radio :label="2">2倍简化</el-radio>
-                <el-radio :label="4">4倍简化（推荐）</el-radio>
-                <el-radio :label="8">8倍简化</el-radio>
-              </el-radio-group>
-              <div style="color: #909399; font-size: 12px; margin-top: 8px;">
-                简化倍数越高，边界越平滑，瓦片越小，但细节越少
-              </div>
-            </el-form-item>
-
-            <el-form-item label="简化算法">
-              <el-radio-group v-model="optimizationConfig.simplification.algorithm">
-                <el-radio label="visvalingam">Visvalingam（保留重要拐点，推荐）</el-radio>
-                <el-radio label="douglas_peucker">Douglas-Peucker（保守，保证拓扑）</el-radio>
-              </el-radio-group>
-            </el-form-item>
-          </el-collapse-item>
-          </el-collapse>
-
-          <!-- 预估信息 -->
+          <!-- 优化说明 -->
           <el-alert type="info" style="margin-top: 20px;" :closable="false">
-            <strong>优化流程</strong>（自动执行，按顺序）<br/>
-            瓦片分辨率优化 → 对象采样 → 几何简化<br/>
-            每步检查大小，满足条件则停止
+            <strong>v4.0 优化流程</strong>（自动执行）<br/>
+            📋 准备阶段：物化视图 → 空间索引 → ANALYZE<br/>
+            1️⃣ 属性优化：根据 zoom 级别过滤属性<br/>
+            2️⃣ 分层 Extent：MaxZoom 层 {{ optimizationConfig.extent_optimization.max_zoom_extent }}，其他层 {{ optimizationConfig.extent_optimization.base_extent }}<br/>
+            3️⃣ 动态减半：若瓦片超过 {{ optimizationConfig.tile_size_thresholds.max_size_mb }}MB，自动降低分辨率（最低 {{ optimizationConfig.extent_optimization.min_extent }}）
           </el-alert>
         </template>
       </el-form>
@@ -393,6 +468,46 @@
         <el-button @click="resetOptimizationConfig">恢复默认</el-button>
         <el-button @click="handleOptimizationConfigCancel">取消</el-button>
         <el-button type="primary" @click="handleOptimizationConfigConfirm">开始生成</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 准备失败提示对话框 (v4.0 新增) -->
+    <el-dialog
+      v-model="showPreparationFailedDialog"
+      title="⚠️ 准备阶段检查失败"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="preparationStatus" class="preparation-status">
+        <div v-for="check in preparationStatus.checks" :key="check.name" class="check-item">
+          <div v-if="check.status === 'failed'" class="failed-check">
+            <span style="color: #f56c6c; font-weight: bold;">❌ {{ check.message }}</span>
+            <div v-if="check.details" style="margin-top: 8px; padding-left: 20px; font-size: 12px; color: #606266;">
+              <div v-for="(value, key) in check.details" :key="key">
+                <strong>{{ key }}:</strong> {{ value }}
+              </div>
+            </div>
+          </div>
+          <div v-else-if="check.status === 'passed'" class="passed-check">
+            <span style="color: #67c23a; font-weight: bold;">✅ {{ check.message }}</span>
+          </div>
+          <div v-else-if="check.status === 'skipped'" class="skipped-check">
+            <span style="color: #909399; font-weight: bold;">⏭️ {{ check.message }}</span>
+          </div>
+        </div>
+
+        <el-alert type="warning" style="margin-top: 16px;" :closable="false">
+          <strong>操作建议:</strong><br/>
+          • 点击"重新检查"重新执行准备阶段<br/>
+          • 修复问题后再次尝试<br/>
+          • 或点击"完成准备"跳过失败项继续生成（可能影响性能）
+        </el-alert>
+      </div>
+
+      <template #footer>
+        <el-button @click="handleRecheckPreparation">重新检查</el-button>
+        <el-button @click="handleCompletePreparation">完成准备</el-button>
+        <el-button @click="handleCancelPreparation">取消</el-button>
       </template>
     </el-dialog>
   </div>
@@ -447,34 +562,34 @@ const showOptimizationDialog = ref(false)
 const tileConfigData = ref(null) // 存储 getTileConfig 的结果
 const optimizationExpanded = ref(false) // 优化选项折叠状态（默认收起）
 
-// 优化配置（默认值）
+// 优化配置（默认值） - v4.0: 保留 Extent 优化、属性优化和大小阈值，加入准备阶段检查
 const optimizationConfig = ref({
-  version: '2.0',
+  version: '4.0',
+  extent_optimization: {
+    max_zoom_extent: 2048,  // Max Zoom 层 Extent
+    base_extent: 1024,      // 其他层 Extent
+    min_extent: 256         // 最小 Extent
+  },
   attribute_pruning: {
     enabled: true,
     zoom_threshold: 8
   },
   tile_size_thresholds: {
-    no_optimization_mb: 2.0,
-    stop_optimization_mb: 5.0
-  },
-  extent_optimization: {
-    blur_level: 2 // 1: 清晰(4096), 2: 适中(2048), 4: 模糊(1024)
-  },
-  sampling: {
-    polygon_line: {
-      cumulative_size_ratio: 0.8,
-      max_feature_count_ratio: 0.6
-    },
-    point: {
-      sample_ratio: 0.6
-    }
-  },
-  simplification: {
-    tolerance_multiplier: 4.0, // 2: 保守, 4: 平衡, 8: 激进
-    algorithm: 'visvalingam' // visvalingam | douglas_peucker
+    max_size_mb: 5.0
   }
 })
+
+// 准备阶段状态 (v4.0 新增)
+const preparationStatus = ref(null) // 存储准备阶段检查结果
+const showPreparationFailedDialog = ref(false) // 准备失败对话框
+
+// 准备阶段新增状态变量（支持三步工作流）
+const showPreparationDialog = ref(false) // 是否显示准备对话框
+const preparationCheckResult = ref(null) // 准备检查的结果
+const preparationInProgress = ref(false) // 准备工作是否进行中
+const canStartGeneration = ref(false) // 是否可以开始生成
+const prepareTaskId = ref(null) // 准备任务ID
+let prepareProgressPollingTimer = null // 轮询定时器
 
 const columns = computed(() => props.data?.columns || [])
 const rows = computed(() => props.data?.rows || [])
@@ -783,22 +898,114 @@ const handleQuickView = async () => {
   }
 
   try {
+    // 显示准备对话框
+    showPreparationDialog.value = true
     quickViewLoading.value = true
+    preparationCheckResult.value = null
+    preparationInProgress.value = false
+    canStartGeneration.value = false
 
-    // 步骤1: 获取瓦片配置（计算 minZoom 和 maxZoom）
-    // 注意: createAPIClient 默认 extractData=true，已自动提取 response.data
+    // 执行准备检查（诊断）
+    const checkResult = await quickViewAPI.checkPreparation(engineId.value, schema.value, table.value)
+    preparationCheckResult.value = checkResult
+
+    // 根据结果状态设置标志位
+    if (checkResult.overall_status === 'passed') {
+      canStartGeneration.value = true
+    } else {
+      canStartGeneration.value = false
+    }
+  } catch (error) {
+    console.error('检查准备状态失败:', error)
+    ElMessage.error(error.response?.data?.error || '检查准备状态失败')
+    showPreparationDialog.value = false
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 启动准备工作（创建物化视图、索引、ANALYZE）
+const handlePrepareForCreateMVT = async () => {
+  try {
+    preparationInProgress.value = true
+    ElMessage.info('准备工作已启动，请耐心等待...')
+
+    // 调用准备API
+    const result = await quickViewAPI.prepareForCreateMVT(engineId.value, schema.value, table.value)
+    prepareTaskId.value = result.fingerprint
+
+    // 开始轮询准备进度
+    startPrepareProgressPolling()
+  } catch (error) {
+    console.error('启动准备工作失败:', error)
+    ElMessage.error(error.response?.data?.error || '启动准备工作失败')
+    preparationInProgress.value = false
+  }
+}
+
+// 轮询准备进度
+const startPrepareProgressPolling = () => {
+  // 清除旧的轮询定时器
+  if (prepareProgressPollingTimer) {
+    clearInterval(prepareProgressPollingTimer)
+  }
+
+  prepareProgressPollingTimer = setInterval(async () => {
+    try {
+      const status = await quickViewAPI.getQuickViewStatus(engineId.value, schema.value, table.value)
+
+      // 检查准备状态字段
+      if (status.preparation_status) {
+        const prepStatus = status.preparation_status
+
+        if (prepStatus.overall_status === 'passed') {
+          // 准备成功
+          clearInterval(prepareProgressPollingTimer)
+          prepareProgressPollingTimer = null
+          preparationInProgress.value = false
+          canStartGeneration.value = true
+          preparationCheckResult.value = prepStatus
+          ElMessage.success('准备工作已完成，可以开始生成')
+        } else if (prepStatus.overall_status === 'failed') {
+          // 准备失败
+          clearInterval(prepareProgressPollingTimer)
+          prepareProgressPollingTimer = null
+          preparationInProgress.value = false
+          preparationCheckResult.value = prepStatus
+          ElMessage.error('准备工作失败，请检查数据库权限或磁盘空间')
+        }
+        // 否则继续轮询
+      } else if (status.status === 'prepared') {
+        // 备选方案：如果 preparation_status 为空但 status='prepared'，也表示准备完成
+        clearInterval(prepareProgressPollingTimer)
+        prepareProgressPollingTimer = null
+        preparationInProgress.value = false
+        canStartGeneration.value = true
+        ElMessage.success('准备工作已完成，可以开始生成')
+      }
+    } catch (error) {
+      console.error('查询准备进度失败:', error)
+    }
+  }, 2000) // 每2秒轮询一次
+}
+
+// 启动生成（在准备通过后）
+const handleStartGeneration = async () => {
+  try {
+    // 获取瓦片配置（计算 minZoom 和 maxZoom）
     const tileConfig = await quickViewAPI.getTileConfig(engineId.value, schema.value, table.value)
 
     // 保存配置数据
     tileConfigData.value = tileConfig
 
-    // 步骤2: 显示优化配置对话框
+    // 关闭准备对话框
+    showPreparationDialog.value = false
+
+    // 显示优化配置对话框
     showOptimizationDialog.value = true
   } catch (error) {
     console.error('获取瓦片配置失败:', error)
     ElMessage.error(error.response?.data?.error || '获取瓦片配置失败')
-  } finally {
-    quickViewLoading.value = false
   }
 }
 
@@ -837,7 +1044,6 @@ const handleOptimizationConfigConfirm = async () => {
     await quickViewAPI.triggerQuickView(engineId.value, schema.value, table.value, {
       min_zoom: minZoom,
       max_zoom: maxZoom,
-      concurrency: 10,
       priority: 'default',
       optimization_config: optimizationConfig.value
     })
@@ -864,33 +1070,76 @@ const handleOptimizationConfigCancel = () => {
 // 重置优化配置到默认值
 const resetOptimizationConfig = () => {
   optimizationConfig.value = {
-    version: '2.0',
+    version: '4.0',
+    extent_optimization: {
+      max_zoom_extent: 2048,
+      base_extent: 1024,
+      min_extent: 256
+    },
     attribute_pruning: {
       enabled: true,
       zoom_threshold: 8
     },
     tile_size_thresholds: {
-      no_optimization_mb: 2.0,
-      stop_optimization_mb: 5.0
-    },
-    extent_optimization: {
-      blur_level: 2
-    },
-    sampling: {
-      polygon_line: {
-        cumulative_size_ratio: 0.8,
-        max_feature_count_ratio: 0.6
-      },
-      point: {
-        sample_ratio: 0.6
-      }
-    },
-    simplification: {
-      tolerance_multiplier: 4.0,
-      algorithm: 'visvalingam'
+      max_size_mb: 5.0
     }
   }
   ElMessage.success('已恢复默认配置')
+}
+
+// 准备失败处理：重新检查 (v4.0 新增)
+const handleRecheckPreparation = async () => {
+  try {
+    showPreparationFailedDialog.value = false
+    quickViewLoading.value = true
+    // 重新触发快显任务（会重新执行准备检查）
+    const minZoomInput = document.getElementById('config-min-zoom-input')
+    const maxZoomInput = document.getElementById('config-max-zoom-input')
+    const minZoom = parseInt(minZoomInput?.value || 0, 10)
+    const maxZoom = parseInt(maxZoomInput?.value || 18, 10)
+
+    await quickViewAPI.triggerQuickView(engineId.value, schema.value, table.value, {
+      min_zoom: minZoom,
+      max_zoom: maxZoom,
+      priority: 'default',
+      optimization_config: optimizationConfig.value
+    })
+
+    quickViewStatus.value = 'generating'
+    ElMessage.success('准备阶段检查已重新启动')
+    startQuickViewPolling()
+  } catch (error) {
+    console.error('重新检查失败:', error)
+    ElMessage.error('重新检查失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 准备失败处理：完成准备 (v4.0 新增)
+const handleCompletePreparation = async () => {
+  try {
+    showPreparationFailedDialog.value = false
+    quickViewLoading.value = true
+    ElMessage.warning('用户确认跳过失败项，继续生成（可能影响性能）')
+    // 关闭优化配置对话框，继续进行
+    showOptimizationDialog.value = false
+    // 继续生成
+    startQuickViewPolling()
+  } catch (error) {
+    console.error('完成准备失败:', error)
+    ElMessage.error('完成准备失败')
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+// 准备失败处理：取消 (v4.0 新增)
+const handleCancelPreparation = () => {
+  showPreparationFailedDialog.value = false
+  quickViewStatus.value = 'none'
+  quickViewProgress.value = null
+  ElMessage.info('已取消预缓存任务')
 }
 
 // 格式化空间范围
@@ -1214,6 +1463,50 @@ body.is-resizing .map-splitter::after {
 .mode-switch-wrapper .el-switch.is-disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 准备状态对话框样式 */
+.preparation-status-section {
+  padding: 12px 0;
+}
+
+.preparation-loading {
+  padding: 20px;
+}
+
+.preparation-progress-section {
+  padding: 12px 0;
+  text-align: center;
+}
+
+.check-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.check-item:last-child {
+  border-bottom: none;
+}
+
+.failed-check {
+  padding: 8px 12px;
+  background-color: var(--el-fill-color);
+  border-left: 3px solid #f56c6c;
+  border-radius: 4px;
+}
+
+.passed-check {
+  padding: 8px 12px;
+  background-color: var(--el-fill-color);
+  border-left: 3px solid #67c23a;
+  border-radius: 4px;
+}
+
+.skipped-check {
+  padding: 8px 12px;
+  background-color: var(--el-fill-color);
+  border-left: 3px solid #909399;
+  border-radius: 4px;
 }
 </style>
 

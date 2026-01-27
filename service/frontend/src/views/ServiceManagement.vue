@@ -27,7 +27,7 @@
           <el-option label="Data API" value="data_api" />
           <el-option label="REST" value="rest" />
         </el-select>
-        <el-button type="primary" :icon="Plus" @click="handleCreate">创建服务</el-button>
+        <el-button type="primary" :icon="Plus" @click="handleCreate">服务注册</el-button>
         <el-button :icon="Download" @click="handleExport">导出配置</el-button>
       </div>
     </div>
@@ -47,7 +47,25 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="url" label="服务地址" min-width="250" show-overflow-tooltip />
+      <el-table-column label="服务地址" min-width="250">
+        <template #default="{ row }">
+          <div style="display: flex; align-items: center; gap: 8px;" @click.stop>
+            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              {{ row.url }}
+            </span>
+            <el-tooltip content="复制服务地址" placement="top">
+              <el-button
+                size="small"
+                text
+                @click.stop="handleCopyURL(row.url)"
+                style="padding: 4px;"
+              >
+                <el-icon><DocumentCopy /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag :type="getStatusColor(row.status)">
@@ -64,7 +82,17 @@
         <template #default="{ row }">
           <el-button size="small" @click.stop="handleEdit(row)">编辑</el-button>
           <el-button size="small" @click.stop="handleRefresh(row)">刷新</el-button>
-          <el-button size="small" @click.stop="handleHealthCheck(row)">健康检查</el-button>
+          <el-tooltip
+            :content="row.health_check_url ? '执行健康检查' : '未配置健康检查地址，将使用服务地址进行检查'"
+            placement="top"
+          >
+            <el-button
+              size="small"
+              @click.stop="handleHealthCheck(row)"
+            >
+              健康检查
+            </el-button>
+          </el-tooltip>
           <el-button size="small" type="danger" @click.stop="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -88,7 +116,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, Download } from '@element-plus/icons-vue'
+import { Search, Plus, Download, DocumentCopy } from '@element-plus/icons-vue'
 import serviceAPI from '../api/service'
 
 const router = useRouter()
@@ -112,9 +140,9 @@ const loadServices = async () => {
       params.service_type = filterType.value
     }
 
-    const { data } = await serviceAPI.list(params)
-    services.value = data.data || []
-    total.value = data.total || 0
+    const result = await serviceAPI.list(params)
+    services.value = result.data || []
+    total.value = result.total || 0
   } catch (error) {
     ElMessage.error('加载服务列表失败: ' + (error.response?.data?.message || error.message))
   } finally {
@@ -130,9 +158,9 @@ const handleSearch = async () => {
 
   try {
     loading.value = true
-    const { data } = await serviceAPI.search({ keyword: searchKeyword.value })
-    services.value = data.data || []
-    total.value = data.total || 0
+    const result = await serviceAPI.search({ keyword: searchKeyword.value })
+    services.value = result.data || []
+    total.value = result.total || 0
   } catch (error) {
     ElMessage.error('搜索失败: ' + (error.response?.data?.message || error.message))
   } finally {
@@ -164,11 +192,11 @@ const handleRefresh = async (row) => {
 
 const handleHealthCheck = async (row) => {
   try {
-    const { data } = await serviceAPI.healthCheck(row.id)
-    if (data.healthy) {
+    const result = await serviceAPI.healthCheck(row.id)
+    if (result.status === 'healthy') {
       ElMessage.success('健康检查通过')
     } else {
-      ElMessage.warning('健康检查失败: ' + data.message)
+      ElMessage.warning('健康检查失败: ' + result.message)
     }
     await loadServices()
   } catch (error) {
@@ -194,8 +222,8 @@ const handleDelete = async (row) => {
 
 const handleExport = async () => {
   try {
-    const { data } = await serviceAPI.export()
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const result = await serviceAPI.export()
+    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -205,6 +233,28 @@ const handleExport = async () => {
     ElMessage.success('导出成功')
   } catch (error) {
     ElMessage.error('导出失败: ' + (error.response?.data?.message || error.message))
+  }
+}
+
+const handleCopyURL = async (url) => {
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('服务地址已复制到剪贴板')
+  } catch (error) {
+    // 降级方案：使用传统方法复制
+    const textarea = document.createElement('textarea')
+    textarea.value = url
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      ElMessage.success('服务地址已复制到剪贴板')
+    } catch (err) {
+      ElMessage.error('复制失败，请手动复制')
+    }
+    document.body.removeChild(textarea)
   }
 }
 

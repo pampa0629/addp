@@ -114,13 +114,13 @@ const getServicesByType = (type) => {
 const loadCatalog = async () => {
   try {
     loading.value = true
-    const { data } = await serviceAPI.getCatalog()
+    const catalog = await serviceAPI.getCatalog()
 
     // 后端返回的是按类型分组的 map: { "wms": [...], "wfs": [...] }
     // 需要将所有服务合并成一个扁平列表
-    if (data && typeof data === 'object') {
+    if (catalog && typeof catalog === 'object') {
       const allServicesList = []
-      Object.values(data).forEach(serviceList => {
+      Object.values(catalog).forEach(serviceList => {
         if (Array.isArray(serviceList)) {
           allServicesList.push(...serviceList)
         }

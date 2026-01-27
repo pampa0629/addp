@@ -462,8 +462,21 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 
 	// 提取 table_metadata
 	if tableMeta, ok := item.Attributes["table_metadata"].(map[string]interface{}); ok {
+		// primary_key 可能是字符串或数组
 		if pk, ok := tableMeta["primary_key"].(string); ok {
+			// 兼容字符串格式
 			spatialMeta.PrimaryKey = pk
+			fmt.Printf("✅ [GetTableSpatialMetadata] 提取主键（字符串格式）: %s\n", pk)
+		} else if pkArray, ok := tableMeta["primary_key"].([]interface{}); ok {
+			// 处理数组格式（取第一个主键列）
+			if len(pkArray) > 0 {
+				if pkStr, ok := pkArray[0].(string); ok {
+					spatialMeta.PrimaryKey = pkStr
+					fmt.Printf("✅ [GetTableSpatialMetadata] 提取主键（数组格式）: %s (从 %d 个主键中取第一个)\n", pkStr, len(pkArray))
+				}
+			}
+		} else {
+			fmt.Printf("⚠️  [GetTableSpatialMetadata] 主键格式未知，类型为: %T\n", tableMeta["primary_key"])
 		}
 	}
 
@@ -485,6 +498,10 @@ func (s *MetadataQueryService) GetTableSpatialMetadata(tenantID, engineID uint, 
 	if item.RowCount != nil {
 		spatialMeta.RowCount = *item.RowCount
 	}
+
+	// 📝 日志：返回前检查主键
+	fmt.Printf("🔍 [GetTableSpatialMetadata] 即将返回，主键值: '%s', 几何列: '%s', SRID: %d\n",
+		spatialMeta.PrimaryKey, spatialMeta.GeometryColumn, spatialMeta.SRID)
 
 	return spatialMeta, nil
 }

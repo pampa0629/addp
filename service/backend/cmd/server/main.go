@@ -40,6 +40,7 @@ func main() {
 
 	// 初始化 repositories
 	externalServiceRepo := repository.NewExternalServiceRepository(db)
+	internalServiceRepo := repository.NewInternalServiceRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
@@ -63,14 +64,23 @@ func main() {
 
 	// 初始化 services
 	externalServiceService := registry.NewExternalServiceService(externalServiceRepo)
+	internalServiceService := api.NewInternalServiceHandler(internalServiceRepo)
 	queryService := data.NewQueryService(systemClient, metaClient)
 
 	// 初始化 handlers
 	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
+	sqlDB, err := db.DB()
+	if err != nil {
+		logger.L().Error("Failed to get SQL DB", "error", err)
+		os.Exit(1)
+	}
+	wfsHandler := api.NewWFSHandler(internalServiceRepo, db, sqlDB)
+	ogcAPIHandler := api.NewOGCAPIHandler(internalServiceRepo, db)
+	wmtsHandler := api.NewWMTSHandler(internalServiceRepo, db)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, systemClient)
+	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceService, wfsHandler, ogcAPIHandler, wmtsHandler, systemClient)
 
 	// 初始化调度器
 	ctx := context.Background()

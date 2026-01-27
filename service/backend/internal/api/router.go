@@ -13,6 +13,10 @@ func SetupRouter(
 	cfg *config.Config,
 	serviceRegistryHandler *ServiceRegistryHandler,
 	dataServiceHandler *DataServiceHandler,
+	internalServiceHandler *InternalServiceHandler,
+	wfsHandler *WFSHandler,
+	ogcAPIHandler *OGCAPIHandler,
+	wmtsHandler *WMTSHandler,
 	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
@@ -25,6 +29,31 @@ func SetupRouter(
 		c.JSON(200, gin.H{"status": "healthy", "service": "service"})
 	})
 
+	// OGC WFS 端点（公开访问，无需认证）
+	ogc := router.Group("/ogc/wfs")
+	{
+		ogc.GET("/:serviceName", wfsHandler.HandleWFSRequest)
+		ogc.POST("/:serviceName", wfsHandler.PostGetFeature)
+	}
+
+	// OGC API Features 端点（公开访问，无需认证）
+	api_features := router.Group("/ogc/api/:serviceName")
+	{
+		api_features.GET("/", ogcAPIHandler.LandingPage)
+		api_features.GET("/conformance", ogcAPIHandler.Conformance)
+		api_features.GET("/collections", ogcAPIHandler.Collections)
+		api_features.GET("/collections/:collectionID", ogcAPIHandler.GetCollection)
+		api_features.GET("/collections/:collectionID/items", ogcAPIHandler.Items)
+		api_features.GET("/collections/:collectionID/items/:featureID", ogcAPIHandler.GetItem)
+	}
+
+	// OGC WMTS 端点（公开访问，无需认证）
+	wmts := router.Group("/ogc/wmts")
+	{
+		wmts.GET("/:serviceName", wmtsHandler.GetCapabilities)
+		wmts.GET("/:serviceName/tile/:layer/:z/:x/:y.mvt", wmtsHandler.GetTile)
+	}
+
 	// API 路由组（需要认证）
 	api := router.Group("/api/service")
 	{
@@ -35,7 +64,7 @@ func SetupRouter(
 			api.Use(audit.AuditMiddleware("service", systemClient))
 		}
 
-		// 服务注册管理 API
+		// 外部服务注册管理 API
 		registry := api.Group("/registry")
 		{
 			registry.POST("/services", serviceRegistryHandler.CreateService)
@@ -47,6 +76,22 @@ func SetupRouter(
 			registry.POST("/services/:id/health", serviceRegistryHandler.HealthCheck)
 			registry.GET("/search", serviceRegistryHandler.SearchServices)
 			registry.GET("/export", serviceRegistryHandler.ExportConfig)
+		}
+
+		// 内部服务（数据发布）API
+		internal := api.Group("/internal")
+		{
+			// 服务管理
+			internal.POST("/services", internalServiceHandler.CreateService)
+			internal.GET("/services", internalServiceHandler.ListServices)
+			internal.GET("/services/:id", internalServiceHandler.GetService)
+			internal.PUT("/services/:id", internalServiceHandler.UpdateService)
+			internal.DELETE("/services/:id", internalServiceHandler.DeleteService)
+
+			// 图层管理
+			internal.POST("/services/:id/layers", internalServiceHandler.AddLayer)
+			internal.PUT("/services/:id/layers/:layer_id", internalServiceHandler.UpdateLayer)
+			internal.DELETE("/services/:id/layers/:layer_id", internalServiceHandler.DeleteLayer)
 		}
 
 		// 服务目录 API

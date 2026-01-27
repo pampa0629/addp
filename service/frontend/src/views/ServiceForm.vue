@@ -177,14 +177,23 @@ const loadService = async () => {
   if (!isEdit.value) return
 
   try {
-    const { data } = await serviceAPI.get(route.params.id)
+    const service = await serviceAPI.get(route.params.id)
+
+    // 填充表单数据
     form.value = {
-      ...form.value,
-      ...data,
+      name: service.name || '',
+      description: service.description || '',
+      service_type: service.service_type || '',
+      url: service.url || '',
+      auth_type: service.auth_type || 'none',
+      health_check: service.health_check_url || '',
+      status: service.status || 'active',
+      // 认证信息不回显（安全考虑）
       auth_username: '',
       auth_password: '',
       auth_token: '',
-      auth_api_key: ''
+      auth_api_key: '',
+      auth_key_name: 'X-API-Key'
     }
   } catch (error) {
     ElMessage.error('加载服务信息失败: ' + (error.response?.data?.message || error.message))

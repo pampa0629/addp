@@ -135,8 +135,7 @@ func SetupRouter(
 			unifiedTilesHandler.GetTile(c)
 		})
 
-		// Pre-Cache API（预缓存 - 推荐使用）
-		// Quick View API（快显）
+		// Quick View API（快显服务：准备 → 预缓存 → MVT启用）
 		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
 
 		// GeoJSON API（轻量级几何数据获取）
@@ -144,21 +143,23 @@ func SetupRouter(
 		engines.GET("/:id/spatial/:schema/:table/geojson", geojsonHandler.GetGeoJSON)
 		engines.GET("/:id/spatial/:schema/:table/geojson/metadata", geojsonHandler.GetGeoJSONMetadata)
 
-		// Pre-Cache 路由
-		engines.POST("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.TriggerQuickView)
-		engines.GET("/:id/spatial/:schema/:table/pre-cache/status", quickViewHandler.GetQuickViewStatus)
-		engines.PATCH("/:id/spatial/:schema/:table/pre-cache/mode", quickViewHandler.UpdatePreferredMode)
-		engines.POST("/:id/spatial/:schema/:table/pre-cache/cancel", quickViewHandler.CancelQuickView)
-		engines.POST("/:id/spatial/:schema/:table/pre-cache/resume", quickViewHandler.ResumeQuickView)
-		engines.DELETE("/:id/spatial/:schema/:table/pre-cache", quickViewHandler.ClearQuickView)
+		// Quick View 路由（快显服务：准备 → 预缓存 → MVT启用）
+		engines.POST("/:id/spatial/:schema/:table/quick-view/prepare", quickViewHandler.PrepareForCreateMVT)
+		engines.POST("/:id/spatial/:schema/:table/quick-view/pre-cache", quickViewHandler.TriggerQuickView)
+		engines.GET("/:id/spatial/:schema/:table/quick-view/status", quickViewHandler.GetQuickViewStatus)
+		engines.PATCH("/:id/spatial/:schema/:table/quick-view/preferred-mode", quickViewHandler.UpdatePreferredMode)
+		engines.POST("/:id/spatial/:schema/:table/quick-view/cancel", quickViewHandler.CancelQuickView)
+		engines.POST("/:id/spatial/:schema/:table/quick-view/resume", quickViewHandler.ResumeQuickView)
+		engines.DELETE("/:id/spatial/:schema/:table/quick-view", quickViewHandler.ClearQuickView)
+		engines.GET("/:id/spatial/:schema/:table/quick-view/check-preparation", quickViewHandler.CheckPreparation)
 	}
 
-	// Pre-Cache 任务列表和统计（全局）
-	api.GET("/pre-cache/tasks", func(c *gin.Context) {
+	// Quick View 任务列表和统计（全局）
+	api.GET("/quick-view/tasks", func(c *gin.Context) {
 		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
 		quickViewHandler.ListQuickViewTasks(c)
 	})
-	api.GET("/pre-cache/statistics", func(c *gin.Context) {
+	api.GET("/quick-view/statistics", func(c *gin.Context) {
 		quickViewHandler := NewQuickViewHandler(quickViewService, redisClient)
 		quickViewHandler.GetStatistics(c)
 	})

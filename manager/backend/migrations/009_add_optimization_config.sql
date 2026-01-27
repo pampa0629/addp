@@ -13,7 +13,7 @@ ADD COLUMN IF NOT EXISTS optimization_config JSONB DEFAULT '{
     "stop_optimization_mb": 5.0
   },
   "extent_optimization": {
-    "blur_level": 2
+    "blur_level": 1
   },
   "sampling": {
     "polygon_line": {

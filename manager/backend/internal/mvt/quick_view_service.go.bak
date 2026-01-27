@@ -15,7 +15,6 @@ import (
 	commonModels "github.com/addp/common/models"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"gorm.io/gorm"
 )
 
 // QuickViewService 快显服务
@@ -24,8 +23,6 @@ type QuickViewService struct {
 	tileGen     *TileGenerator
 	minioClient *minio.Client
 	bucket      string
-	db          *gorm.DB // 数据库连接（用于保存准备状态）
-	prepService *PreparationService // 准备阶段服务
 }
 
 // QuickViewConfig 快显配置
@@ -55,7 +52,7 @@ type MinIOConfig struct {
 }
 
 // NewQuickViewService 创建快显服务
-func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig, db *gorm.DB) (*QuickViewService, error) {
+func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig) (*QuickViewService, error) {
 	// 初始化 MinIO 客户端
 	client, err := minio.New(minioCfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(minioCfg.AccessKey, minioCfg.SecretKey, ""),
@@ -91,8 +88,6 @@ func NewQuickViewService(tileGen *TileGenerator, minioCfg MinIOConfig, db *gorm.
 		tileGen:     tileGen,
 		minioClient: client,
 		bucket:      minioCfg.Bucket,
-		db:          db,
-		prepService: NewPreparationService(db, tileGen.resourceService),
 	}, nil
 }
 
@@ -145,62 +140,6 @@ func (s *QuickViewService) GenerateMixed(
 	logger.L().Info("✅ SRID 验证通过",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
 		"srid", actualSRID)
-
-	// 1.3 运行准备阶段检查（v4.0 新增）
-	logger.L().Info("🔄 开始准备阶段检查",
-		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table))
-
-	prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
-	if err != nil {
-		logger.L().Error("❌ 准备阶段检查失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"error", err)
-		return nil, fmt.Errorf("准备阶段检查失败: %w", err)
-	}
-
-	logger.L().Info("✅ 准备阶段检查完成",
-		"overall_status", prepStatus.OverallStatus,
-		"summary", prepStatus.Summary)
-
-	// 如果准备阶段失败，返回错误并让前端显示失败信息
-	if prepStatus.OverallStatus == "failed" {
-		// 保存准备状态到数据库（以便前端显示）
-		logger.L().Warn("⚠️ 准备阶段有失败项",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"checks", prepStatus.Checks)
-		return nil, fmt.Errorf("准备阶段检查失败，请手动处理后重试")
-	}
-
-	// 🆕 v4.0 检查是否需要使用物化视图（如果原始 SRID 不是 3857）
-	// 原始 SRID 是在 actualSRID 中
-	if actualSRID != 3857 {
-		// 需要使用物化视图，修改配置
-		cfg.Table = fmt.Sprintf("%s_mv3857", cfg.Table)
-		cfg.GeomColumn = "geom_3857"
-		logger.L().Info("🔄 启用物化视图（坐标系转换）",
-			"original_srid", actualSRID,
-			"mv_table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"mv_geom_column", cfg.GeomColumn)
-	} else {
-		logger.L().Info("✅ 原始表已是 3857 坐标系，无需物化视图",
-			"srid", actualSRID)
-	}
-
-
-	// 1.5 精准统计信息采集（Phase 1诊断）
-	stats, err := s.collectStatistics(ctx, cfg)
-	if err != nil {
-		logger.L().Warn("⚠️ 统计信息采集失败，继续生成",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"error", err)
-	} else {
-		// 记录统计信息摘要
-		logger.L().Info("📊 统计信息采集完成",
-			"table_rows", stats.TableRows,
-			"bounds", fmt.Sprintf("[%.2f,%.2f,%.2f,%.2f]", stats.Bounds[0], stats.Bounds[1], stats.Bounds[2], stats.Bounds[3]),
-			"last_analyze_age_hours", stats.LastAnalyzeAgeHours,
-			"needs_analyze", stats.NeedsAnalyze)
-	}
 
 	// 2. 预先计算所有层级的瓦片范围
 	type zoomRange struct {
@@ -300,23 +239,17 @@ func (s *QuickViewService) GenerateMixed(
 	// 4. 每层统计数据（线程安全）
 	type zoomStats struct {
 		sync.Mutex
-		totalTiles         int
-		generatedTiles     int
-		emptyTiles         int
-		skippedTiles       int // 跳过的瓦片数（已存在）
-		totalGenTime       float64
-		totalSize          int64
-		maxTileSize        int64
-		minTileSize        int64
-		extentReducedCount int // Extent减半次数
+		totalTiles     int
+		generatedTiles int
+		emptyTiles     int
+		skippedTiles   int // 跳过的瓦片数（已存在）
+		totalGenTime   float64
+		totalSize      int64
 	}
 
 	statsMap := make(map[int]*zoomStats)
 	for _, zr := range zoomRanges {
-		statsMap[zr.zoom] = &zoomStats{
-			totalTiles:  zr.totalTiles,
-			minTileSize: math.MaxInt64,
-		}
+		statsMap[zr.zoom] = &zoomStats{totalTiles: zr.totalTiles}
 	}
 
 	// 5. 启动 Worker Pool
@@ -339,24 +272,6 @@ func (s *QuickViewService) GenerateMixed(
 			logger.L().Debug("Worker 开始处理任务", "worker_id", id)
 			tilesProcessed := 0
 			for coord := range jobs {
-				// ✅ 新增：检查 Context 是否被取消
-				select {
-				case <-ctx.Done():
-					logger.L().Info("⚠️  Worker 检测到 Context 取消，停止处理新瓦片",
-						"worker_id", id,
-						"tiles_processed", tilesProcessed)
-					return
-				default:
-				}
-
-				// ✅ 新增：检查 Redis 取消标志
-				if progressTracker != nil && progressTracker.IsCancelled(ctx) {
-					logger.L().Info("⚠️  Worker 检测到 Redis 取消标志，停止处理新瓦片",
-						"worker_id", id,
-						"tiles_processed", tilesProcessed)
-					return
-				}
-
 				result := s.processTile(ctx, cfg, coord)
 				results <- result
 				tilesProcessed++
@@ -504,34 +419,33 @@ func (s *QuickViewService) GenerateMixed(
 			// 继续处理
 		}
 
-	// 每个瓦片都检查Redis取消标志（性能影响<1%，用户体验最佳）
-		if progressTracker != nil && progressTracker.IsCancelled(ctx) {
-			logger.L().Warn("⚠️  瓦片生成被用户取消（Redis标志）",
-				"processed", processedTiles,
-				"total", totalTaskCount,
-				"progress", fmt.Sprintf("%.1f%%", float64(processedTiles)/float64(totalTaskCount)*100))
+		// 每100个瓦片检查一次Redis取消标志（避免频繁查询Redis）
+		if processedTiles%100 == 0 && progressTracker != nil {
+			if progressTracker.IsCancelled(ctx) {
+				logger.L().Warn("⚠️  瓦片生成被用户取消（Redis标志）",
+					"processed", processedTiles,
+					"total", totalTaskCount,
+					"progress", fmt.Sprintf("%.1f%%", float64(processedTiles)/float64(totalTaskCount)*100))
 
-			// 更新进度为已取消
-			progressTracker.UpdateProgress(ctx, &QuickViewProgress{
-				Status:             "cancelled",
-				CurrentZoom:        result.coord.Z,
-				MaxZoom:            cfg.MaxZoom,
-				TilesProcessed:     processedTiles,
-				TilesTotalEstimate: totalTaskCount,
-				ProgressPercent:    float64(processedTiles) / float64(totalTaskCount) * 100,
-			})
+				// 更新进度为已取消
+				progressTracker.UpdateProgress(ctx, &QuickViewProgress{
+					Status:             "cancelled",
+					CurrentZoom:        result.coord.Z,
+					MaxZoom:            cfg.MaxZoom,
+					TilesProcessed:     processedTiles,
+					TilesTotalEstimate: totalTaskCount,
+					ProgressPercent:    float64(processedTiles) / float64(totalTaskCount) * 100,
+				})
 
-			// ⚠️ 不清除取消标志！原因：
-			// 1. 多Worker场景下，清除标志会导致其他Worker无法感知取消
-			// 2. Redis标志由cancel操作设置，由cancel操作负责清除
-			// 3. 标志有TTL（1小时），会自动过期
-			// 4. Worker只应该"读取"标志，不应该"修改"标志
+				// 清除取消标志
+				progressTracker.ClearCancelFlag(ctx)
 
-			// 停止进度监控 goroutine
-			close(progressDone)
+				// 停止进度监控 goroutine
+				close(progressDone)
 
-			// 返回取消错误
-			return nil, fmt.Errorf("task cancelled by user")
+				// 返回取消错误
+				return nil, fmt.Errorf("task cancelled by user")
+			}
 		}
 
 		stats := statsMap[result.coord.Z]
@@ -543,14 +457,6 @@ func (s *QuickViewService) GenerateMixed(
 				stats.generatedTiles++
 				stats.totalGenTime += result.genTimeMs * 1e6 // 转换为纳秒
 				stats.totalSize += result.sizeBytes
-
-				// 跟踪 min/max 瓦片大小
-				if result.sizeBytes > stats.maxTileSize {
-					stats.maxTileSize = result.sizeBytes
-				}
-				if result.sizeBytes < stats.minTileSize {
-					stats.minTileSize = result.sizeBytes
-				}
 			} else if result.sizeBytes == -1 {
 				// 跳过的瓦片（已存在）
 				stats.skippedTiles++
@@ -593,15 +499,7 @@ func (s *QuickViewService) GenerateMixed(
 		}
 
 		if processedTiles%100 == 0 {
-			// 每100个瓦片输出一次进度和资源监控
-			resourceInfo := s.getResourceMetrics(ctx, cfg)
-			logger.L().Info(fmt.Sprintf("⚙️ z=%d epoch: processed=%d, CPU=%.0f%%, Mem=%.1fMB, DBConns=%d, QueryTime=%.1fms",
-				result.coord.Z,
-				processedTiles,
-				resourceInfo.CPUPercent,
-				resourceInfo.MemoryMB,
-				resourceInfo.DBConnections,
-				resourceInfo.QueryTimeMs),
+			logger.L().Info("⚙️  快显生成进度",
 				"processed", processedTiles,
 				"total_estimated", totalTaskCount)
 		}
@@ -616,27 +514,10 @@ func (s *QuickViewService) GenerateMixed(
 		close(progressDone)
 	}
 
-	// 8. 汇总结果与详细日志
+	// 8. 汇总结果
 	result := &GenerateResult{}
 	var lastAvgTime, lastAvgSize float64
-	var overallAvgTime float64 = 0
 
-	// 第一遍：计算所有平均值用于异常检测
-	var totalTime, totalTiles float64
-	for _, zr := range zoomRanges {
-		stats := statsMap[zr.zoom]
-		stats.Lock()
-		if stats.generatedTiles > 0 {
-			totalTime += stats.totalGenTime / 1e6
-			totalTiles += float64(stats.generatedTiles)
-		}
-		stats.Unlock()
-	}
-	if totalTiles > 0 {
-		overallAvgTime = totalTime / totalTiles
-	}
-
-	// 第二遍：输出详细的层级性能日志
 	for _, zr := range zoomRanges {
 		stats := statsMap[zr.zoom]
 		stats.Lock()
@@ -651,90 +532,14 @@ func (s *QuickViewService) GenerateMixed(
 			avgSizeKB = float64(stats.totalSize) / float64(stats.generatedTiles) / 1024.0
 		}
 
-		// 计算数据倾斜度 (max_size / avg_size)
-		skewness := 0.0
-		if avgSizeKB > 0 && stats.maxTileSize > 0 {
-			skewness = float64(stats.maxTileSize) / 1024.0 / avgSizeKB
-		}
-
-		// 计算空瓦片占比
-		emptyRatio := 0.0
-		if stats.totalTiles > 0 {
-			emptyRatio = float64(stats.emptyTiles) / float64(stats.totalTiles) * 100
-		}
-
-		// 检测性能异常（与整体平均相比，下降超过50%）
-		bottleneck := false
-		if overallAvgTime > 0 && avgTimeMs > overallAvgTime*1.5 {
-			bottleneck = true
-		}
-
-		// 总大小（MB）
-		totalSizeMB := float64(stats.totalSize) / 1024.0 / 1024.0
-
-		// 最大/最小瓦片大小（MB/KB）
-		maxSizeMB := float64(stats.maxTileSize) / 1024.0 / 1024.0
-		minSizeKB := float64(stats.minTileSize) / 1024.0
-		if stats.minTileSize == math.MaxInt64 {
-			minSizeKB = 0 // 没有生成的瓦片
-		}
-
-		// 详细的层级性能日志，按照计划格式
-		logger.L().Info(fmt.Sprintf("z=%d: tiles_estimate=%d, generated=%d, empty=%d, skipped=%d, avg_time_ms=%.1f, avg_size_kb=%.1f, total_size_mb=%.1f, max_size_mb=%.1f, min_size_kb=%.1f, skewness=%.1f, empty_ratio=%.1f%%, extent_reduced=%d, bottleneck=%v",
-			zr.zoom,
-			stats.totalTiles,
-			stats.generatedTiles,
-			stats.emptyTiles,
-			stats.skippedTiles,
-			avgTimeMs,
-			avgSizeKB,
-			totalSizeMB,
-			maxSizeMB,
-			minSizeKB,
-			skewness,
-			emptyRatio,
-			stats.extentReducedCount,
-			bottleneck),
-			"zoom", zr.zoom)
-
-		// 性能诊断警告（异常检测和原因分析）
-		if bottleneck && overallAvgTime > 0 {
-			// 检测到性能异常
-			perfDecrease := ((avgTimeMs - overallAvgTime) / overallAvgTime) * 100
-			logger.L().Warn(fmt.Sprintf("⚠️ z=%d 性能异常: avg_time=%.1fms (平均=%.1fms, +%.0f%%)",
-				zr.zoom, avgTimeMs, overallAvgTime, perfDecrease))
-
-			// 原因分析
-			if skewness > 3.0 {
-				logger.L().Warn(fmt.Sprintf("原因分析: avg_tile_size=%.1fKB, max_tile_size=%.1fMB, 数据倾斜度=%.1f (存在明显数据热点)",
-					avgSizeKB, maxSizeMB, skewness))
-				logger.L().Info("建议: 存在数据热点，后续可考虑增量策略或其他优化")
-			} else if stats.extentReducedCount > stats.generatedTiles/10 {
-				// Extent减半次数超过生成瓦片数的10%
-				extentRatio := float64(stats.extentReducedCount) / float64(stats.generatedTiles) * 100
-				logger.L().Warn(fmt.Sprintf("原因分析: Extent减半频繁 (%d次, %.1f%%的瓦片需要减半)",
-					stats.extentReducedCount, extentRatio))
-				logger.L().Info("建议: 考虑调整Extent初始值或瓦片大小阈值")
-			} else {
-				logger.L().Info("原因分析: 可能存在数据库查询瓶颈或I/O压力，检查资源监控日志")
-			}
-		}
-
-		// 数据分布异常检测
-		if emptyRatio > 50.0 && stats.generatedTiles > 10 {
-			logger.L().Warn(fmt.Sprintf("⚠️ z=%d 空瓦片率过高: %.1f%% (数据稀疏)",
-				zr.zoom, emptyRatio))
-			logger.L().Info("建议: 数据分布稀疏，可考虑仅生成非空瓦片")
-		}
-
-		// Extent减半异常检测
-		if stats.extentReducedCount > 0 {
-			extentRatio := float64(stats.extentReducedCount) / float64(stats.generatedTiles) * 100
-			if extentRatio > 20.0 {
-				logger.L().Warn(fmt.Sprintf("⚠️ z=%d Extent减半频繁: %d次 (%.1f%%)",
-					zr.zoom, stats.extentReducedCount, extentRatio))
-			}
-		}
+		logger.L().Info("层级统计",
+			"zoom", zr.zoom,
+			"generated", stats.generatedTiles,
+			"skipped", stats.skippedTiles,
+			"empty", stats.emptyTiles,
+			"total", stats.totalTiles,
+			"avg_time_ms", avgTimeMs,
+			"avg_size_kb", avgSizeKB)
 
 		// 记录最后有效层级（非空且已处理）
 		if stats.generatedTiles > 0 {
@@ -789,99 +594,6 @@ func (s *QuickViewService) GenerateMixed(
 		})
 	}
 
-	// ============ 预缓存总结报告 ============
-	logger.L().Info("========== 预缓存完成总结 ==========")
-	logger.L().Info(fmt.Sprintf("表: %s.%s", cfg.Schema, cfg.Table))
-	if stats != nil && stats.TableRows > 0 {
-		logger.L().Info(fmt.Sprintf("表行数: %d", stats.TableRows))
-	}
-	logger.L().Info(fmt.Sprintf("总耗时: %.0f分%.0f秒",
-		math.Floor(result.GenerationSec/60), math.Mod(result.GenerationSec, 60)))
-
-	// === 性能分布 ===
-	logger.L().Info("=== 性能分布 ===")
-	var slowZooms, fastZooms []int
-	for _, zr := range zoomRanges {
-		zoomStats := statsMap[zr.zoom]
-		if zoomStats.generatedTiles > 0 {
-			avgTimeMs := zoomStats.totalGenTime / float64(zoomStats.generatedTiles) / 1e6
-			if avgTimeMs > 100 {
-				slowZooms = append(slowZooms, zr.zoom)
-			} else if avgTimeMs < 50 {
-				fastZooms = append(fastZooms, zr.zoom)
-			}
-		}
-	}
-	if len(slowZooms) > 0 {
-		logger.L().Info(fmt.Sprintf("慢速层级: z=%v (avg_time > 100ms)", slowZooms))
-	}
-	if len(fastZooms) > 0 {
-		logger.L().Info(fmt.Sprintf("快速层级: z=%v (avg_time < 50ms)", fastZooms))
-	}
-
-	// === 数据分布 ===
-	logger.L().Info("=== 数据分布 ===")
-	var totalEmpty, totalGenerated int
-	var maxSkewness float64
-	var totalExtentReduced int
-	for _, zr := range zoomRanges {
-		zoomStats := statsMap[zr.zoom]
-		totalEmpty += zoomStats.emptyTiles
-		totalGenerated += zoomStats.generatedTiles
-		totalExtentReduced += zoomStats.extentReducedCount
-
-		if zoomStats.generatedTiles > 0 {
-			avgSizeKB := float64(zoomStats.totalSize) / float64(zoomStats.generatedTiles) / 1024.0
-			if avgSizeKB > 0 && zoomStats.maxTileSize > 0 {
-				skewness := float64(zoomStats.maxTileSize) / 1024.0 / avgSizeKB
-				if skewness > maxSkewness {
-					maxSkewness = skewness
-				}
-			}
-		}
-	}
-
-	emptyRatioTotal := 0.0
-	if result.TotalTiles > 0 {
-		emptyRatioTotal = float64(totalEmpty) / float64(result.TotalTiles) * 100
-	}
-	logger.L().Info(fmt.Sprintf("空瓦片率: %.1f%% (总体稀疏度)", emptyRatioTotal))
-	logger.L().Info(fmt.Sprintf("数据倾斜度: %.1f (最大值, 存在%s数据热点)",
-		maxSkewness, func() string {
-			if maxSkewness > 5 {
-				return "明显"
-			} else if maxSkewness > 3 {
-				return "较明显"
-			}
-			return "轻微"
-		}()))
-	logger.L().Info(fmt.Sprintf("Extent减半发生: %d次 (瓦片超过5MB时)", totalExtentReduced))
-
-	// === 硬件利用 ===
-	logger.L().Info("=== 硬件利用 ===")
-	resourceInfo := s.getResourceMetrics(ctx, cfg)
-	logger.L().Info(fmt.Sprintf("当前DB连接: %d", resourceInfo.DBConnections))
-	logger.L().Info(fmt.Sprintf("配置并发数: %d", cfg.Concurrency))
-
-	// === 后续建议 ===
-	logger.L().Info("=== 后续建议 ===")
-	if resourceInfo.DBConnections < cfg.Concurrency*80/100 {
-		logger.L().Info("• DB连接未饱和，如果CPU利用率也较低，可考虑增加并发数")
-	}
-	if len(slowZooms) > 0 {
-		logger.L().Info("• 某些层级持续缓慢，建议分析其数据特征")
-	}
-	if maxSkewness > 5 {
-		logger.L().Info("• 数据倾斜明显，后续可考虑针对热点区域的优化策略")
-	}
-	if totalExtentReduced > totalGenerated/5 {
-		logger.L().Info("• Extent减半频繁，可考虑调整初始Extent值或大小阈值")
-	}
-	if emptyRatioTotal > 50 {
-		logger.L().Info("• 空瓦片率过高，可考虑仅生成非空瓦片的策略")
-	}
-	logger.L().Info("=====================================")
-
 	logger.L().Info("快显生成完成（混合模式）",
 		"total_tiles", result.TotalTiles,
 		"cached_tiles", result.CachedTiles,
@@ -898,19 +610,6 @@ func (s *QuickViewService) processTile(
 	coord TileCoord,
 ) *tileResult {
 	startTime := time.Now()
-
-	// 🆕 检查Context是否已被取消（防止启动新的ST_AsMVT查询）
-	select {
-	case <-ctx.Done():
-		logger.L().Info("⚠️  检测到Context取消，放弃启动新的瓦片生成",
-			"tile", fmt.Sprintf("z%d/%d_%d", coord.Z, coord.X, coord.Y),
-			"fingerprint", cfg.Fingerprint)
-		return &tileResult{
-			coord: coord,
-			err:   fmt.Errorf("context cancelled before tile generation"),
-		}
-	default:
-	}
 
 	// 1. 检查瓦片是否已存在于 MinIO
 	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", cfg.Fingerprint, coord.Z, coord.X, coord.Y)
@@ -937,8 +636,7 @@ func (s *QuickViewService) processTile(
 		Z:                  coord.Z,
 		X:                  coord.X,
 		Y:                  coord.Y,
-		MaxZoom:            cfg.MaxZoom,                 // 传递最大 zoom 级别
-		OptimizationConfig: cfg.OptimizationConfig,      // v3.0 传递优化配置
+		OptimizationConfig: cfg.OptimizationConfig, // v2.0 传递优化配置
 	}
 
 	mvtData, err := s.tileGen.GenerateTile(ctx, params)
@@ -1095,246 +793,3 @@ func (s *QuickViewService) DeleteTiles(ctx context.Context, fingerprint string) 
 
 	return nil
 }
-
-// StatisticsInfo 统计信息结构
-type StatisticsInfo struct {
-	TableRows            int64
-	LastAnalyzeAgeHours  int
-	NeedsAnalyze         bool
-	Bounds               [4]float64 // [minLng, minLat, maxLng, maxLat]
-}
-
-// prepareFor3857MVT 准备 3857 物化视图和索引（如果需要）
-// 对于非 3857 的空间表，自动创建物化视图和空间索引
-func (s *QuickViewService) prepareFor3857MVT(
-	ctx context.Context,
-	cfg QuickViewConfig,
-	actualSRID int,
-) error {
-	// 1. 判断是否需要物化视图（仅 public.dltb 且 SRID=2360）
-	if cfg.Schema != "public" || cfg.Table != "dltb" || actualSRID == 3857 {
-		logger.L().Info("⏭️  无需物化视图转换",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"srid", actualSRID)
-		return nil
-	}
-
-	// 2. 获取数据库连接
-	conn, err := s.tileGen.GetOrCreateDBPool(ctx, cfg.EngineID, cfg.TenantID)
-	if err != nil {
-		return fmt.Errorf("failed to get db connection: %w", err)
-	}
-
-	mvTable := fmt.Sprintf("%s_3857", cfg.Table)
-	mvFullName := fmt.Sprintf("%s.%s", cfg.Schema, mvTable)
-	indexName := fmt.Sprintf("idx_%s_geom", mvTable)
-
-	logger.L().Info("🔍 检查物化视图",
-		"materialized_view", mvFullName,
-		"original_srid", actualSRID,
-		"target_srid", 3857)
-
-	// 3. 检查物化视图是否存在
-	var mvExists bool
-	checkMVSQL := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_matviews
-			WHERE schemaname = $1 AND matviewname = $2
-		)
-	`
-	if err := conn.QueryRowContext(ctx, checkMVSQL, cfg.Schema, mvTable).Scan(&mvExists); err != nil {
-		return fmt.Errorf("failed to check materialized view: %w", err)
-	}
-
-	if !mvExists {
-		logger.L().Info("🚧 物化视图不存在，开始创建",
-			"materialized_view", mvFullName,
-			"estimated_time", "可能需要数分钟")
-
-		// 创建物化视图（转换为 3857）
-		createMVSQL := fmt.Sprintf(`
-			CREATE MATERIALIZED VIEW %s AS
-			SELECT
-				id,
-				ST_Transform(%s, 3857) AS geom_3857
-			FROM %s.%s
-			WHERE %s IS NOT NULL
-		`, mvFullName, cfg.GeomColumn, cfg.Schema, cfg.Table, cfg.GeomColumn)
-
-		if _, err := conn.ExecContext(ctx, createMVSQL); err != nil {
-			return fmt.Errorf("failed to create materialized view: %w", err)
-		}
-
-		logger.L().Info("✅ 物化视图创建成功", "materialized_view", mvFullName)
-	} else {
-		logger.L().Info("✅ 物化视图已存在", "materialized_view", mvFullName)
-	}
-
-	// 4. 检查空间索引是否存在
-	var indexExists bool
-	checkIndexSQL := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_indexes
-			WHERE schemaname = $1 AND tablename = $2 AND indexname = $3
-		)
-	`
-	if err := conn.QueryRowContext(ctx, checkIndexSQL, cfg.Schema, mvTable, indexName).Scan(&indexExists); err != nil {
-		return fmt.Errorf("failed to check spatial index: %w", err)
-	}
-
-	if !indexExists {
-		logger.L().Info("🚧 空间索引不存在，开始创建",
-			"index", indexName,
-			"table", mvFullName,
-			"estimated_time", "可能需要数分钟")
-
-		// 创建 GIST 空间索引
-		createIndexSQL := fmt.Sprintf(`
-			CREATE INDEX %s ON %s USING GIST (geom_3857)
-		`, indexName, mvFullName)
-
-		if _, err := conn.ExecContext(ctx, createIndexSQL); err != nil {
-			return fmt.Errorf("failed to create spatial index: %w", err)
-		}
-
-		logger.L().Info("✅ 空间索引创建成功", "index", indexName)
-	} else {
-		logger.L().Info("✅ 空间索引已存在", "index", indexName)
-	}
-
-	// 5. 执行 ANALYZE 更新统计信息
-	logger.L().Info("🔄 更新物化视图统计信息", "table", mvFullName)
-	analyzeSQL := fmt.Sprintf("ANALYZE %s", mvFullName)
-	if _, err := conn.ExecContext(ctx, analyzeSQL); err != nil {
-		logger.L().Warn("⚠️ ANALYZE 执行失败，继续", "error", err)
-	} else {
-		logger.L().Info("✅ 统计信息更新完成", "table", mvFullName)
-	}
-
-	return nil
-}
-
-// collectStatistics 采集统计信息（精准化，仅收集MVT需要的）
-func (s *QuickViewService) collectStatistics(
-	ctx context.Context,
-	cfg QuickViewConfig,
-) (*StatisticsInfo, error) {
-	info := &StatisticsInfo{}
-
-	// 获取表的连接信息
-	conn, err := s.tileGen.getOrCreateDBPool(ctx, cfg.EngineID, cfg.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get db connection: %w", err)
-	}
-
-	// 1. 检查统计信息年龄
-	var lastAnalyze *time.Time
-	var nLiveTup int64
-	row := conn.QueryRowContext(ctx,
-		"SELECT last_analyze, n_live_tup FROM pg_stat_user_tables WHERE schemaname = $1 AND relname = $2",
-		cfg.Schema, cfg.Table)
-	err = row.Scan(&lastAnalyze, &nLiveTup)
-	if err != nil {
-		logger.L().Warn("Failed to get table stats", "error", err)
-		// 继续，不中断
-	} else {
-		info.TableRows = nLiveTup
-		if lastAnalyze != nil {
-			age := time.Since(*lastAnalyze)
-			info.LastAnalyzeAgeHours = int(age.Hours())
-			if age > 24*time.Hour {
-				info.NeedsAnalyze = true
-				logger.L().Info("⚠️ 统计信息过旧，建议执行ANALYZE",
-					"last_analyze", lastAnalyze.Format(time.RFC3339),
-					"age_hours", info.LastAnalyzeAgeHours)
-			}
-		} else {
-			info.NeedsAnalyze = true
-			logger.L().Info("⚠️ 统计信息不存在，建议执行ANALYZE")
-		}
-	}
-
-	// 2. 采集空间bounds（使用物化视图或原始表）
-	geomCol := cfg.GeomColumn
-	// 检查是否使用物化视图
-	table := cfg.Table
-	if cfg.Schema == "public" && cfg.Table == "dltb" && cfg.SRID == 2360 {
-		table = "dltb_3857"
-		geomCol = "geom_3857"
-	}
-
-	boundRow := conn.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT ST_Extent(%s) as bounds FROM %s.%s", geomCol, cfg.Schema, table))
-	var boundsWKT *string
-	if err := boundRow.Scan(&boundsWKT); err != nil {
-		logger.L().Warn("Failed to get spatial bounds", "error", err)
-	} else if boundsWKT != nil {
-		// 解析 WKT 格式的 bounds
-		// 格式: "POLYGON((minLng minLat,maxLng minLat,maxLng maxLat,minLng maxLat,minLng minLat))"
-		if bounds, err := parseBoundsFromWKT(*boundsWKT); err == nil {
-			info.Bounds = bounds
-		} else {
-			logger.L().Warn("Failed to parse bounds", "error", err)
-		}
-	}
-
-	return info, nil
-}
-
-// parseBoundsFromWKT 从WKT格式解析bounds
-// 格式: "POLYGON((minLng minLat,maxLng minLat,maxLng maxLat,minLng maxLat,minLng minLat))"
-func parseBoundsFromWKT(wkt string) ([4]float64, error) {
-	// 简单的解析：提取数字
-	// 实际应该用更健壮的方式，这里为了演示
-	var bounds [4]float64
-
-	// 查找第一个(
-	start := bytes.Index([]byte(wkt), []byte("(("))
-	if start == -1 {
-		return bounds, fmt.Errorf("invalid WKT format")
-	}
-
-	// 简化处理：假设格式正确，直接扫描坐标
-	// 更好的方式是使用正则或标准库，这里为了快速
-	fmt.Sscanf(wkt[start+2:], "%f %f,%f %f", &bounds[0], &bounds[1], &bounds[2], &bounds[3])
-
-	return bounds, nil
-}
-
-// ResourceMetrics 资源监控指标
-type ResourceMetrics struct {
-	CPUPercent     float64
-	MemoryMB       float64
-	DBConnections  int
-	QueryTimeMs    float64
-}
-
-// getResourceMetrics 采集资源监控指标
-func (s *QuickViewService) getResourceMetrics(ctx context.Context, cfg QuickViewConfig) *ResourceMetrics {
-	metrics := &ResourceMetrics{
-		CPUPercent:    0,
-		MemoryMB:      0,
-		DBConnections: 0,
-		QueryTimeMs:   0,
-	}
-
-	// 获取数据库连接数
-	conn, err := s.tileGen.getOrCreateDBPool(ctx, cfg.EngineID, cfg.TenantID)
-	if err == nil {
-		// 查询活跃连接数
-		row := conn.QueryRowContext(ctx,
-			"SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND state = 'active'")
-		var activeConns int
-		if err := row.Scan(&activeConns); err == nil {
-			metrics.DBConnections = activeConns
-		}
-	}
-
-	// TODO: 添加CPU和内存的采集（需要OS层面的调用或通过proc文件系统）
-	// 当前版本留作占位符，实际实现时可以使用:
-	// - runtime.ReadMemStats() 获取Go内存使用
-	// - 通过shell命令或专门库获取CPU使用率
-
-	return metrics
-}
-

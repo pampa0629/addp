@@ -8,6 +8,7 @@ import (
 	"github.com/addp/common/logger"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/mvt"
 	"github.com/addp/manager/internal/repository"
@@ -26,6 +27,7 @@ type QuickViewService struct {
 	minioClient  *minio.Client
 	minioBucket  string
 	redisClient  *redis.Client
+	cfg          *config.Config
 }
 
 // NewQuickViewService 创建快显服务
@@ -37,6 +39,7 @@ func NewQuickViewService(
 	minioClient *minio.Client,
 	minioBucket string,
 	redisClient *redis.Client,
+	cfg *config.Config,
 ) *QuickViewService {
 	return &QuickViewService{
 		repo:         repository.NewQuickViewRepository(db),
@@ -46,6 +49,7 @@ func NewQuickViewService(
 		minioClient:  minioClient,
 		minioBucket:  minioBucket,
 		redisClient:  redisClient,
+		cfg:          cfg,
 	}
 }
 
@@ -55,16 +59,31 @@ type TriggerQuickViewParams struct {
 	EngineID           uint
 	SchemaName         string
 	TableName          string
-	MinZoom            *int                                // 可选，不指定则自动计算
-	MaxZoom            int                                 // 默认18
-	Concurrency        int                                 // 默认10
+	MinZoom            *int                                // 必需，用户确认的最小缩放级别
+	MaxZoom            int                                 // 必需，用户确认的最大缩放级别
+	Concurrency        int                                 // 可选，默认从配置读取
 	Priority           string                              // "critical", "default", "low"
 	OptimizationConfig *commonModels.OptimizationConfig    // v2.0 优化配置
 }
 
-// TriggerQuickView 触发快显缓存生成
+// TriggerQuickView 触发预缓存（第二步，必须先完成准备）
 func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQuickViewParams) error {
-	// 1. 检查是否已在生成中（并发控制）
+	// 1. 检查快显表记录是否存在
+	exists, _ := s.repo.Exists(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
+	if !exists {
+		return fmt.Errorf("quick view record not found, please run PrepareForCreateMVT first")
+	}
+
+	// 2. 检查准备是否完成
+	prepCompleted, err := s.repo.IsPreparationCompleted(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
+	if err != nil {
+		return fmt.Errorf("failed to check preparation status: %w", err)
+	}
+	if !prepCompleted {
+		return fmt.Errorf("preparation not completed, please complete PrepareForCreateMVT first")
+	}
+
+	// 3. 检查是否已在生成中（并发控制）
 	isGenerating, err := s.repo.IsGenerating(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		return fmt.Errorf("failed to check generating status: %w", err)
@@ -74,76 +93,78 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		return fmt.Errorf("quick view is already generating for this table")
 	}
 
-	// 2. 从Meta获取空间元数据（通过SystemClient或直接查询meta数据库）
-	// 这里需要调用Meta的API或直接查询meta_item表
+	// 4. 验证必需参数（前端必须提供用户确认的值）
+	if params.MinZoom == nil {
+		return fmt.Errorf("min_zoom is required (must be confirmed by user)")
+	}
+	if params.MaxZoom == 0 {
+		return fmt.Errorf("max_zoom is required (must be confirmed by user)")
+	}
+
+	// 5. 从Meta获取空间元数据（GeomColumn、SRID、PrimaryKey 等）
 	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, params.TenantID, params.EngineID, params.SchemaName, params.TableName)
 	if err != nil {
 		return fmt.Errorf("failed to get spatial metadata: %w", err)
 	}
 
-	// 注意：spatialMeta.RecordCount 已经从 Meta API 获取，无需再查询 PostgreSQL
-
-	// 3. 计算fingerprint（使用 engine_id + schema + table 的组合）
+	// 6. 计算fingerprint
 	fingerprint := calculateFingerprint(params.EngineID, params.SchemaName, params.TableName)
 
-	// 5. 验证必需参数（前端必须提供用户确认的值）
-	if params.MinZoom == nil {
-		return fmt.Errorf("min_zoom 是必需参数（必须由用户确认）")
-	}
-	if params.MaxZoom == 0 {
-		return fmt.Errorf("max_zoom 是必需参数（必须由用户确认）")
-	}
-
-	minZoom := *params.MinZoom
-	// params.MaxZoom 直接使用，无需计算
-
 	// 6. 设置默认并发数
+	logger.L().Info("🔍 Service: 并发数配置检查",
+		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
+		"concurrency_from_api", params.Concurrency,
+		"concurrency_from_config", s.cfg.PreCache.Concurrency)
+
 	if params.Concurrency == 0 {
-		params.Concurrency = 20 // 提高默认并发数（原来是10）
+		params.Concurrency = s.cfg.PreCache.Concurrency
+		logger.L().Info("✅ Service: 使用配置中的默认并发数",
+			"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
+			"final_concurrency", params.Concurrency)
 	}
 
-	// 7. 创建或更新快显记录
+	// 7. 初始化优化配置（如果用户未提供）
+	if params.OptimizationConfig == nil {
+		params.OptimizationConfig = &commonModels.OptimizationConfig{}
+		*params.OptimizationConfig = commonModels.DefaultOptimizationConfig()
+		logger.L().Info("✅ Service: 使用默认优化配置",
+			"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName))
+	}
+
+	// 8. 获取快显表记录
+	qv, err := s.repo.GetByTable(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
+	if err != nil {
+		return fmt.Errorf("failed to get quick view: %w", err)
+	}
+
+	// 9. 更新记录状态为生成中（只更新必要字段，保护 preparation_status 和 extent）
 	now := time.Now()
-	qv := models.QuickView{
-		TenantID:           params.TenantID,
-		EngineID:           params.EngineID,
-		SchemaName:         params.SchemaName,
-		Table:              params.TableName,
-		Status:             "generating",
-		PreferredMode:      "mvt",                     // 默认使用 MVT 模式
-		MinZoom:            &minZoom,
-		MaxZoom:            params.MaxZoom,
-		Fingerprint:        fingerprint,
-		Extent:             spatialMeta.Extent,
-		ExtentSRID:         spatialMeta.ExtentSRID,
-		OptimizationConfig: params.OptimizationConfig, // v2.0 保存优化配置
-		StartedAt:          &now,                      // 设置任务开始时间
+	updates := map[string]interface{}{
+		"status":              "generating",
+		"started_at":          now,
+		"min_zoom":            params.MinZoom,
+		"max_zoom":            params.MaxZoom,
+		"optimization_config": params.OptimizationConfig,
 	}
 
-	// 检查是否已存在记录
-	exists, _ := s.repo.Exists(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-	if exists {
-		// 更新现有记录
-		existingQV, err := s.repo.GetByTable(params.TenantID, params.EngineID, params.SchemaName, params.TableName)
-		if err != nil {
-			return fmt.Errorf("failed to get existing quick view: %w", err)
-		}
-		qv.ID = existingQV.ID
-		// 保留用户之前设置的 PreferredMode
-		if existingQV.PreferredMode != "" {
-			qv.PreferredMode = existingQV.PreferredMode
-		}
-		if err := s.repo.Update(&qv); err != nil {
-			return fmt.Errorf("failed to update quick view: %w", err)
-		}
-	} else {
-		// 创建新记录
-		if err := s.repo.Create(&qv); err != nil {
-			return fmt.Errorf("failed to create quick view: %w", err)
+	if err := s.repo.GetDB().Model(&models.QuickView{}).Where("id = ?", qv.ID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to update quick view: %w", err)
+	}
+
+	// 10. 清除之前的取消标志（如果存在）
+	if s.redisClient != nil && fingerprint != "" {
+		tracker := mvt.NewProgressTracker(s.redisClient, fingerprint)
+		if err := tracker.ClearCancelFlag(ctx); err != nil {
+			logger.L().Warn("Failed to clear cancel flag during trigger",
+				"error", err,
+				"fingerprint", fingerprint)
+		} else {
+			logger.L().Info("已清除之前的取消标志（重新触发预缓存）",
+				"fingerprint", fingerprint)
 		}
 	}
 
-	// 8. 入队任务
+	// 11. 入队预缓存任务
 	payload := worker.QuickViewTaskPayload{
 		TenantID:           params.TenantID,
 		EngineID:           params.EngineID,
@@ -153,12 +174,17 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 		SRID:               spatialMeta.SRID,
 		PrimaryKey:         spatialMeta.PrimaryKey,
 		Extent:             spatialMeta.Extent,
-		MinZoom:            minZoom,
+		MinZoom:            *params.MinZoom,
 		MaxZoom:            params.MaxZoom,
 		Concurrency:        params.Concurrency,
 		Fingerprint:        fingerprint,
-		OptimizationConfig: params.OptimizationConfig, // v2.0 传递优化配置
+		OptimizationConfig: params.OptimizationConfig,
 	}
+
+	logger.L().Info("📤 Service: 准备入队预缓存任务",
+		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
+		"concurrency", payload.Concurrency,
+		"priority", params.Priority)
 
 	if params.Priority != "" {
 		err = s.taskQueue.EnqueueQuickViewTaskWithPriority(ctx, payload, params.Priority)
@@ -168,15 +194,16 @@ func (s *QuickViewService) TriggerQuickView(ctx context.Context, params TriggerQ
 
 	if err != nil {
 		// 更新状态为失败
-		s.repo.UpdateStatus(qv.ID, "failed", err.Error())
+		s.repo.UpdateStatusOnly(qv.ID, "failed", err.Error())
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	logger.L().Info("Quick view task enqueued",
+	logger.L().Info("✅ Service: 预缓存任务已入队",
 		"engine_id", params.EngineID,
 		"table", fmt.Sprintf("%s.%s", params.SchemaName, params.TableName),
-		"min_zoom", minZoom,
-		"max_zoom", params.MaxZoom)
+		"min_zoom", *params.MinZoom,
+		"max_zoom", params.MaxZoom,
+		"concurrency", payload.Concurrency)
 
 	return nil
 }
@@ -310,11 +337,16 @@ func (s *QuickViewService) ClearQuickView(
 			"deleted_count", deletedCount)
 	}
 
-	// 3. 删除 Redis 进度
+	// 3. 删除 Redis 进度和取消标志
 	if s.redisClient != nil && qv.Fingerprint != "" {
 		progressTracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
+		// 删除进度信息
 		if err := progressTracker.DeleteProgress(ctx); err != nil {
 			logger.L().Warn("Failed to delete progress from Redis", "error", err, "fingerprint", qv.Fingerprint)
+		}
+		// 同时删除取消标志
+		if err := progressTracker.ClearCancelFlag(ctx); err != nil {
+			logger.L().Warn("Failed to clear cancel flag from Redis", "error", err, "fingerprint", qv.Fingerprint)
 		}
 	}
 
@@ -360,10 +392,31 @@ func (s *QuickViewService) CancelQuickView(
 	if s.redisClient != nil && qv.Fingerprint != "" {
 		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
 		if err := tracker.SetCancelled(ctx); err != nil {
-			logger.L().Warn("Failed to set cancel flag in Redis, but status updated",
+			// 改进：详细记录Redis错误，但不返回错误，因为：
+			// 1. PG状态已改为cancelled
+			// 2. Worker完成当前瓦片后会检查PG状态，最终一致
+			// 3. 即使Redis失败，任务也会停止恢复
+			logger.L().Error("Failed to set cancel flag in Redis",
 				"error", err,
-				"fingerprint", qv.Fingerprint)
-			// 不返回错误，因为数据库状态已经更新
+				"fingerprint", qv.Fingerprint,
+				"engine_id", engineID,
+				"table", fmt.Sprintf("%s.%s", schema, table))
+			// 不返回错误，让取消操作继续，Worker会通过PG状态最终检查
+		}
+	}
+
+	// 5. 尝试从 Asynq 队列删除任务
+	if s.taskQueue != nil {
+		if err := s.taskQueue.CancelQuickViewTask(ctx, qv.Fingerprint); err != nil {
+			logger.L().Warn("Failed to cancel task from queue, may continue if already processing",
+				"error", err,
+				"fingerprint", qv.Fingerprint,
+				"engine_id", engineID,
+				"table", fmt.Sprintf("%s.%s", schema, table))
+			// 不返回错误，因为：
+			// 1. PG状态已改为cancelled
+			// 2. 任务可能已被Worker获取（active状态），无法从队列删除
+			// 3. Worker会检查PG状态发现cancelled，不会更新为ready
 		}
 	}
 
@@ -413,17 +466,21 @@ func (s *QuickViewService) ResumeQuickView(
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
-	// 4.5 清除 Redis 取消标志（如果存在）
+	// 5. 清除 Redis 取消标志（Resume 是明确的重新执行操作）
 	if s.redisClient != nil && qv.Fingerprint != "" {
 		tracker := mvt.NewProgressTracker(s.redisClient, qv.Fingerprint)
 		if err := tracker.ClearCancelFlag(ctx); err != nil {
-			logger.L().Warn("Failed to clear cancel flag in Redis",
+			logger.L().Warn("Failed to clear cancel flag during resume",
 				"error", err,
+				"fingerprint", qv.Fingerprint)
+			// 继续执行，不影响恢复流程
+		} else {
+			logger.L().Info("已清除取消标志，任务可以重新执行",
 				"fingerprint", qv.Fingerprint)
 		}
 	}
 
-	// 5. 重新入队任务（使用原有的配置）
+	// 6. 重新入队任务（使用原有的配置）
 	payload := worker.QuickViewTaskPayload{
 		TenantID:        tenantID,
 		EngineID:        engineID,
@@ -435,7 +492,7 @@ func (s *QuickViewService) ResumeQuickView(
 		Extent:          spatialMeta.Extent,
 		MinZoom:         *qv.MinZoom,
 		MaxZoom:         qv.MaxZoom,
-		Concurrency:     20, // 使用默认并发数
+		Concurrency:     s.cfg.PreCache.Concurrency,
 		Fingerprint:     qv.Fingerprint,
 	}
 
@@ -460,6 +517,147 @@ func (s *QuickViewService) IncrementCachedTiles(
 	schema, table string,
 ) error {
 	return s.repo.IncrementCachedTiles(tenantID, engineID, schema, table)
+}
+
+// RunPreparationChecks 执行准备检查（仅诊断，不修改）
+// 检查物化视图、空间索引和ANALYZE统计是否满足要求
+func (s *QuickViewService) RunPreparationChecks(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+) (*models.PreparationStatus, error) {
+	// 1. 从Meta模块获取空间元数据（包括几何列名）
+	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get spatial metadata: %w", err)
+	}
+
+	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
+		return nil, fmt.Errorf("geometry column not found in metadata")
+	}
+
+	// 2. 创建准备阶段服务
+	resourceService := &systemClientResourceAdapter{
+		systemClient: s.systemClient,
+	}
+	prepService := mvt.NewPreparationService(s.repo.GetDB(), resourceService)
+
+	// 3. 执行所有检查，传递实际的几何列名
+	prepStatus, err := prepService.RunPreparationChecks(
+		ctx, tenantID, engineID, schema, table, spatialMeta.GeomColumn,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run preparation checks: %w", err)
+	}
+
+	// 4. 如果诊断通过，创建快显表记录
+	if prepStatus != nil && prepStatus.OverallStatus == "passed" {
+		// 检查记录是否已存在
+		exists, _ := s.repo.Exists(tenantID, engineID, schema, table)
+		if !exists {
+			// 创建新记录（包含 preparation_status 和空间范围）
+			qv := models.QuickView{
+				TenantID:           tenantID,
+				EngineID:           engineID,
+				SchemaName:         schema,
+				Table:              table,
+				Status:             "prepared",
+				Fingerprint:        calculateFingerprint(engineID, schema, table),
+				PreparationStatus:  prepStatus,
+				Extent:             spatialMeta.Extent,
+				ExtentSRID:         spatialMeta.ExtentSRID,
+				StartedAt:          &time.Time{},
+				CompletedAt:        &time.Time{},
+			}
+			now := time.Now()
+			qv.StartedAt = &now
+			qv.CompletedAt = &now
+
+			if err := s.repo.Create(&qv); err != nil {
+				logger.L().Error("Failed to create quick view record", "error", err)
+				// 不返回错误，只记录日志，诊断结果不受影响
+			}
+		}
+	}
+
+	return prepStatus, nil
+}
+
+// PrepareForCreateMVT 执行准备工作（启动异步任务）
+// 创建物化视图、空间索引和执行ANALYZE
+func (s *QuickViewService) PrepareForCreateMVT(
+	ctx context.Context,
+	tenantID, engineID uint,
+	schema, table string,
+) (string, error) {
+	fingerprint := calculateFingerprint(engineID, schema, table)
+	now := time.Now()
+
+	// 1. 先创建或更新快显记录（status="preparing"）
+	exists, _ := s.repo.Exists(tenantID, engineID, schema, table)
+
+	if !exists {
+		// 创建新记录
+		qv := models.QuickView{
+			TenantID:    tenantID,
+			EngineID:    engineID,
+			SchemaName:  schema,
+			Table:       table,
+			Status:      "preparing",
+			Fingerprint: fingerprint,
+			StartedAt:   &now,
+		}
+		if err := s.repo.Create(&qv); err != nil {
+			return "", fmt.Errorf("failed to create quick view record: %w", err)
+		}
+	} else {
+		// 更新状态为准备中
+		qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
+		if err != nil {
+			return "", fmt.Errorf("failed to get quick view record: %w", err)
+		}
+		if err := s.repo.UpdateStatus(qv.ID, "preparing", ""); err != nil {
+			return "", fmt.Errorf("failed to update status: %w", err)
+		}
+	}
+
+	// 2. 从Meta模块获取空间元数据（包括几何列名）
+	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
+	if err != nil {
+		return "", fmt.Errorf("failed to get spatial metadata: %w", err)
+	}
+
+	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
+		return "", fmt.Errorf("geometry column not found in metadata")
+	}
+
+	// 3. 入队准备任务，传递实际的几何列名
+	payload := worker.PrepareForCreateMVTTaskPayload{
+		TenantID:    tenantID,
+		EngineID:    engineID,
+		SchemaName:  schema,
+		TableName:   table,
+		Fingerprint: fingerprint,
+		GeomColumn:  spatialMeta.GeomColumn, // 传递实际的几何列名
+	}
+
+	err = s.taskQueue.EnqueuePrepareForCreateMVTTask(ctx, payload)
+	if err != nil {
+		// 准备失败，更新状态
+		qv, _ := s.repo.GetByTable(tenantID, engineID, schema, table)
+		if qv != nil {
+			s.repo.UpdateStatus(qv.ID, "none", err.Error())
+		}
+		return "", fmt.Errorf("failed to enqueue prepare task: %w", err)
+	}
+
+	logger.L().Info("✅ Preparation task enqueued",
+		"engine_id", engineID,
+		"table", fmt.Sprintf("%s.%s", schema, table),
+		"geom_column", spatialMeta.GeomColumn,
+		"fingerprint", fingerprint)
+
+	return fingerprint, nil
 }
 
 // calculateFingerprint 计算表的指纹（用于 MinIO 路径）
@@ -498,4 +696,15 @@ func (s *QuickViewService) UpdatePreferredMode(
 		"preferred_mode", preferredMode)
 
 	return nil
+}
+
+// systemClientResourceAdapter 实现 mvt.ResourceService 接口
+// 使用 SystemClient 获取引擎配置
+type systemClientResourceAdapter struct {
+	systemClient *commonClient.SystemClient
+}
+
+func (a *systemClientResourceAdapter) GetEngine(engineID, tenantID uint) (*commonModels.Engine, error) {
+	// SystemClient.GetEngine 只需要 engineID（租户信息通过 token/auth 已经绑定）
+	return a.systemClient.GetEngine(engineID)
 }

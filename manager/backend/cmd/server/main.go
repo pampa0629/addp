@@ -149,7 +149,8 @@ func main() {
 	defer searchService.Close()
 
 	// 创建统一 MVT 服务（整合实时生成 + 缓存访问，对前端隐藏 fingerprint）
-	mvtService := service.NewMVTService(metadataRepo, systemClient)
+	// ✅ 传入连接池配置，实时生成瓦片使用较小的连接数（默认5，避免峰值压力）
+	mvtService := service.NewMVTService(metadataRepo, systemClient, 5)
 	unifiedMVTService := service.NewUnifiedMVTService(
 		service.NewSpatialPreviewService(redisClient),
 		mvtService,
@@ -174,7 +175,7 @@ func main() {
 	minioBucket := "manager"
 
 	// 初始化 Quick View 服务（依赖 Redis、MinIO 和数据库）
-	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient)
+	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient, cfg)
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
 	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, cfg, logger.L())

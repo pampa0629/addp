@@ -122,3 +122,6 @@ system/backend/cmd/server/server
 transfer/backend/cmd/server/server
 meta/backend/meta-worker
 manager/backend/manager-backend
+.claude/settings.local.json
+.claude/settings.local.json
+.claude/settings.local.json

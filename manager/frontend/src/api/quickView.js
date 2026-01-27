@@ -1,7 +1,7 @@
 import request from './client'
 
 /**
- * Pre-Cache API - 预缓存管理（快显）
+ * Quick View API - 快显服务（准备 → 预缓存 → MVT启用）
  */
 export const quickViewAPI = {
   /**
@@ -15,21 +15,21 @@ export const quickViewAPI = {
    * 触发预缓存生成
    */
   triggerQuickView(engineId, schema, table, params = {}) {
-    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache`, params)
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/pre-cache`, params)
   },
 
   /**
    * 获取预缓存状态
    */
   getQuickViewStatus(engineId, schema, table) {
-    return request.get(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/status`)
+    return request.get(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/status`)
   },
 
   /**
    * 清除预缓存
    */
   clearQuickView(engineId, schema, table) {
-    return request.delete(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache`)
+    return request.delete(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view`)
   },
 
   /**
@@ -37,7 +37,7 @@ export const quickViewAPI = {
    */
   updatePreferredMode(engineId, schema, table, preferredMode) {
     return request.patch(
-      `/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/mode`,
+      `/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/preferred-mode`,
       { preferred_mode: preferredMode }
     )
   },
@@ -46,27 +46,41 @@ export const quickViewAPI = {
    * 取消预缓存生成
    */
   cancelQuickView(engineId, schema, table) {
-    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/cancel`)
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/cancel`)
   },
 
   /**
    * 恢复预缓存生成
    */
   resumeQuickView(engineId, schema, table) {
-    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/pre-cache/resume`)
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/resume`)
   },
 
   /**
-   * 列出所有预缓存任务
+   * 列出所有快显任务
    */
   listQuickViewTasks(params = {}) {
-    return request.get('/manager/pre-cache/tasks', { params })
+    return request.get('/manager/quick-view/tasks', { params })
   },
 
   /**
-   * 获取预缓存统计信息
+   * 获取快显统计信息
    */
   getStatistics() {
-    return request.get('/manager/pre-cache/statistics')
+    return request.get('/manager/quick-view/statistics')
+  },
+
+  /**
+   * 检查准备状态（诊断，不修改）
+   */
+  checkPreparation(engineId, schema, table) {
+    return request.get(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/check-preparation`)
+  },
+
+  /**
+   * 启动准备工作（创建物化视图、索引、ANALYZE）
+   */
+  prepareForCreateMVT(engineId, schema, table) {
+    return request.post(`/manager/engines/${engineId}/spatial/${schema}/${table}/quick-view/prepare`)
   }
 }

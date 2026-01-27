@@ -67,6 +67,14 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 		req = TriggerQuickViewRequest{}
 	}
 
+	// 🔍 日志：记录收到的并发数参数
+	logger.L().Info("📥 API 收到快显触发请求",
+		"engine_id", engineID,
+		"schema", schema,
+		"table", table,
+		"concurrency_from_request", req.Concurrency,
+		"priority", req.Priority)
+
 	// 3. 获取租户ID（从context或JWT中）
 	tenantID := uint(1) // TODO: 从JWT或context中获取
 	if val, exists := c.Get("tenant_id"); exists {
@@ -157,6 +165,7 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 		"completed_at":     qv.CompletedAt,
 		"created_at":       qv.CreatedAt,
 		"updated_at":       qv.UpdatedAt,
+		"preparation_status": qv.PreparationStatus, // v4.0 准备阶段状态
 	}
 
 	// 如果有进度信息，添加到响应中
@@ -394,3 +403,96 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 		"preferred_mode": req.PreferredMode,
 	})
 }
+
+// CheckPreparation 检查准备状态（诊断，如果通过则创建快显表记录）
+// GET /api/manager/engines/:id/spatial/:schema/:table/pre-cache/check
+func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
+	// 1. 解析路径参数
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	schema := c.Param("schema")
+	table := c.Param("table")
+
+	if schema == "" || table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		return
+	}
+
+	// 2. 获取租户ID
+	tenantID := uint(1)
+	if val, exists := c.Get("tenant_id"); exists {
+		if tid, ok := val.(uint); ok {
+			tenantID = tid
+		}
+	}
+
+	// 3. 执行准备检查（如果通过，Service 层会自动创建快显表记录）
+	prepStatus, err := h.service.RunPreparationChecks(
+		c.Request.Context(),
+		tenantID,
+		uint(engineID),
+		schema,
+		table,
+	)
+	if err != nil {
+		logger.L().Error("Failed to run preparation checks", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4. 返回准备状态
+	c.JSON(http.StatusOK, prepStatus)
+}
+
+// PrepareForCreateMVT 启动准备工作任务
+// POST /api/manager/engines/:id/spatial/:schema/:table/pre-cache/prepare
+func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
+	// 1. 解析路径参数
+	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid resource id"})
+		return
+	}
+
+	schema := c.Param("schema")
+	table := c.Param("table")
+
+	if schema == "" || table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "schema and table are required"})
+		return
+	}
+
+	// 2. 获取租户ID
+	tenantID := uint(1)
+	if val, exists := c.Get("tenant_id"); exists {
+		if tid, ok := val.(uint); ok {
+			tenantID = tid
+		}
+	}
+
+	// 3. 启动准备工作
+	fingerprint, err := h.service.PrepareForCreateMVT(
+		c.Request.Context(),
+		tenantID,
+		uint(engineID),
+		schema,
+		table,
+	)
+	if err != nil {
+		logger.L().Error("Failed to start preparation", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 4. 返回任务信息
+	c.JSON(http.StatusOK, gin.H{
+		"status": "preparing",
+		"message": "准备工作已启动",
+		"fingerprint": fingerprint,
+	})
+}
+

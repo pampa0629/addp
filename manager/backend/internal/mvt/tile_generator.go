@@ -22,6 +22,9 @@ type TileGenerator struct {
 	// ✅ 连接池管理 (按 engineID 缓存)
 	dbPools   map[uint]*sql.DB
 	poolMutex sync.RWMutex
+
+	// 连接池配置
+	maxDBConns int // 每个数据库的最大连接数
 }
 
 // ResourceService 资源服务接口（避免循环依赖）
@@ -30,10 +33,16 @@ type ResourceService interface {
 }
 
 // NewTileGenerator 创建瓦片生成器
-func NewTileGenerator(resourceService ResourceService) *TileGenerator {
+// maxDBConns: 每个数据库的最大连接数，0 表示使用默认值 10
+func NewTileGenerator(resourceService ResourceService, maxDBConns int) *TileGenerator {
+	if maxDBConns <= 0 {
+		maxDBConns = 10 // 默认值
+	}
+
 	return &TileGenerator{
 		resourceService: resourceService,
 		dbPools:         make(map[uint]*sql.DB),
+		maxDBConns:      maxDBConns,
 	}
 }
 
@@ -47,7 +56,8 @@ type TileGenerationParams struct {
 	SRID               int
 	PrimaryKey         string
 	Z, X, Y            int
-	OptimizationConfig *commonModels.OptimizationConfig // v2.0 优化配置
+	MaxZoom            int                                 // 最大 zoom 级别（用于分层 Extent 策略）
+	OptimizationConfig *commonModels.OptimizationConfig // v3.0 优化配置
 }
 
 // GenerateTile 生成 MVT 瓦片
@@ -74,7 +84,7 @@ func (g *TileGenerator) GenerateTile(
 	// 构建 MVT 查询（使用 common/spatial 统一实现）
 	sqlStr, args := g.buildMVTQuery(
 		params.Schema,
-		params.Table,
+		params.Table, // 使用从 QuickView 传入的表名（可能是 MV）
 		params.GeomColumn,
 		params.SRID,
 		params.Z,
@@ -143,24 +153,14 @@ func (g *TileGenerator) buildMVTQuery(
 	primaryKey string,
 	config *commonModels.OptimizationConfig,
 ) (string, []interface{}) {
-	// 使用 common/spatial.BuildMVTQuery 统一实现
-	// ✅ 根据 zoom 级别动态启用简化：
-	//   - z < 10: 简化几何，减少数据量，防止浏览器崩溃
-	//   - z >= 10: 保留完整精度，提供详细展示
-	simplify := z < 10
+	// 使用源表或物化视图（由准备阶段服务确保 3857 坐标系）
+	originalTable := table
 
 	opt := spatial.MVTOptions{
-		Layer:    table,
-		Extent:   4096,
-		Buffer:   64,
-		SRID:     srid,
-		Simplify: simplify,
-	}
-
-	if simplify {
-		logger.L().Debug("🔧 启用几何简化",
-			"z", z,
-			"tolerance", spatial.SimplifyTolerance(z))
+		Layer:  originalTable, // Layer 名称使用原始表名（前端显示）
+		Extent: 2048,
+		Buffer: 64,
+		SRID:   srid,
 	}
 
 	return spatial.BuildMVTQuery(schema, table, geomColumn, []string{}, z, x, y, opt, primaryKey)
@@ -316,8 +316,9 @@ func (g *TileGenerator) getOrCreateDBPool(ctx context.Context, engineID, tenantI
 	}
 
 	// 6. 配置连接池参数
-	db.SetMaxOpenConns(25)                 // 最大打开连接数
-	db.SetMaxIdleConns(5)                  // 最大空闲连接数
+	// ✅ 使用配置的连接数，而不是硬编码
+	db.SetMaxOpenConns(g.maxDBConns)       // 最大打开连接数
+	db.SetMaxIdleConns(g.maxDBConns)       // 最大空闲连接数（与最大连接数相同，避免频繁创建销毁）
 	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大存活时间
 	db.SetConnMaxIdleTime(1 * time.Minute) // 连接最大空闲时间
 
@@ -331,8 +332,8 @@ func (g *TileGenerator) getOrCreateDBPool(ctx context.Context, engineID, tenantI
 	g.dbPools[engineID] = db
 	logger.L().Info("✅ 创建数据库连接池",
 		"engine_id", engineID,
-		"max_open_conns", 25,
-		"max_idle_conns", 5)
+		"max_open_conns", g.maxDBConns,
+		"max_idle_conns", g.maxDBConns)
 
 	return db, nil
 }
@@ -430,11 +431,12 @@ func (g *TileGenerator) Close() error {
 }
 
 // ============================================================================
-// 三阶段优化流程（v2.0）
+// 单阶段 Extent 优化流程（v3.0）
+// 仅保留分层 Extent 策略和动态减半，移除采样和几何简化
 // ============================================================================
 
-// generateTileWithOptimization 使用三阶段优化流程生成瓦片
-// 优化顺序：Extent 优化 → 对象采样 → 几何简化
+// generateTileWithOptimization 使用单阶段 Extent 优化生成瓦片 (v3.0)
+// 优化流程：属性优化 → 分层 Extent → 动态减半
 func (g *TileGenerator) generateTileWithOptimization(
 	ctx context.Context,
 	params TileGenerationParams,
@@ -446,149 +448,119 @@ func (g *TileGenerator) generateTileWithOptimization(
 		*config = commonModels.DefaultOptimizationConfig()
 	}
 
-	logger.L().Info("🔄 启用三阶段优化流程",
+	logger.L().Info("🔄 启用 v3.0 单阶段 Extent 优化流程",
 		"z", params.Z, "x", params.X, "y", params.Y,
+		"max_zoom", params.MaxZoom,
 		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
-		"extent_blur_level", config.ExtentOptimization.BlurLevel,
-		"sampling_polygon_ratio", fmt.Sprintf("%.2f", config.Sampling.PolygonLine.CumulativeSizeRatio),
-		"sampling_point_ratio", fmt.Sprintf("%.2f", config.Sampling.Point.SampleRatio),
-		"simplification_algo", config.Simplification.Algorithm,
-		"simplification_tolerance_mult", fmt.Sprintf("%.2f", config.Simplification.ToleranceMultiplier),
-		"size_thresholds_no_opt", fmt.Sprintf("%.2f MB", config.TileSizeThresholds.NoOptimizationMB),
-		"size_thresholds_stop", fmt.Sprintf("%.2f MB", config.TileSizeThresholds.StopOptimizationMB))
+		"max_size_mb", fmt.Sprintf("%.2f MB", config.TileSizeThresholds.MaxSizeMB),
+		"max_zoom_extent", config.ExtentOptimization.MaxZoomExtent,
+		"base_extent", config.ExtentOptimization.BaseExtent,
+		"min_extent", config.ExtentOptimization.MinExtent)
 
 	// Step A: 应用属性优化（基于 zoom）
 	stepAStart := time.Now()
 	var columns []string
 	if config.AttributePruning.Enabled && params.Z <= config.AttributePruning.ZoomThreshold {
-		// z0-z8: 仅主键
+		// z0-zN: 仅主键
 		if params.PrimaryKey != "" {
 			columns = []string{params.PrimaryKey}
 		}
-		logger.L().Debug("🔧 属性优化：仅返回主键", "z", params.Z)
+		logger.L().Debug("🔧 属性优化：仅返回主键", "z", params.Z, "primary_key", params.PrimaryKey)
 	} else {
-		// z9+: 全部属性（传空数组让 BuildMVTQuery 返回所有列）
+		// z(N+1)+: 全部属性
 		columns = []string{}
 		logger.L().Debug("🔧 属性优化：返回全部属性", "z", params.Z)
 	}
 	logger.L().Debug("📝 属性优化耗时", "duration_ms", time.Since(stepAStart).Milliseconds())
 
-	// Step B: 生成基础瓦片（使用默认 Extent 4096）
-	stepBStart := time.Now()
-	mvtData, err := g.generateBaseTile(ctx, params, columns, 4096)
+	// Step B: 获取初始 Extent（分层策略）
+	initialExtent := config.ExtentOptimization.GetExtentForZoom(params.Z, params.MaxZoom)
+	logger.L().Info("📊 使用分层 Extent 策略",
+		"z", params.Z,
+		"max_zoom", params.MaxZoom,
+		"initial_extent", initialExtent,
+		"reason", fmt.Sprintf("z==%d (max_zoom): %d, z<%d: %d",
+			params.MaxZoom, config.ExtentOptimization.MaxZoomExtent,
+			params.MaxZoom, config.ExtentOptimization.BaseExtent))
+
+	// Step C: 生成瓦片并动态减半直到符合大小要求
+	mvtData, finalExtent, err := g.generateTileWithDynamicExtentReduction(
+		ctx, params, columns, initialExtent,
+		config.ExtentOptimization.MinExtent,
+		config.TileSizeThresholds.MaxSizeMB)
 	if err != nil {
 		return nil, err
 	}
-	stepBDuration := time.Since(stepBStart)
 
 	tileSizeMB := float64(len(mvtData)) / (1024 * 1024)
-	noOptMB := config.TileSizeThresholds.NoOptimizationMB
-	stopOptMB := config.TileSizeThresholds.StopOptimizationMB
-
-	logger.L().Info("📊 基础瓦片大小",
-		"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-		"threshold", fmt.Sprintf("%.2f", noOptMB),
-		"duration_ms", stepBDuration.Milliseconds())
-
-	// Step C: 检查大小，决定是否优化
-	if tileSizeMB < noOptMB {
-		totalDuration := time.Since(tileStartTime)
-		logger.L().Info("✅ 瓦片大小符合要求，无需优化",
-			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-			"z", params.Z, "x", params.X, "y", params.Y,
-			"total_duration_ms", totalDuration.Milliseconds())
-		return mvtData, nil
-	}
-
-	// ════════════════════════════════════════════════════════
-	// 进入优化流程（新顺序）
-	// ════════════════════════════════════════════════════════
-
-	// Step 1: Extent 优化
-	logger.L().Info("🔧 Step 1: Extent 优化（模糊度）",
-		"blur_level", config.ExtentOptimization.BlurLevel)
-	step1Start := time.Now()
-	targetExtent := config.GetExtent() // 基于 blur_level 计算
-	mvtData, err = g.generateBaseTile(ctx, params, columns, targetExtent)
-	if err != nil {
-		return nil, err
-	}
-	step1Duration := time.Since(step1Start)
-	tileSizeMB = float64(len(mvtData)) / (1024 * 1024)
-
-	logger.L().Info("📊 Step 1 完成: Extent 优化后大小",
-		"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-		"extent", targetExtent,
-		"duration_ms", step1Duration.Milliseconds())
-
-	if tileSizeMB < noOptMB {
-		totalDuration := time.Since(tileStartTime)
-		logger.L().Info("✅ Step 1 后符合要求，停止优化",
-			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-			"z", params.Z, "x", params.X, "y", params.Y,
-			"total_duration_ms", totalDuration.Milliseconds())
-		return mvtData, nil
-	}
-
-	// Step 2: 对象采样
-	logger.L().Info("🔧 Step 2: 对象采样",
-		"polygon_ratio", fmt.Sprintf("%.2f", config.Sampling.PolygonLine.CumulativeSizeRatio),
-		"point_ratio", fmt.Sprintf("%.2f", config.Sampling.Point.SampleRatio))
-	step2Start := time.Now()
-	mvtData, err = g.generateTileWithSampling(ctx, params, columns, targetExtent, config)
-	if err != nil {
-		return nil, err
-	}
-	step2Duration := time.Since(step2Start)
-	tileSizeMB = float64(len(mvtData)) / (1024 * 1024)
-
-	logger.L().Info("📊 Step 2 完成: 对象采样后大小",
-		"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-		"duration_ms", step2Duration.Milliseconds())
-
-	if tileSizeMB < noOptMB {
-		totalDuration := time.Since(tileStartTime)
-		logger.L().Info("✅ Step 2 后符合要求，停止优化",
-			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-			"z", params.Z, "x", params.X, "y", params.Y,
-			"total_duration_ms", totalDuration.Milliseconds())
-		return mvtData, nil
-	}
-
-	if tileSizeMB < stopOptMB {
-		totalDuration := time.Since(tileStartTime)
-		logger.L().Info("✅ 大小在停止优化阈值内，跳过几何简化",
-			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-			"stop_threshold", fmt.Sprintf("%.2f", stopOptMB),
-			"z", params.Z, "x", params.X, "y", params.Y,
-			"total_duration_ms", totalDuration.Milliseconds())
-		return mvtData, nil
-	}
-
-	// Step 3: 几何简化
-	logger.L().Info("🔧 Step 3: 几何简化",
-		"algorithm", config.Simplification.Algorithm,
-		"tolerance_mult", fmt.Sprintf("%.2f", config.Simplification.ToleranceMultiplier))
-	step3Start := time.Now()
-	mvtData, err = g.generateTileWithSimplification(ctx, params, columns, targetExtent, config)
-	if err != nil {
-		return nil, err
-	}
-	step3Duration := time.Since(step3Start)
-	tileSizeMB = float64(len(mvtData)) / (1024 * 1024)
-
 	totalDuration := time.Since(tileStartTime)
-	logger.L().Info("✅ 优化流程完成（全部3步）",
+
+	logger.L().Info("✅ v3.0 优化流程完成",
 		"z", params.Z, "x", params.X, "y", params.Y,
 		"table", fmt.Sprintf("%s.%s", params.Schema, params.Table),
+		"initial_extent", initialExtent,
+		"final_extent", finalExtent,
 		"final_size_mb", fmt.Sprintf("%.2f", tileSizeMB),
-		"step1_extent_ms", step1Duration.Milliseconds(),
-		"step2_sampling_ms", step2Duration.Milliseconds(),
-		"step3_simplification_ms", step3Duration.Milliseconds(),
-		"total_duration_ms", totalDuration.Milliseconds(),
-		"algo", config.Simplification.Algorithm)
+		"max_size_mb", fmt.Sprintf("%.2f", config.TileSizeThresholds.MaxSizeMB),
+		"total_duration_ms", totalDuration.Milliseconds())
 
 	return mvtData, nil
+}
+
+// generateTileWithDynamicExtentReduction 生成瓦片，自动减半 Extent 直到符合大小要求
+func (g *TileGenerator) generateTileWithDynamicExtentReduction(
+	ctx context.Context,
+	params TileGenerationParams,
+	columns []string,
+	initialExtent int,
+	minExtent int,
+	maxSizeMB float64,
+) (mvtData []byte, finalExtent int, err error) {
+	currentExtent := initialExtent
+	attempt := 0
+
+	for currentExtent >= minExtent {
+		attempt++
+		logger.L().Info("🔄 生成瓦片尝试",
+			"attempt", attempt,
+			"extent", currentExtent,
+			"z", params.Z, "x", params.X, "y", params.Y)
+
+		// 生成瓦片
+		mvtData, err = g.generateBaseTile(ctx, params, columns, currentExtent)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to generate tile with extent %d: %w", currentExtent, err)
+		}
+
+		tileSizeMB := float64(len(mvtData)) / (1024 * 1024)
+		logger.L().Info("📊 瓦片大小检查",
+			"attempt", attempt,
+			"extent", currentExtent,
+			"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
+			"max_mb", fmt.Sprintf("%.2f", maxSizeMB),
+			"is_ok", tileSizeMB <= maxSizeMB)
+
+		if tileSizeMB <= maxSizeMB {
+			logger.L().Info("✅ 瓦片大小符合要求",
+				"attempt", attempt,
+				"extent", currentExtent,
+				"size_mb", fmt.Sprintf("%.2f", tileSizeMB),
+				"z", params.Z, "x", params.X, "y", params.Y)
+			return mvtData, currentExtent, nil
+		}
+
+		// 减半 Extent 继续尝试
+		currentExtent = currentExtent / 2
+	}
+
+	// 即使减半到最小值仍然超过限制，也返回最后一次的结果（进度优于完美）
+	logger.L().Warn("⚠️ 瓦片大小仍超过限制，返回最小 Extent 结果",
+		"min_extent", minExtent,
+		"final_size_mb", fmt.Sprintf("%.2f", float64(len(mvtData))/(1024*1024)),
+		"max_mb", fmt.Sprintf("%.2f", maxSizeMB),
+		"z", params.Z, "x", params.X, "y", params.Y)
+
+	return mvtData, minExtent, nil
 }
 
 // generateBaseTile 生成基础瓦片（指定 Extent）
@@ -606,8 +578,10 @@ func (g *TileGenerator) generateBaseTile(
 	}
 
 	// 构建简单的 MVT 查询（不使用采样和简化）
+	// 注意：params.Table 和 params.GeomColumn 已从 QuickView 准备结果中获取
+	// 避免在这里重复检查物化视图存在性
 	opt := spatial.MVTOptions{
-		Layer:  params.Table,
+		Layer:  params.Table, // Layer 名称使用原始表名（前端显示）
 		Extent: extent,
 		Buffer: 64,
 		SRID:   params.SRID,
@@ -623,10 +597,21 @@ func (g *TileGenerator) generateBaseTile(
 		params.PrimaryKey,
 	)
 
-	logger.L().Debug("🔍 生成基础瓦片 SQL",
+	logger.L().Info("🔍 生成基础瓦片 SQL",
 		"extent", extent,
 		"columns_count", len(columns),
-		"sql_length", len(sqlStr))
+		"sql_length", len(sqlStr),
+		"args_count", len(args),
+		"args", fmt.Sprintf("%v", args))
+
+	// 打印完整的SQL和参数（用于排查Extent优化卡住的问题）
+	logger.L().Info("📋 完整的SQL语句（首1000字符）",
+		"sql_preview", func() string {
+			if len(sqlStr) > 1000 {
+				return sqlStr[:1000] + "..."
+			}
+			return sqlStr
+		}())
 
 	var mvtData []byte
 	err = db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvtData)
@@ -650,164 +635,6 @@ func (g *TileGenerator) generateBaseTile(
 		"extent", extent,
 		"data_size_bytes", len(mvtData),
 		"query_duration_ms", queryDuration.Milliseconds())
-
-	return mvtData, nil
-}
-
-// generateTileWithSampling 生成带对象采样的瓦片
-func (g *TileGenerator) generateTileWithSampling(
-	ctx context.Context,
-	params TileGenerationParams,
-	columns []string,
-	extent int,
-	config *commonModels.OptimizationConfig,
-) ([]byte, error) {
-	queryStart := time.Now()
-
-	db, err := g.getOrCreateDBPool(ctx, params.EngineID, params.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get db pool: %w", err)
-	}
-
-	// 构建带采样的 MVT 查询
-	samplingParams := &spatial.SamplingParams{
-		Enabled: true,
-		PolygonLine: spatial.PolygonLineSampling{
-			CumulativeSizeRatio:  config.Sampling.PolygonLine.CumulativeSizeRatio,
-			MaxFeatureCountRatio: config.Sampling.PolygonLine.MaxFeatureCountRatio,
-		},
-		Point: spatial.PointSampling{
-			SampleRatio: config.Sampling.Point.SampleRatio,
-		},
-	}
-
-	opt := spatial.MVTOptions{
-		Layer:          params.Table,
-		Extent:         extent,
-		Buffer:         64,
-		SRID:           params.SRID,
-		SamplingConfig: samplingParams,
-	}
-
-	sqlStr, args := spatial.BuildMVTQuery(
-		params.Schema,
-		params.Table,
-		params.GeomColumn,
-		columns,
-		params.Z, params.X, params.Y,
-		opt,
-		params.PrimaryKey,
-	)
-
-	logger.L().Debug("🔍 生成采样瓦片 SQL",
-		"extent", extent,
-		"polygon_ratio", fmt.Sprintf("%.2f", config.Sampling.PolygonLine.CumulativeSizeRatio),
-		"point_ratio", fmt.Sprintf("%.2f", config.Sampling.Point.SampleRatio),
-		"sql_length", len(sqlStr))
-
-	var mvtData []byte
-	err = db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvtData)
-	queryDuration := time.Since(queryStart)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.L().Debug("📭 采样瓦片查询无结果",
-				"query_duration_ms", queryDuration.Milliseconds())
-			return []byte{}, nil
-		}
-		logger.L().Error("❌ 采样瓦片查询失败",
-			"error", err,
-			"query_duration_ms", queryDuration.Milliseconds())
-		return nil, fmt.Errorf("failed to execute MVT query with sampling: %w", err)
-	}
-
-	logger.L().Debug("✅ 采样瓦片查询完成",
-		"data_size_bytes", len(mvtData),
-		"query_duration_ms", queryDuration.Milliseconds())
-
-	return mvtData, nil
-}
-
-// generateTileWithSimplification 生成带几何简化的瓦片（累积优化）
-func (g *TileGenerator) generateTileWithSimplification(
-	ctx context.Context,
-	params TileGenerationParams,
-	columns []string,
-	extent int,
-	config *commonModels.OptimizationConfig,
-) ([]byte, error) {
-	queryStart := time.Now()
-
-	db, err := g.getOrCreateDBPool(ctx, params.EngineID, params.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get db pool: %w", err)
-	}
-
-	// 继续使用采样参数（累积优化）
-	samplingParams := &spatial.SamplingParams{
-		Enabled: true,
-		PolygonLine: spatial.PolygonLineSampling{
-			CumulativeSizeRatio:  config.Sampling.PolygonLine.CumulativeSizeRatio,
-			MaxFeatureCountRatio: config.Sampling.PolygonLine.MaxFeatureCountRatio,
-		},
-		Point: spatial.PointSampling{
-			SampleRatio: config.Sampling.Point.SampleRatio,
-		},
-	}
-
-	// 启用几何简化
-	simplificationParams := &spatial.SimplificationParams{
-		Enabled:             true,
-		ToleranceMultiplier: config.Simplification.ToleranceMultiplier,
-		Algorithm:           config.Simplification.Algorithm,
-	}
-
-	opt := spatial.MVTOptions{
-		Layer:                params.Table,
-		Extent:               extent,
-		Buffer:               64,
-		SRID:                 params.SRID,
-		SamplingConfig:       samplingParams,
-		SimplificationConfig: simplificationParams,
-	}
-
-	sqlStr, args := spatial.BuildMVTQuery(
-		params.Schema,
-		params.Table,
-		params.GeomColumn,
-		columns,
-		params.Z, params.X, params.Y,
-		opt,
-		params.PrimaryKey,
-	)
-
-	logger.L().Debug("🔍 生成简化瓦片 SQL",
-		"extent", extent,
-		"algorithm", config.Simplification.Algorithm,
-		"tolerance_mult", fmt.Sprintf("%.2f", config.Simplification.ToleranceMultiplier),
-		"sql_length", len(sqlStr))
-
-	var mvtData []byte
-	err = db.QueryRowContext(ctx, sqlStr, args...).Scan(&mvtData)
-	queryDuration := time.Since(queryStart)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.L().Debug("📭 简化瓦片查询无结果",
-				"query_duration_ms", queryDuration.Milliseconds())
-			return []byte{}, nil
-		}
-		logger.L().Error("❌ 简化瓦片查询失败",
-			"error", err,
-			"algorithm", config.Simplification.Algorithm,
-			"query_duration_ms", queryDuration.Milliseconds())
-		return nil, fmt.Errorf("failed to execute MVT query with simplification: %w", err)
-	}
-
-	logger.L().Debug("✅ 简化瓦片查询完成",
-		"data_size_bytes", len(mvtData),
-		"query_duration_ms", queryDuration.Milliseconds(),
-		"algorithm", config.Simplification.Algorithm)
 
 	return mvtData, nil
 }

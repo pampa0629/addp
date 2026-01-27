@@ -52,12 +52,13 @@ func (r *QuickViewRepository) GetByID(id uint) (*models.QuickView, error) {
 }
 
 // Update 更新快显记录
+// Deprecated: 使用 UpdateStatusOnly, UpdateGenerationResult 等专用方法以确保字段保护
 func (r *QuickViewRepository) Update(qv *models.QuickView) error {
 	return r.db.Save(qv).Error
 }
 
-// UpdateStatus 更新状态
-func (r *QuickViewRepository) UpdateStatus(id uint, status, errorMsg string) error {
+// UpdateStatusOnly 仅更新 status 和 error_message，保护所有其他字段
+func (r *QuickViewRepository) UpdateStatusOnly(id uint, status, errorMsg string) error {
 	updates := map[string]interface{}{
 		"status": status,
 	}
@@ -65,23 +66,49 @@ func (r *QuickViewRepository) UpdateStatus(id uint, status, errorMsg string) err
 	if errorMsg != "" {
 		updates["error_message"] = errorMsg
 	} else {
-		updates["error_message"] = "" // 清空错误信息
+		updates["error_message"] = nil // 清空错误信息（使用 nil 而不是空字符串）
 	}
 
 	return r.db.Model(&models.QuickView{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// UpdateResult 更新生成结果
-func (r *QuickViewRepository) UpdateResult(id uint, result UpdateResultParams) error {
+// UpdateStatus 更新状态（保留向后兼容）
+// Deprecated: 使用 UpdateStatusOnly 以确保字段保护
+func (r *QuickViewRepository) UpdateStatus(id uint, status, errorMsg string) error {
+	return r.UpdateStatusOnly(id, status, errorMsg)
+}
+
+// UpdateGenerationResult 更新预缓存结果，保护 preparation_status 和 preferred_mode
+func (r *QuickViewRepository) UpdateGenerationResult(id uint, result UpdateResultParams) error {
 	updates := map[string]interface{}{
-		"status":                  "ready",
-		"actual_max_zoom":         result.ActualMaxZoom,
-		"total_tiles":             result.TotalTiles,
-		"cached_tiles":            result.CachedTiles,
-		"completed_at":            gorm.Expr("NOW()"),
+		"status":          "ready",
+		"actual_max_zoom": result.ActualMaxZoom,
+		"total_tiles":     result.TotalTiles,
+		"cached_tiles":    result.CachedTiles,
+		"completed_at":    gorm.Expr("NOW()"),
 	}
 
 	return r.db.Model(&models.QuickView{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdateGenerationResultWithPreferredMode 预缓存完成后，同时设置 preferred_mode = "mvt"
+func (r *QuickViewRepository) UpdateGenerationResultWithPreferredMode(id uint, result UpdateResultParams) error {
+	updates := map[string]interface{}{
+		"status":          "ready",
+		"actual_max_zoom": result.ActualMaxZoom,
+		"total_tiles":     result.TotalTiles,
+		"cached_tiles":    result.CachedTiles,
+		"completed_at":    gorm.Expr("NOW()"),
+		"preferred_mode":  "mvt", // 第三步：自动启用 MVT
+	}
+
+	return r.db.Model(&models.QuickView{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdateResult 更新生成结果（保留向后兼容）
+// Deprecated: 使用 UpdateGenerationResult 或 UpdateGenerationResultWithPreferredMode
+func (r *QuickViewRepository) UpdateResult(id uint, result UpdateResultParams) error {
+	return r.UpdateGenerationResult(id, result)
 }
 
 // UpdateResultParams 更新结果参数
@@ -245,13 +272,12 @@ func (r *QuickViewRepository) GetFingerprint(tenantID, engineID uint, schema, ta
 // UpdatePreferredMode 更新用户偏好的显示模式
 func (r *QuickViewRepository) UpdatePreferredMode(
 	tenantID, engineID uint,
-	schema, table string,
-	preferredMode string,
+	schema, table, mode string,
 ) error {
 	result := r.db.Model(&models.QuickView{}).
 		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
 			tenantID, engineID, schema, table).
-		Update("preferred_mode", preferredMode)
+		Update("preferred_mode", mode)
 
 	if result.Error != nil {
 		return result.Error
@@ -263,3 +289,96 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 
 	return nil
 }
+
+// UpdatePreparationStatusAtomic 原子性更新准备状态和 quick_view.status
+func (r *QuickViewRepository) UpdatePreparationStatusAtomic(
+	id uint,
+	prepStatus *models.PreparationStatus,
+	qvStatus string,
+) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.QuickView{}).
+			Where("id = ?", id).
+			Update("preparation_status", prepStatus).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.QuickView{}).
+			Where("id = ?", id).
+			Update("status", qvStatus).Error
+	})
+}
+
+// UpdatePreparationStatus 更新准备阶段状态（保留向后兼容）
+// Deprecated: 使用 UpdatePreparationStatusAtomic 确保原子性更新
+func (r *QuickViewRepository) UpdatePreparationStatus(
+	id uint,
+	status *models.PreparationStatus,
+) error {
+	return r.db.Model(&models.QuickView{}).
+		Where("id = ?", id).
+		Update("preparation_status", status).Error
+}
+
+// GetPreparationResult 获取准备结果（必须存在）
+func (r *QuickViewRepository) GetPreparationResult(
+	tenantID, engineID uint,
+	schema, table string,
+) (*models.PreparationStatus, error) {
+	var qv models.QuickView
+	err := r.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		tenantID, engineID, schema, table).
+		First(&qv).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if qv.PreparationStatus == nil {
+		return nil, fmt.Errorf("preparation not completed")
+	}
+
+	return qv.PreparationStatus, nil
+}
+
+// IsPreparationCompleted 检查准备是否完成
+func (r *QuickViewRepository) IsPreparationCompleted(
+	tenantID, engineID uint,
+	schema, table string,
+) (bool, error) {
+	var qv models.QuickView
+	err := r.db.Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+		tenantID, engineID, schema, table).
+		First(&qv).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return qv.PreparationStatus != nil && qv.PreparationStatus.OverallStatus == "passed", nil
+}
+
+// GetPreparationStatus 获取准备阶段状态（保留向后兼容）
+// Deprecated: 使用 GetPreparationResult 或 IsPreparationCompleted
+func (r *QuickViewRepository) GetPreparationStatus(
+	tenantID, engineID uint,
+	schema, table string,
+) (*models.PreparationStatus, error) {
+	var qv models.QuickView
+	err := r.db.Select("preparation_status").
+		Where("tenant_id = ? AND engine_id = ? AND schema_name = ? AND table_name = ?",
+			tenantID, engineID, schema, table).
+		First(&qv).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("quick view not found")
+		}
+		return nil, err
+	}
+
+	return qv.PreparationStatus, nil
+}
+

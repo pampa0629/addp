@@ -41,6 +41,9 @@ type QuickView struct {
 	// 优化配置（v2.0 新增）
 	OptimizationConfig *commonmodels.OptimizationConfig `gorm:"type:jsonb" json:"optimization_config,omitempty"`
 
+	// 准备阶段状态（v4.0 新增）
+	PreparationStatus *PreparationStatus `gorm:"type:jsonb" json:"preparation_status,omitempty"`
+
 	// 时间戳
 	StartedAt   *time.Time `gorm:"" json:"started_at,omitempty"`
 	CompletedAt *time.Time `gorm:"" json:"completed_at,omitempty"`
@@ -51,6 +54,65 @@ type QuickView struct {
 // TableName 指定表名
 func (QuickView) TableName() string {
 	return "manager.quick_view"
+}
+
+// PreparedQueryInfo 准备完成后的查询信息（避免瓦片生成时重复检查）
+type PreparedQueryInfo struct {
+	MaterializedViewExists bool   `json:"materialized_view_exists"` // 是否使用物化视图
+	QueryTable             string `json:"query_table"`              // 实际查询的表名
+	QueryGeomColumn        string `json:"query_geom_column"`        // 实际查询的几何列名
+	QuerySRID              int    `json:"query_srid"`               // 实际查询的SRID
+}
+
+// PreparationExecution 准备阶段执行信息（用于故障排查）
+type PreparationExecution struct {
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+	DurationSec float64   `json:"duration_sec"`
+	WorkerID    string    `json:"worker_id"`   // 哪个 Worker 执行
+	TaskID      string    `json:"task_id"`     // Asynq TaskID
+	RetryCount  int       `json:"retry_count"`
+	LastError   string    `json:"last_error,omitempty"`
+}
+
+// PreparationStatus 准备阶段检查结果
+type PreparationStatus struct {
+	Version       string                 `json:"version"`                   // "1.0"
+	Checks        []PreparationCheck     `json:"checks"`                    // 检查项列表
+	OverallStatus string                 `json:"overall_status"`            // "passed" | "failed"
+	Summary       string                 `json:"summary"`                   // 摘要
+	CompletedAt   time.Time              `json:"completed_at"`              // 完成时间
+	QueryInfo     *PreparedQueryInfo     `json:"query_info,omitempty"`      // 准备完成后的查询信息
+	ExecutionInfo *PreparationExecution  `json:"execution_info,omitempty"`  // 故障排查信息
+}
+
+// Scan 实现 sql.Scanner 接口，用于从 JSONB 数据库字段读取
+func (ps *PreparationStatus) Scan(value interface{}) error {
+	if value == nil {
+		*ps = PreparationStatus{}
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+
+	return json.Unmarshal(bytes, ps)
+}
+
+// Value 实现 driver.Valuer 接口，用于将数据写入 JSONB 数据库字段
+func (ps PreparationStatus) Value() (driver.Value, error) {
+	return json.Marshal(ps)
+}
+
+// PreparationCheck 单个检查项
+type PreparationCheck struct {
+	Name      string                 `json:"name"`       // "materialized_view" | "spatial_index" | "analyze"
+	Status    string                 `json:"status"`     // "passed" | "failed" | "skipped"
+	Message   string                 `json:"message"`    // 检查信息
+	Details   map[string]interface{} `json:"details"`    // 详细信息
+	CheckedAt time.Time              `json:"checked_at"` // 检查时间
 }
 
 // JSONFloatArray 用于存储 float64 数组到 JSONB

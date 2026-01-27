@@ -27,9 +27,12 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="服务地址" :span="2">
-          <el-link :href="service.url" target="_blank" type="primary">
-            {{ service.url }}
-          </el-link>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="flex: 1;">{{ service.url }}</span>
+            <el-button size="small" @click="handleCopyURL(service.url)">
+              复制
+            </el-button>
+          </div>
         </el-descriptions-item>
         <el-descriptions-item label="认证类型">
           {{ formatAuthType(service.auth_type) }}
@@ -88,9 +91,9 @@ const layers = ref([])
 const loadService = async () => {
   try {
     loading.value = true
-    const { data } = await serviceAPI.get(route.params.id)
-    service.value = data
-    layers.value = data.layers || []
+    const result = await serviceAPI.get(route.params.id)
+    service.value = result
+    layers.value = result.layers || []
   } catch (error) {
     ElMessage.error('加载服务详情失败: ' + (error.response?.data?.message || error.message))
     handleBack()
@@ -111,11 +114,11 @@ const handleRefresh = async () => {
 
 const handleHealthCheck = async () => {
   try {
-    const { data } = await serviceAPI.healthCheck(route.params.id)
-    if (data.healthy) {
+    const result = await serviceAPI.healthCheck(route.params.id)
+    if (result.status === 'healthy') {
       ElMessage.success('健康检查通过')
     } else {
-      ElMessage.warning('健康检查失败: ' + data.message)
+      ElMessage.warning('健康检查失败: ' + result.message)
     }
     await loadService()
   } catch (error) {
@@ -129,6 +132,28 @@ const handleEdit = () => {
 
 const handleBack = () => {
   router.push('/services')
+}
+
+const handleCopyURL = async (url) => {
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('服务地址已复制到剪贴板')
+  } catch (error) {
+    // 降级方案：使用传统方法复制
+    const textarea = document.createElement('textarea')
+    textarea.value = url
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      ElMessage.success('服务地址已复制到剪贴板')
+    } catch (err) {
+      ElMessage.error('复制失败，请手动复制')
+    }
+    document.body.removeChild(textarea)
+  }
 }
 
 const getServiceTypeColor = (type) => {

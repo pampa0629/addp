@@ -19,19 +19,12 @@ services:
     image: ${POSTGRES_IMAGE:-imresamu/postgis-arm64:15-3.4}
     container_name: business-postgres
     # 优化 PostgreSQL 内存配置，支持 MVT 瓦片生成
-    # macOS 优化：降低 shared_buffers 避免共享内存段分配失败
+    # macOS 优化：增加 shm_size 到 2GB 避免共享内存段分配失败
+    shm_size: 2g
     command:
       - postgres
       - -c
-      - shared_buffers=256MB
-      - -c
-      - work_mem=64MB
-      - -c
-      - maintenance_work_mem=128MB
-      - -c
-      - max_connections=50
-      - -c
-      - effective_cache_size=1GB
+      - config_file=/etc/postgresql/postgresql.conf
       - -c
       - timezone=Asia/Shanghai
     environment:
@@ -42,6 +35,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
     ports:
       - "${POSTGRES_PORT:-5433}:5432"
     healthcheck:
