@@ -1,4 +1,14 @@
+# Math Workflow Engine Dependencies
+
+# Web framework
 Flask==3.0.0
 flask-cors==4.0.0
-pydantic==2.5.0
+
+# Data validation (upgraded for Python 3.11+ compatibility)
+pydantic>=2.6.0
+
+# HTTP client for System registration
 requests==2.31.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
