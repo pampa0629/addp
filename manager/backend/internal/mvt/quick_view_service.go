@@ -128,66 +128,19 @@ func (s *QuickViewService) GenerateMixed(
 	logger.L().Info("开始生成快显缓存（混合入队模式）",
 		"engine_id", cfg.EngineID,
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+		"geom_column", cfg.GeomColumn,
+		"srid", cfg.SRID,
 		"min_zoom", cfg.MinZoom,
 		"max_zoom", cfg.MaxZoom,
 		"concurrency", cfg.Concurrency)
 
-	// 1. 验证 SRID 一致性（防止元数据与实际数据不一致导致错误）
-	actualSRID, err := s.tileGen.VerifySRID(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn, cfg.SRID)
-	if err != nil {
-		logger.L().Error("❌ SRID 验证失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"expected_srid", cfg.SRID,
-			"error", err)
-		return nil, fmt.Errorf("SRID 验证失败: %w", err)
-	}
+	// ⚠️ 重要：此方法接收的 cfg 已经由准备阶段处理完毕
+	// - 如果源表不是 3857，cfg.Table 已经切换到物化视图（如 dltb_mv3857）
+	// - cfg.GeomColumn 已经是正确的几何列名（如 geom_3857 或原始列名）
+	// - cfg.SRID 已经是正确的 SRID（3857）
+	// 因此无需重复检查 SRID 或判断物化视图，直接使用传入的配置即可
 
-	logger.L().Info("✅ SRID 验证通过",
-		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-		"srid", actualSRID)
-
-	// 1.3 运行准备阶段检查（v4.0 新增）
-	logger.L().Info("🔄 开始准备阶段检查",
-		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table))
-
-	prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
-	if err != nil {
-		logger.L().Error("❌ 准备阶段检查失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"error", err)
-		return nil, fmt.Errorf("准备阶段检查失败: %w", err)
-	}
-
-	logger.L().Info("✅ 准备阶段检查完成",
-		"overall_status", prepStatus.OverallStatus,
-		"summary", prepStatus.Summary)
-
-	// 如果准备阶段失败，返回错误并让前端显示失败信息
-	if prepStatus.OverallStatus == "failed" {
-		// 保存准备状态到数据库（以便前端显示）
-		logger.L().Warn("⚠️ 准备阶段有失败项",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"checks", prepStatus.Checks)
-		return nil, fmt.Errorf("准备阶段检查失败，请手动处理后重试")
-	}
-
-	// 🆕 v4.0 检查是否需要使用物化视图（如果原始 SRID 不是 3857）
-	// 原始 SRID 是在 actualSRID 中
-	if actualSRID != 3857 {
-		// 需要使用物化视图，修改配置
-		cfg.Table = fmt.Sprintf("%s_mv3857", cfg.Table)
-		cfg.GeomColumn = "geom_3857"
-		logger.L().Info("🔄 启用物化视图（坐标系转换）",
-			"original_srid", actualSRID,
-			"mv_table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"mv_geom_column", cfg.GeomColumn)
-	} else {
-		logger.L().Info("✅ 原始表已是 3857 坐标系，无需物化视图",
-			"srid", actualSRID)
-	}
-
-
-	// 1.5 精准统计信息采集（Phase 1诊断）
+	// 1. 精准统计信息采集（Phase 1诊断）
 	stats, err := s.collectStatistics(ctx, cfg)
 	if err != nil {
 		logger.L().Warn("⚠️ 统计信息采集失败，继续生成",
@@ -592,8 +545,8 @@ func (s *QuickViewService) GenerateMixed(
 			lastProgressUpdateTime = time.Now()
 		}
 
-		if processedTiles%100 == 0 {
-			// 每100个瓦片输出一次进度和资源监控
+		if processedTiles%10 == 0 {
+			// 每10个瓦片输出一次进度和资源监控
 			resourceInfo := s.getResourceMetrics(ctx, cfg)
 			logger.L().Info(fmt.Sprintf("⚙️ z=%d epoch: processed=%d, CPU=%.0f%%, Mem=%.1fMB, DBConns=%d, QueryTime=%.1fms",
 				result.coord.Z,
@@ -1152,11 +1105,12 @@ func (s *QuickViewService) prepareFor3857MVT(
 			"estimated_time", "可能需要数分钟")
 
 		// 创建物化视图（转换为 3857）
+		// ⚠️ 重要：显式指定几何类型和 SRID，确保在 geometry_columns 中正确注册
 		createMVSQL := fmt.Sprintf(`
 			CREATE MATERIALIZED VIEW %s AS
 			SELECT
 				id,
-				ST_Transform(%s, 3857) AS geom_3857
+				ST_Transform(%s, 3857)::geometry(GEOMETRY, 3857) AS geom_3857
 			FROM %s.%s
 			WHERE %s IS NOT NULL
 		`, mvFullName, cfg.GeomColumn, cfg.Schema, cfg.Table, cfg.GeomColumn)
@@ -1165,7 +1119,7 @@ func (s *QuickViewService) prepareFor3857MVT(
 			return fmt.Errorf("failed to create materialized view: %w", err)
 		}
 
-		logger.L().Info("✅ 物化视图创建成功", "materialized_view", mvFullName)
+		logger.L().Info("✅ 物化视图创建成功（SRID=3857）", "materialized_view", mvFullName)
 	} else {
 		logger.L().Info("✅ 物化视图已存在", "materialized_view", mvFullName)
 	}

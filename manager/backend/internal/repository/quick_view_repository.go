@@ -99,7 +99,8 @@ func (r *QuickViewRepository) UpdateGenerationResultWithPreferredMode(id uint, r
 		"total_tiles":     result.TotalTiles,
 		"cached_tiles":    result.CachedTiles,
 		"completed_at":    gorm.Expr("NOW()"),
-		"preferred_mode":  "mvt", // 第三步：自动启用 MVT
+		"preferred_mode":  "mvt",    // 第三步：自动启用 MVT
+		"error_message":   "",       // 清除错误信息（任务成功完成）
 	}
 
 	return r.db.Model(&models.QuickView{}).Where("id = ?", id).Updates(updates).Error
@@ -296,16 +297,16 @@ func (r *QuickViewRepository) UpdatePreparationStatusAtomic(
 	prepStatus *models.PreparationStatus,
 	qvStatus string,
 ) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.QuickView{}).
-			Where("id = ?", id).
-			Update("preparation_status", prepStatus).Error; err != nil {
-			return err
-		}
-		return tx.Model(&models.QuickView{}).
-			Where("id = ?", id).
-			Update("status", qvStatus).Error
-	})
+	// 使用 Updates (复数) 方法和 map，确保 JSONB 字段正确序列化
+	// 注意：必须使用 map，不能直接传 struct，否则 GORM 可能无法正确处理 JSONB 字段
+	updates := map[string]interface{}{
+		"preparation_status": prepStatus,
+		"status":             qvStatus,
+	}
+
+	return r.db.Model(&models.QuickView{}).
+		Where("id = ?", id).
+		Updates(updates).Error
 }
 
 // UpdatePreparationStatus 更新准备阶段状态（保留向后兼容）

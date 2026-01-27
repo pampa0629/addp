@@ -593,11 +593,21 @@ func (s *QuickViewService) PrepareForCreateMVT(
 	fingerprint := calculateFingerprint(engineID, schema, table)
 	now := time.Now()
 
-	// 1. 先创建或更新快显记录（status="preparing"）
+	// 1. 从Meta模块获取空间元数据（包括几何列名、extent等）
+	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
+	if err != nil {
+		return "", fmt.Errorf("failed to get spatial metadata: %w", err)
+	}
+
+	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
+		return "", fmt.Errorf("geometry column not found in metadata")
+	}
+
+	// 2. 先创建或更新快显记录（status="preparing"，同时设置 extent）
 	exists, _ := s.repo.Exists(tenantID, engineID, schema, table)
 
 	if !exists {
-		// 创建新记录
+		// 创建新记录，包含从 Meta 获取的 extent
 		qv := models.QuickView{
 			TenantID:    tenantID,
 			EngineID:    engineID,
@@ -606,29 +616,37 @@ func (s *QuickViewService) PrepareForCreateMVT(
 			Status:      "preparing",
 			Fingerprint: fingerprint,
 			StartedAt:   &now,
+			// 从 Meta 同步 extent 信息
+			Extent:     spatialMeta.Extent,
+			ExtentSRID: spatialMeta.ExtentSRID,
 		}
 		if err := s.repo.Create(&qv); err != nil {
 			return "", fmt.Errorf("failed to create quick view record: %w", err)
 		}
+		logger.L().Info("✅ Created QuickView with extent from Meta",
+			"table", fmt.Sprintf("%s.%s", schema, table),
+			"extent", spatialMeta.Extent,
+			"extent_srid", spatialMeta.ExtentSRID)
 	} else {
-		// 更新状态为准备中
+		// 更新状态为准备中，同时更新 extent（以防元数据有更新）
 		qv, err := s.repo.GetByTable(tenantID, engineID, schema, table)
 		if err != nil {
 			return "", fmt.Errorf("failed to get quick view record: %w", err)
 		}
-		if err := s.repo.UpdateStatus(qv.ID, "preparing", ""); err != nil {
-			return "", fmt.Errorf("failed to update status: %w", err)
+
+		// 使用 Updates 只更新必要字段，保护其他字段
+		updates := map[string]interface{}{
+			"status":      "preparing",
+			"extent":      spatialMeta.Extent,
+			"extent_srid": spatialMeta.ExtentSRID,
 		}
-	}
-
-	// 2. 从Meta模块获取空间元数据（包括几何列名）
-	spatialMeta, err := s.GetSpatialMetadataFromMeta(ctx, tenantID, engineID, schema, table)
-	if err != nil {
-		return "", fmt.Errorf("failed to get spatial metadata: %w", err)
-	}
-
-	if spatialMeta == nil || spatialMeta.GeomColumn == "" {
-		return "", fmt.Errorf("geometry column not found in metadata")
+		if err := s.repo.GetDB().Model(&qv).Updates(updates).Error; err != nil {
+			return "", fmt.Errorf("failed to update quick view: %w", err)
+		}
+		logger.L().Info("✅ Updated QuickView extent from Meta",
+			"table", fmt.Sprintf("%s.%s", schema, table),
+			"extent", spatialMeta.Extent,
+			"extent_srid", spatialMeta.ExtentSRID)
 	}
 
 	// 3. 入队准备任务，传递实际的几何列名

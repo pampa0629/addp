@@ -25,11 +25,12 @@ ADDP 采用**准备阶段 + 生成过程**的两个独立任务：
     ↓
   4. 保存准备状态到快显表（preparation_status 字段）
      - 包含每个检查的结果（passed/skipped/failed）
-     - 包含查询信息（QueryInfo），供预缓存复用
-     - 包含执行信息（ExecutionInfo），便于故障排查
+     - 所有诊断信息存储在 checks 数组
+     - query_info = null（动态推导，不在诊断阶段生成）
+     - execution_info = null（仅在实际执行准备工作时才填充）
     ↓
   5. 返回 overall_status
-     - "passed" → 所有检查都成功
+     - "passed" → 所有检查都成功，可开始预缓存
      - "failed" → 有检查项失败，提示用户
     ↓
 状态转换: none → preparing → prepared
@@ -38,18 +39,18 @@ ADDP 采用**准备阶段 + 生成过程**的两个独立任务：
     ↓
   1. **强制检查**：preparation_status 必须为 "passed"
     ↓
-  2. 读取 QueryInfo（避免重复检查）
-     - 使用 QueryInfo.QueryTable（物化视图或源表）
-     - 使用 QueryInfo.QueryGeomColumn（转换后的几何列）
-     - 使用 QueryInfo.QuerySRID（目标 SRID）
+  2. 推导 QueryInfo（从 checks 数组动态推导）
+     - 从 materialized_view check 判断是否需要物化视图
+     - 从 spatial_index check 获取实际查询表名和几何列
+     - SRID 固定为 3857
     ↓
   3. 根据 zoom 级别应用属性优化（z<=8 只返回主键）
     ↓
-  4. 使用分层 Extent 策略（max zoom: 2048, 其他: 1024）
+  4. 使用分层 Extent 策略（max zoom: 1024, 其他: 512）
     ↓
   5. 生成瓦片并检查大小
      - 大小 <= 5MB → 保存瓦片
-     - 大小 > 5MB → Extent 减半（2048→1024→512→256），重新生成
+     - 大小 > 5MB → Extent 减半（1024→512→256），重新生成
     ↓
   6. **自动启用 MVT 模式**：设置 preferred_mode = "mvt"
     ↓
@@ -57,8 +58,9 @@ ADDP 采用**准备阶段 + 生成过程**的两个独立任务：
 ```
 
 **核心原则**：
+- 准备阶段（诊断）和执行阶段分离：CheckPreparation 只做诊断，不执行实际操作
 - 准备阶段确保数据库性能最优（物化视图 + 索引 + 统计信息）
-- 生成过程复用准备阶段的结果，避免重复计算
+- 生成过程从 checks 动态推导 QueryInfo，避免冗余存储
 - 强制顺序流程：必须完成准备才能执行预缓存
 - 字段保护机制：preparation_status 不会被覆盖
 
@@ -153,6 +155,8 @@ ANALYZE {schema}.{table}_mv3857;
 
 **数据结构**（保存到 `quick_view.preparation_status` 字段）：
 
+CheckPreparation 诊断阶段保存检查结果到 `preparation_status`。**重要**：诊断阶段仅保存检查结果（checks 数组）和执行元数据（execution_info），`query_info` 保持为 `null`。QueryInfo 不需要在诊断阶段生成，因为预缓存生成阶段可以从 checks 数组动态推导出来，避免冗余存储。
+
 ```json
 {
   "version": "1.0",
@@ -165,17 +169,21 @@ ANALYZE {schema}.{table}_mv3857;
         "view_name": "dltb_mv3857",
         "source_srid": 2360,
         "target_srid": 3857,
-        "row_count": 1234567
+        "row_count": 1234567,
+        "action_required": false
       },
       "checked_at": "2026-01-25T10:30:00Z"
     },
     {
       "name": "spatial_index",
       "status": "passed" | "failed" | "skipped",
-      "message": "空间索引 idx_dltb_mv3857_geom_3857_gist 已存在",
+      "message": "空间索引 public.dltb_mv3857 (geom_3857) 已存在",
       "details": {
         "index_name": "idx_dltb_mv3857_geom_3857_gist",
-        "column": "geom_3857"
+        "table": "public.dltb_mv3857",
+        "column": "geom_3857",
+        "source_srid": 2360,
+        "action_required": false
       },
       "checked_at": "2026-01-25T10:30:05Z"
     },
@@ -185,7 +193,8 @@ ANALYZE {schema}.{table}_mv3857;
       "message": "统计信息已更新",
       "details": {
         "last_analyze": "2026-01-25T10:30:10Z",
-        "executed": true
+        "last_autoanalyze": null,
+        "action_required": false
       },
       "checked_at": "2026-01-25T10:30:10Z"
     }
@@ -193,78 +202,205 @@ ANALYZE {schema}.{table}_mv3857;
   "overall_status": "passed" | "failed",
   "summary": "准备阶段全部通过，可以开始生成瓦片",
   "completed_at": "2026-01-25T10:30:10Z",
-  "query_info": {
-    "materialized_view_exists": true,
-    "query_table": "public.dltb_mv3857",
-    "query_geom_column": "geom_3857",
-    "query_srid": 3857
-  },
-  "execution_info": {
-    "started_at": "2026-01-25T10:30:00Z",
-    "completed_at": "2026-01-25T10:30:10Z",
-    "duration_sec": 10.5,
-    "worker_id": "worker-12345",
-    "task_id": "prepare_for_create_mvt",
-    "retry_count": 0
+  "query_info": null,
+  "execution_info": null
+}
+```
+
+**重要说明**：
+- `checks` 数组包含了所有准备工作的诊断信息，包括物化视图、空间索引、统计信息的完整状态
+- `query_info` 在诊断阶段为 `null`，**由后续预缓存生成阶段在 Worker 处理 QuickViewTask 时从 checks 动态推导**
+  - 这样设计的原因：checks 中已包含所有必要信息，无需冗余存储 query_info
+  - 从 materialized_view check 可推导是否需要物化视图
+  - 从 spatial_index check 可提取查询表名和几何列名
+  - SRID 固定为 3857
+- `execution_info` 在诊断阶段为 `null`，仅在实际执行准备工作（HandlePrepareForCreateMVTTask）时才会填充
+
+**状态说明**：
+- `passed`：检查通过（例如：物化视图已存在，索引已存在，统计信息已更新）
+- `failed`：检查失败（例如：物化视图不存在，索引不存在，统计信息缺失）
+- `skipped`：不需要执行（例如：源表已经是 3857，无需物化视图）
+
+**overall_status**：
+- `passed`：所有检查都是 `passed` 或 `skipped`，可以开始预缓存生成（QueryInfo 会自动推导）
+- `failed`：至少有一个检查是 `failed`，需要先执行准备工作（PrepareForCreateMVT）或手动处理
+
+---
+
+### 2.5 QueryInfo 的推导（查询参数生成）
+
+**核心概念**：QueryInfo 不是在诊断阶段生成并保存的，而是在预缓存生成阶段从 `preparation_status.checks` 动态推导。这样设计的优点是避免信息冗余，因为所有必要数据都已经在 checks 数组中。
+
+**推导时机**：
+- 当 Worker 处理 QuickViewTask（预缓存生成任务）时
+- 检查 `preparation_status.query_info` 是否为 null
+- 如果为 null，则从 checks 数组动态推导
+
+**推导逻辑**：
+
+从 checks 数组中提取关键信息：
+
+1. **从 `materialized_view` check 判断是否存在物化视图**：
+   - status = `skipped` → 源表已是 3857，无需物化视图，`materialized_view_exists = false`
+   - status = `passed` → 物化视图存在，`materialized_view_exists = true`
+   - status = `failed` → 物化视图不存在，overall_status 应为 failed，不会推导
+
+2. **从 `spatial_index` check 获取实际查询表和几何列**：
+   - `details.table` - 完整的表名（含 schema），例如 `"public.dltb_mv3857"` 或 `"public.dltb"`
+   - `details.column` - 几何列名，例如 `"geom_3857"` 或 `"geom"`
+   - **重要**：需要从 `details.table` 中解析出表名部分（不含 schema）
+
+3. **SRID 固定为 3857**（所有坐标转换的最终目标）
+
+**推导结果（PreparedQueryInfo 结构）**：
+
+| 字段 | 说明 | 来源 |
+|------|------|------|
+| `materialized_view_exists` | 是否存在物化视图（boolean） | `materialized_view` check 的 status |
+| `query_table` | 瓦片生成时实际查询的表名（仅表名，不含 schema） | 从 `spatial_index` check 的 `details.table` 提取表名部分 |
+| `query_geom_column` | 实际查询的几何列名 | `spatial_index` check 的 `details.column` |
+| `query_srid` | 实际查询的 SRID（固定为 3857） | 常数 3857 |
+
+**三种情形的推导示例**：
+
+**情形 1：源表已是 3857（materialized_view status = skipped）**
+
+checks 中的相关信息：
+```json
+{
+  "name": "materialized_view",
+  "status": "skipped",
+  "message": "源表已经是 3857 坐标系，无需物化视图",
+  "details": {
+    "source_srid": 3857,
+    "target_srid": 3857,
+    "action_required": false
   }
 }
 ```
 
-**状态说明**：
-- `passed`：检查通过或成功完成操作
-- `failed`：检查失败或操作失败
-- `skipped`：不需要执行（例如：源表已经是 3857，跳过物化视图创建）
+对应的 spatial_index check：
+```json
+{
+  "name": "spatial_index",
+  "status": "passed",
+  "message": "空间索引 public.dltb (geom) 已存在",
+  "details": {
+    "table": "public.dltb",
+    "column": "geom",
+    "source_srid": 3857
+  }
+}
+```
 
-**overall_status**：
-- `passed`：所有检查都是 `passed` 或 `skipped`，可以开始生成
-- `failed`：至少有一个检查是 `failed`，需要用户手动处理
+推导结果：
+```json
+{
+  "materialized_view_exists": false,
+  "query_table": "dltb",
+  "query_geom_column": "geom",
+  "query_srid": 3857
+}
+```
 
----
+**情形 2：物化视图已存在（materialized_view status = passed）**
 
-### 2.5 QueryInfo（查询信息）
+checks 中的相关信息：
+```json
+{
+  "name": "materialized_view",
+  "status": "passed",
+  "message": "物化视图 public.dltb_mv3857 已存在",
+  "details": {
+    "view_name": "dltb_mv3857",
+    "source_srid": 2360,
+    "target_srid": 3857,
+    "action_required": false
+  }
+}
+```
 
-**用途**：供预缓存阶段复用，避免重复检查
+对应的 spatial_index check：
+```json
+{
+  "name": "spatial_index",
+  "status": "passed",
+  "message": "空间索引 public.dltb_mv3857 (geom_3857) 已存在",
+  "details": {
+    "table": "public.dltb_mv3857",
+    "column": "geom_3857",
+    "source_srid": 2360
+  }
+}
+```
 
-**字段说明**：
+推导结果：
+```json
+{
+  "materialized_view_exists": true,
+  "query_table": "dltb_mv3857",
+  "query_geom_column": "geom_3857",
+  "query_srid": 3857
+}
+```
 
-| 字段 | 说明 | 示例 |
-|------|------|------|
-| `materialized_view_exists` | 是否存在物化视图 | `true` 或 `false` |
-| `query_table` | 瓦片生成时实际查询的表名 | `public.dltb_mv3857` 或 `public.dltb` |
-| `query_geom_column` | 实际查询的几何列名 | `geom_3857` 或 `geom` |
-| `query_srid` | 实际查询的 SRID（已转换到 3857） | `3857` |
+**情形 3：物化视图需要创建（materialized_view status = failed）**
 
-**三种情形**：
+此情况下 `overall_status` 为 `failed`，不满足预缓存前置条件，不会进行推导，用户需要先执行 PrepareForCreateMVT 创建物化视图。
 
-1. **source_table 已是 3857（skipped）**：
-   ```json
-   {
-     "materialized_view_exists": false,
-     "query_table": "public.dltb",
-     "query_geom_column": "geom",
-     "query_srid": 3857
-   }
-   ```
+**Go 代码实现示例**：
 
-2. **创建了物化视图（passed）**：
-   ```json
-   {
-     "materialized_view_exists": true,
-     "query_table": "public.dltb_mv3857",
-     "query_geom_column": "geom_3857",
-     "query_srid": 3857
-   }
-   ```
+```go
+// deriveQueryInfoFromChecks 从 preparation_status.checks 推导 QueryInfo
+func deriveQueryInfoFromChecks(checks []models.PreparationCheck, schema string) *models.PreparedQueryInfo {
+    queryInfo := &models.PreparedQueryInfo{
+        QuerySRID: 3857, // 固定为 3857
+    }
 
-3. **物化视图已存在（passed）**：
-   ```json
-   {
-     "materialized_view_exists": true,
-     "query_table": "public.dltb_mv3857",
-     "query_geom_column": "geom_3857",
-     "query_srid": 3857
-   }
-   ```
+    // 遍历 checks 数组
+    for _, check := range checks {
+        switch check.Name {
+        case "materialized_view":
+            // 判断是否存在物化视图
+            if check.Status == "skipped" {
+                queryInfo.MaterializedViewExists = false
+            } else if check.Status == "passed" {
+                queryInfo.MaterializedViewExists = true
+            }
+
+        case "spatial_index":
+            // 从 spatial_index check 提取表名和几何列
+            if check.Status == "passed" || check.Status == "skipped" {
+                if tableVal, ok := check.Details["table"]; ok {
+                    if table, ok := tableVal.(string); ok {
+                        // 从 "public.dltb_mv3857" 中提取 "dltb_mv3857"
+                        parts := strings.Split(table, ".")
+                        if len(parts) >= 2 {
+                            queryInfo.QueryTable = parts[len(parts)-1]
+                        } else {
+                            queryInfo.QueryTable = table
+                        }
+                    }
+                }
+
+                if columnVal, ok := check.Details["column"]; ok {
+                    if column, ok := columnVal.(string); ok {
+                        queryInfo.QueryGeomColumn = column
+                    }
+                }
+            }
+        }
+    }
+
+    return queryInfo
+}
+```
+
+**关键要点**：
+- 推导是幂等的：同一份 checks 总是推导出相同的 QueryInfo
+- 推导不修改数据库：只从内存中的 checks 提取信息
+- 解析表名时需要处理 "schema.table" 格式，避免重复的 schema 前缀
+- SRID 固定为 3857，这是所有瓦片生成的目标坐标系
 
 ---
 
@@ -328,13 +464,14 @@ ANALYZE {schema}.{table}_mv3857;
 
 | Zoom 级别 | Extent 值 | 说明 |
 |----------|----------|------|
-| **Max zoom** | 2048 | 最高精度，适合高 zoom 级别 |
-| **其他 zoom** | 1024 | 标准精度，适合中低 zoom 级别 |
+| **Max zoom** | 1024 | 最高精度，适合高 zoom 级别 |
+| **其他 zoom** | 512 | 标准精度，适合中低 zoom 级别 |
 
 **说明**：
-- Max zoom 层（通常 z16-z18）需要最高精度，使用 2048
-- 其他层级（z0-z15）使用 1024 即可满足视觉需求
+- Max zoom 层（通常 z16-z18）需要最高精度，使用 1024
+- 其他层级（z0-z15）使用 512 即可满足视觉需求
 - Extent 值越高，瓦片越大，但边界越精细
+- 配合 tile_size=512，在普通屏幕上达到 1:1 或 2:1 的精度比，避免浪费
 
 ---
 
@@ -343,10 +480,10 @@ ANALYZE {schema}.{table}_mv3857;
 **触发条件**：生成的瓦片大小超过阈值（默认 5MB）
 
 **减半流程**：
-1. 初始 Extent：2048（max zoom）或 1024（其他 zoom）
+1. 初始 Extent：1024（max zoom）或 512（其他 zoom）
 2. 生成瓦片并检查大小
 3. 如果大小 > 5MB：
-   - Extent 减半：2048 → 1024 → 512 → 256
+   - Extent 减半：1024 → 512 → 256，或 512 → 256
    - 重新生成瓦片
 4. 重复步骤 2-3，直到：
    - 瓦片大小 ≤ 5MB，或
@@ -356,9 +493,9 @@ ANALYZE {schema}.{table}_mv3857;
 
 **示例流程**：
 ```
-生成瓦片（Extent = 2048）→ 8MB → 超过阈值
+生成瓦片（Extent = 1024）→ 8MB → 超过阈值
   ↓
-Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
+Extent 减半为 512 → 重新生成 → 4.5MB → 通过
   ↓
 保存瓦片
 ```
@@ -389,8 +526,8 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
       "max_size_mb": 5.0
     },
     "extent_optimization": {
-      "max_zoom_extent": 2048,
-      "base_extent": 1024,
+      "max_zoom_extent": 1024,
+      "base_extent": 512,
       "min_extent": 256
     }
   },
@@ -406,12 +543,14 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
 - 一般数据集（1万 - 100万条记录）
 - 平衡质量和性能
 - 大多数情况下推荐使用
+- **优化 extent 与 tile_size 匹配，避免精度浪费**
 
 **预期效果**：
-- z0-z3 瓦片大小：< 2MB
-- z4-z8 瓦片大小：< 3MB
-- z9-z16 瓦片大小：< 5MB
-- 视觉效果：保留所有要素，边界精细
+- z0-z3 瓦片大小：< 1MB
+- z4-z8 瓦片大小：< 2MB
+- z9-z16 瓦片大小：< 3MB
+- 视觉效果：保留所有要素，边界清晰
+- **文件大小比旧配置（2048/1024）减少约 50%**
 
 ---
 
@@ -429,8 +568,8 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
       "max_size_mb": 3.0
     },
     "extent_optimization": {
-      "max_zoom_extent": 1024,
-      "base_extent": 512,
+      "max_zoom_extent": 512,
+      "base_extent": 256,
       "min_extent": 256
     }
   },
@@ -448,14 +587,15 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
 - 优先速度，可接受质量损失
 
 **预期效果**：
-- z0-z3 瓦片大小：< 1MB
-- z4-z8 瓦片大小：< 2MB
-- z9-z16 瓦片大小：< 3MB
+- z0-z3 瓦片大小：< 0.5MB
+- z4-z8 瓦片大小：< 1MB
+- z9-z16 瓦片大小：< 2MB
 - 视觉效果：保留所有要素，边界略粗糙
+- **极致优化，文件大小最小化**
 
 ---
 
-### 4.3 保守优化配置
+### 4.3 保守优化配置（高质量）
 
 ```json
 {
@@ -470,7 +610,7 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
     },
     "extent_optimization": {
       "max_zoom_extent": 2048,
-      "base_extent": 2048,
+      "base_extent": 1024,
       "min_extent": 512
     }
   },
@@ -486,12 +626,14 @@ Extent 减半为 1024 → 重新生成 → 4.5MB → 通过
 - 小数据集（< 1万条记录）
 - 追求高质量
 - 网络带宽充足
+- **Retina 屏幕用户多**
 
 **预期效果**：
-- z0-z3 瓦片大小：< 5MB
-- z4-z8 瓦片大小：< 6MB
+- z0-z3 瓦片大小：< 3MB
+- z4-z8 瓦片大小：< 5MB
 - z9-z16 瓦片大小：< 8MB
 - 视觉效果：保留所有要素和细节
+- **高清晰度，适合 Retina 屏幕**
 
 ---
 
@@ -516,11 +658,15 @@ POST /api/manager/engines/:id/spatial/:schema/:table/quick-view/prepare
     "version": "1.0",
     "checks": [...],
     "overall_status": "passed",
-    "query_info": {...},
-    "execution_info": {...}
+    "query_info": null,
+    "execution_info": null
   }
 }
 ```
+
+**说明**：
+- `query_info` 在诊断阶段为 `null`
+- 当预缓存生成时，Worker 会从 checks 数组动态推导 QueryInfo（预缓存用户无需关心此细节）
 
 **状态码**：
 - `200`：准备工作启动成功
@@ -538,10 +684,21 @@ GET /api/manager/engines/:id/spatial/:schema/:table/quick-view/check-preparation
 **响应**：
 ```json
 {
-  "preparation_status": {...},
-  "can_proceed": true  // true 表示可以开始预缓存
+  "preparation_status": {
+    "version": "1.0",
+    "checks": [...],
+    "overall_status": "passed",
+    "query_info": null,
+    "execution_info": null
+  },
+  "can_proceed": true  // true 表示可以开始预缓存（overall_status = "passed"）
 }
 ```
+
+**说明**：
+- 诊断只读取 checks 数组和 overall_status，检查是否满足预缓存前置条件
+- `query_info` 为 null，会在预缓存生成时从 checks 动态推导
+- `can_proceed = true` 表示可以调用预缓存 API
 
 ---
 
@@ -571,6 +728,10 @@ POST /api/manager/engines/:id/spatial/:schema/:table/quick-view/pre-cache
   "fingerprint": "abc123def456"
 }
 ```
+
+**前置条件检查**：
+- `preparation_status` 必须存在且 `overall_status` = "passed"
+- 如果 `query_info` 为 null，Worker 会自动从 checks 数组推导
 
 **错误情况**：
 - `400`：preparation_status 未完成或状态不是 "passed"
@@ -838,6 +999,36 @@ GET /api/manager/quick-view/statistics
 - 使用 `CREATE INDEX CONCURRENTLY` 不阻塞表访问
 - 物化视图创建期间会占用较多 CPU 和内存
 
+### Q7: 为什么 v4.0 修改了默认 extent 值？
+
+**变更**：
+- Max Zoom Extent: 2048 → **1024**
+- Base Extent: 1024 → **512**
+
+**原因**：
+
+1. **精度与渲染匹配**：
+   - 大多数地图库使用 tile_size = 512px
+   - 旧配置（2048/1024）精度比 = 4:1 或 2:1，存在浪费
+   - 新配置（1024/512）精度比 = 2:1 或 1:1，更合理
+
+2. **文件大小优化**：
+   - extent 降低 50%，瓦片大小减少约 40-50%
+   - 加载速度提升明显，节省带宽
+
+3. **普通屏幕优先**：
+   - 大多数用户使用普通屏幕（devicePixelRatio = 1）
+   - 新配置在普通屏上无精度浪费
+   - Retina 屏幕仍有足够精度（2:1 比例可接受）
+
+4. **动态减半机制**：
+   - 超过 5MB 自动减半到 512/256
+   - 最小值仍为 256，保障视觉质量
+
+**如果需要更高精度**（Retina 屏多、overzooming 频繁），使用"保守优化配置"（见 4.3）。
+
+---
+
 ### Q5: 瓦片太大，如何优化？
 
 **症状**：
@@ -848,11 +1039,13 @@ GET /api/manager/quick-view/statistics
 **解决方案**：按以下顺序调整参数：
 
 1. **降低阈值**：`max_size_mb: 5.0 → 3.0`
-2. **降低基础 Extent**：`base_extent: 1024 → 512`
-3. **降低 Max Zoom Extent**：`max_zoom_extent: 2048 → 1024`
+2. **降低基础 Extent**：`base_extent: 512 → 256`
+3. **降低 Max Zoom Extent**：`max_zoom_extent: 1024 → 512`
 4. **提高属性阈值**：`zoom_threshold: 8 → 10`（更多层级只返回主键）
 
 **示例**：切换到"激进优化配置"（见 4.2）
+
+**注意**：v4.0 默认配置已优化，extent 与 tile_size 匹配（512/1024），相比旧配置（1024/2048）文件大小减少约 50%
 
 ### Q6: PostgreSQL 内存不足导致瓦片生成失败？
 
@@ -1012,7 +1205,56 @@ h.repo.UpdateGenerationResultWithPreferredMode(qv.ID, updateParams)
 
 ## 八、更新日志
 
-### v2.0 (2026-01-26) ⭐ 最新版本
+### v2.1 (2026-01-27) ⭐ 最新版本
+
+**QueryInfo 推导优化**：
+- **改变架构**：QueryInfo 不在诊断阶段生成，而是在预缓存生成阶段从 checks 动态推导
+  - 诊断阶段（CheckPreparation）：仅保存 checks 数组和 overall_status，`query_info = null`
+  - 生成阶段（Worker.HandleQuickViewTask）：从 checks 自动推导 QueryInfo
+  - 优势：避免信息冗余，checks 中已包含所有必要数据
+
+**实现细节**：
+- 新增 `deriveQueryInfoFromChecks()` 方法，从 checks 数组动态推导 QueryInfo
+  - 从 `materialized_view` check 判断是否存在物化视图
+  - 从 `spatial_index` check 提取查询表名（须解析 "schema.table" 格式）和几何列名
+  - SRID 固定为 3857
+- Worker 改进：如果 `query_info` 为 null，自动调用推导方法
+
+**文档更新**：
+- 详细说明 QueryInfo 推导逻辑和三种情形
+- 提供 Go 代码实现示例
+- 更新 API 文档说明
+
+**向后兼容**：
+- 已有的包含 query_info 的快显记录继续使用现有数据
+- 新的快显记录使用推导方式
+- 推导是幂等的，多次调用结果一致
+
+**Extent 优化调整**：
+- **降低默认 Extent 值，优化精度与渲染匹配**
+  - Max Zoom Extent: 2048 → **1024**（减少 50%）
+  - Base Extent: 1024 → **512**（减少 50%）
+  - Min Extent: 256（保持不变）
+
+**优化效果**：
+- **文件大小减少约 40-50%**，加载速度显著提升
+- 精度比更合理：普通屏幕 1:1 或 2:1，Retina 屏幕 2:1 或 4:1
+- 避免精度浪费，节省带宽和存储空间
+- 动态减半策略保持不变（超过 5MB 自动减半到 256）
+
+**影响范围**：
+- 后端：handler.go、preparation_service.go、common/models/optimization.go
+- 前端：TablePreview.vue
+- 文档：本文档全面更新
+
+**向后兼容**：
+- 已生成的瓦片不受影响，继续使用
+- 新生成的瓦片使用新配置
+- 用户可通过"保守优化配置"恢复高精度（2048/1024）
+
+---
+
+### v2.0 (2026-01-26)
 
 **核心改进**：
 - **API 重构**：统一为 `/quick-view` 路由前缀

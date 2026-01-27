@@ -566,8 +566,8 @@ const optimizationExpanded = ref(false) // 优化选项折叠状态（默认收�
 const optimizationConfig = ref({
   version: '4.0',
   extent_optimization: {
-    max_zoom_extent: 2048,  // Max Zoom 层 Extent
-    base_extent: 1024,      // 其他层 Extent
+    max_zoom_extent: 1024,  // Max Zoom 层 Extent
+    base_extent: 512,       // 其他层 Extent
     min_extent: 256         // 最小 Extent
   },
   attribute_pruning: {
@@ -1072,8 +1072,8 @@ const resetOptimizationConfig = () => {
   optimizationConfig.value = {
     version: '4.0',
     extent_optimization: {
-      max_zoom_extent: 2048,
-      base_extent: 1024,
+      max_zoom_extent: 1024,
+      base_extent: 512,
       min_extent: 256
     },
     attribute_pruning: {

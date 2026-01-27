@@ -447,7 +447,9 @@
       "Bash(/tmp/test_preparation_with_test_table.sh)",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3Njk0MTc3MjUsImlhdCI6MTc2OTQwNjkyNX0.o3DereYc8kGYZpA7e3xuGaA9DZgn7sLVniq5QLU04S0\")",
       "Bash(mc alias set:*)",
-      "Bash(/tmp/test_quick_view.sh:*)"
+      "Bash(/tmp/test_quick_view.sh:*)",
+      "Bash(PGPASSWORD=addp2024 psql:*)",
+      "Bash(TOKEN='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjkxNjEzNDQsInVzZXJfaWQiOjEsInRlbmFudF9pZCI6MX0.W8uYkEWLKxVUYcAYXBpzbQJMrC0xwMEKYdjr5CY_0AY')"
     ],
     "deny": [],
     "ask": [],

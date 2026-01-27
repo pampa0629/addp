@@ -203,19 +203,57 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		OptimizationConfig: payload.OptimizationConfig, // v2.0 传递优化配置
 	}
 
-	// 尝试从 PreparationStatus.QueryInfo 读取查询参数（如果准备已完成）
-	if preCheckQV.PreparationStatus != nil && preCheckQV.PreparationStatus.QueryInfo != nil {
-		queryInfo := preCheckQV.PreparationStatus.QueryInfo
-		if queryInfo.MaterializedViewExists {
-			// 准备阶段创建了物化视图，使用物化视图参数
-			config.Table = queryInfo.QueryTable
-			config.GeomColumn = queryInfo.QueryGeomColumn
-			config.SRID = queryInfo.QuerySRID
-			logger.L().Info("✅ 使用准备阶段的物化视图参数生成瓦片",
-				"materialized_view", fmt.Sprintf("%s.%s", payload.SchemaName, queryInfo.QueryTable),
-				"geom_column", queryInfo.QueryGeomColumn,
-				"srid", queryInfo.QuerySRID)
+	// ✅ 从 PreparationStatus 中获取或推导 QueryInfo
+	var queryInfo *models.PreparedQueryInfo
+
+	if preCheckQV.PreparationStatus == nil {
+		errMsg := "preparation status not found, please run preparation first"
+		logger.L().Error(errMsg,
+			"engine_id", payload.EngineID,
+			"table", fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName))
+		if err := h.repo.UpdateStatusOnly(preCheckQV.ID, "failed", errMsg); err != nil {
+			logger.L().Error("Failed to update status to failed", "error", err)
 		}
+		return fmt.Errorf(errMsg)
+	}
+
+	// 如果 QueryInfo 已存在，直接使用
+	if preCheckQV.PreparationStatus.QueryInfo != nil {
+		queryInfo = preCheckQV.PreparationStatus.QueryInfo
+	} else {
+		// 否则从 checks 数组推导 QueryInfo
+		var err error
+		queryInfo, err = h.deriveQueryInfoFromChecks(preCheckQV.PreparationStatus.Checks, payload.SchemaName)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to derive query info from checks: %v", err)
+			logger.L().Error(errMsg,
+				"engine_id", payload.EngineID,
+				"table", fmt.Sprintf("%s.%s", payload.SchemaName, payload.TableName))
+			if err := h.repo.UpdateStatusOnly(preCheckQV.ID, "failed", errMsg); err != nil {
+				logger.L().Error("Failed to update status to failed", "error", err)
+			}
+			return fmt.Errorf(errMsg)
+		}
+		logger.L().Info("✅ 从检查结果推导出 QueryInfo",
+			"materialized_view_exists", queryInfo.MaterializedViewExists,
+			"query_table", queryInfo.QueryTable,
+			"query_geom_column", queryInfo.QueryGeomColumn,
+			"query_srid", queryInfo.QuerySRID)
+	}
+	config.Table = queryInfo.QueryTable
+	config.GeomColumn = queryInfo.QueryGeomColumn
+	config.SRID = queryInfo.QuerySRID
+
+	if queryInfo.MaterializedViewExists {
+		logger.L().Info("✅ 使用准备阶段的物化视图参数生成瓦片",
+			"materialized_view", fmt.Sprintf("%s.%s", payload.SchemaName, queryInfo.QueryTable),
+			"geom_column", queryInfo.QueryGeomColumn,
+			"srid", queryInfo.QuerySRID)
+	} else {
+		logger.L().Info("✅ 使用准备阶段的源表参数生成瓦片（源表已是 3857）",
+			"table", fmt.Sprintf("%s.%s", payload.SchemaName, queryInfo.QueryTable),
+			"geom_column", queryInfo.QueryGeomColumn,
+			"srid", queryInfo.QuerySRID)
 	}
 
 	// 🔍 日志：记录传递给 MVT Service 的配置
@@ -559,7 +597,70 @@ func (h *TaskHandler) HandlePrepareForCreateMVTTask(ctx context.Context, task *a
 	return nil
 }
 
-// updateQuickViewStatus 更新快显状态
+// deriveQueryInfoFromChecks 从 PreparationStatus.Checks 推导 QueryInfo
+// 这样可以避免重复存储信息，QueryInfo 可以从 checks 动态计算
+func (h *TaskHandler) deriveQueryInfoFromChecks(checks []models.PreparationCheck, schema string) (*models.PreparedQueryInfo, error) {
+	queryInfo := &models.PreparedQueryInfo{
+		QuerySRID: 3857, // 目标 SRID 总是 3857
+	}
+
+	// 遍历 checks，从中提取必要的信息
+	for _, check := range checks {
+		switch check.Name {
+		case "materialized_view":
+			// 从物化视图检查判断是否需要物化视图
+			if check.Status == "skipped" {
+				// 源表已是 3857，不需要物化视图
+				queryInfo.MaterializedViewExists = false
+			} else if check.Status == "passed" {
+				// 物化视图存在，需要使用物化视图
+				queryInfo.MaterializedViewExists = true
+			} else {
+				return nil, fmt.Errorf("materialized view check failed: %s", check.Message)
+			}
+
+		case "spatial_index":
+			// 从空间索引检查获取查询表和几何列
+			if check.Status == "passed" || check.Status == "skipped" {
+				if tableVal, ok := check.Details["table"]; ok {
+					if table, ok := tableVal.(string); ok {
+						// table 格式可能是 "schema.table"，需要提取出表名
+						// 例如：从 "public.dltb_mv3857" 提取出 "dltb_mv3857"
+						parts := strings.Split(table, ".")
+						if len(parts) >= 2 {
+							queryInfo.QueryTable = parts[len(parts)-1] // 取最后一部分作为表名
+						} else {
+							queryInfo.QueryTable = table // 如果没有 schema 前缀，直接使用
+						}
+					}
+				}
+				if colVal, ok := check.Details["column"]; ok {
+					if col, ok := colVal.(string); ok {
+						queryInfo.QueryGeomColumn = col
+					}
+				}
+			} else {
+				return nil, fmt.Errorf("spatial index check failed: %s", check.Message)
+			}
+
+		case "analyze":
+			// ANALYZE 检查不影响 QueryInfo，只需要状态通过即可
+			if check.Status != "passed" {
+				return nil, fmt.Errorf("analyze check failed: %s", check.Message)
+			}
+		}
+	}
+
+	// 验证必要字段
+	if queryInfo.QueryTable == "" {
+		return nil, fmt.Errorf("failed to derive query table from checks")
+	}
+	if queryInfo.QueryGeomColumn == "" {
+		return nil, fmt.Errorf("failed to derive query geom column from checks")
+	}
+
+	return queryInfo, nil
+}
 func (h *TaskHandler) updateQuickViewStatus(
 	payload QuickViewTaskPayload,
 	status string,
