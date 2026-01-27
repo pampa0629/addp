@@ -362,6 +362,7 @@ def register_to_system():
 | 2025-12-18 | Manager 数据预览"暂无数据"（双重 .data 访问） | Claude Code |
 | 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |
 | 2026-01-27 | Python Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
+| 2026-01-27 | 工作流引擎注册失败 404（缺少 /api 前缀） | Claude Code |
 
 ---
 
@@ -463,3 +464,117 @@ python3 -m venv venv
 - **修复版本：** v0.0.22+
 - **影响范围：** Python Workflow Engine（所有 Python 3.11+ 环境）
 - **验证命令：** `bash scripts/dev/restart.sh -python-workflow`
+
+---
+
+### 4. 工作流引擎注册失败 404（缺少 /api 前缀）
+
+#### 问题现象
+
+启动 Python/Math/Spark Workflow Engine 后，日志显示注册失败：
+
+```
+2026-01-27 16:13:57,196 - __main__ - INFO - 📤 发送注册请求到: http://localhost:8180/internal/engines/register
+2026-01-27 16:13:57,196 - urllib3.connectionpool - DEBUG - http://localhost:8180 "POST /internal/engines/register HTTP/1.1" 404 18
+2026-01-27 16:13:57,196 - __main__ - INFO - 📥 收到响应: status=404, body=404 page not found
+2026-01-27 16:13:57,196 - __main__ - WARNING - ⚠️  Failed to register: 404 - 404 page not found
+```
+
+引擎会重试 5 次，全部失败后放弃注册。
+
+#### 问题根因
+
+**注册 API 路径缺少 `/api` 前缀**
+
+- **错误路径**: `http://localhost:8180/internal/engines/register`
+- **正确路径**: `http://localhost:8180/api/internal/engines/register`
+
+System Backend 的路由定义在 `system/backend/internal/api/engine_handler.go`：
+
+```go
+// POST /api/internal/engines/register
+func RegisterEngine(c *gin.Context) {
+    // 引擎注册逻辑
+}
+```
+
+所有内部 API 都必须带 `/api` 前缀，这是 System Backend 的统一路由规范。
+
+#### 技术细节
+
+**受影响的引擎：**
+
+1. **Python Workflow Engine** (`engines/python-workflow/api_server.py`)
+2. **Math Workflow Engine** (`engines/math-workflow/api_server.py`)
+3. **Spark Workflow Engine** (`engines/spark-workflow/api_server.py`)
+
+**注册逻辑位置：**
+```python
+# engines/*/api_server.py
+def register_to_system():
+    response = requests.post(
+        f"{system_url}/internal/engines/register",  # ❌ 错误
+        json=payload,
+        headers=headers
+    )
+```
+
+**为什么引擎仍能正常运行：**
+- 注册失败不影响引擎的 API 服务（仍监听在 8099/8097/8098 端口）
+- 但 System 无法发现引擎，Develop 和 Orchestrator 模块无法调用
+- 用户在前端看不到可用的计算引擎
+
+#### 解决方案
+
+**修复所有引擎的注册 URL：**
+
+```python
+# 修改前
+response = requests.post(
+    f"{system_url}/internal/engines/register",
+    # ...
+)
+
+# 修改后
+response = requests.post(
+    f"{system_url}/api/internal/engines/register",
+    # ...
+)
+```
+
+**修复的文件：**
+- [engines/python-workflow/api_server.py](../engines/python-workflow/api_server.py)（第 593、604 行）
+- [engines/math-workflow/api_server.py](../engines/math-workflow/api_server.py)（第 354 行）
+- [engines/spark-workflow/api_server.py](../engines/spark-workflow/api_server.py)（第 395 行）
+
+#### 验证修复
+
+```bash
+# 重启工作流引擎
+bash scripts/dev/restart.sh -python-workflow
+
+# 检查注册日志（应该看到 202 成功状态）
+tail -f logs/python-workflow-engine-stderr.log
+
+# 预期输出：
+# 📤 发送注册请求到: http://localhost:8180/api/internal/engines/register
+# 📥 收到响应: status=202, body=...
+# ✅ Successfully registered to System Backend (Engine ID: xxx)
+```
+
+**在 System 后端验证：**
+```bash
+# 查询已注册的引擎列表
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:8180/api/engines
+
+# 应该能看到 python_workflow、math_workflow、spark_workflow
+```
+
+#### 修复日期
+
+- **发现日期：** 2026-01-27
+- **修复版本：** v0.0.22+
+- **影响范围：** 所有工作流引擎（Python、Math、Spark）
+- **根本原因：** API 路由规范不一致
+- **验证命令：** `bash scripts/dev/restart.sh && tail -f logs/*-workflow-engine-stderr.log`
