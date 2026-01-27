@@ -590,7 +590,7 @@ def register_to_system():
     }
 
     try:
-        logger.info(f"📤 发送注册请求到: {system_url}/internal/engines/register")
+        logger.info(f"📤 发送注册请求到: {system_url}/api/internal/engines/register")
         logger.info(f"📦 Payload: {payload}")
         logger.info(f"🔑 Headers: Content-Type={headers['Content-Type']}, API Key length={len(api_key)}")
 
@@ -601,7 +601,7 @@ def register_to_system():
         }
 
         response = requests.post(
-            f"{system_url}/internal/engines/register",
+            f"{system_url}/api/internal/engines/register",
             json=payload,
             headers=headers,
             proxies=proxies,

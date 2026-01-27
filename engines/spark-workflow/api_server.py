@@ -392,7 +392,7 @@ def register_to_system():
         }
 
         response = requests.post(
-            f"{system_url}/internal/engines/register",
+            f"{system_url}/api/internal/engines/register",
             json=payload,
             headers=headers,
             proxies=proxies,
