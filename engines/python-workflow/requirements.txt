@@ -1,10 +1,10 @@
 # Python Workflow Engine Dependencies
 
-# Core spatial computation (with NumPy 1.x compatibility)
-numpy<2.0
+# Core spatial computation (NumPy 2.0+ for Python 3.11+ compatibility)
+numpy>=2.0
 pandas>=2.0,<3.0
-geopandas==0.14.1
-shapely==2.0.2
+geopandas>=0.15.0
+shapely>=2.1.0
 
 # Web framework
 flask==3.0.0
@@ -22,6 +22,9 @@ requests==2.31.0
 
 # Data validation and settings management
 pydantic>=2.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
 
 # Safe expression evaluation for calculate_field operator
 simpleeval==0.9.13

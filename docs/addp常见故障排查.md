@@ -361,3 +361,105 @@ def register_to_system():
 |------|------|---------|
 | 2025-12-18 | Manager 数据预览"暂无数据"（双重 .data 访问） | Claude Code |
 | 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |
+| 2026-01-27 | Python Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
+
+---
+
+## 后端问题
+
+### 3. Python Workflow Engine 依赖安装失败（NumPy 版本冲突）
+
+#### 问题现象
+
+运行 `bash scripts/dev/restart.sh -python-workflow` 时失败，错误信息：
+
+```
+Collecting numpy<2.0 (from -r requirements.txt (line 4))
+  Using cached numpy-1.26.4.tar.gz (15.8 MB)
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... error
+  error: subprocess-exited-with-error
+```
+
+#### 问题根因
+
+**NumPy 1.x 与 Python 3.13 不兼容**
+
+- 虚拟环境使用 Python 3.11，但当重新创建 venv 时可能使用 Python 3.13（如系统默认更新）
+- numpy<2.0 在 Python 3.13 上没有预编译 wheel
+- 系统缺少编译工具（C 编译器、BLAS/LAPACK 库等），导致从源码编译失败
+- numpy<2.0 的旧版本在 PyPI 中已被官方移除，Python 3.13 无法获取预编译包
+
+#### 技术细节
+
+**NumPy 与 Python 版本兼容性矩阵：**
+
+| NumPy | Python 3.11 | Python 3.12 | Python 3.13 |
+|-------|------------|------------|------------|
+| 1.26.x | ✅ | ✅ | ❌ |
+| 2.0+ | ✅ | ✅ | ✅ |
+
+**相关依赖的兼容性：**
+
+- `geopandas==0.14.1` + `numpy>=2.0` → **不兼容**（NumPy 2.x ABI 更改）
+- `shapely==2.0.2` + `numpy>=2.0` → **不兼容**
+- `geopandas>=0.15.0` + `numpy>=2.0` → **兼容** ✅
+- `shapely>=2.1.0` + `numpy>=2.0` → **兼容** ✅
+
+#### 解决方案
+
+**更新 `engines/python-workflow/requirements.txt`：**
+
+1. **升级 NumPy**（从 `<2.0` 改为 `>=2.0`）
+2. **升级 GeoPandas**（从 `0.14.1` 改为 `>=0.15.0`）
+3. **升级 Shapely**（从 `2.0.2` 改为 `>=2.1.0`）
+4. **新增 python-dotenv**（缺失的依赖）
+
+**修改前：**
+```txt
+numpy<2.0
+pandas>=2.0,<3.0
+geopandas==0.14.1
+shapely==2.0.2
+```
+
+**修改后：**
+```txt
+# Core spatial computation (NumPy 2.0+ for Python 3.11+ compatibility)
+numpy>=2.0
+pandas>=2.0,<3.0
+geopandas>=0.15.0
+shapely>=2.1.0
+
+# ... 其他依赖
+
+# Environment variable loading
+python-dotenv>=1.0.0
+```
+
+#### 验证修复
+
+```bash
+cd engines/python-workflow
+
+# 清除旧的虚拟环境（如需要）
+rm -rf venv
+
+# 重新创建并安装依赖
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt
+
+# 验证核心依赖
+./venv/bin/python -c "import flask, pandas, geopandas, numpy; \
+  print(f'NumPy: {numpy.__version__}'); \
+  print(f'GeoPandas: {geopandas.__version__}'); \
+  print(f'✓ 所有依赖安装成功')"
+```
+
+#### 修复日期
+
+- **发现日期：** 2026-01-27
+- **修复版本：** v0.0.22+
+- **影响范围：** Python Workflow Engine（所有 Python 3.11+ 环境）
+- **验证命令：** `bash scripts/dev/restart.sh -python-workflow`
