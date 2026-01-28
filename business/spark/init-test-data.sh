@@ -20,14 +20,14 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # PostgreSQL 配置
-POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+POSTGRES_HOST="${POSTGRES_HOST:-business-postgres}"
 POSTGRES_PORT="${POSTGRES_PORT:-5433}"
 POSTGRES_DB="${POSTGRES_DB:-business}"
 POSTGRES_USER="${POSTGRES_USER:-business}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-business_password}"
 
 # Spark Thrift Server 配置
-SPARK_HOST="${SPARK_HOST:-localhost}"
+SPARK_HOST="${SPARK_HOST:-business-spark-master}"
 SPARK_PORT="${SPARK_PORT:-10000}"
 
 echo -e "${BLUE}======================================${NC}"
