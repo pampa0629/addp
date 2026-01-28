@@ -1,10 +1,147 @@
-# ADDP 基础设施脚本
+# ADDP 基础设施管理脚本
 
-本目录包含所有与 ADDP 基础设施（PostgreSQL、Redis、MinIO、Meilisearch）相关的初始化和管理脚本。
+## 职责范围
 
-## 核心原则
+本目录脚本**仅管理 ADDP 系统基础设施容器**，不涉及 business 容器。
 
-本目录遵循以下7个核心原则:
+### 管理的容器（addp-*）
+
+| 容器名称 | 服务 | 用途 |
+|---------|------|------|
+| addp-postgres | PostgreSQL 15 + PostGIS | ADDP 系统元数据 |
+| addp-redis | Redis 7 | 缓存和任务队列 |
+| addp-minio | MinIO | 系统文件存储 |
+| addp-meilisearch | Meilisearch | 全文搜索 |
+
+### 不管理的容器（business-*）
+
+business 容器由 `business/` 目录独立管理，可脱离 ADDP 部署。
+
+用户部署 business 数据库后，通过 ADDP System 模块注册引擎，即可在 ADDP 中使用。
+
+## 脚本说明
+
+### 核心管理
+
+- **up.sh** - 启动 ADDP 基础设施
+  ```bash
+  bash scripts/infra/up.sh
+  ```
+
+- **down.sh** - 停止 ADDP 基础设施（默认保留数据）
+  ```bash
+  bash scripts/infra/down.sh           # 保留数据卷
+  bash scripts/infra/down.sh -v        # 删除数据卷
+  bash scripts/infra/down.sh --force   # 跳过确认
+  ```
+
+- **status.sh** - 查看基础设施状态
+  ```bash
+  bash scripts/infra/status.sh
+  ```
+
+### 初始化（由 up.sh 自动调用）
+
+- **init-postgresql.sh** - 初始化 PostgreSQL（扩展、Schema）
+- **init-redis.sh** - 初始化 Redis 配置
+- **init-minio.sh** - 初始化 MinIO buckets
+- **init-meilisearch.sh** - 初始化 Meilisearch 索引
+
+## 项目隔离
+
+### Docker Compose 项目
+
+- `addp-infra` - 本目录管理（`docker-compose.infra.yml`）
+- `addp-app` - 应用服务（`docker-compose.yml`）
+- `business` - 业务数据库（`business/docker-compose.yml`）
+
+### 网络隔离
+
+- `addp-network` - ADDP 系统和应用共享
+- `business-network` - business 数据库独立网络
+
+business 容器不连接 `addp-network`，确保隔离性。
+
+## 常见问题
+
+### Q: 为什么 down.sh 删除了 business 容器？
+
+**可能原因**：
+1. `business/docker-compose.yml` 缺少 `name: business` 定义
+2. Docker Compose 项目隔离配置错误
+
+**解决**：
+1. 确保 `business/docker-compose.yml` 顶部有 `name: business`
+2. 执行前先用 `bash scripts/infra/status.sh` 检查容器列表
+3. 如看到 business 容器，立即取消并检查配置
+
+### Q: 如何确认只操作 addp 容器？
+
+```bash
+bash scripts/infra/status.sh
+```
+
+应该只显示：
+- addp-postgres
+- addp-redis
+- addp-minio
+- addp-meilisearch
+
+如果出现 `business-*` 容器，说明配置有误，请勿继续操作。
+
+### Q: 如何完全清理并重建？
+
+```bash
+# 1. 停止并删除所有数据（警告：数据丢失）
+bash scripts/infra/down.sh -v
+
+# 2. 重新启动
+bash scripts/infra/up.sh
+```
+
+删除数据卷会丢失：
+- PostgreSQL 所有数据库和表
+- Redis 所有缓存和队列
+- MinIO 所有文件
+- Meilisearch 所有索引
+
+### Q: 如何单独重启某个服务？
+
+```bash
+# 重启 PostgreSQL
+docker compose -f docker-compose.infra.yml restart postgres
+
+# 重启 Redis
+docker compose -f docker-compose.infra.yml restart redis
+
+# 重启 MinIO
+docker compose -f docker-compose.infra.yml restart minio
+
+# 重启 Meilisearch
+docker compose -f docker-compose.infra.yml restart meilisearch
+```
+
+## 端口映射
+
+| 服务 | 容器端口 | 主机端口 |
+|-----|---------|---------|
+| PostgreSQL | 5432 | 15432 |
+| Redis | 6379 | 16379 |
+| MinIO API | 9000 | 19000 |
+| MinIO Console | 9001 | 19001 |
+| Meilisearch | 7700 | 17700 |
+
+## 开发提示
+
+- **查看日志**：`docker compose -f docker-compose.infra.yml logs -f <service>`
+- **进入容器**：`docker exec -it <container-name> bash`
+- **修改配置**：编辑 `.env` 后需重启服务
+
+## 相关文档
+
+- [配置说明](../../docs/addp配置介绍.md)
+- [端口分配](../../docs/addp端口分配.md)
+- [部署步骤](../../docs/addp部署和开发步骤.md)
 
 1. **单一职责**: 同样功能只在一处实现,其他地方调用
 2. **适应性**: 适应不同环境(OS、CPU架构),脚本自动适配

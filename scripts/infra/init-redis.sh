@@ -40,7 +40,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 # 确认 Redis 容器正在运行
-if ! docker compose ps --status running redis >/dev/null 2>&1; then
+if ! docker compose -f docker-compose.infra.yml ps --status running redis >/dev/null 2>&1; then
   echo -e "${RED}✗ Redis 容器未运行，无法初始化${NC}"
   echo -e "${YELLOW}  请先执行: bash scripts/infra/up.sh${NC}"
   exit 1
@@ -123,7 +123,7 @@ echo ""
 
 # Verify Redis connection
 echo -e "${YELLOW}▶ 检查 Redis 连接...${NC}"
-CONTAINER_STATUS=$(docker compose ps redis --format "{{.Status}}" 2>/dev/null || echo "not running")
+CONTAINER_STATUS=$(docker compose -f docker-compose.infra.yml ps redis --format "{{.Status}}" 2>/dev/null || echo "not running")
 echo -e "  ${BLUE}容器状态: ${CONTAINER_STATUS}${NC}"
 echo -e "  ${BLUE}地址: ${REDIS_HOST}:${REDIS_PORT}${NC}"
 
