@@ -251,6 +251,52 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 		CheckedAt: time.Now().UTC(),
 	}
 
+	// ✅ 新增：检查表名是否已经是物化视图格式 (xxx_mv3857)
+	if isAlreadyMaterializedView(table) {
+		// 当前表已经是物化视图，直接在物化视图上检查索引
+		indexGeomColumn := "geom_3857" // 物化视图的几何列固定为 geom_3857
+		indexTable := table
+		indexName := fmt.Sprintf("idx_%s_%s_gist", indexTable, indexGeomColumn)
+
+		// 检查索引是否存在且有效
+		var indexValid bool
+		indexCheckErr := engineDB.WithContext(ctx).Raw(
+			`SELECT i.indisvalid
+			 FROM pg_indexes idx
+			 JOIN pg_class c ON c.relname = idx.indexname
+			 JOIN pg_index i ON i.indexrelid = c.oid
+			 WHERE idx.schemaname = $1 AND idx.tablename = $2 AND idx.indexname = $3`,
+			schema, indexTable, indexName,
+		).Scan(&indexValid).Error
+
+		if indexCheckErr == nil && indexValid {
+			// 索引已存在且有效
+			check.Status = "passed"
+			check.Message = fmt.Sprintf("空间索引 %s 已存在", indexName)
+			check.Details["index_name"] = indexName
+			check.Details["table"] = fmt.Sprintf("%s.%s", schema, indexTable)
+			check.Details["column"] = indexGeomColumn
+			check.Details["action_required"] = false
+			return check
+		}
+
+		// 索引不存在或无效
+		if indexCheckErr == nil && !indexValid {
+			// 索引存在但无效，先删除
+			dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s.%s", schema, indexName)
+			engineDB.WithContext(ctx).Exec(dropSQL)
+		}
+
+		check.Status = "failed"
+		check.Message = fmt.Sprintf("空间索引 %s 不存在，需要在准备阶段创建", indexName)
+		check.Details["index_name"] = indexName
+		check.Details["table"] = fmt.Sprintf("%s.%s", schema, indexTable)
+		check.Details["column"] = indexGeomColumn
+		check.Details["action_required"] = true
+		check.Details["expected_time_seconds"] = 60
+		return check
+	}
+
 	// 快速检查：获取源表的 SRID
 	var sourceSRID int
 	sridQuery := fmt.Sprintf(
@@ -355,18 +401,27 @@ func (ps *PreparationService) checkAndAnalyze(ctx context.Context, engineDB *gor
 		CheckedAt: time.Now().UTC(),
 	}
 
-	// 快速检查：确定检查目标表（物化视图优先）
-	mvName := fmt.Sprintf("%s_mv3857", table)
-	var mvExists int
-	engineDB.WithContext(ctx).Raw(
-		`SELECT COUNT(*) FROM pg_matviews
-		 WHERE schemaname = $1 AND matviewname = $2`,
-		schema, mvName,
-	).Scan(&mvExists)
+	// ✅ 确定检查目标表
+	var targetTable string
 
-	targetTable := table
-	if mvExists > 0 {
-		targetTable = mvName
+	// 如果表名已经是物化视图格式，直接使用该表
+	if isAlreadyMaterializedView(table) {
+		targetTable = table
+	} else {
+		// 否则检查是否存在对应的物化视图
+		mvName := fmt.Sprintf("%s_mv3857", table)
+		var mvExists int
+		engineDB.WithContext(ctx).Raw(
+			`SELECT COUNT(*) FROM pg_matviews
+			 WHERE schemaname = $1 AND matviewname = $2`,
+			schema, mvName,
+		).Scan(&mvExists)
+
+		if mvExists > 0 {
+			targetTable = mvName
+		} else {
+			targetTable = table
+		}
 	}
 
 	// 快速检查：统计信息是否已更新

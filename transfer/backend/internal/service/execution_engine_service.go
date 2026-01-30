@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/logger"
@@ -146,7 +147,7 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 
 		// ✅ 设置后处理回调（在 Writer Close 前执行）
 		s.engine.SetPostProcessCallback(func(ctx context.Context, execTaskInner *pipeline.ExecutionTask, writer pipeline.Writer) error {
-			return s.executePostProcessing(ctx, task, execTaskInner)
+			return s.executePostProcessing(ctx, task, execTaskInner, executionID)
 		})
 
 		// 使用串行引擎执行
@@ -905,13 +906,18 @@ func (s *ExecutionEngineService) executePostProcessing(
 	ctx context.Context,
 	task *models.Task,
 	execTask *pipeline.ExecutionTask,
+	executionID uint,
 ) error {
 	s.logger.Debug("checking if post-processing is needed", "task_id", task.ID)
+
+	// 记录日志到前端
+	s.logToExecution(executionID, "[后处理] 开始执行后处理任务...")
 
 	// 1. 判断是否应该执行后处理（仅数据库 Writer）
 	writerType := s.inferConnectorType(execTask.TargetConfig.Config)
 	if !s.shouldRunPostProcessing(writerType) {
 		s.logger.Debug("post-processing not needed for writer type", "writer_type", writerType)
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] 跳过后处理 (Writer类型: %s 不需要后处理)", writerType))
 		return nil
 	}
 
@@ -925,10 +931,12 @@ func (s *ExecutionEngineService) executePostProcessing(
 	// 3. 检查是否有对应的后处理器
 	if !postprocessor.GlobalRegistry().HasPostProcessor(engineType) {
 		s.logger.Debug("no postprocessor for engine", "engine", engineType)
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] 引擎 %s 无后处理器，跳过", engineType))
 		return nil
 	}
 
 	s.logger.Info("starting post-processing", "engine_type", engineType, "task_id", task.ID)
+	s.logToExecution(executionID, fmt.Sprintf("[后处理] 引擎类型: %s", engineType))
 
 	// ✅ 新增：获取最终的 Schema（包含检测到的主键信息）
 	finalSchema := s.engine.GetFinalSchema()
@@ -936,32 +944,54 @@ func (s *ExecutionEngineService) executePostProcessing(
 		s.logger.Info("detected primary key from source table",
 			"columns", finalSchema.PrimaryKey.Columns,
 			"task_id", task.ID)
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] 检测到主键: %v", finalSchema.PrimaryKey.Columns))
 	}
 
 	// 4. 构建后处理器配置
-	ppConfig, err := s.buildPostProcessorConfig(task, execTask, engineType, finalSchema)
+	ppConfig, err := s.buildPostProcessorConfig(task, execTask, engineType, finalSchema, executionID)
 	if err != nil {
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] ❌ 配置构建失败: %v", err))
 		return fmt.Errorf("failed to build postprocessor config: %w", err)
+	}
+
+	// 记录后处理任务信息
+	s.logToExecution(executionID, fmt.Sprintf("[后处理] 目标表: %s", ppConfig.TableName))
+	if ppConfig.CreatePrimaryKey {
+		s.logToExecution(executionID, "[后处理] ✓ 主键创建: 启用")
+	}
+	if ppConfig.CreateSpatialIndex {
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] ✓ 空间索引创建: 启用 (发现 %d 个几何字段)", len(ppConfig.GeometryColumns)))
+		for colName, meta := range ppConfig.GeometryColumns {
+			s.logToExecution(executionID, fmt.Sprintf("[后处理]   - 字段: %s, SRID: %d, 类型: %s", colName, meta.SRID, meta.SpatialType))
+		}
+	}
+	if ppConfig.UpdateStatistics {
+		s.logToExecution(executionID, "[后处理] ✓ 统计信息更新: 启用")
 	}
 
 	// 5. 创建后处理器
 	pp, err := postprocessor.GlobalRegistry().NewPostProcessor(ppConfig)
 	if err != nil {
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] ❌ 后处理器创建失败: %v", err))
 		return fmt.Errorf("failed to create postprocessor: %w", err)
 	}
 	defer pp.Close()
 
 	// 6. 初始化后处理器
 	if err := pp.Initialize(ctx, ppConfig); err != nil {
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] ❌ 后处理器初始化失败: %v", err))
 		return fmt.Errorf("failed to initialize postprocessor: %w", err)
 	}
 
 	// 7. 执行后处理任务
+	s.logToExecution(executionID, "[后处理] 开始执行优化任务...")
 	if err := pp.Execute(ctx); err != nil {
+		s.logToExecution(executionID, fmt.Sprintf("[后处理] ❌ 后处理执行失败: %v", err))
 		return fmt.Errorf("post-processing failed: %w", err)
 	}
 
 	s.logger.Info("✅ [后处理] 后处理任务完成", "engine_type", engineType, "task_id", task.ID)
+	s.logToExecution(executionID, "[后处理] ✅ 所有后处理任务已完成")
 	return nil
 }
 
@@ -997,6 +1027,7 @@ func (s *ExecutionEngineService) buildPostProcessorConfig(
 	execTask *pipeline.ExecutionTask,
 	engineType string,
 	schema *pipeline.Schema, // ✅ 新增参数：最终 Schema（包含检测到的主键）
+	executionID uint,
 ) (postprocessor.PostProcessorConfig, error) {
 	targetConfig := execTask.TargetConfig.Config
 
@@ -1058,8 +1089,8 @@ func (s *ExecutionEngineService) buildPostProcessorConfig(
 		config.SpatialIndexPrefix = indexPrefix
 	}
 
-	// 提取空间列配置
-	config.GeometryColumns = s.extractGeometryColumns(targetConfig)
+	// 提取空间列配置（从 Schema 和配置中）
+	config.GeometryColumns = s.extractGeometryColumns(targetConfig, schema)
 
 	return config, nil
 }
@@ -1083,48 +1114,89 @@ func (s *ExecutionEngineService) shouldRunPostProcessing(writerType string) bool
 	return false
 }
 
-// extractGeometryColumns 从配置中提取空间列信息
-func (s *ExecutionEngineService) extractGeometryColumns(config map[string]interface{}) map[string]postprocessor.GeometryColumnMetadata {
+// extractGeometryColumns 从配置和 Schema 中提取空间列信息
+func (s *ExecutionEngineService) extractGeometryColumns(config map[string]interface{}, schema *pipeline.Schema) map[string]postprocessor.GeometryColumnMetadata {
 	result := make(map[string]postprocessor.GeometryColumnMetadata)
 
-	// 从 geometry_columns 配置提取
+	// 默认 SRID
+	defaultSRID := 4326
+	if configSRID, ok := config["srid"].(float64); ok {
+		defaultSRID = int(configSRID)
+	} else if configSRID, ok := config["srid"].(int); ok {
+		defaultSRID = configSRID
+	}
+
+	// ✅ 优先级 1: 从 Schema 的 Fields 中自动识别 geometry 类型字段
+	if schema != nil && len(schema.Fields) > 0 {
+		for _, field := range schema.Fields {
+			if strings.EqualFold(field.Type, "geometry") {
+				srid := field.SRID
+				if srid == 0 {
+					srid = defaultSRID
+				}
+				result[field.Name] = postprocessor.GeometryColumnMetadata{
+					ColumnName:  field.Name,
+					SRID:        srid,
+					SpatialType: field.SpatialType,
+				}
+				s.logger.Debug("detected geometry field from schema",
+					"field", field.Name,
+					"srid", srid,
+					"spatial_type", field.SpatialType)
+			}
+		}
+	}
+
+	// 优先级 2: 从 geometry_columns 配置提取（补充或覆盖）
 	if geomCols, ok := config["geometry_columns"].([]interface{}); ok {
 		for _, col := range geomCols {
 			if colName, ok := col.(string); ok && colName != "" {
-				// 默认 SRID
-				srid := 4326
-				if configSRID, ok := config["srid"].(float64); ok {
-					srid = int(configSRID)
-				} else if configSRID, ok := config["srid"].(int); ok {
-					srid = configSRID
+				// 如果 Schema 中已经存在，跳过（Schema 优先）
+				if _, exists := result[colName]; exists {
+					continue
 				}
 
 				result[colName] = postprocessor.GeometryColumnMetadata{
 					ColumnName:  colName,
-					SRID:        srid,
+					SRID:        defaultSRID,
 					SpatialType: "Geometry", // 默认类型
 				}
 			}
 		}
 	}
 
-	// 从 geometry_field 配置提取（单个几何字段）
+	// 优先级 3: 从 geometry_field 配置提取（单个几何字段）
 	if geomField, ok := config["geometry_field"].(string); ok && geomField != "" {
 		if _, exists := result[geomField]; !exists {
-			srid := 4326
-			if configSRID, ok := config["srid"].(float64); ok {
-				srid = int(configSRID)
-			} else if configSRID, ok := config["srid"].(int); ok {
-				srid = configSRID
-			}
-
 			result[geomField] = postprocessor.GeometryColumnMetadata{
 				ColumnName:  geomField,
-				SRID:        srid,
+				SRID:        defaultSRID,
 				SpatialType: "Geometry",
 			}
 		}
 	}
 
+	s.logger.Info("extracted geometry columns for post-processing",
+		"count", len(result),
+		"columns", getGeometryColumnNames(result))
+
 	return result
+}
+
+// getGeometryColumnNames 辅助函数：提取几何列名称列表
+func getGeometryColumnNames(geomCols map[string]postprocessor.GeometryColumnMetadata) []string {
+	names := make([]string, 0, len(geomCols))
+	for name := range geomCols {
+		names = append(names, name)
+	}
+	return names
+}
+
+// logToExecution 将日志记录到执行记录中（前端可见）
+func (s *ExecutionEngineService) logToExecution(executionID uint, message string) {
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logLine := fmt.Sprintf("%s [INFO] %s", timestamp, message)
+	if err := s.execRepo.AppendLog(executionID, logLine); err != nil {
+		s.logger.Warn("failed to append log to execution", "error", err, "execution_id", executionID)
+	}
 }
