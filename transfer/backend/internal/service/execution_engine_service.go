@@ -929,7 +929,8 @@ func (s *ExecutionEngineService) executePostProcessing(
 ) error {
 	s.logger.Debug("checking if post-processing is needed", "task_id", task.ID)
 
-	// 记录日志到前端
+	// 记录日志到前端（添加空行分隔）
+	s.logToExecution(executionID, "")
 	s.logToExecution(executionID, "[后处理] 开始执行后处理任务...")
 
 	// 1. 判断是否应该执行后处理（仅数据库 Writer）
