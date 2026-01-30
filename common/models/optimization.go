@@ -33,8 +33,8 @@ type TileSizeThresholdsConfig struct {
 
 // ExtentOptimizationConfig Extent 优化配置 (v3.0: 分层策略 + 动态减半)
 type ExtentOptimizationConfig struct {
-	MaxZoomExtent int `json:"max_zoom_extent"` // Max zoom 层的 Extent（固定 2048）
-	BaseExtent    int `json:"base_extent"`     // 其他层的基础 Extent（固定 1024）
+	MaxZoomExtent int `json:"max_zoom_extent"` // Max zoom 层的 Extent（默认 1024）
+	BaseExtent    int `json:"base_extent"`     // 其他层的基础 Extent（默认 512）
 	MinExtent     int `json:"min_extent"`      // 动态减半的最小 Extent（固定 256）
 }
 
@@ -50,16 +50,16 @@ func DefaultOptimizationConfig() OptimizationConfig {
 			MaxSizeMB: 5.0,
 		},
 		ExtentOptimization: ExtentOptimizationConfig{
-			MaxZoomExtent: 2048,
-			BaseExtent:    1024,
+			MaxZoomExtent: 1024,
+			BaseExtent:    512,
 			MinExtent:     256,
 		},
 	}
 }
 
 // GetExtentForZoom 根据 zoom 级别计算初始 Extent (v3.0: 分层策略)
-// - Max zoom: 2048
-// - 其他: 1024
+// - Max zoom: 1024（默认）
+// - 其他: 512（默认）
 func (e *ExtentOptimizationConfig) GetExtentForZoom(z int, maxZoom int) int {
 	if z == maxZoom {
 		return e.MaxZoomExtent
