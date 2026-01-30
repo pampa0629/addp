@@ -177,7 +177,305 @@ const response = await dataExplorerAPI.getPreview(params)
 
 ## 后端问题
 
-（待补充）
+### 1. MVT 物化视图创建失败 - column "id" does not exist（主键大小写问题）
+
+#### 问题现象
+
+在 Manager 模块的数据预览界面，点击"准备预缓存"按钮时，物化视图创建检查失败：
+
+```
+物化视图创建失败: ERROR: column "id" does not exist (SQLSTATE 42703)
+```
+
+错误信息显示：
+- 检查项：物化视图 ❌ 失败
+- 说明：物化视图创建失败: ERROR: column "id" does not exist (SQLSTATE 42703)
+- 检查项：空间索引 ❌ 失败（因物化视图不存在而失败）
+
+#### 问题根因
+
+**三个核心问题：**
+
+1. **硬编码主键列名为 `id`**
+   - 原代码假设所有表的主键都叫 `id`
+   - 实际表的主键可能是 `SmID`、`gid`、`objectid`、`fid` 等
+   - 导致 SQL 语句引用不存在的列
+
+2. **未处理 PostgreSQL 大小写敏感性 - 主键列**
+   - PostgreSQL 中不带引号的标识符会自动转换为小写
+   - 如果主键是 `SmID`（混合大小写），必须用双引号包裹：`"SmID"`
+   - 原代码生成的 SQL：`SELECT SmID AS id` → 被识别为 `smid` → 找不到列
+   - 正确的 SQL：`SELECT "SmID" AS id` → 保留原始大小写
+
+3. **未处理 PostgreSQL 大小写敏感性 - 几何列**
+   - 同样的问题也出现在几何列上（如 `SmGeometry`、`SHAPE`、`geom` 等）
+   - 原代码：`ST_Transform(SmGeometry, 3857)` → 被识别为 `smgeometry` → 找不到列
+   - 正确写法：`ST_Transform("SmGeometry", 3857)` → 保留原始大小写
+   - WHERE 子句也需要用引号：`WHERE "SmGeometry" IS NOT NULL`
+
+#### 技术细节
+
+**原代码问题**（`manager/backend/internal/mvt/preparation_service.go:445-452`）：
+
+```go
+// 创建物化视图（转换为 3857）
+createMVSQL := fmt.Sprintf(`
+    CREATE MATERIALIZED VIEW %s AS
+    SELECT
+        id,                          -- ❌ 问题1：硬编码，假设主键叫 id
+        ST_Transform(%s, 3857) AS geom_3857  -- ❌ 问题2：几何列未加引号
+    FROM %s.%s
+    WHERE %s IS NOT NULL             -- ❌ 问题3：WHERE 子句的列未加引号
+`, mvFullName, geomColumn, schema, table, geomColumn)
+```
+
+**具体错误示例：**
+
+```sql
+-- 假设表结构：SmID (主键), SmGeometry (几何列)
+
+-- 原代码生成的 SQL（错误）
+CREATE MATERIALIZED VIEW public.test_mv3857 AS
+SELECT
+    id,                              -- ❌ 列不存在
+    ST_Transform(SmGeometry, 3857) AS geom_3857  -- ❌ 找不到 smgeometry
+FROM public.test
+WHERE SmGeometry IS NOT NULL         -- ❌ 找不到 smgeometry
+
+-- 正确的 SQL
+CREATE MATERIALIZED VIEW public.test_mv3857 AS
+SELECT
+    "SmID" AS id,                    -- ✅ 保留大小写
+    ST_Transform("SmGeometry", 3857) AS geom_3857  -- ✅ 保留大小写
+FROM public.test
+WHERE "SmGeometry" IS NOT NULL       -- ✅ 保留大小写
+```
+
+**PostgreSQL 大小写规则：**
+```sql
+-- 不带引号 → 自动转为小写
+SELECT SmID FROM test;     -- 查找 smid 列（失败）
+
+-- 带引号 → 保留原始大小写
+SELECT "SmID" FROM test;   -- 查找 SmID 列（成功）
+```
+
+**Meta 模块的主键存储：**
+- Meta 已经扫描并存储了表的主键信息
+- 存储位置：`metadata.meta_item.attributes` JSONB 字段
+  - `attributes.table_metadata.primary_key` - 主键列名列表
+  - `attributes.table_metadata.has_primary_key` - 是否有主键
+  - `attributes.fields[].is_primary_key` - 每个字段的主键标记
+- Manager 可以通过 `metaClient.GetTableSpatialMetadata()` 获取主键信息
+
+#### 解决方案
+
+**修复步骤：**
+
+1. **动态查询主键列名**（不再硬编码）
+
+添加查询主键的方法（`manager/backend/internal/mvt/preparation_service.go:408-426`）：
+
+```go
+// getPrimaryKeyColumn 获取表的主键列名
+// 返回主键列名，如果没有主键返回空字符串
+func (ps *PreparationService) getPrimaryKeyColumn(ctx context.Context, engineDB *gorm.DB, schema, table string) (string, error) {
+    var pkColumn string
+    query := `
+        SELECT a.attname
+        FROM pg_index i
+        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+        WHERE i.indrelid = ($1 || '.' || $2)::regclass
+          AND i.indisprimary
+        LIMIT 1
+    `
+    err := engineDB.WithContext(ctx).Raw(query, schema, table).Scan(&pkColumn).Error
+    if err != nil {
+        // 如果查询失败（可能是没有主键），返回空字符串而不是错误
+        return "", nil
+    }
+    return pkColumn, nil
+}
+```
+
+2. **处理大小写问题**（用双引号包裹所有列名）
+
+修改物化视图创建逻辑（`manager/backend/internal/mvt/preparation_service.go:452-474`）：
+
+```go
+// 查询主键列名
+pkColumn, err := ps.getPrimaryKeyColumn(ctx, engineDB, schema, table)
+if err != nil {
+    prepStatus.Checks[i].Status = "failed"
+    prepStatus.Checks[i].Message = fmt.Sprintf("查询主键失败: %v", err)
+    return fmt.Errorf("failed to get primary key: %w", err)
+}
+
+// 构建SELECT子句
+var selectClause string
+if pkColumn != "" {
+    // 有主键，使用实际主键列（用双引号包裹以保留大小写）
+    selectClause = fmt.Sprintf(`"%s" AS id`, pkColumn)
+    prepStatus.Checks[i].Details["primary_key"] = pkColumn
+} else {
+    // 没有主键，生成临时ID
+    selectClause = "row_number() OVER () AS id"
+    prepStatus.Checks[i].Details["primary_key"] = "generated"
+    prepStatus.Checks[i].Details["warning"] = "源表无主键，使用 row_number() 生成临时ID"
+}
+
+// 创建物化视图（转换为 3857）
+// 注意：所有列名都用双引号包裹以保留大小写（PostgreSQL 区分大小写）
+createMVSQL := fmt.Sprintf(`
+    CREATE MATERIALIZED VIEW %s AS
+    SELECT
+        %s,                          -- ✅ 动态主键，支持大小写
+        ST_Transform("%s", 3857) AS geom_3857  -- ✅ 几何列加引号
+    FROM %s.%s
+    WHERE "%s" IS NOT NULL           -- ✅ WHERE 子句也加引号
+`, mvFullName, selectClause, geomColumn, schema, table, geomColumn)
+```
+
+3. **在检查阶段也添加主键诊断**（`manager/backend/internal/mvt/preparation_service.go:157-166`）：
+
+```go
+// 快速检查：获取源表的主键
+pkColumn, err := ps.getPrimaryKeyColumn(ctx, engineDB, schema, table)
+if err != nil {
+    // 查询主键时的错误不应该阻止物化视图创建
+    check.Details["pk_check_warning"] = fmt.Sprintf("查询主键失败: %v，将使用 row_number() 生成ID", err)
+}
+check.Details["primary_key"] = pkColumn
+if pkColumn == "" {
+    check.Details["primary_key_status"] = "无主键，将生成临时ID"
+}
+```
+
+#### 验证修复
+
+```bash
+# 重启 Manager 服务
+bash scripts/dev/restart.sh -manager
+
+# 在前端测试
+# 1. 打开 Manager → 数据浏览器
+# 2. 选择包含混合大小写主键的表（如 public.test，主键 SmID）
+# 3. 点击"准备预缓存"
+# 4. 应该显示：
+#    - 物化视图 ✅ 通过（或标记为待创建）
+#    - Details 中显示正确的主键名（如 "SmID"）
+```
+
+**SQL 验证：**
+```sql
+-- 查看创建的物化视图结构
+\d public.test_mv3857
+
+-- 应该包含：
+-- Column    | Type
+-- ----------+---------
+-- id        | bigint     (从 SmID 映射而来)
+-- geom_3857 | geometry
+```
+
+#### 支持的场景
+
+修复后支持以下所有场景：
+
+**主键列名：**
+1. ✅ **混合大小写主键**（如 `SmID`、`ObjectID`、`FeatureId`）
+2. ✅ **全小写主键**（如 `id`、`gid`、`fid`）
+3. ✅ **全大写主键**（如 `ID`、`FID`）
+4. ✅ **无主键表**（生成 `row_number() OVER () AS id`，标记警告）
+
+**几何列名：**
+1. ✅ **混合大小写几何列**（如 `SmGeometry`、`TheGeom`、`Shape`）
+2. ✅ **全小写几何列**（如 `geom`、`geometry`、`shape`）
+3. ✅ **全大写几何列**（如 `GEOM`、`SHAPE`、`GEOMETRY`）
+
+**常见的 GIS 数据列名组合：**
+- SuperMap 数据：`SmID` + `SmGeometry` ✅
+- ArcGIS 数据：`OBJECTID` + `SHAPE` ✅
+- PostGIS 默认：`id` + `geom` ✅
+- QGIS 导入：`fid` + `geometry` ✅
+
+#### 无主键表的限制
+
+如果表没有主键，系统会生成临时 ID，但有以下限制：
+
+- ✅ **可以生成** MVT 瓦片并在地图上显示
+- ✅ **可以进行** 基本的地图浏览和缩放
+- ❌ **无法唯一标识** 要素（点击、高亮等交互功能受限）
+- ⚠️ **数据刷新后** ID 可能变化（row_number 基于查询顺序）
+
+**建议**：前端应提示用户表没有主键，建议添加主键以支持完整功能。
+
+#### 未来优化建议
+
+1. **优先从 Meta 获取主键**
+   - Meta 已经扫描过表结构，有主键信息缓存
+   - 减少数据库查询，提升性能
+   - 作为备用方案才直接查询数据库
+
+2. **支持复合主键**
+   - 当前只取第一个主键列
+   - 可改为连接多个主键列：`CONCAT(col1, '-', col2) AS id`
+
+3. **前端显示主键状态**
+   - 在预缓存配置界面显示主键信息
+   - 无主键时明确警告用户功能限制
+
+#### 相关影响范围
+
+此问题影响以下模块和功能：
+
+**受影响的模块：**
+1. **Manager 模块**
+   - MVT 预缓存准备阶段（物化视图创建）
+   - 空间索引创建（依赖物化视图）
+   - 瓦片生成任务（依赖物化视图）
+
+**受影响的数据源：**
+2. **使用混合大小写列名的 PostgreSQL 表**
+   - SuperMap、ArcGIS、QGIS 等 GIS 工具导入的数据
+   - 遵循特定命名规范的企业数据（如大写列名）
+   - 历史遗留系统的数据表
+
+**不受影响的场景：**
+3. **全小写列名的表**（PostgreSQL 默认风格）
+4. **坐标系已是 3857 的表**（无需物化视图）
+5. **通过 PostGIS 标准工具创建的表**
+
+#### 预防措施
+
+为避免类似问题，建议采取以下预防措施：
+
+**1. 数据库设计规范**
+   - ✅ **推荐**：使用全小写的列名（PostgreSQL 最佳实践）
+   - ❌ **避免**：使用混合大小写，除非有特殊需求
+   - ✅ **必须**：始终为空间表添加主键
+
+**2. 代码规范**
+   - PostgreSQL 动态 SQL 中的列名**必须**用双引号包裹
+   - 查询元数据时使用 `attname` 获取原始列名（保留大小写）
+   - 单元测试应覆盖大小写敏感场景
+
+**3. 文档说明**
+   - 在数据导入文档中说明列名大小写问题
+   - 提供数据规范化工具或脚本（转换为小写）
+   - 标注 GIS 数据迁移的注意事项
+
+#### 修复日期
+
+- **发现日期：** 2026-01-29
+- **修复版本：** v0.0.23+
+- **影响范围：** Manager 模块 MVT 预缓存功能（物化视图创建、空间索引、瓦片生成）
+- **相关文件：** `manager/backend/internal/mvt/preparation_service.go`
+- **关键修复：**
+  - ✅ 动态查询主键列名（不再硬编码 `id`）
+  - ✅ 支持大小写敏感的列名（主键和几何列都用双引号包裹）
+  - ✅ 支持无主键表（使用 `row_number() OVER ()` 生成临时 ID）
+  - ✅ 详细的主键诊断信息（便于故障排查）
 
 ---
 
@@ -363,6 +661,7 @@ def register_to_system():
 | 2026-01-03 | Workflow 引擎注册失败 502（系统代理拦截） | Claude Code |
 | 2026-01-27 | Python Workflow Engine 依赖安装失败（NumPy 版本冲突） | Claude Code |
 | 2026-01-27 | 工作流引擎注册失败 404（缺少 /api 前缀） | Claude Code |
+| 2026-01-29 | MVT 物化视图创建失败（主键大小写问题） | Claude Code |
 
 ---
 

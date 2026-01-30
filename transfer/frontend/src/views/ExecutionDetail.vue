@@ -16,6 +16,59 @@
         <el-descriptions-item label="结束时间">{{ execution.end_time || '-' }}</el-descriptions-item>
       </el-descriptions>
 
+      <!-- ✅ 新增：后处理摘要卡片 -->
+      <el-divider v-if="execution.status === 'success'">后处理执行摘要</el-divider>
+      <div v-if="execution.status === 'success'" class="post-process-summary">
+        <el-space wrap :size="15">
+          <!-- 主键创建 -->
+          <el-statistic
+            v-if="postProcessSummary.primary_key_created"
+            title="主键创建"
+            :value="'✓'"
+          >
+            <template #prefix>
+              <el-icon style="color: #67C23A; font-size: 20px;">
+                <span style="font-weight: bold;">🔑</span>
+              </el-icon>
+            </template>
+            <template #suffix>
+              <el-text size="small" type="success">
+                {{ postProcessSummary.primary_key_columns.join(', ') }}
+              </el-text>
+            </template>
+          </el-statistic>
+
+          <!-- 空间索引 -->
+          <el-statistic
+            v-if="postProcessSummary.spatial_indexes_created > 0"
+            title="空间索引"
+            :value="postProcessSummary.spatial_indexes_created"
+          >
+            <template #prefix>
+              <el-icon style="color: #409EFF; font-size: 20px;">
+                <span style="font-weight: bold;">🗺️</span>
+              </el-icon>
+            </template>
+            <template #suffix>
+              <el-text size="small" type="primary">个</el-text>
+            </template>
+          </el-statistic>
+
+          <!-- 统计更新 -->
+          <el-statistic
+            v-if="postProcessSummary.statistics_updated"
+            title="统计更新"
+            :value="'✓'"
+          >
+            <template #prefix>
+              <el-icon style="color: #909399; font-size: 20px;">
+                <span style="font-weight: bold;">📊</span>
+              </el-icon>
+            </template>
+          </el-statistic>
+        </el-space>
+      </div>
+
       <el-divider>执行日志</el-divider>
 
       <!-- 日志控制栏 -->
@@ -23,6 +76,7 @@
         <el-radio-group v-model="logLevel" size="small">
           <el-radio-button label="all">全部</el-radio-button>
           <el-radio-button label="info">INFO</el-radio-button>
+          <el-radio-button label="post-process">后处理</el-radio-button>
           <el-radio-button label="error">ERROR</el-radio-button>
         </el-radio-group>
 
@@ -44,9 +98,19 @@
         </div>
       </div>
 
-      <!-- 日志查看器 -->
+      <!-- 日志查看器（高亮显示后处理日志） -->
       <div class="log-viewer">
-        <pre v-if="filteredLogs">{{ filteredLogs }}</pre>
+        <div v-if="filteredLogs">
+          <div
+            v-for="(line, index) in filteredLogsArray"
+            :key="index"
+            :class="getLogLineClass(line)"
+            class="log-line"
+          >
+            <span class="log-icon">{{ getLogIcon(line) }}</span>
+            <span class="log-text">{{ line }}</span>
+          </div>
+        </div>
         <div v-else class="empty-logs">暂无日志</div>
       </div>
     </el-card>
@@ -57,7 +121,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { executionAPI } from '@/api/tasks'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElIcon } from 'element-plus'
 
 const route = useRoute()
 const loading = ref(false)
@@ -149,6 +213,100 @@ const downloadLogs = () => {
   ElMessage.success('日志下载成功')
 }
 
+// ✅ 新增：后处理摘要信息提取
+const postProcessSummary = computed(() => {
+  const summary = {
+    primary_key_created: false,
+    primary_key_columns: [],
+    spatial_indexes_created: 0,
+    statistics_updated: false
+  }
+
+  if (!logs.value) return summary
+
+  const logLines = logs.value.split('\n')
+
+  logLines.forEach(line => {
+    // 检测主键创建成功
+    if (line.includes('✅ [后处理]') && line.includes('主键创建成功')) {
+      summary.primary_key_created = true
+      // 从日志中提取列名，格式: "columns"=["SmID"]
+      const match = line.match(/"columns"=\[(.*?)\]/)
+      if (match) {
+        summary.primary_key_columns = match[1]
+          .split(',')
+          .map(s => s.trim().replace(/"/g, ''))
+          .filter(Boolean)
+      }
+    }
+
+    // 检测空间索引创建
+    if (line.includes('✅ [后处理]') && line.includes('空间索引创建成功')) {
+      summary.spatial_indexes_created++
+    }
+
+    // 检测统计信息更新
+    if (line.includes('✅ [后处理]') && line.includes('统计信息更新成功')) {
+      summary.statistics_updated = true
+    }
+  })
+
+  return summary
+})
+
+// ✅ 新增：日志行分类
+const getLogIcon = (line) => {
+  if (line.includes('🔑')) return '🔑'
+  if (line.includes('🗺️')) return '🗺️'
+  if (line.includes('📊')) return '📊'
+  if (line.includes('❌')) return '❌'
+  if (line.includes('✅')) return '✅'
+  if (line.includes('⚠️')) return '⚠️'
+  if (line.includes('ℹ️')) return 'ℹ️'
+  if (line.includes('⚙️')) return '⚙️'
+  return ' '
+}
+
+// ✅ 新增：日志行样式分类
+const getLogLineClass = (line) => {
+  // 后处理相关日志
+  if (line.includes('[后处理]')) {
+    if (line.includes('✅')) return 'log-success'
+    if (line.includes('🔑')) return 'log-primary-key'
+    if (line.includes('🗺️')) return 'log-spatial-index'
+    if (line.includes('📊')) return 'log-statistics'
+    if (line.includes('❌')) return 'log-error'
+    if (line.includes('⚠️')) return 'log-warning'
+    return 'log-post-process'
+  }
+
+  // 普通日志
+  if (line.includes('[ERROR]') || line.includes('❌')) return 'log-error'
+  if (line.includes('[WARN]') || line.includes('⚠️')) return 'log-warning'
+  if (line.includes('[INFO]') || line.includes('ℹ️')) return 'log-info'
+
+  return 'log-default'
+}
+
+// ✅ 新增：日志行数组（用于逐行渲染）
+const filteredLogsArray = computed(() => {
+  if (!logs.value) return []
+
+  const lines = logs.value.split('\n')
+
+  if (logLevel.value === 'all') return lines
+
+  if (logLevel.value === 'post-process') {
+    return lines.filter(line => line.includes('[后处理]'))
+  }
+
+  return lines.filter(line => {
+    const upperLevel = logLevel.value.toUpperCase()
+    return line.includes(`[${upperLevel}]`)
+  })
+})
+
+// 日志过滤（保留原有的 pre 方式作为备用）
 const filteredLogs = computed(() => {
   if (!logs.value) return ''
   if (logLevel.value === 'all') return logs.value
@@ -156,6 +314,9 @@ const filteredLogs = computed(() => {
   return logs.value
     .split('\n')
     .filter(line => {
+      if (logLevel.value === 'post-process') {
+        return line.includes('[后处理]')
+      }
       const upperLevel = logLevel.value.toUpperCase()
       return line.includes(`[${upperLevel}]`)
     })
@@ -221,6 +382,99 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+/* ✅ 新增：日志行样式 */
+.log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  border-left: 3px solid transparent;
+  padding-left: 6px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.log-icon {
+  min-width: 24px;
+  font-weight: bold;
+}
+
+.log-text {
+  flex: 1;
+}
+
+/* 主键创建日志 */
+.log-primary-key {
+  background-color: rgba(232, 219, 163, 0.1);
+  border-left-color: #e6a23c;
+  color: #ffb94f;
+}
+
+/* 空间索引日志 */
+.log-spatial-index {
+  background-color: rgba(89, 184, 255, 0.1);
+  border-left-color: #409eff;
+  color: #66b1ff;
+}
+
+/* 统计信息日志 */
+.log-statistics {
+  background-color: rgba(144, 147, 153, 0.1);
+  border-left-color: #909399;
+  color: #a8abb2;
+}
+
+/* 成功日志 */
+.log-success {
+  background-color: rgba(103, 194, 58, 0.1);
+  border-left-color: #67c23a;
+  color: #85ce61;
+  font-weight: bold;
+}
+
+/* 错误日志 */
+.log-error {
+  background-color: rgba(245, 108, 108, 0.1);
+  border-left-color: #f56c6c;
+  color: #f78989;
+  font-weight: bold;
+}
+
+/* 警告日志 */
+.log-warning {
+  background-color: rgba(230, 162, 60, 0.1);
+  border-left-color: #e6a23c;
+  color: #ffb94f;
+}
+
+/* 信息日志 */
+.log-info {
+  background-color: rgba(89, 184, 255, 0.1);
+  border-left-color: #409eff;
+  color: #66b1ff;
+}
+
+/* 后处理日志 */
+.log-post-process {
+  background-color: rgba(103, 194, 58, 0.1);
+  border-left-color: #67c23a;
+  color: #85ce61;
+}
+
+/* 默认日志 */
+.log-default {
+  color: #d4d4d4;
+}
+
+/* 后处理摘要样式 */
+.post-process-summary {
+  background: #f5f7fa;
+  padding: 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  border-left: 4px solid #67c23a;
 }
 
 .empty-logs {

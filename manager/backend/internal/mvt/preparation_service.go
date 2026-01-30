@@ -134,6 +134,35 @@ func (ps *PreparationService) checkAndCreateMaterializedView(ctx context.Context
 		CheckedAt: time.Now().UTC(),
 	}
 
+	// 检查表名是否已经是物化视图格式 (xxx_mv3857)
+	if isAlreadyMaterializedView(table) {
+		// 当前表已经是物化视图，直接检查是否存在
+		var mvExists int
+		mvCheckQuery := `SELECT COUNT(*) FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2`
+		if err := engineDB.WithContext(ctx).Raw(mvCheckQuery, schema, table).Scan(&mvExists).Error; err != nil {
+			check.Status = "failed"
+			check.Message = fmt.Sprintf("检查物化视图失败: %v", err)
+			return check
+		}
+
+		if mvExists > 0 {
+			check.Status = "passed"
+			check.Message = fmt.Sprintf("物化视图 %s.%s 已存在", schema, table)
+			check.Details["view_name"] = table
+			check.Details["source_srid"] = 3857 // 物化视图已经是 3857
+			check.Details["target_srid"] = 3857
+			check.Details["action_required"] = false
+			return check
+		}
+
+		// 物化视图不存在，但表名是物化视图格式，说明有问题
+		check.Status = "failed"
+		check.Message = fmt.Sprintf("物化视图 %s.%s 不存在（表名格式为物化视图但未找到）", schema, table)
+		check.Details["view_name"] = table
+		check.Details["action_required"] = true
+		return check
+	}
+
 	// 快速检查：获取源表的 SRID（从 geometry_columns 查询）
 	var sourceSRID int
 	query := fmt.Sprintf(
@@ -152,6 +181,17 @@ func (ps *PreparationService) checkAndCreateMaterializedView(ctx context.Context
 		check.Status = "failed"
 		check.Message = "几何列名称不能为空"
 		return check
+	}
+
+	// 快速检查：获取源表的主键
+	pkColumn, err := ps.getPrimaryKeyColumn(ctx, engineDB, schema, table)
+	if err != nil {
+		// 查询主键时的错误不应该阻止物化视图创建
+		check.Details["pk_check_warning"] = fmt.Sprintf("查询主键失败: %v，将使用 row_number() 生成ID", err)
+	}
+	check.Details["primary_key"] = pkColumn
+	if pkColumn == "" {
+		check.Details["primary_key_status"] = "无主键，将生成临时ID"
 	}
 
 	// 如果源表已经是 3857，跳过物化视图
@@ -265,16 +305,19 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 	// 索引名称
 	indexName := fmt.Sprintf("idx_%s_%s_gist", indexTable, indexGeomColumn)
 
-	// 快速检查：索引是否已存在（仅检查，不创建）
-	var indexExists int
-	engineDB.WithContext(ctx).Raw(
-		`SELECT COUNT(*) FROM pg_indexes
-		 WHERE schemaname = $1 AND tablename = $2 AND indexname = $3`,
+	// 快速检查：索引是否已存在且有效（检查 indisvalid 字段）
+	var indexValid bool
+	indexCheckErr := engineDB.WithContext(ctx).Raw(
+		`SELECT i.indisvalid
+		 FROM pg_indexes idx
+		 JOIN pg_class c ON c.relname = idx.indexname
+		 JOIN pg_index i ON i.indexrelid = c.oid
+		 WHERE idx.schemaname = $1 AND idx.tablename = $2 AND idx.indexname = $3`,
 		schema, indexTable, indexName,
-	).Scan(&indexExists)
+	).Scan(&indexValid).Error
 
-	if indexExists > 0 {
-		// 索引已存在，检查通过
+	if indexCheckErr == nil && indexValid {
+		// 索引已存在且有效，检查通过
 		check.Status = "passed"
 		check.Message = fmt.Sprintf("空间索引 %s.%s (%s) 已存在", schema, indexTable, indexGeomColumn)
 		check.Details["index_name"] = indexName
@@ -283,6 +326,12 @@ func (ps *PreparationService) checkAndCreateSpatialIndex(ctx context.Context, en
 		check.Details["source_srid"] = sourceSRID
 		check.Details["action_required"] = false
 		return check
+	}
+
+	// 如果索引存在但无效（INVALID），先删除
+	if indexCheckErr == nil && !indexValid {
+		dropSQL := fmt.Sprintf("DROP INDEX IF EXISTS %s.%s", schema, indexName)
+		engineDB.WithContext(ctx).Exec(dropSQL)
 	}
 
 	// 索引不存在，标记为待创建（由准备阶段处理）
@@ -405,6 +454,26 @@ func (ps *PreparationService) RefreshMaterializedView(ctx context.Context, engin
 	return engineDB.WithContext(ctx).Exec(refreshSQL).Error
 }
 
+// getPrimaryKeyColumn 获取表的主键列名
+// 返回主键列名，如果没有主键返回空字符串
+func (ps *PreparationService) getPrimaryKeyColumn(ctx context.Context, engineDB *gorm.DB, schema, table string) (string, error) {
+	var pkColumn string
+	query := `
+		SELECT a.attname
+		FROM pg_index i
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+		WHERE i.indrelid = ($1 || '.' || $2)::regclass
+		  AND i.indisprimary
+		LIMIT 1
+	`
+	err := engineDB.WithContext(ctx).Raw(query, schema, table).Scan(&pkColumn).Error
+	if err != nil {
+		// 如果查询失败（可能是没有主键），返回空字符串而不是错误
+		return "", nil
+	}
+	return pkColumn, nil
+}
+
 // ExecutePreparation 执行准备工作，在检查之后实际执行必要的操作
 func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, engineID uint, schema, table, geomColumn string, prepStatus *models.PreparationStatus) error {
 	// 获取引擎数据库连接
@@ -435,6 +504,91 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 		}
 
 		switch check.Name {
+		case "materialized_view":
+			// 执行物化视图创建
+			if check.Status == "failed" {
+				mvName := fmt.Sprintf("%s_mv3857", table)
+				mvFullName := fmt.Sprintf("%s.%s", schema, mvName)
+
+				// 查询主键列名
+				pkColumn, err := ps.getPrimaryKeyColumn(ctx, engineDB, schema, table)
+				if err != nil {
+					prepStatus.Checks[i].Status = "failed"
+					prepStatus.Checks[i].Message = fmt.Sprintf("查询主键失败: %v", err)
+					return fmt.Errorf("failed to get primary key: %w", err)
+				}
+
+				// 构建SELECT子句
+				var selectClause string
+				if pkColumn != "" {
+					// 有主键，保留原始主键列名（不重命名，用双引号包裹以保留大小写）
+					selectClause = fmt.Sprintf(`"%s"`, pkColumn)
+					prepStatus.Checks[i].Details["primary_key"] = pkColumn
+				} else {
+					// 没有主键，生成临时ID
+					selectClause = "row_number() OVER () AS id"
+					prepStatus.Checks[i].Details["primary_key"] = "id"  // 生成的ID列名为 id
+					prepStatus.Checks[i].Details["warning"] = "源表无主键，使用 row_number() 生成临时ID"
+				}
+
+				// 创建物化视图（转换为 3857）
+				// 注意：列名用双引号包裹以保留大小写（PostgreSQL 区分大小写）
+				createMVSQL := fmt.Sprintf(`
+					CREATE MATERIALIZED VIEW %s AS
+					SELECT
+						%s,
+						ST_Transform("%s", 3857) AS geom_3857
+					FROM %s.%s
+					WHERE "%s" IS NOT NULL
+				`, mvFullName, selectClause, geomColumn, schema, table, geomColumn)
+
+				if err := engineDB.WithContext(ctx).Exec(createMVSQL).Error; err != nil {
+					prepStatus.Checks[i].Status = "failed"
+					prepStatus.Checks[i].Message = fmt.Sprintf("物化视图创建失败: %v", err)
+					return fmt.Errorf("failed to create materialized view: %w", err)
+				}
+
+				// 创建成功
+				prepStatus.Checks[i].Status = "passed"
+				if pkColumn != "" {
+					prepStatus.Checks[i].Message = fmt.Sprintf("物化视图 %s 创建成功（主键: %s）", mvFullName, pkColumn)
+				} else {
+					prepStatus.Checks[i].Message = fmt.Sprintf("物化视图 %s 创建成功（生成临时ID）", mvFullName)
+				}
+				prepStatus.Checks[i].Details["action_required"] = false
+			}
+
+		case "spatial_index":
+			// 执行空间索引创建
+			if check.Status == "failed" {
+				// 从 Details 中获取索引信息
+				indexName, _ := check.Details["index_name"].(string)
+				indexTable, _ := check.Details["table"].(string)
+				indexColumn, _ := check.Details["column"].(string)
+
+				if indexName == "" || indexTable == "" || indexColumn == "" {
+					prepStatus.Checks[i].Status = "failed"
+					prepStatus.Checks[i].Message = "索引信息不完整，无法创建"
+					continue
+				}
+
+				// 创建 GIST 空间索引（使用 CONCURRENTLY 避免锁表）
+				createIndexSQL := fmt.Sprintf(`
+					CREATE INDEX CONCURRENTLY %s ON %s USING GIST (%s)
+				`, indexName, indexTable, indexColumn)
+
+				if err := engineDB.WithContext(ctx).Exec(createIndexSQL).Error; err != nil {
+					prepStatus.Checks[i].Status = "failed"
+					prepStatus.Checks[i].Message = fmt.Sprintf("空间索引创建失败: %v", err)
+					return fmt.Errorf("failed to create spatial index: %w", err)
+				}
+
+				// 创建成功
+				prepStatus.Checks[i].Status = "passed"
+				prepStatus.Checks[i].Message = fmt.Sprintf("空间索引 %s 创建成功", indexName)
+				prepStatus.Checks[i].Details["action_required"] = false
+			}
+
 		case "analyze":
 			// 执行 ANALYZE（如果需要）
 			if check.Status == "failed" {
@@ -459,6 +613,23 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 				}
 			}
 		}
+	}
+
+	// 更新总体状态
+	allPassed := true
+	for _, check := range prepStatus.Checks {
+		if check.Status == "failed" {
+			allPassed = false
+			break
+		}
+	}
+
+	if allPassed {
+		prepStatus.OverallStatus = "passed"
+		prepStatus.Summary = "准备工作全部完成，可以开始生成瓦片"
+	} else {
+		prepStatus.OverallStatus = "failed"
+		prepStatus.Summary = "准备工作有失败项，请检查详情"
 	}
 
 	return nil

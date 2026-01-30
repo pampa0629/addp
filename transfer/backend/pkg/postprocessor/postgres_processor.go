@@ -107,24 +107,31 @@ func (p *PostgresPostProcessor) CreatePrimaryKey(ctx context.Context, pk *Primar
 		quoteIdentifier(constraintName),
 		strings.Join(quotedColumns, ", "))
 
-	p.logger.Info("creating primary key",
+	p.logger.Info("🔑 [后处理] 准备创建主键",
+		"table", p.tableName,
 		"constraint", constraintName,
-		"columns", pk.Columns)
+		"columns", pk.Columns,
+		"sql", alterSQL)
 
 	if _, err := p.db.ExecContext(ctx, alterSQL); err != nil {
 		// 容错：主键已存在
 		if isErrorAlreadyExists(err) {
-			p.logger.Warn("primary key already exists", "constraint", constraintName)
+			p.logger.Warn("⚠️ [后处理] 主键已存在，跳过创建", "constraint", constraintName)
 			return nil
 		}
 		// 容错：数据有重复
 		if isErrorDuplicateValue(err) {
-			return fmt.Errorf("cannot create primary key on columns %v: duplicate values found", pk.Columns)
+			errMsg := fmt.Sprintf("❌ [后处理] 无法创建主键: 列 %v 中存在重复值", pk.Columns)
+			p.logger.Error(errMsg, "error", err)
+			return fmt.Errorf(errMsg)
 		}
-		return fmt.Errorf("failed to create primary key: %w", err)
+		errMsg := fmt.Sprintf("❌ [后处理] 主键创建失败: %v", err)
+		p.logger.Error(errMsg, "error", err)
+		return fmt.Errorf(errMsg)
 	}
 
-	p.logger.Info("primary key created successfully",
+	p.logger.Info("✅ [后处理] 主键创建成功",
+		"table", p.tableName,
 		"constraint", constraintName,
 		"columns", pk.Columns)
 	return nil
@@ -156,32 +163,38 @@ func (p *PostgresPostProcessor) CreateSpatialIndexes(ctx context.Context, indexe
 			indexType,
 			quoteIdentifier(idx.ColumnName))
 
-		p.logger.Info("creating spatial index",
+		p.logger.Info("🗺️ [后处理] 创建空间索引",
+			"table", p.tableName,
 			"index", idx.IndexName,
 			"column", idx.ColumnName,
-			"type", indexType)
+			"type", indexType,
+			"sql", createIndexSQL)
 
 		if _, err := p.db.ExecContext(ctx, createIndexSQL); err != nil {
 			// 容错：索引已存在
 			if isErrorAlreadyExists(err) {
-				p.logger.Warn("spatial index already exists", "index", idx.IndexName)
+				p.logger.Warn("⚠️ [后处理] 空间索引已存在，跳过创建", "index", idx.IndexName)
 				successCount++
 				continue
 			}
 			// 其他错误记录但不中断
-			p.logger.Warn("failed to create spatial index",
+			p.logger.Warn("❌ [后处理] 空间索引创建失败",
 				"index", idx.IndexName,
 				"column", idx.ColumnName,
 				"error", err)
 			continue
 		}
 
-		p.logger.Info("spatial index created successfully", "index", idx.IndexName)
+		p.logger.Info("✅ [后处理] 空间索引创建成功",
+			"table", p.tableName,
+			"index", idx.IndexName,
+			"column", idx.ColumnName)
 		successCount++
 	}
 
 	if successCount > 0 {
-		p.logger.Info("spatial indexes created",
+		p.logger.Info("✅ [后处理] 空间索引创建完成",
+			"table", p.tableName,
 			"success", successCount,
 			"total", len(indexes))
 	}
@@ -195,13 +208,18 @@ func (p *PostgresPostProcessor) CreateSpatialIndexes(ctx context.Context, indexe
 func (p *PostgresPostProcessor) UpdateStatistics(ctx context.Context) error {
 	analyzeSQL := fmt.Sprintf("ANALYZE %s", qualifiedTableName(p.tableName))
 
-	p.logger.Info("updating table statistics")
+	p.logger.Info("📊 [后处理] 更新表统计信息",
+		"table", p.tableName,
+		"sql", analyzeSQL)
 
 	if _, err := p.db.ExecContext(ctx, analyzeSQL); err != nil {
-		return fmt.Errorf("failed to update statistics: %w", err)
+		errMsg := fmt.Sprintf("❌ [后处理] 统计信息更新失败: %v", err)
+		p.logger.Error(errMsg, "error", err)
+		return fmt.Errorf(errMsg)
 	}
 
-	p.logger.Info("table statistics updated successfully")
+	p.logger.Info("✅ [后处理] 统计信息更新成功",
+		"table", p.tableName)
 	return nil
 }
 
@@ -209,17 +227,21 @@ func (p *PostgresPostProcessor) UpdateStatistics(ctx context.Context) error {
 // ctx: 上下文
 // 返回：错误（主键创建失败时返回错误，其他任务失败仅记录警告）
 func (p *PostgresPostProcessor) Execute(ctx context.Context) error {
-	p.logger.Info("starting post-processing tasks")
+	p.logger.Info("⚙️ [后处理] 启动后处理任务",
+		"table", p.tableName,
+		"create_primary_key", p.config.CreatePrimaryKey,
+		"create_spatial_index", p.config.CreateSpatialIndex,
+		"update_statistics", p.config.UpdateStatistics)
 
 	// 任务 1: 创建主键
 	if p.config.CreatePrimaryKey {
 		pk := extractPrimaryKeyMetadata(p.config)
 		if err := p.CreatePrimaryKey(ctx, pk); err != nil {
-			p.logger.Error("primary key creation failed", "error", err)
+			p.logger.Error("❌ [后处理] 主键创建失败", "error", err)
 			return err // 主键失败返回错误（关键约束）
 		}
 	} else {
-		p.logger.Debug("primary key creation disabled")
+		p.logger.Debug("ℹ️ [后处理] 主键创建已禁用", "table", p.tableName)
 	}
 
 	// 任务 2: 创建空间索引
@@ -227,23 +249,24 @@ func (p *PostgresPostProcessor) Execute(ctx context.Context) error {
 		indexes := extractSpatialIndexMetadata(p.config)
 		if err := p.CreateSpatialIndexes(ctx, indexes); err != nil {
 			// 空间索引失败仅记录警告（性能优化，非关键）
-			p.logger.Warn("spatial index creation failed", "error", err)
+			p.logger.Warn("⚠️ [后处理] 空间索引创建失败", "error", err)
 		}
 	} else {
-		p.logger.Debug("spatial index creation disabled")
+		p.logger.Debug("ℹ️ [后处理] 空间索引创建已禁用", "table", p.tableName)
 	}
 
 	// 任务 3: 更新统计信息
 	if p.config.UpdateStatistics {
 		if err := p.UpdateStatistics(ctx); err != nil {
 			// 统计更新失败仅记录警告
-			p.logger.Warn("statistics update failed", "error", err)
+			p.logger.Warn("⚠️ [后处理] 统计信息更新失败", "error", err)
 		}
 	} else {
-		p.logger.Debug("statistics update disabled")
+		p.logger.Debug("ℹ️ [后处理] 统计更新已禁用", "table", p.tableName)
 	}
 
-	p.logger.Info("post-processing tasks completed")
+	p.logger.Info("✅ [后处理] 所有后处理任务完成",
+		"table", p.tableName)
 	return nil
 }
 

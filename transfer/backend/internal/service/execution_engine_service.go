@@ -144,6 +144,11 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 			s.updateExecutionMetricsWithLogs(executionID, logs, metrics)
 		})
 
+		// ✅ 设置后处理回调（在 Writer Close 前执行）
+		s.engine.SetPostProcessCallback(func(ctx context.Context, execTaskInner *pipeline.ExecutionTask, writer pipeline.Writer) error {
+			return s.executePostProcessing(ctx, task, execTaskInner)
+		})
+
 		// 使用串行引擎执行
 		executeErr = s.engine.Execute(ctx, execTask)
 
@@ -181,13 +186,8 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 
 	s.logger.Info("task executed successfully", "task_id", taskID, "records", metrics.RecordsWritten)
 
-	// ===== 后处理集成点 =====
-	// 在 Writer.Close() 之后，triggerMetadataScan() 之前调用
-	if err := s.executePostProcessing(ctx, task, execTask); err != nil {
-		s.logger.Warn("post-processing failed", "error", err)
-		// 后处理失败不影响任务成功
-	}
-	// ===== 后处理集成点结束 =====
+	// 后处理已通过回调机制在 Execute() 内部执行（Writer.Flush() 之后、Writer.Close() 之前）
+	// 不再需要在此处调用 executePostProcessing
 
 	// 如果任务配置了自动扫描元数据，触发 Meta 模块扫描
 	if task.AutoScanMetadata {
@@ -636,8 +636,11 @@ func (s *ExecutionEngineService) resourceToConnectorConfig(resource *commonModel
 		if port, ok := connInfo["port"].(float64); ok {
 			connectorConfig["port"] = int(port)
 		}
+		// 兼容两种字段名: username 和 user
 		if username, ok := connInfo["username"].(string); ok {
 			connectorConfig["username"] = username
+		} else if user, ok := connInfo["user"].(string); ok {
+			connectorConfig["username"] = user
 		}
 		if password, ok := connInfo["password"].(string); ok {
 			connectorConfig["password"] = password
@@ -927,8 +930,16 @@ func (s *ExecutionEngineService) executePostProcessing(
 
 	s.logger.Info("starting post-processing", "engine_type", engineType, "task_id", task.ID)
 
+	// ✅ 新增：获取最终的 Schema（包含检测到的主键信息）
+	finalSchema := s.engine.GetFinalSchema()
+	if finalSchema != nil && finalSchema.PrimaryKey != nil {
+		s.logger.Info("detected primary key from source table",
+			"columns", finalSchema.PrimaryKey.Columns,
+			"task_id", task.ID)
+	}
+
 	// 4. 构建后处理器配置
-	ppConfig, err := s.buildPostProcessorConfig(task, execTask, engineType)
+	ppConfig, err := s.buildPostProcessorConfig(task, execTask, engineType, finalSchema)
 	if err != nil {
 		return fmt.Errorf("failed to build postprocessor config: %w", err)
 	}
@@ -950,7 +961,7 @@ func (s *ExecutionEngineService) executePostProcessing(
 		return fmt.Errorf("post-processing failed: %w", err)
 	}
 
-	s.logger.Info("post-processing completed successfully", "engine_type", engineType, "task_id", task.ID)
+	s.logger.Info("✅ [后处理] 后处理任务完成", "engine_type", engineType, "task_id", task.ID)
 	return nil
 }
 
@@ -985,6 +996,7 @@ func (s *ExecutionEngineService) buildPostProcessorConfig(
 	task *models.Task,
 	execTask *pipeline.ExecutionTask,
 	engineType string,
+	schema *pipeline.Schema, // ✅ 新增参数：最终 Schema（包含检测到的主键）
 ) (postprocessor.PostProcessorConfig, error) {
 	targetConfig := execTask.TargetConfig.Config
 
@@ -994,10 +1006,22 @@ func (s *ExecutionEngineService) buildPostProcessorConfig(
 		return postprocessor.PostProcessorConfig{}, fmt.Errorf("table name not found in target config")
 	}
 
+	// ✅ 新增：优先使用 Writer 的数据库连接
+	writerDB := s.engine.GetWriterDB()
+	if writerDB != nil {
+		s.logger.Debug("using writer's database connection for post-processing",
+			"table", tableName)
+	} else {
+		s.logger.Debug("writer connection not available, will create new connection",
+			"table", tableName)
+	}
+
 	config := postprocessor.PostProcessorConfig{
 		EngineType:       engineType,
 		TableName:        tableName,
-		ConnectionConfig: targetConfig,
+		DB:               writerDB,         // ✅ 优先使用 Writer 连接
+		ConnectionConfig: targetConfig,     // 降级方案（如果 DB 为 nil）
+		Schema:           schema, // ✅ 新增：传递 Schema（供主键提取使用）
 
 		// 默认启用所有任务
 		CreatePrimaryKey:   true,

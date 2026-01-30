@@ -20,6 +20,7 @@ import (
     "github.com/addp/transfer/internal/service"
 	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
+	_ "github.com/addp/transfer/plugins" // ✅ 新增：触发 plugins 包的 init() 函数（注册 PostProcessor）
 	"github.com/addp/transfer/pkg/pipeline"
 	"github.com/addp/transfer/pkg/plugin_loader"
 	"github.com/hibiken/asynq"

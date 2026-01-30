@@ -455,8 +455,14 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 			}
 
 			// 将 MetaItem 转换为 MetaNode
+			// 为了避免 ID 冲突，使用虚拟 ID: 使用 node_id 作为实际的"虚拟"标识
+			// 这样所有 Items 的虚拟 ID 都会是其 parent_node_id (1-100 之间的某个值)
+			// 但为了保证唯一性,我们使用一个特殊的转换方法:
+			// 对于 Items,使用 meta_item.ID + 100000 作为虚拟 ID
+			virtualID := item.ID + 100000
+
 			node := &commonModels.MetaNode{
-				ID:             item.ID,
+				ID:             virtualID, // 使用虚拟 ID 避免与 meta_node 冲突
 				TenantID:       item.TenantID,
 				EngineID:       item.EngineID,
 				ParentNodeID:   &item.NodeID, // Item 的 NodeID 是其父节点

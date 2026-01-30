@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"log/slog"
@@ -39,16 +40,23 @@ func (lb *LogBuffer) Clear() {
 	lb.entries = nil
 }
 
+// PostProcessCallback 后处理回调函数类型
+// 在数据传输完成、连接关闭前执行后处理任务
+type PostProcessCallback func(ctx context.Context, task *ExecutionTask, writer Writer) error
+
 // ExecutionEngine 执行引擎
 // 负责编排 Reader → Transform → Writer 的数据流管道
 type ExecutionEngine struct {
-	registry         *ConnectorRegistry
-	stateManager     *StateManager
-	metricsCollector *MetricsCollector
-	logger           *slog.Logger
-	logBuffer        *LogBuffer
-	config           *EngineConfig
-	progressCallback func(logs string, metrics *Metrics) // 新增：进度回调
+	registry            *ConnectorRegistry
+	stateManager        *StateManager
+	metricsCollector    *MetricsCollector
+	logger              *slog.Logger
+	logBuffer           *LogBuffer
+	config              *EngineConfig
+	progressCallback    func(logs string, metrics *Metrics) // 进度回调
+	postProcessCallback PostProcessCallback                  // ✅ 新增：后处理回调（在 Close 前执行）
+	finalSchema         *Schema                              // ✅ 保存最终的 Schema（用于后处理主键检测）
+	writerDB            *sql.DB                              // ✅ 保存 Writer 的数据库连接
 }
 
 // EngineConfig 引擎配置
@@ -103,12 +111,14 @@ func NewExecutionEngine(
 
 // ExecutionTask 执行任务定义
 type ExecutionTask struct {
-	TaskID      uint
-	ExecutionID uint
-	SourceConfig  ConnectorConfig
-	TargetConfig  ConnectorConfig
-	Transforms    []Transform
-	Mode          ReaderMode
+	TaskID       uint
+	ExecutionID  uint
+	SourceConfig ConnectorConfig
+	TargetConfig ConnectorConfig
+	Transforms   []Transform
+	Mode         ReaderMode
+	// ✅ 新增：源表 Schema（包含检测到的主键信息）
+	SourceSchema *Schema
 }
 
 // Execute 执行数据传输任务
@@ -185,11 +195,32 @@ func (e *ExecutionEngine) Execute(ctx context.Context, task *ExecutionTask) erro
 		return fmt.Errorf("stream process failed: %w", err)
 	}
 
+	// ✅ 新增：在 Flush 前，提取 Writer 的数据库连接（供后处理使用）
+	if dbWriter, ok := writer.(DBWriter); ok {
+		e.writerDB = dbWriter.GetDB()
+		e.logger.Debug("extracted database connection from writer for post-processing")
+	} else {
+		e.writerDB = nil
+	}
+
 	// 5. 刷新写入器缓冲区
 	e.logBuffer.Append("INFO", "Flushing writer buffer")
 	if err := writer.Flush(ctx); err != nil {
 		e.logBuffer.Append("ERROR", fmt.Sprintf("Failed to flush writer: %v", err))
 		return fmt.Errorf("failed to flush writer: %w", err)
+	}
+
+	// ✅ 新增：在 Writer Close 前执行后处理回调
+	// 此时数据已全部写入并 Flush，连接仍然有效
+	if e.postProcessCallback != nil {
+		e.logger.Debug("executing post-processing callback")
+		if err := e.postProcessCallback(ctx, task, writer); err != nil {
+			// 后处理失败仅记录警告，不影响主流程成功
+			e.logger.Warn("post-processing callback failed", "error", err)
+			e.logBuffer.Append("WARN", fmt.Sprintf("Post-processing failed: %v", err))
+		} else {
+			e.logger.Debug("post-processing callback completed successfully")
+		}
 	}
 
 	metrics := e.metricsCollector.GetMetrics()
@@ -231,6 +262,10 @@ func (e *ExecutionEngine) streamProcess(
 			if err == io.EOF {
 				e.logger.Info("reader reached EOF", "batches_processed", batchCount)
 				e.logBuffer.Append("INFO", fmt.Sprintf("Reached end of source data, total batches processed: %d", batchCount))
+				// ✅ 新增：保存最后一个 batch 的 Schema（包含主键检测结果）
+				if batch != nil && batch.Schema != nil {
+					e.finalSchema = batch.Schema
+				}
 				break
 			}
 			e.logBuffer.Append("ERROR", fmt.Sprintf("Reader error at batch %d: %v", batchCount, err))
@@ -270,6 +305,10 @@ func (e *ExecutionEngine) streamProcess(
 
 		// 5. 更新指标
 		e.metricsCollector.RecordBatch(batch)
+		// ✅ 新增：更新最终 Schema（持续保存最后一个 batch 的 Schema）
+		if batch.Schema != nil {
+			e.finalSchema = batch.Schema
+		}
 		batchCount++
 
 		// 6. 保存 Checkpoint（定期）
@@ -347,4 +386,23 @@ func (e *ExecutionEngine) ClearLogs() {
 // SetProgressCallback 设置进度回调函数
 func (e *ExecutionEngine) SetProgressCallback(callback func(logs string, metrics *Metrics)) {
 	e.progressCallback = callback
+}
+
+// SetPostProcessCallback 设置后处理回调函数
+// 回调将在数据传输完成、Writer Flush 后、Close 前执行
+func (e *ExecutionEngine) SetPostProcessCallback(callback PostProcessCallback) {
+	e.postProcessCallback = callback
+}
+
+// ✅ 新增方法：GetFinalSchema 获取最终的 Schema（包含主键信息）
+// 用于后处理阶段提取检测到的主键信息
+func (e *ExecutionEngine) GetFinalSchema() *Schema {
+	return e.finalSchema
+}
+
+// GetWriterDB 获取 Writer 的数据库连接
+// 用于 PostProcessor 复用连接，避免创建新连接
+// 返回 nil 表示 Writer 不是数据库类型
+func (e *ExecutionEngine) GetWriterDB() *sql.DB {
+	return e.writerDB
 }

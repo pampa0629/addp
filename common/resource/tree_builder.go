@@ -103,6 +103,9 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 			// 子节点，添加到父节点的 children
 			if parentNode, exists := nodeMap[*node.ParentNodeID]; exists {
 				parentNode.Children = append(parentNode.Children, treeNode)
+			} else {
+				// 父节点不存在时，作为顶层节点
+				root.Children = append(root.Children, treeNode)
 			}
 		}
 	}

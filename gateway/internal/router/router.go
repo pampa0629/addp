@@ -75,7 +75,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	serviceProxy := proxy.NewServiceProxy(cfg.ServiceServiceURL)
 	copilotProxy := proxy.NewServiceProxy(cfg.CopilotServiceURL)
 
-	// 公开路由（无需鉴权）- 主要是认证相关接口
+	// ============ 公开路由（无需鉴权）============
+	// 注意：这些路由必须在通配符路由之前定义，避免冲突
 	public := router.Group("/api")
 	{
 		// System 模块的认证接口（登录、注册）
@@ -83,13 +84,17 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		public.POST("/system/register", systemProxy.Handle)
 	}
 
-	// 受保护的路由（需要 API Key 鉴权）
+	// ============ 受保护的路由（需要 API Key 鉴权）============
 	api := router.Group("/api")
 	api.Use(apiKeyAuthMiddleware.Handler())      // API Key 验证
 	api.Use(rateLimiterMiddleware.Handler())     // 限流
 	api.Use(accessLoggerMiddleware.Handler())    // 访问日志
 	{
-		// ============ System 模块 ============
+		// ============ 所有模块路由（通配转发）============
+		// 优点：零维护成本、自动支持新增 API、模块完全解耦
+
+		// System 模块 - 排除公开路由（login、register），其他全部转发
+		// 注意：由于 login/register 已在 public 组注册，这里只处理其他路径
 		systemGroup := api.Group("/system")
 		{
 			systemGroup.Any("/users", systemProxy.Handle)
@@ -106,82 +111,28 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			systemGroup.Any("/admin/*path", systemProxy.Handle)
 		}
 
-		// ============ Manager 模块 ============
-		// 使用路径重写，将 /api/manager/* 重写为 /api/*
-		managerGroup := api.Group("/manager")
-		{
-			managerGroup.Any("/engines", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/engines/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/preview", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/preview/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/tree/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/search", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/search/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/operators", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/operators/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/tasks", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/tasks/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/mvt/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/embedding/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/video-stream", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/config/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/pre-cache/*path", managerProxy.HandleWithPathRewrite("/manager"))
-			managerGroup.Any("/spatial/*path", managerProxy.HandleWithPathRewrite("/manager"))
-		}
+		// Manager 模块 - 直接转发（Manager 后端路由已包含 /api/manager 前缀）
+		api.Any("/manager", managerProxy.Handle)
+		api.Any("/manager/*path", managerProxy.Handle)
 
-		// ============ Meta 模块 ============
-		metaGroup := api.Group("/meta")
-		{
-			metaGroup.Any("/engines", metaProxy.Handle)
-			metaGroup.Any("/engines/*path", metaProxy.Handle)
-			metaGroup.Any("/operators", metaProxy.Handle)
-			metaGroup.Any("/operators/*path", metaProxy.Handle)
-			metaGroup.Any("/scan/*path", metaProxy.Handle)
-			metaGroup.Any("/object-storage/*path", metaProxy.Handle)
-		}
+		// Meta 模块 - 直接转发所有请求
+		api.Any("/meta", metaProxy.Handle)
+		api.Any("/meta/*path", metaProxy.Handle)
 
-		// ============ Transfer 模块 ============
-		transferGroup := api.Group("/transfer")
-		{
-			transferGroup.Any("/tasks", transferProxy.Handle)
-			transferGroup.Any("/tasks/*path", transferProxy.Handle)
-			transferGroup.Any("/executions", transferProxy.Handle)
-			transferGroup.Any("/executions/*path", transferProxy.Handle)
-			transferGroup.Any("/connections", transferProxy.Handle)
-			transferGroup.Any("/connections/*path", transferProxy.Handle)
-			transferGroup.Any("/local-engines", transferProxy.Handle)
-			transferGroup.Any("/local-engines/*path", transferProxy.Handle)
-			transferGroup.Any("/system-engines", transferProxy.Handle)
-			transferGroup.Any("/system-engines/*path", transferProxy.Handle)
-			transferGroup.Any("/object-storage/*path", transferProxy.Handle)
-			transferGroup.Any("/transforms", transferProxy.Handle)
-			transferGroup.Any("/transforms/*path", transferProxy.Handle)
-			transferGroup.Any("/mappings", transferProxy.Handle)
-			transferGroup.Any("/mappings/*path", transferProxy.Handle)
-		}
+		// Transfer 模块 - 直接转发所有请求
+		api.Any("/transfer", transferProxy.Handle)
+		api.Any("/transfer/*path", transferProxy.Handle)
 
-		// ============ Develop 模块 ============
-		developGroup := api.Group("/develop")
-		{
-			developGroup.Any("/engines", developProxy.Handle)
-			developGroup.Any("/engines/*path", developProxy.Handle)
-			developGroup.Any("/sql", developProxy.Handle)
-			developGroup.Any("/sql/*path", developProxy.Handle)
-			developGroup.Any("/operators", developProxy.Handle)
-			developGroup.Any("/operators/*path", developProxy.Handle)
-			developGroup.Any("/workflows", developProxy.Handle)
-			developGroup.Any("/workflows/*path", developProxy.Handle)
-		}
+		// Develop 模块 - 直接转发所有请求
+		api.Any("/develop", developProxy.Handle)
+		api.Any("/develop/*path", developProxy.Handle)
 
-		// ============ Service 模块 ============
-		serviceGroup := api.Group("/service")
-		{
-			serviceGroup.Any("/services", serviceProxy.Handle)
-			serviceGroup.Any("/services/*path", serviceProxy.Handle)
-			serviceGroup.Any("/ogc/*path", serviceProxy.Handle)
-		}
+		// Service 模块 - 直接转发所有请求
+		api.Any("/service", serviceProxy.Handle)
+		api.Any("/service/*path", serviceProxy.Handle)
 
-		// ============ Copilot 模块（暂不加前缀，保持原样）============
+		// Copilot 模块 - 使用路径重写
+		api.Any("/copilot", copilotProxy.HandleWithPathRewrite("/api"))
 		api.Any("/copilot/*path", copilotProxy.HandleWithPathRewrite("/api"))
 
 		// ============ 内部 API（跨模块调用，无需模块前缀）============

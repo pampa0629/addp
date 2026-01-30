@@ -17,6 +17,7 @@ export * from './utils/index'
 // Types
 export * from './types/index'
 export * from './types/tree'
+export * from './types/resourceLocator'
 
 // Composables - Authentication
 export {

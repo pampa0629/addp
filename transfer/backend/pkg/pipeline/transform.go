@@ -148,6 +148,26 @@ func (t *FieldMappingTransform) Apply(ctx context.Context, batch *DataBatch) (*D
 		}
 
 		batch.Schema.Fields = newFields
+
+		// ✅ 新增：智能调整主键列名（根据字段映射）
+		if batch.Schema.PrimaryKey != nil && len(batch.Schema.PrimaryKey.Columns) > 0 {
+			newPKColumns := make([]string, len(batch.Schema.PrimaryKey.Columns))
+
+			// 为每个主键列查找对应的映射目标列名
+			for i, pkCol := range batch.Schema.PrimaryKey.Columns {
+				newPKColumns[i] = pkCol // 默认保持原列名
+
+				// 如果主键列被映射了，使用映射后的列名
+				for _, mapping := range t.mappings {
+					if mapping.Source == pkCol {
+						newPKColumns[i] = mapping.Target
+						break
+					}
+				}
+			}
+
+			batch.Schema.PrimaryKey.Columns = newPKColumns
+		}
 	}
 
 	return batch, nil

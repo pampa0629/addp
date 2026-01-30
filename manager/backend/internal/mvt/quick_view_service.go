@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -133,6 +134,8 @@ func (s *QuickViewService) GenerateMixed(
 		"concurrency", cfg.Concurrency)
 
 	// 1. 验证 SRID 一致性（防止元数据与实际数据不一致导致错误）
+	// 注意：此时 cfg.Table、cfg.GeomColumn、cfg.SRID 已经由 Worker 根据 PreparationStatus.QueryInfo 设置
+	// 如果使用了物化视图，这里的参数就是物化视图的参数 (test_mv3857, geom_3857, 3857)
 	actualSRID, err := s.tileGen.VerifySRID(ctx, cfg.EngineID, cfg.TenantID, cfg.Schema, cfg.Table, cfg.GeomColumn, cfg.SRID)
 	if err != nil {
 		logger.L().Error("❌ SRID 验证失败",
@@ -142,50 +145,10 @@ func (s *QuickViewService) GenerateMixed(
 		return nil, fmt.Errorf("SRID 验证失败: %w", err)
 	}
 
-	logger.L().Info("✅ SRID 验证通过",
+	logger.L().Info("✅ SRID 验证通过，开始生成MVT瓦片",
 		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
+		"geom_column", cfg.GeomColumn,
 		"srid", actualSRID)
-
-	// 1.3 运行准备阶段检查（v4.0 新增）
-	logger.L().Info("🔄 开始准备阶段检查",
-		"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table))
-
-	prepStatus, err := s.prepService.RunPreparationChecks(ctx, cfg.TenantID, cfg.EngineID, cfg.Schema, cfg.Table, cfg.GeomColumn)
-	if err != nil {
-		logger.L().Error("❌ 准备阶段检查失败",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"error", err)
-		return nil, fmt.Errorf("准备阶段检查失败: %w", err)
-	}
-
-	logger.L().Info("✅ 准备阶段检查完成",
-		"overall_status", prepStatus.OverallStatus,
-		"summary", prepStatus.Summary)
-
-	// 如果准备阶段失败，返回错误并让前端显示失败信息
-	if prepStatus.OverallStatus == "failed" {
-		// 保存准备状态到数据库（以便前端显示）
-		logger.L().Warn("⚠️ 准备阶段有失败项",
-			"table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"checks", prepStatus.Checks)
-		return nil, fmt.Errorf("准备阶段检查失败，请手动处理后重试")
-	}
-
-	// 🆕 v4.0 检查是否需要使用物化视图（如果原始 SRID 不是 3857）
-	// 原始 SRID 是在 actualSRID 中
-	if actualSRID != 3857 {
-		// 需要使用物化视图，修改配置
-		cfg.Table = fmt.Sprintf("%s_mv3857", cfg.Table)
-		cfg.GeomColumn = "geom_3857"
-		logger.L().Info("🔄 启用物化视图（坐标系转换）",
-			"original_srid", actualSRID,
-			"mv_table", fmt.Sprintf("%s.%s", cfg.Schema, cfg.Table),
-			"mv_geom_column", cfg.GeomColumn)
-	} else {
-		logger.L().Info("✅ 原始表已是 3857 坐标系，无需物化视图",
-			"srid", actualSRID)
-	}
-
 
 	// 1.5 精准统计信息采集（Phase 1诊断）
 	stats, err := s.collectStatistics(ctx, cfg)
@@ -1336,5 +1299,10 @@ func (s *QuickViewService) getResourceMetrics(ctx context.Context, cfg QuickView
 	// - 通过shell命令或专门库获取CPU使用率
 
 	return metrics
+}
+
+// isAlreadyMaterializedView 检查表名是否已经是物化视图格式 (xxx_mv3857)
+func isAlreadyMaterializedView(tableName string) bool {
+	return strings.HasSuffix(tableName, "_mv3857")
 }
 

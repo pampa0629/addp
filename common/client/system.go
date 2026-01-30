@@ -398,8 +398,8 @@ func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, erro
 		return nil, err
 	}
 
-	// 2. 过滤出支持 "sql" 开发模式的引擎
-	queryEngines := commonutils.FilterEnginesByDevMode(allEngines, "sql")
+	// 2. 过滤出支持 "query" 开发模式的引擎
+	queryEngines := commonutils.FilterEnginesByDevMode(allEngines, "query")
 
 	return queryEngines, nil
 }

@@ -81,6 +81,32 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 		task.BatchSize = 1000
 	}
 
+	// ✅ 确保 config.target 中包含后处理配置（显式化）
+	if targetConfig, ok := task.Config["target"].(map[string]interface{}); ok {
+		// 主键创建配置
+		if _, exists := targetConfig["create_primary_key"]; !exists {
+			targetConfig["create_primary_key"] = true // 默认启用
+		}
+		if _, exists := targetConfig["force_primary_key"]; !exists {
+			targetConfig["force_primary_key"] = []string{} // 空数组表示自动检测
+		}
+		if _, exists := targetConfig["primary_key_name"]; !exists {
+			targetConfig["primary_key_name"] = "" // 空字符串表示自动生成
+		}
+
+		// 空间索引配置
+		if _, exists := targetConfig["create_spatial_index"]; !exists {
+			targetConfig["create_spatial_index"] = true // 默认启用
+		}
+
+		// 统计信息更新配置
+		if _, exists := targetConfig["update_statistics"]; !exists {
+			targetConfig["update_statistics"] = true // 默认启用
+		}
+
+		task.Config["target"] = targetConfig
+	}
+
 	// 创建任务
 	if err := s.taskRepo.Create(task); err != nil {
 		s.logger.Error("failed to create task", "error", err)
@@ -137,6 +163,32 @@ func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *mo
 	}
 	if req.Config != nil {
 		task.Config = req.Config
+
+		// ✅ 确保更新后的 config.target 也包含后处理配置
+		if targetConfig, ok := task.Config["target"].(map[string]interface{}); ok {
+			// 主键创建配置
+			if _, exists := targetConfig["create_primary_key"]; !exists {
+				targetConfig["create_primary_key"] = true
+			}
+			if _, exists := targetConfig["force_primary_key"]; !exists {
+				targetConfig["force_primary_key"] = []string{}
+			}
+			if _, exists := targetConfig["primary_key_name"]; !exists {
+				targetConfig["primary_key_name"] = ""
+			}
+
+			// 空间索引配置
+			if _, exists := targetConfig["create_spatial_index"]; !exists {
+				targetConfig["create_spatial_index"] = true
+			}
+
+			// 统计信息更新配置
+			if _, exists := targetConfig["update_statistics"]; !exists {
+				targetConfig["update_statistics"] = true
+			}
+
+			task.Config["target"] = targetConfig
+		}
 	}
 	if req.Schedule != nil {
 		task.Schedule = *req.Schedule

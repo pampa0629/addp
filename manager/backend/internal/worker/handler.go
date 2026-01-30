@@ -203,19 +203,41 @@ func (h *TaskHandler) HandleQuickViewTask(ctx context.Context, task *asynq.Task)
 		OptimizationConfig: payload.OptimizationConfig, // v2.0 传递优化配置
 	}
 
-	// 尝试从 PreparationStatus.QueryInfo 读取查询参数（如果准备已完成）
-	if preCheckQV.PreparationStatus != nil && preCheckQV.PreparationStatus.QueryInfo != nil {
-		queryInfo := preCheckQV.PreparationStatus.QueryInfo
-		if queryInfo.MaterializedViewExists {
-			// 准备阶段创建了物化视图，使用物化视图参数
-			config.Table = queryInfo.QueryTable
-			config.GeomColumn = queryInfo.QueryGeomColumn
-			config.SRID = queryInfo.QuerySRID
-			logger.L().Info("✅ 使用准备阶段的物化视图参数生成瓦片",
-				"materialized_view", fmt.Sprintf("%s.%s", payload.SchemaName, queryInfo.QueryTable),
-				"geom_column", queryInfo.QueryGeomColumn,
-				"srid", queryInfo.QuerySRID)
+	// 从 PreparationStatus.Checks 中提取生成所需的参数
+	if preCheckQV.PreparationStatus != nil && len(preCheckQV.PreparationStatus.Checks) > 0 {
+		// 查找 materialized_view 检查项
+		for _, check := range preCheckQV.PreparationStatus.Checks {
+			if check.Name == "materialized_view" && check.Status == "passed" {
+				// 从 details 中提取参数
+				if viewName, ok := check.Details["view_name"].(string); ok {
+					config.Table = viewName
+				}
+				if primaryKey, ok := check.Details["primary_key"].(string); ok {
+					config.PrimaryKey = primaryKey
+				}
+				if targetSRID, ok := check.Details["target_srid"].(float64); ok {
+					config.SRID = int(targetSRID)
+				}
+				break
+			}
 		}
+
+		// 查找 spatial_index 检查项
+		for _, check := range preCheckQV.PreparationStatus.Checks {
+			if check.Name == "spatial_index" && check.Status == "passed" {
+				// 从 details 中提取几何列名
+				if column, ok := check.Details["column"].(string); ok {
+					config.GeomColumn = column
+				}
+				break
+			}
+		}
+
+		logger.L().Info("✅ 从准备阶段结果中提取生成参数",
+			"table", config.Table,
+			"geom_column", config.GeomColumn,
+			"primary_key", config.PrimaryKey,
+			"srid", config.SRID)
 	}
 
 	// 🔍 日志：记录传递给 MVT Service 的配置

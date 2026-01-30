@@ -832,3 +832,8 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// GetDB 返回底层数据库连接（实现 DBWriter 接口）
+func (w *JDBCWriter) GetDB() *sql.DB {
+	return w.db
+}

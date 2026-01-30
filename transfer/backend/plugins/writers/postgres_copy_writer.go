@@ -549,3 +549,8 @@ func (w *PostgresCOPYWriter) buildConnectionString(config PostgresCOPYConfig) (s
 		config.Host, config.Port, config.Username, config.Password, config.Database, sslMode), nil
 }
 
+// GetDB 返回底层数据库连接（实现 DBWriter 接口）
+func (w *PostgresCOPYWriter) GetDB() *sql.DB {
+	return w.db
+}
+

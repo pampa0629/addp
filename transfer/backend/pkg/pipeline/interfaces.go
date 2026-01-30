@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"time"
 )
@@ -43,6 +44,15 @@ type Writer interface {
 
 	// Close 关闭连接
 	Close() error
+}
+
+// DBWriter 数据库类型的 Writer 扩展接口
+// 允许 PostProcessor 复用数据库连接
+type DBWriter interface {
+	Writer
+	// GetDB 返回底层数据库连接（仅数据库 Writer 实现）
+	// 返回 nil 表示该 Writer 不是数据库类型
+	GetDB() *sql.DB
 }
 
 // Transform 数据转换接口
