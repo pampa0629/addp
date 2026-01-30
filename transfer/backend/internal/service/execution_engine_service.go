@@ -153,9 +153,9 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		// 使用串行引擎执行
 		executeErr = s.engine.Execute(ctx, execTask)
 
-		// 获取执行指标和日志并更新
+		// 获取执行指标并更新（不更新日志，因为日志已通过 AppendLog 实时追加）
 		metrics = s.engine.GetMetrics()
-		s.updateExecutionMetricsWithLogs(executionID, s.engine.GetLogs(), metrics)
+		s.updateExecutionMetrics(executionID, metrics)
 	}
 
 	// 检查执行错误
@@ -468,6 +468,25 @@ func (s *ExecutionEngineService) updateExecutionMetricsWithLogs(executionID uint
 		metricsMap["records_written"] = metrics.RecordsWritten
 		metricsMap["bytes_read"] = metrics.BytesRead
 		metricsMap["bytes_written"] = metrics.BytesWritten
+	}
+
+	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
+		s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
+	}
+}
+
+// updateExecutionMetrics 仅更新执行指标（不更新日志）
+// 用于执行完成后更新指标，避免覆盖通过 AppendLog 追加的日志
+func (s *ExecutionEngineService) updateExecutionMetrics(executionID uint, metrics *pipeline.Metrics) {
+	if metrics == nil {
+		return
+	}
+
+	metricsMap := map[string]interface{}{
+		"records_read":    metrics.RecordsRead,
+		"records_written": metrics.RecordsWritten,
+		"bytes_read":      metrics.BytesRead,
+		"bytes_written":   metrics.BytesWritten,
 	}
 
 	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
