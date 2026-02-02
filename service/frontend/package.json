@@ -18,6 +18,9 @@
     "vue": "^3.4.15",
     "vue-router": "^4.2.5"
   },
+  "overrides": {
+    "vue": "^3.4.15"
+  },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.3",
     "vite": "^5.0.12"

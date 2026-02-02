@@ -6,6 +6,8 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
+	"github.com/addp/service/internal/models"
+	"github.com/addp/service/internal/ogc/common"
 	"github.com/addp/service/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -59,7 +61,7 @@ func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
     <ows:Operation name="GetCapabilities">
       <ows:DCP>
         <ows:HTTP>
-          <ows:Get xlink:href="%s?service=WMTS&request=GetCapabilities"/>
+          <ows:Get xlink:href="%s?service=WMTS&amp;request=GetCapabilities"/>
         </ows:HTTP>
       </ows:DCP>
     </ows:Operation>
@@ -93,7 +95,7 @@ func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 // GET /ogc/wmts/:serviceName/tile/:layer/:z/:x/:y.mvt
 func (h *WMTSHandler) GetTile(c *gin.Context) {
 	serviceName := c.Param("serviceName")
-	layer := c.Param("layer")
+	layerName := c.Param("layer")
 	zStr := c.Param("z")
 	xStr := c.Param("x")
 	yStr := c.Param("y")
@@ -117,6 +119,12 @@ func (h *WMTSHandler) GetTile(c *gin.Context) {
 		return
 	}
 
+	// 验证缩放级别范围（0-22）
+	if z < 0 || z > 22 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Zoom level must be between 0 and 22"})
+		return
+	}
+
 	// 查询服务和图层
 	service, err := h.repo.GetByName(serviceName)
 	if err != nil {
@@ -130,7 +138,7 @@ func (h *WMTSHandler) GetTile(c *gin.Context) {
 	}
 
 	// 查询图层
-	publishedLayer, err := h.repo.GetLayerByName(service.ID, layer)
+	publishedLayer, err := h.repo.GetLayerByName(service.ID, layerName)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Layer not found"})
 		return
@@ -141,11 +149,65 @@ func (h *WMTSHandler) GetTile(c *gin.Context) {
 		return
 	}
 
-	logger.L().Debug("WMTS GetTile requested", "service", serviceName, "layer", layer, "z", z, "x", x, "y", y)
+	// 检查图层是否有几何列（非空间数据不支持 WMTS）
+	if publishedLayer.GeometryColumn == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Layer does not contain spatial data",
+			"hint":  "WMTS requires geometry column",
+		})
+		return
+	}
 
-	// TODO: 调用 Common 模块的 MVT 生成器
-	// tileData, err := h.generateMVTTile(service, publishedLayer, z, x, y)
+	logger.L().Debug("WMTS GetTile requested",
+		"service", serviceName,
+		"layer", layerName,
+		"z", z, "x", x, "y", y)
 
-	// 这是一个占位符响应
-	c.JSON(http.StatusOK, gin.H{"message": "WMTS GetTile not yet fully implemented"})
+	// 生成 MVT 瓦片
+	mvtData, err := h.generateMVTTile(service, publishedLayer, z, x, y)
+	if err != nil {
+		logger.L().Error("Failed to generate MVT tile",
+			"error", err,
+			"service", serviceName,
+			"layer", layerName,
+			"z", z, "x", x, "y", y)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate tile"})
+		return
+	}
+
+	// 空瓦片（无数据）
+	if mvtData == nil || len(mvtData) == 0 {
+		c.Status(http.StatusNoContent) // 204 No Content
+		return
+	}
+
+	// 设置缓存控制头
+	cacheControl := "public, max-age=3600"
+	if publishedLayer.CacheControl != "" {
+		cacheControl = publishedLayer.CacheControl
+	}
+	c.Header("Cache-Control", cacheControl)
+
+	// 返回 MVT 数据
+	c.Data(http.StatusOK, "application/vnd.mapbox-vector-tile", mvtData)
+
+	logger.L().Debug("WMTS GetTile returned",
+		"service", serviceName,
+		"layer", layerName,
+		"z", z, "x", x, "y", y,
+		"size", len(mvtData))
+}
+
+// generateMVTTile 生成 MVT 瓦片（内部方法）
+func (h *WMTSHandler) generateMVTTile(
+	service *models.InternalService,
+	layer *models.InternalServiceLayer,
+	z, x, y int,
+) ([]byte, error) {
+	// TODO: 从 service.EngineID 获取对应的数据库连接
+	// 当前使用默认数据库连接
+	db := h.db
+
+	// 调用 common 模块的 MVT 生成器
+	return common.GenerateMVTTile(db, layer, z, x, y)
 }

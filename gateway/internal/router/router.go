@@ -6,7 +6,9 @@ import (
 	"log"
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/cors"
+	"github.com/addp/gateway/internal"
 	"github.com/addp/gateway/internal/cache"
 	"github.com/addp/gateway/internal/config"
 	"github.com/addp/gateway/internal/middleware"
@@ -41,6 +43,26 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	rateLimiterMiddleware := middleware.NewRateLimiterMiddleware(redisClient)
 	accessLoggerMiddleware := middleware.NewAccessLoggerMiddleware(db)
 
+	// 初始化模块发现（如果启用）
+	var moduleDiscovery *internal.ModuleDiscovery
+	if cfg.ModuleRegistryEnabled {
+		log.Println("🔍 启用模块发现，从 System 加载模块列表...")
+
+		// 创建用于模块发现的 System 客户端
+		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		moduleDiscovery = internal.NewModuleDiscovery(registryClient, cfg.ModuleRefreshInterval)
+
+		// 启动模块发现
+		if err := moduleDiscovery.Start(cfg.ModuleRefreshInterval); err != nil {
+			log.Printf("⚠️ 模块发现启动失败，回退到硬编码路由: %v", err)
+			moduleDiscovery = nil // 回退到硬编码路由
+		} else {
+			log.Println("✅ 模块发现已启动")
+		}
+	} else {
+		log.Println("ℹ️  模块发现已禁用，使用硬编码路由")
+	}
+
 	// 健康检查（无需鉴权）
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{
@@ -51,10 +73,23 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 
 	// 网关首页（无需鉴权）
 	router.GET("/", func(c *gin.Context) {
-		c.JSON(200, gin.H{
+		response := gin.H{
 			"message": "全域数据平台 API Gateway",
 			"version": "1.0.0",
-			"services": gin.H{
+		}
+
+		// 如果启用了模块发现，显示动态模块列表
+		if moduleDiscovery != nil {
+			modules := moduleDiscovery.GetModules()
+			moduleMap := make(map[string]string)
+			for name, info := range modules {
+				moduleMap[name] = info.ModuleURL
+			}
+			response["modules"] = moduleMap
+			response["module_discovery"] = "enabled"
+		} else {
+			// 使用硬编码服务列表
+			response["services"] = gin.H{
 				"system":   cfg.SystemServiceURL,
 				"manager":  cfg.ManagerServiceURL,
 				"meta":     cfg.MetaServiceURL,
@@ -62,11 +97,14 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				"develop":  cfg.DevelopServiceURL,
 				"service":  cfg.ServiceServiceURL,
 				"copilot":  cfg.CopilotServiceURL,
-			},
-		})
+			}
+			response["module_discovery"] = "disabled"
+		}
+
+		c.JSON(200, response)
 	})
 
-	// 创建代理
+	// 创建硬编码代理（作为 fallback）
 	systemProxy := proxy.NewServiceProxy(cfg.SystemServiceURL)
 	managerProxy := proxy.NewServiceProxy(cfg.ManagerServiceURL)
 	metaProxy := proxy.NewServiceProxy(cfg.MetaServiceURL)
@@ -80,8 +118,25 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	public := router.Group("/api")
 	{
 		// System 模块的认证接口（登录、注册）
-		public.POST("/system/login", systemProxy.Handle)
-		public.POST("/system/register", systemProxy.Handle)
+		if moduleDiscovery != nil {
+			public.POST("/system/login", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("system"); err == nil {
+					p.Handle(c)
+				} else {
+					systemProxy.Handle(c) // fallback
+				}
+			})
+			public.POST("/system/register", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("system"); err == nil {
+					p.Handle(c)
+				} else {
+					systemProxy.Handle(c) // fallback
+				}
+			})
+		} else {
+			public.POST("/system/login", systemProxy.Handle)
+			public.POST("/system/register", systemProxy.Handle)
+		}
 	}
 
 	// ============ 受保护的路由（需要 API Key 鉴权）============
@@ -90,59 +145,129 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	api.Use(rateLimiterMiddleware.Handler())     // 限流
 	api.Use(accessLoggerMiddleware.Handler())    // 访问日志
 	{
-		// ============ 所有模块路由（通配转发）============
-		// 优点：零维护成本、自动支持新增 API、模块完全解耦
+		// 如果启用了模块发现，使用动态路由
+		if moduleDiscovery != nil {
+			log.Println("✅ 使用动态路由")
 
-		// System 模块 - 排除公开路由（login、register），其他全部转发
-		// 注意：由于 login/register 已在 public 组注册，这里只处理其他路径
-		systemGroup := api.Group("/system")
-		{
-			systemGroup.Any("/users", systemProxy.Handle)
-			systemGroup.Any("/users/*path", systemProxy.Handle)
-			systemGroup.Any("/tenants", systemProxy.Handle)
-			systemGroup.Any("/tenants/*path", systemProxy.Handle)
-			systemGroup.Any("/engines", systemProxy.Handle)
-			systemGroup.Any("/engines/*path", systemProxy.Handle)
-			systemGroup.Any("/logs", systemProxy.Handle)
-			systemGroup.Any("/logs/*path", systemProxy.Handle)
-			systemGroup.Any("/applications", systemProxy.Handle)
-			systemGroup.Any("/applications/*path", systemProxy.Handle)
-			systemGroup.Any("/api-docs/*path", systemProxy.Handle)
-			systemGroup.Any("/admin/*path", systemProxy.Handle)
-		}
+			// 动态路由：自动支持所有注册的模块
+			api.Any("/:module", func(c *gin.Context) {
+				moduleName := c.Param("module")
 
-		// Manager 模块 - 直接转发（Manager 后端路由已包含 /api/manager 前缀）
-		api.Any("/manager", managerProxy.Handle)
-		api.Any("/manager/*path", managerProxy.Handle)
+				// 从模块发现获取代理
+				p, err := moduleDiscovery.GetProxy(moduleName)
+				if err != nil {
+					// Fallback 到硬编码路由
+					switch moduleName {
+					case "system":
+						systemProxy.Handle(c)
+					case "manager":
+						managerProxy.Handle(c)
+					case "meta":
+						metaProxy.Handle(c)
+					case "transfer":
+						transferProxy.Handle(c)
+					case "develop":
+						developProxy.Handle(c)
+					case "service":
+						serviceProxy.Handle(c)
+					case "copilot":
+						copilotProxy.HandleWithPathRewrite("/api")(c)
+					default:
+						c.JSON(503, gin.H{
+							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
+						})
+					}
+					return
+				}
 
-		// Meta 模块 - 直接转发所有请求
-		api.Any("/meta", metaProxy.Handle)
-		api.Any("/meta/*path", metaProxy.Handle)
+				p.Handle(c)
+			})
 
-		// Transfer 模块 - 直接转发所有请求
-		api.Any("/transfer", transferProxy.Handle)
-		api.Any("/transfer/*path", transferProxy.Handle)
+			api.Any("/:module/*path", func(c *gin.Context) {
+				moduleName := c.Param("module")
 
-		// Develop 模块 - 直接转发所有请求
-		api.Any("/develop", developProxy.Handle)
-		api.Any("/develop/*path", developProxy.Handle)
+				// 从模块发现获取代理
+				p, err := moduleDiscovery.GetProxy(moduleName)
+				if err != nil {
+					// Fallback 到硬编码路由
+					switch moduleName {
+					case "system":
+						systemProxy.Handle(c)
+					case "manager":
+						managerProxy.Handle(c)
+					case "meta":
+						metaProxy.Handle(c)
+					case "transfer":
+						transferProxy.Handle(c)
+					case "develop":
+						developProxy.Handle(c)
+					case "service":
+						serviceProxy.Handle(c)
+					case "copilot":
+						copilotProxy.HandleWithPathRewrite("/api")(c)
+					default:
+						c.JSON(503, gin.H{
+							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
+						})
+					}
+					return
+				}
 
-		// Service 模块 - 直接转发所有请求
-		api.Any("/service", serviceProxy.Handle)
-		api.Any("/service/*path", serviceProxy.Handle)
+				p.Handle(c)
+			})
+		} else {
+			// 使用硬编码路由（原有逻辑保持不变）
+			log.Println("ℹ️  使用硬编码路由")
 
-		// Copilot 模块 - 使用路径重写
-		api.Any("/copilot", copilotProxy.HandleWithPathRewrite("/api"))
-		api.Any("/copilot/*path", copilotProxy.HandleWithPathRewrite("/api"))
+			// System 模块 - 排除公开路由（login、register），其他全部转发
+			systemGroup := api.Group("/system")
+			{
+				systemGroup.Any("/users", systemProxy.Handle)
+				systemGroup.Any("/users/*path", systemProxy.Handle)
+				systemGroup.Any("/tenants", systemProxy.Handle)
+				systemGroup.Any("/tenants/*path", systemProxy.Handle)
+				systemGroup.Any("/engines", systemProxy.Handle)
+				systemGroup.Any("/engines/*path", systemProxy.Handle)
+				systemGroup.Any("/logs", systemProxy.Handle)
+				systemGroup.Any("/logs/*path", systemProxy.Handle)
+				systemGroup.Any("/applications", systemProxy.Handle)
+				systemGroup.Any("/applications/*path", systemProxy.Handle)
+				systemGroup.Any("/api-docs/*path", systemProxy.Handle)
+				systemGroup.Any("/admin/*path", systemProxy.Handle)
+			}
 
-		// ============ 内部 API（跨模块调用，无需模块前缀）============
-		internalGroup := api.Group("/internal")
-		{
-			// System 内部 API
-			internalGroup.Any("/engines", systemProxy.Handle)
-			internalGroup.Any("/engines/*path", systemProxy.Handle)
-			internalGroup.Any("/users/*path", systemProxy.Handle)
-			internalGroup.Any("/tenants/*path", systemProxy.Handle)
+			// Manager 模块
+			api.Any("/manager", managerProxy.Handle)
+			api.Any("/manager/*path", managerProxy.Handle)
+
+			// Meta 模块
+			api.Any("/meta", metaProxy.Handle)
+			api.Any("/meta/*path", metaProxy.Handle)
+
+			// Transfer 模块
+			api.Any("/transfer", transferProxy.Handle)
+			api.Any("/transfer/*path", transferProxy.Handle)
+
+			// Develop 模块
+			api.Any("/develop", developProxy.Handle)
+			api.Any("/develop/*path", developProxy.Handle)
+
+			// Service 模块
+			api.Any("/service", serviceProxy.Handle)
+			api.Any("/service/*path", serviceProxy.Handle)
+
+			// Copilot 模块
+			api.Any("/copilot", copilotProxy.HandleWithPathRewrite("/api"))
+			api.Any("/copilot/*path", copilotProxy.HandleWithPathRewrite("/api"))
+
+			// 内部 API（跨模块调用）
+			internalGroup := api.Group("/internal")
+			{
+				internalGroup.Any("/engines", systemProxy.Handle)
+				internalGroup.Any("/engines/*path", systemProxy.Handle)
+				internalGroup.Any("/users/*path", systemProxy.Handle)
+				internalGroup.Any("/tenants/*path", systemProxy.Handle)
+			}
 		}
 	}
 

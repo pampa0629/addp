@@ -877,3 +877,217 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 - **影响范围：** 所有工作流引擎（Python、Math、Spark）
 - **根本原因：** API 路由规范不一致
 - **验证命令：** `bash scripts/dev/restart.sh && tail -f logs/*-workflow-engine-stderr.log`
+
+---
+
+## PostgreSQL 字段名大小写问题全面修复（2026-01-30）
+
+### 问题描述
+
+PostgreSQL 中不带引号的标识符会自动转换为小写，导致混合大小写的字段名（如 SuperMap 的 `SmID`、`SmGeometry`，ArcGIS 的 `OBJECTID`、`SHAPE`）在 SQL 查询中失败。
+
+### 症状
+
+1. **MVT 物化视图创建失败**：
+   ```
+   ERROR: column "smgeometry" does not exist
+   ```
+
+2. **OGC WFS 查询失败**：
+   ```
+   ERROR: column "shape" does not exist
+   ```
+
+3. **数据预览正常，但 MVT 瓦片生成失败**
+
+### 根本原因
+
+动态 SQL 构建时未使用双引号包裹标识符，导致 PostgreSQL 自动将标识符转换为小写。
+
+**错误示例**：
+```go
+// ❌ 错误：SmGeometry 会被转换为 smgeometry
+query := fmt.Sprintf("SELECT %s FROM %s.%s", geomColumn, schema, table)
+```
+
+**正确示例**：
+```go
+// ✅ 正确：使用双引号保留大小写
+query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, geomColumn, schema, table)
+```
+
+### 修复内容
+
+#### 已修复的文件（共 7 处）
+
+**Manager 模块（5 处）**：
+
+1. [manager/backend/internal/mvt/preparation_service.go:596](../manager/backend/internal/mvt/preparation_service.go#L596)
+   - 物化视图创建：`FROM %s.%s` → `FROM "%s"."%s"`
+
+2. [manager/backend/internal/mvt/preparation_service.go:632](../manager/backend/internal/mvt/preparation_service.go#L632)
+   - 索引创建：添加双引号到索引名、表名、列名
+
+3. [manager/backend/internal/mvt/preparation_service.go:658](../manager/backend/internal/mvt/preparation_service.go#L658)
+   - ANALYZE 语句：`ANALYZE %s.%s` → `ANALYZE "%s"."%s"`
+
+4. [manager/backend/internal/mvt/quick_view_service.go:1164](../manager/backend/internal/mvt/quick_view_service.go#L1164)
+   - Quick View 物化视图创建
+
+5. [manager/backend/internal/mvt/quick_view_service.go:1271](../manager/backend/internal/mvt/quick_view_service.go#L1271)
+   - ST_Extent 查询
+
+**Service 模块（2 处）**：
+
+6. [service/backend/internal/ogc/common/feature_query.go:58](../service/backend/internal/ogc/common/feature_query.go#L58)
+   - WFS 要素查询：几何列转换
+
+7. [service/backend/internal/ogc/common/feature_query.go:78](../service/backend/internal/ogc/common/feature_query.go#L78)
+   - WFS 空间过滤：几何列引用
+
+#### 已确认正确的模块
+
+以下模块无需修复，已正确处理标识符：
+
+- ✅ **Common 模块** - [common/spatial/query.go](../common/spatial/query.go)
+- ✅ **Transfer 模块** - 完善的 `quoteIdentifier()` 机制
+- ✅ **Meta 模块** - 所有查询都正确使用双引号
+- ✅ **Develop 模块** - 直接执行用户 SQL
+- ✅ **Orchestrator 模块** - 无动态 SQL 构建
+- ✅ **System 模块** - 无动态 SQL 构建
+- ✅ **Labs 模块** - 已正确处理
+
+### 长期解决方案：统一 SQL 构建工具
+
+为防止未来出现类似问题，创建了统一的 SQL 构建工具库：
+
+**位置**：[common/sqlbuilder/](../common/sqlbuilder/)
+
+**核心功能**：
+```go
+import "github.com/addp/common/sqlbuilder"
+
+// 1. 引用标识符
+column := sqlbuilder.QuoteIdentifier("SmID")  // "SmID"
+
+// 2. 完整表名
+table := sqlbuilder.QualifiedTableName("public", "MyTable")  // "public"."MyTable"
+
+// 3. 几何转换
+geom := sqlbuilder.GeometryTransform("SmGeometry", 3857)  // ST_Transform("SmGeometry", 3857)
+
+// 4. 完整 SQL 语句
+sql := sqlbuilder.CreateIndexSQL("idx_geom", "public", "MyTable", 
+    []string{"SmGeometry"}, "GIST", true)
+// CREATE INDEX CONCURRENTLY "idx_geom" ON "public"."MyTable" USING GIST ("SmGeometry")
+```
+
+**文档**：[common/sqlbuilder/README.md](../common/sqlbuilder/README.md)
+
+### 验证步骤
+
+#### 1. 重启相关服务
+
+```bash
+# 重启 Manager 模块
+bash scripts/dev/restart.sh -manager
+
+# 重启 Service 模块
+bash scripts/dev/restart.sh -service
+```
+
+#### 2. 测试混合大小写字段
+
+创建测试表：
+```sql
+CREATE TABLE public.test_mixed_case (
+    "SmID" SERIAL PRIMARY KEY,
+    "SmGeometry" geometry(Point, 4326),
+    "DataName" VARCHAR(100)
+);
+
+INSERT INTO public.test_mixed_case ("SmGeometry", "DataName")
+VALUES (ST_GeomFromText('POINT(120.0 30.0)', 4326), 'Test Data');
+```
+
+测试流程：
+1. 在 Manager 数据浏览器中浏览该表 ✅
+2. 验证数据预览正常显示 ✅
+3. 点击"准备预缓存"，验证物化视图创建成功 ✅
+4. 验证 MVT 瓦片可以正常生成 ✅
+5. 在 Service 模块中发布 WFS 服务 ✅
+6. 验证 WFS GetFeature 请求正常 ✅
+
+### 最佳实践
+
+#### 1. 始终使用双引号
+
+```go
+// ❌ 避免
+query := fmt.Sprintf("SELECT %s FROM %s.%s", col, schema, table)
+
+// ✅ 推荐
+query := fmt.Sprintf(`SELECT "%s" FROM "%s"."%s"`, col, schema, table)
+```
+
+#### 2. 使用 sqlbuilder 工具
+
+```go
+// ✅ 更好：使用统一工具
+import "github.com/addp/common/sqlbuilder"
+
+query := sqlbuilder.SelectSQL(
+    []string{col},
+    schema,
+    table,
+    nil, "", 0, 0,
+)
+```
+
+#### 3. WHERE 条件中的列名
+
+```go
+// ❌ 错误
+whereClause := fmt.Sprintf("WHERE %s > 100", col)
+
+// ✅ 正确
+whereClause := fmt.Sprintf(`WHERE "%s" > 100`, col)
+
+// ✅ 更好：使用工具
+whereClause := sqlbuilder.WhereClause([]string{
+    fmt.Sprintf(`"%s" > 100`, col),
+})
+```
+
+### 影响范围
+
+| 模块 | 修复文件数 | 影响功能 | 风险等级 |
+|------|-----------|---------|----------|
+| Manager | 2 | MVT 预缓存、物化视图创建 | 🔴 高 |
+| Service | 1 | OGC WFS 要素查询 | 🟠 中 |
+| Transfer | 0 | 已正确实现 | ✅ 无 |
+| Meta | 0 | 已正确实现 | ✅ 无 |
+| Common | 0 | 已正确实现 | ✅ 无 |
+
+### 相关文档
+
+- [字段名大小写梳理计划](./字段名的大小写梳理.md) - 完整的排查和修复计划
+- [SQL Builder 使用文档](../common/sqlbuilder/README.md) - 统一 SQL 构建工具
+- [PostgreSQL 标识符文档](https://www.postgresql.org/docs/current/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS)
+
+### 修复日期
+
+- **发现日期：** 2026-01-30
+- **修复版本：** v0.0.24+
+- **影响范围：** Manager MVT、Service OGC
+- **根本原因：** 动态 SQL 构建未使用双引号包裹标识符
+- **长期方案：** 创建统一的 sqlbuilder 工具库
+
+### 经验教训
+
+1. **Transfer 模块的最佳实践值得借鉴**：已实现统一的 `quoteIdentifier()` 方法
+2. **Meta 模块的正确性**：元数据扫描和空间元数据处理完全正确
+3. **工具化是关键**：创建统一工具库可以防止未来重复出现类似问题
+4. **测试覆盖很重要**：需要针对混合大小写字段的测试用例
+5. **文档化经验**：及时记录问题和解决方案，避免重复踩坑
+

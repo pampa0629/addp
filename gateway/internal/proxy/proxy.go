@@ -22,6 +22,11 @@ func NewServiceProxy(targetURL string) *ServiceProxy {
 	}
 }
 
+// GetTargetURL 获取目标服务 URL
+func (p *ServiceProxy) GetTargetURL() string {
+	return p.targetURL
+}
+
 func (p *ServiceProxy) Handle(c *gin.Context) {
 	// 构建目标 URL
 	path := c.Request.URL.Path

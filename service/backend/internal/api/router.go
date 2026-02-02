@@ -17,6 +17,8 @@ func SetupRouter(
 	wfsHandler *WFSHandler,
 	ogcAPIHandler *OGCAPIHandler,
 	wmtsHandler *WMTSHandler,
+	restQueryHandler *RestQueryHandler,
+	engineHandler *EngineHandler,
 	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
@@ -52,6 +54,12 @@ func SetupRouter(
 	{
 		wmts.GET("/:serviceName", wmtsHandler.GetCapabilities)
 		wmts.GET("/:serviceName/tile/:layer/:z/:x/:y.mvt", wmtsHandler.GetTile)
+	}
+
+	// REST Query API 端点（公开访问，无需认证）
+	query := router.Group("/api/query")
+	{
+		query.GET("/:serviceName/:layerName", restQueryHandler.Query)
 	}
 
 	// API 路由组（需要认证）
@@ -105,7 +113,11 @@ func SetupRouter(
 		{
 			data.POST("/query", dataServiceHandler.Query)
 			data.POST("/aggregate", dataServiceHandler.Aggregate)
+			data.GET("/structure", dataServiceHandler.GetTableStructure)
 		}
+
+		// 引擎管理 API
+		api.GET("/engines", engineHandler.ListEngines)
 
 		// TODO: OGC API - Features
 		// ogc := api.Group("/ogc")

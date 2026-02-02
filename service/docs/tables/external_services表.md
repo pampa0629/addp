@@ -228,7 +228,7 @@
 
 **响应**（204 No Content）
 
-**注意**：软删除，关联的 service_layers 记录会级联删除（ON DELETE CASCADE）。
+**注意**：软删除，关联的 external_service_layers 记录会级联删除（ON DELETE CASCADE）。
 
 ---
 
@@ -469,5 +469,5 @@ curl -X POST http://localhost:8085/api/service/registry/services \
 
 ## 十一、相关文档
 
-- [service_layers表](./service_layers表.md) - 服务图层表
+- [external_service_layers表](./external_service_layers表.md) - 外部服务图层表
 - [数据库架构](../数据库架构.md) - Service 模块架构

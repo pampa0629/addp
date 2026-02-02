@@ -449,7 +449,12 @@
       "Bash(mc alias set:*)",
       "Bash(/tmp/test_quick_view.sh:*)",
       "Bash(docker network:*)",
-      "Bash(go list:*)"
+      "Bash(go list:*)",
+      "Bash(npm --version:*)",
+      "Bash(pkg_file=\"/Users/pampa/code/addp/$dir/frontend/package.json\")",
+      "Bash(if [ -f \"$pkg_file\" ])",
+      "Bash(if ! grep -q \"\"\"overrides\"\":\" \"$pkg_file\")",
+      "Bash(PGPASSWORD=addp_business_pass psql:*)"
     ],
     "deny": [],
     "ask": [],

@@ -10,6 +10,7 @@ import (
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/events"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/utils"
 	"github.com/addp/meta/internal/api"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/repository"
@@ -48,6 +49,12 @@ func main() {
 		AddSource: &cfg.LogAddSource,
 		File:      cfg.LogFile,
 	})
+
+	// 检查端口是否可用
+	if err := utils.CheckPortAvailable(cfg.ServerPort); err != nil {
+		logger.L().Error("端口检查失败", "error", err, "port", cfg.ServerPort)
+		os.Exit(1)
+	}
 
 	logger.L().Info("Meta 服务配置加载完成",
 		"port", cfg.ServerPort,
@@ -184,6 +191,58 @@ func main() {
 
 	// 设置路由
 	router := api.SetupRouter(cfg, engineService, scanService, taskService, redisClient, systemClient)
+
+	// ========== 模块注册（注册到 System service_registry）==========
+	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		go func() {
+			// 等待3秒确保服务完全启动
+			time.Sleep(3 * time.Second)
+
+			// 构建服务URL
+			serviceHost := utils.GetServiceHost()
+			port := utils.GetModulePort("meta")
+			serviceURL := utils.BuildServiceURL(serviceHost, port)
+
+			// 创建 System 客户端用于模块注册
+			registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+
+			// 注册服务
+			registrationReq := &commonClient.ModuleRegistrationRequest{
+				ModuleName:    "meta",
+				ModuleURL:     serviceURL,
+				RoutePrefix:    "/meta",
+				HealthCheckURL: serviceURL + "/health",
+				Metadata: map[string]interface{}{
+					"module": "meta",
+				},
+			}
+
+			maxRetries := 3
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := registryClient.RegisterModule(registrationReq); err != nil {
+					logger.L().Warn("Meta 模块注册失败",
+						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
+						"error", err)
+					time.Sleep(time.Duration(attempt*5) * time.Second)
+					continue
+				}
+				logger.L().Info("Meta 模块注册成功", "url", serviceURL)
+				break
+			}
+
+			// 启动心跳
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				if err := registryClient.SendHeartbeat("meta"); err != nil {
+					logger.L().Error("Meta 心跳失败", "error", err)
+				} else {
+					logger.L().Debug("Meta 心跳成功")
+				}
+			}
+		}()
+	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Meta 服务的外部访问 URL（供 Orchestrator 调用）

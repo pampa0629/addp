@@ -1,6 +1,6 @@
 <template>
-  <div class="internal-service-list">
-    <h1>内部服务管理</h1>
+  <div class="published-service-list">
+    <h1>服务发布</h1>
 
     <!-- 操作栏 -->
     <div class="toolbar">
@@ -8,7 +8,7 @@
         <input
           v-model="searchQuery"
           type="text"
-          placeholder="搜索服务名称或标题..."
+          placeholder="搜索已发布服务..."
           @keyup.enter="handleSearch"
         />
         <button @click="handleSearch" class="btn btn-primary">搜索</button>
@@ -86,10 +86,10 @@
 </template>
 
 <script>
-import internalServiceAPI from '@/api/internalService'
+import publishedServiceAPI from '@/api/publishedService'
 
 export default {
-  name: 'InternalServiceList',
+  name: 'PublishedServiceList',
   data() {
     return {
       services: [],
@@ -122,9 +122,9 @@ export default {
           params.search = this.searchQuery
         }
 
-        const response = await internalServiceAPI.listServices(params)
-        this.services = response.data.data
-        this.total = response.data.total
+        const response = await publishedServiceAPI.listServices(params)
+        this.services = response.data || []
+        this.total = response.total || 0
       } catch (error) {
         this.error = '加载服务列表失败: ' + (error.message || '未知错误')
         console.error('Failed to load services:', error)
@@ -144,7 +144,7 @@ export default {
       }
 
       try {
-        await internalServiceAPI.deleteService(id)
+        await publishedServiceAPI.deleteService(id)
         alert('服务已删除')
         this.loadServices()
       } catch (error) {
@@ -154,19 +154,19 @@ export default {
     },
 
     goToCreate() {
-      this.$router.push('/internal-services/create')
+      this.$router.push('/published-services/create')
     },
 
     goToDetail(id) {
-      this.$router.push(`/internal-services/${id}`)
+      this.$router.push(`/published-services/${id}`)
     },
 
     goToEdit(id) {
-      this.$router.push(`/internal-services/${id}/edit`)
+      this.$router.push(`/published-services/${id}/edit`)
     },
 
     goToTest(id) {
-      this.$router.push(`/internal-services/${id}/test`)
+      this.$router.push(`/published-services/${id}/test`)
     },
 
     previousPage() {
@@ -201,7 +201,7 @@ export default {
 </script>
 
 <style scoped>
-.internal-service-list {
+.published-service-list {
   padding: 20px;
 }
 

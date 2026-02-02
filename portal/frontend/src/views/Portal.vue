@@ -148,17 +148,21 @@
               <el-icon><Link /></el-icon>
               <span>数据服务</span>
             </template>
-            <el-menu-item index="/service/services">
-              <el-icon><List /></el-icon>
-              <span>服务管理</span>
-            </el-menu-item>
-            <el-menu-item index="/service/catalog">
-              <el-icon><Box /></el-icon>
-              <span>服务目录</span>
-            </el-menu-item>
             <el-menu-item index="/service/query">
               <el-icon><Search /></el-icon>
-              <span>数据查询</span>
+              <span>数据服务</span>
+            </el-menu-item>
+            <el-menu-item index="/service/internal-services">
+              <el-icon><Grid /></el-icon>
+              <span>空间服务</span>
+            </el-menu-item>
+            <el-menu-item index="/service/services">
+              <el-icon><Connection /></el-icon>
+              <span>服务注册</span>
+            </el-menu-item>
+            <el-menu-item index="/service/catalog">
+              <el-icon><FolderOpened /></el-icon>
+              <span>服务目录</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -300,7 +304,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit, Key, Notebook, Delete } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection, Grid, FolderOpened } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -458,9 +462,10 @@ const handleMenuSelect = (index) => {
         url = `${moduleUrls[module]}/`
       }
     } else if (module === 'service') {
-      // Service 模块的路由: /services, /catalog, /query 等 (不需要 /service 前缀)
+      // Service 模块的路由: /services, /internal-services, /catalog, /query 等 (不需要 /service 前缀)
       const servicePageMap = {
         'services': 'services',
+        'internal-services': 'internal-services',
         'catalog': 'catalog',
         'query': 'query',
         '': 'services'

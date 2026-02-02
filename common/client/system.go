@@ -718,3 +718,191 @@ func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
 
 	return nil
 }
+
+// ==================== 模块注册与发现 API ====================
+
+// ModuleRegistrationRequest 模块注册请求
+type ModuleRegistrationRequest struct {
+	ModuleName     string                 `json:"module_name"`
+	ModuleURL      string                 `json:"module_url"`
+	RoutePrefix    string                 `json:"route_prefix"`
+	HealthCheckURL string                 `json:"health_check_url,omitempty"`
+	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// ModuleInfo 模块信息
+type ModuleInfo struct {
+	ID             uint                   `json:"id"`
+	ModuleName     string                 `json:"module_name"`
+	ModuleURL      string                 `json:"module_url"`
+	RoutePrefix    string                 `json:"route_prefix"`
+	HealthCheckURL string                 `json:"health_check_url"`
+	Status         string                 `json:"status"`
+	LastHeartbeat  time.Time              `json:"last_heartbeat"`
+	Metadata       map[string]interface{} `json:"metadata"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+}
+
+// RegisterModule 注册模块
+func (c *SystemClient) RegisterModule(req *ModuleRegistrationRequest) error {
+	url := fmt.Sprintf("%s/api/internal/modules/register", c.baseURL)
+
+	bodyBytes, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("register module failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// SendHeartbeat 发送心跳
+func (c *SystemClient) SendHeartbeat(moduleName string) error {
+	url := fmt.Sprintf("%s/api/internal/modules/heartbeat", c.baseURL)
+
+	reqBody := map[string]string{"module_name": moduleName}
+	bodyBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("heartbeat failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// GetModules 获取模块列表
+func (c *SystemClient) GetModules() ([]*ModuleInfo, error) {
+	url := fmt.Sprintf("%s/api/internal/modules", c.baseURL)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get modules failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Modules []*ModuleInfo `json:"modules"`
+		Count   int           `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Modules, nil
+}
+
+// GetActiveModules 获取活跃模块列表
+func (c *SystemClient) GetActiveModules() ([]*ModuleInfo, error) {
+	url := fmt.Sprintf("%s/api/internal/modules?status=up", c.baseURL)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get active modules failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Modules []*ModuleInfo `json:"modules"`
+		Count   int           `json:"count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Modules, nil
+}
+
+// GetModule 获取单个模块信息
+func (c *SystemClient) GetModule(moduleName string) (*ModuleInfo, error) {
+	url := fmt.Sprintf("%s/api/internal/modules/%s", c.baseURL, moduleName)
+
+	httpReq, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(httpReq)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get module failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var module ModuleInfo
+	if err := json.NewDecoder(resp.Body).Decode(&module); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &module, nil
+}
+

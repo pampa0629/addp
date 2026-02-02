@@ -23,12 +23,8 @@ export default defineConfig({
       clientPort: 5170
     },
     proxy: {
-      '/api/meta': {
-        target: 'http://localhost:8082',
-        changeOrigin: true
-      },
       '/api': {
-        target: 'http://localhost:8180',
+        target: 'http://localhost:8000', // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

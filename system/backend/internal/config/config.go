@@ -110,9 +110,13 @@ func Load() *Config {
 	}
 	log.Printf("✅ CORS AllowedOrigins: %v", allowedOrigins)
 
+	// 读取端口配置（统一使用 {MODULE}_BACKEND_PORT 格式）
+	port := getEnv("SYSTEM_BACKEND_PORT", "8180")
+	serverAddr := ":" + port
+
 	return &Config{
 		Env:                     env,
-		ServerAddr:              getEnv("SERVER_ADDR", ":8180"),
+		ServerAddr:              serverAddr,
 		DatabaseURL:             "", // PostgreSQL 不使用此字段
 		JWTSecret:               jwtSecret,
 		EncryptionKey:           encryptionKey,

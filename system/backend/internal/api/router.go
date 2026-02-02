@@ -66,6 +66,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	engineRepo := repository.NewEngineRepository(db)
 	tenantRepo := repository.NewTenantRepository(db)
 	appRepo := repository.NewApplicationRepository(db)
+	moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
 
 	// 初始化 services
 	userService := service.NewUserService(userRepo)
@@ -76,6 +77,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	appService := service.NewApplicationService(appRepo)
 	taskProviderService := service.NewTaskProviderService(db)
 	cleanupOrchestratorService := service.NewCleanupOrchestratorService(redisClient)
+	moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
 
 	// 日志中间件
 	router.Use(middleware.LoggerMiddleware(logService))
@@ -223,6 +225,14 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		internalHandler := NewInternalHandler(appService)
 		internal.GET("/api-keys/validate", internalHandler.ValidateAPIKey)
 		internal.GET("/api-keys/bulk", internalHandler.BulkGetAPIKeys)
+
+		// 模块注册与发现 API（供各模块注册和 Gateway 查询）
+		moduleRegistryHandler := NewModuleRegistryHandler(moduleRegistryService)
+		internal.POST("/modules/register", moduleRegistryHandler.Register)
+		internal.POST("/modules/heartbeat", moduleRegistryHandler.Heartbeat)
+		internal.GET("/modules", moduleRegistryHandler.ListModules)
+		internal.GET("/modules/:name", moduleRegistryHandler.GetModule)
+		internal.DELETE("/modules/:name", moduleRegistryHandler.DeleteModule)
 	}
 
 	return router

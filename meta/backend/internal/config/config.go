@@ -60,7 +60,7 @@ func LoadConfig() *Config {
 	systemURL := commonConfig.GetEnv("SYSTEM_SERVICE_URL", "http://localhost:8180")
 
 	cfg := &Config{
-		ServerPort:        commonConfig.GetEnv("SERVER_PORT", "8082"),
+		ServerPort:        commonConfig.GetEnv("META_BACKEND_PORT", "8082"),
 		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "metadata"),
 		InternalAPIKey:    commonConfig.GetEnv("INTERNAL_API_KEY", ""),
 		AutoSyncEnabled:   commonConfig.GetEnvBool("AUTO_SYNC_ENABLED", true),

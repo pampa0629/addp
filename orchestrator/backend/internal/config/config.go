@@ -42,7 +42,7 @@ func LoadConfig() *Config {
 	}
 
 	return &Config{
-		ServerPort: getEnv("ORCHESTRATOR_PORT", "8084"),
+		ServerPort: getEnv("ORCHESTRATOR_BACKEND_PORT", "8084"),
 
 		DBHost:     getEnv("POSTGRES_HOST", "localhost"),
 		DBPort:     getEnv("POSTGRES_PORT", "5432"),

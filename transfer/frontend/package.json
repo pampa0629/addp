@@ -16,6 +16,9 @@
     "element-plus": "^2.3.14",
     "@element-plus/icons-vue": "^2.1.0"
   },
+  "overrides": {
+    "vue": "^3.4.15"
+  },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.3.4",
     "vite": "^4.4.9"

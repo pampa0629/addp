@@ -11,8 +11,10 @@ import (
 	"github.com/addp/common/dbbridge"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/utils"
 	"github.com/addp/system/internal/api"
 	"github.com/addp/system/internal/config"
+	"github.com/addp/system/internal/models"
 	"github.com/addp/system/internal/repository"
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
@@ -26,6 +28,13 @@ func main() {
 
 	// 加载配置
 	cfg := config.Load()
+
+	// 检查端口是否可用
+	if err := utils.CheckPortAvailable(cfg.ServerAddr); err != nil {
+		logger.L().Error("端口检查失败", "error", err, "addr", cfg.ServerAddr)
+		os.Exit(1)
+	}
+	logger.L().Info("端口检查通过", "addr", cfg.ServerAddr)
 
 	// 临时调试：输出配置值
 	logger.L().Info("[DEBUG] PostgreSQL 配置",
@@ -44,6 +53,12 @@ func main() {
 	// 自动迁移
 	if err := repository.AutoMigrate(db); err != nil {
 		logger.L().Error("数据库迁移失败", "error", err)
+		os.Exit(1)
+	}
+
+	// 创建模块注册表索引
+	if err := repository.CreateModuleRegistryIndexes(db); err != nil {
+		logger.L().Error("模块注册表索引创建失败", "error", err)
 		os.Exit(1)
 	}
 
@@ -82,6 +97,56 @@ func main() {
 			logger.L().Error("服务器启动失败", "error", err)
 			os.Exit(1)
 		}
+	}()
+
+	// 启动服务注册与心跳（在服务器启动后）
+	go func() {
+		// 等待3秒确保服务完全启动
+		time.Sleep(3 * time.Second)
+
+		// 构建服务URL
+		serviceHost := utils.GetServiceHost()
+		port := utils.GetModulePort("system")
+		serviceURL := utils.BuildServiceURL(serviceHost, port)
+
+		// 注册自己到模块注册表
+		moduleRegistryRepo := repository.NewModuleRegistryRepository(db)
+		moduleRegistryService := service.NewModuleRegistryService(moduleRegistryRepo)
+
+		// System 模块注册自己
+		registrationReq := &models.ModuleRegistrationRequest{
+			ModuleName:     "system",
+			ModuleURL:      serviceURL,
+			RoutePrefix:    "/system",
+			HealthCheckURL: serviceURL + "/health",
+			Metadata: map[string]interface{}{
+				"module": "system",
+			},
+		}
+
+		if err := moduleRegistryService.Register(registrationReq); err != nil {
+			logger.L().Error("System 模块注册失败", "error", err)
+		} else {
+			logger.L().Info("System 模块注册成功", "url", serviceURL)
+		}
+
+		// 启动心跳 goroutine
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				if err := moduleRegistryService.SendHeartbeat("system"); err != nil {
+					logger.L().Error("System 心跳失败", "error", err)
+				} else {
+					logger.L().Debug("System 心跳成功")
+				}
+			}
+		}()
+
+		// 启动服务清理定时任务（标记超时模块为down）
+		ctx := context.Background()
+		go moduleRegistryService.StartCleanupTask(ctx, 60*time.Second)
 	}()
 
 	// 启动健康检查（在后台goroutine中）

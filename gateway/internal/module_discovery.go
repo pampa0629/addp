@@ -1,0 +1,154 @@
+package internal
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/addp/common/client"
+	"github.com/addp/gateway/internal/proxy"
+	"github.com/gin-gonic/gin"
+)
+
+// ModuleDiscovery 模块发现管理器
+type ModuleDiscovery struct {
+	systemClient  *client.SystemClient
+	modules       map[string]*client.ModuleInfo  // moduleName -> ModuleInfo
+	proxies       map[string]*proxy.ServiceProxy // moduleName -> proxy
+	mu            sync.RWMutex
+	refreshTicker *time.Ticker
+	ctx           context.Context
+	cancel        context.CancelFunc
+}
+
+// NewModuleDiscovery 创建模块发现管理器
+func NewModuleDiscovery(systemClient *client.SystemClient, refreshInterval time.Duration) *ModuleDiscovery {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &ModuleDiscovery{
+		systemClient: systemClient,
+		modules:      make(map[string]*client.ModuleInfo),
+		proxies:      make(map[string]*proxy.ServiceProxy),
+		ctx:          ctx,
+		cancel:       cancel,
+	}
+}
+
+// Start 启动模块发现（加载模块列表并定期刷新）
+func (md *ModuleDiscovery) Start(refreshInterval time.Duration) error {
+	// 首次加载模块列表
+	if err := md.refreshModules(); err != nil {
+		return fmt.Errorf("初始化模块列表失败: %w", err)
+	}
+
+	// 启动定期刷新
+	md.refreshTicker = time.NewTicker(refreshInterval)
+	go func() {
+		for {
+			select {
+			case <-md.ctx.Done():
+				return
+			case <-md.refreshTicker.C:
+				if err := md.refreshModules(); err != nil {
+					// 日志记录错误，但不中断服务
+					fmt.Printf("刷新模块列表失败: %v\n", err)
+				}
+			}
+		}
+	}()
+
+	return nil
+}
+
+// Stop 停止模块发现
+func (md *ModuleDiscovery) Stop() {
+	if md.refreshTicker != nil {
+		md.refreshTicker.Stop()
+	}
+	md.cancel()
+}
+
+// refreshModules 从 System 获取模块列表并更新代理
+func (md *ModuleDiscovery) refreshModules() error {
+	// 获取所有活跃模块
+	modules, err := md.systemClient.GetModules()
+	if err != nil {
+		return err
+	}
+
+	md.mu.Lock()
+	defer md.mu.Unlock()
+
+	// 更新模块列表
+	newModules := make(map[string]*client.ModuleInfo)
+	for _, mod := range modules {
+		if mod.Status == "up" {
+			newModules[mod.ModuleName] = mod
+
+			// 如果代理不存在或 URL 变更，创建/更新代理
+			if existingProxy, exists := md.proxies[mod.ModuleName]; !exists {
+				md.proxies[mod.ModuleName] = proxy.NewServiceProxy(mod.ModuleURL)
+			} else if existingProxy.GetTargetURL() != mod.ModuleURL {
+				// URL 变更，重新创建代理
+				md.proxies[mod.ModuleName] = proxy.NewServiceProxy(mod.ModuleURL)
+			}
+		}
+	}
+
+	// 移除已下线的模块代理
+	for moduleName := range md.proxies {
+		if _, exists := newModules[moduleName]; !exists {
+			delete(md.proxies, moduleName)
+		}
+	}
+
+	md.modules = newModules
+
+	fmt.Printf("模块列表已刷新: %d 个活跃模块\n", len(md.modules))
+	return nil
+}
+
+// GetProxy 获取模块代理（用于路由转发）
+func (md *ModuleDiscovery) GetProxy(moduleName string) (*proxy.ServiceProxy, error) {
+	md.mu.RLock()
+	defer md.mu.RUnlock()
+
+	p, exists := md.proxies[moduleName]
+	if !exists {
+		return nil, fmt.Errorf("模块 %s 不可用或未注册", moduleName)
+	}
+
+	return p, nil
+}
+
+// GetModules 获取所有活跃模块信息（用于展示）
+func (md *ModuleDiscovery) GetModules() map[string]*client.ModuleInfo {
+	md.mu.RLock()
+	defer md.mu.RUnlock()
+
+	// 返回模块列表的副本
+	result := make(map[string]*client.ModuleInfo, len(md.modules))
+	for k, v := range md.modules {
+		result[k] = v
+	}
+
+	return result
+}
+
+// HandleDynamicRoute 动态路由处理器（供 SetupRouter 使用）
+func (md *ModuleDiscovery) HandleDynamicRoute(c *gin.Context) {
+	moduleName := c.Param("module")
+
+	// 从模块发现获取代理
+	p, err := md.GetProxy(moduleName)
+	if err != nil {
+		c.JSON(503, gin.H{
+			"error": fmt.Sprintf("模块 %s 不可用", moduleName),
+		})
+		return
+	}
+
+	// 转发请求
+	p.Handle(c)
+}

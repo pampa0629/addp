@@ -3,10 +3,10 @@ import { useAuthStore } from '../stores/auth'
 
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
-    return '/services'
+    return '/published-services'
   }
   if (fullPath === '/' || fullPath === '/') {
-    return '/services'
+    return '/published-services'
   }
   return fullPath
 }
@@ -20,13 +20,47 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/services'
+    redirect: '/published-services'
   },
+
+  // === 服务发布路由（原"空间服务"） ===
+  {
+    path: '/published-services',
+    name: 'PublishedServiceList',
+    component: () => import('../views/PublishedServiceList.vue'),
+    meta: { requiresAuth: true, title: '服务发布' }
+  },
+  {
+    path: '/published-services/create',
+    name: 'PublishedServiceCreate',
+    component: () => import('../views/PublishedServiceForm.vue'),
+    meta: { requiresAuth: true, title: '创建服务' }
+  },
+  {
+    path: '/published-services/:id/edit',
+    name: 'PublishedServiceEdit',
+    component: () => import('../views/PublishedServiceForm.vue'),
+    meta: { requiresAuth: true, title: '编辑服务' }
+  },
+  {
+    path: '/published-services/:id',
+    name: 'PublishedServiceDetail',
+    component: () => import('../views/PublishedServiceDetail.vue'),
+    meta: { requiresAuth: true, title: '服务详情' }
+  },
+  {
+    path: '/published-services/:id/test',
+    name: 'PublishedServiceTest',
+    component: () => import('../views/PublishedServiceTest.vue'),
+    meta: { requiresAuth: true, title: '服务测试' }
+  },
+
+  // === 服务注册路由（保持不变） ===
   {
     path: '/services',
     name: 'ServiceManagement',
     component: () => import('../views/ServiceManagement.vue'),
-    meta: { requiresAuth: true, title: '服务管理' }
+    meta: { requiresAuth: true, title: '服务注册' }
   },
   {
     path: '/services/create',
@@ -46,17 +80,13 @@ const routes = [
     component: () => import('../views/ServiceDetail.vue'),
     meta: { requiresAuth: true, title: '服务详情' }
   },
+
+  // === 服务目录路由（保持不变） ===
   {
     path: '/catalog',
     name: 'ServiceCatalog',
     component: () => import('../views/ServiceCatalog.vue'),
     meta: { requiresAuth: true, title: '服务目录' }
-  },
-  {
-    path: '/query',
-    name: 'DataQuery',
-    component: () => import('../views/DataQuery.vue'),
-    meta: { requiresAuth: true, title: '数据查询' }
   }
 ]
 

@@ -59,6 +59,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.Application{},
 		&models.APIKey{},
 		&models.TaskProvider{},
+		&models.ModuleRegistry{},
 	)
 }
 
@@ -241,4 +242,27 @@ func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
 	}
 	return nil
 }
+
+// CreateModuleRegistryIndexes 创建模块注册表的索引
+func CreateModuleRegistryIndexes(db *gorm.DB) error {
+	// 为 status 字段创建索引(加速模块状态查询)
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_module_registry_status
+		ON system.module_registry(status)
+	`).Error; err != nil {
+		return err
+	}
+
+	// 为 last_heartbeat 字段创建索引(加速心跳超时查询)
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_module_registry_heartbeat
+		ON system.module_registry(last_heartbeat)
+	`).Error; err != nil {
+		return err
+	}
+
+	log.Println("✅ 模块注册表索引已创建")
+	return nil
+}
+
 

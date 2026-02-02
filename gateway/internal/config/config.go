@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"time"
+)
 
 type Config struct {
 	Port               string
@@ -29,10 +33,14 @@ type Config struct {
 
 	// Authentication
 	InternalAPIKey string
+
+	// 模块发现配置
+	ModuleRegistryEnabled  bool          // 是否启用模块注册
+	ModuleRefreshInterval  time.Duration // 刷新间隔
 }
 
 func Load() *Config {
-	port := getEnv("PORT", ":8000")
+	port := getEnv("GATEWAY_PORT", "8000")
 	if len(port) > 0 && port[0] != ':' {
 		port = ":" + port
 	}
@@ -64,6 +72,10 @@ func Load() *Config {
 
 		// Internal API Key for calling System module
 		InternalAPIKey: getEnv("INTERNAL_API_KEY", "change-this-in-production"),
+
+		// 模块发现配置
+		ModuleRegistryEnabled: getEnvBool("MODULE_REGISTRY_ENABLED", true),
+		ModuleRefreshInterval: getEnvDuration("MODULE_REGISTRY_REFRESH_INTERVAL", "30s"),
 	}
 }
 
@@ -72,4 +84,23 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err == nil {
+			return parsed
+		}
+	}
+	return defaultValue
+}
+
+func getEnvDuration(key, defaultValue string) time.Duration {
+	value := getEnv(key, defaultValue)
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		duration, _ = time.ParseDuration(defaultValue)
+	}
+	return duration
 }

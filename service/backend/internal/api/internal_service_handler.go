@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/repository"
 	"github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,9 +17,9 @@ type InternalServiceHandler struct {
 }
 
 // NewInternalServiceHandler 创建新的内部服务处理器
-func NewInternalServiceHandler(repo *repository.InternalServiceRepository) *InternalServiceHandler {
+func NewInternalServiceHandler(svc *service.InternalServiceService) *InternalServiceHandler {
 	return &InternalServiceHandler{
-		svc: service.NewInternalServiceService(repo),
+		svc: svc,
 	}
 }
 

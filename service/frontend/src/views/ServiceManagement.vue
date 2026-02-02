@@ -1,11 +1,11 @@
 <template>
   <div class="service-management">
     <div class="header">
-      <h2>服务管理</h2>
+      <h2>服务注册</h2>
       <div class="header-actions">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索服务名称"
+          placeholder="搜索已注册服务"
           style="width: 300px; margin-right: 12px"
           :prefix-icon="Search"
           clearable
@@ -27,7 +27,7 @@
           <el-option label="Data API" value="data_api" />
           <el-option label="REST" value="rest" />
         </el-select>
-        <el-button type="primary" :icon="Plus" @click="handleCreate">服务注册</el-button>
+        <el-button type="primary" :icon="Plus" @click="handleCreate">注册服务</el-button>
         <el-button :icon="Download" @click="handleExport">导出配置</el-button>
       </div>
     </div>

@@ -10,12 +10,14 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/utils"
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/service/internal/api"
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/repository"
 	"github.com/addp/service/internal/service/data"
 	"github.com/addp/service/internal/service/registry"
+	serviceInternal "github.com/addp/service/internal/service"
 )
 
 func main() {
@@ -30,6 +32,13 @@ func main() {
 		AddSource: &cfg.LogAddSource,
 		File:      cfg.LogFile,
 	})
+
+	// 检查端口是否可用
+	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
+		os.Exit(1)
+	}
+	logger.L().Info("端口检查通过", "port", cfg.Port)
 
 	// 初始化数据库
 	db, err := repository.InitDatabase(cfg)
@@ -64,12 +73,14 @@ func main() {
 
 	// 初始化 services
 	externalServiceService := registry.NewExternalServiceService(externalServiceRepo)
-	internalServiceService := api.NewInternalServiceHandler(internalServiceRepo)
+	internalServiceService := serviceInternal.NewInternalServiceService(internalServiceRepo, metaClient)
 	queryService := data.NewQueryService(systemClient, metaClient)
 
 	// 初始化 handlers
+	internalServiceHandler := api.NewInternalServiceHandler(internalServiceService)
 	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
+	engineHandler := api.NewEngineHandler(systemClient)
 	sqlDB, err := db.DB()
 	if err != nil {
 		logger.L().Error("Failed to get SQL DB", "error", err)
@@ -78,9 +89,61 @@ func main() {
 	wfsHandler := api.NewWFSHandler(internalServiceRepo, db, sqlDB)
 	ogcAPIHandler := api.NewOGCAPIHandler(internalServiceRepo, db)
 	wmtsHandler := api.NewWMTSHandler(internalServiceRepo, db)
+	restQueryHandler := api.NewRestQueryHandler(internalServiceRepo, db)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceService, wfsHandler, ogcAPIHandler, wmtsHandler, systemClient)
+	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, systemClient)
+
+	// ========== 模块注册（注册到 System service_registry）==========
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		go func() {
+			// 等待3秒确保服务完全启动
+			time.Sleep(3 * time.Second)
+
+			// 构建服务URL
+			serviceHost := utils.GetServiceHost()
+			port := utils.GetModulePort("service")
+			serviceURL := utils.BuildServiceURL(serviceHost, port)
+
+			// 创建 System 客户端用于模块注册
+			registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+
+			// 注册服务
+			registrationReq := &commonClient.ModuleRegistrationRequest{
+				ModuleName:    "service",
+				ModuleURL:     serviceURL,
+				RoutePrefix:    "/service",
+				HealthCheckURL: serviceURL + "/health",
+				Metadata: map[string]interface{}{
+					"module": "service",
+				},
+			}
+
+			maxRetries := 3
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := registryClient.RegisterModule(registrationReq); err != nil {
+					logger.L().Warn("Service 模块注册失败",
+						"attempt", attempt, "max", maxRetries, "error", err)
+					time.Sleep(time.Duration(attempt*5) * time.Second)
+					continue
+				}
+				logger.L().Info("Service 模块注册成功", "url", serviceURL)
+				break
+			}
+
+			// 启动心跳
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				if err := registryClient.SendHeartbeat("service"); err != nil {
+					logger.L().Error("Service 心跳失败", "error", err)
+				} else {
+					logger.L().Debug("Service 心跳成功")
+				}
+			}
+		}()
+	}
 
 	// 初始化调度器
 	ctx := context.Background()

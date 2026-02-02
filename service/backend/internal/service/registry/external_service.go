@@ -218,7 +218,7 @@ func (s *ExternalServiceService) ProxyRequest(ctx context.Context, service *mode
 }
 
 // fetchOGCMetadata 获取 OGC 服务元数据
-func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *models.ExternalService) (models.JSONB, []models.ServiceLayer, error) {
+func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *models.ExternalService) (models.JSONB, []models.ExternalServiceLayer, error) {
 	var capabilitiesURL string
 
 	switch service.ServiceType {
@@ -264,7 +264,7 @@ func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *
 
 	// 根据服务类型解析元数据
 	var metadata models.JSONB
-	var layers []models.ServiceLayer
+	var layers []models.ExternalServiceLayer
 
 	switch service.ServiceType {
 	case "wms":
@@ -282,7 +282,7 @@ func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *
 			"raw_response":     string(body[:min(1000, len(body))]),
 			"fetched_at":       time.Now().Format(time.RFC3339),
 		}
-		layers = []models.ServiceLayer{}
+		layers = []models.ExternalServiceLayer{}
 	}
 
 	if err != nil {
@@ -293,7 +293,7 @@ func (s *ExternalServiceService) fetchOGCMetadata(ctx context.Context, service *
 }
 
 // parseWMSCapabilities 解析 WMS GetCapabilities XML 响应
-func (s *ExternalServiceService) parseWMSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+func (s *ExternalServiceService) parseWMSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ExternalServiceLayer, error) {
 	var capabilities WMSCapabilities
 	if err := xml.Unmarshal(body, &capabilities); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse WMS XML: %w", err)
@@ -310,14 +310,14 @@ func (s *ExternalServiceService) parseWMSCapabilities(body []byte, serviceID uin
 	}
 
 	// 提取图层列表（递归处理嵌套图层）
-	var layers []models.ServiceLayer
+	var layers []models.ExternalServiceLayer
 	extractWMSLayers(&layers, capabilities.Capability.Layer, serviceID, "")
 
 	return metadata, layers, nil
 }
 
 // extractWMSLayers 递归提取 WMS 图层
-func extractWMSLayers(layers *[]models.ServiceLayer, layer WMSLayer, serviceID uint, parentName string) {
+func extractWMSLayers(layers *[]models.ExternalServiceLayer, layer WMSLayer, serviceID uint, parentName string) {
 	layerName := layer.Name
 	if layerName == "" {
 		// 如果是容器图层（没有 Name），使用 Title
@@ -371,7 +371,7 @@ func extractWMSLayers(layers *[]models.ServiceLayer, layer WMSLayer, serviceID u
 			stylesJSON["styles"] = styles
 		}
 
-		*layers = append(*layers, models.ServiceLayer{
+		*layers = append(*layers, models.ExternalServiceLayer{
 			ServiceID:   serviceID,
 			LayerName:   layer.Name,
 			DisplayName: layer.Title,
@@ -397,7 +397,7 @@ func extractWMSLayers(layers *[]models.ServiceLayer, layer WMSLayer, serviceID u
 }
 
 // parseWFSCapabilities 解析 WFS GetCapabilities XML 响应
-func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ExternalServiceLayer, error) {
 	var capabilities WFSCapabilities
 	if err := xml.Unmarshal(body, &capabilities); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse WFS XML: %w", err)
@@ -413,7 +413,7 @@ func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uin
 	}
 
 	// 提取要素类型列表
-	var layers []models.ServiceLayer
+	var layers []models.ExternalServiceLayer
 	for _, ft := range capabilities.FeatureTypeList.FeatureTypes {
 		// 提取 BBox
 		var bbox models.JSONB
@@ -445,7 +445,7 @@ func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uin
 			outputFormats = []string{"application/gml+xml"} // WFS 默认格式
 		}
 
-		layers = append(layers, models.ServiceLayer{
+		layers = append(layers, models.ExternalServiceLayer{
 			ServiceID:    serviceID,
 			LayerName:    ft.Name,
 			DisplayName:  ft.Title,
@@ -466,7 +466,7 @@ func (s *ExternalServiceService) parseWFSCapabilities(body []byte, serviceID uin
 }
 
 // parseWMTSCapabilities 解析 WMTS GetCapabilities XML 响应
-func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID uint) (models.JSONB, []models.ExternalServiceLayer, error) {
 	var capabilities WMTSCapabilities
 	if err := xml.Unmarshal(body, &capabilities); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse WMTS XML: %w", err)
@@ -481,7 +481,7 @@ func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID ui
 	}
 
 	// 提取图层列表
-	var layers []models.ServiceLayer
+	var layers []models.ExternalServiceLayer
 	for _, layer := range capabilities.Contents.Layers {
 		// 提取 BBox
 		var bbox models.JSONB
@@ -509,7 +509,7 @@ func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID ui
 			tileMatrixSets = append(tileMatrixSets, tms.TileMatrixSet)
 		}
 
-		layers = append(layers, models.ServiceLayer{
+		layers = append(layers, models.ExternalServiceLayer{
 			ServiceID:    serviceID,
 			LayerName:    layer.Identifier,
 			DisplayName:  layer.Title,
@@ -530,7 +530,7 @@ func (s *ExternalServiceService) parseWMTSCapabilities(body []byte, serviceID ui
 }
 
 // parseOGCAPICollections 解析 OGC API Features collections JSON 响应
-func (s *ExternalServiceService) parseOGCAPICollections(body []byte, serviceID uint) (models.JSONB, []models.ServiceLayer, error) {
+func (s *ExternalServiceService) parseOGCAPICollections(body []byte, serviceID uint) (models.JSONB, []models.ExternalServiceLayer, error) {
 	var collections OGCAPICollections
 	if err := json.Unmarshal(body, &collections); err != nil {
 		return nil, nil, fmt.Errorf("failed to parse OGC API JSON: %w", err)
@@ -544,7 +544,7 @@ func (s *ExternalServiceService) parseOGCAPICollections(body []byte, serviceID u
 	}
 
 	// 提取集合列表
-	var layers []models.ServiceLayer
+	var layers []models.ExternalServiceLayer
 	for _, coll := range collections.Collections {
 		// 提取 BBox
 		var bbox models.JSONB
@@ -572,7 +572,7 @@ func (s *ExternalServiceService) parseOGCAPICollections(body []byte, serviceID u
 			}
 		}
 
-		layers = append(layers, models.ServiceLayer{
+		layers = append(layers, models.ExternalServiceLayer{
 			ServiceID:    serviceID,
 			LayerName:    coll.ID,
 			DisplayName:  coll.Title,
@@ -845,9 +845,9 @@ func (s *ExternalServiceService) ToDTO(service *models.ExternalService) *models.
 
 	// 转换图层
 	if len(service.Layers) > 0 {
-		dto.Layers = make([]models.ServiceLayerDTO, len(service.Layers))
+		dto.Layers = make([]models.ExternalServiceLayerDTO, len(service.Layers))
 		for i, layer := range service.Layers {
-			dto.Layers[i] = models.ServiceLayerDTO{
+			dto.Layers[i] = models.ExternalServiceLayerDTO{
 				ID:           layer.ID,
 				ServiceID:    layer.ServiceID,
 				LayerName:    layer.LayerName,
@@ -888,7 +888,12 @@ func (s *ExternalServiceService) HealthCheck(ctx context.Context, serviceID, ten
 	checkURL := string(service.HealthCheck)
 	if checkURL == "" {
 		checkURL = service.URL
+		// 如果未设置专门的健康检查 URL，对 OGC 服务添加 GetCapabilities 参数
+		checkURL = s.buildOGCHealthCheckURL(checkURL, service.ServiceType)
 	}
+
+	// 输出调试日志
+	fmt.Printf("[HealthCheck] ServiceID=%d, Type=%s, URL=%s\n", serviceID, service.ServiceType, checkURL)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", checkURL, nil)
 	if err != nil {
@@ -902,17 +907,64 @@ func (s *ExternalServiceService) HealthCheck(ctx context.Context, serviceID, ten
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		_ = s.repo.UpdateHealthCheck(serviceID, "error")
+		fmt.Printf("[HealthCheck] Request failed: %v\n", err)
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+	// 输出响应状态
+	fmt.Printf("[HealthCheck] Response status: %d\n", resp.StatusCode)
+
+	// 健康检查策略：
+	// - 2xx/3xx: 服务正常
+	// - 4xx (包括 401/403/418 等): 服务在线，但需要认证或被 WAF 拦截，仍视为"可达"
+	// - 5xx: 服务内部错误，视为"不健康"
+	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
 		_ = s.repo.UpdateHealthCheck(serviceID, "active")
+		if resp.StatusCode >= 400 {
+			fmt.Printf("[HealthCheck] Service reachable but returned client error: %d (likely needs auth or blocked by WAF)\n", resp.StatusCode)
+		}
 		return nil
 	}
 
+	// 5xx 服务器错误才视为真正的健康检查失败
 	_ = s.repo.UpdateHealthCheck(serviceID, "error")
 	return fmt.Errorf("health check failed with status: %d", resp.StatusCode)
+}
+
+// buildOGCHealthCheckURL 为 OGC 服务构建健康检查 URL
+func (s *ExternalServiceService) buildOGCHealthCheckURL(baseURL, serviceType string) string {
+	var params string
+	switch serviceType {
+	case "wmts":
+		params = "?Service=WMTS&Request=GetCapabilities&Version=1.0.0"
+	case "wms":
+		params = "?Service=WMS&Request=GetCapabilities&Version=1.3.0"
+	case "wfs":
+		params = "?Service=WFS&Request=GetCapabilities&Version=2.0.0"
+	default:
+		return baseURL
+	}
+
+	// 检查 URL 是否已经包含查询参数
+	if len(baseURL) > 0 && baseURL[len(baseURL)-1] == '?' {
+		return baseURL + params[1:] // 去掉 ? 前缀
+	} else if len(baseURL) > 0 && baseURL[len(baseURL)-1] == '&' {
+		return baseURL + params[1:] // 去掉 ? 前缀
+	} else if hasQueryParams(baseURL) {
+		return baseURL + "&" + params[1:] // 使用 & 连接
+	}
+	return baseURL + params
+}
+
+// hasQueryParams 检查 URL 是否已包含查询参数
+func hasQueryParams(url string) bool {
+	for i := 0; i < len(url); i++ {
+		if url[i] == '?' {
+			return true
+		}
+	}
+	return false
 }
 
 // BatchHealthCheck 批量健康检查

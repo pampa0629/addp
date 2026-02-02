@@ -87,3 +87,15 @@
 - **状态管理**: Pinia
 - **路由**: Vue Router
 - **HTTP 客户端**: Axios (带认证拦截器)
+
+**Vue 版本统一要求**:
+
+- 所有模块必须共享**单一 Vue 实例**，避免多实例导致生命周期钩子失效
+- `common-frontend` 作为共享库使用 `peerDependencies`，**不得有 node_modules 目录**
+- 各前端模块的 `package.json` 必须添加 `overrides` 配置强制统一 Vue 版本，示例：
+  ```json
+  "overrides": {
+    "vue": "^3.4.15"
+  }
+  ```
+- 安装依赖前需确保删除 `common-frontend/node_modules` 和 `common-frontend/package-lock.json`

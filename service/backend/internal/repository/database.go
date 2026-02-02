@@ -43,7 +43,7 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 func AutoMigrate(db *gorm.DB) error {
 	migrateModels := []interface{}{
 		&models.ExternalService{},
-		&models.ServiceLayer{},
+		&models.ExternalServiceLayer{},
 		&models.InternalService{},
 		&models.InternalServiceLayer{},
 	}

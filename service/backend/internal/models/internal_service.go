@@ -18,10 +18,12 @@ type InternalService struct {
 	Keywords    StringArray `gorm:"type:text[]" json:"keywords"`
 
 	// 服务类型配置
-	EnabledWFS     bool `gorm:"default:true" json:"enabled_wfs"`
-	EnabledOGCAPI  bool `gorm:"default:true" json:"enabled_ogc_api"`
-	EnabledWMTS    bool `gorm:"default:true" json:"enabled_wmts"`
-	EnabledWMS     bool `gorm:"default:false" json:"enabled_wms"`
+	EnabledWFS        bool `gorm:"default:true" json:"enabled_wfs"`
+	EnabledOGCAPI     bool `gorm:"default:true" json:"enabled_ogc_api"`
+	EnabledWMTS       bool `gorm:"default:true" json:"enabled_wmts"`
+	EnabledWMS        bool `gorm:"default:false" json:"enabled_wms"`
+	EnabledRestQuery  bool `gorm:"default:true" json:"enabled_rest_query"`  // 简化REST查询API
+	PublicAccess      bool `gorm:"default:false" json:"public_access"`       // 是否公开访问（无需JWT）
 
 	// 服务参数
 	DefaultSRID  int `gorm:"default:4326" json:"default_srid"`
@@ -61,10 +63,12 @@ type CreateInternalServiceRequest struct {
 	Abstract    string `json:"abstract"`
 	Keywords    []string `json:"keywords"`
 
-	EnabledWFS    bool `json:"enabled_wfs"`
-	EnabledOGCAPI bool `json:"enabled_ogc_api"`
-	EnabledWMTS   bool `json:"enabled_wmts"`
-	EnabledWMS    bool `json:"enabled_wms"`
+	EnabledWFS       bool `json:"enabled_wfs"`
+	EnabledOGCAPI    bool `json:"enabled_ogc_api"`
+	EnabledWMTS      bool `json:"enabled_wmts"`
+	EnabledWMS       bool `json:"enabled_wms"`
+	EnabledRestQuery bool `json:"enabled_rest_query"`
+	PublicAccess     bool `json:"public_access"`
 
 	DefaultSRID  int `json:"default_srid" binding:"omitempty,oneof=4326 3857 4490 2000 4214"`
 	MaxFeatures  int `json:"max_features" binding:"omitempty,gte=1,lte=10000"`
@@ -83,10 +87,12 @@ type UpdateInternalServiceRequest struct {
 	Abstract     *string `json:"abstract,omitempty"`
 	Keywords     []string `json:"keywords,omitempty"`
 
-	EnabledWFS    *bool `json:"enabled_wfs,omitempty"`
-	EnabledOGCAPI *bool `json:"enabled_ogc_api,omitempty"`
-	EnabledWMTS   *bool `json:"enabled_wmts,omitempty"`
-	EnabledWMS    *bool `json:"enabled_wms,omitempty"`
+	EnabledWFS       *bool `json:"enabled_wfs,omitempty"`
+	EnabledOGCAPI    *bool `json:"enabled_ogc_api,omitempty"`
+	EnabledWMTS      *bool `json:"enabled_wmts,omitempty"`
+	EnabledWMS       *bool `json:"enabled_wms,omitempty"`
+	EnabledRestQuery *bool `json:"enabled_rest_query,omitempty"`
+	PublicAccess     *bool `json:"public_access,omitempty"`
 
 	DefaultSRID  *int `json:"default_srid,omitempty"`
 	MaxFeatures  *int `json:"max_features,omitempty"`
@@ -109,10 +115,12 @@ type InternalServiceDTO struct {
 	Abstract    string `json:"abstract"`
 	Keywords    []string `json:"keywords"`
 
-	EnabledWFS    bool `json:"enabled_wfs"`
-	EnabledOGCAPI bool `json:"enabled_ogc_api"`
-	EnabledWMTS   bool `json:"enabled_wmts"`
-	EnabledWMS    bool `json:"enabled_wms"`
+	EnabledWFS       bool `json:"enabled_wfs"`
+	EnabledOGCAPI    bool `json:"enabled_ogc_api"`
+	EnabledWMTS      bool `json:"enabled_wmts"`
+	EnabledWMS       bool `json:"enabled_wms"`
+	EnabledRestQuery bool `json:"enabled_rest_query"`
+	PublicAccess     bool `json:"public_access"`
 
 	DefaultSRID  int `json:"default_srid"`
 	MaxFeatures  int `json:"max_features"`

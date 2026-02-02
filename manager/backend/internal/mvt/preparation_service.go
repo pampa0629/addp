@@ -593,7 +593,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 					SELECT
 						%s,
 						ST_Transform("%s", 3857) AS geom_3857
-					FROM %s.%s
+					FROM "%s"."%s"
 					WHERE "%s" IS NOT NULL
 				`, mvFullName, selectClause, geomColumn, schema, table, geomColumn)
 
@@ -629,7 +629,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 
 				// 创建 GIST 空间索引（使用 CONCURRENTLY 避免锁表）
 				createIndexSQL := fmt.Sprintf(`
-					CREATE INDEX CONCURRENTLY %s ON %s USING GIST (%s)
+					CREATE INDEX CONCURRENTLY "%s" ON "%s" USING GIST ("%s")
 				`, indexName, indexTable, indexColumn)
 
 				if err := engineDB.WithContext(ctx).Exec(createIndexSQL).Error; err != nil {
@@ -655,7 +655,7 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 					}
 				}
 
-				analyzeSQL := fmt.Sprintf("ANALYZE %s.%s", schema, targetTable)
+				analyzeSQL := fmt.Sprintf("ANALYZE \"%s\".\"%s\"", schema, targetTable)
 				if err := engineDB.WithContext(ctx).Exec(analyzeSQL).Error; err != nil {
 					// ANALYZE失败但不中断流程
 					prepStatus.Checks[i].Status = "warning"

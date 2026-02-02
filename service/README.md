@@ -56,7 +56,7 @@ docker-compose up -d
 | 表名 | 说明 |
 |-----|------|
 | `external_services` | 注册的外部服务（WMS、WFS 等），支持租户隔离 |
-| `service_layers` | 服务的图层信息（几何类型、坐标系、边界框等） |
+| `external_service_layers` | 外部服务的图层信息（几何类型、坐标系、边界框等） |
 
 详细字段定义请查看 [CLAUDE.md#关键架构](./CLAUDE.md#关键架构)
 

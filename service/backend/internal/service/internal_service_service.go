@@ -3,17 +3,23 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 
+	"github.com/addp/common/client"
 	"github.com/addp/service/internal/models"
 	"github.com/addp/service/internal/repository"
 )
 
 type InternalServiceService struct {
-	repo *repository.InternalServiceRepository
+	repo       *repository.InternalServiceRepository
+	metaClient *client.MetaClient
 }
 
-func NewInternalServiceService(repo *repository.InternalServiceRepository) *InternalServiceService {
-	return &InternalServiceService{repo}
+func NewInternalServiceService(repo *repository.InternalServiceRepository, metaClient *client.MetaClient) *InternalServiceService {
+	return &InternalServiceService{
+		repo:       repo,
+		metaClient: metaClient,
+	}
 }
 
 // CreateService 创建新的内部服务
@@ -211,10 +217,63 @@ func (s *InternalServiceService) DeleteService(id uint) error {
 
 // AddLayer 添加图层
 func (s *InternalServiceService) AddLayer(serviceID uint, req *models.AddLayerRequest) (*models.InternalServiceLayerDTO, error) {
-	// 验证服务是否存在
-	_, err := s.repo.GetByID(serviceID)
+	// 验证服务是否存在并获取 engine_id
+	service, err := s.repo.GetByID(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
+	}
+
+	// 从请求中获取或设置默认值
+	geometryColumn := req.GeometryColumn
+	srid := req.SRID
+	geometryTypes := req.GeometryTypes
+	extent4326 := req.Extent4326
+
+	// 如果未提供空间元数据，尝试从 Meta 模块获取
+	if geometryColumn == "" || srid == 0 || len(geometryTypes) == 0 {
+		if s.metaClient != nil {
+			// 设置租户 ID（用于服务间调用时的租户隔离）
+			s.metaClient.SetTenantID(&service.TenantID)
+
+			log.Printf("📡 Fetching spatial metadata from Meta for %s.%s (tenant_id=%d, engine_id=%d)",
+				req.SchemaName, req.DBTableName, service.TenantID, service.EngineID)
+
+			spatialMeta, err := s.metaClient.GetTableSpatialMetadata(service.EngineID, req.SchemaName, req.DBTableName)
+			if err != nil {
+				log.Printf("⚠️  Failed to get spatial metadata from Meta: %v", err)
+				// 如果 Meta 获取失败且用户未提供必填字段，返回错误
+				if geometryColumn == "" {
+					return nil, fmt.Errorf("geometry_column is required (Meta service unavailable)")
+				}
+				if srid == 0 {
+					return nil, fmt.Errorf("srid is required (Meta service unavailable)")
+				}
+			} else {
+				// 使用 Meta 提供的元数据（仅在用户未提供时）
+				if geometryColumn == "" {
+					geometryColumn = spatialMeta.GeometryColumn
+					log.Printf("✅ Using geometry_column from Meta: %s", geometryColumn)
+				}
+				if srid == 0 {
+					srid = spatialMeta.SRID
+					log.Printf("✅ Using SRID from Meta: %d", srid)
+				}
+				if len(geometryTypes) == 0 && len(spatialMeta.GeometryTypes) > 0 {
+					geometryTypes = spatialMeta.GeometryTypes
+					log.Printf("✅ Using geometry_types from Meta: %v", geometryTypes)
+				}
+				// TODO: 将 Meta 的 extent 转换为 extent_4326 (需要坐标转换)
+				// 暂时跳过，让用户手动提供或后续优化
+			}
+		}
+	}
+
+	// 最终验证必填字段
+	if geometryColumn == "" {
+		return nil, fmt.Errorf("geometry_column is required")
+	}
+	if srid == 0 {
+		return nil, fmt.Errorf("srid is required")
 	}
 
 	layer := &models.InternalServiceLayer{
@@ -226,10 +285,10 @@ func (s *InternalServiceService) AddLayer(serviceID uint, req *models.AddLayerRe
 		MetaItemID:     req.MetaItemID,
 		SchemaName:     req.SchemaName,
 		DBTableName:    req.DBTableName,
-		GeometryColumn: req.GeometryColumn,
-		SRID:           req.SRID,
-		Extent4326:     req.Extent4326,
-		GeometryTypes:  models.StringArray(req.GeometryTypes),
+		GeometryColumn: geometryColumn,
+		SRID:           srid,
+		Extent4326:     extent4326,
+		GeometryTypes:  models.StringArray(geometryTypes),
 		Queryable:      req.Queryable,
 		MaxFeatures:    req.MaxFeatures,
 		FilterColumns:  models.StringArray(req.FilterColumns),

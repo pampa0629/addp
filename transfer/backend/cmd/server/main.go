@@ -10,6 +10,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
+	"github.com/addp/common/utils"
 	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
@@ -78,6 +79,14 @@ func main() {
 		"log_file", logFile,
 	)
 
+	// 检查端口是否可用
+	if err := utils.CheckPortAvailable(cfg.Port); err != nil {
+		logger.L().Error("端口检查失败", "error", err, "port", cfg.Port)
+		os.Exit(1)
+	}
+	logger.L().Info("端口检查通过", "port", cfg.Port)
+
+
 	// 连接数据库
 	db, err := connectDatabase(cfg)
 	if err != nil {
@@ -123,6 +132,54 @@ func main() {
 
 	// 设置路由
 	router := api.SetupRouter(taskService, executionService, localEngineService, objectStorageService, cfg.SystemServiceURL, redisClient, systemClient)
+
+	// ========== 模块注册（注册到 System service_registry）==========
+	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
+		go func() {
+			// 等待3秒确保服务完全启动
+			time.Sleep(3 * time.Second)
+
+			// 构建服务URL
+			serviceHost := utils.GetServiceHost()
+			port := utils.GetModulePort("transfer")
+			serviceURL := utils.BuildServiceURL(serviceHost, port)
+
+			// 创建 System 客户端用于模块注册
+			registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+
+			// 注册服务
+			registrationReq := &commonClient.ModuleRegistrationRequest{
+				ModuleName:    "transfer",
+				ModuleURL:     serviceURL,
+				RoutePrefix:    "/transfer",
+				HealthCheckURL: serviceURL + "/health",
+				Metadata: map[string]interface{}{
+					"module": "transfer",
+				},
+			}
+
+			maxRetries := 3
+			for attempt := 1; attempt <= maxRetries; attempt++ {
+				if err := registryClient.RegisterModule(registrationReq); err != nil {
+					log.Printf("⚠️  Transfer 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
+					time.Sleep(time.Duration(attempt*5) * time.Second)
+					continue
+				}
+				log.Printf("✅ Transfer 模块注册成功: %s", serviceURL)
+				break
+			}
+
+			// 启动心跳
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+
+			for range ticker.C {
+				if err := registryClient.SendHeartbeat("transfer"); err != nil {
+					log.Printf("❌ Transfer 心跳失败: %v", err)
+				}
+			}
+		}()
+	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========
 	// 构造 Transfer 服务的外部访问 URL（供 Orchestrator 调用）

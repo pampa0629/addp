@@ -1,8 +1,8 @@
-# service_layers 表结构和 API 说明
+# external_service_layers 表结构和 API 说明
 
 ## 一、表结构概览
 
-`service.service_layers` 表是 Service 模块的服务图层表，存储外部服务的图层/要素类信息。与 `external_services` 表是 1:N 关系，记录每个服务包含的地理数据图层。
+`service.external_service_layers` 表是 Service 模块的外部服务图层表，存储外部服务的图层/要素类信息。与 `external_services` 表是 1:N 关系，记录每个服务包含的地理数据图层。
 
 ### 核心功能
 
@@ -34,7 +34,7 @@
 
 | 索引名 | 字段 | 说明 |
 |--------|------|------|
-| `idx_service_layer_service` | service_id | 按服务查询图层 |
+| `idx_external_service_layer_service` | service_id | 按服务查询图层 |
 
 ### 2.3 外键约束
 

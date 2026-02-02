@@ -59,7 +59,7 @@ func Load() *Config {
 
 	return &Config{
 		Env:        env,
-		ServerAddr: getEnv("PORT", "8085"),
+		ServerAddr: ":" + getEnv("DEVELOP_BACKEND_PORT", "8085"),
 		JWTSecret:  jwtSecret,
 
 		// PostgreSQL 配置

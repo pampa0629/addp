@@ -95,26 +95,26 @@ func (r *ExternalServiceRepository) UpdateHealthCheck(id uint, status string) er
 }
 
 // GetLayersByServiceID 获取服务的所有图层
-func (r *ExternalServiceRepository) GetLayersByServiceID(serviceID uint) ([]models.ServiceLayer, error) {
-	var layers []models.ServiceLayer
+func (r *ExternalServiceRepository) GetLayersByServiceID(serviceID uint) ([]models.ExternalServiceLayer, error) {
+	var layers []models.ExternalServiceLayer
 	err := r.db.Where("service_id = ? AND enabled = ?", serviceID, true).
 		Find(&layers).Error
 	return layers, err
 }
 
 // CreateLayer 创建服务图层
-func (r *ExternalServiceRepository) CreateLayer(layer *models.ServiceLayer) error {
+func (r *ExternalServiceRepository) CreateLayer(layer *models.ExternalServiceLayer) error {
 	return r.db.Create(layer).Error
 }
 
 // UpdateLayer 更新服务图层
-func (r *ExternalServiceRepository) UpdateLayer(layer *models.ServiceLayer) error {
+func (r *ExternalServiceRepository) UpdateLayer(layer *models.ExternalServiceLayer) error {
 	return r.db.Save(layer).Error
 }
 
 // DeleteLayer 删除服务图层
 func (r *ExternalServiceRepository) DeleteLayer(layerID uint) error {
-	return r.db.Delete(&models.ServiceLayer{}, layerID).Error
+	return r.db.Delete(&models.ExternalServiceLayer{}, layerID).Error
 }
 
 // GetActiveServices 获取所有激活的服务
@@ -127,7 +127,7 @@ func (r *ExternalServiceRepository) GetActiveServices(tenantID uint) ([]models.E
 }
 
 // BulkCreateLayers 批量创建图层
-func (r *ExternalServiceRepository) BulkCreateLayers(layers []models.ServiceLayer) error {
+func (r *ExternalServiceRepository) BulkCreateLayers(layers []models.ExternalServiceLayer) error {
 	if len(layers) == 0 {
 		return nil
 	}
@@ -136,7 +136,7 @@ func (r *ExternalServiceRepository) BulkCreateLayers(layers []models.ServiceLaye
 
 // DeleteLayersByServiceID 删除服务的所有图层
 func (r *ExternalServiceRepository) DeleteLayersByServiceID(serviceID uint) error {
-	return r.db.Where("service_id = ?", serviceID).Delete(&models.ServiceLayer{}).Error
+	return r.db.Where("service_id = ?", serviceID).Delete(&models.ExternalServiceLayer{}).Error
 }
 
 // SearchServices 搜索服务（按名称、描述）

@@ -2,8 +2,10 @@ import axios from 'axios'
 import { createAuthAPI } from '@common-ui'
 
 // 创建指向 System 后端的独立客户端（用于认证）
+// 开发模式: 通过 vite proxy 转发到 Gateway
+// 生产模式: 通过主 Nginx 转发到 Gateway
 const systemClient = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api/system' : '/api/system',
+  baseURL: '/api/system',  // 使用相对路径，让 proxy 生效
   timeout: 10000
 })
 

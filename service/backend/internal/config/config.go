@@ -34,7 +34,7 @@ func Load() *Config {
 	metaURL := commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082")
 
 	cfg := &Config{
-		Port:              commonConfig.GetEnv("PORT", "8086"),
+		Port:              commonConfig.GetEnv("SERVICE_BACKEND_PORT", "8086"),
 		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "service"),
 		ManagerServiceURL: managerURL,
 		MetaServiceURL:    metaURL,

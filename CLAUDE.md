@@ -179,11 +179,12 @@ bash scripts/dev/restart.sh
 - **缓存/队列**: Redis 7
 - **对象存储**: MinIO (S3 兼容)
 - **任务队列**: Asynq (基于 Redis,用于 Transfer 模块)、Cron (用于 Meta 模块调度)
-- **空间计算**: Python Workflow Engine (基于 Python 的空间工作流执行引擎,内存 GeoDataFrame 处理)
 
-### Go 依赖版本规范
+### 依赖版本规范
 
-为确保所有模块的依赖版本一致性,ADDP 平台使用统一的 Go 依赖版本(最后更新: 2025-12-15)。
+为确保所有模块的依赖版本一致性,ADDP 平台使用统一的 Go 依赖版本。
+前端模块需确保 Vue 单一实例，各模块 package.json 需添加 `overrides` 强制统一 Vue 版本，common-frontend 不得有 node_modules。
+
 需要详细技术栈信息时,请参考 docs/技术栈规约.md 文档。
 
 ### 基础设施

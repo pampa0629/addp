@@ -45,7 +45,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8180',
+        target: 'http://localhost:8000', // 统一通过 Gateway 访问
         changeOrigin: true
       }
     }

@@ -28,13 +28,13 @@ type ExternalService struct {
 	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
 
 	// 关联
-	Layers []ServiceLayer `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"layers,omitempty"`
+	Layers []ExternalServiceLayer `gorm:"foreignKey:ServiceID;constraint:OnDelete:CASCADE" json:"layers,omitempty"`
 }
 
-// ServiceLayer 服务图层/要素类注册模型
-type ServiceLayer struct {
+// ExternalServiceLayer 外部服务图层/要素类注册模型
+type ExternalServiceLayer struct {
 	ID           uint      `gorm:"primarykey" json:"id"`
-	ServiceID    uint      `gorm:"not null;index:idx_service_layer_service" json:"service_id"`
+	ServiceID    uint      `gorm:"not null;index:idx_external_service_layer_service" json:"service_id"`
 	LayerName    string    `gorm:"not null;size:255" json:"layer_name"`
 	DisplayName  string    `gorm:"size:255" json:"display_name"`
 	GeometryType string    `gorm:"size:50" json:"geometry_type"` // 'Point', 'LineString', 'Polygon', etc.
@@ -98,8 +98,8 @@ func (ExternalService) TableName() string {
 }
 
 // TableName 指定表名
-func (ServiceLayer) TableName() string {
-	return "service.service_layers"
+func (ExternalServiceLayer) TableName() string {
+	return "service.external_service_layers"
 }
 
 // ExternalServiceDTO 外部服务 DTO（用于 API 响应）
@@ -118,11 +118,11 @@ type ExternalServiceDTO struct {
 	CreatedBy       uint               `json:"created_by"`
 	CreatedAt       time.Time          `json:"created_at"`
 	UpdatedAt       time.Time          `json:"updated_at"`
-	Layers          []ServiceLayerDTO  `json:"layers,omitempty"`
+	Layers          []ExternalServiceLayerDTO  `json:"layers,omitempty"`
 }
 
-// ServiceLayerDTO 服务图层 DTO
-type ServiceLayerDTO struct {
+// ExternalServiceLayerDTO 外部服务图层 DTO
+type ExternalServiceLayerDTO struct {
 	ID           uint      `json:"id"`
 	ServiceID    uint      `json:"service_id"`
 	LayerName    string    `json:"layer_name"`

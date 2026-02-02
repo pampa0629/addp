@@ -1160,9 +1160,9 @@ func (s *QuickViewService) prepareFor3857MVT(
 			CREATE MATERIALIZED VIEW %s AS
 			SELECT
 				id,
-				ST_Transform(%s, 3857)::geometry(GEOMETRY, 3857) AS geom_3857
-			FROM %s.%s
-			WHERE %s IS NOT NULL
+				ST_Transform("%s", 3857)::geometry(GEOMETRY, 3857) AS geom_3857
+			FROM "%s"."%s"
+			WHERE "%s" IS NOT NULL
 		`, mvFullName, cfg.GeomColumn, cfg.Schema, cfg.Table, cfg.GeomColumn)
 
 		if _, err := conn.ExecContext(ctx, createMVSQL); err != nil {
@@ -1268,7 +1268,7 @@ func (s *QuickViewService) collectStatistics(
 	}
 
 	boundRow := conn.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT ST_Extent(%s) as bounds FROM %s.%s", geomCol, cfg.Schema, table))
+		fmt.Sprintf("SELECT ST_Extent(\"%s\") as bounds FROM \"%s\".\"%s\"", geomCol, cfg.Schema, table))
 	var boundsWKT *string
 	if err := boundRow.Scan(&boundsWKT); err != nil {
 		logger.L().Warn("Failed to get spatial bounds", "error", err)

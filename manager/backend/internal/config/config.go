@@ -93,7 +93,7 @@ func Load() *Config {
 	defaultPluginDir := strings.Join(pluginDirs, ",")
 
 	cfg := &Config{
-		Port:                  commonConfig.GetEnv("PORT", "8081"),
+		Port:                  commonConfig.GetEnv("MANAGER_BACKEND_PORT", "8081"),
 		DBSchema:              commonConfig.GetEnv("DB_SCHEMA", "manager"),
 		PreviewPluginDir:      defaultPluginDir,
 		MetaServiceURL:        metaURL,
