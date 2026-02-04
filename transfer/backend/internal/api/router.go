@@ -159,6 +159,7 @@ func SetupRouter(
 	objectStorage := protected.Group("/object-storage")
 	{
 		objectStorage.POST("/browse", objectStorageHandler.BrowseDirectories)
+		objectStorage.POST("/list-files", objectStorageHandler.ListFiles)
 	}
 
 	// 执行记录路由

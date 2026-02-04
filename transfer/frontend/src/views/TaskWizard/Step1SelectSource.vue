@@ -92,8 +92,43 @@
         </el-select>
       </el-form-item>
 
-      <!-- 表（仅 table 模式） -->
-      <el-form-item v-if="queryMode === 'table'" label="数据表">
+      <!-- 对象存储路径选择（仅 S3/MinIO） -->
+      <el-form-item v-if="sourceType === 's3' && formData.engineValue" label="存储路径">
+        <el-input
+          v-model="formData.objectPath"
+          placeholder="请选择对象存储路径"
+          readonly
+          @click="showObjectPathPicker = true"
+        >
+          <template #append>
+            <el-button @click="showObjectPathPicker = true">浏览</el-button>
+          </template>
+        </el-input>
+        <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+          <p>选择对象存储的路径,然后从该路径下选择文件</p>
+        </div>
+      </el-form-item>
+
+      <!-- 对象存储文件选择（仅 S3/MinIO，选择路径后显示） -->
+      <el-form-item v-if="sourceType === 's3' && formData.objectPath" label="选择文件">
+        <el-select
+          v-model="formData.objectFile"
+          placeholder="请选择文件"
+          filterable
+          :loading="loadingFiles"
+          @change="handleFileChange"
+        >
+          <el-option
+            v-for="file in files"
+            :key="file.name"
+            :label="file.name"
+            :value="file.name"
+          />
+        </el-select>
+      </el-form-item>
+
+      <!-- 表（仅 table 模式且非 S3/MinIO） -->
+      <el-form-item v-if="queryMode === 'table' && sourceType !== 's3'" label="数据表">
         <el-select
           v-model="formData.table"
           placeholder="请选择数据表"
@@ -111,15 +146,33 @@
         </el-select>
       </el-form-item>
 
-      <!-- 表信息预览（仅系统引擎有元数据） -->
-      <el-form-item v-if="selectedTable && hasTableMetadata" label="表信息">
+      <!-- 表信息预览（仅系统引擎有元数据且非 S3/MinIO） -->
+      <el-form-item v-if="selectedTable && hasTableMetadata && sourceType !== 's3'" label="表信息">
         <div class="table-info">
           <p v-if="selectedTable.row_count !== undefined"><strong>行数：</strong>{{ selectedTable.row_count || 0 }}</p>
           <p v-if="selectedTable.size_bytes !== undefined"><strong>大小：</strong>{{ formatBytes(selectedTable.size_bytes) }}</p>
           <p v-if="selectedTable.comment"><strong>备注：</strong>{{ selectedTable.comment }}</p>
         </div>
       </el-form-item>
+
+      <!-- 文件信息预览（仅 S3/MinIO） -->
+      <el-form-item v-if="sourceType === 's3' && selectedFile" label="文件信息">
+        <div class="table-info">
+          <p><strong>文件名：</strong>{{ selectedFile.name }}</p>
+          <p v-if="selectedFile.size !== undefined"><strong>大小：</strong>{{ formatBytes(selectedFile.size) }}</p>
+          <p v-if="selectedFile.last_modified"><strong>修改时间：</strong>{{ selectedFile.last_modified }}</p>
+        </div>
+      </el-form-item>
     </el-form>
+
+    <!-- 对象存储路径选择器 -->
+    <ObjectStoragePathPicker
+      v-model:visible="showObjectPathPicker"
+      :scope="parseEngineValue(formData.engineValue).origin"
+      :resource-id="parseEngineValue(formData.engineValue).id"
+      :initial-prefix="formData.objectPath"
+      @selected="handlePathSelected"
+    />
   </div>
 </template>
 
@@ -129,6 +182,8 @@ import { ElMessage } from 'element-plus'
 import { getTables, getTableFields, getSchemas } from '@/api/meta'
 import { systemEnginesAPI } from '@/api/systemEngines'
 import { localEnginesAPI } from '@/api/localEngines'
+import { objectStorageAPI } from '@/api/objectStorage'
+import ObjectStoragePathPicker from '@/components/ObjectStoragePathPicker.vue'
 
 // Props
 const props = defineProps({
@@ -149,7 +204,9 @@ const sqlQuery = ref('') // SQL 查询语句
 const formData = reactive({
   engineValue: '', // 格式: "system:1" 或 "local:1"
   schema: '',
-  table: ''
+  table: '',
+  objectPath: '', // S3/MinIO 路径
+  objectFile: '' // S3/MinIO 文件
 })
 
 const systemEngines = ref([])
@@ -157,10 +214,14 @@ const localEngines = ref([])
 const schemas = ref([])
 const tables = ref([])
 const selectedTable = ref(null)
+const files = ref([]) // S3/MinIO 文件列表
+const selectedFile = ref(null) // S3/MinIO 选中的文件
+const showObjectPathPicker = ref(false) // 是否显示路径选择器
 
 const loadingEngines = ref(false)
 const loadingSchemas = ref(false)
 const loadingTables = ref(false)
+const loadingFiles = ref(false) // 加载文件列表
 
 // 解析引擎 value
 const parseEngineValue = (value) => {
@@ -229,6 +290,10 @@ const supportsQueryMode = computed(() => {
 
 // Computed
 const canProceed = computed(() => {
+  // S3/MinIO 模式：需要引擎、路径和文件
+  if (sourceType.value === 's3') {
+    return formData.engineValue && formData.objectPath && formData.objectFile
+  }
   // SQL 模式：需要引擎和 SQL 查询
   if (queryMode.value === 'sql') {
     return formData.engineValue && sqlQuery.value.trim() !== ''
@@ -250,15 +315,27 @@ watch(canProceed, (newVal) => {
   if (newVal) {
     const { origin, id } = parseEngineValue(formData.engineValue)
     // 更新向导状态
-    props.wizardState.updateSource({
-      engineID: id,
-      scope: origin, // 'system' 或 'local'
-      schema: formData.schema,
-      table: formData.table,
-      sourceType: sourceType.value, // 添加数据源类型
-      queryMode: queryMode.value, // 添加查询模式
-      sqlQuery: sqlQuery.value // 添加 SQL 查询
-    })
+    if (sourceType.value === 's3') {
+      // S3/MinIO 模式
+      props.wizardState.updateSource({
+        engineID: id,
+        scope: origin,
+        sourceType: sourceType.value,
+        objectPath: formData.objectPath,
+        objectFile: formData.objectFile
+      })
+    } else {
+      // 数据库模式
+      props.wizardState.updateSource({
+        engineID: id,
+        scope: origin,
+        schema: formData.schema,
+        table: formData.table,
+        sourceType: sourceType.value,
+        queryMode: queryMode.value,
+        sqlQuery: sqlQuery.value
+      })
+    }
   }
 })
 
@@ -267,8 +344,12 @@ function handleSourceTypeChange() {
   // 切换数据源类型时，清空已选择的引擎和表
   formData.engineValue = ''
   formData.table = ''
+  formData.objectPath = ''
+  formData.objectFile = ''
   tables.value = []
+  files.value = []
   selectedTable.value = null
+  selectedFile.value = null
 }
 
 function handleQueryModeChange() {
@@ -441,6 +522,55 @@ async function loadLocalEngineTables(engineID) {
   } finally {
     loadingTables.value = false
   }
+}
+
+// 路径选择器选中路径
+async function handlePathSelected(path) {
+  formData.objectPath = path
+  formData.objectFile = ''
+  files.value = []
+  selectedFile.value = null
+
+  // 加载该路径下的文件
+  await loadFiles()
+}
+
+// 加载对象存储文件列表
+async function loadFiles() {
+  if (!formData.engineValue || !formData.objectPath) return
+
+  loadingFiles.value = true
+  try {
+    const { origin, id } = parseEngineValue(formData.engineValue)
+    const response = await objectStorageAPI.listFiles({
+      scope: origin,
+      engine_id: id,
+      prefix: formData.objectPath
+    })
+
+    const fileList = Array.isArray(response?.data?.files) ? response.data.files : []
+    files.value = fileList.map(item => ({
+      name: item.name || item,
+      size: item.size || 0,
+      last_modified: item.last_modified || ''
+    }))
+
+    if (files.value.length > 0) {
+      ElMessage.success(`已加载 ${files.value.length} 个文件`)
+    } else {
+      ElMessage.warning('该路径下没有文件')
+    }
+  } catch (error) {
+    ElMessage.error('加载文件列表失败')
+    console.error(error)
+  } finally {
+    loadingFiles.value = false
+  }
+}
+
+// 文件选择改变
+function handleFileChange() {
+  selectedFile.value = files.value.find(f => f.name === formData.objectFile)
 }
 
 async function handleTableChange() {

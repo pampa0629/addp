@@ -296,13 +296,7 @@ func (s *InternalServiceService) AddLayer(serviceID uint, req *models.AddLayerRe
 		}
 	}
 
-	// 空间服务的图层必须有几何列
-	if service.IsSpatialService() && req.GeometryColumn == "" {
-		// 空间服务允许在后续从 Meta 获取几何列信息，所以这里不强制要求
-		// 但如果最终还是没有几何列，会在后面的验证中报错
-	}
-
-	// 数据表服务的图层不能有几何列
+	// 数据表服务的图层不能有几何列（先检查用户输入）
 	if service.ServiceType == "table" && req.GeometryColumn != "" {
 		return nil, errors.New("table service layer cannot have geometry_column")
 	}
@@ -313,51 +307,71 @@ func (s *InternalServiceService) AddLayer(serviceID uint, req *models.AddLayerRe
 	geometryTypes := req.GeometryTypes
 	extent4326 := req.Extent4326
 
-	// 如果未提供空间元数据，尝试从 Meta 模块获取
-	if geometryColumn == "" || srid == 0 || len(geometryTypes) == 0 {
-		if s.metaClient != nil {
-			// 设置租户 ID（用于服务间调用时的租户隔离）
-			s.metaClient.SetTenantID(&service.TenantID)
+	// 根据服务类型决定是否从 Meta 获取空间元数据
+	if service.ServiceType == "spatial" {
+		// 空间服务：如果未提供空间元数据，尝试从 Meta 模块获取
+		if geometryColumn == "" || srid == 0 || len(geometryTypes) == 0 {
+			if s.metaClient != nil {
+				// 设置租户 ID（用于服务间调用时的租户隔离）
+				s.metaClient.SetTenantID(&service.TenantID)
 
-			log.Printf("📡 Fetching spatial metadata from Meta for %s.%s (tenant_id=%d, engine_id=%d)",
-				req.SchemaName, req.DBTableName, service.TenantID, service.EngineID)
+				log.Printf("📡 Fetching spatial metadata from Meta for %s.%s (tenant_id=%d, engine_id=%d)",
+					req.SchemaName, req.DBTableName, service.TenantID, service.EngineID)
 
-			spatialMeta, err := s.metaClient.GetTableSpatialMetadata(service.EngineID, req.SchemaName, req.DBTableName)
-			if err != nil {
-				log.Printf("⚠️  Failed to get spatial metadata from Meta: %v", err)
-				// 如果 Meta 获取失败且用户未提供必填字段，返回错误
-				if geometryColumn == "" {
-					return nil, fmt.Errorf("geometry_column is required (Meta service unavailable)")
+				spatialMeta, err := s.metaClient.GetTableSpatialMetadata(service.EngineID, req.SchemaName, req.DBTableName)
+				if err != nil {
+					log.Printf("⚠️  Failed to get spatial metadata from Meta: %v", err)
+					// 如果 Meta 获取失败且用户未提供必填字段，返回错误
+					if geometryColumn == "" {
+						return nil, fmt.Errorf("geometry_column is required for spatial service (Meta service unavailable)")
+					}
+					if srid == 0 {
+						return nil, fmt.Errorf("srid is required for spatial service (Meta service unavailable)")
+					}
+				} else {
+					// 使用 Meta 提供的元数据（仅在用户未提供时）
+					if geometryColumn == "" {
+						geometryColumn = spatialMeta.GeometryColumn
+						log.Printf("✅ Using geometry_column from Meta: %s", geometryColumn)
+					}
+					if srid == 0 {
+						srid = spatialMeta.SRID
+						log.Printf("✅ Using SRID from Meta: %d", srid)
+					}
+					if len(geometryTypes) == 0 && len(spatialMeta.GeometryTypes) > 0 {
+						geometryTypes = spatialMeta.GeometryTypes
+						log.Printf("✅ Using geometry_types from Meta: %v", geometryTypes)
+					}
+					// TODO: 将 Meta 的 extent 转换为 extent_4326 (需要坐标转换)
+					// 暂时跳过，让用户手动提供或后续优化
 				}
-				if srid == 0 {
-					return nil, fmt.Errorf("srid is required (Meta service unavailable)")
-				}
-			} else {
-				// 使用 Meta 提供的元数据（仅在用户未提供时）
-				if geometryColumn == "" {
-					geometryColumn = spatialMeta.GeometryColumn
-					log.Printf("✅ Using geometry_column from Meta: %s", geometryColumn)
-				}
-				if srid == 0 {
-					srid = spatialMeta.SRID
-					log.Printf("✅ Using SRID from Meta: %d", srid)
-				}
-				if len(geometryTypes) == 0 && len(spatialMeta.GeometryTypes) > 0 {
-					geometryTypes = spatialMeta.GeometryTypes
-					log.Printf("✅ Using geometry_types from Meta: %v", geometryTypes)
-				}
-				// TODO: 将 Meta 的 extent 转换为 extent_4326 (需要坐标转换)
-				// 暂时跳过，让用户手动提供或后续优化
 			}
 		}
+	} else if service.ServiceType == "table" {
+		// 数据表服务：禁止从 Meta 自动获取几何列，强制清空
+		geometryColumn = ""
+		geometryTypes = []string{}
+		// 使用默认 SRID（数据表服务不需要空间信息，但数据库字段有 NOT NULL 约束）
+		if srid == 0 {
+			srid = 4326
+		}
+		log.Printf("⚠️  Table service: geometry_column disabled for %s.%s", req.SchemaName, req.DBTableName)
 	}
 
-	// 最终验证必填字段
-	if geometryColumn == "" {
-		return nil, fmt.Errorf("geometry_column is required")
-	}
-	if srid == 0 {
-		return nil, fmt.Errorf("srid is required")
+	// 最终验证：根据服务类型验证必填字段
+	if service.ServiceType == "spatial" {
+		// 空间服务必须有几何列和 SRID
+		if geometryColumn == "" {
+			return nil, fmt.Errorf("geometry_column is required for spatial service")
+		}
+		if srid == 0 {
+			return nil, fmt.Errorf("srid is required for spatial service")
+		}
+	} else if service.ServiceType == "table" {
+		// 数据表服务不能有几何列（再次确认，防止从 Meta 意外获取）
+		if geometryColumn != "" {
+			return nil, errors.New("table service layer cannot have geometry_column (detected from Meta or user input)")
+		}
 	}
 
 	layer := &models.InternalServiceLayer{

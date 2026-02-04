@@ -29,11 +29,25 @@ type ObjectStorageDirectory struct {
 	Path string `json:"path"`
 }
 
+// ObjectStorageFile 文件条目
+type ObjectStorageFile struct {
+	Name         string    `json:"name"`
+	Size         int64     `json:"size"`
+	LastModified time.Time `json:"last_modified"`
+}
+
 // ObjectStorageBrowseResult 目录浏览结果
 type ObjectStorageBrowseResult struct {
 	Bucket      string                   `json:"bucket"`
 	Prefix      string                   `json:"prefix"`
 	Directories []ObjectStorageDirectory `json:"directories"`
+}
+
+// ObjectStorageListFilesResult 文件列表结果
+type ObjectStorageListFilesResult struct {
+	Bucket string                `json:"bucket"`
+	Prefix string                `json:"prefix"`
+	Files  []ObjectStorageFile   `json:"files"`
 }
 
 // ObjectStorageService 提供对象存储的辅助能力
@@ -136,6 +150,92 @@ func (s *ObjectStorageService) ListDirectories(ctx context.Context, tenantID uin
 		Bucket:      bucket,
 		Prefix:      sanitizedPrefix,
 		Directories: directories,
+	}, nil
+}
+
+// ListFiles 列出指定前缀下的文件（不包括子目录）
+func (s *ObjectStorageService) ListFiles(ctx context.Context, tenantID uint, scope string, engineID uint, prefix string) (*ObjectStorageListFilesResult, error) {
+	connInfo, bucket, err := s.resolveConnectionInfo(scope, engineID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	if bucket == "" {
+		return nil, ErrObjectStorageBucketRequired
+	}
+
+	endpoint := getStringFromConn(connInfo, "endpoint")
+	accessKey := getStringFromConn(connInfo, "access_key")
+	secretKey := getStringFromConn(connInfo, "secret_key")
+	useSSL := getBoolFromConn(connInfo, "use_ssl")
+
+	if endpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("incomplete object storage connection info")
+	}
+
+	endpoint, schemeSSL := stripEndpointScheme(endpoint)
+	if schemeSSL {
+		useSSL = true
+	}
+
+	client, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: useSSL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create object storage client: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	sanitizedPrefix := sanitizePrefix(prefix)
+	opts := minio.ListObjectsOptions{
+		Prefix:    sanitizedPrefix,
+		Recursive: false,
+	}
+
+	objectCh := client.ListObjects(ctx, bucket, opts)
+	files := make([]ObjectStorageFile, 0)
+
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, fmt.Errorf("failed to list objects: %w", object.Err)
+		}
+
+		// 跳过目录（以 / 结尾的对象）
+		if strings.HasSuffix(object.Key, "/") {
+			continue
+		}
+
+		// 只列出当前目录下的文件，不包括子目录中的文件
+		relativePath := strings.TrimPrefix(object.Key, sanitizedPrefix)
+		if strings.Contains(relativePath, "/") {
+			// 这是子目录中的文件，跳过
+			continue
+		}
+
+		files = append(files, ObjectStorageFile{
+			Name:         object.Key,
+			Size:         object.Size,
+			LastModified: object.LastModified,
+		})
+
+		// 限制返回的文件数量，避免过大
+		if len(files) >= 1000 {
+			break
+		}
+	}
+
+	// 按名称排序
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+	})
+
+	return &ObjectStorageListFilesResult{
+		Bucket: bucket,
+		Prefix: sanitizedPrefix,
+		Files:  files,
 	}, nil
 }
 
