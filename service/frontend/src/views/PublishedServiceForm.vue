@@ -521,7 +521,7 @@ const handleSubmit = async () => {
           layer_name: selectedTable.value.tableName,
           title: selectedTable.value.label,
           schema_name: selectedTable.value.schema,
-          db_table_name: selectedTable.value.tableName,
+          table_name: selectedTable.value.tableName,
           geometry_column: selectedTable.value.geometryColumn || '',
           srid: selectedTable.value.srid || 0,
           geometry_types: selectedTable.value.geometryType

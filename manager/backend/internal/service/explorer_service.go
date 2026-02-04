@@ -561,14 +561,39 @@ type metaClientAdapter struct {
 	client *commonClient.MetaClient
 }
 
-func (a *metaClientAdapter) GetNodeByID(nodeID uint) (*commonModels.MetaNode, error) {
-	// TODO: 实现从 MetaClient 获取节点
-	return nil, fmt.Errorf("not implemented")
+func (a *metaClientAdapter) GetMetadataTree(engineID uint) (*commonModels.MetadataTree, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("meta client not initialized")
+	}
+	return a.client.GetMetadataTree(engineID)
 }
 
-func (a *metaClientAdapter) GetTree(engineID uint, expandDepth int) ([]*commonModels.MetaNode, error) {
-	// TODO: 实现从 MetaClient 获取树
-	return nil, fmt.Errorf("not implemented")
+func (a *metaClientAdapter) GetNodeByPath(engineID uint, nodePath string) (*commonModels.MetaNode, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("meta client not initialized")
+	}
+	return a.client.GetNodeByPath(engineID, nodePath)
+}
+
+func (a *metaClientAdapter) GetNodeChildren(nodeID uint) ([]commonModels.MetaNode, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("meta client not initialized")
+	}
+	return a.client.GetNodeChildren(nodeID)
+}
+
+func (a *metaClientAdapter) GetNodeItems(nodeID uint) ([]commonModels.MetaItem, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("meta client not initialized")
+	}
+	return a.client.GetNodeItems(nodeID)
+}
+
+func (a *metaClientAdapter) GetMetaNode(nodeID uint) (*commonModels.MetaNode, error) {
+	if a.client == nil {
+		return nil, fmt.Errorf("meta client not initialized")
+	}
+	return a.client.GetMetaNode(nodeID)
 }
 
 // convertManagerEngineToCommon 将 Manager 的 Engine 转换为 Common 的 Engine

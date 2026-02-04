@@ -185,7 +185,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
-import publishedServiceAPI from "../api/publishedService'
+import publishedServiceAPI from "../api/publishedService"
 
 const route = useRoute()
 

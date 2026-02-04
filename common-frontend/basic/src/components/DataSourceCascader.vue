@@ -104,7 +104,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  Database,
   Folder,
   Document,
   Coin,
@@ -471,7 +470,7 @@ const hasGeometryColumn = (node) => {
 // 获取图标组件
 const getIconComponent = (iconName) => {
   const iconMap = {
-    Database: Database,
+    Database: Coin,
     Coin: Coin,
     Folder: Folder,
     FolderOpen: Folder,
