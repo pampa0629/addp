@@ -1,52 +1,30 @@
-package common
+package wfs
 
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 	"strings"
 
+	"github.com/addp/common/spatial"
 	"github.com/addp/service/internal/models"
 )
 
 // QueryParams 要素查询参数
 type QueryParams struct {
-	LayerID     uint
-	SRID        int           // 目标坐标系 EPSG 代码
-	BBOX        *BBox         // 空间范围过滤
-	Filter      string        // CQL 过滤器
-	PropertyNames []string    // 要返回的属性列表
-	SortBy      string        // 排序字段 (field_name+A 或 field_name+D)
-	Limit       int           // 返回要素数
-	Offset      int           // 分页偏移
-}
-
-// BBox 空间范围
-type BBox struct {
-	MinX float64
-	MinY float64
-	MaxX float64
-	MaxY float64
-	CRS  int // EPSG 代码
-}
-
-// SupportedSRIDs 支持的坐标系列表
-var SupportedSRIDs = []int{4326, 3857, 4490, 2000, 4214}
-
-// ValidateSRID 验证坐标系是否支持
-func ValidateSRID(srid int) error {
-	for _, supported := range SupportedSRIDs {
-		if srid == supported {
-			return nil
-		}
-	}
-	return fmt.Errorf("unsupported SRID %d, supported: %v", srid, SupportedSRIDs)
+	LayerID       uint
+	SRID          int             // 目标坐标系 EPSG 代码
+	BBOX          *spatial.BBox   // 空间范围过滤
+	Filter        string          // CQL 过滤器
+	PropertyNames []string        // 要返回的属性列表
+	SortBy        string          // 排序字段 (field_name+A 或 field_name+D)
+	Limit         int             // 返回要素数
+	Offset        int             // 分页偏移
 }
 
 // BuildFeatureQuery 构建要素查询 SQL
 // 返回 SQL 语句和参数列表
 func BuildFeatureQuery(layer *models.InternalServiceLayer, params *QueryParams) (string, []interface{}, error) {
-	if err := ValidateSRID(params.SRID); err != nil {
+	if err := spatial.ValidateSRID(params.SRID); err != nil {
 		return "", nil, err
 	}
 
@@ -263,59 +241,3 @@ func RowsToFeatures(rows *sql.Rows, columns []string) ([]map[string]interface{},
 
 	return features, rows.Err()
 }
-
-// ParseBBox 解析 bbox 参数字符串
-// 格式：minLon,minLat,maxLon,maxLat[,crs]
-// 默认坐标系为 EPSG:4326
-func ParseBBox(bboxStr string) (*BBox, error) {
-	if bboxStr == "" {
-		return nil, nil
-	}
-
-	parts := strings.Split(bboxStr, ",")
-	if len(parts) != 4 && len(parts) != 5 {
-		return nil, fmt.Errorf("invalid bbox format, expected minLon,minLat,maxLon,maxLat[,crs]")
-	}
-
-	bbox := &BBox{
-		CRS: 4326, // 默认 WGS84
-	}
-
-	var err error
-	bbox.MinX, err = strconv.ParseFloat(parts[0], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid bbox minX: %w", err)
-	}
-
-	bbox.MinY, err = strconv.ParseFloat(parts[1], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid bbox minY: %w", err)
-	}
-
-	bbox.MaxX, err = strconv.ParseFloat(parts[2], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid bbox maxX: %w", err)
-	}
-
-	bbox.MaxY, err = strconv.ParseFloat(parts[3], 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid bbox maxY: %w", err)
-	}
-
-	// 解析 CRS（如果提供）
-	if len(parts) == 5 {
-		crs, err := strconv.Atoi(parts[4])
-		if err != nil {
-			return nil, fmt.Errorf("invalid bbox CRS: %w", err)
-		}
-		bbox.CRS = crs
-	}
-
-	// 验证范围
-	if bbox.MinX >= bbox.MaxX || bbox.MinY >= bbox.MaxY {
-		return nil, fmt.Errorf("invalid bbox: min values must be less than max values")
-	}
-
-	return bbox, nil
-}
-

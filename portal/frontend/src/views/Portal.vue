@@ -148,13 +148,9 @@
               <el-icon><Link /></el-icon>
               <span>数据服务</span>
             </template>
-            <el-menu-item index="/service/query">
-              <el-icon><Search /></el-icon>
-              <span>数据服务</span>
-            </el-menu-item>
-            <el-menu-item index="/service/internal-services">
-              <el-icon><Grid /></el-icon>
-              <span>空间服务</span>
+            <el-menu-item index="/service/published-services">
+              <el-icon><Upload /></el-icon>
+              <span>服务发布</span>
             </el-menu-item>
             <el-menu-item index="/service/services">
               <el-icon><Connection /></el-icon>
@@ -462,13 +458,12 @@ const handleMenuSelect = (index) => {
         url = `${moduleUrls[module]}/`
       }
     } else if (module === 'service') {
-      // Service 模块的路由: /services, /internal-services, /catalog, /query 等 (不需要 /service 前缀)
+      // Service 模块的路由: /services, /published-services, /catalog 等 (不需要 /service 前缀)
       const servicePageMap = {
         'services': 'services',
-        'internal-services': 'internal-services',
+        'published-services': 'published-services',
         'catalog': 'catalog',
-        'query': 'query',
-        '': 'services'
+        '': 'published-services'
       }
       const actualPage = servicePageMap[page] !== undefined ? servicePageMap[page] : page
       if (actualPage) {
@@ -511,7 +506,7 @@ const navigateToModule = (module) => {
   } else if (module === 'develop') {
     handleMenuSelect('/develop/sql')
   } else if (module === 'service') {
-    handleMenuSelect('/service/services')
+    handleMenuSelect('/service/published-services')
   }
 }
 

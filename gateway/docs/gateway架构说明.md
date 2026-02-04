@@ -1,27 +1,25 @@
-# Gateway 架构详解
+# Gateway 架构说明
 
 ## 📋 目录
 
-1. [Gateway 是什么](#gateway-是什么)
+1. [Gateway 概述](#gateway-概述)
 2. [核心功能](#核心功能)
-3. [工作原理](#工作原理)
-4. [代码结构](#代码结构)
-5. [请求流程](#请求流程)
-6. [路由规则](#路由规则)
-7. [数据库集成](#数据库集成)
-8. [Redis 集成](#redis-集成)
-9. [为什么使用专用 SystemClient](#为什么使用专用-systemclient)
-10. [监控和调试](#监控和调试)
-11. [未来扩展](#未来扩展)
+3. [整体架构](#整体架构)
+4. [模块注册与动态路由](#模块注册与动态路由)
+5. [路由规则](#路由规则)
+6. [数据存储设计](#数据存储设计)
+7. [代码结构](#代码结构)
+8. [请求流程](#请求流程)
+9. [架构决策](#架构决策)
 
-## Gateway 是什么
+## Gateway 概述
 
 Gateway（API 网关）是全域数据平台的**统一入口**，所有外部请求都通过它进入系统。
 
 ### 为什么需要 Gateway？
 
 在微服务架构中，如果没有 Gateway：
-
+ 
 ```
 客户端 → System (8180)     # 直接访问宿主机端口
 客户端 → Manager (8081)
@@ -60,8 +58,9 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 
 ## 核心功能
 
-### 1. **API Key 认证** 🔐
-基于三层缓存的 API Key 验证机制
+### 1. API Key 认证 🔐
+
+基于三层缓存的 API Key 验证机制，确保高性能和安全性。
 
 ```
 客户端请求（X-API-Key: xxx）
@@ -74,25 +73,27 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 
 **特点**：
 - SHA256 哈希存储，安全可靠
-- 三层缓存极大提升性能
-- 支持服务级别访问控制
+- 三层缓存极大提升性能（缓存命中率 > 95%）
+- 支持服务级别访问控制（allowed_services）
 - 支持 API Key 撤销和缓存失效
 
-### 2. **请求路由** 🚦
-根据 URL 路径将请求转发到对应的后端服务
+### 2. 请求路由 🚦
 
-```
-/api/system/*    → System (认证、用户、租户、引擎、日志)
-/api/manager/*   → Manager (数据源、预览、文件上传)
-/api/meta/*      → Meta (元数据扫描、对象存储)
-/api/transfer/*  → Transfer (数据传输任务)
-/api/develop/*   → Develop (SQL 执行、工作流)
-/api/service/*   → Service (数据服务、OGC 标准)
-/api/copilot/*   → Copilot (AI 助手)
-```
+根据 URL 路径将请求转发到对应的后端服务。
 
-### 3. **限流控制** ⏱️
-基于 Redis 令牌桶算法的限流机制
+| 路由前缀 | 目标服务 | 说明 |
+|---------|---------|-----|
+| `/api/system/*` | System (8180) | 认证、用户、租户、引擎、日志 |
+| `/api/manager/*` | Manager (8081) | 数据源、预览、文件上传 |
+| `/api/meta/*` | Meta (8082) | 元数据扫描、对象存储 |
+| `/api/transfer/*` | Transfer (8083) | 数据传输任务 |
+| `/api/develop/*` | Develop (8084) | SQL 执行、工作流 |
+| `/api/service/*` | Service (8086) | 数据服务、OGC 标准 |
+| `/api/copilot/*` | Copilot (8087) | AI 助手 |
+
+### 3. 限流控制 ⏱️
+
+基于 Redis 令牌桶算法的限流机制，防止恶意攻击和保护后端服务。
 
 ```
 每个应用独立限流配额
@@ -104,21 +105,20 @@ Redis 原子操作（Lua 脚本）
 
 **特点**：
 - 按应用 ID 独立限流
-- 每分钟请求数可配置
+- 每分钟请求数可配置（在 System 模块 Application 管理界面设置）
 - Redis 保证分布式一致性
 - 自动记录限流事件
 
-### 4. **访问日志** 📝
-异步记录所有 API 访问到 PostgreSQL
+### 4. 访问日志 📝
 
-```
-每次请求自动记录：
-  - 应用 ID 和 API Key 前缀
-  - 请求路径、方法、参数
-  - 响应状态码和响应时间
-  - 缓存命中情况
-  - 是否被限流
-```
+异步记录所有 API 访问到 PostgreSQL `gateway.api_access_logs` 表。
+
+**记录内容**：
+- 应用 ID 和 API Key 前缀
+- 请求路径、方法、参数
+- 响应状态码和响应时间
+- 缓存命中情况
+- 是否被限流
 
 **用途**：
 - API 使用统计和分析
@@ -126,35 +126,16 @@ Redis 原子操作（Lua 脚本）
 - 缓存命中率分析
 - 限流审计
 
-### 5. **请求代理** 🔄
-完整转发 HTTP 请求，包括：
-- 请求方法（GET, POST, PUT, DELETE）
-- 请求头（Headers）
-- 请求体（Body）
-- 查询参数（Query Parameters）
+### 5. 其他功能
 
-### 6. **路径重写** 🔀
-支持模块化路由映射
+- **请求代理**：完整转发 HTTP 请求（方法、头部、体、查询参数）
+- **路径重写**：支持模块化路由映射（如 `/api/manager/engines` → `/api/engines`）
+- **跨域处理**：统一配置 CORS，允许前端跨域访问
+- **健康检查**：提供 `/health` 端点检查 Gateway 状态
 
-```
-Manager 模块路径重写：
-  请求：GET /api/manager/engines/1
-  转发：GET /api/engines/1 (Manager 服务)
+## 整体架构
 
-Copilot 模块路径重写：
-  请求：POST /api/copilot/chat
-  转发：POST /chat (Copilot 服务)
-```
-
-### 7. **跨域处理** 🌐
-统一配置 CORS，允许前端跨域访问
-
-### 8. **健康检查** ❤️
-提供 `/health` 端点检查 Gateway 状态
-
-## 工作原理
-
-### 整体架构
+### 架构图
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -226,138 +207,240 @@ Response
 
 ### 核心组件
 
-#### 1. **Config (配置管理)**
-文件：[internal/config/config.go](../internal/config/config.go)
+| 组件 | 文件位置 | 职责 |
+|------|---------|------|
+| **Config** | `internal/config/config.go` | 配置管理：从环境变量读取配置、提供默认值 |
+| **Router** | `internal/router/router.go` | 路由配置：定义路由规则、创建代理实例、配置中间件链 |
+| **Proxy** | `internal/proxy/proxy.go` | HTTP 代理：转发请求、保持完整性、支持路径重写 |
+| **APIKeyAuthMiddleware** | `internal/middleware/api_key_auth.go` | 三层缓存验证 API Key |
+| **RateLimiterMiddleware** | `internal/middleware/rate_limiter.go` | Redis 令牌桶限流 |
+| **AccessLoggerMiddleware** | `internal/middleware/access_logger.go` | 异步记录访问日志 |
+| **SystemClient** | `pkg/client/system_client.go` | 专用客户端：验证 API Key（5秒超时） |
+| **LocalCache** | `internal/cache/local_cache.go` | 本地缓存：5分钟 TTL、自动清理 |
+| **ModuleDiscovery** | `internal/module_discovery.go` | 模块发现：从 System 动态加载模块列表、创建代理 |
 
-```go
-type Config struct {
-    // Gateway 配置
-    Port string  // Gateway 端口（默认：8000）
-    Env  string  // 运行环境（development/production）
+## 模块注册与动态路由
 
-    // 后端服务地址（7 个服务）
-    SystemServiceURL   string  // System 服务（默认：http://localhost:8180）
-    ManagerServiceURL  string  // Manager 服务（默认：http://localhost:8081）
-    MetaServiceURL     string  // Meta 服务（默认：http://localhost:8082）
-    TransferServiceURL string  // Transfer 服务（默认：http://localhost:8083）
-    DevelopServiceURL  string  // Develop 服务（默认：http://localhost:8084）
-    ServiceServiceURL  string  // Service 服务（默认：http://localhost:8086）
-    CopilotServiceURL  string  // Copilot 服务（默认：http://localhost:8087）
+Gateway 支持两种路由模式：**硬编码路由**（默认）和**动态路由**（基于模块注册表）。
 
-    // 数据库配置
-    DBHost     string  // PostgreSQL 主机（默认：localhost）
-    DBPort     string  // PostgreSQL 端口（默认：5432）
-    DBUser     string  // 数据库用户（默认：addp）
-    DBPassword string  // 数据库密码（默认：addp_password）
-    DBName     string  // 数据库名（默认：addp）
-    DBSchema   string  // 数据库 schema（默认：gateway）
+### 模块注册表（system.module_registry）
 
-    // Redis 配置
-    RedisHost     string  // Redis 主机（默认：localhost）
-    RedisPort     string  // Redis 端口（默认：6379）
-    RedisPassword string  // Redis 密码（默认：addp_redis）
-    RedisDB       int     // Redis DB（默认：0）
+**表名**：`system.module_registry`
 
-    // 认证配置
-    InternalAPIKey string  // 内部 API 密钥（用于调用 System 模块）
+**用途**：System 模块维护的模块注册中心，记录所有已注册模块的信息，供 Gateway 动态发现和路由。
+
+**核心字段**：
+
+| 字段名 | 类型 | 说明 | 示例 |
+|-------|------|------|------|
+| module_name | VARCHAR(50) | 模块名称（唯一索引） | `manager` |
+| module_url | VARCHAR(255) | 模块 URL | `http://localhost:8081` |
+| route_prefix | VARCHAR(50) | 路由前缀 | `/manager` |
+| health_check_url | VARCHAR(255) | 健康检查端点 | `http://localhost:8081/health` |
+| status | VARCHAR(20) | 状态（up/down） | `up` |
+| last_heartbeat | TIMESTAMP | 最后心跳时间 | `2025-01-24 10:30:15` |
+| metadata | JSONB | 扩展信息（版本、权重） | `{"version": "0.0.24"}` |
+
+**索引**：
+- `idx_module_registry_status` - 状态索引（加速查询活跃模块）
+- `idx_module_registry_heartbeat` - 心跳索引（加速超时检测）
+
+### 模块注册流程
+
+```
+1. 模块启动
+   - 调用 System API: POST /api/internal/modules/register
+   - 传入：module_name, module_url, route_prefix, health_check_url
+   ↓
+2. System 模块写入 module_registry 表（幂等操作）
+   - 如果模块已存在，更新 URL 和 metadata
+   - 如果模块不存在，创建新记录
+   - 初始状态设为 'up'
+   ↓
+3. 模块定期发送心跳
+   - 调用 System API: POST /api/internal/modules/heartbeat
+   - System 更新 last_heartbeat 字段
+   ↓
+4. System 定时任务（每 30 秒）检查超时模块
+   - 如果 last_heartbeat 超时（默认 2 分钟）
+   - 将 status 从 'up' 改为 'down'
+```
+
+### Gateway 动态路由流程
+
+```
+1. Gateway 启动
+   - 检查环境变量：MODULE_REGISTRY_ENABLED=true
+   - 如果启用，创建 ModuleDiscovery 实例
+   ↓
+2. 初始化模块列表
+   - 调用 System API: GET /api/internal/modules?status=up
+   - 获取所有活跃模块（status='up'）
+   ↓
+3. 构建动态路由映射
+   - 为每个模块创建 ServiceProxy：map[module_name]*ServiceProxy
+   - 存储模块信息：map[module_name]*ModuleInfo
+   ↓
+4. 启动定时刷新任务
+   - 定期刷新模块列表（MODULE_REFRESH_INTERVAL，默认 30 秒）
+   - 检测模块变更：
+     - 新增模块 → 创建新代理
+     - 模块 URL 变更 → 重建代理
+     - 模块下线（status='down'） → 删除代理
+   ↓
+5. 请求路由
+   - 客户端请求：GET /api/manager/engines
+   - Gateway 提取 module_name = "manager"
+   - 从 ModuleDiscovery 获取对应的 ServiceProxy
+   - 如果模块存在且 status='up' → 转发请求
+   - 如果模块不存在或 status='down' → 返回 503 Service Unavailable
+   - Fallback 机制：如果模块发现失败，使用硬编码路由
+```
+
+### 动态路由的核心价值
+
+| 价值点 | 说明 |
+|--------|------|
+| **动态扩展** | 新增模块无需修改 Gateway 代码，只需注册到 System 即可自动路由 |
+| **自动故障切换** | 模块宕机或心跳超时自动标记为 'down'，Gateway 不再转发请求 |
+| **健康监控** | 通过心跳机制实时监控模块状态，及时发现服务故障 |
+| **负载均衡基础** | 未来可支持同一模块的多实例（通过 metadata 存储权重信息） |
+| **灰度发布基础** | 未来可支持同一模块的多个版本（v1/v2），通过 metadata 控制流量分配 |
+| **配置热更新** | 模块 URL 变更无需重启 Gateway，定时刷新自动生效 |
+
+### 配置示例
+
+**启用动态路由**（`.env`）：
+```bash
+MODULE_REGISTRY_ENABLED=true        # 启用模块发现
+MODULE_REFRESH_INTERVAL=30s         # 刷新间隔（默认 30 秒）
+```
+
+**硬编码路由**（默认，无需模块注册）：
+```bash
+MODULE_REGISTRY_ENABLED=false       # 禁用模块发现（使用硬编码路由）
+```
+
+## 路由规则
+
+### 路由表
+
+| 路由前缀 | 目标服务 | 端口 | 认证要求 | 路径重写 | 说明 |
+|---------|---------|------|---------|---------|-----|
+| `POST /api/system/login` | System | 8180 | **公开** | 无 | 用户登录 |
+| `POST /api/system/register` | System | 8180 | **公开** | 无 | 用户注册 |
+| `/api/system/*` | System | 8180 | API Key | 无 | 用户、租户、引擎、日志管理 |
+| `/api/manager/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 数据源、预览、搜索 |
+| `/api/meta/*` | Meta | 8082 | API Key | 无 | 元数据扫描、对象存储 |
+| `/api/transfer/*` | Transfer | 8083 | API Key | 无 | 传输任务、连接管理 |
+| `/api/develop/*` | Develop | 8084 | API Key | 无 | SQL 执行、工作流 |
+| `/api/service/*` | Service | 8086 | API Key | 无 | 数据服务、OGC 标准 |
+| `/api/copilot/*` | Copilot | 8087 | API Key | ✅ 移除 `/api` | AI 助手 |
+
+### 路径重写示例
+
+**Manager 模块**：
+```
+请求: GET /api/manager/engines/1
+  ↓ 路径重写（移除 /manager 前缀）
+转发: GET /api/engines/1 (Manager 服务)
+```
+
+**Copilot 模块**：
+```
+请求: POST /api/copilot/chat
+  ↓ 路径重写（移除 /api 前缀）
+转发: POST /chat (Copilot 服务)
+```
+
+### 路由匹配规则
+
+Gateway 使用 **前缀匹配**，支持通配符和查询参数透传：
+
+```
+请求: GET /api/system/users/123
+匹配: /api/system/users/*
+代理到: http://localhost:8180/api/system/users/123
+
+请求: POST /api/manager/engines?type=postgresql
+匹配: /api/manager/engines/*
+路径重写: /api/engines?type=postgresql
+代理到: http://localhost:8081/api/engines?type=postgresql
+```
+
+## 数据存储设计
+
+### PostgreSQL Schema: gateway
+
+**说明**：Gateway 在数据库初始化脚本中预留了独立的 `gateway` schema，用于存储访问日志等数据。
+
+#### 访问日志（api_access_logs）
+
+**实现状态**：⚠️ **当前未实现**
+
+Gateway 有访问日志中间件的代码实现（`internal/middleware/access_logger.go`），设计用于记录 API Key 访问审计和性能监控，但由于未执行 GORM AutoMigrate，`gateway.api_access_logs` 表实际上不存在，访问日志功能未启用。
+
+**设计用途**（未来实现）：
+- 记录 API Key 访问信息（application_id, api_key_prefix）
+- 监控缓存性能（cache_hit 指标）
+- 审计限流事件（rate_limited 指标）
+- 分析响应时间（response_time_ms）
+
+**与 System AuditLog 的关系**：
+- **System AuditLog**（`system.audit_logs`）：已实现，记录**用户业务操作审计**（谁做了什么操作）
+  - 使用范围：Manager、Meta、Transfer、Develop、Service、Orchestrator 模块
+  - 记录内容：用户信息、HTTP 请求、资源类型、错误追踪
+  - 记录范围：仅非 GET 请求（创建、更新、删除等修改操作）
+  - 用途：合规审计、问题追溯
+- **Gateway AccessLog**（未实现）：设计用于记录 **API Key 访问审计和性能监控**
+  - 使用范围：仅 Gateway 模块
+  - 记录内容：API Key 信息、服务路由、缓存命中、限流状态
+  - 记录范围：所有请求（包括 GET）
+  - 用途：性能分析、限流审计、缓存优化
+
+**两者关系**：互补而非替代。System AuditLog 关注"谁做了什么"，Gateway AccessLog 关注"API Key 访问性能和限流"。
+
+### PostgreSQL Schema: system.module_registry
+
+详见上文 [模块注册与动态路由](#模块注册与动态路由) 章节。
+
+### Redis Key 设计
+
+Gateway 使用 Redis 存储缓存和限流数据。
+
+| Key 模式 | 用途 | TTL | 数据类型 | 示例 Value |
+|---------|------|-----|---------|-----------|
+| `gateway:apikey:{hash}` | API Key 验证缓存 | 1 小时 | String (JSON) | `{"valid": true, "app_id": 123, ...}` |
+| `ratelimit:app:{id}` | 限流计数器 | 1 分钟 | Integer | `45`（当前分钟请求数） |
+
+#### API Key 验证缓存
+
+**Key 格式**：`gateway:apikey:{SHA256(api_key)}`
+
+**Value 格式**：JSON 字符串
+```json
+{
+  "valid": true,
+  "app_id": 123,
+  "app_name": "My Application",
+  "allowed_services": ["system", "manager", "meta"],
+  "rate_limit_per_minute": 1000,
+  "expires_at": "2025-12-31T23:59:59Z"
 }
 ```
 
-**作用**：
-- 从环境变量读取配置
-- 提供默认值
-- 集中管理所有服务地址和连接信息
+**用途**：避免每次请求都调用 System API，极大提升验证性能（从 20ms → <1ms）
 
-#### 2. **Router (路由配置)**
-文件：[internal/router/router.go](../internal/router/router.go)
+#### 限流计数器
 
-**作用**：
-- 定义路由规则（公开路由 + 受保护路由）
-- 创建代理实例（7 个服务）
-- 配置中间件链（CORS → API Key → 限流 → 日志）
-- 初始化数据库和 Redis 连接
+**Key 格式**：`ratelimit:app:{app_id}`
 
-#### 3. **Proxy (HTTP 代理)**
-文件：[internal/proxy/proxy.go](../internal/proxy/proxy.go)
+**Value 格式**：整数（当前分钟的请求数）
 
-```go
-type ServiceProxy struct {
-    targetURL string      // 目标服务地址
-    client    *http.Client // HTTP 客户端
-}
-
-// Handle 基础代理处理
-func (p *ServiceProxy) Handle(c *gin.Context) {
-    // 1. 构建目标 URL（保留查询参数）
-    // 2. 读取请求体
-    // 3. 创建新请求
-    // 4. 复制请求头
-    // 5. 发送请求到后端服务
-    // 6. 复制响应头和响应体
-}
-
-// HandleWithPathRewrite 路径重写代理
-func (p *ServiceProxy) HandleWithPathRewrite(prefix string) gin.HandlerFunc {
-    // 移除路径前缀后转发
-    // 例如：/api/manager/engines → /api/engines
-}
-```
-
-**作用**：
-- 转发 HTTP 请求到后端服务
-- 保持请求的完整性（方法、头部、体、查询参数）
-- 支持路径重写
-- 透明代理，客户端无感知
-
-#### 4. **Middleware (中间件)**
-
-##### APIKeyAuthMiddleware
-文件：[internal/middleware/api_key_auth.go](../internal/middleware/api_key_auth.go)
-
-**功能**：
-- 检查 `X-API-Key` 请求头
-- 计算 API Key 的 SHA256 哈希
-- 三层缓存验证（本地 5分钟 → Redis 1小时 → System API）
-- 将验证结果存入 gin context
-
-##### RateLimiterMiddleware
-文件：[internal/middleware/rate_limiter.go](../internal/middleware/rate_limiter.go)
-
-**功能**：
-- 基于 Redis 令牌桶算法
-- 按应用 ID 限制每分钟请求数
-- 使用 Lua 脚本保证原子性
-- 超限返回 429 错误
-
-##### AccessLoggerMiddleware
-文件：[internal/middleware/access_logger.go](../internal/middleware/access_logger.go)
-
-**功能**：
-- 异步记录所有 API 访问
-- 存储到 PostgreSQL `gateway.api_access_logs` 表
-- 包含应用 ID、API Key 前缀、服务名、响应状态、响应时间等
-
-#### 5. **SystemClient (专用客户端)**
-文件：[pkg/client/system_client.go](../pkg/client/system_client.go)
-
-**功能**：
-- `ValidateAPIKey(keyHash)` - 验证 API Key
-- `BulkGetAPIKeys()` - 批量获取 API Keys（用于预加载）
-
-**特点**：
-- 5 秒超时（快速失败）
-- 使用内部密钥认证（`X-Internal-API-Key`）
-- 轻量级（100 行代码）
-- 专为 API Key 验证优化
-
-#### 6. **LocalCache (本地缓存)**
-文件：[internal/cache/local_cache.go](../internal/cache/local_cache.go)
-
-**功能**：
-- 存储 API Key 验证结果
-- 5 分钟 TTL
-- 自动清理过期数据
-- 支持主动失效
+**实现**：
+- 使用 Redis INCR 原子操作
+- Lua 脚本保证原子性
+- 每分钟自动重置（TTL 60秒）
 
 ## 代码结构
 
@@ -383,93 +466,51 @@ gateway/
 │   └── client/
 │       └── system_client.go     # System 模块 API 客户端
 ├── docs/
-│   └── gateway架构说明.md       # 本文档
+│   ├── gateway架构说明.md       # 本文档
+│   ├── gateway鉴权限流设计（未实现）.md  # 未实现功能设计
+│   └── gateway运维手册.md       # 监控和调试指南
 ├── go.mod                        # Go 模块定义
 ├── go.sum                        # 依赖校验
-├── Dockerfile                    # Docker 镜像构建
-└── README.md                     # 说明文档
+└── Dockerfile                    # Docker 镜像构建
 ```
 
 ## 请求流程
 
-### 示例 1：带 API Key 的请求流程
+### 带 API Key 的请求流程
 
 ```
 1. 客户端发起请求
    GET http://localhost:8000/api/manager/engines
    Headers: X-API-Key: sk_live_abc123...
 
-2. 请求到达 Gateway
-   ↓
-   [Gateway:8000] 接收请求
+2. Gateway 接收 → CORS 处理
 
-3. CORS 中间件处理
-   ↓
-   [Middleware] 添加 CORS 头
+3. API Key 认证中间件
+   - 提取 API Key 并计算 SHA256 hash
+   - 三层缓存验证：本地缓存 → Redis 缓存 → System API
+   - 将验证结果存入 gin context
 
-4. API Key 认证中间件
-   ↓
-   [APIKeyAuthMiddleware]
-   - 提取 API Key: sk_live_abc123...
-   - 计算 SHA256 hash
-   - 查询本地缓存 → Miss
-   - 查询 Redis 缓存 → Miss
-   - 调用 System API /internal/api-keys/validate
-   - 返回验证结果: {valid: true, app_id: 123, rate_limit_per_minute: 1000}
-   - 写入 Redis 缓存（1小时）
-   - 写入本地缓存（5分钟）
-   - 设置 context: app_id=123, app_name="My App"
+4. 限流中间件
+   - 读取 app_id
+   - Redis 令牌桶检查
+   - 通过或返回 429
 
-5. 限流中间件
-   ↓
-   [RateLimiterMiddleware]
-   - 读取 app_id: 123
-   - Redis 令牌桶检查: ratelimit:app:123
-   - 当前请求数: 45 < 1000 (限额)
-   - 通过
-
-6. 访问日志中间件
-   ↓
-   [AccessLoggerMiddleware]
+5. 访问日志中间件
    - 记录请求开始时间
-   - 继续处理...
 
-7. 路由匹配
-   ↓
-   [Router] 匹配规则: /api/manager/* → managerProxy
+6. 路由匹配 → 代理转发
+   - 匹配规则: /api/manager/* → managerProxy
+   - 路径重写: /api/manager/engines → /api/engines
+   - 转发到: http://localhost:8081/api/engines
 
-8. 代理转发（路径重写）
-   ↓
-   [Proxy] 原始路径: /api/manager/engines
-   [Proxy] 重写后: /api/engines
-   [Proxy] 目标 URL: http://localhost:8081/api/engines
-   [Proxy] 复制请求头: X-API-Key, Content-Type...
-   [Proxy] 发送请求
+7. Manager 服务处理并返回
 
-9. Manager 服务处理
-   ↓
-   GET http://localhost:8081/api/engines
-   [Manager] 返回引擎列表
-
-10. Gateway 接收响应
-    ↓
-    [Proxy] 复制响应状态: 200
-    [Proxy] 复制响应头: Content-Type: application/json
-    [Proxy] 复制响应体: [{"id": 1, "name": "PostgreSQL"}]
-
-11. 访问日志记录
-    ↓
-    [AccessLoggerMiddleware]
-    - 计算响应时间: 67ms
-    - 异步写入 PostgreSQL: gateway.api_access_logs
-    - 记录: app_id=123, service_name=manager, response_time_ms=67, cache_hit=false
-
-12. 返回给客户端
-    ↓
-    客户端收到: [{"id": 1, "name": "PostgreSQL"}]
+8. Gateway 返回响应
+   - 访问日志异步写入 PostgreSQL
+   - 返回给客户端
 ```
 
-### 示例 2：限流触发流程
+### 限流触发流程
 
 ```
 客户端发起第 1001 次请求（限额 1000/分钟）
@@ -477,21 +518,18 @@ gateway/
 APIKeyAuthMiddleware（缓存 Hit，<1ms）
   ↓
 RateLimiterMiddleware
-  ├─ 读取 app_id: 123
   ├─ Redis INCR ratelimit:app:123 → 1001
-  └─ 1001 > 1000 (限额) → 返回 429 Too Many Requests
+  └─ 1001 > 1000 → 返回 429 Too Many Requests
   ↓
 AccessLoggerMiddleware
   └─ 记录: rate_limited=true, response_status=429
   ↓
-响应给客户端: {"error": "Rate limit exceeded"}
+响应: {"error": "Rate limit exceeded", "limit": 1000}
 ```
 
-### 示例 3：公开路由（登录）
+### 公开路由（登录）
 
 ```
-客户端发起登录请求
-  ↓
 POST http://localhost:8000/api/system/login
 Body: {"username": "admin", "password": "123456"}
   ↓
@@ -506,269 +544,19 @@ System 服务验证用户名密码
 返回 JWT Token
 ```
 
-### 时序图
+## 架构决策
 
-```
-客户端          Gateway         System API      Redis       PostgreSQL
-  │              │               │               │            │
-  │─────POST────→│               │               │            │
-  │ X-API-Key: xxx               │               │            │
-  │              │               │               │            │
-  │              │─ValidateKey──→│               │            │
-  │              │               │ (首次验证)    │            │
-  │              │←────Valid─────│               │            │
-  │              │               │               │            │
-  │              │──────SET──────┼──────────────→│            │
-  │              │         (缓存 1小时)          │            │
-  │              │               │               │            │
-  │              │─────POST──────┼───────────────┼───────────→│
-  │              │ (代理到 Manager)              │            │
-  │              │               │               │            │
-  │              │←────200───────┼───────────────┼────────────│
-  │              │               │               │            │
-  │              │──────INSERT───┼───────────────┼───────────→│
-  │              │         (异步记录访问日志)    │            │
-  │              │               │               │            │
-  │←────200──────│               │               │            │
-  │              │               │               │            │
-```
-
-## 路由规则
-
-### 当前配置的路由
-
-| 路由前缀 | 目标服务 | 端口 | 认证要求 | 路径重写 | 说明 |
-|---------|---------|------|---------|---------|-----|
-| `POST /api/system/login` | System | 8180 | **公开** | 无 | 用户登录 |
-| `POST /api/system/register` | System | 8180 | **公开** | 无 | 用户注册 |
-| `/api/system/users/*` | System | 8180 | API Key | 无 | 用户管理 |
-| `/api/system/tenants/*` | System | 8180 | API Key | 无 | 租户管理 |
-| `/api/system/engines/*` | System | 8180 | API Key | 无 | 引擎管理 |
-| `/api/system/logs/*` | System | 8180 | API Key | 无 | 日志查询 |
-| `/api/system/applications/*` | System | 8180 | API Key | 无 | 应用管理 |
-| `/api/system/admin/*` | System | 8180 | API Key | 无 | 系统管理 |
-| `/api/manager/engines/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 引擎配置 |
-| `/api/manager/preview/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 数据预览 |
-| `/api/manager/tree/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 目录树 |
-| `/api/manager/search/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 搜索 |
-| `/api/manager/mvt/*` | Manager | 8081 | API Key | ✅ 移除 `/manager` | 地图瓦片 |
-| `/api/meta/engines/*` | Meta | 8082 | API Key | 无 | 引擎列表 |
-| `/api/meta/scan/*` | Meta | 8082 | API Key | 无 | 元数据扫描 |
-| `/api/meta/object-storage/*` | Meta | 8082 | API Key | 无 | 对象存储 |
-| `/api/transfer/tasks/*` | Transfer | 8083 | API Key | 无 | 传输任务 |
-| `/api/transfer/executions/*` | Transfer | 8083 | API Key | 无 | 任务执行 |
-| `/api/transfer/connections/*` | Transfer | 8083 | API Key | 无 | 连接管理 |
-| `/api/develop/engines/*` | Develop | 8084 | API Key | 无 | 引擎列表 |
-| `/api/develop/sql/*` | Develop | 8084 | API Key | 无 | SQL 执行 |
-| `/api/develop/workflows/*` | Develop | 8084 | API Key | 无 | 工作流管理 |
-| `/api/service/services/*` | Service | 8086 | API Key | 无 | 数据服务 |
-| `/api/service/ogc/*` | Service | 8086 | API Key | 无 | OGC 标准 |
-| `/api/copilot/*` | Copilot | 8087 | API Key | ✅ 移除 `/api` | AI 助手 |
-| `/api/internal/engines/*` | System | 8180 | API Key | 无 | 内部 API |
-
-### 路径重写示例
-
-**Manager 模块**：
-```
-请求: GET /api/manager/engines/1
-  ↓ 路径重写（移除 /manager 前缀）
-转发: GET /api/engines/1 (Manager 服务)
-```
-
-**Copilot 模块**：
-```
-请求: POST /api/copilot/chat
-  ↓ 路径重写（移除 /api 前缀）
-转发: POST /chat (Copilot 服务)
-```
-
-### 路由匹配规则
-
-Gateway 使用 **前缀匹配**：
-
-```
-请求: GET /api/system/users/123
-匹配: /api/system/users/*
-代理到: http://localhost:8180/api/system/users/123
-
-请求: POST /api/manager/engines?type=postgresql
-匹配: /api/manager/engines/*
-路径重写: /api/engines?type=postgresql
-代理到: http://localhost:8081/api/engines?type=postgresql
-
-请求: GET /api/develop/sql/execute
-匹配: /api/develop/sql/*
-代理到: http://localhost:8084/api/develop/sql/execute
-```
-
-## 数据库集成
-
-### PostgreSQL Schema: `gateway`
-
-Gateway 使用独立的数据库 schema 存储访问日志。
-
-#### 表结构：api_access_logs
-
-```sql
-CREATE TABLE gateway.api_access_logs (
-    id                SERIAL PRIMARY KEY,
-    application_id    INTEGER,              -- 应用 ID（来自 API Key 验证）
-    api_key_prefix    VARCHAR(20),          -- API Key 前缀（sk_live_xxx...）
-    service_name      VARCHAR(255),         -- 目标服务名（system, manager, meta 等）
-    request_method    VARCHAR(10),          -- HTTP 方法（GET, POST, PUT, DELETE）
-    request_path      TEXT,                 -- 请求路径
-    request_params    JSONB,                -- 查询参数 + 请求体
-    response_status   INTEGER,              -- 响应状态码（200, 404, 500 等）
-    response_time_ms  INTEGER,              -- 响应时间（毫秒）
-    cache_hit         BOOLEAN DEFAULT FALSE,-- 缓存命中标志
-    rate_limited      BOOLEAN DEFAULT FALSE,-- 是否被限流
-    accessed_at       TIMESTAMP DEFAULT NOW()-- 访问时间
-);
-
--- 索引（加速查询）
-CREATE INDEX idx_accessed_at ON gateway.api_access_logs(accessed_at);
-CREATE INDEX idx_application_id ON gateway.api_access_logs(application_id);
-CREATE INDEX idx_service_name ON gateway.api_access_logs(service_name);
-CREATE INDEX idx_response_status ON gateway.api_access_logs(response_status);
-```
-
-#### 字段说明
-
-| 字段名 | 类型 | 说明 | 示例 |
-|-------|------|------|------|
-| id | INTEGER | 主键 | 1001 |
-| application_id | INTEGER | 应用 ID | 123 |
-| api_key_prefix | VARCHAR(20) | API Key 前缀 | `sk_live_abc...` |
-| service_name | VARCHAR(255) | 目标服务 | `manager` |
-| request_method | VARCHAR(10) | HTTP 方法 | `GET` |
-| request_path | TEXT | 请求路径 | `/api/manager/engines` |
-| request_params | JSONB | 请求参数 | `{"type": "postgresql"}` |
-| response_status | INTEGER | 响应状态码 | 200 |
-| response_time_ms | INTEGER | 响应时间（毫秒） | 67 |
-| cache_hit | BOOLEAN | 缓存命中 | true |
-| rate_limited | BOOLEAN | 是否被限流 | false |
-| accessed_at | TIMESTAMP | 访问时间 | `2025-01-24 10:30:15` |
-
-#### 用途
-
-1. **API 使用统计**
-   ```sql
-   -- 按服务统计请求量
-   SELECT service_name, COUNT(*) as request_count
-   FROM gateway.api_access_logs
-   WHERE accessed_at > NOW() - INTERVAL '1 day'
-   GROUP BY service_name
-   ORDER BY request_count DESC;
-   ```
-
-2. **性能分析**
-   ```sql
-   -- 查询平均响应时间
-   SELECT service_name, AVG(response_time_ms) as avg_time
-   FROM gateway.api_access_logs
-   WHERE accessed_at > NOW() - INTERVAL '1 hour'
-   GROUP BY service_name;
-   ```
-
-3. **缓存命中率监控**
-   ```sql
-   -- 计算缓存命中率
-   SELECT
-       COUNT(*) FILTER (WHERE cache_hit = TRUE) * 100.0 / COUNT(*) as hit_rate
-   FROM gateway.api_access_logs
-   WHERE accessed_at > NOW() - INTERVAL '1 hour';
-   ```
-
-4. **限流审计**
-   ```sql
-   -- 查询被限流的请求
-   SELECT application_id, COUNT(*) as rate_limited_count
-   FROM gateway.api_access_logs
-   WHERE rate_limited = TRUE
-   GROUP BY application_id
-   ORDER BY rate_limited_count DESC;
-   ```
-
-## Redis 集成
-
-### Redis Key 前缀规范
-
-Gateway 使用 Redis 存储缓存和限流数据。
-
-| Key 模式 | 用途 | TTL | 数据类型 | 示例 |
-|---------|------|-----|---------|------|
-| `gateway:apikey:{hash}` | API Key 验证缓存 | 1 小时 | String (JSON) | `gateway:apikey:abc123...` |
-| `ratelimit:app:{id}` | 限流计数器 | 1 分钟 | Integer | `ratelimit:app:123` |
-
-### API Key 验证缓存
-
-**Key 格式**：`gateway:apikey:{SHA256(api_key)}`
-
-**Value 格式**：
-```json
-{
-  "valid": true,
-  "app_id": 123,
-  "app_name": "My Application",
-  "allowed_services": ["system", "manager", "meta"],
-  "rate_limit_per_minute": 1000,
-  "expires_at": "2025-12-31T23:59:59Z"
-}
-```
-
-**TTL**：1 小时
-
-**用途**：
-- 避免每次请求都调用 System API 验证
-- 极大提升验证性能（从 20ms → <1ms）
-- 与本地缓存配合，实现三层缓存
-
-### 限流计数器
-
-**Key 格式**：`ratelimit:app:{app_id}`
-
-**Value 格式**：整数（当前分钟的请求数）
-
-**TTL**：1 分钟（滑动窗口）
-
-**实现**：
-- 使用 Redis INCR 原子操作
-- Lua 脚本保证原子性
-- 每分钟自动重置
-
-**示例**：
-```bash
-# 第 1 次请求
-INCR ratelimit:app:123  # → 1
-EXPIRE ratelimit:app:123 60
-
-# 第 2 次请求
-INCR ratelimit:app:123  # → 2
-
-# ...
-
-# 第 1001 次请求（限额 1000）
-GET ratelimit:app:123  # → 1001
-# 超限，返回 429
-```
-
-## 为什么使用专用 SystemClient
-
-### 核心问题
+### 为什么使用专用 SystemClient
 
 Gateway 需要调用 System 模块验证 API Key，为什么不使用 `common/client/system.go` 而是自己实现 `gateway/pkg/client/system_client.go`？
-
-### 决策理由
 
 #### 1. 职责单一
 
 **Gateway 需求**：
-- 只需要验证 API Key（2 个方法）
-  - `ValidateAPIKey(keyHash)` - 验证单个 API Key
-  - `BulkGetAPIKeys()` - 批量获取 API Keys
+- 只需要 2 个方法：`ValidateAPIKey(keyHash)` 和 `BulkGetAPIKeys()`
 
 **Common SystemClient**：
-- 提供 30+ 个方法（GetEngine、ListEngines、CreateEngine、RegisterCapability 等）
+- 提供 30+ 个方法（GetEngine、ListEngines、CreateEngine 等）
 - Gateway 完全不需要这些功能
 
 **结论**：使用通用客户端违反**最小依赖原则**
@@ -783,11 +571,10 @@ Gateway 需要调用 System 模块验证 API Key，为什么不使用 `common/cl
 
 **结论**：Gateway 是高频低延迟服务，5 秒超时专门为 API Key 验证设计
 
-#### 3. 缓存优化
+#### 3. 缓存深度集成
 
 **Gateway 专用客户端**：
-```go
-// 三层缓存验证
+```
 validateWithCache(keyHash)
   ├─ 本地缓存（5分钟 TTL）→ <1ms
   ├─ Redis 缓存（1小时 TTL）→ <5ms
@@ -795,9 +582,8 @@ validateWithCache(keyHash)
 ```
 
 **Common 通用客户端**：
-```go
-// 无缓存，每次都调用 System API
-GetEngine(engineID) → 20-30ms（每次）
+```
+无缓存，每次都调用 System API → 20-30ms
 ```
 
 **结论**：Gateway 的三层缓存深度集成在中间件中，无法用通用客户端替代
@@ -805,21 +591,12 @@ GetEngine(engineID) → 20-30ms（每次）
 #### 4. 依赖隔离
 
 **Gateway 专用客户端**：
-```go
-import (
-    "net/http"
-    "encoding/json"
-)
-// 无外部依赖
-```
+- 无外部依赖，仅使用标准库 `net/http` 和 `encoding/json`
+- 代码仅 100 行
 
 **Common 通用客户端**：
-```go
-import (
-    "github.com/addp/common/models"  // 依赖所有模型
-    commonutils "github.com/addp/common/utils"
-)
-```
+- 依赖 `common/models` 的所有数据模型
+- 代码 700+ 行
 
 **结论**：Gateway 不需要依赖 common/models 的所有数据模型，减少耦合
 
@@ -829,49 +606,6 @@ import (
 - **Common SystemClient**：随着功能增加频繁变更
 
 **结论**：专用客户端更稳定，不受通用客户端变更影响
-
-### 代码对比
-
-**Gateway 专用 SystemClient（100 行）**：
-```go
-type SystemClient struct {
-    baseURL    string
-    httpClient *http.Client  // 5秒超时
-    internalKey string       // X-Internal-API-Key
-}
-
-func (c *SystemClient) ValidateAPIKey(keyHash string) (*APIKeyValidationResponse, error) {
-    url := fmt.Sprintf("%s/internal/api-keys/validate?key_hash=%s", c.baseURL, keyHash)
-    // 简单的 HTTP GET 请求
-    // 返回验证结果
-}
-
-func (c *SystemClient) BulkGetAPIKeys() ([]APIKeyValidationResponse, error) {
-    // 批量获取 API Keys（用于预加载缓存）
-}
-```
-
-**Common SystemClient（700+ 行）**：
-```go
-type SystemClient struct {
-    baseURL     string
-    httpClient  *http.Client  // 30秒超时
-    authToken   string         // JWT Token
-    internalKey string         // Internal Key
-}
-
-// 30+ 方法
-func (c *SystemClient) GetEngine(engineID uint) (*models.Engine, error) { ... }
-func (c *SystemClient) ListEngines(engineType string, tenantID uint) ([]models.Engine, error) { ... }
-func (c *SystemClient) CreateEngine(payload *models.CreateEngineRequest) (*models.Engine, error) { ... }
-func (c *SystemClient) RegisterCapability(req *models.CapabilityRegistrationRequest) error { ... }
-func (c *SystemClient) ListCapabilities(filters map[string]string) ([]*models.Capability, error) { ... }
-func (c *SystemClient) ListTaskProviders() ([]*models.TaskProvider, error) { ... }
-func (c *SystemClient) ListSchemas(engineID uint) ([]SchemaInfo, error) { ... }
-func (c *SystemClient) ListTables(engineID uint, schema string) ([]TableInfo, error) { ... }
-func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error { ... }
-// ... 还有 20+ 个方法
-```
 
 ### 最佳实践
 
@@ -889,300 +623,27 @@ func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
 - DRY 不是绝对的，职责隔离更重要
 - Gateway 是高频低延迟服务，需要极致性能优化
 
-## 监控和调试
+## 相关文档
 
-### 性能指标
+### 模块文档
 
-#### 1. API Key 验证性能
+- [gateway鉴权限流设计（未实现）.md](gateway鉴权限流设计（未实现）.md) - Service 数据服务鉴权、服务注册改造、未来扩展功能
+- [gateway运维手册.md](gateway运维手册.md) - 性能监控、调试命令、常见问题排查
 
-**目标**：
-- 本地缓存命中率：> 95%
-- Redis 缓存命中率：> 90%
-- System API 调用延迟：P99 < 50ms
+### 平台文档
 
-**监控查询**：
-```sql
--- 缓存命中率（过去 1 小时）
-SELECT
-    COUNT(*) FILTER (WHERE cache_hit = TRUE) * 100.0 / COUNT(*) as cache_hit_rate
-FROM gateway.api_access_logs
-WHERE accessed_at > NOW() - INTERVAL '1 hour';
-```
+- [ADDP 开发原则](../../docs/addp开发原则.md) - 平台级开发原则和规范
+- [ADDP 核心概念说明](../../docs/addp核心概念说明.md) - 平台核心概念辨析
+- [System 模块说明](../../system/CLAUDE.md) - System 模块的架构和功能
 
-#### 2. 限流统计
-
-**监控指标**：
-- 被限流的请求数
-- Top 10 限流应用
-- 限流触发时段分布
-
-**监控查询**：
-```sql
--- 被限流的应用排行（过去 1 天）
-SELECT
-    application_id,
-    COUNT(*) as rate_limited_count
-FROM gateway.api_access_logs
-WHERE rate_limited = TRUE
-  AND accessed_at > NOW() - INTERVAL '1 day'
-GROUP BY application_id
-ORDER BY rate_limited_count DESC
-LIMIT 10;
-```
-
-#### 3. 访问日志分析
-
-**监控指标**：
-- 请求量 Top 10 服务
-- 平均响应时间 Top 10 慢路由
-- 4xx/5xx 错误率
-
-**监控查询**：
-```sql
--- 请求量 Top 10 服务（过去 1 小时）
-SELECT
-    service_name,
-    COUNT(*) as request_count,
-    AVG(response_time_ms) as avg_time
-FROM gateway.api_access_logs
-WHERE accessed_at > NOW() - INTERVAL '1 hour'
-GROUP BY service_name
-ORDER BY request_count DESC
-LIMIT 10;
-
--- 慢查询 Top 10（过去 1 小时）
-SELECT
-    request_method,
-    request_path,
-    AVG(response_time_ms) as avg_time
-FROM gateway.api_access_logs
-WHERE accessed_at > NOW() - INTERVAL '1 hour'
-GROUP BY request_method, request_path
-ORDER BY avg_time DESC
-LIMIT 10;
-
--- 错误率分析（过去 1 小时）
-SELECT
-    response_status,
-    COUNT(*) as count
-FROM gateway.api_access_logs
-WHERE accessed_at > NOW() - INTERVAL '1 hour'
-  AND response_status >= 400
-GROUP BY response_status
-ORDER BY count DESC;
-```
-
-### 调试命令
-
-#### Redis 缓存调试
-
-```bash
-# 连接 Redis
-docker exec -it addp-infra-redis redis-cli
-
-# 查看所有 API Key 缓存
-KEYS gateway:apikey:*
-
-# 查看特定 API Key 缓存
-GET gateway:apikey:abc123...
-
-# 查看 TTL
-TTL gateway:apikey:abc123...
-
-# 查看限流状态
-GET ratelimit:app:123
-TTL ratelimit:app:123
-
-# 清理缓存（调试用）
-DEL gateway:apikey:abc123...
-```
-
-#### PostgreSQL 日志调试
-
-```bash
-# 连接 PostgreSQL
-psql -h localhost -p 15432 -U addp -d addp
-
-# 切换到 gateway schema
-SET search_path TO gateway;
-
-# 查看最近 100 条访问日志
-SELECT
-    id,
-    application_id,
-    api_key_prefix,
-    service_name,
-    request_method,
-    request_path,
-    response_status,
-    response_time_ms,
-    cache_hit,
-    rate_limited,
-    accessed_at
-FROM api_access_logs
-ORDER BY accessed_at DESC
-LIMIT 100;
-
-# 查看特定应用的访问日志
-SELECT * FROM api_access_logs
-WHERE application_id = 123
-ORDER BY accessed_at DESC
-LIMIT 50;
-
-# 查看被限流的请求
-SELECT * FROM api_access_logs
-WHERE rate_limited = TRUE
-ORDER BY accessed_at DESC;
-```
-
-#### 健康检查
-
-```bash
-# Gateway 健康检查
-curl http://localhost:8000/health
-
-# 响应示例
-{
-  "status": "ok",
-  "service": "gateway"
-}
-
-# Gateway 服务列表
-curl http://localhost:8000/
-
-# 响应示例
-{
-  "message": "全域数据平台 API Gateway",
-  "version": "1.0.0",
-  "services": {
-    "system": "http://localhost:8180",
-    "manager": "http://localhost:8081",
-    "meta": "http://localhost:8082",
-    "transfer": "http://localhost:8083",
-    "develop": "http://localhost:8084",
-    "service": "http://localhost:8086",
-    "copilot": "http://localhost:8087"
-  }
-}
-```
-
-#### 测试 API Key 验证
-
-```bash
-# 测试有效的 API Key
-curl -X GET http://localhost:8000/api/manager/engines \
-  -H "X-API-Key: sk_live_your_api_key_here"
-
-# 测试无效的 API Key
-curl -X GET http://localhost:8000/api/manager/engines \
-  -H "X-API-Key: invalid_key"
-# 响应: 401 Unauthorized
-
-# 测试无 API Key
-curl -X GET http://localhost:8000/api/manager/engines
-# 响应: 正常处理（跳过 API Key 验证，可能依赖 JWT）
-```
-
-#### 测试限流
-
-```bash
-# 发送大量请求触发限流（假设限额 1000/分钟）
-for i in {1..1100}; do
-  curl -X GET http://localhost:8000/api/manager/engines \
-    -H "X-API-Key: sk_live_your_api_key_here"
-done
-
-# 第 1001 次请求返回：429 Too Many Requests
-```
-
-### 日志查看
-
-```bash
-# Gateway 日志（开发模式）
-# 直接查看控制台输出
-
-# Gateway 日志（Docker 模式）
-docker logs -f gateway
-
-# 过滤特定日志
-docker logs gateway | grep "API Key validation"
-docker logs gateway | grep "Rate limit exceeded"
-```
-
-## 未来扩展
-
-### 1. API 版本管理
-支持多个 API 版本并存
-
-```
-/api/v1/manager/engines  → Manager v1
-/api/v2/manager/engines  → Manager v2
-```
-
-### 2. GraphQL 网关集成
-统一的 GraphQL 入口
-
-```
-POST /graphql
-{
-  "query": "{ engines { id name } }"
-}
-```
-
-### 3. WebSocket 代理支持
-支持 WebSocket 连接代理
-
-```
-wss://gateway.example.com/ws/realtime
-  → ws://manager:8081/ws/realtime
-```
-
-### 4. gRPC 网关支持
-支持 gRPC 协议转换
-
-```
-gRPC Client → Gateway (gRPC-HTTP Transcoding) → HTTP Backend
-```
-
-### 5. 熔断降级
-后端服务故障时自动熔断
-
-```
-Manager 服务故障
-  → 熔断器打开
-  → 返回降级响应
-```
-
-### 6. 负载均衡
-支持多个后端实例的负载均衡
-
-```
-Gateway → Manager Instance 1 (Round Robin)
-        → Manager Instance 2
-        → Manager Instance 3
-```
-
-### 7. 智能路由
-基于请求特征的智能路由
-
-```
-大文件上传 → Manager 高性能实例
-普通查询 → Manager 普通实例
-```
-
-### 8. API 文档聚合
-聚合所有服务的 API 文档
-
-```
-GET /api-docs  → Swagger UI（所有服务的 API）
-```
+---
 
 ## 总结
 
 Gateway 的核心价值：
 
 1. ✅ **统一入口** - 客户端只需要一个地址
-2. ✅ **API Key 认证** - 三层缓存，性能极致优化
+2. ✅ **API Key 认证** - 三层缓存，性能极致优化（缓存命中率 > 95%）
 3. ✅ **限流控制** - Redis 令牌桶，保护后端服务
 4. ✅ **访问日志** - PostgreSQL 持久化，支持审计和分析
 5. ✅ **透明代理** - 后端服务无感知

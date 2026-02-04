@@ -30,11 +30,20 @@ type TreeBuilder struct {
 
 // MetaClient Meta 模块客户端接口（可选依赖）
 type MetaClient interface {
-	// GetNodeByID 根据节点 ID 获取节点信息
-	GetNodeByID(nodeID uint) (*models.MetaNode, error)
+	// GetMetadataTree 获取引擎的完整元数据树
+	GetMetadataTree(engineID uint) (*models.MetadataTree, error)
 
-	// GetTree 获取引擎的资源树
-	GetTree(engineID uint, expandDepth int) ([]*models.MetaNode, error)
+	// GetNodeByPath 按路径查询节点
+	GetNodeByPath(engineID uint, nodePath string) (*models.MetaNode, error)
+
+	// GetNodeChildren 获取节点的子节点
+	GetNodeChildren(nodeID uint) ([]models.MetaNode, error)
+
+	// GetNodeItems 获取节点下的项目
+	GetNodeItems(nodeID uint) ([]models.MetaItem, error)
+
+	// GetMetaNode 获取单个节点详情
+	GetMetaNode(nodeID uint) (*models.MetaNode, error)
 }
 
 // CustomTreeBuilder 自定义树构建器接口（用于降级方案）
@@ -48,6 +57,28 @@ func NewTreeBuilder(metaClient MetaClient) *TreeBuilder {
 	return &TreeBuilder{
 		metaClient: metaClient,
 	}
+}
+
+// BuildFromMetadataTree 从 MetadataTree 构建树
+// 适用场景：Service 模块需要将 Meta API 返回的 MetadataTree 转换为前端期待的树结构
+//
+// 参数:
+//   - engine: 引擎信息
+//   - metadataTree: Meta API 返回的元数据树
+//
+// 返回: 树的根节点
+func (b *TreeBuilder) BuildFromMetadataTree(engine *models.Engine, metadataTree *models.MetadataTree) (*TreeNode, error) {
+	// 合并 TopNodes 和 ChildNodes
+	allNodes := make([]*models.MetaNode, 0, len(metadataTree.TopNodes)+len(metadataTree.ChildNodes))
+	for i := range metadataTree.TopNodes {
+		allNodes = append(allNodes, &metadataTree.TopNodes[i])
+	}
+	for i := range metadataTree.ChildNodes {
+		allNodes = append(allNodes, &metadataTree.ChildNodes[i])
+	}
+
+	// 使用现有的 BuildFromMeta 方法
+	return b.BuildFromMeta(engine, allNodes, -1)
 }
 
 // BuildFromMeta 从 Meta 模块的节点构建树
@@ -113,6 +144,69 @@ func (b *TreeBuilder) BuildFromMeta(engine *models.Engine, metaNodes []*models.M
 	return root, nil
 }
 
+// ConvertMetaNodes 将 MetaNode 列表转换为 TreeNode 列表
+// 适用场景：懒加载子节点时，将 Meta API 返回的节点转换为前端树节点
+//
+// 参数:
+//   - engine: 引擎信息
+//   - metaNodes: Meta 模块的节点列表
+//
+// 返回: 树节点列表
+func (b *TreeBuilder) ConvertMetaNodes(engine *models.Engine, metaNodes []*models.MetaNode) []*TreeNode {
+	treeNodes := make([]*TreeNode, 0, len(metaNodes))
+	for _, node := range metaNodes {
+		treeNode := b.convertMetaNode(engine, node)
+		treeNodes = append(treeNodes, treeNode)
+	}
+	return treeNodes
+}
+
+// ConvertMetaItems 将 MetaItem 列表转换为 MetaNode 列表
+// 适用场景：从 Meta API 获取叶子项目（表、对象等）后，转换为节点格式
+//
+// 参数:
+//   - items: Meta 模块的 Item 列表
+//
+// 返回: MetaNode 列表（使用虚拟 ID 避免冲突）
+func (b *TreeBuilder) ConvertMetaItems(items []models.MetaItem) []*models.MetaNode {
+	nodes := make([]*models.MetaNode, 0, len(items))
+
+	for i := range items {
+		item := &items[i]
+
+		// 动态计算 Depth：根据 ItemType 和 FullName
+		depth := calculateItemDepth(item.ItemType, item.FullName)
+
+		// 使用虚拟 ID (item.ID + 100000) 避免与 meta_node 的 ID 冲突
+		virtualID := item.ID + 100000
+
+		node := &models.MetaNode{
+			ID:             virtualID,
+			TenantID:       item.TenantID,
+			EngineID:       item.EngineID,
+			ParentNodeID:   &item.NodeID,
+			NodeType:       item.ItemType,
+			Name:           item.Name,
+			FullName:       item.FullName,
+			Depth:          depth,
+			Path:           item.FullName,
+			ScanStatus:     "completed",
+			ItemCount:      calculateItemCount(item.ItemType, item.Attributes),
+			TotalSizeBytes: 0,
+			Attributes:     item.Attributes,
+		}
+
+		// 注意：
+		// - 对于 table, collection, object 等叶子节点，ItemCount=0，不会显示展开箭头
+		// - 对于 directory, prefix 等容器节点，ItemCount 从 attributes 中提取（可能为 0 或实际子对象数）
+		// - hasChildren 字段由 shouldHaveChildren() 判断，容器类型即使 ItemCount=0 也会返回 true
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes
+}
+
 // BuildFromEngine 从引擎直接构建树（不依赖 Meta）
 // 适用场景：Meta 不可用时的降级方案
 //
@@ -156,6 +250,50 @@ func (b *TreeBuilder) ConvertNodeToTree(loc *ResourceLocator, metadata map[strin
 
 // 内部辅助方法
 
+// shouldHaveChildren 判断节点是否应该有子节点
+// 对于容器类型（schema, bucket, directory 等），即使 ItemCount=0 也可能有子节点
+// 对于叶子类型（table, object 等），根据 ItemCount 判断
+func shouldHaveChildren(nodeType string, itemCount int) bool {
+	// 数据库容器类型：即使 ItemCount=0 也可能有子项
+	databaseContainers := map[string]bool{
+		"database": true,
+		"schema":   true,
+	}
+
+	// 对象存储容器类型：即使 ItemCount=0 也可能有子项
+	objectStorageContainers := map[string]bool{
+		"bucket":    true,
+		"prefix":    true,
+		"directory": true,
+	}
+
+	// 如果是容器类型，总是返回 true（允许展开尝试加载）
+	if databaseContainers[nodeType] || objectStorageContainers[nodeType] {
+		return true
+	}
+
+	// 叶子类型：根据 ItemCount 判断
+	return itemCount > 0
+}
+
+// calculateItemCount 计算 Item 的子项数量
+// 对于对象存储的 directory/prefix，可能包含子对象，需要从 attributes 中提取
+// 对于表、集合、对象等叶子节点，返回 0
+func calculateItemCount(itemType string, attributes map[string]interface{}) int {
+	// 对象存储的 directory/prefix 可能包含子对象
+	if itemType == "directory" || itemType == "prefix" {
+		// 从 attributes 中提取 object_count
+		if objCount, ok := attributes["object_count"].(float64); ok {
+			return int(objCount)
+		}
+		// 如果没有 object_count，返回 0（后续懒加载时会尝试获取子节点）
+		return 0
+	}
+
+	// table, collection, object 等叶子节点，ItemCount 固定为 0
+	return 0
+}
+
 // convertMetaNode 递归转换 MetaNode 为 TreeNode
 func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNode) *TreeNode {
 	// 统一处理：直接使用 parsePath 解析 FullName
@@ -190,8 +328,9 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 
 	locatorURI := loc.ToURI()
 
-	// 根据ItemCount判断是否有子节点
-	hasChildren := node.ItemCount > 0
+	// 根据节点类型和ItemCount判断是否有子节点
+	// 容器类型（schema, bucket, directory等）即使ItemCount=0也可能有子节点
+	hasChildren := shouldHaveChildren(node.NodeType, node.ItemCount)
 
 	// Children 字段始终初始化为空数组
 	// Element Plus el-tree 在非 lazy 模式下需要 children 是数组才会显示展开箭头
@@ -211,6 +350,33 @@ func (b *TreeBuilder) convertMetaNode(engine *models.Engine, node *models.MetaNo
 	// 如果 MetaNode 没有 Children，则跳过
 
 	return treeNode
+}
+
+// calculateItemDepth 动态计算 Item 的深度
+// 根据 ItemType 和 FullName 计算节点在树中的深度
+func calculateItemDepth(itemType, fullName string) int {
+	// 对象存储类型（object）：根据路径中的斜杠数量计算
+	// 例如: "addp/image/file.jpg" → depth=3 (bucket=1, directory=2, object=3)
+	if itemType == "object" {
+		segments := strings.Split(strings.Trim(fullName, "/"), "/")
+		return len(segments)
+	}
+
+	// 数据库表类型（table）：根据点号数量计算
+	// 例如: "public.users" → depth=2 (schema=1, table=2)
+	if itemType == "table" {
+		segments := strings.Split(fullName, ".")
+		return len(segments)
+	}
+
+	// MongoDB 集合类型（collection）：通常是 database.collection
+	if itemType == "collection" {
+		segments := strings.Split(fullName, ".")
+		return len(segments)
+	}
+
+	// 默认深度为 2（大多数情况下 Items 在第二层）
+	return 2
 }
 
 // parsePath 从 FullName 解析路径

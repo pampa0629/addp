@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	pq "github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 // MVTOptions encapsulates rendering options for building an MVT SQL query.
@@ -111,4 +112,76 @@ FROM (
 	)
 
 	return sql, args
+}
+
+// GenerateMVTTileWithConfig 生成 MVT 瓦片（高层封装）
+// 使用图层配置参数直接生成 MVT 二进制数据
+//
+// 参数:
+//   - db: GORM 数据库连接
+//   - schema: 数据库 schema 名称
+//   - table: 数据表名称
+//   - geomCol: 几何列名称
+//   - srid: 源数据坐标系 EPSG 代码
+//   - z, x, y: MVT 瓦片坐标
+//   - extent: 瓦片范围（通常为 4096）
+//   - buffer: 缓冲区像素（通常为 256）
+//   - columns: 要包含的属性列列表
+//   - layerName: MVT 图层名称
+//
+// 返回:
+//   - []byte: MVT 二进制数据
+//   - error: 错误信息
+//
+// 示例:
+//
+//	mvtData, err := spatial.GenerateMVTTileWithConfig(
+//	    db, "public", "cities", "geom", 4326,
+//	    10, 512, 384, 4096, 256,
+//	    []string{"name", "population"}, "cities"
+//	)
+func GenerateMVTTileWithConfig(
+	db *gorm.DB,
+	schema, table, geomCol string,
+	srid int,
+	z, x, y int,
+	extent, buffer int,
+	columns []string,
+	layerName string,
+) ([]byte, error) {
+	// 验证参数
+	if extent == 0 {
+		extent = 4096
+	}
+	if buffer == 0 {
+		buffer = 256
+	}
+	if layerName == "" {
+		layerName = table
+	}
+
+	// 构建 MVT 选项
+	opts := MVTOptions{
+		Layer:  layerName,
+		Extent: extent,
+		Buffer: buffer,
+		SRID:   srid,
+	}
+
+	// 构建 SQL 查询和参数
+	sql, args := BuildMVTQuery(schema, table, geomCol, columns, z, x, y, opts, "")
+
+	// 执行查询
+	var mvtData []byte
+	err := db.Raw(sql, args...).Scan(&mvtData).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate MVT tile: %w", err)
+	}
+
+	// 空瓦片返回 nil（无数据）
+	if len(mvtData) == 0 {
+		return nil, nil
+	}
+
+	return mvtData, nil
 }

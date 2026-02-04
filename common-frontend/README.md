@@ -59,6 +59,98 @@ console.log(FormatType.SHAPEFILE) // "shapefile"
 
 ## 组件列表
 
+### ResourceLocator 定位符系统
+
+统一的资源定位符 URI 系统，支持跨存储引擎的资源标识。
+
+**URI 格式**: `addp://engine/{engine_id}/path/{resource_path}?type={type}`
+
+**支持的资源类型**:
+- `table` - 关系型数据库表
+- `collection` - MongoDB 集合
+- `object` - 对象存储对象
+- `directory` - 对象存储目录
+- `database` / `schema` / `bucket` - 容器类型
+
+**工具函数**:
+```js
+import {
+  parseLocator,       // 解析 URI 为对象
+  buildLocator,       // 构建 URI 字符串
+  getPathString,      // 获取路径字符串（如 "public/users"）
+  getFullName,        // 获取完整名称（类型感知格式化）
+  getLastSegment,     // 获取路径最后一段
+  getParentLocator,   // 获取父路径定位符
+  cloneLocator,       // 深拷贝定位符
+  isLocatorEqual      // 比较两个定位符是否相等
+} from '@addp/common-frontend'
+
+// 示例
+const locator = parseLocator('addp://engine/1/path/public/users?type=table')
+// { engineId: 1, path: ['public', 'users'], type: 'table' }
+
+const uri = buildLocator({
+  engineId: 1,
+  path: ['public', 'users'],
+  type: 'table'
+})
+// 'addp://engine/1/path/public/users?type=table'
+```
+
+### 数据源选择器
+
+> 📚 **详细文档**: [数据源选择器使用指南](./docs/数据源选择器使用指南.md)
+
+提供统一的数据源（表/对象）选择体验，支持多种存储引擎。
+
+**组件系列**:
+- `DataSourceSelector` - 核心选择器组件
+- `DataSourceSelectorDialog` - Dialog 包装（弹窗场景）
+- `DataSourceSelectorCard` - Card 包装（表单嵌入场景）
+
+**主要特性**:
+- ✅ 多种数据源类型（PostgreSQL、MySQL、MongoDB、MinIO、S3、Doris、ClickHouse、Spark）
+- ✅ 引擎类型过滤和节点类型过滤
+- ✅ 自动几何列检测（空间数据）
+- ✅ 单选/多选模式
+- ✅ 懒加载优化
+
+**使用示例**:
+```vue
+<template>
+  <DataSourceSelectorDialog
+    v-model:visible="dialogVisible"
+    api-base-url="/api/service"
+    :engine-types="['postgresql', 'mysql']"
+    :selectable-node-types="['table']"
+    @confirm="handleConfirm"
+  />
+</template>
+
+<script setup>
+import { ref } from 'vue'
+import { DataSourceSelectorDialog } from '@addp/common-frontend'
+
+const dialogVisible = ref(false)
+
+const handleConfirm = (selection) => {
+  console.log('选择:', selection)
+  // { engineId, schema, tableName, fullName, locator, hasGeometry, ... }
+}
+</script>
+```
+
+**相关 API 函数**:
+```js
+import {
+  getEngines,              // 获取引擎列表
+  getEngineTree,           // 获取引擎树结构
+  getNodeChildren,         // 懒加载子节点
+  detectTableMetadata,     // 检测表元数据（几何列等）
+  extractDataSourceSelection  // 从树节点提取选择信息
+} from '@addp/common-frontend'
+```
+
 ### 预览组件
 
 - **ShapefilePreview** - Shapefile 文件预览（带地图）
@@ -150,10 +242,30 @@ const handleNodeAction = ({ action, node }) => {
 **树形工具函数**:
 
 ```js
-import { makeNodeId, findNodeById, flattenTree, findNodePath } from '@addp/common-frontend'
+import {
+  // 数据结构操作
+  flattenTree,        // 扁平化树为数组
+  filterTree,         // 过滤树节点
+  sortTree,           // 树节点排序
+  cloneTree,          // 深拷贝树
+  getAllNodeKeys,     // 获取所有节点 ID（✨ 新增）
 
-// 生成唯一节点 ID
-const nodeId = makeNodeId('engine', 1, 'public', 'users')
+  // 节点查询
+  findNodeById,       // 根据 ID 查找节点
+  findNodePath,       // 查找节点路径（根到目标的所有 ID）
+  getParentIds,       // 获取所有父节点 ID
+  getLeafNodes,       // 获取所有叶子节点
+
+  // 树遍历
+  traverseTree,       // 递归遍历每个节点（提供回调）
+  getTreeDepth        // 计算树的最大深度
+} from '@addp/common-frontend'
+
+// 使用示例
+
+// 获取所有节点 ID
+const allKeys = getAllNodeKeys(treeData)
+// ['engine-1', 'schema-1-public', 'table-1-users']
 
 // 查找节点
 const node = findNodeById(treeData, 'table-1-users')
@@ -163,6 +275,18 @@ const allNodes = flattenTree(treeData)
 
 // 查找节点路径
 const path = findNodePath(treeData, 'table-1-users')
+// ['engine-1', 'schema-1-public', 'table-1-users']
+
+// 遍历树（带父节点和层级信息）
+traverseTree(treeData, (node, parent, level) => {
+  console.log(`Level ${level}: ${node.label}`)
+})
+
+// 过滤树节点
+const tables = filterTree(treeData, (node) => node.type === 'table')
+
+// 树节点排序
+const sorted = sortTree(treeData, (a, b) => a.label.localeCompare(b.label))
 ```
 
 ### 定时调度组件
@@ -243,6 +367,71 @@ client.interceptors.request.use(
 ```
 
 **收益**: 每个模块的认证代码从 ~240 行减少到 ~23 行 (**-90%**) 🎉
+
+### 树管理组件 (Composables)
+
+提供通用的树加载、缓存管理功能，适用于需要树形数据的场景。
+
+#### useTreeCache
+
+树节点缓存管理器，提供自动过期、容量控制的缓存功能。
+
+**使用示例**:
+```javascript
+import { useTreeCache } from '@addp/common-frontend'
+
+const cache = useTreeCache({
+  maxAge: 5 * 60 * 1000,  // 5分钟过期
+  maxSize: 100             // 最多100个缓存项
+})
+
+// 设置缓存
+cache.setNodeChildrenCache('node_id', children)
+
+// 获取缓存
+const cached = cache.getNodeChildrenCache('node_id')
+
+// 清空所有缓存
+cache.clearCache()
+```
+
+#### useTreeLoader
+
+树增量加载器，封装增量加载、缓存、错误处理逻辑。
+
+**使用示例**:
+```javascript
+import { useTreeLoader } from '@addp/common-frontend'
+import client from '@/api/client'
+
+const treeLoader = useTreeLoader(client, {
+  enableCache: true,
+  cacheOptions: { maxAge: 5 * 60 * 1000 }
+})
+
+// 增量加载子节点
+const children = await treeLoader.loadNodeChildren(
+  'addp://engine/1/path/public?type=schema',
+  1  // 展开深度
+)
+
+// 搜索节点
+const results = await treeLoader.searchNodes(
+  1,        // engineId
+  'users',  // keyword
+  { nodeTypes: ['table'], limit: 50 }
+)
+
+// 清空缓存
+treeLoader.clearCache()
+```
+
+**主要特性**:
+- ✅ 自动缓存管理（TTL + 容量控制）
+- ✅ 增量加载优化
+- ✅ 搜索结果缓存
+- ✅ 错误处理和状态管理
+- ✅ 支持强制刷新
 
 ### 地图组件
 

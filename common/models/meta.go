@@ -14,7 +14,7 @@ type MetaNode struct {
 	Depth          int                    `json:"depth"`
 	Path           string                 `json:"path"`
 	ScanStatus     string                 `json:"scan_status"`
-	LastScanAt     *time.Time             `json:"last_scan_at,omitempty"`
+	LastScanAt     *time.Time             `json:"scanned_at,omitempty"`
 	ItemCount      int                    `json:"item_count"`
 	TotalSizeBytes int64                  `json:"total_size_bytes"`
 	Attributes     map[string]interface{} `json:"attributes,omitempty"`

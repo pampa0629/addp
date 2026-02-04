@@ -165,7 +165,8 @@ func (h *LogHandler) Export(c *gin.Context) {
 func (h *LogHandler) CreateFromInternal(c *gin.Context) {
 	var req models.AuditLogCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		commonapi.RespondError(c, 400, "无效的请求参数")
+		// 输出详细错误信息便于调试
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数", "details": err.Error()})
 		return
 	}
 

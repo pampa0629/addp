@@ -3,7 +3,6 @@ package wfs
 import (
 	"encoding/xml"
 	"fmt"
-	"strings"
 
 	"github.com/addp/service/internal/models"
 )

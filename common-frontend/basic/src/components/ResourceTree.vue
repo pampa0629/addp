@@ -53,9 +53,11 @@
         node-key="id"
         :highlight-current="true"
         :expand-on-click-node="expandOnClickNode"
-        :expanded-keys="computedExpandedKeys"
+        :default-expanded-keys="computedExpandedKeys"
         :current-node-key="currentNodeKey"
         :filter-node-method="currentFilterMethod"
+        :lazy="lazy"
+        :load="load"
         @node-click="handleNodeClick"
         @node-expand="handleNodeExpand"
         @node-collapse="handleNodeCollapse"
@@ -122,6 +124,7 @@ import {
   Collection,
   Document
 } from '@element-plus/icons-vue'
+import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
 
 const props = defineProps({
   // 数据源
@@ -219,6 +222,16 @@ const props = defineProps({
     default: true
   },
 
+  // 懒加载
+  lazy: {
+    type: Boolean,
+    default: false
+  },
+  load: {
+    type: Function,
+    default: null
+  },
+
   // 空状态
   emptyText: {
     type: String,
@@ -288,21 +301,6 @@ const computedExpandedKeys = computed(() => {
   return []
 })
 
-// 获取所有节点的 key
-const getAllNodeKeys = (nodes) => {
-  const keys = []
-  const traverse = (nodes) => {
-    for (const node of nodes) {
-      keys.push(node.id)
-      if (node.children?.length) {
-        traverse(node.children)
-      }
-    }
-  }
-  traverse(nodes)
-  return keys
-}
-
 // 默认过滤方法
 const defaultFilterMethod = (node, keyword) => {
   if (!keyword) return true
@@ -367,25 +365,22 @@ const filteredTreeData = computed(() => {
   return filterTree(props.treeData)
 })
 
-// 查找所有匹配节点的路径
+// 查找所有匹配节点的路径（优化：复用 tree.js 的工具函数）
 const findMatchedPaths = (nodes, keyword) => {
-  const paths = []
-  const traverse = (nodes, parentPath = []) => {
-    for (const node of nodes) {
-      const currentPath = [...parentPath, node.id]
-      const match = currentFilterMethod.value(node, keyword)
+  const matchedPaths = []
 
-      if (match) {
-        paths.push(...currentPath)
-      }
-
-      if (node.children?.length) {
-        traverse(node.children, currentPath)
-      }
+  // 1. 使用 traverseTree 遍历所有节点
+  traverseTree(nodes, (node) => {
+    // 2. 检查是否匹配
+    if (currentFilterMethod.value(node, keyword)) {
+      // 3. 使用 findNodePath 获取路径
+      const path = findNodePath(nodes, node.id)
+      matchedPaths.push(...path)
     }
-  }
-  traverse(nodes)
-  return [...new Set(paths)]
+  })
+
+  // 4. 去重
+  return [...new Set(matchedPaths)]
 }
 
 // 监听搜索关键词，自动展开匹配路径

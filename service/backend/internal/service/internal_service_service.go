@@ -24,9 +24,29 @@ func NewInternalServiceService(repo *repository.InternalServiceRepository, metaC
 
 // CreateService 创建新的内部服务
 func (s *InternalServiceService) CreateService(req *models.CreateInternalServiceRequest, tenantID uint, createdBy uint) (*models.InternalServiceDTO, error) {
-	// 验证至少有一种服务类型启用
-	if !req.EnabledWFS && !req.EnabledOGCAPI && !req.EnabledWMTS && !req.EnabledWMS {
-		return nil, errors.New("at least one service type must be enabled")
+	// 1. 验证服务类型
+	if req.ServiceType != "spatial" && req.ServiceType != "table" {
+		return nil, errors.New("invalid service_type: must be 'spatial' or 'table'")
+	}
+
+	// 2. 空间服务的特殊验证
+	if req.ServiceType == "spatial" {
+		if req.DefaultSRID == nil || *req.DefaultSRID == 0 {
+			return nil, errors.New("default_srid is required for spatial service")
+		}
+		if req.FirstLayer == nil {
+			return nil, errors.New("first_layer is required for spatial service")
+		}
+		if req.FirstLayer.GeometryColumn == "" {
+			return nil, errors.New("geometry_column is required for spatial service layer")
+		}
+	}
+
+	// 3. 数据表服务的特殊验证
+	if req.ServiceType == "table" {
+		if req.FirstLayer != nil && req.FirstLayer.GeometryColumn != "" {
+			return nil, errors.New("table service layer cannot have geometry_column")
+		}
 	}
 
 	// 检查服务名称是否唯一
@@ -39,9 +59,9 @@ func (s *InternalServiceService) CreateService(req *models.CreateInternalService
 	}
 
 	// 设置默认值
-	defaultSRID := req.DefaultSRID
-	if defaultSRID == 0 {
-		defaultSRID = 4326
+	defaultSRID := 4326
+	if req.DefaultSRID != nil {
+		defaultSRID = *req.DefaultSRID
 	}
 
 	maxFeatures := req.MaxFeatures
@@ -49,32 +69,89 @@ func (s *InternalServiceService) CreateService(req *models.CreateInternalService
 		maxFeatures = 1000
 	}
 
+	// 构建 config JSON
+	config := s.buildServiceConfig(req)
+
 	service := &models.InternalService{
-		TenantID:       tenantID,
-		ServiceName:    req.ServiceName,
-		Title:          req.Title,
-		Abstract:       req.Abstract,
-		Keywords:       models.StringArray(req.Keywords),
-		EnabledWFS:     req.EnabledWFS,
-		EnabledOGCAPI:  req.EnabledOGCAPI,
-		EnabledWMTS:    req.EnabledWMTS,
-		EnabledWMS:     req.EnabledWMS,
-		DefaultSRID:    defaultSRID,
-		MaxFeatures:    maxFeatures,
-		ProviderName:   req.ProviderName,
-		ProviderSite:   req.ProviderSite,
-		ContactPerson:  req.ContactPerson,
-		ContactEmail:   req.ContactEmail,
-		EngineID:       req.EngineID,
-		Status:         "active",
-		CreatedBy:      createdBy,
+		TenantID:      tenantID,
+		ServiceName:   req.ServiceName,
+		Title:         req.Title,
+		Abstract:      req.Abstract,
+		Keywords:      models.StringArray(req.Keywords),
+		ServiceType:   req.ServiceType,
+		Config:        config,
+		PublicAccess:  req.PublicAccess,
+		DefaultSRID:   defaultSRID,
+		MaxFeatures:   maxFeatures,
+		ProviderName:  req.ProviderName,
+		ProviderSite:  req.ProviderSite,
+		ContactPerson: req.ContactPerson,
+		ContactEmail:  req.ContactEmail,
+		EngineID:      req.EngineID,
+		Status:        "active",
+		CreatedBy:     createdBy,
 	}
 
 	if err := s.repo.Create(service); err != nil {
 		return nil, fmt.Errorf("create service failed: %w", err)
 	}
 
+	// 如果提供了第一个图层，自动创建
+	if req.FirstLayer != nil {
+		if _, err := s.AddLayer(service.ID, req.FirstLayer); err != nil {
+			// 回滚服务
+			s.repo.Delete(service.ID)
+			return nil, fmt.Errorf("failed to create first layer: %w", err)
+		}
+	}
+
+	// 重新加载服务（包含图层）
+	service, err = s.repo.GetByID(service.ID)
+	if err != nil {
+		return nil, fmt.Errorf("get created service failed: %w", err)
+	}
+
 	return s.convertToDTO(service), nil
+}
+
+// buildServiceConfig 构建服务配置
+func (s *InternalServiceService) buildServiceConfig(req *models.CreateInternalServiceRequest) models.JSONB {
+	config := make(map[string]interface{})
+
+	if req.ServiceType == "spatial" {
+		// 空间服务的默认配置
+		protocols := map[string]interface{}{
+			"wfs":        map[string]interface{}{"enabled": true, "version": "2.0.0"},
+			"wmts":       map[string]interface{}{"enabled": true, "version": "1.0.0"},
+			"ogc_api":    map[string]interface{}{"enabled": true, "version": "1.0"},
+			"rest_query": map[string]interface{}{"enabled": true},
+		}
+
+		// 用户自定义的协议配置覆盖默认值
+		if req.ProtocolsConfig != nil {
+			for k, v := range req.ProtocolsConfig {
+				protocols[k] = v
+			}
+		}
+
+		config["protocols"] = protocols
+		config["allow_multiple_layers"] = true
+	} else {
+		// 数据表服务的默认配置
+		config["protocols"] = map[string]interface{}{
+			"rest_query": map[string]interface{}{
+				"enabled": true,
+				"pagination": map[string]interface{}{
+					"default_limit": 20,
+					"max_limit":     1000,
+				},
+				"export_formats": []string{"json", "csv"},
+			},
+		}
+		config["allow_multiple_layers"] = false
+	}
+
+	return config
 }
 
 // GetService 获取服务详情
@@ -119,38 +196,6 @@ func (s *InternalServiceService) SearchServices(tenantID uint, keyword string, o
 
 // UpdateService 更新服务
 func (s *InternalServiceService) UpdateService(id uint, req *models.UpdateInternalServiceRequest) (*models.InternalServiceDTO, error) {
-	// 验证至少有一种服务类型启用（如果要更新的话）
-	if (req.EnabledWFS != nil || req.EnabledOGCAPI != nil || req.EnabledWMTS != nil || req.EnabledWMS != nil) {
-		// 获取当前服务的状态
-		currentService, err := s.repo.GetByID(id)
-		if err != nil {
-			return nil, fmt.Errorf("get service failed: %w", err)
-		}
-
-		// 检查更新后是否至少有一种服务启用
-		enabledWFS := currentService.EnabledWFS
-		enabledOGCAPI := currentService.EnabledOGCAPI
-		enabledWMTS := currentService.EnabledWMTS
-		enabledWMS := currentService.EnabledWMS
-
-		if req.EnabledWFS != nil {
-			enabledWFS = *req.EnabledWFS
-		}
-		if req.EnabledOGCAPI != nil {
-			enabledOGCAPI = *req.EnabledOGCAPI
-		}
-		if req.EnabledWMTS != nil {
-			enabledWMTS = *req.EnabledWMTS
-		}
-		if req.EnabledWMS != nil {
-			enabledWMS = *req.EnabledWMS
-		}
-
-		if !enabledWFS && !enabledOGCAPI && !enabledWMTS && !enabledWMS {
-			return nil, errors.New("at least one service type must be enabled")
-		}
-	}
-
 	updates := make(map[string]interface{})
 	if req.Title != nil {
 		updates["title"] = *req.Title
@@ -161,17 +206,8 @@ func (s *InternalServiceService) UpdateService(id uint, req *models.UpdateIntern
 	if req.Keywords != nil {
 		updates["keywords"] = models.StringArray(req.Keywords)
 	}
-	if req.EnabledWFS != nil {
-		updates["enabled_wfs"] = *req.EnabledWFS
-	}
-	if req.EnabledOGCAPI != nil {
-		updates["enabled_ogc_api"] = *req.EnabledOGCAPI
-	}
-	if req.EnabledWMTS != nil {
-		updates["enabled_wmts"] = *req.EnabledWMTS
-	}
-	if req.EnabledWMS != nil {
-		updates["enabled_wms"] = *req.EnabledWMS
+	if req.PublicAccess != nil {
+		updates["public_access"] = *req.PublicAccess
 	}
 	if req.DefaultSRID != nil {
 		updates["default_srid"] = *req.DefaultSRID
@@ -193,6 +229,32 @@ func (s *InternalServiceService) UpdateService(id uint, req *models.UpdateIntern
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status
+	}
+
+	// 更新协议配置
+	if req.ProtocolsConfig != nil {
+		// 获取当前 config
+		currentService, err := s.repo.GetByID(id)
+		if err != nil {
+			return nil, fmt.Errorf("get service failed: %w", err)
+		}
+
+		config := currentService.Config
+		if config == nil {
+			config = make(models.JSONB)
+		}
+
+		// 合并协议配置
+		if config["protocols"] == nil {
+			config["protocols"] = make(map[string]interface{})
+		}
+		protocols := config["protocols"].(map[string]interface{})
+		for k, v := range req.ProtocolsConfig {
+			protocols[k] = v
+		}
+		config["protocols"] = protocols
+
+		updates["config"] = config
 	}
 
 	if err := s.repo.Update(id, updates); err != nil {
@@ -221,6 +283,28 @@ func (s *InternalServiceService) AddLayer(serviceID uint, req *models.AddLayerRe
 	service, err := s.repo.GetByID(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("service not found: %w", err)
+	}
+
+	// 检查是否允许多图层
+	if !service.AllowMultipleLayers() {
+		layers, err := s.repo.ListLayers(serviceID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check existing layers: %w", err)
+		}
+		if len(layers) >= 1 {
+			return nil, errors.New("table service only supports single layer")
+		}
+	}
+
+	// 空间服务的图层必须有几何列
+	if service.IsSpatialService() && req.GeometryColumn == "" {
+		// 空间服务允许在后续从 Meta 获取几何列信息，所以这里不强制要求
+		// 但如果最终还是没有几何列，会在后面的验证中报错
+	}
+
+	// 数据表服务的图层不能有几何列
+	if service.ServiceType == "table" && req.GeometryColumn != "" {
+		return nil, errors.New("table service layer cannot have geometry_column")
 	}
 
 	// 从请求中获取或设置默认值
@@ -388,29 +472,36 @@ func (s *InternalServiceService) convertToDTO(service *models.InternalService) *
 		layers[i] = *s.convertLayerToDTO(&layer)
 	}
 
+	// Convert Config JSONB to map for DTO
+	var config map[string]interface{}
+	if service.Config != nil {
+		config = service.Config
+	} else {
+		config = make(map[string]interface{})
+	}
+
 	return &models.InternalServiceDTO{
-		ID:             service.ID,
-		TenantID:       service.TenantID,
-		ServiceName:    service.ServiceName,
-		Title:          service.Title,
-		Abstract:       service.Abstract,
-		Keywords:       service.Keywords,
-		EnabledWFS:     service.EnabledWFS,
-		EnabledOGCAPI:  service.EnabledOGCAPI,
-		EnabledWMTS:    service.EnabledWMTS,
-		EnabledWMS:     service.EnabledWMS,
-		DefaultSRID:    service.DefaultSRID,
-		MaxFeatures:    service.MaxFeatures,
-		ProviderName:   service.ProviderName,
-		ProviderSite:   service.ProviderSite,
-		ContactPerson:  service.ContactPerson,
-		ContactEmail:   service.ContactEmail,
-		EngineID:       service.EngineID,
-		Status:         service.Status,
-		Layers:         layers,
-		CreatedBy:      service.CreatedBy,
-		CreatedAt:      service.CreatedAt,
-		UpdatedAt:      service.UpdatedAt,
+		ID:            service.ID,
+		TenantID:      service.TenantID,
+		ServiceName:   service.ServiceName,
+		Title:         service.Title,
+		Abstract:      service.Abstract,
+		Keywords:      service.Keywords,
+		ServiceType:   service.ServiceType,
+		Config:        config,
+		PublicAccess:  service.PublicAccess,
+		DefaultSRID:   service.DefaultSRID,
+		MaxFeatures:   service.MaxFeatures,
+		ProviderName:  service.ProviderName,
+		ProviderSite:  service.ProviderSite,
+		ContactPerson: service.ContactPerson,
+		ContactEmail:  service.ContactEmail,
+		EngineID:      service.EngineID,
+		Status:        service.Status,
+		Layers:        layers,
+		CreatedBy:     service.CreatedBy,
+		CreatedAt:     service.CreatedAt,
+		UpdatedAt:     service.UpdatedAt,
 	}
 }
 

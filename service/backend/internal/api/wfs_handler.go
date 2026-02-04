@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/addp/common/logger"
+	"github.com/addp/common/spatial"
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/ogc/common"
+	"github.com/addp/service/internal/ogc/wfs"
 	"github.com/addp/service/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -53,7 +54,14 @@ func (h *WFSHandler) HandleWFSRequest(c *gin.Context) {
 		return
 	}
 
-	if !svc.EnabledWFS {
+	// 检查是否为空间服务
+	if !svc.IsSpatialService() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "WFS only supports spatial services"})
+		return
+	}
+
+	// 检查 WFS 协议是否启用
+	if !svc.IsProtocolEnabled("wfs") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "WFS is not enabled for this service"})
 		return
 	}
@@ -609,9 +617,9 @@ func (h *WFSHandler) GetFeature(c *gin.Context, serviceName string, svc *models.
 	}
 
 	// 解析 bbox 参数（格式：minx,miny,maxx,maxy[,crs]）
-	var bbox *common.BBox
+	var bbox *spatial.BBox
 	if bboxStr := c.Query("bbox"); bboxStr != "" {
-		bbox, err = common.ParseBBox(bboxStr)
+		bbox, err = spatial.ParseBBox(bboxStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid bbox parameter", "details": err.Error()})
 			return
@@ -642,7 +650,7 @@ func (h *WFSHandler) GetFeature(c *gin.Context, serviceName string, svc *models.
 	}
 
 	// 构建查询参数（复用 OGC API 的查询引擎）
-	queryParams := &common.QueryParams{
+	queryParams := &wfs.QueryParams{
 		LayerID: layer.ID,
 		SRID:    srid,
 		BBOX:    bbox,
@@ -652,7 +660,7 @@ func (h *WFSHandler) GetFeature(c *gin.Context, serviceName string, svc *models.
 	}
 
 	// 构建查询 SQL
-	sql, args, err := common.BuildFeatureQuery(layer, queryParams)
+	sql, args, err := wfs.BuildFeatureQuery(layer, queryParams)
 	if err != nil {
 		logger.L().Error("Failed to build feature query", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid query parameters", "details": err.Error()})
@@ -686,7 +694,7 @@ func (h *WFSHandler) GetFeature(c *gin.Context, serviceName string, svc *models.
 	}
 
 	// 转换为 GeoJSON Features
-	features, err := common.RowsToFeatures(rows, columns)
+	features, err := wfs.RowsToFeatures(rows, columns)
 	if err != nil {
 		logger.L().Error("Failed to convert rows to features", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process features"})

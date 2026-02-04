@@ -42,7 +42,9 @@ func (h *RestQueryHandler) Query(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledRestQuery {
+	// 检查 REST Query 协议是否启用
+	// 注意：REST Query 支持所有服务类型（spatial 和 table）
+	if !service.IsProtocolEnabled("rest_query") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "REST Query API is not enabled for this service"})
 		return
 	}

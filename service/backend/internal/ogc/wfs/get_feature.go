@@ -7,8 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/format/geojson"
+	"github.com/addp/common/spatial"
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/ogc/common"
 	"github.com/addp/service/internal/repository"
 	"gorm.io/gorm"
 )
@@ -32,16 +33,16 @@ type GetFeatureRequest struct {
 	Service       string
 	Version       string
 	Request       string
-	TypeName      string    // 图层名称
-	OutputFormat  string    // 输出格式：application/json (GeoJSON) 或 application/gml+xml
-	Count         int       // maxFeatures 别名
-	MaxFeatures   int       // 最大返回要素数
-	StartIndex    int       // 分页起始索引
-	BBox          *common.BBox // 空间范围
-	SrsName       string    // 坐标系 URN
-	PropertyName  string    // 属性列表（逗号分隔）
-	SortBy        string    // 排序字段
-	CQL_Filter    string    // CQL 过滤器
+	TypeName      string          // 图层名称
+	OutputFormat  string          // 输出格式：application/json (GeoJSON) 或 application/gml+xml
+	Count         int             // maxFeatures 别名
+	MaxFeatures   int             // 最大返回要素数
+	StartIndex    int             // 分页起始索引
+	BBox          *spatial.BBox   // 空间范围
+	SrsName       string          // 坐标系 URN
+	PropertyName  string          // 属性列表（逗号分隔）
+	SortBy        string          // 排序字段
+	CQL_Filter    string          // CQL 过滤器
 }
 
 // ParseGetFeatureRequest 从 URL 查询参数解析 GetFeature 请求
@@ -93,14 +94,6 @@ func ParseGetFeatureRequest(query url.Values, layer *models.InternalServiceLayer
 		}
 	}
 
-	// 解析坐标系（从 srsName 中提取 EPSG 代码）
-	srid := layer.SRID
-	if req.SrsName != "" {
-		if epsg, err := extractEPSGFromURN(req.SrsName); err == nil {
-			srid = epsg
-		}
-	}
-
 	// 解析输出格式
 	if req.OutputFormat == "" {
 		req.OutputFormat = "application/json" // 默认 GeoJSON
@@ -127,7 +120,7 @@ func (h *GetFeatureHandler) ExecuteGetFeature(serviceName string, layerName stri
 	}
 
 	// 2. 构建查询参数
-	queryParams := &common.QueryParams{
+	queryParams := &QueryParams{
 		LayerID:  layer.ID,
 		SRID:     service.DefaultSRID,
 		BBOX:     req.BBox,
@@ -160,7 +153,7 @@ func (h *GetFeatureHandler) ExecuteGetFeature(serviceName string, layerName stri
 	}
 
 	// 3. 构建并执行 SQL 查询
-	sqlQuery, args, err := common.BuildFeatureQuery(layer, queryParams)
+	sqlQuery, args, err := BuildFeatureQuery(layer, queryParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build query: %w", err)
 	}
@@ -169,7 +162,7 @@ func (h *GetFeatureHandler) ExecuteGetFeature(serviceName string, layerName stri
 	if err != nil {
 		return nil, fmt.Errorf("query execution failed: %w", err)
 	}
-	defer rows.Columns()
+	defer rows.Close()
 
 	// 4. 获取列名
 	columns, err := rows.Columns()
@@ -181,11 +174,11 @@ func (h *GetFeatureHandler) ExecuteGetFeature(serviceName string, layerName stri
 	switch req.OutputFormat {
 	case "application/json", "application/geo+json":
 		// GeoJSON 格式
-		geojson, err := common.RowsToGeoJSON(rows, columns)
+		geojsonFC, err := geojson.RowsToGeoJSON(rows, columns)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert to GeoJSON: %w", err)
 		}
-		return geojson, nil
+		return geojsonFC, nil
 
 	case "application/gml+xml":
 		// GML 格式
@@ -202,34 +195,9 @@ func (h *GetFeatureHandler) ExecuteGetFeature(serviceName string, layerName stri
 
 // parseBBox 解析 BBOX 字符串
 // 格式：minx,miny,maxx,maxy[,crs]
-func parseBBox(bboxStr string) (*common.BBox, error) {
-	parts := strings.Split(bboxStr, ",")
-	if len(parts) < 4 {
-		return nil, fmt.Errorf("invalid bbox format")
-	}
-
-	minX, _ := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
-	minY, _ := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
-	maxX, _ := strconv.ParseFloat(strings.TrimSpace(parts[2]), 64)
-	maxY, _ := strconv.ParseFloat(strings.TrimSpace(parts[3]), 64)
-
-	bbox := &common.BBox{
-		MinX: minX,
-		MinY: minY,
-		MaxX: maxX,
-		MaxY: maxY,
-		CRS:  4326, // 默认 WGS84
-	}
-
-	// 如果提供了 CRS，解析它
-	if len(parts) > 4 {
-		crsStr := strings.TrimSpace(parts[4])
-		if epsg, err := extractEPSGFromURN(crsStr); err == nil {
-			bbox.CRS = epsg
-		}
-	}
-
-	return bbox, nil
+// 使用 common/spatial 包的 ParseBBox 函数
+func parseBBox(bboxStr string) (*spatial.BBox, error) {
+	return spatial.ParseBBox(bboxStr)
 }
 
 // extractEPSGFromURN 从 OGC CRS URN 中提取 EPSG 代码

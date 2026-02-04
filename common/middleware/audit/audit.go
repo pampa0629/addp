@@ -62,7 +62,6 @@ func AuditMiddleware(moduleName string, systemClient *client.SystemClient) gin.H
 			}
 
 			// 解析资源类型和 ID
-			action := c.Request.Method + " " + c.Request.URL.Path
 			entityInfo := ParseEntityFromPath(c.Request.Method, c.Request.URL.Path)
 
 			// 获取用户信息（或使用系统用户）
@@ -71,12 +70,15 @@ func AuditMiddleware(moduleName string, systemClient *client.SystemClient) gin.H
 			tenantID, tenantIDExists := c.Get("tenant_id")
 
 			auditLog := &models.AuditLogCreateRequest{
-				Action:       action,
+				HTTPMethod:   c.Request.Method,
+				ResourcePath: c.Request.URL.Path,
+				QueryParams:  c.Request.URL.RawQuery,
+				UserAgent:    c.Request.UserAgent(),
 				IPAddress:    c.ClientIP(),
-				Details:      requestBody,
+				RequestBody:  requestBody,
 				ModuleName:   moduleName,
-				HTTPStatus:   &httpStatus,
-				DurationMs:   &durationMs,
+				HTTPStatus:   httpStatus,
+				DurationMs:   durationMs,
 				LogLevel:     logLevel,
 				ErrorMessage: errorMessage,
 				RequestID:    requestID,
@@ -104,7 +106,7 @@ func AuditMiddleware(moduleName string, systemClient *client.SystemClient) gin.H
 			} else {
 				// 系统调用（无认证信息）
 				sysUID := models.SystemUserIDInternal
-				sysUname := models.GetSystemUserName(action)
+				sysUname := models.GetSystemUserName(c.Request.URL.Path)
 				auditLog.UserID = &sysUID
 				auditLog.Username = &sysUname
 				// tenantID 保持为 nil（系统调用无租户）

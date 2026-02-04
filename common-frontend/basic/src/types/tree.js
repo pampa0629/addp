@@ -196,6 +196,25 @@ export function cloneTree(nodes) {
 }
 
 /**
+ * 获取树中所有节点的 ID
+ * @param {Array} nodes - 树节点数组
+ * @returns {Array} 所有节点 ID 数组
+ */
+export function getAllNodeKeys(nodes) {
+  const keys = []
+  const traverse = (nodes) => {
+    for (const node of nodes) {
+      keys.push(node.id)
+      if (node.children?.length) {
+        traverse(node.children)
+      }
+    }
+  }
+  traverse(nodes || [])
+  return keys
+}
+
+/**
  * 树节点排序
  * @param {Array} nodes - 树节点数组
  * @param {Function} compareFn - 比较函数

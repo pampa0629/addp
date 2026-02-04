@@ -1,4 +1,4 @@
-package common
+package geojson
 
 import (
 	"database/sql"
@@ -22,6 +22,20 @@ type GeoJSONFeatureCollection struct {
 }
 
 // RowsToGeoJSON 将数据库行转换为 GeoJSON FeatureCollection
+// 适用于将 SQL 查询结果（包含 geometry 列）序列化为 GeoJSON 格式
+//
+// 参数:
+//   - rows: 数据库查询结果集
+//   - columns: 列名列表
+//
+// 返回:
+//   - *GeoJSONFeatureCollection: GeoJSON FeatureCollection 对象
+//   - error: 错误信息
+//
+// 示例:
+//
+//	rows, _ := db.Query("SELECT id, ST_AsGeoJSON(geom) as geometry, name FROM cities")
+//	fc, err := geojson.RowsToGeoJSON(rows, []string{"id", "geometry", "name"})
 func RowsToGeoJSON(rows *sql.Rows, columns []string) (*GeoJSONFeatureCollection, error) {
 	fc := &GeoJSONFeatureCollection{
 		Type:     "FeatureCollection",

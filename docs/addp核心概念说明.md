@@ -42,12 +42,12 @@ ADDP 平台由以下核心模块组成:
 | **Portal** | 统一门户入口,集成所有模块功能 | 5170 (dev) / 80 (prod) |
 | **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 |
 | **Gateway** | API 网关,处理请求路由和转发 | 8000 |
-| **Manager** | 数据管理:数据源连接、文件上传、数据预览 | 8081 |
+| **Manager** | 数据管理:数据源连接、目录展示、数据预览 | 8081 |
 | **Meta** | 元数据服务:元数据扫描、索引、搜索 | 8082 |
 | **Transfer** | 数据传输:导入、导出、同步任务 | 8083 |
-| **Orchestrator** | 工作流编排:跨模块任务调度 | 8084 |
+| **Orchestrator** | 任务编排:跨模块任务编排调度 | 8084 |
 | **Develop** | 数据开发:查询执行、工作流、Notebook 开发 | 8085 |
-| **Service** | 数据服务:API 发布、OGC 标准服务 | 8086 |
+| **Service** | 数据服务:服务发布（空间OGC标准与非空间）、外部服务注册 | 8086 |
 
 ### 共享模块
 
@@ -74,8 +74,8 @@ ADDP 平台由以下核心模块组成:
 
 | 引擎 | 类型 | 说明 | 路径 |
 |------|------|------|------|
-| **python_workflow** | 空间计算引擎 | 基于 Python 的内存空间计算,提供 21 个空间算子 | `engines/python_workflow/` |
-| **spark-workflow** | 分布式空间计算引擎 | 基于 Spark 的大规模空间数据处理 | `engines/spark-workflow/` |
+| **python_workflow** | 单节点计算引擎 | 基于 Python 的内存计算,提供空间与非空间算子 | `engines/python_workflow/` |
+| **spark-workflow** | 分布式计算引擎 | 基于 Spark 的大规模数据处理,提供空间与非空间算子 | `engines/spark-workflow/` |
 | **jupyter** | Notebook 执行引擎 | 交互式 Notebook 环境，支持 Python 和 Shell | `engines/jupyter/` |
 
 这些引擎在系统启动时自动注册为**内置引擎**,全局可用。
@@ -117,6 +117,7 @@ ADDP 采用基于 Docker 的微服务架构:
 - 租户间数据完全隔离
 - 支持多租户部署,降低运维成本
 - 数据表通过 `tenant_id` 字段实现隔离
+- 模块之间的API调用，需要传递 `tenant_id` 实现隔离
 
 **内置租户**:
 - 系统启动时自动创建 "默认租户" (ID=1)
@@ -508,7 +509,7 @@ TableInfo {
 - 包含具体的连接配置(主机、端口、认证)
 - 一个引擎可以创建多个数据源实例
 
-### 上传目录 (Upload Directory)
+### 上传目录 (Upload Directory)，待定，未实现
 
 **上传目录** 是 MinIO/S3 中的文件组织结构:
 - 按租户隔离:`{tenant_id}/`
@@ -527,7 +528,7 @@ ADDP 支持多种数据类型的预览:
 
 **空间数据预览**:
 - 在地图上可视化空间几何
-- 支持 GeoJSON、Shapefile、PostGIS
+- 支持 GeoJSON、Shapefile、PostGIS（支持MVT快显模式）
 - 前端组件: `GeoJsonPreview`、`ShapefilePreview`
 
 **文件预览**:

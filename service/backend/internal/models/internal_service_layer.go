@@ -29,7 +29,7 @@ type InternalServiceLayer struct {
 	GeometryColumn  string `gorm:"size:255" json:"geometry_column"`  // NULL表示非空间数据
 
 	// 空间元数据（在发布时捕获）
-	SRID           int `gorm:"not null" json:"srid"`
+	SRID           int `gorm:"column:srid;not null" json:"srid"`
 	Extent4326     JSONB `gorm:"type:jsonb" json:"extent_4326,omitempty"` // [minLng, minLat, maxLng, maxLat]
 	GeometryTypes  StringArray `gorm:"type:text[]" json:"geometry_types"`
 

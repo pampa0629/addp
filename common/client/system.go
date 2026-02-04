@@ -688,8 +688,8 @@ func (c *SystemClient) CreateAuditLog(log *models.AuditLogCreateRequest) error {
 	url := fmt.Sprintf("%s/api/internal/audit-logs", c.baseURL)
 
 	// 脱敏敏感信息
-	if log.Details != "" {
-		log.Details = commonutils.MaskSensitiveData(log.Details)
+	if log.RequestBody != "" {
+		log.RequestBody = commonutils.MaskSensitiveData(log.RequestBody)
 	}
 
 	bodyBytes, err := json.Marshal(log)

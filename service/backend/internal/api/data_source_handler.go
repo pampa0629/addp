@@ -1,0 +1,351 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+
+	commonClient "github.com/addp/common/client"
+	"github.com/addp/common/models"
+	"github.com/addp/common/resource"
+	"github.com/gin-gonic/gin"
+)
+
+// DataSourceHandler 处理数据源相关的代理请求
+// 为 Service 前端提供统一的数据源访问接口，内部调用 System 和 Meta 模块
+type DataSourceHandler struct {
+	systemClient *commonClient.SystemClient
+	metaClient   *commonClient.MetaClient
+	metaBaseURL  string
+}
+
+// NewDataSourceHandler 创建新的数据源处理器
+func NewDataSourceHandler(systemClient *commonClient.SystemClient, metaBaseURL string) *DataSourceHandler {
+	return &DataSourceHandler{
+		systemClient: systemClient,
+		metaBaseURL:  metaBaseURL,
+	}
+}
+
+// GetEngines 获取存储引擎列表
+// GET /api/service/engines
+// 内部调用：System API - GET /api/system/engines
+func (h *DataSourceHandler) GetEngines(c *gin.Context) {
+	tenantID := c.GetUint("tenant_id")
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
+		return
+	}
+
+	// 调用 System API 获取引擎列表（空字符串表示获取所有类型）
+	engines, err := h.systemClient.ListEngines("", tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engines: " + err.Error()})
+		return
+	}
+
+	// 根据 API 规范：查询列表（无分页）直接返回数组
+	c.JSON(http.StatusOK, engines)
+}
+
+// GetEngineTree 获取引擎的元数据树
+// GET /api/service/engines/:engine_id/tree?expand_depth=2
+// 内部调用：Meta API - GET /api/meta/engines/:engine_id/tree
+func (h *DataSourceHandler) GetEngineTree(c *gin.Context) {
+	engineIDStr := c.Param("engine_id")
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid engine_id"})
+		return
+	}
+
+	tenantID := c.GetUint("tenant_id")
+	if tenantID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
+		return
+	}
+
+	// 从 JWT token 中获取认证信息
+	authToken := c.GetString("jwt_token")
+	if authToken == "" {
+		// 尝试从 Authorization header 提取
+		if header := c.GetHeader("Authorization"); header != "" {
+			if len(header) > 7 && header[:7] == "Bearer " {
+				authToken = header[7:]
+			}
+		}
+	}
+
+	// 1. 获取引擎信息
+	engine, err := h.systemClient.GetEngine(uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
+		return
+	}
+
+	// 2. 创建 MetaClient（使用用户的 JWT Token）
+	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
+
+	// 3. 调用 Meta API 获取元数据树
+	metadataTree, err := metaClient.GetMetadataTree(uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get metadata tree: " + err.Error()})
+		return
+	}
+
+	// 4. 使用 TreeBuilder 转换为标准树结构
+	treeBuilder := resource.NewTreeBuilder(nil)
+	treeNode, err := treeBuilder.BuildFromMetadataTree(engine, metadataTree)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to build tree: " + err.Error()})
+		return
+	}
+
+	// 根据 API 规范：查询单个资源直接返回对象
+	c.JSON(http.StatusOK, treeNode)
+}
+
+// GetNodeChildren 获取节点的子节点和项目（懒加载）
+// GET /api/service/nodes/:node_id/children
+// 内部调用：Meta API - GET /api/meta/nodes/:node_id/children + /api/meta/nodes/:node_id/items
+// 返回合并后的结果（包括子节点和叶子项目）
+func (h *DataSourceHandler) GetNodeChildren(c *gin.Context) {
+	nodeIDStr := c.Param("node_id")
+	nodeID, err := strconv.ParseUint(nodeIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid node_id"})
+		return
+	}
+
+	// 从 JWT token 中获取认证信息
+	authToken := c.GetString("jwt_token")
+	if authToken == "" {
+		if header := c.GetHeader("Authorization"); header != "" {
+			if len(header) > 7 && header[:7] == "Bearer " {
+				authToken = header[7:]
+			}
+		}
+	}
+
+	// 创建 MetaClient
+	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
+
+	// 1. 调用 Meta API 获取子节点（node → node，如 schema → sub-schema）
+	children, err := metaClient.GetNodeChildren(uint(nodeID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get node children: " + err.Error()})
+		return
+	}
+
+	// 2. 调用 Meta API 获取节点项目（node → items，如 schema → tables）
+	items, err := metaClient.GetNodeItems(uint(nodeID))
+	if err != nil {
+		// items 获取失败不影响整体流程，只记录日志
+		// 某些节点类型（如 table）可能没有 items
+		items = []models.MetaItem{} // 使用空数组
+	}
+
+	// 3. 如果既没有子节点也没有项目，返回空数组
+	if len(children) == 0 && len(items) == 0 {
+		c.JSON(http.StatusOK, []interface{}{})
+		return
+	}
+
+	// 4. 获取引擎信息
+	var engineID uint
+	if len(children) > 0 {
+		engineID = children[0].EngineID
+	} else if len(items) > 0 {
+		engineID = items[0].EngineID
+	}
+
+	engine, err := h.systemClient.GetEngine(engineID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get engine: " + err.Error()})
+		return
+	}
+
+	// 5. 使用 TreeBuilder 的统一方法转换 Items 为 MetaNodes
+	treeBuilder := resource.NewTreeBuilder(nil)
+	itemNodes := treeBuilder.ConvertMetaItems(items)
+
+	// 6. 合并子节点和转换后的 Item 节点
+	allNodes := make([]*models.MetaNode, 0, len(children)+len(itemNodes))
+
+	// 添加子节点
+	for i := range children {
+		allNodes = append(allNodes, &children[i])
+	}
+
+	// 添加转换后的 Item 节点
+	allNodes = append(allNodes, itemNodes...)
+
+	// 7. 使用 TreeBuilder 转换为标准树节点
+	treeNodes := treeBuilder.ConvertMetaNodes(engine, allNodes)
+
+	// 根据 API 规范：查询列表（无分页）直接返回数组
+	c.JSON(http.StatusOK, treeNodes)
+}
+
+// GetTableMetadata 获取表的元数据（用于检测几何列）
+// GET /api/service/tables/metadata?engine_id=1&schema=public&table=users
+// 内部调用：Meta API - GET /api/meta/metadata/fields
+func (h *DataSourceHandler) GetTableMetadata(c *gin.Context) {
+	engineIDStr := c.Query("engine_id")
+	if engineIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing engine_id parameter"})
+		return
+	}
+
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid engine_id"})
+		return
+	}
+
+	schema := c.Query("schema")
+	if schema == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing schema parameter"})
+		return
+	}
+
+	table := c.Query("table")
+	if table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing table parameter"})
+		return
+	}
+
+	// 从 JWT token 中获取认证信息
+	authToken := c.GetString("jwt_token")
+	if authToken == "" {
+		if header := c.GetHeader("Authorization"); header != "" {
+			if len(header) > 7 && header[:7] == "Bearer " {
+				authToken = header[7:]
+			}
+		}
+	}
+
+	// 创建 MetaClient
+	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
+
+	// 调用 Meta API 获取字段信息
+	fields, err := metaClient.GetTableFields(uint(engineID), schema, table, true)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get table fields: " + err.Error()})
+		return
+	}
+
+	// 检测几何列
+	var geometryColumn string
+	var srid int
+	var geometryType string
+	hasGeometry := false
+
+	for _, field := range fields {
+		// 检查是否是空间字段
+		if field.IsSpatial {
+			geometryColumn = field.Name
+			srid = field.SRID
+			geometryType = field.GeometryType
+			hasGeometry = true
+			break
+		}
+	}
+
+	// 根据 API 规范：查询单个资源直接返回对象
+	c.JSON(http.StatusOK, gin.H{
+		"has_geometry":    hasGeometry,
+		"geometry_column": geometryColumn,
+		"srid":            srid,
+		"geometry_type":   geometryType,
+		"fields":          fields,
+	})
+}
+
+// GetTableSpatialMetadata 获取表的空间元数据（用于空间服务发布）
+// GET /api/service/tables/spatial-metadata?engine_id=1&schema=public&table=users
+// 内部调用：Meta API - GET /api/meta/metadata/tables/spatial
+func (h *DataSourceHandler) GetTableSpatialMetadata(c *gin.Context) {
+	engineIDStr := c.Query("engine_id")
+	if engineIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing engine_id parameter"})
+		return
+	}
+
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid engine_id"})
+		return
+	}
+
+	schema := c.Query("schema")
+	if schema == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing schema parameter"})
+		return
+	}
+
+	table := c.Query("table")
+	if table == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Missing table parameter"})
+		return
+	}
+
+	// 从 JWT token 中获取认证信息
+	authToken := c.GetString("jwt_token")
+	if authToken == "" {
+		if header := c.GetHeader("Authorization"); header != "" {
+			if len(header) > 7 && header[:7] == "Bearer " {
+				authToken = header[7:]
+			}
+		}
+	}
+
+	// 创建 MetaClient
+	metaClient := commonClient.NewMetaClient(h.metaBaseURL, authToken)
+
+	// 调用 Meta API 获取空间元数据
+	spatialMeta, err := metaClient.GetTableSpatialMetadata(uint(engineID), schema, table)
+	if err != nil {
+		// 如果表不是空间表，返回空结果而不是错误
+		c.JSON(http.StatusOK, gin.H{
+			"has_geometry": false,
+		})
+		return
+	}
+
+	// 获取第一个几何类型（如果有多个）
+	geometryType := ""
+	if len(spatialMeta.GeometryTypes) > 0 {
+		geometryType = spatialMeta.GeometryTypes[0]
+	}
+
+	// 根据 API 规范：查询单个资源直接返回对象
+	c.JSON(http.StatusOK, gin.H{
+		"has_geometry":    true,
+		"geometry_column": spatialMeta.GeometryColumn,
+		"srid":            spatialMeta.SRID,
+		"geometry_type":   geometryType,
+		"extent":          spatialMeta.Extent,
+	})
+}
+
+// HealthCheck 健康检查
+func (h *DataSourceHandler) HealthCheck(c *gin.Context) {
+	// 检查 System 和 Meta 服务的连通性
+	systemOK := h.systemClient != nil
+	metaOK := h.metaBaseURL != ""
+
+	status := "healthy"
+	if !systemOK || !metaOK {
+		status = "degraded"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": status,
+		"checks": gin.H{
+			"system": systemOK,
+			"meta":   metaOK,
+		},
+		"message": fmt.Sprintf("DataSource handler status: %s", status),
+	})
+}

@@ -14,7 +14,7 @@
 | 场景                 | 必读文档                      | 触发关键词                        |
 | -------------------- | ----------------------------- | --------------------------------- |
 | 开发原则与编码规范   | docs/addp开发原则.md          | 原则、规范、DRY、向后兼容         |
-| API 设计规范         | docs/addp-api设计规范.md      | API、接口、RESTful、响应格式、HTTP状态码 |
+| API设计、前后端不一致 | docs/addp-API设计规范.md      | API、接口、RESTful、响应格式、HTTP状态码 |
 | 环境配置、密钥      | docs/addp配置介绍.md          | 配置、环境变量、.env              |
 | 端口               | docs/addp端口分配.md          | 端口                              |
 | Go/前端依赖版本      | docs/addp技术栈规约.md            | 依赖、版本、升级、库              |
@@ -24,7 +24,7 @@
 | 新增数据类型/数据格式  | docs/addp数据类型扩展指南.md     | 新数据类型、新数据格式 |
 | 故障和问题修复        | docs/addp常见故障排查.md        | 出错、修复、问题                  |
 | 厘清基本概念        | docs/addp核心概念说明.md        | 概念、术语、混淆、辨析                  |
-| Gateway 路由         | gateway/ARCHITECTURE.md       | 路由、转发、API网关               |
+| Gateway 路由         | gateway/gateway架构说明.md       | 路由、转发、API网关               |
 | System 模块详情      | system/CLAUDE.md              | 认证、用户、租户、日志            |
 | Manager 模块详情     | manager/CLAUDE.md             | 数据预览、MVT、对象存储、插件     |
 | Meta 模块详情        | meta/CLAUDE.md                | 元数据扫描、定时调度、向量化      |
@@ -37,7 +37,7 @@
 **重要**:
 
 - 遇到相关问题时,优先阅读对应文档
-- 多个场景可能需要阅读多份文档
+- 理解一个场景可能需要阅读多份文档
 - 外链文档包含详细信息,主文档仅提供概览
 
 ## 开发原则
@@ -51,7 +51,8 @@
 
 ### 2. 保持整洁
 
-临时脚本和文档保存到 /tmp/,保持项目树整洁。你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块的docs目录下。
+临时脚本和文档保存到 /tmp/,保持项目树整洁。
+你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块的docs目录下。
 
 ### 3. 无需请求权限
 
@@ -64,6 +65,7 @@
 ### 5. 修复根本原因
 
 深入分析根本原因,彻底解决而不是打补丁。
+若根本原因涉及到原有实现的调整，尤其是架构层面的问题和修改，必须提出来探讨，而不是“将错就错，负负得正”。
 
 ### 6. 大胆删除
 
@@ -75,7 +77,8 @@
 
 ### 8. DRY (不要重复自己)
 
-将重复代码提取到 common/ 或 common-frontend/ 模块。
+不允许存在没有充分理由的重复代码。
+优先将重复代码提取到 common/ 或 common-frontend/ 模块。
 
 详细说明: docs/addp开发原则.md
 
@@ -90,14 +93,14 @@
 - **portal/** - 统一门户入口,基于 iframe 的模块集成 
 - **system/** - 核心系统模块:用户认证、日志、引擎管理 -  (PostgreSQL system schema)
 - **gateway/** - API 网关:处理外部请求并路由到内部服务 -  (反向代理)
-- **manager/** - 数据管理:数据源连接、上传目录组织、数据预览 
+- **manager/** - 数据管理:数据源连接、按目录展示数据、数据预览 
 - **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 -  (PostgreSQL metadata schema)
 - **transfer/** - 数据传输:数据导入/导出/同步
-- **orchestrator/** - 工作流编排:任务调度和执行
-- **develop/** - 开发工作台:SQL 执行、GIS 工作流管理 
-- **service/** - 数据服务模块:外部服务注册、数据查询服务、OGC 标准支持 (PostgreSQL service schema)
+- **orchestrator/** - 任务编排:基于meta、manager、develop等模块配置好的任务之上的任务编排、调度和执行
+- **develop/** - 开发工作台:查询（SQL）工作台、Notebook开发和基于算子的工作流编辑器 
+- **service/** - 数据服务模块:内部数据的服务发布（含空间与非空间）、外部服务注册(PostgreSQL service schema)
 - **engines/python_workflow/** - 基于Python的工作流计算引擎,提供空间和非空间算子
-- **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,空间和非空间算子
+- **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,提供空间和非空间算子
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
@@ -319,11 +322,9 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 - [`CLAUDE.md`](CLAUDE.md) - 本文件 (平台级架构)
 - [`system/CLAUDE.md`](system/CLAUDE.md) - System 模块详情
-- [`gateway/ARCHITECTURE.md`](gateway/ARCHITECTURE.md) - Gateway 路由逻辑
-- [`docs/CONFIG_CENTER.md`](docs/CONFIG_CENTER.md) - 配置中心指南
-- [`docs/COMMON_MODULE.md`](docs/COMMON_MODULE.md) - Common 模块使用
+- [`gateway/doc/gateway架构说明.md`](gateway/doc/gateway架构说明.md) - Gateway 路由逻辑
 - [`common-frontend/README.md`](common-frontend/README.md) - Common 前端组件指南
-- [`common-frontend/ARCHITECTURE.md`](common-frontend/ARCHITECTURE.md) - Common 前端架构
+- [`common-frontend/docs/ARCHITECTURE.md`](common-frontend/docs/ARCHITECTURE.md) - Common 前端架构
 - 各模块目录中的 DATA_STRUCTURES.md
 
 ### 构建和部署
@@ -357,8 +358,8 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 
 各模块的日志都统一输出到 addp/logs目录下，按照模块和前后端区分不同的日志文件。
 
-**开发状态，不得通过go run 或 go build来直接运行或构建临时的二进制程序，以避免造成多个后台程序同时运行；不得自行建立bin目录；修改后端代码后，使用 `./scripts/dev/restart.sh -<模块名>` 重启对应服务来验证确认结果，没有经过这一步，不要告知我已经改好了。**
+**开发状态，不得通过go run 或 go build来直接运行或构建临时的二进制程序，以避免造成多个后台程序同时运行；不得自行建立bin目录；修改后端代码后，使用 `./scripts/dev/restart.sh -<模块名>` 重启对应服务来验证确认结果。如果修改了common中的代码，使用 `./scripts/dev/restart.sh -all` 进行全部编译**
 
-**如果仅仅修改了前端，无需重启服务**
+**如果仅仅修改了前端，无需重启后台服务**
 
 **每次讨论后更新plan时，务必根据讨论结果，全面检查和修订plan文档，而不是仅仅补充讨论结果**

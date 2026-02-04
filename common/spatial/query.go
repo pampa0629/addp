@@ -279,3 +279,113 @@ func parseAndTransformBox(db *sql.DB, boxStr string, srid int) ([]float64, error
 
 	return []float64{minLon, minLat, maxLon, maxLat}, nil
 }
+
+// BBox 空间范围边界框
+// 用于表示地理空间的矩形范围，支持不同坐标系
+type BBox struct {
+	MinX float64 // 最小 X 坐标（经度）
+	MinY float64 // 最小 Y 坐标（纬度）
+	MaxX float64 // 最大 X 坐标（经度）
+	MaxY float64 // 最大 Y 坐标（纬度）
+	CRS  int     // 坐标参考系统 EPSG 代码（如 4326、3857）
+}
+
+// SupportedSRIDs 支持的坐标系列表
+// 包含常用的坐标系统 EPSG 代码
+var SupportedSRIDs = []int{
+	4326, // WGS84 经纬度坐标系
+	3857, // Web Mercator 投影坐标系
+	4490, // CGCS2000 国家2000坐标系
+	2000, // Anguilla 1957 / British West Indies Grid
+	4214, // Beijing 1954
+}
+
+// ValidateSRID 验证坐标系是否在支持列表中
+//
+// 参数:
+//   - srid: EPSG 坐标系代码
+//
+// 返回:
+//   - error: 如果不支持则返回错误信息
+//
+// 示例:
+//
+//	err := spatial.ValidateSRID(4326) // nil
+//	err := spatial.ValidateSRID(9999) // error: unsupported SRID
+func ValidateSRID(srid int) error {
+	for _, supported := range SupportedSRIDs {
+		if srid == supported {
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported SRID %d, supported: %v", srid, SupportedSRIDs)
+}
+
+// ParseBBox 解析 bbox 参数字符串为 BBox 结构
+//
+// 格式: minLon,minLat,maxLon,maxLat[,crs]
+// 默认坐标系为 EPSG:4326 (WGS84)
+//
+// 参数:
+//   - bboxStr: bbox 字符串，格式为逗号分隔的坐标值
+//
+// 返回:
+//   - *BBox: 解析后的边界框对象
+//   - error: 解析错误信息
+//
+// 示例:
+//
+//	bbox, err := spatial.ParseBBox("120.0,30.0,121.0,31.0")       // WGS84
+//	bbox, err := spatial.ParseBBox("120.0,30.0,121.0,31.0,4326")  // 显式指定 WGS84
+//	bbox, err := spatial.ParseBBox("120.0,30.0,121.0,31.0,3857")  // Web Mercator
+func ParseBBox(bboxStr string) (*BBox, error) {
+	if bboxStr == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(bboxStr, ",")
+	if len(parts) != 4 && len(parts) != 5 {
+		return nil, fmt.Errorf("invalid bbox format, expected minLon,minLat,maxLon,maxLat[,crs]")
+	}
+
+	bbox := &BBox{
+		CRS: 4326, // 默认 WGS84
+	}
+
+	var err error
+	bbox.MinX, err = strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bbox minX: %w", err)
+	}
+
+	bbox.MinY, err = strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bbox minY: %w", err)
+	}
+
+	bbox.MaxX, err = strconv.ParseFloat(parts[2], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bbox maxX: %w", err)
+	}
+
+	bbox.MaxY, err = strconv.ParseFloat(parts[3], 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid bbox maxY: %w", err)
+	}
+
+	// 解析 CRS（如果提供）
+	if len(parts) == 5 {
+		crs, err := strconv.Atoi(parts[4])
+		if err != nil {
+			return nil, fmt.Errorf("invalid bbox CRS: %w", err)
+		}
+		bbox.CRS = crs
+	}
+
+	// 验证范围合理性
+	if bbox.MinX >= bbox.MaxX || bbox.MinY >= bbox.MaxY {
+		return nil, fmt.Errorf("invalid bbox: min values must be less than max values")
+	}
+
+	return bbox, nil
+}

@@ -4,11 +4,30 @@
     <div class="page-header">
       <div class="header-left">
         <h2>{{ service?.title }}</h2>
-        <div class="protocol-tags">
-          <el-tag v-if="service?.enabled_wfs" size="small" type="success">WFS</el-tag>
-          <el-tag v-if="service?.enabled_ogc_api" size="small" type="success">OGC API</el-tag>
-          <el-tag v-if="service?.enabled_wmts" size="small" type="success">WMTS</el-tag>
-          <el-tag v-if="service?.enabled_wms" size="small" type="info">WMS</el-tag>
+        <div class="service-meta">
+          <!-- 服务类型标签 -->
+          <el-tag
+            :type="service?.service_type === 'spatial' ? 'success' : 'primary'"
+            size="large"
+          >
+            {{ service?.service_type === 'spatial' ? '空间服务' : '数据表服务' }}
+          </el-tag>
+
+          <!-- 协议标签 -->
+          <div class="protocol-tags">
+            <el-tag v-if="isProtocolEnabled('wfs')" size="small" type="success">
+              WFS
+            </el-tag>
+            <el-tag v-if="isProtocolEnabled('wmts')" size="small" type="success">
+              WMTS
+            </el-tag>
+            <el-tag v-if="isProtocolEnabled('ogc_api')" size="small" type="success">
+              OGC API
+            </el-tag>
+            <el-tag v-if="isProtocolEnabled('rest_query')" size="small" type="primary">
+              REST Query
+            </el-tag>
+          </div>
         </div>
       </div>
       <div class="header-right">
@@ -19,36 +38,61 @@
     </div>
 
     <!-- 服务信息卡片 -->
-    <el-card header="服务信息" style="margin-bottom: 20px;">
+    <el-card header="服务信息" style="margin-bottom: 20px">
       <el-descriptions :column="2" border>
-        <el-descriptions-item label="服务名称">{{ service?.service_name }}</el-descriptions-item>
-        <el-descriptions-item label="标题">{{ service?.title }}</el-descriptions-item>
+        <el-descriptions-item label="服务名称">
+          {{ service?.service_name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="标题">
+          {{ service?.title }}
+        </el-descriptions-item>
+        <el-descriptions-item label="服务类型">
+          <el-tag :type="service?.service_type === 'spatial' ? 'success' : 'primary'">
+            {{ service?.service_type === 'spatial' ? '空间服务' : '数据表服务' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="存储引擎">
+          Engine #{{ service?.engine_id }}
+        </el-descriptions-item>
         <el-descriptions-item label="摘要" :span="2">
           {{ service?.abstract || '无' }}
         </el-descriptions-item>
-        <el-descriptions-item label="关键词">
+        <el-descriptions-item label="关键词" :span="2">
           <el-tag
             v-for="kw in service?.keywords"
             :key="kw"
             size="small"
-            style="margin-right: 5px;"
+            style="margin-right: 5px"
           >
             {{ kw }}
           </el-tag>
           <span v-if="!service?.keywords || service.keywords.length === 0">无</span>
         </el-descriptions-item>
-        <el-descriptions-item label="默认坐标系">EPSG:{{ service?.default_srid }}</el-descriptions-item>
-        <el-descriptions-item label="最大要素数">{{ service?.max_features }}</el-descriptions-item>
-        <el-descriptions-item label="存储引擎">
-          Engine #{{ service?.engine_id }}
+        <el-descriptions-item
+          v-if="service?.service_type === 'spatial'"
+          label="默认坐标系"
+        >
+          EPSG:{{ service?.default_srid }}
+        </el-descriptions-item>
+        <el-descriptions-item label="最大要素数">
+          {{ service?.max_features }}
+        </el-descriptions-item>
+        <el-descriptions-item label="公开访问">
+          <el-tag :type="service?.public_access ? 'success' : 'info'" size="small">
+            {{ service?.public_access ? '是' : '否' }}
+          </el-tag>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
 
-    <!-- OGC 端点卡片 -->
-    <el-card header="OGC 服务端点" style="margin-bottom: 20px;">
+    <!-- 空间服务端点卡片 -->
+    <el-card
+      v-if="service?.service_type === 'spatial'"
+      header="OGC 服务端点"
+      style="margin-bottom: 20px"
+    >
       <!-- WFS 端点 -->
-      <div v-if="service?.enabled_wfs" class="endpoint-item">
+      <div v-if="isProtocolEnabled('wfs')" class="endpoint-item">
         <div class="endpoint-title">
           <el-icon><Link /></el-icon>
           WFS GetCapabilities
@@ -61,7 +105,7 @@
       </div>
 
       <!-- OGC API Features 端点 -->
-      <div v-if="service?.enabled_ogc_api" class="endpoint-item">
+      <div v-if="isProtocolEnabled('ogc_api')" class="endpoint-item">
         <div class="endpoint-title">
           <el-icon><Link /></el-icon>
           OGC API Features (Landing Page)
@@ -74,7 +118,7 @@
       </div>
 
       <!-- WMTS 端点 -->
-      <div v-if="service?.enabled_wmts" class="endpoint-item">
+      <div v-if="isProtocolEnabled('wmts')" class="endpoint-item">
         <div class="endpoint-title">
           <el-icon><Link /></el-icon>
           WMTS GetCapabilities
@@ -86,23 +130,125 @@
         </div>
       </div>
 
-      <div v-if="!service?.enabled_wfs && !service?.enabled_ogc_api && !service?.enabled_wmts" class="no-endpoints">
-        <el-empty description="未启用任何 OGC 协议" />
+      <!-- REST Query 端点 -->
+      <div v-if="isProtocolEnabled('rest_query')" class="endpoint-item">
+        <div class="endpoint-title">
+          <el-icon><Link /></el-icon>
+          REST Query API
+        </div>
+        <el-alert type="info" :closable="false" style="margin-bottom: 8px">
+          空间服务的 REST Query API 支持几何字段格式转换和空间过滤（BBox）
+        </el-alert>
+        <div
+          v-for="layer in service?.layers"
+          :key="layer.id"
+          style="margin-bottom: 12px"
+        >
+          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">
+            图层：{{ layer.layer_name }}
+          </div>
+          <div class="endpoint-url">
+            <el-input :value="getRestQueryUrl(layer.layer_name)" readonly />
+            <el-button @click="copyEndpoint(getRestQueryUrl(layer.layer_name))">
+              复制
+            </el-button>
+            <el-button @click="testEndpoint(getRestQueryUrl(layer.layer_name))">
+              测试
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="
+          !isProtocolEnabled('wfs') &&
+          !isProtocolEnabled('ogc_api') &&
+          !isProtocolEnabled('wmts') &&
+          !isProtocolEnabled('rest_query')
+        "
+        class="no-endpoints"
+      >
+        <el-empty description="未启用任何协议" />
+      </div>
+    </el-card>
+
+    <!-- 数据表服务端点卡片 -->
+    <el-card
+      v-if="service?.service_type === 'table'"
+      header="REST Query API 端点"
+      style="margin-bottom: 20px"
+    >
+      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+        数据表服务提供简化的 REST API，支持灵活的查询、分页、过滤和导出功能
+      </el-alert>
+
+      <div
+        v-if="service?.layers && service.layers.length > 0"
+        class="endpoint-item"
+      >
+        <div class="endpoint-title">
+          <el-icon><Link /></el-icon>
+          数据表查询 API
+        </div>
+        <div class="endpoint-url">
+          <el-input :value="getRestQueryUrl(service.layers[0].layer_name)" readonly />
+          <el-button
+            @click="copyEndpoint(getRestQueryUrl(service.layers[0].layer_name))"
+          >
+            复制
+          </el-button>
+          <el-button
+            @click="testEndpoint(getRestQueryUrl(service.layers[0].layer_name))"
+          >
+            测试
+          </el-button>
+        </div>
+
+        <div style="margin-top: 12px; font-size: 13px; color: #606266">
+          <strong>支持的查询参数：</strong>
+          <ul style="margin: 8px 0; padding-left: 20px">
+            <li><code>page</code> 和 <code>limit</code>：分页参数</li>
+            <li><code>where</code>：条件过滤（SQL WHERE 子句）</li>
+            <li><code>order_by</code>：排序字段</li>
+            <li><code>columns</code>：指定返回的列</li>
+          </ul>
+        </div>
       </div>
     </el-card>
 
     <!-- 图层列表 -->
     <el-card header="图层列表">
-      <div style="margin-bottom: 16px;">
-        <el-button type="primary" @click="showAddLayerDialog = true">添加图层</el-button>
+      <!-- 空间服务：允许添加图层 -->
+      <div v-if="service?.service_type === 'spatial'" style="margin-bottom: 16px">
+        <el-button type="primary" @click="showAddLayerDialog = true">
+          添加图层
+        </el-button>
       </div>
+
+      <!-- 数据表服务：显示提示 -->
+      <el-alert
+        v-if="service?.service_type === 'table'"
+        type="info"
+        :closable="false"
+        style="margin-bottom: 16px"
+      >
+        数据表服务仅支持单图层发布
+      </el-alert>
 
       <el-table :data="service?.layers || []" border stripe>
         <el-table-column prop="layer_name" label="图层名称" width="180" />
         <el-table-column prop="title" label="标题" width="180" />
         <el-table-column label="数据源" width="300">
           <template #default="{ row }">
-            {{ row.schema_name }}.{{ row.table_name }}
+            {{ row.schema_name }}.{{ row.db_table_name }}
+          </template>
+        </el-table-column>
+        <el-table-column label="类型" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.geometry_column" type="success" size="small">
+              空间
+            </el-tag>
+            <el-tag v-else type="info" size="small">非空间</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="geometry_column" label="几何列" width="120" />
@@ -121,7 +267,14 @@
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="editLayer(row)">编辑</el-button>
-            <el-button size="small" type="danger" @click="deleteLayer(row.id)">删除</el-button>
+            <el-button
+              v-if="service?.service_type === 'spatial'"
+              size="small"
+              type="danger"
+              @click="deleteLayer(row.id)"
+            >
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -129,7 +282,7 @@
       <el-empty
         v-if="!service?.layers || service.layers.length === 0"
         description="暂无图层，请添加图层"
-        style="margin-top: 20px;"
+        style="margin-top: 20px"
       />
     </el-card>
 
@@ -154,7 +307,7 @@
         </el-form-item>
 
         <el-form-item label="表名" required>
-          <el-input v-model="layerForm.table_name" placeholder="例如: poi_restaurants" />
+          <el-input v-model="layerForm.db_table_name" placeholder="例如: poi_restaurants" />
         </el-form-item>
 
         <el-form-item label="启用">
@@ -177,7 +330,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
-import publishedServiceAPI from "../api/publishedService'
+import publishedServiceAPI from '../api/publishedService'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,9 +358,16 @@ const layerForm = ref({
   layer_name: '',
   title: '',
   schema_name: 'public',
-  table_name: '',
+  db_table_name: '',
   enabled: true
 })
+
+// 检查协议是否启用
+const isProtocolEnabled = (protocol) => {
+  if (!service.value?.config?.protocols) return false
+  const protocolConfig = service.value.config.protocols[protocol]
+  return protocolConfig?.enabled === true
+}
 
 // 计算 OGC 端点 URL
 const baseURL = computed(() => {
@@ -227,6 +387,12 @@ const ogcApiEndpoint = computed(() =>
 const wmtsEndpoint = computed(() =>
   `${baseURL.value}/wmts/${service.value?.service_name}?service=WMTS&request=GetCapabilities&version=1.0.0`
 )
+
+// REST Query API URL
+const getRestQueryUrl = (layerName) => {
+  const apiBase = import.meta.env.DEV ? 'http://localhost:8086' : window.location.origin
+  return `${apiBase}/api/query/${service.value?.service_name}/${layerName}`
+}
 
 // 加载服务详情
 const loadService = async () => {
@@ -277,15 +443,11 @@ const goToTest = () => {
 // 删除服务
 const handleDelete = async () => {
   try {
-    await ElMessageBox.confirm(
-      '确定要删除该服务吗？此操作不可恢复。',
-      '警告',
-      {
-        type: 'warning',
-        confirmButtonText: '确定',
-        cancelButtonText: '取消'
-      }
-    )
+    await ElMessageBox.confirm('确定要删除该服务吗？此操作不可恢复。', '警告', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    })
 
     await publishedServiceAPI.deleteService(route.params.id)
     ElMessage.success('删除成功')
@@ -303,7 +465,7 @@ const resetLayerForm = () => {
     layer_name: '',
     title: '',
     schema_name: 'public',
-    table_name: '',
+    db_table_name: '',
     enabled: true
   }
 }
@@ -379,9 +541,15 @@ onMounted(loadService)
 }
 
 .header-left h2 {
-  margin: 0 0 10px 0;
+  margin: 0 0 12px 0;
   font-size: 24px;
   color: #303133;
+}
+
+.service-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .protocol-tags {
@@ -430,5 +598,14 @@ onMounted(loadService)
 :deep(.el-card__header) {
   font-weight: 600;
   font-size: 16px;
+}
+
+code {
+  background-color: #f5f7fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #e96900;
 }
 </style>

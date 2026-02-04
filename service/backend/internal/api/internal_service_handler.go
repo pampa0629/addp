@@ -1,7 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -28,7 +31,15 @@ func NewInternalServiceHandler(svc *service.InternalServiceService) *InternalSer
 func (h *InternalServiceHandler) CreateService(c *gin.Context) {
 	var req models.CreateInternalServiceRequest
 
+	// 先读取原始请求体用于调试
+	bodyBytes, _ := io.ReadAll(c.Request.Body)
+	log.Printf("[Service] CreateService request body: %s", string(bodyBytes))
+
+	// 重新设置请求体以便绑定
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[Service] Failed to bind request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
@@ -47,10 +58,9 @@ func (h *InternalServiceHandler) CreateService(c *gin.Context) {
 		// 区分不同的错误类型
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		} else if err.Error() == "at least one service type must be enabled" || err.Error() == "service name already exists" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create service: " + err.Error()})
+			// 验证错误和业务错误都返回 400
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 		return
 	}
@@ -154,18 +164,21 @@ func (h *InternalServiceHandler) UpdateService(c *gin.Context) {
 
 	var req models.UpdateInternalServiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// 记录详细错误日志
+		log.Printf("[Service] Failed to bind request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
+
+	// 记录请求数据用于调试
+	log.Printf("[Service] Update service %d with request: %+v", id, req)
 
 	result, err := h.svc.UpdateService(uint(id), &req)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
-		} else if err.Error() == "at least one service type must be enabled" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update service: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 		return
 	}
@@ -216,7 +229,7 @@ func (h *InternalServiceHandler) AddLayer(c *gin.Context) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
 		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add layer: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 		return
 	}

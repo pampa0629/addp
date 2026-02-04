@@ -27,8 +27,6 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	go.uber.org/mock v0.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 

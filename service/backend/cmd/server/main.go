@@ -81,6 +81,7 @@ func main() {
 	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
+	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL) // 数据源代理 Handler
 	sqlDB, err := db.DB()
 	if err != nil {
 		logger.L().Error("Failed to get SQL DB", "error", err)
@@ -92,7 +93,7 @@ func main() {
 	restQueryHandler := api.NewRestQueryHandler(internalServiceRepo, db)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, systemClient)
+	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, dataSourceHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

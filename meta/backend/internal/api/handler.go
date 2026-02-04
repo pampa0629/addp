@@ -682,7 +682,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, fields)
+		c.JSON(http.StatusOK, gin.H{"data": fields})
 		return
 	}
 
@@ -692,7 +692,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, names)
+	c.JSON(http.StatusOK, gin.H{"data": names})
 }
 
 // ClearResourceCache 清除资源缓存

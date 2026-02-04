@@ -7,7 +7,8 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
-	"github.com/addp/service/internal/ogc/common"
+	"github.com/addp/common/spatial"
+	"github.com/addp/service/internal/ogc/wfs"
 	"github.com/addp/service/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -38,8 +39,14 @@ func (h *OGCAPIHandler) LandingPage(c *gin.Context) {
 		return
 	}
 
-	// 验证是否启用 OGC API Features
-	if !service.EnabledOGCAPI {
+	// 检查是否为空间服务
+	if !service.IsSpatialService() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "OGC API Features only supports spatial services"})
+		return
+	}
+
+	// 检查 OGC API 协议是否启用
+	if !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -86,7 +93,7 @@ func (h *OGCAPIHandler) Conformance(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledOGCAPI {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -114,7 +121,7 @@ func (h *OGCAPIHandler) Collections(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledOGCAPI {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -192,7 +199,7 @@ func (h *OGCAPIHandler) GetCollection(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledOGCAPI {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -266,7 +273,7 @@ func (h *OGCAPIHandler) Items(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledOGCAPI {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -317,9 +324,9 @@ func (h *OGCAPIHandler) Items(c *gin.Context) {
 	}
 
 	// 解析 bbox 参数
-	var bbox *common.BBox
+	var bbox *spatial.BBox
 	if bboxStr := c.Query("bbox"); bboxStr != "" {
-		bbox, err = common.ParseBBox(bboxStr)
+		bbox, err = spatial.ParseBBox(bboxStr)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid bbox parameter", "details": err.Error()})
 			return
@@ -339,7 +346,7 @@ func (h *OGCAPIHandler) Items(c *gin.Context) {
 	}
 
 	// 构建查询参数
-	queryParams := &common.QueryParams{
+	queryParams := &wfs.QueryParams{
 		LayerID: layer.ID,
 		SRID:    srid,
 		BBOX:    bbox,
@@ -349,7 +356,7 @@ func (h *OGCAPIHandler) Items(c *gin.Context) {
 	}
 
 	// 构建查询 SQL
-	sql, args, err := common.BuildFeatureQuery(layer, queryParams)
+	sql, args, err := wfs.BuildFeatureQuery(layer, queryParams)
 	if err != nil {
 		logger.L().Error("Failed to build feature query", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid query parameters", "details": err.Error()})
@@ -379,7 +386,7 @@ func (h *OGCAPIHandler) Items(c *gin.Context) {
 	}
 
 	// 转换为 GeoJSON Features
-	features, err := common.RowsToFeatures(rows, columns)
+	features, err := wfs.RowsToFeatures(rows, columns)
 	if err != nil {
 		logger.L().Error("Failed to convert rows to features", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process features"})
@@ -492,7 +499,7 @@ func (h *OGCAPIHandler) GetItem(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledOGCAPI {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("ogc_api") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "OGC API Features is not enabled for this service"})
 		return
 	}
@@ -554,7 +561,7 @@ func (h *OGCAPIHandler) GetItem(c *gin.Context) {
 	}
 
 	// 转换为 GeoJSON Features
-	features, err := common.RowsToFeatures(rows, columns)
+	features, err := wfs.RowsToFeatures(rows, columns)
 	if err != nil {
 		logger.L().Error("Failed to convert rows to features", "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process feature"})

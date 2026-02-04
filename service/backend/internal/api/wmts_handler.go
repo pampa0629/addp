@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/addp/common/logger"
+	"github.com/addp/common/spatial"
 	"github.com/addp/service/internal/models"
-	"github.com/addp/service/internal/ogc/common"
 	"github.com/addp/service/internal/repository"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -39,8 +39,14 @@ func (h *WMTSHandler) GetCapabilities(c *gin.Context) {
 		return
 	}
 
-	// 验证是否启用 WMTS
-	if !service.EnabledWMTS {
+	// 检查是否为空间服务
+	if !service.IsSpatialService() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "WMTS only supports spatial services"})
+		return
+	}
+
+	// 检查 WMTS 协议是否启用
+	if !service.IsProtocolEnabled("wmts") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "WMTS is not enabled for this service"})
 		return
 	}
@@ -132,7 +138,7 @@ func (h *WMTSHandler) GetTile(c *gin.Context) {
 		return
 	}
 
-	if !service.EnabledWMTS {
+	if !service.IsSpatialService() || !service.IsProtocolEnabled("wmts") {
 		c.JSON(http.StatusForbidden, gin.H{"error": "WMTS is not enabled for this service"})
 		return
 	}
@@ -208,6 +214,17 @@ func (h *WMTSHandler) generateMVTTile(
 	// 当前使用默认数据库连接
 	db := h.db
 
-	// 调用 common 模块的 MVT 生成器
-	return common.GenerateMVTTile(db, layer, z, x, y)
+	// 调用 common/spatial 模块的 MVT 生成器
+	return spatial.GenerateMVTTileWithConfig(
+		db,
+		layer.SchemaName,
+		layer.DBTableName,
+		layer.GeometryColumn,
+		layer.SRID,
+		z, x, y,
+		layer.MVTExtent,
+		layer.MVTBuffer,
+		layer.FilterColumns,
+		layer.LayerName,
+	)
 }

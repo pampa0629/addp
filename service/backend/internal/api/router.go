@@ -19,6 +19,7 @@ func SetupRouter(
 	wmtsHandler *WMTSHandler,
 	restQueryHandler *RestQueryHandler,
 	engineHandler *EngineHandler,
+	dataSourceHandler *DataSourceHandler, // 数据源代理 Handler
 	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
@@ -116,8 +117,12 @@ func SetupRouter(
 			data.GET("/structure", dataServiceHandler.GetTableStructure)
 		}
 
-		// 引擎管理 API
-		api.GET("/engines", engineHandler.ListEngines)
+		// 数据源代理 API（用于前端选择数据表）
+		api.GET("/engines", dataSourceHandler.GetEngines)
+		api.GET("/engines/:engine_id/tree", dataSourceHandler.GetEngineTree)
+		api.GET("/nodes/:node_id/children", dataSourceHandler.GetNodeChildren)
+		api.GET("/tables/metadata", dataSourceHandler.GetTableMetadata)
+		api.GET("/tables/spatial-metadata", dataSourceHandler.GetTableSpatialMetadata)
 
 		// TODO: OGC API - Features
 		// ogc := api.Group("/ogc")

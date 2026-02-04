@@ -14,6 +14,23 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// extractAuthToken 从请求中提取认证 token
+func extractAuthToken(c *gin.Context) string {
+	// 优先从 context 中获取（由认证中间件设置）
+	if token := c.GetString("jwt_token"); token != "" {
+		return token
+	}
+
+	// 从 Authorization header 提取
+	if header := c.GetHeader("Authorization"); header != "" {
+		if len(header) > 7 && header[:7] == "Bearer " {
+			return header[7:]
+		}
+	}
+
+	return ""
+}
+
 // SetupRouter 设置路由
 func SetupRouter(
 	taskService *service.TaskService,
@@ -21,6 +38,7 @@ func SetupRouter(
 	localEngineService *service.LocalEngineService,
 	objectStorageService *service.ObjectStorageService,
 	systemURL string,
+	metaURL string,
 	redisClient *redis.Client,
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
@@ -70,6 +88,31 @@ func SetupRouter(
 	localEngineHandler := NewLocalEngineHandler(localEngineService)
 	objectStorageHandler := NewObjectStorageHandler(objectStorageService)
 	transformHandler := NewTransformHandler()
+	// DataSourceHandler 需要在请求处理时创建（因为需要 JWT token）
+	// 这里先不初始化，在路由中动态创建
+
+	// 数据源路由（为前端提供统一的数据源访问接口）
+	// 注意：DataSourceHandler 需要用户的 JWT token，所以在路由中动态创建
+	protected.GET("/engines", func(c *gin.Context) {
+		authToken := extractAuthToken(c)
+		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler.GetEngines(c)
+	})
+	protected.GET("/engines/:engine_id/tree", func(c *gin.Context) {
+		authToken := extractAuthToken(c)
+		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler.GetEngineTree(c)
+	})
+	protected.GET("/nodes/:node_id/children", func(c *gin.Context) {
+		authToken := extractAuthToken(c)
+		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler.GetNodeChildren(c)
+	})
+	protected.GET("/tables/metadata", func(c *gin.Context) {
+		authToken := extractAuthToken(c)
+		dataSourceHandler := NewDataSourceHandlerWithClients(systemClient, metaURL, authToken)
+		dataSourceHandler.DetectTableMetadata(c)
+	})
 
 	// 任务管理路由
 	tasks := protected.Group("/tasks")

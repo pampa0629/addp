@@ -42,8 +42,8 @@ type AuditLogCreateRequest struct {
 	TenantID     *uint   `json:"tenant_id"`
 	HTTPMethod   string  `json:"http_method" binding:"required"`   // HTTP方法
 	ResourcePath string  `json:"resource_path" binding:"required"` // 资源路径
-	HTTPStatus   int     `json:"http_status" binding:"required"`   // HTTP状态码
-	DurationMs   int     `json:"duration_ms" binding:"required"`   // 请求耗时
+	HTTPStatus   int     `json:"http_status"`                      // HTTP状态码(0值有效)
+	DurationMs   int     `json:"duration_ms"`                      // 请求耗时（毫秒,0值有效）
 	EntityType   string  `json:"entity_type"`                      // 资源类型
 	EntityID     string  `json:"entity_id"`                        // 资源ID
 	RequestBody  string  `json:"request_body"`                     // 操作详情

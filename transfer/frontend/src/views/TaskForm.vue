@@ -94,10 +94,11 @@
         <!-- 源连接器 -->
         <el-form-item label="源数据类型">
           <el-select v-model="sourceType" @change="handleSourceTypeChange" placeholder="请选择">
+            <el-option label="从管理的引擎选择" value="managed" />
             <el-option label="Spatialite (单线程)" value="spatialite" />
             <el-option label="Spatialite (并行)" value="spatialite_parallel" />
-            <el-option label="PostgreSQL" value="postgresql" />
-            <el-option label="MySQL" value="mysql" />
+            <el-option label="PostgreSQL (手动配置)" value="postgresql" />
+            <el-option label="MySQL (手动配置)" value="mysql" />
             <el-option label="CSV 文件" value="csv" />
             <el-option label="GeoJSON" value="geojson" />
             <el-option label="Shapefile" value="shapefile" />
@@ -106,7 +107,21 @@
           <div class="hint" v-if="sourceType === 'spatialite_parallel'">
             ⚡ 并行模式：适合千万级数据，自动分区并发读取
           </div>
+          <div class="hint" v-if="sourceType === 'managed'">
+            📦 从已注册的存储引擎中选择表或对象
+          </div>
         </el-form-item>
+
+        <!-- 管理的源数据选择 -->
+        <template v-if="sourceType === 'managed'">
+          <DataSourceCascaderCard
+            api-base-url="/api/transfer"
+            title="选择源数据"
+            :engine-types="['postgresql', 'mysql', 'minio', 's3']"
+            :selectable-node-types="['table', 'object']"
+            @update:selection="managedSource = $event"
+          />
+        </template>
 
         <!-- Spatialite 源配置 -->
         <template v-if="sourceType === 'spatialite' || sourceType === 'spatialite_parallel'">
@@ -155,9 +170,10 @@
         <!-- 目标连接器 -->
         <el-form-item label="目标数据类型">
           <el-select v-model="targetType" @change="handleTargetTypeChange" placeholder="请选择">
+            <el-option label="从管理的引擎选择" value="managed" />
             <el-option label="PostgreSQL (标准)" value="postgresql" />
             <el-option label="PostgreSQL (COPY)" value="postgres_copy" />
-            <el-option label="MySQL" value="mysql" />
+            <el-option label="MySQL (手动配置)" value="mysql" />
             <el-option label="CSV 文件" value="csv" />
             <el-option label="GeoJSON" value="geojson" />
             <el-option label="Shapefile" value="shapefile" />
@@ -166,7 +182,22 @@
           <div class="hint" v-if="targetType === 'postgres_copy'">
             ⚡ COPY 协议：性能提升 5-10x，适合大批量导入
           </div>
+          <div class="hint" v-if="targetType === 'managed'">
+            📦 从已注册的存储引擎中选择目标表
+          </div>
         </el-form-item>
+
+        <!-- 管理的目标数据选择 -->
+        <template v-if="targetType === 'managed'">
+          <DataSourceCascaderCard
+            api-base-url="/api/transfer"
+            title="选择目标表"
+            :engine-types="['postgresql', 'mysql']"
+            :selectable-node-types="['table']"
+            enable-geometry-detection
+            @update:selection="managedTarget = $event"
+          />
+        </template>
 
         <!-- PostgreSQL 目标配置 -->
         <template v-if="targetType === 'postgresql' || targetType === 'postgres_copy'">
@@ -227,7 +258,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { taskAPI } from '@/api/tasks'
-import { ScheduleConfig } from '@common-ui'
+import { ScheduleConfig, DataSourceCascaderCard } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
@@ -244,6 +275,10 @@ const dataScale = ref('medium')
 // 连接器类型
 const sourceType = ref('spatialite')
 const targetType = ref('postgresql')
+
+// 管理的数据源选择结果
+const managedSource = ref(null)
+const managedTarget = ref(null)
 
 // 表单数据
 const form = ref({
@@ -324,6 +359,22 @@ const configPreview = computed(() => {
 
 // 构建源配置
 const buildSourceConfig = () => {
+  // 管理的数据源
+  if (sourceType.value === 'managed' && managedSource.value) {
+    const config = {
+      engine_id: managedSource.value.engineId,
+      engine_type: managedSource.value.engineType,
+      schema: managedSource.value.schema,
+      table: managedSource.value.tableName
+    }
+    // 如果有几何列信息
+    if (managedSource.value.geometryColumn) {
+      config.geometry_fields = [managedSource.value.geometryColumn]
+      config.srid = managedSource.value.srid
+    }
+    return config
+  }
+
   if (sourceType.value === 'spatialite' || sourceType.value === 'spatialite_parallel') {
     const config = {
       engine_type: 'spatialite',
@@ -362,6 +413,25 @@ const buildSourceConfig = () => {
 
 // 构建目标配置
 const buildTargetConfig = () => {
+  // 管理的数据源
+  if (targetType.value === 'managed' && managedTarget.value) {
+    const config = {
+      engine_id: managedTarget.value.engineId,
+      engine_type: managedTarget.value.engineType,
+      schema: managedTarget.value.schema,
+      table: managedTarget.value.tableName
+    }
+    // 如果有几何列信息
+    if (managedTarget.value.geometryColumn) {
+      config.geometry_columns = [managedTarget.value.geometryColumn]
+      config.srid = managedTarget.value.srid
+    }
+    if (targetType.value === 'postgres_copy' || performanceMode.value === 'high-performance') {
+      config.max_connections = form.value.max_connections
+    }
+    return config
+  }
+
   if (targetType.value === 'postgresql' || targetType.value === 'postgres_copy') {
     const config = {
       engine_type: 'postgresql',
@@ -450,6 +520,8 @@ const handleSourceTypeChange = () => {
     username: '',
     password: ''
   }
+  // 清空管理的数据源选择
+  managedSource.value = null
 }
 
 const handleTargetTypeChange = () => {
@@ -459,6 +531,8 @@ const handleTargetTypeChange = () => {
   } else if (targetType.value === 'mysql') {
     targetConfig.value.port = 3306
   }
+  // 清空管理的数据源选择
+  managedTarget.value = null
 }
 
 const handleBack = () => {

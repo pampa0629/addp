@@ -17,16 +17,13 @@ type InternalService struct {
 	Abstract    string `gorm:"type:text" json:"abstract"`
 	Keywords    StringArray `gorm:"type:text[]" json:"keywords"`
 
-	// 服务类型配置
-	EnabledWFS        bool `gorm:"default:true" json:"enabled_wfs"`
-	EnabledOGCAPI     bool `gorm:"default:true" json:"enabled_ogc_api"`
-	EnabledWMTS       bool `gorm:"default:true" json:"enabled_wmts"`
-	EnabledWMS        bool `gorm:"default:false" json:"enabled_wms"`
-	EnabledRestQuery  bool `gorm:"default:true" json:"enabled_rest_query"`  // 简化REST查询API
-	PublicAccess      bool `gorm:"default:false" json:"public_access"`       // 是否公开访问（无需JWT）
+	// 服务类型和配置
+	ServiceType string `gorm:"size:50;not null;default:'spatial';check:service_type IN ('spatial', 'table')" json:"service_type"`
+	Config      JSONB  `gorm:"type:jsonb;not null;default:'{}'" json:"config"`
+	PublicAccess bool  `gorm:"default:false" json:"public_access"` // 是否公开访问（无需JWT）
 
 	// 服务参数
-	DefaultSRID  int `gorm:"default:4326" json:"default_srid"`
+	DefaultSRID  int `gorm:"column:default_srid;default:4326" json:"default_srid"`
 	MaxFeatures  int `gorm:"default:1000" json:"max_features"`
 
 	// 元数据
@@ -56,51 +53,101 @@ func (InternalService) TableName() string {
 	return "service.internal_services"
 }
 
+// GetProtocolConfig 获取指定协议的配置
+func (s *InternalService) GetProtocolConfig(protocol string) map[string]interface{} {
+	if s.Config == nil {
+		return nil
+	}
+	protocols, ok := s.Config["protocols"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	config, ok := protocols[protocol].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	return config
+}
+
+// IsProtocolEnabled 检查指定协议是否启用
+func (s *InternalService) IsProtocolEnabled(protocol string) bool {
+	config := s.GetProtocolConfig(protocol)
+	if config == nil {
+		return false
+	}
+	enabled, ok := config["enabled"].(bool)
+	if !ok {
+		return false
+	}
+	return enabled
+}
+
+// AllowMultipleLayers 是否允许多图层
+func (s *InternalService) AllowMultipleLayers() bool {
+	if s.ServiceType == "table" {
+		return false
+	}
+	if s.Config != nil {
+		if allow, ok := s.Config["allow_multiple_layers"].(bool); ok {
+			return allow
+		}
+	}
+	// 默认空间服务允许多图层
+	return s.ServiceType == "spatial"
+}
+
+// IsSpatialService 是否为空间服务
+func (s *InternalService) IsSpatialService() bool {
+	return s.ServiceType == "spatial"
+}
+
 // CreateInternalServiceRequest 创建内部服务请求
 type CreateInternalServiceRequest struct {
-	ServiceName string `json:"service_name" binding:"required,alphanum"`
-	Title       string `json:"title" binding:"required"`
-	Abstract    string `json:"abstract"`
+	ServiceName string   `json:"service_name" binding:"required"`
+	Title       string   `json:"title" binding:"required"`
+	Abstract    string   `json:"abstract"`
 	Keywords    []string `json:"keywords"`
 
-	EnabledWFS       bool `json:"enabled_wfs"`
-	EnabledOGCAPI    bool `json:"enabled_ogc_api"`
-	EnabledWMTS      bool `json:"enabled_wmts"`
-	EnabledWMS       bool `json:"enabled_wms"`
-	EnabledRestQuery bool `json:"enabled_rest_query"`
-	PublicAccess     bool `json:"public_access"`
+	// 服务类型
+	ServiceType string `json:"service_type" binding:"required,oneof=spatial table"`
 
-	DefaultSRID  int `json:"default_srid" binding:"omitempty,oneof=4326 3857 4490 2000 4214"`
-	MaxFeatures  int `json:"max_features" binding:"omitempty,gte=1,lte=10000"`
+	// 协议配置
+	ProtocolsConfig map[string]interface{} `json:"protocols_config"`
 
-	ProviderName string `json:"provider_name"`
-	ProviderSite string `json:"provider_site"`
+	// 空间服务专用（ServiceType == 'spatial' 时需要）
+	DefaultSRID *int `json:"default_srid"`
+
+	MaxFeatures  int  `json:"max_features" binding:"omitempty,gte=1,lte=10000"`
+	PublicAccess bool `json:"public_access"`
+
+	ProviderName  string `json:"provider_name"`
+	ProviderSite  string `json:"provider_site"`
 	ContactPerson string `json:"contact_person"`
-	ContactEmail string `json:"contact_email"`
+	ContactEmail  string `json:"contact_email"`
 
 	EngineID uint `json:"engine_id" binding:"required"`
+
+	// 第一个图层配置（创建服务时自动创建）
+	FirstLayer *AddLayerRequest `json:"first_layer"`
 }
 
 // UpdateInternalServiceRequest 更新内部服务请求
 type UpdateInternalServiceRequest struct {
-	Title        *string `json:"title,omitempty"`
-	Abstract     *string `json:"abstract,omitempty"`
-	Keywords     []string `json:"keywords,omitempty"`
+	Title    *string  `json:"title,omitempty"`
+	Abstract *string  `json:"abstract,omitempty"`
+	Keywords []string `json:"keywords,omitempty"`
 
-	EnabledWFS       *bool `json:"enabled_wfs,omitempty"`
-	EnabledOGCAPI    *bool `json:"enabled_ogc_api,omitempty"`
-	EnabledWMTS      *bool `json:"enabled_wmts,omitempty"`
-	EnabledWMS       *bool `json:"enabled_wms,omitempty"`
-	EnabledRestQuery *bool `json:"enabled_rest_query,omitempty"`
-	PublicAccess     *bool `json:"public_access,omitempty"`
+	// 协议配置更新
+	ProtocolsConfig map[string]interface{} `json:"protocols_config,omitempty"`
+	PublicAccess    *bool                  `json:"public_access,omitempty"`
 
-	DefaultSRID  *int `json:"default_srid,omitempty"`
-	MaxFeatures  *int `json:"max_features,omitempty"`
+	DefaultSRID *int `json:"default_srid,omitempty"`
+	MaxFeatures *int `json:"max_features,omitempty"`
 
-	ProviderName *string `json:"provider_name,omitempty"`
-	ProviderSite *string `json:"provider_site,omitempty"`
+	ProviderName  *string `json:"provider_name,omitempty"`
+	ProviderSite  *string `json:"provider_site,omitempty"`
 	ContactPerson *string `json:"contact_person,omitempty"`
-	ContactEmail *string `json:"contact_email,omitempty"`
+	ContactEmail  *string `json:"contact_email,omitempty"`
 
 	Status *string `json:"status,omitempty" binding:"omitempty,oneof=active inactive error"`
 }
@@ -109,32 +156,29 @@ type UpdateInternalServiceRequest struct {
 type InternalServiceDTO struct {
 	ID uint `json:"id"`
 
-	TenantID    uint `json:"tenant_id"`
-	ServiceName string `json:"service_name"`
-	Title       string `json:"title"`
-	Abstract    string `json:"abstract"`
+	TenantID    uint     `json:"tenant_id"`
+	ServiceName string   `json:"service_name"`
+	Title       string   `json:"title"`
+	Abstract    string   `json:"abstract"`
 	Keywords    []string `json:"keywords"`
 
-	EnabledWFS       bool `json:"enabled_wfs"`
-	EnabledOGCAPI    bool `json:"enabled_ogc_api"`
-	EnabledWMTS      bool `json:"enabled_wmts"`
-	EnabledWMS       bool `json:"enabled_wms"`
-	EnabledRestQuery bool `json:"enabled_rest_query"`
-	PublicAccess     bool `json:"public_access"`
+	ServiceType  string                 `json:"service_type"`
+	Config       map[string]interface{} `json:"config"`
+	PublicAccess bool                   `json:"public_access"`
 
-	DefaultSRID  int `json:"default_srid"`
-	MaxFeatures  int `json:"max_features"`
+	DefaultSRID int `json:"default_srid"`
+	MaxFeatures int `json:"max_features"`
 
-	ProviderName string `json:"provider_name"`
-	ProviderSite string `json:"provider_site"`
+	ProviderName  string `json:"provider_name"`
+	ProviderSite  string `json:"provider_site"`
 	ContactPerson string `json:"contact_person"`
-	ContactEmail string `json:"contact_email"`
+	ContactEmail  string `json:"contact_email"`
 
-	EngineID uint `json:"engine_id"`
+	EngineID uint   `json:"engine_id"`
 	Status   string `json:"status"`
 
 	Layers    []InternalServiceLayerDTO `json:"layers,omitempty"`
-	CreatedBy uint `json:"created_by"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedBy uint                      `json:"created_by"`
+	CreatedAt time.Time                 `json:"created_at"`
+	UpdatedAt time.Time                 `json:"updated_at"`
 }

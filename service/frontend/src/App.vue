@@ -25,7 +25,7 @@
           <el-sub-menu index="services">
             <template #title>
               <el-icon><Connection /></el-icon>
-              <span>服务管理</span>
+              <span>数据服务</span>
             </template>
 
             <el-menu-item index="/published-services">
