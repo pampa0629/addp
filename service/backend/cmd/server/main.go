@@ -50,6 +50,8 @@ func main() {
 	// 初始化 repositories
 	externalServiceRepo := repository.NewExternalServiceRepository(db)
 	internalServiceRepo := repository.NewInternalServiceRepository(db)
+	queryServiceRepo := repository.NewQueryServiceRepository(db)
+	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
@@ -74,10 +76,21 @@ func main() {
 	// 初始化 services
 	externalServiceService := registry.NewExternalServiceService(externalServiceRepo)
 	internalServiceService := serviceInternal.NewInternalServiceService(internalServiceRepo, metaClient)
+
+	// 构建服务基础URL用于查询服务
+	serviceHost := utils.GetServiceHost()
+	port := utils.GetModulePort("service")
+	serviceURL := utils.BuildServiceURL(serviceHost, port)
+
+	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, serviceURL)
+	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
+	registeredServiceService := serviceInternal.NewRegisteredServiceService(registeredServiceRepo, serviceURL)
 	queryService := data.NewQueryService(systemClient, metaClient)
 
 	// 初始化 handlers
 	internalServiceHandler := api.NewInternalServiceHandler(internalServiceService)
+	queryServiceHandler := api.NewQueryServiceHandler(queryServiceService, queryExecutorService)
+	registeredServiceHandler := api.NewRegisteredServiceHandler(registeredServiceService)
 	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
@@ -93,7 +106,7 @@ func main() {
 	restQueryHandler := api.NewRestQueryHandler(internalServiceRepo, db)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, dataSourceHandler, systemClient)
+	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, queryServiceHandler, registeredServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, dataSourceHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
@@ -167,9 +180,72 @@ func main() {
 	// 1. 每小时自动健康检查所有活跃服务
 	healthCheckHandler := func(ctx context.Context, taskID string) error {
 		logger.L().Info("开始执行定时健康检查")
-		// 获取所有租户的活跃服务并进行健康检查
-		// 注意：这里简化处理，实际应该遍历所有租户
-		// TODO: 完善租户遍历逻辑
+
+		// 获取所有租户列表
+		var tenants []struct {
+			ID uint
+		}
+
+		// 如果有 System 客户端，则从 System 服务获取租户列表
+		// 否则，从数据库中查询所有不同的租户ID
+		if systemClient != nil {
+			// TODO: 调用 System API 获取租户列表
+			// 暂时使用数据库查询
+			logger.L().Debug("从数据库查询租户列表")
+		}
+
+		// 从注册服务表中查询所有唯一的租户ID
+		if err := db.Raw("SELECT DISTINCT tenant_id AS id FROM service.registered_services WHERE status = 'active'").Scan(&tenants).Error; err != nil {
+			logger.L().Error("查询租户列表失败", "error", err)
+			return err
+		}
+
+		logger.L().Info("找到活跃租户", "count", len(tenants))
+
+		// 遍历每个租户
+		totalChecked := 0
+		totalSuccess := 0
+		totalFailed := 0
+
+		for _, tenant := range tenants {
+			// 获取该租户下所有活跃的注册服务
+			services, err := registeredServiceRepo.GetByTenant(tenant.ID, map[string]interface{}{
+				"status": "active",
+			})
+			if err != nil {
+				logger.L().Error("获取租户服务失败", "tenant_id", tenant.ID, "error", err)
+				continue
+			}
+
+			logger.L().Debug("租户服务数量", "tenant_id", tenant.ID, "count", len(services))
+
+			// 对每个服务执行健康检查
+			for _, service := range services {
+				totalChecked++
+				result, err := registeredServiceService.HealthCheck(service.ID)
+				if err != nil {
+					logger.L().Error("健康检查失败", "service_id", service.ID, "service_name", service.ServiceName, "error", err)
+					totalFailed++
+				} else {
+					if result.Status == "healthy" {
+						totalSuccess++
+					} else {
+						totalFailed++
+					}
+					logger.L().Debug("健康检查完成",
+						"service_id", service.ID,
+						"service_name", service.ServiceName,
+						"status", result.Status,
+						"response_time", result.ResponseTime)
+				}
+			}
+		}
+
+		logger.L().Info("定时健康检查完成",
+			"total", totalChecked,
+			"success", totalSuccess,
+			"failed", totalFailed)
+
 		return nil
 	}
 	if err := scheduler.Schedule(ctx, "health-check", cfg.HealthCheckCron, healthCheckHandler); err != nil {
@@ -181,7 +257,68 @@ func main() {
 	// 2. 每天凌晨刷新所有服务元数据
 	metadataRefreshHandler := func(ctx context.Context, taskID string) error {
 		logger.L().Info("开始执行定时元数据刷新")
-		// TODO: 实现元数据刷新逻辑
+
+		// 获取所有租户的租户ID
+		var tenants []struct {
+			ID uint
+		}
+
+		// 从注册服务表中查询所有唯一的租户ID（仅OGC服务需要刷新）
+		if err := db.Raw(`SELECT DISTINCT tenant_id AS id
+			FROM service.registered_services
+			WHERE service_type IN ('wms', 'wfs', 'wmts', 'ogc_api')
+			AND status = 'active'`).Scan(&tenants).Error; err != nil {
+			logger.L().Error("查询租户列表失败", "error", err)
+			return err
+		}
+
+		logger.L().Info("找到有OGC服务的租户", "count", len(tenants))
+
+		// 遍历每个租户
+		totalRefreshed := 0
+		totalSuccess := 0
+		totalFailed := 0
+
+		for _, tenant := range tenants {
+			// 获取该租户下所有OGC服务
+			services, err := registeredServiceRepo.GetByTenant(tenant.ID, map[string]interface{}{
+				"status": "active",
+			})
+			if err != nil {
+				logger.L().Error("获取租户服务失败", "tenant_id", tenant.ID, "error", err)
+				continue
+			}
+
+			// 仅处理 OGC 服务
+			for _, service := range services {
+				if service.ServiceType == "wms" || service.ServiceType == "wfs" ||
+					service.ServiceType == "wmts" || service.ServiceType == "ogc_api" {
+
+					totalRefreshed++
+					err := registeredServiceService.RefreshMetadata(service.ID, false)
+					if err != nil {
+						logger.L().Error("元数据刷新失败",
+							"service_id", service.ID,
+							"service_name", service.ServiceName,
+							"type", service.ServiceType,
+							"error", err)
+						totalFailed++
+					} else {
+						totalSuccess++
+						logger.L().Debug("元数据刷新成功",
+							"service_id", service.ID,
+							"service_name", service.ServiceName,
+							"type", service.ServiceType)
+					}
+				}
+			}
+		}
+
+		logger.L().Info("定时元数据刷新完成",
+			"total", totalRefreshed,
+			"success", totalSuccess,
+			"failed", totalFailed)
+
 		return nil
 	}
 	if err := scheduler.Schedule(ctx, "metadata-refresh", cfg.MetadataRefreshCron, metadataRefreshHandler); err != nil {

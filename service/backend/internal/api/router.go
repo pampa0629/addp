@@ -14,6 +14,8 @@ func SetupRouter(
 	serviceRegistryHandler *ServiceRegistryHandler,
 	dataServiceHandler *DataServiceHandler,
 	internalServiceHandler *InternalServiceHandler,
+	queryServiceHandler *QueryServiceHandler, // 新增：查询服务 Handler
+	registeredServiceHandler *RegisteredServiceHandler, // 新增：注册服务 Handler
 	wfsHandler *WFSHandler,
 	ogcAPIHandler *OGCAPIHandler,
 	wmtsHandler *WMTSHandler,
@@ -61,6 +63,8 @@ func SetupRouter(
 	query := router.Group("/api/query")
 	{
 		query.GET("/:serviceName/:layerName", restQueryHandler.Query)
+		// 查询服务端点（支持公开访问，handler内部会检查权限）
+		query.GET("/:serviceName", queryServiceHandler.QueryData)
 	}
 
 	// API 路由组（需要认证）
@@ -101,6 +105,31 @@ func SetupRouter(
 			internal.POST("/services/:id/layers", internalServiceHandler.AddLayer)
 			internal.PUT("/services/:id/layers/:layer_id", internalServiceHandler.UpdateLayer)
 			internal.DELETE("/services/:id/layers/:layer_id", internalServiceHandler.DeleteLayer)
+		}
+
+		// 查询服务管理 API
+		queryAPI := api.Group("/query")
+		{
+			queryAPI.POST("", queryServiceHandler.CreateService)
+			queryAPI.GET("", queryServiceHandler.ListServices)
+			queryAPI.GET("/:id", queryServiceHandler.GetService)
+			queryAPI.PUT("/:id", queryServiceHandler.UpdateService)
+			queryAPI.DELETE("/:id", queryServiceHandler.DeleteService)
+		}
+
+		// 注册服务管理 API（新架构）
+		registeredAPI := api.Group("/registered")
+		{
+			registeredAPI.POST("", registeredServiceHandler.CreateService)
+			registeredAPI.GET("", registeredServiceHandler.ListServices)
+			registeredAPI.GET("/:id", registeredServiceHandler.GetService)
+			registeredAPI.PUT("/:id", registeredServiceHandler.UpdateService)
+			registeredAPI.DELETE("/:id", registeredServiceHandler.DeleteService)
+			registeredAPI.POST("/:id/refresh", registeredServiceHandler.RefreshMetadata)
+			registeredAPI.POST("/:id/health", registeredServiceHandler.HealthCheck)
+
+			// 代理转发端点 - 支持所有 HTTP 方法
+			registeredAPI.Any("/proxy/:id/*path", registeredServiceHandler.ProxyService)
 		}
 
 		// 服务目录 API

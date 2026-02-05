@@ -456,7 +456,8 @@
       "Bash(if ! grep -q \"\"\"overrides\"\":\" \"$pkg_file\")",
       "Bash(PGPASSWORD=addp_business_pass psql:*)",
       "Bash(PGPASSWORD=addp2024 psql:*)",
-      "Bash(go work:*)"
+      "Bash(go work:*)",
+      "Bash(PGPASSWORD=\"addp_secret\" psql:*)"
     ],
     "deny": [],
     "ask": [],

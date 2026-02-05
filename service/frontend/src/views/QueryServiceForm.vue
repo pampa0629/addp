@@ -1,0 +1,712 @@
+<template>
+  <div class="query-service-form" v-loading="loading">
+    <div class="page-header">
+      <el-button @click="goBack" :icon="ArrowLeft" circle />
+      <h2>{{ isEdit ? '编辑查询服务' : '创建查询服务' }}</h2>
+    </div>
+
+    <!-- 步骤条（仅新建模式显示） -->
+    <el-steps
+      v-if="!isEdit"
+      :active="currentStep"
+      finish-status="success"
+      align-center
+      style="margin-bottom: 30px"
+    >
+      <el-step title="选择配置方式" />
+      <el-step title="配置数据源" />
+      <el-step title="配置服务信息" />
+    </el-steps>
+
+    <!-- Step 0: 选择配置方式（仅新建模式） -->
+    <div v-if="!isEdit && currentStep === 0">
+      <el-card>
+        <template #header>
+          <span>选择数据源配置方式</span>
+        </template>
+
+        <el-radio-group v-model="form.config_type" style="width: 100%">
+          <el-card
+            shadow="hover"
+            :class="{ 'selected-card': form.config_type === 'table' }"
+            style="margin-bottom: 16px; cursor: pointer"
+            @click="form.config_type = 'table'"
+          >
+            <el-radio label="table" style="width: 100%">
+              <div class="config-type-card">
+                <h3><el-icon><Grid /></el-icon> 界面配置（推荐）</h3>
+                <p>通过界面选择数据表，系统自动检测空间字段和元数据</p>
+                <p>✅ 支持动态查询参数（filter、fields、orderBy）</p>
+                <p>✅ 可选择默认返回字段和可过滤字段</p>
+                <p>✅ 自动检测空间字段并启用 OGC Features</p>
+                <el-tag type="success" size="small">推荐用于单表查询</el-tag>
+              </div>
+            </el-radio>
+          </el-card>
+
+          <el-card
+            shadow="hover"
+            :class="{ 'selected-card': form.config_type === 'sql' }"
+            style="cursor: pointer"
+            @click="form.config_type = 'sql'"
+          >
+            <el-radio label="sql" style="width: 100%">
+              <div class="config-type-card">
+                <h3><el-icon><Document /></el-icon> SQL 配置（高级）</h3>
+                <p>编写自定义 SQL 查询语句</p>
+                <p>✅ 支持复杂查询（JOIN、子查询、聚合）</p>
+                <p>✅ 支持计算字段和自定义过滤逻辑</p>
+                <p>⚠️ 仅支持分页参数（page、page_size、format）</p>
+                <el-tag type="warning" size="small">适合复杂查询场景</el-tag>
+              </div>
+            </el-radio>
+          </el-card>
+        </el-radio-group>
+      </el-card>
+    </div>
+
+    <!-- Step 1: 配置数据源 -->
+    <div v-if="!isEdit && currentStep === 1">
+      <!-- Table 模式 -->
+      <div v-if="form.config_type === 'table'">
+        <el-card>
+          <template #header>
+            <span>选择数据表</span>
+          </template>
+
+          <el-form :model="form" label-width="120px">
+            <el-form-item label="存储引擎" required>
+              <el-select v-model="form.engine_id" placeholder="请选择存储引擎" style="width: 400px" @change="onEngineChange">
+                <el-option
+                  v-for="engine in engines"
+                  :key="engine.id"
+                  :label="`${engine.name} (${engine.type})`"
+                  :value="engine.id"
+                />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item label="Schema" required>
+              <el-input v-model="form.schema_name" placeholder="例如: public" style="width: 400px" />
+            </el-form-item>
+
+            <el-form-item label="Table" required>
+              <el-input v-model="form.table_name" placeholder="例如: users" style="width: 400px" />
+              <el-button
+                v-if="form.engine_id && form.schema_name && form.table_name"
+                type="primary"
+                @click="detectSpatialFields"
+                :loading="detecting"
+                style="margin-left: 12px"
+              >
+                检测空间字段
+              </el-button>
+            </el-form-item>
+
+            <!-- 空间字段检测结果 -->
+            <el-alert
+              v-if="spatialMetadata && spatialMetadata.hasGeometry"
+              type="success"
+              :closable="false"
+              style="margin-bottom: 16px"
+            >
+              <template #title>
+                <div>
+                  ✅ 检测到空间字段：<strong>{{ spatialMetadata.geometryColumn }}</strong>
+                </div>
+                <div style="margin-top: 8px; font-size: 13px">
+                  <div>坐标系：EPSG:{{ spatialMetadata.srid }}</div>
+                  <div>几何类型：{{ spatialMetadata.geometryTypes?.join(', ') || '未知' }}</div>
+                  <div v-if="spatialMetadata.extent">
+                    空间范围：{{ JSON.stringify(spatialMetadata.extent) }}
+                  </div>
+                </div>
+              </template>
+            </el-alert>
+
+            <el-alert
+              v-else-if="spatialMetadata && !spatialMetadata.hasGeometry"
+              type="info"
+              :closable="false"
+              style="margin-bottom: 16px"
+            >
+              未检测到空间字段，将创建普通数据查询服务
+            </el-alert>
+
+            <!-- 字段配置（可选） -->
+            <el-divider content-position="left">字段配置（可选）</el-divider>
+
+            <el-form-item label="默认返回字段">
+              <el-input
+                v-model="defaultFieldsInput"
+                placeholder="留空返回所有字段，或输入字段列表（用逗号分隔）"
+                style="width: 100%"
+              />
+              <div class="help-text">
+                示例：id,name,category,geom（未配置则返回所有字段，API 可通过 fields 参数覆盖）
+              </div>
+            </el-form-item>
+
+            <el-form-item label="可过滤字段">
+              <el-input
+                v-model="filterableFieldsInput"
+                placeholder="留空允许过滤所有字段，或输入允许过滤的字段（用逗号分隔）"
+                style="width: 100%"
+              />
+              <div class="help-text">
+                示例：name,category（未配置则允许过滤所有字段）
+              </div>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </div>
+
+      <!-- SQL 模式 -->
+      <div v-else-if="form.config_type === 'sql'">
+        <el-card>
+          <template #header>
+            <span>编写 SQL 查询</span>
+          </template>
+
+          <el-form :model="form" label-width="120px">
+            <el-form-item label="存储引擎" required>
+              <el-select v-model="form.engine_id" placeholder="请选择存储引擎" style="width: 400px">
+                <el-option
+                  v-for="engine in engines"
+                  :key="engine.id"
+                  :label="`${engine.name} (${engine.type})`"
+                  :value="engine.id"
+                />
+              </el-select>
+            </el-form-item>
+
+            <el-form-item label="SQL 查询语句" required>
+              <el-input
+                v-model="form.sql_query"
+                type="textarea"
+                :rows="10"
+                placeholder="示例：&#10;SELECT id, name, ST_AsGeoJSON(geom) as geometry&#10;FROM cities&#10;WHERE population > 1000000"
+                style="font-family: 'Courier New', monospace"
+              />
+              <div class="help-text">
+                ⚠️ SQL 语句固定，仅支持分页参数（page、page_size），不支持动态 filter/fields/orderBy
+              </div>
+            </el-form-item>
+
+            <el-divider content-position="left">空间字段配置（可选）</el-divider>
+
+            <el-form-item label="包含空间字段">
+              <el-checkbox v-model="sqlHasGeometry">
+                SQL 查询结果包含空间字段
+              </el-checkbox>
+            </el-form-item>
+
+            <div v-if="sqlHasGeometry">
+              <el-form-item label="几何列名" required>
+                <el-input v-model="sqlGeometryColumn" placeholder="例如: geometry" style="width: 300px" />
+                <div class="help-text">
+                  SQL 查询返回的几何列名称（必须在 SELECT 中）
+                </div>
+              </el-form-item>
+
+              <el-form-item label="坐标系 (SRID)" required>
+                <el-input-number v-model="sqlSrid" :min="0" :max="999999" placeholder="例如: 4326" />
+                <div class="help-text">
+                  空间坐标系统标识符（如 4326 = WGS84）
+                </div>
+              </el-form-item>
+            </div>
+          </el-form>
+        </el-card>
+      </div>
+    </div>
+
+    <!-- Step 2: 配置服务信息 -->
+    <div v-if="isEdit || currentStep === 2">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="140px">
+        <!-- 基本信息 -->
+        <el-card header="基本信息" style="margin-bottom: 20px">
+          <el-form-item label="配置方式" v-if="!isEdit">
+            <el-tag :type="form.config_type === 'table' ? 'success' : 'warning'" size="large">
+              {{ form.config_type === 'table' ? '表配置' : 'SQL配置' }}
+            </el-tag>
+            <span style="margin-left: 12px; color: #909399; font-size: 13px">
+              （配置方式创建后不可变更）
+            </span>
+          </el-form-item>
+
+          <el-form-item label="服务名称" prop="service_name" required>
+            <el-input
+              v-model="form.service_name"
+              placeholder="例如: beijing_poi"
+              :disabled="isEdit"
+              style="width: 400px"
+            />
+            <div class="help-text">
+              仅支持英文、数字和下划线，用于服务 URL
+            </div>
+          </el-form-item>
+
+          <el-form-item label="服务标题" prop="title" required>
+            <el-input v-model="form.title" placeholder="例如: 北京POI数据查询" style="width: 400px" />
+          </el-form-item>
+
+          <el-form-item label="服务描述">
+            <el-input
+              type="textarea"
+              v-model="form.description"
+              :rows="3"
+              placeholder="服务的简要描述"
+            />
+          </el-form-item>
+
+          <el-form-item label="关键词">
+            <div class="keyword-input">
+              <el-tag
+                v-for="tag in form.keywords"
+                :key="tag"
+                closable
+                @close="removeKeyword(tag)"
+                style="margin-right: 8px; margin-bottom: 8px"
+              >
+                {{ tag }}
+              </el-tag>
+              <el-input
+                v-if="inputVisible"
+                v-model="inputValue"
+                ref="inputRef"
+                size="small"
+                style="width: 120px"
+                @keyup.enter="handleInputConfirm"
+                @blur="handleInputConfirm"
+              />
+              <el-button v-else size="small" @click="showInput">
+                + 添加关键词
+              </el-button>
+            </div>
+          </el-form-item>
+        </el-card>
+
+        <!-- 协议配置 -->
+        <el-card header="协议配置" style="margin-bottom: 20px">
+          <el-alert type="info" :closable="false" style="margin-bottom: 16px">
+            REST API 默认启用。检测到空间字段时，OGC API Features 会自动启用。
+          </el-alert>
+
+          <el-form-item label="REST API">
+            <el-checkbox v-model="enableRestApi" disabled>
+              启用 REST API（默认启用）
+            </el-checkbox>
+            <div class="help-text">
+              提供 JSON/CSV/GeoJSON 格式的查询接口
+            </div>
+          </el-form-item>
+
+          <el-form-item label="OGC Features">
+            <el-checkbox v-model="enableOgcFeatures" :disabled="!hasGeometryField">
+              启用 OGC API Features
+            </el-checkbox>
+            <div class="help-text">
+              {{ hasGeometryField ? '检测到空间字段，自动启用（可手动禁用）' : '未检测到空间字段，无法启用' }}
+            </div>
+          </el-form-item>
+        </el-card>
+
+        <!-- 访问控制 -->
+        <el-card header="访问控制" style="margin-bottom: 20px">
+          <el-form-item label="公开访问">
+            <el-checkbox v-model="form.public_access">
+              允许公开访问（无需 JWT 认证）
+            </el-checkbox>
+            <div class="help-text">
+              启用后，任何人都可以访问查询端点
+            </div>
+          </el-form-item>
+
+          <el-form-item label="最大返回数" prop="max_features">
+            <el-input-number v-model="form.max_features" :min="1" :max="10000" />
+            <div class="help-text">单次查询返回的最大记录数量</div>
+          </el-form-item>
+        </el-card>
+      </el-form>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="button-group">
+      <el-button v-if="!isEdit && currentStep > 0" @click="prevStep">
+        上一步
+      </el-button>
+      <el-button
+        v-if="!isEdit && currentStep < 2"
+        type="primary"
+        :disabled="!canProceed"
+        @click="nextStep"
+      >
+        下一步
+      </el-button>
+      <el-button
+        v-if="isEdit || currentStep === 2"
+        type="primary"
+        @click="handleSubmit"
+        :loading="submitting"
+      >
+        {{ isEdit ? '更新' : '创建' }}
+      </el-button>
+      <el-button @click="goBack">
+        取消
+      </el-button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft, Grid, Document } from '@element-plus/icons-vue'
+import queryServiceAPI from '@/api/queryService'
+
+const router = useRouter()
+const route = useRoute()
+
+const loading = ref(false)
+const submitting = ref(false)
+const currentStep = ref(0)
+const detecting = ref(false)
+
+const isEdit = computed(() => !!route.params.id)
+
+// 表单数据
+const form = reactive({
+  config_type: 'table',
+  engine_id: null,
+  schema_name: '',
+  table_name: '',
+  sql_query: '',
+  service_name: '',
+  title: '',
+  description: '',
+  keywords: [],
+  public_access: false,
+  max_features: 1000
+})
+
+// 存储引擎列表（TODO: 从 System 模块获取）
+const engines = ref([
+  { id: 1, name: '默认 PostgreSQL', type: 'postgresql' }
+])
+
+// 空间元数据
+const spatialMetadata = ref(null)
+
+// SQL 模式的空间字段配置
+const sqlHasGeometry = ref(false)
+const sqlGeometryColumn = ref('')
+const sqlSrid = ref(4326)
+
+// 字段配置输入
+const defaultFieldsInput = ref('')
+const filterableFieldsInput = ref('')
+
+// 协议启用状态
+const enableRestApi = ref(true) // REST API 默认启用，不可禁用
+const enableOgcFeatures = ref(false)
+
+// 关键词输入
+const inputVisible = ref(false)
+const inputValue = ref('')
+const inputRef = ref(null)
+
+// 表单验证规则
+const rules = {
+  service_name: [
+    { required: true, message: '请输入服务名称', trigger: 'blur' },
+    { pattern: /^[a-z0-9_]+$/, message: '仅支持小写英文、数字和下划线', trigger: 'blur' }
+  ],
+  title: [
+    { required: true, message: '请输入服务标题', trigger: 'blur' }
+  ],
+  max_features: [
+    { required: true, message: '请设置最大返回数', trigger: 'blur' },
+    { type: 'number', min: 1, max: 10000, message: '范围: 1-10000', trigger: 'blur' }
+  ]
+}
+
+// 计算属性：是否检测到空间字段
+const hasGeometryField = computed(() => {
+  if (form.config_type === 'table') {
+    return spatialMetadata.value?.hasGeometry === true
+  } else {
+    return sqlHasGeometry.value
+  }
+})
+
+// 计算属性：是否可以进入下一步
+const canProceed = computed(() => {
+  if (currentStep.value === 0) {
+    return !!form.config_type
+  } else if (currentStep.value === 1) {
+    if (form.config_type === 'table') {
+      return form.engine_id && form.schema_name && form.table_name
+    } else {
+      return form.engine_id && form.sql_query
+    }
+  }
+  return true
+})
+
+// 方法：检测空间字段
+const detectSpatialFields = async () => {
+  detecting.value = true
+  try {
+    // TODO: 调用 Meta 模块的 API 检测空间字段
+    // const response = await metaAPI.getTableSpatialMetadata(form.engine_id, form.schema_name, form.table_name)
+
+    // 临时模拟数据
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    spatialMetadata.value = {
+      hasGeometry: true,
+      geometryColumn: 'geom',
+      srid: 4326,
+      geometryTypes: ['Point'],
+      extent: { minX: 116.0, minY: 39.0, maxX: 117.0, maxY: 40.0 }
+    }
+
+    if (spatialMetadata.value.hasGeometry) {
+      enableOgcFeatures.value = true
+      ElMessage.success('检测到空间字段，已自动启用 OGC API Features')
+    } else {
+      ElMessage.info('未检测到空间字段')
+    }
+  } catch (error) {
+    ElMessage.warning('空间字段检测失败: ' + (error.message || '未知错误'))
+    spatialMetadata.value = { hasGeometry: false }
+  } finally {
+    detecting.value = false
+  }
+}
+
+// 方法：引擎变更
+const onEngineChange = () => {
+  form.schema_name = ''
+  form.table_name = ''
+  spatialMetadata.value = null
+}
+
+// 方法：步骤控制
+const nextStep = () => {
+  if (canProceed.value) {
+    currentStep.value++
+  }
+}
+
+const prevStep = () => {
+  if (currentStep.value > 0) {
+    currentStep.value--
+  }
+}
+
+// 方法：关键词管理
+const removeKeyword = (tag) => {
+  form.keywords = form.keywords.filter(k => k !== tag)
+}
+
+const showInput = () => {
+  inputVisible.value = true
+  nextTick(() => {
+    inputRef.value?.focus()
+  })
+}
+
+const handleInputConfirm = () => {
+  if (inputValue.value && !form.keywords.includes(inputValue.value)) {
+    form.keywords.push(inputValue.value)
+  }
+  inputVisible.value = false
+  inputValue.value = ''
+}
+
+// 方法：提交表单
+const handleSubmit = async () => {
+  submitting.value = true
+  try {
+    // 构建请求数据
+    const requestData = {
+      service_name: form.service_name,
+      title: form.title,
+      description: form.description,
+      keywords: form.keywords,
+      config_type: form.config_type,
+      engine_id: form.engine_id,
+      public_access: form.public_access,
+      max_features: form.max_features
+    }
+
+    // Table 模式特有字段
+    if (form.config_type === 'table') {
+      requestData.schema_name = form.schema_name
+      requestData.table_name = form.table_name
+
+      // 构建 data_config
+      const dataConfig = {}
+
+      // 默认字段
+      if (defaultFieldsInput.value.trim()) {
+        dataConfig.default_fields = defaultFieldsInput.value.split(',').map(f => f.trim())
+      }
+
+      // 可过滤字段
+      if (filterableFieldsInput.value.trim()) {
+        dataConfig.filterable_fields = filterableFieldsInput.value.split(',').map(f => f.trim())
+      }
+
+      if (Object.keys(dataConfig).length > 0) {
+        requestData.data_config = dataConfig
+      }
+    }
+    // SQL 模式特有字段
+    else {
+      requestData.sql_query = form.sql_query
+
+      // 如果有空间字段配置
+      if (sqlHasGeometry.value && sqlGeometryColumn.value) {
+        requestData.data_config = {
+          geometry: {
+            has_geometry: true,
+            column: sqlGeometryColumn.value,
+            srid: sqlSrid.value
+          }
+        }
+      }
+    }
+
+    // 协议配置
+    requestData.protocols = {
+      rest_api: { enabled: true },
+      ogc_features: { enabled: enableOgcFeatures.value }
+    }
+
+    // 提交
+    if (isEdit.value) {
+      await queryServiceAPI.updateService(route.params.id, requestData)
+      ElMessage.success('查询服务已更新')
+    } else {
+      await queryServiceAPI.createService(requestData)
+      ElMessage.success('查询服务已创建')
+    }
+
+    router.push('/query-services')
+  } catch (error) {
+    ElMessage.error((isEdit.value ? '更新' : '创建') + '失败: ' + (error.message || '未知错误'))
+    console.error('Failed to submit:', error)
+  } finally {
+    submitting.value = false
+  }
+}
+
+// 方法：返回列表
+const goBack = () => {
+  router.push('/query-services')
+}
+
+// 生命周期：加载编辑数据
+onMounted(async () => {
+  // TODO: 加载存储引擎列表
+  // engines.value = await systemAPI.getEngines()
+
+  if (isEdit.value) {
+    loading.value = true
+    try {
+      const service = await queryServiceAPI.getService(route.params.id)
+
+      // 填充表单（编辑模式只能修改服务信息，不能修改数据源）
+      Object.assign(form, {
+        service_name: service.service_name,
+        title: service.title,
+        description: service.description,
+        keywords: service.keywords || [],
+        public_access: service.public_access,
+        max_features: service.max_features
+      })
+
+      // 协议配置
+      if (service.protocols?.ogc_features?.enabled) {
+        enableOgcFeatures.value = true
+      }
+    } catch (error) {
+      ElMessage.error('加载服务失败: ' + (error.message || '未知错误'))
+    } finally {
+      loading.value = false
+    }
+  }
+})
+</script>
+
+<style scoped>
+.query-service-form {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 24px;
+  color: #303133;
+}
+
+.config-type-card {
+  padding-left: 32px;
+}
+
+.config-type-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #303133;
+}
+
+.config-type-card p {
+  margin: 6px 0;
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.selected-card {
+  border-color: #409eff;
+  box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
+}
+
+.help-text {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #909399;
+}
+
+.keyword-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.button-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #ebeef5;
+}
+</style>

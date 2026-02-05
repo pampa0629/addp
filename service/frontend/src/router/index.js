@@ -23,6 +23,58 @@ const routes = [
     redirect: '/published-services'
   },
 
+  // === 查询服务路由 ===
+  {
+    path: '/query-services',
+    name: 'QueryServiceList',
+    component: () => import('../views/QueryServiceList.vue'),
+    meta: { requiresAuth: true, title: '查询服务' }
+  },
+  {
+    path: '/query-services/create',
+    name: 'QueryServiceCreate',
+    component: () => import('../views/QueryServiceForm.vue'),
+    meta: { requiresAuth: true, title: '创建查询服务' }
+  },
+  {
+    path: '/query-services/:id/edit',
+    name: 'QueryServiceEdit',
+    component: () => import('../views/QueryServiceForm.vue'),
+    meta: { requiresAuth: true, title: '编辑查询服务' }
+  },
+  {
+    path: '/query-services/:id',
+    name: 'QueryServiceDetail',
+    component: () => import('../views/QueryServiceDetail.vue'),
+    meta: { requiresAuth: true, title: '查询服务详情' }
+  },
+
+  // === 注册服务路由（新架构） ===
+  {
+    path: '/registered-services',
+    name: 'RegisteredServiceList',
+    component: () => import('../views/RegisteredServiceList.vue'),
+    meta: { requiresAuth: true, title: '注册服务' }
+  },
+  {
+    path: '/registered-services/create',
+    name: 'RegisteredServiceCreate',
+    component: () => import('../views/RegisteredServiceForm.vue'),
+    meta: { requiresAuth: true, title: '注册外部服务' }
+  },
+  {
+    path: '/registered-services/:id/edit',
+    name: 'RegisteredServiceEdit',
+    component: () => import('../views/RegisteredServiceForm.vue'),
+    meta: { requiresAuth: true, title: '编辑注册服务' }
+  },
+  {
+    path: '/registered-services/:id',
+    name: 'RegisteredServiceDetail',
+    component: () => import('../views/RegisteredServiceDetail.vue'),
+    meta: { requiresAuth: true, title: '注册服务详情' }
+  },
+
   // === 服务发布路由（原"空间服务"） ===
   {
     path: '/published-services',
