@@ -457,7 +457,14 @@
       "Bash(PGPASSWORD=addp_business_pass psql:*)",
       "Bash(PGPASSWORD=addp2024 psql:*)",
       "Bash(go work:*)",
-      "Bash(PGPASSWORD=\"addp_secret\" psql:*)"
+      "Bash(PGPASSWORD=\"addp_secret\" psql:*)",
+      "Bash(__NEW_LINE_7564b9655879489b__ echo \"已删除旧文件\")",
+      "Bash(.dev-bins/addp-service:*)",
+      "Bash(test:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzAyOTEyNzUsImlhdCI6MTc3MDI4MDQ3NX0.j2liFJ4ZKmbSI7doDNPJmEtFrOLdzdWNvNPkx8zf5OQ\" curl -X POST http://localhost:8086/api/service/query  -H \"Content-Type: application/json\"  -H \"Authorization: Bearer $TOKEN\"  -d '{ \"\"service_name\"\": \"\"test_service\"\", \"\"title\"\": \"\"测试服务\"\", \"\"description\"\": \"\"用于测试Gateway URL配置的查询服务\"\", \"\"keywords\"\": [\"\"test\"\"], \"\"config_type\"\": \"\"table\"\", \"\"engine_id\"\": 4, \"\"schema_name\"\": \"\"public\"\", \"\"table_name\"\": \"\"test\"\", \"\"public_access\"\": true, \"\"max_features\"\": 1000 }')",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzAyOTEyNzUsImlhdCI6MTc3MDI4MDQ3NX0.j2liFJ4ZKmbSI7doDNPJmEtFrOLdzdWNvNPkx8zf5OQ\" curl -X POST http://localhost:8000/api/service/query  -H \"Content-Type: application/json\"  -H \"Authorization: Bearer $TOKEN\"  -d '{ \"\"service_name\"\": \"\"test_service\"\", \"\"title\"\": \"\"测试服务\"\", \"\"description\"\": \"\"用于测试Gateway URL配置的查询服务\"\", \"\"keywords\"\": [\"\"test\"\"], \"\"config_type\"\": \"\"table\"\", \"\"engine_id\"\": 4, \"\"schema_name\"\": \"\"public\"\", \"\"table_name\"\": \"\"test\"\", \"\"public_access\"\": true, \"\"max_features\"\": 1000 }')",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzAyOTEyNzUsImlhdCI6MTc3MDI4MDQ3NX0.j2liFJ4ZKmbSI7doDNPJmEtFrOLdzdWNvNPkx8zf5OQ\")",
+      "Bash(__NEW_LINE_1fc5a02326aa9b58__ curl -v -X POST http://localhost:8000/api/service/query -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d '{\n    \"\"service_name\"\": \"\"test_service\"\",\n    \"\"title\"\": \"\"测试服务\"\"\n  }')"
     ],
     "deny": [],
     "ask": [],

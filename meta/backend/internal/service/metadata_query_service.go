@@ -11,6 +11,7 @@ import (
 	_ "github.com/addp/common/format/mappers/mysql"
 	_ "github.com/addp/common/format/mappers/postgresql"
 	_ "github.com/addp/common/format/mappers/spatialite"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/meta/internal/models"
 	"gorm.io/gorm"
 )
@@ -110,7 +111,7 @@ func (s *MetadataQueryService) GetTableFields(engineID uint, tableName string, t
 	return names, nil
 }
 
-func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
+func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]commonModels.FieldInfo, error) {
 	s.log.Info("GetTableFieldDetails 开始查询", "engineID", engineID, "tableName", tableName, "tenantID", tenantID)
 
 	// 1. 先获取该资源下的所有节点ID（schema nodes）
@@ -127,7 +128,7 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 
 	if len(nodeIDs) == 0 {
 		s.log.Warn("没有找到任何节点")
-		return []TableFieldInfo{}, nil
+		return []commonModels.FieldInfo{}, nil
 	}
 
 	// 2. 查询指定表名的 meta_item
@@ -152,16 +153,16 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 	// 字段信息存储在 attributes.fields 中，格式为 []map[string]interface{}
 	fieldsData, ok := item.Attributes["fields"]
 	if !ok {
-		return []TableFieldInfo{}, nil
+		return []commonModels.FieldInfo{}, nil
 	}
 
 	fieldsList, ok := fieldsData.([]interface{})
 	if !ok {
-		return []TableFieldInfo{}, fmt.Errorf("invalid fields format in metadata")
+		return []commonModels.FieldInfo{}, fmt.Errorf("invalid fields format in metadata")
 	}
 
 	// 4. 构造字段详细信息
-	fieldInfos := make([]TableFieldInfo, 0, len(fieldsList))
+	fieldInfos := make([]commonModels.FieldInfo, 0, len(fieldsList))
 	for _, fieldData := range fieldsList {
 		fieldMap, ok := fieldData.(map[string]interface{})
 		if !ok {
@@ -169,18 +170,17 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 		}
 
 		dataType := toString(fieldMap["data_type"])
-		columnType := toString(fieldMap["column_type"])
 
-		info := TableFieldInfo{
-			Name:            toString(fieldMap["name"]),
-			DataType:        dataType,
-			ColumnType:      columnType,
-			StandardType:    standardizeFieldType(dataType, columnType),
-			Comment:         toString(fieldMap["comment"]),
-			IsNullable:      toBool(fieldMap["is_nullable"]),
-			IsPrimaryKey:    toBool(fieldMap["is_primary_key"]),
-			IsUniqueKey:     toBool(fieldMap["is_unique_key"]),
-			OrdinalPosition: int(toInt(fieldMap["ordinal_position"])),
+		info := commonModels.FieldInfo{
+			Name:         toString(fieldMap["name"]),
+			DataType:     dataType,
+			IsPrimaryKey: toBool(fieldMap["is_primary_key"]),
+			IsNullable:   toBool(fieldMap["is_nullable"]),
+			Comment:      toString(fieldMap["comment"]),
+			// ← 关键: 从元数据中提取空间字段信息
+			IsSpatial:    toBool(fieldMap["is_spatial"]),
+			GeometryType: toString(fieldMap["geometry_type"]),
+			SRID:         int(toInt(fieldMap["srid"])),
 		}
 
 		fieldInfos = append(fieldInfos, info)
@@ -190,7 +190,7 @@ func (s *MetadataQueryService) GetTableFieldDetails(engineID uint, tableName str
 }
 
 // queryFieldsFromDatabase 从数据库动态查询表的字段信息
-func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
+func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName string, tenantID uint) ([]commonModels.FieldInfo, error) {
 	s.log.Info("开始从数据库动态查询字段", "engineID", engineID, "tableName", tableName)
 
 	// 1. 获取引擎连接信息
@@ -241,20 +241,28 @@ func (s *MetadataQueryService) queryFieldsFromDatabase(engineID uint, tableName 
 
 	s.log.Info("从数据库查询到字段", "count", len(pluginColumns))
 
-	// 7. 转换为 TableFieldInfo 格式
-	fieldInfos := make([]TableFieldInfo, 0, len(pluginColumns))
-	for i, col := range pluginColumns {
-		info := TableFieldInfo{
-			Name:            col.ColumnName,
-			DataType:        col.DataType,
-			ColumnType:      col.DataType, // 使用 DataType 作为 ColumnType
-			StandardType:    standardizeFieldType(col.DataType, col.DataType),
-			Comment:         col.Comment,
-			IsNullable:      col.IsNullable,
-			IsPrimaryKey:    col.IsPrimaryKey,
-			IsUniqueKey:     false, // 插件暂不返回 unique key 信息
-			OrdinalPosition: i + 1,
+	// 7. 转换为 FieldInfo 格式
+	fieldInfos := make([]commonModels.FieldInfo, 0, len(pluginColumns))
+	for _, col := range pluginColumns {
+		info := commonModels.FieldInfo{
+			Name:         col.ColumnName,
+			DataType:     col.DataType,
+			IsNullable:   col.IsNullable,
+			IsPrimaryKey: col.IsPrimaryKey,
+			Comment:      col.Comment,
+			// ← 关键: 根据 DataType 判断是否为空间字段
+			IsSpatial:    isSpatialDataType(col.DataType),
 		}
+
+		// 如果是空间字段且为 PostgreSQL,尝试从数据库获取详细信息
+		if info.IsSpatial && resource.EngineType == "postgresql" {
+			spatialInfo := s.detectSpatialInfo(db, schemaName, tablePart, col.ColumnName)
+			if spatialInfo != nil {
+				info.GeometryType = spatialInfo.GeometryType
+				info.SRID = spatialInfo.SRID
+			}
+		}
+
 		fieldInfos = append(fieldInfos, info)
 	}
 
@@ -521,22 +529,67 @@ func (s *MetadataQueryService) GetMetaNodeByID(tenantID, nodeID uint) (*models.M
 // 辅助类型定义
 // ============================================================================
 
-// TableFieldInfo 表字段信息（用于 Transfer 模块）
-type TableFieldInfo struct {
-	Name            string `json:"name"`
-	DataType        string `json:"data_type"`                // 原始数据类型（如 "varchar", "int"）
-	ColumnType      string `json:"column_type,omitempty"`    // 完整列类型（如 "varchar(255)"）
-	StandardType    string `json:"standard_type,omitempty"`  // 标准化类型（使用 common/format.FieldType）
-	IsNullable      bool   `json:"is_nullable"`
-	IsPrimaryKey    bool   `json:"is_primary_key"`
-	IsUniqueKey     bool   `json:"is_unique_key"`
-	OrdinalPosition int    `json:"ordinal_position"`
-	Comment         string `json:"comment,omitempty"`
+// SpatialInfo 空间字段详细信息（用于动态查询）
+type SpatialInfo struct {
+	GeometryType string
+	SRID         int
 }
 
 // ============================================================================
 // 辅助函数
 // ============================================================================
+
+// isSpatialDataType 判断数据类型是否为空间类型
+func isSpatialDataType(dataType string) bool {
+	spatialTypes := []string{
+		"geometry", "geography",
+		"point", "linestring", "polygon",
+		"multipoint", "multilinestring", "multipolygon",
+		"geometrycollection",
+	}
+	lowerType := strings.ToLower(dataType)
+	for _, t := range spatialTypes {
+		if lowerType == t || strings.HasPrefix(lowerType, t+"(") {
+			return true
+		}
+	}
+	return false
+}
+
+// detectSpatialInfo 从数据库动态检测空间字段信息（仅 PostgreSQL）
+func (s *MetadataQueryService) detectSpatialInfo(db *gorm.DB, schema, table, column string) *SpatialInfo {
+	var result struct {
+		GeometryType string
+		SRID         int
+	}
+
+	// 使用 geometry_columns 系统视图获取空间信息
+	query := `
+		SELECT
+			COALESCE(type, '') as geometry_type,
+			COALESCE(srid, 0) as srid
+		FROM geometry_columns
+		WHERE f_table_schema = $1
+		  AND f_table_name = $2
+		  AND f_geometry_column = $3
+		LIMIT 1
+	`
+
+	err := db.Raw(query, schema, table, column).Scan(&result).Error
+	if err != nil {
+		s.log.Warn("检测空间字段信息失败", "schema", schema, "table", table, "column", column, "error", err)
+		return nil
+	}
+
+	if result.GeometryType == "" {
+		return nil
+	}
+
+	return &SpatialInfo{
+		GeometryType: result.GeometryType,
+		SRID:         result.SRID,
+	}
+}
 
 func toString(value interface{}) string {
 	switch v := value.(type) {

@@ -211,8 +211,8 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	// 从 JWT token 中获取租户 ID（如果是公开服务则可能没有）
 	tenantID := c.GetUint("tenant_id")
 
-	// 获取服务配置（获取模型而不是 DTO）
-	service, err := h.svc.GetServiceModelByName(serviceName, tenantID)
+	// 先通过服务名称查找服务(不过滤租户),然后检查权限
+	service, err := h.svc.GetServiceModelByNameOnly(serviceName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
@@ -229,9 +229,16 @@ func (h *QueryServiceHandler) QueryData(c *gin.Context) {
 	}
 
 	// 检查访问权限
-	if !service.PublicAccess && tenantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
-		return
+	if !service.PublicAccess {
+		// 非公开服务需要认证且租户匹配
+		if tenantID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+			return
+		}
+		if service.TenantID != tenantID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+			return
+		}
 	}
 
 	// 检查 REST API 是否启用

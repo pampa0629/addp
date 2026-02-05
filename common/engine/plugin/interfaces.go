@@ -262,7 +262,7 @@ type TableInfo struct {
 // ColumnInfo 列信息
 type ColumnInfo struct {
 	ColumnName   string // 列名
-	DataType     string // 原生数据类型（如 varchar, int4）
+	DataType     string // 原生数据类型（如 varchar, int4, geometry, geography）
 	IsNullable   bool   // 是否可为空
 	IsPrimaryKey bool   // 是否主键
 	Comment      string // 列注释

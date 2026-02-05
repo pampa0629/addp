@@ -11,18 +11,12 @@ import (
 
 func SetupRouter(
 	cfg *config.Config,
-	serviceRegistryHandler *ServiceRegistryHandler,
 	dataServiceHandler *DataServiceHandler,
-	internalServiceHandler *InternalServiceHandler,
-	queryServiceHandler *QueryServiceHandler, // 新增：查询服务 Handler
-	registeredServiceHandler *RegisteredServiceHandler, // 新增：注册服务 Handler
-	wfsHandler *WFSHandler,
-	ogcAPIHandler *OGCAPIHandler,
-	wmtsHandler *WMTSHandler,
-	restQueryHandler *RestQueryHandler,
+	queryServiceHandler *QueryServiceHandler,
+	registeredServiceHandler *RegisteredServiceHandler,
 	engineHandler *EngineHandler,
-	dataSourceHandler *DataSourceHandler, // 数据源代理 Handler
-	systemClient *commonClient.SystemClient, // 用于审计日志
+	dataSourceHandler *DataSourceHandler,
+	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -34,38 +28,8 @@ func SetupRouter(
 		c.JSON(200, gin.H{"status": "healthy", "service": "service"})
 	})
 
-	// OGC WFS 端点（公开访问，无需认证）
-	ogc := router.Group("/ogc/wfs")
-	{
-		ogc.GET("/:serviceName", wfsHandler.HandleWFSRequest)
-		ogc.POST("/:serviceName", wfsHandler.PostGetFeature)
-	}
-
-	// OGC API Features 端点（公开访问，无需认证）
-	api_features := router.Group("/ogc/api/:serviceName")
-	{
-		api_features.GET("/", ogcAPIHandler.LandingPage)
-		api_features.GET("/conformance", ogcAPIHandler.Conformance)
-		api_features.GET("/collections", ogcAPIHandler.Collections)
-		api_features.GET("/collections/:collectionID", ogcAPIHandler.GetCollection)
-		api_features.GET("/collections/:collectionID/items", ogcAPIHandler.Items)
-		api_features.GET("/collections/:collectionID/items/:featureID", ogcAPIHandler.GetItem)
-	}
-
-	// OGC WMTS 端点（公开访问，无需认证）
-	wmts := router.Group("/ogc/wmts")
-	{
-		wmts.GET("/:serviceName", wmtsHandler.GetCapabilities)
-		wmts.GET("/:serviceName/tile/:layer/:z/:x/:y.mvt", wmtsHandler.GetTile)
-	}
-
-	// REST Query API 端点（公开访问，无需认证）
-	query := router.Group("/api/query")
-	{
-		query.GET("/:serviceName/:layerName", restQueryHandler.Query)
-		// 查询服务端点（支持公开访问，handler内部会检查权限）
-		query.GET("/:serviceName", queryServiceHandler.QueryData)
-	}
+	// 查询服务端点（支持公开访问，handler内部会检查权限）
+	router.GET("/api/query/:serviceName", queryServiceHandler.QueryData)
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/service")
@@ -75,36 +39,6 @@ func SetupRouter(
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
 			api.Use(audit.AuditMiddleware("service", systemClient))
-		}
-
-		// 外部服务注册管理 API
-		registry := api.Group("/registry")
-		{
-			registry.POST("/services", serviceRegistryHandler.CreateService)
-			registry.GET("/services", serviceRegistryHandler.ListServices)
-			registry.GET("/services/:id", serviceRegistryHandler.GetService)
-			registry.PUT("/services/:id", serviceRegistryHandler.UpdateService)
-			registry.DELETE("/services/:id", serviceRegistryHandler.DeleteService)
-			registry.POST("/services/:id/refresh", serviceRegistryHandler.RefreshMetadata)
-			registry.POST("/services/:id/health", serviceRegistryHandler.HealthCheck)
-			registry.GET("/search", serviceRegistryHandler.SearchServices)
-			registry.GET("/export", serviceRegistryHandler.ExportConfig)
-		}
-
-		// 内部服务（数据发布）API
-		internal := api.Group("/internal")
-		{
-			// 服务管理
-			internal.POST("/services", internalServiceHandler.CreateService)
-			internal.GET("/services", internalServiceHandler.ListServices)
-			internal.GET("/services/:id", internalServiceHandler.GetService)
-			internal.PUT("/services/:id", internalServiceHandler.UpdateService)
-			internal.DELETE("/services/:id", internalServiceHandler.DeleteService)
-
-			// 图层管理
-			internal.POST("/services/:id/layers", internalServiceHandler.AddLayer)
-			internal.PUT("/services/:id/layers/:layer_id", internalServiceHandler.UpdateLayer)
-			internal.DELETE("/services/:id/layers/:layer_id", internalServiceHandler.DeleteLayer)
 		}
 
 		// 查询服务管理 API
@@ -117,7 +51,7 @@ func SetupRouter(
 			queryAPI.DELETE("/:id", queryServiceHandler.DeleteService)
 		}
 
-		// 注册服务管理 API（新架构）
+		// 注册服务管理 API
 		registeredAPI := api.Group("/registered")
 		{
 			registeredAPI.POST("", registeredServiceHandler.CreateService)
@@ -131,12 +65,6 @@ func SetupRouter(
 			// 代理转发端点 - 支持所有 HTTP 方法
 			registeredAPI.Any("/proxy/:id/*path", registeredServiceHandler.ProxyService)
 		}
-
-		// 服务目录 API
-		api.GET("/catalog", serviceRegistryHandler.GetServiceCatalog)
-
-		// 服务代理 API
-		api.GET("/proxy/:id/*path", serviceRegistryHandler.ProxyService)
 
 		// 数据查询服务 API
 		data := api.Group("/data")
@@ -152,15 +80,6 @@ func SetupRouter(
 		api.GET("/nodes/:node_id/children", dataSourceHandler.GetNodeChildren)
 		api.GET("/tables/metadata", dataSourceHandler.GetTableMetadata)
 		api.GET("/tables/spatial-metadata", dataSourceHandler.GetTableSpatialMetadata)
-
-		// TODO: OGC API - Features
-		// ogc := api.Group("/ogc")
-		// {
-		// 	ogc.GET("/collections", ogcHandler.GetCollections)
-		// 	ogc.GET("/collections/:collection_id", ogcHandler.GetCollection)
-		// 	ogc.GET("/collections/:collection_id/items", ogcHandler.GetItems)
-		// 	ogc.GET("/collections/:collection_id/items/:item_id", ogcHandler.GetItem)
-		// }
 	}
 
 	return router

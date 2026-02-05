@@ -42,10 +42,10 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 // AutoMigrate 自动迁移所有表结构
 func AutoMigrate(db *gorm.DB) error {
 	migrateModels := []interface{}{
-		&models.ExternalService{},
-		&models.ExternalServiceLayer{},
-		&models.InternalService{},
-		&models.InternalServiceLayer{},
+		// Phase 2 新模型
+		&models.QueryService{},
+		&models.RegisteredService{},
+		&models.RegisteredServiceLayer{},
 	}
 
 	for _, model := range migrateModels {

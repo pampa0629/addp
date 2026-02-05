@@ -1,50 +1,50 @@
 import client from './client'
 
 export default {
-  // 服务注册管理
+  // 注册服务管理 (外部服务注册)
   // 获取服务列表
   list(params) {
-    return client.get('/service/registry/services', { params })
+    return client.get('/service/registered', { params })
   },
 
   // 获取服务详情
   get(id) {
-    return client.get(`/service/registry/services/${id}`)
+    return client.get(`/service/registered/${id}`)
   },
 
   // 创建服务
   create(data) {
-    return client.post('/service/registry/services', data)
+    return client.post('/service/registered', data)
   },
 
   // 更新服务
   update(id, data) {
-    return client.put(`/service/registry/services/${id}`, data)
+    return client.put(`/service/registered/${id}`, data)
   },
 
   // 删除服务
   delete(id) {
-    return client.delete(`/service/registry/services/${id}`)
+    return client.delete(`/service/registered/${id}`)
   },
 
   // 刷新元数据
   refreshMetadata(id) {
-    return client.post(`/service/registry/services/${id}/refresh`)
+    return client.post(`/service/registered/${id}/refresh`)
   },
 
   // 健康检查
   healthCheck(id) {
-    return client.post(`/service/registry/services/${id}/health`)
+    return client.post(`/service/registered/${id}/health`)
   },
 
-  // 搜索服务
+  // 搜索服务 (暂时保留,待确认后端是否提供)
   search(params) {
-    return client.get('/service/registry/search', { params })
+    return client.get('/service/registered', { params })
   },
 
-  // 导出配置
+  // 导出配置 (暂时保留,待确认后端是否提供)
   export() {
-    return client.get('/service/registry/export')
+    return client.get('/service/registered/export')
   },
 
   // 获取服务目录

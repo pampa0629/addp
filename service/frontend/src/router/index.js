@@ -3,10 +3,10 @@ import { useAuthStore } from '../stores/auth'
 
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
-    return '/published-services'
+    return '/query-services'
   }
   if (fullPath === '/' || fullPath === '/') {
-    return '/published-services'
+    return '/query-services'
   }
   return fullPath
 }
@@ -20,7 +20,7 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/published-services'
+    redirect: '/query-services'
   },
 
   // === 查询服务路由 ===

@@ -618,19 +618,22 @@ func (ps *PreparationService) ExecutePreparation(ctx context.Context, tenantID, 
 			if check.Status == "failed" {
 				// 从 Details 中获取索引信息
 				indexName, _ := check.Details["index_name"].(string)
-				indexTable, _ := check.Details["table"].(string)
+				indexTableFull, _ := check.Details["table"].(string) // 格式: schema.table
 				indexColumn, _ := check.Details["column"].(string)
 
-				if indexName == "" || indexTable == "" || indexColumn == "" {
+				if indexName == "" || indexTableFull == "" || indexColumn == "" {
 					prepStatus.Checks[i].Status = "failed"
 					prepStatus.Checks[i].Message = "索引信息不完整，无法创建"
 					continue
 				}
 
+				// indexTableFull 格式为 "schema.table"，需要分离并使用物化视图名称
+				mvName := fmt.Sprintf("%s_mv3857", table)
+
 				// 创建 GIST 空间索引（使用 CONCURRENTLY 避免锁表）
 				createIndexSQL := fmt.Sprintf(`
-					CREATE INDEX CONCURRENTLY "%s" ON "%s" USING GIST ("%s")
-				`, indexName, indexTable, indexColumn)
+					CREATE INDEX CONCURRENTLY "%s" ON "%s"."%s" USING GIST ("%s")
+				`, indexName, schema, mvName, indexColumn)
 
 				if err := engineDB.WithContext(ctx).Exec(createIndexSQL).Error; err != nil {
 					prepStatus.Checks[i].Status = "failed"

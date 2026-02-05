@@ -59,7 +59,8 @@ export async function getEngines(apiBaseUrl, options = {}) {
     const url = `${apiBaseUrl}/engines`
     const response = await authenticatedAxios.get(url)
 
-    let engines = response.data
+    // 按照 ADDP API 规范,响应格式为 { data: [...] }
+    let engines = response.data.data || response.data
 
     // 如果指定了引擎类型过滤
     if (engineTypes && engineTypes.length > 0) {
@@ -109,7 +110,8 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
       params: { expand_depth: expandDepth }
     })
 
-    return response.data
+    // 按照 ADDP API 规范,响应格式为 { data: {...} }
+    return response.data.data || response.data
   } catch (error) {
     console.error('[DataSourceAPI] getEngineTree failed:', error)
     throw new Error(`获取引擎树失败: ${error.response?.data?.error || error.message}`)
@@ -132,8 +134,8 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
     const url = `${apiBaseUrl}/nodes/${nodeId}/children`
     const response = await authenticatedAxios.get(url)
 
-    // 后端直接返回数组
-    return response.data || []
+    // 按照 ADDP API 规范,响应格式为 { data: [...] }
+    return response.data.data || response.data || []
   } catch (error) {
     console.error('[DataSourceAPI] getNodeChildren failed:', error)
     throw new Error(`加载子节点失败: ${error.response?.data?.error || error.message}`)
@@ -170,16 +172,20 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
  */
 export async function detectTableMetadata(apiBaseUrl, params) {
   try {
-    const url = `${apiBaseUrl}/tables/metadata`
+    // Meta 模块的表空间元数据检测端点
+    const url = `${apiBaseUrl}/metadata/tables/spatial`
     const response = await authenticatedAxios.get(url, { params })
 
+    // 按照 ADDP API 规范,响应格式为 { data: {...} }
+    const data = response.data.data || response.data
+
     return {
-      has_geometry: response.data.has_geometry || false,
-      geometry_column: response.data.geometry_column || null,
-      srid: response.data.srid || null,
-      geometry_type: response.data.geometry_type || null,
-      extent: response.data.extent || null,
-      fields: response.data.fields || null
+      has_geometry: data.has_geometry || false,
+      geometry_column: data.geometry_column || null,
+      srid: data.srid || null,
+      geometry_type: data.geometry_type || null,
+      extent: data.extent || null,
+      fields: data.fields || null
     }
   } catch (error) {
     console.error('[DataSourceAPI] detectTableMetadata failed:', error)

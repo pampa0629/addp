@@ -13,6 +13,9 @@ type Config struct {
 	Port     string
 	DBSchema string
 
+	// Gateway URL (用于生成对外服务端点)
+	GatewayURL string
+
 	// 模块集成配置
 	ManagerServiceURL string
 	MetaServiceURL    string
@@ -36,6 +39,7 @@ func Load() *Config {
 	cfg := &Config{
 		Port:              commonConfig.GetEnv("SERVICE_BACKEND_PORT", "8086"),
 		DBSchema:          commonConfig.GetEnv("DB_SCHEMA", "service"),
+		GatewayURL:        commonConfig.GetEnv("GATEWAY_URL", "http://localhost:8000"),
 		ManagerServiceURL: managerURL,
 		MetaServiceURL:    metaURL,
 	}

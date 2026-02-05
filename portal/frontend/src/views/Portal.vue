@@ -148,9 +148,9 @@
               <el-icon><Link /></el-icon>
               <span>数据服务</span>
             </template>
-            <el-menu-item index="/service/published-services">
+            <el-menu-item index="/service/query-services">
               <el-icon><Upload /></el-icon>
-              <span>服务发布</span>
+              <span>查询服务</span>
             </el-menu-item>
             <el-menu-item index="/service/services">
               <el-icon><Connection /></el-icon>
@@ -458,12 +458,12 @@ const handleMenuSelect = (index) => {
         url = `${moduleUrls[module]}/`
       }
     } else if (module === 'service') {
-      // Service 模块的路由: /services, /published-services, /catalog 等 (不需要 /service 前缀)
+      // Service 模块的路由: /services, /query-services, /catalog 等 (不需要 /service 前缀)
       const servicePageMap = {
         'services': 'services',
-        'published-services': 'published-services',
+        'query-services': 'query-services',
         'catalog': 'catalog',
-        '': 'published-services'
+        '': 'query-services'
       }
       const actualPage = servicePageMap[page] !== undefined ? servicePageMap[page] : page
       if (actualPage) {
@@ -506,7 +506,7 @@ const navigateToModule = (module) => {
   } else if (module === 'develop') {
     handleMenuSelect('/develop/sql')
   } else if (module === 'service') {
-    handleMenuSelect('/service/published-services')
+    handleMenuSelect('/service/query-services')
   }
 }
 

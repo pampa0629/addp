@@ -16,7 +16,6 @@ import (
 	"github.com/addp/service/internal/config"
 	"github.com/addp/service/internal/repository"
 	"github.com/addp/service/internal/service/data"
-	"github.com/addp/service/internal/service/registry"
 	serviceInternal "github.com/addp/service/internal/service"
 )
 
@@ -48,8 +47,6 @@ func main() {
 	}
 
 	// 初始化 repositories
-	externalServiceRepo := repository.NewExternalServiceRepository(db)
-	internalServiceRepo := repository.NewInternalServiceRepository(db)
 	queryServiceRepo := repository.NewQueryServiceRepository(db)
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
 
@@ -73,40 +70,27 @@ func main() {
 		logger.L().Warn("Meta 集成未启用或配置不完整，元数据查询功能将不可用")
 	}
 
-	// 初始化 services
-	externalServiceService := registry.NewExternalServiceService(externalServiceRepo)
-	internalServiceService := serviceInternal.NewInternalServiceService(internalServiceRepo, metaClient)
-
 	// 构建服务基础URL用于查询服务
+	// 使用 Gateway URL 作为对外服务端点的基础地址
+	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, cfg.GatewayURL)
+	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
+
+	// 注册服务使用内部服务地址
 	serviceHost := utils.GetServiceHost()
 	port := utils.GetModulePort("service")
 	serviceURL := utils.BuildServiceURL(serviceHost, port)
-
-	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, serviceURL)
-	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
 	registeredServiceService := serviceInternal.NewRegisteredServiceService(registeredServiceRepo, serviceURL)
 	queryService := data.NewQueryService(systemClient, metaClient)
 
 	// 初始化 handlers
-	internalServiceHandler := api.NewInternalServiceHandler(internalServiceService)
 	queryServiceHandler := api.NewQueryServiceHandler(queryServiceService, queryExecutorService)
 	registeredServiceHandler := api.NewRegisteredServiceHandler(registeredServiceService)
-	serviceRegistryHandler := api.NewServiceRegistryHandler(externalServiceService)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
-	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL) // 数据源代理 Handler
-	sqlDB, err := db.DB()
-	if err != nil {
-		logger.L().Error("Failed to get SQL DB", "error", err)
-		os.Exit(1)
-	}
-	wfsHandler := api.NewWFSHandler(internalServiceRepo, db, sqlDB)
-	ogcAPIHandler := api.NewOGCAPIHandler(internalServiceRepo, db)
-	wmtsHandler := api.NewWMTSHandler(internalServiceRepo, db)
-	restQueryHandler := api.NewRestQueryHandler(internalServiceRepo, db)
+	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, serviceRegistryHandler, dataServiceHandler, internalServiceHandler, queryServiceHandler, registeredServiceHandler, wfsHandler, ogcAPIHandler, wmtsHandler, restQueryHandler, engineHandler, dataSourceHandler, systemClient)
+	router := api.SetupRouter(cfg, dataServiceHandler, queryServiceHandler, registeredServiceHandler, engineHandler, dataSourceHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

@@ -394,7 +394,7 @@ func (h *TaskHandler) HandlePrepareForCreateMVTTask(ctx context.Context, task *a
 				Fingerprint: payload.Fingerprint,
 				StartedAt:   &now,
 				// 添加完整的空间元数据（避免 clear cache 后丢失）
-				Extent:     spatialMeta.Extent,
+				Extent:     models.JSONFloatArray(spatialMeta.Extent),
 				ExtentSRID: spatialMeta.ExtentSRID,
 				MinZoom:    nil, // 准备阶段不设置 zoom，由用户在生成时指定
 				MaxZoom:    18,  // 默认值
@@ -685,7 +685,7 @@ func (h *TaskHandler) updateQuickViewStatus(
 				MinZoom:     &payload.MinZoom,
 				MaxZoom:     payload.MaxZoom,
 				Fingerprint: payload.Fingerprint,
-				Extent:      payload.Extent,
+				Extent:      models.JSONFloatArray(payload.Extent),
 			}
 
 			if status == "generating" {

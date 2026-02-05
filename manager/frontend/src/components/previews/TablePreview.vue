@@ -69,6 +69,14 @@
               </el-button>
             </template>
 
+            <!-- 状态：preparing - 准备中 -->
+            <template v-else-if="quickViewStatus === 'preparing' || quickViewStatus === 'prepared'">
+              <el-tag type="warning" size="large">🔧 准备中...</el-tag>
+              <el-button type="primary" size="small" @click="handleQuickView">
+                📋 查看准备状态
+              </el-button>
+            </template>
+
             <!-- 状态：cancelled - 已取消 -->
             <template v-else-if="quickViewStatus === 'cancelled'">
               <el-tag type="info" size="large">⏸️ 已取消</el-tag>

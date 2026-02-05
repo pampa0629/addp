@@ -133,9 +133,21 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 					systemProxy.Handle(c) // fallback
 				}
 			})
+
+			// 查询服务数据访问端点（公开，认证由 Service 模块内部判断）
+			public.GET("/query/:serviceName", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
 		} else {
 			public.POST("/system/login", systemProxy.Handle)
 			public.POST("/system/register", systemProxy.Handle)
+
+			// 查询服务数据访问端点（公开，认证由 Service 模块内部判断）
+			public.GET("/query/:serviceName", serviceProxy.Handle)
 		}
 	}
 

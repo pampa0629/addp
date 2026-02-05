@@ -1,53 +1,53 @@
 import client from './client'
 
 export default {
-  // 内部服务管理 API
+  // 查询服务管理 API (内部数据服务发布)
 
   // 获取服务列表
   listServices(params) {
-    return client.get('/service/internal/services', { params })
+    return client.get('/service/query', { params })
   },
 
   // 搜索服务
   searchServices(params) {
-    return client.get('/service/internal/services', { params })
+    return client.get('/service/query', { params })
   },
 
   // 获取服务详情
   getService(id) {
-    return client.get(`/service/internal/services/${id}`)
+    return client.get(`/service/query/${id}`)
   },
 
   // 创建服务
   createService(data) {
-    return client.post('/service/internal/services', data)
+    return client.post('/service/query', data)
   },
 
   // 更新服务
   updateService(id, data) {
-    return client.put(`/service/internal/services/${id}`, data)
+    return client.put(`/service/query/${id}`, data)
   },
 
   // 删除服务
   deleteService(id) {
-    return client.delete(`/service/internal/services/${id}`)
+    return client.delete(`/service/query/${id}`)
   },
 
-  // 图层管理 API
+  // 图层管理 API (查询服务暂时不支持多图层，这些接口待实现)
 
   // 添加图层
   addLayer(serviceId, data) {
-    return client.post(`/service/internal/services/${serviceId}/layers`, data)
+    return client.post(`/service/query/${serviceId}/layers`, data)
   },
 
   // 更新图层
   updateLayer(serviceId, layerId, data) {
-    return client.put(`/service/internal/services/${serviceId}/layers/${layerId}`, data)
+    return client.put(`/service/query/${serviceId}/layers/${layerId}`, data)
   },
 
   // 删除图层
   deleteLayer(serviceId, layerId) {
-    return client.delete(`/service/internal/services/${serviceId}/layers/${layerId}`)
+    return client.delete(`/service/query/${serviceId}/layers/${layerId}`)
   },
 
   // OGC 端点测试 API

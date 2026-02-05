@@ -195,6 +195,16 @@ func (s *QueryServiceService) GetServiceModelByName(serviceName string, tenantID
 	return service, nil
 }
 
+// GetServiceModelByNameOnly 仅根据名称获取服务模型（不过滤租户，用于公开服务查询）
+func (s *QueryServiceService) GetServiceModelByNameOnly(serviceName string) (*models.QueryService, error) {
+	service, err := s.repo.GetByName(serviceName)
+	if err != nil {
+		return nil, fmt.Errorf("get service failed: %w", err)
+	}
+
+	return service, nil
+}
+
 // ListServices 列出租户下的所有查询服务
 func (s *QueryServiceService) ListServices(tenantID uint, offset int, limit int) ([]models.QueryServiceDTO, int64, error) {
 	services, total, err := s.repo.List(tenantID, offset, limit)

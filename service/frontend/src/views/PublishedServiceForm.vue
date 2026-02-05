@@ -503,54 +503,50 @@ const handleSubmit = async () => {
       await publishedServiceAPI.updateService(route.params.id, updateData)
       ElMessage.success('更新成功')
     } else {
-      // 新建模式
+      // 新建模式 - 适配新的 QueryService API
       const createData = {
         service_name: form.value.service_name,
         title: form.value.title,
-        abstract: form.value.abstract,
-        keywords: form.value.keywords,
-        service_type: form.value.service_type,
-        public_access: form.value.public_access,
-        max_features: form.value.max_features,
-        provider_name: form.value.provider_name,
-        provider_site: form.value.provider_site,
-        contact_person: form.value.contact_person,
-        contact_email: form.value.contact_email,
+        description: form.value.abstract || '',
+        keywords: form.value.keywords || [],
+
+        // 配置方式：当前只支持表模式
+        config_type: 'table',
+
+        // 存储引擎和表信息
         engine_id: form.value.engine_id,
-        first_layer: {
-          layer_name: selectedTable.value.tableName,
-          title: selectedTable.value.label,
-          schema_name: selectedTable.value.schema,
-          table_name: selectedTable.value.tableName,
-          geometry_column: selectedTable.value.geometryColumn || '',
-          srid: selectedTable.value.srid || 0,
-          geometry_types: selectedTable.value.geometryType
-            ? [selectedTable.value.geometryType]
-            : [],
-          enabled: true
-        }
-      }
+        schema_name: selectedTable.value.schema,
+        table_name: selectedTable.value.tableName,
 
-      // 空间服务的额外配置
-      if (form.value.service_type === 'spatial') {
-        createData.default_srid = form.value.default_srid
+        // 数据配置
+        data_config: {
+          geometry: selectedTable.value.hasGeometry ? {
+            has_geometry: true,
+            column: selectedTable.value.geometryColumn,
+            srid: selectedTable.value.srid || 4326,
+            types: selectedTable.value.geometryType
+              ? [selectedTable.value.geometryType]
+              : []
+          } : {
+            has_geometry: false
+          }
+        },
 
-        // 构建协议配置
-        createData.protocols_config = {
-          wfs: {
-            enabled: enabledProtocols.value.includes('wfs'),
-            version: '2.0.0'
+        // 协议配置
+        protocols: {
+          rest_api: {
+            enabled: true,
+            formats: ['json', 'csv', 'geojson']
           },
-          wmts: {
-            enabled: enabledProtocols.value.includes('wmts'),
-            version: '1.0.0'
-          },
-          ogc_api: {
-            enabled: enabledProtocols.value.includes('ogc_api'),
+          ogc_features: {
+            enabled: form.value.service_type === 'spatial',
             version: '1.0'
-          },
-          rest_query: { enabled: true }
-        }
+          }
+        },
+
+        // 访问控制
+        public_access: form.value.public_access || false,
+        max_features: form.value.max_features || 1000
       }
 
       const response = await publishedServiceAPI.createService(createData)

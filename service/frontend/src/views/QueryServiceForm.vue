@@ -74,64 +74,19 @@
             <span>选择数据表</span>
           </template>
 
-          <el-form :model="form" label-width="120px">
-            <el-form-item label="存储引擎" required>
-              <el-select v-model="form.engine_id" placeholder="请选择存储引擎" style="width: 400px" @change="onEngineChange">
-                <el-option
-                  v-for="engine in engines"
-                  :key="engine.id"
-                  :label="`${engine.name} (${engine.type})`"
-                  :value="engine.id"
-                />
-              </el-select>
-            </el-form-item>
+          <DataSourceSelector
+            :api-base-url="metaApiBaseUrl"
+            :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
+            :selectable-node-types="['table']"
+            :enable-geometry-detection="true"
+            :require-geometry="false"
+            :show-selection-info="true"
+            tree-height="400px"
+            @update:selection="handleTableSelection"
+            @geometry-detected="handleGeometryDetected"
+          />
 
-            <el-form-item label="Schema" required>
-              <el-input v-model="form.schema_name" placeholder="例如: public" style="width: 400px" />
-            </el-form-item>
-
-            <el-form-item label="Table" required>
-              <el-input v-model="form.table_name" placeholder="例如: users" style="width: 400px" />
-              <el-button
-                v-if="form.engine_id && form.schema_name && form.table_name"
-                type="primary"
-                @click="detectSpatialFields"
-                :loading="detecting"
-                style="margin-left: 12px"
-              >
-                检测空间字段
-              </el-button>
-            </el-form-item>
-
-            <!-- 空间字段检测结果 -->
-            <el-alert
-              v-if="spatialMetadata && spatialMetadata.hasGeometry"
-              type="success"
-              :closable="false"
-              style="margin-bottom: 16px"
-            >
-              <template #title>
-                <div>
-                  ✅ 检测到空间字段：<strong>{{ spatialMetadata.geometryColumn }}</strong>
-                </div>
-                <div style="margin-top: 8px; font-size: 13px">
-                  <div>坐标系：EPSG:{{ spatialMetadata.srid }}</div>
-                  <div>几何类型：{{ spatialMetadata.geometryTypes?.join(', ') || '未知' }}</div>
-                  <div v-if="spatialMetadata.extent">
-                    空间范围：{{ JSON.stringify(spatialMetadata.extent) }}
-                  </div>
-                </div>
-              </template>
-            </el-alert>
-
-            <el-alert
-              v-else-if="spatialMetadata && !spatialMetadata.hasGeometry"
-              type="info"
-              :closable="false"
-              style="margin-bottom: 16px"
-            >
-              未检测到空间字段，将创建普通数据查询服务
-            </el-alert>
+          <el-form :model="form" label-width="120px" style="margin-top: 16px">
 
             <!-- 字段配置（可选） -->
             <el-divider content-position="left">字段配置（可选）</el-divider>
@@ -365,6 +320,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Grid, Document } from '@element-plus/icons-vue'
 import queryServiceAPI from '@/api/queryService'
+import { DataSourceSelector } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
@@ -391,10 +347,14 @@ const form = reactive({
   max_features: 1000
 })
 
-// 存储引擎列表（TODO: 从 System 模块获取）
-const engines = ref([
-  { id: 1, name: '默认 PostgreSQL', type: 'postgresql' }
-])
+// 存储引擎列表（不再需要手动维护，DataSourceSelector 会从 Meta 模块加载）
+
+// Meta API 基础 URL
+const metaApiBaseUrl = computed(() => {
+  return import.meta.env.DEV
+    ? 'http://localhost:8082/api/meta'
+    : '/api/meta'
+})
 
 // 空间元数据
 const spatialMetadata = ref(null)
@@ -486,7 +446,47 @@ const detectSpatialFields = async () => {
   }
 }
 
-// 方法：引擎变更
+// 方法：处理表选择（DataSourceSelector 回调）
+const handleTableSelection = (selection) => {
+  console.log('[QueryServiceForm] Table selection:', selection)
+
+  if (!selection) {
+    // 清空选择
+    form.engine_id = null
+    form.schema_name = ''
+    form.table_name = ''
+    spatialMetadata.value = null
+    return
+  }
+
+  // 更新表单字段
+  form.engine_id = selection.engineId
+  form.schema_name = selection.schema
+  form.table_name = selection.table
+
+  // 如果检测到几何列,自动启用 OGC Features
+  if (selection.hasGeometry) {
+    spatialMetadata.value = {
+      hasGeometry: true,
+      geometryColumn: selection.geometryColumn,
+      srid: selection.srid,
+      geometryTypes: selection.geometryType ? [selection.geometryType] : [],
+      extent: selection.extent
+    }
+    enableOgcFeatures.value = true
+    ElMessage.success(`检测到空间字段: ${selection.geometryColumn}`)
+  } else {
+    spatialMetadata.value = { hasGeometry: false }
+    enableOgcFeatures.value = false
+  }
+}
+
+// 方法：处理几何检测结果（DataSourceSelector 回调）
+const handleGeometryDetected = (result) => {
+  console.log('[QueryServiceForm] Geometry detected:', result)
+}
+
+// 方法：引擎变更（已被 DataSourceSelector 替代，不再需要）
 const onEngineChange = () => {
   form.schema_name = ''
   form.table_name = ''

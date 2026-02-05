@@ -1333,7 +1333,7 @@ func (s *ScanService) GetTableFields(engineID uint, tableName string, tenantID u
 }
 
 // GetTableFieldDetails 获取表字段详细信息（支持空间字段识别）
-func (s *ScanService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]TableFieldInfo, error) {
+func (s *ScanService) GetTableFieldDetails(engineID uint, tableName string, tenantID uint) ([]commonModels.FieldInfo, error) {
 	return s.metadataQueryService.GetTableFieldDetails(engineID, tableName, tenantID)
 }
 

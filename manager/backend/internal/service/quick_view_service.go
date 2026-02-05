@@ -564,7 +564,7 @@ func (s *QuickViewService) RunPreparationChecks(
 				Status:             "prepared",
 				Fingerprint:        calculateFingerprint(engineID, schema, table),
 				PreparationStatus:  prepStatus,
-				Extent:             spatialMeta.Extent,
+				Extent:             models.JSONFloatArray(spatialMeta.Extent),
 				ExtentSRID:         spatialMeta.ExtentSRID,
 				StartedAt:          &time.Time{},
 				CompletedAt:        &time.Time{},
@@ -617,7 +617,7 @@ func (s *QuickViewService) PrepareForCreateMVT(
 			Fingerprint: fingerprint,
 			StartedAt:   &now,
 			// 从 Meta 同步 extent 信息
-			Extent:     spatialMeta.Extent,
+			Extent:     models.JSONFloatArray(spatialMeta.Extent),
 			ExtentSRID: spatialMeta.ExtentSRID,
 		}
 		if err := s.repo.Create(&qv); err != nil {
@@ -637,7 +637,7 @@ func (s *QuickViewService) PrepareForCreateMVT(
 		// 使用 Updates 只更新必要字段，保护其他字段
 		updates := map[string]interface{}{
 			"status":      "preparing",
-			"extent":      spatialMeta.Extent,
+			"extent":      models.JSONFloatArray(spatialMeta.Extent),
 			"extent_srid": spatialMeta.ExtentSRID,
 		}
 		if err := s.repo.GetDB().Model(&qv).Updates(updates).Error; err != nil {

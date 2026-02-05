@@ -49,6 +49,7 @@
 
 <script setup>
 import { Link, Clock, Grid } from '@element-plus/icons-vue'
+import { getEnabledProtocols } from '../utils/serviceHelper'
 
 const props = defineProps({
   service: {
@@ -57,8 +58,8 @@ const props = defineProps({
   },
   source: {
     type: String,
-    default: 'external', // 'external', 'internal', 或 'data'
-    validator: (value) => ['external', 'internal', 'data'].includes(value)
+    default: 'external', // 'external', 'query', 'registered'
+    validator: (value) => ['external', 'query', 'registered'].includes(value)
   }
 })
 
@@ -67,18 +68,18 @@ defineEmits(['click'])
 // 服务来源相关
 const getSourceTypeColor = (source) => {
   const colors = {
-    'internal': 'primary',    // 空间服务 - 蓝色
-    'external': 'success',    // 服务注册 - 绿色
-    'data': 'warning'         // 数据服务 - 橙色
+    'query': 'primary',       // 查询服务 - 蓝色
+    'registered': 'success',  // 注册服务 - 绿色
+    'external': 'warning'     // 外部服务(旧) - 橙色
   }
   return colors[source] || 'info'
 }
 
 const formatSourceType = (source) => {
   const types = {
-    'internal': '空间服务',
-    'external': '服务注册',
-    'data': '数据服务'
+    'query': '查询服务',
+    'registered': '注册服务',
+    'external': '服务注册'
   }
   return types[source] || source
 }
@@ -87,18 +88,15 @@ const formatSourceType = (source) => {
 const getServiceTypes = (service) => {
   const types = []
 
-  if (props.source === 'internal') {
-    // 空间服务：返回所有启用的协议
-    if (service.enabled_wfs) types.push('wfs')
-    if (service.enabled_wmts) types.push('wmts')
-    if (service.enabled_wms) types.push('wms')
-    if (service.enabled_ogc_api) types.push('ogc_api')
-    return types.length > 0 ? types : ['unknown']
-  } else if (props.source === 'data') {
-    // 数据服务：返回 Data API
-    return ['data_api']
+  if (props.source === 'query') {
+    // 查询服务：返回所有启用的协议
+    const protocols = getEnabledProtocols(service)
+    return protocols.map(p => p.key)
+  } else if (props.source === 'registered') {
+    // 注册服务：返回单一service_type
+    return [service.service_type || 'unknown']
   } else {
-    // 服务注册：返回单一service_type
+    // 外部服务（旧）：返回单一service_type
     return [service.service_type || 'unknown']
   }
 }
@@ -109,8 +107,10 @@ const getServiceTypeColor = (type) => {
     wfs: 'primary',
     wmts: 'warning',
     ogc_api: 'info',
-    data_api: 'info',
+    ogc_features: 'info',
+    rest_api: 'danger',
     rest: 'danger',
+    xyz: 'warning',
     unknown: ''
   }
   return colors[type] || 'info'
@@ -122,11 +122,13 @@ const formatServiceType = (type) => {
     wfs: 'WFS',
     wmts: 'WMTS',
     ogc_api: 'OGC API',
-    data_api: 'Data API',
+    ogc_features: 'OGC Features',
+    rest_api: 'REST API',
     rest: 'REST',
+    xyz: 'XYZ Tiles',
     unknown: '未知'
   }
-  return types[type] || type
+  return types[type] || type.toUpperCase()
 }
 
 // 服务状态相关
@@ -158,23 +160,23 @@ const getServiceDescription = (service) => {
   return service.abstract || service.description || ''
 }
 
-// 获取服务URL（兼容内外部服务）
+// 获取服务URL（兼容查询服务和注册服务）
 const getServiceUrl = (service) => {
-  if (props.source === 'internal') {
-    // 内部服务：构建OGC服务URL
+  if (props.source === 'query') {
+    // 查询服务：构建 REST API URL
     const serviceName = service.service_name
-    if (service.enabled_wfs) {
-      return `/ogc/wfs/${serviceName}`
-    } else if (service.enabled_ogc_api) {
-      return `/ogc/api/${serviceName}`
-    } else if (service.enabled_wmts) {
-      return `/ogc/wmts/${serviceName}`
-    } else if (service.enabled_wms) {
-      return `/ogc/wms/${serviceName}`
+    const protocols = getEnabledProtocols(service)
+    if (protocols.some(p => p.key === 'rest_api')) {
+      return `/api/query/${serviceName}`
+    } else if (protocols.some(p => p.key === 'ogc_features')) {
+      return `/ogc/features/${serviceName}`
     }
     return '未配置服务端点'
+  } else if (props.source === 'registered') {
+    // 注册服务：返回端点URL
+    return service.endpoint_url || '未配置'
   } else {
-    // 外部服务：直接返回URL
+    // 外部服务（旧）：直接返回URL
     return service.url || '未配置'
   }
 }

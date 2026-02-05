@@ -3,8 +3,8 @@
     <div class="header">
       <h2>服务目录</h2>
       <div class="header-actions">
-        <el-button type="success" @click="$router.push('/published-services')">服务发布管理</el-button>
-        <el-button type="primary" @click="$router.push('/services')">服务注册管理</el-button>
+        <el-button type="success" @click="$router.push('/query-services')">查询服务管理</el-button>
+        <el-button type="primary" @click="$router.push('/registered-services')">注册服务管理</el-button>
       </div>
     </div>
 
@@ -108,40 +108,45 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
-import publishedServiceAPI from '../api/publishedService'
+import queryServiceAPI from '../api/queryService'
+import registeredServiceAPI from '../api/registeredService'
 import ServiceCard from '../components/ServiceCard.vue'
+import { getEnabledProtocols } from '../utils/serviceHelper'
 
 const router = useRouter()
 const loading = ref(false)
 const activeTab = ref('all')
 const externalServices = ref([])
-const internalServices = ref([])
-const dataServices = ref([])
+const queryServices = ref([])  // 查询服务（原内部服务）
+const registeredServices = ref([])  // 注册服务
 
 // 合并所有服务
 const allServices = computed(() => {
   const external = externalServices.value.map(s => ({ ...s, _source: 'external' }))
-  const internal = internalServices.value.map(s => ({ ...s, _source: 'internal' }))
-  const data = dataServices.value.map(s => ({ ...s, _source: 'data' }))
-  return [...external, ...internal, ...data]
+  const query = queryServices.value.map(s => ({ ...s, _source: 'query' }))
+  const registered = registeredServices.value.map(s => ({ ...s, _source: 'registered' }))
+  return [...external, ...query, ...registered]
 })
 
-// 根据服务类型获取服务（需要处理内部服务的多协议情况）
+// 根据服务类型获取服务（需要处理查询服务的多协议情况）
 const getServicesByType = (type) => {
   return allServices.value.filter(s => {
-    if (s._source === 'data') {
-      // 数据服务：只匹配 data_api
-      return type === 'data_api'
-    } else if (s._source === 'external') {
-      // 服务注册：直接匹配 service_type
+    if (s._source === 'query') {
+      // 查询服务：检查协议配置
+      const protocols = getEnabledProtocols(s)
+      if (type === 'data_api' || type === 'rest') {
+        return protocols.some(p => p.key === 'rest_api')
+      }
+      if (type === 'ogc_api') {
+        return protocols.some(p => p.key === 'ogc_features')
+      }
+      return false
+    } else if (s._source === 'registered') {
+      // 注册服务：直接匹配 service_type
       return s.service_type === type
     } else {
-      // 空间服务：检查对应的 enabled_xxx 标志
-      if (type === 'wms') return s.enabled_wms
-      if (type === 'wfs') return s.enabled_wfs
-      if (type === 'wmts') return s.enabled_wmts
-      if (type === 'ogc_api') return s.enabled_ogc_api
-      return false
+      // 外部服务（旧的 service 注册）：直接匹配 service_type
+      return s.service_type === type
     }
   })
 }
@@ -156,16 +161,15 @@ const loadCatalog = async () => {
   try {
     loading.value = true
 
-    // 并行加载三类服务
-    const [externalData, internalData, dataData] = await Promise.all([
-      loadExternalServices(),
-      loadInternalServices(),
-      loadDataServices()
+    // 并行加载查询服务和注册服务 (移除外部服务)
+    const [queryData, registeredData] = await Promise.all([
+      loadQueryServices(),
+      loadRegisteredServices()
     ])
 
-    externalServices.value = externalData
-    internalServices.value = internalData
-    dataServices.value = dataData
+    externalServices.value = []  // 旧架构的外部服务已废弃
+    queryServices.value = queryData
+    registeredServices.value = registeredData
   } catch (error) {
     ElMessage.error('加载服务目录失败: ' + (error.response?.data?.message || error.message))
   } finally {
@@ -173,47 +177,30 @@ const loadCatalog = async () => {
   }
 }
 
-// 加载外部服务
+// 加载外部服务 (已废弃,保留空实现以兼容)
 const loadExternalServices = async () => {
-  try {
-    const catalog = await serviceAPI.getCatalog()
+  // 旧架构的外部服务已废弃,现在统一使用注册服务
+  return []
+}
 
-    // 后端返回的是按类型分组的 map: { "wms": [...], "wfs": [...] }
-    if (catalog && typeof catalog === 'object') {
-      const allServicesList = []
-      Object.values(catalog).forEach(serviceList => {
-        if (Array.isArray(serviceList)) {
-          allServicesList.push(...serviceList)
-        }
-      })
-      return allServicesList
-    }
-    return []
+// 加载查询服务
+const loadQueryServices = async () => {
+  try {
+    const response = await queryServiceAPI.listServices({ page: 1, limit: 1000 })
+    return response.data.data || []
   } catch (error) {
-    console.error('加载外部服务失败:', error)
+    console.error('加载查询服务失败:', error)
     return []
   }
 }
 
-// 加载内部服务
-const loadInternalServices = async () => {
+// 加载注册服务
+const loadRegisteredServices = async () => {
   try {
-    const response = await publishedServiceAPI.listServices({ page: 1, limit: 1000 })
-    return response.data || []
+    const response = await registeredServiceAPI.listServices({ page: 1, limit: 1000 })
+    return response.data.data || []
   } catch (error) {
-    console.error('加载发布服务失败:', error)
-    return []
-  }
-}
-
-// 加载数据服务
-const loadDataServices = async () => {
-  try {
-    // TODO: 当前数据服务没有列表API，暂时返回空数组
-    // 未来可以调用 dataAPI.list() 获取数据服务列表
-    return []
-  } catch (error) {
-    console.error('加载数据服务失败:', error)
+    console.error('加载注册服务失败:', error)
     return []
   }
 }
@@ -222,11 +209,10 @@ const loadDataServices = async () => {
 const handleServiceClick = (service) => {
   if (service._source === 'external') {
     router.push(`/services/${service.id}`)
-  } else if (service._source === 'internal') {
-    router.push(`/published-services/${service.id}`)
-  } else if (service._source === 'data') {
-    // 数据服务：已删除，不再跳转
-    ElMessage.warning('该功能已移至Develop模块的查询工作台')
+  } else if (service._source === 'query') {
+    router.push(`/query-services/${service.id}`)
+  } else if (service._source === 'registered') {
+    router.push(`/registered-services/${service.id}`)
   }
 }
 
