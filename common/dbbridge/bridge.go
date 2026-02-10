@@ -10,6 +10,7 @@ import (
 	// 导入所有数据库插件，触发 init() 注册
 	_ "github.com/addp/common/engine/plugins/clickhouse"
 	_ "github.com/addp/common/engine/plugins/doris"
+	_ "github.com/addp/common/engine/plugins/jupyter"
 	_ "github.com/addp/common/engine/plugins/math_workflow"
 	_ "github.com/addp/common/engine/plugins/minio"
 	_ "github.com/addp/common/engine/plugins/mongodb"

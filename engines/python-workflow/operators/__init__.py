@@ -90,6 +90,7 @@ def list_operators():
         parameters = []
         if 'param_schema' in meta:
             for param in meta['param_schema']:
+                # param 已经是字典（来自 to_legacy_dict()），直接使用
                 param_meta = {
                     "name": param['name'],
                     "type": type_mapping.get(param['type'], 'string'),
@@ -100,6 +101,24 @@ def list_operators():
                 # 数组类型需要指定item_type
                 if param['type'] in ['list[float]', 'list[str]']:
                     param_meta["item_type"] = "float" if param['type'] == 'list[float]' else "string"
+
+                # 添加 UI 相关字段（如果存在）
+                if param.get('ui_type'):
+                    param_meta["ui_type"] = param['ui_type']
+                if param.get('ui_config'):
+                    param_meta["ui_config"] = param['ui_config']
+                if param.get('enum'):
+                    param_meta["enum"] = param['enum']
+                if param.get('default') is not None:
+                    param_meta["default"] = param['default']
+                if param.get('notes'):
+                    param_meta["notes"] = param['notes']
+
+                # 添加依赖和条件显示字段（如果存在）
+                if param.get('depends_on'):
+                    param_meta["depends_on"] = param['depends_on']
+                if param.get('show_when'):
+                    param_meta["show_when"] = param['show_when']
 
                 parameters.append(param_meta)
 

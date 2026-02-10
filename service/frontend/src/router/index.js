@@ -139,6 +139,32 @@ const routes = [
     name: 'ServiceCatalog',
     component: () => import('../views/ServiceCatalog.vue'),
     meta: { requiresAuth: true, title: '服务目录' }
+  },
+
+  // === 瓦片服务路由 ===
+  {
+    path: '/tile',
+    name: 'TileServiceList',
+    component: () => import('../views/TileServiceList.vue'),
+    meta: { requiresAuth: true, title: '瓦片服务' }
+  },
+  {
+    path: '/tile/create',
+    name: 'TileServiceCreate',
+    component: () => import('../views/TileServiceForm.vue'),
+    meta: { requiresAuth: true, title: '创建瓦片服务' }
+  },
+  {
+    path: '/tile/:id/edit',
+    name: 'TileServiceEdit',
+    component: () => import('../views/TileServiceForm.vue'),
+    meta: { requiresAuth: true, title: '编辑瓦片服务' }
+  },
+  {
+    path: '/tile/:id',
+    name: 'TileServiceDetail',
+    component: () => import('../views/TileServiceDetail.vue'),
+    meta: { requiresAuth: true, title: '瓦片服务详情' }
   }
 ]
 

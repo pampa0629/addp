@@ -9,7 +9,6 @@ import (
 	auth "github.com/addp/common/middleware/auth"
 	"github.com/addp/meta/internal/config"
 	"github.com/addp/meta/internal/service"
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -19,12 +18,7 @@ func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanS
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
 
-	// CORS配置
-	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowCredentials = true
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
-	corsConfig.AllowAllOrigins = true
-	router.Use(cors.New(corsConfig))
+	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 
 	if engineService == nil || scanService == nil {
 		panic("engineService and scanService must be provided to SetupRouter")

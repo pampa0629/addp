@@ -376,7 +376,8 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": json.dumps(capabilities)
+        "capabilities": json.dumps(capabilities),
+        "is_builtin": True  # 内置引擎，对所有租户可见
     }
 
     headers = {

@@ -5,72 +5,119 @@ I/O 算子模块
 支持多种数据源：数据库表、文件、GeoJSON 对象
 """
 
+import logging
+import pandas as pd
 import geopandas as gpd
 from typing import Dict, Any
-import os
-import requests
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from .base import (
     OperatorType,
     OperatorMetadata, OperatorParam, OperatorCategory, register_operator
 )
 
+logger = logging.getLogger(__name__)
+
 
 # ==================== 算子实现 ====================
 
-def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
+def load(
+    source_type: str,
+    connection_info: Dict[str, Any] = None,
+    schema: str = None,
+    table: str = None,
+    path: str = None,
+    format: str = None,
+    geojson: Dict[str, Any] = None,
+    geom_column: str = None,
+    **kwargs
+) -> gpd.GeoDataFrame:
     """
     通用数据加载算子
 
-    接收 DataLocation 信息，根据类型加载数据：
+    参数由 Develop Backend 预处理：
+    - connection_info: 数据库连接信息（已解密），包含 engine_type、host、port、user、password、database 等
     - source_type: "table" | "file" | "geojson" | "reference"
-    - engine_id: 存储引擎 ID
     - 其他参数: table/path、schema/format 等
 
-    注意：此算子不直接执行 SQL，而是根据 DataLocation 信息
-    通过 System API 获取引擎连接信息后加载数据
+    注意：此算子不再依赖 System API，所有连接信息由 Develop Backend 预处理后传入
     """
-    source_type = params.get('source_type')
-    engine_id = params.get('engine_id')
-
     if source_type == 'table':
-        # 1. 从 System API 获取引擎连接信息
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
-        response = requests.get(f'{system_url}/api/engines/{engine_id}')
+        if not connection_info:
+            raise ValueError("source_type=table 时必须提供 connection_info")
 
-        if response.status_code != 200:
-            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
+        # 从 connection_info 中提取信息（已由 Develop Backend 从 System API 获取并解密）
+        engine_type = connection_info.get('engine_type')
+        host = connection_info.get('host')
+        port = connection_info.get('port')
+        # 兼容 username 和 user 两种字段名
+        user = connection_info.get('user') or connection_info.get('username')
+        password = connection_info.get('password')
+        database = connection_info.get('database')
 
-        engine = response.json()
+        if not all([engine_type, host, port, user, database]):
+            raise ValueError(f"connection_info 缺少必要字段: {connection_info}")
 
-        # 2. 根据引擎类型构建连接字符串
-        engine_type = engine['engine_type']
-        conn_info = engine['connection_info']
-
-        table = params.get('table')
-        schema = params.get('schema', 'public')
-
-        # 3. 根据不同数据库类型加载
+        # 根据不同数据库类型加载
         if engine_type in ['postgresql', 'PostgreSQL']:
-            conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            conn_str = f"postgresql://{user}:{password}@{host}:{port}/{database}"
             engine_db = create_engine(conn_str)
 
-            # 读取空间数据（假设几何列名为 geom）
+            # 读取空间数据
             sql = f'SELECT * FROM {schema}.{table}'
-            gdf = gpd.read_postgis(sql, engine_db, geom_col='geom')
+
+            # 先查询表结构，找出几何列
+            logger.info(f"正在加载表: {schema}.{table}")
+
+            # 检查表中的几何列
+            check_geom_sql = f"""
+                SELECT column_name, udt_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = '{schema}' AND table_name = '{table}'
+                AND (udt_name = 'geometry' OR udt_name = 'geography' OR data_type LIKE '%geometry%')
+            """
+            with engine_db.connect() as conn:
+                geom_cols = conn.execute(text(check_geom_sql)).fetchall()
+                logger.info(f"表 {schema}.{table} 中的几何列: {geom_cols}")
+
+            # 如果指定了几何列名则使用，否则让 geopandas 自动检测
+            if geom_column:
+                logger.info(f"使用指定的几何列: {geom_column}")
+                gdf = gpd.read_postgis(sql, engine_db, geom_col=geom_column)
+            elif geom_cols:
+                # 如果找到了几何列，使用第一个
+                detected_geom_col = geom_cols[0][0]
+                logger.info(f"自动检测到几何列: {detected_geom_col}")
+                gdf = gpd.read_postgis(sql, engine_db, geom_col=detected_geom_col)
+            else:
+                # 没有几何列，作为普通表加载
+                logger.warning(f"表 {schema}.{table} 中没有几何列，作为普通 DataFrame 加载")
+                gdf = gpd.GeoDataFrame(pd.read_sql(sql, engine_db))
 
         elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
-            password = conn_info.get('password', '')
             if password:
-                conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+                conn_str = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
             else:
-                conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+                conn_str = f"mysql+pymysql://{user}@{host}:{port}/{database}"
 
             engine_db = create_engine(conn_str)
 
             # MySQL/Doris 空间数据读取
             sql = f'SELECT * FROM {table}'
-            gdf = gpd.read_postgis(sql, engine_db, geom_col='geom')
+            logger.info(f"正在加载表: {database}.{table}")
+
+            # MySQL/Doris 检查几何列（简化版，因为 information_schema 结构不同）
+            # 暂时先尝试常见的几何列名
+            if geom_column:
+                logger.info(f"使用指定的几何列: {geom_column}")
+                gdf = gpd.read_postgis(sql, engine_db, geom_col=geom_column)
+            else:
+                # 先尝试不指定 geom_col，如果失败再作为普通表加载
+                try:
+                    logger.info("尝试自动检测几何列")
+                    gdf = gpd.read_postgis(sql, engine_db)
+                except Exception as e:
+                    logger.warning(f"自动检测失败: {e}，作为普通 DataFrame 加载")
+                    gdf = gpd.GeoDataFrame(pd.read_sql(sql, engine_db))
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
@@ -79,32 +126,25 @@ def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
 
     elif source_type == 'file':
         # 从对象存储加载文件
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
-        response = requests.get(f'{system_url}/api/engines/{engine_id}')
-
-        if response.status_code != 200:
-            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
-
-        engine = response.json()
-
-        path = params.get('path')
-        format_type = params.get('format', 'geojson')
+        if not connection_info:
+            raise ValueError("source_type=file 时必须提供 connection_info")
 
         # TODO: 实现从 MinIO/S3 下载文件逻辑
-        # local_file = download_from_minio(engine, path)
+        # local_file = download_from_minio(connection_info, path)
 
         # 临时实现：假设文件已在本地
-        if format_type in ['geojson', 'shapefile']:
+        if format in ['geojson', 'shapefile']:
             gdf = gpd.read_file(path)
         else:
-            raise ValueError(f"Unsupported format: {format_type}")
+            raise ValueError(f"Unsupported format: {format}")
 
         return gdf
 
     elif source_type == 'geojson':
         # 直接解析 GeoJSON 对象
-        geojson_obj = params.get('geojson')
-        gdf = gpd.GeoDataFrame.from_features(geojson_obj['features'])
+        if not geojson:
+            raise ValueError("source_type=geojson 时必须提供 geojson 参数")
+        gdf = gpd.GeoDataFrame.from_features(geojson['features'])
         return gdf
 
     elif source_type == 'reference':
@@ -116,90 +156,82 @@ def load(params: Dict[str, Any]) -> gpd.GeoDataFrame:
         raise ValueError(f"Unsupported source_type: {source_type}")
 
 
-def save(data: gpd.GeoDataFrame, params: Dict[str, Any]) -> Dict[str, Any]:
+def save(
+    input_gdf: gpd.GeoDataFrame,
+    target_type: str,
+    connection_info: Dict[str, Any] = None,
+    schema: str = None,
+    table: str = None,
+    mode: str = 'replace',
+    path: str = None,
+    format: str = None,
+    **kwargs
+) -> Dict[str, Any]:
     """
     通用数据保存算子
 
-    根据目标类型保存数据：
+    参数由 Develop Backend 预处理：
+    - input_gdf: 要保存的空间数据（由工作流引擎注入）
+    - connection_info: 数据库连接信息（已解密）
     - target_type: "table" | "file"
-    - engine_id: 存储引擎 ID
     """
-    target_type = params.get('target_type')
-    engine_id = params.get('engine_id')
-
     if target_type == 'table':
-        # 1. 从 System API 获取引擎连接信息
-        system_url = os.getenv('SYSTEM_BACKEND_URL', 'http://localhost:8180')
-        response = requests.get(f'{system_url}/api/engines/{engine_id}')
+        if not connection_info:
+            raise ValueError("target_type=table 时必须提供 connection_info")
 
-        if response.status_code != 200:
-            raise ValueError(f"Failed to get engine {engine_id}: {response.text}")
+        # 从 connection_info 中提取信息
+        engine_type = connection_info.get('engine_type')
+        host = connection_info.get('host')
+        port = connection_info.get('port')
+        # 兼容 username 和 user 两种字段名
+        user = connection_info.get('user') or connection_info.get('username')
+        password = connection_info.get('password')
+        database = connection_info.get('database')
 
-        engine = response.json()
+        if not all([engine_type, host, port, user, database]):
+            raise ValueError(f"connection_info 缺少必要字段: {connection_info}")
 
-        # 2. 构建连接
-        engine_type = engine['engine_type']
-        conn_info = engine['connection_info']
-
-        table = params.get('table')
-        schema = params.get('schema', 'public')
-        mode = params.get('mode', 'overwrite')
-
-        # 3. 根据数据库类型保存
+        # 根据数据库类型保存
         if engine_type in ['postgresql', 'PostgreSQL']:
-            conn_str = f"postgresql://{conn_info['user']}:{conn_info['password']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+            conn_str = f"postgresql://{user}:{password}@{host}:{port}/{database}"
             engine_db = create_engine(conn_str)
 
-            if_exists = 'replace' if mode == 'overwrite' else 'append'
-            data.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
+            if_exists = 'replace' if mode == 'replace' else 'append'
+            input_gdf.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
 
         elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
-            password = conn_info.get('password', '')
             if password:
-                conn_str = f"mysql+pymysql://{conn_info['user']}:{password}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+                conn_str = f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
             else:
-                conn_str = f"mysql+pymysql://{conn_info['user']}@{conn_info['host']}:{conn_info['port']}/{conn_info['database']}"
+                conn_str = f"mysql+pymysql://{user}@{host}:{port}/{database}"
 
             engine_db = create_engine(conn_str)
 
-            if_exists = 'replace' if mode == 'overwrite' else 'append'
-            data.to_sql(table, engine_db, if_exists=if_exists, index=False)
+            if_exists = 'replace' if mode == 'replace' else 'append'
+            input_gdf.to_sql(table, engine_db, if_exists=if_exists, index=False)
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
 
-        return {
-            "output_type": "table",
-            "output_table": f"{schema}.{table}",
-            "engine_id": engine_id,
-            "row_count": len(data)
-        }
+        return input_gdf
 
     elif target_type == 'file':
         # TODO: 实现保存到对象存储逻辑
-        path = params.get('path')
-        format_type = params.get('format', 'geojson')
+        if not path or not format:
+            raise ValueError("target_type=file 时必须提供 path 和 format")
 
         # 临时实现：保存到本地文件
-        if format_type == 'geojson':
-            data.to_file(path, driver='GeoJSON')
-        elif format_type == 'shapefile':
-            data.to_file(path, driver='ESRI Shapefile')
+        if format == 'geojson':
+            input_gdf.to_file(path, driver='GeoJSON')
+        elif format == 'shapefile':
+            input_gdf.to_file(path, driver='ESRI Shapefile')
         else:
-            raise ValueError(f"Unsupported format: {format_type}")
+            raise ValueError(f"Unsupported format: {format}")
 
-        return {
-            "output_type": "file",
-            "output_file": path,
-            "format": format_type
-        }
+        return input_gdf
 
     else:
-        # 标量或其他类型
-        return {
-            "output_type": "scalar",
-            "value": str(data)
-        }
+        raise ValueError(f"Unsupported target_type: {target_type}")
 
 
 # ==================== 元数据定义 ====================
@@ -220,15 +252,38 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="数据来源类型",
-            notes="可选值: table(数据库表), file(文件), geojson(GeoJSON对象)"
+            notes="可选值: table(数据库表), file(文件), geojson(GeoJSON对象)",
+            enum=["table", "file", "geojson"],
+            default="table"
+        ),
+        # 特殊参数：数据源级联选择器（仅在 source_type=table 时显示）
+        OperatorParam(
+            name="数据源",
+            type="ui",
+            data_type="object",
+            required=False,
+            description="选择数据表（推荐使用此方式）",
+            notes="使用可视化界面选择数据源，支持引擎→Schema→表的级联选择，自动填充下方参数",
+            ui_type="data_source_cascader",
+            ui_config={
+                "api_base_url": "/api/meta",
+                "engine_types": ["postgresql", "mysql", "doris", "clickhouse"],
+                "selectable_node_types": ["table"],
+                "enable_geometry_detection": True,
+                "require_geometry": False
+            },
+            depends_on="source_type",
+            show_when={"source_type": "table"}
         ),
         OperatorParam(
             name="engine_id",
             type="param",
             data_type="integer",
-            required=True,
+            required=False,
             description="存储引擎ID",
-            notes="仅 source_type=table 时有效,对应 System 模块中的引擎ID"
+            notes="source_type=table 或 file 时必填。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的数据库连接信息），算子执行时直接使用 connection_info，无需调用 System API。",
+            depends_on="source_type",
+            show_when={"source_type": ["table", "file"]}
         ),
         OperatorParam(
             name="schema",
@@ -236,7 +291,10 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="数据库schema名称",
-            notes="仅 source_type=table 时有效"
+            notes="仅 source_type=table 时有效，默认为 public",
+            default="public",
+            depends_on="source_type",
+            show_when={"source_type": "table"}
         ),
         OperatorParam(
             name="table",
@@ -244,7 +302,9 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="数据库表名",
-            notes="仅 source_type=table 时必填"
+            notes="仅 source_type=table 时必填",
+            depends_on="source_type",
+            show_when={"source_type": "table"}
         ),
         OperatorParam(
             name="path",
@@ -252,7 +312,9 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="文件路径",
-            notes="仅 source_type=file 时必填,支持绝对路径或相对路径"
+            notes="仅 source_type=file 时必填,支持绝对路径或相对路径",
+            depends_on="source_type",
+            show_when={"source_type": "file"}
         ),
         OperatorParam(
             name="format",
@@ -260,7 +322,9 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="文件格式",
-            notes="仅 source_type=file 时有效,可选值: geojson, shapefile"
+            notes="仅 source_type=file 时有效,可选值: geojson, shapefile",
+            depends_on="source_type",
+            show_when={"source_type": "file"}
         ),
         OperatorParam(
             name="geojson",
@@ -268,7 +332,20 @@ LOAD_METADATA = OperatorMetadata(
             data_type="object",
             required=False,
             description="GeoJSON对象",
-            notes="仅 source_type=geojson 时必填,必须是有效的 GeoJSON FeatureCollection"
+            notes="仅 source_type=geojson 时必填,必须是有效的 GeoJSON FeatureCollection",
+            depends_on="source_type",
+            show_when={"source_type": "geojson"}
+        ),
+        OperatorParam(
+            name="geom_column",
+            type="param",
+            data_type="string",
+            required=False,
+            description="几何列名",
+            notes="空间数据的几何列名。如果不指定，geopandas会自动检测几何列（推荐）。仅在自动检测失败或需要指定特定列时使用",
+            default=None,
+            depends_on="source_type",
+            show_when={"source_type": "table"}
         )
     ],
 
@@ -280,10 +357,12 @@ LOAD_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "数据库表必须包含几何字段(geometry列),否则加载失败",
+        "支持自动检测几何列,无需手动指定 geom_column (推荐)",
+        "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
         "文件路径支持 MinIO 路径(minio://bucket/path)和本地路径",
         "Shapefile 会自动处理编码问题,默认尝试 utf-8 和 gb2312",
-        "加载后的 GeoDataFrame 会保留所有属性字段"
+        "加载后的 GeoDataFrame 会保留所有属性字段",
+        "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],
 
     workflow_example={
@@ -311,7 +390,7 @@ SAVE_METADATA = OperatorMetadata(
 
     params=[
         OperatorParam(
-            name="data",
+            name="input_gdf",
             type="input",
             data_type="GeoDataFrame",
             required=True,
@@ -323,7 +402,24 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="保存目标类型",
+            enum=["table", "file"],
+            default="table",
             notes="可选值: table(数据库表), file(文件)"
+        ),
+        OperatorParam(
+            name="保存目标",
+            type="ui",
+            data_type="object",
+            required=False,
+            description="选择保存的数据库和表",
+            ui_type="data_source_cascader",
+            ui_config={
+                "placeholder": "选择存储引擎 → Schema → 数据表",
+                "auto_fill_params": ["engine_id", "schema", "table"],
+                "allow_create_table": True  # 允许创建新表
+            },
+            depends_on="target_type",
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
             name="engine_id",
@@ -331,7 +427,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="integer",
             required=False,
             description="存储引擎ID",
-            notes="仅 target_type=table 时必填,对应 System 模块中的引擎ID"
+            notes="由数据源选择器自动填充,对应 System 模块中的引擎ID。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的连接信息），算子执行时直接使用 connection_info。",
+            depends_on="target_type",
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
             name="schema",
@@ -339,7 +437,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="数据库schema名称",
-            notes="仅 target_type=table 时有效"
+            notes="由数据源选择器自动填充",
+            depends_on="target_type",
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
             name="table",
@@ -347,7 +447,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="数据库表名",
-            notes="仅 target_type=table 时必填"
+            notes="由数据源选择器自动填充或手动输入新表名",
+            depends_on="target_type",
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
             name="mode",
@@ -355,7 +457,11 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="表已存在时的处理方式",
-            notes="可选值: replace(替换), append(追加), fail(失败),仅 target_type=table 时有效"
+            enum=["replace", "append", "fail"],
+            default="replace",
+            notes="可选值: replace(替换), append(追加), fail(失败)",
+            depends_on="target_type",
+            show_when={"target_type": "table"}
         ),
         OperatorParam(
             name="path",
@@ -363,7 +469,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="文件保存路径",
-            notes="仅 target_type=file 时必填,支持绝对路径或相对路径"
+            notes="支持绝对路径或相对路径,例如: /output/result.geojson",
+            depends_on="target_type",
+            show_when={"target_type": "file"}
         ),
         OperatorParam(
             name="format",
@@ -371,7 +479,11 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=False,
             description="文件格式",
-            notes="仅 target_type=file 时有效,可选值: geojson, shapefile"
+            enum=["geojson", "shapefile"],
+            default="geojson",
+            notes="可选值: geojson, shapefile",
+            depends_on="target_type",
+            show_when={"target_type": "file"}
         )
     ],
 
@@ -386,7 +498,8 @@ SAVE_METADATA = OperatorMetadata(
         "保存到数据库时会自动创建几何索引提升查询性能",
         "保存到Shapefile时字段名会被截断为10个字符",
         "GeoJSON 格式保留所有字段名和数据精度",
-        "mode=append 时要求表结构与数据结构一致"
+        "mode=append 时要求表结构与数据结构一致",
+        "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],
 
     workflow_example={

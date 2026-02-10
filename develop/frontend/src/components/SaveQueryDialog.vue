@@ -201,7 +201,7 @@ const handleSave = async () => {
       name: formData.value.name,
       display_name: formData.value.display_name || formData.value.name,
       engine_id: props.engineId,
-      sql: props.sql,
+      query: props.sql,
       description: formData.value.description,
       tags: formData.value.tags,
       timeout: formData.value.timeout,

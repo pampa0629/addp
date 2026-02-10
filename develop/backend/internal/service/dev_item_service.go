@@ -67,22 +67,23 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 
 	// 创建开发项
 	item := &models.DevItem{
-		TenantID:    tenantID,
-		Name:        req.Name,
-		DisplayName: req.DisplayName,
-		DevType:     req.DevType,
-		QueryType:   req.QueryType,
-		Content:     req.Content,
-		EngineID:    req.EngineID,
-		Schedule:    req.Schedule,
-		IsScheduled: req.IsScheduled,
-		Timeout:     req.Timeout,
-		Description: req.Description,
-		Tags:        req.Tags,
-		CreatedBy:   &userID,
-		Status:      "active",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		TenantID:        tenantID,
+		Name:            req.Name,
+		DisplayName:     req.DisplayName,
+		DevType:         req.DevType,
+		QueryType:       req.QueryType,
+		Content:         req.Content,
+		ExecutionConfig: req.ExecutionConfig, // 添加执行配置
+		EngineID:        req.EngineID,
+		Schedule:        req.Schedule,
+		IsScheduled:     req.IsScheduled,
+		Timeout:         req.Timeout,
+		Description:     req.Description,
+		Tags:            req.Tags,
+		CreatedBy:       &userID,
+		Status:          "active",
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if err := s.devItemRepo.Create(item); err != nil {
@@ -127,6 +128,9 @@ func (s *DevItemService) UpdateDevItem(id uint, req *models.UpdateDevItemRequest
 	}
 	if req.Content != nil && len(req.Content) > 0 {
 		item.Content = req.Content
+	}
+	if req.ExecutionConfig != nil {
+		item.ExecutionConfig = req.ExecutionConfig
 	}
 	if req.EngineID != nil {
 		item.EngineID = req.EngineID

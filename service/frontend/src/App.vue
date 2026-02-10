@@ -28,6 +28,16 @@
               <span>数据服务</span>
             </template>
 
+            <el-menu-item index="/query-services">
+              <el-icon><Search /></el-icon>
+              <span>查询服务</span>
+            </el-menu-item>
+
+            <el-menu-item index="/tile">
+              <el-icon><Grid /></el-icon>
+              <span>瓦片服务</span>
+            </el-menu-item>
+
             <el-menu-item index="/published-services">
               <el-icon><Upload /></el-icon>
               <span>服务发布</span>
@@ -56,7 +66,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Connection, Link, Upload, FolderOpened } from '@element-plus/icons-vue'
+import { Connection, Link, Upload, FolderOpened, Search, Grid } from '@element-plus/icons-vue'
 
 const route = useRoute()
 

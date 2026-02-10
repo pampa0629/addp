@@ -198,6 +198,7 @@
 
 <script>
 import registeredServiceAPI from '@/api/registeredService'
+import { copyToClipboard as copyTextToClipboard } from '../utils/serviceHelper'
 
 export default {
   name: 'RegisteredServiceDetail',
@@ -280,12 +281,13 @@ export default {
       }
     },
 
-    copyToClipboard(text) {
-      navigator.clipboard.writeText(text).then(() => {
+    async copyToClipboard(text) {
+      const success = await copyTextToClipboard(text)
+      if (success) {
         alert('已复制到剪贴板')
-      }).catch(() => {
-        alert('复制失败')
-      })
+      } else {
+        alert('复制失败，请手动复制')
+      }
     },
 
     serviceTypeText(serviceType) {

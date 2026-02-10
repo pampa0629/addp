@@ -151,6 +151,158 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 		}
 	}
 
+	// OGC API Features 公开路由（不需要 API Key 认证）
+	ogc := router.Group("/ogc")
+	{
+		if moduleDiscovery != nil {
+			// Landing Page
+			ogc.GET("/features/:serviceName", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Conformance
+			ogc.GET("/features/:serviceName/conformance", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Collections
+			ogc.GET("/features/:serviceName/collections", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Items
+			ogc.GET("/features/:serviceName/collections/:collectionId/items", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Single Item
+			ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+		} else {
+			// Fallback 到硬编码路由
+			ogc.GET("/features/:serviceName", serviceProxy.Handle)
+			ogc.GET("/features/:serviceName/conformance", serviceProxy.Handle)
+			ogc.GET("/features/:serviceName/collections", serviceProxy.Handle)
+			ogc.GET("/features/:serviceName/collections/:collectionId/items", serviceProxy.Handle)
+			ogc.GET("/features/:serviceName/collections/:collectionId/items/:featureId", serviceProxy.Handle)
+		}
+	}
+
+	// WMTS 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
+	wmts := router.Group("/wmts")
+	{
+		if moduleDiscovery != nil {
+			wmts.GET("/:serviceName", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+		} else {
+			// Fallback 到硬编码路由
+			wmts.GET("/:serviceName", serviceProxy.Handle)
+		}
+	}
+
+	// OGC Tiles API 公开路由（添加到 ogc 组之外，避免路径冲突）
+	ogcTiles := router.Group("/ogc/tiles")
+	{
+		if moduleDiscovery != nil {
+			// Landing Page
+			ogcTiles.GET("/:serviceName", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Conformance
+			ogcTiles.GET("/:serviceName/conformance", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// TileMatrixSets
+			ogcTiles.GET("/:serviceName/tileMatrixSets", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// TileMatrixSet Detail
+			ogcTiles.GET("/:serviceName/tileMatrixSets/:tileMatrixSetId", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Tilesets
+			ogcTiles.GET("/:serviceName/tiles", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+			// Single Tile
+			ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+		} else {
+			// Fallback 到硬编码路由
+			ogcTiles.GET("/:serviceName", serviceProxy.Handle)
+			ogcTiles.GET("/:serviceName/conformance", serviceProxy.Handle)
+			ogcTiles.GET("/:serviceName/tileMatrixSets", serviceProxy.Handle)
+			ogcTiles.GET("/:serviceName/tileMatrixSets/:tileMatrixSetId", serviceProxy.Handle)
+			ogcTiles.GET("/:serviceName/tiles", serviceProxy.Handle)
+			ogcTiles.GET("/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", serviceProxy.Handle)
+		}
+	}
+
+	// XYZ Tiles 公开路由（不需要 API Key 认证，认证由 Service 模块内部判断）
+	// 注意：Gin 不支持 :y.:format 语法，使用 /*yformat 通配符，由 Service 后端解析
+	tiles := router.Group("/tiles")
+	{
+		if moduleDiscovery != nil {
+			tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
+		} else {
+			// Fallback 到硬编码路由
+			tiles.GET("/:serviceName/:layerName/:z/:x/*yformat", serviceProxy.Handle)
+		}
+	}
+
 	// ============ 受保护的路由（需要 API Key 鉴权）============
 	api := router.Group("/api")
 	api.Use(apiKeyAuthMiddleware.Handler())      // API Key 验证

@@ -31,41 +31,70 @@
           </el-alert>
 
           <div v-else>
-            <el-form-item
-              v-for="param in effectiveParameters"
-              :key="param.name"
-              :label="param.name"
-              :required="param.required"
-            >
-              <template #label>
-                <div class="param-label">
-                  <span>{{ param.name }}</span>
-                  <el-tooltip v-if="param.description" placement="top">
-                    <template #content>{{ param.description }}</template>
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
+            <template v-for="param in effectiveParameters" :key="param.name">
+              <!-- 特殊处理：数据源级联选择器 -->
+              <template v-if="param.ui_type === 'data_source_cascader'">
+                <div class="data-source-section">
+                  <h4 class="subsection-title">{{ param.name || '数据源选择' }}</h4>
+                  <p v-if="param.description" class="subsection-description">
+                    {{ param.description }}
+                  </p>
+
+                  <DataSourceCascader
+                    :api-base-url="param.ui_config?.api_base_url || '/api/meta'"
+                    :engine-types="param.ui_config?.engine_types || ['postgresql', 'mysql', 'doris', 'clickhouse']"
+                    :selectable-node-types="param.ui_config?.selectable_node_types || ['table']"
+                    :enable-geometry-detection="param.ui_config?.enable_geometry_detection !== false"
+                    :require-geometry="param.ui_config?.require_geometry || false"
+                    :allow-create-table="param.ui_config?.allow_create_table || false"
+                    :show-selection-info="true"
+                    :initial-selection="{ engine_id: formData.engine_id, schema: formData.schema, table: formData.table }"
+                    @update:selection="handleDataSourceSelection"
+                  />
+
+                  <div v-if="param.notes" class="help-text" style="margin-top: 12px">
+                    <el-icon style="margin-right: 4px"><InfoFilled /></el-icon>
+                    {{ param.notes }}
+                  </div>
                 </div>
               </template>
 
-              <!-- 根据参数类型渲染不同的输入组件 -->
-              <component
-                :is="getComponentByType(param)"
-                v-model="formData[param.name]"
-                v-bind="getComponentProps(param)"
-                :placeholder="getPlaceholder(param)"
-                @change="onParamChange(param.name)"
+              <!-- 常规参数渲染 -->
+              <el-form-item
+                v-else
+                :label="param.name"
+                :required="param.required"
               >
-                <!-- 渲染 enum 下拉选项 -->
-                <template v-if="param.enum && param.enum.length > 0">
-                  <el-option
-                    v-for="option in param.enum"
-                    :key="option"
-                    :label="option"
-                    :value="option"
-                  />
+                <template #label>
+                  <div class="param-label">
+                    <span>{{ param.name }}</span>
+                    <el-tooltip v-if="param.description" placement="top">
+                      <template #content>{{ param.description }}</template>
+                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </div>
                 </template>
-              </component>
-            </el-form-item>
+
+                <!-- 根据参数类型渲染不同的输入组件 -->
+                <component
+                  :is="getComponentByType(param)"
+                  v-model="formData[param.name]"
+                  v-bind="getComponentProps(param)"
+                  :placeholder="getPlaceholder(param)"
+                  @change="onParamChange(param.name)"
+                >
+                  <!-- 渲染 enum 下拉选项 -->
+                  <template v-if="param.enum && param.enum.length > 0">
+                    <el-option
+                      v-for="option in param.enum"
+                      :key="option"
+                      :label="option"
+                      :value="option"
+                    />
+                  </template>
+                </component>
+              </el-form-item>
+            </template>
           </div>
         </section>
 
@@ -81,11 +110,12 @@
 
 <script setup>
 import { ref, watch, computed } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
+import { QuestionFilled, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import EngineSelect from './EngineSelect.vue'
 import SchemaSelect from './SchemaSelect.vue'
 import TableSelect from './TableSelect.vue'
+import { DataSourceCascader } from '@addp/common-frontend'
 
 const props = defineProps({
   nodeId: {
@@ -116,17 +146,73 @@ const formData = ref({})
 
 // 使用结构化参数定义(优先)或回退到旧格式
 const effectiveParameters = computed(() => {
+  let params = []
+
   if (props.parameters && props.parameters.length > 0) {
-    return props.parameters
+    params = props.parameters
+  } else {
+    // 向后兼容:将旧的 paramDefinitions 转换为参数数组
+    params = Object.entries(props.paramDefinitions).map(([name, desc]) => ({
+      name,
+      type: 'string',
+      description: desc,
+      required: false
+    }))
   }
 
-  // 向后兼容:将旧的 paramDefinitions 转换为参数数组
-  return Object.entries(props.paramDefinitions).map(([name, desc]) => ({
-    name,
-    type: 'string',
-    description: desc,
-    required: false
-  }))
+  // 过滤掉 input 类型的参数（这些参数通过连接线自动传递）
+  // 识别方法：1）参数名为data/input_df/input_gdf  2）数据类型为object/GeoDataFrame/DataFrame
+  params = params.filter(p => {
+    const inputParamNames = ['data', 'input_df', 'input_gdf', 'input']
+    const inputDataTypes = ['object', 'GeoDataFrame', 'DataFrame']
+
+    // 如果参数名是典型的input参数名，且数据类型也是表格类型，则过滤掉
+    if (inputParamNames.includes(p.name) && inputDataTypes.includes(p.type)) {
+      return false
+    }
+
+    // 如果有param_type字段，也使用它判断
+    if (p.param_type === 'input') {
+      return false
+    }
+
+    return true
+  })
+
+  // 根据 show_when 条件过滤参数
+  params = params.filter(p => {
+    // 没有 show_when 条件的参数继续检查
+    if (p.show_when) {
+      // 检查 show_when 条件
+      for (const [dependParam, expectedValue] of Object.entries(p.show_when)) {
+        const currentValue = formData.value[dependParam]
+
+        // 如果期望值是数组，检查当前值是否在数组中
+        if (Array.isArray(expectedValue)) {
+          if (!expectedValue.includes(currentValue)) {
+            return false
+          }
+        } else {
+          // 单个值比较
+          if (currentValue !== expectedValue) {
+            return false
+          }
+        }
+      }
+    }
+
+    return true
+  })
+
+  // 检查过滤后的参数列表中是否有可见的 data_source_cascader
+  const hasVisibleDataSourceCascader = params.some(p => p.ui_type === 'data_source_cascader')
+  if (hasVisibleDataSourceCascader) {
+    // 隐藏被 DataSourceCascader 自动填充的参数
+    const autoFilledParams = ['engine_id', 'schema', 'table']
+    params = params.filter(p => !autoFilledParams.includes(p.name))
+  }
+
+  return params
 })
 
 // 构建参数依赖关系映射
@@ -231,6 +317,41 @@ const onParamChange = (paramName) => {
   }
 }
 
+// 处理数据源选择器的选择结果
+const handleDataSourceSelection = (selection) => {
+  if (!selection) {
+    // 清空数据源相关参数
+    formData.value.source_type = null
+    formData.value.target_type = null
+    formData.value.engine_id = null
+    formData.value.schema = null
+    formData.value.table = null
+    return
+  }
+
+  // 根据算子类型设置不同的字段
+  // load 算子使用 source_type，save 算子使用 target_type
+  if (props.operator === 'save') {
+    formData.value.target_type = 'table'
+    formData.value.engine_id = selection.engineId
+    formData.value.schema = selection.schema
+    formData.value.table = selection.tableName
+    // 设置默认的 mode
+    if (!formData.value.mode) {
+      formData.value.mode = 'replace'
+    }
+  } else {
+    // 默认情况（load 算子）
+    formData.value.source_type = 'table'
+    formData.value.engine_id = selection.engineId
+    formData.value.schema = selection.schema
+    formData.value.table = selection.tableName
+  }
+
+  console.log('[OperatorParamsPanel] 数据源选择:', selection)
+  ElMessage.success(`已选择: ${selection.fullName}`)
+}
+
 // 保存参数
 const saveParams = () => {
   // 验证必填参数
@@ -241,9 +362,37 @@ const saveParams = () => {
     }
   }
 
+  // 过滤参数：只保存当前条件下应该显示的参数（已经过 show_when 过滤的）
+  const cleanedParams = {}
+
+  // 使用 effectiveParameters 而不是 props.parameters
+  // effectiveParameters 已经根据 show_when 条件过滤了不应该显示的参数
+  effectiveParameters.value.forEach(param => {
+    // 跳过 UI 类型参数（这些参数已经在 effectiveParameters 中被隐藏了，但以防万一）
+    if (param.type === 'ui' || param.type === 'input' || param.param_type === 'input') {
+      return
+    }
+
+    const paramName = param.name
+    const paramValue = formData.value[paramName]
+
+    // 如果有值，使用实际值；否则使用默认值
+    if (paramValue !== undefined && paramValue !== null && paramValue !== '') {
+      cleanedParams[paramName] = paramValue
+    } else if (param.default !== undefined && param.default !== null) {
+      cleanedParams[paramName] = param.default
+    }
+  })
+
+  console.log('[OperatorParamsPanel] 保存参数:', {
+    原始参数: formData.value,
+    清理后参数: cleanedParams,
+    有效参数列表: effectiveParameters.value.map(p => p.name)
+  })
+
   emit('save', {
     nodeId: props.nodeId,
-    params: { ...formData.value }
+    params: cleanedParams
   })
 
   ElMessage.success('参数已保存')
@@ -317,6 +466,27 @@ const resetParams = () => {
 
 .help-icon:hover {
   color: #409eff;
+}
+
+.data-source-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin: 0 0 8px 0;
+}
+
+.subsection-description {
+  font-size: 13px;
+  color: #606266;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
 }
 
 /* 自定义滚动条 */

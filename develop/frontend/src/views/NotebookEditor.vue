@@ -1,60 +1,286 @@
 <template>
   <div class="notebook-editor">
-    <!-- 顶部工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <el-icon :size="24"><Notebook /></el-icon>
-        <span class="title">Notebook 开发</span>
+    <!-- 左侧 Notebook 列表 -->
+    <el-aside width="320px" class="notebook-sidebar">
+      <div class="sidebar-header">
+        <h3>Notebook 列表</h3>
+        <div class="actions">
+          <el-button type="primary" size="small" @click="showCreateDialog">
+            <el-icon><Plus /></el-icon> 新建
+          </el-button>
+          <el-button type="success" size="small" @click="showUploadDialog">
+            <el-icon><Upload /></el-icon> 上传
+          </el-button>
+          <el-button size="small" @click="loadNotebooks">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </div>
       </div>
-      <div class="toolbar-right">
-        <el-button
-          type="primary"
-          :icon="RefreshRight"
-          @click="refreshJupyter"
-          size="small"
+
+      <el-input
+        v-model="searchKeyword"
+        placeholder="搜索 Notebook"
+        clearable
+        class="search-input"
+        @input="loadNotebooks"
+      >
+        <template #prefix>
+          <el-icon><Search /></el-icon>
+        </template>
+      </el-input>
+
+      <div class="notebook-list" v-loading="loading">
+        <el-empty v-if="!loading && notebooks.length === 0" description="暂无 Notebook" />
+
+        <div
+          v-for="notebook in notebooks"
+          :key="notebook.id"
+          class="notebook-item"
+          :class="{ active: currentNotebook && currentNotebook.id === notebook.id }"
+          @click="selectNotebook(notebook)"
         >
-          刷新
-        </el-button>
-        <el-button
-          type="success"
-          :icon="Link"
-          @click="openInNewTab"
-          size="small"
-        >
-          新窗口打开
-        </el-button>
-        <el-button
-          :icon="QuestionFilled"
-          @click="showHelp"
-          size="small"
-        >
-          帮助
-        </el-button>
+          <div class="notebook-info">
+            <div class="notebook-name">{{ notebook.display_name || notebook.name }}</div>
+            <div class="notebook-meta">
+              <span class="notebook-time">{{ formatTime(notebook.updated_at) }}</span>
+            </div>
+          </div>
+
+          <div class="notebook-actions" @click.stop>
+            <el-tooltip content="在 Jupyter Lab 中打开">
+              <el-button type="primary" size="small" text @click="openInJupyter(notebook)">
+                <el-icon><Document /></el-icon>
+              </el-button>
+            </el-tooltip>
+
+            <el-tooltip content="执行">
+              <el-button type="success" size="small" text @click="showExecuteDialog(notebook)">
+                <el-icon><VideoPlay /></el-icon>
+              </el-button>
+            </el-tooltip>
+
+            <el-tooltip content="执行历史">
+              <el-button type="info" size="small" text @click="viewHistory(notebook)">
+                <el-icon><Clock /></el-icon>
+              </el-button>
+            </el-tooltip>
+
+            <el-dropdown @command="handleCommand($event, notebook)">
+              <el-button size="small" text>
+                <el-icon><More /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="download">
+                    <el-icon><Download /></el-icon> 下载
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>
+                    <el-icon><Delete /></el-icon> 删除
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+
+        <el-pagination
+          v-if="total > pageSize"
+          v-model:current-page="currentPage"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          small
+          @current-change="loadNotebooks"
+          @size-change="loadNotebooks"
+          class="pagination"
+        />
       </div>
-    </div>
+    </el-aside>
 
-    <!-- 状态提示 -->
-    <div v-if="loading" class="loading-container">
-      <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-      <p>正在加载 Jupyter Lab...</p>
-    </div>
+    <!-- 右侧 Jupyter Lab -->
+    <el-main class="jupyter-container">
+      <div v-if="!currentNotebook" class="empty-state">
+        <el-empty description="请选择一个 Notebook 或创建新的 Notebook" />
+      </div>
 
-    <div v-else-if="error" class="error-container">
-      <el-icon :size="48" color="#f56c6c"><WarningFilled /></el-icon>
-      <p class="error-message">{{ error }}</p>
-      <el-button type="primary" @click="checkHealth">重新检查</el-button>
-    </div>
+      <div v-else class="jupyter-wrapper">
+        <div class="jupyter-toolbar">
+          <span class="current-notebook-name">{{ currentNotebook.display_name || currentNotebook.name }}</span>
+          <div class="toolbar-actions">
+            <el-button size="small" @click="refreshJupyter">
+              <el-icon><Refresh /></el-icon> 刷新
+            </el-button>
+            <el-button size="small" @click="openInNewTab">
+              <el-icon><TopRight /></el-icon> 新窗口打开
+            </el-button>
+            <el-button size="small" @click="showHelp">
+              <el-icon><QuestionFilled /></el-icon> 帮助
+            </el-button>
+          </div>
+        </div>
 
-    <!-- Jupyter Lab iframe -->
-    <div v-else class="jupyter-container">
-      <iframe
-        ref="jupyterFrame"
-        :src="jupyterURL"
-        class="jupyter-iframe"
-        frameborder="0"
-        @load="onJupyterLoad"
-      />
-    </div>
+        <iframe
+          ref="jupyterIframe"
+          :src="jupyterUrl"
+          class="jupyter-iframe"
+          @load="onJupyterLoad"
+        />
+      </div>
+    </el-main>
+
+    <!-- 新建 Notebook 对话框 -->
+    <el-dialog
+      v-model="createDialogVisible"
+      title="新建 Notebook"
+      width="600px"
+    >
+      <el-form :model="createForm" label-width="100px">
+        <el-form-item label="名称" required>
+          <el-input v-model="createForm.name" placeholder="请输入 Notebook 名称" />
+        </el-form-item>
+
+        <el-form-item label="描述">
+          <el-input
+            v-model="createForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入描述"
+          />
+        </el-form-item>
+
+        <el-form-item label="Kernel">
+          <el-select v-model="createForm.kernel" placeholder="选择 Kernel">
+            <el-option label="Python 3" value="python3" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="数据源">
+          <el-select
+            v-model="createForm.data_sources"
+            multiple
+            placeholder="选择可用的数据源"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="ds in dataSources"
+              :key="ds.id"
+              :label="ds.display_name || ds.name"
+              :value="ds.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="createDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmCreate" :loading="creating">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 上传 Notebook 对话框 -->
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="上传 Notebook"
+      width="600px"
+    >
+      <el-form :model="uploadForm" label-width="100px">
+        <el-form-item label="文件" required>
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :limit="1"
+            accept=".ipynb"
+            :on-change="handleFileChange"
+          >
+            <template #trigger>
+              <el-button type="primary">选择文件</el-button>
+            </template>
+            <template #tip>
+              <div class="el-upload__tip">只能上传 .ipynb 文件</div>
+            </template>
+          </el-upload>
+        </el-form-item>
+
+        <el-form-item label="名称" required>
+          <el-input v-model="uploadForm.name" placeholder="请输入 Notebook 名称" />
+        </el-form-item>
+
+        <el-form-item label="描述">
+          <el-input
+            v-model="uploadForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="请输入描述"
+          />
+        </el-form-item>
+
+        <el-form-item label="数据源">
+          <el-select
+            v-model="uploadForm.data_sources"
+            multiple
+            placeholder="选择可用的数据源"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="ds in dataSources"
+              :key="ds.id"
+              :label="ds.display_name || ds.name"
+              :value="ds.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmUpload" :loading="uploading">确定上传</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 执行 Notebook 对话框 -->
+    <el-dialog
+      v-model="executeDialogVisible"
+      title="执行 Notebook"
+      width="600px"
+    >
+      <el-form :model="executeForm" label-width="100px">
+        <el-form-item label="Notebook">
+          <el-input :value="executeNotebook?.display_name || executeNotebook?.name" disabled />
+        </el-form-item>
+
+        <el-form-item label="参数">
+          <el-input
+            v-model="executeForm.parameters"
+            type="textarea"
+            :rows="5"
+            placeholder="输入 JSON 格式的参数，例如：&#10;{&#10;  &quot;city_name&quot;: &quot;北京&quot;,&#10;  &quot;buffer_distance&quot;: 1000&#10;}"
+          />
+        </el-form-item>
+
+        <el-form-item label="数据源">
+          <el-select
+            v-model="executeForm.data_source_ids"
+            multiple
+            placeholder="选择数据源（可选）"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="ds in dataSources"
+              :key="ds.id"
+              :label="ds.display_name || ds.name"
+              :value="ds.id"
+            />
+          </el-select>
+          <div class="form-tip">选择的数据源连接信息将自动注入到 Notebook 执行环境中</div>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="executeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmExecute" :loading="executing">确定执行</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 帮助对话框 -->
     <el-dialog v-model="helpDialogVisible" title="Notebook 开发帮助" width="600px">
@@ -106,72 +332,136 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted, computed } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Notebook,
-  RefreshRight,
-  Link,
-  QuestionFilled,
-  Loading,
-  WarningFilled
+  Plus, Upload, Refresh, Search, Document, VideoPlay, Clock, More,
+  Download, Delete, TopRight, QuestionFilled
 } from '@element-plus/icons-vue'
 import { notebookAPI } from '@/api/notebook'
+import { listDevItems, deleteDevItem, executeDevItem } from '@/api/devItem'
+import { listEngines } from '@/api/engines'
+import { useRouter } from 'vue-router'
+import dayjs from 'dayjs'
 
-// 响应式状态
-const jupyterURL = ref('')
-const loading = ref(true)
-const error = ref('')
-const jupyterFrame = ref(null)
+const router = useRouter()
+
+// 列表相关
+const notebooks = ref([])
+const currentNotebook = ref(null)
+const loading = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+const searchKeyword = ref('')
+
+// 数据源列表
+const dataSources = ref([])
+
+// Jupyter Lab 相关
+const jupyterIframe = ref(null)
+const jupyterBaseUrl = ref('http://localhost:8088/lab')
+const jupyterUrl = computed(() => {
+  if (!currentNotebook.value) return ''
+
+  // 从 content 中获取 minio_path
+  const minioPath = currentNotebook.value.content?.minio_path
+  if (!minioPath) return jupyterBaseUrl.value
+
+  // 构造 Jupyter Lab URL
+  return `${jupyterBaseUrl.value}/tree/${minioPath}`
+})
+
+// 新建对话框
+const createDialogVisible = ref(false)
+const creating = ref(false)
+const createForm = ref({
+  name: '',
+  description: '',
+  kernel: 'python3',
+  data_sources: []
+})
+
+// 上传对话框
+const uploadDialogVisible = ref(false)
+const uploading = ref(false)
+const uploadRef = ref(null)
+const uploadForm = ref({
+  file: null,
+  name: '',
+  description: '',
+  data_sources: []
+})
+
+// 执行对话框
+const executeDialogVisible = ref(false)
+const executing = ref(false)
+const executeNotebook = ref(null)
+const executeForm = ref({
+  parameters: '{}',
+  data_source_ids: []
+})
+
+// 帮助对话框
 const helpDialogVisible = ref(false)
 
-// 检查 Jupyter Engine 健康状态
-const checkHealth = async () => {
+// 加载 Notebook 列表
+const loadNotebooks = async () => {
   loading.value = true
-  error.value = ''
-
   try {
-    await notebookAPI.healthCheck()
-    // 健康检查通过，获取 Jupyter URL
-    await loadJupyterURL()
-  } catch (err) {
-    console.error('Jupyter 健康检查失败:', err)
-    error.value = err.response?.data?.error || 'Jupyter Engine 服务不可用，请检查服务是否启动'
+    const params = {
+      dev_type: 'notebook',
+      page: currentPage.value,
+      page_size: pageSize.value
+    }
+
+    if (searchKeyword.value) {
+      params.keyword = searchKeyword.value
+    }
+
+    const response = await listDevItems(params)
+    notebooks.value = response.items || []
+    total.value = response.total || 0
+  } catch (error) {
+    console.error('加载 Notebook 列表失败:', error)
+    ElMessage.error('加载 Notebook 列表失败')
+  } finally {
     loading.value = false
   }
 }
 
-// 获取 Jupyter Lab URL
-const loadJupyterURL = async () => {
+// 加载数据源列表（从 System 模块）
+const loadDataSources = async () => {
   try {
-    // 直接使用本地 Jupyter Lab URL（开发模式）
-    jupyterURL.value = 'http://localhost:8088/lab'
-    loading.value = false
-  } catch (err) {
-    console.error('获取 Jupyter URL 失败:', err)
-    error.value = '获取 Jupyter URL 失败'
-    loading.value = false
+    const data = await listEngines()
+    dataSources.value = Array.isArray(data) ? data : []
+  } catch (error) {
+    console.error('加载数据源列表失败:', error)
+    ElMessage.error('加载数据源列表失败')
   }
 }
 
-// Jupyter iframe 加载完成
-const onJupyterLoad = () => {
-  console.log('Jupyter Lab 加载完成')
+// 选择 Notebook
+const selectNotebook = (notebook) => {
+  currentNotebook.value = notebook
 }
 
-// 刷新 Jupyter
+// 在 Jupyter Lab 中打开
+const openInJupyter = (notebook) => {
+  selectNotebook(notebook)
+}
+
+// 刷新 Jupyter iframe
 const refreshJupyter = () => {
-  if (jupyterFrame.value) {
-    jupyterFrame.value.src = jupyterFrame.value.src
-    ElMessage.success('正在刷新 Jupyter Lab')
+  if (jupyterIframe.value) {
+    jupyterIframe.value.src = jupyterIframe.value.src
   }
 }
 
-// 在新窗口打开
+// 在新窗口打开 Jupyter Lab
 const openInNewTab = () => {
-  if (jupyterURL.value) {
-    window.open(jupyterURL.value, '_blank')
-    ElMessage.success('已在新窗口打开 Jupyter Lab')
+  if (jupyterUrl.value) {
+    window.open(jupyterUrl.value, '_blank')
   }
 }
 
@@ -180,84 +470,401 @@ const showHelp = () => {
   helpDialogVisible.value = true
 }
 
-// 组件挂载
-onMounted(() => {
-  checkHealth()
-})
+// Jupyter iframe 加载完成
+const onJupyterLoad = () => {
+  console.log('Jupyter Lab 加载完成')
+}
 
-// 组件卸载
-onBeforeUnmount(() => {
-  // 清理工作
+// 显示新建对话框
+const showCreateDialog = () => {
+  createForm.value = {
+    name: '',
+    description: '',
+    kernel: 'python3',
+    data_sources: []
+  }
+  createDialogVisible.value = true
+}
+
+// 确认新建
+const confirmCreate = async () => {
+  if (!createForm.value.name) {
+    ElMessage.warning('请输入 Notebook 名称')
+    return
+  }
+
+  creating.value = true
+  try {
+    // 创建空的 Notebook 结构
+    const notebookContent = {
+      cells: [
+        {
+          cell_type: 'markdown',
+          metadata: {},
+          source: [`# ${createForm.value.name}`]
+        },
+        {
+          cell_type: 'code',
+          execution_count: null,
+          metadata: {},
+          outputs: [],
+          source: []
+        }
+      ],
+      metadata: {
+        kernelspec: {
+          display_name: 'Python 3',
+          language: 'python',
+          name: 'python3'
+        },
+        language_info: {
+          name: 'python',
+          version: '3.9.0'
+        }
+      },
+      nbformat: 4,
+      nbformat_minor: 5
+    }
+
+    // 创建 File 对象
+    const blob = new Blob([JSON.stringify(notebookContent, null, 2)], { type: 'application/json' })
+    const file = new File([blob], `${createForm.value.name}.ipynb`, { type: 'application/json' })
+
+    // 上传
+    await notebookAPI.uploadNotebook(file, {
+      name: createForm.value.name,
+      description: createForm.value.description,
+      kernel: createForm.value.kernel,
+      data_sources: createForm.value.data_sources
+    })
+
+    ElMessage.success('创建成功')
+    createDialogVisible.value = false
+    await loadNotebooks()
+  } catch (error) {
+    console.error('创建失败:', error)
+    ElMessage.error(error.response?.data?.error || '创建失败')
+  } finally {
+    creating.value = false
+  }
+}
+
+// 显示上传对话框
+const showUploadDialog = () => {
+  uploadForm.value = {
+    file: null,
+    name: '',
+    description: '',
+    data_sources: []
+  }
+  uploadDialogVisible.value = true
+}
+
+// 文件选择改变
+const handleFileChange = (file) => {
+  uploadForm.value.file = file.raw
+  if (!uploadForm.value.name) {
+    uploadForm.value.name = file.name.replace('.ipynb', '')
+  }
+}
+
+// 确认上传
+const confirmUpload = async () => {
+  if (!uploadForm.value.file) {
+    ElMessage.warning('请选择文件')
+    return
+  }
+
+  if (!uploadForm.value.name) {
+    ElMessage.warning('请输入 Notebook 名称')
+    return
+  }
+
+  uploading.value = true
+  try {
+    await notebookAPI.uploadNotebook(uploadForm.value.file, {
+      name: uploadForm.value.name,
+      description: uploadForm.value.description,
+      data_sources: uploadForm.value.data_sources
+    })
+
+    ElMessage.success('上传成功')
+    uploadDialogVisible.value = false
+    await loadNotebooks()
+  } catch (error) {
+    console.error('上传失败:', error)
+    ElMessage.error(error.response?.data?.error || '上传失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+// 显示执行对话框
+const showExecuteDialog = (notebook) => {
+  executeNotebook.value = notebook
+  executeForm.value = {
+    parameters: JSON.stringify(notebook.content?.parameters || {}, null, 2),
+    data_source_ids: notebook.content?.data_sources || []
+  }
+  executeDialogVisible.value = true
+}
+
+// 确认执行
+const confirmExecute = async () => {
+  // 验证参数 JSON
+  let parameters = {}
+  try {
+    parameters = JSON.parse(executeForm.value.parameters || '{}')
+  } catch (error) {
+    ElMessage.error('参数格式不正确，请输入有效的 JSON')
+    return
+  }
+
+  executing.value = true
+  try {
+    // 调用统一的 dev_item 执行接口
+    const response = await executeDevItem(executeNotebook.value.id, {
+      parameters,
+      data_source_ids: executeForm.value.data_source_ids
+    })
+
+    ElMessage.success(`Notebook 已提交执行，执行 ID: ${response.execution_id}`)
+    executeDialogVisible.value = false
+
+    // 跳转到执行监控页面
+    router.push({
+      path: '/executions',
+      query: { execution_id: response.execution_id }
+    })
+  } catch (error) {
+    console.error('执行失败:', error)
+    ElMessage.error(error.response?.data?.error || '执行失败')
+  } finally {
+    executing.value = false
+  }
+}
+
+// 查看执行历史
+const viewHistory = (notebook) => {
+  router.push({
+    path: '/executions',
+    query: { dev_item_id: notebook.id }
+  })
+}
+
+// 下拉菜单命令处理
+const handleCommand = async (command, notebook) => {
+  switch (command) {
+    case 'download':
+      await downloadNotebook(notebook)
+      break
+    case 'delete':
+      await deleteNotebook(notebook)
+      break
+  }
+}
+
+// 下载 Notebook
+const downloadNotebook = async (notebook) => {
+  try {
+    const response = await notebookAPI.downloadNotebook(notebook.id)
+
+    // 创建下载链接（response 已经是 blob，因为 extractData 拦截器会提取 data）
+    const url = window.URL.createObjectURL(new Blob([response]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${notebook.name}.ipynb`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success('下载成功')
+  } catch (error) {
+    console.error('下载失败:', error)
+    ElMessage.error('下载失败')
+  }
+}
+
+// 删除 Notebook
+const deleteNotebook = async (notebook) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除 Notebook "${notebook.display_name || notebook.name}" 吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await deleteDevItem(notebook.id)
+    ElMessage.success('删除成功')
+
+    // 如果删除的是当前选中的 Notebook，清空选中状态
+    if (currentNotebook.value && currentNotebook.value.id === notebook.id) {
+      currentNotebook.value = null
+    }
+
+    await loadNotebooks()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error)
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+// 格式化时间
+const formatTime = (time) => {
+  if (!time) return '-'
+  return dayjs(time).format('YYYY-MM-DD HH:mm')
+}
+
+// 初始化
+onMounted(async () => {
+  await loadNotebooks()
+  await loadDataSources()
 })
 </script>
 
 <style scoped>
 .notebook-editor {
   display: flex;
-  flex-direction: column;
-  height: 100vh;
-  background: #fff;
+  height: 100%;
+  background: #f5f5f5;
 }
 
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #e4e7ed;
-  background: #fff;
-  min-height: 56px;
-}
-
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.toolbar-left .title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.toolbar-right {
-  display: flex;
-  gap: 10px;
-}
-
-.loading-container,
-.error-container {
-  flex: 1;
+.notebook-sidebar {
+  background: white;
+  border-right: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  background: #f5f7fa;
 }
 
-.loading-container p,
-.error-container p {
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sidebar-header h3 {
+  margin: 0 0 12px 0;
   font-size: 16px;
-  color: #606266;
+  font-weight: 600;
 }
 
-.error-message {
-  color: #f56c6c;
-  margin: 0;
+.sidebar-header .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.search-input {
+  margin: 12px 16px;
+}
+
+.notebook-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.notebook-item {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notebook-item:hover {
+  border-color: #409eff;
+  box-shadow: 0 2px 4px rgba(64, 158, 255, 0.1);
+}
+
+.notebook-item.active {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.notebook-info {
+  margin-bottom: 8px;
+}
+
+.notebook-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-meta {
+  font-size: 12px;
+  color: #999;
+}
+
+.notebook-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.pagination {
+  margin-top: 12px;
+  justify-content: center;
 }
 
 .jupyter-container {
-  flex: 1;
-  overflow: hidden;
-  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.jupyter-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.jupyter-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.current-notebook-name {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .jupyter-iframe {
-  width: 100%;
-  height: 100%;
+  flex: 1;
   border: none;
+  background: white;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
 }
 
 /* 帮助对话框样式 */

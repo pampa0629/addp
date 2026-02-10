@@ -6,12 +6,14 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from config import settings
 
-# 创建数据库引擎
+# 创建数据库引擎（优化配置避免延迟）
 engine = create_engine(
     settings.database_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
+    pool_pre_ping=False,  # 禁用连接预检查
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=3600,
+    connect_args={"connect_timeout": 5}
 )
 
 # 创建会话工厂
@@ -20,16 +22,22 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # 创建模型基类
 Base = declarative_base()
 
+# 在模块级别导入所有模型（避免在异步函数中导入导致的延迟）
+from models import conversation, message, llm_config  # noqa: E402
+
 
 async def init_db():
     """初始化数据库"""
-    # 导入所有模型以确保它们被注册到 Base.metadata
-    from models import conversation, message, llm_config
+    import asyncio
+    loop = asyncio.get_event_loop()
 
-    # 创建所有表 (在生产环境应使用 Alembic 迁移)
-    # 注意：需要先通过 SQL 脚本创建 schema
-    Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created successfully")
+    # 在线程池中执行同步数据库操作
+    def _sync_create():
+        Base.metadata.create_all(bind=engine)
+
+    await loop.run_in_executor(None, _sync_create)
+
+    print("✅ Database tables created successfully", flush=True)
 
 
 def get_db():

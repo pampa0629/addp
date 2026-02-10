@@ -6,7 +6,7 @@
  */
 
 import axios from 'axios'
-import { parseLocator as parseResourceLocator } from '../types/resourceLocator.js'
+import { parseLocator as parseResourceLocator, buildLocator } from '../types/resourceLocator.js'
 
 /**
  * 创建带有认证支持的 axios 实例
@@ -32,6 +32,67 @@ const createAuthenticatedAxios = () => {
 
 // 使用认证 axios 实例
 const authenticatedAxios = createAuthenticatedAxios()
+
+/**
+ * 规范化树节点格式
+ * 将 Meta API 返回的节点格式转换为组件期望的格式
+ *
+ * @param {Array|Object} nodes - 节点或节点数组
+ * @returns {Array} 规范化的节点数组
+ */
+const normalizeTreeNodes = (nodes) => {
+  if (!nodes) return []
+  const nodeArray = Array.isArray(nodes) ? nodes : [nodes]
+
+  return nodeArray.map(node => {
+    // 基础字段转换
+    // 兼容两种格式：
+    // 1. Meta API 返回的 MetaNode: name, node_type, id
+    // 2. Service API 返回的 TreeNode: label, type, id (已是 locator URI)
+    const normalized = {
+      id: (typeof node.id === 'string' && node.id.startsWith('addp://')) ? node.id : `node-${node.id}`, // TreeNode 的 id 已经是 locator URI
+      label: node.label || node.name || node.full_name || 'Unnamed',
+      type: node.type || node.node_type || 'unknown',
+      icon: getNodeIcon(node.type || node.node_type),
+      metadata: {
+        meta_id: node.metadata?.meta_id || node.id, // 保存原始 ID 用于后续 API 调用
+        engine_id: node.metadata?.engine_id || node.engine_id,
+        tenant_id: node.metadata?.tenant_id || node.tenant_id,
+        full_name: node.metadata?.full_name || node.full_name,
+        scan_status: node.metadata?.scan_status || node.scan_status,
+        scanned_at: node.metadata?.scanned_at || node.scanned_at,
+        item_count: node.metadata?.item_count || node.item_count,
+        total_size_bytes: node.metadata?.total_size_bytes || node.total_size_bytes
+      },
+      // 判断是否有子节点
+      hasChildren: node.hasChildren || ['schema', 'database', 'bucket', 'directory'].includes(node.type || node.node_type),
+      locator: node.locator // 保留 locator 字段（TreeNode 格式）
+    }
+
+    // 递归处理子节点
+    if (node.children && node.children.length > 0) {
+      normalized.children = normalizeTreeNodes(node.children)
+    }
+
+    return normalized
+  })
+}
+
+/**
+ * 根据节点类型获取图标名称
+ */
+const getNodeIcon = (nodeType) => {
+  const iconMap = {
+    'schema': 'Folder',
+    'database': 'Coin',
+    'bucket': 'Folder',
+    'directory': 'Folder',
+    'table': 'Document',
+    'collection': 'Document',
+    'object': 'Document'
+  }
+  return iconMap[nodeType] || 'Document'
+}
 
 /**
  * 获取存储引擎列表
@@ -61,6 +122,13 @@ export async function getEngines(apiBaseUrl, options = {}) {
 
     // 按照 ADDP API 规范,响应格式为 { data: [...] }
     let engines = response.data.data || response.data
+
+    // 兼容性处理：Meta 模块返回 resource_type，System 模块返回 engine_type
+    // 统一转换为 engine_type
+    engines = engines.map(engine => ({
+      ...engine,
+      engine_type: engine.engine_type || engine.resource_type
+    }))
 
     // 如果指定了引擎类型过滤
     if (engineTypes && engineTypes.length > 0) {
@@ -111,7 +179,89 @@ export async function getEngineTree(apiBaseUrl, engineId, options = {}) {
     })
 
     // 按照 ADDP API 规范,响应格式为 { data: {...} }
-    return response.data.data || response.data
+    const data = response.data.data || response.data
+
+    // 兼容性处理：Meta 模块返回 top_nodes 和 items
+    if (data.top_nodes) {
+      const topNodes = normalizeTreeNodes(data.top_nodes)
+
+      // 如果有 items（表数据），需要将它们添加到对应的父节点下
+      if (data.items && data.items.length > 0) {
+        const itemsByNodeId = {}
+
+        // 按 node_id 分组
+        data.items.forEach(item => {
+          const nodeId = item.node_id
+          if (!itemsByNodeId[nodeId]) {
+            itemsByNodeId[nodeId] = []
+          }
+          itemsByNodeId[nodeId].push(item)
+        })
+
+        // 将 items 添加到对应的 top_nodes 下
+        topNodes.forEach(node => {
+          const metaId = node.metadata.meta_id
+          const schemaName = node.label
+
+          // 为 schema 节点构建 locator
+          node.locator = buildLocator({
+            engineId,
+            path: [schemaName],
+            type: node.type,
+            metaId: metaId
+          })
+
+          if (itemsByNodeId[metaId]) {
+            // 转换 items 为规范化节点
+            node.children = itemsByNodeId[metaId].map(item => {
+              const tableName = item.name || 'Unnamed'
+              const locator = buildLocator({
+                engineId,
+                path: [schemaName, tableName],
+                type: item.item_type || 'table',
+                metaId: item.id
+              })
+
+              return {
+                id: `item-${item.id}`,
+                label: tableName,
+                type: item.item_type || 'table',
+                icon: getNodeIcon(item.item_type || 'table'),
+                locator: locator,
+                metadata: {
+                  meta_id: item.id,
+                  item_id: item.id,
+                  engine_id: item.engine_id,
+                  node_id: item.node_id,
+                  tenant_id: item.tenant_id,
+                  full_name: item.full_name,
+                  row_count: item.row_count,
+                  size_bytes: item.size_bytes,
+                  attributes: item.attributes
+                },
+                hasChildren: false
+              }
+            })
+          }
+        })
+      }
+
+      return {
+        children: topNodes
+      }
+    }
+
+    // Service 模块返回 TreeNode 格式（直接是 children 数组）
+    // 需要经过 normalizeTreeNodes 处理以统一格式
+    if (data.children) {
+      const normalizedChildren = normalizeTreeNodes(data.children)
+      return {
+        children: normalizedChildren
+      }
+    }
+
+    // 如果是单个节点，也需要规范化
+    return normalizeTreeNodes([data])[0]
   } catch (error) {
     console.error('[DataSourceAPI] getEngineTree failed:', error)
     throw new Error(`获取引擎树失败: ${error.response?.data?.error || error.message}`)
@@ -135,7 +285,10 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
     const response = await authenticatedAxios.get(url)
 
     // 按照 ADDP API 规范,响应格式为 { data: [...] }
-    return response.data.data || response.data || []
+    const children = response.data.data || response.data || []
+
+    // 规范化节点格式
+    return normalizeTreeNodes(children)
   } catch (error) {
     console.error('[DataSourceAPI] getNodeChildren failed:', error)
     throw new Error(`加载子节点失败: ${error.response?.data?.error || error.message}`)
@@ -172,18 +325,28 @@ export async function getNodeChildren(apiBaseUrl, nodeId) {
  */
 export async function detectTableMetadata(apiBaseUrl, params) {
   try {
-    // Meta 模块的表空间元数据检测端点
-    const url = `${apiBaseUrl}/metadata/tables/spatial`
+    // 根据 API 基础 URL 选择正确的端点
+    // Meta 模块: /api/meta/metadata/tables/spatial
+    // Service 模块: /api/service/tables/spatial-metadata
+    const isMeta = apiBaseUrl.includes('/meta')
+    const endpoint = isMeta ? '/metadata/tables/spatial' : '/tables/spatial-metadata'
+    const url = `${apiBaseUrl}${endpoint}`
+
     const response = await authenticatedAxios.get(url, { params })
 
     // 按照 ADDP API 规范,响应格式为 { data: {...} }
     const data = response.data.data || response.data
 
+    // 兼容性处理：API 可能返回 geometry_types (数组) 或 geometry_type (字符串)
+    const geometryTypes = data.geometry_types || (data.geometry_type ? [data.geometry_type] : [])
+    const hasGeometry = !!data.geometry_column || (geometryTypes && geometryTypes.length > 0)
+
     return {
-      has_geometry: data.has_geometry || false,
+      has_geometry: hasGeometry,
       geometry_column: data.geometry_column || null,
       srid: data.srid || null,
-      geometry_type: data.geometry_type || null,
+      geometry_type: geometryTypes[0] || null,  // 取第一个几何类型
+      geometry_types: geometryTypes,  // 保留完整的类型数组
       extent: data.extent || null,
       fields: data.fields || null
     }
@@ -195,6 +358,7 @@ export async function detectTableMetadata(apiBaseUrl, params) {
       geometry_column: null,
       srid: null,
       geometry_type: null,
+      geometry_types: [],
       extent: null,
       fields: null
     }

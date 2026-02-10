@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # 空间分析算子 (7个)
 # ========================================
 
-def st_buffer(input_df: DataFrame, geom_column: str = "geom", distance: float = 0.01, output_column: str = "buffer_geom") -> DataFrame:
+def buffer(input_df: DataFrame, geom_column: str = "geom", distance: float = 0.01, output_column: str = "buffer_geom") -> DataFrame:
     """
     缓冲区算子
 
@@ -33,7 +33,7 @@ def st_buffer(input_df: DataFrame, geom_column: str = "geom", distance: float = 
         包含缓冲区的DataFrame
 
     Example:
-        df_buffered = st_buffer(df, geom_column="geom", distance=100, output_column="buffer_geom")
+        df_buffered = buffer(df, geom_column="geom", distance=100, output_column="buffer_geom")
     """
     from pyspark.sql.functions import expr
 
@@ -49,7 +49,7 @@ def st_buffer(input_df: DataFrame, geom_column: str = "geom", distance: float = 
 
 
 
-def st_intersection(input_df: DataFrame, geom_column: str = "geom", intersect_geom: str = None, output_column: str = "intersection_geom") -> DataFrame:
+def intersection(input_df: DataFrame, geom_column: str = "geom", intersect_geom: str = None, output_column: str = "intersection_geom") -> DataFrame:
     """
     相交算子
 
@@ -82,7 +82,7 @@ def st_intersection(input_df: DataFrame, geom_column: str = "geom", intersect_ge
 
 
 
-def st_union(input_df: DataFrame, geom_column: str = "geom") -> DataFrame:
+def union(input_df: DataFrame, geom_column: str = "geom") -> DataFrame:
     """
     几何合并算子
 
@@ -104,7 +104,7 @@ def st_union(input_df: DataFrame, geom_column: str = "geom") -> DataFrame:
 
 
 
-def st_centroid(input_df: DataFrame, geom_column: str = "geom", output_column: str = "centroid") -> DataFrame:
+def centroid(input_df: DataFrame, geom_column: str = "geom", output_column: str = "centroid") -> DataFrame:
     """
     质心算子
 
@@ -184,7 +184,7 @@ def spatial_join(
 
 
 
-def st_distance(input_df: DataFrame, geom_column: str = "geom", target_geom: str = None, output_column: str = "distance") -> DataFrame:
+def distance(input_df: DataFrame, geom_column: str = "geom", target_geom: str = None, output_column: str = "distance") -> DataFrame:
     """
     距离计算算子
 
@@ -217,7 +217,7 @@ def st_distance(input_df: DataFrame, geom_column: str = "geom", target_geom: str
 
 
 
-def st_transform(input_df: DataFrame, geom_column: str = "geom", source_crs: str = "EPSG:4326", target_crs: str = "EPSG:3857", output_column: str = "geom_transformed") -> DataFrame:
+def transform(input_df: DataFrame, geom_column: str = "geom", source_crs: str = "EPSG:4326", target_crs: str = "EPSG:3857", output_column: str = "geom_transformed") -> DataFrame:
     """
     坐标转换算子
 
@@ -246,11 +246,11 @@ def st_transform(input_df: DataFrame, geom_column: str = "geom", source_crs: str
 # ========================================
 
 BUFFER_METADATA = OperatorMetadata(
-    name="st_buffer",
+    name="buffer",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="缓冲区分析",
     brief_description="在几何对象周围创建指定距离的缓冲区,用于影响范围分析",
-    overview="st_buffer 是最常用的空间分析算子,在点、线、面周围创建指定距离的缓冲区。广泛应用于影响范围分析、服务半径计算、安全距离评估等场景。",
+    overview="buffer 是最常用的空间分析算子,在点、线、面周围创建指定距离的缓冲区。广泛应用于影响范围分析、服务半径计算、安全距离评估等场景。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="必须包含有效的几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom",必须是 Geometry 类型'),
@@ -264,7 +264,7 @@ BUFFER_METADATA = OperatorMetadata(
         "基站覆盖分析: 5G 基站缓冲 300米,评估网络覆盖率"
     ],
     notes=[
-        "地理坐标系(EPSG:4326)缓冲效果不准确,建议先用 st_transform 转投影坐标系",
+        "地理坐标系(EPSG:4326)缓冲效果不准确,建议先用 transform 转投影坐标系",
         "投影坐标系单位为米,地理坐标系单位为度(1度≈111km)",
         "缓冲区会产生复杂的多边形,后续操作可能较慢",
         "大数据集缓冲建议设置合理的 distance,避免内存溢出"
@@ -273,7 +273,7 @@ BUFFER_METADATA = OperatorMetadata(
     output_desc="DataFrame (新增缓冲区几何列)",
     workflow_example={
         'id': 'school_buffer_analysis',
-        'operator': 'st_buffer',
+        'operator': 'buffer',
         'params': {
             'input_df': {'$ref': 'load_schools'},
             'geom_column': 'geom',
@@ -286,7 +286,7 @@ BUFFER_METADATA = OperatorMetadata(
 
 
 INTERSECTION_METADATA = OperatorMetadata(
-    name="st_intersection",
+    name="intersection",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="几何相交",
     brief_description="计算两个几何对象的相交部分,用于叠加分析",
@@ -313,7 +313,7 @@ INTERSECTION_METADATA = OperatorMetadata(
     output_desc="DataFrame (新增相交几何列)",
     workflow_example={
         'id': 'clip_roads_by_city',
-        'operator': 'st_intersection',
+        'operator': 'intersection',
         'params': {
             'input_df': {'$ref': 'load_roads'},
             'geom_column': 'geom',
@@ -326,7 +326,7 @@ INTERSECTION_METADATA = OperatorMetadata(
 
 
 UNION_METADATA = OperatorMetadata(
-    name="st_union",
+    name="union",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="几何合并",
     brief_description="将所有几何对象合并为单个几何,用于生成整体边界",
@@ -351,7 +351,7 @@ UNION_METADATA = OperatorMetadata(
     output_desc="DataFrame (单行,包含合并后的几何)",
     workflow_example={
         'id': 'union_city_districts',
-        'operator': 'st_union',
+        'operator': 'union',
         'params': {
             'input_df': {'$ref': 'load_districts'},
             'geom_column': 'geom'
@@ -362,7 +362,7 @@ UNION_METADATA = OperatorMetadata(
 
 
 CENTROID_METADATA = OperatorMetadata(
-    name="st_centroid",
+    name="centroid",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="质心计算",
     brief_description="计算几何对象的几何中心点,用于标注和聚合分析",
@@ -388,7 +388,7 @@ CENTROID_METADATA = OperatorMetadata(
     output_desc="DataFrame (新增质心列)",
     workflow_example={
         'id': 'province_centroid',
-        'operator': 'st_centroid',
+        'operator': 'centroid',
         'params': {
             'input_df': {'$ref': 'load_provinces'},
             'geom_column': 'geom',
@@ -442,7 +442,7 @@ SPATIAL_JOIN_METADATA = OperatorMetadata(
 
 
 DISTANCE_METADATA = OperatorMetadata(
-    name="st_distance",
+    name="distance",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="距离计算",
     brief_description="计算几何对象到目标点/线/面的距离,用于邻近度分析",
@@ -469,7 +469,7 @@ DISTANCE_METADATA = OperatorMetadata(
     output_desc="DataFrame (新增距离列)",
     workflow_example={
         'id': 'distance_to_city_center',
-        'operator': 'st_distance',
+        'operator': 'distance',
         'params': {
             'input_df': {'$ref': 'load_communities'},
             'geom_column': 'geom',
@@ -482,11 +482,11 @@ DISTANCE_METADATA = OperatorMetadata(
 
 
 TRANSFORM_METADATA = OperatorMetadata(
-    name="st_transform",
+    name="transform",
     category=OperatorCategory.SPATIAL_ANALYSIS,
     description="坐标转换",
     brief_description="在不同坐标系之间转换几何对象,是空间分析的前置步骤",
-    overview="st_transform 在不同坐标参考系统(CRS)之间转换几何坐标。地理坐标系(EPSG:4326 WGS84)适合存储,投影坐标系(EPSG:3857 Web Mercator)适合计算。",
+    overview="transform 在不同坐标参考系统(CRS)之间转换几何坐标。地理坐标系(EPSG:4326 WGS84)适合存储,投影坐标系(EPSG:3857 Web Mercator)适合计算。",
     params=[
         OperatorParam(name="input_df", type="dataframe", required=True, description="输入 DataFrame", notes="包含几何列"),
         OperatorParam(name="geom_column", type="str", required=False, description="几何列名", notes='默认"geom"'),
@@ -510,7 +510,7 @@ TRANSFORM_METADATA = OperatorMetadata(
     output_desc="DataFrame (新增转换后的几何列)",
     workflow_example={
         'id': 'transform_to_web_mercator',
-        'operator': 'st_transform',
+        'operator': 'transform',
         'params': {
             'input_df': {'$ref': 'load_poi'},
             'geom_column': 'geom',
@@ -528,11 +528,11 @@ TRANSFORM_METADATA = OperatorMetadata(
 # ========================================
 
 OPERATORS = dict([
-    register_operator(BUFFER_METADATA, st_buffer),
-    register_operator(INTERSECTION_METADATA, st_intersection),
-    register_operator(UNION_METADATA, st_union),
-    register_operator(CENTROID_METADATA, st_centroid),
+    register_operator(BUFFER_METADATA, buffer),
+    register_operator(INTERSECTION_METADATA, intersection),
+    register_operator(UNION_METADATA, union),
+    register_operator(CENTROID_METADATA, centroid),
     register_operator(SPATIAL_JOIN_METADATA, spatial_join),
-    register_operator(DISTANCE_METADATA, st_distance),
-    register_operator(TRANSFORM_METADATA, st_transform)
+    register_operator(DISTANCE_METADATA, distance),
+    register_operator(TRANSFORM_METADATA, transform)
 ])

@@ -86,36 +86,6 @@
             </el-menu-item>
           </el-sub-menu>
 
-          <el-sub-menu index="meta">
-            <template #title>
-              <el-icon><Box /></el-icon>
-              <span>元数据</span>
-            </template>
-            <el-menu-item index="/meta/scan">
-              <el-icon><Search /></el-icon>
-              <span>元数据扫描</span>
-            </el-menu-item>
-            <el-menu-item index="/meta/tasks">
-              <el-icon><Monitor /></el-icon>
-              <span>任务监控</span>
-            </el-menu-item>
-          </el-sub-menu>
-
-          <el-sub-menu index="orchestrator">
-            <template #title>
-              <el-icon><Operation /></el-icon>
-              <span>编排引擎</span>
-            </template>
-            <el-menu-item index="/orchestrator/orchestrations">
-              <el-icon><List /></el-icon>
-              <span>编排任务</span>
-            </el-menu-item>
-            <el-menu-item index="/orchestrator/executions">
-              <el-icon><Timer /></el-icon>
-              <span>执行记录</span>
-            </el-menu-item>
-          </el-sub-menu>
-
           <el-sub-menu index="develop">
             <template #title>
               <el-icon><Edit /></el-icon>
@@ -152,6 +122,10 @@
               <el-icon><Upload /></el-icon>
               <span>查询服务</span>
             </el-menu-item>
+            <el-menu-item index="/service/tile">
+              <el-icon><Grid /></el-icon>
+              <span>瓦片服务</span>
+            </el-menu-item>
             <el-menu-item index="/service/services">
               <el-icon><Connection /></el-icon>
               <span>服务注册</span>
@@ -159,6 +133,36 @@
             <el-menu-item index="/service/catalog">
               <el-icon><FolderOpened /></el-icon>
               <span>服务目录</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="orchestrator">
+            <template #title>
+              <el-icon><Operation /></el-icon>
+              <span>任务编排</span>
+            </template>
+            <el-menu-item index="/orchestrator/orchestrations">
+              <el-icon><List /></el-icon>
+              <span>编排任务</span>
+            </el-menu-item>
+            <el-menu-item index="/orchestrator/executions">
+              <el-icon><Timer /></el-icon>
+              <span>执行记录</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="meta">
+            <template #title>
+              <el-icon><Box /></el-icon>
+              <span>元数据</span>
+            </template>
+            <el-menu-item index="/meta/scan">
+              <el-icon><Search /></el-icon>
+              <span>元数据扫描</span>
+            </el-menu-item>
+            <el-menu-item index="/meta/tasks">
+              <el-icon><Monitor /></el-icon>
+              <span>任务监控</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -218,7 +222,7 @@
               </el-card>
             </el-col>
           </el-row>
-          <!-- 第二排: 数据管理、元数据管理 -->
+          <!-- 第二排: 数据管理、数据开发 -->
           <el-row :gutter="20" style="margin-top: 20px;">
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('manager')">
@@ -230,18 +234,6 @@
               </el-card>
             </el-col>
             <el-col :span="12">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
-                  <h2>元数据管理</h2>
-                  <p>元数据解析、数据血缘、数据目录</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <!-- 第三排: 数据开发、编排引擎 -->
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('develop')">
                 <div class="card-content">
                   <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
@@ -250,17 +242,8 @@
                 </div>
               </el-card>
             </el-col>
-            <el-col :span="12">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('orchestrator')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
-                  <h2>编排引擎</h2>
-                  <p>工作流编排、任务调度、执行管理</p>
-                </div>
-              </el-card>
-            </el-col>
           </el-row>
-          <!-- 第四排: 数据服务 -->
+          <!-- 第三排: 数据服务、任务编排 -->
           <el-row :gutter="20" style="margin-top: 20px;">
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('service')">
@@ -268,6 +251,27 @@
                   <el-icon :size="48" color="#1890FF"><Link /></el-icon>
                   <h2>数据服务</h2>
                   <p>外部服务注册、OGC 服务、数据查询服务</p>
+                </div>
+              </el-card>
+            </el-col>
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('orchestrator')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
+                  <h2>任务编排</h2>
+                  <p>工作流编排、任务调度、执行管理</p>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
+          <!-- 第四排: 元数据管理 -->
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
+                  <h2>元数据管理</h2>
+                  <p>元数据解析、数据血缘、数据目录</p>
                 </div>
               </el-card>
             </el-col>
@@ -280,6 +284,7 @@
               :src="iframeUrl"
               :key="iframeUrl"
               frameborder="0"
+              allow="clipboard-write; clipboard-read"
               @load="handleIframeLoad"
               class="module-iframe"
             ></iframe>
@@ -463,6 +468,7 @@ const handleMenuSelect = (index) => {
         'services': 'services',
         'query-services': 'query-services',
         'catalog': 'catalog',
+        'tile': 'tile',
         '': 'query-services'
       }
       const actualPage = servicePageMap[page] !== undefined ? servicePageMap[page] : page

@@ -93,9 +93,15 @@ func (r *DevExecutionRepository) List(req *models.ListExecutionsRequest, tenantI
 		return nil, 0, err
 	}
 
-	// 分页查询
+	// 分页查询（使用Preload预加载关联的dev_item，避免N+1查询）
+	// 注意：列表查询不包含result和inputs字段，避免传输大量数据（工作流结果可能有几十MB）
 	offset := (req.Page - 1) * req.PageSize
-	if err := query.Order("created_at DESC").
+	if err := query.Preload("DevItem", "tenant_id = ?", tenantID).
+		Select("id", "dev_item_id", "tenant_id", "execution_id", "dev_type", "trigger_type",
+			"triggered_by", "status", "progress", "current_step", "error_message",
+			"execution_time_ms", "engine_id", "rows_affected", "result_size_bytes",
+			"started_at", "completed_at", "created_at").
+		Order("created_at DESC").
 		Limit(req.PageSize).
 		Offset(offset).
 		Find(&executions).Error; err != nil {
@@ -109,12 +115,9 @@ func (r *DevExecutionRepository) List(req *models.ListExecutionsRequest, tenantI
 			DevExecution: exec,
 		}
 
-		// 加载关联的开发项
-		if exec.DevItemID != nil {
-			var item models.DevItem
-			if err := r.db.Where("id = ? AND tenant_id = ?", *exec.DevItemID, tenantID).First(&item).Error; err == nil {
-				responses[i].DevItem = &item
-			}
+		// 关联的开发项已经通过Preload加载，直接使用
+		if exec.DevItemID != nil && exec.DevItem != nil {
+			responses[i].DevItem = exec.DevItem
 		}
 	}
 
@@ -148,77 +151,68 @@ func (r *DevExecutionRepository) GetLatestByDevItemID(devItemID uint, tenantID u
 	return &execution, nil
 }
 
-// GetStatistics 获取执行统计信息
+// GetStatistics 获取执行统计信息（优化版：单次聚合查询）
 func (r *DevExecutionRepository) GetStatistics(tenantID uint, devItemID *uint, startDate, endDate string) (*models.ExecutionStatistics, error) {
-	query := r.db.Model(&models.DevExecution{}).Where("tenant_id = ?", tenantID)
+	// 构建基础查询条件
+	baseQuery := r.db.Model(&models.DevExecution{}).Where("tenant_id = ?", tenantID)
 
 	// 开发项ID过滤
 	if devItemID != nil {
-		query = query.Where("dev_item_id = ?", *devItemID)
+		baseQuery = baseQuery.Where("dev_item_id = ?", *devItemID)
 	}
 
 	// 时间范围过滤
 	if startDate != "" {
 		startTime, err := time.Parse("2006-01-02", startDate)
 		if err == nil {
-			query = query.Where("started_at >= ?", startTime)
+			baseQuery = baseQuery.Where("started_at >= ?", startTime)
 		}
 	}
 	if endDate != "" {
 		endTime, err := time.Parse("2006-01-02", endDate)
 		if err == nil {
 			endTime = endTime.Add(24 * time.Hour)
-			query = query.Where("started_at < ?", endTime)
+			baseQuery = baseQuery.Where("started_at < ?", endTime)
 		}
 	}
 
 	stats := &models.ExecutionStatistics{}
 
-	// 总执行次数
-	if err := query.Count(&stats.TotalExecutions).Error; err != nil {
+	// 使用单次聚合查询获取所有统计数据
+	type AggResult struct {
+		TotalExecutions   int64
+		SuccessCount      int64
+		FailedCount       int64
+		RunningCount      int64
+		AvgExecutionTime  float64
+		TotalRowsAffected int64
+	}
+
+	var aggResult AggResult
+	err := baseQuery.Select(`
+		COUNT(*) as total_executions,
+		COUNT(CASE WHEN status = 'success' THEN 1 END) as success_count,
+		COUNT(CASE WHEN status IN ('failed', 'timeout', 'cancelled') THEN 1 END) as failed_count,
+		COUNT(CASE WHEN status IN ('pending', 'running') THEN 1 END) as running_count,
+		COALESCE(AVG(CASE WHEN execution_time_ms IS NOT NULL AND status = 'success' THEN execution_time_ms END), 0) as avg_execution_time,
+		COALESCE(SUM(CASE WHEN rows_affected IS NOT NULL THEN rows_affected END), 0) as total_rows_affected
+	`).Scan(&aggResult).Error
+
+	if err != nil {
 		return nil, err
 	}
 
-	// 成功次数
-	if err := query.Where("status = ?", "success").Count(&stats.SuccessCount).Error; err != nil {
-		return nil, err
-	}
-
-	// 失败次数
-	if err := query.Where("status IN ?", []string{"failed", "timeout", "cancelled"}).Count(&stats.FailedCount).Error; err != nil {
-		return nil, err
-	}
-
-	// 运行中次数
-	if err := query.Where("status IN ?", []string{"pending", "running"}).Count(&stats.RunningCount).Error; err != nil {
-		return nil, err
-	}
+	// 填充统计结果
+	stats.TotalExecutions = aggResult.TotalExecutions
+	stats.SuccessCount = aggResult.SuccessCount
+	stats.FailedCount = aggResult.FailedCount
+	stats.RunningCount = aggResult.RunningCount
+	stats.AvgExecutionTime = aggResult.AvgExecutionTime
+	stats.TotalRowsAffected = aggResult.TotalRowsAffected
 
 	// 计算成功率
 	if stats.TotalExecutions > 0 {
 		stats.SuccessRate = float64(stats.SuccessCount) / float64(stats.TotalExecutions) * 100
-	}
-
-	// 平均执行时间
-	type AvgResult struct {
-		AvgTime float64
-	}
-	var avgResult AvgResult
-	if err := query.Where("execution_time_ms IS NOT NULL AND status = ?", "success").
-		Select("AVG(execution_time_ms) as avg_time").
-		Scan(&avgResult).Error; err == nil {
-		stats.AvgExecutionTime = avgResult.AvgTime
-	}
-
-	// 总影响行数
-	type SumResult struct {
-		TotalRows int64
-	}
-	var sumResult SumResult
-	if err := query.Where("rows_affected IS NOT NULL").
-		Select("SUM(rows_affected) as total_rows").
-		Scan(&sumResult).Error; err == nil {
-		stats.TotalRowsAffected = sumResult.TotalRows
 	}
 
 	return stats, nil

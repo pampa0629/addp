@@ -72,15 +72,65 @@
               <span class="tree-node" :class="[data.type, { highlight: data.highlight }]">
                 <span class="node-main">
                   <slot name="node-icon" :node="node" :data="data">
-                    <el-icon v-if="data.icon">
-                      <component :is="getIconComponent(data.icon)" />
+                    <!-- 引擎层图标 -->
+                    <el-icon v-if="data.type === 'engine' && data.engineType === 'postgresql'">
+                      <Coin />
                     </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'mysql'">
+                      <Coin />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'doris'">
+                      <Coin />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'clickhouse'">
+                      <Coin />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'mongodb'">
+                      <Coin />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && data.engineType === 'spark'">
+                      <Grid />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'engine' && (data.engineType === 'minio' || data.engineType === 's3')">
+                      <Shop />
+                    </el-icon>
+                    <!-- 其他节点类型图标 -->
+                    <el-icon v-else-if="data.type === 'schema'">
+                      <OfficeBuilding />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'bucket'">
+                      <Box />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'directory'">
+                      <FolderOpened />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'prefix'">
+                      <Folder />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'table'">
+                      <Grid />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'object'">
+                      <Document />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'task'">
+                      <Files />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'folder'">
+                      <Folder />
+                    </el-icon>
+                    <el-icon v-else-if="data.type === 'file'">
+                      <Document />
+                    </el-icon>
+                    <!-- 默认图标 -->
                     <el-icon v-else>
-                      <component :is="getDefaultIcon(data.type)" />
+                      <Document />
                     </el-icon>
                   </slot>
                   <slot name="node-label" :node="node" :data="data">
-                    <span class="label" :title="data.label">{{ data.label }}</span>
+                    <span class="label" :title="data.label">
+                      {{ data.label }}
+                    </span>
                   </slot>
                 </span>
                 <span v-if="visibleNodeActions(data).length" class="node-actions">
@@ -100,7 +150,7 @@
                         <Loading />
                       </el-icon>
                       <el-icon v-else :style="{ color: action.color }">
-                        <component :is="getIconComponent(action.icon)" />
+                        <component :is="actionIconMap[action.icon]" />
                       </el-icon>
                     </span>
                   </slot>
@@ -121,10 +171,36 @@ import {
   Loading,
   Search,
   Folder,
+  FolderOpened,
   Collection,
-  Document
+  Document,
+  Files,
+  Grid,
+  Coin,
+  DataBoard,
+  Box,
+  MagicStick,
+  OfficeBuilding,
+  Shop
 } from '@element-plus/icons-vue'
 import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
+
+// 动作图标映射（将字符串名称映射到图标组件）
+const actionIconMap = {
+  Refresh,
+  Loading,
+  Search,
+  Files,
+  MagicStick,
+  Document,
+  Folder,
+  Grid,
+  DataBoard,
+  Coin,
+  Box,
+  OfficeBuilding,
+  Shop
+}
 
 const props = defineProps({
   // 数据源
@@ -602,29 +678,6 @@ const isActionLoading = (action, node) => {
 const handleNodeAction = (action, node) => {
   if (isActionDisabled(action, node)) return
   emit('node-action', { action: action.name, node })
-}
-
-// 获取图标组件
-const getIconComponent = (iconName) => {
-  // 这里返回图标名称，由 Element Plus 自动解析
-  // 如果需要支持自定义图标，可以维护一个图标映射表
-  return iconName
-}
-
-// 获取默认图标
-const getDefaultIcon = (nodeType) => {
-  const iconMap = {
-    resource: Collection,
-    schema: Folder,
-    bucket: Folder,
-    directory: Folder,
-    table: Document,
-    object: Document,
-    task: Document,
-    folder: Folder,
-    file: Document
-  }
-  return iconMap[nodeType] || Document
 }
 </script>
 

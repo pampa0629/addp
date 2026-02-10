@@ -189,8 +189,8 @@
       <SaveQueryDialog
         v-if="showEditDialog"
         v-model="showEditDialog"
-        :resource-id="editingTask?.engine_id"
-        :sql="editingTask?.content?.sql || ''"
+        :engine-id="editingTask?.engine_id"
+        :sql="editingTask?.content?.query || editingTask?.content?.sql || ''"
         @saved="handleUpdateTask"
       />
     </el-dialog>

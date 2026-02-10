@@ -15,7 +15,7 @@
 
       <el-descriptions v-if="service" :column="2" border>
         <el-descriptions-item label="服务ID">{{ service.id }}</el-descriptions-item>
-        <el-descriptions-item label="服务名称">{{ service.name }}</el-descriptions-item>
+        <el-descriptions-item label="服务名称">{{ service.service_name }}</el-descriptions-item>
         <el-descriptions-item label="服务类型">
           <el-tag :type="getServiceTypeColor(service.service_type)">
             {{ formatServiceType(service.service_type) }}
@@ -26,12 +26,23 @@
             {{ formatStatus(service.status) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="服务地址" :span="2">
+        <el-descriptions-item label="原始服务地址" :span="2">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="flex: 1;">{{ service.url }}</span>
-            <el-button size="small" @click="handleCopyURL(service.url)">
+            <span style="flex: 1;">{{ service.endpoint_url }}</span>
+            <el-button size="small" @click="handleCopyURL(service.endpoint_url)">
               复制
             </el-button>
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="service.endpoints?.proxy" label="代理端点" :span="2">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="flex: 1; color: #409EFF; font-weight: 500;">{{ service.endpoints.proxy }}</span>
+            <el-button type="primary" size="small" @click="handleCopyURL(service.endpoints.proxy)">
+              复制
+            </el-button>
+          </div>
+          <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+            ✓ 通过 ADDP Gateway 统一代理，支持认证转发和访问审计
           </div>
         </el-descriptions-item>
         <el-descriptions-item label="认证类型">
@@ -81,6 +92,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import serviceAPI from '../api/service'
+import { copyToClipboard } from '../utils/serviceHelper'
 
 const router = useRouter()
 const route = useRoute()
@@ -135,24 +147,11 @@ const handleBack = () => {
 }
 
 const handleCopyURL = async (url) => {
-  try {
-    await navigator.clipboard.writeText(url)
+  const success = await copyToClipboard(url)
+  if (success) {
     ElMessage.success('服务地址已复制到剪贴板')
-  } catch (error) {
-    // 降级方案：使用传统方法复制
-    const textarea = document.createElement('textarea')
-    textarea.value = url
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    try {
-      document.execCommand('copy')
-      ElMessage.success('服务地址已复制到剪贴板')
-    } catch (err) {
-      ElMessage.error('复制失败，请手动复制')
-    }
-    document.body.removeChild(textarea)
+  } else {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 

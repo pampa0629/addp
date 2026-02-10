@@ -163,6 +163,7 @@ START_COPILOT_BACKEND=false
 START_GATEWAY=false
 START_PORTAL=false
 START_PYTHON_WORKFLOW=false
+START_MATH_WORKFLOW=false
 START_SPARK_WORKFLOW=false
 START_JUPYTER=false
 
@@ -190,6 +191,7 @@ if [ "$START_ALL" = true ]; then
   START_GATEWAY=true
   START_PORTAL=true
   START_PYTHON_WORKFLOW=true
+  START_MATH_WORKFLOW=true
   START_SPARK_WORKFLOW=true
   START_JUPYTER=true
 else
@@ -232,6 +234,7 @@ else
       START_DEVELOP_BACKEND=true
       START_DEVELOP_FRONTEND=true
       START_PYTHON_WORKFLOW=true
+      START_MATH_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       ;;
@@ -1095,12 +1098,12 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Math Workflow Engine
-if check_service_running "math-workflow-engine" "8097"; then
+if check_service_running "math-workflow-engine" "8089"; then
   echo "启动 Math Workflow Engine..."
   cd engines/math-workflow
 
   # 设置环境变量
-  export PORT=8097
+  export PORT=8089
   export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:8180"}
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
@@ -1116,7 +1119,7 @@ if check_service_running "math-workflow-engine" "8097"; then
   echo -n "  等待服务就绪"
   MAX_WAIT=60
   WAIT_COUNT=0
-  while ! curl -s http://localhost:8097/health > /dev/null 2>&1; do
+  while ! curl -s http://localhost:8089/health > /dev/null 2>&1; do
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1129,7 +1132,7 @@ if check_service_running "math-workflow-engine" "8097"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Math Workflow Engine 就绪 (http://localhost:8097)${NC}"
+  echo -e "${GREEN}✓ Math Workflow Engine 就绪 (http://localhost:8089)${NC}"
 else
   MATH_WORKFLOW_PID=$(cat .dev-pids/math-workflow-engine.pid 2>/dev/null)
   echo -e "${GREEN}✓ Math Workflow Engine 已在运行 (PID: $MATH_WORKFLOW_PID)${NC}"
@@ -1375,16 +1378,9 @@ if check_service_running "jupyter-engine" "8088"; then
   API_SERVER_PID=$!
   echo $API_SERVER_PID > ../../.dev-pids/jupyter-api-server.pid
 
-  # 启动 Jupyter Lab（后台）
+  # 启动 Jupyter Lab（后台，使用配置文件）
   ./venv/bin/jupyter lab \
-    --ip=0.0.0.0 \
-    --port=8088 \
-    --no-browser \
-    --ServerApp.token='' \
-    --ServerApp.password='' \
-    --ServerApp.allow_origin='*' \
-    --ServerApp.disable_check_xsrf=True \
-    --LabApp.tornado_settings="{'headers': {'Content-Security-Policy': \"frame-ancestors 'self' http://localhost:5170 http://localhost:5178\"}}" \
+    --config=jupyter_lab_config.py \
     > ../../logs/jupyter-lab.log 2> ../../logs/jupyter-lab-stderr.log &
   JUPYTER_LAB_PID=$!
   echo $JUPYTER_LAB_PID > ../../.dev-pids/jupyter-lab.pid
@@ -1435,6 +1431,26 @@ if check_service_running "jupyter-engine" "8088"; then
   echo -e "${GREEN}✓ Jupyter Engine 就绪:${NC}"
   echo -e "  - API Server: http://localhost:8097"
   echo -e "  - Jupyter Lab: http://localhost:8088/lab"
+
+  # 向 System 模块注册引擎
+  echo -n "注册 Jupyter Engine 到 System 模块..."
+  cd engines/jupyter
+  if [ -f "register.py" ]; then
+    export SYSTEM_API_URL=http://localhost:8180
+    export JUPYTER_ENGINE_URL=http://localhost:8097
+    export JUPYTER_LAB_URL=http://localhost:8088/lab
+    export INTERNAL_API_KEY=${INTERNAL_API_KEY}
+    ./venv/bin/python register.py > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      echo -e " ${GREEN}✓${NC}"
+    else
+      echo -e " ${YELLOW}⚠${NC}"
+      echo -e "${YELLOW}⚠ 注册失败，但引擎仍正常运行${NC}"
+    fi
+  else
+    echo -e " ${YELLOW}⚠ register.py 不存在，跳过注册${NC}"
+  fi
+  cd ../..
 else
   API_SERVER_PID=$(cat .dev-pids/jupyter-api-server.pid 2>/dev/null)
   JUPYTER_LAB_PID=$(cat .dev-pids/jupyter-lab.pid 2>/dev/null)

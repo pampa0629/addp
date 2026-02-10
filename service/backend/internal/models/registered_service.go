@@ -65,10 +65,10 @@ type RegisteredServiceLayer struct {
 	ID uint `gorm:"primarykey" json:"id"`
 
 	// 关联
-	ServiceID uint `gorm:"not null;index:idx_registered_layers_service" json:"service_id"`
+	ServiceID uint `gorm:"not null;index:idx_registered_layers_service;uniqueIndex:unique_service_layer" json:"service_id"`
 
 	// 基本信息
-	LayerName   string `gorm:"not null;size:255;uniqueIndex:unique_registered_layer_name" json:"layer_name"`
+	LayerName   string `gorm:"not null;size:255;uniqueIndex:unique_service_layer" json:"layer_name"`
 	DisplayName string `gorm:"size:255" json:"display_name"`
 	Description string `gorm:"type:text" json:"description"`
 

@@ -17,6 +17,8 @@ import (
 	"github.com/addp/service/internal/repository"
 	"github.com/addp/service/internal/service/data"
 	serviceInternal "github.com/addp/service/internal/service"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 func main() {
@@ -49,6 +51,7 @@ func main() {
 	// 初始化 repositories
 	queryServiceRepo := repository.NewQueryServiceRepository(db)
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
+	tileServiceRepo := repository.NewTileServiceRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
@@ -75,22 +78,48 @@ func main() {
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, cfg.GatewayURL)
 	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
 
-	// 注册服务使用内部服务地址
-	serviceHost := utils.GetServiceHost()
-	port := utils.GetModulePort("service")
-	serviceURL := utils.BuildServiceURL(serviceHost, port)
-	registeredServiceService := serviceInternal.NewRegisteredServiceService(registeredServiceRepo, serviceURL)
+	// 注册服务使用 Gateway URL 作为代理端点的基础地址
+	// 这样用户可以通过统一的 Gateway 访问代理服务
+	registeredServiceService := serviceInternal.NewRegisteredServiceService(registeredServiceRepo, cfg.GatewayURL)
+
+	// 瓦片服务使用 Gateway URL 作为服务端点的基础地址
+	tileServiceService := serviceInternal.NewTileServiceService(tileServiceRepo, cfg.GatewayURL)
+
+	// 初始化 MinIO 客户端（用于瓦片存储）
+	minioClient, err := minio.New(cfg.MinioEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(cfg.MinioAccessKey, cfg.MinioSecretKey, ""),
+		Secure: cfg.MinioUseSSL,
+	})
+	if err != nil {
+		logger.L().Error("MinIO 客户端初始化失败", "error", err)
+		os.Exit(1)
+	}
+	logger.L().Info("MinIO 客户端已初始化", "endpoint", cfg.MinioEndpoint)
+
+	// MinIO Bucket 名称（与 Manager 保持一致）
+	minioBucket := "manager"
+
+	// 初始化瓦片相关服务
+	staticTileService := serviceInternal.NewStaticTileService(minioClient, minioBucket)
+	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
+	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket)
+
 	queryService := data.NewQueryService(systemClient, metaClient)
 
 	// 初始化 handlers
 	queryServiceHandler := api.NewQueryServiceHandler(queryServiceService, queryExecutorService)
+	ogcFeaturesHandler := api.NewOGCFeaturesHandler(queryServiceService, queryExecutorService, cfg.GatewayURL)
 	registeredServiceHandler := api.NewRegisteredServiceHandler(registeredServiceService)
+	tileServiceHandler := api.NewTileServiceHandler(tileServiceService)
+	tileEndpointHandler := api.NewTileEndpointHandler(tileServiceService, staticTileService, dynamicTileService, tileCacheService)
+	wmtsHandler := api.NewWMTSHandler(tileServiceService)
+	ogcTilesHandler := api.NewOGCTilesHandler(tileServiceService, tileEndpointHandler)
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
 	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, dataServiceHandler, queryServiceHandler, registeredServiceHandler, engineHandler, dataSourceHandler, systemClient)
+	router := api.SetupRouter(cfg, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
@@ -336,6 +365,13 @@ func main() {
 		logger.L().Error("调度器关闭失败", "error", err)
 	} else {
 		logger.L().Info("调度器已停止")
+	}
+
+	// 关闭动态瓦片服务的数据库连接
+	if err := dynamicTileService.Close(); err != nil {
+		logger.L().Error("动态瓦片服务关闭失败", "error", err)
+	} else {
+		logger.L().Info("动态瓦片服务已关闭")
 	}
 
 	logger.L().Info("Service 模块已优雅关闭")

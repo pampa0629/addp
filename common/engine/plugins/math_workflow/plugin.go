@@ -30,7 +30,7 @@ func (p *MathWorkflowPlugin) EngineCategory() string {
 }
 
 func (p *MathWorkflowPlugin) DefaultPort() int {
-	return 8097
+	return 8089 // Math Workflow Engine 默认端口
 }
 
 func (p *MathWorkflowPlugin) RequiredFields() []string {

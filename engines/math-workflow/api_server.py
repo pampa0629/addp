@@ -307,7 +307,7 @@ def register_to_system():
     api_key = os.getenv('INTERNAL_API_KEY', '')
 
     # 读取自身配置
-    port = int(os.getenv('PORT', 8097))
+    port = int(os.getenv('PORT', 8089))
     protocol = os.getenv('PROTOCOL', 'http')
 
     # 生成 capabilities
@@ -335,7 +335,8 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": json.dumps(capabilities)
+        "capabilities": json.dumps(capabilities),
+        "is_builtin": True  # 内置引擎，对所有租户可见
     }
 
     headers = {
@@ -398,7 +399,7 @@ if __name__ == '__main__':
     # 后台线程自动注册
     threading.Thread(target=register_to_system, daemon=True).start()
 
-    port = int(os.getenv('PORT', 8097))
+    port = int(os.getenv('PORT', 8089))
     logger.info(f"🚀 Math Workflow Engine 启动: http://0.0.0.0:{port}")
     logger.info(f"   算子数量: {len(OPERATORS)}")
     logger.info(f"   OpenAPI 文档: ../docs/workflow-engine-api-v1.yaml")

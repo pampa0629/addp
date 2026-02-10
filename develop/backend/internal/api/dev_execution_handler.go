@@ -21,13 +21,13 @@ func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandl
 	}
 }
 
-// ExecuteDevItem 执行开发项
+// ExecuteDevItem 执行开发项（支持参数化）
 // @Summary 执行开发项
 // @Tags Execution
 // @Accept json
 // @Produce json
 // @Param id path int true "开发项ID"
-// @Param body body map[string]interface{} false "执行参数"
+// @Param body body map[string]interface{} false "执行参数（可选）"
 // @Success 200 {object} map[string]string
 // @Router /api/develop/items/{id}/execute [post]
 func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
@@ -40,8 +40,25 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	// 执行开发项
-	executionID, err := h.devExecutor.ExecuteDevItem(c.Request.Context(), uint(id), tenantID, userID, "manual")
+	// 尝试解析参数（可选）
+	var params map[string]interface{}
+	_ = c.ShouldBindJSON(&params)
+
+	var executionID string
+	if params != nil && len(params) > 0 {
+		// 参数化执行
+		executionID, err = h.devExecutor.ExecuteWithParams(
+			c.Request.Context(),
+			uint(id),
+			params,
+			tenantID,
+			userID,
+		)
+	} else {
+		// 常规执行
+		executionID, err = h.devExecutor.ExecuteDevItem(c.Request.Context(), uint(id), tenantID, userID, "manual")
+	}
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

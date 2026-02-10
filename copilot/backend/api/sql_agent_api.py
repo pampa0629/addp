@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 
 from agents.sql_agent import sql_agent
-from services.memory_service import memory_service
+# TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
+# from services.memory_service import memory_service
 from services.metadata_matcher import metadata_matcher
 
 router = APIRouter()
@@ -56,31 +57,34 @@ async def generate_sql(request: SQLGenerationRequest):
         )
 
         # 2. 获取对话记忆（如果有）
-        memory = None
-        if request.conversation_id:
-            memory = await memory_service.get_memory(request.conversation_id)
+        # TODO: Copilot 暂时不需要对话历史，直接返回结果
+        # memory = None
+        # if request.conversation_id:
+        #     memory = await memory_service.get_memory(request.conversation_id)
 
-        # 3. 调用 SQL Agent 生成
+        # 3. 调用 SQL Agent 生成（不使用 memory）
         result = await sql_agent.generate(
             query=request.query,
             datasources=match_result.candidates,
-            memory=memory,
+            memory=None,  # 不使用对话历史
             tenant_id=request.tenant_id
         )
 
         # 4. 保存对话历史
-        conversation_id = await memory_service.save_message(
-            conversation_id=request.conversation_id,
-            tenant_id=request.tenant_id,
-            user_id=request.user_id,
-            user_message=request.query,
-            assistant_message=result["sql"],
-            metadata={
-                "selected_datasource": match_result.selected,
-                "candidates": match_result.candidates
-            },
-            context_type='sql'
-        )
+        # TODO: Copilot 暂时不需要保存对话历史
+        # conversation_id = await memory_service.save_message(
+        #     conversation_id=request.conversation_id,
+        #     tenant_id=request.tenant_id,
+        #     user_id=request.user_id,
+        #     user_message=request.query,
+        #     assistant_message=result["sql"],
+        #     metadata={
+        #         "selected_datasource": match_result.selected,
+        #         "candidates": match_result.candidates
+        #     },
+        #     context_type='sql'
+        # )
+        conversation_id = 0  # 临时固定值，不保存对话历史
 
         # 5. 转换候选列表
         candidates = [
@@ -107,11 +111,12 @@ async def generate_sql(request: SQLGenerationRequest):
         raise HTTPException(status_code=500, detail=f"SQL 生成失败: {str(e)}")
 
 
-@router.get("/sql/conversations/{conversation_id}")
-async def get_conversation_history(conversation_id: int):
-    """获取对话历史"""
-    try:
-        history = await memory_service.get_conversation_history(conversation_id)
-        return {"conversation_id": conversation_id, "messages": history}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")
+# TODO: Copilot 暂时不需要对话历史功能
+# @router.get("/sql/conversations/{conversation_id}")
+# async def get_conversation_history(conversation_id: int):
+#     """获取对话历史"""
+#     try:
+#         history = await memory_service.get_conversation_history(conversation_id)
+#         return {"conversation_id": conversation_id, "messages": history}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")

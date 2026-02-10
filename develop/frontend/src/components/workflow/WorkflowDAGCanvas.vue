@@ -557,7 +557,7 @@ function loadWorkflow(workflow) {
       y: 100 + Math.floor(index / 3) * 120,
       operator: task.operator,
       params: task.params || {},
-      dependencies: task.dependencies || []  // 使用 dependencies 字段
+      depends_on: task.depends_on || []  // 使用 depends_on 字段（匹配后端）
     })
 
     // 更新计数器
@@ -573,9 +573,9 @@ function loadWorkflow(workflow) {
   // 创建边
   workflow.tasks.forEach(task => {
     const targetId = task.id
-    // 使用 dependencies 字段
-    if (task.dependencies && task.dependencies.length > 0) {
-      task.dependencies.forEach(sourceId => {
+    // 使用 depends_on 字段（匹配后端）
+    if (task.depends_on && task.depends_on.length > 0) {
+      task.depends_on.forEach(sourceId => {
         edges.push({
           source: sourceId,
           target: targetId,
@@ -665,9 +665,14 @@ function updateNodeParams(nodeId, params) {
   const node = graph.value.findById(nodeId)
   if (node) {
     const model = node.getModel()
-    model.params = params
-    graph.value.updateItem(node, model)
+    // 创建新的模型对象，确保 G6 能够检测到变化
+    const newModel = {
+      ...model,
+      params: { ...params }  // 深拷贝参数对象
+    }
+    graph.value.updateItem(node, newModel)
     emitWorkflow()
+    console.log('[WorkflowDAGCanvas] 节点参数已更新:', nodeId, params)
   }
 }
 

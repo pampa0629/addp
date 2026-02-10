@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/addp/common/logger"
 	"github.com/addp/service/internal/models"
 	svc "github.com/addp/service/internal/service"
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,8 @@ func (h *RegisteredServiceHandler) CreateService(c *gin.Context) {
 	var req models.CreateRegisteredServiceRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// 记录详细错误日志
+		logger.L().Error("CreateService validation error", "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
@@ -206,6 +209,9 @@ func (h *RegisteredServiceHandler) RefreshMetadata(c *gin.Context) {
 	if err := h.svc.RefreshMetadata(uint(id), req.Force); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Service not found"})
+		} else if err.Error() == "metadata refresh is only supported for OGC services" {
+			// 业务逻辑错误：不支持的服务类型
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to refresh metadata: " + err.Error()})
 		}
@@ -248,13 +254,9 @@ func (h *RegisteredServiceHandler) ProxyService(c *gin.Context) {
 		return
 	}
 
-	// 获取租户 ID 和用户 ID（用于审计）
+	// 获取租户 ID 和用户 ID（用于审计，如果没有认证则为 0）
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
-	if tenantID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing tenant_id in token"})
-		return
-	}
 
 	// 代理请求到外部服务
 	err = h.svc.ProxyServiceRequest(uint(id), tenantID, userID, c)

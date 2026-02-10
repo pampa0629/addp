@@ -56,11 +56,13 @@ type WorkflowRequest struct {
 
 // WorkflowResponse 工作流执行响应
 type WorkflowResponse struct {
-	Status      string                 `json:"status"`
-	ExecutionID string                 `json:"execution_id"`
-	FinalResult string                 `json:"final_result,omitempty"` // GeoJSON 字符串
-	AllResults  map[string]string      `json:"all_results,omitempty"`  // 所有中间结果
-	Error       string                 `json:"error,omitempty"`
+	Status        string                   `json:"status"`
+	ExecutionID   string                   `json:"execution_id"`
+	FinalResult   string                   `json:"final_result,omitempty"` // GeoJSON 字符串
+	AllResults    map[string]string        `json:"all_results,omitempty"`  // 所有中间结果
+	Error         string                   `json:"error,omitempty"`
+	Logs          []map[string]interface{} `json:"logs,omitempty"`      // 执行日志
+	Traceback     string                   `json:"traceback,omitempty"` // 详细堆栈信息
 }
 
 // getAPIEndpoint 从引擎的 capabilities 中提取 API 端点
@@ -127,14 +129,110 @@ func (s *WorkflowEngineService) ExecuteWorkflow(
 		return nil, fmt.Errorf("查询工作流引擎失败: %w", err)
 	}
 
-	// 3. 检查是否需要 Spark 运行时（从 engine_specific 判断）
-	if sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64); ok {
-		// Spark 工作流引擎（需要目标 Spark 集群）
-		return s.executeViaSparkWorkflow(ctx, engine, uint(sparkClusterID), workflowDef, inputData)
+	// 3. 预处理工作流参数：将 engine_id 转换为 connection_info（解耦工作流引擎和 System 服务）
+	preprocessedWorkflowDef, err := s.preprocessWorkflowParams(ctx, workflowDef)
+	if err != nil {
+		return nil, fmt.Errorf("预处理工作流参数失败: %w", err)
 	}
 
-	// 4. 通用工作流引擎（自带运行时：python_workflow、math_workflow 等）
-	return s.executeViaGenericWorkflow(ctx, engine, workflowDef, inputData)
+	// 4. 检查是否需要 Spark 运行时（从 engine_specific 判断）
+	if sparkClusterID, ok := config.EngineSpecific["spark_cluster_id"].(float64); ok {
+		// Spark 工作流引擎（需要目标 Spark 集群）
+		return s.executeViaSparkWorkflow(ctx, engine, uint(sparkClusterID), preprocessedWorkflowDef, inputData)
+	}
+
+	// 5. 通用工作流引擎（自带运行时：python_workflow、math_workflow 等）
+	return s.executeViaGenericWorkflow(ctx, engine, preprocessedWorkflowDef, inputData)
+}
+
+// preprocessWorkflowParams 预处理工作流参数
+// 将算子参数中的 engine_id 转换为实际的 connection_info
+// 这样工作流引擎就不需要依赖 System 服务，实现解耦
+func (s *WorkflowEngineService) preprocessWorkflowParams(
+	ctx context.Context,
+	workflowDef map[string]interface{},
+) (map[string]interface{}, error) {
+	// 深拷贝 workflowDef，避免修改原始数据
+	result := make(map[string]interface{})
+	for k, v := range workflowDef {
+		result[k] = v
+	}
+
+	// 获取 tasks 数组
+	tasksInterface, ok := result["tasks"]
+	if !ok {
+		// 如果没有 tasks 字段，可能是 Map 格式的工作流定义
+		// Map 格式：{"step1": {...}, "step2": {...}}
+		// 暂时不处理，直接返回原始定义
+		log.Printf("⚠️  工作流定义中没有 tasks 字段，跳过参数预处理")
+		return result, nil
+	}
+
+	tasks, ok := tasksInterface.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("tasks 字段格式错误，期望数组")
+	}
+
+	// 遍历所有任务，预处理参数
+	for i, taskInterface := range tasks {
+		task, ok := taskInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		paramsInterface, ok := task["params"]
+		if !ok {
+			continue
+		}
+
+		params, ok := paramsInterface.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// 检查是否有 engine_id 参数
+		engineIDInterface, hasEngineID := params["engine_id"]
+		if !hasEngineID {
+			continue
+		}
+
+		// 转换 engine_id 为 uint
+		var engineID uint
+		switch v := engineIDInterface.(type) {
+		case float64:
+			engineID = uint(v)
+		case int:
+			engineID = uint(v)
+		case uint:
+			engineID = v
+		default:
+			log.Printf("⚠️  任务 %d 的 engine_id 类型错误: %T", i, engineIDInterface)
+			continue
+		}
+
+		// 从 System API 获取引擎信息（包含解密后的 connection_info）
+		engine, err := s.systemClient.GetEngineByID(engineID)
+		if err != nil {
+			return nil, fmt.Errorf("获取引擎 %d 信息失败: %w", engineID, err)
+		}
+
+		// 构建完整的 connection_info（包含 engine_type）
+		// 注意：将 Engine.EngineType 添加到 connection_info 中，方便算子使用
+		enrichedConnInfo := make(map[string]interface{})
+		for k, v := range engine.ConnectionInfo {
+			enrichedConnInfo[k] = v
+		}
+		enrichedConnInfo["engine_type"] = engine.EngineType
+
+		// 替换 engine_id 为 connection_info
+		delete(params, "engine_id")
+		params["connection_info"] = enrichedConnInfo
+
+		log.Printf("✅ 任务 %d: 已将 engine_id=%d 转换为 connection_info (engine_type=%s)",
+			i, engineID, engine.EngineType)
+	}
+
+	return result, nil
 }
 
 // executeViaGenericWorkflow 通过通用工作流引擎执行（自带运行时）
@@ -146,9 +244,21 @@ func (s *WorkflowEngineService) executeViaGenericWorkflow(
 	inputData map[string]interface{},
 ) (*WorkflowResponse, error) {
 	// 从引擎 ConnectionInfo 提取 API URL
+	// 优先使用 api_url 字段，如果没有则从 host/port/protocol 构造
 	apiURL, ok := engine.ConnectionInfo["api_url"].(string)
 	if !ok || apiURL == "" {
-		return nil, fmt.Errorf("工作流引擎 %s 缺少 api_url 配置", engine.Name)
+		// 尝试从 host、port、protocol 构造 API URL
+		host, hostOK := engine.ConnectionInfo["host"].(string)
+		portFloat, portOK := engine.ConnectionInfo["port"].(float64) // JSON 数字默认为 float64
+		protocol, protocolOK := engine.ConnectionInfo["protocol"].(string)
+
+		if !hostOK || !portOK || !protocolOK {
+			return nil, fmt.Errorf("工作流引擎 %s 缺少 api_url 或 host/port/protocol 配置", engine.Name)
+		}
+
+		port := int(portFloat)
+		apiURL = fmt.Sprintf("%s://%s:%d", protocol, host, port)
+		log.Printf("📍 [WorkflowEngine] 从 connection_info 构造 API URL: %s", apiURL)
 	}
 
 	// 动态获取 workflow API 端点
@@ -216,9 +326,21 @@ func (s *WorkflowEngineService) executeViaSparkWorkflow(
 	}
 
 	// 2. 从 Spark 工作流引擎 ConnectionInfo 提取 API URL
+	// 优先使用 api_url 字段，如果没有则从 host/port/protocol 构造
 	workflowAPIURL, ok := engine.ConnectionInfo["api_url"].(string)
 	if !ok || workflowAPIURL == "" {
-		return nil, errors.New("Spark 工作流引擎缺少 api_url 配置")
+		// 尝试从 host、port、protocol 构造 API URL
+		host, hostOK := engine.ConnectionInfo["host"].(string)
+		portFloat, portOK := engine.ConnectionInfo["port"].(float64)
+		protocol, protocolOK := engine.ConnectionInfo["protocol"].(string)
+
+		if !hostOK || !portOK || !protocolOK {
+			return nil, errors.New("Spark 工作流引擎缺少 api_url 或 host/port/protocol 配置")
+		}
+
+		port := int(portFloat)
+		workflowAPIURL = fmt.Sprintf("%s://%s:%d", protocol, host, port)
+		log.Printf("📍 [WorkflowEngine] 从 connection_info 构造 Spark 工作流引擎 API URL: %s", workflowAPIURL)
 	}
 
 	// 动态获取 workflow API 端点

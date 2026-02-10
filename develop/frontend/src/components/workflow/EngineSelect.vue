@@ -41,13 +41,13 @@ const emit = defineEmits(['update:modelValue', 'change'])
 const engines = ref([])
 const loading = ref(false)
 
-// 根据 resourceTypes 过滤资源
+// 根据 engineTypes 过滤引擎
 const filteredEngines = computed(() => {
   if (!props.engineTypes || props.engineTypes.length === 0) {
     return engines.value
   }
   return engines.value.filter(r =>
-    props.engineTypes.includes(r.resource_type)
+    props.engineTypes.includes(r.engine_type)
   )
 })
 

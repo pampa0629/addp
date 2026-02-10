@@ -4,6 +4,7 @@
   "private": true,
   "main": "src/index.js",
   "peerDependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "ol": "^9.2.4",
     "vue": "^3.4.0"
   }

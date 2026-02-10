@@ -3,18 +3,6 @@ import { parseLocator, buildLocator } from '@addp/common-frontend'
 import client from '@/api/client'
 
 /**
- * 引擎类型对应的图标
- */
-const ENGINE_ICONS = {
-  postgresql: 'Coin',
-  mysql: 'Coin',
-  mongodb: 'Collection',
-  minio: 'FolderOpened',
-  s3: 'FolderOpened',
-  default: 'Coin'
-}
-
-/**
  * explorerStore - 数据探查状态管理
  * 基于 ResourceLocator URI 系统
  */
@@ -73,7 +61,6 @@ export const useExplorerStore = defineStore('explorer', {
           locator: locator,
           label: engine.name,
           type: 'engine',
-          icon: ENGINE_ICONS[engine.engine_type] || ENGINE_ICONS.default,
           engineId: engine.id,
           engineType: engine.engine_type,
           // 如果已加载树数据，使用树的子节点；否则返回空数组（懒加载）
@@ -184,6 +171,12 @@ export const useExplorerStore = defineStore('explorer', {
         // 后端直接返回 tree 对象（符合 API 规范）
         // API 客户端的 extractData 已提取了 response.data
         const tree = response
+
+        // 获取引擎类型并为所有节点添加 engineType
+        const engine = this.engines.find(e => e.id === engineId)
+        if (engine && tree) {
+          this.addEngineTypeToTree(tree, engine.engine_type)
+        }
 
         // 存储到引擎树缓存中
         this.engineTrees[engineId] = tree
@@ -326,6 +319,14 @@ export const useExplorerStore = defineStore('explorer', {
         // 后端返回 { parent_locator: ..., children: [...] }
         const children = response.children || []
 
+        // 获取引擎类型并为子节点添加 engineType
+        const engine = this.engines.find(e => e.id === loc.engineId)
+        if (engine && children.length > 0) {
+          children.forEach(child => {
+            this.addEngineTypeToTree(child, engine.engine_type)
+          })
+        }
+
         // 4. 更新缓存
         this.nodeChildrenCache[locator] = {
           children,
@@ -434,6 +435,25 @@ export const useExplorerStore = defineStore('explorer', {
       }
 
       return false
+    },
+
+    /**
+     * 为树的所有节点添加 engineType 字段（辅助方法）
+     * @param {Object} tree - 树根节点
+     * @param {string} engineType - 引擎类型
+     */
+    addEngineTypeToTree(tree, engineType) {
+      if (!tree) return
+
+      // 为当前节点添加 engineType
+      tree.engineType = engineType
+
+      // 递归处理子节点
+      if (tree.children && tree.children.length > 0) {
+        for (const child of tree.children) {
+          this.addEngineTypeToTree(child, engineType)
+        }
+      }
     }
   }
 })

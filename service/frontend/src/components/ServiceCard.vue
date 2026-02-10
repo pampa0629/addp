@@ -58,8 +58,8 @@ const props = defineProps({
   },
   source: {
     type: String,
-    default: 'external', // 'external', 'query', 'registered'
-    validator: (value) => ['external', 'query', 'registered'].includes(value)
+    default: 'external', // 'external', 'query', 'registered', 'tile'
+    validator: (value) => ['external', 'query', 'registered', 'tile'].includes(value)
   }
 })
 
@@ -70,7 +70,8 @@ const getSourceTypeColor = (source) => {
   const colors = {
     'query': 'primary',       // 查询服务 - 蓝色
     'registered': 'success',  // 注册服务 - 绿色
-    'external': 'warning'     // 外部服务(旧) - 橙色
+    'tile': 'warning',        // 瓦片服务 - 橙色
+    'external': 'info'        // 外部服务(旧) - 灰色
   }
   return colors[source] || 'info'
 }
@@ -79,6 +80,7 @@ const formatSourceType = (source) => {
   const types = {
     'query': '查询服务',
     'registered': '注册服务',
+    'tile': '瓦片服务',
     'external': '服务注册'
   }
   return types[source] || source
@@ -92,6 +94,14 @@ const getServiceTypes = (service) => {
     // 查询服务：返回所有启用的协议
     const protocols = getEnabledProtocols(service)
     return protocols.map(p => p.key)
+  } else if (props.source === 'tile') {
+    // 瓦片服务：返回所有启用的协议
+    const types = []
+    if (service.protocols?.xyz?.enabled) types.push('xyz')
+    if (service.protocols?.wmts?.enabled || service.protocols?.wmts !== false) types.push('wmts')  // WMTS 默认启用
+    if (service.protocols?.ogc_tiles?.enabled) types.push('ogc_api')
+    if (service.protocols?.tms?.enabled) types.push('tms')
+    return types.length > 0 ? types : ['xyz']  // 默认至少显示 XYZ
   } else if (props.source === 'registered') {
     // 注册服务：返回单一service_type
     return [service.service_type || 'unknown']
@@ -111,6 +121,7 @@ const getServiceTypeColor = (type) => {
     rest_api: 'danger',
     rest: 'danger',
     xyz: 'warning',
+    tms: 'warning',
     unknown: ''
   }
   return colors[type] || 'info'
@@ -126,6 +137,7 @@ const formatServiceType = (type) => {
     rest_api: 'REST API',
     rest: 'REST',
     xyz: 'XYZ Tiles',
+    tms: 'TMS',
     unknown: '未知'
   }
   return types[type] || type.toUpperCase()
@@ -160,7 +172,7 @@ const getServiceDescription = (service) => {
   return service.abstract || service.description || ''
 }
 
-// 获取服务URL（兼容查询服务和注册服务）
+// 获取服务URL（兼容查询服务、注册服务和瓦片服务）
 const getServiceUrl = (service) => {
   if (props.source === 'query') {
     // 查询服务：构建 REST API URL
@@ -172,6 +184,17 @@ const getServiceUrl = (service) => {
       return `/ogc/features/${serviceName}`
     }
     return '未配置服务端点'
+  } else if (props.source === 'tile') {
+    // 瓦片服务：返回瓦片端点
+    const serviceName = service.service_name
+    if (service.protocols?.xyz?.enabled) {
+      return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`
+    } else if (service.protocols?.wmts?.enabled) {
+      return `/wmts/${serviceName}?request=GetCapabilities`
+    } else if (service.protocols?.ogc_tiles?.enabled) {
+      return `/ogc/tiles/${serviceName}`
+    }
+    return `/tiles/${serviceName}/{layerName}/{z}/{x}/{y}.mvt`  // 默认 XYZ
   } else if (props.source === 'registered') {
     // 注册服务：返回端点URL
     return service.endpoint_url || '未配置'

@@ -1,22 +1,33 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
+	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
 // NotebookHandler Notebook 开发 API 处理器
 type NotebookHandler struct {
-	jupyterService *service.JupyterService
+	jupyterService           *service.JupyterService
+	notebookExecutionService *service.NotebookExecutionService
+	devItemService           *service.DevItemService
 }
 
 // NewNotebookHandler 创建 Notebook 处理器
-func NewNotebookHandler(jupyterService *service.JupyterService) *NotebookHandler {
+func NewNotebookHandler(
+	jupyterService *service.JupyterService,
+	notebookExecutionService *service.NotebookExecutionService,
+	devItemService *service.DevItemService,
+) *NotebookHandler {
 	return &NotebookHandler{
-		jupyterService: jupyterService,
+		jupyterService:           jupyterService,
+		notebookExecutionService: notebookExecutionService,
+		devItemService:           devItemService,
 	}
 }
 
@@ -173,5 +184,279 @@ func (h *NotebookHandler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "healthy",
 		"message": "Jupyter Engine 运行正常",
+	})
+}
+
+// UploadNotebookRequest 上传 Notebook 请求
+type UploadNotebookRequest struct {
+	Name        string                 `json:"name" binding:"required"`
+	Description string                 `json:"description"`
+	DataSources []uint                 `json:"data_sources"` // 数据源 engine IDs
+	Parameters  map[string]interface{} `json:"parameters"`
+	Kernel      string                 `json:"kernel"` // 默认 python3
+	Tags        []string               `json:"tags"`
+}
+
+// UploadNotebook 上传 Notebook 文件并创建 dev_item
+// @Summary 上传 Notebook
+// @Tags Notebook
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "Notebook 文件 (.ipynb)"
+// @Param name formData string true "Notebook 名称"
+// @Param description formData string false "描述"
+// @Param data_sources formData string false "数据源 IDs (JSON 数组)"
+// @Param parameters formData string false "参数 (JSON 对象)"
+// @Success 200 {object} models.DevItem
+// @Router /api/develop/notebooks/upload [post]
+func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
+	// 获取用户信息
+	tenantID, _ := c.Get("tenant_id")
+	userID, _ := c.Get("user_id")
+
+	// 读取表单数据
+	name := c.PostForm("name")
+	description := c.PostForm("description")
+	dataSourcesStr := c.PostForm("data_sources")
+	parametersStr := c.PostForm("parameters")
+	kernel := c.PostForm("kernel")
+	if kernel == "" {
+		kernel = "python3"
+	}
+
+	// 解析数据源 IDs
+	var dataSources []uint
+	if dataSourcesStr != "" {
+		if err := json.Unmarshal([]byte(dataSourcesStr), &dataSources); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 data_sources 格式"})
+			return
+		}
+	}
+
+	// 解析参数
+	var parameters map[string]interface{}
+	if parametersStr != "" {
+		if err := json.Unmarshal([]byte(parametersStr), &parameters); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 parameters 格式"})
+			return
+		}
+	}
+	if parameters == nil {
+		parameters = make(map[string]interface{})
+	}
+
+	// 读取上传的文件
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "未上传文件或文件读取失败"})
+		return
+	}
+
+	// 打开文件
+	uploadedFile, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法打开上传的文件"})
+		return
+	}
+	defer uploadedFile.Close()
+
+	// 读取文件内容
+	notebookContent, err := io.ReadAll(uploadedFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "无法读取文件内容"})
+		return
+	}
+
+	// 只存储文件名作为 notebook_path（相对路径）
+	// Jupyter Engine 会根据 tenant_id 自动拼接完整路径：tenant_{tenant_id}/notebooks/{notebook_path}
+	notebookPath := file.Filename
+
+	// 生成完整 MinIO 路径用于保存文件
+	minioPath := fmt.Sprintf("tenant_%d/notebooks/%s", tenantID, file.Filename)
+
+	// 保存到 MinIO
+	if h.notebookExecutionService != nil {
+		if err := h.notebookExecutionService.SaveNotebookToMinIO(c.Request.Context(), minioPath, notebookContent); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("保存到 MinIO 失败: %v", err)})
+			return
+		}
+	} else {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "NotebookExecutionService 未初始化"})
+		return
+	}
+
+	// 创建 dev_item
+	content := models.DevItemContent{
+		"notebook_path": notebookPath, // 相对路径（仅文件名）
+		"kernel":        kernel,
+		"parameters":    parameters,
+		"data_sources":  dataSources,
+		"description":   description,
+	}
+
+	createReq := &models.CreateDevItemRequest{
+		Name:        name,
+		DisplayName: name,
+		DevType:     "notebook",
+		Content:     content,
+		Description: description,
+		Timeout:     600, // 默认 10 分钟
+	}
+
+	devItem, err := h.devItemService.CreateDevItem(createReq, tenantID.(uint), userID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建 dev_item 失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Notebook 上传成功",
+		"dev_item": devItem,
+	})
+}
+
+// DownloadNotebook 下载 Notebook 文件
+// @Summary 下载 Notebook
+// @Tags Notebook
+// @Produce application/json
+// @Param id path int true "DevItem ID"
+// @Success 200 {file} binary
+// @Router /api/develop/notebooks/:id/download [get]
+func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
+	// 获取用户信息
+	tenantID, _ := c.Get("tenant_id")
+
+	// 获取 dev_item ID
+	var uri struct {
+		ID uint `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	// 查询 dev_item
+	devItem, err := h.devItemService.GetDevItem(uri.ID, tenantID.(uint))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
+		return
+	}
+
+	if devItem.DevType != "notebook" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不是 Notebook 类型"})
+		return
+	}
+
+	// 获取 MinIO 路径
+	minioPath, ok := devItem.Content["minio_path"].(string)
+	if !ok || minioPath == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Notebook 路径不存在"})
+		return
+	}
+
+	// 从 MinIO 读取文件
+	if h.notebookExecutionService == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "NotebookExecutionService 未初始化"})
+		return
+	}
+
+	notebookContent, err := h.notebookExecutionService.ReadNotebookFromMinIO(c.Request.Context(), minioPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取 Notebook 失败: %v", err)})
+		return
+	}
+
+	// 设置响应头
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.ipynb", devItem.Name))
+	c.Header("Content-Type", "application/json")
+	c.Data(http.StatusOK, "application/json", notebookContent)
+}
+
+// ListNotebooks 列出用户的 Notebooks
+// @Summary 列出 Notebooks
+// @Tags Notebook
+// @Produce json
+// @Param page query int false "页码" default(1)
+// @Param page_size query int false "每页数量" default(20)
+// @Success 200 {object} models.ListDevItemsResponse
+// @Router /api/develop/notebooks [get]
+func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
+	// 获取用户信息
+	tenantID, _ := c.Get("tenant_id")
+
+	// 解析查询参数
+	var req models.ListDevItemsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 强制过滤 dev_type='notebook'
+	req.DevType = "notebook"
+
+	// 设置默认值
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.PageSize <= 0 {
+		req.PageSize = 20
+	}
+
+	// 查询列表
+	items, total, err := h.devItemService.ListDevItems(&req, tenantID.(uint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("查询失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.ListDevItemsResponse{
+		Items:    items,
+		Total:    total,
+		Page:     req.Page,
+		PageSize: req.PageSize,
+	})
+}
+
+// DeleteNotebook 删除 Notebook
+// @Summary 删除 Notebook
+// @Tags Notebook
+// @Param id path int true "DevItem ID"
+// @Success 200 {object} map[string]string
+// @Router /api/develop/notebooks/:id [delete]
+func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
+	// 获取用户信息
+	tenantID, _ := c.Get("tenant_id")
+
+	// 获取 dev_item ID
+	var uri struct {
+		ID uint `uri:"id" binding:"required"`
+	}
+	if err := c.ShouldBindUri(&uri); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	// 查询 dev_item
+	devItem, err := h.devItemService.GetDevItem(uri.ID, tenantID.(uint))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
+		return
+	}
+
+	if devItem.DevType != "notebook" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不是 Notebook 类型"})
+		return
+	}
+
+	// 删除 dev_item（软删除）
+	if err := h.devItemService.DeleteDevItem(uri.ID, tenantID.(uint)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("删除失败: %v", err)})
+		return
+	}
+
+	// TODO: 可选择从 MinIO 删除文件（暂时保留文件，仅软删除 dev_item）
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Notebook 删除成功",
 	})
 }

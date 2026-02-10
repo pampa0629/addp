@@ -114,7 +114,7 @@
     <!-- 保存任务对话框 -->
     <SaveQueryDialog
       v-model="showSaveDialog"
-      :resource-id="selectedEngineId"
+      :engine-id="selectedEngineId"
       :sql="queryContent"
       @saved="handleSaveTask"
     />

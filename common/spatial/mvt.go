@@ -76,13 +76,19 @@ func BuildMVTQuery(schema, table, geomCol string, cols []string, z, x, y int, op
 	if len(quoted) > 0 {
 		colsSQL = ", " + strings.Join(quoted, ", ")
 	}
-
+	
 	// 基础参数
 	args := []interface{}{z, x, y, opt.Layer, opt.Extent, opt.Buffer}
 
-	// 简单模式：直接使用源表的几何字段（不做 ST_Transform）
-	// 假设源表已经在 3857 或已通过物化视图转换
-	geomExpr := "t." + qGeom
+	// 构建几何表达式：如果源数据不是 3857，需要进行坐标转换
+	var geomExpr string
+	if opt.SRID != 3857 {
+		// 需要坐标转换
+		geomExpr = fmt.Sprintf("ST_Transform(t.%s, 3857)", qGeom)
+	} else {
+		// 已经是 3857，直接使用
+		geomExpr = "t." + qGeom
+	}
 
 	sql := fmt.Sprintf(`
 WITH b AS (
@@ -100,15 +106,15 @@ FROM (
       true
     ) AS geom%s
   FROM %s.%s AS t, b
-  WHERE t.%s && b.g3857
-    AND ST_Intersects(t.%s, b.g3857)
+  WHERE %s && b.g3857
+    AND ST_Intersects(%s, b.g3857)
 ) AS m`,
 		geomExpr,
 		colsSQL,
 		qSchema,
 		qTable,
-		qGeom,
-		qGeom,
+		geomExpr,  // 使用 geomExpr 而不是 t.qGeom
+		geomExpr,  // 使用 geomExpr 而不是 t.qGeom
 	)
 
 	return sql, args
@@ -171,9 +177,9 @@ func GenerateMVTTileWithConfig(
 	// 构建 SQL 查询和参数
 	sql, args := BuildMVTQuery(schema, table, geomCol, columns, z, x, y, opts, "")
 
-	// 执行查询
+	// 执行查询（ST_AsMVT 返回单个 bytea 值，使用 Row().Scan）
 	var mvtData []byte
-	err := db.Raw(sql, args...).Scan(&mvtData).Error
+	err := db.Raw(sql, args...).Row().Scan(&mvtData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate MVT tile: %w", err)
 	}

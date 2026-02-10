@@ -12,7 +12,7 @@ from enum import Enum
 
 class OperatorCategory(str, Enum):
     """算子分类枚举"""
-    IO = "I/O"
+    DATA_IO = "数据I/O"
     SPATIAL_ANALYSIS = "空间分析"
     DATA_TRANSFORM = "数据转换"
     AGGREGATION = "聚合分析"

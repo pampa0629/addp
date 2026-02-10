@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"log"
 
 	commonConfig "github.com/addp/common/config"
@@ -20,11 +21,17 @@ type Config struct {
 	ManagerServiceURL string
 	MetaServiceURL    string
 
-	// Redis 配置
+	// Redis 配置（用于资源变更事件同步）
 	RedisHost     string
 	RedisPort     string
 	RedisPassword string
 	RedisDB       int
+
+	// MinIO 配置（用于瓦片存储）
+	MinioEndpoint  string
+	MinioAccessKey string
+	MinioSecretKey string
+	MinioUseSSL    bool
 
 	// 定时任务配置
 	HealthCheckCron     string // 健康检查 Cron 表达式
@@ -68,6 +75,15 @@ func Load() *Config {
 	cfg.RedisPort = commonConfig.GetEnv("REDIS_PORT", "6379")
 	cfg.RedisPassword = commonConfig.GetEnv("REDIS_PASSWORD", "")
 	cfg.RedisDB = commonConfig.GetEnvInt("REDIS_DB", 0)
+
+	// MinIO 配置（用于瓦片存储）
+	// 注意：Service 模块使用系统 infra MinIO，端口从 MINIO_API_PORT 读取
+	minioPort := commonConfig.GetEnv("MINIO_API_PORT", "9000")
+	defaultEndpoint := fmt.Sprintf("localhost:%s", minioPort)
+	cfg.MinioEndpoint = commonConfig.GetEnv("MINIO_SYSTEM_ENDPOINT", commonConfig.GetEnv("MINIO_ENDPOINT", defaultEndpoint))
+	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
+	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
+	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
 
 	// 定时任务配置
 	cfg.HealthCheckCron = commonConfig.GetEnv("SERVICE_HEALTH_CHECK_CRON", "0 * * * *")       // 默认每小时

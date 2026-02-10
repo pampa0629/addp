@@ -250,10 +250,94 @@
             <el-button @click="testEndpoint(ogcFeaturesCollections)">测试</el-button>
           </div>
         </div>
+
+        <!-- Conformance -->
+        <div style="margin-bottom: 12px">
+          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">Conformance:</div>
+          <div class="endpoint-url">
+            <el-input :value="ogcFeaturesConformance" readonly />
+            <el-button @click="copyEndpoint(ogcFeaturesConformance)">复制</el-button>
+            <el-button @click="testEndpoint(ogcFeaturesConformance)">测试</el-button>
+          </div>
+        </div>
+
+        <!-- Items (实际数据) -->
+        <div style="margin-bottom: 12px">
+          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">
+            Items (实际地理数据，限制10条):
+          </div>
+          <div class="endpoint-url">
+            <el-input :value="ogcFeaturesItems" readonly />
+            <el-button @click="copyEndpoint(ogcFeaturesItems)">复制</el-button>
+            <el-button type="primary" @click="testEndpoint(ogcFeaturesItems)">测试</el-button>
+          </div>
+        </div>
       </div>
 
       <div v-if="!isProtocolEnabled('rest_api') && !isProtocolEnabled('ogc_features')" class="no-endpoints">
         <el-empty description="未启用任何协议" />
+      </div>
+    </el-card>
+
+    <!-- 数据预览卡片 -->
+    <el-card header="数据预览" style="margin-bottom: 20px">
+      <div class="preview-controls">
+        <el-button
+          type="primary"
+          @click="loadPreviewData"
+          :loading="previewLoading"
+          :disabled="!isProtocolEnabled('rest_api')"
+        >
+          {{ previewData.length > 0 ? '刷新数据' : '加载数据' }}
+        </el-button>
+        <div v-if="previewData.length > 0" style="color: #606266; font-size: 14px">
+          共 {{ previewPagination.total }} 条记录，当前显示 {{ previewData.length }} 条
+        </div>
+      </div>
+
+      <!-- 数据表格 -->
+      <el-table
+        v-if="previewData.length > 0"
+        :data="previewData"
+        border
+        stripe
+        style="margin-top: 16px"
+        max-height="600"
+        v-loading="previewLoading"
+      >
+        <el-table-column
+          v-for="column in previewColumns"
+          :key="column"
+          :prop="column"
+          :label="column"
+          :min-width="120"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span v-if="isGeometryColumn(column)" class="geometry-data">
+              [几何数据]
+            </span>
+            <span v-else>{{ formatCellValue(row[column]) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 分页 -->
+      <el-pagination
+        v-if="previewData.length > 0"
+        v-model:current-page="previewPagination.page"
+        v-model:page-size="previewPagination.pageSize"
+        :page-sizes="[10, 20, 50, 100]"
+        :total="previewPagination.total"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="loadPreviewData"
+        @size-change="loadPreviewData"
+        style="margin-top: 16px; justify-content: center"
+      />
+
+      <!-- 空状态 -->
+      <div v-if="previewData.length === 0 && !previewLoading" class="preview-empty">
+        <el-empty description="点击「加载数据」按钮查看数据预览" />
       </div>
     </el-card>
   </div>
@@ -265,12 +349,24 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Link } from '@element-plus/icons-vue'
 import queryServiceAPI from '@/api/queryService'
+import { copyToClipboard } from '../utils/serviceHelper'
+import axios from 'axios'
 
 const router = useRouter()
 const route = useRoute()
 
 const service = ref(null)
 const loading = ref(false)
+
+// 数据预览相关状态
+const previewData = ref([])
+const previewColumns = ref([])
+const previewLoading = ref(false)
+const previewPagination = ref({
+  page: 1,
+  pageSize: 20,
+  total: 0
+})
 
 const serviceId = computed(() => route.params.id)
 
@@ -314,6 +410,17 @@ const ogcFeaturesCollections = computed(() => {
   return `${baseURL.value}/ogc/features/${service.value.service_name}/collections`
 })
 
+const ogcFeaturesConformance = computed(() => {
+  if (!service.value) return ''
+  return `${baseURL.value}/ogc/features/${service.value.service_name}/conformance`
+})
+
+const ogcFeaturesItems = computed(() => {
+  if (!service.value) return ''
+  // collectionId 使用服务名称
+  return `${baseURL.value}/ogc/features/${service.value.service_name}/collections/${service.value.service_name}/items?limit=10`
+})
+
 // 方法：检查协议是否启用
 const isProtocolEnabled = (protocolName) => {
   if (!service.value?.protocols || !service.value.protocols[protocolName]) {
@@ -349,11 +456,11 @@ const formatDate = (dateString) => {
 
 // 方法：复制端点
 const copyEndpoint = async (url) => {
-  try {
-    await navigator.clipboard.writeText(url)
+  const success = await copyToClipboard(url)
+  if (success) {
     ElMessage.success('已复制到剪贴板')
-  } catch (error) {
-    ElMessage.error('复制失败')
+  } else {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 
@@ -413,6 +520,69 @@ const goBack = () => {
 
 const goToEdit = () => {
   router.push(`/query-services/${serviceId.value}/edit`)
+}
+
+// 数据预览方法
+const loadPreviewData = async () => {
+  if (!service.value?.service_name) {
+    ElMessage.warning('服务信息未加载')
+    return
+  }
+
+  previewLoading.value = true
+  try {
+    const url = `/api/query/${service.value.service_name}`
+    const params = {
+      page: previewPagination.value.page,
+      page_size: previewPagination.value.pageSize,
+      format: 'json'
+    }
+
+    const response = await axios.get(url, { params })
+
+    if (response.data && response.data.data) {
+      previewData.value = response.data.data
+
+      // 提取列名（从第一行数据中）
+      if (response.data.data.length > 0) {
+        previewColumns.value = Object.keys(response.data.data[0])
+      }
+
+      // 更新分页信息
+      if (response.data.pagination) {
+        previewPagination.value.total = response.data.pagination.total
+      }
+
+      ElMessage.success(`成功加载 ${response.data.data.length} 条数据`)
+    } else {
+      ElMessage.warning('未获取到数据')
+    }
+  } catch (error) {
+    console.error('加载数据预览失败:', error)
+    ElMessage.error('加载数据预览失败: ' + (error.response?.data?.error || error.message))
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+// 判断是否是几何列
+const isGeometryColumn = (columnName) => {
+  const geometryColumnNames = ['geom', 'geometry', 'shape', 'wkb_geometry', 'smgeometry', 'the_geom']
+  return geometryColumnNames.includes(columnName.toLowerCase())
+}
+
+// 格式化单元格值
+const formatCellValue = (value) => {
+  if (value === null || value === undefined) {
+    return '-'
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  if (typeof value === 'number') {
+    return value.toLocaleString()
+  }
+  return value
 }
 
 // 生命周期
@@ -527,5 +697,22 @@ code {
 
 ul {
   line-height: 1.8;
+}
+
+.preview-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.preview-empty {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.geometry-data {
+  color: #909399;
+  font-style: italic;
+  font-size: 12px;
 }
 </style>

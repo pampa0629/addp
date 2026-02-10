@@ -85,7 +85,9 @@ make ports-validate
 | Service Frontend      | 5180     | 8096        | 独立访问                   |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
+| Math Workflow Engine  | 8089     | 8089        | 数学计算工作流引擎         |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |
+| Spark Workflow Engine | 8098     | 8098        | Spark 分布式工作流引擎     |
 | Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python)      |
 | PostgreSQL (System)   | 15432    | 15432       | ADDP 系统元数据            |
 | Redis                 | 16379    | 16379       | 缓存和队列                 |

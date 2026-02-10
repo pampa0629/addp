@@ -25,6 +25,7 @@
         >
           <el-option label="查询" value="query" />
           <el-option label="工作流" value="workflow" />
+          <el-option label="Notebook" value="notebook" />
           <el-option label="脚本" value="script" />
         </el-select>
         <el-select
@@ -387,7 +388,7 @@ const formatTime = (time) => {
 
 // 操作函数
 const handleViewDetail = (row) => {
-  router.push(`/executions/${row.id}`)
+  router.push(`/executions/${row.execution_id}`)
 }
 
 const handleCancel = async (row) => {
@@ -395,7 +396,7 @@ const handleCancel = async (row) => {
     await ElMessageBox.confirm('确定要取消此执行吗？', '确认取消', {
       type: 'warning'
     })
-    await cancelExecution(row.id)
+    await cancelExecution(row.execution_id)
     ElMessage.success('已取消')
     loadExecutions()
     loadStatistics()
@@ -409,7 +410,7 @@ const handleCancel = async (row) => {
 
 const handleRetry = async (row) => {
   try {
-    await retryExecution(row.id)
+    await retryExecution(row.execution_id)
     ElMessage.success('已提交重试')
     loadExecutions()
     loadStatistics()

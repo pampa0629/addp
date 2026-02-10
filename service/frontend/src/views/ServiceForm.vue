@@ -45,10 +45,10 @@
 
         <el-form-item label="认证类型" prop="auth_type">
           <el-radio-group v-model="form.auth_type">
-            <el-radio label="none">无认证</el-radio>
-            <el-radio label="basic">Basic Auth</el-radio>
-            <el-radio label="bearer">Bearer Token</el-radio>
-            <el-radio label="api_key">API Key</el-radio>
+            <el-radio value="none">无认证</el-radio>
+            <el-radio value="basic">Basic Auth</el-radio>
+            <el-radio value="bearer">Bearer Token</el-radio>
+            <el-radio value="api_key">API Key</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -88,8 +88,8 @@
 
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="form.status">
-            <el-radio label="active">活跃</el-radio>
-            <el-radio label="inactive">未激活</el-radio>
+            <el-radio value="active">活跃</el-radio>
+            <el-radio value="inactive">未激活</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -206,14 +206,17 @@ const handleSubmit = async () => {
     await formRef.value.validate()
     submitting.value = true
 
+    // 后端 API 期望的字段名
     const submitData = {
-      name: form.value.name,
-      description: form.value.description,
+      service_name: form.value.name,           // 后端: service_name
+      title: form.value.name,                  // 后端: title (必填，使用 name 作为 title)
+      description: form.value.description || '',
+      keywords: [],                            // 后端: keywords (可选)
       service_type: form.value.service_type,
-      url: form.value.url,
+      endpoint_url: form.value.url,            // 后端: endpoint_url
       auth_type: form.value.auth_type,
-      health_check_url: form.value.health_check,
-      status: form.value.status
+      health_check_url: form.value.health_check || '',
+      auto_refresh_metadata: false             // 后端: auto_refresh_metadata (可选)
     }
 
     // 根据认证类型构建 auth_config
@@ -229,8 +232,11 @@ const handleSubmit = async () => {
     } else if (form.value.auth_type === 'api_key') {
       submitData.auth_config = {
         key: form.value.auth_api_key,
-        key_name: form.value.auth_key_name
+        name: form.value.auth_key_name,        // 后端: name
+        location: 'header'                     // 后端: location
       }
+    } else {
+      submitData.auth_config = {}              // 无认证时也要提供空对象
     }
 
     if (isEdit.value) {

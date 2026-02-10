@@ -38,6 +38,7 @@
           v-model="selections[index + 1]"
           :placeholder="`请选择${getLevelLabel(level)}`"
           filterable
+          :allow-create="allowCreateTable && isLastLevel(index + 1)"
           :loading="loading && currentLoadingLevel === index + 1"
           :multiple="isLastLevel(index + 1) && selectionMode === 'multiple'"
           :collapse-tags="isLastLevel(index + 1) && selectionMode === 'multiple'"
@@ -163,11 +164,19 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  allowCreateTable: {
+    type: Boolean,
+    default: false  // 是否允许在最后一级手动输入新表名
+  },
 
   // 初始状态
   initialEngineId: {
     type: Number,
     default: null
+  },
+  initialSelection: {
+    type: Object,
+    default: null  // { engine_id, schema, table }
   }
 })
 
@@ -189,6 +198,7 @@ const loading = ref(false)
 const currentLoadingLevel = ref(-1)
 const detecting = ref(false)
 const currentSelection = ref(null)
+const lastLoadedInitialSelection = ref(null)  // 记录上次加载的初始值，防止重复加载
 
 // 层级标签映射
 const levelLabels = {
@@ -295,6 +305,55 @@ const loadNextLevel = async (currentLevel) => {
   if (!selectedId) return
 
   const node = nodeCache.value.get(selectedId)
+
+  // 如果是最后一级且允许创建新表，检查是否是手动输入的表名
+  if (!node && props.allowCreateTable && isLastLevel(currentLevel)) {
+    // 用户手动输入了新表名，构造虚拟节点
+    const parentLevel = currentLevel - 1
+    const parentId = selections.value[parentLevel]
+    const parentNode = nodeCache.value.get(parentId)
+    const engineNode = nodeCache.value.get(selections.value[0])
+
+    if (parentNode && engineNode) {
+      const engineId = engineNode.metadata?.engine_id
+      const schemaName = parentNode.label || parentNode.metadata?.name
+      const tableName = selectedId  // 用户输入的表名
+
+      // 构造虚拟表节点的 locator
+      const locator = `addp://engine/${engineId}/path/${schemaName}/${tableName}?type=table`
+
+      // 构造虚拟表节点
+      const virtualTableNode = {
+        id: `virtual-table-${selectedId}`,
+        type: 'table',
+        label: tableName,
+        locator: locator,
+        metadata: {
+          meta_id: null,  // 新表还没有 meta_id
+          name: tableName,
+          engine_id: engineId,
+          parent_id: parentNode.metadata?.meta_id,
+          is_virtual: true  // 标记为虚拟节点
+        }
+      }
+
+      // 缓存虚拟节点
+      nodeCache.value.set(virtualTableNode.id, virtualTableNode)
+
+      // 触发选择完成（跳过几何检测，因为表还不存在）
+      const selection = DataSourceAPI.extractDataSourceSelection(virtualTableNode, {
+        includeGeometry: false
+      })
+
+      if (selection) {
+        selection.isNewTable = true  // 标记为新表
+        currentSelection.value = selection
+        emit('update:selection', selection)
+      }
+      return
+    }
+  }
+
   if (!node) {
     console.error('[DataSourceCascader] Node not found in cache:', selectedId)
     return
@@ -314,11 +373,15 @@ const loadNextLevel = async (currentLevel) => {
   try {
     let children = []
 
-    if (node.type === 'engine') {
-      // 加载第一层（schemas/buckets）
+    // 检查节点是否已经有 children（预加载的）
+    if (node.children && node.children.length > 0) {
+      console.log('[DataSourceCascader] Using preloaded children from node')
+      children = node.children
+    } else if (node.type === 'engine') {
+      // 加载第一层（schemas/buckets）和第二层（tables）
       const engineId = node.metadata.engine_id
       const tree = await DataSourceAPI.getEngineTree(props.apiBaseUrl, engineId, {
-        expandDepth: 1
+        expandDepth: 2
       })
       children = tree.children || []
     } else {
@@ -517,9 +580,88 @@ watch(() => props.initialEngineId, (newValue) => {
   }
 })
 
-// 挂载时加载引擎列表
-onMounted(() => {
-  loadEngines()
+// 加载初始值的函数
+const loadInitialSelection = async (value) => {
+  // 检查是否需要加载（防止重复加载）
+  if (!value || !value.engine_id || !value.schema || !value.table) {
+    return
+  }
+
+  // 比较是否与上次加载的值相同
+  const valueKey = `${value.engine_id}-${value.schema}-${value.table}`
+  if (lastLoadedInitialSelection.value === valueKey) {
+    console.log('[DataSourceCascader] 初始值未变化，跳过加载')
+    return
+  }
+
+  try {
+    console.log('[DataSourceCascader] 加载初始值:', value)
+    lastLoadedInitialSelection.value = valueKey
+
+    // 1. 设置引擎并加载 schemas
+    selections.value[0] = `engine-${value.engine_id}`
+    await loadNextLevel(0)
+
+    // 等待 schema 列表加载完成
+    await new Promise(resolve => setTimeout(resolve, 800))
+
+    // 2. 查找 schema 节点
+    const schemaOptions = levelOptions.value[1] || []
+    const schemaNode = schemaOptions.find(node => {
+      const label = node.label || node.metadata?.name
+      return label === value.schema
+    })
+
+    if (schemaNode) {
+      selections.value[1] = schemaNode.id
+      await loadNextLevel(1)
+
+      // 等待 table 列表加载完成
+      await new Promise(resolve => setTimeout(resolve, 800))
+
+      // 3. 查找 table 节点
+      const tableOptions = levelOptions.value[2] || []
+      const tableNode = tableOptions.find(node => {
+        const label = node.label || node.metadata?.name
+        return label === value.table
+      })
+
+      if (tableNode) {
+        selections.value[2] = tableNode.id
+        // 触发选择完成
+        await handleLevelChange(2)
+        console.log('[DataSourceCascader] 初始值加载完成:', {
+          engine: selections.value[0],
+          schema: selections.value[1],
+          table: selections.value[2]
+        })
+      } else {
+        console.warn('[DataSourceCascader] 未找到表节点:', value.table)
+      }
+    } else {
+      console.warn('[DataSourceCascader] 未找到schema节点:', value.schema)
+    }
+  } catch (error) {
+    console.error('[DataSourceCascader] 加载初始值失败:', error)
+    lastLoadedInitialSelection.value = null  // 重置标志位，允许重试
+  }
+}
+
+// 监听 initialSelection 变化
+watch(() => props.initialSelection, async (newValue) => {
+  // 确保引擎列表已经加载完成
+  if (levelOptions.value[0]?.length > 0) {
+    await loadInitialSelection(newValue)
+  }
+})
+
+// 挂载时加载引擎列表，然后加载初始值
+onMounted(async () => {
+  await loadEngines()
+  // 引擎列表加载完成后，如果有初始值则加载
+  if (props.initialSelection) {
+    await loadInitialSelection(props.initialSelection)
+  }
 })
 
 // 暴露方法

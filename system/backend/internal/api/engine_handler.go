@@ -439,6 +439,7 @@ type RegisterEngineRequest struct {
 	Description    string                 `json:"description"`
 	ConnectionInfo map[string]interface{} `json:"connection_info" binding:"required"`
 	Capabilities   string                 `json:"capabilities"` // JSON 字符串
+	IsBuiltin      bool                   `json:"is_builtin"`   // 是否为内置引擎（对所有租户可见）
 }
 
 // RegisterEngineInternal 内部API：引擎自注册（创建或更新引擎记录并触发连接检查）
@@ -469,7 +470,7 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 	var engine *models.Engine
 	if err != nil {
 		// 不存在 - 创建新记录
-		fmt.Printf("[RegisterEngine] ➕ 引擎不存在，创建新记录\n")
+		fmt.Printf("[RegisterEngine] ➕ 引擎不存在，创建新记录 (is_builtin=%v)\n", req.IsBuiltin)
 		newEngine := models.Engine{
 			Name:             req.Name,
 			EngineType:       req.EngineType,
@@ -478,8 +479,8 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 			ConnectionInfo:   req.ConnectionInfo,
 			Capabilities:     &req.Capabilities,
 			IsActive:         true,
-			IsBuiltin:        false, // 废弃字段，设为 false
-			TenantID:         nil,   // 平台级引擎
+			IsBuiltin:        req.IsBuiltin, // 使用请求中的 is_builtin 值
+			TenantID:         nil,           // 平台级引擎
 			ConnectionStatus: "unknown",
 		}
 
@@ -492,11 +493,12 @@ func (h *EngineHandler) RegisterEngineInternal(c *gin.Context) {
 		engine = &newEngine
 	} else {
 		// 已存在 - 更新记录
-		fmt.Printf("[RegisterEngine] 🔄 引擎已存在 (ID=%d)，更新记录\n", existingEngine.ID)
+		fmt.Printf("[RegisterEngine] 🔄 引擎已存在 (ID=%d)，更新记录 (is_builtin=%v)\n", existingEngine.ID, req.IsBuiltin)
 		existingEngine.Name = req.Name
 		existingEngine.Description = req.Description
 		existingEngine.ConnectionInfo = req.ConnectionInfo
 		existingEngine.Capabilities = &req.Capabilities
+		existingEngine.IsBuiltin = req.IsBuiltin // 更新 is_builtin 字段
 
 		if err := h.engineService.UpdateEngine(existingEngine); err != nil {
 			fmt.Printf("[RegisterEngine] ❌ 更新引擎失败: %v\n", err)

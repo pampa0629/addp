@@ -9,6 +9,7 @@ import (
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
 	"github.com/addp/common/resource"
+	commonUtils "github.com/addp/common/utils"
 	"github.com/addp/manager/internal/models"
 )
 
@@ -213,6 +214,8 @@ func (s *ExplorerService) ListEngines(ctx context.Context, tenantID *uint) ([]*c
 }
 
 // GetEngineList 获取可用于探查的引擎列表
+// Manager 模块只展示具有存储能力的引擎（capabilities 中包含 "storage"）
+// 工作流引擎只有 "compute" 能力，不应显示在 Manager 数据探查界面
 func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine, error) {
 	if s.systemClient == nil {
 		return nil, fmt.Errorf("system client not available")
@@ -230,13 +233,17 @@ func (s *ExplorerService) GetEngineList(tenantID *uint) ([]*commonModels.Engine,
 		return nil, fmt.Errorf("failed to list engines: %w", err)
 	}
 
-	// 转换为指针切片
-	result := make([]*commonModels.Engine, len(engines))
+	// 过滤出具有存储能力的引擎（使用 common/utils 提供的统一工具）
+	// 工作流引擎只有 "compute" 能力，不应显示在 Manager 数据探查界面
+	var storageEngines []*commonModels.Engine
 	for i := range engines {
-		result[i] = &engines[i]
+		// 使用 common/utils 提供的 HasStorageCapability 函数检查存储能力
+		if commonUtils.HasStorageCapability(&engines[i]) {
+			storageEngines = append(storageEngines, &engines[i])
+		}
 	}
 
-	return result, nil
+	return storageEngines, nil
 }
 
 // GetNodeChildren 获取节点的子节点（增量加载）

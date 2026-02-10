@@ -260,7 +260,30 @@ func (s *RegisteredServiceService) performHealthCheck(service *models.Registered
 	// 确定检查URL
 	checkURL := service.HealthCheckURL
 	if checkURL == "" {
-		checkURL = service.EndpointURL
+		// 对于 OGC 服务，使用 GetCapabilities 作为健康检查
+		switch service.ServiceType {
+		case "wms":
+			checkURL = service.EndpointURL
+			if checkURL[len(checkURL)-1] != '?' && checkURL[len(checkURL)-1] != '&' {
+				checkURL += "?"
+			}
+			checkURL += "SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0"
+		case "wfs":
+			checkURL = service.EndpointURL
+			if checkURL[len(checkURL)-1] != '?' && checkURL[len(checkURL)-1] != '&' {
+				checkURL += "?"
+			}
+			checkURL += "SERVICE=WFS&REQUEST=GetCapabilities"
+		case "wmts":
+			checkURL = service.EndpointURL
+			if checkURL[len(checkURL)-1] != '?' && checkURL[len(checkURL)-1] != '&' {
+				checkURL += "?"
+			}
+			checkURL += "SERVICE=WMTS&REQUEST=GetCapabilities"
+		default:
+			// REST 或其他类型，直接使用 EndpointURL
+			checkURL = service.EndpointURL
+		}
 	}
 
 	// 发送HTTP请求
@@ -438,11 +461,21 @@ func (s *RegisteredServiceService) refreshWMSMetadata(service *models.Registered
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	// TODO: 解析XML并提取元数据和图层信息
-	// 这里简化处理，仅存储原始响应
+	// 解析 WMS Capabilities XML 并提取图层信息
+	bodyStr := string(body)
+
+	// 存储元数据
 	metadata := map[string]interface{}{
-		"capabilities_xml": string(body),
+		"capabilities_xml": bodyStr,
 		"refreshed_at":     time.Now(),
+	}
+
+	// 提取服务标题和摘要
+	if title := extractXMLValue(bodyStr, "Title"); title != "" {
+		metadata["service_title"] = title
+	}
+	if abstract := extractXMLValue(bodyStr, "Abstract"); abstract != "" {
+		metadata["service_abstract"] = abstract
 	}
 
 	// 更新元数据
@@ -450,7 +483,39 @@ func (s *RegisteredServiceService) refreshWMSMetadata(service *models.Registered
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
-	log.Printf("[RegisteredService] WMS metadata refreshed for service %s", service.ServiceName)
+	// 提取并存储图层信息
+	layers := extractWMSLayers(bodyStr)
+	log.Printf("[RegisteredService] WMS: extracted %d layers from service %s", len(layers), service.ServiceName)
+
+	// 删除旧图层
+	if err := s.repo.DeleteLayersByServiceID(service.ID); err != nil {
+		return fmt.Errorf("failed to delete old layers: %w", err)
+	}
+
+	// 创建新图层
+	for _, layer := range layers {
+		layerModel := &models.RegisteredServiceLayer{
+			ServiceID:    service.ID,
+			LayerName:    layer.Name,
+			DisplayName:  layer.Title,
+			Description:  layer.Abstract,
+			GeometryType: "Unknown", // WMS 不直接提供几何类型信息
+			CRS:          layer.CRS,
+			BBox:         layer.BBox,
+			Metadata: map[string]interface{}{
+				"queryable": layer.Queryable,
+				"styles":    layer.Styles,
+			},
+			Enabled: true,
+		}
+
+		if err := s.repo.CreateLayer(layerModel); err != nil {
+			log.Printf("Failed to create layer %s: %v", layer.Name, err)
+			continue
+		}
+	}
+
+	log.Printf("[RegisteredService] WMS metadata refreshed for service %s, found %d layers", service.ServiceName, len(layers))
 	return nil
 }
 
@@ -778,7 +843,7 @@ func (s *RegisteredServiceService) buildEndpoints(service *models.RegisteredServ
 	endpoints := make(map[string]string)
 
 	// 代理端点
-	endpoints["proxy"] = fmt.Sprintf("%s/api/service/proxy/%d", s.baseURL, service.ID)
+	endpoints["proxy"] = fmt.Sprintf("%s/api/service/registered/proxy/%d", s.baseURL, service.ID)
 
 	// 原始端点
 	endpoints["original"] = service.EndpointURL
@@ -793,11 +858,6 @@ func (s *RegisteredServiceService) ProxyServiceRequest(serviceID uint, tenantID 
 	service, err := s.repo.GetByID(serviceID)
 	if err != nil {
 		return fmt.Errorf("failed to get service: %w", err)
-	}
-
-	// 验证租户权限
-	if service.TenantID != tenantID {
-		return errors.New("permission denied: service does not belong to tenant")
 	}
 
 	// 2. 获取请求路径
@@ -981,6 +1041,122 @@ func extractWFSBBox(xml string) map[string]interface{} {
 }
 
 // WMTSLayer WMTS 图层信息
+// WMSLayer WMS 图层信息
+type WMSLayer struct {
+	Name      string
+	Title     string
+	Abstract  string
+	CRS       string
+	BBox      map[string]interface{}
+	Queryable bool
+	Styles    []string
+}
+
+// extractWMSLayers 从 WMS Capabilities XML 中提取图层列表
+func extractWMSLayers(xml string) []WMSLayer {
+	var layers []WMSLayer
+
+	// 使用正则表达式提取所有 Layer 块（跳过根 Layer）
+	// WMS Capabilities 的结构是嵌套的 Layer 标签
+	layerPattern := regexp.MustCompile(`(?s)<Layer[^>]*>(.*?)</Layer>`)
+	matches := layerPattern.FindAllStringSubmatch(xml, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			layerXML := match[1]
+
+			// 提取 Name（WMS 使用 Name 作为唯一标识符）
+			name := extractXMLValue(layerXML, "Name")
+
+			// 只处理有 Name 的图层（叶子图层）
+			// 没有 Name 的是容器图层，跳过
+			if name == "" {
+				continue
+			}
+
+			layer := WMSLayer{
+				Name:     name,
+				Title:    extractXMLValue(layerXML, "Title"),
+				Abstract: extractXMLValue(layerXML, "Abstract"),
+				BBox:     make(map[string]interface{}),
+				Styles:   []string{},
+			}
+
+			// 如果 Title 为空，使用 Name
+			if layer.Title == "" {
+				layer.Title = layer.Name
+			}
+
+			// 提取 queryable 属性
+			queryablePattern := regexp.MustCompile(`<Layer[^>]*\s+queryable="(\d+)"`)
+			if queryMatch := queryablePattern.FindStringSubmatch(match[0]); len(queryMatch) > 1 {
+				layer.Queryable = queryMatch[1] == "1"
+			}
+
+			// 提取 CRS/SRS
+			crsPattern := regexp.MustCompile(`<(?:CRS|SRS)>([^<]+)</(?:CRS|SRS)>`)
+			if crsMatch := crsPattern.FindStringSubmatch(layerXML); len(crsMatch) > 1 {
+				layer.CRS = strings.TrimSpace(crsMatch[1])
+			}
+
+			// 提取边界框（使用 EX_GeographicBoundingBox）
+			if bbox := extractWMSBBox(layerXML); bbox != nil {
+				layer.BBox = bbox
+			}
+
+			// 提取样式名称
+			styleNamePattern := regexp.MustCompile(`<Style>.*?<Name>([^<]+)</Name>.*?</Style>`)
+			styleMatches := styleNamePattern.FindAllStringSubmatch(layerXML, -1)
+			for _, styleMatch := range styleMatches {
+				if len(styleMatch) > 1 {
+					layer.Styles = append(layer.Styles, strings.TrimSpace(styleMatch[1]))
+				}
+			}
+
+			layers = append(layers, layer)
+		}
+	}
+
+	log.Printf("[WMS Parser] Extracted %d layers", len(layers))
+	return layers
+}
+
+// extractWMSBBox 从 WMS Layer XML 中提取边界框
+func extractWMSBBox(layerXML string) map[string]interface{} {
+	// 优先使用 EX_GeographicBoundingBox
+	bboxPattern := regexp.MustCompile(`(?s)<EX_GeographicBoundingBox>(.*?)</EX_GeographicBoundingBox>`)
+	if bboxMatch := bboxPattern.FindStringSubmatch(layerXML); len(bboxMatch) > 1 {
+		bboxXML := bboxMatch[1]
+
+		westLon := extractXMLValue(bboxXML, "westBoundLongitude")
+		eastLon := extractXMLValue(bboxXML, "eastBoundLongitude")
+		southLat := extractXMLValue(bboxXML, "southBoundLatitude")
+		northLat := extractXMLValue(bboxXML, "northBoundLatitude")
+
+		if westLon != "" && eastLon != "" && southLat != "" && northLat != "" {
+			return map[string]interface{}{
+				"west":  westLon,
+				"east":  eastLon,
+				"south": southLat,
+				"north": northLat,
+			}
+		}
+	}
+
+	// 如果没有 EX_GeographicBoundingBox，尝试使用 LatLonBoundingBox
+	latlonPattern := regexp.MustCompile(`<LatLonBoundingBox[^>]*minx="([^"]+)"[^>]*miny="([^"]+)"[^>]*maxx="([^"]+)"[^>]*maxy="([^"]+)"`)
+	if latlonMatch := latlonPattern.FindStringSubmatch(layerXML); len(latlonMatch) > 4 {
+		return map[string]interface{}{
+			"west":  latlonMatch[1],
+			"south": latlonMatch[2],
+			"east":  latlonMatch[3],
+			"north": latlonMatch[4],
+		}
+	}
+
+	return nil
+}
+
 type WMTSLayer struct {
 	Identifier       string
 	Title            string

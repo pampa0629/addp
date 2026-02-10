@@ -6,7 +6,6 @@ import (
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
 	"github.com/addp/common/middleware/auth"
-	"github.com/addp/common/middleware/cors"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/repository"
 	"github.com/addp/manager/internal/service"
@@ -30,8 +29,7 @@ func SetupRouter(
 ) *gin.Engine {
 	router := gin.Default()
 
-	// CORS
-	router.Use(cors.CORS())
+	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {

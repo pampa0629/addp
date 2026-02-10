@@ -20,47 +20,49 @@
 
     <!-- Step 0: 选择配置方式（仅新建模式） -->
     <div v-if="!isEdit && currentStep === 0">
-      <el-card>
+      <el-card class="config-step-card">
         <template #header>
           <span>选择数据源配置方式</span>
         </template>
 
-        <el-radio-group v-model="form.config_type" style="width: 100%">
-          <el-card
-            shadow="hover"
-            :class="{ 'selected-card': form.config_type === 'table' }"
-            style="margin-bottom: 16px; cursor: pointer"
+        <el-radio-group v-model="form.config_type" class="config-radio-group">
+          <div
+            class="config-card-wrapper"
+            :class="{ 'selected': form.config_type === 'table' }"
             @click="form.config_type = 'table'"
           >
-            <el-radio label="table" style="width: 100%">
-              <div class="config-type-card">
-                <h3><el-icon><Grid /></el-icon> 界面配置（推荐）</h3>
-                <p>通过界面选择数据表，系统自动检测空间字段和元数据</p>
-                <p>✅ 支持动态查询参数（filter、fields、orderBy）</p>
-                <p>✅ 可选择默认返回字段和可过滤字段</p>
-                <p>✅ 自动检测空间字段并启用 OGC Features</p>
-                <el-tag type="success" size="small">推荐用于单表查询</el-tag>
+            <el-radio value="table" class="config-radio">
+              <div class="config-content">
+                <h3><el-icon><Grid /></el-icon> 表配置模式（推荐新手）</h3>
+                <p class="description">通过界面选择数据表，系统自动检测空间字段和元数据</p>
+                <div class="features">
+                  <p>✅ 支持动态查询参数（filter、fields、orderBy）</p>
+                  <p>✅ 可选择默认返回字段和可过滤字段</p>
+                  <p>✅ 自动检测空间字段并启用 OGC Features</p>
+                </div>
+                <el-tag type="success" size="small">适用场景：单表查询、快速发布数据服务</el-tag>
               </div>
             </el-radio>
-          </el-card>
+          </div>
 
-          <el-card
-            shadow="hover"
-            :class="{ 'selected-card': form.config_type === 'sql' }"
-            style="cursor: pointer"
+          <div
+            class="config-card-wrapper"
+            :class="{ 'selected': form.config_type === 'sql' }"
             @click="form.config_type = 'sql'"
           >
-            <el-radio label="sql" style="width: 100%">
-              <div class="config-type-card">
-                <h3><el-icon><Document /></el-icon> SQL 配置（高级）</h3>
-                <p>编写自定义 SQL 查询语句</p>
-                <p>✅ 支持复杂查询（JOIN、子查询、聚合）</p>
-                <p>✅ 支持计算字段和自定义过滤逻辑</p>
-                <p>⚠️ 仅支持分页参数（page、page_size、format）</p>
-                <el-tag type="warning" size="small">适合复杂查询场景</el-tag>
+            <el-radio value="sql" class="config-radio">
+              <div class="config-content">
+                <h3><el-icon><Document /></el-icon> SQL 配置模式（适合高级用户）</h3>
+                <p class="description">编写自定义 SQL 查询语句，灵活控制数据输出</p>
+                <div class="features">
+                  <p>✅ 支持复杂查询（JOIN、子查询、聚合）</p>
+                  <p>✅ 支持计算字段和自定义过滤逻辑</p>
+                  <p>⚠️ 仅支持分页参数（page、page_size、format）</p>
+                </div>
+                <el-tag type="warning" size="small">适用场景：复杂业务查询、多表关联、数据计算</el-tag>
               </div>
             </el-radio>
-          </el-card>
+          </div>
         </el-radio-group>
       </el-card>
     </div>
@@ -74,16 +76,14 @@
             <span>选择数据表</span>
           </template>
 
-          <DataSourceSelector
+          <DataSourceCascader
             :api-base-url="metaApiBaseUrl"
             :engine-types="['postgresql', 'mysql', 'doris', 'clickhouse']"
             :selectable-node-types="['table']"
             :enable-geometry-detection="true"
             :require-geometry="false"
             :show-selection-info="true"
-            tree-height="400px"
             @update:selection="handleTableSelection"
-            @geometry-detected="handleGeometryDetected"
           />
 
           <el-form :model="form" label-width="120px" style="margin-top: 16px">
@@ -127,12 +127,15 @@
             <el-form-item label="存储引擎" required>
               <el-select v-model="form.engine_id" placeholder="请选择存储引擎" style="width: 400px">
                 <el-option
-                  v-for="engine in engines"
+                  v-for="engine in sqlSupportedEngines"
                   :key="engine.id"
-                  :label="`${engine.name} (${engine.type})`"
+                  :label="`${engine.name} (${engine.engine_type})`"
                   :value="engine.id"
                 />
               </el-select>
+              <div class="help-text">
+                仅显示支持 SQL 查询的存储引擎
+              </div>
             </el-form-item>
 
             <el-form-item label="SQL 查询语句" required>
@@ -149,6 +152,20 @@
             </el-form-item>
 
             <el-divider content-position="left">空间字段配置（可选）</el-divider>
+
+            <el-form-item>
+              <el-button
+                type="primary"
+                :loading="detectingSQLSpatial"
+                :disabled="!form.engine_id || !form.sql_query"
+                @click="detectSQLSpatialFields"
+              >
+                检测空间字段
+              </el-button>
+              <div class="help-text">
+                自动检测 SQL 查询结果是否包含空间字段，并填充几何列配置
+              </div>
+            </el-form-item>
 
             <el-form-item label="包含空间字段">
               <el-checkbox v-model="sqlHasGeometry">
@@ -168,6 +185,13 @@
                 <el-input-number v-model="sqlSrid" :min="0" :max="999999" placeholder="例如: 4326" />
                 <div class="help-text">
                   空间坐标系统标识符（如 4326 = WGS84）
+                </div>
+              </el-form-item>
+
+              <el-form-item label="几何类型" v-if="sqlGeometryType">
+                <el-tag>{{ sqlGeometryType }}</el-tag>
+                <div class="help-text">
+                  检测到的几何类型
                 </div>
               </el-form-item>
             </div>
@@ -318,9 +342,9 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Grid, Document } from '@element-plus/icons-vue'
+import { ArrowLeft, Grid, Document, Search } from '@element-plus/icons-vue'
 import queryServiceAPI from '@/api/queryService'
-import { DataSourceSelector } from '@common-ui'
+import { DataSourceCascader, detectTableMetadata } from '@common-ui'
 
 const router = useRouter()
 const route = useRoute()
@@ -329,6 +353,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const currentStep = ref(0)
 const detecting = ref(false)
+const detectingSQLSpatial = ref(false)
 
 const isEdit = computed(() => !!route.params.id)
 
@@ -343,17 +368,17 @@ const form = reactive({
   title: '',
   description: '',
   keywords: [],
-  public_access: false,
+  public_access: true, // 默认公开访问
   max_features: 1000
 })
 
-// 存储引擎列表（不再需要手动维护，DataSourceSelector 会从 Meta 模块加载）
+// 存储引擎列表（SQL 模式下使用）
+const engines = ref([])
 
-// Meta API 基础 URL
+// Service API 基础 URL（用于 DataSourceCascader）
+// 通过 Service 后端统一访问数据源信息
 const metaApiBaseUrl = computed(() => {
-  return import.meta.env.DEV
-    ? 'http://localhost:8082/api/meta'
-    : '/api/meta'
+  return '/api/service'
 })
 
 // 空间元数据
@@ -363,6 +388,7 @@ const spatialMetadata = ref(null)
 const sqlHasGeometry = ref(false)
 const sqlGeometryColumn = ref('')
 const sqlSrid = ref(4326)
+const sqlGeometryType = ref('')
 
 // 字段配置输入
 const defaultFieldsInput = ref('')
@@ -399,6 +425,15 @@ const hasGeometryField = computed(() => {
   } else {
     return sqlHasGeometry.value
   }
+})
+
+// 计算属性：支持 SQL 的存储引擎（过滤掉对象存储）
+const sqlSupportedEngines = computed(() => {
+  const supportedTypes = ['postgresql', 'mysql', 'doris', 'clickhouse', 'mongodb', 'spark']
+  return engines.value.filter(engine => {
+    const engineType = engine.engine_type?.toLowerCase() || ''
+    return supportedTypes.includes(engineType)
+  })
 })
 
 // 计算属性：是否可以进入下一步
@@ -446,7 +481,53 @@ const detectSpatialFields = async () => {
   }
 }
 
-// 方法：处理表选择（DataSourceSelector 回调）
+// 方法：检测 SQL 查询结果的空间字段
+const detectSQLSpatialFields = async () => {
+  if (!form.engine_id || !form.sql_query) {
+    ElMessage.warning('请先选择存储引擎并输入 SQL 查询')
+    return
+  }
+
+  console.log('[QueryServiceForm] Detecting SQL spatial fields...', {
+    engine_id: form.engine_id,
+    sql: form.sql_query
+  })
+
+  detectingSQLSpatial.value = true
+  try {
+    const response = await queryServiceAPI.detectSQLSpatialMetadata({
+      engine_id: form.engine_id,
+      sql: form.sql_query
+    })
+
+    console.log('[QueryServiceForm] Detection response:', response)
+
+    if (response.has_geometry) {
+      // 自动填充空间字段信息
+      sqlHasGeometry.value = true
+      sqlGeometryColumn.value = response.geometry_column
+      sqlSrid.value = response.srid || 4326
+      sqlGeometryType.value = response.geometry_type || ''
+
+      ElMessage.success(`检测到空间字段: ${response.geometry_column} (SRID: ${response.srid})`)
+    } else {
+      // 未检测到空间字段
+      sqlHasGeometry.value = false
+      sqlGeometryColumn.value = ''
+      sqlSrid.value = 4326
+      sqlGeometryType.value = ''
+
+      ElMessage.info('未检测到空间字段')
+    }
+  } catch (error) {
+    console.error('[QueryServiceForm] SQL spatial detection failed:', error)
+    ElMessage.warning('空间字段检测失败: ' + (error.message || error.response?.data?.error || '未知错误'))
+  } finally {
+    detectingSQLSpatial.value = false
+  }
+}
+
+// 方法：处理表选择（DataSourceCascader 回调）
 const handleTableSelection = (selection) => {
   console.log('[QueryServiceForm] Table selection:', selection)
 
@@ -462,7 +543,7 @@ const handleTableSelection = (selection) => {
   // 更新表单字段
   form.engine_id = selection.engineId
   form.schema_name = selection.schema
-  form.table_name = selection.table
+  form.table_name = selection.tableName
 
   // 如果检测到几何列,自动启用 OGC Features
   if (selection.hasGeometry) {
@@ -611,13 +692,20 @@ const goBack = () => {
 
 // 生命周期：加载编辑数据
 onMounted(async () => {
-  // TODO: 加载存储引擎列表
-  // engines.value = await systemAPI.getEngines()
+  // 加载存储引擎列表（SQL 模式下使用）
+  try {
+    const response = await queryServiceAPI.getStorageEngines()
+    engines.value = response?.data || []
+  } catch (error) {
+    console.error('[QueryServiceForm] 加载存储引擎失败:', error)
+    ElMessage.warning('加载存储引擎失败，SQL 模式可能无法使用')
+  }
 
   if (isEdit.value) {
     loading.value = true
     try {
       const service = await queryServiceAPI.getService(route.params.id)
+      console.log('[QueryServiceForm] 编辑模式：加载服务数据', service)
 
       // 填充表单（编辑模式只能修改服务信息，不能修改数据源）
       Object.assign(form, {
@@ -628,6 +716,52 @@ onMounted(async () => {
         public_access: service.public_access,
         max_features: service.max_features
       })
+
+      // 填充数据源配置（用于显示和检测空间字段）
+      // 注意：数据源配置字段直接在服务对象顶层，不是嵌套在 source_config 下
+      form.config_type = service.config_type || 'table'
+      form.engine_id = service.engine_id
+      form.schema_name = service.schema_name || ''
+      form.table_name = service.table_name || ''
+      form.sql_query = service.sql_query || ''
+
+      console.log('[QueryServiceForm] 编辑模式：数据源配置', {
+        config_type: form.config_type,
+        engine_id: form.engine_id,
+        schema_name: form.schema_name,
+        table_name: form.table_name
+      })
+
+      // 如果是 table 模式且有完整的数据源信息，重新检测空间字段
+      if (form.config_type === 'table' && form.engine_id && form.schema_name && form.table_name) {
+        try {
+          console.log('[QueryServiceForm] 编辑模式：开始检测空间字段...')
+          const geometryInfo = await detectTableMetadata(metaApiBaseUrl.value, {
+            engine_id: form.engine_id,
+            schema: form.schema_name,
+            table: form.table_name
+          })
+
+          console.log('[QueryServiceForm] 编辑模式：检测结果', geometryInfo)
+
+          if (geometryInfo.has_geometry) {
+            spatialMetadata.value = {
+              hasGeometry: true,
+              geometryColumn: geometryInfo.geometry_column,
+              srid: geometryInfo.srid,
+              geometryTypes: geometryInfo.geometry_types || [],
+              extent: geometryInfo.extent
+            }
+            console.log('[QueryServiceForm] 编辑模式：检测到空间字段', geometryInfo.geometry_column)
+          } else {
+            spatialMetadata.value = { hasGeometry: false }
+            console.log('[QueryServiceForm] 编辑模式：未检测到空间字段')
+          }
+        } catch (error) {
+          console.error('[QueryServiceForm] 编辑模式：空间字段检测失败:', error)
+          spatialMetadata.value = { hasGeometry: false }
+        }
+      }
 
       // 协议配置
       if (service.protocols?.ogc_features?.enabled) {
@@ -664,29 +798,99 @@ onMounted(async () => {
   color: #303133;
 }
 
-.config-type-card {
-  padding-left: 32px;
+.config-step-card {
+  overflow: visible;
 }
 
-.config-type-card h3 {
+.config-step-card :deep(.el-card__body) {
+  overflow: visible;
+  height: auto;
+  max-height: none;
+}
+
+.config-radio-group {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+  width: 100%;
+}
+
+.config-card-wrapper {
+  flex: 1;
+  border: 2px solid #dcdfe6;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.config-card-wrapper:hover {
+  border-color: #409eff;
+  box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.2);
+}
+
+.config-card-wrapper.selected {
+  border-color: #409eff;
+  background-color: #f0f7ff;
+  box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
+}
+
+.config-radio {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  margin: 0 !important;
+  height: auto;
+}
+
+.config-radio :deep(.el-radio__input) {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.config-radio :deep(.el-radio__label) {
+  width: 100%;
+  padding-left: 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.config-content {
+  width: 100%;
+  overflow: visible;
+}
+
+.config-content h3 {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 0 12px 0;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 600;
   color: #303133;
 }
 
-.config-type-card p {
-  margin: 6px 0;
+.config-content .description {
+  margin: 0 0 12px 0;
   font-size: 14px;
   color: #606266;
   line-height: 1.6;
 }
 
-.selected-card {
-  border-color: #409eff;
-  box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
+.config-content .features {
+  margin-bottom: 12px;
+}
+
+.config-content .features p {
+  margin: 6px 0;
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
 }
 
 .help-text {

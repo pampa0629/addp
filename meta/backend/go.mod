@@ -6,7 +6,6 @@ toolchain go1.24.2
 
 require (
 	github.com/addp/common v0.0.0
-	github.com/gin-contrib/cors v1.5.0
 	github.com/gin-gonic/gin v1.11.0
 	github.com/hibiken/asynq v0.25.1
 	github.com/meilisearch/meilisearch-go v0.26.0

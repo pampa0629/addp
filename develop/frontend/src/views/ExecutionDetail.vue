@@ -190,7 +190,11 @@
               :closable="false"
               show-icon
             >
-              <pre style="margin-top: 8px; white-space: pre-wrap;">{{ execution?.error_message }}</pre>
+              <template v-if="execution?.result?.traceback">
+                <div style="margin-top: 12px; margin-bottom: 8px; font-weight: bold;">详细堆栈信息:</div>
+                <pre class="error-traceback">{{ execution.result.traceback }}</pre>
+              </template>
+              <pre v-else style="margin-top: 8px; white-space: pre-wrap;">{{ execution?.error_message }}</pre>
             </el-alert>
           </div>
         </el-tab-pane>
@@ -233,6 +237,13 @@ const loadExecution = async (silent = false) => {
     const id = route.params.id
     const data = await getExecution(id)
     execution.value = data
+
+    // 从 execution.result 中读取日志
+    if (data.result && data.result.logs) {
+      logs.value = data.result.logs
+    } else {
+      logs.value = []
+    }
   } catch (error) {
     console.error('加载执行详情失败:', error)
     if (!silent) {
@@ -241,8 +252,14 @@ const loadExecution = async (silent = false) => {
   }
 }
 
-// 加载执行日志
+// 加载执行日志（保留向后兼容，但优先使用 result 中的日志）
 const loadLogs = async () => {
+  // 如果 result 中已有日志，则不再单独加载
+  if (execution.value?.result?.logs) {
+    logs.value = execution.value.result.logs
+    return
+  }
+
   try {
     const id = route.params.id
     const data = await getExecutionLogs(id)
@@ -523,6 +540,21 @@ onUnmounted(() => {
   color: #606266;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
+}
+
+.error-traceback {
+  background: #fff5f5;
+  color: #c45656;
+  padding: 12px;
+  border-radius: 4px;
+  overflow: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  border: 1px solid #fde2e2;
+  max-height: 400px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
 @keyframes rotate {

@@ -64,12 +64,30 @@ func main() {
 	jupyterService := service.NewJupyterService(cfg)
 	log.Printf("✅ JupyterService 初始化完成")
 
+	// 3.5 Jupyter实例管理服务（租户隔离的 Jupyter 容器管理）
+	jupyterInstanceService, err := service.NewJupyterInstanceService(cfg)
+	if err != nil {
+		log.Printf("⚠️  JupyterInstanceService 初始化失败: %v", err)
+		jupyterInstanceService = nil
+	} else {
+		log.Printf("✅ JupyterInstanceService 初始化完成")
+	}
+
+	// 3.6 NotebookExecutionService（Notebook 完整执行服务）
+	notebookExecutionService, err := service.NewNotebookExecutionService(cfg, systemClient, jupyterService)
+	if err != nil {
+		log.Printf("⚠️  NotebookExecutionService 初始化失败: %v（将使用简化模式）", err)
+		notebookExecutionService = nil // 允许降级到简化模式
+	} else {
+		log.Printf("✅ NotebookExecutionService 初始化完成")
+	}
+
 	// 4. DevItem业务逻辑服务
 	devItemService := service.NewDevItemService(devItemRepo)
 	log.Printf("✅ DevItemService 初始化完成")
 
 	// 5. DevExecutor 统一执行器
-	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine, jupyterService)
+	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成")
 
 	// 5. 算子发现服务（动态发现工作流引擎）
@@ -87,11 +105,19 @@ func main() {
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
 	queryHandler := api.NewQueryHandler(sqlEngine, devItemService)
-	notebookHandler := api.NewNotebookHandler(jupyterService)
+	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devItemService)
+
+	// Jupyter 实例管理 Handler
+	var jupyterInstanceHandler *api.JupyterInstanceHandler
+	if jupyterInstanceService != nil {
+		jupyterInstanceHandler = api.NewJupyterInstanceHandler(jupyterInstanceService)
+		log.Printf("✅ JupyterInstanceHandler 初始化完成")
+	}
+
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, devItemService, systemClient)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, devItemService, systemClient)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 模块注册（注册到 System service_registry）==========

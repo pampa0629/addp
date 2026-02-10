@@ -7,8 +7,8 @@ Spark 工作流算子模块
 # 导入所有算子函数
 from .io_operators import load, save, preview, cache, persist
 from .spatial_operators import (
-    st_buffer, st_intersection, st_union, st_centroid,
-    spatial_join, st_distance, st_transform
+    buffer, intersection, union, centroid,
+    spatial_join, distance, transform
 )
 from .transform_operators import (
     select, filter, add_column, rename_column, drop_column
@@ -33,13 +33,13 @@ _OPERATOR_REGISTRY = {
     "persist": persist,
 
     # 空间算子
-    "st_buffer": st_buffer,
-    "st_intersection": st_intersection,
-    "st_union": st_union,
-    "st_centroid": st_centroid,
+    "buffer": buffer,
+    "intersection": intersection,
+    "union": union,
+    "centroid": centroid,
     "spatial_join": spatial_join,
-    "st_distance": st_distance,
-    "st_transform": st_transform,
+    "distance": distance,
+    "transform": transform,
 
     # 数据转换算子
     "select": select,
@@ -99,8 +99,8 @@ def list_operators():
 __all__ = [
     # 算子函数
     "load", "save", "preview", "cache", "persist",
-    "st_buffer", "st_intersection", "st_union", "st_centroid",
-    "spatial_join", "st_distance", "st_transform",
+    "buffer", "intersection", "union", "centroid",
+    "spatial_join", "distance", "transform",
     "select", "filter", "add_column", "rename_column", "drop_column",
     "group_by", "join",
     "sql", "create_temp_view",

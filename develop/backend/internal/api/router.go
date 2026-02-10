@@ -21,6 +21,7 @@ func SetupRouter(
 	engineHandler *EngineHandler,
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
+	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理
 	devItemService interface{}, // 添加 devItemService 参数
 	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
@@ -129,10 +130,27 @@ func SetupRouter(
 		// ========== Notebook 开发 ==========
 		notebooks := api.Group("/notebooks")
 		{
-			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL)   // 获取 Jupyter Lab URL
-			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)     // 执行 Notebook
-			notebooks.GET("/kernels", notebookHandler.ListKernels)          // 列出可用 Kernel
-			notebooks.GET("/health", notebookHandler.HealthCheck)           // 健康检查
+			notebooks.POST("/jupyter-url", notebookHandler.GetJupyterURL)     // 获取 Jupyter Lab URL
+			notebooks.POST("/execute", notebookHandler.ExecuteNotebook)       // 执行 Notebook（临时）
+			notebooks.GET("/kernels", notebookHandler.ListKernels)            // 列出可用 Kernel
+			notebooks.GET("/health", notebookHandler.HealthCheck)             // 健康检查
+
+			// 新增：Notebook 管理 API
+			notebooks.POST("/upload", notebookHandler.UploadNotebook)         // 上传 Notebook
+			notebooks.GET("", notebookHandler.ListNotebooks)                  // 列出 Notebooks
+			notebooks.GET("/:id/download", notebookHandler.DownloadNotebook)  // 下载 Notebook
+			notebooks.DELETE("/:id", notebookHandler.DeleteNotebook)          // 删除 Notebook
+		}
+
+		// ========== Jupyter 实例管理 ==========
+		if jupyterInstanceHandler != nil {
+			jupyter := api.Group("/jupyter")
+			{
+				jupyter.POST("/instance/start", jupyterInstanceHandler.StartInstance)     // 启动 Jupyter 实例
+				jupyter.POST("/instance/stop", jupyterInstanceHandler.StopInstance)       // 停止 Jupyter 实例
+				jupyter.GET("/instance/status", jupyterInstanceHandler.GetInstanceStatus) // 获取实例状态
+				jupyter.GET("/instances", jupyterInstanceHandler.ListInstances)           // 列出所有实例（管理员）
+			}
 		}
 	}
 

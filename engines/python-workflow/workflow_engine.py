@@ -6,9 +6,14 @@ GeoPandas 工作流引擎
 import geopandas as gpd
 from typing import Dict, Any, List, Union
 import json
+import logging
+import traceback
 from collections import defaultdict, deque
+from datetime import datetime
 
 from operators import get_operator, list_operators
+
+logger = logging.getLogger(__name__)
 
 
 class GeoPandasWorkflowEngine:
@@ -21,6 +26,7 @@ class GeoPandasWorkflowEngine:
         self.tasks = {}              # {task_id: TaskDef}
         self.results = {}            # {task_id: {port_name: GeoDataFrame}}  # 内存缓存(端口结构)
         self.task_order = []         # 拓扑排序后的任务执行顺序
+        self.logs = []               # 执行日志列表
 
     def add_task(self, task_id: str, operator: str, params: Dict[str, Any], depends_on: List[str] = None):
         """
@@ -213,6 +219,21 @@ class GeoPandasWorkflowEngine:
 
         raise ValueError(f"Unsupported geometry input format: {type(geojson_data)}")
 
+    def log(self, level: str, message: str, task_id: str = None):
+        """添加日志条目"""
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "message": message
+        }
+        if task_id:
+            log_entry["task_id"] = task_id
+        self.logs.append(log_entry)
+
+        # 同时输出到 logger
+        log_func = getattr(logger, level.lower(), logger.info)
+        log_func(f"[{task_id or 'workflow'}] {message}")
+
     def execute_task(self, task_id: str) -> Dict[str, gpd.GeoDataFrame]:
         """
         执行单个任务，返回端口输出字典
@@ -227,29 +248,41 @@ class GeoPandasWorkflowEngine:
         operator_name = task['operator']
         params = task['params']
 
-        # 解析参数引用
-        resolved_params = self.resolve_references(params)
+        self.log("INFO", f"开始执行算子 '{operator_name}'", task_id)
 
-        # 处理输入参数：如果有 input_gdf 参数且是 GeoJSON，转换为 GeoDataFrame
-        if 'input_gdf' in resolved_params and not isinstance(resolved_params['input_gdf'], gpd.GeoDataFrame):
-            if isinstance(resolved_params['input_gdf'], (dict, str)):
-                resolved_params['input_gdf'] = self.parse_geojson_input(resolved_params['input_gdf'])
+        try:
+            # 解析参数引用
+            resolved_params = self.resolve_references(params)
 
-        # 获取算子函数
-        operator_func = get_operator(operator_name)
+            # 处理输入参数：如果有 input_gdf 参数且是 GeoJSON，转换为 GeoDataFrame
+            if 'input_gdf' in resolved_params and not isinstance(resolved_params['input_gdf'], gpd.GeoDataFrame):
+                if isinstance(resolved_params['input_gdf'], (dict, str)):
+                    resolved_params['input_gdf'] = self.parse_geojson_input(resolved_params['input_gdf'])
 
-        # 执行算子
-        result = operator_func(**resolved_params)
+            # 获取算子函数
+            operator_func = get_operator(operator_name)
 
-        # 自动适配单输出/多输出
-        if isinstance(result, dict):
-            # 多输出: {"large": gdf1, "small": gdf2}
-            return result
-        elif isinstance(result, gpd.GeoDataFrame):
-            # 单输出: 自动包装为 {"default": gdf}
-            return {"default": result}
-        else:
-            raise ValueError(f"Unsupported operator return type: {type(result)}. Expected GeoDataFrame or Dict[str, GeoDataFrame]")
+            # 执行算子
+            result = operator_func(**resolved_params)
+
+            # 自动适配单输出/多输出
+            if isinstance(result, dict):
+                # 多输出: {"large": gdf1, "small": gdf2}
+                output_ports = result
+            elif isinstance(result, gpd.GeoDataFrame):
+                # 单输出: 自动包装为 {"default": gdf}
+                output_ports = {"default": result}
+            else:
+                raise ValueError(f"Unsupported operator return type: {type(result)}. Expected GeoDataFrame or Dict[str, GeoDataFrame]")
+
+            self.log("INFO", f"算子执行成功，输出端口: {list(output_ports.keys())}", task_id)
+            return output_ports
+
+        except Exception as e:
+            error_msg = f"算子执行失败: {str(e)}"
+            self.log("ERROR", error_msg, task_id)
+            self.log("ERROR", f"详细堆栈:\n{traceback.format_exc()}", task_id)
+            raise ValueError(error_msg) from e
 
 
     def run(self, input_data: Dict[str, Any] = None) -> gpd.GeoDataFrame:
@@ -266,8 +299,11 @@ class GeoPandasWorkflowEngine:
         Raises:
             ValueError: 如果工作流定义错误或执行失败
         """
+        self.log("INFO", "开始执行工作流")
+
         # 拓扑排序
         self.task_order = self.topological_sort()
+        self.log("INFO", f"任务执行顺序: {self.task_order}")
 
         # 如果提供了输入数据，存储到 results 中（key 前缀 "input."，包装为端口格式）
         if input_data:
@@ -281,6 +317,7 @@ class GeoPandasWorkflowEngine:
                     self.results[f"input.{key}"] = {"default": self.parse_geojson_input(value)}
                 else:
                     self.results[f"input.{key}"] = {"default": value}
+            self.log("INFO", f"已加载输入数据: {list(input_data.keys())}")
 
         # 逐步执行
         for task_id in self.task_order:
@@ -291,7 +328,9 @@ class GeoPandasWorkflowEngine:
                 self.results[task_id] = port_outputs
 
             except Exception as e:
-                raise ValueError(f"任务 {task_id} 执行失败: {str(e)}")
+                error_msg = f"任务 {task_id} 执行失败: {str(e)}"
+                self.log("ERROR", error_msg)
+                raise ValueError(error_msg) from e
 
         # 返回最后一个任务的结果
         final_task_id = self.task_order[-1]
@@ -299,10 +338,10 @@ class GeoPandasWorkflowEngine:
 
         # 如果只有一个端口，返回该端口
         if len(final_outputs) == 1:
-            return list(final_outputs.values())[0]
+            result = list(final_outputs.values())[0]
         # 如果有 default 端口，返回 default
         elif "default" in final_outputs:
-            return final_outputs["default"]
+            result = final_outputs["default"]
         else:
             # 多个端口且无 default，报错提示
             raise ValueError(
@@ -310,6 +349,9 @@ class GeoPandasWorkflowEngine:
                 f"Available ports: {list(final_outputs.keys())}. "
                 f"Please specify which port to return."
             )
+
+        self.log("INFO", "工作流执行成功")
+        return result
 
     def get_result_geojson(self, task_id: str = None, port: str = None) -> str:
         """
@@ -344,22 +386,34 @@ class GeoPandasWorkflowEngine:
 
         return gdf.to_json()
 
-    def get_all_results_geojson(self) -> Dict[str, Dict[str, str]]:
+    def get_all_results_geojson(self) -> Dict[str, str]:
         """
-        获取所有任务结果的 GeoJSON（按端口）
+        获取所有任务结果的 GeoJSON
 
         Returns:
-            {task_id: {port_name: geojson_string}} 嵌套字典
+            {task_id: geojson_string} 字典（使用默认端口或唯一端口）
         """
         results = {}
         for task_id, port_outputs in self.results.items():
             if task_id.startswith('input.'):
                 continue
-            results[task_id] = {
-                port_name: gdf.to_json()
+
+            # 过滤出 GeoDataFrame 类型的端口
+            gdf_ports = {
+                port_name: gdf
                 for port_name, gdf in port_outputs.items()
                 if isinstance(gdf, gpd.GeoDataFrame)
             }
+
+            # 如果只有一个端口，使用该端口
+            if len(gdf_ports) == 1:
+                gdf = list(gdf_ports.values())[0]
+                results[task_id] = gdf.to_json()
+            # 如果有 default 端口，使用 default
+            elif "default" in gdf_ports:
+                results[task_id] = gdf_ports["default"].to_json()
+            # 否则跳过这个任务（没有明确的输出）
+
         return results
 
     def clear(self):
@@ -367,6 +421,7 @@ class GeoPandasWorkflowEngine:
         self.tasks.clear()
         self.results.clear()
         self.task_order.clear()
+        self.logs.clear()
 
 
 # ========================================
@@ -386,7 +441,8 @@ def execute_workflow(workflow_def: Dict[str, Any], input_data: Dict[str, Any] = 
             {
                 "status": "success",
                 "final_result": "...",  # GeoJSON 字符串
-                "all_results": {...}    # 所有中间结果
+                "all_results": {...},   # 所有中间结果
+                "logs": [...]            # 执行日志
             }
     """
     engine = GeoPandasWorkflowEngine()
@@ -402,13 +458,16 @@ def execute_workflow(workflow_def: Dict[str, Any], input_data: Dict[str, Any] = 
         return {
             "status": "success",
             "final_result": engine.get_result_geojson(),
-            "all_results": engine.get_all_results_geojson()
+            "all_results": engine.get_all_results_geojson(),
+            "logs": engine.logs
         }
 
     except Exception as e:
         return {
             "status": "failed",
-            "error": str(e)
+            "error": str(e),
+            "logs": engine.logs,
+            "traceback": traceback.format_exc()
         }
 
 

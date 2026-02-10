@@ -80,5 +80,17 @@ export default {
   // 测试 OGC Features Single Item
   testOGCFeaturesItem(serviceName, collectionId, featureId) {
     return client.get(`/ogc/features/${serviceName}/collections/${collectionId}/items/${featureId}`)
+  },
+
+  // 数据源相关 API
+
+  // 检测 SQL 查询结果的空间元数据
+  detectSQLSpatialMetadata(data) {
+    return client.post('/service/sql/spatial-metadata', data)
+  },
+
+  // 跨模块 API: 获取存储引擎列表（来自 System 模块）
+  getStorageEngines() {
+    return client.get('/system/engines')
   }
 }

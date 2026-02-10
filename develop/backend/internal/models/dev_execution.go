@@ -25,6 +25,7 @@ type DevExecution struct {
 
 	// 执行结果
 	Result       ExecutionResult `gorm:"type:jsonb" json:"result,omitempty"`
+	Inputs       ExecutionResult `gorm:"type:jsonb" json:"inputs,omitempty"`     // 输入参数
 	ErrorMessage string          `gorm:"type:text" json:"error_message,omitempty"`
 	ExecutionTimeMs *int64       `json:"execution_time_ms,omitempty"` // 执行时间（毫秒）
 
@@ -32,6 +33,9 @@ type DevExecution struct {
 	EngineID         *uint  `json:"engine_id,omitempty"`
 	RowsAffected     *int64 `json:"rows_affected,omitempty"`
 	ResultSizeBytes  *int64 `json:"result_size_bytes,omitempty"`
+
+	// 关联对象（不存储在数据库，用于Preload）
+	DevItem *DevItem `gorm:"foreignKey:DevItemID;references:ID" json:"-"`
 
 	// 时间戳
 	StartedAt   *time.Time `json:"started_at,omitempty"`

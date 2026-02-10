@@ -196,6 +196,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import publishedServiceAPI from '../api/publishedService'
+import { copyToClipboard } from '../utils/serviceHelper'
 
 const route = useRoute()
 const router = useRouter()
@@ -253,17 +254,11 @@ const loadService = async () => {
 
 // 复制端点 URL
 const copyEndpoint = async (url) => {
-  try {
-    await navigator.clipboard.writeText(url)
+  const success = await copyToClipboard(url)
+  if (success) {
     ElMessage.success('已复制到剪贴板')
-  } catch (error) {
-    const input = document.createElement('input')
-    input.value = url
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
-    ElMessage.success('已复制到剪贴板')
+  } else {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 

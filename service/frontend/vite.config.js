@@ -7,19 +7,25 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-    }
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@common-map': resolve(__dirname, '../../common-frontend/map/src')
+    },
+    dedupe: ['ol', 'vue']
   },
   server: {
     port: 5180,
-    strictPort: true, // 端口被占用时报错，不自动切换
+    strictPort: true,
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      },
+      '/ogc': {
+        target: 'http://localhost:8000',
         changeOrigin: true
       }
     }
   },
-  base: process.env.NODE_ENV === 'development' ? '/' : '/service/'  // 开发模式用 /，生产模式用 /service/
+  base: process.env.NODE_ENV === 'development' ? '/' : '/service/'
 })

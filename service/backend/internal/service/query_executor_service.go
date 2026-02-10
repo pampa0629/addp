@@ -140,6 +140,8 @@ func (s *QueryExecutorService) executeTableQuery(
 
 	// 1. 构建 SELECT 字段列表
 	selectFields := "*"
+	geomColumn := ""
+
 	if params.Fields != "" {
 		// 用户指定了字段列表
 		fields := strings.Split(params.Fields, ",")
@@ -163,10 +165,16 @@ func (s *QueryExecutorService) executeTableQuery(
 
 	// 2. 处理空间字段（如果有）
 	if service.HasGeometry() {
-		geomColumn := service.GetGeometryColumn()
+		geomColumn = service.GetGeometryColumn()
 		if strings.ToLower(engineType) == "postgresql" && geomColumn != "" {
-			// 替换几何列为 ST_AsGeoJSON 格式
-			selectFields = s.replaceGeometryColumn(selectFields, geomColumn, engineType)
+			// 如果是 SELECT *，需要先获取所有列名，然后显式构建字段列表
+			if strings.TrimSpace(selectFields) == "*" {
+				tableName := s.quoteIdentifier(engineType, schema) + "." + s.quoteIdentifier(engineType, table)
+				selectFields = s.buildSelectFieldsWithGeometry(ctx, db, tableName, geomColumn, engineType)
+			} else {
+				// 替换几何列为 ST_AsGeoJSON 格式
+				selectFields = s.replaceGeometryColumn(selectFields, geomColumn, engineType)
+			}
 		}
 	}
 
@@ -369,4 +377,61 @@ func (s *QueryExecutorService) FormatAsGeoJSON(
 	}
 
 	return json.Marshal(featureCollection)
+}
+
+// buildSelectFieldsWithGeometry 为包含几何列的表构建显式字段列表
+// 用于替代 SELECT * 以确保几何列被正确转换为 GeoJSON
+func (s *QueryExecutorService) buildSelectFieldsWithGeometry(
+	ctx context.Context,
+	db *gorm.DB,
+	tableName string,
+	geomColumn string,
+	engineType string,
+) string {
+	// 查询表的所有列名
+	var columns []struct {
+		ColumnName string `gorm:"column:column_name"`
+	}
+
+	// 从表名中提取 schema 和 table
+	parts := strings.Split(tableName, ".")
+	if len(parts) != 2 {
+		// 如果无法解析表名，返回 *
+		return "*"
+	}
+
+	// 去掉引号
+	schema := strings.Trim(parts[0], "\"`")
+	table := strings.Trim(parts[1], "\"`")
+
+	query := `
+		SELECT column_name
+		FROM information_schema.columns
+		WHERE table_schema = ? AND table_name = ?
+		ORDER BY ordinal_position
+	`
+
+	if err := db.WithContext(ctx).Raw(query, schema, table).Scan(&columns).Error; err != nil {
+		// 查询失败，返回 *
+		return "*"
+	}
+
+	if len(columns) == 0 {
+		return "*"
+	}
+
+	// 构建字段列表
+	fieldList := make([]string, len(columns))
+	for i, col := range columns {
+		quotedCol := s.quoteIdentifier(engineType, col.ColumnName)
+
+		// 如果是几何列，使用 ST_AsGeoJSON 转换
+		if col.ColumnName == geomColumn {
+			fieldList[i] = fmt.Sprintf("ST_AsGeoJSON(%s) AS %s", quotedCol, quotedCol)
+		} else {
+			fieldList[i] = quotedCol
+		}
+	}
+
+	return strings.Join(fieldList, ", ")
 }

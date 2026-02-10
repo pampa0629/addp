@@ -130,7 +130,7 @@
         </div>
         <div class="panel-body">
           <OperatorPalette
-            :engine-type="null"
+            :engine-type="currentEngineModule"
             @operator-drag="handleOperatorDrag"
             @operator-click="handleOperatorClick"
           />
@@ -325,6 +325,19 @@ const hasValidWorkflow = computed(() => {
   return workflowData.value?.tasks?.length > 0
 })
 
+// 当前引擎的模块名称（用于加载对应的算子列表）
+const currentEngineModule = computed(() => {
+  if (!selectedEngine.value) return 'python' // 默认 Python
+
+  const engineType = selectedEngine.value.engine_type || ''
+  if (engineType.toLowerCase().includes('spark')) {
+    return 'spark'
+  } else if (engineType.toLowerCase().includes('math')) {
+    return 'math'
+  }
+  return 'python'
+})
+
 // 工作流更新处理
 const handleWorkflowUpdate = (workflow) => {
   workflowData.value = workflow
@@ -336,9 +349,46 @@ const handleNodeClick = async (node) => {
   try {
     console.log('节点被点击:', node)
 
-    // 获取算子的完整参数定义
-    const response = await getOperatorDetail(node.operator)
-    const operator = response.operator  // 从响应中提取 operator 对象
+    // 确定当前工作流引擎的模块名称
+    let moduleName = 'python'  // 默认使用 Python 引擎
+    if (selectedEngine.value) {
+      const engineType = selectedEngine.value.engine_type || ''
+      if (engineType.toLowerCase().includes('spark')) {
+        moduleName = 'spark'
+      } else if (engineType.toLowerCase().includes('math')) {
+        moduleName = 'math'
+      }
+      // Python 工作流引擎保持 'python'
+    }
+
+    // 从对应引擎的模块获取算子列表，然后查找匹配的算子
+    const moduleResponse = await fetch(`/api/develop/operators/modules/${moduleName}`)
+    const moduleData = await moduleResponse.json()
+
+    const operator = moduleData.operators?.find(op => op.name === node.operator)
+
+    if (!operator) {
+      // 如果在当前引擎模块中找不到，回退到全局查找
+      console.warn(`算子 ${node.operator} 在模块 ${moduleName} 中未找到，使用全局查找`)
+      const response = await getOperatorDetail(node.operator)
+      const globalOperator = response.operator
+
+      const paramDefs = {}
+      if (globalOperator.parameters && Array.isArray(globalOperator.parameters)) {
+        globalOperator.parameters.forEach(param => {
+          paramDefs[param.name] = param.description || `${param.name}参数`
+        })
+      }
+
+      selectedNode.value = {
+        id: node.id,
+        operator: node.operator,
+        params: node.params || {},
+        paramDefs: paramDefs,
+        parameters: globalOperator.parameters || []
+      }
+      return
+    }
 
     // 转换参数定义为对象格式(用于向后兼容)
     const paramDefs = {}
@@ -355,6 +405,8 @@ const handleNodeClick = async (node) => {
       paramDefs: paramDefs,
       parameters: operator.parameters || []  // 传递完整的参数数组
     }
+
+    console.log('[WorkflowEditor] 加载节点参数:', node.id, node.params)
   } catch (error) {
     console.error('加载算子详情失败:', error)
     ElMessage.error('加载算子参数定义失败')
@@ -374,7 +426,7 @@ const handleOperatorClick = (operator) => {
 const handleParamsSave = (data) => {
   if (canvasRef.value) {
     canvasRef.value.updateNodeParams(data.nodeId, data.params)
-    ElMessage.success('参数已保存')
+    // 成功消息已经在 OperatorParamsPanel 中显示，这里不需要重复
   }
 }
 
@@ -411,7 +463,7 @@ const selectDefaultEngine = () => {
   if (workflowEngines.value.length === 0) return
 
   const pythonWorkflow = workflowEngines.value.find(
-    e => e.resource_type === 'api.python_workflow'
+    e => e.engine_type === 'api.python_workflow'
   )
 
   if (pythonWorkflow) {
@@ -443,17 +495,17 @@ const handleEngineChange = async (engineId) => {
 
 // 判断是否需要选择 Spark 运行时
 const needsSparkRuntime = () => {
-  return selectedEngine.value?.resource_type === 'api.spark_workflow'
+  return selectedEngine.value?.engine_type === 'api.spark_workflow'
 }
 
 // 获取引擎标签
 const getEngineTag = (engine) => {
-  if (engine.resource_type === 'api.python_workflow') {
+  if (engine.engine_type === 'api.python_workflow') {
     return 'Python 工作流'
-  } else if (engine.resource_type === 'api.spark_workflow') {
+  } else if (engine.engine_type === 'api.spark_workflow') {
     return 'Spark 工作流引擎'
   }
-  return engine.resource_type
+  return engine.engine_type
 }
 
 // 格式化运行时标签
@@ -462,7 +514,7 @@ const formatRuntimeLabel = (runtime) => {
   let connInfo = '未配置'
 
   if (runtime.connection_info) {
-    if (runtime.resource_type === 'spark') {
+    if (runtime.engine_type === 'spark') {
       // Apache Spark 数据源：显示 host:port/database
       const { host, port, database } = runtime.connection_info
       if (host && port) {
@@ -524,8 +576,15 @@ const confirmSave = async () => {
     const executionConfig = {
       type: 'workflow',
       engine_id: workflowEngineId.value,
-      engine_type: selectedEngine.value.resource_type,
+      engine_type: selectedEngine.value?.engine_type || selectedEngine.value?.resource_type,
     }
+
+    console.log('[WorkflowEditor] 执行配置:', {
+      workflowEngineId: workflowEngineId.value,
+      selectedEngine: selectedEngine.value,
+      executionConfig,
+      executionConfigJSON: JSON.stringify(executionConfig)
+    })
 
     // 如果是 Spark 工作流引擎，添加 engine_specific 配置
     if (needsSparkRuntime()) {
@@ -600,8 +659,15 @@ const confirmExecute = async () => {
     const executionConfig = {
       type: 'workflow',
       engine_id: workflowEngineId.value,
-      engine_type: selectedEngine.value.resource_type,
+      engine_type: selectedEngine.value?.engine_type || selectedEngine.value?.resource_type,
     }
+
+    console.log('[WorkflowEditor] 执行配置:', {
+      workflowEngineId: workflowEngineId.value,
+      selectedEngine: selectedEngine.value,
+      executionConfig,
+      executionConfigJSON: JSON.stringify(executionConfig)
+    })
 
     // 如果是 Spark 工作流引擎，添加 engine_specific 配置
     if (needsSparkRuntime()) {

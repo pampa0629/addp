@@ -39,7 +39,7 @@
       @row-click="handleRowClick"
     >
       <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="name" label="服务名称" min-width="180" />
+      <el-table-column prop="service_name" label="服务名称" min-width="180" />
       <el-table-column prop="service_type" label="类型" width="120">
         <template #default="{ row }">
           <el-tag :type="getServiceTypeColor(row.service_type)">
@@ -51,13 +51,13 @@
         <template #default="{ row }">
           <div style="display: flex; align-items: center; gap: 8px;" @click.stop>
             <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              {{ row.url }}
+              {{ row.endpoint_url }}
             </span>
             <el-tooltip content="复制服务地址" placement="top">
               <el-button
                 size="small"
                 text
-                @click.stop="handleCopyURL(row.url)"
+                @click.stop="handleCopyURL(row.endpoint_url)"
                 style="padding: 4px;"
               >
                 <el-icon><DocumentCopy /></el-icon>
@@ -81,7 +81,18 @@
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
           <el-button size="small" @click.stop="handleEdit(row)">编辑</el-button>
-          <el-button size="small" @click.stop="handleRefresh(row)">刷新</el-button>
+          <el-tooltip
+            :content="isOGCService(row.service_type) ? '刷新元数据' : 'REST 服务不支持元数据刷新'"
+            placement="top"
+          >
+            <el-button
+              size="small"
+              :disabled="!isOGCService(row.service_type)"
+              @click.stop="handleRefresh(row)"
+            >
+              刷新
+            </el-button>
+          </el-tooltip>
           <el-tooltip
             :content="row.health_check_url ? '执行健康检查' : '未配置健康检查地址，将使用服务地址进行检查'"
             placement="top"
@@ -118,6 +129,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Download, DocumentCopy } from '@element-plus/icons-vue'
 import serviceAPI from '../api/service'
+import { copyToClipboard } from '../utils/serviceHelper'
 
 const router = useRouter()
 const loading = ref(false)
@@ -206,7 +218,7 @@ const handleHealthCheck = async (row) => {
 
 const handleDelete = async (row) => {
   try {
-    await ElMessageBox.confirm(`确定要删除服务"${row.name}"吗？`, '确认删除', {
+    await ElMessageBox.confirm(`确定要删除服务"${row.service_name}"吗？`, '确认删除', {
       type: 'warning'
     })
 
@@ -237,24 +249,11 @@ const handleExport = async () => {
 }
 
 const handleCopyURL = async (url) => {
-  try {
-    await navigator.clipboard.writeText(url)
+  const success = await copyToClipboard(url)
+  if (success) {
     ElMessage.success('服务地址已复制到剪贴板')
-  } catch (error) {
-    // 降级方案：使用传统方法复制
-    const textarea = document.createElement('textarea')
-    textarea.value = url
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    try {
-      document.execCommand('copy')
-      ElMessage.success('服务地址已复制到剪贴板')
-    } catch (err) {
-      ElMessage.error('复制失败，请手动复制')
-    }
-    document.body.removeChild(textarea)
+  } else {
+    ElMessage.error('复制失败，请手动复制')
   }
 }
 
@@ -304,6 +303,11 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+// 判断是否为 OGC 服务
+const isOGCService = (serviceType) => {
+  return ['wms', 'wfs', 'wmts', 'ogc_api'].includes(serviceType)
 }
 
 onMounted(() => {

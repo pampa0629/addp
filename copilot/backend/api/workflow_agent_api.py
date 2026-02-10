@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 
 from agents.workflow_agent import workflow_agent
-from services.memory_service import memory_service
+# TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
+# from services.memory_service import memory_service
 
 router = APIRouter()
 
@@ -44,34 +45,37 @@ async def generate_workflow(request: WorkflowGenerationRequest):
 
     try:
         # 1. 获取对话记忆（如果有）
-        memory = None
-        if request.conversation_id:
-            print(f"[API] 加载对话历史: {request.conversation_id}")
-            memory = await memory_service.get_memory(request.conversation_id)
-            print(f"[API] 对话历史加载完成")
+        # TODO: Copilot 暂时不需要对话历史，直接返回结果
+        # memory = None
+        # if request.conversation_id:
+        #     print(f"[API] 加载对话历史: {request.conversation_id}")
+        #     memory = await memory_service.get_memory(request.conversation_id)
+        #     print(f"[API] 对话历史加载完成")
 
-        # 2. 调用工作流 Agent 生成
+        # 2. 调用工作流 Agent 生成（不使用 memory）
         print(f"[API] 调用 Workflow Agent...")
         result = await workflow_agent.generate(
             query=request.query,
-            memory=memory,
+            memory=None,  # 不使用对话历史
             tenant_id=request.tenant_id,
-            use_two_stage=request.use_two_stage  # 新增：传递两阶段模式参数
+            use_two_stage=request.use_two_stage
         )
         print(f"[API] ✅ Workflow Agent 返回结果")
 
         # 3. 保存对话历史
-        print(f"[API] 保存对话历史...")
-        conversation_id = await memory_service.save_message(
-            conversation_id=request.conversation_id,
-            tenant_id=request.tenant_id,
-            user_id=request.user_id,
-            user_message=request.query,
-            assistant_message=result.get("explanation", "工作流生成成功"),
-            metadata={"workflow": result["workflow"]},
-            context_type='workflow'
-        )
-        print(f"[API] 对话历史已保存: {conversation_id}")
+        # TODO: Copilot 暂时不需要保存对话历史
+        # print(f"[API] 保存对话历史...")
+        # conversation_id = await memory_service.save_message(
+        #     conversation_id=request.conversation_id,
+        #     tenant_id=request.tenant_id,
+        #     user_id=request.user_id,
+        #     user_message=request.query,
+        #     assistant_message=result.get("explanation", "工作流生成成功"),
+        #     metadata={"workflow": result["workflow"]},
+        #     context_type='workflow'
+        # )
+        # print(f"[API] 对话历史已保存: {conversation_id}")
+        conversation_id = 0  # 临时固定值，不保存对话历史
 
         response = WorkflowGenerationResponse(
             workflow=result["workflow"],
@@ -102,11 +106,12 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         raise HTTPException(status_code=500, detail=f"服务内部错误: {str(e)}")
 
 
-@router.get("/workflow/conversations/{conversation_id}")
-async def get_conversation_history(conversation_id: int):
-    """获取对话历史"""
-    try:
-        history = await memory_service.get_conversation_history(conversation_id)
-        return {"conversation_id": conversation_id, "messages": history}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")
+# TODO: Copilot 暂时不需要对话历史功能
+# @router.get("/workflow/conversations/{conversation_id}")
+# async def get_conversation_history(conversation_id: int):
+#     """获取对话历史"""
+#     try:
+#         history = await memory_service.get_conversation_history(conversation_id)
+#         return {"conversation_id": conversation_id, "messages": history}
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"获取对话历史失败: {str(e)}")

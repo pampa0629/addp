@@ -221,6 +221,7 @@ def execute_workflow_endpoint():
         if result['status'] == 'success':
             response['final_result'] = result['final_result']
             response['all_results'] = result['all_results']
+            response['logs'] = result.get('logs', [])
             logger.info(f"Workflow {execution_id} completed successfully in {execution_time:.2f}ms")
             return jsonify(response), 200
         else:
@@ -228,6 +229,8 @@ def execute_workflow_endpoint():
                 ErrorCode.EXECUTION_FAILED,
                 result.get('error', '工作流执行失败')
             ))
+            response['logs'] = result.get('logs', [])
+            response['traceback'] = result.get('traceback', '')
             return jsonify(response), 500
 
     except ValueError as e:
@@ -581,7 +584,8 @@ def register_to_system():
             "port": port
             # host 由 System 自动填充
         },
-        "capabilities": json.dumps(capabilities)
+        "capabilities": json.dumps(capabilities),
+        "is_builtin": True  # 内置引擎，对所有租户可见
     }
 
     headers = {

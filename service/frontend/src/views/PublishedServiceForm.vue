@@ -78,7 +78,7 @@
             style="margin-bottom: 16px; cursor: pointer"
             @click="form.service_type = 'spatial'"
           >
-            <el-radio label="spatial" style="width: 100%">
+            <el-radio value="spatial" style="width: 100%">
               <div class="service-type-card">
                 <h3><el-icon><MapLocation /></el-icon> 空间服务</h3>
                 <p>启用 OGC 协议（WFS/WMTS/OGC API），支持在地图上展示</p>
@@ -95,7 +95,7 @@
             style="cursor: pointer"
             @click="form.service_type = 'table'"
           >
-            <el-radio label="table" style="width: 100%">
+            <el-radio value="table" style="width: 100%">
               <div class="service-type-card">
                 <h3><el-icon><Document /></el-icon> 数据表服务</h3>
                 <p>简化的 REST API，适合 Web 应用集成</p>

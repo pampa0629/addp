@@ -156,3 +156,38 @@ export function getStatusDisplay(status) {
   }
   return statusMap[status] || { type: 'info', text: status }
 }
+
+/**
+ * 复制文本到剪贴板（兼容旧浏览器）
+ * @param {String} text - 要复制的文本
+ * @returns {Promise<Boolean>} 复制是否成功
+ */
+export async function copyToClipboard(text) {
+  try {
+    // 优先使用现代 Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+
+    // 后备方案：使用传统的 execCommand 方法
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.top = '0'
+    textarea.style.left = '0'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+
+    try {
+      const successful = document.execCommand('copy')
+      return successful
+    } finally {
+      document.body.removeChild(textarea)
+    }
+  } catch (error) {
+    console.error('复制失败:', error)
+    return false
+  }
+}
