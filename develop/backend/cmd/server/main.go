@@ -64,13 +64,22 @@ func main() {
 	jupyterService := service.NewJupyterService(cfg)
 	log.Printf("✅ JupyterService 初始化完成")
 
-	// 3.5 Jupyter实例管理服务（租户隔离的 Jupyter 容器管理）
+	// 3.5 Jupyter实例管理服务（租户隔离的 Jupyter 容器管理 - Docker 方案,已废弃）
 	jupyterInstanceService, err := service.NewJupyterInstanceService(cfg)
 	if err != nil {
 		log.Printf("⚠️  JupyterInstanceService 初始化失败: %v", err)
 		jupyterInstanceService = nil
 	} else {
 		log.Printf("✅ JupyterInstanceService 初始化完成")
+	}
+
+	// 3.7 Jupyter虚拟环境管理服务（租户隔离的虚拟环境管理 - 开发环境新方案）
+	jupyterVenvService, err := service.NewJupyterVenvService(cfg)
+	if err != nil {
+		log.Printf("⚠️  JupyterVenvService 初始化失败: %v", err)
+		jupyterVenvService = nil
+	} else {
+		log.Printf("✅ JupyterVenvService 初始化完成")
 	}
 
 	// 3.6 NotebookExecutionService（Notebook 完整执行服务）
@@ -107,17 +116,24 @@ func main() {
 	queryHandler := api.NewQueryHandler(sqlEngine, devItemService)
 	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devItemService)
 
-	// Jupyter 实例管理 Handler
+	// Jupyter 实例管理 Handler (Docker 方案,已废弃)
 	var jupyterInstanceHandler *api.JupyterInstanceHandler
 	if jupyterInstanceService != nil {
 		jupyterInstanceHandler = api.NewJupyterInstanceHandler(jupyterInstanceService)
 		log.Printf("✅ JupyterInstanceHandler 初始化完成")
 	}
 
+	// Jupyter 虚拟环境管理 Handler (开发环境新方案)
+	var jupyterVenvHandler *api.JupyterVenvHandler
+	if jupyterVenvService != nil {
+		jupyterVenvHandler = api.NewJupyterVenvHandler(jupyterVenvService)
+		log.Printf("✅ JupyterVenvHandler 初始化完成")
+	}
+
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, devItemService, systemClient)
+	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devItemService, systemClient)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 模块注册（注册到 System service_registry）==========

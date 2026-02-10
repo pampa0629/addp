@@ -120,7 +120,42 @@
           </div>
         </div>
 
+        <!-- 虚拟环境初始化卡片 -->
+        <div v-if="checkingVenv" class="venv-status-card" v-loading="true" element-loading-text="正在检查开发环境...">
+          <el-empty description="正在检查开发环境状态..." />
+        </div>
+
+        <div v-else-if="!venvReady" class="venv-init-card">
+          <el-result icon="warning" title="需要初始化开发环境">
+            <template #sub-title>
+              <div class="venv-init-tips">
+                <p>首次使用 Notebook 需要初始化租户专属的 Python 虚拟环境</p>
+                <p>初始化后您将拥有:</p>
+                <ul>
+                  <li>✅ 独立的 Python 虚拟环境（继承预装的常用库）</li>
+                  <li>✅ 自动注入的数据源连接（无需手动配置）</li>
+                  <li>✅ 可自由安装 Python 库（不影响其他租户）</li>
+                  <li>✅ 环境持久化保存（ADDP 重启后仍然保留）</li>
+                </ul>
+                <p class="time-note">⏱️ 初始化过程约需 30 秒</p>
+              </div>
+            </template>
+            <template #extra>
+              <el-button
+                type="primary"
+                size="large"
+                @click="initVenvEnvironment"
+                :loading="initLoading"
+              >
+                {{ initLoading ? '正在初始化...' : '立即初始化' }}
+              </el-button>
+            </template>
+          </el-result>
+        </div>
+
+        <!-- Jupyter Lab iframe -->
         <iframe
+          v-else
           ref="jupyterIframe"
           :src="jupyterUrl"
           class="jupyter-iframe"
@@ -341,6 +376,7 @@ import {
 import { notebookAPI } from '@/api/notebook'
 import { listDevItems, deleteDevItem, executeDevItem } from '@/api/devItem'
 import { listEngines } from '@/api/engines'
+import { getVenvStatus, initVenv } from '@/api/jupyter'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 
@@ -361,15 +397,25 @@ const dataSources = ref([])
 // Jupyter Lab 相关
 const jupyterIframe = ref(null)
 const jupyterBaseUrl = ref('http://localhost:8088/lab')
+
+// 虚拟环境状态
+const venvInfo = ref(null)
+const venvReady = ref(false)
+const initLoading = ref(false)
+const checkingVenv = ref(true)
+
 const jupyterUrl = computed(() => {
-  if (!currentNotebook.value) return ''
+  if (!currentNotebook.value || !venvInfo.value) return ''
 
   // 从 content 中获取 minio_path
   const minioPath = currentNotebook.value.content?.minio_path
   if (!minioPath) return jupyterBaseUrl.value
 
   // 构造 Jupyter Lab URL
-  return `${jupyterBaseUrl.value}/tree/${minioPath}`
+  // 使用 /lab/tree/ 路径打开指定文件，Jupyter 会自动使用租户的 Kernel
+  // 注意: 由于配置了 TenantKernelSpecManager，Jupyter 只会显示租户的 Kernel
+  const kernelName = venvInfo.value.kernel_name
+  return `${jupyterBaseUrl.value}/lab/tree/${minioPath}`
 })
 
 // 新建对话框
@@ -723,7 +769,44 @@ const formatTime = (time) => {
 }
 
 // 初始化
+// 检查虚拟环境状态
+const checkVenvStatus = async () => {
+  try {
+    checkingVenv.value = true
+    const res = await getVenvStatus()
+    venvInfo.value = res.data || res
+    venvReady.value = venvInfo.value.exists
+  } catch (error) {
+    console.error('检查虚拟环境状态失败:', error)
+    ElMessage.error('检查虚拟环境状态失败')
+    venvReady.value = false
+  } finally {
+    checkingVenv.value = false
+  }
+}
+
+// 初始化虚拟环境
+const initVenvEnvironment = async () => {
+  try {
+    initLoading.value = true
+    ElMessage.info('正在初始化开发环境，请稍候...')
+
+    const res = await initVenv()
+    venvInfo.value = res.data?.data || res.data
+    venvReady.value = true
+
+    ElMessage.success('开发环境初始化成功！')
+  } catch (error) {
+    console.error('初始化虚拟环境失败:', error)
+    ElMessage.error(error.response?.data?.error || '初始化失败')
+    venvReady.value = false
+  } finally {
+    initLoading.value = false
+  }
+}
+
 onMounted(async () => {
+  await checkVenvStatus()
   await loadNotebooks()
   await loadDataSources()
 })
@@ -859,6 +942,53 @@ onMounted(async () => {
   flex: 1;
   border: none;
   background: white;
+}
+
+/* 虚拟环境状态卡片 */
+.venv-status-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  padding: 40px;
+}
+
+.venv-init-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  padding: 40px;
+}
+
+.venv-init-tips {
+  text-align: left;
+  max-width: 600px;
+  margin: 0 auto;
+  line-height: 1.8;
+}
+
+.venv-init-tips p {
+  margin: 12px 0;
+  color: #606266;
+}
+
+.venv-init-tips ul {
+  margin: 16px 0;
+  padding-left: 20px;
+  color: #606266;
+}
+
+.venv-init-tips ul li {
+  margin: 8px 0;
+}
+
+.venv-init-tips .time-note {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #909399;
 }
 
 .form-tip {

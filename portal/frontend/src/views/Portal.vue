@@ -8,6 +8,9 @@
         <h1>全域数据平台</h1>
       </div>
       <div class="header-right">
+        <!-- 主题切换器 -->
+        <ThemeSwitcher style="margin-right: 16px;" />
+
         <el-dropdown>
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
@@ -306,6 +309,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 import { Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection, Grid, FolderOpened } from '@element-plus/icons-vue'
+import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -541,8 +545,8 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--app-bg-header);
+  border-bottom: 1px solid var(--app-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -558,9 +562,14 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   font-size: 24px;
   font-weight: 600;
   margin: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--app-primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
 }
 
 .user-dropdown {
@@ -574,12 +583,12 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .user-dropdown:hover {
-  background: #f5f7fa;
+  background: var(--app-bg-secondary);
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--app-bg-sidebar);
+  border-right: 1px solid var(--app-border-color);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -614,7 +623,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .main-content {
-  background: #f5f7fa;
+  background: var(--app-bg-secondary);
   padding: 0;
   overflow: hidden;
   display: flex;
@@ -635,8 +644,8 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .module-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  transform: var(--app-card-hover-transform);
+  box-shadow: var(--app-shadow-hover);
 }
 
 .module-card-disabled {
@@ -657,11 +666,11 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 .card-content h2 {
   margin: 15px 0 10px 0;
   font-size: 20px;
-  color: #303133;
+  color: var(--app-text-primary);
 }
 
 .card-content p {
-  color: #909399;
+  color: var(--app-text-tertiary);
   font-size: 14px;
   margin: 0;
 }
@@ -691,7 +700,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #909399;
+  color: var(--app-text-tertiary);
 }
 
 .el-menu-vertical {

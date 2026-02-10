@@ -29,7 +29,6 @@ import sys
 ADDP_TENANT_ID = os.getenv('TENANT_ID') or os.getenv('ADDP_TENANT_ID')  # 兼容两种环境变量名
 ADDP_API_BASE = os.getenv('ADDP_API_BASE', 'http://localhost:8000')
 ADDP_AUTO_LOAD = os.getenv('ADDP_AUTO_LOAD', 'true').lower() == 'true'
-INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY', '')  # 内部 API Key（用于服务间调用）
 
 # ============================================================================
 # 主函数
@@ -56,21 +55,12 @@ def load_addp_datasources():
         return
 
     try:
-        # 调用 ADDP System 内部 API 获取引擎列表
-        # 使用内部 API Key 进行服务间认证（无需用户 token）
-        headers = {}
-        if INTERNAL_API_KEY:
-            headers['X-Internal-API-Key'] = INTERNAL_API_KEY
-
-        # 优先使用 System Backend 直连（开发环境）
-        # 格式: http://localhost:8180/api/internal/engines?tenant_id=1
-        system_url = os.getenv('SYSTEM_SERVICE_URL', 'http://localhost:8180')
-        api_url = f'{system_url}/api/internal/engines'
-
+        # 调用 ADDP System API 获取引擎列表
+        # 注意：使用 System API（/api/system/engines）而不是 Develop API
+        # 因为 Develop API 需要认证，而 System API 可以通过内网调用
         response = requests.get(
-            api_url,
+            f'{ADDP_API_BASE}/api/system/engines',
             params={'tenant_id': ADDP_TENANT_ID},
-            headers=headers,
             timeout=5
         )
 

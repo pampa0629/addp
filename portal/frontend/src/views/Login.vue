@@ -89,7 +89,7 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--app-primary-gradient);
 }
 
 .login-card {
@@ -106,7 +106,7 @@ const handleLogin = async () => {
 .login-header h2 {
   text-align: center;
   margin: 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--app-primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

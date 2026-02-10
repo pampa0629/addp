@@ -21,9 +21,10 @@ func SetupRouter(
 	engineHandler *EngineHandler,
 	queryHandler *QueryHandler,
 	notebookHandler *NotebookHandler,
-	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理
-	devItemService interface{}, // 添加 devItemService 参数
-	systemClient *commonClient.SystemClient, // 用于审计日志
+	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理 (Docker 方案,已废弃)
+	jupyterVenvHandler *JupyterVenvHandler,         // Jupyter 虚拟环境管理 (新方案)
+	devItemService interface{},                     // 添加 devItemService 参数
+	systemClient *commonClient.SystemClient,        // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -142,7 +143,7 @@ func SetupRouter(
 			notebooks.DELETE("/:id", notebookHandler.DeleteNotebook)          // 删除 Notebook
 		}
 
-		// ========== Jupyter 实例管理 ==========
+		// ========== Jupyter 实例管理 (Docker 方案,已废弃) ==========
 		if jupyterInstanceHandler != nil {
 			jupyter := api.Group("/jupyter")
 			{
@@ -150,6 +151,24 @@ func SetupRouter(
 				jupyter.POST("/instance/stop", jupyterInstanceHandler.StopInstance)       // 停止 Jupyter 实例
 				jupyter.GET("/instance/status", jupyterInstanceHandler.GetInstanceStatus) // 获取实例状态
 				jupyter.GET("/instances", jupyterInstanceHandler.ListInstances)           // 列出所有实例（管理员）
+			}
+		}
+
+		// ========== Jupyter 虚拟环境管理 (新方案,开发环境) ==========
+		if jupyterVenvHandler != nil {
+			jupyter := api.Group("/jupyter")
+			{
+				// 租户虚拟环境管理
+				jupyter.GET("/venv/status", jupyterVenvHandler.GetVenvStatus)       // 获取租户虚拟环境状态
+				jupyter.POST("/venv/init", jupyterVenvHandler.InitVenv)            // 初始化租户虚拟环境
+				jupyter.DELETE("/venv", jupyterVenvHandler.DeleteVenv)             // 删除租户虚拟环境
+
+				// 管理员接口
+				jupyter.GET("/venvs", jupyterVenvHandler.ListVenvs)                // 列出所有租户虚拟环境
+				jupyter.POST("/venv/:tenant_id/init", jupyterVenvHandler.InitVenvByID) // 为指定租户初始化虚拟环境
+
+				// Jupyter Server 状态
+				jupyter.GET("/server/status", jupyterVenvHandler.GetJupyterServerStatus) // 获取 Jupyter Server 状态
 			}
 		}
 	}
