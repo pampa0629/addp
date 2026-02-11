@@ -3,6 +3,7 @@
     <div class="header">
       <h2>{{ isEdit ? '编辑编排' : '创建编排' }}</h2>
       <div>
+        <el-button @click="handleViewJSON">查看 JSON</el-button>
         <el-button @click="handleCancel">取消</el-button>
         <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
       </div>
@@ -22,15 +23,15 @@
         ></el-input>
       </el-form-item>
 
-      <el-form-item label="启用">
-        <el-switch v-model="form.enabled"></el-switch>
-      </el-form-item>
-
       <el-form-item label="定时调度">
-        <ScheduleConfig
-          v-model="form.schedule"
-          :allow-custom-cron="true"
-        />
+        <div class="schedule-row">
+          <el-switch v-model="form.enabled" style="margin-right: 12px;"></el-switch>
+          <span style="margin-right: 12px; color: var(--addp-text-secondary);">启用</span>
+          <ScheduleConfig
+            v-model="form.schedule"
+            :allow-custom-cron="true"
+          />
+        </div>
       </el-form-item>
     </el-form>
 
@@ -49,11 +50,27 @@
       </div>
     </div>
 
+    <!-- JSON 预览对话框 -->
+    <el-dialog
+      v-model="jsonDialogVisible"
+      title="编排 JSON 配置"
+      width="60%"
+      :close-on-click-modal="false"
+    >
+      <div class="json-preview">
+        <div class="json-actions">
+          <el-button size="small" @click="copyJSON">复制 JSON</el-button>
+          <el-button size="small" @click="downloadJSON">下载 JSON</el-button>
+        </div>
+        <pre class="json-content">{{ formattedJSON }}</pre>
+      </div>
+    </el-dialog>
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import DAGEditor from '../components/DAGEditor.vue'
@@ -67,6 +84,7 @@ const dagEditor = ref(null)
 
 const isEdit = ref(false)
 const saving = ref(false)
+const jsonDialogVisible = ref(false)
 
 const form = reactive({
   name: '',
@@ -74,6 +92,11 @@ const form = reactive({
   enabled: false,
   schedule: '',
   steps: []
+})
+
+// 格式化 JSON 用于展示
+const formattedJSON = computed(() => {
+  return JSON.stringify(form, null, 2)
 })
 
 onMounted(async () => {
@@ -138,6 +161,32 @@ async function handleSave() {
 function handleCancel() {
   router.back()
 }
+
+function handleViewJSON() {
+  jsonDialogVisible.value = true
+}
+
+async function copyJSON() {
+  try {
+    await navigator.clipboard.writeText(formattedJSON.value)
+    ElMessage.success('JSON 已复制到剪贴板')
+  } catch (error) {
+    ElMessage.error('复制失败')
+  }
+}
+
+function downloadJSON() {
+  const blob = new Blob([formattedJSON.value], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `orchestration-${form.name || 'unnamed'}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success('JSON 已下载')
+}
 </script>
 
 <style scoped>
@@ -167,6 +216,11 @@ function handleCancel() {
   flex-shrink: 0;
 }
 
+.schedule-row {
+  display: flex;
+  align-items: center;
+}
+
 .three-column-layout {
   flex: 1;
   display: flex;
@@ -185,5 +239,35 @@ function handleCancel() {
   min-width: 0;
   background: var(--addp-bg-secondary) !important;
   overflow: hidden;
+}
+
+.json-preview {
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+}
+
+.json-actions {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--addp-bg-tertiary);
+  border-radius: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.json-content {
+  flex: 1;
+  overflow: auto;
+  background: var(--addp-bg-tertiary);
+  padding: 16px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--addp-text-primary);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

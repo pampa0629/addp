@@ -400,7 +400,7 @@ class WorkflowGenerationAgent:
         "param1": "value1",
         "param2": "value2"
       }},
-      "dependencies": []
+      "depends_on": []
     }},
     {{
       "id": "task2",
@@ -408,7 +408,7 @@ class WorkflowGenerationAgent:
       "params": {{
         "input_data": "task1"
       }},
-      "dependencies": ["task1"]
+      "depends_on": ["task1"]
     }}
   ]
 }}
@@ -417,11 +417,11 @@ class WorkflowGenerationAgent:
 ## 关键规则
 
 1. **任务 ID**: 使用 `task1`, `task2`, ... 作为任务ID
-2. **依赖关系**: 在 `dependencies` 中指定依赖的前驱任务ID
-3. **参数传递**: 如果任务依赖前一个任务，使用前一个任务的 ID 作为参数值
-4. **工作流示例**: 参考上述各个算子的 "工作流示例" 部分学习正确的 DAG JSON 格式
+2. **依赖关系**: 在 `depends_on` 中指定依赖的前驱任务ID（注意：字段名是 depends_on，不是 dependencies）
+3. **参数传递**: 如果任务依赖前一个任务的输出，需要在 params 中引用（如 `input_gdf: "task1"`）同时在 depends_on 中声明依赖
+4. **工作流示例**: **严格参考**上述各个算子的 "工作流示例" 部分，学习正确的 DAG JSON 格式和依赖关系写法
 5. **参数有效性**: 确保所有参数值都是有效的，参数名称必须与算子定义一致
-6. **逻辑连贯**: 确保任务之间有逻辑关联，依赖关系正确
+6. **逻辑连贯**: 确保任务之间有逻辑关联，depends_on 依赖关系正确
 
 ## 重要提示
 

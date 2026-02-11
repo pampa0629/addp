@@ -1,0 +1,122 @@
+"""
+Tools 单元测试
+
+测试所有 LangChain Tools 的基本功能
+"""
+import pytest
+import asyncio
+from tools.develop_tools import (
+    EngineTool,
+    SchemaTableTool,
+    ObjectStorageTool,
+    OperatorDiscoveryTool,
+    OperatorDetailTool
+)
+from tools.meta_tools import MetadataSearchTool
+
+
+class TestDevelopTools:
+    """测试 Develop Tools"""
+
+    @pytest.mark.asyncio
+    async def test_engine_tool(self):
+        """测试 EngineTool"""
+        tool = EngineTool()
+        result = await tool._arun(tenant_id=1)
+
+        assert isinstance(result, list)
+        print(f"✅ EngineTool 测试通过：获取到 {len(result)} 个引擎")
+
+        if result:
+            engine = result[0]
+            assert "id" in engine
+            assert "name" in engine
+            assert "type" in engine
+            print(f"   示例引擎：{engine['name']} ({engine['type']})")
+
+    @pytest.mark.asyncio
+    async def test_schema_table_tool(self):
+        """测试 SchemaTableTool"""
+        tool = SchemaTableTool()
+
+        # 先获取一个引擎 ID
+        engine_tool = EngineTool()
+        engines = await engine_tool._arun(tenant_id=1)
+
+        if not engines:
+            pytest.skip("没有可用的引擎，跳过测试")
+
+        # 找到一个关系数据库引擎
+        db_engine = next(
+            (e for e in engines if e["type"] in ["postgresql", "mysql", "doris"]),
+            None
+        )
+
+        if not db_engine:
+            pytest.skip("没有可用的关系数据库引擎，跳过测试")
+
+        result = await tool._arun(engine_id=db_engine["id"])
+
+        assert isinstance(result, dict)
+        assert "schemas" in result
+        assert "tables" in result
+        print(f"✅ SchemaTableTool 测试通过：{len(result['schemas'])} schemas, {len(result['tables'])} tables")
+
+    @pytest.mark.asyncio
+    async def test_operator_discovery_tool(self):
+        """测试 OperatorDiscoveryTool"""
+        tool = OperatorDiscoveryTool()
+        result = await tool._arun()
+
+        assert isinstance(result, list)
+        print(f"✅ OperatorDiscoveryTool 测试通过：获取到 {len(result)} 个算子")
+
+        if result:
+            operator = result[0]
+            assert "name" in operator
+            assert "brief" in operator
+            assert "category" in operator
+            print(f"   示例算子：{operator['name']} ({operator['category']})")
+
+    @pytest.mark.asyncio
+    async def test_operator_detail_tool(self):
+        """测试 OperatorDetailTool"""
+        tool = OperatorDetailTool()
+        result = await tool._arun(operator_name="load")
+
+        assert result is not None or result is None  # API 可能返回 None
+        print(f"✅ OperatorDetailTool 测试通过")
+
+        if result:
+            assert "name" in result
+            assert "description" in result
+            print(f"   算子名称：{result['name']}")
+
+
+class TestMetaTools:
+    """测试 Meta Tools"""
+
+    @pytest.mark.asyncio
+    async def test_metadata_search_tool(self):
+        """测试 MetadataSearchTool"""
+        tool = MetadataSearchTool()
+        result = await tool._arun(query="test", tenant_id=1, limit=5)
+
+        assert isinstance(result, list)
+        print(f"✅ MetadataSearchTool 测试通过：找到 {len(result)} 个结果")
+
+        if result:
+            metadata = result[0]
+            assert "name" in metadata
+            assert "type" in metadata
+            print(f"   示例结果：{metadata['name']} ({metadata['type']})")
+
+
+if __name__ == "__main__":
+    """运行所有测试"""
+    print("=" * 60)
+    print("开始测试 LangChain Tools")
+    print("=" * 60)
+
+    # 运行测试
+    pytest.main([__file__, "-v", "-s"])

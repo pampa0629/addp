@@ -1,5 +1,7 @@
 """
 LLM 服务：支持多 LLM 提供商的适配层
+
+使用 LangChain 标准 LLM 类，确保与 Chain/Agent 兼容
 """
 from typing import Optional, List
 from http import HTTPStatus
@@ -17,6 +19,15 @@ class BaseLLMAdapter:
     async def ainvoke(self, messages: List[dict], temperature: float = 0.7, max_tokens: int = 2000) -> str:
         """异步调用 LLM"""
         raise NotImplementedError
+
+    def bind(self, **kwargs):
+        """
+        绑定运行时参数（LangChain Chain 需要）
+
+        简单实现：返回self，忽略绑定参数
+        """
+        # 对于我们的简单适配器，直接返回 self
+        return self
 
 
 class DashscopeAdapter(BaseLLMAdapter):
@@ -351,16 +362,18 @@ class LLMService:
         self.default_provider = settings.default_llm_provider
         self.default_model = settings.default_llm_model
 
-    def get_llm(self, tenant_id: Optional[int] = None, provider: Optional[str] = None) -> BaseLLMAdapter:
+    def get_llm(self, tenant_id: Optional[int] = None, provider: Optional[str] = None):
         """
-        获取 LLM 适配器实例
+        获取 LLM 实例
+
+        使用 LangChain 标准 LLM 类，确保与 Chain/Agent 兼容
 
         Args:
             tenant_id: 租户 ID（用于获取租户级配置，暂未实现）
             provider: 指定 LLM 提供商，不指定则使用默认值
 
         Returns:
-            LLM 适配器实例
+            LangChain LLM 实例（ChatOpenAI、ChatAnthropic 等）
         """
         provider = provider or self.default_provider
         print(f"[LLM Service] 获取 LLM 实例 - Provider: {provider}, Tenant: {tenant_id}")
@@ -376,39 +389,67 @@ class LLMService:
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
 
-    def get_dashscope_adapter(self) -> DashscopeAdapter:
-        """获取通义千问适配器"""
+    def get_dashscope_adapter(self):
+        """
+        获取通义千问适配器（使用 OpenAI 兼容模式）
+
+        通义千问支持 OpenAI 格式的 API 调用，
+        使用 LangChain 的 ChatOpenAI 确保兼容 Runnable 协议
+        """
         if not settings.dashscope_api_key:
             print("[LLM Service] ❌ Dashscope API Key 未配置")
             raise ValueError("Dashscope API Key not configured. Please set DASHSCOPE_API_KEY in .env")
 
         model = settings.dashscope_model or self.default_model or "qwen-max"
-        print(f"[LLM Service] 创建 Dashscope Adapter - Model: {model}")
+        print(f"[LLM Service] 创建 Dashscope Adapter (OpenAI 兼容模式) - Model: {model}")
 
-        if settings.disable_ssl_verify:
-            print(f"[LLM Service] ⚠️ SSL 验证已禁用（开发环境配置）")
+        # 使用 LangChain 的 ChatOpenAI
+        from langchain_openai import ChatOpenAI
 
-        return DashscopeAdapter(
+        # 通义千问的 OpenAI 兼容 API 端点
+        base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+        return ChatOpenAI(
             api_key=settings.dashscope_api_key,
             model=model,
-            disable_ssl_verify=settings.disable_ssl_verify
+            base_url=base_url,
+            temperature=0.7,
+            max_tokens=2000
         )
 
-    def get_openai_adapter(self) -> OpenAIAdapter:
-        """获取 OpenAI 适配器"""
+    def get_openai_adapter(self):
+        """获取 OpenAI 适配器（使用 LangChain ChatOpenAI）"""
         if not settings.openai_api_key:
             raise ValueError("OpenAI API Key not configured")
 
-        model = self.default_model if self.default_provider == 'openai' else 'gpt-4o-mini'
-        return OpenAIAdapter(api_key=settings.openai_api_key, model=model)
+        from langchain_openai import ChatOpenAI
 
-    def get_claude_adapter(self) -> ClaudeAdapter:
-        """获取 Claude 适配器"""
+        model = self.default_model if self.default_provider == 'openai' else 'gpt-4o-mini'
+        print(f"[LLM Service] 创建 OpenAI Adapter - Model: {model}")
+
+        return ChatOpenAI(
+            api_key=settings.openai_api_key,
+            model=model,
+            temperature=0.7,
+            max_tokens=2000
+        )
+
+    def get_claude_adapter(self):
+        """获取 Claude 适配器（使用 LangChain ChatAnthropic）"""
         if not settings.claude_api_key:
             raise ValueError("Claude API Key not configured")
 
+        from langchain_anthropic import ChatAnthropic
+
         model = self.default_model if self.default_provider == 'claude' else 'claude-3-5-sonnet-20241022'
-        return ClaudeAdapter(api_key=settings.claude_api_key, model=model)
+        print(f"[LLM Service] 创建 Claude Adapter - Model: {model}")
+
+        return ChatAnthropic(
+            api_key=settings.claude_api_key,
+            model=model,
+            temperature=0.7,
+            max_tokens=2000
+        )
 
     def get_ollama_adapter(self) -> OllamaAdapter:
         """获取 Ollama 适配器"""

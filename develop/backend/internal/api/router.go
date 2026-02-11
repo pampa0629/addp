@@ -12,6 +12,39 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// internalAPIKeyMiddleware 处理内部 API 认证（X-Internal-API-Key）
+// 如果请求包含有效的内部 API Key，则设置上下文并标记为已认证
+func internalAPIKeyMiddleware(expectedKey string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// 检查是否有内部 API Key
+		apiKey := c.GetHeader("X-Internal-API-Key")
+		if apiKey != "" && apiKey == expectedKey {
+			// 内部 API 调用，设置默认的上下文信息
+			c.Set(commonAuth.ContextUserIDKey, uint(1))
+			c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
+			c.Set(commonAuth.ContextTenantIDKey, uint(1)) // 默认租户 ID
+			c.Set("internal_api_authenticated", true)     // 标记为已通过内部认证
+		}
+		c.Next()
+	}
+}
+
+// systemAuthMiddlewareWrapper 包装 SystemAuthMiddleware，支持跳过已通过内部认证的请求
+func systemAuthMiddlewareWrapper(systemURL string) gin.HandlerFunc {
+	authMiddleware := commonAuth.SystemAuthMiddleware(systemURL)
+
+	return func(c *gin.Context) {
+		// 如果已经通过内部 API 认证，跳过 JWT 认证
+		if authenticated, exists := c.Get("internal_api_authenticated"); exists && authenticated.(bool) {
+			c.Next()
+			return
+		}
+
+		// 否则，执行正常的 JWT 认证
+		authMiddleware(c)
+	}
+}
+
 // SetupRouter 设置路由（Phase 3 完整版本）
 func SetupRouter(
 	cfg *config.Config,
@@ -67,7 +100,10 @@ func SetupRouter(
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/develop")
-	api.Use(commonAuth.SystemAuthMiddleware(cfg.SystemServiceURL))
+	// 添加内部 API 认证中间件（支持 X-Internal-API-Key）
+	api.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
+	// 使用包装后的认证中间件（支持跳过已通过内部认证的请求）
+	api.Use(systemAuthMiddlewareWrapper(cfg.SystemServiceURL))
 	// 审计日志中间件（记录到 System 模块）
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("develop", systemClient))

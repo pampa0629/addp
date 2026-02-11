@@ -598,7 +598,7 @@ const confirmSave = async () => {
       display_name: saveForm.display_name,
       dev_type: 'workflow',
       description: saveForm.description,
-      execution_config: JSON.stringify(executionConfig),  // 序列化为 JSON 字符串
+      execution_config: executionConfig,  // 直接传递对象，不需要序列化
       content: {
         workflow_definition: workflow,
         inputs: {}
@@ -680,7 +680,7 @@ const confirmExecute = async () => {
     const tempTask = await createDevItem({
       name: `临时工作流_${Date.now()}`,
       dev_type: 'workflow',
-      execution_config: JSON.stringify(executionConfig),
+      execution_config: executionConfig,  // 直接传递对象，不需要序列化
       content: {
         workflow_definition: workflow,
         inputs: inputs

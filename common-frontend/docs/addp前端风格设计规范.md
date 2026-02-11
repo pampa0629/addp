@@ -8,7 +8,7 @@
 
 ### 1. 统一颜色系统
 
-**禁止使用硬编码颜色值**。所有颜色必须通过 CSS 变量引用，以支持主题切换（浅色/暗黑模式）。
+**禁止使用硬编码颜色值**。所有颜色必须通过 CSS 变量引用，以支持主题切换（浅色/深色/蓝色/紫色模式）。
 
 ### 2. DRY（Don't Repeat Yourself）原则
 
@@ -39,13 +39,12 @@
 --addp-bg-header       /* 顶部导航栏背景色 */
 ```
 
-**浅色模式值**：
-- `--addp-bg-primary: #FFFFFF`
-- `--addp-bg-secondary: #F5F7FA`
+**不同主题的典型值**：
 
-**暗黑模式值**：
-- `--addp-bg-primary: #1D1E1F`
-- `--addp-bg-secondary: #141414`
+| 变量 | 浅色模式 | 深色模式 | 蓝色模式 | 紫色模式 |
+|------|---------|---------|---------|---------|
+| `--addp-bg-primary` | `#FFFFFF` | `#1D1E1F` | `#0f1629` | `#1a1625` |
+| `--addp-bg-secondary` | `#F5F7FA` | `#141414` | `#0a0f1e` | `#0f0a1a` |
 
 #### 文本色变量
 
@@ -55,15 +54,13 @@
 --addp-text-tertiary   /* 三级文本：占位符、禁用文本、提示信息 */
 ```
 
-**浅色模式值**：
-- `--addp-text-primary: #303133`
-- `--addp-text-secondary: #606266`
-- `--addp-text-tertiary: #909399`
+**不同主题的典型值**：
 
-**暗黑模式值**：
-- `--addp-text-primary: #E5EAF3`
-- `--addp-text-secondary: #CFD3DC`
-- `--addp-text-tertiary: #A3A6AD`
+| 变量 | 浅色模式 | 深色模式 | 蓝色模式 | 紫色模式 |
+|------|---------|---------|---------|---------|
+| `--addp-text-primary` | `#303133` | `#E5EAF3` | `#e0e7ff` | `#e8e3f0` |
+| `--addp-text-secondary` | `#606266` | `#CFD3DC` | `#c7d2fe` | `#c4b8d9` |
+| `--addp-text-tertiary` | `#909399` | `#A3A6AD` | `#a5b4fc` | `#9d8eb8` |
 
 #### 边框色变量
 
@@ -72,13 +69,12 @@
 --addp-border-color-light /* 浅边框色：次要分隔线 */
 ```
 
-**浅色模式值**：
-- `--addp-border-color: #E4E7ED`
-- `--addp-border-color-light: #EBEEF5`
+**不同主题的典型值**：
 
-**暗黑模式值**：
-- `--addp-border-color: #4C4D4F`
-- `--addp-border-color-light: #414243`
+| 变量 | 浅色模式 | 深色模式 | 蓝色模式 | 紫色模式 |
+|------|---------|---------|---------|---------|
+| `--addp-border-color` | `#E4E7ED` | `#4C4D4F` | `#1e3a8a` | `#3a2f52` |
+| `--addp-border-color-light` | `#EBEEF5` | `#414243` | `#1e40af` | `#2d243f` |
 
 #### 阴影变量
 
@@ -195,7 +191,220 @@ var(--el-color-primary)   /* 主色：蓝色 */
 
 ---
 
-## 主题切换支持
+## 主题系统架构
+
+### 主题类型
+
+ADDP 平台支持 **5 种主题模式**，定义在 `common-frontend/basic/src/config/themes.js` 中：
+
+| 主题值 | 主题名称 | 图标 | 是否深色 | 说明 |
+|--------|---------|------|---------|------|
+| `system` | 跟随系统 | Monitor | 跟随系统 | 根据操作系统设置自动切换浅色/深色 |
+| `light` | 浅色模式 | Sunny | `false` | 传统浅色主题，白色背景 |
+| `dark` | 深色模式 | Moon | `true` | 传统深色主题，深灰色背景 |
+| `blue` | 蓝色模式 | Cloudy | `true` | 深色系，蓝色调背景和边框 |
+| `purple` | 紫色模式 | MagicStick | `true` | 深色系，紫色调背景和边框 |
+
+### 主题配置文件
+
+所有主题配置集中在 `common-frontend/basic/src/config/themes.js` 中：
+
+```javascript
+export const THEME_CONFIGS = [
+  {
+    value: 'system',
+    label: '跟随系统',
+    icon: 'Monitor',
+    isDarkTheme: null // null 表示跟随系统
+  },
+  {
+    value: 'light',
+    label: '浅色模式',
+    icon: 'Sunny',
+    isDarkTheme: false
+  },
+  {
+    value: 'dark',
+    label: '深色模式',
+    icon: 'Moon',
+    isDarkTheme: true
+  },
+  {
+    value: 'blue',
+    label: '蓝色模式',
+    icon: 'Cloudy',
+    isDarkTheme: true // 蓝色主题视为深色（用于 Element Plus 深色 CSS）
+  },
+  {
+    value: 'purple',
+    label: '紫色模式',
+    icon: 'MagicStick',
+    isDarkTheme: true // 紫色主题视为深色（用于 Element Plus 深色 CSS）
+  }
+]
+```
+
+**新增主题步骤**：
+1. 在 `themes.js` 中添加主题配置
+2. 在 `theme.css` 中添加对应的 CSS 变量定义（`html.{theme-name}` 选择器）
+3. 在 `ThemeSwitcher.vue` 中导入对应的图标组件
+
+### 主题 CSS 变量定义
+
+所有主题的 CSS 变量定义在 `common-frontend/basic/src/styles/theme.css` 中。
+
+#### 浅色模式（`:root`）
+
+```css
+:root {
+  --addp-bg-primary: #FFFFFF;
+  --addp-bg-secondary: #F5F7FA;
+  --addp-bg-sidebar: #FFFFFF;
+  --addp-bg-header: #FFFFFF;
+
+  --addp-text-primary: #303133;
+  --addp-text-secondary: #606266;
+  --addp-text-tertiary: #909399;
+
+  --addp-border-color: #E4E7ED;
+  --addp-border-color-light: #EBEEF5;
+
+  --addp-primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+```
+
+#### 深色模式（`html.dark`）
+
+```css
+html.dark {
+  --addp-bg-primary: #1D1E1F;
+  --addp-bg-secondary: #141414;
+  --addp-bg-sidebar: #1D1E1F;
+  --addp-bg-header: #1D1E1F;
+
+  --addp-text-primary: #E5EAF3;
+  --addp-text-secondary: #CFD3DC;
+  --addp-text-tertiary: #A3A6AD;
+
+  --addp-border-color: #4C4D4F;
+  --addp-border-color-light: #414243;
+
+  --addp-primary-gradient: linear-gradient(135deg, #7c8fe6 0%, #9068bc 100%);
+}
+```
+
+#### 蓝色模式（`html.blue`）
+
+```css
+html.blue {
+  --addp-bg-primary: #0f1629;
+  --addp-bg-secondary: #0a0f1e;
+  --addp-bg-sidebar: #0f1629;
+  --addp-bg-header: #0f1629;
+
+  --addp-text-primary: #e0e7ff;
+  --addp-text-secondary: #c7d2fe;
+  --addp-text-tertiary: #a5b4fc;
+
+  --addp-border-color: #1e3a8a;
+  --addp-border-color-light: #1e40af;
+
+  --addp-primary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+```
+
+#### 紫色模式（`html.purple`）
+
+```css
+html.purple {
+  --addp-bg-primary: #1a1625;
+  --addp-bg-secondary: #0f0a1a;
+  --addp-bg-sidebar: #1a1625;
+  --addp-bg-header: #1a1625;
+
+  --addp-text-primary: #e8e3f0;
+  --addp-text-secondary: #c4b8d9;
+  --addp-text-tertiary: #9d8eb8;
+
+  --addp-border-color: #3a2f52;
+  --addp-border-color-light: #2d243f;
+
+  --addp-primary-gradient: linear-gradient(135deg, #a78bfa 0%, #c084fc 100%);
+}
+```
+
+### 深色系主题的双重 class 机制
+
+**核心机制**：深色系主题（`dark`、`blue`、`purple`）会同时应用两个 class：
+
+```html
+<!-- 深色模式 -->
+<html class="dark">
+
+<!-- 蓝色模式 -->
+<html class="dark blue">
+
+<!-- 紫色模式 -->
+<html class="dark purple">
+```
+
+**为什么需要同时应用 `dark` class？**
+
+1. **Element Plus 深色 CSS 依赖**：`element-plus/theme-chalk/dark/css-vars.css` 只在 `html.dark` 时生效
+2. **自定义主题变量覆盖**：`html.blue` 和 `html.purple` 在 `dark` 的基础上覆盖特定颜色变量
+3. **避免重复定义**：不需要为每个深色系主题重新定义所有 Element Plus 组件样式
+
+**实现逻辑**（在 `useTheme.js` 中）：
+
+```javascript
+function applyTheme(mode, systemPrefersDark = false) {
+  const html = document.documentElement
+  const config = getThemeConfig(mode)
+
+  // 清除所有主题 class
+  html.classList.remove('dark', 'light', 'blue', 'purple')
+
+  if (mode === 'light') {
+    // 浅色模式：不添加任何 class（使用 :root 变量）
+    console.log('[Theme] 应用浅色模式')
+  } else if (mode === 'system') {
+    // 跟随系统：根据系统偏好决定是否添加 dark class
+    if (systemPrefersDark) {
+      html.classList.add('dark')
+      console.log('[Theme] 跟随系统（深色）')
+    } else {
+      console.log('[Theme] 跟随系统（浅色）')
+    }
+  } else {
+    // 其他主题：添加对应的 class
+    html.classList.add(mode)
+
+    // 如果是深色主题，同时添加 dark class 以触发 Element Plus 深色 CSS
+    if (config.isDarkTheme) {
+      html.classList.add('dark')
+      console.log(`[Theme] 应用 ${config.label}（深色系，同时启用 Element Plus 深色模式）`)
+    } else {
+      console.log(`[Theme] 应用 ${config.label}`)
+    }
+  }
+}
+```
+
+### Element Plus 深色模式集成
+
+**所有模块的 `main.js` 必须静态导入 Element Plus 深色 CSS**：
+
+```javascript
+// 导入 Element Plus 深色模式 CSS
+import 'element-plus/theme-chalk/dark/css-vars.css'
+// 导入统一主题 CSS
+import '@common-ui/styles/theme.css'
+```
+
+**重要说明**：
+- 这个 CSS 文件只在 `html.dark` 时生效，不会强制应用深色模式
+- 通过动态添加/移除 `dark` class 来控制 Element Plus 是否使用深色样式
+- 静态导入是正确的做法，不需要动态加载
 
 ### 自动过渡动画
 
@@ -228,7 +437,7 @@ watch(isDark, (newIsDark) => {
     iframe.contentWindow?.postMessage({
       type: 'theme-change',
       source: 'addp-portal',
-      mode: mode.value,          // 'system' | 'light' | 'dark'
+      mode: mode.value,          // 'system' | 'light' | 'dark' | 'blue' | 'purple'
       isDark: newIsDark,         // boolean
       timestamp: Date.now()
     }, window.location.origin)
@@ -347,9 +556,9 @@ import { MyComponent } from '@common-ui'
 
 ### 全局覆盖规则
 
-`theme.css` 已经为 Element Plus 组件提供了全局暗黑模式覆盖样式，**无需在各模块中重复覆盖**。
+`theme.css` 已经为 Element Plus 组件提供了全局深色系主题覆盖样式，**无需在各模块中重复覆盖**。
 
-已覆盖的组件包括：
+**深色系主题选择器**（`html.dark, html.blue, html.purple`）下已覆盖的组件：
 
 - `el-empty`：空状态
 - `el-pagination`：分页器
@@ -365,6 +574,31 @@ import { MyComponent } from '@common-ui'
 - `el-tabs`：标签页
 - `el-breadcrumb`：面包屑
 - `el-descriptions`：描述列表
+- `el-menu`：菜单组件
+
+**覆盖样式示例**（在 `theme.css` 中）：
+
+```css
+/* 深色系主题和紫色主题、蓝色主题共享这些样式 */
+html.dark,
+html.blue,
+html.purple {
+  .el-card {
+    background-color: var(--addp-bg-primary) !important;
+    border-color: var(--addp-border-color) !important;
+  }
+
+  .el-empty {
+    background-color: transparent !important;
+  }
+
+  .el-pagination button,
+  .el-pagination .el-pager li {
+    background-color: var(--addp-bg-primary) !important;
+    color: var(--addp-text-primary) !important;
+  }
+}
+```
 
 ### 组件级覆盖
 
@@ -1051,7 +1285,7 @@ perf(meta): 优化元数据扫描性能
 
 ### Q1: 为什么不能使用硬编码颜色？
 
-**A**: 硬编码颜色会导致暗黑模式无法生效。所有颜色必须通过 CSS 变量引用，以支持主题切换。
+**A**: 硬编码颜色会导致主题切换无法生效。所有颜色必须通过 CSS 变量引用，以支持主题切换（浅色/深色/蓝色/紫色模式）。
 
 ### Q2: 如何在模板中动态设置颜色？
 
@@ -1083,72 +1317,56 @@ const bgColor = computed(() => 'var(--addp-bg-primary)')
 
 ### Q4: 新增的 CSS 变量是否需要同步到所有主题？
 
-**A**: 是的。在 `theme.css` 中新增变量时，必须同时为浅色模式（`:root`）和暗黑模式（`html.dark`）定义值。
+**A**: 是的。在 `theme.css` 中新增变量时，必须同时为所有主题（`:root`、`html.dark`、`html.blue`、`html.purple`）定义值。
 
-### Q5: 如何测试暗黑模式效果？
+### Q5: 如何测试不同主题的效果？
 
-**A**: 在浏览器中切换 Portal 右上角的主题开关，或者直接在开发者工具中为 `<html>` 元素添加/移除 `dark` class。
+**A**: 在浏览器中切换 Portal 右上角的主题开关，选择不同主题查看效果。也可以直接在开发者工具中为 `<html>` 元素添加/移除主题 class（`dark`、`blue`、`purple`）。
+
+### Q6: 为什么蓝色/紫色主题需要同时添加 `dark` class？
+
+**A**: 蓝色和紫色主题是深色系主题，需要 Element Plus 的深色模式 CSS 支持。通过同时添加 `dark` class，可以复用 Element Plus 的深色模式样式，只需覆盖特定颜色变量即可。
+
+### Q7: 如何新增自定义主题？
+
+**A**: 按以下步骤新增：
+1. 在 `common-frontend/basic/src/config/themes.js` 中添加主题配置
+2. 在 `common-frontend/basic/src/styles/theme.css` 中添加对应的 CSS 变量定义（`html.{theme-name}` 选择器）
+3. 在 `ThemeSwitcher.vue` 中导入对应的图标组件
+4. 如果是深色系主题，设置 `isDarkTheme: true`
 
 ---
 
-## 暗黑模式实施指南
+## 主题系统实施指南
 
 ### 关键实施步骤
 
 #### 1. CSS 变量定义位置
 
-每个模块的 `App.vue` 必须包含完整的 CSS 变量定义：
+每个模块的 `main.js` 必须导入统一的主题 CSS：
+
+```javascript
+// 导入 Element Plus 深色模式 CSS（静态导入，仅在 html.dark 时生效）
+import 'element-plus/theme-chalk/dark/css-vars.css'
+// 导入统一主题 CSS（包含所有主题的 CSS 变量定义）
+import '@common-ui/styles/theme.css'
+```
+
+**重要说明**：
+- `theme.css` 包含所有主题（`:root`、`html.dark`、`html.blue`、`html.purple`）的 CSS 变量定义
+- `element-plus/theme-chalk/dark/css-vars.css` 仅在 `html.dark` 时生效
+- 所有主题变量由 `common-frontend/basic/src/styles/theme.css` 统一管理
+
+可选：如需在模块的 `App.vue` 中添加模块特定的覆盖样式：
 
 ```vue
 <style>
-/* 浅色模式变量 */
-:root {
-  --addp-bg-primary: #FFFFFF;
-  --addp-bg-secondary: #F5F7FA;
-  --addp-text-primary: #303133;
-  --addp-text-secondary: #606266;
-  --addp-text-tertiary: #909399;
-  --addp-border-color: #E4E7ED;
-}
-
-/* 深色模式变量 */
-html.dark {
-  --addp-bg-primary: #1D1E1F;
-  --addp-bg-secondary: #141414;
-  --addp-text-primary: #E5EAF3;
-  --addp-text-secondary: #CFD3DC;
-  --addp-text-tertiary: #A3A6AD;
-  --addp-border-color: #4C4D4F;
-}
-
-#app {
-  background: var(--addp-bg-secondary) !important;
-}
-
-/* 强制覆盖 Element Plus 在深色模式下的样式 */
-html.dark .el-card {
+/* 模块特定的样式覆盖（可选） */
+html.dark .module-specific-component {
   background-color: var(--addp-bg-primary) !important;
-  border-color: var(--addp-border-color) !important;
-}
-
-html.dark .el-card__body {
-  background-color: var(--addp-bg-primary) !important;
-}
-
-html.dark .el-empty {
-  background-color: transparent !important;
-}
-
-html.dark .el-empty__description p {
-  color: var(--addp-text-secondary) !important;
 }
 </style>
 ```
-
-**为什么必须在 App.vue 中定义？**
-- Vite 开发模式下外部 CSS 文件导入可能不生效
-- 直接在 App.vue 中定义确保在任何情况下都能加载
-- `!important` 用于覆盖 Element Plus 的默认样式
 
 #### 2. 布局组件中禁止硬编码背景色
 
@@ -1158,7 +1376,7 @@ html.dark .el-empty__description p {
 <style scoped>
 /* 错误：硬编码的浅色背景 */
 .content-only {
-  background: #f0f2f5;  /* 在暗黑模式下不会变化！*/
+  background: #f0f2f5;  /* 在切换主题时不会变化！*/
 }
 </style>
 ```
@@ -1234,20 +1452,29 @@ html.dark .el-empty__description p {
 
 ### 常见问题和解决方案
 
-#### 问题 1：暗黑模式下出现白色背景
+#### 问题 1：切换主题后某些区域颜色不变
 
-**症状**：切换到暗黑模式后，某些区域仍然显示白色背景。
+**症状**：切换主题后，某些区域仍然显示原来的颜色。
 
 **排查步骤**：
 1. 打开浏览器开发者工具
-2. 检查 HTML 元素是否有 `dark` class：
+2. 检查 HTML 元素是否有正确的主题 class：
    ```javascript
+   // 深色模式
    document.documentElement.classList.contains('dark')  // 应该返回 true
+
+   // 蓝色模式
+   document.documentElement.className  // 应该是 "dark blue"
+
+   // 紫色模式
+   document.documentElement.className  // 应该是 "dark purple"
    ```
 3. 检查 CSS 变量是否正确：
    ```javascript
    getComputedStyle(document.documentElement).getPropertyValue('--addp-bg-primary')
-   // 应该返回 '#1D1E1F'
+   // 深色模式应该返回 '#1D1E1F'
+   // 蓝色模式应该返回 '#0f1629'
+   // 紫色模式应该返回 '#1a1625'
    ```
 4. 检查元素的实际背景色：
    ```javascript
@@ -1257,12 +1484,12 @@ html.dark .el-empty__description p {
 **常见原因**：
 - Layout 组件中有硬编码的背景色（如 `background: #f0f2f5`）
 - Element Plus 组件的默认样式优先级更高，需要添加 `!important`
-- CSS 变量未在 App.vue 中正确定义
+- CSS 变量未在 `theme.css` 中正确定义
 
 **解决方案**：
 1. 查找所有 `.vue` 文件中的硬编码颜色并替换为 CSS 变量
 2. 在组件样式中添加 `!important`
-3. 在 App.vue 中添加全局的 Element Plus 组件覆盖样式
+3. 确保 `main.js` 中导入了 `@common-ui/styles/theme.css`
 
 #### 问题 2：Portal 与 iframe 模块主题不同步
 
@@ -1298,35 +1525,37 @@ html.dark .el-empty__description p {
 
 **原因**：Element Plus 组件有更高优先级的内联样式或默认样式。
 
-**解决方案**：在 App.vue 中添加全局覆盖：
+**解决方案**：在 `theme.css` 中添加全局覆盖（已在 `common-frontend/basic/src/styles/theme.css` 中定义）：
 
-```vue
-<style>
-html.dark .el-card {
-  background-color: var(--addp-bg-primary) !important;
-}
+```css
+html.dark,
+html.blue,
+html.purple {
+  .el-card {
+    background-color: var(--addp-bg-primary) !important;
+  }
 
-html.dark .el-empty {
-  background-color: transparent !important;
-}
+  .el-empty {
+    background-color: transparent !important;
+  }
 
-html.dark .el-pagination {
-  background-color: transparent !important;
+  .el-pagination {
+    background-color: transparent !important;
+  }
 }
-</style>
 ```
 
 ### 验证清单
 
-新增或修改模块时，使用以下清单验证暗黑模式是否正确实施：
+新增或修改模块时，使用以下清单验证主题系统是否正确实施：
 
-- [ ] App.vue 中包含完整的 CSS 变量定义（`:root` 和 `html.dark`）
-- [ ] App.vue 中添加了 Element Plus 组件的全局覆盖样式
+- [ ] `main.js` 中导入了 `element-plus/theme-chalk/dark/css-vars.css`
+- [ ] `main.js` 中导入了 `@common-ui/styles/theme.css`
+- [ ] `main.js` 中正确初始化了 `useTheme`（包括 `listenToPortal: true`）
 - [ ] Layout.vue 中所有容器使用 CSS 变量，无硬编码颜色
 - [ ] 所有组件的背景色、文本色、边框色使用 CSS 变量
 - [ ] 关键容器样式使用 `!important`
-- [ ] main.js 中正确初始化了 useTheme
-- [ ] 浏览器中切换主题，所有区域都正确变化
+- [ ] 浏览器中切换所有主题（浅色/深色/蓝色/紫色），所有区域都正确变化
 - [ ] 在 Portal 中嵌入时，主题能正确同步
 
 ---
@@ -1335,6 +1564,7 @@ html.dark .el-pagination {
 
 | 版本 | 日期 | 修订内容 | 作者 |
 |------|------|----------|------|
+| 1.1.0 | 2026-02-11 | 新增多主题系统支持（蓝色/紫色模式），完善主题系统架构说明 | Claude Code |
 | 1.0.0 | 2026-02-10 | 初始版本 | Claude Code |
 
 ---

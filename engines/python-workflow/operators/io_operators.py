@@ -30,7 +30,7 @@ def load(
     geojson: Dict[str, Any] = None,
     geom_column: str = None,
     **kwargs
-) -> gpd.GeoDataFrame:
+):
     """
     通用数据加载算子
 
@@ -38,6 +38,8 @@ def load(
     - connection_info: 数据库连接信息（已解密），包含 engine_type、host、port、user、password、database 等
     - source_type: "table" | "file" | "geojson" | "reference"
     - 其他参数: table/path、schema/format 等
+
+    返回: DataFrame（普通表）或 GeoDataFrame（空间表）
 
     注意：此算子不再依赖 System API，所有连接信息由 Develop Backend 预处理后传入
     """
@@ -89,9 +91,9 @@ def load(
                 logger.info(f"自动检测到几何列: {detected_geom_col}")
                 gdf = gpd.read_postgis(sql, engine_db, geom_col=detected_geom_col)
             else:
-                # 没有几何列，作为普通表加载
+                # 没有几何列，作为普通表加载（返回 DataFrame）
                 logger.warning(f"表 {schema}.{table} 中没有几何列，作为普通 DataFrame 加载")
-                gdf = gpd.GeoDataFrame(pd.read_sql(sql, engine_db))
+                gdf = pd.read_sql(sql, engine_db)
 
         elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             if password:
@@ -117,7 +119,7 @@ def load(
                     gdf = gpd.read_postgis(sql, engine_db)
                 except Exception as e:
                     logger.warning(f"自动检测失败: {e}，作为普通 DataFrame 加载")
-                    gdf = gpd.GeoDataFrame(pd.read_sql(sql, engine_db))
+                    gdf = pd.read_sql(sql, engine_db)
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
@@ -157,7 +159,7 @@ def load(
 
 
 def save(
-    input_gdf: gpd.GeoDataFrame,
+    input_df,  # 支持 pd.DataFrame 和 gpd.GeoDataFrame
     target_type: str,
     connection_info: Dict[str, Any] = None,
     schema: str = None,
@@ -171,7 +173,7 @@ def save(
     通用数据保存算子
 
     参数由 Develop Backend 预处理：
-    - input_gdf: 要保存的空间数据（由工作流引擎注入）
+    - input_df: 要保存的数据（支持 DataFrame 和 GeoDataFrame）
     - connection_info: 数据库连接信息（已解密）
     - target_type: "table" | "file"
     """
@@ -197,7 +199,15 @@ def save(
             engine_db = create_engine(conn_str)
 
             if_exists = 'replace' if mode == 'replace' else 'append'
-            input_gdf.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
+
+            # 判断是空间数据还是普通数据
+            # 检查是否为 GeoDataFrame 且已设置几何列（通过 _geometry_column_name 属性）
+            if isinstance(input_df, gpd.GeoDataFrame) and input_df._geometry_column_name is not None:
+                # 使用 to_postgis 保存空间数据（支持任意几何列名）
+                input_df.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
+            else:
+                # 使用 to_sql 保存普通数据
+                input_df.to_sql(table, engine_db, schema=schema, if_exists=if_exists, index=False)
 
         elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             if password:
@@ -208,12 +218,20 @@ def save(
             engine_db = create_engine(conn_str)
 
             if_exists = 'replace' if mode == 'replace' else 'append'
-            input_gdf.to_sql(table, engine_db, if_exists=if_exists, index=False)
+            # MySQL/Doris 使用 to_sql（即使是 GeoDataFrame 也先转换为 DataFrame）
+            if isinstance(input_df, gpd.GeoDataFrame):
+                # 转换几何列为 WKT 格式
+                df_to_save = input_df.copy()
+                if 'geometry' in df_to_save.columns:
+                    df_to_save['geometry'] = df_to_save['geometry'].apply(lambda x: x.wkt if x else None)
+                df_to_save.to_sql(table, engine_db, if_exists=if_exists, index=False)
+            else:
+                input_df.to_sql(table, engine_db, if_exists=if_exists, index=False)
 
         else:
             raise ValueError(f"Unsupported engine type for table: {engine_type}")
 
-        return input_gdf
+        return input_df
 
     elif target_type == 'file':
         # TODO: 实现保存到对象存储逻辑
@@ -222,13 +240,17 @@ def save(
 
         # 临时实现：保存到本地文件
         if format == 'geojson':
-            input_gdf.to_file(path, driver='GeoJSON')
+            if not isinstance(input_df, gpd.GeoDataFrame):
+                raise ValueError("保存为 GeoJSON 需要空间数据（GeoDataFrame）")
+            input_df.to_file(path, driver='GeoJSON')
         elif format == 'shapefile':
-            input_gdf.to_file(path, driver='ESRI Shapefile')
+            if not isinstance(input_df, gpd.GeoDataFrame):
+                raise ValueError("保存为 Shapefile 需要空间数据（GeoDataFrame）")
+            input_df.to_file(path, driver='ESRI Shapefile')
         else:
             raise ValueError(f"Unsupported format: {format}")
 
-        return input_gdf
+        return input_df
 
     else:
         raise ValueError(f"Unsupported target_type: {target_type}")
@@ -384,17 +406,17 @@ SAVE_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据保存",
-    brief_description="将空间数据保存到数据库表或文件,支持多种输出格式",
+    brief_description="将数据保存到数据库表或文件,支持普通表和空间表",
 
-    overview="通用数据保存算子,支持将 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)或文件(Shapefile/GeoJSON)。根据 target_type 参数自动选择保存方式。",
+    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)或文件(Shapefile/GeoJSON)。根据 target_type 参数自动选择保存方式。",
 
     params=[
         OperatorParam(
-            name="input_gdf",
+            name="input_df",
             type="input",
-            data_type="GeoDataFrame",
+            data_type="DataFrame",
             required=True,
-            description="要保存的空间数据"
+            description="要保存的数据（支持 DataFrame 和 GeoDataFrame）"
         ),
         OperatorParam(
             name="target_type",
@@ -456,10 +478,10 @@ SAVE_METADATA = OperatorMetadata(
             type="param",
             data_type="string",
             required=False,
-            description="表已存在时的处理方式",
+            description="表已存在时的处理方式（必须从枚举值中选择）",
             enum=["replace", "append", "fail"],
             default="replace",
-            notes="可选值: replace(替换), append(追加), fail(失败)",
+            notes="可选值: replace(替换表), append(追加数据), fail(抛出错误)。**重要**：只能使用这三个值之一，不能使用 overwrite 等其他值！",
             depends_on="target_type",
             show_when={"target_type": "table"}
         ),
@@ -495,7 +517,9 @@ SAVE_METADATA = OperatorMetadata(
     ],
 
     notes=[
-        "保存到数据库时会自动创建几何索引提升查询性能",
+        "自动识别输入数据类型（DataFrame 或 GeoDataFrame）",
+        "保存空间数据到 PostgreSQL 时使用 PostGIS，自动创建几何索引",
+        "保存普通数据使用标准 SQL 表",
         "保存到Shapefile时字段名会被截断为10个字符",
         "GeoJSON 格式保留所有字段名和数据精度",
         "mode=append 时要求表结构与数据结构一致",
@@ -506,14 +530,14 @@ SAVE_METADATA = OperatorMetadata(
         'id': 'save_result',
         'operator': 'save',
         'params': {
-            'data': {'$ref': 'buffer_rivers'},
+            'input_df': {'$ref': 'task1'},  # 引用前一个任务的输出
             'target_type': 'table',
             'engine_id': 1,
             'schema': 'public',
-            'table': 'river_buffer_result',
+            'table': 'result_table',
             'mode': 'replace'
         },
-        'depends_on': ['buffer_rivers']
+        'depends_on': ['task1']
     }
 )
 
