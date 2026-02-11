@@ -129,8 +129,8 @@ const handleCommand = (command) => {
 }
 
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary) !important;
+  border-bottom: 1px solid var(--addp-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -163,12 +163,12 @@ const handleCommand = (command) => {
 }
 
 .user-dropdown:hover {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary) !important;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .el-menu-vertical {
@@ -176,7 +176,7 @@ const handleCommand = (command) => {
 }
 
 .main-content {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary) !important;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -184,15 +184,15 @@ const handleCommand = (command) => {
 
 .page-header {
   padding: 16px 24px;
-  background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  background: var(--addp-bg-primary) !important;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .page-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .page-body {
@@ -203,7 +203,7 @@ const handleCommand = (command) => {
 .content-only {
   width: 100%;
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary) !important;
   padding: 20px;
   box-sizing: border-box;
 }

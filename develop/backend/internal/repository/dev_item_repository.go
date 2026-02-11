@@ -59,19 +59,9 @@ func (r *DevItemRepository) List(req *models.ListDevItemsRequest, tenantID uint)
 		query = query.Where("dev_type = ?", req.DevType)
 	}
 
-	// 查询类型过滤
-	if req.QueryType != "" {
-		query = query.Where("query_type = ?", req.QueryType)
-	}
-
 	// 状态过滤
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)
-	}
-
-	// 资源ID过滤
-	if req.EngineID != nil {
-		query = query.Where("engine_id = ?", *req.EngineID)
 	}
 
 	// 标签过滤 (PostgreSQL array contains)
@@ -122,7 +112,9 @@ func (r *DevItemRepository) UpdateLastExecution(id uint, tenantID uint, executio
 // FindScheduledItems 查找所有启用了调度的开发项
 func (r *DevItemRepository) FindScheduledItems(tenantID uint) ([]models.DevItem, error) {
 	var items []models.DevItem
-	if err := r.db.Where("tenant_id = ? AND is_scheduled = ? AND status = ?", tenantID, true, "active").
+	// 修改为使用 schedule 字段判断（替代已删除的 is_scheduled 字段）
+	if err := r.db.Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND schedule != '0' AND status = ?",
+		tenantID, "active").
 		Find(&items).Error; err != nil {
 		return nil, err
 	}
@@ -174,16 +166,6 @@ func (r *DevItemRepository) CountByType(tenantID uint) (map[string]int64, error)
 	}
 
 	return counts, nil
-}
-
-// FindByResourceID 查找使用指定资源的所有开发项
-func (r *DevItemRepository) FindByResourceID(engineID uint, tenantID uint) ([]models.DevItem, error) {
-	var items []models.DevItem
-	if err := r.db.Where("engine_id = ? AND tenant_id = ?", engineID, tenantID).
-		Find(&items).Error; err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 // BatchUpdateStatus 批量更新状态

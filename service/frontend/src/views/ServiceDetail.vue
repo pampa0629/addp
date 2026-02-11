@@ -41,7 +41,7 @@
               复制
             </el-button>
           </div>
-          <div style="margin-top: 8px; font-size: 12px; color: #909399;">
+          <div style="margin-top: 8px; font-size: 12px; color: var(--addp-text-tertiary);">
             ✓ 通过 ADDP Gateway 统一代理，支持认证转发和访问审计
           </div>
         </el-descriptions-item>
@@ -240,11 +240,11 @@ onMounted(() => {
 }
 
 pre {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.5;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 </style>

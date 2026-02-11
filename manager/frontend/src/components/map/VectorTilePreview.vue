@@ -542,7 +542,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 
 .ol-popup-content :deep(.primary-label) {
   font-size: 11px;
-  color: #999;
+  color: var(--addp-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -576,7 +576,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 }
 
 .ol-popup-content :deep(.null-value) {
-  color: #999;
+  color: var(--addp-text-tertiary);
   font-style: italic;
 }
 </style>

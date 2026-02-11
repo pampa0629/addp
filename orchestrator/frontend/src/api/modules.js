@@ -10,7 +10,7 @@ export default {
    * listTasksByIdentifier('meta.scanner.default', {page: 1, page_size: 100})
    */
   async listTasksByIdentifier(uniqueIdentifier, params = {}) {
-    const data = await client.get('/tasks/list', {
+    const data = await client.get('/orchestrator/tasks/list', {
       params: { unique_identifier: uniqueIdentifier, ...params }
     })
     return data

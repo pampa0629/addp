@@ -103,7 +103,7 @@
       <el-empty description="暂不支持该文件类型的预览">
         <template #description>
           <p>不支持 {{ fileExtension || '该类型' }} 文件的在线预览</p>
-          <p style="font-size: 12px; color: #909399; margin-top: 8px;">
+          <p style="font-size: 12px; color: var(--addp-text-tertiary); margin-top: 8px;">
             支持的格式：PDF、DOCX、WPS、PPTX、图片、JSON、GeoJSON、CSV、SQLite、文本
           </p>
         </template>
@@ -1333,6 +1333,12 @@ const handleNavigate = (path) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--addp-bg-primary) !important;
+}
+
+.preview-panel :deep(.el-card) {
+  background: var(--addp-bg-primary) !important;
+  border-color: var(--addp-border-color) !important;
 }
 
 .preview-panel :deep(.el-card__body) {
@@ -1340,6 +1346,7 @@ const handleNavigate = (path) => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--addp-bg-primary) !important;
 }
 
 .panel-header {
@@ -1399,6 +1406,7 @@ const handleNavigate = (path) => {
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--addp-bg-primary) !important;
 }
 
 .preview-content {
@@ -1406,5 +1414,15 @@ const handleNavigate = (path) => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--addp-bg-primary) !important;
+}
+
+/* 强制覆盖 Element Plus Empty 组件的背景 */
+.preview-panel :deep(.el-empty) {
+  background: transparent !important;
+}
+
+.preview-panel :deep(.el-empty__description) {
+  color: var(--addp-text-secondary) !important;
 }
 </style>

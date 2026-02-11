@@ -1,0 +1,349 @@
+/* ADDP 平台统一主题系统 - CSS 变量定义 */
+/* 本文件由 Portal 的 theme.css 复制并重命名变量（--app-* → --addp-*） */
+
+/* 注意: Element Plus 深色模式 CSS 需要在各模块的 main.js 中导入 */
+/* import 'element-plus/theme-chalk/dark/css-vars.css' */
+
+/* ==================== 浅色模式变量 ==================== */
+:root {
+  /* 品牌色渐变 */
+  --addp-primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+  /* 背景色系统 */
+  --addp-bg-primary: #FFFFFF;
+  --addp-bg-secondary: #F5F7FA;
+  --addp-bg-sidebar: #FFFFFF;
+  --addp-bg-header: #FFFFFF;
+
+  /* 文本色系统 */
+  --addp-text-primary: #303133;
+  --addp-text-secondary: #606266;
+  --addp-text-tertiary: #909399;
+
+  /* 边框色 */
+  --addp-border-color: #E4E7ED;
+  --addp-border-color-light: #EBEEF5;
+
+  /* 阴影 */
+  --addp-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.1);
+  --addp-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.1);
+
+  /* 模块卡片悬浮变换 */
+  --addp-card-hover-transform: translateY(-5px);
+
+  /* 模块颜色（保持不变，在深色模式下会自动调整饱和度） */
+  --addp-module-system: #409EFF;
+  --addp-module-transfer: #F56C6C;
+  --addp-module-manager: #67C23A;
+  --addp-module-develop: #9370DB;
+  --addp-module-service: #1890FF;
+  --addp-module-orchestrator: #FF7875;
+  --addp-module-meta: #E6A23C;
+}
+
+/* ==================== 深色模式变量 ==================== */
+html.dark {
+  /* 品牌色渐变（深色模式下调整为更柔和的颜色） */
+  --addp-primary-gradient: linear-gradient(135deg, #7c8fe6 0%, #9068bc 100%);
+
+  /* 背景色系统 */
+  --addp-bg-primary: #1D1E1F;
+  --addp-bg-secondary: #141414;
+  --addp-bg-sidebar: #1D1E1F;
+  --addp-bg-header: #1D1E1F;
+
+  /* 文本色系统 */
+  --addp-text-primary: #E5EAF3;
+  --addp-text-secondary: #CFD3DC;
+  --addp-text-tertiary: #A3A6AD;
+
+  /* 边框色 */
+  --addp-border-color: #4C4D4F;
+  --addp-border-color-light: #414243;
+
+  /* 阴影 */
+  --addp-shadow-card: 0 2px 12px rgba(0, 0, 0, 0.5);
+  --addp-shadow-hover: 0 12px 24px rgba(0, 0, 0, 0.6);
+
+  /* 模块卡片悬浮变换 */
+  --addp-card-hover-transform: translateY(-5px);
+
+  /* 模块颜色（深色模式下略微调整饱和度） */
+  --addp-module-system: #409EFF;
+  --addp-module-transfer: #F56C6C;
+  --addp-module-manager: #67C23A;
+  --addp-module-develop: #A78BFA;
+  --addp-module-service: #1890FF;
+  --addp-module-orchestrator: #FF7875;
+  --addp-module-meta: #E6A23C;
+}
+
+/* ==================== 蓝色模式变量 ==================== */
+html.blue {
+  /* 品牌色渐变（蓝色渐变） */
+  --addp-primary-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+
+  /* 背景色系统 */
+  --addp-bg-primary: #0f1629;
+  --addp-bg-secondary: #0a0f1e;
+  --addp-bg-sidebar: #0f1629;
+  --addp-bg-header: #0f1629;
+
+  /* 文本色系统 */
+  --addp-text-primary: #e0e7ff;
+  --addp-text-secondary: #c7d2fe;
+  --addp-text-tertiary: #a5b4fc;
+
+  /* 边框色 */
+  --addp-border-color: #1e3a8a;
+  --addp-border-color-light: #1e40af;
+
+  /* 阴影 */
+  --addp-shadow-card: 0 2px 12px rgba(59, 130, 246, 0.2);
+  --addp-shadow-hover: 0 12px 24px rgba(59, 130, 246, 0.3);
+
+  /* 模块卡片悬浮变换 */
+  --addp-card-hover-transform: translateY(-5px);
+
+  /* 模块颜色（蓝色主题下的配色） */
+  --addp-module-system: #60a5fa;
+  --addp-module-transfer: #f87171;
+  --addp-module-manager: #34d399;
+  --addp-module-develop: #a78bfa;
+  --addp-module-service: #38bdf8;
+  --addp-module-orchestrator: #fb7185;
+  --addp-module-meta: #fbbf24;
+
+  /* ==================== Element Plus 变量覆盖（蓝色主题） ==================== */
+  /* 覆盖 Element Plus 的 CSS 变量，使其与蓝色主题一致 */
+  --el-bg-color: #0f1629;
+  --el-bg-color-page: #0a0f1e;
+  --el-bg-color-overlay: #0f1629;
+  --el-text-color-primary: #e0e7ff;
+  --el-text-color-regular: #c7d2fe;
+  --el-text-color-secondary: #a5b4fc;
+  --el-text-color-placeholder: #6366f1;
+  --el-text-color-disabled: #4f46e5;
+  --el-border-color: #1e3a8a;
+  --el-border-color-light: #1e40af;
+  --el-border-color-lighter: #1e40af;
+  --el-border-color-extra-light: #1e3a8a;
+  --el-border-color-dark: #172554;
+  --el-border-color-darker: #0f172a;
+  --el-fill-color: #1e3a8a;
+  --el-fill-color-light: #1e40af;
+  --el-fill-color-lighter: #1d4ed8;
+  --el-fill-color-extra-light: #2563eb;
+  --el-fill-color-dark: #172554;
+  --el-fill-color-darker: #0f172a;
+  --el-fill-color-blank: transparent;
+  --el-mask-color: rgba(0, 0, 0, 0.8);
+  --el-mask-color-extra-light: rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== 主题切换过渡动画 ==================== */
+*,
+*::before,
+*::after {
+  transition: background-color 0.3s ease,
+              border-color 0.3s ease,
+              color 0.3s ease,
+              box-shadow 0.3s ease;
+}
+
+/* 排除不需要过渡的元素 */
+.no-transition,
+.el-loading-mask,
+.el-message,
+.el-notification,
+.el-message-box,
+.el-popover,
+.el-tooltip__popper,
+iframe,
+img,
+video {
+  transition: none !important;
+}
+
+/* 排除 Element Plus 的动画组件 */
+.el-fade-in-linear-enter-active,
+.el-fade-in-linear-leave-active,
+.el-fade-in-enter-active,
+.el-fade-in-leave-active,
+.el-zoom-in-center-enter-active,
+.el-zoom-in-center-leave-active {
+  transition: none !important;
+}
+
+/* ==================== 暗黑模式下的 Element Plus 组件覆盖 ==================== */
+/* 深色主题和蓝色主题共享这些样式 */
+html.dark,
+html.blue {
+  /* 覆盖 Element Plus 组件的默认背景色 */
+  .el-empty {
+    background-color: transparent !important;
+  }
+
+  .el-empty__description p {
+    color: var(--addp-text-secondary) !important;
+  }
+
+  .el-pagination {
+    background-color: transparent !important;
+  }
+
+  .el-pagination button,
+  .el-pagination .el-pager li {
+    background-color: var(--addp-bg-primary) !important;
+    color: var(--addp-text-primary) !important;
+  }
+
+  .el-pagination button:disabled {
+    background-color: var(--addp-bg-secondary) !important;
+    color: var(--addp-text-tertiary) !important;
+  }
+
+  /* 对话框和弹窗 */
+  .el-dialog,
+  .el-drawer,
+  .el-popover {
+    background-color: var(--addp-bg-primary) !important;
+    border-color: var(--addp-border-color) !important;
+  }
+
+  .el-dialog__header {
+    border-bottom-color: var(--addp-border-color) !important;
+  }
+
+  .el-dialog__footer {
+    border-top-color: var(--addp-border-color) !important;
+  }
+
+  /* 表单和输入框 */
+  .el-input__wrapper,
+  .el-textarea__inner,
+  .el-select .el-input__wrapper {
+    background-color: var(--addp-bg-primary) !important;
+    border-color: var(--addp-border-color) !important;
+  }
+
+  .el-input__inner,
+  .el-textarea__inner {
+    color: var(--addp-text-primary) !important;
+  }
+
+  .el-input__inner::placeholder,
+  .el-textarea__inner::placeholder {
+    color: var(--addp-text-tertiary) !important;
+  }
+
+  /* 表格 */
+  .el-table,
+  .el-table__expanded-cell {
+    background-color: var(--addp-bg-primary) !important;
+  }
+
+  .el-table th,
+  .el-table tr {
+    background-color: var(--addp-bg-primary) !important;
+  }
+
+  .el-table--striped .el-table__body tr.el-table__row--striped td {
+    background-color: var(--addp-bg-secondary) !important;
+  }
+
+  .el-table__empty-block {
+    background-color: transparent !important;
+  }
+
+  /* 卡片 */
+  .el-card {
+    background-color: var(--addp-bg-primary) !important;
+    border-color: var(--addp-border-color) !important;
+  }
+
+  /* 下拉菜单 */
+  .el-dropdown-menu,
+  .el-select-dropdown,
+  .el-picker-panel {
+    background-color: var(--addp-bg-primary) !important;
+    border-color: var(--addp-border-color) !important;
+  }
+
+  .el-dropdown-menu__item,
+  .el-select-dropdown__item {
+    color: var(--addp-text-primary) !important;
+  }
+
+  .el-dropdown-menu__item:hover,
+  .el-select-dropdown__item:hover {
+    background-color: var(--addp-bg-secondary) !important;
+  }
+
+  /* 树形控件 */
+  .el-tree {
+    background-color: transparent !important;
+  }
+
+  .el-tree-node__content:hover {
+    background-color: var(--addp-bg-secondary) !important;
+  }
+
+  /* 标签页 */
+  .el-tabs__header {
+    background-color: transparent !important;
+    border-bottom-color: var(--addp-border-color) !important;
+  }
+
+  .el-tabs__content {
+    background-color: transparent !important;
+  }
+
+  /* 面包屑 */
+  .el-breadcrumb__inner,
+  .el-breadcrumb__inner a {
+    color: var(--addp-text-secondary) !important;
+  }
+
+  /* 描述列表 */
+  .el-descriptions {
+    background-color: transparent !important;
+  }
+
+  .el-descriptions__body {
+    background-color: var(--addp-bg-primary) !important;
+  }
+
+  /* 菜单组件 */
+  .el-menu {
+    background-color: var(--addp-bg-sidebar) !important;
+    border-right-color: var(--addp-border-color) !important;
+  }
+
+  .el-menu-item,
+  .el-sub-menu__title {
+    color: var(--addp-text-primary) !important;
+  }
+
+  .el-menu-item:hover,
+  .el-sub-menu__title:hover {
+    background-color: var(--addp-bg-secondary) !important;
+  }
+
+  .el-menu-item.is-active {
+    background-color: var(--addp-bg-secondary) !important;
+    color: var(--el-color-primary) !important;
+  }
+
+  .el-sub-menu .el-menu {
+    background-color: var(--addp-bg-sidebar) !important;
+  }
+
+  .el-sub-menu .el-menu-item {
+    background-color: var(--addp-bg-sidebar) !important;
+  }
+
+  .el-sub-menu .el-menu-item:hover {
+    background-color: var(--addp-bg-secondary) !important;
+  }
+}

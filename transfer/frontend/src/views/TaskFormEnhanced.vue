@@ -573,14 +573,14 @@ onMounted(() => {
 
 .hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 5px;
 }
 
 .param-hint {
   margin-left: 10px;
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 :deep(.el-form-item__label) {
@@ -589,6 +589,6 @@ onMounted(() => {
 
 :deep(.el-divider__text) {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

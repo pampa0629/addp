@@ -45,19 +45,16 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 		return nil, fmt.Errorf("无效的 dev_type: %s", req.DevType)
 	}
 
-	// 业务验证：如果是 query 类型，必须提供 query_type
-	if req.DevType == "query" && req.QueryType == "" {
-		return nil, fmt.Errorf("query 类型必须提供 query_type")
+	// 业务验证：如果是 query 类型，必须在 content 中提供 query_type
+	if req.DevType == "query" {
+		if req.Content["query_type"] == nil || req.Content["query_type"] == "" {
+			return nil, fmt.Errorf("query 类型必须在 content 中提供 query_type")
+		}
 	}
 
 	// 业务验证：content 不能为空
 	if req.Content == nil || len(req.Content) == 0 {
 		return nil, fmt.Errorf("content 不能为空")
-	}
-
-	// 业务验证：如果启用调度，必须提供 schedule
-	if req.IsScheduled && req.Schedule == "" {
-		return nil, fmt.Errorf("启用调度时必须提供 cron 表达式")
 	}
 
 	// 设置默认值
@@ -71,12 +68,9 @@ func (s *DevItemService) CreateDevItem(req *models.CreateDevItemRequest, tenantI
 		Name:            req.Name,
 		DisplayName:     req.DisplayName,
 		DevType:         req.DevType,
-		QueryType:       req.QueryType,
 		Content:         req.Content,
-		ExecutionConfig: req.ExecutionConfig, // 添加执行配置
-		EngineID:        req.EngineID,
+		ExecutionConfig: req.ExecutionConfig,
 		Schedule:        req.Schedule,
-		IsScheduled:     req.IsScheduled,
 		Timeout:         req.Timeout,
 		Description:     req.Description,
 		Tags:            req.Tags,
@@ -114,17 +108,9 @@ func (s *DevItemService) UpdateDevItem(id uint, req *models.UpdateDevItemRequest
 		item.Name = req.Name
 	}
 
-	// 业务验证：如果启用调度，必须提供 schedule
-	if req.IsScheduled && req.Schedule == "" && item.Schedule == "" {
-		return nil, fmt.Errorf("启用调度时必须提供 cron 表达式")
-	}
-
 	// 更新字段
 	if req.DisplayName != "" {
 		item.DisplayName = req.DisplayName
-	}
-	if req.QueryType != "" {
-		item.QueryType = req.QueryType
 	}
 	if req.Content != nil && len(req.Content) > 0 {
 		item.Content = req.Content
@@ -132,13 +118,9 @@ func (s *DevItemService) UpdateDevItem(id uint, req *models.UpdateDevItemRequest
 	if req.ExecutionConfig != nil {
 		item.ExecutionConfig = req.ExecutionConfig
 	}
-	if req.EngineID != nil {
-		item.EngineID = req.EngineID
-	}
 	if req.Schedule != "" {
 		item.Schedule = req.Schedule
 	}
-	item.IsScheduled = req.IsScheduled
 	if req.Timeout > 0 {
 		item.Timeout = req.Timeout
 	}
@@ -251,15 +233,6 @@ func (s *DevItemService) CountByType(tenantID uint) (map[string]int64, error) {
 		return nil, fmt.Errorf("failed to count by type: %w", err)
 	}
 	return counts, nil
-}
-
-// FindByResourceID 查找使用指定资源的所有开发项
-func (s *DevItemService) FindByResourceID(engineID uint, tenantID uint) ([]models.DevItem, error) {
-	items, err := s.devItemRepo.FindByResourceID(engineID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to find by resource id: %w", err)
-	}
-	return items, nil
 }
 
 // BatchUpdateStatus 批量更新状态

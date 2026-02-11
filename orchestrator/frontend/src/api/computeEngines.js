@@ -23,7 +23,7 @@ export default {
    * ]
    */
   async list() {
-    const data = await client.get('/compute-engines')
+    const data = await client.get('/orchestrator/compute-engines')
     return data
   }
 }

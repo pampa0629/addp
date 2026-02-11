@@ -195,7 +195,7 @@ h2 {
 }
 
 .execution-detail pre {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 10px;
   border-radius: 4px;
   overflow-x: auto;

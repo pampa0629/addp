@@ -988,13 +988,13 @@ onBeforeUnmount(() => {
 }
 
 .json-pre {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   border-radius: 6px;
   padding: 16px;
   font-size: 12px;
   line-height: 1.6;
   max-height: 420px;
   overflow: auto;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

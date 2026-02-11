@@ -132,7 +132,7 @@ async function loadEngineTasks(engine) {
     // 返回模块节点
     return {
       id: identifier,
-      label: engine.name,
+      label: engine.display_name || engine.name,
       type: 'module',
       metadata: {
         uniqueIdentifier: identifier,
@@ -146,7 +146,7 @@ async function loadEngineTasks(engine) {
     // 返回空任务的模块节点
     return {
       id: identifier,
-      label: engine.name,
+      label: engine.display_name || engine.name,
       type: 'module',
       metadata: {
         uniqueIdentifier: identifier,
@@ -224,18 +224,18 @@ function getStatusColor(status) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-right: 1px solid #dcdfe6;
+  background: var(--addp-bg-primary) !important;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .task-panel :deep(.el-card) {
   border: none;
-  border-right: 1px solid #dcdfe6;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .task-panel :deep(.el-card__header) {
   padding: 16px;
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 /* 树节点样式 */
@@ -253,11 +253,11 @@ function getStatusColor(status) {
 /* 模块节点 */
 .module-node {
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .module-node:hover {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
 }
 
 .module-icon {
@@ -279,9 +279,9 @@ function getStatusColor(status) {
   cursor: move;
   padding: 8px;
   margin: 2px 0;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
-  background: white;
+  background: var(--addp-bg-primary) !important;
 }
 
 .task-node:hover {
@@ -291,7 +291,7 @@ function getStatusColor(status) {
 }
 
 .drag-icon {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -328,6 +328,6 @@ function getStatusColor(status) {
 }
 
 .task-panel :deep(.el-tree-node__expand-icon) {
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 </style>

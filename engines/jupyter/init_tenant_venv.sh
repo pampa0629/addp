@@ -55,9 +55,10 @@ mkdir -p "$TENANT_DIR"
 # 获取 Python 解释器路径 (使用基础环境的 Python)
 PYTHON_BIN="$BASE_VENV_PATH/bin/python3"
 
-# 创建租户虚拟环境 (独立环境，不继承 system-site-packages)
-echo "📦 创建虚拟环境..."
-python3 -m venv "$TENANT_VENV_PATH"
+# 创建租户虚拟环境 (继承基础环境的包，使用 --system-site-packages)
+# 这样租户可以使用基础环境中已安装的包，同时也可以安装自己的额外包
+echo "📦 创建虚拟环境（继承基础环境）..."
+python3 -m venv --system-site-packages "$TENANT_VENV_PATH"
 
 # 验证虚拟环境
 if [ ! -f "$TENANT_VENV_PATH/bin/python" ]; then
@@ -65,18 +66,23 @@ if [ ! -f "$TENANT_VENV_PATH/bin/python" ]; then
     exit 1
 fi
 
-echo "✅ 虚拟环境创建成功"
+echo "✅ 虚拟环境创建成功（已继承基础环境的包）"
 
-# 从 requirements.txt 安装基础库（使用 pip 缓存加速）
-echo "📦 安装基础库（使用 pip 缓存）..."
-REQUIREMENTS_FILE="${SCRIPT_DIR}/requirements.txt"
-if [ -f "$REQUIREMENTS_FILE" ]; then
-    # pip 会自动使用缓存，大幅加速后续租户的安装
-    "$TENANT_VENV_PATH/bin/pip" install --quiet -r "$REQUIREMENTS_FILE"
-    echo "✅ 基础库安装完成"
+# 由于使用了 --system-site-packages，租户环境已经可以访问基础环境中的所有包
+# 这里可以选择性地安装租户特定的额外包（如果有 requirements.tenant.txt）
+echo "📦 检查租户特定依赖..."
+TENANT_REQUIREMENTS_FILE="${SCRIPT_DIR}/requirements.tenant.txt"
+if [ -f "$TENANT_REQUIREMENTS_FILE" ]; then
+    echo "   安装租户特定依赖..."
+    "$TENANT_VENV_PATH/bin/pip" install --quiet -r "$TENANT_REQUIREMENTS_FILE"
+    echo "✅ 租户特定依赖安装完成"
 else
-    echo "⚠️  警告: requirements.txt 不存在，跳过基础库安装"
+    echo "   无租户特定依赖，跳过"
 fi
+
+# 显示可用包数量（包括继承的基础环境包）
+PKG_COUNT=$("$TENANT_VENV_PATH/bin/pip" list 2>/dev/null | wc -l | tr -d ' ')
+echo "   可用包总数: $PKG_COUNT (包括继承的基础环境包)"
 
 # 注册 Jupyter Kernel
 echo "📝 注册 Jupyter Kernel..."
@@ -87,13 +93,19 @@ KERNEL_DISPLAY_NAME="Python 3 (租户 ${TENANT_ID})"
 # 设置 IPYTHONDIR 环境变量，让 Kernel 使用租户独立的 IPython 配置
 IPYTHON_DIR="${TENANT_DIR}/.ipython"
 
+# 从环境变量读取 INTERNAL_API_KEY 和 SYSTEM_SERVICE_URL
+INTERNAL_API_KEY="${INTERNAL_API_KEY:-}"
+SYSTEM_SERVICE_URL="${SYSTEM_SERVICE_URL:-http://localhost:8180}"
+
 "$TENANT_VENV_PATH/bin/python" -m ipykernel install \
     --name "$KERNEL_NAME" \
     --display-name "$KERNEL_DISPLAY_NAME" \
     --prefix="$TENANT_DIR" \
     --env TENANT_ID "$TENANT_ID" \
     --env ADDP_API_BASE "$ADDP_API_BASE" \
-    --env IPYTHONDIR "$IPYTHON_DIR"
+    --env IPYTHONDIR "$IPYTHON_DIR" \
+    --env INTERNAL_API_KEY "$INTERNAL_API_KEY" \
+    --env SYSTEM_SERVICE_URL "$SYSTEM_SERVICE_URL"
 
 echo "✅ Kernel 注册成功: $KERNEL_NAME"
 
@@ -143,6 +155,8 @@ echo ""
 echo "   环境变量:"
 echo "     - TENANT_ID=$TENANT_ID"
 echo "     - ADDP_API_BASE=$ADDP_API_BASE"
+echo "     - SYSTEM_SERVICE_URL=$SYSTEM_SERVICE_URL"
+echo "     - INTERNAL_API_KEY=${INTERNAL_API_KEY:0:20}..."
 echo ""
 echo "🚀 租户可以在 Jupyter Lab 中选择此 Kernel 开始使用"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -409,13 +409,17 @@ const jupyterUrl = computed(() => {
 
   // 从 content 中获取 minio_path
   const minioPath = currentNotebook.value.content?.minio_path
-  if (!minioPath) return jupyterBaseUrl.value
+  if (!minioPath) {
+    // 没有 notebook 文件时，返回基础 URL，并指定租户的 kernel
+    const kernelName = venvInfo.value.kernel_name
+    return `${jupyterBaseUrl.value}?kernel=${kernelName}`
+  }
 
   // 构造 Jupyter Lab URL
-  // 使用 /lab/tree/ 路径打开指定文件，Jupyter 会自动使用租户的 Kernel
+  // 使用 /lab/tree/ 路径打开指定文件，并通过 kernel 参数指定租户的 Kernel
   // 注意: 由于配置了 TenantKernelSpecManager，Jupyter 只会显示租户的 Kernel
   const kernelName = venvInfo.value.kernel_name
-  return `${jupyterBaseUrl.value}/lab/tree/${minioPath}`
+  return `${jupyterBaseUrl.value}/lab/tree/${minioPath}?kernel=${kernelName}`
 })
 
 // 新建对话框
@@ -807,6 +811,12 @@ const initVenvEnvironment = async () => {
 
 onMounted(async () => {
   await checkVenvStatus()
+
+  // 自动初始化虚拟环境（如果不存在）
+  if (!venvReady.value) {
+    await initVenvEnvironment()
+  }
+
   await loadNotebooks()
   await loadDataSources()
 })
@@ -816,19 +826,19 @@ onMounted(async () => {
 .notebook-editor {
   display: flex;
   height: 100%;
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
 }
 
 .notebook-sidebar {
-  background: white;
-  border-right: 1px solid #e0e0e0;
+  background: var(--addp-bg-primary);
+  border-right: 1px solid var(--addp-border-color);
   display: flex;
   flex-direction: column;
 }
 
 .sidebar-header {
   padding: 16px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .sidebar-header h3 {
@@ -856,8 +866,8 @@ onMounted(async () => {
   padding: 12px;
   margin-bottom: 8px;
   border-radius: 4px;
-  border: 1px solid #e0e0e0;
-  background: white;
+  border: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -869,7 +879,7 @@ onMounted(async () => {
 
 .notebook-item.active {
   border-color: #409eff;
-  background: #ecf5ff;
+  background: var(--addp-bg-secondary);
 }
 
 .notebook-info {
@@ -886,7 +896,7 @@ onMounted(async () => {
 
 .notebook-meta {
   font-size: 12px;
-  color: #999;
+  color: var(--addp-text-tertiary);
 }
 
 .notebook-actions {
@@ -924,8 +934,8 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .current-notebook-name {
@@ -941,7 +951,7 @@ onMounted(async () => {
 .jupyter-iframe {
   flex: 1;
   border: none;
-  background: white;
+  background: var(--addp-bg-primary);
 }
 
 /* 虚拟环境状态卡片 */
@@ -950,7 +960,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
+  background: var(--addp-bg-primary);
   padding: 40px;
 }
 
@@ -959,7 +969,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: white;
+  background: var(--addp-bg-primary);
   padding: 40px;
 }
 
@@ -972,13 +982,13 @@ onMounted(async () => {
 
 .venv-init-tips p {
   margin: 12px 0;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .venv-init-tips ul {
   margin: 16px 0;
   padding-left: 20px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .venv-init-tips ul li {
@@ -988,12 +998,12 @@ onMounted(async () => {
 .venv-init-tips .time-note {
   margin-top: 16px;
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .form-tip {
   font-size: 12px;
-  color: #999;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
 }
 
@@ -1005,7 +1015,7 @@ onMounted(async () => {
 .help-content h3 {
   margin-top: 16px;
   margin-bottom: 8px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 16px;
 }
 
@@ -1015,13 +1025,13 @@ onMounted(async () => {
 
 .help-content p {
   margin: 8px 0;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .help-content ul {
   margin: 8px 0;
   padding-left: 24px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .help-content li {
@@ -1029,7 +1039,7 @@ onMounted(async () => {
 }
 
 .help-content code {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Monaco', 'Courier New', monospace;

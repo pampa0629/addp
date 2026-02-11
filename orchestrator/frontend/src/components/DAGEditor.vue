@@ -582,13 +582,13 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .toolbar {
   padding: 12px 16px;
-  background: white;
-  border-bottom: 1px solid #dcdfe6;
+  background: var(--addp-bg-primary) !important;
+  border-bottom: 1px solid var(--addp-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -609,12 +609,12 @@ defineExpose({
 
 .tips-text {
   font-size: 12px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 #dag-container {
   flex: 1;
-  background: #fafbfc;
+  background: var(--addp-bg-secondary) !important;
   position: relative;
   overflow: hidden;
 }

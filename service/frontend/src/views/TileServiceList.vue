@@ -243,7 +243,7 @@ export default {
 
 h1 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .toolbar {
@@ -252,7 +252,7 @@ h1 {
   align-items: center;
   margin-bottom: 20px;
   padding: 15px;
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 
@@ -263,14 +263,16 @@ h1 {
 
 .search-bar input {
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   width: 300px;
   font-size: 14px;
+  background: var(--addp-bg-primary) !important;
+  color: var(--addp-text-primary);
 }
 
 .services-container {
-  background: white;
+  background: var(--addp-bg-primary) !important;
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   min-height: 200px;
@@ -280,7 +282,7 @@ h1 {
 .empty-state {
   text-align: center;
   padding: 60px 20px;
-  color: #999;
+  color: var(--addp-text-tertiary);
 }
 
 .empty-state .tip {
@@ -295,21 +297,22 @@ h1 {
 }
 
 .services-table th {
-  background: #f9f9f9;
+  background: var(--addp-bg-secondary) !important;
   padding: 12px;
   text-align: left;
   font-weight: 600;
-  color: #555;
-  border-bottom: 2px solid #eee;
+  color: var(--addp-text-primary);
+  border-bottom: 2px solid var(--addp-border-color);
 }
 
 .services-table td {
   padding: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--addp-border-color);
+  color: var(--addp-text-primary);
 }
 
 .services-table tbody tr:hover {
-  background: #fafafa;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .protocols {
@@ -347,7 +350,7 @@ h1 {
 }
 
 .badge-secondary {
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
   color: #757575;
 }
 
@@ -363,10 +366,12 @@ h1 {
   gap: 15px;
   margin-top: 20px;
   padding: 15px;
+  background: var(--addp-bg-secondary) !important;
+  border-radius: 4px;
 }
 
 .page-info {
-  color: #666;
+  color: var(--addp-text-secondary);
   font-size: 14px;
 }
 

@@ -75,11 +75,11 @@
       <el-divider content-position="left">调度设置</el-divider>
 
       <el-form-item label="启用调度">
-        <el-switch v-model="formData.is_scheduled" />
+        <el-switch v-model="scheduledEnabled" />
       </el-form-item>
 
       <el-form-item
-        v-if="formData.is_scheduled"
+        v-if="scheduledEnabled"
         label="调度配置"
         prop="schedule"
       >
@@ -135,8 +135,17 @@ const formData = ref({
   description: '',
   tags: [],
   timeout: 300,
-  is_scheduled: false,
-  schedule: ''
+  schedule: ''  // 删除 is_scheduled 字段
+})
+
+// 计算属性：根据 schedule 判断是否启用调度（替代 is_scheduled 字段）
+const scheduledEnabled = computed({
+  get: () => formData.value.schedule !== '' && formData.value.schedule !== null,
+  set: (val) => {
+    if (!val) {
+      formData.value.schedule = ''
+    }
+  }
 })
 
 const tagOptions = ref([
@@ -156,7 +165,8 @@ const rules = {
   schedule: [
     {
       validator: (rule, value, callback) => {
-        if (formData.value.is_scheduled && !value) {
+        // 使用计算属性判断是否启用调度
+        if (scheduledEnabled.value && !value) {
           callback(new Error('启用调度时必须配置调度表达式'))
         } else {
           callback()
@@ -181,8 +191,7 @@ const resetForm = () => {
     description: '',
     tags: [],
     timeout: 300,
-    is_scheduled: false,
-    schedule: ''
+    schedule: ''  // 删除 is_scheduled 字段
   }
   formRef.value?.clearValidate()
 }
@@ -205,8 +214,7 @@ const handleSave = async () => {
       description: formData.value.description,
       tags: formData.value.tags,
       timeout: formData.value.timeout,
-      is_scheduled: formData.value.is_scheduled,
-      schedule: formData.value.schedule
+      schedule: formData.value.schedule  // 不再发送 is_scheduled 字段
     }
 
     emit('saved', taskData)

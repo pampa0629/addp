@@ -271,7 +271,7 @@ onMounted(() => {
   margin: 40px 0;
   min-height: 400px;
   padding: 20px;
-  background: #fff;
+  background: var(--addp-bg-primary);
   border-radius: 4px;
 }
 
@@ -280,6 +280,6 @@ onMounted(() => {
   justify-content: center;
   gap: 12px;
   padding: 20px 0;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--addp-border-color);
 }
 </style>

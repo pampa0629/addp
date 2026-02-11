@@ -57,7 +57,7 @@
           <template #default="{ row }">
             <div>
               <strong>{{ row.display_name || row.name }}</strong>
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">
+              <div style="font-size: 12px; color: var(--addp-text-tertiary); margin-top: 4px">
                 {{ row.name }}
               </div>
             </div>
@@ -78,7 +78,7 @@
         <el-table-column label="调度" width="200">
           <template #default="{ row }">
             <ScheduleDisplay
-              v-if="row.is_scheduled && row.schedule"
+              v-if="row.schedule && row.schedule !== ''"
               :schedule="row.schedule"
             />
             <span v-else style="color: #909399">手动触发</span>
@@ -105,7 +105,7 @@
               >
                 {{ row.last_execution_status }}
               </el-tag>
-              <div style="font-size: 12px; color: #909399; margin-top: 4px">
+              <div style="font-size: 12px; color: var(--addp-text-tertiary); margin-top: 4px">
                 {{ formatTime(row.last_executed_at) }}
               </div>
             </div>
@@ -347,7 +347,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .toolbar {
@@ -355,8 +355,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .toolbar-left,
@@ -369,14 +369,14 @@ onMounted(() => {
 .toolbar h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-weight: 500;
 }
 
 .filter-bar {
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .content-area {
@@ -396,6 +396,6 @@ onMounted(() => {
 }
 
 :deep(.el-table__row:hover) {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
 }
 </style>

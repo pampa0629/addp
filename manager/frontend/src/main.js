@@ -3,6 +3,10 @@ import { createPinia } from 'pinia'
 import router from './router'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+// 导入 Element Plus 深色模式 CSS
+import 'element-plus/theme-chalk/dark/css-vars.css'
+// 导入统一主题 CSS
+import '../../../common-frontend/basic/src/styles/theme.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'ol/ol.css'
 // 按需引入实际使用的图标
@@ -26,6 +30,8 @@ import TextPreview from '@/components/previews/TextPreview.vue'
 import MarkdownPreview from '@/components/previews/MarkdownPreview.vue'
 import VideoPreview from '@/components/previews/VideoPreview.vue'
 import ExcelPreview from '@/components/previews/ExcelPreview.vue'
+// 导入主题管理
+import { useTheme } from '@common-ui'
 
 const { createApp, h, resolveComponent } = Vue
 
@@ -46,6 +52,14 @@ app.use(pinia)
 
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
+
+// 初始化主题系统
+const { init: initTheme } = useTheme({
+  listenToPortal: true,
+  storageKey: 'theme-mode'
+})
+
+initTheme()
 
 const mountApp = () => {
   app.mount('#app')

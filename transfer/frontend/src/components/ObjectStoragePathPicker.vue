@@ -241,7 +241,7 @@ watch(
 
 .bucket-info {
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .picker-breadcrumb {
@@ -264,7 +264,7 @@ watch(
 }
 
 .directory-name {
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .picker-footer {
@@ -276,7 +276,7 @@ watch(
 
 .selected-info {
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .footer-actions {

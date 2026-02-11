@@ -492,7 +492,7 @@ h1 {
   height: 40px;
   border-radius: 50%;
   background: #e0e0e0;
-  color: #999;
+  color: var(--addp-text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -512,7 +512,7 @@ h1 {
 
 .step-title {
   font-size: 14px;
-  color: #999;
+  color: var(--addp-text-tertiary);
 }
 
 .step.active .step-title {
@@ -610,7 +610,7 @@ h3 {
 
 .help-text {
   font-size: 12px;
-  color: #999;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
 }
 
@@ -741,7 +741,7 @@ h3 {
 .endpoint code {
   display: inline-block;
   padding: 8px 12px;
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;

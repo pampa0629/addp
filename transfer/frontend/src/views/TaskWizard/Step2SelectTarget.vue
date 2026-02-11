@@ -44,7 +44,7 @@
               :disabled="!hasSpatialFields"
             >
               <span>GeoJSON</span>
-              <span v-if="!hasSpatialFields" style="color: #909399; font-size: 12px; margin-left: 8px;">（无空间字段）</span>
+              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">（无空间字段）</span>
             </el-option>
             <el-option
               label="Shapefile"
@@ -52,7 +52,7 @@
               :disabled="!hasSpatialFields"
             >
               <span>Shapefile</span>
-              <span v-if="!hasSpatialFields" style="color: #909399; font-size: 12px; margin-left: 8px;">（无空间字段）</span>
+              <span v-if="!hasSpatialFields" style="color: var(--addp-text-tertiary); font-size: 12px; margin-left: 8px;">（无空间字段）</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -63,7 +63,7 @@
             v-model="outputPath"
             placeholder="例如：exports/data.csv 或 exports/output.geojson"
           />
-          <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+          <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
             <p>文件将保存到对象存储的指定路径（相对于 bucket 根目录）</p>
           </div>
         </el-form-item>
@@ -74,7 +74,7 @@
             <div style="display: flex; align-items: center; gap: 20px;">
               <el-checkbox v-model="csvHeaders">包含表头</el-checkbox>
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="color: #606266;">分隔符：</span>
+                <span style="color: var(--addp-text-secondary);">分隔符：</span>
                 <el-input
                   v-model="csvDelimiter"
                   placeholder=","
@@ -106,7 +106,7 @@
               :value="field.name"
             />
           </el-select>
-          <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+          <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
             <p>选择用于空间数据导出的几何字段</p>
           </div>
         </el-form-item>
@@ -443,7 +443,7 @@ onMounted(async () => {
 }
 
 .step-description {
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin-bottom: 30px;
 }
 </style>

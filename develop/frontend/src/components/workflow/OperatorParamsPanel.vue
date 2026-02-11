@@ -426,7 +426,7 @@ const resetParams = () => {
 .section {
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .section:last-child {
@@ -436,7 +436,7 @@ const resetParams = () => {
 .section-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin: 0 0 16px 0;
   display: flex;
   align-items: center;
@@ -459,7 +459,7 @@ const resetParams = () => {
 }
 
 .help-icon {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   cursor: help;
   font-size: 14px;
 }
@@ -471,20 +471,20 @@ const resetParams = () => {
 .data-source-section {
   margin-bottom: 24px;
   padding: 16px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 8px;
 }
 
 .subsection-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin: 0 0 8px 0;
 }
 
 .subsection-description {
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin: 0 0 16px 0;
   line-height: 1.5;
 }
@@ -495,12 +495,12 @@ const resetParams = () => {
 }
 
 .operator-params-panel::-webkit-scrollbar-track {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 3px;
 }
 
 .operator-params-panel::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: var(--addp-border-secondary);
   border-radius: 3px;
 }
 

@@ -722,8 +722,8 @@ defineExpose({
 
 .toolbar {
   padding: 12px 16px;
-  background: #f5f7fa;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-secondary);
+  border-bottom: 1px solid var(--addp-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -747,7 +747,7 @@ defineExpose({
 
 #workflow-dag-container {
   flex: 1;
-  background: #fff;
+  background: var(--addp-bg-primary);
   overflow: hidden;
   position: relative;
   z-index: 1;

@@ -209,7 +209,7 @@
             <el-tag :type="form.config_type === 'table' ? 'success' : 'warning'" size="large">
               {{ form.config_type === 'table' ? '表配置' : 'SQL配置' }}
             </el-tag>
-            <span style="margin-left: 12px; color: #909399; font-size: 13px">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 13px">
               （配置方式创建后不可变更）
             </span>
           </el-form-item>
@@ -795,7 +795,7 @@ onMounted(async () => {
 .page-header h2 {
   margin: 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .config-step-card {
@@ -822,7 +822,7 @@ onMounted(async () => {
   padding: 20px;
   cursor: pointer;
   transition: all 0.3s;
-  background: #fff;
+  background: var(--addp-bg-primary);
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -872,13 +872,13 @@ onMounted(async () => {
   margin: 0 0 12px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .config-content .description {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.6;
 }
 
@@ -889,14 +889,14 @@ onMounted(async () => {
 .config-content .features p {
   margin: 6px 0;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.5;
 }
 
 .help-text {
   margin-top: 4px;
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .keyword-input {

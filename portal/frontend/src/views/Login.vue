@@ -89,7 +89,7 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  background: var(--app-primary-gradient);
+  background: var(--addp-primary-gradient);
 }
 
 .login-card {
@@ -106,7 +106,7 @@ const handleLogin = async () => {
 .login-header h2 {
   text-align: center;
   margin: 0;
-  background: var(--app-primary-gradient);
+  background: var(--addp-primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }

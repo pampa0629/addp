@@ -19,7 +19,7 @@
             :value="engine.id"
           >
             <span style="float: left">{{ engine.name }}</span>
-            <span style="float: right; color: #8492a6; font-size: 13px">
+            <span style="float: right; color: var(--addp-text-tertiary); font-size: 13px">
               {{ engine.engine_type }}
             </span>
           </el-option>
@@ -331,7 +331,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .toolbar {
@@ -339,8 +339,8 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .toolbar-left,
@@ -353,7 +353,7 @@ onMounted(async () => {
 .toolbar h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-weight: 500;
 }
 
@@ -376,9 +376,9 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid #e4e7ed;
-  color: #303133;
+  background: var(--addp-bg-secondary);
+  border-bottom: 1px solid var(--addp-border-color);
+  color: var(--addp-text-primary);
 }
 
 .panel-title {
@@ -391,7 +391,7 @@ onMounted(async () => {
 
 .hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .editor-content,
@@ -402,7 +402,7 @@ onMounted(async () => {
 
 .divider {
   width: 1px;
-  background: #e4e7ed;
+  background: var(--addp-border-color);
   cursor: col-resize;
 }
 

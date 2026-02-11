@@ -330,7 +330,7 @@ const handleConfirm = () => {
 
 /* 只读状态 */
 .schedule-config.readonly .schedule-result {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   padding: 8px 12px;
   border-radius: 4px;
 }
@@ -343,13 +343,13 @@ const handleConfirm = () => {
 }
 
 .schedule-presets__label {
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 14px;
   font-weight: 500;
 }
 
 .schedule-presets__sublabel {
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-size: 13px;
   margin-left: 8px;
 }
@@ -373,13 +373,13 @@ const handleConfirm = () => {
 }
 
 .schedule-current__label {
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-size: 13px;
   flex-shrink: 0;
 }
 
 .schedule-current__value {
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 14px;
   font-weight: 500;
 }
@@ -387,11 +387,11 @@ const handleConfirm = () => {
 .schedule-dialog__tip {
   margin-left: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .schedule-dialog__preview {
   font-size: 14px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

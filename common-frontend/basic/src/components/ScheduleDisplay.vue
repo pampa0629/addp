@@ -38,6 +38,6 @@ defineProps({
 
 .schedule-text {
   font-size: 13px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

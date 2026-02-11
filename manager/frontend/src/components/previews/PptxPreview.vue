@@ -304,7 +304,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   overflow: auto;
 }
 
@@ -350,12 +350,12 @@ onMounted(() => {
 .error-message {
   font-size: 16px;
   margin-bottom: 20px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .limit-info {
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   line-height: 1.6;
   margin-bottom: 16px;
 }
@@ -405,7 +405,7 @@ onMounted(() => {
 .filename {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin: 0;
   word-break: break-all;
   flex: 1;
@@ -428,7 +428,7 @@ onMounted(() => {
 
 .notice-content strong {
   font-size: 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .notice-content ul {
@@ -438,7 +438,7 @@ onMounted(() => {
 
 .notice-content li {
   margin: 6px 0;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 /* 详细信息卡片 */
@@ -453,7 +453,7 @@ onMounted(() => {
 .detail-card h3 {
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin: 0 0 20px 0;
   padding-bottom: 15px;
   border-bottom: 2px solid #f0f0f0;
@@ -474,13 +474,13 @@ onMounted(() => {
 .detail-item .label {
   font-size: 13px;
   font-weight: 600;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   text-transform: uppercase;
 }
 
 .detail-item .value {
   font-size: 15px;
-  color: #303133;
+  color: var(--addp-text-primary);
   word-break: break-all;
 }
 
@@ -495,11 +495,11 @@ onMounted(() => {
 
 .download-hint {
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .limit-hint {
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 </style>

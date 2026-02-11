@@ -18,9 +18,6 @@
         <el-menu
           :default-active="$route.path"
           router
-          background-color="#304156"
-          text-color="#bfcbd9"
-          active-text-color="#409EFF"
         >
           <el-sub-menu index="services">
             <template #title>
@@ -93,6 +90,7 @@ const isInIframe = computed(() => {
 #app {
   height: 100vh;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .layout-container {
@@ -100,7 +98,7 @@ const isInIframe = computed(() => {
 }
 
 .layout-aside {
-  background-color: #304156;
+  background: var(--addp-bg-primary) !important;
   overflow-y: auto;
 }
 
@@ -109,9 +107,10 @@ const isInIframe = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #2b3a4a;
-  color: #fff;
+  background: var(--addp-bg-primary) !important;
+  color: var(--addp-text-primary);
   margin-bottom: 10px;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .logo h3 {
@@ -120,7 +119,7 @@ const isInIframe = computed(() => {
 }
 
 .layout-main {
-  background-color: #f0f2f5;
+  background: var(--addp-bg-secondary) !important;
   padding: 0;
   overflow-y: auto;
 }
@@ -128,7 +127,7 @@ const isInIframe = computed(() => {
 /* iframe 内容样式 */
 .iframe-content {
   height: 100vh;
-  background-color: #f0f2f5;
+  background: var(--addp-bg-secondary) !important;
   overflow-y: auto;
 }
 

@@ -117,7 +117,7 @@
             >
               {{ row.layer_config?.cache?.enabled ? '已启用' : '未启用' }}
             </el-tag>
-            <span v-else style="color: #909399; font-size: 12px">N/A</span>
+            <span v-else style="color: var(--addp-text-tertiary); font-size: 12px">N/A</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="80" align="center">
@@ -190,7 +190,7 @@
 
         <!-- Landing Page -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">Landing Page:</div>
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Landing Page:</div>
           <div class="endpoint-url">
             <el-input :value="ogcTilesLandingPage" readonly />
             <el-button @click="copyEndpoint(ogcTilesLandingPage)">复制</el-button>
@@ -200,7 +200,7 @@
 
         <!-- TileMatrixSets -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">TileMatrixSets:</div>
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">TileMatrixSets:</div>
           <div class="endpoint-url">
             <el-input :value="ogcTileMatrixSets" readonly />
             <el-button @click="copyEndpoint(ogcTileMatrixSets)">复制</el-button>
@@ -849,7 +849,7 @@ onMounted(() => {
 .header-left h2 {
   margin: 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .service-meta {
@@ -882,7 +882,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 15px;
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin-bottom: 8px;
 }
 
@@ -897,7 +897,7 @@ onMounted(() => {
 }
 
 code {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
@@ -906,7 +906,7 @@ code {
 }
 
 .code-example {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   padding: 16px;
@@ -914,7 +914,7 @@ code {
   margin: 0;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #303133;
+  color: var(--addp-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
 }

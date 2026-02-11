@@ -1372,6 +1372,7 @@ if check_service_running "jupyter-engine" "8088"; then
   export JUPYTER_PORT=8088
   export SYSTEM_SERVICE_URL=http://localhost:8180
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
+  export TENANT_ID=${DEFAULT_TENANT_ID:-1}  # Jupyter Notebook 数据源自动注入需要此环境变量
 
   # 启动 API Server（后台）
   ./venv/bin/python api_server.py > ../../logs/jupyter-api-server.log 2> ../../logs/jupyter-api-server-stderr.log &

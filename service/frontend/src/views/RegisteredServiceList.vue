@@ -382,7 +382,7 @@ h1 {
 
 .empty-state .tip {
   font-size: 14px;
-  color: #999;
+  color: var(--addp-text-tertiary);
 }
 
 .services-table {

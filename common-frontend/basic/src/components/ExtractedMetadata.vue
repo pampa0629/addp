@@ -390,16 +390,16 @@ const sections = computed(() => buildSections(props.metadata))
 .section-document .section-icon { color: #f56c6c; }
 .section-document { border-left: 3px solid #f56c6c; }
 
-.section-geo h4 { color: #909399; }
-.section-geo .section-icon { color: #909399; }
+.section-geo h4 { color: var(--addp-text-tertiary); }
+.section-geo .section-icon { color: var(--addp-text-tertiary); }
 .section-geo { border-left: 3px solid #909399; }
 
-.section-table h4 { color: #606266; }
-.section-table .section-icon { color: #606266; }
+.section-table h4 { color: var(--addp-text-secondary); }
+.section-table .section-icon { color: var(--addp-text-secondary); }
 .section-table { border-left: 3px solid #606266; }
 
-.section-database h4 { color: #303133; }
-.section-database .section-icon { color: #303133; }
+.section-database h4 { color: var(--addp-text-primary); }
+.section-database .section-icon { color: var(--addp-text-primary); }
 .section-database { border-left: 3px solid #303133; }
 
 .section-text h4 { color: #79bbff; }

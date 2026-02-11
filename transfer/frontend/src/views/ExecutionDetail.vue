@@ -61,7 +61,7 @@
             :value="'✓'"
           >
             <template #prefix>
-              <el-icon style="color: #909399; font-size: 20px;">
+              <el-icon style="color: var(--addp-text-tertiary); font-size: 20px;">
                 <span style="font-weight: bold;">📊</span>
               </el-icon>
             </template>
@@ -357,7 +357,7 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 12px;
   padding: 10px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 
@@ -422,7 +422,7 @@ onUnmounted(() => {
 /* 统计信息日志 */
 .log-statistics {
   background-color: rgba(144, 147, 153, 0.1);
-  border-left-color: #909399;
+  border-left-color: var(--addp-text-tertiary);
   color: #a8abb2;
 }
 
@@ -470,7 +470,7 @@ onUnmounted(() => {
 
 /* 后处理摘要样式 */
 .post-process-summary {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
   margin-bottom: 16px;
@@ -479,7 +479,7 @@ onUnmounted(() => {
 
 .empty-logs {
   text-align: center;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   padding: 40px 0;
   font-size: 14px;
 }

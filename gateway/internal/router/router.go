@@ -335,7 +335,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 					case "service":
 						serviceProxy.Handle(c)
 					case "copilot":
-						copilotProxy.HandleWithPathRewrite("/api")(c)
+						copilotProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -368,7 +368,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 					case "service":
 						serviceProxy.Handle(c)
 					case "copilot":
-						copilotProxy.HandleWithPathRewrite("/api")(c)
+						copilotProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -421,8 +421,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			api.Any("/service/*path", serviceProxy.Handle)
 
 			// Copilot 模块
-			api.Any("/copilot", copilotProxy.HandleWithPathRewrite("/api"))
-			api.Any("/copilot/*path", copilotProxy.HandleWithPathRewrite("/api"))
+			api.Any("/copilot", copilotProxy.Handle)
+			api.Any("/copilot/*path", copilotProxy.Handle)
 
 			// 内部 API（跨模块调用）
 			internalGroup := api.Group("/internal")

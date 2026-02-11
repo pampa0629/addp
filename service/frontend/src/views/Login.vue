@@ -110,12 +110,12 @@ const handleLogin = async () => {
 
 .card-header h2 {
   margin: 0;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .subtitle {
   margin: 8px 0 0;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 14px;
 }
 </style>

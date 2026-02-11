@@ -125,8 +125,8 @@ const handleCommand = (command) => {
 }
 
 .header {
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,7 +138,7 @@ const handleCommand = (command) => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .header-right {
@@ -152,7 +152,7 @@ const handleCommand = (command) => {
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-size: 14px;
 }
 
@@ -166,8 +166,8 @@ const handleCommand = (command) => {
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-right: 1px solid var(--addp-border-color);
   overflow-y: auto;
 }
 
@@ -176,7 +176,7 @@ const handleCommand = (command) => {
 }
 
 .content {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   overflow: auto;
   padding: 0;
 }
@@ -187,11 +187,11 @@ const handleCommand = (command) => {
 }
 
 .sidebar::-webkit-scrollbar-track {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .sidebar::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: var(--addp-border-secondary);
   border-radius: 3px;
 }
 

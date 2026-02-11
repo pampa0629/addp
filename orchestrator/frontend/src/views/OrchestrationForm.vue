@@ -159,6 +159,7 @@ function handleCancel() {
 
 .header h2 {
   margin: 0;
+  color: var(--addp-text-primary);
 }
 
 .form-metadata {
@@ -182,7 +183,7 @@ function handleCancel() {
 .center-panel {
   flex: 1;
   min-width: 0;
-  background: #fafbfc;
+  background: var(--addp-bg-secondary) !important;
   overflow: hidden;
 }
 </style>

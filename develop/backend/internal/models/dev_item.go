@@ -16,19 +16,15 @@ type DevItem struct {
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	DisplayName string         `gorm:"size:255" json:"display_name,omitempty"`
 	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'notebook'
-	QueryType   string         `gorm:"size:50;index:idx_dev_items_query_type" json:"query_type,omitempty"` // 'sql' | 'mql' | 'dsl' (仅当 dev_type='query' 时)
 
 	// 内容存储（根据类型解析）
 	Content DevItemContent `gorm:"type:jsonb;not null" json:"content"`
 
 	// 执行配置（JSONB 字段，统一的执行配置）
-	ExecutionConfig *string `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
+	ExecutionConfig DevItemContent `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
 
-	// 保留旧字段用于兼容（已废弃）
-	EngineID    *uint  `gorm:"index:idx_dev_items_resource" json:"engine_id,omitempty"`
-	Schedule    string `gorm:"size:100" json:"schedule,omitempty"` // Cron 表达式
-	IsScheduled bool   `gorm:"default:false" json:"is_scheduled"`
-	Timeout     int    `gorm:"default:300" json:"timeout"` // 超时时间（秒）
+	Schedule string `gorm:"size:100" json:"schedule,omitempty"` // Cron 表达式
+	Timeout  int    `gorm:"default:300" json:"timeout"`         // 超时时间（秒）
 
 	// 元数据
 	Description string         `gorm:"type:text" json:"description,omitempty"`
@@ -51,6 +47,36 @@ type DevItem struct {
 // TableName 指定表名
 func (DevItem) TableName() string {
 	return "develop.dev_items"
+}
+
+// GetQueryType 从 content 中获取查询类型
+func (d *DevItem) GetQueryType() string {
+	if d.Content != nil {
+		if qt, ok := d.Content["query_type"].(string); ok {
+			return qt
+		}
+	}
+	return ""
+}
+
+// GetEngineID 从 execution_config 中获取引擎 ID
+func (d *DevItem) GetEngineID() *uint {
+	if d.ExecutionConfig != nil {
+		if engineID, ok := d.ExecutionConfig["engine_id"].(float64); ok {
+			id := uint(engineID)
+			return &id
+		}
+		if engineID, ok := d.ExecutionConfig["engine_id"].(int); ok {
+			id := uint(engineID)
+			return &id
+		}
+	}
+	return nil
+}
+
+// IsScheduledActive 判断是否启用调度
+func (d *DevItem) IsScheduledActive() bool {
+	return d.Schedule != "" && d.Schedule != "0"
 }
 
 // DevItemContent 开发项内容（支持任意 JSON 结构）
@@ -82,12 +108,9 @@ type CreateDevItemRequest struct {
 	Name            string                 `json:"name" binding:"required"`
 	DisplayName     string                 `json:"display_name"`
 	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
-	QueryType       string                 `json:"query_type" binding:"required_if=DevType query,omitempty,oneof=sql mql dsl"`
 	Content         map[string]interface{} `json:"content" binding:"required"`
-	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
-	EngineID        *uint                  `json:"engine_id"`        // 已废弃，保留兼容
+	ExecutionConfig map[string]interface{} `json:"execution_config"`
 	Schedule        string                 `json:"schedule"`
-	IsScheduled     bool                   `json:"is_scheduled"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`
@@ -97,12 +120,9 @@ type CreateDevItemRequest struct {
 type UpdateDevItemRequest struct {
 	Name            string                 `json:"name"`
 	DisplayName     string                 `json:"display_name"`
-	QueryType       string                 `json:"query_type" binding:"omitempty,oneof=sql mql dsl"`
 	Content         map[string]interface{} `json:"content"`
-	ExecutionConfig *string                `json:"execution_config"` // JSONB 执行配置字符串
-	EngineID        *uint                  `json:"engine_id"`        // 已废弃，保留兼容
+	ExecutionConfig map[string]interface{} `json:"execution_config"`
 	Schedule        string                 `json:"schedule"`
-	IsScheduled     bool                   `json:"is_scheduled"`
 	Timeout         int                    `json:"timeout"`
 	Description     string                 `json:"description"`
 	Tags            []string               `json:"tags"`
@@ -111,14 +131,12 @@ type UpdateDevItemRequest struct {
 
 // ListDevItemsRequest 查询开发项列表请求
 type ListDevItemsRequest struct {
-	Page      int    `form:"page" binding:"min=1"`
-	PageSize  int    `form:"page_size" binding:"min=1,max=100"`
-	DevType   string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
-	QueryType string `form:"query_type" binding:"omitempty,oneof=sql mql dsl"`
-	Status    string `form:"status" binding:"omitempty,oneof=active inactive archived"`
-	EngineID  *uint  `form:"engine_id"`
-	Tag       string `form:"tag"`
-	Keyword   string `form:"keyword"` // 搜索名称或描述
+	Page     int    `form:"page" binding:"min=1"`
+	PageSize int    `form:"page_size" binding:"min=1,max=100"`
+	DevType  string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
+	Status   string `form:"status" binding:"omitempty,oneof=active inactive archived"`
+	Tag      string `form:"tag"`
+	Keyword  string `form:"keyword"` // 搜索名称或描述
 }
 
 // ListDevItemsResponse 开发项列表响应

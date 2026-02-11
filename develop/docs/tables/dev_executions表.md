@@ -1,5 +1,60 @@
 # dev_executions 表结构和 API 说明
 
+## 字段说明（常见疑问解答）
+
+### execution_id vs id
+
+| 字段 | 类型 | 用途 | 示例 |
+|------|------|------|------|
+| `id` | SERIAL (自增) | **内部唯一标识**，用于数据库索引、排序、外键关联 | `12345` |
+| `execution_id` | VARCHAR (UUID) | **外部唯一标识**，用于 API 响应、跨服务调用、日志追踪 | `550e8400-e29b-41d4-a716-446655440000` |
+
+**为什么需要两个 ID？**
+- **UUID** 提供全局唯一性，适合分布式系统、跨服务调用
+- **自增 ID** 提供高效的索引性能、范围查询和排序
+- API 对外暴露 UUID，内部使用自增 ID 优化性能
+
+### dev_type 字段必要性
+
+**为什么不能删除？**
+- **临时执行支持**：当 `dev_item_id` 为空时（临时执行），必须依赖 `dev_type` 路由到正确的执行器
+- **独立查询**：支持按类型过滤执行记录，无需关联 dev_items 表
+- **统计分析**：按类型统计执行情况，提升查询性能
+
+### trigger_type 字段说明
+
+| 值 | 含义 | 触发来源 |
+|---|------|---------|
+| `manual` | 手动触发 | 用户在前端点击"执行"按钮 |
+| `schedule` | 定时触发 | Cron 调度器自动执行 |
+| `orchestrator` | 编排触发 | Orchestrator 模块调用 |
+| `api` | API 触发 | 外部系统通过 API 调用 |
+
+### engine_id 为 null 的原因
+
+**什么情况下为 null？**
+- SQL 查询：**有值**（必须指定数据库引擎）
+- 工作流：**可能为 null**（引擎配置在 execution_config 中）
+- Notebook：**可能为 null**（使用默认 Jupyter 引擎）
+- 临时执行：**可能为 null**（未关联开发项）
+
+**如何获取引擎信息？**
+- 如果 `dev_item_id` 不为空，可从 `dev_items.execution_config` 中读取
+- 如果 `dev_item_id` 为空，表示临时执行，引擎信息在执行参数中
+
+### rows_affected 为 null 的原因
+
+**什么情况下有值？**
+- SQL DML 语句：**有值**（INSERT/UPDATE/DELETE 影响的行数）
+- SQL SELECT 查询：**有值**（返回的行数）
+
+**什么情况下为 null？**
+- 工作流执行：**null**（不适用于工作流）
+- Notebook 执行：**null**（不适用于 Notebook）
+- 执行失败：**null**（未完成执行）
+
+---
+
 ## 一、表结构概览
 
 `develop.dev_executions` 表是 Develop 模块的执行记录表，记录所有 SQL 查询、工作流、Notebook 的执行历史。支持执行状态追踪、结果存储、性能监控。

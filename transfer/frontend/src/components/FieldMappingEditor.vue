@@ -347,7 +347,7 @@ const fetchTargetFields = async () => {
   display: flex;
   justify-content: flex-end;
   padding: 10px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 </style>

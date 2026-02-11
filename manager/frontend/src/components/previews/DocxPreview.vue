@@ -889,7 +889,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
 }
 
 .large-file-warning {
@@ -918,7 +918,7 @@ onMounted(() => {
 .limit-hint {
   margin-top: 8px;
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .loading-container {
@@ -956,7 +956,7 @@ onMounted(() => {
 .loading-hint p {
   margin: 4px 0;
   font-size: 14px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .loading-tips {
@@ -987,14 +987,14 @@ onMounted(() => {
 
 .error-message {
   font-size: 16px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin-bottom: 16px;
 }
 
 .limit-info {
   margin-bottom: 16px;
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   line-height: 1.6;
 }
 
@@ -1012,7 +1012,7 @@ onMounted(() => {
 
 .download-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .docx-container {
@@ -1028,7 +1028,7 @@ onMounted(() => {
   align-items: center;
   padding: 12px 16px;
   background: white;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--addp-border-color);
   flex-shrink: 0;
 }
 
@@ -1041,7 +1041,7 @@ onMounted(() => {
   margin: 0;
   line-height: 1.6;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .toolbar-left {
@@ -1064,7 +1064,7 @@ onMounted(() => {
 .docx-title {
   font-size: 14px;
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
   max-width: 400px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1087,7 +1087,7 @@ onMounted(() => {
   word-break: break-word;
   font-size: 14px;
   line-height: 1.6;
-  color: #303133;
+  color: var(--addp-text-primary);
   background: #f8f9fb;
   padding: 16px;
   border-radius: 4px;
@@ -1098,7 +1098,7 @@ onMounted(() => {
   font-size: 28px;
   font-weight: 600;
   margin: 24px 0 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
   line-height: 1.4;
 }
 
@@ -1106,7 +1106,7 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 600;
   margin: 20px 0 12px;
-  color: #303133;
+  color: var(--addp-text-primary);
   line-height: 1.4;
 }
 
@@ -1114,14 +1114,14 @@ onMounted(() => {
   font-size: 20px;
   font-weight: 600;
   margin: 16px 0 12px;
-  color: #303133;
+  color: var(--addp-text-primary);
   line-height: 1.4;
 }
 
 .docx-content :deep(p) {
   margin: 8px 0;
   line-height: 1.8;
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-size: 14px;
 }
 
@@ -1130,13 +1130,13 @@ onMounted(() => {
   padding: 12px 16px;
   border-left: 4px solid #409eff;
   background: #f4f4f5;
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-style: italic;
 }
 
 .docx-content :deep(strong) {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .docx-content :deep(em) {
@@ -1152,7 +1152,7 @@ onMounted(() => {
 .docx-content :deep(li) {
   margin: 4px 0;
   line-height: 1.8;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .docx-content :deep(table) {
@@ -1169,13 +1169,13 @@ onMounted(() => {
 }
 
 .docx-content :deep(th) {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .docx-content :deep(td) {
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .docx-content :deep(img) {
@@ -1195,7 +1195,7 @@ onMounted(() => {
 }
 
 .docx-content :deep(code) {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
@@ -1204,7 +1204,7 @@ onMounted(() => {
 }
 
 .docx-content :deep(pre) {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 12px;
   border-radius: 4px;
   overflow-x: auto;
@@ -1214,6 +1214,6 @@ onMounted(() => {
 .docx-content :deep(pre code) {
   background: none;
   padding: 0;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

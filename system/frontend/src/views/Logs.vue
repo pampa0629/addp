@@ -448,16 +448,18 @@ onMounted(() => {
 .filter-form {
   margin-bottom: 20px;
   padding: 15px;
-  background-color: #f5f7fa;
+  background: var(--addp-bg-primary) !important;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
 }
 
 .code-block {
-  background-color: #f5f5f5;
+  background: var(--addp-bg-secondary) !important;
   padding: 15px;
   border-radius: 4px;
   max-height: 400px;
   overflow-y: auto;
+  border: 1px solid var(--addp-border-color);
 }
 
 .code-block pre {
@@ -467,11 +469,12 @@ onMounted(() => {
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
+  color: var(--addp-text-primary);
 }
 
 .empty-text {
   text-align: center;
-  color: #999;
+  color: var(--addp-text-tertiary);
   padding: 20px;
 }
 
@@ -480,9 +483,10 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
-  background-color: #fef0f0;
+  background: var(--addp-bg-secondary) !important;
   padding: 10px;
   border-radius: 4px;
+  border: 1px solid #f56c6c;
 }
 
 /* ✅ 慢请求高亮样式 */

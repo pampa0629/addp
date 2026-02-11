@@ -29,6 +29,7 @@ onMounted(async () => {
   height: 100vh;
   margin: 0;
   padding: 0;
+  background: var(--addp-bg-secondary) !important;
 }
 
 body {

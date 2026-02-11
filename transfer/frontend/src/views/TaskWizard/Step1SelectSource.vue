@@ -46,7 +46,7 @@
             />
           </el-option-group>
         </el-select>
-        <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+        <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
           <p>系统管理的引擎从元数据模块自动加载表，本地引擎实时扫描数据库</p>
         </div>
       </el-form-item>
@@ -68,7 +68,7 @@
           placeholder="请输入 SQL 查询语句，例如：SELECT * FROM table_name WHERE condition"
           @change="handleSQLQueryChange"
         />
-        <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+        <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
           <p>支持标准 SQL 语法，查询结果将作为数据源</p>
         </div>
       </el-form-item>
@@ -104,7 +104,7 @@
             <el-button @click="showObjectPathPicker = true">浏览</el-button>
           </template>
         </el-input>
-        <div class="hint" style="margin-top: 8px; font-size: 13px; color: #909399;">
+        <div class="hint" style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary);">
           <p>选择对象存储的路径,然后从该路径下选择文件</p>
         </div>
       </el-form-item>
@@ -666,18 +666,18 @@ onMounted(async () => {
 }
 
 .step-description {
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin-bottom: 30px;
 }
 
 .table-info {
   padding: 12px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 
 .table-info p {
   margin: 8px 0;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 </style>

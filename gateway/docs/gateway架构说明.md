@@ -87,7 +87,8 @@ Gateway（API 网关）是全域数据平台的**统一入口**，所有外部�
 | `/api/manager/*` | Manager (8081) | 数据源、预览、文件上传 |
 | `/api/meta/*` | Meta (8082) | 元数据扫描、对象存储 |
 | `/api/transfer/*` | Transfer (8083) | 数据传输任务 |
-| `/api/develop/*` | Develop (8084) | SQL 执行、工作流 |
+| `/api/orchestrator/*` | Orchestrator (8084) | 任务编排、工作流编排 |
+| `/api/develop/*` | Develop (8085) | SQL 执行、工作流 |
 | `/api/service/*` | Service (8086) | 数据服务、OGC 标准 |
 | `/api/copilot/*` | Copilot (8087) | AI 助手 |
 

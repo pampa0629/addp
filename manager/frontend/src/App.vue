@@ -17,5 +17,6 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100vh;
+  background: var(--addp-bg-secondary) !important;
 }
 </style>

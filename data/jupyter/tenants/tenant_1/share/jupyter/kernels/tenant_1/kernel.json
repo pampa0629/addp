@@ -1,23 +1,23 @@
 {
- "argv": [
-  "/Users/pampa/code/addp/data/jupyter/tenants/tenant_1/venv/bin/python",
-  "-Xfrozen_modules=off",
-  "-m",
-  "ipykernel_launcher",
-  "-f",
-  "{connection_file}"
- ],
- "display_name": "Python 3 (租户 1)",
- "language": "python",
- "metadata": {
-  "debugger": true
- },
- "kernel_protocol_version": "5.5",
- "env": {
-  "TENANT_ID": "1",
-  "ADDP_API_BASE": "http://localhost:8000",
-  "IPYTHONDIR": "/Users/pampa/code/addp/data/jupyter/tenants/tenant_1/.ipython",
-  "INTERNAL_API_KEY": "KzzK5NsazRz/gBhJGrxSKXRdIR7wYzQ5MrVsZ1eJkE7uXDo9uXyp8h4KC+U55Kva",
-  "SYSTEM_SERVICE_URL": "http://localhost:8180"
- }
+  "argv": [
+    "/Users/pampa/code/addp/data/jupyter/tenants/tenant_1/venv/bin/python",
+    "-Xfrozen_modules=off",
+    "-m",
+    "ipykernel_launcher",
+    "-f",
+    "{connection_file}"
+  ],
+  "display_name": "Python 3 (租户 1)",
+  "language": "python",
+  "metadata": {
+    "debugger": true
+  },
+  "kernel_protocol_version": "5.5",
+  "env": {
+    "TENANT_ID": "1",
+    "ADDP_API_BASE": "http://localhost:8180",
+    "IPYTHONDIR": "/Users/pampa/code/addp/data/jupyter/tenants/tenant_1/.ipython",
+    "INTERNAL_API_KEY": "KzzK5NsazRz/gBhJGrxSKXRdIR7wYzQ5MrVsZ1eJkE7uXDo9uXyp8h4KC+U55Kva",
+    "SYSTEM_SERVICE_URL": "http://localhost:8180"
+  }
 }

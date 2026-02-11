@@ -434,12 +434,12 @@ onMounted(() => {
 
 .task-plan-name {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .resource-name {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .pagination {

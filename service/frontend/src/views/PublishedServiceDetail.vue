@@ -84,7 +84,7 @@
         </template>
         <template v-else-if="service?.config_type === 'sql'">
           <el-descriptions-item label="SQL 查询" :span="2">
-            <pre style="background: #f5f7fa; padding: 12px; border-radius: 4px; overflow-x: auto">{{ service?.sql_query }}</pre>
+            <pre style="background: var(--addp-bg-secondary); padding: 12px; border-radius: 4px; overflow-x: auto">{{ service?.sql_query }}</pre>
           </el-descriptions-item>
         </template>
       </el-descriptions>
@@ -316,7 +316,7 @@ onMounted(() => {
 .header-left h2 {
   margin: 0 0 12px 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .service-meta {
@@ -340,7 +340,7 @@ onMounted(() => {
   gap: 8px;
   font-weight: 600;
   margin-bottom: 8px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .endpoint-url {
@@ -361,7 +361,7 @@ pre {
 }
 
 code {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;

@@ -118,7 +118,7 @@
             <el-tag :type="form.service_type === 'spatial' ? 'success' : 'primary'" size="large">
               {{ form.service_type === 'spatial' ? '空间服务' : '数据表服务' }}
             </el-tag>
-            <span style="margin-left: 12px; color: #909399; font-size: 13px">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 13px">
               （服务类型创建后不可变更）
             </span>
           </el-form-item>
@@ -189,28 +189,28 @@
               <div style="display: flex; flex-direction: column; gap: 12px">
                 <el-checkbox label="wfs">
                   <strong>WFS 2.0</strong>
-                  <span style="color: #909399; margin-left: 8px">
+                  <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     矢量要素查询服务，支持 QGIS、ArcGIS
                   </span>
                 </el-checkbox>
 
                 <el-checkbox label="wmts">
                   <strong>WMTS 1.0</strong>
-                  <span style="color: #909399; margin-left: 8px">
+                  <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     矢量瓦片地图服务，高性能地图展示
                   </span>
                 </el-checkbox>
 
                 <el-checkbox label="ogc_api">
                   <strong>OGC API Features</strong>
-                  <span style="color: #909399; margin-left: 8px">
+                  <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     现代化 RESTful 空间 API
                   </span>
                 </el-checkbox>
 
                 <el-checkbox label="rest_query" checked disabled>
                   <strong>REST Query API</strong>
-                  <span style="color: #909399; margin-left: 8px">
+                  <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     （默认启用）简化 REST 查询 API
                   </span>
                 </el-checkbox>
@@ -581,12 +581,12 @@ onMounted(() => {
 .page-header h2 {
   margin: 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .help-text {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -617,7 +617,7 @@ onMounted(() => {
 .service-type-card p {
   margin: 4px 0;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .selected-card {

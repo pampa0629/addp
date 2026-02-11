@@ -250,7 +250,7 @@ export default {
 
 h1 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .toolbar {
@@ -269,9 +269,11 @@ h1 {
 .search-bar input {
   flex: 1;
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   font-size: 14px;
+  background: var(--addp-bg-primary) !important;
+  color: var(--addp-text-primary);
 }
 
 .btn {
@@ -355,44 +357,46 @@ h1 {
 
 .empty-state .tip {
   font-size: 14px;
-  color: #999;
+  color: var(--addp-text-tertiary);
 }
 
 .services-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: white;
+  background: var(--addp-bg-primary) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .services-table th {
-  background-color: #f8f9fa;
+  background: var(--addp-bg-secondary) !important;
   padding: 12px;
   text-align: left;
   font-weight: 500;
-  border-bottom: 2px solid #dee2e6;
+  border-bottom: 2px solid var(--addp-border-color);
   font-size: 14px;
+  color: var(--addp-text-primary);
 }
 
 .services-table td {
   padding: 12px;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--addp-border-color);
   font-size: 14px;
+  color: var(--addp-text-primary);
 }
 
 .services-table tbody tr:hover {
-  background-color: #f8f9fa;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .data-source {
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #495057;
+  color: var(--addp-text-secondary);
 }
 
 .sql-indicator {
   font-style: italic;
-  color: #6c757d;
+  color: var(--addp-text-tertiary);
 }
 
 .protocols {
@@ -447,12 +451,12 @@ h1 {
   gap: 15px;
   margin-top: 20px;
   padding: 15px;
-  background-color: #f8f9fa;
+  background: var(--addp-bg-secondary) !important;
   border-radius: 4px;
 }
 
 .page-info {
   font-size: 14px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 </style>

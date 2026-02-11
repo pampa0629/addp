@@ -157,7 +157,7 @@
                 <el-tag :type="response.status === 200 ? 'success' : 'danger'">
                   HTTP {{ response.status }}
                 </el-tag>
-                <span style="margin-left: 10px; color: #909399;">
+                <span style="margin-left: 10px; color: var(--addp-text-tertiary);">
                   耗时: {{ response.duration }}ms
                 </span>
               </div>
@@ -348,7 +348,7 @@ onMounted(loadService)
 .page-header h2 {
   margin: 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .empty-state {
@@ -362,7 +362,7 @@ onMounted(loadService)
 }
 
 .json-view {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
   font-size: 12px;
@@ -374,7 +374,7 @@ onMounted(loadService)
 
 .help-text {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
 }
 

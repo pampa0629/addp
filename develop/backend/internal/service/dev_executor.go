@@ -86,8 +86,8 @@ func (e *DevExecutor) ExecuteDevItem(
 		TriggeredBy: &userID,
 		Status:      "pending",
 		Progress:    0,
-		EngineID:    devItem.EngineID,
-		Inputs:      inputs, // 保存输入参数
+		EngineID:    devItem.GetEngineID(), // 使用兼容方法
+		Inputs:      inputs,                // 保存输入参数
 		StartedAt:   &startTime,
 		CreatedAt:   time.Now(),
 	}
@@ -158,10 +158,16 @@ func (e *DevExecutor) ExecuteContent(
 
 	// 构造临时 DevItem
 	tempItem := &models.DevItem{
-		DevType:  devType,
-		Content:  content,
-		EngineID: resourceID,
-		Timeout:  timeout,
+		DevType: devType,
+		Content: content,
+		Timeout: timeout,
+	}
+
+	// 如果提供了 resourceID，设置到 execution_config
+	if resourceID != nil {
+		tempItem.ExecutionConfig = models.DevItemContent{
+			"engine_id": *resourceID,
+		}
 	}
 
 	// 异步执行任务
@@ -271,7 +277,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "执行工作流")
 
 	// 验证执行配置
-	if devItem.ExecutionConfig == nil || *devItem.ExecutionConfig == "" {
+	if devItem.ExecutionConfig == nil || len(devItem.ExecutionConfig) == 0 {
 		return nil, "工作流缺少执行配置，请配置工作流引擎"
 	}
 
@@ -300,9 +306,13 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 	execCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	log.Printf("🔵 [DevExecutor] 调用工作流引擎: execution_id=%s config=%s", executionID, *devItem.ExecutionConfig)
+	// 将 ExecutionConfig 转为 JSON 字符串
+	configJSON, _ := json.Marshal(devItem.ExecutionConfig)
+	configStr := string(configJSON)
+
+	log.Printf("🔵 [DevExecutor] 调用工作流引擎: execution_id=%s config=%s", executionID, configStr)
 	// 调用工作流引擎（传递 JSONB 配置字符串）
-	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, workflowDef, inputData, *devItem.ExecutionConfig)
+	resp, err := e.workflowEngine.ExecuteWorkflow(execCtx, workflowDef, inputData, configStr)
 	if err != nil {
 		log.Printf("❌ [DevExecutor] 工作流引擎调用失败: execution_id=%s err=%v", executionID, err)
 		return nil, fmt.Sprintf("工作流执行失败: %v", err)
@@ -332,8 +342,11 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 
 // executeQuery 执行查询（根据query_type路由）
 func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string, *int64) {
+	// 使用兼容方法获取查询类型
+	queryType := devItem.GetQueryType()
+
 	// 根据 query_type 路由到不同执行器
-	switch devItem.QueryType {
+	switch queryType {
 	case "sql":
 		return e.executeSQL(ctx, devItem, executionID)
 	case "mql":
@@ -342,10 +355,10 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem,
 		return nil, "Elasticsearch 查询功能尚未实现", nil
 	default:
 		// 如果没有指定query_type，默认当作SQL处理（向后兼容）
-		if devItem.QueryType == "" {
+		if queryType == "" {
 			return e.executeSQL(ctx, devItem, executionID)
 		}
-		return nil, fmt.Sprintf("不支持的查询类型: %s", devItem.QueryType), nil
+		return nil, fmt.Sprintf("不支持的查询类型: %s", queryType), nil
 	}
 }
 
@@ -353,8 +366,9 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem,
 func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, executionID string) (models.ExecutionResult, string, *int64) {
 	_ = e.devExecutionRepo.UpdateProgress(executionID, 30, "执行SQL")
 
-	// 验证资源ID
-	if devItem.EngineID == nil {
+	// 使用兼容方法获取引擎ID
+	engineID := devItem.GetEngineID()
+	if engineID == nil {
 		return nil, "SQL执行需要指定资源", nil
 	}
 
@@ -377,7 +391,7 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, e
 	defer cancel()
 
 	// 调用SQL引擎
-	sqlResult, err := e.sqlEngine.ExecuteSQL(execCtx, *devItem.EngineID, sqlContent, timeout)
+	sqlResult, err := e.sqlEngine.ExecuteSQL(execCtx, *engineID, sqlContent, timeout)
 	if err != nil {
 		return nil, fmt.Sprintf("SQL执行失败: %v", err), nil
 	}
@@ -688,13 +702,13 @@ func (e *DevExecutor) ExecuteWithParams(
 
 	// 9. 创建临时 DevItem（使用解析后的内容）
 	tempItem := &models.DevItem{
-		ID:       devItem.ID,
-		DevType:  devItem.DevType,
-		Content:  resolvedContentMap,
-		EngineID: devItem.EngineID,
-		Timeout:  devItem.Timeout,
-		TenantID: tenantID,
-		Status:   devItem.Status,
+		ID:              devItem.ID,
+		DevType:         devItem.DevType,
+		Content:         resolvedContentMap,
+		Timeout:         devItem.Timeout,
+		TenantID:        tenantID,
+		Status:          devItem.Status,
+		ExecutionConfig: devItem.ExecutionConfig, // 保留执行配置
 	}
 
 	// 10. 直接创建执行记录并执行（避免 ExecuteDevItem 重新加载 devItem 丢失参数）
@@ -718,8 +732,8 @@ func (e *DevExecutor) ExecuteWithParams(
 		TriggeredBy: &userID,
 		Status:      "pending",
 		Progress:    0,
-		EngineID:    devItem.EngineID,
-		Inputs:      executionInputs, // 保存合并后的参数
+		EngineID:    devItem.GetEngineID(), // 使用兼容方法
+		Inputs:      executionInputs,       // 保存合并后的参数
 		StartedAt:   &startTime,
 		CreatedAt:   time.Now(),
 	}

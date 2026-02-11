@@ -3,17 +3,15 @@
     <el-button circle :icon="currentIcon" :title="currentTitle" />
     <template #dropdown>
       <el-dropdown-menu>
-        <el-dropdown-item command="system" :class="{ 'is-active': mode === 'system' }">
-          <el-icon><Monitor /></el-icon>
-          跟随系统
-        </el-dropdown-item>
-        <el-dropdown-item command="light" :class="{ 'is-active': mode === 'light' }">
-          <el-icon><Sunny /></el-icon>
-          浅色模式
-        </el-dropdown-item>
-        <el-dropdown-item command="dark" :class="{ 'is-active': mode === 'dark' }">
-          <el-icon><Moon /></el-icon>
-          深色模式
+        <!-- 自动从配置生成菜单项 -->
+        <el-dropdown-item
+          v-for="theme in themes"
+          :key="theme.value"
+          :command="theme.value"
+          :class="{ 'is-active': mode === theme.value }"
+        >
+          <el-icon><component :is="icons[theme.icon]" /></el-icon>
+          {{ theme.label }}
         </el-dropdown-item>
       </el-dropdown-menu>
     </template>
@@ -23,7 +21,20 @@
 <script setup>
 import { computed } from 'vue'
 import { useThemeStore } from '../store/theme'
-import { Monitor, Sunny, Moon } from '@element-plus/icons-vue'
+import { THEME_CONFIGS, getThemeConfig } from '@common-ui/config/themes'
+import { Monitor, Sunny, Moon, Cloudy, MagicStick } from '@element-plus/icons-vue'
+
+// 图标映射
+const icons = {
+  Monitor,
+  Sunny,
+  Moon,
+  Cloudy,
+  MagicStick
+}
+
+// 主题配置列表
+const themes = THEME_CONFIGS
 
 const themeStore = useThemeStore()
 
@@ -33,22 +44,22 @@ const mode = computed(() => themeStore.mode)
 // 实际应用的主题 (深色或浅色)
 const isDark = computed(() => themeStore.isDark)
 
-// 当前显示的图标 (根据实际应用的主题)
+// 当前显示的图标 (根据当前主题配置)
 const currentIcon = computed(() => {
-  return isDark.value ? Moon : Sunny
+  const config = getThemeConfig(mode.value)
+  return config ? icons[config.icon] : icons.Sunny
 })
 
 // 按钮标题
 const currentTitle = computed(() => {
-  const modeText = {
-    system: '跟随系统',
-    light: '浅色模式',
-    dark: '深色模式'
-  }[mode.value]
+  const config = getThemeConfig(mode.value)
+  if (!config) return '主题切换'
 
-  const actualTheme = isDark.value ? '深色' : '浅色'
+  const actualTheme = config.isDarkTheme === null
+    ? (isDark.value ? '深色' : '浅色')
+    : (config.isDarkTheme ? '深色' : '浅色')
 
-  return `当前主题: ${modeText} (${actualTheme})`
+  return `当前主题: ${config.label} (${actualTheme})`
 })
 
 // 处理下拉菜单选择

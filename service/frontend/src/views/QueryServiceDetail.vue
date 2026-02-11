@@ -233,7 +233,7 @@
 
         <!-- Landing Page -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">Landing Page:</div>
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Landing Page:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesLandingPage" readonly />
             <el-button @click="copyEndpoint(ogcFeaturesLandingPage)">复制</el-button>
@@ -243,7 +243,7 @@
 
         <!-- Collections -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">Collections:</div>
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Collections:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesCollections" readonly />
             <el-button @click="copyEndpoint(ogcFeaturesCollections)">复制</el-button>
@@ -253,7 +253,7 @@
 
         <!-- Conformance -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">Conformance:</div>
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">Conformance:</div>
           <div class="endpoint-url">
             <el-input :value="ogcFeaturesConformance" readonly />
             <el-button @click="copyEndpoint(ogcFeaturesConformance)">复制</el-button>
@@ -263,7 +263,7 @@
 
         <!-- Items (实际数据) -->
         <div style="margin-bottom: 12px">
-          <div style="font-size: 13px; color: #909399; margin-bottom: 4px">
+          <div style="font-size: 13px; color: var(--addp-text-tertiary); margin-bottom: 4px">
             Items (实际地理数据，限制10条):
           </div>
           <div class="endpoint-url">
@@ -290,7 +290,7 @@
         >
           {{ previewData.length > 0 ? '刷新数据' : '加载数据' }}
         </el-button>
-        <div v-if="previewData.length > 0" style="color: #606266; font-size: 14px">
+        <div v-if="previewData.length > 0" style="color: var(--addp-text-secondary); font-size: 14px">
           共 {{ previewPagination.total }} 条记录，当前显示 {{ previewData.length }} 条
         </div>
       </div>
@@ -617,7 +617,7 @@ onMounted(() => {
 .header-left h2 {
   margin: 0;
   font-size: 24px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .service-meta {
@@ -650,7 +650,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 15px;
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
   margin-bottom: 8px;
 }
 
@@ -670,7 +670,7 @@ onMounted(() => {
 }
 
 .sql-query-box {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   padding: 16px;
@@ -681,13 +681,13 @@ onMounted(() => {
   margin: 0;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #303133;
+  color: var(--addp-text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
 
 code {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   padding: 2px 6px;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
@@ -711,7 +711,7 @@ ul {
 }
 
 .geometry-data {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-style: italic;
   font-size: 12px;
 }

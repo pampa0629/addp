@@ -693,6 +693,6 @@ defineExpose({
 }
 
 :deep(.el-tree-node:focus > .el-tree-node__content) {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
 }
 </style>

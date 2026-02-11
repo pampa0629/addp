@@ -77,10 +77,10 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.managerURL,
-		TaskListEndpoint:    "/api/quick-view/list",   // 快显任务列表
-		TaskDetailEndpoint:  "/api/quick-view/:id",    // 快显任务详情
-		TaskExecuteEndpoint: "/api/quick-view",        // 创建快显任务
-		TaskStatusEndpoint:  "/api/quick-view/status", // 快显任务状态
+		TaskListEndpoint:    "/api/manager/quick-view/tasks",   // 快显任务列表
+		TaskDetailEndpoint:  "/api/manager/quick-view/:id",    // 快显任务详情
+		TaskExecuteEndpoint: "/api/manager/quick-view",        // 创建快显任务
+		TaskStatusEndpoint:  "/api/manager/quick-view/status", // 快显任务状态
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

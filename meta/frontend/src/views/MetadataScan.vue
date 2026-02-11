@@ -1128,7 +1128,7 @@ onBeforeUnmount(() => {
 
 .name-text {
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 14px;
 }
 
@@ -1142,12 +1142,12 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .engine-stats {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   cursor: help;
 }
 
@@ -1178,7 +1178,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   cursor: help;
 }
 
@@ -1188,7 +1188,7 @@ onBeforeUnmount(() => {
 
 .last-scan {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .last-scan .label {
@@ -1196,7 +1196,7 @@ onBeforeUnmount(() => {
 }
 
 .last-scan .time {
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 /* ========== 引擎操作列 ========== */
@@ -1221,7 +1221,7 @@ onBeforeUnmount(() => {
 
 .schema-name {
   font-weight: 500;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 14px;
 }
 
@@ -1232,7 +1232,7 @@ onBeforeUnmount(() => {
 
 .schema-details {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1259,7 +1259,7 @@ onBeforeUnmount(() => {
 
 .selection-info {
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   padding: 0 8px;
 }
 
@@ -1342,7 +1342,7 @@ onBeforeUnmount(() => {
   margin-left: 100px;
   margin-top: -8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   line-height: 1.5;
 }
 

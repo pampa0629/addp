@@ -919,7 +919,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .ai-assistant-panel {
@@ -984,8 +984,8 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: flex-start;
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
   flex-shrink: 0;
 }
 
@@ -1003,7 +1003,7 @@ onMounted(async () => {
 .toolbar-left h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-weight: 500;
 }
 
@@ -1025,7 +1025,7 @@ onMounted(async () => {
 .spark-runtime-select-group label {
   font-size: 14px;
   font-weight: 500;
-  color: #606266;
+  color: var(--addp-text-secondary);
   min-width: 100px;
   white-space: nowrap;
 }
@@ -1041,8 +1041,8 @@ onMounted(async () => {
   width: 300px;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-right: 1px solid var(--addp-border-color);
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -1050,7 +1050,7 @@ onMounted(async () => {
 
 .right-panel {
   border-right: none;
-  border-left: 1px solid #e4e7ed;
+  border-left: 1px solid var(--addp-border-color);
   position: relative;
   z-index: 10;
 }
@@ -1060,22 +1060,22 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   position: relative;
   z-index: 1;
 }
 
 .panel-header {
   padding: 12px 16px;
-  background: #fafafa;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-secondary);
+  border-bottom: 1px solid var(--addp-border-color);
   flex-shrink: 0;
 }
 
 .panel-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .panel-body {
@@ -1091,7 +1091,7 @@ onMounted(async () => {
 .json-viewer {
   max-height: 500px;
   overflow: auto;
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
   border-radius: 4px;
   padding: 12px;
 }
@@ -1101,6 +1101,6 @@ onMounted(async () => {
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 13px;
   line-height: 1.5;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 </style>

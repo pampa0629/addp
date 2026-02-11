@@ -47,7 +47,7 @@ func SetupRouter(
 
 	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, httpClient)
 
-	api := router.Group("/api")
+	api := router.Group("/api/orchestrator")
 
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {

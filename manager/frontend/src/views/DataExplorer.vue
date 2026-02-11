@@ -288,6 +288,7 @@ watch(() => route.query, async (query) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .split-container {
@@ -295,10 +296,12 @@ watch(() => route.query, async (query) => {
   display: grid;
   gap: 0;
   overflow: hidden;
+  background: var(--addp-bg-secondary) !important;
 }
 
 .tree-container {
   height: 100%;
   overflow: auto;
+  background: var(--addp-bg-primary) !important;
 }
 </style>

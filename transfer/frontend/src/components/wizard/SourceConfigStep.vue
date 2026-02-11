@@ -132,12 +132,12 @@ const selectedResource = computed(() => {
   font-size: 16px;
   font-weight: 500;
   margin-bottom: 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 5px;
   line-height: 1.6;
 }

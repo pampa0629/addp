@@ -253,7 +253,7 @@ function fallbackCopyToClipboard(text) {
   align-items: flex-start;
   margin-bottom: 20px;
   padding-bottom: 20px;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .review-header h3 {
@@ -261,7 +261,7 @@ function fallbackCopyToClipboard(text) {
 }
 
 .step-description {
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin: 0;
 }
 
@@ -282,7 +282,7 @@ function fallbackCopyToClipboard(text) {
 }
 
 .json-preview {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 16px;
   border-radius: 4px;
   overflow-x: auto;

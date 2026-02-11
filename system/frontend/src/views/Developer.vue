@@ -203,9 +203,9 @@ const handleNodeClick = (data) => {
   height: calc(100vh - 120px);
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--addp-bg-primary);
   border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--addp-shadow-card);
   margin: 20px;
 }
 
@@ -214,7 +214,7 @@ const handleNodeClick = (data) => {
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #e8e8e8;
+  border-bottom: 1px solid var(--addp-border-color);
   flex-shrink: 0;
 }
 
@@ -232,13 +232,13 @@ const handleNodeClick = (data) => {
 .help-content h4 {
   margin: 0 0 12px 0;
   font-size: 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .help-content p {
   margin: 8px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .api-docs-body {
@@ -249,7 +249,7 @@ const handleNodeClick = (data) => {
 
 .api-nav {
   width: 300px;
-  border-right: 1px solid #e8e8e8;
+  border-right: 1px solid var(--addp-border-color);
   overflow-y: auto;
   padding: 10px 0;
   flex-shrink: 0;
@@ -296,24 +296,24 @@ const handleNodeClick = (data) => {
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--addp-border-color-light);
 }
 
 .api-path {
   font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
   font-size: 15px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .api-name {
   margin: 0 0 8px 0;
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .api-desc {
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin: 0 0 20px 0;
   font-size: 14px;
   line-height: 1.6;
@@ -326,17 +326,17 @@ const handleNodeClick = (data) => {
 /* 代码块样式 */
 .code-block {
   margin-top: 16px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .code-title {
-  background: #e8e8e8;
+  background: var(--addp-border-color);
   padding: 8px 15px;
   font-weight: 600;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .code-block pre {

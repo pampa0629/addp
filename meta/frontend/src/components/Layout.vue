@@ -129,8 +129,8 @@ const handleLogout = () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #fff;
-  border-bottom: 1px solid #ebeef5;
+  background: var(--addp-bg-primary) !important;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .header-left {
@@ -156,17 +156,17 @@ const handleLogout = () => {
   cursor: pointer;
   padding: 6px 10px;
   border-radius: 4px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   transition: background 0.2s;
 }
 
 .user-dropdown:hover {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #ebeef5;
+  background: var(--addp-bg-primary) !important;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .el-menu-vertical {
@@ -174,7 +174,7 @@ const handleLogout = () => {
 }
 
 .main-content {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary) !important;
   padding: 24px;
   overflow: auto;
 }
@@ -185,7 +185,7 @@ const handleLogout = () => {
   min-height: 100vh;
   padding: 20px;
   margin: 0;
-  background: #f0f2f5;
+  background: var(--addp-bg-secondary) !important;
   overflow: visible;
   box-sizing: border-box;
 }

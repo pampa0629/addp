@@ -223,14 +223,14 @@ const getColumnPairs = (sheet) => {
 
 .summary-item .label {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-bottom: 4px;
 }
 
 .summary-item .value {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .excel-alerts :deep(.el-alert) + :deep(.el-alert) {
@@ -238,7 +238,7 @@ const getColumnPairs = (sheet) => {
 }
 
 .excel-body {
-  background: #fff;
+  background: var(--addp-bg-primary);
   border: 1px solid #ebeef5;
   border-radius: 6px;
   padding: 8px;

@@ -503,7 +503,7 @@ const navigateToDocument = (item = {}) => {
 
 .search-subtitle {
   margin: 4px 0 0;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 13px;
 }
 
@@ -533,7 +533,7 @@ const navigateToDocument = (item = {}) => {
   height: 36px;
   border: none;
   background-color: transparent;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .history-trigger:hover {
@@ -574,12 +574,12 @@ const navigateToDocument = (item = {}) => {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .history-loading {
   text-align: center;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 13px;
   padding: 12px 0;
 }
@@ -602,7 +602,7 @@ const navigateToDocument = (item = {}) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .history-query:hover {
@@ -627,7 +627,7 @@ const navigateToDocument = (item = {}) => {
 
 .results-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .results-list {
@@ -662,7 +662,7 @@ const navigateToDocument = (item = {}) => {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .result-name {
@@ -681,7 +681,7 @@ const navigateToDocument = (item = {}) => {
   flex-wrap: wrap;
   gap: 16px;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .vector-score {
@@ -696,9 +696,9 @@ const navigateToDocument = (item = {}) => {
 
 .result-snippet {
   font-size: 14px;
-  color: #303133;
+  color: var(--addp-text-primary);
   line-height: 1.6;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   padding: 12px;
   border-radius: 6px;
   max-height: 120px;
@@ -712,7 +712,7 @@ const navigateToDocument = (item = {}) => {
 
 .result-extra {
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .result-actions {

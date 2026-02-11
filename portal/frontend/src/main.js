@@ -5,9 +5,9 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 // 导入 Element Plus 深色模式 CSS
 import 'element-plus/theme-chalk/dark/css-vars.css'
+// 导入统一主题 CSS (包含 Element Plus 深色模式和自定义变量)
+import '@common-ui/styles/theme.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-// 导入自定义主题变量
-import './styles/theme.css'
 // 按需引入实际使用的图标
 import {
   Platform, User, Lock, Setting, ArrowDown, SwitchButton,
@@ -37,8 +37,7 @@ app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 
 // 初始化主题系统 (必须在 pinia 挂载后)
+// 注意：useTheme 会自动初始化，这里只需要创建 store 即可
 const themeStore = useThemeStore()
-themeStore.initSystemThemeListener()
-themeStore.applyTheme()
 
 app.mount('#app')

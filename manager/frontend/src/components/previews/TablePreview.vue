@@ -208,7 +208,7 @@
         <!-- 加载中 ... -->
         <div v-if="preparationCheckResult === null" class="preparation-loading">
           <el-skeleton animated :rows="5" />
-          <p style="text-align: center; margin-top: 12px; color: #909399;">
+          <p style="text-align: center; margin-top: 12px; color: var(--addp-text-tertiary);">
             正在检查准备状态...
           </p>
         </div>
@@ -299,7 +299,7 @@
           style="margin-bottom: 16px;"
         />
         <el-progress :percentage="50" style="margin-bottom: 12px;" />
-        <p style="text-align: center; color: #606266; font-size: 14px;">
+        <p style="text-align: center; color: var(--addp-text-secondary); font-size: 14px;">
           处理中... 请勿关闭此对话框
         </p>
       </div>
@@ -396,7 +396,7 @@
               :max="4096"
               :step="256"
             />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               最大 Zoom 层的 Extent（默认 2048，通常无需修改）
             </span>
           </el-form-item>
@@ -407,7 +407,7 @@
               :max="4096"
               :step="256"
             />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               其他层的基础 Extent（默认 1024，可根据数据密度调整）
             </span>
           </el-form-item>
@@ -418,7 +418,7 @@
               :max="1024"
               :step="64"
             />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               动态减半的最小 Extent（默认 256，低于此值不再减半）
             </span>
           </el-form-item>
@@ -427,7 +427,7 @@
           <el-divider>属性优化</el-divider>
           <el-form-item label="属性优化">
             <el-switch v-model="optimizationConfig.attribute_pruning.enabled" />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               低层级仅返回主键，减少数据量
             </span>
           </el-form-item>
@@ -440,7 +440,7 @@
               :min="0"
               :max="18"
             />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               z0-z{{ optimizationConfig.attribute_pruning.zoom_threshold }}: 仅主键 |
               z{{ optimizationConfig.attribute_pruning.zoom_threshold + 1 }}+: 全部属性
             </span>
@@ -456,7 +456,7 @@
               :step="0.5"
               :precision="1"
             />
-            <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+            <span style="margin-left: 12px; color: var(--addp-text-tertiary); font-size: 12px;">
               瓦片大小超过此值时，自动降低分辨率直到符合要求（默认 5MB）
             </span>
           </el-form-item>
@@ -490,7 +490,7 @@
         <div v-for="check in preparationStatus.checks" :key="check.name" class="check-item">
           <div v-if="check.status === 'failed'" class="failed-check">
             <span style="color: #f56c6c; font-weight: bold;">❌ {{ check.message }}</span>
-            <div v-if="check.details" style="margin-top: 8px; padding-left: 20px; font-size: 12px; color: #606266;">
+            <div v-if="check.details" style="margin-top: 8px; padding-left: 20px; font-size: 12px; color: var(--addp-text-secondary);">
               <div v-for="(value, key) in check.details" :key="key">
                 <strong>{{ key }}:</strong> {{ value }}
               </div>
@@ -500,7 +500,7 @@
             <span style="color: #67c23a; font-weight: bold;">✅ {{ check.message }}</span>
           </div>
           <div v-else-if="check.status === 'skipped'" class="skipped-check">
-            <span style="color: #909399; font-weight: bold;">⏭️ {{ check.message }}</span>
+            <span style="color: var(--addp-text-tertiary); font-weight: bold;">⏭️ {{ check.message }}</span>
           </div>
         </div>
 
@@ -1330,7 +1330,7 @@ onUnmounted(() => {
   width: 100%;
   border-radius: 4px;
   overflow: hidden;
-  background: #f5f5f5;
+  background: var(--addp-bg-secondary);
 }
 
 .map-splitter {
@@ -1533,7 +1533,7 @@ body.is-resizing .map-splitter::after {
   font-size: 12px;
   line-height: 1.6;
   color: #333;
-  background-color: #fff;
+  background-color: var(--addp-bg-primary);
   padding: 12px;
   border-radius: 4px;
   max-height: 400px;

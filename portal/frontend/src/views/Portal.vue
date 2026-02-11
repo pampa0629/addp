@@ -294,7 +294,7 @@
             <div v-else class="loading-container">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
               <p>等待选择模块...</p>
-              <p style="font-size: 12px; color: #909399;">currentModule: {{ currentModule }}</p>
+              <p class="debug-info">currentModule: {{ currentModule }}</p>
             </div>
           </div>
         </div>
@@ -545,8 +545,8 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .header {
-  background: var(--app-bg-header);
-  border-bottom: 1px solid var(--app-border-color);
+  background: var(--addp-bg-header);
+  border-bottom: 1px solid var(--addp-border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -562,7 +562,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   font-size: 24px;
   font-weight: 600;
   margin: 0;
-  background: var(--app-primary-gradient);
+  background: var(--addp-primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -583,12 +583,12 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .user-dropdown:hover {
-  background: var(--app-bg-secondary);
+  background: var(--addp-bg-secondary);
 }
 
 .sidebar {
-  background: var(--app-bg-sidebar);
-  border-right: 1px solid var(--app-border-color);
+  background: var(--addp-bg-sidebar);
+  border-right: 1px solid var(--addp-border-color);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -623,7 +623,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .main-content {
-  background: var(--app-bg-secondary);
+  background: var(--addp-bg-secondary);
   padding: 0;
   overflow: hidden;
   display: flex;
@@ -644,8 +644,8 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 }
 
 .module-card:hover {
-  transform: var(--app-card-hover-transform);
-  box-shadow: var(--app-shadow-hover);
+  transform: var(--addp-card-hover-transform);
+  box-shadow: var(--addp-shadow-hover);
 }
 
 .module-card-disabled {
@@ -666,11 +666,11 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 .card-content h2 {
   margin: 15px 0 10px 0;
   font-size: 20px;
-  color: var(--app-text-primary);
+  color: var(--addp-text-primary);
 }
 
 .card-content p {
-  color: var(--app-text-tertiary);
+  color: var(--addp-text-tertiary);
   font-size: 14px;
   margin: 0;
 }
@@ -679,6 +679,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   flex: 1;
   display: flex;
   min-height: 0;
+  background: var(--addp-bg-secondary);
 }
 
 .iframe-container {
@@ -686,12 +687,14 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   flex: 1;
   min-height: 0;
   height: calc(100vh - 64px);
+  background: var(--addp-bg-secondary);
 }
 
 .module-iframe {
   width: 100%;
   height: 100%;
   border: none;
+  background: var(--addp-bg-secondary);
 }
 
 .loading-container {
@@ -700,7 +703,12 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--app-text-tertiary);
+  color: var(--addp-text-tertiary);
+}
+
+.debug-info {
+  font-size: 12px;
+  color: var(--addp-text-tertiary);
 }
 
 .el-menu-vertical {

@@ -573,7 +573,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .toolbar {
@@ -581,8 +581,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .toolbar-left,
@@ -595,7 +595,7 @@ onMounted(() => {
 .toolbar h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-weight: 500;
   margin-right: 20px;
 }
@@ -615,7 +615,7 @@ onMounted(() => {
 }
 
 .text-muted {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-style: italic;
 }
 </style>

@@ -144,8 +144,8 @@ const handleLogout = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--addp-bg-primary) !important;
+  border-bottom: 1px solid var(--addp-border-color);
   padding: 0 20px;
 }
 
@@ -158,7 +158,7 @@ const handleLogout = () => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .header-right {
@@ -171,19 +171,19 @@ const handleLogout = () => {
   align-items: center;
   gap: 5px;
   cursor: pointer;
-  color: #606266;
+  color: var(--addp-text-secondary);
   padding: 8px 12px;
   border-radius: 4px;
   transition: all 0.3s;
 }
 
 .user-dropdown:hover {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e8e8e8;
+  background: var(--addp-bg-primary) !important;
+  border-right: 1px solid var(--addp-border-color);
 }
 
 .el-menu-vertical {
@@ -192,7 +192,7 @@ const handleLogout = () => {
 }
 
 .main-content {
-  background: #f0f2f5;
+  background: var(--addp-bg-secondary) !important;
   padding: 20px;
 }
 
@@ -203,7 +203,7 @@ const handleLogout = () => {
   min-height: 100vh;
   padding: 20px;
   margin: 0;
-  background: #f0f2f5;
+  background: var(--addp-bg-secondary) !important;
   overflow: visible;
   box-sizing: border-box;
 }

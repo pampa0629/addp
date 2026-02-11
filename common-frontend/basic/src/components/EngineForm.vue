@@ -219,7 +219,7 @@ defineExpose({
 <style scoped>
 .form-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
   line-height: 1.5;
 }
@@ -236,7 +236,7 @@ defineExpose({
   align-items: center;
   justify-content: center;
   padding: 60px 20px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .visual-config-placeholder p {

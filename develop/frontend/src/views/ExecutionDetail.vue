@@ -85,7 +85,7 @@
 
         <!-- 进度条 -->
         <div style="margin-top: 16px;">
-          <div style="margin-bottom: 8px; color: #606266;">执行进度</div>
+          <div style="margin-bottom: 8px; color: var(--addp-text-secondary);">执行进度</div>
           <el-progress
             :percentage="execution?.progress || 0"
             :status="getProgressStatus(execution?.status)"
@@ -453,7 +453,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
 }
 
 .toolbar {
@@ -461,8 +461,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: var(--addp-bg-primary);
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .toolbar-left,
@@ -475,7 +475,7 @@ onUnmounted(() => {
 .toolbar h2 {
   margin: 0;
   font-size: 18px;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-weight: 500;
 }
 
@@ -487,7 +487,7 @@ onUnmounted(() => {
 .card-header {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .content-area {
@@ -514,20 +514,20 @@ onUnmounted(() => {
 }
 
 .json-result {
-  background: #fafafa;
-  color: #303133;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-primary);
   padding: 16px;
   border-radius: 4px;
   overflow: auto;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--addp-border-color);
 }
 
 .workflow-result h3 {
   margin: 0 0 16px 0;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .log-item {
@@ -537,7 +537,7 @@ onUnmounted(() => {
 }
 
 .log-message {
-  color: #606266;
+  color: var(--addp-text-secondary);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
 }

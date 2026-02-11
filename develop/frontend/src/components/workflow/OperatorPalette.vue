@@ -277,7 +277,7 @@ onMounted(() => {
 
 .category-name {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   flex: 1;
 }
 
@@ -292,15 +292,15 @@ onMounted(() => {
 .operator-item {
   padding: 12px;
   margin: 4px 0;
-  background: #f5f7fa;
-  border: 1px solid #e4e7ed;
+  background: var(--addp-bg-secondary);
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   cursor: move;
   transition: all 0.2s;
 }
 
 .operator-item:hover {
-  background: #ecf5ff;
+  background: var(--addp-bg-secondary);
   border-color: #409eff;
   transform: translateX(4px);
 }
@@ -318,12 +318,12 @@ onMounted(() => {
 
 .operator-name {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 14px;
 }
 
 .info-icon {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   cursor: help;
   font-size: 16px;
 }
@@ -334,7 +334,7 @@ onMounted(() => {
 
 .operator-description {
   font-size: 12px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.4;
 }
 
@@ -346,13 +346,13 @@ onMounted(() => {
 .operator-help h4 {
   margin: 0 0 8px 0;
   font-size: 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .operator-help .description {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.5;
 }
 
@@ -360,7 +360,7 @@ onMounted(() => {
   margin: 0 0 8px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .operator-help .params-section ul {
@@ -371,7 +371,7 @@ onMounted(() => {
 .operator-help .params-section li {
   margin: 4px 0;
   font-size: 13px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.4;
 }
 
@@ -385,12 +385,12 @@ onMounted(() => {
 }
 
 .operator-categories::-webkit-scrollbar-track {
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 3px;
 }
 
 .operator-categories::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: var(--addp-border-secondary);
   border-radius: 3px;
 }
 

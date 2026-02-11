@@ -1116,13 +1116,13 @@ onBeforeUnmount(() => {
 .card-header h2 {
   margin: 0;
   font-size: 20px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .subtitle {
   margin: 0;
   font-size: 14px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .datasource-selector {
@@ -1151,7 +1151,7 @@ onBeforeUnmount(() => {
 .section-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .filter-group {
@@ -1208,7 +1208,7 @@ onBeforeUnmount(() => {
 
 .task-name__title {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .task-name__meta {
@@ -1219,7 +1219,7 @@ onBeforeUnmount(() => {
 
 .task-name__desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   line-height: 1.4;
 }
 
@@ -1238,14 +1238,14 @@ onBeforeUnmount(() => {
 
 .run-task__name {
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .run-task__meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 12px;
 }
 
@@ -1258,8 +1258,8 @@ onBeforeUnmount(() => {
 }
 
 .json-block {
-  background: #f5f7fa;
-  color: #606266;
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-secondary);
   border-radius: 6px;
   padding: 12px;
   font-size: 12px;

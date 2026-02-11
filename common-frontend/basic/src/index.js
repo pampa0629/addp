@@ -52,3 +52,10 @@ export {
 
 // Composables - Tree Management
 export { useTreeCache, useTreeLoader } from './composables'
+
+// Composables - Theme Management
+export { useTheme } from './composables/useTheme'
+export { THEME_CONFIGS, THEME_VALUES, getThemeConfig, isThemeDark } from './config/themes'
+
+// Theme Components
+export { default as ThemeSwitcher } from './components/ThemeSwitcher.vue'

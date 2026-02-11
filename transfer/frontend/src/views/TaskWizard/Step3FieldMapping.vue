@@ -171,7 +171,7 @@ function handleMappingChange(index) {
 }
 
 .step-description {
-  color: #606266;
+  color: var(--addp-text-secondary);
   margin-bottom: 20px;
 }
 

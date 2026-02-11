@@ -266,7 +266,7 @@ const formatDate = (dateStr) => {
   margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -275,7 +275,7 @@ const formatDate = (dateStr) => {
 .service-description {
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -290,7 +290,7 @@ const formatDate = (dateStr) => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-bottom: 12px;
 }
 
@@ -307,7 +307,7 @@ const formatDate = (dateStr) => {
   padding-top: 12px;
   border-top: 1px solid #ebeef5;
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .footer-item {

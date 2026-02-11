@@ -154,7 +154,7 @@ const exportCSV = () => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #fff;
+  background: var(--addp-bg-primary);
   border-radius: 4px;
 }
 
@@ -163,22 +163,22 @@ const exportCSV = () => {
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-bottom: 1px solid #dcdfe6;
 }
 
 .info-item {
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 .info-item strong {
-  color: #303133;
+  color: var(--addp-text-primary);
   margin-left: 4px;
 }
 
 .null-value {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-style: italic;
 }
 
