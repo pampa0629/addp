@@ -781,12 +781,25 @@ const generateWorkflow = async () => {
     return
   }
 
+  // 检查是否选择了工作流引擎
+  if (!workflowEngineId.value) {
+    ElMessage.warning('请先选择工作流引擎')
+    return
+  }
+
   generating.value = true
   try {
+    // 从选中的引擎获取 engine_type
+    const engineType = selectedEngine.value?.engine_type || selectedEngine.value?.resource_type || 'python_workflow'
+    // 去掉 _workflow 后缀（python_workflow → python）
+    const simpleEngineType = engineType.replace('_workflow', '')
+
     const result = await generateWorkflowFromNL({
       query: aiQuery.value,
       tenant_id: 1, // TODO: 从 store 获取
-      user_id: 1
+      user_id: 1,
+      workflow_engine_id: workflowEngineId.value,  // 传递工作流引擎 ID
+      engine_type: simpleEngineType  // 传递引擎类型（python/spark/math）
     })
 
     // 直接加载到画布，不显示预览
