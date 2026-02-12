@@ -41,7 +41,6 @@ class WorkflowGenerationRequest(BaseModel):
     conversation_id: Optional[int] = None
     tenant_id: int = 1
     user_id: int = 1
-    skip_data_source: bool = False  # 是否跳过数据源理解阶段
     engine_type: str = "python"  # 工作流引擎类型：python, spark, math（默认 python）
     workflow_engine_id: Optional[int] = None  # 工作流引擎 ID（由前端传递，对应 system.engines 表中的 ID）
 
@@ -67,9 +66,6 @@ class WorkflowGenerationResponse(BaseModel):
     selected_operators: Optional[list] = None
     validation_result: Optional[Dict] = None
 
-    # 推荐的执行配置（用于前端创建 dev_item）
-    recommended_execution_config: Optional[Dict] = None
-
 
 @router.post("/workflow/generate", response_model=WorkflowGenerationResponse)
 async def generate_workflow(request: WorkflowGenerationRequest):
@@ -90,8 +86,8 @@ async def generate_workflow(request: WorkflowGenerationRequest):
     print(f"[API] 租户 ID: {request.tenant_id}")
     print(f"[API] 用户 ID: {request.user_id}")
     print(f"[API] 对话 ID: {request.conversation_id}")
-    print(f"[API] 跳过数据源理解: {request.skip_data_source}")
     print(f"[API] 工作流引擎类型: {request.engine_type}")
+    print(f"[API] 工作流引擎 ID: {request.workflow_engine_id}")
     print(f"{'='*80}\n")
 
     try:
@@ -103,7 +99,6 @@ async def generate_workflow(request: WorkflowGenerationRequest):
         result = await pipeline.run(
             query=request.query,
             tenant_id=request.tenant_id,
-            skip_data_source=request.skip_data_source,
             engine_type=request.engine_type  # 传递引擎类型
         )
         print(f"[API] ✅ WorkflowPipeline 返回结果")
@@ -116,16 +111,6 @@ async def generate_workflow(request: WorkflowGenerationRequest):
             # TODO: Copilot 暂时不需要保存对话历史
             conversation_id = 0  # 临时固定值
 
-            # 构造推荐的执行配置
-            # 注意：
-            # 1. 如果前端传递了 workflow_engine_id，直接使用（推荐方式）
-            # 2. 如果没有传递，设置为 None，由前端/Develop Backend 根据 engine_type 查询默认引擎
-            recommended_execution_config = {
-                "type": "workflow",
-                "engine_type": f"{request.engine_type}_workflow",  # python_workflow, spark_workflow, math_workflow
-                "engine_id": request.workflow_engine_id  # 工作流引擎 ID（如果前端传递了）
-            }
-
             response = WorkflowGenerationResponse(
                 status="success",
                 workflow=result["workflow"],
@@ -133,13 +118,11 @@ async def generate_workflow(request: WorkflowGenerationRequest):
                 conversation_id=conversation_id,
                 data_source=result.get("data_source"),
                 selected_operators=result.get("selected_operators"),
-                validation_result=result.get("validation_result"),
-                recommended_execution_config=recommended_execution_config  # 新增字段
+                validation_result=result.get("validation_result")
             )
 
             print(f"[API] ✅ 工作流生成成功")
             print(f"[API] 任务数量: {len(result['workflow']['tasks'])}")
-            print(f"[API] 推荐引擎: {recommended_execution_config['engine_type']} (ID: {recommended_execution_config['engine_id']})")
             print(f"[API] ✅ 请求处理完成\n")
             return response
 

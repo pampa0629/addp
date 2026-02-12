@@ -679,6 +679,7 @@ function updateNodeParams(nodeId, params) {
 // 暴露方法给父组件
 defineExpose({
   updateNodeParams,
+  clearGraph,
   getWorkflow: () => {
     // 返回当前工作流
     const nodes = graph.value.getNodes()

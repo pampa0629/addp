@@ -104,7 +104,6 @@ class WorkflowPipeline:
         self,
         query: str,
         tenant_id: int = 1,
-        skip_data_source: bool = False,
         engine_type: str = "python"  # 工作流引擎类型：python, spark, math
     ) -> Dict[str, Any]:
         """
@@ -113,7 +112,6 @@ class WorkflowPipeline:
         Args:
             query: 用户查询
             tenant_id: 租户 ID
-            skip_data_source: 是否跳过数据源理解阶段
             engine_type: 工作流引擎类型（python/spark/math），用于筛选算子
 
         Returns:
@@ -137,7 +135,7 @@ class WorkflowPipeline:
             # ========== 阶段 1: 数据源理解 ==========
             data_source: Optional[DataSourceContext] = None
 
-            if self.enable_data_source_understanding and not skip_data_source:
+            if self.enable_data_source_understanding:
                 print("\n[WorkflowPipeline] ▶ 阶段 1: 数据源理解")
                 data_source = await self.data_source_agent.understand(query, tenant_id)
 

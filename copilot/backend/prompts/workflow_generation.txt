@@ -36,8 +36,12 @@
   - 引用前驱任务输出：使用 `{{"$ref": "task_id"}}` 格式（对象格式，不是字符串！）
   - ✅ 正确：`"input_df": {{"$ref": "task1"}}`
   - ❌ 错误：`"input_df": "{{task1}}"` 或 `"input_df": "{{{{task1}}}}"`
-  - 第一个 load 任务的参数直接从数据源信息获取（engine_id、schema、table 等）
-  - 最后一个 save 任务的参数指定保存位置
+- **⭐ 数据源参数（非常重要）**：
+  - **第一个 load 任务的 engine_id、schema、table 必须从上面的"数据源信息"中提取**
+  - 如果数据源信息提供了 engine_id=8，就使用 8，不要自己编造
+  - 如果数据源信息提供了 schema="public"，就使用 "public"
+  - **绝对不要使用硬编码的 engine_id: 1**，必须使用实际的数据源信息
+  - save 任务的 engine_id 通常与 load 任务相同（除非用户明确指定不同的保存位置）
 
 ### 3. 依赖关系
 - load 任务通常没有依赖（depends_on 为空数组）
@@ -102,9 +106,9 @@ load2 → process2 ┘
       "operator": "load",
       "params": {{
         "source_type": "table",
-        "engine_id": 1,
-        "schema": "public",
-        "table": "test"
+        "engine_id": <从数据源信息中获取>,
+        "schema": "<从数据源信息中获取>",
+        "table": "<从数据源信息中获取>"
       }},
       "depends_on": []
     }},
@@ -124,9 +128,9 @@ load2 → process2 ┘
       "params": {{
         "input_df": {{"$ref": "task2"}},
         "target_type": "table",
-        "engine_id": 1,
-        "schema": "public",
-        "table": "test_buffer",
+        "engine_id": <从数据源信息中获取或用户指定>,
+        "schema": "<用户指定的保存位置>",
+        "table": "<用户指定的保存表名>",
         "mode": "replace"
       }},
       "depends_on": ["task2"]

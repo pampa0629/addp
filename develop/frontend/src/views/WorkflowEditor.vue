@@ -572,19 +572,12 @@ const confirmSave = async () => {
   try {
     const workflow = canvasRef.value?.getWorkflow()
 
-    // 构造执行配置（JSONB格式）
+    // 构造执行配置（始终使用页面选择的引擎）
     const executionConfig = {
       type: 'workflow',
       engine_id: workflowEngineId.value,
-      engine_type: selectedEngine.value?.engine_type || selectedEngine.value?.resource_type,
+      engine_type: selectedEngine.value?.engine_type || selectedEngine.value?.resource_type
     }
-
-    console.log('[WorkflowEditor] 执行配置:', {
-      workflowEngineId: workflowEngineId.value,
-      selectedEngine: selectedEngine.value,
-      executionConfig,
-      executionConfigJSON: JSON.stringify(executionConfig)
-    })
 
     // 如果是 Spark 工作流引擎，添加 engine_specific 配置
     if (needsSparkRuntime()) {
@@ -592,6 +585,12 @@ const confirmSave = async () => {
         spark_cluster_id: sparkRuntimeId.value
       }
     }
+
+    console.log('[WorkflowEditor] 执行配置:', {
+      workflowEngineId: workflowEngineId.value,
+      selectedEngine: selectedEngine.value,
+      executionConfig
+    })
 
     await createDevItem({
       name: saveForm.name,
@@ -729,7 +728,28 @@ const handleViewJSON = () => {
   }
 
   const workflow = canvasRef.value?.getWorkflow()
-  workflowJSON.value = JSON.stringify(workflow, null, 2)
+
+  // 构造执行配置（始终使用页面当前选择）
+  const executionConfig = {
+    type: 'workflow',
+    engine_id: workflowEngineId.value,
+    engine_type: selectedEngine.value?.engine_type || selectedEngine.value?.resource_type
+  }
+
+  // 如果是 Spark 工作流引擎，添加 engine_specific 配置
+  if (needsSparkRuntime()) {
+    executionConfig.engine_specific = {
+      spark_cluster_id: sparkRuntimeId.value
+    }
+  }
+
+  // 构造完整的 dev_item 结构（包括 execution_config）
+  const exportData = {
+    workflow_definition: workflow,
+    execution_config: executionConfig
+  }
+
+  workflowJSON.value = JSON.stringify(exportData, null, 2)
   jsonDialogVisible.value = true
 }
 
@@ -798,11 +818,11 @@ const generateWorkflow = async () => {
       query: aiQuery.value,
       tenant_id: 1, // TODO: 从 store 获取
       user_id: 1,
-      workflow_engine_id: workflowEngineId.value,  // 传递工作流引擎 ID
+      workflow_engine_id: workflowEngineId.value,  // 传递给 Copilot 用于算子筛选
       engine_type: simpleEngineType  // 传递引擎类型（python/spark/math）
     })
 
-    // 直接加载到画布，不显示预览
+    // 直接加载到画布
     workflowData.value = result.workflow
     ElMessage.success(`工作流生成成功，包含 ${result.workflow.tasks.length} 个步骤`)
   } catch (error) {
@@ -870,7 +890,10 @@ const loadTask = async (taskId) => {
     // 解析执行配置
     if (task.execution_config) {
       try {
-        const config = JSON.parse(task.execution_config)
+        // 兼容后端返回对象或字符串两种格式
+        const config = typeof task.execution_config === 'string'
+          ? JSON.parse(task.execution_config)
+          : task.execution_config
 
         // 恢复工作流引擎选择
         workflowEngineId.value = config.engine_id

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	commonClient "github.com/addp/common/client"
@@ -205,6 +206,14 @@ func (s *WorkflowEngineService) preprocessWorkflowParams(
 			engineID = uint(v)
 		case uint:
 			engineID = v
+		case string:
+			// 支持字符串类型的 engine_id（如 "8"）
+			id64, err := strconv.ParseUint(v, 10, 32)
+			if err != nil {
+				log.Printf("⚠️  任务 %d 的 engine_id 字符串转换失败: %v", i, err)
+				continue
+			}
+			engineID = uint(id64)
 		default:
 			log.Printf("⚠️  任务 %d 的 engine_id 类型错误: %T", i, engineIDInterface)
 			continue
