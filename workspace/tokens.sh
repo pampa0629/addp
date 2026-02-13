@@ -1,0 +1,6 @@
+#!/bin/bash
+# Authentication tokens for testing
+
+# SuperAdmin token
+SUPERADMIN_TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6IlN1cGVyQWRtaW4iLCJ0ZW5hbnRfaWQiOjAsImV4cCI6MTc3MDk5MjY2MywiaWF0IjoxNzcwOTgxODYzfQ.Q3S_vHy_dR08DAp5C2zEMGfitz2PKvLx0EsDIKGqkms"
+
