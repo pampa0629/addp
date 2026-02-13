@@ -1,0 +1,154 @@
+{
+  "module": "system",
+  "title": "系统模块",
+  "version": "0.0.20",
+  "categories": [
+    {
+      "name": "认证接口",
+      "description": "用户注册和登录相关接口",
+      "apis": [
+        {
+          "name": "用户注册",
+          "method": "POST",
+          "path": "/api/auth/register",
+          "description": "注册新用户账号",
+          "auth": false,
+          "request": "{\n  \"username\": \"testuser\",\n  \"password\": \"password123\",\n  \"email\": \"test@example.com\",\n  \"full_name\": \"测试用户\"\n}",
+          "response": "{\n  \"id\": 1,\n  \"username\": \"testuser\",\n  \"email\": \"test@example.com\",\n  \"full_name\": \"测试用户\",\n  \"is_active\": true,\n  \"is_superuser\": false,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\",\n  \"updated_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "用户登录",
+          "method": "POST",
+          "path": "/api/auth/login",
+          "description": "用户登录获取访问令牌",
+          "auth": false,
+          "request": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}",
+          "response": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"token_type\": \"Bearer\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "用户管理",
+      "description": "用户信息的增删改查",
+      "apis": [
+        {
+          "name": "获取当前用户信息",
+          "method": "GET",
+          "path": "/api/users/me",
+          "description": "获取当前登录用户的详细信息",
+          "auth": true,
+          "response": "{\n  \"id\": 1,\n  \"username\": \"admin\",\n  \"email\": \"admin@test.com\",\n  \"full_name\": \"管理员\",\n  \"is_active\": true,\n  \"is_superuser\": false,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "获取用户列表",
+          "method": "GET",
+          "path": "/api/users",
+          "description": "获取用户列表，支持分页",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 10",
+          "response": "[\n  {\n    \"id\": 1,\n    \"username\": \"admin\",\n    \"email\": \"admin@test.com\",\n    \"full_name\": \"管理员\",\n    \"is_active\": true,\n    \"is_superuser\": false,\n    \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n  }\n]"
+        },
+        {
+          "name": "获取指定用户",
+          "method": "GET",
+          "path": "/api/users/:id",
+          "description": "根据用户 ID 获取用户详细信息",
+          "auth": true,
+          "params": ":id - 用户 ID",
+          "response": "{\n  \"id\": 1,\n  \"username\": \"admin\",\n  \"email\": \"admin@test.com\",\n  \"full_name\": \"管理员\",\n  \"is_active\": true,\n  \"is_superuser\": false,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "更新用户信息",
+          "method": "PUT",
+          "path": "/api/users/:id",
+          "description": "更新指定用户的信息",
+          "auth": true,
+          "params": ":id - 用户 ID",
+          "request": "{\n  \"email\": \"newemail@test.com\",\n  \"full_name\": \"新名字\",\n  \"password\": \"newpassword123\",\n  \"is_active\": true\n}",
+          "response": "{\n  \"id\": 1,\n  \"username\": \"admin\",\n  \"email\": \"newemail@test.com\",\n  \"full_name\": \"新名字\",\n  \"is_active\": true,\n  \"is_superuser\": false,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "删除用户",
+          "method": "DELETE",
+          "path": "/api/users/:id",
+          "description": "删除指定用户",
+          "auth": true,
+          "params": ":id - 用户 ID",
+          "response": "{\n  \"message\": \"删除成功\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "日志管理",
+      "description": "审计日志查询",
+      "apis": [
+        {
+          "name": "获取日志列表",
+          "method": "GET",
+          "path": "/api/logs",
+          "description": "获取审计日志列表，支持分页和用户过滤",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20\nuser_id: 用户 ID（可选，用于过滤特定用户的日志）",
+          "response": "[\n  {\n    \"id\": 1,\n    \"user_id\": 1,\n    \"username\": \"admin\",\n    \"action\": \"POST /api/auth/register\",\n    \"resource_type\": \"\",\n    \"engine_id\": \"\",\n    \"details\": \"\",\n    \"ip_address\": \"127.0.0.1\",\n    \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n  }\n]"
+        },
+        {
+          "name": "获取指定日志",
+          "method": "GET",
+          "path": "/api/logs/:id",
+          "description": "根据日志 ID 获取日志详细信息",
+          "auth": true,
+          "response": "{\n  \"id\": 1,\n  \"user_id\": 1,\n  \"username\": \"admin\",\n  \"action\": \"POST /api/auth/register\",\n  \"resource_type\": \"\",\n  \"engine_id\": \"\",\n  \"details\": \"\",\n  \"ip_address\": \"127.0.0.1\",\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "引擎管理",
+      "description": "数据引擎配置的增删改查",
+      "apis": [
+        {
+          "name": "创建引擎",
+          "method": "POST",
+          "path": "/api/engines",
+          "description": "创建新的引擎配置",
+          "auth": true,
+          "request": "{\n  \"name\": \"MySQL主库\",\n  \"engine_type\": \"mysql\",\n  \"connection_info\": {\n    \"host\": \"localhost\",\n    \"port\": 3306,\n    \"database\": \"mydb\",\n    \"username\": \"root\"\n  },\n  \"description\": \"生产环境MySQL数据库\"\n}",
+          "response": "{\n  \"id\": 1,\n  \"name\": \"MySQL主库\",\n  \"engine_type\": \"mysql\",\n  \"connection_info\": {\n    \"host\": \"localhost\",\n    \"port\": 3306,\n    \"database\": \"mydb\",\n    \"username\": \"root\"\n  },\n  \"description\": \"生产环境MySQL数据库\",\n  \"created_by\": 1,\n  \"is_active\": true,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\",\n  \"updated_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "获取引擎列表",
+          "method": "GET",
+          "path": "/api/engines",
+          "description": "获取引擎列表，支持分页和类型过滤",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 10\nengine_type: 引擎类型（可选，如 postgresql、mysql、minio）",
+          "response": "[\n  {\n    \"id\": 1,\n    \"name\": \"MySQL主库\",\n    \"engine_type\": \"mysql\",\n    \"connection_info\": {...},\n    \"description\": \"生产环境MySQL数据库\",\n    \"created_by\": 1,\n    \"is_active\": true,\n    \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n  }\n]"
+        },
+        {
+          "name": "获取指定引擎",
+          "method": "GET",
+          "path": "/api/engines/:id",
+          "description": "根据引擎 ID 获取引擎详细信息",
+          "auth": true,
+          "response": "{\n  \"id\": 1,\n  \"name\": \"MySQL主库\",\n  \"engine_type\": \"mysql\",\n  \"connection_info\": {...},\n  \"description\": \"生产环境MySQL数据库\",\n  \"created_by\": 1,\n  \"is_active\": true,\n  \"created_at\": \"2025-09-30T16:54:08.539068+08:00\"\n}"
+        },
+        {
+          "name": "更新引擎",
+          "method": "PUT",
+          "path": "/api/engines/:id",
+          "description": "更新指定引擎的配置",
+          "auth": true,
+          "request": "{\n  \"name\": \"MySQL主库-更新\",\n  \"connection_info\": {\n    \"host\": \"newhost\",\n    \"port\": 3306\n  },\n  \"description\": \"更新后的描述\",\n  \"is_active\": true\n}",
+          "response": "{\n  \"id\": 1,\n  \"name\": \"MySQL主库-更新\",\n  \"engine_type\": \"mysql\",\n  \"connection_info\": {...},\n  \"description\": \"更新后的描述\",\n  \"is_active\": true\n}"
+        },
+        {
+          "name": "删除引擎",
+          "method": "DELETE",
+          "path": "/api/engines/:id",
+          "description": "删除指定引擎",
+          "auth": true,
+          "response": "{\n  \"message\": \"删除成功\"\n}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,366 @@
+{
+  "module": "manager",
+  "title": "数据管理模块",
+  "version": "0.0.21",
+  "categories": [
+    {
+      "name": "数据探查",
+      "description": "引擎列表、资源树、数据预览等功能",
+      "apis": [
+        {
+          "name": "获取引擎列表",
+          "method": "GET",
+          "path": "/api/explorer/engines",
+          "description": "获取数据探查可用的引擎列表",
+          "auth": true,
+          "response": "[\n  {\n    \"id\": 1,\n    \"name\": \"业务数据库\",\n    \"type\": \"postgresql\",\n    \"has_spatial\": true\n  }\n]"
+        },
+        {
+          "name": "获取资源树",
+          "method": "GET",
+          "path": "/api/explorer/tree/:engine_id",
+          "description": "获取引擎的资源树结构（schema、表、文件等）",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "response": "{\n  \"engine_id\": 1,\n  \"nodes\": [\n    {\n      \"id\": \"schema:public\",\n      \"label\": \"public\",\n      \"type\": \"schema\",\n      \"children\": [...]\n    }\n  ]\n}"
+        },
+        {
+          "name": "刷新资源树节点",
+          "method": "POST",
+          "path": "/api/explorer/tree/:engine_id/refresh",
+          "description": "刷新指定资源树节点（如刷新某个 schema 下的表列表）",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "request": "{\n  \"node_id\": \"schema:public\"\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"节点已刷新\"\n}"
+        },
+        {
+          "name": "数据预览",
+          "method": "GET",
+          "path": "/api/explorer/preview",
+          "description": "预览各类数据资源（表数据、图片、视频、GeoJSON 等）",
+          "auth": true,
+          "query": "locator: 资源定位符 URI (必填)\n例如: db://72/public/users\n      minio://67/images/photo.jpg",
+          "response": "{\n  \"type\": \"table\",\n  \"columns\": [\"id\", \"name\", \"email\"],\n  \"rows\": [[1, \"张三\", \"zhang@example.com\"]],\n  \"total\": 100\n}"
+        },
+        {
+          "name": "视频流",
+          "method": "GET",
+          "path": "/api/explorer/video-stream",
+          "description": "流式传输视频文件，支持分片播放",
+          "auth": true,
+          "query": "locator: 视频资源定位符 URI (必填)\n例如: minio://67/videos/demo.mp4",
+          "response": "二进制视频流\nContent-Type: video/mp4"
+        },
+        {
+          "name": "混合检索",
+          "method": "GET",
+          "path": "/api/search",
+          "description": "跨引擎混合检索（全文检索 + 向量语义检索）数据资产",
+          "auth": true,
+          "query": "q: 搜索关键词 (必填)\npage: 页码，默认 1\npage_size: 每页数量，默认 10",
+          "response": "{\n  \"data\": {\n    \"total\": 15,\n    \"page\": 1,\n    \"page_size\": 10,\n    \"results\": [\n      {\n        \"document_id\": \"abc123\",\n        \"file_name\": \"城市数据.csv\",\n        \"engine_name\": \"业务数据库\",\n        \"score\": 0.95,\n        \"highlights\": {...}\n      }\n    ],\n    \"vector_hits\": [...]\n  }\n}"
+        },
+        {
+          "name": "查询检索历史",
+          "method": "GET",
+          "path": "/api/search/history",
+          "description": "获取用户的检索历史记录",
+          "auth": true,
+          "response": "[\n  {\n    \"id\": 1,\n    \"query\": \"城市数据\",\n    \"created_at\": \"2025-01-11T10:00:00Z\"\n  }\n]"
+        },
+        {
+          "name": "删除检索历史记录",
+          "method": "DELETE",
+          "path": "/api/search/history/:id",
+          "description": "删除单条检索历史记录",
+          "auth": true,
+          "params": ":id - 历史记录ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"历史记录已删除\"\n}"
+        },
+        {
+          "name": "清空检索历史",
+          "method": "DELETE",
+          "path": "/api/search/history",
+          "description": "清空用户的所有检索历史记录",
+          "auth": true,
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"历史记录已清空\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "引擎管理",
+      "description": "引擎列表、详情查询",
+      "apis": [
+        {
+          "name": "获取引擎列表",
+          "method": "GET",
+          "path": "/api/engines",
+          "description": "获取所有引擎列表",
+          "auth": true,
+          "response": "[\n  {\n    \"id\": 1,\n    \"name\": \"业务数据库\",\n    \"type\": \"postgresql\",\n    \"host\": \"localhost\",\n    \"port\": 5432\n  }\n]"
+        },
+        {
+          "name": "获取引擎详情",
+          "method": "GET",
+          "path": "/api/engines/:id",
+          "description": "获取指定引擎的详细信息",
+          "auth": true,
+          "params": ":id - 引擎ID",
+          "response": "{\n  \"id\": 1,\n  \"name\": \"业务数据库\",\n  \"type\": \"postgresql\",\n  \"host\": \"localhost\",\n  \"port\": 5432,\n  \"database\": \"business\"\n}"
+        },
+        {
+          "name": "获取要素中心点",
+          "method": "GET",
+          "path": "/api/engines/:id/features/:feature_id/centroid",
+          "description": "获取空间要素的中心点坐标（用于地图定位）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:feature_id - 要素ID",
+          "response": "{\n  \"centroid\": {\n    \"x\": 120.15,\n    \"y\": 30.28\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "元数据扫描",
+      "description": "元数据扫描任务管理",
+      "apis": [
+        {
+          "name": "获取扫描任务列表",
+          "method": "GET",
+          "path": "/api/engines/:id/scan-tasks",
+          "description": "获取引擎的元数据扫描任务列表",
+          "auth": true,
+          "params": ":id - 引擎ID",
+          "response": "[\n  {\n    \"id\": 1,\n    \"engine_id\": 1,\n    \"name\": \"定时扫描\",\n    \"schedule\": \"0 2 * * *\",\n    \"enabled\": true\n  }\n]"
+        },
+        {
+          "name": "创建扫描任务",
+          "method": "POST",
+          "path": "/api/engines/:id/scan-tasks",
+          "description": "创建新的元数据扫描任务",
+          "auth": true,
+          "params": ":id - 引擎ID",
+          "request": "{\n  \"name\": \"定时扫描\",\n  \"schedule\": \"0 2 * * *\",\n  \"enabled\": true\n}",
+          "response": "{\n  \"id\": 1,\n  \"message\": \"扫描任务已创建\"\n}"
+        },
+        {
+          "name": "更新扫描任务",
+          "method": "PUT",
+          "path": "/api/engines/:id/scan-tasks/:task_id",
+          "description": "更新扫描任务配置",
+          "auth": true,
+          "params": ":id - 引擎ID\n:task_id - 任务ID",
+          "request": "{\n  \"name\": \"定时扫描\",\n  \"schedule\": \"0 3 * * *\",\n  \"enabled\": false\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"扫描任务已更新\"\n}"
+        },
+        {
+          "name": "删除扫描任务",
+          "method": "DELETE",
+          "path": "/api/engines/:id/scan-tasks/:task_id",
+          "description": "删除扫描任务",
+          "auth": true,
+          "params": ":id - 引擎ID\n:task_id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"扫描任务已删除\"\n}"
+        },
+        {
+          "name": "触发扫描任务",
+          "method": "POST",
+          "path": "/api/engines/:id/scan-tasks/:task_id/trigger",
+          "description": "手动触发扫描任务执行",
+          "auth": true,
+          "params": ":id - 引擎ID\n:task_id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"run_id\": 123,\n  \"message\": \"扫描任务已触发\"\n}"
+        },
+        {
+          "name": "获取扫描运行记录",
+          "method": "GET",
+          "path": "/api/engines/:id/scan-runs",
+          "description": "获取引擎的扫描运行历史记录",
+          "auth": true,
+          "params": ":id - 引擎ID",
+          "response": "[\n  {\n    \"id\": 1,\n    \"task_id\": 1,\n    \"status\": \"completed\",\n    \"started_at\": \"2025-01-11T02:00:00Z\",\n    \"completed_at\": \"2025-01-11T02:05:00Z\"\n  }\n]"
+        },
+        {
+          "name": "获取扫描运行详情",
+          "method": "GET",
+          "path": "/api/engines/:id/scan-runs/:run_id",
+          "description": "获取扫描运行的详细信息",
+          "auth": true,
+          "params": ":id - 引擎ID\n:run_id - 运行记录ID",
+          "response": "{\n  \"id\": 1,\n  \"task_id\": 1,\n  \"status\": \"completed\",\n  \"started_at\": \"2025-01-11T02:00:00Z\",\n  \"completed_at\": \"2025-01-11T02:05:00Z\",\n  \"tables_scanned\": 50,\n  \"errors\": []\n}"
+        },
+        {
+          "name": "创建手动扫描",
+          "method": "POST",
+          "path": "/api/engines/:id/scan-runs/manual",
+          "description": "创建并执行一次手动扫描",
+          "auth": true,
+          "params": ":id - 引擎ID",
+          "request": "{\n  \"name\": \"手动扫描\"\n}",
+          "response": "{\n  \"run_id\": 123,\n  \"status\": \"running\",\n  \"message\": \"手动扫描已启动\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "空间瓦片服务",
+      "description": "MVT 瓦片获取、预缓存、GeoJSON 查询",
+      "apis": [
+        {
+          "name": "获取 MVT 瓦片",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/tiles/:schema/:table/:z/:x/:y",
+          "description": "获取空间数据的 Mapbox Vector Tile（MVT）瓦片，自动处理内存 LRU → Redis → MinIO → 实时生成",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名\n:z - 缩放级别\n:x, :y - 瓦片坐标",
+          "response": "二进制 MVT 数据\nContent-Type: application/vnd.mapbox-vector-tile"
+        },
+        {
+          "name": "获取瓦片配置",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/:schema/:table/tile-config",
+          "description": "获取空间图层的瓦片配置信息（MinZoom/MaxZoom）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"min_zoom\": 0,\n  \"max_zoom\": 14,\n  \"bounds\": [120.0, 30.0, 121.0, 31.0]\n}"
+        },
+        {
+          "name": "触发预缓存",
+          "method": "POST",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache",
+          "description": "触发空间数据快显缓存（预生成 MVT 瓦片到 MinIO）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "request": "{\n  \"min_zoom\": 0,\n  \"max_zoom\": 14,\n  \"priority\": \"high\"\n}",
+          "response": "{\n  \"task_id\": \"quickview_123\",\n  \"status\": \"pending\",\n  \"message\": \"预缓存任务已创建\"\n}"
+        },
+        {
+          "name": "查询预缓存状态",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache/status",
+          "description": "查询预缓存任务的执行状态和进度",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"task_id\": \"quickview_123\",\n  \"status\": \"running\",\n  \"progress\": 45,\n  \"total_tiles\": 1000,\n  \"cached_tiles\": 450\n}"
+        },
+        {
+          "name": "取消预缓存",
+          "method": "POST",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache/cancel",
+          "description": "取消正在执行的预缓存任务",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"预缓存任务已取消\"\n}"
+        },
+        {
+          "name": "恢复预缓存",
+          "method": "POST",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache/resume",
+          "description": "恢复已暂停或失败的预缓存任务",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"预缓存任务已恢复\"\n}"
+        },
+        {
+          "name": "清除预缓存",
+          "method": "DELETE",
+          "path": "/api/engines/:id/spatial/:schema/:table/pre-cache",
+          "description": "清除表的所有预缓存瓦片数据",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"status\": \"success\",\n  \"message\": \"预缓存已清除\"\n}"
+        },
+        {
+          "name": "获取预缓存任务列表",
+          "method": "GET",
+          "path": "/api/pre-cache/tasks",
+          "description": "获取所有预缓存任务列表",
+          "auth": true,
+          "response": "[\n  {\n    \"task_id\": \"quickview_123\",\n    \"engine_id\": 1,\n    \"schema\": \"public\",\n    \"table\": \"cities\",\n    \"status\": \"completed\",\n    \"progress\": 100\n  }\n]"
+        },
+        {
+          "name": "获取预缓存统计",
+          "method": "GET",
+          "path": "/api/pre-cache/statistics",
+          "description": "获取预缓存系统的统计信息",
+          "auth": true,
+          "response": "{\n  \"total_tasks\": 10,\n  \"running_tasks\": 2,\n  \"completed_tasks\": 7,\n  \"failed_tasks\": 1,\n  \"total_tiles\": 50000,\n  \"cached_size\": \"2.5GB\"\n}"
+        },
+        {
+          "name": "获取 GeoJSON 数据",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/:schema/:table/geojson",
+          "description": "获取空间表的 GeoJSON 格式数据（轻量级几何数据获取）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "query": "limit: 限制返回数量，默认 100\noffset: 偏移量，默认 0",
+          "response": "{\n  \"type\": \"FeatureCollection\",\n  \"features\": [\n    {\n      \"type\": \"Feature\",\n      \"geometry\": {...},\n      \"properties\": {...}\n    }\n  ]\n}"
+        },
+        {
+          "name": "获取 GeoJSON 元数据",
+          "method": "GET",
+          "path": "/api/engines/:id/spatial/:schema/:table/geojson/metadata",
+          "description": "获取空间表的 GeoJSON 元数据（总数、边界等）",
+          "auth": true,
+          "params": ":id - 引擎ID\n:schema - 数据库 schema\n:table - 表名",
+          "response": "{\n  \"total\": 1000,\n  \"bounds\": [120.0, 30.0, 121.0, 31.0],\n  \"geometry_type\": \"Point\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "向量化",
+      "description": "对象存储数据向量化功能",
+      "apis": [
+        {
+          "name": "创建向量化任务",
+          "method": "POST",
+          "path": "/api/embedding",
+          "description": "对对象存储中的文档、图片、视频进行向量化，支持单对象、目录和 Bucket 三级向量化",
+          "auth": true,
+          "request": "{\n  \"engine_id\": 1,\n  \"bucket\": \"documents\",\n  \"scope\": \"object\",\n  \"object_key\": \"reports/file.pdf\",\n  \"prefix\": \"reports/\",\n  \"recursive\": true,\n  \"task_name\": \"向量化任务\"\n}",
+          "response": "{\n  \"status\": \"success\",\n  \"task_id\": \"embedding-1-object-1234567890\",\n  \"task_status\": \"running\",\n  \"message\": \"向量化任务已创建并开始执行\",\n  \"created_at\": \"2025-01-09T10:00:00Z\"\n}"
+        },
+        {
+          "name": "查询向量化任务状态",
+          "method": "GET",
+          "path": "/api/embedding/tasks/:task_id",
+          "description": "查询向量化任务的实时执行状态（内存追踪器）",
+          "auth": true,
+          "params": ":task_id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"task_id\": \"embedding-1-object-1234567890\",\n  \"task_status\": \"completed\",\n  \"message\": \"向量化完成\",\n  \"progress\": 100,\n  \"start_time\": \"2025-01-09T10:00:00Z\",\n  \"end_time\": \"2025-01-09T10:05:00Z\",\n  \"result\": {...}\n}"
+        },
+        {
+          "name": "查询向量化任务历史列表",
+          "method": "GET",
+          "path": "/api/embedding/history",
+          "description": "查询向量化任务历史记录列表（数据库持久化）",
+          "auth": true,
+          "query": "engine_id: 引擎ID（可选）\npage: 页码，默认 1\npage_size: 每页数量，默认 20",
+          "response": "{\n  \"status\": \"success\",\n  \"data\": [...],\n  \"total\": 50,\n  \"page\": 1,\n  \"page_size\": 20\n}"
+        },
+        {
+          "name": "查询向量化任务历史详情",
+          "method": "GET",
+          "path": "/api/embedding/history/:task_id",
+          "description": "查询向量化任务的历史详细信息（数据库持久化）",
+          "auth": true,
+          "params": ":task_id - 任务ID",
+          "response": "{\n  \"status\": \"success\",\n  \"task_id\": \"embedding-1-object-1234567890\",\n  \"engine_id\": 1,\n  \"scope\": \"object\",\n  \"bucket\": \"documents\",\n  \"object_key\": \"reports/file.pdf\",\n  \"task_status\": \"completed\",\n  \"created_at\": \"2025-01-09T10:00:00Z\",\n  \"completed_at\": \"2025-01-09T10:05:00Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "配置管理",
+      "description": "模块配置查询",
+      "apis": [
+        {
+          "name": "获取地图配置",
+          "method": "GET",
+          "path": "/api/config/map",
+          "description": "获取地图配置信息（高德地图 API Key、MVT 服务地址等）",
+          "auth": true,
+          "response": "{\n  \"amap_key\": \"your-amap-key\",\n  \"mvt_base_url\": \"http://localhost:8081/api\"\n}"
+        }
+      ]
+    }
+  ]
+}

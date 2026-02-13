@@ -1,0 +1,647 @@
+openapi: 3.0.3
+info:
+  title: ADDP Workflow Engine API
+  version: 1.0.0
+  description: |
+    # ADDP 工作流计算引擎标准接口规范
+
+    本规范定义了所有工作流计算引擎必须实现的标准HTTP接口。
+
+    ## 核心概念
+
+    - **算子(Operator)**: 独立的计算单元，可串联执行
+    - **工作流(Workflow)**: 由多个算子组成的DAG(有向无环图)
+    - **执行(Execution)**: 工作流或单算子的一次运行
+
+    ## 设计原则
+
+    1. **语言无关**: 可用任何技术栈实现(Python, Go, Java等)
+    2. **统一接口**: 所有引擎遵循相同的API契约
+    3. **自动发现**: Develop模块通过API动态获取算子
+    4. **能力声明**: 通过capabilities声明引擎特性
+
+  contact:
+    name: ADDP Development Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:{port}
+    description: 本地开发环境
+    variables:
+      port:
+        default: '8099'
+        description: 引擎服务端口
+  - url: http://{host}:{port}
+    description: 自定义环境
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8099'
+
+tags:
+  - name: Infrastructure
+    description: 基础设施接口(健康检查等)
+  - name: Operators
+    description: 算子管理接口
+  - name: Workflow
+    description: 工作流执行接口
+  - name: Execution
+    description: 执行状态查询接口
+
+paths:
+  # ==================== 健康检查 ====================
+  /health:
+    get:
+      summary: 健康检查
+      description: 检查引擎服务是否正常运行
+      operationId: healthCheck
+      tags: [Infrastructure]
+      responses:
+        '200':
+          description: 引擎健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                service: python-workflow-engine
+                version: 1.0.0
+                uptime: 3600
+                operators_count: 42
+
+  # ==================== 算子列表 ====================
+  /api/operators:
+    get:
+      summary: 获取算子列表
+      description: |
+        返回引擎提供的所有算子元数据
+
+        **关键**: 这是Develop模块发现算子的唯一入口
+      operationId: listOperators
+      tags: [Operators]
+      parameters:
+        - name: category
+          in: query
+          description: 按分类过滤
+          schema:
+            type: string
+            example: 几何处理
+        - name: module
+          in: query
+          description: 按模块过滤
+          schema:
+            type: string
+            example: python-workflow
+      responses:
+        '200':
+          description: 算子列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorListResponse'
+        '500':
+          description: 服务器错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== 工作流执行 ====================
+  /api/spatial/workflow:
+    post:
+      summary: 执行工作流
+      description: |
+        执行包含多个算子的工作流(DAG)
+
+        **关键**: 所有工作流引擎必须实现此接口
+      operationId: executeWorkflow
+      tags: [Workflow]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowExecuteRequest'
+            example:
+              workflow_def:
+                tasks:
+                  - id: task1
+                    operator: buffer
+                    params:
+                      distance: 100
+                      resolution: 16
+                    depends_on: []
+                  - id: task2
+                    operator: centroid
+                    params: {}
+                    depends_on: [task1]
+              input_data:
+                geometry: "POINT(116.4 39.9)"
+      responses:
+        '200':
+          description: 执行成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowExecuteResponse'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 执行失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== 单算子执行 ====================
+  /api/spatial/operators/{name}/execute:
+    post:
+      summary: 执行单个算子
+      description: 快速执行单个算子,用于测试或简单计算
+      operationId: executeOperator
+      tags: [Operators]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: 算子名称
+          schema:
+            type: string
+          example: buffer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorExecuteRequest'
+            example:
+              params:
+                distance: 200.0
+                resolution: 16
+      responses:
+        '200':
+          description: 执行成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorExecuteResponse'
+        '404':
+          description: 算子不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                status: failed
+                error: 算子 'unknown' 不存在
+                error_code: OPERATOR_NOT_FOUND
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 执行失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ==================== 执行状态查询 ====================
+  /api/spatial/executions/{execution_id}:
+    get:
+      summary: 查询执行状态
+      description: 查询工作流或算子的执行状态(用于异步执行)
+      operationId: getExecutionStatus
+      tags: [Execution]
+      parameters:
+        - name: execution_id
+          in: path
+          required: true
+          description: 执行ID(UUID)
+          schema:
+            type: string
+            format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+      responses:
+        '200':
+          description: 执行状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionStatusResponse'
+        '404':
+          description: 执行记录不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+# ==================== 数据模型 ====================
+components:
+  schemas:
+    # 健康检查响应
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+        - version
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: 健康状态
+        service:
+          type: string
+          description: 服务名称
+          example: python-workflow-engine
+        version:
+          type: string
+          description: 版本号
+          example: 1.0.0
+        uptime:
+          type: integer
+          description: 运行时长(秒)
+          example: 3600
+        operators_count:
+          type: integer
+          description: 算子数量
+          example: 42
+        dependencies:
+          type: object
+          description: 依赖版本信息
+          additionalProperties:
+            type: string
+          example:
+            geopandas: 0.14.1
+            pandas: 2.0.0
+
+    # 算子列表响应
+    OperatorListResponse:
+      type: object
+      required:
+        - status
+        - operators
+        - count
+      properties:
+        status:
+          type: string
+          enum: [success]
+          example: success
+        operators:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperatorMetadata'
+        count:
+          type: integer
+          description: 算子总数
+          example: 42
+
+    # 算子元数据
+    OperatorMetadata:
+      type: object
+      required:
+        - id
+        - name
+        - display_name
+        - category
+        - description
+        - module
+        - parameters
+        - output_ports
+      properties:
+        id:
+          type: string
+          description: 算子唯一标识
+          example: buffer
+        name:
+          type: string
+          description: 算子名称
+          example: buffer
+        display_name:
+          type: string
+          description: 中文显示名
+          example: 缓冲区分析
+        category:
+          type: string
+          description: 算子分类
+          example: 几何处理
+        description:
+          type: string
+          description: 功能描述
+          example: 对几何对象创建缓冲区
+        brief_description:
+          type: string
+          description: 简短说明(一句话)
+          example: 在几何对象周围创建指定距离的缓冲区
+        module:
+          type: string
+          description: 所属引擎模块
+          example: python-workflow
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParameterMetadata'
+        output_ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutputPortMetadata'
+        use_cases:
+          type: array
+          description: 使用场景
+          items:
+            type: string
+          example:
+            - POI 影响范围分析
+            - 道路噪音影响区域
+        notes:
+          type: array
+          description: 注意事项
+          items:
+            type: string
+          example:
+            - 注意 distance 单位与 CRS 一致
+
+    # 参数元数据
+    ParameterMetadata:
+      type: object
+      required:
+        - name
+        - type
+        - required
+        - description
+      properties:
+        name:
+          type: string
+          description: 参数名
+          example: distance
+        type:
+          type: string
+          description: 参数类型
+          enum:
+            - string
+            - integer
+            - float
+            - boolean
+            - array
+            - object
+            - geodataframe
+          example: float
+        required:
+          type: boolean
+          description: 是否必填
+          example: true
+        description:
+          type: string
+          description: 参数说明
+          example: 缓冲距离(米)
+        default:
+          description: 默认值
+          example: 100.0
+        min:
+          type: number
+          description: 最小值(数值类型)
+          example: 0.0
+        max:
+          type: number
+          description: 最大值(数值类型)
+          example: 10000.0
+        enum:
+          type: array
+          items:
+            type: string
+          description: 枚举值(下拉选择)
+          example: [meters, degrees]
+        notes:
+          type: string
+          description: 注意事项
+          example: 单位与坐标系一致
+
+    # 输出端口元数据
+    OutputPortMetadata:
+      type: object
+      required:
+        - name
+        - type
+        - description
+        - is_default
+      properties:
+        name:
+          type: string
+          description: 端口名称
+          example: default
+        type:
+          type: string
+          description: 输出数据类型
+          example: geodataframe
+        description:
+          type: string
+          description: 端口语义说明
+          example: 缓冲区结果
+        is_default:
+          type: boolean
+          description: 是否为默认端口
+          example: true
+
+    # 工作流执行请求
+    WorkflowExecuteRequest:
+      type: object
+      required:
+        - workflow_def
+      properties:
+        workflow_def:
+          $ref: '#/components/schemas/WorkflowDefinition'
+        input_data:
+          type: object
+          additionalProperties: true
+          description: 输入数据(可选)
+
+    # 工作流定义
+    WorkflowDefinition:
+      type: object
+      required:
+        - tasks
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskDefinition'
+          description: 任务列表
+
+    # 任务定义
+    TaskDefinition:
+      type: object
+      required:
+        - id
+        - operator
+        - params
+      properties:
+        id:
+          type: string
+          description: 任务ID
+          example: task1
+        operator:
+          type: string
+          description: 算子名称
+          example: buffer
+        params:
+          type: object
+          additionalProperties: true
+          description: 参数键值对
+        depends_on:
+          type: array
+          items:
+            type: string
+          description: 依赖的任务ID列表
+          example: []
+
+    # 工作流执行响应
+    WorkflowExecuteResponse:
+      type: object
+      required:
+        - status
+        - execution_id
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+          example: success
+        execution_id:
+          type: string
+          format: uuid
+          description: 执行ID
+          example: 550e8400-e29b-41d4-a716-446655440000
+        final_result:
+          description: 最终结果(GeoJSON等)
+        all_results:
+          type: object
+          description: 所有任务结果
+        error:
+          type: string
+          description: 错误信息(失败时)
+        execution_time_ms:
+          type: number
+          description: 执行耗时(毫秒)
+          example: 1234.56
+
+    # 算子执行请求
+    OperatorExecuteRequest:
+      type: object
+      required:
+        - params
+      properties:
+        params:
+          type: object
+          additionalProperties: true
+          description: 算子参数
+
+    # 算子执行响应
+    OperatorExecuteResponse:
+      type: object
+      required:
+        - status
+        - execution_id
+      properties:
+        status:
+          type: string
+          enum: [success, failed]
+          example: success
+        execution_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        result:
+          description: 执行结果
+        message:
+          type: string
+          description: 提示信息
+        execution_time_ms:
+          type: number
+          description: 执行耗时(毫秒)
+          example: 123.45
+
+    # 执行状态响应
+    ExecutionStatusResponse:
+      type: object
+      required:
+        - status
+        - execution_id
+      properties:
+        status:
+          type: string
+          enum: [success, failed, running]
+          example: success
+        execution_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        task_status:
+          type: string
+          enum: [running, pending, completed, failed]
+          example: completed
+        result:
+          description: 执行结果
+        error:
+          type: string
+          description: 错误信息(失败时)
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 进度(0-100)
+          example: 100
+        started_at:
+          type: string
+          format: date-time
+          description: 开始时间
+          example: 2025-12-31T10:30:00Z
+
+    # 错误响应
+    ErrorResponse:
+      type: object
+      required:
+        - status
+        - error
+      properties:
+        status:
+          type: string
+          enum: [failed, error]
+          example: failed
+        error:
+          type: string
+          description: 错误信息
+          example: 参数验证失败
+        error_code:
+          type: string
+          description: 错误代码
+          enum:
+            - OPERATOR_NOT_FOUND
+            - INVALID_PARAMS
+            - EXECUTION_FAILED
+            - WORKFLOW_INVALID
+            - INTERNAL_ERROR
+          example: INVALID_PARAMS
+        details:
+          type: string
+          description: 详细错误信息(可选)
+
+  # 安全定义
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT认证令牌(从System模块获取)
+
+# 全局安全要求(部分端点可覆盖)
+security:
+  - BearerAuth: []

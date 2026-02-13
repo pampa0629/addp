@@ -1,0 +1,133 @@
+{
+  "module": "meta",
+  "title": "元数据模块",
+  "version": "0.0.21",
+  "lastUpdate": "2026-01-09",
+  "categories": [
+    {
+      "name": "引擎和Schema管理",
+      "description": "引擎资源、Schema列表查询",
+      "apis": [
+        {
+          "name": "获取引擎列表",
+          "method": "GET",
+          "path": "/api/meta/engines",
+          "description": "获取所有存储引擎（从System模块）",
+          "auth": true,
+          "response": "{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"name\": \"PostgreSQL主库\",\n      \"engine_type\": \"postgresql\"\n    }\n  ],\n  \"total\": 3\n}"
+        },
+        {
+          "name": "获取Schema列表",
+          "method": "GET",
+          "path": "/api/meta/engines/:engine_id/schemas",
+          "description": "获取指定引擎已扫描的Schema列表",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "response": "{\n  \"data\": [\n    {\n      \"name\": \"public\",\n      \"table_count\": 10,\n      \"scanned_at\": \"2026-01-07T10:00:00Z\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "获取可用Schema列表",
+          "method": "GET",
+          "path": "/api/meta/engines/:engine_id/schemas/available",
+          "description": "获取引擎的所有可用Schema（包括未扫描的）",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "response": "{\n  \"data\": [\n    \"public\",\n    \"gis\",\n    \"business\"\n  ]\n}"
+        },
+        {
+          "name": "获取对象存储节点",
+          "method": "GET",
+          "path": "/api/meta/engines/:engine_id/storage/nodes",
+          "description": "获取对象存储（MinIO/S3）的目录树结构",
+          "auth": true,
+          "params": ":engine_id - 引擎ID",
+          "query": "path: 路径（可选，默认为根目录）",
+          "response": "{\n  \"data\": {\n    \"nodes\": [\n      {\n        \"name\": \"images/\",\n        \"type\": \"folder\",\n        \"path\": \"images/\"\n      },\n      {\n        \"name\": \"photo.jpg\",\n        \"type\": \"file\",\n        \"size\": 102400\n      }\n    ]\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "元数据扫描",
+      "description": "元数据扫描、定时任务管理",
+      "apis": [
+        {
+          "name": "自动扫描",
+          "method": "POST",
+          "path": "/api/meta/scan/auto",
+          "description": "自动扫描所有未扫描的引擎",
+          "auth": true,
+          "response": "{\n  \"data\": {\n    \"scanned_engines\": 3,\n    \"total_schemas\": 5,\n    \"message\": \"自动扫描完成\"\n  }\n}"
+        },
+        {
+          "name": "扫描指定引擎",
+          "method": "POST",
+          "path": "/api/meta/scan/engine",
+          "description": "扫描指定引擎的Schema或对象路径",
+          "auth": true,
+          "request": "{\n  \"engine_id\": 1,\n  \"schema_names\": [\"public\", \"gis\"],\n  \"object_paths\": []\n}",
+          "response": "{\n  \"scan_run_id\": 123,\n  \"status\": \"running\",\n  \"message\": \"扫描任务已启动\"\n}"
+        },
+        {
+          "name": "获取扫描运行记录",
+          "method": "GET",
+          "path": "/api/meta/scan/runs",
+          "description": "获取扫描任务运行记录（支持分页和筛选）",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20\nengine_id: 引擎ID（可选）\nstatus: 状态（可选）",
+          "response": "{\n  \"data\": [\n    {\n      \"id\": 140,\n      \"engine_id\": 67,\n      \"name\": \"minio-手动-000140\",\n      \"status\": \"success\",\n      \"progress_percent\": 100\n    }\n  ],\n  \"total\": 17,\n  \"page\": 1,\n  \"page_size\": 5,\n  \"total_pages\": 4\n}"
+        },
+        {
+          "name": "获取扫描任务列表",
+          "method": "GET",
+          "path": "/api/meta/scan/tasks",
+          "description": "获取定时扫描任务列表",
+          "auth": true,
+          "query": "page: 页码，默认 1\npage_size: 每页数量，默认 20",
+          "response": "{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"name\": \"每日扫描\",\n      \"engine_id\": 1,\n      \"schedule\": \"0 2 * * *\",\n      \"enabled\": true\n    }\n  ],\n  \"total\": 5\n}"
+        },
+        {
+          "name": "创建扫描任务",
+          "method": "POST",
+          "path": "/api/meta/scan/tasks",
+          "description": "创建定时扫描任务",
+          "auth": true,
+          "request": "{\n  \"name\": \"每日扫描\",\n  \"engine_id\": 1,\n  \"schedule_type\": \"cron\",\n  \"schedule\": \"0 2 * * *\",\n  \"enabled\": true,\n  \"schema_names\": [\"public\"]\n}",
+          "response": "{\n  \"data\": {\n    \"id\": 1,\n    \"name\": \"每日扫描\",\n    \"next_run_at\": \"2026-01-08T02:00:00Z\"\n  }\n}"
+        },
+        {
+          "name": "触发扫描任务",
+          "method": "POST",
+          "path": "/api/meta/scan/tasks/:task_id/trigger",
+          "description": "手动触发定时扫描任务",
+          "auth": true,
+          "params": ":task_id - 任务ID",
+          "response": "{\n  \"data\": {\n    \"scan_run_id\": 456,\n    \"message\": \"扫描已触发\"\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "元数据查询",
+      "description": "表元数据、字段信息查询",
+      "apis": [
+        {
+          "name": "获取表元数据",
+          "method": "GET",
+          "path": "/api/meta/metadata/tables",
+          "description": "获取数据库表的元数据信息",
+          "auth": true,
+          "query": "engine_id: 引擎ID (必填)\nschema: Schema名称 (可选)",
+          "response": "{\n  \"data\": [\n    {\n      \"table_name\": \"users\",\n      \"schema\": \"public\",\n      \"row_count\": 1000,\n      \"size_bytes\": 65536,\n      \"comment\": \"用户表\"\n    }\n  ]\n}"
+        },
+        {
+          "name": "获取表字段信息",
+          "method": "GET",
+          "path": "/api/meta/metadata/fields",
+          "description": "获取表的字段详细信息",
+          "auth": true,
+          "query": "engine_id: 引擎ID (必填)\ntable_name: 表名 (必填)\ninclude_details: 是否包含详细信息 (可选)",
+          "response": "{\n  \"data\": [\n    {\n      \"name\": \"id\",\n      \"data_type\": \"integer\",\n      \"is_primary_key\": true,\n      \"is_nullable\": false\n    }\n  ]\n}"
+        }
+      ]
+    }
+  ]
+}
