@@ -621,7 +621,7 @@ onMounted(() => {
 }
 
 .selected-card {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
 }
 

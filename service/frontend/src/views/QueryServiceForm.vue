@@ -829,12 +829,12 @@ onMounted(async () => {
 }
 
 .config-card-wrapper:hover {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.2);
 }
 
 .config-card-wrapper.selected {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   background-color: #f0f7ff;
   box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
 }
