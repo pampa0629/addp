@@ -370,7 +370,7 @@ export default {
 
 .header-left h2 {
   margin: 0;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .header-right {
@@ -426,7 +426,7 @@ export default {
 
 .btn-warning {
   background-color: #ffc107;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .btn-warning:hover:not(:disabled) {
@@ -460,7 +460,7 @@ export default {
 .error-state {
   text-align: center;
   padding: 40px 20px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 
 .detail-container {

@@ -469,7 +469,7 @@ export default {
 
 h1 {
   margin-bottom: 30px;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 /* 步骤指示器 */
@@ -542,7 +542,7 @@ h1 {
 
 h2 {
   margin-bottom: 20px;
-  color: #333;
+  color: var(--addp-text-primary);
   font-size: 20px;
 }
 
@@ -582,12 +582,12 @@ h3 {
 
 .layer-type-card h3 {
   margin: 0 0 10px 0;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .layer-type-card p {
   margin: 0;
-  color: #666;
+  color: var(--addp-text-secondary);
   font-size: 14px;
 }
 

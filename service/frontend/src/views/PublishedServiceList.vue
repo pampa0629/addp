@@ -259,7 +259,7 @@ h1 {
 
 .btn-warning {
   background-color: #ffc107;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .btn-warning:hover {
@@ -311,7 +311,7 @@ h1 {
 .empty-state {
   text-align: center;
   padding: 20px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 
 .services-table {
@@ -385,6 +385,6 @@ h1 {
 
 .page-info {
   font-size: 14px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 </style>
