@@ -392,15 +392,15 @@ const sections = computed(() => buildSections(props.metadata))
 
 .section-geo h4 { color: var(--addp-text-tertiary); }
 .section-geo .section-icon { color: var(--addp-text-tertiary); }
-.section-geo { border-left: 3px solid #909399; }
+.section-geo { border-left: 3px solid var(--addp-text-tertiary); }
 
 .section-table h4 { color: var(--addp-text-secondary); }
 .section-table .section-icon { color: var(--addp-text-secondary); }
-.section-table { border-left: 3px solid #606266; }
+.section-table { border-left: 3px solid var(--addp-text-secondary); }
 
 .section-database h4 { color: var(--addp-text-primary); }
 .section-database .section-icon { color: var(--addp-text-primary); }
-.section-database { border-left: 3px solid #303133; }
+.section-database { border-left: 3px solid var(--addp-text-primary); }
 
 .section-text h4 { color: #79bbff; }
 .section-text .section-icon { color: #79bbff; }

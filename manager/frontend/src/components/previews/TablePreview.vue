@@ -361,7 +361,7 @@
             :value="tileConfigData.min_zoom"
             min="0"
             max="22"
-            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+            style="width: 100%; padding: 8px 12px; border: 1px solid var(--addp-border-color); border-radius: 4px; font-size: 14px;"
           />
         </el-form-item>
         <el-form-item label="最大层级 (MaxZoom)">
@@ -371,7 +371,7 @@
             :value="tileConfigData.max_zoom"
             min="0"
             max="22"
-            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+            style="width: 100%; padding: 8px 12px; border: 1px solid var(--addp-border-color); border-radius: 4px; font-size: 14px;"
           />
         </el-form-item>
 
@@ -1513,7 +1513,7 @@ body.is-resizing .map-splitter::after {
 .skipped-check {
   padding: 8px 12px;
   background-color: var(--el-fill-color);
-  border-left: 3px solid #909399;
+  border-left: 3px solid var(--addp-text-tertiary);
   border-radius: 4px;
 }
 </style>

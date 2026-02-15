@@ -1163,7 +1163,7 @@ onMounted(() => {
 
 .docx-content :deep(th),
 .docx-content :deep(td) {
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   padding: 8px 12px;
   text-align: left;
 }
