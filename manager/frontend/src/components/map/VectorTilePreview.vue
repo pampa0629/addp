@@ -359,7 +359,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
   width: 40px;
   height: 40px;
   border: 4px solid #f3f3f3;
-  border-top: 4px solid #409eff;
+  border-top: 4px solid var(--el-color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 12px;
@@ -382,7 +382,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
   transform: translateX(-50%);
   background: #fef0f0;
   border: 1px solid #fde2e2;
-  color: #f56c6c;
+  color: var(--el-color-danger);
   padding: 12px 16px;
   border-radius: 8px;
   display: flex;
@@ -404,7 +404,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 }
 
 .retry-btn {
-  background: #f56c6c;
+  background: var(--el-color-danger);
   color: white;
   border: none;
   padding: 6px 12px;

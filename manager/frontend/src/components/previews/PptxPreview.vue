@@ -316,7 +316,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .loading-container .el-icon {
@@ -335,7 +335,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 20px;
-  color: #f56c6c;
+  color: var(--el-color-danger);
   padding: 40px;
 }
 

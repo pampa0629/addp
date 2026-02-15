@@ -239,14 +239,14 @@ const onImageLoad = (event) => {
   padding: 16px;
   border-radius: 8px;
   border: 1px solid var(--el-border-color-lighter);
-  border-left: 3px solid #e6a23c;
+  border-left: 3px solid var(--el-color-warning);
 }
 
 .quick-metadata h4 {
   margin: 0 0 12px;
   font-size: 14px;
   font-weight: 600;
-  color: #e6a23c;
+  color: var(--el-color-warning);
   display: flex;
   align-items: center;
   gap: 8px;

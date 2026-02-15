@@ -933,7 +933,7 @@ onMounted(() => {
 
 .loading-container .el-icon {
   font-size: 48px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .loading-info {
@@ -960,7 +960,7 @@ onMounted(() => {
 }
 
 .loading-tips {
-  color: #67c23a !important;
+  color: var(--el-color-success) !important;
   font-size: 13px !important;
 }
 
@@ -977,7 +977,7 @@ onMounted(() => {
 
 .error-container .el-icon {
   font-size: 48px;
-  color: #f56c6c;
+  color: var(--el-color-danger);
 }
 
 .error-info {
@@ -1058,7 +1058,7 @@ onMounted(() => {
 
 .toolbar-left .el-icon {
   font-size: 20px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .docx-title {
@@ -1128,7 +1128,7 @@ onMounted(() => {
 .docx-content :deep(blockquote) {
   margin: 16px 0;
   padding: 12px 16px;
-  border-left: 4px solid #409eff;
+  border-left: 4px solid var(--el-color-primary);
   background: #f4f4f5;
   color: var(--addp-text-secondary);
   font-style: italic;
@@ -1186,7 +1186,7 @@ onMounted(() => {
 }
 
 .docx-content :deep(a) {
-  color: #409eff;
+  color: var(--el-color-primary);
   text-decoration: none;
 }
 
@@ -1200,7 +1200,7 @@ onMounted(() => {
   border-radius: 3px;
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 
 .docx-content :deep(pre) {

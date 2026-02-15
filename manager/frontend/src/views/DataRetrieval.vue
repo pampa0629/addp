@@ -537,7 +537,7 @@ const navigateToDocument = (item = {}) => {
 }
 
 .history-trigger:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .history-trigger:focus-visible {
@@ -606,7 +606,7 @@ const navigateToDocument = (item = {}) => {
 }
 
 .history-query:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .history-list :deep(.el-empty) {
@@ -673,7 +673,7 @@ const navigateToDocument = (item = {}) => {
 }
 
 .result-icon {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .result-meta {

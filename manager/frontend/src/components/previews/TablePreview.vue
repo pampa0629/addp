@@ -489,7 +489,7 @@
       <div v-if="preparationStatus" class="preparation-status">
         <div v-for="check in preparationStatus.checks" :key="check.name" class="check-item">
           <div v-if="check.status === 'failed'" class="failed-check">
-            <span style="color: #f56c6c; font-weight: bold;">❌ {{ check.message }}</span>
+            <span style="color: var(--el-color-danger); font-weight: bold;">❌ {{ check.message }}</span>
             <div v-if="check.details" style="margin-top: 8px; padding-left: 20px; font-size: 12px; color: var(--addp-text-secondary);">
               <div v-for="(value, key) in check.details" :key="key">
                 <strong>{{ key }}:</strong> {{ value }}
@@ -497,7 +497,7 @@
             </div>
           </div>
           <div v-else-if="check.status === 'passed'" class="passed-check">
-            <span style="color: #67c23a; font-weight: bold;">✅ {{ check.message }}</span>
+            <span style="color: var(--el-color-success); font-weight: bold;">✅ {{ check.message }}</span>
           </div>
           <div v-else-if="check.status === 'skipped'" class="skipped-check">
             <span style="color: var(--addp-text-tertiary); font-weight: bold;">⏭️ {{ check.message }}</span>
@@ -1499,14 +1499,14 @@ body.is-resizing .map-splitter::after {
 .failed-check {
   padding: 8px 12px;
   background-color: var(--el-fill-color);
-  border-left: 3px solid #f56c6c;
+  border-left: 3px solid var(--el-color-danger);
   border-radius: 4px;
 }
 
 .passed-check {
   padding: 8px 12px;
   background-color: var(--el-fill-color);
-  border-left: 3px solid #67c23a;
+  border-left: 3px solid var(--el-color-success);
   border-radius: 4px;
 }
 
