@@ -97,7 +97,7 @@
           </span>
           <el-button
             v-if="executionResult"
-            type="text"
+            text
             size="small"
             @click="clearResult"
           >

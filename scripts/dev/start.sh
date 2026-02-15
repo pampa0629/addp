@@ -14,6 +14,7 @@ show_usage() {
   echo "  -orchestrator 只启动 Orchestrator 模块 (依赖: System)"
   echo "  -develop      只启动 Develop 模块 (依赖: System + Python Workflow Engine)"
   echo "  -service      只启动 Service 模块 (依赖: System)"
+  echo "  -monitor      只启动 Monitor 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
   echo "  -python-workflow    只启动 Python Workflow Engine"
   echo "  -math-workflow      只启动 Math Workflow Engine"
@@ -130,7 +131,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-copilot|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -159,6 +160,8 @@ START_DEVELOP_BACKEND=false
 START_DEVELOP_FRONTEND=false
 START_SERVICE_BACKEND=false
 START_SERVICE_FRONTEND=false
+START_MONITOR_BACKEND=false
+START_MONITOR_FRONTEND=false
 START_COPILOT_BACKEND=false
 START_GATEWAY=false
 START_PORTAL=false
@@ -187,6 +190,8 @@ if [ "$START_ALL" = true ]; then
   START_DEVELOP_FRONTEND=true
   START_SERVICE_BACKEND=true
   START_SERVICE_FRONTEND=true
+  START_MONITOR_BACKEND=true
+  START_MONITOR_FRONTEND=true
   START_COPILOT_BACKEND=true
   START_GATEWAY=true
   START_PORTAL=true
@@ -244,6 +249,12 @@ else
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
       ;;
+    monitor)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_MONITOR_BACKEND=true
+      START_MONITOR_FRONTEND=true
+      ;;
     copilot)
       START_SYSTEM_BACKEND=true
       START_SYSTEM_FRONTEND=true
@@ -276,6 +287,7 @@ else
       START_ORCHESTRATOR_BACKEND=true
       START_DEVELOP_BACKEND=true
       START_SERVICE_BACKEND=true
+      START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
       START_PYTHON_WORKFLOW=true
       START_SPARK_WORKFLOW=true
@@ -300,6 +312,8 @@ else
       START_DEVELOP_FRONTEND=true
       START_SERVICE_BACKEND=true
       START_SERVICE_FRONTEND=true
+      START_MONITOR_BACKEND=true
+      START_MONITOR_FRONTEND=true
       START_COPILOT_BACKEND=true
       START_GATEWAY=true
       START_PORTAL=true
@@ -523,6 +537,7 @@ TRANSFER_FE_PORT=${TRANSFER_FE_PORT:-5176}
 ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 DEVELOP_FE_PORT=${DEVELOP_FE_PORT:-5178}
 SERVICE_FE_PORT=${SERVICE_FE_PORT:-5180}
+MONITOR_FE_PORT=${MONITOR_FE_PORT:-5179}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -652,6 +667,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_MONITOR_BACKEND" = true ]; then
+    build_service "monitor" "monitor/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_MANAGER_WORKER" = true ]; then
     build_worker "manager" "manager/backend" &
@@ -747,6 +767,17 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $SERVICE_PID > .dev-pids/service.pid
     else
       SERVICE_PID=$(cat .dev-pids/service.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Monitor Backend（带检查）
+  if [ "$START_MONITOR_BACKEND" = true ]; then
+    if check_service_running "monitor" "8100"; then
+      .dev-bins/addp-monitor > logs/monitor-backend.log 2> logs/monitor-backend-stderr.log &
+      MONITOR_PID=$!
+      echo $MONITOR_PID > .dev-pids/monitor.pid
+    else
+      MONITOR_PID=$(cat .dev-pids/monitor.pid 2>/dev/null)
     fi
   fi
 
@@ -1656,7 +1687,7 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ]; then
+if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
@@ -1693,6 +1724,10 @@ if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STAR
 
   if [ "$START_SERVICE_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("service:${SERVICE_FE_PORT}:service/frontend")
+  fi
+
+  if [ "$START_MONITOR_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("monitor:${MONITOR_FE_PORT}:monitor/frontend")
   fi
 
   echo "并发启动所有前端..."

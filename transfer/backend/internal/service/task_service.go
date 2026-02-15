@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/addp/common/logger"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // TaskQueue 任务队列接口（避免循环依赖）
@@ -22,14 +20,14 @@ type TaskQueue interface {
 
 // TaskService 任务服务
 type TaskService struct {
-	db              *gorm.DB
-	taskRepo        *repository.TaskRepository
-	execRepo        *repository.ExecutionRepository
-	mappingRepo     *repository.MappingRepository
-	executionEngine *ExecutionEngineService
-	cfg             *config.Config
-	taskQueue       TaskQueue
-	logger          *slog.Logger
+	db               *gorm.DB
+	taskRepo         *repository.TaskRepository
+	executionService *ExecutionService // 使用统一执行服务
+	mappingRepo      *repository.MappingRepository
+	executionEngine  *ExecutionEngineService
+	cfg              *config.Config
+	taskQueue        TaskQueue
+	logger           *slog.Logger
 }
 
 // NewTaskService 创建任务服务
@@ -42,13 +40,17 @@ func NewTaskService(
 	return &TaskService{
 		db:              db,
 		taskRepo:        repository.NewTaskRepository(db),
-		execRepo:        repository.NewExecutionRepository(db),
 		mappingRepo:     repository.NewMappingRepository(db),
 		executionEngine: executionEngine,
 		taskQueue:       taskQueue,
 		cfg:             cfg,
 		logger:          logger.With("component", "task_service"),
 	}
+}
+
+// SetExecutionService 设置执行服务（在创建后注入，避免循环依赖）
+func (s *TaskService) SetExecutionService(executionService *ExecutionService) {
+	s.executionService = executionService
 }
 
 // CreateTask 创建任务
@@ -259,70 +261,49 @@ func (s *TaskService) GetTaskStatistics(ctx context.Context, tenantID uint) (*mo
 	return s.taskRepo.GetStatistics(tenantID)
 }
 
-// StartTask 启动任务（立即执行）- 使用事务确保原子性
+// StartTask 启动任务（立即执行）
 func (s *TaskService) StartTask(ctx context.Context, id, tenantID, userID uint) (*models.TaskExecution, error) {
 	s.logger.Info("starting task", "task_id", id)
 
-	var execution *models.TaskExecution
-
-	// 使用事务包装所有操作，确保原子性
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		// 1. 锁定任务行（FOR UPDATE），防止并发冲突
-		task := &models.Task{}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND tenant_id = ?", id, tenantID).
-			First(task).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return fmt.Errorf("task not found or access denied")
-			}
-			return fmt.Errorf("failed to lock task: %w", err)
-		}
-
-		// 2. 检查任务状态
-		if task.Status == models.TaskStatusRunning {
-			return fmt.Errorf("task is already running")
-		}
-
-		now := time.Now()
-
-		// 3. 创建执行记录
-		execution = &models.TaskExecution{
-			TaskID:      id,
-			Status:      models.ExecutionStatusPending,
-			StartTime:   models.LocalTime{Time: now},
-			TriggerType: "manual",
-			TriggerBy:   &userID,
-		}
-
-		if err := tx.Create(execution).Error; err != nil {
-			return fmt.Errorf("failed to create execution: %w", err)
-		}
-
-		// 4. 原子更新任务状态（在同一事务中）
-		updates := map[string]interface{}{
-			"status":   models.TaskStatusRunning,
-			"progress": 0,
-		}
-
-		if err := tx.Model(task).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to update task state: %w", err)
-		}
-
-		return nil
-	})
-
+	// 1. 检查任务存在性和权限
+	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
-		s.logger.Error("failed to start task in transaction", "error", err, "task_id", id)
 		return nil, err
 	}
 
-	// 事务提交成功后，将任务提交到队列（Asynq）
+	// 2. 检查任务状态
+	if task.Status == models.TaskStatusRunning {
+		return nil, fmt.Errorf("task is already running")
+	}
+
+	// 3. 使用统一执行服务创建执行记录
+	execution, err := s.executionService.CreateExecution(ctx, id, "manual", &userID)
+	if err != nil {
+		s.logger.Error("failed to create execution", "error", err, "task_id", id)
+		return nil, fmt.Errorf("failed to create execution: %w", err)
+	}
+
+	// 4. 更新任务状态为运行中
+	updates := map[string]interface{}{
+		"status":   models.TaskStatusRunning,
+		"progress": 0,
+	}
+
+	if err := s.taskRepo.UpdateFields(id, updates); err != nil {
+		// 回滚：删除执行记录
+		// TODO: 实现执行记录删除方法
+		s.logger.Error("failed to update task state, execution record created but task not started",
+			"error", err, "task_id", id, "execution_id", execution.ID)
+		return nil, fmt.Errorf("failed to update task state: %w", err)
+	}
+
+	// 5. 将任务提交到队列（Asynq）
 	if s.taskQueue != nil {
 		if err := s.taskQueue.EnqueueExecuteTask(ctx, id, execution.ID, tenantID); err != nil {
 			s.logger.Error("failed to enqueue task", "error", err, "task_id", id)
 
 			// 回滚：标记执行失败
-			s.execRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error())
+			s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error())
 
 			// 回滚：恢复任务状态为空闲
 			if err := s.taskRepo.UpdateFields(id, map[string]interface{}{
@@ -355,9 +336,9 @@ func (s *TaskService) StopTask(ctx context.Context, id, tenantID uint) error {
 	}
 
 	// 查询最后一次执行记录
-	lastExecution, err := s.execRepo.GetLatestByTaskID(id)
+	lastExecution, err := s.executionService.GetLatestExecution(ctx, id, tenantID)
 	if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
-		if err := s.execRepo.FinishExecution(lastExecution.ID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
+		if err := s.executionService.FinishExecution(ctx, lastExecution.ID, models.ExecutionStatusFailed, "execution stopped by user"); err != nil {
 			s.logger.Warn("failed to finish execution when stopping task", "error", err, "task_id", id)
 		}
 	}
@@ -393,9 +374,9 @@ func (s *TaskService) PauseTask(ctx context.Context, id, tenantID uint) error {
 	// 如果任务正在运行，需要停止当前执行
 	if task.Status == models.TaskStatusRunning {
 		// 查询最后一次执行记录
-		lastExecution, err := s.execRepo.GetLatestByTaskID(id)
+		lastExecution, err := s.executionService.GetLatestExecution(ctx, id, tenantID)
 		if err == nil && lastExecution != nil && lastExecution.Status == models.ExecutionStatusRunning {
-			if err := s.execRepo.FinishExecution(lastExecution.ID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
+			if err := s.executionService.FinishExecution(ctx, lastExecution.ID, models.ExecutionStatusFailed, "task paused by user"); err != nil {
 				s.logger.Warn("failed to finish execution when pausing task", "error", err, "task_id", id)
 			}
 		}

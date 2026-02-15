@@ -78,17 +78,22 @@
 | `tenant_id` | INTEGER | NOT NULL, INDEXED | 租户 ID |
 | `dev_item_id` | INTEGER | INDEXED | 关联的开发项 ID（可为空） |
 | `execution_id` | VARCHAR(255) | NOT NULL, UNIQUE | UUID 执行标识 |
-| `execution_type` | VARCHAR(50) | NOT NULL | 执行类型：'query'、'workflow'、'notebook' |
+| `dev_type` | VARCHAR(50) | NOT NULL | 开发类型：'query'、'workflow'、'script'、'notebook' |
+| `trigger_type` | VARCHAR(50) | INDEXED | 触发类型：'manual'、'schedule'、'orchestrator'、'api' |
+| `triggered_by` | INTEGER | | 触发者 ID |
 | `status` | VARCHAR(50) | NOT NULL, INDEXED | 执行状态 |
+| `progress` | INTEGER | DEFAULT 0 | 执行进度（0-100） |
+| `current_step` | VARCHAR(255) | | 当前执行步骤（工作流） |
 | `result` | JSONB | | 执行结果（查询结果、工作流输出等） |
+| `inputs` | JSONB | | 输入参数 |
 | `error_message` | TEXT | | 错误信息（失败时） |
-| `execution_time_ms` | INTEGER | | 执行耗时（毫秒） |
-| `rows_affected` | INTEGER | | 影响行数（SQL 查询） |
+| `execution_time_ms` | BIGINT | | 执行耗时（毫秒） |
+| `rows_affected` | BIGINT | | 影响行数（SQL 查询） |
+| `result_size_bytes` | BIGINT | | 结果大小（字节） |
 | `engine_id` | INTEGER | | 使用的引擎 ID |
 | `started_at` | TIMESTAMP | | 开始时间 |
 | `completed_at` | TIMESTAMP | | 完成时间 |
-| `created_by` | INTEGER | | 创建者 ID |
-| `created_at` | TIMESTAMP | DEFAULT NOW() | 创建时间 |
+| `created_at` | TIMESTAMP | DEFAULT NOW(), INDEXED | 创建时间 |
 
 ### 2.2 数据库索引
 
@@ -97,6 +102,8 @@
 | `idx_dev_executions_tenant_status` | tenant_id, status | 按租户和状态查询 |
 | `idx_dev_executions_item` | dev_item_id | 按开发项查询 |
 | `idx_dev_executions_execution_id` | execution_id | UUID 唯一索引 |
+| `idx_dev_executions_trigger_type` | trigger_type | 按触发类型过滤 |
+| `idx_dev_executions_created_at` | created_at DESC | 按创建时间倒序排列 |
 
 ---
 
@@ -127,7 +134,7 @@ pending → running → success
 
 ## 四、Result 字段结构
 
-### 4.1 Query 类型（execution_type='query'）
+### 4.1 Query 类型（dev_type='query'）
 
 ```json
 {
@@ -144,7 +151,7 @@ pending → running → success
 }
 ```
 
-### 4.2 Workflow 类型（execution_type='workflow'）
+### 4.2 Workflow 类型（dev_type='workflow'）
 
 ```json
 {
@@ -228,20 +235,22 @@ pending → running → success
 ### 5.3 GET /api/v1/executions - 查询执行记录列表
 
 **查询参数**：
-- `execution_type`：按类型过滤
+- `dev_type`：按类型过滤
 - `status`：按状态过滤
 - `dev_item_id`：按开发项过滤
+- `trigger_type`：按触发类型过滤
+- `start_date`、`end_date`：按日期范围过滤
 - `page`、`page_size`：分页参数
 
 **响应**：
 
 ```json
 {
-  "items": [
+  "executions": [
     {
       "id": 123,
       "execution_id": "uuid-xxxx",
-      "execution_type": "query",
+      "dev_type": "query",
       "status": "success",
       "execution_time_ms": 245,
       "created_at": "2025-01-01T10:00:00Z"
@@ -281,8 +290,8 @@ pending → running → success
 
 ```sql
 -- 查询平均执行时间
-SELECT 
-  execution_type,
+SELECT
+  dev_type,
   AVG(execution_time_ms) as avg_time_ms,
   MAX(execution_time_ms) as max_time_ms,
   COUNT(*) as total_executions
@@ -290,20 +299,20 @@ FROM develop.dev_executions
 WHERE status = 'success'
   AND tenant_id = 1
   AND created_at > NOW() - INTERVAL '7 days'
-GROUP BY execution_type;
+GROUP BY dev_type;
 ```
 
 ### 6.2 失败率分析
 
 ```sql
 -- 查询失败率
-SELECT 
-  execution_type,
+SELECT
+  dev_type,
   COUNT(CASE WHEN status = 'failed' THEN 1 END) * 100.0 / COUNT(*) as failure_rate
 FROM develop.dev_executions
 WHERE tenant_id = 1
   AND created_at > NOW() - INTERVAL '7 days'
-GROUP BY execution_type;
+GROUP BY dev_type;
 ```
 
 ---

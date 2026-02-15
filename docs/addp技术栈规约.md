@@ -88,6 +88,50 @@
 - **路由**: Vue Router
 - **HTTP 客户端**: Axios (带认证拦截器)
 
+### 前端依赖版本规范
+
+为确保所有前端模块的依赖版本一致，ADDP 平台使用以下统一的前端依赖版本（最后更新: 2026-02-15）：
+
+#### 核心框架
+
+- **Vue**: `vue@3.5.13`
+- **Vue Router**: `vue-router@4.5.0`
+- **Vite**: `vite@6.0.5`
+- **@vitejs/plugin-vue**: `@vitejs/plugin-vue@5.2.1`
+
+#### UI 组件库
+
+- **Element Plus**: `element-plus@2.8.8` ⚠️ **必须使用此版本**
+  - **版本选择**: 2.8.8 是最后一个无弃用警告的 2.x 稳定版本
+  - **稳定性**: 包含所有必需功能，无控制台警告
+  - **影响**: 所有前端模块必须统一使用此版本
+  - **重要**: 使用新的 API 规范，避免使用已弃用的属性
+    - ✅ **正确**: `<el-button text>文本按钮</el-button>` (使用 `text` 属性)
+    - ❌ **错误**: `<el-button type="text">文本按钮</el-button>` (旧的 API，虽然在 2.8.8 中仍可用，但为了代码一致性应统一使用新 API)
+    - 同理，链接按钮使用 `<el-button link>`
+- **@element-plus/icons-vue**: `@element-plus/icons-vue@2.3.2`
+
+#### 状态管理与 HTTP
+
+- **Pinia**: `pinia@2.3.0`
+- **Axios**: `axios@1.7.9`
+
+#### 地图与可视化
+
+- **OpenLayers** (Manager/Service): `ol@9.2.4`
+- **ECharts** (Monitor): `echarts@5.5.1`
+
+#### 编辑器
+
+- **Monaco Editor** (Develop): `monaco-editor@0.45.0`
+- **SQL Formatter** (Develop): `sql-formatter@15.4.7`
+
+**重要提示**:
+
+- 新模块开发时，请严格遵循上述版本
+- 升级依赖前，需在所有模块中统一升级
+- Element Plus 2.8.8 是当前推荐的稳定版本，避免升级到 2.9+ 产生警告
+
 **Vue 版本统一要求**:
 
 - 所有模块必须共享**单一 Vue 实例**，避免多实例导致生命周期钩子失效
@@ -95,7 +139,7 @@
 - 各前端模块的 `package.json` 必须添加 `overrides` 配置强制统一 Vue 版本，示例：
   ```json
   "overrides": {
-    "vue": "^3.4.15"
+    "vue": "3.5.13"
   }
   ```
 - 安装依赖前需确保删除 `common-frontend/node_modules` 和 `common-frontend/package-lock.json`

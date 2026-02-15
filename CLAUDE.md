@@ -32,6 +32,7 @@
 | Orchestrator 模块详情| orchestrator/CLAUDE.md        | 工作流编排、DAG、任务调度         |
 | Develop 模块详情     | develop/CLAUDE.md             | SQL 执行、工作流、算子        |
 | Service 模块详情     | service/CLAUDE.md             | 数据服务、OGC 标准、API 发布      |
+| Monitor 模块详情     | docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
 
 
 **重要**:
@@ -45,38 +46,31 @@
 **重要**: ADDP 目前处于积极开发阶段。以下原则指导所有开发工作:
 
 ### 1. 无需考虑向后兼容
-
 当前addp采用激进策略，无需考虑任何兼容性，可自由修改代码、infra中数据表结构、API和前端代码；不要保留兼容性的代码。
 若已有的数据无法升级，则直接删除。
 
 ### 2. 保持整洁
-
 临时脚本和文档保存到 /tmp/,保持项目树整洁。
-你觉得需要保留的文档，需要征求用户的同意，保存到 ./docs 或 对应模块的docs目录下。
+你觉得需要保留的文档，在征求用户的同意后，保存到 ./docs 或 对应模块的docs目录下。
+claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下。
 
 ### 3. 无需请求权限
-
 在自动编辑模式下,自由执行脚本,无需每次询问用户。
 
 ### 4. 全局思考
-
 任何修改都要考虑全局影响,同步更新相关模块。
 
 ### 5. 修复根本原因
-
 深入分析根本原因,彻底解决而不是打补丁。
-若根本原因涉及到原有实现的调整，尤其是架构层面的问题和修改，必须提出来探讨，而不是“将错就错，负负得正”。
+若根本原因涉及到原有实现的调整，尤其是架构层面的问题和修改，必须提出来探讨，而不是“头疼医头脚疼医脚”。
 
 ### 6. 大胆删除
-
 删除过时的代码和文件,不要保留"以防万一"的内容。
 
 ### 7. 挑战不合理的需求
-
 质疑不合理的需求和实现要求,平等讨论达成共识。
 
 ### 8. DRY (不要重复自己)
-
 不允许存在没有充分理由的重复代码。
 优先将重复代码提取到 common/ 或 common-frontend/ 模块。
 
@@ -93,14 +87,16 @@
 - **portal/** - 统一门户入口,基于 iframe 的模块集成 
 - **system/** - 核心系统模块:用户认证、日志、引擎管理 -  (PostgreSQL system schema)
 - **gateway/** - API 网关:处理外部请求并路由到内部服务 -  (反向代理)
-- **manager/** - 数据管理:数据源连接、按目录展示数据、数据预览 
+- **manager/** - 数据管理:按目录展示数据、数据预览 
 - **meta/** - 元数据服务:数据元数据解析/存储/查询,定时扫描 -  (PostgreSQL metadata schema)
 - **transfer/** - 数据传输:数据导入/导出/同步
 - **orchestrator/** - 任务编排:基于meta、manager、develop等模块配置好的任务之上的任务编排、调度和执行
-- **develop/** - 开发工作台:查询（SQL）工作台、Notebook开发和基于算子的工作流编辑器 
+- **develop/** - 开发工作台:查询（SQL）工作台、Notebook开发和基于算子的工作流编辑器
 - **service/** - 数据服务模块:内部数据的服务发布（含空间与非空间）、外部服务注册(PostgreSQL service schema)
+- **monitor/** - 执行监控:统一监控所有模块的任务执行记录、统计分析、健康检查 (使用 common.task_executions 表)
 - **engines/python_workflow/** - 基于Python的工作流计算引擎,提供空间和非空间算子
 - **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,提供空间和非空间算子
+- **engines/jupyter/** - 基于jupyter的notebook开发后台服务
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
@@ -127,36 +123,7 @@
 # 如：只启动 System 模块 (5-8秒,节省85%资源)
 bash scripts/dev/start.sh -system
 ```
-**详细指南**: [docs/模块选择启动指南.md](docs/模块选择启动指南.md)
-
-### 开发工作流（重要）
-
-**如果你修改了某个模块的代码，使用选择性重启快速验证**：
-
-```bash
-# 场景 1: 修改了 Manager 模块
-bash scripts/dev/restart.sh -manager
-
-# 场景 2: 修改了多个模块或不确定影响范围
-bash scripts/dev/restart.sh -all
-
-# 场景 3: 只重启服务，不重新编译（最快）
-bash scripts/dev/restart.sh
-```
-
-**支持的模块选项**：
-
-- `-system` - System 模块
-- `-manager` - Manager 模块
-- `-meta` - Meta 模块
-- `-transfer` - Transfer 模块
-- `-orchestrator` - Orchestrator 模块
-- `-develop` - Develop 模块
-- `-service` - Service 模块
-- `-gateway` - Gateway 模块
-- `-all` - 所有模块
-
-**当前处于开发阶段，优先采用 ./scripts/dev/ 下的脚本，有明确要求时再使用容器方式。**
+**详细指南**: [./scripts/docs/模块选择启动指南.md](./scripts/docs/模块选择启动指南.md)
 
 ## 模块端口
 
@@ -165,10 +132,9 @@ bash scripts/dev/restart.sh
 - **Portal**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
 - **System Backend**: 8180
-- **PostgreSQL**: 15432 (system)
-- **Redis**: 16379
-- **MinIO**: 19000-19001 (system) / 9002-9003 (business)
-
+- **PostgreSQL**: 15432 (infra)
+- **Redis**: 16379(infra)
+- **MinIO**: 19000-19001 (infra) / 9002-9003 (business)
 完整端口列表: docs/addp端口分配.md
 
 ## 技术栈
@@ -188,7 +154,7 @@ bash scripts/dev/restart.sh
 为确保所有模块的依赖版本一致性,ADDP 平台使用统一的 Go 依赖版本。
 前端模块需确保 Vue 单一实例，各模块 package.json 需添加 `overrides` 强制统一 Vue 版本，common-frontend 不得有 node_modules。
 
-需要详细技术栈信息时,请参考 docs/技术栈规约.md 文档。
+需要详细技术栈信息时,请参考 [docs/addp技术栈规约.md](docs/addp技术栈规约.md) 文档。
 
 ### 基础设施
 
@@ -308,7 +274,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 ### 新模块开发
 
-开发新模块时,请阅读: docs/新模块开发指南.md
+开发新模块时,请阅读: docs/addp新模块开发指南.md
 
 ## 重要文件位置
 
@@ -346,15 +312,15 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 
 **相关文档**：
 - **架构说明**：[docs/数据库插件系统.md](docs/数据库插件系统.md) - 了解插件系统的整体架构和设计
-- **新增指南**：[docs/addp新增存储引擎指南.md](docs/addp新增存储引擎指南.md) - 如何添加新的数据库/存储引擎类型
+- **新增指南**：[docs/addp数据引擎扩展指南.md](docs/addp数据引擎扩展指南.md) - 如何添加新的数据库/存储引擎类型
 
 ## 故障排查
 
 **JWT token 问题**: 确保 `.env` 中的 `JWT_SECRET` 在各服务间匹配 (System 和 Gateway 等所有模块，均需要相同的密钥)
 **跨服务调用失败**: 验证 `ENABLE_SERVICE_INTEGRATION=true` 且 docker-compose.yml 中的服务 URL 正确
 
-更多故障排查，可翻阅 [docs/常见故障排查.md](docs/常见故障排查.md) 文档。
-如果一个问题需要反复修改才能改好，或者以后可能反复遇到，你就应主动向用户提出把问题根源和修复思路记录到[docs/常见故障排查.md]中。
+更多故障排查，可翻阅 [docs/addp常见故障排查.md](docs/addp常见故障排查.md) 文档。
+如果一个问题需要反复修改才能改好，或者以后可能反复遇到，你就应主动向用户提出把问题根源和修复思路记录到[docs/addp常见故障排查.md]中。 
 
 各模块的日志都统一输出到 addp/logs目录下，按照模块和前后端区分不同的日志文件。
 
@@ -363,3 +329,5 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 **如果仅仅修改了前端，无需重启后台服务**
 
 **每次讨论后更新plan时，务必根据讨论结果，全面检查和修订plan文档，而不是仅仅补充讨论结果**
+
+**UML相关的设计，采用在md文档中增加mermaid代码库的方式**

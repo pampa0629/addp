@@ -12,28 +12,28 @@ import (
 
 // Executor 编排执行器
 type Executor struct {
-	execRepo       *repository.ExecutionRepository
-	orchRepo       *repository.OrchestrationRepository
-	engineRegistry *EngineRegistry
-	taskClient     *TaskClient
+	executionService *ExecutionService // 使用统一执行服务
+	orchRepo         *repository.OrchestrationRepository
+	engineRegistry   *EngineRegistry
+	taskClient       *TaskClient
 	// 保留旧客户端以支持向后兼容
 	moduleClient *ModuleClient
 }
 
 // NewExecutor 创建执行器
 func NewExecutor(
-	execRepo *repository.ExecutionRepository,
+	executionService *ExecutionService,
 	orchRepo *repository.OrchestrationRepository,
 	engineRegistry *EngineRegistry,
 	taskClient *TaskClient,
 	moduleClient *ModuleClient, // 可选，用于向后兼容
 ) *Executor {
 	return &Executor{
-		execRepo:       execRepo,
-		orchRepo:       orchRepo,
-		engineRegistry: engineRegistry,
-		taskClient:     taskClient,
-		moduleClient:   moduleClient,
+		executionService: executionService,
+		orchRepo:         orchRepo,
+		engineRegistry:   engineRegistry,
+		taskClient:       taskClient,
+		moduleClient:     moduleClient,
 	}
 }
 
@@ -49,7 +49,7 @@ func (e *Executor) ExecuteAsync(executionID uint) {
 
 // executeSync 同步执行编排
 func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
-	execution, err := e.execRepo.GetByID(executionID)
+	execution, err := e.executionService.GetExecution(ctx, executionID, 0)
 	if err != nil {
 		return err
 	}
@@ -60,16 +60,15 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 	}
 
 	// 标记开始
-	now := time.Now()
-	execution.Status = "running"
-	execution.StartedAt = &now
-	e.execRepo.Update(execution)
+	if err := e.executionService.UpdateStatus(ctx, executionID, "running"); err != nil {
+		return err
+	}
 
 	// 构建 DAG 并拓扑排序
 	graph := buildDAG(orch.Steps)
 	sorted, err := topologicalSort(graph)
 	if err != nil {
-		return e.markFailed(execution, fmt.Errorf("拓扑排序失败: %w", err))
+		return e.markFailed(ctx, executionID, fmt.Errorf("拓扑排序失败: %w", err))
 	}
 
 	// 逐步执行
@@ -81,26 +80,24 @@ func (e *Executor) executeSync(ctx context.Context, executionID uint) error {
 		}
 
 		// 更新当前步骤
-		execution.CurrentStep = step.ID
-		e.execRepo.Update(execution)
+		if err := e.executionService.UpdateCurrentStep(ctx, executionID, step.ID); err != nil {
+			// 记录日志但继续执行
+		}
 
 		// 执行步骤（传递 stepResults 以支持参数模板化）
 		result, err := e.executeStep(ctx, step, stepResults)
 		stepResults[step.ID] = result
 
 		if err != nil {
-			execution.StepResults = stepResults
-			e.execRepo.Update(execution)
-			return e.markFailed(execution, fmt.Errorf("步骤 %s 失败: %w", step.Name, err))
+			e.executionService.UpdateStepResults(ctx, executionID, stepResults)
+			return e.markFailed(ctx, executionID, fmt.Errorf("步骤 %s 失败: %w", step.Name, err))
 		}
 	}
 
 	// 标记完成
-	execution.Status = "completed"
-	execution.StepResults = stepResults
-	completedAt := time.Now()
-	execution.CompletedAt = &completedAt
-	e.execRepo.Update(execution)
+	if err := e.executionService.FinishExecution(ctx, executionID, "completed", "", stepResults); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -405,12 +402,8 @@ func splitPath(path string) []string {
 }
 
 // markFailed 标记执行失败
-func (e *Executor) markFailed(execution *models.Execution, err error) error {
-	execution.Status = "failed"
-	execution.ErrorMessage = err.Error()
-	completedAt := time.Now()
-	execution.CompletedAt = &completedAt
-	e.execRepo.Update(execution)
+func (e *Executor) markFailed(ctx context.Context, executionID uint, err error) error {
+	e.executionService.FinishExecution(ctx, executionID, "failed", err.Error(), nil)
 	return err
 }
 

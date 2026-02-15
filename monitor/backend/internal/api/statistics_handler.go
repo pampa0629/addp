@@ -1,0 +1,77 @@
+package api
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/addp/monitor/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+// StatisticsHandler 统计 Handler
+type StatisticsHandler struct {
+	statisticsService *service.StatisticsService
+}
+
+// NewStatisticsHandler 创建 Handler
+func NewStatisticsHandler(statisticsService *service.StatisticsService) *StatisticsHandler {
+	return &StatisticsHandler{
+		statisticsService: statisticsService,
+	}
+}
+
+// GetStatistics 获取统计数据
+func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
+	// 从 context 获取 tenant_id
+	tenantIDRaw, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		return
+	}
+
+	// 转换类型：中间件设置的是 uint，需要转换为 int
+	tenantID := int(tenantIDRaw.(uint))
+
+	req := &service.StatisticsRequest{
+		TenantID: tenantID,
+		Module:   c.Query("module"),
+		Duration: c.DefaultQuery("duration", "24h"),
+	}
+
+	// 获取统计数据
+	stats, err := h.statisticsService.GetStatistics(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// GetTrendData 获取趋势数据
+func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
+	// 从 context 获取 tenant_id
+	tenantIDRaw, exists := c.Get("tenant_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "tenant_id not found"})
+		return
+	}
+
+	// 转换类型：中间件设置的是 uint，需要转换为 int
+	tenantID := int(tenantIDRaw.(uint))
+
+	// 解析参数
+	module := c.Query("module")
+	days, _ := strconv.Atoi(c.DefaultQuery("days", "7"))
+
+	// 获取趋势数据
+	trendData, err := h.statisticsService.GetTrendData(c.Request.Context(), tenantID, module, days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"trend_data": trendData,
+	})
+}

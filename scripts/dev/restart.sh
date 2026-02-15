@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-gateway] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -15,6 +15,7 @@ show_usage() {
   echo "  -orchestrator 强制重新编译 Orchestrator 模块"
   echo "  -develop     强制重新编译 Develop 模块"
   echo "  -service     强制重新编译 Service 模块"
+  echo "  -monitor     强制重新编译 Monitor 模块"
   echo "  -gateway     强制重新编译 Gateway 模块"
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
@@ -60,7 +61,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-gateway|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;

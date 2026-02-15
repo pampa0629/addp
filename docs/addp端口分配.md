@@ -83,6 +83,8 @@ make ports-validate
 | Develop Frontend      | 5178     | 8095        | 独立访问                   |
 | Service Backend       | 8086     | 8086        | 数据服务、OGC 标准服务     |
 | Service Frontend      | 5180     | 8096        | 独立访问                   |
+| Monitor Backend       | 8100     | 8100        | 执行监控、统计分析         |
+| Monitor Frontend      | 5179     | 5179        | 监控仪表盘                 |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流引擎         |

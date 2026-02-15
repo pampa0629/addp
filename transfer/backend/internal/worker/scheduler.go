@@ -4,23 +4,23 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	commonScheduler "github.com/addp/common/scheduler"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/internal/service"
 )
 
 // Scheduler 定时调度器（使用公共调度模块）
 type Scheduler struct {
-	scheduler     commonScheduler.Scheduler // 公共调度器
-	taskRepo      *repository.TaskRepository
-	taskQueue     *TaskQueue
-	executionRepo *repository.ExecutionRepository
+	scheduler        commonScheduler.Scheduler // 公共调度器
+	taskRepo         *repository.TaskRepository
+	taskQueue        *TaskQueue
+	executionService *service.ExecutionService // 使用统一执行服务
 }
 
 // NewScheduler 创建定时调度器
-func NewScheduler(taskRepo *repository.TaskRepository, executionRepo *repository.ExecutionRepository, taskQueue *TaskQueue) *Scheduler {
+func NewScheduler(taskRepo *repository.TaskRepository, taskQueue *TaskQueue) *Scheduler {
 	// 创建公共调度器（启用秒级精度）
 	scheduler, err := commonScheduler.NewScheduler(commonScheduler.Options{
 		Name:          "transfer",
@@ -31,11 +31,15 @@ func NewScheduler(taskRepo *repository.TaskRepository, executionRepo *repository
 	}
 
 	return &Scheduler{
-		scheduler:     scheduler,
-		taskRepo:      taskRepo,
-		executionRepo: executionRepo,
-		taskQueue:     taskQueue,
+		scheduler: scheduler,
+		taskRepo:  taskRepo,
+		taskQueue: taskQueue,
 	}
+}
+
+// SetExecutionService 设置执行服务（在创建后注入）
+func (s *Scheduler) SetExecutionService(executionService *service.ExecutionService) {
+	s.executionService = executionService
 }
 
 // Start 启动调度器
@@ -109,17 +113,9 @@ func (s *Scheduler) createHandler(task models.Task) commonScheduler.TaskHandler 
 func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) {
 	log.Printf("⏰ 触发定时任务 - TaskID: %d, Name: %s", task.ID, task.Name)
 
-	now := time.Now()
-
-	// 创建执行记录
-	execution := &models.TaskExecution{
-		TaskID:      task.ID,
-		Status:      models.ExecutionStatusPending,
-		StartTime:   models.LocalTime{Time: now},
-		TriggerType: "schedule",
-	}
-
-	if err := s.executionRepo.Create(execution); err != nil {
+	// 创建执行记录（使用统一执行服务）
+	execution, err := s.executionService.CreateExecution(ctx, task.ID, "schedule", nil)
+	if err != nil {
 		log.Printf("❌ 创建执行记录失败 - TaskID: %d, Error: %v", task.ID, err)
 		return
 	}
@@ -135,7 +131,7 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 	if err := s.taskQueue.EnqueueExecuteTask(ctx, task.ID, execution.ID, task.TenantID); err != nil {
 		log.Printf("❌ 任务入队失败 - TaskID: %d, Error: %v", task.ID, err)
 		// 更新执行状态为失败
-		if err := s.executionRepo.FinishExecution(execution.ID, models.ExecutionStatusFailed, err.Error()); err != nil {
+		if err := s.executionService.FinishExecution(ctx, execution.ID, models.ExecutionStatusFailed, err.Error()); err != nil {
 			log.Printf("❌ 更新执行状态失败 - ExecutionID: %d, Error: %v", execution.ID, err)
 		}
 		// 回滚任务状态为空闲

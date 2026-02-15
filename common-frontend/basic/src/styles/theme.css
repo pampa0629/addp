@@ -325,6 +325,14 @@ html.blue {
     color: var(--addp-text-primary) !important;
   }
 
+  /* 确保菜单项中的 span 和图标也使用正确的颜色 */
+  .el-menu-item span,
+  .el-sub-menu__title span,
+  .el-menu-item .el-icon,
+  .el-sub-menu__title .el-icon {
+    color: var(--addp-text-primary) !important;
+  }
+
   .el-menu-item:hover,
   .el-sub-menu__title:hover {
     background-color: var(--addp-bg-secondary) !important;
@@ -332,6 +340,12 @@ html.blue {
 
   .el-menu-item.is-active {
     background-color: var(--addp-bg-secondary) !important;
+    color: var(--el-color-primary) !important;
+  }
+
+  /* 激活状态的菜单项内的文字和图标 */
+  .el-menu-item.is-active span,
+  .el-menu-item.is-active .el-icon {
     color: var(--el-color-primary) !important;
   }
 

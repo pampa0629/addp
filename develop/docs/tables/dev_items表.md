@@ -117,6 +117,7 @@
 |---|------|------------|
 | `query` | SQL/MQL 查询 | `{"query_type": "sql", "query": "SELECT * FROM cities"}` |
 | `workflow` | GIS 工作流 | `{"workflow_definition": {...}}` |
+| `script` | 脚本开发 | `{"script": "print('hello')", "language": "python"}` |
 | `notebook` | Jupyter Notebook | `{"cells": [...], "metadata": {...}}` |
 
 ---
