@@ -447,7 +447,7 @@ const resetParams = () => {
   display: inline-block;
   width: 4px;
   height: 14px;
-  background: #409eff;
+  background: var(--el-color-primary);
   margin-right: 8px;
   border-radius: 2px;
 }
@@ -465,7 +465,7 @@ const resetParams = () => {
 }
 
 .help-icon:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .data-source-section {

@@ -183,12 +183,12 @@ const exportCSV = () => {
 }
 
 .number-value {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 
 .boolean-value {
-  color: #67c23a;
+  color: var(--el-color-success);
   font-weight: 500;
 }
 
