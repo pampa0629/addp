@@ -44,7 +44,7 @@
               几何列：{{ selectedTable.geometryColumn }}
               (SRID: {{ selectedTable.srid }})
             </div>
-            <div v-else style="margin-top: 8px; font-size: 13px; color: #909399">
+            <div v-else style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
               无几何列
             </div>
           </template>

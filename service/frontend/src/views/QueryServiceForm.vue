@@ -817,7 +817,7 @@ onMounted(async () => {
 
 .config-card-wrapper {
   flex: 1;
-  border: 2px solid #dcdfe6;
+  border: 2px solid var(--addp-border-color);
   border-radius: 8px;
   padding: 20px;
   cursor: pointer;

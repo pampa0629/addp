@@ -195,7 +195,7 @@
         </div>
 
         <!-- Table模式：显示查询参数说明 -->
-        <div v-if="service?.config_type === 'table'" style="margin-top: 12px; font-size: 13px; color: #606266">
+        <div v-if="service?.config_type === 'table'" style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
           <strong>支持的查询参数：</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
             <li><code>filter</code>：WHERE条件（如：name='张三' AND age>20）</li>
@@ -207,7 +207,7 @@
         </div>
 
         <!-- SQL模式：显示查询参数说明 -->
-        <div v-else style="margin-top: 12px; font-size: 13px; color: #606266">
+        <div v-else style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
           <strong>支持的查询参数：</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
             <li><code>page</code> 和 <code>page_size</code>：分页参数</li>
@@ -671,7 +671,7 @@ onMounted(() => {
 
 .sql-query-box {
   background-color: var(--addp-bg-secondary);
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   padding: 16px;
   overflow-x: auto;

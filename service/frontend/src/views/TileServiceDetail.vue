@@ -96,7 +96,7 @@
         <el-table-column label="数据源" min-width="200">
           <template #default="{ row }">
             <div v-if="row.layer_type === 'dynamic'">
-              <div style="font-size: 12px; color: #606266">
+              <div style="font-size: 12px; color: var(--addp-text-secondary)">
                 Engine #{{ row.layer_config?.source?.engine_id }}
               </div>
               <code style="font-size: 12px">
@@ -163,7 +163,7 @@
           <el-button @click="copyEndpoint(xyzTilesEndpoint)">复制</el-button>
           <el-button @click="testXYZTile">测试</el-button>
         </div>
-        <div style="margin-top: 8px; font-size: 13px; color: #909399">
+        <div style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
           示例: <code>{{ xyzTilesExample }}</code>
         </div>
       </div>
@@ -228,7 +228,7 @@
         </el-select>
       </div>
 
-      <div v-if="selectedLayerForPreview" style="width: 100%; height: 600px; border: 1px solid #dcdfe6; border-radius: 4px">
+      <div v-if="selectedLayerForPreview" style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px">
         <TilePreview
           :tile-url="previewTileUrl"
           base-map="osm"
@@ -241,7 +241,7 @@
       </div>
       <div
         v-else
-        style="width: 100%; height: 600px; border: 1px solid #dcdfe6; border-radius: 4px; display: flex; align-items: center; justify-content: center"
+        style="width: 100%; height: 600px; border: 1px solid var(--addp-border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center"
       >
         <el-empty description="请选择图层查看地图预览" />
       </div>
@@ -907,7 +907,7 @@ code {
 
 .code-example {
   background-color: var(--addp-bg-secondary);
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
   padding: 16px;
   overflow-x: auto;
