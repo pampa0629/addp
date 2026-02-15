@@ -350,14 +350,14 @@ watch(() => [props.page, props.pageSize], async () => {
 .ol-popup-closer:after {
   content: "✕";
   font-size: 16px;
-  color: #666;
+  color: var(--addp-text-secondary);
   display: block;
   text-align: center;
   line-height: 20px;
 }
 
 .ol-popup-closer:hover:after {
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .ol-popup-content {
@@ -406,7 +406,7 @@ watch(() => [props.page, props.pageSize], async () => {
 .ol-popup-content :deep(.primary-value) {
   font-size: 20px;
   font-weight: 700;
-  color: #333;
+  color: var(--addp-text-primary);
   margin-bottom: 4px;
   line-height: 1.3;
 }
@@ -435,7 +435,7 @@ watch(() => [props.page, props.pageSize], async () => {
 
 .ol-popup-content :deep(.attr-key) {
   font-weight: 600;
-  color: #666;
+  color: var(--addp-text-secondary);
   margin-right: 4px;
 }
 

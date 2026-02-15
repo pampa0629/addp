@@ -928,7 +928,7 @@ onMounted(() => {
   justify-content: center;
   height: 100%;
   gap: 16px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 
 .loading-container .el-icon {
@@ -971,7 +971,7 @@ onMounted(() => {
   justify-content: center;
   height: 100%;
   gap: 16px;
-  color: #666;
+  color: var(--addp-text-secondary);
   padding: 24px;
 }
 

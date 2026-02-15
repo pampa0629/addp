@@ -1532,7 +1532,7 @@ body.is-resizing .map-splitter::after {
   font-family: 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.6;
-  color: #333;
+  color: var(--addp-text-primary);
   background-color: var(--addp-bg-primary);
   padding: 12px;
   border-radius: 4px;
