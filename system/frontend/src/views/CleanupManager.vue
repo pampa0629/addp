@@ -390,7 +390,7 @@ onMounted(() => {
 .module-result {
   margin-top: 30px;
   padding: 20px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 
@@ -401,7 +401,7 @@ onMounted(() => {
 
 .stat-detail {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 5px;
 }
 
@@ -417,7 +417,7 @@ onMounted(() => {
   margin-top: 30px;
   padding: 20px;
   background: #fff;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--addp-border-color);
   border-radius: 4px;
 }
 

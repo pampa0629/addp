@@ -273,7 +273,7 @@
           <!-- 能力声明标签页 -->
           <el-tab-pane label="能力声明" v-if="selectedEngine.capabilities">
             <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).storage?.length > 0" style="margin-bottom: 20px">
-              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">存储能力</div>
+              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">存储能力</div>
               <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).storage" border size="small">
                 <el-table-column prop="type" label="类型" width="150">
                   <template #default="{ row }">
@@ -284,7 +284,7 @@
               </el-table>
             </div>
             <div v-if="parseCapabilitiesJSON(selectedEngine.capabilities).compute?.length > 0">
-              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">计算能力</div>
+              <div style="font-weight: 500; margin-bottom: 12px; color: var(--addp-text-primary); font-size: 14px">计算能力</div>
               <el-table :data="parseCapabilitiesJSON(selectedEngine.capabilities).compute" border size="small">
                 <el-table-column prop="type" label="类型" width="150">
                   <template #default="{ row }">
@@ -942,12 +942,12 @@ onMounted(() => {
 .filter-label {
   font-weight: 500;
   margin-right: 16px;
-  color: #606266;
+  color: var(--addp-text-secondary);
 }
 
 /* 内置引擎行样式 */
 :deep(.builtin-engine-row) {
-  background-color: #f5f7fa;
+  background-color: var(--addp-bg-secondary);
 }
 
 :deep(.builtin-engine-row:hover) {
@@ -979,7 +979,7 @@ onMounted(() => {
 }
 
 .status-unknown {
-  background-color: #909399;
+  background-color: var(--addp-text-tertiary);
   box-shadow: 0 0 6px rgba(144, 147, 153, 0.6);
 }
 
@@ -1027,13 +1027,13 @@ onMounted(() => {
   margin: 16px 0 8px;
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--addp-text-primary);
 }
 
 .type-card p {
   margin: 0 0 16px;
   font-size: 14px;
-  color: #606266;
+  color: var(--addp-text-secondary);
   line-height: 1.5;
 }
 
@@ -1042,7 +1042,7 @@ onMounted(() => {
   padding: 0;
   margin: 0;
   font-size: 13px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
 }
 
 .type-card ul li {

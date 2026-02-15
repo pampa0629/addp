@@ -313,7 +313,7 @@ const actionChartOption = computed(() => ({
     data: stats.value.actionDistribution.map(a => a.count),
     itemStyle: {
       color: function(params) {
-        const colors = ['#E6A23C', '#F56C6C', '#909399', '#67C23A']
+        const colors = ['#E6A23C', '#F56C6C', 'var(--addp-text-tertiary)', '#67C23A']
         return colors[params.dataIndex % colors.length]
       }
     }
