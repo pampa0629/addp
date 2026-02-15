@@ -505,6 +505,6 @@ const resetParams = () => {
 }
 
 .operator-params-panel::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+  background: var(--addp-text-tertiary);
 }
 </style>

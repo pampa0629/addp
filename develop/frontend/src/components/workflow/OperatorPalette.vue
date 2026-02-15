@@ -395,6 +395,6 @@ onMounted(() => {
 }
 
 .operator-categories::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+  background: var(--addp-text-tertiary);
 }
 </style>
