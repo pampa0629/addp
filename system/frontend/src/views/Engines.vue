@@ -969,12 +969,12 @@ onMounted(() => {
 }
 
 .status-online {
-  background-color: #67c23a;
+  background-color: var(--el-color-success);
   box-shadow: 0 0 6px rgba(103, 194, 58, 0.6);
 }
 
 .status-offline {
-  background-color: #f56c6c;
+  background-color: var(--el-color-danger);
   box-shadow: 0 0 6px rgba(245, 108, 108, 0.6);
 }
 
@@ -984,7 +984,7 @@ onMounted(() => {
 }
 
 .status-checking {
-  background-color: #e6a23c;
+  background-color: var(--el-color-warning);
   box-shadow: 0 0 6px rgba(230, 162, 60, 0.6);
   animation: pulse 1.5s ease-in-out infinite;
 }
@@ -1015,7 +1015,7 @@ onMounted(() => {
 
 .type-card:hover {
   transform: translateY(-5px);
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
 }
 
 .type-icon {

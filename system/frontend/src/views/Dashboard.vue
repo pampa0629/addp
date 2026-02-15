@@ -31,7 +31,7 @@
       </el-col>
       <el-col :span="6">
         <el-card shadow="hover">
-          <el-statistic title="今日错误" :value="stats.errorCount" :loading="loading" :value-style="{ color: stats.errorCount > 0 ? '#f56c6c' : '#67c23a' }">
+          <el-statistic title="今日错误" :value="stats.errorCount" :loading="loading" :value-style="{ color: stats.errorCount > 0 ? 'var(--el-color-danger)' : 'var(--el-color-success)' }">
             <template #prefix>
               <el-icon><Monitor /></el-icon>
             </template>
@@ -200,11 +200,11 @@ const trendChartOption = computed(() => {
         }
       },
       lineStyle: {
-        color: '#409EFF',
+        color: 'var(--el-color-primary)',
         width: 2
       },
       itemStyle: {
-        color: '#409EFF'
+        color: 'var(--el-color-primary)'
       }
     }]
   }
@@ -241,7 +241,7 @@ const userChartOption = computed(() => ({
         x2: 0,
         y2: 1,
         colorStops: [
-          { offset: 0, color: '#67C23A' },
+          { offset: 0, color: 'var(--el-color-success)' },
           { offset: 1, color: '#85CE61' }
         ]
       }
@@ -280,7 +280,7 @@ const moduleChartOption = computed(() => ({
         x2: 0,
         y2: 1,
         colorStops: [
-          { offset: 0, color: '#409EFF' },
+          { offset: 0, color: 'var(--el-color-primary)' },
           { offset: 1, color: '#66B1FF' }
         ]
       }
@@ -313,7 +313,7 @@ const actionChartOption = computed(() => ({
     data: stats.value.actionDistribution.map(a => a.count),
     itemStyle: {
       color: function(params) {
-        const colors = ['#E6A23C', '#F56C6C', 'var(--addp-text-tertiary)', '#67C23A']
+        const colors = ['var(--el-color-warning)', 'var(--el-color-danger)', 'var(--addp-text-tertiary)', 'var(--el-color-success)']
         return colors[params.dataIndex % colors.length]
       }
     }
