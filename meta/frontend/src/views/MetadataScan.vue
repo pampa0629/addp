@@ -72,7 +72,7 @@
                       placement="top"
                     >
                       <div class="schedule-indicator">
-                        <el-icon :color="resourcePlanMap[row.id].enabled ? '#67C23A' : '#909399'">
+                        <el-icon :color="resourcePlanMap[row.id].enabled ? '#67C23A' : 'var(--addp-text-tertiary)'">
                           <Clock />
                         </el-icon>
                         <span>{{ resourcePlanMap[row.id].enabled ? '调度已启用' : '调度未启用' }}</span>
@@ -192,7 +192,7 @@
                         :content="`继承引擎调度：${engineScheduleDesc}`"
                         placement="top"
                       >
-                        <el-icon color="#909399" :size="16" class="schedule-icon">
+                        <el-icon color="var(--addp-text-tertiary)" :size="16" class="schedule-icon">
                           <Link />
                         </el-icon>
                       </el-tooltip>
@@ -284,7 +284,7 @@
           <li>{{ inheritanceInfo.independent }} 个已配置独立调度</li>
           <li>{{ inheritanceInfo.inherited }} 个将继承引擎调度</li>
         </ul>
-        <div style="margin-top: 8px; color: #909399">
+        <div style="margin-top: 8px; color: var(--addp-text-tertiary)">
           引擎调度只会扫描未配置独立调度的{{ getSchemaTerminology(selectedResource.resource_type) }}
         </div>
       </el-alert>
@@ -734,10 +734,10 @@ const getConnectionIconColor = (status) => {
   const colorMap = {
     'online': '#67C23A',
     'offline': '#F56C6C',
-    'unknown': '#909399',
+    'unknown': 'var(--addp-text-tertiary)',
     'checking': '#E6A23C'
   }
-  return colorMap[status] || '#909399'
+  return colorMap[status] || 'var(--addp-text-tertiary)'
 }
 
 const getConnectionStatusLabel = (status) => {
@@ -1239,7 +1239,7 @@ onBeforeUnmount(() => {
 }
 
 .detail-separator {
-  color: #DCDFE6;
+  color: var(--addp-border-color);
 }
 
 /* ========== Schema操作列 ========== */
@@ -1299,14 +1299,14 @@ onBeforeUnmount(() => {
 .panel-resizer {
   flex: 0 0 6px;
   cursor: col-resize;
-  background: linear-gradient(180deg, #dcdfe6 0%, #c0c4cc 100%);
+  background: linear-gradient(180deg, var(--addp-border-color) 0%, #c0c4cc 100%);
   border-radius: 3px;
   align-self: stretch;
   margin: 0 4px;
 }
 
 .panel-resizer:hover {
-  background: linear-gradient(180deg, #c0c4cc 0%, #909399 100%);
+  background: linear-gradient(180deg, #c0c4cc 0%, var(--addp-text-tertiary) 100%);
 }
 
 .right-panel {
