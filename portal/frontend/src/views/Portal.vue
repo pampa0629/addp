@@ -224,7 +224,7 @@
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('system')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#409EFF"><Setting /></el-icon>
+                  <el-icon :size="48" color="var(--el-color-primary)"><Setting /></el-icon>
                   <h2>系统管理</h2>
                   <p>用户管理、日志查询、引擎配置</p>
                 </div>
@@ -233,7 +233,7 @@
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('transfer')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#F56C6C"><Upload /></el-icon>
+                  <el-icon :size="48" color="var(--el-color-danger)"><Upload /></el-icon>
                   <h2>数据传输</h2>
                   <p>数据导入、数据导出、任务调度</p>
                 </div>
@@ -245,7 +245,7 @@
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('manager')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#67C23A"><DataAnalysis /></el-icon>
+                  <el-icon :size="48" color="var(--el-color-success)"><DataAnalysis /></el-icon>
                   <h2>数据管理</h2>
                   <p>数据源管理、目录组织、数据预览</p>
                 </div>
@@ -287,7 +287,7 @@
             <el-col :span="12">
               <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
                 <div class="card-content">
-                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
+                  <el-icon :size="48" color="var(--el-color-warning)"><Box /></el-icon>
                   <h2>元数据管理</h2>
                   <p>元数据解析、数据血缘、数据目录</p>
                 </div>
