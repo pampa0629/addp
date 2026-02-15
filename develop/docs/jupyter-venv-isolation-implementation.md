@@ -16,7 +16,7 @@
 │   └─ 使用 MinIOContentsManager 按 tenant_id 隔离文件
 │
 └─ 租户独立虚拟环境 (持久化,读写)
-    └─ data/jupyter/tenants/tenant_{id}/
+    └─ engines/jupyter/tenants/tenant_{id}/
         ├─ venv/ (继承基础环境 + 租户自己安装的库)
         └─ .jupyter/kernels/tenant_{id}/
             └─ kernel.json (环境变量: TENANT_ID)
@@ -198,7 +198,7 @@ Jupyter Server 启动 (startup.sh)
 - ✅ 租户 A 安装的库，租户 B 看不到
 
 ### 3. 持久化
-- ✅ `data/jupyter/tenants/` 目录持久化保存
+- ✅ `engines/jupyter/tenants/` 目录持久化保存
 - ✅ ADDP 重启后，虚拟环境和已安装的库全部保留
 - ✅ 无需重新初始化
 
@@ -244,9 +244,9 @@ cd engines/jupyter
 ```
 
 验证:
-- [ ] 虚拟环境创建成功: `data/jupyter/tenants/tenant_1/venv/`
+- [ ] 虚拟环境创建成功: `engines/jupyter/tenants/tenant_1/venv/`
 - [ ] Kernel 注册成功: `~/.local/share/jupyter/kernels/tenant_1/`
-- [ ] 可以列出继承的基础库: `data/jupyter/tenants/tenant_1/venv/bin/pip list`
+- [ ] 可以列出继承的基础库: `engines/jupyter/tenants/tenant_1/venv/bin/pip list`
 
 ### 4. 测试后端 API
 ```bash
@@ -286,10 +286,10 @@ print(df)
 ./engines/jupyter/init_tenant_venv.sh 2
 
 # 租户 1 安装库
-data/jupyter/tenants/tenant_1/venv/bin/pip install scikit-learn
+engines/jupyter/tenants/tenant_1/venv/bin/pip install scikit-learn
 
 # 验证租户 2 看不到
-data/jupyter/tenants/tenant_2/venv/bin/pip list | grep scikit-learn
+engines/jupyter/tenants/tenant_2/venv/bin/pip list | grep scikit-learn
 # 应该为空
 ```
 
@@ -299,7 +299,7 @@ data/jupyter/tenants/tenant_2/venv/bin/pip list | grep scikit-learn
 bash scripts/dev/restart.sh -develop
 
 # 验证虚拟环境仍然存在
-ls data/jupyter/tenants/tenant_1/venv/
+ls engines/jupyter/tenants/tenant_1/venv/
 
 # 验证 Kernel 仍然可用
 jupyter kernelspec list | grep tenant_1
@@ -330,4 +330,4 @@ jupyter kernelspec list | grep tenant_1
 - `develop/frontend/src/views/NotebookEditor.vue` - 界面 (待改造)
 
 ### 数据
-- `data/jupyter/tenants/` - 租户虚拟环境数据 (持久化)
+- `engines/jupyter/tenants/` - 租户虚拟环境数据 (持久化)

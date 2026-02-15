@@ -567,7 +567,9 @@
       "Bash(GOPROXY=https://goproxy.cn,direct go mod tidy:*)",
       "Bash(head:*)",
       "Bash(npm view:*)",
-      "Bash(md5:*)"
+      "Bash(md5:*)",
+      "Bash(/tmp/color_audit.sh:*)",
+      "Bash(/tmp/color_audit.sh)"
     ],
     "deny": [],
     "ask": [],

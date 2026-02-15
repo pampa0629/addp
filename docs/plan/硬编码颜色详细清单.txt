@@ -1,0 +1,583 @@
+=== ADDP 硬编码颜色详细审计清单 ===
+
+生成时间: Mon Feb 16 01:12:56 CST 2026
+扫描目录: */frontend/src
+
+========================================
+
+## 模块: portal
+
+硬编码数量: 8 处
+
+views/Portal.vue:227:                  <el-icon :size="48" color="#409EFF"><Setting /></el-icon>
+views/Portal.vue:236:                  <el-icon :size="48" color="#F56C6C"><Upload /></el-icon>
+views/Portal.vue:248:                  <el-icon :size="48" color="#67C23A"><DataAnalysis /></el-icon>
+views/Portal.vue:257:                  <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
+views/Portal.vue:269:                  <el-icon :size="48" color="#1890FF"><Link /></el-icon>
+views/Portal.vue:278:                  <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
+views/Portal.vue:290:                  <el-icon :size="48" color="#E6A23C"><Box /></el-icon>
+views/Portal.vue:299:                  <el-icon :size="48" color="#13C2C2"><DataLine /></el-icon>
+
+----------------------------------------
+
+## 模块: system
+
+硬编码数量: 37 处
+
+views/Dashboard.vue:34:          <el-statistic title="今日错误" :value="stats.errorCount" :loading="loading" :value-style="{ color: stats.errorCount > 0 ? '#f56c6c' : '#67c23a' }">
+views/Dashboard.vue:203:        color: '#409EFF',
+views/Dashboard.vue:207:        color: '#409EFF'
+views/Dashboard.vue:244:          { offset: 0, color: '#67C23A' },
+views/Dashboard.vue:245:          { offset: 1, color: '#85CE61' }
+views/Dashboard.vue:283:          { offset: 0, color: '#409EFF' },
+views/Dashboard.vue:284:          { offset: 1, color: '#66B1FF' }
+views/Dashboard.vue:316:        const colors = ['#E6A23C', '#F56C6C', '#909399', '#67C23A']
+views/Login.vue:137:  color: #303133;
+views/Login.vue:143:  color: #909399;
+views/Engines.vue:276:              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">存储能力</div>
+views/Engines.vue:287:              <div style="font-weight: 500; margin-bottom: 12px; color: #303133; font-size: 14px">计算能力</div>
+views/Engines.vue:939:  border-bottom: 1px solid #ebeef5;
+views/Engines.vue:945:  color: #606266;
+views/Engines.vue:950:  background-color: #f5f7fa;
+views/Engines.vue:954:  background-color: #ebeef5 !important;
+views/Engines.vue:972:  background-color: #67c23a;
+views/Engines.vue:977:  background-color: #f56c6c;
+views/Engines.vue:982:  background-color: #909399;
+views/Engines.vue:987:  background-color: #e6a23c;
+views/Engines.vue:1018:  border-color: #409eff;
+views/Engines.vue:1030:  color: #303133;
+views/Engines.vue:1036:  color: #606266;
+views/Engines.vue:1045:  color: #909399;
+views/Logs.vue:482:  color: #f56c6c;
+views/Logs.vue:489:  border: 1px solid #f56c6c;
+views/Logs.vue:494:  color: #F56C6C;
+views/Logs.vue:499:  color: #E6A23C;
+views/Developer.vue:345:  background: #282c34;
+views/Developer.vue:346:  color: #abb2bf;
+views/Applications.vue:513:  color: #909399;
+views/Applications.vue:519:  color: #909399;
+views/Applications.vue:525:  background: #f5f7fa;
+views/CleanupManager.vue:393:  background: #f5f7fa;
+views/CleanupManager.vue:404:  color: #909399;
+views/CleanupManager.vue:419:  background: #fff;
+views/CleanupManager.vue:420:  border: 1px solid #dcdfe6;
+
+----------------------------------------
+
+## 模块: manager
+
+硬编码数量: 117 处
+
+composables/useOpenLayersMap.js:24:    fill: new Fill({ color: '#409EFF' }),
+composables/useOpenLayersMap.js:25:    stroke: new Stroke({ color: '#ffffff', width: 2 })
+composables/useOpenLayersMap.js:30:  stroke: new Stroke({ color: '#67C23A', width: 2 }),
+composables/useGaodeMap.js:162:        strokeColor: '#ffffff',
+composables/useGaodeMap.js:164:        fillColor: '#409EFF',
+composables/useGaodeMap.js:182:      strokeColor: '#67C23A',
+composables/useGaodeMap.js:185:      fillColor: '#67C23A',
+composables/useGaodeMap.js:194:      strokeColor: '#409EFF',
+components/ThemeDebugger.vue:109:  color: #00ff00;
+components/ThemeDebugger.vue:110:  border: 2px solid #00ff00;
+components/ThemeDebugger.vue:125:  border-bottom: 1px solid #00ff00;
+components/ThemeDebugger.vue:130:  color: #00ff00;
+components/ThemeDebugger.vue:136:  border: 1px solid #00ff00;
+components/ThemeDebugger.vue:137:  color: #00ff00;
+components/ThemeDebugger.vue:145:  background: #00ff00;
+components/ThemeDebugger.vue:146:  color: #000;
+components/ThemeDebugger.vue:163:  color: #ffff00;
+components/ThemeDebugger.vue:167:  color: #ff6b6b;
+components/ThemeDebugger.vue:171:  color: #00ff00;
+components/ThemeDebugger.vue:176:  border-top: 1px dashed #00ff00;
+components/ThemeDebugger.vue:182:  color: #ffff00;
+components/ThemeDebugger.vue:195:  color: #00ffff;
+components/ThemeDebugger.vue:202:  border: 1px solid #00ff00;
+components/ThemeDebugger.vue:207:  background: #00ff00;
+components/ThemeDebugger.vue:208:  color: #000;
+components/ThemeDebugger.vue:218:  background: #00cc00;
+components/map/GeoJSONPreview.vue:279:  color: #fff;
+components/map/GeoJSONPreview.vue:290:  color: #fff;
+components/map/GeoJSONPreview.vue:304:  border: 1px solid #ccc;
+components/map/GeoJSONPreview.vue:334:  border-top-color: #ccc;
+components/map/GeoJSONPreview.vue:353:  color: #666;
+components/map/GeoJSONPreview.vue:360:  color: #333;
+components/map/GeoJSONPreview.vue:378:  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+components/map/GeoJSONPreview.vue:403:  border-bottom: 2px solid #f0f0f0;
+components/map/GeoJSONPreview.vue:409:  color: #333;
+components/map/GeoJSONPreview.vue:429:  border-bottom: 1px solid #f5f5f5;
+components/map/GeoJSONPreview.vue:438:  color: #666;
+components/map/GeoJSONPreview.vue:443:  color: #000;
+components/map/GaodeMapRenderer.vue:107:  background-color: #409eff;
+components/map/GaodeMapRenderer.vue:108:  border: 2px solid #ffffff;
+components/map/VectorTilePreview.vue:355:  color: #666;
+components/map/VectorTilePreview.vue:361:  border: 4px solid #f3f3f3;
+components/map/VectorTilePreview.vue:362:  border-top: 4px solid #409eff;
+components/map/VectorTilePreview.vue:383:  background: #fef0f0;
+components/map/VectorTilePreview.vue:384:  border: 1px solid #fde2e2;
+components/map/VectorTilePreview.vue:385:  color: #f56c6c;
+components/map/VectorTilePreview.vue:407:  background: #f56c6c;
+components/map/VectorTilePreview.vue:419:  background: #f78989;
+components/map/VectorTilePreview.vue:423:  background: #dd6161;
+components/map/VectorTilePreview.vue:433:  border: 1px solid #ccc;
+components/map/VectorTilePreview.vue:463:  border-top-color: #ccc;
+components/map/VectorTilePreview.vue:482:  color: #666;
+components/map/VectorTilePreview.vue:489:  color: #333;
+components/map/VectorTilePreview.vue:507:  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+components/map/VectorTilePreview.vue:532:  border-bottom: 2px solid #f0f0f0;
+components/map/VectorTilePreview.vue:538:  color: #333;
+components/map/VectorTilePreview.vue:558:  border-bottom: 1px solid #f5f5f5;
+components/map/VectorTilePreview.vue:567:  color: #666;
+components/map/VectorTilePreview.vue:572:  color: #000;
+components/previews/PptxPreview.vue:33:            <el-icon :size="24" color="#d04726" class="file-type-icon">
+components/previews/PptxPreview.vue:319:  color: #409eff;
+components/previews/PptxPreview.vue:338:  color: #f56c6c;
+components/previews/PptxPreview.vue:459:  border-bottom: 2px solid #f0f0f0;
+components/previews/VideoPreview.vue:336:  background: #000;
+components/previews/DocxPreview.vue:931:  color: #666;
+components/previews/DocxPreview.vue:936:  color: #409eff;
+components/previews/DocxPreview.vue:951:  background: #f4f4f5;
+components/previews/DocxPreview.vue:963:  color: #67c23a !important;
+components/previews/DocxPreview.vue:974:  color: #666;
+components/previews/DocxPreview.vue:980:  color: #f56c6c;
+components/previews/DocxPreview.vue:1061:  color: #409eff;
+components/previews/DocxPreview.vue:1091:  background: #f8f9fb;
+components/previews/DocxPreview.vue:1131:  border-left: 4px solid #409eff;
+components/previews/DocxPreview.vue:1132:  background: #f4f4f5;
+components/previews/DocxPreview.vue:1166:  border: 1px solid #dcdfe6;
+components/previews/DocxPreview.vue:1189:  color: #409eff;
+components/previews/DocxPreview.vue:1203:  color: #e6a23c;
+components/previews/ExcelPreview.vue:216:  background: #f4f7ff;
+components/previews/ExcelPreview.vue:242:  border: 1px solid #ebeef5;
+components/previews/ImagePreview.vue:242:  border-left: 3px solid #e6a23c;
+components/previews/ImagePreview.vue:249:  color: #e6a23c;
+components/previews/TablePreview.vue:364:            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+components/previews/TablePreview.vue:374:            style="width: 100%; padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 4px; font-size: 14px;"
+components/previews/TablePreview.vue:492:            <span style="color: #f56c6c; font-weight: bold;">❌ {{ check.message }}</span>
+components/previews/TablePreview.vue:500:            <span style="color: #67c23a; font-weight: bold;">✅ {{ check.message }}</span>
+components/previews/TablePreview.vue:1502:  border-left: 3px solid #f56c6c;
+components/previews/TablePreview.vue:1509:  border-left: 3px solid #67c23a;
+components/previews/TablePreview.vue:1516:  border-left: 3px solid #909399;
+components/previews/TablePreview.vue:1535:  color: #333;
+components/previews/ExtractedMetadata.vue:377:.section-video h4 { color: #409eff; }
+components/previews/ExtractedMetadata.vue:378:.section-video .section-icon { color: #409eff; }
+components/previews/ExtractedMetadata.vue:379:.section-video { border-left: 3px solid #409eff; }
+components/previews/ExtractedMetadata.vue:381:.section-audio h4 { color: #67c23a; }
+components/previews/ExtractedMetadata.vue:382:.section-audio .section-icon { color: #67c23a; }
+components/previews/ExtractedMetadata.vue:383:.section-audio { border-left: 3px solid #67c23a; }
+components/previews/ExtractedMetadata.vue:385:.section-image h4 { color: #e6a23c; }
+components/previews/ExtractedMetadata.vue:386:.section-image .section-icon { color: #e6a23c; }
+components/previews/ExtractedMetadata.vue:387:.section-image { border-left: 3px solid #e6a23c; }
+components/previews/ExtractedMetadata.vue:389:.section-document h4 { color: #f56c6c; }
+components/previews/ExtractedMetadata.vue:390:.section-document .section-icon { color: #f56c6c; }
+components/previews/ExtractedMetadata.vue:391:.section-document { border-left: 3px solid #f56c6c; }
+components/previews/ExtractedMetadata.vue:395:.section-geo { border-left: 3px solid #909399; }
+components/previews/ExtractedMetadata.vue:399:.section-table { border-left: 3px solid #606266; }
+components/previews/ExtractedMetadata.vue:403:.section-database { border-left: 3px solid #303133; }
+components/previews/ExtractedMetadata.vue:405:.section-text h4 { color: #79bbff; }
+components/previews/ExtractedMetadata.vue:406:.section-text .section-icon { color: #79bbff; }
+components/previews/ExtractedMetadata.vue:407:.section-text { border-left: 3px solid #79bbff; }
+views/Metadata.vue:355:              <el-icon v-if="row.is_primary_key" color="#67C23A"><Key /></el-icon>
+views/DataRetrieval.vue:501:  color: #1f2d3d;
+views/DataRetrieval.vue:540:  color: #409eff;
+views/DataRetrieval.vue:609:  color: #409eff;
+views/DataRetrieval.vue:625:  color: #1f2d3d;
+views/DataRetrieval.vue:641:  border-bottom: 1px solid #ebeef5;
+views/DataRetrieval.vue:676:  color: #409eff;
+views/DataRetrieval.vue:694:  border: 1px solid #f0ad4e;
+views/DataRetrieval.vue:709:  background-color: #ffe58f;
+views/SpatialPreview.vue:39:.toolbar { height: 44px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #eee; }
+
+----------------------------------------
+
+## 模块: meta
+
+硬编码数量: 24 处
+
+components/Layout.vue:143:  color: #409eff;
+views/MetadataScan.vue:75:                        <el-icon :color="resourcePlanMap[row.id].enabled ? '#67C23A' : '#909399'">
+views/MetadataScan.vue:82:                      <el-icon color="#C0C4CC"><Clock /></el-icon>
+views/MetadataScan.vue:186:                        <el-icon color="#409EFF" :size="16" class="schedule-icon">
+views/MetadataScan.vue:195:                        <el-icon color="#909399" :size="16" class="schedule-icon">
+views/MetadataScan.vue:249:        <p style="margin-top: 20px; text-align: center; color: #999">{{ scanMessage }}</p>
+views/MetadataScan.vue:287:        <div style="margin-top: 8px; color: #909399">
+views/MetadataScan.vue:735:    'online': '#67C23A',
+views/MetadataScan.vue:736:    'offline': '#F56C6C',
+views/MetadataScan.vue:737:    'unknown': '#909399',
+views/MetadataScan.vue:738:    'checking': '#E6A23C'
+views/MetadataScan.vue:740:  return colorMap[status] || '#909399'
+views/MetadataScan.vue:1155:  color: #67C23A;
+views/MetadataScan.vue:1160:  color: #E6A23C;
+views/MetadataScan.vue:1186:  color: #C0C4CC;
+views/MetadataScan.vue:1195:  color: #C0C4CC;
+views/MetadataScan.vue:1242:  color: #DCDFE6;
+views/MetadataScan.vue:1267:  color: #409EFF;
+views/MetadataScan.vue:1282:  background-color: #ecf5ff;
+views/MetadataScan.vue:1295:  border-right: 1px solid #f2f3f5;
+views/MetadataScan.vue:1302:  background: linear-gradient(180deg, #dcdfe6 0%, #c0c4cc 100%);
+views/MetadataScan.vue:1309:  background: linear-gradient(180deg, #c0c4cc 0%, #909399 100%);
+views/TaskMonitor.vue:104:              <div style="margin-top: 4px; color: #909399">
+views/TaskMonitor.vue:108:            <span v-else style="color: #c0c4cc">-</span>
+
+----------------------------------------
+
+## 模块: transfer
+
+硬编码数量: 32 处
+
+components/FieldMappingEditor.vue:9:        <p v-if="autoCreateMode" style="color: #67C23A; margin-top: 5px;">
+components/ObjectStoragePathPicker.vue:253:  color: #409eff;
+components/ObjectStoragePathPicker.vue:263:  color: #e6a23c;
+views/TaskList.vue:26:                <el-icon color="#409EFF"><Loading /></el-icon>
+views/TaskList.vue:33:                <el-icon color="#67C23A"><SuccessFilled /></el-icon>
+views/TaskList.vue:40:                <el-icon color="#F56C6C"><CircleCloseFilled /></el-icon>
+views/TaskList.vue:340:  border-bottom: 1px solid #EBEEF5;
+views/ExecutionDetail.vue:30:              <el-icon style="color: #67C23A; font-size: 20px;">
+views/ExecutionDetail.vue:48:              <el-icon style="color: #409EFF; font-size: 20px;">
+views/ExecutionDetail.vue:370:  background: #1e1e1e;
+views/ExecutionDetail.vue:371:  color: #d4d4d4;
+views/ExecutionDetail.vue:411:  border-left-color: #e6a23c;
+views/ExecutionDetail.vue:412:  color: #ffb94f;
+views/ExecutionDetail.vue:418:  border-left-color: #409eff;
+views/ExecutionDetail.vue:419:  color: #66b1ff;
+views/ExecutionDetail.vue:426:  color: #a8abb2;
+views/ExecutionDetail.vue:432:  border-left-color: #67c23a;
+views/ExecutionDetail.vue:433:  color: #85ce61;
+views/ExecutionDetail.vue:440:  border-left-color: #f56c6c;
+views/ExecutionDetail.vue:441:  color: #f78989;
+views/ExecutionDetail.vue:448:  border-left-color: #e6a23c;
+views/ExecutionDetail.vue:449:  color: #ffb94f;
+views/ExecutionDetail.vue:455:  border-left-color: #409eff;
+views/ExecutionDetail.vue:456:  color: #66b1ff;
+views/ExecutionDetail.vue:462:  border-left-color: #67c23a;
+views/ExecutionDetail.vue:463:  color: #85ce61;
+views/ExecutionDetail.vue:468:  color: #d4d4d4;
+views/ExecutionDetail.vue:477:  border-left: 4px solid #67c23a;
+views/ExecutionDetail.vue:494:  background: #2d2d2d;
+views/ExecutionDetail.vue:499:  background: #555;
+views/ExecutionDetail.vue:504:  background: #666;
+views/TaskWizard.vue:2837:  border-top: 1px solid #ebeef5;
+
+----------------------------------------
+
+## 模块: orchestrator
+
+硬编码数量: 20 处
+
+components/DAGEditor.vue:135:  if (!uniqueIdentifier) return '#5B8FF9'
+components/DAGEditor.vue:142:    'meta': '#5AD8A6',
+components/DAGEditor.vue:143:    'transfer': '#5B8FF9',
+components/DAGEditor.vue:144:    'manager': '#F6BD16',
+components/DAGEditor.vue:145:    'develop': '#6DC8EC',
+components/DAGEditor.vue:146:    'orchestrator': '#9270CA'
+components/DAGEditor.vue:181:        stroke: '#f00',
+components/DAGEditor.vue:187:        stroke: '#f00',
+components/DAGEditor.vue:191:        stroke: '#1890ff',
+components/DAGEditor.vue:206:        fill: '#5B8FF9',
+components/DAGEditor.vue:207:        stroke: '#1890FF',
+components/DAGEditor.vue:213:          fill: '#fff',
+components/DAGEditor.vue:225:        fill: '#fff',
+components/DAGEditor.vue:226:        stroke: '#1890FF'
+components/DAGEditor.vue:232:        stroke: '#A3B1BF',
+components/DAGEditor.vue:236:          fill: '#A3B1BF'
+components/DAGEditor.vue:359:        stroke: '#1890FF',
+components/DAGEditor.vue:411:      stroke: '#1890FF',
+components/TaskPanel.vue:264:  color: #409eff;
+components/TaskPanel.vue:289:  border-color: #409eff;
+
+----------------------------------------
+
+## 模块: develop
+
+硬编码数量: 47 处
+
+components/QueryResult.vue:167:  border-bottom: 1px solid #dcdfe6;
+components/QueryResult.vue:186:  color: #409eff;
+components/QueryResult.vue:191:  color: #67c23a;
+components/SaveQueryDialog.vue:72:        <span style="margin-left: 10px; color: #909399">秒</span>
+components/workflow/OperatorParamsPanel.vue:450:  background: #409eff;
+components/workflow/OperatorParamsPanel.vue:468:  color: #409eff;
+components/workflow/OperatorParamsPanel.vue:508:  background: #909399;
+components/workflow/WorkflowDAGCanvas.vue:101:          fill: '#6DC8EC',
+components/workflow/WorkflowDAGCanvas.vue:102:          stroke: '#5DADE2',
+components/workflow/WorkflowDAGCanvas.vue:116:          fill: '#fff',
+components/workflow/WorkflowDAGCanvas.vue:129:          fill: '#fff',
+components/workflow/WorkflowDAGCanvas.vue:130:          stroke: '#52C41A',
+components/workflow/WorkflowDAGCanvas.vue:151:            fill: '#fff',
+components/workflow/WorkflowDAGCanvas.vue:152:            stroke: port.is_default ? '#5DADE2' : '#F59E0B',
+components/workflow/WorkflowDAGCanvas.vue:171:              fill: '#666',
+components/workflow/WorkflowDAGCanvas.vue:210:        stroke: '#f00',
+components/workflow/WorkflowDAGCanvas.vue:216:        stroke: '#f00',
+components/workflow/WorkflowDAGCanvas.vue:220:        stroke: '#1890ff',
+components/workflow/WorkflowDAGCanvas.vue:231:        stroke: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:236:          fill: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:354:            stroke: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:359:              fill: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:584:            stroke: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:589:              fill: '#A3B1BF',
+components/workflow/WorkflowDAGCanvas.vue:759:  color: #fff;
+components/workflow/OperatorPalette.vue:304:  border-color: #409eff;
+components/workflow/OperatorPalette.vue:332:  color: #409eff;
+components/workflow/OperatorPalette.vue:379:  color: #409eff;
+components/workflow/OperatorPalette.vue:398:  background: #909399;
+views/WorkflowEditor.vue:72:                  <div style="font-size: 12px; color: #8492a6">
+views/WorkflowEditor.vue:963:  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+views/QueryEditor.vue:410:  background: #409eff;
+views/QueryTasks.vue:84:            <span v-else style="color: #909399">手动触发</span>
+views/QueryTasks.vue:112:            <span v-else style="color: #909399">未执行</span>
+views/ExecutionMonitor.vue:70:          <div class="stat-icon" style="background: #409eff;">
+views/ExecutionMonitor.vue:81:          <div class="stat-icon" style="background: #67c23a;">
+views/ExecutionMonitor.vue:92:          <div class="stat-icon" style="background: #e6a23c;">
+views/ExecutionMonitor.vue:103:          <div class="stat-icon" style="background: #f56c6c;">
+views/ExecutionMonitor.vue:534:  color: #fff;
+views/Layout.vue:160:  color: #409eff;
+views/Layout.vue:199:  background: #909399;
+views/ExecutionDetail.vue:546:  background: #fff5f5;
+views/ExecutionDetail.vue:547:  color: #c45656;
+views/ExecutionDetail.vue:554:  border: 1px solid #fde2e2;
+views/NotebookEditor.vue:876:  border-color: #409eff;
+views/NotebookEditor.vue:881:  border-color: #409eff;
+views/NotebookEditor.vue:1047:  color: #e83e8c;
+
+----------------------------------------
+
+## 模块: service
+
+硬编码数量: 229 处
+
+components/ServiceCard.vue:308:  border-top: 1px solid #ebeef5;
+views/RegisteredServiceForm.vue:380:  color: #333;
+views/RegisteredServiceForm.vue:385:  background-color: #f8f9fa;
+views/RegisteredServiceForm.vue:386:  border: 1px solid #dee2e6;
+views/RegisteredServiceForm.vue:394:  background-color: #e9ecef;
+views/RegisteredServiceForm.vue:400:  color: #666;
+views/RegisteredServiceForm.vue:413:  border-bottom: 1px solid #e9ecef;
+views/RegisteredServiceForm.vue:424:  color: #495057;
+views/RegisteredServiceForm.vue:437:  color: #495057;
+views/RegisteredServiceForm.vue:443:  color: #dc3545;
+views/RegisteredServiceForm.vue:453:  border: 1px solid #ced4da;
+views/RegisteredServiceForm.vue:464:  border-color: #007bff;
+views/RegisteredServiceForm.vue:470:  background-color: #e9ecef;
+views/RegisteredServiceForm.vue:482:  color: #6c757d;
+views/RegisteredServiceForm.vue:498:  background-color: #f8f9fa;
+views/RegisteredServiceForm.vue:510:  border-top: 1px solid #e9ecef;
+views/RegisteredServiceForm.vue:529:  background-color: #007bff;
+views/RegisteredServiceForm.vue:534:  background-color: #0056b3;
+views/RegisteredServiceForm.vue:538:  background-color: #6c757d;
+views/RegisteredServiceForm.vue:543:  background-color: #545b62;
+views/RegisteredServiceDetail.vue:362:  border-bottom: 2px solid #e9ecef;
+views/RegisteredServiceDetail.vue:373:  color: #333;
+views/RegisteredServiceDetail.vue:383:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:384:  border: 1px solid #dee2e6;
+views/RegisteredServiceDetail.vue:392:  background-color: #e9ecef;
+views/RegisteredServiceDetail.vue:410:  background-color: #007bff;
+views/RegisteredServiceDetail.vue:415:  background-color: #0056b3;
+views/RegisteredServiceDetail.vue:419:  background-color: #28a745;
+views/RegisteredServiceDetail.vue:424:  background-color: #218838;
+views/RegisteredServiceDetail.vue:428:  background-color: #ffc107;
+views/RegisteredServiceDetail.vue:429:  color: #333;
+views/RegisteredServiceDetail.vue:433:  background-color: #e0a800;
+views/RegisteredServiceDetail.vue:437:  background-color: #dc3545;
+views/RegisteredServiceDetail.vue:442:  background-color: #c82333;
+views/RegisteredServiceDetail.vue:446:  background-color: #6c757d;
+views/RegisteredServiceDetail.vue:451:  background-color: #545b62;
+views/RegisteredServiceDetail.vue:463:  color: #666;
+views/RegisteredServiceDetail.vue:481:  color: #495057;
+views/RegisteredServiceDetail.vue:484:  border-bottom: 2px solid #e9ecef;
+views/RegisteredServiceDetail.vue:494:  border-bottom: 1px solid #e9ecef;
+views/RegisteredServiceDetail.vue:509:  color: #6c757d;
+views/RegisteredServiceDetail.vue:510:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:522:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:523:  border: 1px solid #dee2e6;
+views/RegisteredServiceDetail.vue:532:  color: #6c757d;
+views/RegisteredServiceDetail.vue:536:  color: #dc3545;
+views/RegisteredServiceDetail.vue:541:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:542:  border: 1px solid #dee2e6;
+views/RegisteredServiceDetail.vue:553:  color: #495057;
+views/RegisteredServiceDetail.vue:562:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:569:  border-bottom: 1px solid #dee2e6;
+views/RegisteredServiceDetail.vue:575:  color: #495057;
+views/RegisteredServiceDetail.vue:579:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:592:  background-color: #cfe2ff;
+views/RegisteredServiceDetail.vue:593:  color: #084298;
+views/RegisteredServiceDetail.vue:597:  background-color: #d1ecf1;
+views/RegisteredServiceDetail.vue:598:  color: #0c5460;
+views/RegisteredServiceDetail.vue:602:  background-color: #d4edda;
+views/RegisteredServiceDetail.vue:603:  color: #155724;
+views/RegisteredServiceDetail.vue:607:  background-color: #fff3cd;
+views/RegisteredServiceDetail.vue:608:  color: #856404;
+views/RegisteredServiceDetail.vue:612:  background-color: #f8d7da;
+views/RegisteredServiceDetail.vue:613:  color: #721c24;
+views/RegisteredServiceDetail.vue:617:  background-color: #e2e3e5;
+views/RegisteredServiceDetail.vue:618:  color: #383d41;
+views/RegisteredServiceDetail.vue:623:  background-color: #f8f9fa;
+views/RegisteredServiceDetail.vue:624:  border: 1px solid #dee2e6;
+views/RegisteredServiceDetail.vue:628:  color: #e83e8c;
+views/QueryServiceList.vue:289:  background-color: #007bff;
+views/QueryServiceList.vue:294:  background-color: #0056b3;
+views/QueryServiceList.vue:298:  background-color: #28a745;
+views/QueryServiceList.vue:303:  background-color: #218838;
+views/QueryServiceList.vue:307:  background-color: #ffc107;
+views/QueryServiceList.vue:308:  color: #333;
+views/QueryServiceList.vue:312:  background-color: #e0a800;
+views/QueryServiceList.vue:316:  background-color: #dc3545;
+views/QueryServiceList.vue:321:  background-color: #c82333;
+views/QueryServiceList.vue:325:  background-color: #17a2b8;
+views/QueryServiceList.vue:330:  background-color: #138496;
+views/QueryServiceList.vue:351:  color: #666;
+views/QueryServiceList.vue:417:  background-color: #d1ecf1;
+views/QueryServiceList.vue:418:  color: #0c5460;
+views/QueryServiceList.vue:422:  background-color: #d4edda;
+views/QueryServiceList.vue:423:  color: #155724;
+views/QueryServiceList.vue:427:  background-color: #fff3cd;
+views/QueryServiceList.vue:428:  color: #856404;
+views/QueryServiceList.vue:432:  background-color: #f8d7da;
+views/QueryServiceList.vue:433:  color: #721c24;
+views/QueryServiceList.vue:437:  background-color: #e2e3e5;
+views/QueryServiceList.vue:438:  color: #383d41;
+views/TileServiceList.vue:290:  color: #ccc;
+views/TileServiceList.vue:333:  background: #e3f2fd;
+views/TileServiceList.vue:334:  color: #1976d2;
+views/TileServiceList.vue:338:  background: #e8f5e9;
+views/TileServiceList.vue:339:  color: #388e3c;
+views/TileServiceList.vue:343:  background: #fff3e0;
+views/TileServiceList.vue:344:  color: #f57c00;
+views/TileServiceList.vue:348:  background: #ffebee;
+views/TileServiceList.vue:349:  color: #d32f2f;
+views/TileServiceList.vue:354:  color: #757575;
+views/TileServiceList.vue:394:  background: #1976d2;
+views/TileServiceList.vue:399:  background: #1565c0;
+views/TileServiceList.vue:403:  background: #388e3c;
+views/TileServiceList.vue:408:  background: #2e7d32;
+views/TileServiceList.vue:417:  background: #0288d1;
+views/TileServiceList.vue:422:  background: #0277bd;
+views/TileServiceList.vue:426:  background: #f57c00;
+views/TileServiceList.vue:431:  background: #ef6c00;
+views/TileServiceList.vue:435:  background: #d32f2f;
+views/TileServiceList.vue:440:  background: #c62828;
+views/PublishedServiceList.vue:228:  border: 1px solid #ddd;
+views/PublishedServiceList.vue:243:  background-color: #007bff;
+views/PublishedServiceList.vue:248:  background-color: #0056b3;
+views/PublishedServiceList.vue:252:  background-color: #28a745;
+views/PublishedServiceList.vue:257:  background-color: #218838;
+views/PublishedServiceList.vue:261:  background-color: #ffc107;
+views/PublishedServiceList.vue:262:  color: #333;
+views/PublishedServiceList.vue:266:  background-color: #e0a800;
+views/PublishedServiceList.vue:270:  background-color: #dc3545;
+views/PublishedServiceList.vue:275:  background-color: #c82333;
+views/PublishedServiceList.vue:279:  background-color: #17a2b8;
+views/PublishedServiceList.vue:284:  background-color: #138496;
+views/PublishedServiceList.vue:288:  background-color: #6c757d;
+views/PublishedServiceList.vue:293:  background-color: #5a6268;
+views/PublishedServiceList.vue:314:  color: #666;
+views/PublishedServiceList.vue:324:  background-color: #f8f9fa;
+views/PublishedServiceList.vue:328:  border-bottom: 2px solid #dee2e6;
+views/PublishedServiceList.vue:333:  border-bottom: 1px solid #dee2e6;
+views/PublishedServiceList.vue:337:  background-color: #f8f9fa;
+views/PublishedServiceList.vue:355:  background-color: #d1ecf1;
+views/PublishedServiceList.vue:356:  color: #0c5460;
+views/PublishedServiceList.vue:360:  background-color: #d4edda;
+views/PublishedServiceList.vue:361:  color: #155724;
+views/PublishedServiceList.vue:365:  background-color: #fff3cd;
+views/PublishedServiceList.vue:366:  color: #856404;
+views/PublishedServiceList.vue:382:  background-color: #f8f9fa;
+views/PublishedServiceList.vue:388:  color: #666;
+views/QueryServiceDetail.vue:198:        <div v-if="service?.config_type === 'table'" style="margin-top: 12px; font-size: 13px; color: #606266">
+views/QueryServiceDetail.vue:210:        <div v-else style="margin-top: 12px; font-size: 13px; color: #606266">
+views/QueryServiceDetail.vue:607:  border-bottom: 1px solid #ebeef5;
+views/QueryServiceDetail.vue:674:  border: 1px solid #dcdfe6;
+views/QueryServiceDetail.vue:695:  color: #e83e8c;
+views/QueryServiceForm.vue:792:  border-bottom: 1px solid #ebeef5;
+views/QueryServiceForm.vue:820:  border: 2px solid #dcdfe6;
+views/QueryServiceForm.vue:832:  border-color: #409eff;
+views/QueryServiceForm.vue:837:  border-color: #409eff;
+views/QueryServiceForm.vue:838:  background-color: #f0f7ff;
+views/QueryServiceForm.vue:914:  border-top: 1px solid #ebeef5;
+views/ServiceDetail.vue:39:            <span style="flex: 1; color: #409EFF; font-weight: 500;">{{ service.endpoints.proxy }}</span>
+views/RegisteredServiceList.vue:280:  color: #333;
+views/RegisteredServiceList.vue:299:  border: 1px solid #ddd;
+views/RegisteredServiceList.vue:314:  background-color: #007bff;
+views/RegisteredServiceList.vue:319:  background-color: #0056b3;
+views/RegisteredServiceList.vue:323:  background-color: #28a745;
+views/RegisteredServiceList.vue:328:  background-color: #218838;
+views/RegisteredServiceList.vue:332:  background-color: #ffc107;
+views/RegisteredServiceList.vue:333:  color: #333;
+views/RegisteredServiceList.vue:337:  background-color: #e0a800;
+views/RegisteredServiceList.vue:341:  background-color: #dc3545;
+views/RegisteredServiceList.vue:346:  background-color: #c82333;
+views/RegisteredServiceList.vue:350:  background-color: #17a2b8;
+views/RegisteredServiceList.vue:355:  background-color: #138496;
+views/RegisteredServiceList.vue:376:  color: #666;
+views/RegisteredServiceList.vue:396:  background-color: #f8f9fa;
+views/RegisteredServiceList.vue:400:  border-bottom: 2px solid #dee2e6;
+views/RegisteredServiceList.vue:406:  border-bottom: 1px solid #dee2e6;
+views/RegisteredServiceList.vue:411:  background-color: #f8f9fa;
+views/RegisteredServiceList.vue:417:  color: #495057;
+views/RegisteredServiceList.vue:433:  background-color: #d1ecf1;
+views/RegisteredServiceList.vue:434:  color: #0c5460;
+views/RegisteredServiceList.vue:438:  background-color: #d4edda;
+views/RegisteredServiceList.vue:439:  color: #155724;
+views/RegisteredServiceList.vue:443:  background-color: #fff3cd;
+views/RegisteredServiceList.vue:444:  color: #856404;
+views/RegisteredServiceList.vue:448:  background-color: #f8d7da;
+views/RegisteredServiceList.vue:449:  color: #721c24;
+views/RegisteredServiceList.vue:453:  background-color: #e2e3e5;
+views/RegisteredServiceList.vue:454:  color: #383d41;
+views/RegisteredServiceList.vue:470:  background-color: #f8f9fa;
+views/RegisteredServiceList.vue:476:  color: #666;
+views/TileServiceForm.vue:472:  color: #333;
+views/TileServiceForm.vue:494:  background: #e0e0e0;
+views/TileServiceForm.vue:504:  background: #1976d2;
+views/TileServiceForm.vue:509:  background: #388e3c;
+views/TileServiceForm.vue:519:  color: #1976d2;
+views/TileServiceForm.vue:526:  background: #e0e0e0;
+views/TileServiceForm.vue:532:  background: #388e3c;
+views/TileServiceForm.vue:545:  color: #333;
+views/TileServiceForm.vue:551:  color: #555;
+views/TileServiceForm.vue:565:  border: 2px solid #e0e0e0;
+views/TileServiceForm.vue:573:  border-color: #1976d2;
+views/TileServiceForm.vue:579:  border-color: #1976d2;
+views/TileServiceForm.vue:580:  background: #e3f2fd;
+views/TileServiceForm.vue:585:  color: #333;
+views/TileServiceForm.vue:590:  color: #666;
+views/TileServiceForm.vue:608:  color: #555;
+views/TileServiceForm.vue:623:  border: 1px solid #ddd;
+views/TileServiceForm.vue:635:  background: #e8f5e9;
+views/TileServiceForm.vue:636:  border: 1px solid #4caf50;
+views/TileServiceForm.vue:644:  color: #2e7d32;
+views/TileServiceForm.vue:656:  color: #555;
+views/TileServiceForm.vue:660:  color: #2e7d32;
+views/TileServiceForm.vue:690:  border-top: 1px solid #eee;
+views/TileServiceForm.vue:702:  background: #388e3c;
+views/TileServiceForm.vue:712:  background: #f9f9f9;
+views/TileServiceForm.vue:732:  border: 1px solid #ddd;
+views/TileServiceForm.vue:738:  color: #555;
+views/TileServiceForm.vue:768:  background: #1976d2;
+views/TileServiceForm.vue:773:  background: #1565c0;
+views/TileServiceForm.vue:777:  background: #757575;
+views/TileServiceForm.vue:782:  background: #616161;
+views/PublishedServiceForm.vue:47:            <div v-else style="margin-top: 8px; font-size: 13px; color: #909399">
+views/PublishedServiceForm.vue:624:  border-color: #409eff;
+views/TileServiceDetail.vue:99:              <div style="font-size: 12px; color: #606266">
+views/TileServiceDetail.vue:166:        <div style="margin-top: 8px; font-size: 13px; color: #909399">
+views/TileServiceDetail.vue:231:      <div v-if="selectedLayerForPreview" style="width: 100%; height: 600px; border: 1px solid #dcdfe6; border-radius: 4px">
+views/TileServiceDetail.vue:244:        style="width: 100%; height: 600px; border: 1px solid #dcdfe6; border-radius: 4px; display: flex; align-items: center; justify-content: center"
+views/TileServiceDetail.vue:839:  border-bottom: 1px solid #ebeef5;
+views/TileServiceDetail.vue:905:  color: #e83e8c;
+views/TileServiceDetail.vue:910:  border: 1px solid #dcdfe6;
+views/TileServiceDetail.vue:934:  background: #e8f5e9;
+views/TileServiceDetail.vue:935:  border: 1px solid #4caf50;
+views/TileServiceDetail.vue:943:  color: #2e7d32;
+views/TileServiceDetail.vue:955:  color: #555;
+views/TileServiceDetail.vue:959:  color: #2e7d32;
+views/PublishedServiceDetail.vue:130:        <div style="margin-top: 12px; font-size: 13px; color: #606266">
+views/PublishedServiceDetail.vue:152:        <div style="margin-top: 8px; font-size: 13px; color: #909399">
+views/PublishedServiceDetail.vue:173:          <span v-if="isProtocolEnabled('rest_api')" style="margin-left: 12px; color: #606266">
+views/PublishedServiceDetail.vue:184:          <span v-if="isProtocolEnabled('ogc_features')" style="margin-left: 12px; color: #606266">
+
+----------------------------------------
+
+## 模块: monitor
+
+✅ 无硬编码颜色
+
+----------------------------------------
+

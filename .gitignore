@@ -67,6 +67,9 @@ htmlcov/
 pip-wheel-metadata/
 nohup.out
 
+# Jupyter tenant virtual environments
+engines/jupyter/tenants/
+
 # Test coverage
 coverage/
 *.cover
