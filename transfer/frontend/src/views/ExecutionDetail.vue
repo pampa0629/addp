@@ -501,6 +501,6 @@ onUnmounted(() => {
 }
 
 .log-viewer::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  background: var(--addp-text-secondary);
 }
 </style>
