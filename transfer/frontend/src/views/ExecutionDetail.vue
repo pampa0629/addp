@@ -27,7 +27,7 @@
             :value="'✓'"
           >
             <template #prefix>
-              <el-icon style="color: #67C23A; font-size: 20px;">
+              <el-icon style="color: var(--el-color-success); font-size: 20px;">
                 <span style="font-weight: bold;">🔑</span>
               </el-icon>
             </template>
@@ -45,7 +45,7 @@
             :value="postProcessSummary.spatial_indexes_created"
           >
             <template #prefix>
-              <el-icon style="color: #409EFF; font-size: 20px;">
+              <el-icon style="color: var(--el-color-primary); font-size: 20px;">
                 <span style="font-weight: bold;">🗺️</span>
               </el-icon>
             </template>
@@ -408,14 +408,14 @@ onUnmounted(() => {
 /* 主键创建日志 */
 .log-primary-key {
   background-color: rgba(232, 219, 163, 0.1);
-  border-left-color: #e6a23c;
+  border-left-color: var(--el-color-warning);
   color: #ffb94f;
 }
 
 /* 空间索引日志 */
 .log-spatial-index {
   background-color: rgba(89, 184, 255, 0.1);
-  border-left-color: #409eff;
+  border-left-color: var(--el-color-primary);
   color: #66b1ff;
 }
 
@@ -429,7 +429,7 @@ onUnmounted(() => {
 /* 成功日志 */
 .log-success {
   background-color: rgba(103, 194, 58, 0.1);
-  border-left-color: #67c23a;
+  border-left-color: var(--el-color-success);
   color: #85ce61;
   font-weight: bold;
 }
@@ -437,7 +437,7 @@ onUnmounted(() => {
 /* 错误日志 */
 .log-error {
   background-color: rgba(245, 108, 108, 0.1);
-  border-left-color: #f56c6c;
+  border-left-color: var(--el-color-danger);
   color: #f78989;
   font-weight: bold;
 }
@@ -445,21 +445,21 @@ onUnmounted(() => {
 /* 警告日志 */
 .log-warning {
   background-color: rgba(230, 162, 60, 0.1);
-  border-left-color: #e6a23c;
+  border-left-color: var(--el-color-warning);
   color: #ffb94f;
 }
 
 /* 信息日志 */
 .log-info {
   background-color: rgba(89, 184, 255, 0.1);
-  border-left-color: #409eff;
+  border-left-color: var(--el-color-primary);
   color: #66b1ff;
 }
 
 /* 后处理日志 */
 .log-post-process {
   background-color: rgba(103, 194, 58, 0.1);
-  border-left-color: #67c23a;
+  border-left-color: var(--el-color-success);
   color: #85ce61;
 }
 
@@ -474,7 +474,7 @@ onUnmounted(() => {
   padding: 16px;
   border-radius: 4px;
   margin-bottom: 16px;
-  border-left: 4px solid #67c23a;
+  border-left: 4px solid var(--el-color-success);
 }
 
 .empty-logs {
