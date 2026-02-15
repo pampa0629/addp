@@ -72,7 +72,7 @@
                       placement="top"
                     >
                       <div class="schedule-indicator">
-                        <el-icon :color="resourcePlanMap[row.id].enabled ? '#67C23A' : 'var(--addp-text-tertiary)'">
+                        <el-icon :color="resourcePlanMap[row.id].enabled ? 'var(--el-color-success)' : 'var(--addp-text-tertiary)'">
                           <Clock />
                         </el-icon>
                         <span>{{ resourcePlanMap[row.id].enabled ? '调度已启用' : '调度未启用' }}</span>
@@ -183,7 +183,7 @@
                         :content="`独立调度：${getSchemaPlan(row).description}\n下次执行：${getSchemaPlan(row).nextRun}`"
                         placement="top"
                       >
-                        <el-icon color="#409EFF" :size="16" class="schedule-icon">
+                        <el-icon color="var(--el-color-primary)" :size="16" class="schedule-icon">
                           <Clock />
                         </el-icon>
                       </el-tooltip>
@@ -732,10 +732,10 @@ const getConnectionIcon = (status) => {
 
 const getConnectionIconColor = (status) => {
   const colorMap = {
-    'online': '#67C23A',
-    'offline': '#F56C6C',
+    'online': 'var(--el-color-success)',
+    'offline': 'var(--el-color-danger)',
     'unknown': 'var(--addp-text-tertiary)',
-    'checking': '#E6A23C'
+    'checking': 'var(--el-color-warning)'
   }
   return colorMap[status] || 'var(--addp-text-tertiary)'
 }
@@ -1152,12 +1152,12 @@ onBeforeUnmount(() => {
 }
 
 .stat-scanned {
-  color: #67C23A;
+  color: var(--el-color-success);
   margin-left: 4px;
 }
 
 .stat-unscanned {
-  color: #E6A23C;
+  color: var(--el-color-warning);
   margin-left: 4px;
 }
 
@@ -1264,7 +1264,7 @@ onBeforeUnmount(() => {
 }
 
 .selection-info strong {
-  color: #409EFF;
+  color: var(--el-color-primary);
   font-size: 16px;
 }
 

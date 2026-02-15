@@ -140,7 +140,7 @@ const handleLogout = () => {
 }
 
 .header-icon {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .header-right {
