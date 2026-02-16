@@ -22,13 +22,13 @@ engines/
 通过HTTP API调用的内置模块,资源类型命名规范: `api.{module}`
 
 **已有引擎**:
-- `api.meta` - 元数据管理模块(元数据扫描等算子)
-- `api.transfer` - 数据传输模块(数据传输等算子)
-- `api.manager` - 数据管理模块(瓦片生成等算子)
-- `api.python-workflow` - Python Workflow 引擎(空间计算算子)
+- `meta` - 元数据管理模块(元数据扫描等算子)
+- `transfer` - 数据传输模块(数据传输等算子)
+- `manager` - 数据管理模块(瓦片生成等算子)
+- `python_workflow` - Python Workflow 引擎(空间计算算子)
 
 **规划中**:
-- `api.spark_workflow` - Spark Workflow 引擎(大数据空间计算)
+- `spark_workflow` - Spark Workflow 引擎(大数据空间计算)
 
 ### 标准库引擎
 通过标准协议(JDBC/S3)访问的外部数据源:
@@ -124,10 +124,10 @@ POST /api/{module}/operators/:name/execute
 **注册数据格式**:
 ```json
 {
-  "unique_identifier": "api.python-workflow",
+  "unique_identifier": "python_workflow",
   "name": "python_workflow_engine",
   "display_name": "Python Workflow 空间计算引擎",
-  "resource_type": "api.python-workflow",
+  "resource_type": "python_workflow",
   "is_builtin": true,
   "capabilities": {
     "compute": [{

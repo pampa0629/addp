@@ -96,13 +96,13 @@ func main() {
 	}
 	logger.L().Info("MinIO 客户端已初始化", "endpoint", cfg.MinioEndpoint)
 
-	// MinIO Bucket 名称（与 Manager 保持一致）
-	minioBucket := "manager"
+	// MinIO Bucket 名称（Service 模块专用）
+	minioBucket := "service"
 
 	// 初始化瓦片相关服务
 	staticTileService := serviceInternal.NewStaticTileService(minioClient, minioBucket)
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
-	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket)
+	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
 
 	queryService := data.NewQueryService(systemClient, metaClient)
 

@@ -306,9 +306,9 @@ func (s *QuickViewService) ClearQuickView(
 		return fmt.Errorf("failed to get quick view: %w", err)
 	}
 
-	// 2. 删除 MinIO 中的瓦片
+	// 2. 删除 MinIO 中的瓦片（租户隔离）
 	if s.minioClient != nil && qv.Fingerprint != "" {
-		prefix := fmt.Sprintf("mvt-tiles/%s/", qv.Fingerprint)
+		prefix := fmt.Sprintf("tenant_%d/mvt-tiles/%s/", tenantID, qv.Fingerprint)
 
 		// 列出所有对象
 		objectsCh := s.minioClient.ListObjects(ctx, s.minioBucket, minio.ListObjectsOptions{
@@ -320,12 +320,16 @@ func (s *QuickViewService) ClearQuickView(
 		deletedCount := 0
 		for object := range objectsCh {
 			if object.Err != nil {
-				logger.L().Warn("Error listing object for deletion", "error", object.Err, "prefix", prefix)
+				logger.L().Warn("Error listing object for deletion",
+					"tenant_id", tenantID,
+					"error", object.Err, "prefix", prefix)
 				continue
 			}
 
 			if err := s.minioClient.RemoveObject(ctx, s.minioBucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-				logger.L().Warn("Failed to delete object", "error", err, "key", object.Key)
+				logger.L().Warn("Failed to delete object",
+					"tenant_id", tenantID,
+					"error", err, "key", object.Key)
 				continue
 			}
 
@@ -333,6 +337,7 @@ func (s *QuickViewService) ClearQuickView(
 		}
 
 		logger.L().Info("Deleted tiles from MinIO",
+			"tenant_id", tenantID,
 			"fingerprint", qv.Fingerprint,
 			"deleted_count", deletedCount)
 	}
@@ -684,6 +689,20 @@ func calculateFingerprint(engineID uint, schema, table string) string {
 	// 两步计算方式：先拼接 full_name，再计算指纹
 	fullName := fmt.Sprintf("%s.%s", schema, table)
 	return commonModels.GenerateItemFingerprint(engineID, fullName)
+}
+
+// buildQuickViewPath 构建快显瓦片的 MinIO 路径（租户隔离）
+// 格式: tenant_{tenant_id}/mvt-tiles/{fingerprint}/tiles/z{z}/{x}_{y}.mvt.gz
+func buildQuickViewPath(tenantID uint, fingerprint string, z, x, y int) string {
+	return fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
+		tenantID, fingerprint, z, x, y)
+}
+
+// buildQuickViewMetadataPath 构建快显元数据的 MinIO 路径（租户隔离）
+// 格式: tenant_{tenant_id}/mvt-tiles/{fingerprint}/metadata.json
+func buildQuickViewMetadataPath(tenantID uint, fingerprint string) string {
+	return fmt.Sprintf("tenant_%d/mvt-tiles/%s/metadata.json",
+		tenantID, fingerprint)
 }
 
 // UpdatePreferredMode 更新用户偏好的显示模式

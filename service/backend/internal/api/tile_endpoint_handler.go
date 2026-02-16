@@ -173,7 +173,7 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 
 		// 5.2 尝试从缓存读取
 		if cacheEnabled {
-			tileData, err = h.tileCacheService.GetCachedTile(ctx, tileService.ID, layer.ID, z, x, y)
+			tileData, err = h.tileCacheService.GetCachedTile(ctx, tileService.TenantID, tileService.ID, layer.ID, z, x, y)
 			if err == nil && len(tileData) > 0 {
 				fromCache = true
 				logger.L().Debug("✅ 缓存命中", "z", z, "x", x, "y", y, "size", len(tileData))
@@ -202,6 +202,7 @@ func (h *TileEndpointHandler) GetXYZTile(c *gin.Context) {
 					bgCtx := context.Background()
 					if err := h.tileCacheService.PutCachedTile(
 						bgCtx,
+						tileService.TenantID,
 						tileService.ID,
 						layer.ID,
 						z, x, y,

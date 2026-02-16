@@ -746,10 +746,10 @@ func (s *EngineService) generateDefaultCapabilities(engineType string) string {
 	// 降级：对于API引擎等非数据库类型，使用硬编码
 	engineTypeLower := strings.ToLower(engineType)
 	switch engineTypeLower {
-	case "api.python-workflow":
+	case "python_workflow":
 		return `{"compute":[{"dev_modes":["workflow"],"supported_formats":["geojson","wkt","csv","parquet"],"features":["dag","memory_efficient","batch","pandas","numpy","scipy"],"description":"Python数据处理（Pandas, GeoPandas, NumPy, SciPy）"}]}`
 
-	case "api.spark_workflow":
+	case "spark_workflow":
 		return `{"compute":[{"dev_modes":["workflow"],"engine":"spark","scale":"distributed","features":["big_data","distributed"],"description":"分布式空间分析"}]}`
 
 	default:

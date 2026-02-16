@@ -569,7 +569,11 @@
       "Bash(npm view:*)",
       "Bash(md5:*)",
       "Bash(/tmp/color_audit.sh:*)",
-      "Bash(/tmp/color_audit.sh)"
+      "Bash(/tmp/color_audit.sh)",
+      "Bash(/tmp/stage4_summary.md:*)",
+      "Bash(/dev/null:*)",
+      "Bash(mc rm:*)",
+      "Bash(/tmp/verify_service_bucket.sh:*)"
     ],
     "deny": [],
     "ask": [],

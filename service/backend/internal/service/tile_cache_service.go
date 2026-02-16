@@ -15,27 +15,30 @@ import (
 
 // TileCacheService 瓦片缓存服务（基于 MinIO）
 type TileCacheService struct {
-	minioClient *minio.Client
-	bucket      string
+	minioClient  *minio.Client
+	bucket       string
+	tileBasePath string
 }
 
 // NewTileCacheService 创建瓦片缓存服务
-func NewTileCacheService(minioClient *minio.Client, bucket string) *TileCacheService {
+func NewTileCacheService(minioClient *minio.Client, bucket string, tileBasePath string) *TileCacheService {
 	return &TileCacheService{
-		minioClient: minioClient,
-		bucket:      bucket,
+		minioClient:  minioClient,
+		bucket:       bucket,
+		tileBasePath: tileBasePath,
 	}
 }
 
 // GetCachedTile 从 MinIO 读取缓存瓦片
 func (s *TileCacheService) GetCachedTile(
 	ctx context.Context,
+	tenantID uint,
 	serviceID, layerID uint,
 	z, x, y int,
 ) ([]byte, error) {
-	// 构建对象路径
-	objectName := fmt.Sprintf("service/%d/%d/%d/%d/%d.mvt.gz",
-		serviceID, layerID, z, x, y)
+	// 构建对象路径（包含租户隔离）
+	objectName := fmt.Sprintf("%s/%d/%d/%d/cache/%d/%d/%d.mvt.gz",
+		s.tileBasePath, tenantID, serviceID, layerID, z, x, y)
 
 	// 从 MinIO 读取
 	object, err := s.minioClient.GetObject(ctx, s.bucket, objectName, minio.GetObjectOptions{})
@@ -74,6 +77,7 @@ func (s *TileCacheService) GetCachedTile(
 // PutCachedTile 保存瓦片到 MinIO（异步）
 func (s *TileCacheService) PutCachedTile(
 	ctx context.Context,
+	tenantID uint,
 	serviceID, layerID uint,
 	z, x, y int,
 	tileData []byte,
@@ -88,9 +92,9 @@ func (s *TileCacheService) PutCachedTile(
 	}
 	gzipWriter.Close()
 
-	// 构建对象路径
-	objectName := fmt.Sprintf("service/%d/%d/%d/%d/%d.mvt.gz",
-		serviceID, layerID, z, x, y)
+	// 构建对象路径（包含租户隔离）
+	objectName := fmt.Sprintf("%s/%d/%d/%d/cache/%d/%d/%d.mvt.gz",
+		s.tileBasePath, tenantID, serviceID, layerID, z, x, y)
 
 	// 上传到 MinIO
 	_, err = s.minioClient.PutObject(
@@ -132,10 +136,11 @@ func (s *TileCacheService) PutCachedTile(
 // ClearLayerCache 清理图层的所有缓存
 func (s *TileCacheService) ClearLayerCache(
 	ctx context.Context,
+	tenantID uint,
 	serviceID, layerID uint,
 ) error {
-	// 删除 service/{serviceID}/{layerID}/ 下的所有对象
-	prefix := fmt.Sprintf("service/%d/%d/", serviceID, layerID)
+	// 删除 tiles/{tenantID}/{serviceID}/{layerID}/cache/ 下的所有对象
+	prefix := fmt.Sprintf("%s/%d/%d/%d/cache/", s.tileBasePath, tenantID, serviceID, layerID)
 
 	objectsCh := s.minioClient.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,
@@ -166,10 +171,11 @@ func (s *TileCacheService) ClearLayerCache(
 // ClearServiceCache 清理服务的所有缓存
 func (s *TileCacheService) ClearServiceCache(
 	ctx context.Context,
+	tenantID uint,
 	serviceID uint,
 ) error {
-	// 删除 service/{serviceID}/ 下的所有对象
-	prefix := fmt.Sprintf("service/%d/", serviceID)
+	// 删除 tiles/{tenantID}/{serviceID}/ 下的所有对象
+	prefix := fmt.Sprintf("%s/%d/%d/", s.tileBasePath, tenantID, serviceID)
 
 	objectsCh := s.minioClient.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
 		Prefix:    prefix,

@@ -139,7 +139,7 @@ ADDP 采用基于 Docker 的微服务架构:
 **引擎** 是 ADDP 平台中所有数据源和计算资源的统一抽象。引擎代表一个可以存储数据或执行计算的外部系统(数据库、对象存储)或内部模块(空间计算引擎)。
 
 **核心属性**:
-- **引擎类型** (EngineType): 如 `postgresql`、`mongodb`、`api.python-workflow` ⭐
+- **引擎类型** (EngineType): 如 `postgresql`、`mongodb`、`python_workflow` ⭐
 - **引擎分类** (EngineCategory): `standard` 或 `extension`
 - **连接信息** (ConnectionInfo): 数据库连接串、API 端点等
 - **能力声明** (Capabilities): 引擎支持的功能列表
@@ -211,7 +211,7 @@ ADDP 采用**三层接口架构**实现引擎插件化,支持灵活扩展:
 - ADDP 平台内置的计算模块,通过 HTTP API 调用
 - ADDP平台内置了若干扩展引擎（均放在engines目录下）；用户也可以按照约定的标准自定义开发，然后注册到平台中
 - 示例: python工作流引擎、Spark 工作流引擎
-- 类型命名: 以 `api.` 开头(如 `api.python-workflow`)
+- 类型命名: 使用引擎名称(如 `python_workflow`、`spark_workflow`、`jupyter`)
 
 #### 3. 按注册方式分类
 
@@ -226,7 +226,7 @@ ADDP 采用**三层接口架构**实现引擎插件化,支持灵活扩展:
 - 不属于任何租户(`tenant_id = null`),全局可见
 - 不可删除或修改核心配置(防止误操作)
 - `is_builtin = true`
-- 具有全局唯一标识符(`unique_identifier`,如 `"api.python-workflow"`)
+- 具有全局唯一标识符(`unique_identifier`,如 `"python_workflow"`)
 
 ### 引擎能力 (Capabilities)
 
@@ -327,15 +327,15 @@ ADDP 平台当前支持 **11 种**数据引擎:
 
 **扩展引擎** (3 种):
 - **Python Workflow** - 基于 Python 的单节点工作流计算引擎
-  - 类型: `api.python-workflow`
+  - 类型: `python_workflow`
   - 能力: 空间和非空间算子工作流(21 个空间算子)
   - 适用场景: 中小规模空间数据分析(< 100 万行)
 - **Spark Workflow** - 基于 Spark 的分布式工作流引擎
-  - 类型: `api.spark_workflow`
+  - 类型: `spark_workflow`
   - 能力: 大规模分布式空间数据处理
   - 适用场景: 大规模数据分析(> 100 万行)
 - **Math Workflow** - 数学计算工作流引擎
-  - 类型: `api.math_workflow`
+  - 类型: `math_workflow`
   - 能力: 数学计算和建模
   - 适用场景: 数学计算、统计分析
 
@@ -501,22 +501,6 @@ TableInfo {
 ---
 
 ## 五、数据管理
-
-### 数据源 (Data Source)
-
-**数据源** 是指通过引擎连接的外部数据库或存储系统:
-- 基于引擎实例创建
-- 包含具体的连接配置(主机、端口、认证)
-- 一个引擎可以创建多个数据源实例
-
-### 上传目录 (Upload Directory)，待定，未实现
-
-**上传目录** 是 MinIO/S3 中的文件组织结构:
-- 按租户隔离:`{tenant_id}/`
-- 支持多级目录结构
-- 存储用户上传的文件(Shapefile、GeoJSON、图片、视频等)
-- 与元数据扫描集成,自动索引文件
-
 ### 数据预览 (Data Preview)
 
 ADDP 支持多种数据类型的预览:
@@ -703,7 +687,7 @@ ADDP 支持多种数据类型的预览:
 
 ---
 
-## 八、编排调度
+## 八、任务编排
 
 ### 任务库 (Task Template)
 

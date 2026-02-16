@@ -463,7 +463,7 @@ const selectDefaultEngine = () => {
   if (workflowEngines.value.length === 0) return
 
   const pythonWorkflow = workflowEngines.value.find(
-    e => e.engine_type === 'api.python_workflow'
+    e => e.engine_type === 'python_workflow'
   )
 
   if (pythonWorkflow) {
@@ -495,14 +495,14 @@ const handleEngineChange = async (engineId) => {
 
 // 判断是否需要选择 Spark 运行时
 const needsSparkRuntime = () => {
-  return selectedEngine.value?.engine_type === 'api.spark_workflow'
+  return selectedEngine.value?.engine_type === 'spark_workflow'
 }
 
 // 获取引擎标签
 const getEngineTag = (engine) => {
-  if (engine.engine_type === 'api.python_workflow') {
+  if (engine.engine_type === 'python_workflow') {
     return 'Python 工作流'
-  } else if (engine.engine_type === 'api.spark_workflow') {
+  } else if (engine.engine_type === 'spark_workflow') {
     return 'Spark 工作流引擎'
   }
   return engine.engine_type
