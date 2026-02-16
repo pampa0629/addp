@@ -247,7 +247,7 @@
                 <div class="card-content">
                   <el-icon :size="48" color="var(--el-color-success)"><DataAnalysis /></el-icon>
                   <h2>数据管理</h2>
-                  <p>数据源管理、目录组织、数据预览</p>
+                  <p>数据探查、目录组织、数据预览</p>
                 </div>
               </el-card>
             </el-col>

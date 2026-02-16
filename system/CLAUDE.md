@@ -241,7 +241,7 @@ frontend/src/
 - [users表](docs/tables/users表.md) - 用户表,认证和权限管理
 - [tenants表](docs/tables/tenants表.md) - 租户表,多租户隔离
 - [audit_logs表](docs/tables/audit_logs表.md) - 审计日志表,操作审计和追溯
-- [engines表](docs/tables/engines表.md) - 引擎配置表,数据源管理
+- [engines表](docs/tables/engines表.md) - 引擎配置表,引擎连接管理
 
 **重要**:修改表结构或 API 时,必须同步更新对应的单表文档。
 

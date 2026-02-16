@@ -48,7 +48,7 @@ Gateway 根据 URL 路径前缀自动路由请求：
 | `/api/system/engines/*` | System | http://localhost:8180 | API Key | 无 | 引擎管理 |
 | `/api/system/logs/*` | System | http://localhost:8180 | API Key | 无 | 日志查询 |
 | `/api/system/applications/*` | System | http://localhost:8180 | API Key | 无 | 应用管理 |
-| `/api/manager/engines/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 数据源管理 |
+| `/api/manager/engines/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 引擎数据访问 |
 | `/api/manager/preview/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 数据预览 |
 | `/api/manager/tree/*` | Manager | http://localhost:8081 | API Key | ✅ 移除 `/manager` | 目录树 |
 | `/api/meta/engines/*` | Meta | http://localhost:8082 | API Key | 无 | 引擎列表 |

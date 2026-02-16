@@ -4,9 +4,11 @@
 
 ## 功能
 
-- **数据源管理**: 管理各类数据源连接（MySQL, PostgreSQL, S3, HDFS 等）
-- **目录管理**: 组织和管理上传的数据文件
-- **数据预览**: 预览各种格式的数据文件
+- **数据探查**: 浏览存储引擎中的数据资源（数据库、表、对象存储等）
+- **数据预览**: 预览各种格式的数据文件（空间数据、文档、图片等）
+- **数据检索**: 基于全文检索和语义检索的数据资产查询
+- **向量化任务**: 管理数据向量化任务
+- **空间数据服务**: MVT 瓦片服务和空间数据可视化
 
 ## 开发
 
@@ -46,9 +48,12 @@ Manager 前端使用 System 模块的认证服务：
 ### 路由
 
 所有路由使用 `/manager/` 作为 base path:
-- `/manager/` - 数据源管理
-- `/manager/directories` - 目录管理
-- `/manager/preview` - 数据预览
+- `/manager/data-explorer` - 数据探查（默认首页）
+- `/manager/data-retrieval` - 数据检索
+- `/manager/vectorization-tasks` - 向量化任务
+- `/manager/spatial-preview` - 空间预览
+
+**注意**: 引擎管理由 System 模块负责，Manager 模块仅提供数据访问和预览服务。
 
 ## Docker 部署
 

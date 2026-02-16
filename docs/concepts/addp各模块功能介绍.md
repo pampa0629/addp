@@ -415,7 +415,7 @@ go test -v -run TestFunctionName ./internal/service/
 
 ### Manager 服务 (已实现)
 
-**目的**: 数据源管理、文件组织和数据预览
+**目的**: 数据预览、数据探查、数据处理等
 
 **已实现功能**:
 
