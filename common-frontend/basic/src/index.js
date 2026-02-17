@@ -43,7 +43,6 @@ export {
 export {
   createAuthGuard,
   createAuthInterceptor,
-  createAuthStoreConfig,
   createRefreshInterceptor,
   createAuthAPI,
   createAPIClient,

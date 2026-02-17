@@ -102,39 +102,7 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 
 ### 端口分配
 
-**ADDP 系统服务**:
-
-| 服务              | 开发端口 | Docker 端口 | 说明                   |
-| -------------------- | -------- | ----------- | ----------------------------- |
-| **Nginx Gateway**    | **80**   | **80**      | **统一入口 (推荐)** |
-| **Portal Frontend**  | **5170** | **5170**    | **Portal UI (通过 Nginx)**     |
-| Gateway              | 8000     | 8000        | API Gateway (后端路由) |
-| System Backend       | 8180     | 8180        | 认证、用户、日志             |
-| System Frontend      | 5173     | 8090        | 独立访问             |
-| Manager Backend      | 8081     | 8081        | 数据源、文件           |
-| Manager Frontend     | 5174     | 8091        | 独立访问             |
-| Meta Backend         | 8082     | 8082        | 元数据、血缘             |
-| Meta Frontend        | 5175     | 8092        | 独立访问             |
-| Transfer Backend     | 8083     | 8083        | 导入/导出任务           |
-| Transfer Frontend    | 5176     | 8093        | 独立访问             |
-| Orchestrator Backend | 8084     | 8084        | 工作流编排        |
-| Orchestrator Frontend| 5177     | 8094        | 独立访问             |
-| Develop Backend      | 8085     | 8085        | 开发工具             |
-| Develop Frontend     | 5178     | 8095        | 独立访问             |
-| Python Workflow Engine     | 8099     | 8099        | 空间计算引擎 (Python) |
-| PostgreSQL (System)  | 5432     | 5432        | ADDP 系统元数据          |
-| Redis                | 6379     | 6379        | 缓存和队列                 |
-| MinIO System API     | 9000     | 9000        | 系统文件存储           |
-| MinIO System Console | 9001     | 9001        | 系统 MinIO Web UI           |
-| Meilisearch          | 7700     | 7700        | 全文检索引擎       |
-
-**业务库服务** (通过 `business/docker-compose.yml` 部署):
-
-| 服务                | Docker 端口 | 说明                |
-| ---------------------- | ----------- | -------------------------- |
-| PostgreSQL (Business)  | 5433        | 用户业务数据存储 |
-| MinIO Business API     | 9002        | 用户文件存储          |
-| MinIO Business Console | 9003        | 业务 MinIO Web UI      |
+详见 [addp端口分配.md](addp端口分配.md)。
 
 **推荐访问**:
 - **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)

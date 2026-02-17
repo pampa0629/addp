@@ -8,7 +8,7 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@common-map': resolve(__dirname, '../../common-frontend/map/src')
+      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
     },
     dedupe: ['ol', 'vue']
   },

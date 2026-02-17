@@ -284,7 +284,7 @@ ENABLE_SUPER_ADMIN=true
 ## 相关文档
 
 - [返回核心概念关系图](../addp核心概念关系图.md)
-- [ADDP 认证与路由体系图](addp认证与路由体系图.md)
+- [ADDP 登录认证原理说明](addp登录认证的原理说明.md)
 - [System 模块详情](../../system/CLAUDE.md)
 
 ---

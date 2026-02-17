@@ -381,7 +381,7 @@ A: PreviewResolver 内部自动转换，旧 `engine_id, schema, table` 参数会
 
 ## 📚 相关文档
 
-- [ADDP 核心概念说明](../../docs/addp核心概念说明.md)
+- [ADDP 各模块简要介绍](../../docs/concepts/addp各模块功能介绍.md)
 - [ADDP API 设计规范](../../docs/addp-api设计规范.md)
 - [Manager 模块架构](../CLAUDE.md)
 

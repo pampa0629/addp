@@ -163,8 +163,11 @@ export function createAuthInterceptor(authStoreOrGetter, moduleName = 'Module') 
 /**
  * 标准 Auth Store 工厂函数 (Pinia defineStore 配置)
  *
- * ⚠️ 注意: 由于 Pinia 的限制,此函数返回配置对象,而非完整的 store
- * 各模块仍需调用 defineStore() 并传入此配置
+ * @internal
+ * ⚠️ 内部函数，仅供 createAuthStore 使用，不应直接调用
+ *
+ * 所有模块应使用 createAuthStore() 而不是此函数，以避免 getter 覆盖 bug。
+ * 此函数已从公共 API 中移除，但保留用于内部实现。
  *
  * @param {string} storeName - Store 名称 (建议: '{module}-auth')
  * @param {Object} authAPI - 认证 API 对象
@@ -172,18 +175,8 @@ export function createAuthInterceptor(authStoreOrGetter, moduleName = 'Module') 
  * @param {Object} options - 可选配置
  * @param {boolean} options.persistUser - 是否持久化 user 对象到 localStorage (默认: true)
  * @returns {Object} Pinia store 配置对象
- *
- * @example
- * // manager/frontend/src/store/auth.js
- * import { defineStore } from 'pinia'
- * import { createAuthStoreConfig } from '@common-ui'
- * import { authAPI } from '../api/auth'
- *
- * export const useAuthStore = defineStore('manager-auth', {
- *   ...createAuthStoreConfig('manager-auth', authAPI)
- * })
  */
-export function createAuthStoreConfig(storeName, authAPI, options = {}) {
+function createAuthStoreConfig(storeName, authAPI, options = {}) {
   const { persistUser = true } = options
 
   return {
@@ -456,19 +449,52 @@ export function createRefreshInterceptor(authStoreOrGetter, config = {}) {
 }
 
 /**
- * 创建认证 Store 工厂函数
+ * 创建认证 Store 工厂函数（推荐使用）
  *
  * 安全地创建认证 store，避免 getter 覆盖 bug
  *
- * @param {string} storeName - Store 名称
+ * @param {string} storeName - Store 名称（建议: '{module}-auth'）
  * @param {Object} authAPI - 认证 API 对象
  * @param {Object} options - 配置选项
- * @param {boolean} options.persistUser - 是否持久化用户信息
- * @param {Object} options.extraGetters - 额外的 getters
+ * @param {boolean} options.persistUser - 是否持久化用户信息（默认: true）
+ * @param {Object} options.extraGetters - 额外的 getters（可选）
+ * @param {Object} options.extraActions - 额外的 actions（可选）
  * @returns {Object} Store 配置对象
+ *
+ * @example
+ * // 标准用法
+ * export const useAuthStore = defineStore('meta-auth',
+ *   createAuthStore('meta-auth', authAPI, {
+ *     persistUser: true
+ *   })
+ * )
+ *
+ * @example
+ * // 添加额外的 getters
+ * export const useAuthStore = defineStore('develop-auth',
+ *   createAuthStore('develop-auth', authAPI, {
+ *     persistUser: true,
+ *     extraGetters: {
+ *       username: (state) => state.user?.username || ''
+ *     }
+ *   })
+ * )
+ *
+ * @example
+ * // 添加额外的 actions（高级用法）
+ * export const useAuthStore = defineStore('custom-auth',
+ *   createAuthStore('custom-auth', authAPI, {
+ *     persistUser: true,
+ *     extraActions: {
+ *       async customAction() {
+ *         // 自定义逻辑
+ *       }
+ *     }
+ *   })
+ * )
  */
 export function createAuthStore(storeName, authAPI, options = {}) {
-  const { persistUser = true, extraGetters = {} } = options
+  const { persistUser = true, extraGetters = {}, extraActions = {} } = options
 
   const baseConfig = createAuthStoreConfig(storeName, authAPI, { persistUser })
 
@@ -477,6 +503,10 @@ export function createAuthStore(storeName, authAPI, options = {}) {
     getters: {
       ...baseConfig.getters,
       ...extraGetters
+    },
+    actions: {
+      ...baseConfig.actions,
+      ...extraActions
     }
   }
 }

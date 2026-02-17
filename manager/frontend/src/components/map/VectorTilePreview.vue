@@ -39,7 +39,7 @@ import {
   useVectorTileLoader,
   fromLonLat,
   createGaodeBaseLayer
-} from '@common-map'
+} from '@common-ui-map'
 
 const props = defineProps({
   engineId: { type: [Number, String], required: true },

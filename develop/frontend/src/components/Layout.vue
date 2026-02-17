@@ -46,7 +46,7 @@
             <span>Notebook 开发</span>
           </el-menu-item>
 
-          <el-menu-item index="/query-tasks">
+          <el-menu-item index="/sql-tasks">
             <el-icon><FolderOpened /></el-icon>
             <span>查询任务</span>
           </el-menu-item>
@@ -78,7 +78,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '../store/auth'
 import {
   User,
   ArrowDown,

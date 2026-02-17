@@ -53,7 +53,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()

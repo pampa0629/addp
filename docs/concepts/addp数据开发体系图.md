@@ -120,7 +120,7 @@ graph TB
 
         EngineSelect --> PyWF[Python Workflow<br/>< 100万行<br/>内存计算]
         EngineSelect --> SparkWF[Spark Workflow<br/>> 100万行<br/>分布式计算]
-        EngineSelect --> MathWF[Math Workflow<br/>数学计算]
+        EngineSelect --> MathWF[Math Workflow<br/>数学计算（示范用）]
     end
 
     subgraph "2. 算子获取"

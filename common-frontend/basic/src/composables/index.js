@@ -11,7 +11,6 @@ export { useTreeLoader } from './useTreeLoader'
 export {
   createAuthGuard,
   createAuthInterceptor,
-  createAuthStoreConfig,
   createRefreshInterceptor,
   createAuthAPI,
   createAPIClient,

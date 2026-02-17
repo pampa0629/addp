@@ -138,7 +138,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { formatDate, formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
+import { formatDate } from '@common-ui'
+import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 
 const router = useRouter()
 

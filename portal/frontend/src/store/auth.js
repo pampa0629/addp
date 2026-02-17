@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
-import { createAuthStoreConfig } from '@common-ui'
+import { createAuthStore } from '@common-ui'
 import { authAPI } from '../api/auth'
 
-export const useAuthStore = defineStore('portal-auth', {
-  ...createAuthStoreConfig('portal-auth', authAPI, {
+export const useAuthStore = defineStore('portal-auth',
+  createAuthStore('portal-auth', authAPI, {
     persistUser: true
   })
-})
+)

@@ -960,7 +960,7 @@ func (s *InternalService) IsSpatialService() bool {
 ### 8.3 平台文档
 
 - [ADDP 开发原则](../docs/addp开发原则.md) - 平台级开发原则和规范
-- [ADDP 核心概念说明](../docs/addp核心概念说明.md) - 平台核心概念辨析
+- [ADDP 各模块简要介绍](../docs/concepts/addp各模块功能介绍.md) - 平台核心概念辨析
 - [System 模块说明](../system/CLAUDE.md) - System 模块的架构和功能
 - [Meta 模块说明](../meta/CLAUDE.md) - Meta 模块的架构和功能
 - [Gateway 架构说明](../gateway/docs/gateway架构说明.md) - Gateway 模块的路由和转发机制

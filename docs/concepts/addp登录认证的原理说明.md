@@ -1,4 +1,4 @@
-# ADDP 用户认证流程说明
+# ADDP 登录认证原理说明
 
 ## 一、认证流程概述
 
@@ -20,6 +20,42 @@ ADDP 平台使用 **JWT (JSON Web Token)** 进行用户认证，流程简单清�
 - `authStore` - Pinia 状态管理，存储 token 和 user
 - `createAuthGuard` - 路由守卫，保护需要登录的页面
 - `createAuthInterceptor` - HTTP 拦截器，自动添加 Token 头
+
+### JWT 认证流程总览
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Frontend as 前端
+    participant Gateway as Gateway
+    participant System as System Backend
+    participant DB as PostgreSQL
+
+    Note over User,DB: === 登录阶段 ===
+
+    User->>Frontend: 1. 输入用户名/密码
+    Frontend->>Gateway: 2. POST /api/system/login
+    Gateway->>System: 3. 转发登录请求
+    System->>DB: 4. 查询用户<br/>(users 表)
+    DB-->>System: 5. 返回用户信息<br/>(含 password_hash, tenant_id)
+    System->>System: 6. 验证密码<br/>(bcrypt)
+    System->>System: 7. 生成 JWT Token<br/>payload: {user_id, tenant_id, role}
+    System-->>Gateway: 8. 返回 {token, user_info}
+    Gateway-->>Frontend: 9. 返回登录成功
+    Frontend->>Frontend: 10. 存储 token<br/>(localStorage)
+
+    Note over User,DB: === 访问资源阶段 ===
+
+    User->>Frontend: 11. 访问受保护资源
+    Frontend->>Gateway: 12. GET /api/manager/data<br/>Header: Authorization: Bearer {token}
+    Gateway->>Gateway: 13. 验证 JWT Token<br/>提取 tenant_id
+    Gateway->>System: 14. 转发请求<br/>(附带 tenant_id)
+    System->>DB: 15. 查询数据<br/>(WHERE tenant_id = ?)
+    DB-->>System: 16. 返回租户数据
+    System-->>Gateway: 17. 返回结果
+    Gateway-->>Frontend: 18. 返回数据
+    Frontend-->>User: 19. 展示数据
+```
 
 ---
 
@@ -199,6 +235,29 @@ Vue Router 触发
 
 ### 场景 3：Portal 统一登录（推荐方式）
 
+Portal 通过 iframe 集成所有模块前端，用户只需登录一次，Token 自动传递给各子模块：
+
+```mermaid
+graph TB
+    subgraph "统一门户模式 (推荐)"
+        Portal[Portal<br/>:5170 dev / :8000 prod]
+        Portal --> Sidebar[左侧边栏<br/>统一导航]
+        Portal --> IframeArea[主区域<br/>iframe 动态加载]
+        IframeArea --> SystemFE[System Frontend<br/>:5173]
+        IframeArea --> ManagerFE[Manager Frontend<br/>:5174]
+        IframeArea --> MetaFE[Meta Frontend<br/>:5175]
+        IframeArea --> OtherFE[其他模块前端...]
+    end
+
+    classDef portal fill:#fff9c4,stroke:#f57f17
+    classDef component fill:#e1f5ff,stroke:#01579b
+    classDef frontend fill:#e8f5e9,stroke:#1b5e20
+
+    class Portal portal
+    class Sidebar,IframeArea component
+    class SystemFE,ManagerFE,MetaFE,OtherFE frontend
+```
+
 用户访问 `http://localhost:5170` (Portal 统一入口)
 
 ```
@@ -292,6 +351,8 @@ Vue Router 触发
 ## 五、关键技术点
 
 ### 1. JWT Token 结构
+
+> Gateway 路由规则和 Portal 架构总览见：[ADDP 模块架构图](../addp模块架构图.md)
 
 ```json
 {
@@ -411,6 +472,35 @@ router.beforeEach((to, from, next) => {
 })
 </script>
 ```
+
+### 5. iframe 中的 API 请求路径
+
+**关键知识点**：iframe 内的 API 请求使用相对路径时，相对于 **iframe 的 origin**，而不是父窗口。
+
+```
+Portal (localhost:5170)
+  └─ iframe src="http://localhost:5175/meta"
+       └─ Meta 发起 API 请求: /api/meta/scan
+          └─ 浏览器解析为 http://localhost:5175/api/meta/scan
+             └─ 命中 Meta 的 Vite 代理 /api → Gateway (8000)
+             ✅ 正确路由，无需特殊处理
+```
+
+**所有模块的 `vite.config.js` 配置相同的代理**：
+
+```javascript
+proxy: {
+  '/api': {
+    target: 'http://localhost:8000',  // Gateway
+    changeOrigin: true
+  }
+}
+```
+
+**结论**：在 Portal iframe 中运行时，各模块无需修改 API 请求的 baseURL。使用统一的相对路径 `/api`，由各模块的 Vite 代理转发到 Gateway，和独立运行时行为完全一致。
+
+- ❌ 错误做法：检测 `window.self !== window.top` 并切换到绝对 URL
+- ✅ 正确做法：始终使用 `createAPIClient()` 的默认相对路径配置
 
 ---
 
@@ -536,3 +626,12 @@ ADDP 认证系统的核心设计思想：
 **推荐使用方式**：
 - ✅ 生产环境：**Portal 统一登录** (一次登录，访问所有模块)
 - ✅ 开发调试：各模块独立登录 (方便单独测试)
+
+---
+
+## 相关文档
+
+- [ADDP 模块架构图（含 Gateway 路由 / Portal 架构）](../addp模块架构图.md)
+- [ADDP 账号与权限体系图](addp账号与权限体系图.md)
+- [ADDP 核心概念关系图](../addp核心概念关系图.md)
+- [Gateway 架构说明](../../gateway/doc/gateway架构说明.md)

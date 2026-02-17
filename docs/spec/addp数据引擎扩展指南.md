@@ -80,7 +80,7 @@ ADDP 数据引擎基于三层插件化架构：
 
 ## 🗂️ 当前支持的数据引擎
 
-截至 **v0.0.20** (2025-12-30)，ADDP 平台支持 **11 种**数据引擎：
+截至 **v0.0.20** (2025-12-30)，ADDP 平台支持 **12 种**数据引擎：
 
 ### 关系型数据库 (OLTP/OLAP)
 
@@ -108,10 +108,11 @@ ADDP 数据引擎基于三层插件化架构：
 
 | 引擎 | 类型 | 默认端口 | 接口实现 | 用途 |
 |------|------|----------|----------|------|
-| **Python Workflow** | 工作流引擎 | 8300 | ComputePlugin | 基于 GeoPandas 的空间工作流计算 |
-| **Spark Workflow** | 工作流引擎 | 8400 | ComputePlugin | 分布式空间工作流计算 |
-| **Spark SQL** | SQL 引擎 | 10000 | ComputePlugin | 大数据分布式查询引擎 |
-| **Math Workflow** | 计算引擎 | 8500 | ComputePlugin | 数学计算工作流 |
+| **Python Workflow** | 工作流引擎 | 8099 | ComputePlugin | 基于 GeoPandas 的空间工作流计算 |
+| **Spark Workflow** | 工作流引擎 | 8098 | ComputePlugin | 分布式空间工作流计算 |
+| **Spark SQL** | SQL 引擎 | 10000 | RelationalDBPlugin | 大数据分布式查询引擎（Thrift Server，兼容 JDBC/SQL） |
+| **Math Workflow** | 计算引擎 | 8089 | ComputePlugin | 数学计算工作流 |
+| **Jupyter** | Notebook 引擎 | 8097 | EnginePlugin | 交互式 Notebook 开发（Python/Shell） |
 
 ---
 

@@ -361,7 +361,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Link } from '@element-plus/icons-vue'
 import tileServiceAPI from '@/api/tileService'
-import { TilePreview } from '@common-map'
+import { TilePreview } from '@common-ui-map'
 import { copyToClipboard } from '../utils/serviceHelper'
 import { DataSourceCascader } from '@common-ui'
 

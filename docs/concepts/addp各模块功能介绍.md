@@ -1,644 +1,391 @@
-## Common 模块
+# ADDP 各模块简要介绍
 
-`common` 模块提供共享代码,避免**所有其他后端模块**之间的重复 (Manager、Meta、Transfer、Orchestrator、Develop 和 Python Workflow Engine 集成)。
+本文档提供 ADDP（全域数据平台）各模块的简要功能介绍。详细实现细节请参考各模块的 CLAUDE.md 或专项文档。
 
-**内容**:
+---
 
-- [client/system.go](common/client/system.go) - SystemClient 用于与 System 模块通信
-- [models/resource.go](common/models/resource.go) - 共享的 Resource 模型和 BuildConnectionString 工具
-- [config/loader.go](common/config/loader.go) - 集中式配置加载,带回退
+## 平台概览
 
-**使用模式**:
+**ADDP (All-Domain Data Platform)** 是一个企业级数据管理和分析平台，采用微服务架构，提供从数据接入、存储、处理、分析到服务发布的全生命周期管理能力。
 
+**核心特性**：
+- 微服务架构，模块化设计
+- 多租户隔离，资源独立管理
+- 插件化引擎系统，支持 11 种数据引擎
+- 统一认证和权限管理（JWT + RBAC）
+- 可视化工作流编排
+
+---
+
+## 核心模块
+
+### 1. Portal（统一门户）
+
+**职责定位**：统一入口，集成所有模块功能，提供一致的用户体验
+
+**核心能力**：
+- 基于 iframe 的模块动态加载
+- 一次登录访问所有模块（JWT 认证传递）
+- 统一左侧导航菜单
+- 支持独立访问和门户嵌入两种模式
+
+**端口**：
+- 开发环境：5170
+- 生产环境：80 (通过 Nginx)
+
+**详细文档**：`portal/CLAUDE.md`
+
+---
+
+### 2. System（核心系统）
+
+**职责定位**：平台核心服务，提供用户认证、引擎管理、日志审计
+
+**核心能力**：
+- 用户和租户管理（SuperAdmin / Tenant Admin / Regular User）
+- RBAC 权限控制（角色与权限绑定）
+- 引擎（数据源）注册管理（支持 11 种数据引擎）
+- JWT Token 认证与授权
+- 审计日志记录（操作、登录、API 调用）
+- 系统配置和全局参数管理
+- 模块注册表（各模块向 System 声明自身 API 地址和能力）
+- 任务提供者注册（各模块向 Orchestrator 声明可编排的任务类型）
+- API 文档（统一维护平台 OpenAPI 接口文档）
+
+**端口**：
+- Backend：8180
+
+**详细文档**：`system/CLAUDE.md`
+
+---
+
+### 3. Gateway（API 网关）
+
+**职责定位**：统一 API 入口，请求路由和转发
+
+**核心能力**：
+- 基于路径前缀的请求路由（`/api/system/*` → System Backend）
+- CORS 跨域支持
+- 请求头、正文、查询参数透明转发
+- 健康检查端点（`/health`）
+
+**端口**：
+- Gateway：8000
+
+**详细文档**：`gateway/docs/gateway架构说明.md`
+
+---
+
+### 4. Manager（数据管理）
+
+**职责定位**：数据预览、对象存储管理
+
+**核心能力**：
+- 数据源目录树展示（关系型/NoSQL/对象存储）
+- 多类型数据预览：
+  - 表格数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB）
+  - 空间数据（GeoJSON、Shapefile、PostGIS、MVT 瓦片快显）
+  - 文件预览（图片、视频、PDF、Office 文档）
+- 对象存储管理（MinIO/S3/OSS 的 Bucket 和对象管理）
+- 预览插件系统（TextPreview、ImagePreview、PDFPreview、DocxPreview、PptxPreview）
+- MVT 瓦片缓存（PostGIS 矢量瓦片生成和缓存，支持快显）
+- 向量化（文本和图像向量化，支持语义相似度检索）
+- 全文检索与语义检索（基于 Meilisearch 和向量数据库）
+
+**端口**：
+- Backend：8081
+- Frontend：5174 (dev)
+
+**详细文档**：`manager/CLAUDE.md`
+
+---
+
+### 5. Meta（元数据服务）
+
+**职责定位**：元数据扫描、索引、搜索和管理
+
+**核心能力**：
+- 元数据扫描（关系型数据库、NoSQL、对象存储）：
+  - 关系型：ListSchemas() → ListTables() → ListColumns()
+  - NoSQL（MongoDB）：采样推断 Schema，支持混合类型字段
+  - 对象存储：ListBuckets() → ListObjects()，深度文件解析
+- 全文检索索引（Meilisearch，支持中文分词）
+- 定时扫描（Cron 表达式配置）
+- 事件驱动自动扫描（System 注册引擎触发 Meta 扫描）
+- 统一层级元数据模型（resource → node → item）
+
+**端口**：
+- Backend：8082
+- Frontend：5175 (dev)
+
+**详细文档**：`meta/CLAUDE.md`
+
+---
+
+### 6. Transfer（数据传输）
+
+**职责定位**：数据导入、导出、同步任务管理
+
+**核心能力**：
+- 数据导入（从外部源导入到 ADDP）：CSV、Shapefile、PostgreSQL、MySQL、S3
+- 数据导出（从 ADDP 导出到外部系统）：PostgreSQL、MySQL、MinIO、S3、CSV
+- 增量/全量同步（基于时间戳或 ID）
+- 字段映射和类型转换
+- 异步任务队列（Asynq，优先级队列：critical / default / low）
+- 定时调度（Cron 表达式配置）
+
+**端口**：
+- Backend：8083
+- Frontend：5176 (dev)
+
+**详细文档**：`transfer/CLAUDE.md`
+
+---
+
+### 7. Orchestrator（任务编排）
+
+**职责定位**：跨模块 DAG 任务编排、调度和执行
+
+**核心能力**：
+- 跨模块任务编排（Meta 扫描 → Transfer 传输 → Manager 预览）
+- DAG 拓扑排序，检测循环依赖
+- 参数模板化（`{{stepID.field}}` 引用前序任务结果）
+- 定时调度（Cron 表达式配置）
+- 任务依赖管理（depends_on）
+- 能力注册中心（发现各模块提供的任务）
+
+**端口**：
+- Backend：8084
+- Frontend：5177 (dev)
+
+**详细文档**：`orchestrator/CLAUDE.md`
+
+---
+
+### 8. Develop（数据开发）
+
+**职责定位**：查询执行、工作流开发、Notebook 交互式开发
+
+**核心能力**：
+- **查询开发**：SQL/MQL 编辑、执行、结果展示（支持 PostgreSQL、MySQL、Doris、ClickHouse、MongoDB）
+- **算子工作流**：基于算子的可视化 DAG 工作流（空间和非空间算子，细粒度计算节点）
+- **Notebook 开发**：基于 Jupyter 的交互式 Notebook 环境（Python、Shell）
+- 代码编辑器（语法高亮、自动补全、格式化）
+- 执行历史记录和结果回溯
+
+**端口**：
+- Backend：8085
+- Frontend：5178 (dev)
+
+**详细文档**：`develop/CLAUDE.md`
+
+---
+
+---
+
+### 9. Copilot（AI 助手）
+
+**职责定位**：基于大语言模型（LLM）的 AI 辅助开发模块
+
+**核心能力**：
+- **自然语言转 SQL**：用户用自然语言描述查询需求，AI 自动匹配元数据生成 SQL
+- **自然语言转工作流**：用户描述处理需求，AI 生成 GIS 工作流 DAG 定义
+- **多轮对话记忆**：支持上下文关联的多轮对话
+- **多 LLM 支持**：支持 OpenAI、Claude、Ollama、DashScope 等，租户可自定义模型和 API Key
+- **元数据感知**：调用 Meta 模块智能匹配候选数据源，提升生成准确率
+- **多租户隔离**：对话历史和 LLM 配置按租户完全隔离
+
+**端口**：
+- Backend：8087
+
+**详细文档**：`copilot/CLAUDE.md`
+
+---
+
+### 10. Service（数据服务）
+
+**职责定位**：内部数据发布、外部服务代理接入、矢量瓦片地图服务
+
+**核心能力**（三大服务系统）：
+- **查询服务**：将内部数据库表或 SQL 查询发布为标准服务（REST Query API、OGC API Features 1.0、WFS 2.0）
+- **瓦片服务**：发布高性能矢量瓦片地图（XYZ Tiles、WMTS 1.0、OGC Tiles API），支持动态生成和静态预存
+- **注册服务**：代理管理外部第三方 OGC 服务（支持 WMS/WFS/WMTS/OGC API/XYZ/REST），含健康检查和元数据自动刷新
+- **服务目录**：聚合三大服务系统的统一发现入口，支持按协议类型筛选
+- **权限控制**：管理端 JWT 认证 + 租户隔离，数据端可配置公开或需认证访问
+
+**端口**：
+- Backend：8086
+- Frontend：5180 (dev)
+
+**详细文档**：`service/CLAUDE.md`
+
+---
+
+### 11. Monitor（执行监控）
+
+**职责定位**：全平台任务执行监控、统计分析、健康检查
+
+**核心能力**：
+- 统一监控所有模块的任务执行记录（使用 `common.task_executions` 表）
+- 统计分析（任务成功率、平均执行时长、失败原因）
+- 健康检查（服务存活状态、资源占用）
+- 执行日志查看和搜索
+- 任务重试和取消管理
+
+**端口**：
+- Backend：8100
+- Frontend：5179 (dev)
+
+**详细文档**：`monitor/docs/Monitor模块实施报告.md`
+
+---
+
+## 计算引擎
+
+### Python Workflow Engine
+
+**职责定位**：基于 Python 的单节点工作流计算引擎
+
+**核心能力**：
+- 提供 21 个空间算子（buffer、centroid、intersection、union 等）
+- DAG 内存计算（GeoDataFrame 全程内存传递，避免中间序列化）
+- 支持空间和非空间数据处理
+- 适用场景：中小规模数据（< 100 万行）
+- 执行引擎：GeoPandas（单机内存计算）
+
+**端口**：8090
+
+**详细文档**：`engines/python_workflow/README.md`
+
+---
+
+### Spark Workflow Engine
+
+**职责定位**：基于 Spark 的分布式工作流引擎
+
+**核心能力**：
+- 大规模分布式空间数据处理
+- 支持空间和非空间算子
+- 适用场景：大规模数据（> 100 万行）
+- 执行引擎：Apache Spark（分布式计算）
+- 自动资源调度和任务并行
+
+**端口**：8091
+
+**详细文档**：`engines/spark-workflow/README.md`
+
+---
+
+### Jupyter Engine
+
+**职责定位**：交互式 Notebook 执行引擎
+
+**核心能力**：
+- Jupyter Notebook 交互式开发环境
+- 支持 Python 和 Shell 代码执行
+- 变量传递和工作流集成
+- 结果输出（文本、图表、GeoDataFrame）
+- 代码单元格管理和执行状态跟踪
+
+**端口**：8888
+
+**详细文档**：`engines/jupyter/README.md`
+
+---
+
+## 共享模块
+
+### common（后端共享库）
+
+**职责定位**：后端模块间共享代码，避免重复
+
+**核心能力**：
+- **SystemClient**：与 System 模块通信（ListEngines、GetEngine）
+- **Resource 模型**：共享数据模型（用户、引擎、任务等）
+- **BuildConnectionString**：自动构建数据库连接字符串（解密密码）
+- **配置加载器**：集中式配置加载，支持回退（`common/config/loader.go`）
+- **工具函数**：JWT、加密、日志、类型转换等
+
+**模块路径**：`common/`
+
+**使用模式**：
 ```go
-// 在模块的 go.mod 中
+// go.mod 中引用
 require (github.com/addp/common v0.0.0)
 replace github.com/addp/common => ../../common
 
-// 使用别名导入以避免冲突
-import (
-    commonClient "github.com/addp/common/client"
-    commonModels "github.com/addp/common/models"
-)
-
-// 使用 SystemClient 获取引擎
-client := commonClient.NewSystemClient(systemURL, jwtToken)
-engines, err := client.ListEngines("postgresql")
-engine, err := client.GetEngine(engineID)
-
-// 构建连接字符串 (自动解密密码)
-connStr, err := commonModels.BuildConnectionString(engine)
+// 导入使用
+import commonClient "github.com/addp/common/client"
+import commonModels "github.com/addp/common/models"
 ```
 
-**关键设计原则**:
+**详细文档**：`docs/concepts/addp共享模块介绍.md`
 
-- 最小外部依赖 (仅 Go 标准库)
-- 所有模块使用相同的 SystemClient 实现
-- Resource 模型在所有服务中是规范的
-- common 的破坏性更改会影响所有模块 - 彻底测试
+---
 
-**另请参阅**: [docs/COMMON_MODULE.md](docs/COMMON_MODULE.md)
+### common-frontend（前端共享库）
 
-## Common Frontend
+**职责定位**：前端模块间共享组件、工具和类型定义
 
-`common-frontend` 模块提供共享的 Vue 3 组件、工具和类型定义,供跨模块的前端复用。
+**核心能力**：
+- **basic 子模块**（无地图依赖）：
+  - StorageEngineForm（数据源配置表单）
+  - ImagePreview（图片预览）
+  - formatters（数据格式化工具：formatFileSize、formatDateTime）
+  - 类型定义（FieldType、FormatType、ResourceType）
+- **map 子模块**（地图相关，依赖 OpenLayers 和高德地图）：
+  - GeoJsonPreview（GeoJSON 预览）
+  - ShapefilePreview（Shapefile 预览）
+  - TablePreview（表格数据预览）
+  - MapContainer（地图容器，支持 OpenLayers 和高德地图）
 
-**架构**: 分为两个子模块以避免不必要的依赖:
+**模块路径**：`common-frontend/`
 
-```
-common-frontend/
-├── basic/          # 基础 UI 组件 (无地图依赖)
-│   └── src/
-│       ├── components/  - StorageEngineForm, ImagePreview, ExtractedMetadata
-│       ├── utils/       - 格式化器, 类型工具
-│       ├── types/       - FieldType, FormatType, ResourceType
-│       └── index.js
-│
-└── map/            # 地图相关组件 (需要 ol 和 @amap/amap-jsapi-loader)
-    └── src/
-        ├── components/  - MapContainer, GeoJsonPreview, ShapefilePreview, TablePreview
-        ├── composables/ - useMapConfig, useGaodeMap, useOpenLayersMap
-        └── utils/       - 地理工具, 格式化器
-```
-
-**使用模式**:
-
-**对于无地图功能的模块** (System, Transfer):
-
+**使用模式**：
 ```javascript
-// vite.config.js
+// vite.config.js 中配置别名
 resolve: {
   alias: {
-    '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-  }
-}
-
-// 在组件中
-import { StorageEngineForm, ImagePreview } from '@common-ui'
-import { formatFileSize, formatDateTime } from '@common-ui'
-```
-
-**对于有地图功能的模块** (Manager):
-
-```javascript
-// vite.config.js
-resolve: {
-  alias: {
+    '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
     '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
   }
 }
 
-// package.json 依赖
-{
-  "ol": "^9.2.4",
-  "@amap/amap-jsapi-loader": "^1.0.1"
-}
-
-// 在组件中
-import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
+// 导入使用
+import { StorageEngineForm, ImagePreview } from '@common-ui'
+import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 ```
 
-**关键组件**:
-
-- **预览组件**: ShapefilePreview, GeoJsonPreview, TablePreview, ImagePreview
-- **表单组件**: StorageEngineForm (PostgreSQL/MinIO/S3 配置)
-- **地图组件**: MapContainer, OpenLayersRenderer, GaodeMapRenderer
-- **工具**: formatFileSize, formatDateTime, detectFormatByExtension, isGeospatialFormat
-- **类型**: FieldType, FormatType, ResourceType (与后端模型对齐)
-
-**优势**:
-
-- ✅ **模块化依赖**: 模块只安装需要的内容
-- ✅ **减小打包体积**: 基础模块通过排除地图库节省约 2-3MB
-- ✅ **类型安全**: 共享的类型定义确保前后端一致性
-- ✅ **DRY 合规**: UI 组件复用而非复制
-- ✅ **统一维护**: 所有共享组件集中在一处
-
-**模块使用**:
-
-- **System Frontend**: 使用 `basic` (资源配置的 StorageEngineForm)
-- **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, ShapefilePreview, TablePreview)
-- **Meta Frontend**: 使用 `basic` (元数据显示的 ExtractedMetadata)
-- **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
-- **Portal Frontend**: 使用 `basic` (通用 UI 元素)
-
-**另请参阅**: [common-frontend/README.md](common-frontend/README.md), [common-frontend/ARCHITECTURE.md](common-frontend/ARCHITECTURE.md)
-
-## 开发工作流
-
-### 添加新的 API 端点
-
-遵循代码库中使用的分层架构模式:
-
-1. **在 `internal/models/` 中定义数据模型**:
-
-   ```go
-   type CreateResourceRequest struct {
-       Name           string                 `json:"name" binding:"required"`
-       ResourceType   string                 `json:"resource_type" binding:"required"`
-       ConnectionInfo map[string]interface{} `json:"connection_info"`
-   }
-   ```
-2. **在 `internal/repository/` 中添加仓库方法**:
-
-   ```go
-   func (r *ResourceRepository) Create(resource *models.Resource) error {
-       return r.db.Create(resource).Error
-   }
-   ```
-3. **在 `internal/service/` 中实现业务逻辑**:
-
-   ```go
-   func (s *ResourceService) CreateResource(req *CreateResourceRequest) (*Resource, error) {
-       // 验证、加密、业务规则
-       return s.repo.Create(resource)
-   }
-   ```
-4. **在 `internal/api/` 中创建 HTTP 处理器**:
-
-   ```go
-   func (h *EngineHandler) Create(c *gin.Context) {
-       var req CreateEngineRequest
-       if err := c.ShouldBindJSON(&req); err != nil {
-           c.JSON(400, gin.H{"error": err.Error()})
-           return
-       }
-       engine, err := h.service.CreateEngine(&req)
-       c.JSON(201, engine)
-   }
-   ```
-5. **在 `internal/api/router.go` 中注册路由**:
-
-   ```go
-   protected.POST("/engines", engineHandler.Create)
-   ```
-
-**示例 PR**: 参见 system 模块引擎管理实现
-
-### 数据库迁移
-
-GORM AutoMigrate 自动处理 schema 更改:
-
-1. **在 `internal/models/` 中修改模型结构**:
-
-   ```go
-   type Resource struct {
-       ID             uint      `gorm:"primaryKey"`
-       Name           string    `gorm:"not null"`
-       NewField       string    `gorm:"default:''" json:"new_field"` // 添加新字段
-   }
-   ```
-2. **在 `internal/repository/database.go` 中添加到 AutoMigrate**:
-
-   ```go
-   db.AutoMigrate(
-       &models.Resource{},
-       &models.User{},
-       // 在此添加新模型
-   )
-   ```
-3. **重启应用** - 迁移在启动时运行
-
-**对于复杂迁移**:
-
-- 在 `scripts/migrations/` 中创建 SQL 脚本用于数据转换
-- 在部署新版本前通过 `make db-migrate` 手动运行
-- 在 PR 描述中记录破坏性更改
-
-**Meta 模块特殊性**:
-统一的元数据模型 (resource/node/item) 需要协调更新:
-
-- [meta/backend/internal/models/](meta/backend/internal/models/) 中的模型结构
-- `meta_dictionary` 表中的字典验证
-- 如果结构更改,`attributes` 字段中的 JSON schema 版本
-- 可能需要现有元数据的数据迁移脚本
-
-### 添加前端页面
-
-**重要**: 根据功能将页面添加到正确的前端:
-
-- System 功能 (用户、日志、资源) → `system/frontend/`
-- Manager 功能 (数据源、目录) → `manager/frontend/`
-- Meta 功能 (元数据、血缘) → `meta/frontend/`
-- Transfer 功能 (任务、执行) → `transfer/frontend/`
-
-每个前端的步骤:
-
-1. 在 `<module>/frontend/src/views/` 中创建 Vue 组件
-2. 在 `<module>/frontend/src/api/` 中添加 API 函数
-3. 在 `<module>/frontend/src/router/index.js` 中注册路由
-4. 在 `<module>/frontend/src/components/Layout.vue` 中添加导航链接
-
-## 配置
-
-### 环境变量
-
-根目录 `.env` 文件 (从 `.env.example` 复制):
-
-```bash
-# 安全性 (生产环境必须更改)
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-
-# PostgreSQL - ADDP 系统数据库
-POSTGRES_PASSWORD=addp_password
-POSTGRES_USER=addp
-POSTGRES_DB=addp
-
-# Redis
-REDIS_PASSWORD=addp_redis
-
-# MinIO - 系统文件
-MINIO_SYSTEM_ROOT_USER=minioadmin
-MINIO_SYSTEM_ROOT_PASSWORD=minioadmin
-
-# MinIO - 业务数据 (部署在 business/docker-compose.yml)
-BUSINESS_MINIO_ENDPOINT=host.docker.internal:9002
-BUSINESS_MINIO_ACCESS_KEY=minioadmin
-BUSINESS_MINIO_SECRET_KEY=minioadmin
-
-# 服务集成
-ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
-```
-
-推荐访问**:
-
-- **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)
-- **开发环境**: http://localhost:5170 (Portal 独立访问) 或各模块独立端口
-
-**业务库设置**:
-
-```bash
-cd business
-cp .env.example .env
-docker-compose up -d
-```
-
-## 测试
-
-### 默认测试账户 (仅用于开发和测试环境)
-
-ADDP 系统在首次启动时可自动创建测试账户,方便开发调试。
-
-**重要**: 此功能默认**禁用**,需要在 `.env` 文件中显式启用,且在生产环境强制禁止使用。
-
-#### 超级管理员账户
-
-- **用户名**: `SuperAdmin`
-- **密码**: `20251001#SuperAdmin`
-- **用户类型**: `super_admin` (超级管理员)
-- **租户**: 无 (跨租户管理)
-- **权限**: 管理租户、查看系统级日志、不能直接操作业务数据
-- **用途**: 系统级管理、租户管理
-- **创建方式**: 应用启动时自动创建 (总是启用)
-
-#### 默认租户管理员账户
-
-- **租户**: 默认租户
-- **用户名**: `admin`
-- **密码**: `123456`
-- **用户类型**: `tenant_admin` (租户管理员)
-- **权限**: 管理默认租户下的用户、资源、数据
-- **用途**: 日常开发调试、演示使用
-- **创建方式**: 需要在 `.env` 中设置 `ENABLE_DEFAULT_TENANT=true` 启用
-
-#### 启用默认租户账户
-
-在 `.env` 文件中添加以下配置:
-
-```bash
-# 启用默认租户和租户管理员账户创建
-ENABLE_DEFAULT_TENANT=true
-
-# 可选: 自定义默认账户信息
-DEFAULT_TENANT_NAME=默认租户
-DEFAULT_ADMIN_USERNAME=admin
-DEFAULT_ADMIN_PASSWORD=123456
-DEFAULT_ADMIN_EMAIL=admin@addp.com
-```
-
-#### 安全提示
-
-- ⚠️ **仅用于开发和测试环境** - 这些账户密码较弱,不应在生产环境使用
-- ⚠️ **生产环境强制禁用** - 即使设置 `ENABLE_DEFAULT_TENANT=true`,在 `ENV=production` 时也不会创建
-- ⚠️ **默认禁用** - 未设置 `ENABLE_DEFAULT_TENANT=true` 时不会创建默认租户账户
-- 💡 可通过环境变量自定义账户信息 (用户名、密码、邮箱等)
-- 💡 账户创建是幂等的,重复启动不会重复创建
-
-#### 登录测试
-
-使用默认账户登录:
-
-```bash
-# 使用超级管理员登录
-curl -X POST http://localhost:8180/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "SuperAdmin", "password": "20251001#SuperAdmin"}'
-
-# 使用租户管理员登录
-curl -X POST http://localhost:8180/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "123456"}'
-```
-
-**初始化位置**: `system/backend/internal/repository/database.go`
-
-### 运行测试
-
-```bash
-# 测试所有模块 (从项目根目录)
-make test
-
-# 测试特定模块
-cd system/backend && go test ./...
-cd manager/backend && go test ./...
-cd meta/backend && go test ./...
-
-# 带覆盖率的测试
-go test -cover ./...
-
-# 测试特定包
-go test ./internal/service/...
-
-# 使用详细输出运行测试
-go test -v ./...
-
-# 运行特定测试函数
-go test -v -run TestFunctionName ./internal/service/
-```
-
-**数据持久化**:
-
-**ADDP 系统** (docker-compose.infra.yml):
-
-- PostgreSQL: `postgres_data` 卷 (ADDP 系统元数据)
-- Redis: `redis_data` 卷 (缓存和队列)
-- MinIO System: `minio_data` 卷 (系统文件)
-- Meilisearch: `meilisearch_data` 卷 (搜索索引)
-
-**业务库** (business/docker-compose.yml):
-
-- PostgreSQL: `business_postgres_data` 卷 (用户业务数据)
-- MinIO Business: `business_minio_data` 卷 (用户文件)
-
-## API 端点摘要
-
-**公开**:
-
-- `POST /api/auth/login` - 登录
-- `POST /api/auth/register` - 注册
-
-**受保护** (需要 JWT):
-
-- `GET /api/users/me` - 当前用户
-- `GET /api/users` - 列出用户
-- `GET/PUT/DELETE /api/users/:id` - 用户 CRUD
-- `GET /api/logs` - 审计日志 (支持 `?user_id=X` 过滤)
-- `POST/GET/PUT/DELETE /api/engines` - 引擎 CRUD (支持 `?engine_type=X` 过滤)
-
-## 服务架构详情
-
-### Gateway 服务 (已实现)
-
-**目的**: 所有微服务的统一 API 入口
-
-**关键特性**:
-
-- 使用 Gin 的 HTTP 反向代理
-- 通过 URL 前缀匹配路由 (`/api/auth/*` → System, `/api/datasources/*` → Manager 等)
-- 用于跨域请求的 CORS 中间件
-- 透明的请求/响应转发 (保留头、正文、查询参数)
-- `/health` 的健康检查端点
-
-**配置**: 服务 URL 通过环境变量配置 (`SYSTEM_SERVICE_URL`, `MANAGER_SERVICE_URL` 等)
-
-**架构文件**: 详细的请求流和路由规则参阅 `gateway/ARCHITECTURE.md`
-
-### Manager 服务 (已实现)
-
-**目的**: 数据预览、数据探查、数据处理等
-
-**已实现功能**:
-
-- **对象存储预览** (MinIO, S3, OSS):
-  - 带层级列表的目录/前缀导航
-  - 对象内容预览 (文本、JSON、GeoJSON、图片)
-  - 带流支持的 PDF 预览
-  - Office 文档预览 (DOCX, PPTX) 通过转换
-  - 元数据显示 (大小、最后修改时间、内容类型)
-  - 与 Meta 模块集成用于扫描的元数据增强
-- **预览插件系统** ([manager/backend/internal/service/object_preview.go:1](manager/backend/internal/service/object_preview.go)):
-  - 可扩展的预览处理器 (TextPreview, ImagePreview, PDFPreview, DocxPreview, PptxPreview)
-  - 内容类型检测和路由
-  - 二进制和文本内容处理
-- 连接到 System 模块进行引擎管理
-- 连接信息解密以安全访问
-
-**关键文件**:
-
-- 后端预览服务: [manager/backend/internal/service/object_preview.go](manager/backend/internal/service/object_preview.go)
-- 前端预览组件: [manager/frontend/src/components/previews/](manager/frontend/src/components/previews/)
-- 预览插件注册表: [manager/frontend/src/plugins/previews/index.js](manager/frontend/src/plugins/previews/index.js)
-
-**规划功能**:
-
-- 数据库数据预览 (带分页的表记录)
-- 视频/音频预览
-- 额外的 office 格式 (XLS, CSV)
-- 基于权限的访问控制 (用户/组级别)
-- 文件上传和管理
-
-**数据库**: PostgreSQL `manager` schema
-
-### Meta 服务 (已实现)
-
-**目的**: 元数据管理和数据血缘
-
-**已实现功能**:
-
-- 从 System 模块同步数据源
-- **统一的层级元数据模型**,适用于所有数据源类型:
-  - 关系数据库: resource (database) → node (schema) → item (table/view)
-  - 对象存储: resource (bucket) → node (prefix) → item (object)
-- 元数据扫描:
-  - PostgreSQL、MySQL 和其他兼容 JDBC 的数据库
-  - 通过 S3 API 的对象存储 (MinIO, S3, OSS)
-- 带状态跟踪的 schema 级扫描 (未扫描/扫描中/已扫描)
-- 表和字段元数据提取 (名称、类型、大小、注释)
-- 对象存储元数据提取 (前缀层次结构、对象类型、大小)
-- 使用 cron 表达式的自动和计划扫描 (默认: 每日午夜)
-- **事件驱动的自动扫描**: System 注册触发 Meta 扫描 (通过 Redis Pub/Sub)
-- 多租户元数据隔离
-- **基于 JSON 的灵活属性**,带 schema 版本控制
-
-**自动扫描触发**:
-在 System 模块中注册存储引擎时,可以配置自动元数据扫描:
-
-- **Immediate**: 注册后自动开始扫描 (无需手动触发)
-- **Daily/Weekly**: 在 Meta 模块中创建计划任务
-- **Manual**: 无自动扫描,需要在 Meta 前端手动触发
-
-这通过**事件驱动架构**实现:
-
-1. System 在创建/更新引擎时向 Redis 发布引擎变更事件
-2. Meta 订阅这些事件并检查 `ScanConfig.ScheduleType`
-3. 如果 `ScheduleType == "immediate"`, Meta 自动创建并入队扫描任务
-4. 无循环依赖: System → Redis Pub/Sub → Meta (单向通信)
-
-**扫描工作流**:
-
-1. 从 System 模块 `/api/engines` 同步数据源
-2. 选择要扫描的数据源和 schemas/prefixes
-3. 层级提取元数据:
-   - 数据库: system.engines (database) → meta_node (schemas) → meta_item (tables,字段详情在 JSON 中)
-   - 对象存储: system.engines (bucket scope) → meta_node (prefixes) → meta_item (objects,文件元数据)
-4. 存储在 PostgreSQL `metadata` schema 中,带租户隔离
-5. 跟踪扫描状态、同步版本和最后扫描时间
-6. 支持手动触发和计划自动同步
-
-**架构亮点**:
-
-- **节点类型验证**: `meta_dictionary` 表强制有效的父子关系
-- **软删除**: 所有实体使用 `deleted_at` 进行安全删除和恢复
-- **路径跟踪**: 节点维护 `depth`、`path` (ID 链) 和 `full_name` 以高效查询
-- **增量同步**: `sync_version` 和 `last_synced_at` 启用变更检测
-
-**规划功能**:
-
-- 数据血缘跟踪 (source → transformation → target)
-- 基于标签的搜索和发现
-- 扩展的元数据统计和分析
-- `meta_change_log` 用于审计跟踪和回滚
-
-**数据库**: PostgreSQL `metadata` schema (表: meta_node, meta_item, meta_dictionary, meta_change_log)
-
-### Transfer 服务 (已实现)
-
-**目的**: 数据导入/导出和同步
-
-**规划功能**:
-
-- 从外部源导入 (数据库、API、文件)
-- 导出到各种目标
-- 使用 Cron 表达式的计划任务
-- 字段映射和转换
-- 带进度跟踪的批处理
-- 基于 Asynq 的异步执行任务队列
-- 失败传输的重试机制
-
-**数据库**: PostgreSQL `transfer` schema (表: tasks, task_executions, data_mappings)
-
-**任务队列架构**:
-
-- **队列命名**: 使用模块前缀队列以避免与其他模块冲突
-  - `transfer:critical` - 高优先级任务 (紧急任务)
-  - `transfer:default` - 正常优先级任务 (普通任务)
-  - `transfer:low` - 低优先级任务 (低优先级任务)
-- **Redis 存储结构**:
-  ```
-  asynq:transfer:default:pending    → 等待处理的任务
-  asynq:transfer:default:active     → 正在处理的任务
-  asynq:transfer:default:scheduled  → 延迟执行的任务
-  asynq:transfer:default:retry      → 失败重试队列
-  asynq:transfer:default:archived   → 永久失败的任务 (死信队列)
-  ```
-- **多模块隔离**: 每个模块使用自己的队列命名空间
-  - Transfer: `transfer:*` 队列
-  - Meta (未来): `meta:*` 队列
-  - 其他模块: `{module_name}:*` 队列
-- **Worker 配置**: 使用 Docker Swarm 运行以实现高可用 (默认 2 个副本)
-
-### Python Workflow Engine (已实现)
-
-**目的**: 基于 Python 的空间计算引擎,提供 GIS 工作流执行能力
-
-**架构**: HTTP Sidecar 模式 (独立的 Flask 微服务)
-
-**关键功能** (已实现):
-
-- **21 个空间算子**,分为 5 类:
-
-  - 几何处理 (8): buffer, centroid, convex_hull, simplify, dissolve, envelope, boundary, representative_point
-  - 空间关系 (3): intersection, union, difference
-  - 几何属性 (3): area, length, distance
-  - 格式转换 (2): to_crs, explode
-  - 批处理 (2): clip, spatial_join
-  - 高级算子 (3): voronoi, delaunay_triangulation, minimum_rotated_rectangle
-- **内存高效的工作流执行**:
-
-  - GeoDataFrame 全程内存传递(避免中间序列化)
-  - DAG 拓扑排序(Kahn 算法)
-  - 支持 `{"$ref": "taskID"}` 引用上游结果
-  - 最终结果写入 PostGIS GEOMETRY 字段
-- **双执行模式**:
-
-  - **即时执行**: Develop 模块中直接调用工作流 API (`POST /api/spatial/workflow`)
-  - **任务保存**: 保存为 GIS 任务(存储到 `develop.spatial_tasks`),供 Orchestrator 编排
-- **引擎注册**:
-
-  - 仅注册引擎本身到 System (`python-workflow.engine.default`)
-  - 不注册具体算子 (Transfer 模式)
-  - 任务动态发现: `GET /api/spatial/tasks`
-
-**API 端点**:
-
-```
-GET  /health                          - 健康检查
-GET  /api/spatial/operators           - 获取算子列表(21个)
-POST /api/spatial/workflow            - 即时执行工作流
-POST /api/spatial/operators/:name/execute - 执行单个算子
-GET  /api/spatial/tasks               - 列出保存的任务
-POST /api/spatial/tasks               - 创建任务
-POST /api/spatial/tasks/:id/execute   - 执行任务
-GET  /api/spatial/executions/:id      - 查询执行状态
-```
-
-**数据库**: PostgreSQL `develop` schema
-
-- `develop.spatial_tasks` - GIS任务定义(workflow_def JSONB, input_schema JSONB, schedule VARCHAR)
-- `develop.spatial_execution_results` - 执行结果(geom GEOMETRY(GEOMETRY, 4326), properties JSONB)
-
-**Orchestrator 集成** (已实现):
-
-- 支持参数模板化: `{{stepID.field.nestedField}}`
-- 跨步骤数据传递: SQL → GIS → Transfer
-- 示例: `{"poi_location": "{{sql_extract.geojson}}"}`
-
-**技术栈**:
-
-- **语言**: Python 3.11
-- **框架**: Flask + CORS
-- **库**: GeoPandas 0.14.1, Shapely 2.0.2, NumPy<2.0
-- **数据库**: SQLAlchemy 2.0.23 + GeoAlchemy2 0.14.3
-- **部署**: Docker + Gunicorn (4 workers, 600s timeout)
-
-**端口**: 8090 (开发和生产)
-
-**关键文件**:
-
-- [python-workflow/workflow_engine.py](python-workflow/workflow_engine.py) - DAG执行引擎
-- [python-workflow/operators.py](python-workflow/operators.py) - 21个空间算子
-- [python-workflow/api_server.py](python-workflow/api_server.py) - Flask REST API
-- [develop/backend/internal/service/spatial_workflow_service.go](develop/backend/internal/service/spatial_workflow_service.go) - Develop集成
-- [develop/frontend/src/views/SpatialTasks.vue](develop/frontend/src/views/SpatialTasks.vue) - 任务管理UI
-- [orchestrator/backend/internal/service/executor.go](orchestrator/backend/internal/service/executor.go) - 参数模板化实现
-- [orchestrator/docs/PARAMETER_TEMPLATING.md](orchestrator/docs/PARAMETER_TEMPLATING.md) - 参数模板化文档
-
-**设计原则**:
-
-- ✅ **仅引擎注册**: 只注册引擎,不注册算子(减少System表膨胀)
-- ✅ **内存效率**: GeoDataFrame内存传递,避免反复序列化
-- ✅ **PostGIS存储**: 结果存储为GEOMETRY类型(支持空间索引和查询)
-- ✅ **独立实现**: 完全独立的空间计算引擎,可复用于多场景
-
-## 服务间通信
-
-**当前模式**: 服务间的 HTTP REST 调用
-
-- 服务通过环境变量相互发现 (例如 `SYSTEM_SERVICE_URL`)
-- Manager/Meta/Transfer 可以调用 System API 进行用户验证
-- Manager 在添加新数据源时通知 Meta
-- Transfer 查询 Manager 获取数据源连接信息
-
-**认证传播**: JWT token 通过 `Authorization` 头传递
-
-**错误处理**: 服务返回标准 HTTP 状态码;调用服务处理重试
+**详细文档**：`common-frontend/README.md`、`common-frontend/docs/ARCHITECTURE.md`
+
+---
+
+## 相关文档
+
+- [ADDP 核心概念关系图](../addp核心概念关系图.md) - 概念关系 Mermaid 图
+- [ADDP 模块架构图](../addp模块架构图.md) - 模块架构 Mermaid 图
+- [ADDP 开发原则](../spec/addp开发原则.md) - 开发指导原则
+- [ADDP 部署和开发步骤](../addp部署和开发步骤.md) - 快速启动指南
+- [ADDP 配置介绍](../spec/addp配置介绍.md) - 环境变量和配置中心
+- [ADDP 端口分配](../spec/addp端口分配.md) - 完整端口列表
+- [ADDP 技术栈规约](../spec/addp技术栈规约.md) - Go 和前端依赖版本规范
+- [ADDP 共享模块介绍](addp共享模块介绍.md) - common 和 common-frontend 详细说明
+
+**各模块详细文档**：
+- System: `system/CLAUDE.md`
+- Gateway: `gateway/docs/gateway架构说明.md`
+- Manager: `manager/CLAUDE.md`
+- Meta: `meta/CLAUDE.md`
+- Transfer: `transfer/CLAUDE.md`
+- Orchestrator: `orchestrator/CLAUDE.md`
+- Develop: `develop/CLAUDE.md`
+- Service: `service/CLAUDE.md`
+- Monitor: `monitor/docs/Monitor模块实施报告.md`
+
+---
+
+## 文档版本
+
+- **版本**: v2.0
+- **更新日期**: 2026-02-17
+- **更新内容**: 重写为简要介绍，覆盖全部模块，去除实现细节和代码示例

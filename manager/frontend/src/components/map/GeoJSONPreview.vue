@@ -29,7 +29,7 @@ import {
   fromLonLat,
   createGaodeBaseLayer,
   createDefaultStyleFunction
-} from '@common-map'
+} from '@common-ui-map'
 
 const props = defineProps({
   engineId: { type: [Number, String], required: true },

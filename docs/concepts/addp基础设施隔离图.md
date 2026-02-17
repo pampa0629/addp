@@ -31,7 +31,8 @@ graph TB
         BizTitle[business/docker-compose.yml<br/>独立部署]
 
         BizPG[(business-postgres<br/>业务数据库<br/>:5433)]
-        BizMinIO[(business-minio<br/>业务文件存储<br/>:9002-9003)]
+        BizMinIO[(business-minio<br/>业务对象存储<br/>:9002-9003)]
+        BizOther[(business-other<br/>业务xx引擎<br/>:9002-9003)]
     end
 
     subgraph "ADDP 模块"
@@ -45,13 +46,14 @@ graph TB
 
     Modules -.通过引擎访问.-> BizPG
     Modules -.通过引擎访问.-> BizMinIO
+    Modules -.通过引擎访问.-> BizOther
 
     classDef infra fill:#fce4ec,stroke:#880e4f
     classDef biz fill:#e8f5e9,stroke:#1b5e20
     classDef module fill:#e1f5ff,stroke:#01579b
 
     class InfraTitle,PostgreSQL,Redis,MinIO,Meilisearch infra
-    class BizTitle,BizPG,BizMinIO biz
+    class BizTitle,BizPG,BizMinIO,BizOther biz
     class Modules module
 ```
 
@@ -116,7 +118,7 @@ graph TB
     Isolation --> PG[PostgreSQL Schema 隔离]
     Isolation --> MinIOIso[MinIO Bucket 隔离]
     Isolation --> RedisIso[Redis Key 命名规范]
-    Isolation --> AsynqIso[Asynq Queue 命名规范]
+    Isolation --> AsynqIso[Redis Asynq Queue 命名规范]
     Isolation --> MeiliIso[Meilisearch Index 命名规范]
 
     PG --> PGEx["system schema: 用户/引擎/日志<br/>manager schema: 数据源/预览配置<br/>metadata schema: 元数据索引<br/>transfer schema: 传输任务<br/>orchestrator schema: 编排定义<br/>develop schema: 查询/工作流/Notebook<br/>service schema: 服务配置"]
@@ -156,7 +158,7 @@ graph TB
 - 示例: `system:cache:user:123`、`transfer:asynq:task:456`
 - 便于按模块管理和清理
 
-**4. Asynq Queue 命名规范**:
+**4. Redis Asynq Queue 命名规范**:
 - 格式: `{module}:{priority}`
 - 示例: `transfer:critical`、`meta:default`
 - 支持按优先级调度

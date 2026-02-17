@@ -447,7 +447,7 @@ def register_to_system():
 
 ## 5. 扩展新引擎指南
 
-### 5.1 以 Math Workflow 为例
+### 5.1 以 Stats Workflow 为例
 
 假设要创建一个新的 **统计分析引擎（Stats Workflow）**，步骤如下：
 

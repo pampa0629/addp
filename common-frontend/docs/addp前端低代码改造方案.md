@@ -607,7 +607,7 @@ common-frontend/
 
 ### 11.2 相关文档
 
-- [ADDP核心概念说明](../../docs/addp核心概念说明.md)
+- [ADDP各模块简要介绍](../../docs/concepts/addp各模块功能介绍.md)
 - [ADDP共享模块介绍](../../docs/addp共享模块介绍.md)
 - [Common Frontend README](../README.md)
 - [Common Frontend架构设计](./ARCHITECTURE.md)

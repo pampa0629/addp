@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Layout from '../views/Layout.vue'
+import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../store/auth'
 
 const routes = [
   {

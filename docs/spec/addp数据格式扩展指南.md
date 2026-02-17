@@ -35,7 +35,8 @@
 │ 使用的 Parser:     │   │ 使用的 Parser:  │   │ 使用的 Parser:   │
 │ ✓ FileTableParser  │   │ ✓ FileTableParser│  │ ✓ FileTableParser│
 │ ✓ DBTableParser    │   │ ✓ DBTableParser  │  │ ✓ DBTableParser  │
-│ ✓ DocCollectionParser⭐│ │ ✓ DocCollectionParser⭐│ │                  │
+│ ✓ DocCollectionParser⭐│ │ ✗ DocCollectionParser│ │                  │
+│                    │   │   ⭐ 暂未实现    │  │  (暂未支持)      │
 │ ✓ ObjectInfoParser │   │ ✓ ObjectInfoParser│ │                  │
 └────────────────────┘   └─────────────────┘   └──────────────────┘
 
@@ -48,15 +49,15 @@ ADDP 平台提供 **4 种** Parser 接口,覆盖不同数据源的元数据提�
 │ 1️⃣  FileTableParser（文件表解析器）                           │
 ├────────────────────────────────────────────────────────────────┤
 │ 用途: 从文件中提取表格结构元数据                              │
-│ 支持格式: CSV、Shapefile、GeoJSON、Excel、GeoPackage         │
+│ 支持格式: CSV、Shapefile、GeoJSON、Excel                     │
 │ 核心方法:                                                      │
 │   - ParseTableInfo(ctx, input, options) → TableInfo          │
 │   - ReadPreview(ctx, input, offset, limit, options) → []map  │
 │   - SupportedFormats() → []FormatType                        │
 │                                                                │
 │ 文件路径: common/format/interface.go (第 37-63 行)           │
-│ 实现示例: common/format/builtin/csv_parser.go                │
-│          common/geo/shapefile/parser.go                      │
+│ 实现示例: common/format/csv/parser.go                        │
+│          common/format/shapefile/parser.go                   │
 └────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────┐
@@ -70,7 +71,7 @@ ADDP 平台提供 **4 种** Parser 接口,覆盖不同数据源的元数据提�
 │   - SupportedEngineTypes() → []string                        │
 │                                                                │
 │ 文件路径: common/format/interface.go (第 11-35 行)           │
-│ 实现示例: common/format/db/postgresql_table_parser.go        │
+│ 实现示例: common/format/db/postgresql_parser.go              │
 └────────────────────────────────────────────────────────────────┘
 
 ┌────────────────────────────────────────────────────────────────┐
@@ -107,8 +108,8 @@ ADDP 平台提供 **4 种** Parser 接口,覆盖不同数据源的元数据提�
 │   - SupportedContentTypes() → []string                       │
 │                                                                │
 │ 文件路径: common/format/interface.go (第 65-81 行)           │
-│ 实现示例: common/format/builtin/image_parser.go              │
-│          common/format/builtin/pdf_parser.go                 │
+│ 实现示例: common/format/image/parser.go                      │
+│          common/format/pdf/parser.go                         │
 └────────────────────────────────────────────────────────────────┘
 
 
@@ -243,7 +244,7 @@ FieldInfo {
 ### FieldType 类型系统
 
 **基础类型**:
-- `string`, `int`, `bigint`, `float`, `decimal`, `bool`
+- `string`, `int`, `bigint`, `float`, `double`, `decimal`, `bool`
 - `date`, `time`, `timestamp`, `bytes`
 
 **地理空间类型**:
@@ -317,6 +318,10 @@ for _, ext := range tableInfo.Extensions {
 │   format.RegisterDocCollectionParser(&MongoDBParser{}) ⭐       │
 │   format.RegisterObjectInfoParser(&ImageParser{})              │
 │                                                                 │
+│ 注意: builtin/init.go 仅自动注册 FileTableParser 和            │
+│   ObjectInfoParser；MongoDB DocCollectionParser 需在模块中     │
+│   额外手动导入 "github.com/addp/common/format/document"        │
+│                                                                 │
 │ 使用方式:                                                       │
 │   parser := format.GetFileTableParser(FormatShapefile)         │
 │   tableInfo, err := parser.ParseTableInfo(ctx, input, opts)    │
@@ -332,7 +337,7 @@ for _, ext := range tableInfo.Extensions {
 │ 使用的 Parser:                                                  │
 │   ✓ FileTableParser（预览文件数据）                           │
 │   ✓ DBTableParser（预览数据库表）                             │
-│   ✓ DocCollectionParser（预览 MongoDB Collection）⭐           │
+│   ✗ DocCollectionParser（预览 MongoDB Collection）⭐ 暂未实现  │
 │                                                                 │
 │ 注册方式:（同 Meta 模块，共享注册表）                          │
 │                                                                 │
@@ -343,6 +348,7 @@ for _, ext := range tableInfo.Extensions {
 │   mongoParser := format.GetDocCollectionParser("mongodb") ⭐    │
 │   records, err := mongoParser.ReadPreview(ctx, client,         │
 │                                  "mydb", "mycoll", 0, 100, opts)│
+│   （以上 MongoDB 预览用法暂未实现）                             │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
@@ -371,12 +377,13 @@ for _, ext := range tableInfo.Extensions {
 
 | 数据源 | Mapper 名称 | 文件路径 |
 |--------|-----------|---------|
-| PostgreSQL | `postgresql` | common/format/type_mapper.go |
-| MySQL | `mysql` | common/format/type_mapper.go |
-| Shapefile DBF | `shapefile` | common/format/type_mapper.go |
-| MongoDB | `mongodb` | common/format/type_mapper.go ⭐ |
+| PostgreSQL | `postgresql` | common/format/mappers/postgresql/type_mapper.go |
+| MySQL | `mysql` | common/format/mappers/mysql/type_mapper.go |
+| Shapefile DBF | `shapefile` | common/format/shapefile/type_mapper.go |
+| SpatiaLite | `spatialite` | common/format/mappers/spatialite/type_mapper.go |
+| MongoDB | `mongodb` | **暂未实现** ⭐ |
 
-**MongoDB 类型映射示例** ⭐:
+**MongoDB 类型映射示例** ⭐ (**暂未实现，仅文档说明**):
 
 ```
 MongoDB BSON 类型   →   FieldType（通用类型）
@@ -394,10 +401,10 @@ decimal128          →   FieldTypeDecimal
 mixed               →   FieldTypeMixed ⭐ (字段类型不一致)
 ```
 
-**使用方式**:
+**使用方式**（MongoDB TypeMapper **暂未实现**）:
 
 ```go
-// 获取 MongoDB 类型映射器
+// 获取 MongoDB 类型映射器（暂未实现，以下为规划中的接口形式）
 mapper := format.GetTypeMapper("mongodb")
 
 // BSON 类型 → 通用类型
@@ -452,7 +459,7 @@ nativeType, size, precision := mapper.FromCommon(FieldTypeTimestamp)
 │ value: mixed │──────────────→│ FieldTypeMixed│────────→│ JSONB ⭐     │
 └──────────────┘              └──────────────┘          └──────────────┘
 
-  使用方法:
+  使用方法（MongoDB TypeMapper **暂未实现**）:
   mongoMapper := format.GetTypeMapper("mongodb")
   commonType := mongoMapper.ToCommon("objectid")  // FieldTypeString
 
@@ -719,19 +726,33 @@ common/format/
 
 ### Parser 实现
 ```
-common/format/builtin/
-├── csv_parser.go             # CSV FileTableParser
-├── image_parser.go           # Image ObjectInfoParser
-└── pdf_parser.go             # PDF ObjectInfoParser
+common/format/csv/
+└── parser.go                 # CSV FileTableParser
 
-common/geo/
-├── shapefile/parser.go       # Shapefile FileTableParser
-├── geojson/parser.go         # GeoJSON FileTableParser
-└── geopackage/parser.go      # GeoPackage FileTableParser
+common/format/shapefile/
+├── parser.go                 # Shapefile FileTableParser
+└── type_mapper.go            # Shapefile TypeMapper
+
+common/format/geojson/
+└── parser.go                 # GeoJSON FileTableParser
+
+common/format/excel/
+└── parser.go                 # Excel FileTableParser
+
+common/format/image/
+└── parser.go                 # Image ObjectInfoParser
+
+common/format/pdf/
+└── parser.go                 # PDF ObjectInfoParser
 
 common/format/db/
-├── postgresql_table_parser.go  # PostgreSQL DBTableParser
-└── mysql_table_parser.go       # MySQL DBTableParser
+├── postgresql_parser.go      # PostgreSQL DBTableParser
+└── mysql_parser.go           # MySQL DBTableParser
+
+common/format/mappers/
+├── postgresql/type_mapper.go # PostgreSQL TypeMapper
+├── mysql/type_mapper.go      # MySQL TypeMapper
+└── spatialite/type_mapper.go # SpatiaLite TypeMapper
 
 common/format/document/
 └── mongodb_parser.go         # MongoDB DocCollectionParser ⭐
@@ -747,7 +768,7 @@ meta/backend/internal/service/
 manager/backend/internal/service/
 ├── preview_provider_database.go   # 使用 DBTableParser
 ├── preview_provider_file.go       # 使用 FileTableParser
-└── preview_provider_nosql.go      # 使用 DocCollectionParser ⭐
+└── preview_provider_nosql.go      # 使用 DocCollectionParser ⭐ 暂未实现
 
 transfer/backend/plugins/readers/
 ├── csv_reader.go               # 使用 FileTableParser
@@ -759,7 +780,7 @@ transfer/backend/plugins/readers/
 ## 扩展阅读
 
 - **引擎插件系统**: [docs/addp数据引擎扩展指南.md](addp数据引擎扩展指南.md)
-- **核心概念说明**: [docs/addp核心概念说明.md](addp核心概念说明.md)
+- **各模块简要介绍**: [docs/concepts/addp各模块功能介绍.md](../concepts/addp各模块功能介绍.md)
 - **共享模块介绍**: [docs/addp共享模块介绍.md](addp共享模块介绍.md)
 
 ---

@@ -152,8 +152,136 @@ GORM AutoMigrate 自动处理 schema 更改:
 
 1. 在 `<module>/frontend/src/views/` 中创建 Vue 组件
 2. 在 `<module>/frontend/src/api/` 中添加 API 函数
-3. 在 `<module>/frontend/src/router/index.js` 中注册路由
+3. 在 `<module>/frontend/src/router/index.js` 中注册路由（作为 Layout 的子路由）
 4. 在 `<module>/frontend/src/components/Layout.vue` 中添加导航链接
+
+**Layout.vue 和路由结构要求**:
+
+所有模块前端**必须**在 `<module>/frontend/src/components/Layout.vue` 中创建布局组件：
+
+- **位置**: `components/Layout.vue`（不是 `views/Layout.vue`）
+- **功能**: 提供双模式支持
+  - 独立访问模式：显示完整的 header + sidebar + content 布局
+  - Portal 嵌入模式：通过 `isInIframe` 检测，仅显示 `<router-view>`
+- **路由结构**: 使用嵌套路由，Layout 作为父组件包裹所有需要认证的页面
+
+路由配置示例:
+
+```javascript
+// <module>/frontend/src/router/index.js
+import Layout from '../components/Layout.vue'
+
+const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/Login.vue'),
+    meta: { public: true }
+  },
+  {
+    path: '/',
+    component: Layout,  // Layout 作为父组件
+    redirect: '/main-page',
+    meta: { requiresAuth: true },
+    children: [  // 所有页面作为 children
+      {
+        path: 'main-page',
+        name: 'MainPage',
+        component: () => import('../views/MainPage.vue'),
+        meta: { requiresAuth: true, title: '主页面' }
+      },
+      {
+        path: 'detail/:id',
+        name: 'DetailPage',
+        component: () => import('../views/DetailPage.vue'),
+        meta: { requiresAuth: true, title: '详情页' }
+      }
+    ]
+  }
+]
+```
+
+Layout.vue 基本结构:
+
+```vue
+<template>
+  <!-- Portal 嵌入模式：只显示内容 -->
+  <div v-if="isInIframe" class="content-only">
+    <router-view />
+  </div>
+
+  <!-- 独立访问模式：显示完整布局 -->
+  <div v-else class="layout">
+    <el-header class="header">
+      <div class="header-left">
+        <h1>模块名称</h1>
+      </div>
+      <div class="header-right">
+        <el-dropdown @command="handleCommand">
+          <span class="user-dropdown">
+            <el-icon><User /></el-icon>
+            {{ authStore.user?.username || '用户' }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="logout">
+                <el-icon><SwitchButton /></el-icon>
+                退出登录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+    </el-header>
+
+    <el-container class="main-container">
+      <el-aside class="sidebar" width="200px">
+        <el-menu :default-active="activeMenu" router class="sidebar-menu">
+          <el-menu-item index="/main-page">
+            <el-icon><Document /></el-icon>
+            <span>主页面</span>
+          </el-menu-item>
+        </el-menu>
+      </el-aside>
+
+      <el-main class="content">
+        <router-view />
+      </el-main>
+    </el-container>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { useAuthStore } from '../store/auth'
+import { User, ArrowDown, SwitchButton, Document } from '@element-plus/icons-vue'
+
+const router = useRouter()
+const route = useRoute()
+const authStore = useAuthStore()
+const isInIframe = ref(false)
+
+onMounted(() => {
+  isInIframe.value = window.self !== window.top
+})
+
+// 子页面（详情、表单）激活父级菜单项
+const activeMenu = computed(() => {
+  const path = route.path
+  if (path.startsWith('/main-page')) return '/main-page'
+  return path
+})
+
+const handleCommand = (command) => {
+  if (command === 'logout') {
+    authStore.logout()
+    router.push('/login')
+  }
+}
+</script>
+```
 
 ## 前端开发工作流
 
@@ -201,16 +329,26 @@ npm run dev
 
 ### 开发中的前端-后端连接
 
-**开发模式** (直接后端连接):
+**所有前端请求统一通过 Gateway (localhost:8000)**，开发和生产环境保持一致：
 
-- System 前端 → System 后端 (localhost:8180)
-- Manager 前端 → Manager 后端 (localhost:8081)
-- 认证请求 → System 后端 (localhost:8180)
+- vite.config.js 中配置 `/api` proxy 转发到 Gateway (8000)
+- API Client 使用默认 `baseURL = '/api'`，无需关心各模块后端端口
+- Token 刷新使用 System 后端 (localhost:8180)，由 `createAPIClient` 内部处理
 
-**生产模式** (通过 Gateway):
+```javascript
+// vite.config.js - 所有模块统一配置
+proxy: {
+  '/api': {
+    target: 'http://localhost:8000', // 统一通过 Gateway 访问
+    changeOrigin: true
+  }
+}
 
-- 所有前端请求 → Gateway (localhost:8000)
-- Gateway 路由到适当的后端
+// api/client.js - 所有模块统一模式
+const client = createAPIClient(() => useAuthStore(), {
+  moduleName: 'Manager'  // 无需指定 baseURL，默认为 /api
+})
+```
 
 ### 创建新模块前端
 
@@ -227,7 +365,8 @@ npm run dev
    - `package.json`: 将名称更改为 `meta-frontend`
    - `vite.config.js`: 将端口更改为唯一数字 (例如 5175)
    - `index.html`: 更新标题
-   - `src/router/index.js`: 将基础路径设置为 `/meta/`
+   - `src/router/index.js`: 将基础路径设置为 `/meta/`，并确保使用嵌套路由结构（Layout 作为父组件）
+   - `src/components/Layout.vue`: 更新模块名称和侧边栏菜单项
    - `src/api/client.js`: 将 baseURL 指向 meta 后端 (8082)
    - 保持 `src/api/auth.js` 指向 System 后端 (8180)
 3. **配置 common-frontend 别名** (根据模块需求选择):
@@ -243,12 +382,13 @@ npm run dev
    }
    ```
 
-   对于**有地图功能**的模块 (Manager):
+   对于**有地图功能**的模块 (Manager, Service):
    ```javascript
    // vite.config.js
    resolve: {
      alias: {
        '@': resolve(__dirname, 'src'),
+       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
        '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
      }
    }
@@ -279,11 +419,11 @@ npm run dev
 
 ```vue
 <script setup>
-// 对于基础模块
+// 对于基础模块（所有模块都包含）
 import { StorageEngineForm, ImagePreview } from '@common-ui'
 import { formatFileSize, FieldType } from '@common-ui'
 
-// 对于启用地图的模块
+// 对于启用地图的模块（Manager, Service）
 import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
 
 const resourceForm = ref({
