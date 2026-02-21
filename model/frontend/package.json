@@ -1,0 +1,27 @@
+{
+  "name": "model-frontend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5182",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "3.5.13",
+    "vue-router": "4.5.0",
+    "pinia": "2.3.0",
+    "axios": "1.7.9",
+    "element-plus": "2.8.8",
+    "@element-plus/icons-vue": "2.3.2",
+    "mermaid": "^10.6.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "5.2.1",
+    "vite": "6.0.5"
+  },
+  "overrides": {
+    "vue": "3.5.13"
+  }
+}

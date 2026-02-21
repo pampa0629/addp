@@ -97,6 +97,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 				"develop":  cfg.DevelopServiceURL,
 				"service":  cfg.ServiceServiceURL,
 				"copilot":  cfg.CopilotServiceURL,
+				"standard": cfg.StandardServiceURL,
+				"model":    cfg.ModelServiceURL,
 			}
 			response["module_discovery"] = "disabled"
 		}
@@ -112,6 +114,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	developProxy := proxy.NewServiceProxy(cfg.DevelopServiceURL)
 	serviceProxy := proxy.NewServiceProxy(cfg.ServiceServiceURL)
 	copilotProxy := proxy.NewServiceProxy(cfg.CopilotServiceURL)
+	standardProxy := proxy.NewServiceProxy(cfg.StandardServiceURL)
+	modelProxy := proxy.NewServiceProxy(cfg.ModelServiceURL)
 
 	// ============ 公开路由（无需鉴权）============
 	// 注意：这些路由必须在通配符路由之前定义，避免冲突
@@ -336,6 +340,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						serviceProxy.Handle(c)
 					case "copilot":
 						copilotProxy.Handle(c)
+					case "standard":
+						standardProxy.Handle(c)
+					case "model":
+						modelProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -369,6 +377,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						serviceProxy.Handle(c)
 					case "copilot":
 						copilotProxy.Handle(c)
+					case "standard":
+						standardProxy.Handle(c)
+					case "model":
+						modelProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -423,6 +435,14 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			// Copilot 模块
 			api.Any("/copilot", copilotProxy.Handle)
 			api.Any("/copilot/*path", copilotProxy.Handle)
+
+			// Standard 模块
+			api.Any("/standard", standardProxy.Handle)
+			api.Any("/standard/*path", standardProxy.Handle)
+
+			// Model 模块
+			api.Any("/model", modelProxy.Handle)
+			api.Any("/model/*path", modelProxy.Handle)
 
 			// 内部 API（跨模块调用）
 			internalGroup := api.Group("/internal")

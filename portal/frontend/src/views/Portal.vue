@@ -70,6 +70,21 @@
             </el-menu-item>
           </el-sub-menu>
 
+          <el-sub-menu index="meta">
+            <template #title>
+              <el-icon><Box /></el-icon>
+              <span>元数据</span>
+            </template>
+            <el-menu-item index="/meta/scan">
+              <el-icon><Search /></el-icon>
+              <span>元数据扫描</span>
+            </el-menu-item>
+            <el-menu-item index="/meta/tasks">
+              <el-icon><Monitor /></el-icon>
+              <span>任务监控</span>
+            </el-menu-item>
+          </el-sub-menu>
+
           <el-sub-menu index="manager">
             <template #title>
               <el-icon><DataAnalysis /></el-icon>
@@ -86,6 +101,76 @@
             <el-menu-item index="/manager/vectorization-tasks">
               <el-icon><List /></el-icon>
               <span>向量化任务</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="standard">
+            <template #title>
+              <el-icon><Reading /></el-icon>
+              <span>数据标准</span>
+            </template>
+            <el-menu-item index="/standard/domains">
+              <el-icon><Share /></el-icon>
+              <span>业务域管理</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/glossaries">
+              <el-icon><Document /></el-icon>
+              <span>业务术语</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/elements">
+              <el-icon><DataBoard /></el-icon>
+              <span>数据元管理</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/code-sets">
+              <el-icon><List /></el-icon>
+              <span>码值集管理</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/units">
+              <el-icon><Odometer /></el-icon>
+              <span>计量单位</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/classifications">
+              <el-icon><Share /></el-icon>
+              <span>分类与分级</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/dimension-hierarchies">
+              <el-icon><SortDown /></el-icon>
+              <span>维度层级</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/metrics">
+              <el-icon><TrendCharts /></el-icon>
+              <span>指标管理</span>
+            </el-menu-item>
+            <el-menu-item index="/standard/documents">
+              <el-icon><FolderOpened /></el-icon>
+              <span>标准文档</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-sub-menu index="modeling">
+            <template #title>
+              <el-icon><Grid /></el-icon>
+              <span>数据建模</span>
+            </template>
+            <el-menu-item index="/modeling/dw-layers">
+              <el-icon><Grid /></el-icon>
+              <span>数仓分层</span>
+            </el-menu-item>
+            <el-menu-item index="/modeling/entities">
+              <el-icon><DataBoard /></el-icon>
+              <span>业务实体</span>
+            </el-menu-item>
+            <el-menu-item index="/modeling/er-diagram">
+              <el-icon><Share /></el-icon>
+              <span>实体关系图</span>
+            </el-menu-item>
+            <el-menu-item index="/modeling/logical-tables">
+              <el-icon><Connection /></el-icon>
+              <span>逻辑表设计</span>
+            </el-menu-item>
+            <el-menu-item index="/modeling/star-schema">
+              <el-icon><Grid /></el-icon>
+              <span>星型建模视图</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -151,21 +236,6 @@
             <el-menu-item index="/orchestrator/executions">
               <el-icon><Timer /></el-icon>
               <span>执行记录</span>
-            </el-menu-item>
-          </el-sub-menu>
-
-          <el-sub-menu index="meta">
-            <template #title>
-              <el-icon><Box /></el-icon>
-              <span>元数据</span>
-            </template>
-            <el-menu-item index="/meta/scan">
-              <el-icon><Search /></el-icon>
-              <span>元数据扫描</span>
-            </el-menu-item>
-            <el-menu-item index="/meta/tasks">
-              <el-icon><Monitor /></el-icon>
-              <span>任务监控</span>
             </el-menu-item>
           </el-sub-menu>
 
@@ -303,6 +373,27 @@
               </el-card>
             </el-col>
           </el-row>
+          <!-- 第五排: 数据标准、数据建模 -->
+          <el-row :gutter="20" style="margin-top: 20px;">
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('standard')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#7B4EA6"><Reading /></el-icon>
+                  <h2>数据标准</h2>
+                  <p>业务域、业务术语、数据元、码值集</p>
+                </div>
+              </el-card>
+            </el-col>
+            <el-col :span="12">
+              <el-card shadow="hover" class="module-card" @click="navigateToModule('modeling')">
+                <div class="card-content">
+                  <el-icon :size="48" color="#9370DB"><Grid /></el-icon>
+                  <h2>数据建模</h2>
+                  <p>数仓分层、业务实体、逻辑表设计、实体关系图</p>
+                </div>
+              </el-card>
+            </el-col>
+          </el-row>
         </div>
         <div v-else class="iframe-wrapper">
           <div class="iframe-container">
@@ -332,7 +423,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection, Grid, FolderOpened, DataLine } from '@element-plus/icons-vue'
+import { Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection, Grid, FolderOpened, DataLine, Reading, Share, DataBoard, List, Odometer, TrendCharts, SortDown, Document } from '@element-plus/icons-vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 
 const router = useRouter()
@@ -357,7 +448,9 @@ const moduleUrls = {
   orchestrator: isDevelopment ? `${protocol}//${hostname}:5177` : `${protocol}//${hostname}/orchestrator`,
   develop: isDevelopment ? `${protocol}//${hostname}:5178` : `${protocol}//${hostname}/develop`,
   service: isDevelopment ? `${protocol}//${hostname}:5180` : `${protocol}//${hostname}/service`,
-  monitor: isDevelopment ? `${protocol}//${hostname}:5179` : `${protocol}//${hostname}/monitor`
+  monitor: isDevelopment ? `${protocol}//${hostname}:5179` : `${protocol}//${hostname}/monitor`,
+  standard: isDevelopment ? `${protocol}//${hostname}:5181` : `${protocol}//${hostname}/standard`,
+  modeling: isDevelopment ? `${protocol}//${hostname}:5182` : `${protocol}//${hostname}/model`
 }
 
 onMounted(async () => {
@@ -519,6 +612,36 @@ const handleMenuSelect = (index) => {
       } else {
         url = `${moduleUrls[module]}/`
       }
+    } else if (module === 'standard') {
+      // Model 模块的路由: /standard/domains, /standard/glossaries, /standard/elements
+      // 前端路由包含 /standard 前缀，直接拼接
+      const standardPageMap = {
+        'domains': 'standard/domains',
+        'glossaries': 'standard/glossaries',
+        'elements': 'standard/elements',
+        'code-sets': 'standard/code-sets',
+        'units': 'standard/units',
+        'classifications': 'standard/classifications',
+        'metrics': 'standard/metrics',
+        'documents': 'standard/documents',
+        'dimension-hierarchies': 'standard/dimension-hierarchies',
+        '': 'standard/domains'
+      }
+      const actualPage = standardPageMap[page] !== undefined ? standardPageMap[page] : `standard/${page}`
+      url = `${moduleUrls[module]}/${actualPage}`
+    } else if (module === 'modeling') {
+      // Model 模块的建模路由: /modeling/dw-layers, /modeling/entities, /modeling/logical-tables, /modeling/er-diagram
+      // 前端路由包含 /modeling 前缀，直接拼接
+      const modelingPageMap = {
+        'dw-layers': 'modeling/dw-layers',
+        'entities': 'modeling/entities',
+        'logical-tables': 'modeling/logical-tables',
+        'er-diagram': 'modeling/er-diagram',
+        'star-schema': 'modeling/star-schema',
+        '': 'modeling/dw-layers'
+      }
+      const actualPage = modelingPageMap[page] !== undefined ? modelingPageMap[page] : `modeling/${page}`
+      url = `${moduleUrls[module]}/${actualPage}`
     } else if (page) {
       // 其他模块保持原有逻辑
       url = `${moduleUrls[module]}/${page}`
@@ -557,6 +680,10 @@ const navigateToModule = (module) => {
     handleMenuSelect('/service/query-services')
   } else if (module === 'monitor') {
     handleMenuSelect('/monitor/dashboard')
+  } else if (module === 'standard') {
+    handleMenuSelect('/standard/domains')
+  } else if (module === 'modeling') {
+    handleMenuSelect('/modeling/dw-layers')
   }
 }
 
@@ -753,5 +880,18 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 
 .el-menu-vertical {
   border-right: none;
+}
+
+/* 数据建模分组标题样式 */
+.sidebar :deep(.el-menu-item-group__title) {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 0 8px 20px;
+  color: var(--addp-text-secondary);
+}
+
+.sidebar.collapsed :deep(.el-menu-item-group__title) {
+  padding-left: 0;
+  text-align: center;
 }
 </style>

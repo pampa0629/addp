@@ -34,6 +34,8 @@
 | Develop 模块详情     | develop/CLAUDE.md             | SQL 执行、工作流、算子        |
 | Service 模块详情     | service/CLAUDE.md             | 数据服务、OGC 标准、API 发布      |
 | Monitor 模块详情     | monitor/docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
+| Model 模块详情       | model/CLAUDE.md               | 数据建模、逻辑表、星型建模、指标血缘 |
+| Standard 模块详情    | standard/CLAUDE.md            | 数据标准、数据元、指标、术语、码值 |
 
 
 **重要**:
@@ -339,4 +341,4 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 
 **每次讨论后更新plan时，务必根据讨论结果，全面检查和修订plan文档，而不是仅仅补充讨论结果**
 
-**UML相关的设计，采用在md文档中增加mermaid代码库的方式**
+**UML相关的设计，采用在md文档中增加mermaid代码块的方式**

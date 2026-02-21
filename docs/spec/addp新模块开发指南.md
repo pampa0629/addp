@@ -1,5 +1,34 @@
 ## 新服务的开发指南
 
+## ⚠️ 关键原则（必读）
+
+新模块开发必须遵循以下原则，确保与现有模块的一致性：
+
+1. **配置加载统一性**
+   - ✅ 必须使用 `common/config.LoadEnv()` 加载环境变量
+   - ✅ 必须继承 `commonConfig.BaseConfig`
+   - ❌ 禁止硬编码 `.env` 文件路径（如 `godotenv.Load("../../.env")`）
+   - ❌ 禁止重复定义通用配置字段
+
+2. **代码复用原则**
+   - ✅ 通用功能必须提取到 `common/` 或 `common-frontend/`
+   - ✅ 参考现有模块的实现模式（推荐：manager、meta）
+   - ❌ 禁止在新模块中重复实现已有的通用功能
+
+3. **Schema 隔离原则**
+   - ✅ 每个模块使用独立的 PostgreSQL schema
+   - ✅ 在代码中自动创建 schema（不依赖初始化脚本）
+   - ✅ DSN 连接字符串必须包含 `search_path` 参数
+
+4. **脚本集成原则**
+   - ✅ 新模块必须同步修改 `start.sh`、`restart.sh`、`detect-common.sh`
+   - ✅ 支持独立启动模式（`-your-module`）
+   - ✅ 支持全量启动模式（默认行为）
+
+**违反以上原则的代码将无法通过 Code Review。**
+
+---
+
 实现或扩展服务时:
 
 1. **遵循 System 模块模式**:
@@ -20,13 +49,131 @@
 
    - 使用 PostgreSQL schema 隔离 (所有模块使用 PostgreSQL 和专用 schemas)
    - 使用 GORM 作为 ORM,带 AutoMigrate
-   - 将 schemas 添加到 `scripts/infra/init-postgresql.sql`
-   - 使用 `updated_at` 触发器进行时间戳跟踪
-3. **配置**:
+   - **在 cmd/server/main.go 中自动创建 schema**:
+     ```go
+     // 连接数据库
+     db, err := gorm.Open(postgres.Open(cfg.GetDatabaseDSN()), &gorm.Config{})
+     if err != nil {
+         log.Fatalf("Failed to connect to database: %v", err)
+     }
 
-   - 通过 `internal/config/config.go` 从环境变量读取
-   - 支持开发和 Docker 部署模式
-   - 为缺失的环境变量设置默认值
+     // 确保 schema 存在（关键！）
+     if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
+         log.Fatalf("Failed to create schema: %v", err)
+     }
+
+     // 自动迁移表结构
+     if err := db.AutoMigrate(&models.YourModel{}); err != nil {
+         log.Fatalf("Failed to migrate database: %v", err)
+     }
+     ```
+   - 将 schema 注释添加到 `scripts/infra/init-postgresql.sql`:
+     ```sql
+     -- YourModule 模块 (功能描述)
+     CREATE SCHEMA IF NOT EXISTS your_module;
+     COMMENT ON SCHEMA your_module IS 'YourModule 模块：功能描述';
+     ```
+   - 使用 `updated_at` 触发器进行时间戳跟踪
+
+3. **配置管理**（必须遵循）:
+
+   **核心原则**: 所有新模块**必须**使用 `common/config` 统一配置加载器，禁止自行加载 .env 文件。
+
+   **正确的配置结构**:
+   ```go
+   // internal/config/config.go
+   package config
+
+   import (
+       "fmt"
+       "os"
+       commonConfig "github.com/addp/common/config"
+   )
+
+   type Config struct {
+       commonConfig.BaseConfig  // 继承通用配置 (DB、JWT、加密密钥等)
+
+       // 模块特有配置
+       Port     string
+       DBSchema string
+
+       // Redis 配置
+       RedisHost     string
+       RedisPort     string
+       RedisPassword string
+       RedisDB       int
+
+       // 其他模块 URL
+       SystemURL      string
+       InternalAPIKey string
+   }
+
+   // LoadConfig 加载配置
+   func LoadConfig() (*Config, error) {
+       // ✅ 正确：使用 common/config 自动发现并加载 .env
+       commonConfig.LoadEnv()
+
+       // ❌ 错误：禁止硬编码相对路径
+       // godotenv.Load("../../.env")  // 不要这样做！
+
+       cfg := &Config{
+           Port:     commonConfig.GetEnv("MODULE_BACKEND_PORT", "8110"),
+           DBSchema: "module_name",  // 使用模块名作为 schema
+
+           RedisHost:     commonConfig.GetEnv("REDIS_HOST", "localhost"),
+           RedisPort:     commonConfig.GetEnv("REDIS_PORT", "16379"),
+           RedisPassword: os.Getenv("REDIS_PASSWORD"),
+           RedisDB:       commonConfig.GetEnvInt("REDIS_DB", 0),
+
+           SystemURL:      commonConfig.GetEnv("SYSTEM_URL", "http://localhost:8180"),
+           InternalAPIKey: os.Getenv("INTERNAL_API_KEY"),
+       }
+
+       // 从 System 服务加载共享配置（带降级到本地环境变量）
+       enableIntegration := commonConfig.GetEnvBool("ENABLE_SERVICE_INTEGRATION", true)
+       if err := commonConfig.LoadServiceConfiguration(commonConfig.ServiceConfigLoader{
+           SystemServiceURL:      cfg.SystemURL,
+           EnableIntegration:     enableIntegration,
+           InternalAPIKey:        cfg.InternalAPIKey,
+           BaseConfigDestination: &cfg.BaseConfig,
+       }); err != nil {
+           return nil, fmt.Errorf("failed to load service configuration: %w", err)
+       }
+
+       cfg.BaseConfig.SystemServiceURL = cfg.SystemURL
+       cfg.BaseConfig.EnableIntegration = enableIntegration
+
+       return cfg, nil
+   }
+
+   // GetDatabaseDSN 获取数据库连接字符串（支持 schema 隔离）
+   func (c *Config) GetDatabaseDSN() string {
+       return fmt.Sprintf(
+           "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
+           c.DBHost,    // 来自 BaseConfig
+           c.DBPort,    // 来自 BaseConfig
+           c.DBUser,    // 来自 BaseConfig
+           c.DBPassword,// 来自 BaseConfig
+           c.DBName,    // 来自 BaseConfig
+           c.DBSchema,  // 模块特有配置
+       )
+   }
+   ```
+
+   **关键点**:
+   - ✅ 使用 `commonConfig.LoadEnv()` 自动发现项目根目录的 .env 文件
+   - ✅ 继承 `commonConfig.BaseConfig` 复用通用配置字段
+   - ✅ 使用 `commonConfig.GetEnv()` 等辅助函数获取环境变量
+   - ✅ 支持从 System 服务获取共享配置（JWT、数据库等）
+   - ✅ DSN 包含 `search_path` 参数实现 schema 隔离
+   - ❌ 禁止硬编码 `godotenv.Load("../../.env")`
+   - ❌ 禁止重复定义 BaseConfig 中已有的字段
+
+   **配置降级策略**:
+   1. 优先从 System 服务获取共享配置（JWT_SECRET、数据库连接等）
+   2. 如果 System 服务不可用，降级到本地环境变量
+   3. 如果环境变量不存在，使用代码中的默认值
+
 4. **认证**:
 
    - 重用 System 模块的 JWT 验证逻辑
@@ -38,7 +185,112 @@
    - 使用 `profile: full` 将服务添加到 `docker-compose.yml`
    - 使用健康检查进行依赖管理
    - 连接到 `addp-network` 进行服务间通信
-6. **前端集成**:
+
+6. **开发脚本集成**（新模块必做）:
+
+   新模块需要修改开发脚本以支持独立启动和重启：
+
+   **a. 修改 scripts/dev/start.sh**:
+
+   1. 添加模块启动标志（约第167行）:
+      ```bash
+      START_YOUR_MODULE_BACKEND=false
+      START_YOUR_MODULE_FRONTEND=false
+      ```
+
+   2. 添加到帮助信息（约第19行）:
+      ```bash
+      echo "  -your-module  只启动 YourModule 模块 (依赖: System)"
+      ```
+
+   3. 添加到参数解析（约第135行）:
+      ```bash
+      -system|-manager|-meta|-transfer|-your-module|...)
+      ```
+
+   4. 添加全量启动逻辑（约第199行）:
+      ```bash
+      START_YOUR_MODULE_BACKEND=true
+      START_YOUR_MODULE_FRONTEND=true
+      ```
+
+   5. 添加依赖启动逻辑（参考其他模块的 case 分支）:
+      ```bash
+      your-module)
+        START_SYSTEM_BACKEND=true
+        START_SYSTEM_FRONTEND=true
+        START_YOUR_MODULE_BACKEND=true
+        START_YOUR_MODULE_FRONTEND=true
+        ;;
+      ```
+
+   6. 添加编译逻辑（约第690行）:
+      ```bash
+      if [ "$START_YOUR_MODULE_BACKEND" = true ]; then
+        build_service "your-module" "your-module/backend" &
+      fi
+      ```
+
+   7. 添加启动逻辑（约第805行）:
+      ```bash
+      if [ "$START_YOUR_MODULE_BACKEND" = true ]; then
+        if check_service_running "your-module" "8110"; then
+          .dev-bins/addp-your-module > logs/your-module-backend.log 2> logs/your-module-backend-stderr.log &
+          YOUR_MODULE_PID=$!
+          echo $YOUR_MODULE_PID > .dev-pids/your-module.pid
+        fi
+      fi
+      ```
+
+   8. 添加前端配置（约第1764行）:
+      ```bash
+      if [ "$START_YOUR_MODULE_FRONTEND" = true ]; then
+        FRONTEND_CONFIGS+=("your-module:${YOUR_MODULE_FE_PORT}:your-module/frontend")
+      fi
+      ```
+
+   **b. 修改 scripts/dev/restart.sh**:
+
+   1. 添加到帮助信息（第6行）:
+      ```bash
+      echo "用法: $0 [-all] [-system] ... [-your-module] ..."
+      ```
+
+   2. 添加到帮助选项列表（第20行）:
+      ```bash
+      echo "  -your-module     强制重新编译 YourModule 模块"
+      ```
+
+   3. 添加到参数解析（第64行）:
+      ```bash
+      -system|-manager|-meta|-your-module|-...)
+      ```
+
+   **c. 修改 scripts/utils/detect-common.sh**（如果模块依赖 common）:
+
+   添加到 `GO_MODULES` 数组:
+   ```bash
+   GO_MODULES=(
+     "system/backend"
+     "manager/backend"
+     ...
+     "your-module/backend"
+   )
+   ```
+
+   **验证步骤**:
+   ```bash
+   # 测试独立启动
+   bash scripts/dev/start.sh -your-module
+
+   # 测试重启
+   bash scripts/dev/restart.sh -your-module
+
+   # 测试全量启动
+   bash scripts/dev/start.sh
+   ```
+
+7. **前端集成**:
 
    - 创建独立的 `<module>/frontend/` 目录
    - 从 `system/frontend/` 复制结构 (Vue 3 + Pinia + Element Plus)
@@ -164,6 +416,21 @@ GORM AutoMigrate 自动处理 schema 更改:
   - 独立访问模式：显示完整的 header + sidebar + content 布局
   - Portal 嵌入模式：通过 `isInIframe` 检测，仅显示 `<router-view>`
 - **路由结构**: 使用嵌套路由，Layout 作为父组件包裹所有需要认证的页面
+- **主题适配**（必须）: Layout.vue 中的背景色、边框色**禁止使用硬编码颜色**，必须使用 CSS 变量：
+  ```css
+  /* ✅ 正确 - 使用 CSS 变量 */
+  .header  { background: var(--addp-bg-primary) !important; border-bottom: 1px solid var(--addp-border-color); }
+  .sidebar { background: var(--addp-bg-primary) !important; border-right:  1px solid var(--addp-border-color); }
+  .content { background: var(--addp-bg-secondary) !important; }
+  .content-only { background: var(--addp-bg-secondary) !important; }
+
+  /* ❌ 错误 - 硬编码颜色，切换主题时无法响应 */
+  .header  { background: #fff; border-bottom: 1px solid #e4e7ed; }
+  .sidebar { border-right: 1px solid #e4e7ed; }
+  .content { background: #f5f7fa; }
+  ```
+
+> 详细规范参见 [common-frontend/docs/addp前端风格设计规范.md](../../common-frontend/docs/addp前端风格设计规范.md)
 
 路由配置示例:
 
@@ -366,9 +633,23 @@ const client = createAPIClient(() => useAuthStore(), {
    - `vite.config.js`: 将端口更改为唯一数字 (例如 5175)
    - `index.html`: 更新标题
    - `src/router/index.js`: 将基础路径设置为 `/meta/`，并确保使用嵌套路由结构（Layout 作为父组件）
-   - `src/components/Layout.vue`: 更新模块名称和侧边栏菜单项
+   - `src/components/Layout.vue`: 更新模块名称和侧边栏菜单项，**背景色必须使用 CSS 变量**（见下方要求）
    - `src/api/client.js`: 将 baseURL 指向 meta 后端 (8082)
    - 保持 `src/api/auth.js` 指向 System 后端 (8180)
+   - **`src/main.js`: 必须添加主题初始化**（否则无法跟随 Portal 切换主题）:
+     ```javascript
+     // 必须导入 Element Plus 深色模式 CSS（在 element-plus/dist/index.css 之后）
+     import 'element-plus/theme-chalk/dark/css-vars.css'
+     // 必须导入统一主题 CSS
+     import '@common-ui/styles/theme.css'
+     // 导入主题管理
+     import { useTheme } from '@common-ui'
+
+     // 在 app.use() 之后、app.mount() 之前初始化
+     const { init: initTheme } = useTheme({ listenToPortal: true, storageKey: 'theme-mode' })
+     initTheme()
+     app.mount('#app')
+     ```
 3. **配置 common-frontend 别名** (根据模块需求选择):
 
    对于**无地图功能**的模块 (System, Meta, Transfer):
@@ -438,3 +719,267 @@ const resourceForm = ref({
   <TablePreview :data="tableData" />
 </template>
 ```
+
+## 常见错误和排查
+
+### 错误 1: ".env file not found"
+
+**现象**:
+```
+Warning: .env file not found: open ../../.env: no such file or directory
+```
+
+**原因**: 硬编码了相对路径 `godotenv.Load("../../.env")`
+
+**解决方案**:
+```go
+// ❌ 错误
+godotenv.Load("../../.env")
+
+// ✅ 正确
+commonConfig.LoadEnv()  // 自动发现项目根目录
+```
+
+### 错误 2: "schema does not exist"
+
+**现象**:
+```
+Failed to migrate database: ERROR: schema "your_module" does not exist (SQLSTATE 3F000)
+```
+
+**原因**: 未在代码中创建 schema
+
+**解决方案**:
+在 `cmd/server/main.go` 的 AutoMigrate 之前添加：
+```go
+// 确保 schema 存在
+if err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cfg.DBSchema)).Error; err != nil {
+    log.Fatalf("Failed to create schema: %v", err)
+}
+```
+
+### 错误 3: 重启脚本不识别新模块
+
+**现象**:
+```
+❌ 未知参数: -your-module
+```
+
+**原因**: 未在 `restart.sh` 和 `start.sh` 中添加模块支持
+
+**解决方案**: 参考"开发脚本集成"章节完成脚本修改
+
+### 错误 4: 配置字段重复定义
+
+**现象**: 代码中同时定义了 `DatabaseHost`、`DatabasePort` 等字段，与 `BaseConfig` 重复
+
+**解决方案**:
+```go
+// ❌ 错误：重复定义
+type Config struct {
+    DatabaseHost string
+    DatabasePort string
+    DatabaseUser string
+    DatabasePassword string
+    DatabaseName string
+    // ...
+}
+
+// ✅ 正确：继承 BaseConfig
+type Config struct {
+    commonConfig.BaseConfig  // 包含 DBHost、DBPort、DBUser、DBPassword、DBName 等
+    Port     string          // 模块特有配置
+    DBSchema string
+}
+```
+
+### 错误 5: DSN 缺少 search_path 参数
+
+**现象**: 表创建到了 public schema 而不是模块专用 schema
+
+**解决方案**:
+```go
+// ❌ 错误：缺少 search_path
+func (c *Config) GetDatabaseDSN() string {
+    return fmt.Sprintf(
+        "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+        c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName,
+    )
+}
+
+// ✅ 正确：包含 search_path
+func (c *Config) GetDatabaseDSN() string {
+    return fmt.Sprintf(
+        "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable search_path=%s",
+        c.DBHost, c.DBPort, c.DBUser, c.DBPassword, c.DBName, c.DBSchema,
+    )
+}
+```
+
+### 错误 6: 模块启动但未注册到 Gateway
+
+**现象**: 模块服务正常运行，但 Gateway 无法路由请求
+
+**原因**: 未向 System 服务注册模块
+
+**解决方案**:
+在 `cmd/server/main.go` 中添加模块注册逻辑：
+```go
+// 创建 System 客户端
+systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemURL, cfg.InternalAPIKey)
+
+// 启动模块注册和心跳
+go func() {
+    time.Sleep(2 * time.Second)  // 等待服务器启动
+
+    // 注册模块到 System
+    serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+    registrationReq := &commonClient.ModuleRegistrationRequest{
+        ModuleName:     "your-module",
+        ModuleURL:      serviceURL,
+        RoutePrefix:    "/your-module",
+        HealthCheckURL: serviceURL + "/health",
+        Metadata: map[string]interface{}{
+            "module": "your-module",
+        },
+    }
+
+    if err := systemClient.RegisterModule(registrationReq); err != nil {
+        log.Printf("⚠️  模块注册失败: %v", err)
+    } else {
+        log.Printf("✅ 模块注册成功: %s", serviceURL)
+    }
+
+    // 启动心跳循环
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+    for range ticker.C {
+        if err := systemClient.SendHeartbeat("your-module"); err != nil {
+            log.Printf("⚠️  心跳失败: %v", err)
+        }
+    }
+}()
+```
+
+### 错误 7: 前端 API 路径包含重复的 /api 前缀
+
+**现象**:
+```
+GET http://localhost:5181/api/api/model/domains 503 (Service Unavailable)
+```
+
+**原因**: `createAPIClient` 的 baseURL 默认是 `/api`，如果 API 函数的路径又以 `/api/` 开头，就会拼接成 `/api/api/...`
+
+**规范**: 前端 API 函数中的路径**只写模块前缀以后的部分**，不加 `/api`
+
+```javascript
+// ❌ 错误：多写了 /api
+export const domainAPI = {
+  list() {
+    return client.get('/api/model/domains')  // 实际请求变成 /api/api/model/domains
+  }
+}
+
+// ✅ 正确：路径从模块名开始
+export const domainAPI = {
+  list() {
+    return client.get('/model/domains')  // 实际请求是 /api/model/domains
+  }
+}
+```
+
+**完整路径链路说明**:
+```
+前端 API 函数     →  baseURL + path  →  Gateway 接收   →  转发到后端
+client.get('/model/domains')  →  /api/model/domains  →  后端 /api/model/domains
+```
+
+**参考其他模块的正确写法**:
+```javascript
+// manager 模块
+client.get('/manager/directories')      // ✅ 正确
+
+// meta 模块
+client.get('/meta/datasources')         // ✅ 正确
+
+// model 模块
+client.get('/model/domains')            // ✅ 正确
+```
+
+### 错误 8: 前端模块不跟随 Portal 主题切换
+
+**现象**: 切换 Portal 主题（深色/蓝色/紫色等）时，模块前端的背景和边框颜色不变。
+
+**原因有两处**：
+
+1. **`main.js` 缺少主题初始化**: 未导入主题 CSS 或未调用 `useTheme({ listenToPortal: true })`
+2. **`Layout.vue` 使用硬编码颜色**: 背景/边框使用 `#fff`、`#f5f7fa`、`#e4e7ed` 等固定值而非 CSS 变量
+
+**修复 main.js**:
+```javascript
+import 'element-plus/theme-chalk/dark/css-vars.css'  // 添加
+import '@common-ui/styles/theme.css'                  // 添加
+import { useTheme } from '@common-ui'                 // 添加
+
+// app.use() 之后
+const { init: initTheme } = useTheme({ listenToPortal: true, storageKey: 'theme-mode' })
+initTheme()
+app.mount('#app')
+```
+
+**修复 Layout.vue**:
+```css
+/* 将所有硬编码颜色替换为 CSS 变量 */
+.header       { background: var(--addp-bg-primary) !important;   border-bottom: 1px solid var(--addp-border-color); }
+.sidebar      { background: var(--addp-bg-primary) !important;   border-right:  1px solid var(--addp-border-color); }
+.content      { background: var(--addp-bg-secondary) !important; }
+.content-only { background: var(--addp-bg-secondary) !important; }
+```
+
+> 完整的主题变量列表和设计规范参见 [common-frontend/docs/addp前端风格设计规范.md](../../common-frontend/docs/addp前端风格设计规范.md)
+
+## 检查清单
+
+开发新模块时，使用此清单确保所有步骤完成：
+
+**后端开发**:
+- [ ] 复制并调整目录结构 (`backend/cmd/server/`, `backend/internal/`)
+- [ ] 配置使用 `commonConfig.LoadEnv()` 和 `BaseConfig`
+- [ ] DSN 包含 `search_path` 参数
+- [ ] 在代码中创建 schema (`CREATE SCHEMA IF NOT EXISTS`)
+- [ ] GORM AutoMigrate 配置正确
+- [ ] 实现健康检查端点 (`/health`)
+- [ ] 添加模块注册和心跳逻辑
+
+**前端开发**:
+- [ ] 复制并调整前端目录结构
+- [ ] 配置唯一端口号
+- [ ] 配置路由基础路径
+- [ ] 实现 Layout 组件（支持双模式）
+- [ ] **Layout.vue 背景/边框使用 CSS 变量（`var(--addp-bg-primary/secondary)`，非硬编码颜色）**
+- [ ] **main.js 导入主题 CSS 并调用 `useTheme({ listenToPortal: true })`**
+- [ ] 配置 common-frontend 别名
+- [ ] API Client 正确配置
+- [ ] API 路径不含 `/api` 前缀（格式：`/module-name/resource`）
+
+**脚本集成**:
+- [ ] 修改 `scripts/dev/start.sh` (8个位置)
+- [ ] 修改 `scripts/dev/restart.sh` (3个位置)
+- [ ] 修改 `scripts/utils/detect-common.sh`
+- [ ] 验证独立启动 (`-your-module`)
+- [ ] 验证全量启动
+
+**文档和配置**:
+- [ ] 在 `init-postgresql.sql` 中添加 schema 注释
+- [ ] 在 `.env` 中添加模块端口配置
+- [ ] 创建模块的 `CLAUDE.md` 文档
+- [ ] 更新根目录 `CLAUDE.md` 的模块列表
+
+**测试验证**:
+- [ ] 模块独立启动成功
+- [ ] 健康检查通过
+- [ ] 数据库表创建在正确的 schema
+- [ ] 模块注册到 Gateway 成功
+- [ ] 前端可以访问后端 API
+- [ ] Portal 可以嵌入模块前端
+- [ ] **切换 Portal 主题，模块前端背景/边框随之变化**

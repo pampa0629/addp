@@ -16,6 +16,8 @@ show_usage() {
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -monitor      只启动 Monitor 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
+  echo "  -standard     只启动 Standard 模块 (依赖: System)"
+  echo "  -model        只启动 Model 模块 (依赖: System + Standard)"
   echo "  -python-workflow    只启动 Python Workflow Engine"
   echo "  -math-workflow      只启动 Math Workflow Engine"
   echo "  -spark-workflow 只启动 Spark 工作流引擎"
@@ -131,7 +133,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-standard|-model|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -163,6 +165,10 @@ START_SERVICE_FRONTEND=false
 START_MONITOR_BACKEND=false
 START_MONITOR_FRONTEND=false
 START_COPILOT_BACKEND=false
+START_STANDARD_BACKEND=false
+START_STANDARD_FRONTEND=false
+START_MODEL_BACKEND=false
+START_MODEL_FRONTEND=false
 START_GATEWAY=false
 START_PORTAL=false
 START_PYTHON_WORKFLOW=false
@@ -193,6 +199,10 @@ if [ "$START_ALL" = true ]; then
   START_MONITOR_BACKEND=true
   START_MONITOR_FRONTEND=true
   START_COPILOT_BACKEND=true
+  START_STANDARD_BACKEND=true
+  START_STANDARD_FRONTEND=true
+  START_MODEL_BACKEND=true
+  START_MODEL_FRONTEND=true
   START_GATEWAY=true
   START_PORTAL=true
   START_PYTHON_WORKFLOW=true
@@ -264,6 +274,20 @@ else
       START_JUPYTER=true
       START_COPILOT_BACKEND=true
       ;;
+    standard)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      ;;
+    model)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      START_MODEL_BACKEND=true
+      START_MODEL_FRONTEND=true
+      ;;
     python-workflow)
       START_PYTHON_WORKFLOW=true
       ;;
@@ -289,6 +313,8 @@ else
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
+      START_STANDARD_BACKEND=true
+      START_MODEL_BACKEND=true
       START_PYTHON_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
@@ -315,6 +341,10 @@ else
       START_MONITOR_BACKEND=true
       START_MONITOR_FRONTEND=true
       START_COPILOT_BACKEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      START_MODEL_BACKEND=true
+      START_MODEL_FRONTEND=true
       START_GATEWAY=true
       START_PORTAL=true
       START_PYTHON_WORKFLOW=true
@@ -538,6 +568,8 @@ ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 DEVELOP_FE_PORT=${DEVELOP_FE_PORT:-5178}
 SERVICE_FE_PORT=${SERVICE_FE_PORT:-5180}
 MONITOR_FE_PORT=${MONITOR_FE_PORT:-5179}
+STANDARD_FE_PORT=${STANDARD_FE_PORT:-5181}
+MODEL_FE_PORT=${MODEL_FE_PORT:-5182}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -672,6 +704,16 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_STANDARD_BACKEND" = true ]; then
+    build_service "standard" "standard/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_MODEL_BACKEND" = true ]; then
+    build_service "model" "model/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_MANAGER_WORKER" = true ]; then
     build_worker "manager" "manager/backend" &
@@ -778,6 +820,28 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $MONITOR_PID > .dev-pids/monitor.pid
     else
       MONITOR_PID=$(cat .dev-pids/monitor.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Standard Backend（带检查）
+  if [ "$START_STANDARD_BACKEND" = true ]; then
+    if check_service_running "standard" "8110"; then
+      .dev-bins/addp-standard > logs/standard-backend.log 2> logs/standard-backend-stderr.log &
+      STANDARD_PID=$!
+      echo $STANDARD_PID > .dev-pids/standard.pid
+    else
+      STANDARD_PID=$(cat .dev-pids/standard.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Model Backend（带检查）
+  if [ "$START_MODEL_BACKEND" = true ]; then
+    if check_service_running "model" "8181"; then
+      .dev-bins/addp-model > logs/model-backend.log 2> logs/model-backend-stderr.log &
+      MODEL_PID=$!
+      echo $MODEL_PID > .dev-pids/model.pid
+    else
+      MODEL_PID=$(cat .dev-pids/model.pid 2>/dev/null)
     fi
   fi
 
@@ -1730,6 +1794,14 @@ if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STAR
     FRONTEND_CONFIGS+=("monitor:${MONITOR_FE_PORT}:monitor/frontend")
   fi
 
+  if [ "$START_STANDARD_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("standard:${STANDARD_FE_PORT}:standard/frontend")
+  fi
+
+  if [ "$START_MODEL_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("model:${MODEL_FE_PORT}:model/frontend")
+  fi
+
   echo "并发启动所有前端..."
 
   # 存储 PIDs（使用临时文件）
@@ -1828,6 +1900,9 @@ echo "  Orchestrator: http://localhost:8084"
 echo "  Develop:  http://localhost:8085"
 echo "  Service:  http://localhost:8086"
 echo "  Copilot:  http://localhost:8087"
+echo "  Monitor:  http://localhost:8100"
+echo "  Standard: http://localhost:8110"
+echo "  Model:    http://localhost:8181"
 echo "  Jupyter Engine:      http://localhost:8097 (API) / http://localhost:8088 (Lab UI)"
 echo "  Spark 工作流引擎: http://localhost:8098"
 echo "  Python Workflow Engine:    http://localhost:8099"
@@ -1838,6 +1913,9 @@ echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
 echo "  Develop FE:   http://localhost:${DEVELOP_FE_PORT}"
 echo "  Service FE:   http://localhost:${SERVICE_FE_PORT}"
+echo "  Monitor FE:   http://localhost:${MONITOR_FE_PORT}"
+echo "  Standard FE:  http://localhost:${STANDARD_FE_PORT}"
+echo "  Model FE:     http://localhost:${MODEL_FE_PORT}"
 echo ""
 echo "后端服务 PID:"
 echo "  System Backend:       $SYSTEM_PID"
@@ -1851,6 +1929,9 @@ echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
+echo "  Monitor Backend:      $MONITOR_PID"
+echo "  Standard Backend:     $STANDARD_PID"
+echo "  Model Backend:        $MODEL_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
@@ -1867,6 +1948,9 @@ echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
+echo "  Monitor:  logs/monitor-backend.log"
+echo "  Standard: logs/standard-backend.log"
+echo "  Model:    logs/model-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"

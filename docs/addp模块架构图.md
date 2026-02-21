@@ -165,7 +165,7 @@ graph TB
 | **Portal** | 统一门户入口,集成所有模块功能 | 5170 / 80 | Vue 3, Vue Router |
 | **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 / 8180 | Go, Gin, GORM, JWT |
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
-| **Manager** | 数据管理:数据源连接、目录展示、数据预览、MVT瓦片 | 8081 / 8081 | Go, Gin, OpenLayers |
+| **Manager** | 数据管理:数据存储目录展示、数据预览、MVT瓦片 | 8081 / 8081 | Go, Gin, OpenLayers |
 | **Manager Worker** | Manager 瓦片缓存生成器 | - | Go, Asynq Worker |
 | **Meta** | 元数据服务:扫描、索引、搜索 | 8082 / 8082 | Go, Gin, Meilisearch, Cron |
 | **Meta Worker** | Meta 扫描任务处理器 | - | Go, Asynq Worker |

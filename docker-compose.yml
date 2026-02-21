@@ -529,6 +529,53 @@ services:
       retries: 30
       start_period: 60s
 
+  # ==================== Model 模块 (数据标准与建模) ====================
+
+  model-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-model-backend:${IMAGE_TAG:-latest}
+    container_name: model-backend
+    environment:
+      - PORT=8181
+      - SYSTEM_SERVICE_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - DB_SCHEMA=model
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    ports:
+      - "8181:8181"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  model-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-model-frontend:${IMAGE_TAG:-latest}
+    container_name: model-frontend
+    ports:
+      - "8111:80"
+    networks:
+      - addp-network
+    depends_on:
+      - model-backend
+    restart: unless-stopped
+
   # ==================== Jupyter Engine (Notebook 开发引擎) ====================
 
   jupyter-engine:
@@ -655,6 +702,7 @@ services:
       - DEVELOP_SERVICE_URL=http://develop-backend:8085
       - SERVICE_SERVICE_URL=http://service-backend:8086
       - COPILOT_SERVICE_URL=http://copilot-backend:8087
+      - MODEL_SERVICE_URL=http://model-backend:8181
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:

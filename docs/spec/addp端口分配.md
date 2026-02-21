@@ -85,6 +85,12 @@ make ports-validate
 | Service Frontend      | 5180     | 8096        | 独立访问                   |
 | Monitor Backend       | 8100     | 8100        | 执行监控、统计分析         |
 | Monitor Frontend      | 5179     | 5179        | 监控仪表盘                 |
+| **Standard Backend**  | **8110** | **8110**    | **数据标准管理（业务域、术语、数据元、码值集）** |
+| **Standard Frontend** | **5181** | **8112**    | **标准管理 UI**            |
+| **Model Backend**     | **8181** | **8181**    | **数据建模（业务实体、逻辑表、数仓分层）** |
+| **Model Frontend**    | **5182** | **8111**    | **建模 UI**                |
+| **Quality Backend**   | **8182** | **8182**    | **数据质量检查、评分（质量规则执行层）** |
+| **Quality Frontend**  | **5183** | **8113**    | **质量管理 UI**            |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流引擎         |
@@ -96,3 +102,97 @@ make ports-validate
 | MinIO System API      | 19000    | 19000       | 系统文件存储               |
 | MinIO System Console  | 19001    | 19001       | 系统 MinIO Web UI          |
 | Meilisearch           | 17700    | 17700       | 全文检索引擎               |
+
+## 端口分配规则
+
+### 后端端口规则
+- **核心模块**：808x 系列（8081-8087）
+  - 8081: Manager
+  - 8082: Meta
+  - 8083: Transfer
+  - 8084: Orchestrator
+  - 8085: Develop
+  - 8086: Service
+  - 8087: Copilot
+- **特殊模块**：
+  - 8180: System（避免与企业微信等应用的 8080 端口冲突）
+  - 8100: Monitor
+  - **8110: Standard（数据标准管理）**
+  - **8181: Model（数据建模）**
+  - **8182: Quality（数据质量）**
+- **引擎服务**：808x-809x 系列
+  - 8088: Jupyter Lab UI
+  - 8089: Math Workflow Engine
+  - 8097: Jupyter API Server
+  - 8098: Spark Workflow Engine
+  - 8099: Python Workflow Engine
+
+### 前端开发端口规则
+- **Portal**：5170（统一入口）
+- **核心模块**：517x 系列（5173-5180）
+  - 5173: System
+  - 5174: Manager
+  - 5175: Meta
+  - 5176: Transfer
+  - 5177: Orchestrator
+  - 5178: Develop
+  - 5179: Monitor
+  - 5180: Service
+- **新模块**：518x 系列
+  - **5181: Standard**
+  - **5182: Model**
+  - **5183: Quality**
+
+### 前端 Docker 端口规则
+- **核心模块**：809x 系列（8090-8096）
+  - 8090: System
+  - 8091: Manager
+  - 8092: Meta
+  - 8093: Transfer
+  - 8094: Orchestrator
+  - 8095: Develop
+  - 8096: Service
+- **特殊模块**：
+  - 5179: Monitor（开发和 Docker 端口一致）
+  - **8111: Model（811x 系列起始）**
+  - **8112: Standard（811x 系列）**
+  - **8113: Quality（811x 系列）**
+
+## Standard 和 Model 模块配置要求
+
+### Standard 模块（数据标准管理）
+
+**功能**：管理业务域、业务术语、数据元、码值集等数据标准。
+
+**端口配置**：
+- Backend 开发：`8110`
+- Backend Docker：`8110`
+- Frontend 开发：`5181`
+- Frontend Docker：`8112`
+
+**配置文件**：
+- `.env`: `STANDARD_BACKEND_PORT=8110`, `STANDARD_FRONTEND_PORT=5181`
+- `standard/frontend/vite.config.js`: `port: 5181`
+- `docker-compose.yml`: `"8110:8110"` (backend), `"8112:80"` (frontend, 待添加)
+
+### Model 模块（数据建模）
+
+**功能**：管理业务实体、逻辑表、数仓分层等数据模型。
+
+**端口配置**：
+- Backend 开发：`8181`
+- Backend Docker：`8181`
+- Frontend 开发：`5182`
+- Frontend Docker：`8111`
+
+**配置文件**：
+- `.env`: `MODEL_BACKEND_PORT=8181`, `MODEL_FRONTEND_PORT=5182`
+- `model/frontend/vite.config.js`: `port: 5182`
+- `docker-compose.yml`: `"8181:8181"` (backend), `"8111:80"` (frontend)
+
+**⚠️ 注意事项**：
+1. **Standard Backend (8110)** 和 **Model Backend (8181)** 端口不得冲突
+2. **Standard Frontend (5181)** 和 **Model Frontend (5182)** 开发端口不得冲突
+3. 所有端口配置必须在 `.env`、`vite.config.js`、`docker-compose.yml` 中保持一致
+4. Gateway 需要正确配置 Standard 和 Model 服务的路由映射
+

@@ -50,6 +50,9 @@ CREATE SCHEMA IF NOT EXISTS gateway;
 -- Copilot 模块 (AI对话、会话管理)
 CREATE SCHEMA IF NOT EXISTS copilot;
 
+-- Model 模块 (数据标准与建模)
+CREATE SCHEMA IF NOT EXISTS model;
+
 -- Common 模块 (跨模块共享的数据表：统一执行记录表等)
 CREATE SCHEMA IF NOT EXISTS common;
 
@@ -74,6 +77,7 @@ COMMENT ON SCHEMA develop IS 'Develop 模块：SQL脚本、空间任务、执行
 COMMENT ON SCHEMA orchestrator IS 'Orchestrator 模块：工作流编排相关表';
 COMMENT ON SCHEMA gateway IS 'Gateway 模块：API访问日志等网关功能';
 COMMENT ON SCHEMA copilot IS 'Copilot 模块：AI对话、会话管理、上下文处理';
+COMMENT ON SCHEMA model IS 'Model 模块：数据标准、数据建模、指标管理';
 COMMENT ON SCHEMA common IS 'Common 模块：跨模块共享的数据表（统一执行记录表等）';
 
 COMMENT ON FUNCTION update_updated_at_column() IS '触发器函数：自动更新 updated_at 时间戳';
