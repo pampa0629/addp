@@ -68,9 +68,9 @@ NGINX_RUNNING=$(docker compose -f docker-compose.yml ps nginx --format json 2>/d
 POSTGRES_RUNNING=$(docker compose -f docker-compose.infra.yml ps postgres --format json 2>/dev/null | grep -c '"State":"running"' || echo "0")
 
 if [ "$NGINX_RUNNING" -gt 0 ]; then
-    echo -e "  ${GREEN}✓${NC} Portal (Recommended):  http://localhost:80"
+    echo -e "  ${GREEN}✓${NC} Console (Recommended):  http://localhost:80"
 else
-    echo -e "  ${RED}✗${NC} Portal:                http://localhost:80 ${YELLOW}(not running)${NC}"
+    echo -e "  ${RED}✗${NC} Console:               http://localhost:80 ${YELLOW}(not running)${NC}"
 fi
 
 if [ "$GATEWAY_RUNNING" -gt 0 ]; then

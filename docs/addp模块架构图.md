@@ -25,7 +25,7 @@ ADDP 平台采用微服务架构,由以下模块组成:
 ```mermaid
 graph TB
     subgraph "前端层"
-        Portal[Portal<br/>统一门户<br/>:5170]
+        Console[Console<br/>控制台<br/>:5170]
         SystemFE[System Frontend<br/>:5173]
         ManagerFE[Manager Frontend<br/>:5174]
         MetaFE[Meta Frontend<br/>:5175]
@@ -75,15 +75,15 @@ graph TB
         Meilisearch[(Meilisearch<br/>全文搜索<br/>:17700)]
     end
 
-    Portal --> Gateway
-    SystemFE -.-> Portal
-    ManagerFE -.-> Portal
-    MetaFE -.-> Portal
-    TransferFE -.-> Portal
-    OrchestratorFE -.-> Portal
-    DevelopFE -.-> Portal
-    ServiceFE -.-> Portal
-    MonitorFE -.-> Portal
+    Console --> Gateway
+    SystemFE -.-> Console
+    ManagerFE -.-> Console
+    MetaFE -.-> Console
+    TransferFE -.-> Console
+    OrchestratorFE -.-> Console
+    DevelopFE -.-> Console
+    ServiceFE -.-> Console
+    MonitorFE -.-> Console
 
     Gateway --> System
     Gateway --> Manager
@@ -135,7 +135,7 @@ graph TB
     classDef engine fill:#fff9c4,stroke:#f57f17
     classDef infra fill:#fce4ec,stroke:#880e4f
 
-    class Portal,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE frontend
+    class Console,SystemFE,ManagerFE,MetaFE,TransferFE,OrchestratorFE,DevelopFE,ServiceFE,MonitorFE frontend
     class Gateway gateway
     class System,Manager,Meta,Transfer,Orchestrator,Develop,Service,Monitor backend
     class TransferWorker,MetaWorker,ManagerWorker worker
@@ -145,7 +145,7 @@ graph TB
 ```
 
 **说明**:
-- **前端层**: 各模块的独立前端应用,Portal 通过 iframe 集成所有模块前端
+- **前端层**: 各模块的独立前端应用,Console 通过 iframe 集成所有模块前端
 - **网关层**: Gateway 统一处理外部请求并路由到对应的后端服务
 - **服务层**: 各业务模块的后端服务,提供 RESTful API
 - **Worker运行时**: 独立的后台任务处理进程
@@ -162,7 +162,7 @@ graph TB
 
 | 模块 | 职责 | 端口 (开发/生产) | 主要技术栈 |
 |------|------|-----------------|-----------|
-| **Portal** | 统一门户入口,集成所有模块功能 | 5170 / 80 | Vue 3, Vue Router |
+| **Console** | 控制台入口,集成所有模块功能 | 5170 / 80 | Vue 3, Vue Router |
 | **System** | 核心系统服务:用户认证、引擎管理、日志 | 8180 / 8180 | Go, Gin, GORM, JWT |
 | **Gateway** | API 网关,请求路由和转发 | 8000 / 8000 | Go, Gin |
 | **Manager** | 数据管理:数据存储目录展示、数据预览、MVT瓦片 | 8081 / 8081 | Go, Gin, OpenLayers |
@@ -365,14 +365,14 @@ graph TB
     MBE -.查询执行记录.-> TaskExec
 
     Gateway[Gateway<br/>:8000] --> MBE
-    Portal[Portal<br/>:5170] -.嵌入.-> MFE
+    Console[Console<br/>:5170] -.嵌入.-> MFE
 
     classDef monitor fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     classDef module fill:#f3e5f5,stroke:#4a148c
     classDef infra fill:#fce4ec,stroke:#880e4f
 
     class MFE,MBE monitor
-    class Transfer,Develop,Orchestrator,Gateway,Portal module
+    class Transfer,Develop,Orchestrator,Gateway,Console module
     class TaskExec infra
 ```
 
@@ -546,15 +546,15 @@ INTERNAL_API_KEY=your_internal_api_key_here
 
 ## ADDP 两种使用方式
 
-ADDP 支持两种使用方式：通过 Portal 统一门户访问，或各模块独立部署使用。
+ADDP 支持两种使用方式：通过 Console 控制台访问，或各模块独立部署使用。
 
 ```mermaid
 graph TB
-    subgraph "方式一：通过 Portal 统一门户（推荐）"
-        Portal[Portal<br/>:5170 dev / :8000 prod]
+    subgraph "方式一：通过 Console 控制台（推荐）"
+        Console[Console<br/>:5170 dev / :8000 prod]
 
-        Portal --> Sidebar[左侧边栏<br/>统一导航]
-        Portal --> IframeArea[主区域<br/>iframe 动态加载]
+        Console --> Sidebar[左侧边栏<br/>统一导航]
+        Console --> IframeArea[主区域<br/>iframe 动态加载]
 
         IframeArea --> SystemFE[System Frontend<br/>:5173]
         IframeArea --> ManagerFE[Manager Frontend<br/>:5174]
@@ -570,12 +570,12 @@ graph TB
         Standalone --> StandaloneMeta[Meta: :5175]
     end
 
-    classDef portal fill:#fff9c4,stroke:#f57f17
+    classDef console fill:#fff9c4,stroke:#f57f17
     classDef component fill:#e1f5ff,stroke:#01579b
     classDef frontend fill:#e8f5e9,stroke:#1b5e20
     classDef standalone fill:#f3e5f5,stroke:#4a148c
 
-    class Portal portal
+    class Console console
     class Sidebar,IframeArea component
     class SystemFE,ManagerFE,MetaFE,OtherFE frontend
     class Standalone,StandaloneSystem,StandaloneManager,StandaloneMeta standalone
@@ -583,7 +583,7 @@ graph TB
 
 ### 两种使用方式说明
 
-**方式一：通过 Portal 统一门户**（推荐）：
+**方式一：通过 Console 控制台**（推荐）：
 - **单一入口**：`http://localhost:5170`（dev）或 `http://localhost:8000`（prod）
 - **集成导航**：左侧边栏显示所有模块的导航菜单
 - **模块加载**：主区域通过 iframe 动态加载各模块前端
@@ -827,7 +827,7 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
    └─ Gateway（从 System 获取已注册的模块路由信息，建立动态路由）
 
 7. 前端层（可并行启动）
-   ├─ Portal Frontend
+   ├─ Console Frontend
    ├─ System Frontend
    ├─ Manager Frontend
    ├─ Meta Frontend
@@ -845,7 +845,7 @@ ADDP 平台各模块存在依赖关系，必须按以下顺序启动：
 | **System → Go 业务模块** | 业务模块依赖 System 提供的认证和注册服务 |
 | **Go 业务模块 → Gateway** | 业务模块启动后 3 秒自动向 System 注册；Gateway 启动时从 System 获取已注册模块列表建立路由，必须在业务模块之后启动 |
 | **Copilot 独立于 Go 业务模块层** | Copilot 是 Python 应用服务，语言运行时与 Go 模块不同，不适合混入 Go 三段式（编译→启动→健康检查）流程；但启动时依赖相同（仅 System），运行时才调用 Meta/Develop |
-| **前端无严格顺序约束** | Portal 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
+| **前端无严格顺序约束** | Console 通过 iframe 动态加载各模块前端（用户访问时才加载），各前端可完全并行启动 |
 
 ---
 

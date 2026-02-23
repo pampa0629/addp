@@ -382,7 +382,7 @@ check_service_changed() {
             comparison_time=$(stat -f "%m" "$binary_path" 2>/dev/null || echo "0")
             ;;
 
-        *-frontend|portal|nginx)
+        *-frontend|console|nginx)
             # Frontend services: compare source file time (Dockerfile + source files)
             comparison_time=$(find "$service_dir" -type f '(' -name "*.vue" -o -name "*.js" -o -name "*.ts" -o -name "Dockerfile" -o -name "nginx.conf" ')' \
                 -not -path "*/node_modules/*" -not -path "*/dist/*" 2>/dev/null | \
@@ -508,7 +508,7 @@ build_service() {
             fi
             ;;
 
-        *-frontend|portal|nginx)
+        *-frontend|console|nginx)
             # Frontends: system-frontend, transfer-frontend, and orchestrator-frontend need root context for common-frontend
             if [ "$service" = "system-frontend" ] || [ "$service" = "transfer-frontend" ] || [ "$service" = "orchestrator-frontend" ]; then
                 build_context="."
@@ -621,7 +621,7 @@ main() {
         "meta-worker:meta/backend"
         "manager-worker:manager/backend"
         "gateway:gateway"
-        "portal:portal/frontend"
+        "console:console/frontend"
         "system-frontend:system/frontend"
         "manager-frontend:manager/frontend"
         "meta-frontend:meta/frontend"

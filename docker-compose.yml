@@ -15,7 +15,7 @@
 # 环境变量配置（可选，支持不同部署场景）:
 #   COMPOSE_PROJECT_NAME - 项目名称前缀，用于容器命名（默认: addp）
 #   NGINX_PORT           - Nginx 统一网关端口（默认: 80）
-#   PORTAL_PORT          - Portal 独立访问端口（默认: 5170）
+#   CONSOLE_PORT         - Console 工作台独立访问端口（默认: 5170）
 #   REGISTRY             - 镜像仓库地址（默认: localhost:5001）
 #   IMAGE_TAG            - 镜像标签（默认: latest）
 #
@@ -576,6 +576,141 @@ services:
       - model-backend
     restart: unless-stopped
 
+  quality-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-quality-backend:${IMAGE_TAG:-latest}
+    container_name: quality-backend
+    environment:
+      - QUALITY_BACKEND_PORT=8182
+      - SYSTEM_URL=http://system-backend:8180
+      - STANDARD_URL=http://standard-backend:8110
+      - META_URL=http://meta-backend:8082
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    ports:
+      - "8182:8182"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8182/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  quality-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-quality-frontend:${IMAGE_TAG:-latest}
+    container_name: quality-frontend
+    ports:
+      - "8113:80"
+    networks:
+      - addp-network
+    depends_on:
+      - quality-backend
+    restart: unless-stopped
+
+
+  # ==================== Asset 模块 ====================
+
+  asset-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-asset-backend:${IMAGE_TAG:-latest}
+    container_name: asset-backend
+    environment:
+      - ASSET_BACKEND_PORT=8183
+      - SYSTEM_URL=http://system-backend:8180
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-addp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-addp}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    ports:
+      - "8183:8183"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8183/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  asset-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-asset-frontend:${IMAGE_TAG:-latest}
+    container_name: asset-frontend
+    ports:
+      - "8114:80"
+    networks:
+      - addp-network
+    depends_on:
+      - asset-backend
+    restart: unless-stopped
+
+  # ==================== Portal 模块 ====================
+
+  portal-backend:
+    image: ${REGISTRY:-localhost:5001}/addp-portal-backend:${IMAGE_TAG:-latest}
+    container_name: portal-backend
+    environment:
+      - PORTAL_BACKEND_PORT=8184
+      - SYSTEM_URL=http://system-backend:8180
+      - ASSET_URL=http://asset-backend:8183
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-addp_redis}
+      - REDIS_DB=0
+      - JWT_SECRET=${JWT_SECRET}
+    ports:
+      - "8184:8184"
+    networks:
+      - addp-network
+    depends_on:
+      system-backend:
+        condition: service_started
+      asset-backend:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8184/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  portal-frontend:
+    image: ${REGISTRY:-localhost:5001}/addp-portal-frontend:${IMAGE_TAG:-latest}
+    container_name: portal-frontend
+    ports:
+      - "8115:80"
+    networks:
+      - addp-network
+    depends_on:
+      - portal-backend
+    restart: unless-stopped
   # ==================== Jupyter Engine (Notebook 开发引擎) ====================
 
   jupyter-engine:
@@ -703,6 +838,9 @@ services:
       - SERVICE_SERVICE_URL=http://service-backend:8086
       - COPILOT_SERVICE_URL=http://copilot-backend:8087
       - MODEL_SERVICE_URL=http://model-backend:8181
+      - QUALITY_SERVICE_URL=http://quality-backend:8182
+      - ASSET_SERVICE_URL=http://asset-backend:8183
+      - PORTAL_SERVICE_URL=http://portal-backend:8184
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}
       - GIN_MODE=release
     ports:
@@ -720,13 +858,13 @@ services:
       retries: 30
       start_period: 60s
 
-  # ==================== Portal 统一门户 ====================
+  # ==================== Console 工作台 ====================
 
-  portal:
-    image: ${REGISTRY:-localhost:5001}/addp-portal:${IMAGE_TAG:-latest}
-    container_name: portal
+  console:
+    image: ${REGISTRY:-localhost:5001}/addp-console:${IMAGE_TAG:-latest}
+    container_name: console
     ports:
-      - "${PORTAL_PORT:-5170}:80"  # Portal 可独立访问（开发调试用）
+      - "${CONSOLE_PORT:-5170}:80"  # Console 可独立访问（开发调试用）
     networks:
       - addp-network
     depends_on:
@@ -743,7 +881,7 @@ services:
     networks:
       - addp-network
     depends_on:
-      - portal
+      - console
       - gateway
       - system-frontend
     restart: unless-stopped

@@ -1,11 +1,11 @@
 
 **两种访问模式**:
 
-1. **统一 Portal 模式** (推荐给用户):
+1. **统一 Console 模式** (推荐给用户):
 
    - 单一入口: http://localhost:5170 (dev) 或 http://localhost:8000 (prod)
    - 集成导航,包含所有模块
-   - 模块前端在 portal 的 iframe 中加载
+   - 模块前端在 console 的 iframe 中加载
    - 一次登录访问所有模块
 2. **独立模块模式** (用于独立部署):
 
@@ -16,10 +16,10 @@
 
 **前端关键原则**:
 
-- Portal 提供统一的用户体验和一致的导航
+- Console 提供统一的用户体验和一致的导航
 - 模块前端保持独立,可以独立部署
 - 所有前端共享 JWT 认证模式 (token 存储在 localStorage)
-- Portal 和模块可以独立认证
+- Console 和模块可以独立认证
 - 在生产环境,所有请求通过 Gateway (8000) 路由
 
 ### 认证流程
@@ -70,7 +70,7 @@ const systemClient = axios.create({
 // 基础模块 (Meta, Transfer, Orchestrator, Develop)
 export const authAPI = createAuthAPI(systemClient)
 
-// 带注册功能的模块 (Manager, System, Portal)
+// 带注册功能的模块 (Manager, System, Console)
 export const authAPI = createAuthAPI(systemClient, {
   includeRegister: true
 })
@@ -225,7 +225,7 @@ export default router
 **`createAuthGuard()` 处理的内容:**
 - Token 验证和用户加载
 - 登录页重定向
-- Query token 处理 (Portal iframe 模式)
+- Query token 处理 (Console iframe 模式)
 - 开发/生产环境路径规范化
 
 #### 5. 模块命名规范
@@ -239,7 +239,7 @@ export default router
 'transfer-auth'     // Transfer 模块
 'orchestrator-auth' // Orchestrator 模块
 'system-auth'       // System 模块
-'portal-auth'       // Portal 模块
+'console-auth'       // Console 模块
 'service-auth'      // Service 模块
 'monitor-auth'      // Monitor 模块
 ```

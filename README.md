@@ -30,7 +30,7 @@ ADDP (All Domain Data Platform / 全域数据平台) 是一个企业级数据平
 - 🔄 **数据传输** - 数据导入/导出/同步，支持增量传输
 - 🎯 **工作流编排** - 可视化编排，任务调度，监控告警
 - 🗺️ **空间数据支持** - 完整的 GIS 数据处理能力
-- 📱 **统一 Portal** - 一键登录，所有模块统一访问入口
+- 📱 **Console 控制台** - 一键登录，所有模块统一访问入口
 
 ### 🚀 快速开始
 
@@ -67,7 +67,7 @@ bash scripts/dev/restart.sh -all              # 重新编译所有模块
 bash scripts/dev/stop.sh
 
 # 访问服务
-# - Portal: http://localhost:5170
+# - Console: http://localhost:5170
 # - Gateway: http://localhost:8000
 # - System Backend: http://localhost:8180
 ```
@@ -96,7 +96,7 @@ bash scripts/build/build-images.sh
 bash scripts/local/start.sh
 
 # 访问服务
-# - Portal (推荐): http://localhost:80
+# - Console (推荐): http://localhost:80
 # - Gateway: http://localhost:8000
 ```
 
@@ -121,7 +121,7 @@ bash scripts/prod/health-check.sh
 
 # 访问服务
 # - ✨ 统一入口: http://localhost （Nginx）
-# - Portal: http://localhost:5170
+# - Console: http://localhost:5170
 # - Gateway: http://localhost:8000
 ```
 
@@ -138,7 +138,7 @@ addp/
 ├── common-frontend/     # 共享前端组件 (Vue 3)
 │   ├── basic/          # 基础 UI 组件
 │   └── map/            # 地图相关组件
-├── portal/             # 统一 Portal 入口
+├── console/             # 控制台入口
 ├── system/             # 核心系统模块 (认证、日志、资源管理)
 ├── gateway/            # API 网关
 ├── manager/            # 数据管理模块 (数据源、预览)
@@ -224,7 +224,7 @@ ADDP 提供完整的自动化脚本工具链，覆盖开发、构建、部署全
 | 服务 | 开发端口 | 生产端口 | 说明 |
 |------|---------|---------|------|
 | **Nginx Gateway** | - | **80** | **统一入口 (推荐)** |
-| **Portal** | **5170** | **5170** | Portal 前端 |
+| **Console** | **5170** | **5170** | Console 前端 |
 | Gateway | 8000 | 8000 | API 网关 |
 | System Backend | 8180 | 8180 | 认证、用户管理 |
 | Manager Backend | 8081 | 8081 | 数据管理 |
@@ -280,7 +280,7 @@ ADDP (All Domain Data Platform) is an enterprise-level data platform built on mi
 - 🔄 **Data Transfer** - Import/export/sync with incremental transfer support
 - 🎯 **Workflow Orchestration** - Visual orchestration, task scheduling, monitoring
 - 🗺️ **Spatial Data Support** - Complete GIS data processing capabilities
-- 📱 **Unified Portal** - Single sign-on, unified access to all modules
+- 📱 **Console** (Control Panel) - Single sign-on, unified access to all modules
 
 ### 🚀 Quick Start
 
@@ -299,7 +299,7 @@ cp .env.example .env
 bash scripts/dev/start.sh
 
 # Access services
-# - Portal: http://localhost:5170
+# - Console: http://localhost:5170
 # - Gateway: http://localhost:8000
 ```
 
@@ -314,7 +314,7 @@ bash scripts/build/build-images.sh
 bash scripts/local/start.sh
 
 # Access services
-# - Portal (Recommended): http://localhost:80
+# - Console (Recommended): http://localhost:80
 ```
 
 #### Option 3: Production Deployment

@@ -423,20 +423,20 @@ import '@common-ui/styles/theme.css'
 
 **无需在组件中额外配置过渡动画**，切换主题时所有颜色变化会自动平滑过渡。
 
-### Portal 与模块通信
+### Console 与模块通信
 
-#### Portal（发送方）
+#### Console（发送方）
 
-Portal 通过 postMessage 向所有 iframe 模块广播主题变化：
+Console 通过 postMessage 向所有 iframe 模块广播主题变化：
 
 ```javascript
-// portal/frontend/src/store/theme.js
+// console/frontend/src/store/theme.js
 watch(isDark, (newIsDark) => {
   const iframes = document.querySelectorAll('iframe.module-iframe')
   iframes.forEach((iframe) => {
     iframe.contentWindow?.postMessage({
       type: 'theme-change',
-      source: 'addp-portal',
+      source: 'addp-console',
       mode: mode.value,          // 'system' | 'light' | 'dark' | 'blue' | 'purple'
       isDark: newIsDark,         // boolean
       timestamp: Date.now()
@@ -447,7 +447,7 @@ watch(isDark, (newIsDark) => {
 
 #### 模块（接收方）
 
-各模块在 `main.js` 中初始化主题系统，自动监听 Portal 消息：
+各模块在 `main.js` 中初始化主题系统，自动监听 Console 消息：
 
 ```javascript
 // {module}/frontend/src/main.js
@@ -456,7 +456,7 @@ import '@common-ui/styles/theme.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 
 const { init: initTheme } = useTheme({
-  listenToPortal: true,        // 监听 Portal 的 postMessage
+  listenToConsole: true,        // 监听 Console 的 postMessage
   storageKey: 'theme-mode'     // localStorage 键名
 })
 
@@ -1240,7 +1240,7 @@ test('login flow', async ({ page }) => {
   await page.fill('input[name="username"]', 'admin')
   await page.fill('input[name="password"]', '123456')
   await page.click('button[type="submit"]')
-  await expect(page).toHaveURL(/portal/)
+  await expect(page).toHaveURL(/console/)
 })
 ```
 
@@ -1321,7 +1321,7 @@ const bgColor = computed(() => 'var(--addp-bg-primary)')
 
 ### Q5: 如何测试不同主题的效果？
 
-**A**: 在浏览器中切换 Portal 右上角的主题开关，选择不同主题查看效果。也可以直接在开发者工具中为 `<html>` 元素添加/移除主题 class（`dark`、`blue`、`purple`）。
+**A**: 在浏览器中切换 Console 右上角的主题开关，选择不同主题查看效果。也可以直接在开发者工具中为 `<html>` 元素添加/移除主题 class（`dark`、`blue`、`purple`）。
 
 ### Q6: 为什么蓝色/紫色主题需要同时添加 `dark` class？
 
@@ -1491,22 +1491,22 @@ html.dark .module-specific-component {
 2. 在组件样式中添加 `!important`
 3. 确保 `main.js` 中导入了 `@common-ui/styles/theme.css`
 
-#### 问题 2：Portal 与 iframe 模块主题不同步
+#### 问题 2：Console 与 iframe 模块主题不同步
 
-**症状**：Portal 切换主题后，嵌入的 iframe 模块仍保持原主题。
+**症状**：Console 切换主题后，嵌入的 iframe 模块仍保持原主题。
 
 **排查步骤**：
 1. 检查浏览器控制台是否有 postMessage 日志：
    ```
-   [Portal Theme] 广播主题变化到 X 个 iframe
-   [Theme] 收到 Portal 主题切换消息
+   [Console Theme] 广播主题变化到 X 个 iframe
+   [Theme] 收到 Console 主题切换消息
    ```
 2. 如果没有收到消息，检查模块的 main.js 是否正确初始化了 useTheme：
    ```javascript
    import { useTheme } from '@common-ui'
 
    const { init: initTheme } = useTheme({
-     listenToPortal: true,
+     listenToConsole: true,
      storageKey: 'theme-mode'
    })
 
@@ -1551,12 +1551,12 @@ html.purple {
 
 - [ ] `main.js` 中导入了 `element-plus/theme-chalk/dark/css-vars.css`
 - [ ] `main.js` 中导入了 `@common-ui/styles/theme.css`
-- [ ] `main.js` 中正确初始化了 `useTheme`（包括 `listenToPortal: true`）
+- [ ] `main.js` 中正确初始化了 `useTheme`（包括 `listenToConsole: true`）
 - [ ] Layout.vue 中所有容器使用 CSS 变量，无硬编码颜色
 - [ ] 所有组件的背景色、文本色、边框色使用 CSS 变量
 - [ ] 关键容器样式使用 `!important`
 - [ ] 浏览器中切换所有主题（浅色/深色/蓝色/紫色），所有区域都正确变化
-- [ ] 在 Portal 中嵌入时，主题能正确同步
+- [ ] 在 Console 中嵌入时，主题能正确同步
 
 ---
 

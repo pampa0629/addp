@@ -58,7 +58,7 @@ echo ""
 
 # 清理前端缓存
 echo "🗑️  清理前端缓存..."
-for frontend_dir in portal/frontend system/frontend manager/frontend meta/frontend transfer/frontend orchestrator/frontend develop/frontend service/frontend; do
+for frontend_dir in console/frontend system/frontend manager/frontend meta/frontend transfer/frontend orchestrator/frontend develop/frontend service/frontend; do
   if [ -d "$frontend_dir" ]; then
     rm -rf "$frontend_dir/node_modules/.vite" "$frontend_dir/.vite" 2>/dev/null || true
   fi

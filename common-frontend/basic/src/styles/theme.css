@@ -1,5 +1,5 @@
 /* ADDP 平台统一主题系统 - CSS 变量定义 */
-/* 本文件由 Portal 的 theme.css 复制并重命名变量（--app-* → --addp-*） */
+/* 本文件由 Console 的 theme.css 复制并重命名变量（--app-* → --addp-*） */
 
 /* 注意: Element Plus 深色模式 CSS 需要在各模块的 main.js 中导入 */
 /* import 'element-plus/theme-chalk/dark/css-vars.css' */

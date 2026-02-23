@@ -15,15 +15,15 @@ import { THEME_VALUES, getThemeConfig, isThemeDark } from '../config/themes'
  *
  * @param {Object} options - 配置选项
  * @param {string} options.storageKey - localStorage 键名，默认 'theme-mode'
- * @param {boolean} options.listenToPortal - 是否监听 Portal 的 postMessage，默认 true
- * @param {string} options.portalOrigin - Portal 来源验证，默认 window.location.origin
+ * @param {boolean} options.listenToConsole - 是否监听 Console 的 postMessage，默认 true
+ * @param {string} options.consoleOrigin - Console 来源验证，默认 window.location.origin
  * @returns {Object} 主题管理 API
  */
 export function useTheme(options = {}) {
   const {
     storageKey = 'theme-mode',
-    listenToPortal = true,
-    portalOrigin = window.location.origin
+    listenToConsole = true,
+    consoleOrigin = window.location.origin
   } = options
 
   // ==================== 状态定义 ====================
@@ -47,10 +47,10 @@ export function useTheme(options = {}) {
   let cleanupSystemListener = null
 
   /**
-   * Portal 消息监听器清理函数
+   * Console 消息监听器清理函数
    * @type {Function | null}
    */
-  let cleanupPortalListener = null
+  let cleanupConsoleListener = null
 
   // ==================== 计算属性 ====================
 
@@ -100,15 +100,15 @@ export function useTheme(options = {}) {
   }
 
   /**
-   * 初始化 Portal postMessage 监听器
+   * 初始化 Console postMessage 监听器
    * @returns {Function} 清理函数
    */
-  const initPortalListener = () => {
+  const initConsoleListener = () => {
     // 检测是否在 iframe 中
     const isInIframe = window.self !== window.top
 
     if (!isInIframe) {
-      console.log('[Theme] 不在 iframe 中，跳过 Portal 监听器初始化')
+      console.log('[Theme] 不在 iframe 中，跳过 Console 监听器初始化')
       return () => {}
     }
 
@@ -129,26 +129,26 @@ export function useTheme(options = {}) {
       }
 
       // 验证消息格式
-      if (event.data?.type !== 'theme-change' || event.data?.source !== 'addp-portal') {
+      if (event.data?.type !== 'theme-change' || event.data?.source !== 'addp-console') {
         return
       }
 
-      console.log('[Theme] 收到 Portal 主题切换消息:', {
+      console.log('[Theme] 收到 Console 主题切换消息:', {
         mode: event.data.mode,
         isDark: event.data.isDark,
         from: event.origin
       })
 
-      // 应用主题（不触发 localStorage 保存，因为 Portal 已经保存了）
+      // 应用主题（不触发 localStorage 保存，因为 Console 已经保存了）
       mode.value = event.data.mode
     }
 
     window.addEventListener('message', handleMessage)
-    console.log('[Theme] Portal 消息监听器已启动')
+    console.log('[Theme] Console 消息监听器已启动')
 
     return () => {
       window.removeEventListener('message', handleMessage)
-      console.log('[Theme] Portal 消息监听器已清理')
+      console.log('[Theme] Console 消息监听器已清理')
     }
   }
 
@@ -234,9 +234,9 @@ export function useTheme(options = {}) {
     // 1. 启动系统主题监听
     cleanupSystemListener = initSystemThemeListener()
 
-    // 2. 启动 Portal 消息监听（如果在 iframe 中且启用）
-    if (listenToPortal) {
-      cleanupPortalListener = initPortalListener()
+    // 2. 启动 Console 消息监听（如果在 iframe 中且启用）
+    if (listenToConsole) {
+      cleanupConsoleListener = initConsoleListener()
     }
 
     // 3. 立即应用当前主题
@@ -257,9 +257,9 @@ export function useTheme(options = {}) {
       cleanupSystemListener()
       cleanupSystemListener = null
     }
-    if (cleanupPortalListener) {
-      cleanupPortalListener()
-      cleanupPortalListener = null
+    if (cleanupConsoleListener) {
+      cleanupConsoleListener()
+      cleanupConsoleListener = null
     }
     console.log('[Theme] 主题系统已清理')
   }

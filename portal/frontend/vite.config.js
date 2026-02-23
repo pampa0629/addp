@@ -1,38 +1,43 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path'
 import { resolve } from 'path'
-
-const BUILD_TYPE = process.env.BUILD_TYPE || 'release'
-const OUT_BASE = process.env.OUT_DIR
 
 export default defineConfig({
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src')
-    }
+      '@': path.resolve(__dirname, 'src'),
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@addp/common-frontend/basic': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@addp/common-frontend': resolve(__dirname, '../../common-frontend'),
+      '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
+      'element-plus': resolve(__dirname, 'node_modules/element-plus')
+    },
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
-    port: 5170,
-    strictPort: true, // 端口被占用时报错，不自动切换
+    port: 5185,
+    strictPort: true,
     hmr: {
       protocol: 'ws',
       host: 'localhost',
-      port: 5170,
-      clientPort: 5170
+      port: 5185,
+      clientPort: 5185
+    },
+    fs: {
+      allow: [
+        resolve(__dirname, '..'),
+        resolve(__dirname, '../..'),
+        resolve(__dirname, '../../common-frontend')
+      ]
     },
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // 统一通过 Gateway 访问
+        target: 'http://localhost:8000',
         changeOrigin: true
       }
     }
   },
-  build: {
-    outDir: resolve(__dirname, OUT_BASE ? `${OUT_BASE}/${BUILD_TYPE}/frontend/portal` : 'dist'),
-    sourcemap: BUILD_TYPE === 'debug',
-    minify: BUILD_TYPE !== 'debug',
-    emptyOutDir: true
-  }
+  base: process.env.NODE_ENV === 'development' ? '/' : '/portal/'
 })

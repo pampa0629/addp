@@ -19,21 +19,21 @@
 
 ## 核心模块
 
-### 1. Portal（统一门户）
+### 1. Console（控制台）
 
-**职责定位**：统一入口，集成所有模块功能，提供一致的用户体验
+**职责定位**：控制台入口，集成所有模块功能，提供一致的用户体验
 
 **核心能力**：
 - 基于 iframe 的模块动态加载
 - 一次登录访问所有模块（JWT 认证传递）
 - 统一左侧导航菜单
-- 支持独立访问和门户嵌入两种模式
+- 支持独立访问和控制台嵌入两种模式
 
 **端口**：
 - 开发环境：5170
 - 生产环境：80 (通过 Nginx)
 
-**详细文档**：`portal/CLAUDE.md`
+**详细文档**：`console/CLAUDE.md`
 
 ---
 
@@ -261,7 +261,27 @@
 
 ---
 
-### 13. Monitor（执行监控）
+### 13. Quality（数据质量）
+
+**职责定位**：数据质量检查、评分与问题管理
+
+**核心能力**：
+- **规则应用管理**：将 Standard 模块数据元的质量规则映射到具体数据库表字段，支持字段级规则绑定
+- **检查任务管理**：定义质量检查任务，可指定引擎、Schema、表的检查范围，支持手动触发执行
+- **SQL 规则引擎**：自动将质量规则转换为 SQL 查询，支持 6 种基础规则类型（非空、唯一性、格式正则、长度范围、数值范围、枚举值）
+- **质量评分**：异步执行检查，计算表级综合质量评分和字段级评分明细
+- **问题工单**：检查失败自动生成问题工单，支持状态流转（待处理 → 已解决/已忽略）
+- **执行监控**：执行记录写入 `common.task_executions`，与 Monitor 模块统一监控
+
+**端口**：
+- Backend：8182
+- Frontend：5183 (dev)
+
+**详细文档**：`quality/CLAUDE.md`
+
+---
+
+### 14. Monitor（执行监控）
 
 **职责定位**：全平台任务执行监控、统计分析、健康检查
 
@@ -420,14 +440,15 @@ import { TablePreview, GeoJsonPreview } from '@common-ui-map'
 - Orchestrator: `orchestrator/CLAUDE.md`
 - Develop: `develop/CLAUDE.md`
 - Service: `service/CLAUDE.md`
-- Standard: `standard/CLAUDE.md`（待创建）
-- Model: `model/CLAUDE.md`（待创建）
+- Standard: `standard/CLAUDE.md`
+- Model: `model/CLAUDE.md`
+- Quality: `quality/CLAUDE.md`
 - Monitor: `monitor/docs/Monitor模块实施报告.md`
 
 ---
 
 ## 文档版本
 
-- **版本**: v2.1
-- **更新日期**: 2026-02-20
-- **更新内容**: 补充 Standard（数据标准管理）和 Model（数据模型管理）模块介绍
+- **版本**: v2.2
+- **更新日期**: 2026-02-22
+- **更新内容**: 新增 Quality（数据质量）模块介绍，Monitor 模块编号调整为 14

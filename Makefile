@@ -220,7 +220,7 @@ build-backend-all-local: ## 编译所有服务（仅当前架构，快速）
 	@echo "$(GREEN)本地架构编译完成！$(NC)"
 
 # ===== 前端统一构建 =====
-build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|portal}
+build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|console}
 	@echo "$(GREEN)编译前端（$(BUILD_TYPE)）→ $(OUT_DIR)$(NC)"
 	@if [ -f system/frontend/package.json ]; then \
 	  echo "  - system/frontend"; \
@@ -230,12 +230,12 @@ build-frontend: ## 编译所有前端到 dist/{BUILD_TYPE}/frontend/{system|port
 	    (cd system/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
 	  fi; \
 	fi
-	@if [ -f portal/frontend/package.json ]; then \
-	  echo "  - portal/frontend"; \
+	@if [ -f console/frontend/package.json ]; then \
+	  echo "  - console/frontend"; \
 	  if [ "$(BUILD_TYPE)" = "debug" ]; then \
-	    (cd portal/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
+	    (cd console/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent -- --mode development); \
 	  else \
-	    (cd portal/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
+	    (cd console/frontend && BUILD_TYPE=$(BUILD_TYPE) OUT_DIR=../../$(OUT_DIR) npm run build --silent); \
 	  fi; \
 	fi
 	@echo "$(GREEN)前端编译完成！$(NC)"
@@ -599,7 +599,7 @@ prod-status: ## 显示所有服务状态和访问地址
 	@docker compose -f docker-compose.yml --profile infra --profile addp ps
 	@echo ""
 	@echo "$(YELLOW)访问地址:$(NC)"
-	@echo "  Portal (统一门户):      http://localhost:8000"
+	@echo "  Console (控制台):      http://localhost:8000"
 	@echo "  System 管理界面:        http://localhost:8090"
 	@echo "  Manager 管理界面:       http://localhost:8091"
 	@echo "  Meta 管理界面:          http://localhost:8092"

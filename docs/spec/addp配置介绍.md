@@ -105,8 +105,8 @@ ENABLE_SERVICE_INTEGRATION=true  # 启用跨服务调用
 详见 [addp端口分配.md](addp端口分配.md)。
 
 **推荐访问**:
-- **生产环境**: http://localhost:80 (通过 Nginx 访问 Portal 统一入口)
-- **开发环境**: http://localhost:5170 (Portal 独立访问) 或各模块独立端口
+- **生产环境**: http://localhost:80 (通过 Nginx 访问 Console 控制台)
+- **开发环境**: http://localhost:5170 (Console 独立访问) 或各模块独立端口
 
 **业务库设置**:
 

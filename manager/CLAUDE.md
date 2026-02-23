@@ -594,7 +594,7 @@ Manager 模块依赖：
 └─ Meilisearch (可选) - 混合检索功能（全文检索 + 向量检索）
 
 被依赖：
-├─ Portal 模块 - 提供数据探查 iframe 入口
+├─ Console 模块 - 提供数据探查 iframe 入口
 └─ Orchestrator 模块 - 注册为 TaskProvider（提供数据预览任务）
 ```
 
@@ -633,7 +633,7 @@ bash scripts/dev/restart.sh -manager
 # 2. 查看启动日志（确认编译成功）
 tail -f logs/manager-backend.log
 
-# 3. 测试 API（使用 Portal 登录获取 token）
+# 3. 测试 API（使用 Console 登录获取 token）
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8081/api/v1/engines
 ```
@@ -645,7 +645,7 @@ curl -H "Authorization: Bearer <token>" \
 # 如果遇到问题，手动重启：
 bash scripts/dev/restart.sh -manager
 
-# 访问 Portal 查看效果
+# 访问 Console 查看效果
 open http://localhost:5170
 ```
 

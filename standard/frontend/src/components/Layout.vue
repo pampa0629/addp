@@ -1,5 +1,5 @@
 <template>
-  <!-- Portal 嵌入模式：只显示内容 -->
+  <!-- Console 嵌入模式：只显示内容 -->
   <div v-if="isInIframe" class="content-only">
     <router-view />
   </div>

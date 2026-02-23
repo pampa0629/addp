@@ -67,7 +67,7 @@ make ports-validate
 | 服务                  | 开发端口 | Docker 端口 | 说明                       |
 | --------------------- | -------- | ----------- | -------------------------- |
 | **Nginx Gateway**     | **80**   | **80**      | **统一入口 (推荐)**        |
-| **Portal Frontend**   | **5170** | **5170**    | **Portal UI (通过 Nginx)** |
+| **Console Frontend**   | **5170** | **5170**    | **Console UI (通过 Nginx)** |
 | Gateway               | 8000     | 8000        | API Gateway (后端路由)     |
 | System Backend        | 8180     | 8180        | 认证、用户、日志 (统一使用8180避免端口冲突) |
 | System Frontend       | 5173     | 8090        | 独立访问                   |
@@ -91,6 +91,10 @@ make ports-validate
 | **Model Frontend**    | **5182** | **8111**    | **建模 UI**                |
 | **Quality Backend**   | **8182** | **8182**    | **数据质量检查、评分（质量规则执行层）** |
 | **Quality Frontend**  | **5183** | **8113**    | **质量管理 UI**            |
+| **Asset Backend**     | **8183** | **8183**    | **数据资产管理（编目、申请、授权）** |
+| **Asset Frontend**    | **5184** | **8114**    | **资产管理 UI**            |
+| **Portal Backend**    | **8184** | **8184**    | **数据消费者门户 BFF**      |
+| **Portal Frontend**   | **5185** | **8115**    | **数据门户 UI**            |
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流引擎         |
@@ -120,6 +124,8 @@ make ports-validate
   - **8110: Standard（数据标准管理）**
   - **8181: Model（数据建模）**
   - **8182: Quality（数据质量）**
+  - **8183: Asset（数据资产管理）**
+  - **8184: Portal（数据消费者门户）**
 - **引擎服务**：808x-809x 系列
   - 8088: Jupyter Lab UI
   - 8089: Math Workflow Engine
@@ -128,7 +134,7 @@ make ports-validate
   - 8099: Python Workflow Engine
 
 ### 前端开发端口规则
-- **Portal**：5170（统一入口）
+- **Console**：5170（控制台入口）
 - **核心模块**：517x 系列（5173-5180）
   - 5173: System
   - 5174: Manager
@@ -142,6 +148,8 @@ make ports-validate
   - **5181: Standard**
   - **5182: Model**
   - **5183: Quality**
+  - **5184: Asset**
+  - **5185: Portal**
 
 ### 前端 Docker 端口规则
 - **核心模块**：809x 系列（8090-8096）
@@ -157,6 +165,8 @@ make ports-validate
   - **8111: Model（811x 系列起始）**
   - **8112: Standard（811x 系列）**
   - **8113: Quality（811x 系列）**
+  - **8114: Asset**
+  - **8115: Portal**
 
 ## Standard 和 Model 模块配置要求
 

@@ -1,5 +1,5 @@
 <template>
-  <!-- 在 Portal 中：只显示内容，不显示导航 -->
+  <!-- 在 Console 中：只显示内容，不显示导航 -->
   <div v-if="isInIframe" class="content-only">
     <router-view />
   </div>
@@ -109,7 +109,7 @@ const handleCommand = (command) => {
 </script>
 
 <style scoped>
-/* 内容模式（Portal 中） */
+/* 内容模式（Console 中） */
 .content-only {
   width: 100%;
   height: 100vh;

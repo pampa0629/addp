@@ -18,7 +18,7 @@ MODULES=(
   "orchestrator/frontend"
   "develop/frontend"
   "service/frontend"
-  "portal/frontend"
+  "console/frontend"
   "monitor/frontend"
 )
 

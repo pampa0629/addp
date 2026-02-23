@@ -171,7 +171,7 @@ IMAGE_TAG=v1.0.0 ./scripts/build/build-images.sh \
 - `manager-worker` - Manager Worker
 
 **前端服务**:
-- `portal-frontend` - Portal 前端
+- `console-frontend` - Console 前端
 - `system-frontend` - System 前端
 - `manager-frontend` - Manager 前端
 - `meta-frontend` - Meta 前端
@@ -348,8 +348,8 @@ harbor.example.com:5001/project/addp-manager-backend:latest
 - `addp-orchestrator-frontend`
 - `addp-develop-frontend`
 
-**Portal + Nginx** (2 个):
-- `addp-portal`
+**Console + Nginx** (2 个):
+- `addp-console`
 - `addp-nginx`
 
 ### 前置条件

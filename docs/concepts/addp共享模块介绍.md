@@ -120,6 +120,6 @@ import { TablePreview, GeoJsonPreview, ShapefilePreview } from '@common-ui-map'
 - **Manager Frontend**: 使用 `map` (数据预览的 GeoJsonPreview, ShapefilePreview, TablePreview)
 - **Meta Frontend**: 使用 `basic` (元数据显示的 ExtractedMetadata)
 - **Transfer Frontend**: 使用 `basic` (映射 UI 的字段类型工具)
-- **Portal Frontend**: 使用 `basic` (通用 UI 元素)
+- **Console Frontend**: 使用 `basic` (通用 UI 元素)
 
 **另请参阅**: [common-frontend/README.md](common-frontend/README.md), [common-frontend/ARCHITECTURE.md](common-frontend/ARCHITECTURE.md)

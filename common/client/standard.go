@@ -117,3 +117,40 @@ func (c *StandardClient) GetElement(elementID int64, tenantID int64) (*ElementRe
 
 	return &element, nil
 }
+
+// GetElementQualityRules 获取数据元的质量规则定义
+func (c *StandardClient) GetElementQualityRules(elementID int64, tenantID int64) (map[string]interface{}, error) {
+	url := fmt.Sprintf("%s/api/standard/elements/%d/quality-rules", c.baseURL, elementID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.addAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-ID", fmt.Sprintf("%d", tenantID))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("element_id %d not found", elementID)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("standard api returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return result.Data, nil
+}

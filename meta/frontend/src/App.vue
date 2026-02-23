@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-// Meta模块嵌入在Portal中，不需要自己的导航和用户菜单
+// Meta模块嵌入在Console中，不需要自己的导航和用户菜单
 </script>
 
 <style>

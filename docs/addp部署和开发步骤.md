@@ -93,15 +93,15 @@ bash scripts/prod/start.sh
 1. **启动基础设施** (PostgreSQL、Redis、MinIO、Meilisearch)
 2. **启动 System Backend** (其他服务依赖它)
 3. **启动业务后端** (Manager、Meta、Transfer、Orchestrator、Develop、Python Workflow Engine、Gateway)
-4. **启动前端服务** (所有模块前端 + Portal + Nginx)
+4. **启动前端服务** (所有模块前端 + Console + Nginx)
 5. **健康检查** (验证所有服务就绪)
 
 **访问地址** (部署完成后):
 
-- **✨ Portal 统一入口 (推荐)**: http://localhost:80
+- **✨ Console 控制台 (推荐)**: http://localhost:80
   - 统一登录,一键访问所有模块
   - 通过 Nginx 反向代理,提供最佳用户体验
-- **Portal 独立访问** (开发调试): http://localhost:5170
+- **Console 独立访问** (开发调试): http://localhost:5170
 - **API Gateway**: http://localhost:8000
 - **独立模块访问** (如需单独访问):
   - System: http://localhost:8090

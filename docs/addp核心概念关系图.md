@@ -20,7 +20,7 @@ ADDP 平台的核心概念体系:
 mindmap
   root((ADDP 核心概念))
     模块架构
-      portal:统一门户
+      console:控制台
       gateway:网关路由
       system:系统配置管理
       核心数据流转模块        
@@ -105,7 +105,7 @@ mindmap
       JWT 认证流程
       gateway 路由机制
       运行模式
-        统一门户:portal
+        控制台:console
         独立模块
       Backend/Worker 分离
         transfor
@@ -121,7 +121,7 @@ mindmap
 
 **ADDP 各个模块及其依赖关系**
 
-- 模块总览图 (Portal、Gateway、System、Manager、Meta、Transfer、Orchestrator、Develop、Service、Monitor)
+- 模块总览图 (Console、Gateway、System、Manager、Meta、Transfer、Orchestrator、Develop、Service、Monitor)
 - 模块分层架构 (前端层、网关层、服务层、数据层)
 - 共享模块 (common、common-frontend)
 - 计算引擎 (python_workflow、spark_workflow、jupyter)
@@ -254,17 +254,17 @@ mindmap
 
 ### 11. [认证与路由](concepts/addp登录认证的原理说明.md)
 
-**JWT 认证流程、登录实现详解和 Portal Token 传递机制**
+**JWT 认证流程、登录实现详解和 Console Token 传递机制**
 
 - JWT 认证流程（序列图：登录阶段、访问资源阶段）
 - 完整登录流程（4步详解，含代码示例）
-- 三种登录场景（独立模块登录 vs Portal 统一登录）
-- Portal iframe Token 传递机制
+- 三种登录场景（独立模块登录 vs Console 统一登录）
+- Console iframe Token 传递机制
 - 认证中间件原理（Go 代码）
 - Token 自动刷新机制（JavaScript 代码）
 - 安全特性（bcrypt、签名算法验证、多租户隔离）
 
-> Gateway 路由规则和 Portal 架构图见：[ADDP 模块架构图](addp模块架构图.md)
+> Gateway 路由规则和 Console 架构图见：[ADDP 模块架构图](addp模块架构图.md)
 
 📄 **[阅读完整文档 →](concepts/addp登录认证的原理说明.md)**
 
@@ -281,7 +281,7 @@ mindmap
 ### 用户与权限
 
 - **[账号与权限体系图](concepts/addp账号与权限体系图.md)** - 用户类型、租户隔离、RBAC 权限、JWT 认证
-- **[登录认证原理说明](concepts/addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Portal 架构见[模块架构图](addp模块架构图.md)）
+- **[登录认证原理说明](concepts/addp登录认证的原理说明.md)** - JWT 认证流程、登录详解、Token 刷新、安全特性（Gateway 路由与 Console 架构见[模块架构图](addp模块架构图.md)）
 
 ### 数据管理
 

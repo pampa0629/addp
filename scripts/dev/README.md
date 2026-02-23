@@ -35,7 +35,7 @@ scripts/dev/
 bash scripts/dev/start.sh
 
 # 访问服务
-# - Portal: http://localhost:5170
+# - Console: http://localhost:5170
 # - System: http://localhost:5173
 # - Manager: http://localhost:5174
 # - API Gateway: http://localhost:8000
@@ -50,7 +50,7 @@ bash scripts/dev/start.sh
 # 0. Go 依赖检查(go mod tidy,可跳过)
 # 1. 启动基础设施(PostgreSQL, Redis, MinIO, Meilisearch)
 # 2-7. 启动后端服务(System, Manager, Meta, Transfer, Workers, Orchestrator, Gateway)
-# 8. 启动前端服务(Portal, System, Manager, Meta, Transfer, Orchestrator)
+# 8. 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 
 # 停止所有服务
 bash scripts/dev/stop.sh
@@ -91,7 +91,7 @@ bash scripts/dev/upgrade-go.sh 1.23
    - Orchestrator Backend (8084)
    - Gateway (8000) - API 路由
 4. **健康检查**: 等待所有 /health 返回 200
-5. **Step 8**: 启动前端服务(Portal, System, Manager, Meta, Transfer, Orchestrator)
+5. **Step 8**: 启动前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 6. **输出**: 显示所有访问地址和 PID
 
 **环境变量**:
@@ -199,7 +199,7 @@ Orchestrator Backend (8084)
   ↓
 Gateway (8000) - API 路由
   ↓
-前端服务(Portal, System, Manager, Meta, Transfer, Orchestrator)
+前端服务(Console, System, Manager, Meta, Transfer, Orchestrator)
 ```
 
 **关键依赖**:

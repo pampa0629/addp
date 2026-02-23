@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/common/middleware/audit"
@@ -10,6 +11,7 @@ import (
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // internalAPIKeyMiddleware 处理内部 API 认证（X-Internal-API-Key）
@@ -19,11 +21,17 @@ func internalAPIKeyMiddleware(expectedKey string) gin.HandlerFunc {
 		// 检查是否有内部 API Key
 		apiKey := c.GetHeader("X-Internal-API-Key")
 		if apiKey != "" && apiKey == expectedKey {
-			// 内部 API 调用，设置默认的上下文信息
+			// 内部 API 调用，从 X-Tenant-ID header 读取租户 ID
+			tenantID := uint(0)
+			if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
+				if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
+					tenantID = uint(tid)
+				}
+			}
 			c.Set(commonAuth.ContextUserIDKey, uint(1))
 			c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
-			c.Set(commonAuth.ContextTenantIDKey, uint(1)) // 默认租户 ID
-			c.Set("internal_api_authenticated", true)     // 标记为已通过内部认证
+			c.Set(commonAuth.ContextTenantIDKey, tenantID)
+			c.Set("internal_api_authenticated", true) // 标记为已通过内部认证
 		}
 		c.Next()
 	}
@@ -48,6 +56,7 @@ func systemAuthMiddlewareWrapper(systemURL string) gin.HandlerFunc {
 // SetupRouter 设置路由（Phase 3 完整版本）
 func SetupRouter(
 	cfg *config.Config,
+	db *gorm.DB,
 	devItemHandler *DevItemHandler,
 	devExecutionHandler *DevExecutionHandler,
 	operatorHandler *OperatorHandler,
@@ -108,7 +117,11 @@ func SetupRouter(
 	if systemClient != nil {
 		api.Use(audit.AuditMiddleware("develop", systemClient))
 	}
+	assetDiscHandler := newAssetDiscoverableHandler(db)
 	{
+		// ========== 资产发现接口（供 Asset 模块调用）==========
+		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
 		// ========== 任务列表 API（供 Orchestrator 使用）==========
 		taskListHandler := NewTaskListHandler(devItemService.(*service.DevItemService))
 		api.GET("/tasks/list", taskListHandler.ListTasks)

@@ -59,7 +59,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
       // return next() // ❌ 旧代码：直接放行
     }
 
-    // 1️⃣ 处理 Portal iframe 传递的 token
+    // 1️⃣ 处理 Console iframe 传递的 token
     if (queryToken) {
       console.log(`[${moduleName} Router] Processing query token`)
       authStore.setToken(queryToken)
@@ -99,7 +99,7 @@ export function createAuthGuard(authStoreOrGetter, config = {}) {
     // 3️⃣ iframe 环境检测（仅用于日志，不跳过认证检查）
     const isInIframe = window.self !== window.top
     if (isInIframe) {
-      console.log(`[${moduleName} Router] Running in iframe, token from Portal:`, !!authStore.token)
+      console.log(`[${moduleName} Router] Running in iframe, token from Console:`, !!authStore.token)
     }
 
     // 4️⃣ 标准路由守卫 (检查是否需要认证)

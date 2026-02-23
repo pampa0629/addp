@@ -304,7 +304,7 @@ SQLEXAMPLE
 
 echo ""
 echo -e "${GREEN}✨ 提示：${NC}"
-echo -e "   1. 登录 ADDP Portal → System 模块 → 注册 Apache Spark 资源"
+echo -e "   1. 登录 ADDP Console → System 模块 → 注册 Apache Spark 资源"
 echo -e "   2. 进入 Develop 模块 → SQL 工作台"
 echo -e "   3. 选择 Apache Spark 数据源，粘贴上述 SQL 执行"
 echo ""

@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -19,6 +19,9 @@ show_usage() {
   echo "  -gateway     强制重新编译 Gateway 模块"
   echo "  -standard    强制重新编译 Standard 模块"
   echo "  -model       强制重新编译 Model 模块"
+  echo "  -quality     强制重新编译 Quality 模块
+  -asset       强制重新编译 Asset 模块
+  -portal      强制重新编译 Portal 模块"
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
@@ -63,7 +66,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -190,6 +193,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     elif [ "$module" = "model" ]; then
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
+    elif [ "$module" = "quality" ]; then
+      find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     else
       find "${module}/backend" -type f -name "*.go" -exec touch {} \; 2>/dev/null || true
     fi
@@ -216,6 +221,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
       rm -f .dev-bins/addp-standard 2>/dev/null || true
     elif [ "$module" = "model" ]; then
       rm -f .dev-bins/addp-model 2>/dev/null || true
+    elif [ "$module" = "quality" ]; then
+      rm -f .dev-bins/addp-quality 2>/dev/null || true
     else
       rm -f .dev-bins/addp-${module} 2>/dev/null || true
       rm -f .dev-bins/addp-${module}-worker 2>/dev/null || true
@@ -242,6 +249,8 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "standard" ]; then
       (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
     elif [ "$module" = "model" ]; then
+      (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
+    elif [ "$module" = "quality" ]; then
       (cd "${module}/backend" && go clean -cache 2>/dev/null) || true
     else
       (cd "${module}/backend" && go clean -cache 2>/dev/null) || true

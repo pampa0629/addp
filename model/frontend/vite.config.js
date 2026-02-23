@@ -13,7 +13,8 @@ export default defineConfig({
       '@addp/common-frontend': resolve(__dirname, '../../common-frontend'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus')
-    }
+    },
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   server: {
     port: 5182,

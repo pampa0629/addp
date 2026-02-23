@@ -2,27 +2,27 @@
 
 ## 用户问题
 
-1. Portal 登录后，各个模块如何可用？
+1. Console 登录后，各个模块如何可用？
 2. 所有认证是否都在 System 模块进行？
-3. 如何实现跨模块自动登录（Portal 或任一模块登录后，其他模块自动登录）？
+3. 如何实现跨模块自动登录（Console 或任一模块登录后，其他模块自动登录）？
 
 ## 探索结果
 
 ### 已完成的探索
-- ✅ 阅读 Portal 登录实现和 token 传递机制
+- ✅ 阅读 Console 登录实现和 token 传递机制
 - ✅ 阅读各模块的认证流程
 - ✅ 阅读官方文档：`docs/addp登录认证的原理说明.md` 和 `docs/addp登录认证的统一要求.md`
 - ✅ 分析 common-frontend 的认证工具库
 
 ## 技术分析
 
-### 问题 1: Portal 登录后如何让各模块可用？
+### 问题 1: Console 登录后如何让各模块可用？
 
 **关键机制：URL Query 参数传递 Token**
 
-当用户在 Portal 登录后，点击某个模块卡片时：
+当用户在 Console 登录后，点击某个模块卡片时：
 
-1. **Portal 构建 iframe URL 时附加 token**（`portal/frontend/src/views/Portal.vue:472-476`）：
+1. **Console 构建 iframe URL 时附加 token**（`console/frontend/src/views/Portal.vue:472-476`）：
    ```javascript
    const token = authStore.token
    if (token) {
@@ -52,12 +52,12 @@
    ```
 
 3. **localStorage 隔离但 token 共享**：
-   - Portal (localhost:5170) 和各模块 (localhost:5173-5180) 的 localStorage 是隔离的
+   - Console (localhost:5170) 和各模块 (localhost:5173-5180) 的 localStorage 是隔离的
    - 但每次 iframe 加载时都会传递最新的 token
    - 各模块保存后可以独立使用
 
 **优势**：
-- 用户只需登录一次（在 Portal）
+- 用户只需登录一次（在 Console）
 - 各模块通过 URL 参数获得认证
 - 安全：token 从 URL 立即移除，存入 localStorage
 
@@ -220,7 +220,7 @@ window.addEventListener('storage', (e) => {
 
 **当前架构**：
 ```
-Portal:  http://localhost:5170
+Console:  http://localhost:5170
 System:  http://localhost:5173
 Manager: http://localhost:5174
 ```
@@ -228,7 +228,7 @@ Manager: http://localhost:5174
 **调整后架构**：
 ```
 Gateway:  http://localhost:8000
-Portal:   http://localhost:8000/portal/
+Console:   http://localhost:8000/console/
 System:   http://localhost:8000/system/
 Manager:  http://localhost:8000/manager/
 ```
@@ -254,13 +254,13 @@ Manager:  http://localhost:8000/manager/
 
 ---
 
-#### 方案 5: Portal 永久嵌入模式（最小改动）
+#### 方案 5: Console 永久嵌入模式（最小改动）
 
-**原理**：强制用户只能通过 Portal 访问，禁止直接访问模块
+**原理**：强制用户只能通过 Console 访问，禁止直接访问模块
 
 **技术实现**：
 - 各模块检测是否在 iframe 中：`window.self !== window.top`
-- 如果不在 iframe 且未登录，重定向到 Portal：`window.location.href = 'http://localhost:5170'`
+- 如果不在 iframe 且未登录，重定向到 Console：`window.location.href = 'http://localhost:5170'`
 
 **适用场景**：
 - ✅ 不需要独立模块访问
@@ -269,7 +269,7 @@ Manager:  http://localhost:8000/manager/
 **优势**：
 - 无需后端改动
 - 实现简单（几行代码）
-- 保持当前 Portal token 传递机制
+- 保持当前 Console token 传递机制
 
 **劣势**：
 - 无法独立访问模块（开发调试不便）
@@ -285,7 +285,7 @@ Manager:  http://localhost:8000/manager/
 | SharedWorker | 跨标签同步 | 高 | 不需要 | ✅ | ✅ | ⭐⭐⭐ |
 | Storage 轮询 | - | 低 | 不需要 | ❌ | ❌ | ❌ 不可行 |
 | 统一网关路由 | 全场景 | 中 | 不需要 | ✅ | ✅ | ⭐⭐⭐⭐⭐ |
-| Portal 强制嵌入 | 单一入口 | 低 | 不需要 | ⭐ | ✅ | ⭐⭐ |
+| Console 强制嵌入 | 单一入口 | 低 | 不需要 | ⭐ | ✅ | ⭐⭐ |
 
 ## 需要与用户确认
 
@@ -294,8 +294,8 @@ Manager:  http://localhost:8000/manager/
    - 还是通过 Gateway 统一路径（如 `addp.com/system`, `addp.com/manager`）？
 
 2. **开发环境需求**：
-   - 是否需要支持直接访问模块端口（不通过 Portal）？
-   - 是否可以接受强制通过 Portal 访问？
+   - 是否需要支持直接访问模块端口（不通过 Console）？
+   - 是否可以接受强制通过 Console 访问？
 
 3. **多标签页场景**：
    - 是否需要支持用户在多个标签页中独立打开不同模块？
@@ -306,7 +306,7 @@ Manager:  http://localhost:8000/manager/
 基于当前架构和文档，我推荐：
 
 **短期（开发阶段）**：
-- 保持当前 Portal iframe 传递 token 的方式
+- 保持当前 Console iframe 传递 token 的方式
 - 开发调试时直接访问模块需要重新登录（可接受的开发成本）
 
 **长期（生产部署）**：

@@ -40,7 +40,7 @@ echo ""
 
 # Define all frontend modules
 FRONTENDS=(
-    "portal/frontend"
+    "console/frontend"
     "system/frontend"
     "manager/frontend"
     "meta/frontend"

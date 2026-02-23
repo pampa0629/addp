@@ -233,65 +233,65 @@ Vue Router 触发
 
 ---
 
-### 场景 3：Portal 统一登录（推荐方式）
+### 场景 3：Console 统一登录（推荐方式）
 
-Portal 通过 iframe 集成所有模块前端，用户只需登录一次，Token 自动传递给各子模块：
+Console 通过 iframe 集成所有模块前端，用户只需登录一次，Token 自动传递给各子模块：
 
 ```mermaid
 graph TB
-    subgraph "统一门户模式 (推荐)"
-        Portal[Portal<br/>:5170 dev / :8000 prod]
-        Portal --> Sidebar[左侧边栏<br/>统一导航]
-        Portal --> IframeArea[主区域<br/>iframe 动态加载]
+    subgraph "控制台模式 (推荐)"
+        Console[Console<br/>:5170 dev / :8000 prod]
+        Console --> Sidebar[左侧边栏<br/>统一导航]
+        Console --> IframeArea[主区域<br/>iframe 动态加载]
         IframeArea --> SystemFE[System Frontend<br/>:5173]
         IframeArea --> ManagerFE[Manager Frontend<br/>:5174]
         IframeArea --> MetaFE[Meta Frontend<br/>:5175]
         IframeArea --> OtherFE[其他模块前端...]
     end
 
-    classDef portal fill:#fff9c4,stroke:#f57f17
+    classDef console fill:#fff9c4,stroke:#f57f17
     classDef component fill:#e1f5ff,stroke:#01579b
     classDef frontend fill:#e8f5e9,stroke:#1b5e20
 
-    class Portal portal
+    class Console console
     class Sidebar,IframeArea component
     class SystemFE,ManagerFE,MetaFE,OtherFE frontend
 ```
 
-用户访问 `http://localhost:5170` (Portal 统一入口)
+用户访问 `http://localhost:5170` (Console 控制台入口)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ 第 1 步：Portal 统一登录                                         │
+│ 第 1 步：Console 统一登录                                         │
 └─────────────────────────────────────────────────────────────────┘
 
 用户打开 http://localhost:5170
     ↓
-【Portal】路由守卫检查
+【Console】路由守卫检查
     ├─ 发现未登录
     └─ 重定向到 /login
     ↓
-用户在 Portal Login.vue 输入用户名/密码
+用户在 Console Login.vue 输入用户名/密码
     ↓
-【Portal】authStore.login(username, password)
+【Console】authStore.login(username, password)
     └─→ POST http://localhost:8180/api/auth/login
     ↓
 【System 后端】返回 JWT Token
     ↓
-【Portal】存储 token
+【Console】存储 token
     ├─ localStorage.setItem('token', token)
     └─ authStore.fetchUser()
     ↓
-【Portal】登录成功，进入首页
+【Console】登录成功，进入首页
 
 
 ┌─────────────────────────────────────────────────────────────────┐
-│ 第 2 步：Portal 通过 iframe 加载子模块（传递 Token）             │
+│ 第 2 步：Console 通过 iframe 加载子模块（传递 Token）             │
 └─────────────────────────────────────────────────────────────────┘
 
-用户在 Portal 点击"元数据管理"卡片
+用户在 Console 点击"元数据管理"卡片
     ↓
-【Portal】Portal.vue 创建 iframe:
+【Console】Console.vue 创建 iframe:
     <iframe src="http://localhost:5175/meta?token=eyJhbGciOiJI..."></iframe>
                                            ↑
                           关键：将 token 作为 query 参数传递给子模块
@@ -300,7 +300,7 @@ graph TB
     ↓
 【Meta 路由守卫】createAuthGuard() 检查
     ├─ 发现 to.query.token 存在
-    ├─ authStore.setToken(query.token)  // 保存 Portal 传来的 token
+    ├─ authStore.setToken(query.token)  // 保存 Console 传来的 token
     ├─ authStore.fetchUser()            // 使用 token 获取用户信息
     └─ 从 URL 移除 token 参数（安全考虑）
         最终 URL: http://localhost:5175/meta/scan
@@ -309,16 +309,16 @@ graph TB
     ↓
 【Meta】加载用户界面（已认证状态）
 
-此时 Meta 模块和 Portal 使用同一个 token，用户信息共享
+此时 Meta 模块和 Console 使用同一个 token，用户信息共享
 
 
 ┌─────────────────────────────────────────────────────────────────┐
-│ 第 3 步：用户在 Portal 中切换到 Develop 模块                     │
+│ 第 3 步：用户在 Console 中切换到 Develop 模块                     │
 └─────────────────────────────────────────────────────────────────┘
 
 用户点击"GIS 开发"卡片
     ↓
-【Portal】创建新 iframe:
+【Console】创建新 iframe:
     <iframe src="http://localhost:5178/develop?token=eyJhbGciOiJI..."></iframe>
     ↓
 【Develop 前端】路由守卫检查
@@ -328,18 +328,18 @@ graph TB
     ↓
 【Develop】加载界面（已认证）
 
-✅ 用户在 Portal 只登录一次，所有子模块自动获得认证
+✅ 用户在 Console 只登录一次，所有子模块自动获得认证
 ```
 
 ---
 
 ## 四、三种登录方式对比
 
-| 特性 | Meta 独立登录 | Develop 独立登录 | Portal 统一登录 |
+| 特性 | Meta 独立登录 | Develop 独立登录 | Console 统一登录 |
 |------|-------------|----------------|----------------|
 | **登录入口** | http://localhost:5175/meta/login | http://localhost:5178/develop/login | http://localhost:5170/login |
 | **认证接口** | System `/api/auth/login` | System `/api/auth/login` | System `/api/auth/login` |
-| **Token 存储** | Meta localStorage | Develop localStorage | Portal localStorage |
+| **Token 存储** | Meta localStorage | Develop localStorage | Console localStorage |
 | **Token 传递** | - | - | ✅ 通过 URL query 传递到子模块 |
 | **用户体验** | 需要单独登录 Meta | 需要单独登录 Develop | **一次登录，访问所有模块** |
 | **适用场景** | Meta 独立部署 | Develop 独立部署 | **生产环境推荐** |
@@ -352,7 +352,7 @@ graph TB
 
 ### 1. JWT Token 结构
 
-> Gateway 路由规则和 Portal 架构总览见：[ADDP 模块架构图](../addp模块架构图.md)
+> Gateway 路由规则和 Console 架构总览见：[ADDP 模块架构图](../addp模块架构图.md)
 
 ```json
 {
@@ -436,10 +436,10 @@ client.interceptors.response.use(
 )
 ```
 
-### 4. Portal iframe Token 传递
+### 4. Console iframe Token 传递
 
 ```vue
-<!-- Portal.vue -->
+<!-- Console.vue -->
 <template>
   <iframe
     :src="`${moduleUrl}?token=${authStore.token}`"
@@ -450,7 +450,7 @@ client.interceptors.response.use(
 <script setup>
 // Meta 模块路由守卫
 router.beforeEach((to, from, next) => {
-    // 检测 Portal 传来的 token
+    // 检测 Console 传来的 token
     if (to.query.token) {
         // 保存 token
         authStore.setToken(to.query.token)
@@ -478,7 +478,7 @@ router.beforeEach((to, from, next) => {
 **关键知识点**：iframe 内的 API 请求使用相对路径时，相对于 **iframe 的 origin**，而不是父窗口。
 
 ```
-Portal (localhost:5170)
+Console (localhost:5170)
   └─ iframe src="http://localhost:5175/meta"
        └─ Meta 发起 API 请求: /api/meta/scan
           └─ 浏览器解析为 http://localhost:5175/api/meta/scan
@@ -497,7 +497,7 @@ proxy: {
 }
 ```
 
-**结论**：在 Portal iframe 中运行时，各模块无需修改 API 请求的 baseURL。使用统一的相对路径 `/api`，由各模块的 Vite 代理转发到 Gateway，和独立运行时行为完全一致。
+**结论**：在 Console iframe 中运行时，各模块无需修改 API 请求的 baseURL。使用统一的相对路径 `/api`，由各模块的 Vite 代理转发到 Gateway，和独立运行时行为完全一致。
 
 - ❌ 错误做法：检测 `window.self !== window.top` 并切换到绝对 URL
 - ✅ 正确做法：始终使用 `createAPIClient()` 的默认相对路径配置
@@ -541,7 +541,7 @@ if token.Method.Alg() != "HS256" {
 ### 3. URL Token 保护
 
 ```javascript
-// Portal iframe 传递 token 后立即移除
+// Console iframe 传递 token 后立即移除
 const { token, ...restQuery } = to.query
 next({ path: to.path, query: restQuery, replace: true })
 ```
@@ -582,15 +582,15 @@ return db.Where("tenant_id = ?", tenantID).Find(&tasks).Error
 - Develop 的 token 存储在 Develop 的 localStorage
 - 两个模块的 localStorage 相互隔离
 
-如果需要互通，使用 **Portal 统一登录**。
+如果需要互通，使用 **Console 统一登录**。
 
-### Q3: Portal iframe 模式下，子模块刷新页面会丢失 token 吗？
+### Q3: Console iframe 模式下，子模块刷新页面会丢失 token 吗？
 
 **A**: 会。因为：
 - Token 通过 URL query 传递是一次性的
 - 刷新页面后 URL 中没有 token 参数
 - 解决方案：
-  - Portal 使用 `persistUser: true`，刷新 Portal 后重新加载 iframe 并传递 token
+  - Console 使用 `persistUser: true``，刷新 Console 后重新加载 iframe 并传递 token
   - 或者子模块也持久化 token（但需要考虑安全性）
 
 ### Q4: Token 过期后用户需要重新登录吗？
@@ -619,19 +619,19 @@ ADDP 认证系统的核心设计思想：
 
 1. **统一认证中心**：所有模块通过 System 登录，使用统一的 JWT Secret
 2. **Token 自动刷新**：前端拦截器自动处理 401，无需用户手动重新登录
-3. **iframe Token 传递**：Portal 统一登录后，通过 URL query 传递 token 到子模块
+3. **iframe Token 传递**：Console 统一登录后，通过 URL query 传递 token 到子模块
 4. **多租户隔离**：Token 包含 tenant_id，后端自动过滤数据
 5. **安全优先**：bcrypt 密码加密、签名算法验证、URL token 移除
 
 **推荐使用方式**：
-- ✅ 生产环境：**Portal 统一登录** (一次登录，访问所有模块)
+- ✅ 生产环境：**Console 统一登录** (一次登录，访问所有模块)
 - ✅ 开发调试：各模块独立登录 (方便单独测试)
 
 ---
 
 ## 相关文档
 
-- [ADDP 模块架构图（含 Gateway 路由 / Portal 架构）](../addp模块架构图.md)
+- [ADDP 模块架构图（含 Gateway 路由 / Console 架构）](../addp模块架构图.md)
 - [ADDP 账号与权限体系图](addp账号与权限体系图.md)
 - [ADDP 核心概念关系图](../addp核心概念关系图.md)
 - [Gateway 架构说明](../../gateway/doc/gateway架构说明.md)

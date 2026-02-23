@@ -38,7 +38,7 @@ app.use(ElementPlus)
 
 // 初始化主题系统
 const { init: initTheme } = useTheme({
-  listenToPortal: true,
+  listenToConsole: true,
   storageKey: 'theme-mode'
 })
 

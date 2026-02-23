@@ -56,7 +56,7 @@ localhost:5001/addp-transfer-backend     latest
 localhost:5001/addp-orchestrator-backend latest
 localhost:5001/addp-develop-backend      latest
 localhost:5001/addp-gateway              latest
-localhost:5001/addp-portal               latest
+localhost:5001/addp-console               latest
 localhost:5001/addp-nginx                latest
 ...
 ```
@@ -70,7 +70,7 @@ localhost:5001/addp-nginx                latest
 bash scripts/local/start.sh
 
 # 访问服务
-# - Portal (推荐): http://localhost:80
+# - Console (推荐): http://localhost:80
 # - Gateway:        http://localhost:8000
 # - System Backend: http://localhost:8180
 ```
@@ -150,7 +150,7 @@ bash scripts/local/status.sh
 ```
 === Service URLs ===
 
-  ✓ Portal (Recommended):  http://localhost:80
+  ✓ Console (Recommended):  http://localhost:80
   ✓ Gateway:               http://localhost:8000
   ✓ System Backend:        http://localhost:8180
 
@@ -219,7 +219,7 @@ Worker 服务:
   transfer-frontend    (port 8093)
   orchestrator-frontend (port 8094)
   develop-frontend     (port 8095)
-  portal               (port 5170)
+  console               (port 5170)
   nginx                (port 80) - 统一入口
 ```
 

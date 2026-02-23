@@ -374,37 +374,37 @@ const sections = computed(() => buildSections(props.metadata))
 }
 
 /* 不同类型的section样式 */
-.section-video h4 { color: #409eff; }
-.section-video .section-icon { color: #409eff; }
-.section-video { border-left: 3px solid #409eff; }
+.section-video h4 { color: var(--el-color-primary); }
+.section-video .section-icon { color: var(--el-color-primary); }
+.section-video { border-left: 3px solid var(--el-color-primary); }
 
-.section-audio h4 { color: #67c23a; }
-.section-audio .section-icon { color: #67c23a; }
-.section-audio { border-left: 3px solid #67c23a; }
+.section-audio h4 { color: var(--el-color-success); }
+.section-audio .section-icon { color: var(--el-color-success); }
+.section-audio { border-left: 3px solid var(--el-color-success); }
 
-.section-image h4 { color: #e6a23c; }
-.section-image .section-icon { color: #e6a23c; }
-.section-image { border-left: 3px solid #e6a23c; }
+.section-image h4 { color: var(--el-color-warning); }
+.section-image .section-icon { color: var(--el-color-warning); }
+.section-image { border-left: 3px solid var(--el-color-warning); }
 
-.section-document h4 { color: #f56c6c; }
-.section-document .section-icon { color: #f56c6c; }
-.section-document { border-left: 3px solid #f56c6c; }
+.section-document h4 { color: var(--el-color-danger); }
+.section-document .section-icon { color: var(--el-color-danger); }
+.section-document { border-left: 3px solid var(--el-color-danger); }
 
 .section-geo h4 { color: var(--addp-text-tertiary); }
 .section-geo .section-icon { color: var(--addp-text-tertiary); }
-.section-geo { border-left: 3px solid #909399; }
+.section-geo { border-left: 3px solid var(--addp-text-tertiary); }
 
 .section-table h4 { color: var(--addp-text-secondary); }
 .section-table .section-icon { color: var(--addp-text-secondary); }
-.section-table { border-left: 3px solid #606266; }
+.section-table { border-left: 3px solid var(--addp-text-secondary); }
 
 .section-database h4 { color: var(--addp-text-primary); }
 .section-database .section-icon { color: var(--addp-text-primary); }
-.section-database { border-left: 3px solid #303133; }
+.section-database { border-left: 3px solid var(--addp-text-primary); }
 
-.section-text h4 { color: #79bbff; }
-.section-text .section-icon { color: #79bbff; }
-.section-text { border-left: 3px solid #79bbff; }
+.section-text h4 { color: var(--el-color-primary-light-3); }
+.section-text .section-icon { color: var(--el-color-primary-light-3); }
+.section-text { border-left: 3px solid var(--el-color-primary-light-3); }
 
 .extracted-entry {
   display: grid;

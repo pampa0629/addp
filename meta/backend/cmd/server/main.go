@@ -190,7 +190,7 @@ func main() {
 	// ===================================
 
 	// 设置路由
-	router := api.SetupRouter(cfg, engineService, scanService, taskService, redisClient, systemClient)
+	router := api.SetupRouter(cfg, db, engineService, scanService, taskService, redisClient, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

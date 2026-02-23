@@ -10,7 +10,7 @@ export default defineConfig({
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
     },
-    dedupe: ['ol', 'vue']
+    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios']
   },
   optimizeDeps: {
     include: [

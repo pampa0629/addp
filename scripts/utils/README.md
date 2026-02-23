@@ -133,7 +133,7 @@ make fix-frontend        # 修复模式
 Frontend Docker Standardization Check
 ========================================
 
-Checking: portal/frontend
+Checking: console/frontend
   ✓ Dockerfile exists
   ✓ .dockerignore exists
   ✓ nginx.conf exists
@@ -210,7 +210,7 @@ make check-frontend
 
 4. **standardize-frontend-docker.sh**
    - `--fix` 模式会创建文件，请谨慎使用
-   - 检查所有 frontend 目录: portal, system, manager, meta, transfer, orchestrator, develop
+   - 检查所有 frontend 目录: console, system, manager, meta, transfer, orchestrator, develop
    - 不会覆盖已存在的配置文件
 
 ---

@@ -9,7 +9,7 @@
 创建标准化的 Vue Router `beforeEach` 守卫,处理所有认证相关逻辑:
 
 - ✅ **Step 0**: 智能等待用户加载完成 (Promise 链)
-- ✅ **Step 1**: 处理 Portal iframe 传递的 query token
+- ✅ **Step 1**: 处理 Console iframe 传递的 query token
 - ✅ **Step 2**: 刷新页面后自动恢复用户信息
 - ✅ **Step 3**: iframe 环境自动放行
 - ✅ **Step 4**: 标准路由守卫 (检查认证状态)

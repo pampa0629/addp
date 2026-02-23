@@ -414,7 +414,7 @@ GORM AutoMigrate 自动处理 schema 更改:
 - **位置**: `components/Layout.vue`（不是 `views/Layout.vue`）
 - **功能**: 提供双模式支持
   - 独立访问模式：显示完整的 header + sidebar + content 布局
-  - Portal 嵌入模式：通过 `isInIframe` 检测，仅显示 `<router-view>`
+  - Console 嵌入模式：通过 `isInIframe` 检测，仅显示 `<router-view>`
 - **路由结构**: 使用嵌套路由，Layout 作为父组件包裹所有需要认证的页面
 - **主题适配**（必须）: Layout.vue 中的背景色、边框色**禁止使用硬编码颜色**，必须使用 CSS 变量：
   ```css
@@ -472,7 +472,7 @@ Layout.vue 基本结构:
 
 ```vue
 <template>
-  <!-- Portal 嵌入模式：只显示内容 -->
+  <!-- Console 嵌入模式：只显示内容 -->
   <div v-if="isInIframe" class="content-only">
     <router-view />
   </div>
@@ -552,11 +552,11 @@ const handleCommand = (command) => {
 
 ## 前端开发工作流
 
-### 快速开始: Portal + 所有模块
+### 快速开始: Console + 所有模块
 
 ```bash
-# 终端 1: 启动 Portal (统一入口)
-cd portal/frontend
+# 终端 1: 启动 Console (控制台)
+cd console/frontend
 npm install
 npm run dev
 # 访问: http://localhost:5170
@@ -572,7 +572,7 @@ npm install
 npm run dev
 
 # 现在访问 http://localhost:5170 获得统一体验
-# 通过单一 portal 界面访问所有模块
+# 通过单一 console 界面访问所有模块
 ```
 
 ### 运行单个前端 (独立模式)
@@ -588,8 +588,8 @@ cd manager/frontend
 npm run dev
 # 访问: http://localhost:5174
 
-# Portal (端口 5170)
-cd portal/frontend
+# Console (端口 5170)
+cd console/frontend
 npm run dev
 # 访问: http://localhost:5170
 ```
@@ -636,7 +636,7 @@ const client = createAPIClient(() => useAuthStore(), {
    - `src/components/Layout.vue`: 更新模块名称和侧边栏菜单项，**背景色必须使用 CSS 变量**（见下方要求）
    - `src/api/client.js`: 将 baseURL 指向 meta 后端 (8082)
    - 保持 `src/api/auth.js` 指向 System 后端 (8180)
-   - **`src/main.js`: 必须添加主题初始化**（否则无法跟随 Portal 切换主题）:
+   - **`src/main.js`: 必须添加主题初始化**（否则无法跟随 Console 切换主题）:
      ```javascript
      // 必须导入 Element Plus 深色模式 CSS（在 element-plus/dist/index.css 之后）
      import 'element-plus/theme-chalk/dark/css-vars.css'
@@ -646,7 +646,7 @@ const client = createAPIClient(() => useAuthStore(), {
      import { useTheme } from '@common-ui'
 
      // 在 app.use() 之后、app.mount() 之前初始化
-     const { init: initTheme } = useTheme({ listenToPortal: true, storageKey: 'theme-mode' })
+     const { init: initTheme } = useTheme({ listenToConsole: true, storageKey: 'theme-mode' })
      initTheme()
      app.mount('#app')
      ```
@@ -906,13 +906,13 @@ client.get('/meta/datasources')         // ✅ 正确
 client.get('/model/domains')            // ✅ 正确
 ```
 
-### 错误 8: 前端模块不跟随 Portal 主题切换
+### 错误 8: 前端模块不跟随 Console 主题切换
 
-**现象**: 切换 Portal 主题（深色/蓝色/紫色等）时，模块前端的背景和边框颜色不变。
+**现象**: 切换 Console 主题（深色/蓝色/紫色等）时，模块前端的背景和边框颜色不变。
 
 **原因有两处**：
 
-1. **`main.js` 缺少主题初始化**: 未导入主题 CSS 或未调用 `useTheme({ listenToPortal: true })`
+1. **`main.js` 缺少主题初始化**: 未导入主题 CSS 或未调用 `useTheme({ listenToConsole: true })`
 2. **`Layout.vue` 使用硬编码颜色**: 背景/边框使用 `#fff`、`#f5f7fa`、`#e4e7ed` 等固定值而非 CSS 变量
 
 **修复 main.js**:
@@ -922,7 +922,7 @@ import '@common-ui/styles/theme.css'                  // 添加
 import { useTheme } from '@common-ui'                 // 添加
 
 // app.use() 之后
-const { init: initTheme } = useTheme({ listenToPortal: true, storageKey: 'theme-mode' })
+const { init: initTheme } = useTheme({ listenToConsole: true, storageKey: 'theme-mode' })
 initTheme()
 app.mount('#app')
 ```
@@ -957,7 +957,7 @@ app.mount('#app')
 - [ ] 配置路由基础路径
 - [ ] 实现 Layout 组件（支持双模式）
 - [ ] **Layout.vue 背景/边框使用 CSS 变量（`var(--addp-bg-primary/secondary)`，非硬编码颜色）**
-- [ ] **main.js 导入主题 CSS 并调用 `useTheme({ listenToPortal: true })`**
+- [ ] **main.js 导入主题 CSS 并调用 `useTheme({ listenToConsole: true })`**
 - [ ] 配置 common-frontend 别名
 - [ ] API Client 正确配置
 - [ ] API 路径不含 `/api` 前缀（格式：`/module-name/resource`）
@@ -981,5 +981,5 @@ app.mount('#app')
 - [ ] 数据库表创建在正确的 schema
 - [ ] 模块注册到 Gateway 成功
 - [ ] 前端可以访问后端 API
-- [ ] Portal 可以嵌入模块前端
-- [ ] **切换 Portal 主题，模块前端背景/边框随之变化**
+- [ ] Console 可以嵌入模块前端
+- [ ] **切换 Console 主题，模块前端背景/边框随之变化**

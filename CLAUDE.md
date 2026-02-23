@@ -88,7 +88,7 @@
 - **common-frontend/** - 前端共享库:Vue 3 组件、工具和类型定义,供前端复用
   - **basic/** - 基础 UI 组件,无地图依赖(StorageEngineForm、ImagePreview、formatters)
   - **map/** - 地图相关组件,需要 OpenLayers 和高德地图(GeoJsonPreview、ShapefilePreview、TablePreview)
-- **portal/** - 统一门户入口,基于 iframe 的模块集成 
+- **console/** - 控制台入口,基于 iframe 的模块集成 
 - **system/** - 核心系统模块:用户认证、日志、引擎管理 -  (PostgreSQL system schema)
 - **gateway/** - API 网关:处理外部请求并路由到内部服务 -  (反向代理)
 - **manager/** - 数据管理:按目录展示数据、数据预览 
@@ -113,7 +113,7 @@
 1. **启动基础设施**: `bash scripts/infra/up.sh`
 2. **启动开发环境**: `bash scripts/dev/start.sh`（并行启动优化，25-39 秒）
 3. **访问应用**:
-   - Portal 统一入口: http://localhost:5170
+   - Console 控制台: http://localhost:5170
    - API Gateway: http://localhost:8000
    - System Backend: http://localhost:8180
 
@@ -133,7 +133,7 @@ bash scripts/dev/start.sh -system
 
 **核心端口**(高频使用):
 
-- **Portal**: 5170 (dev) / 80 (prod via Nginx)
+- **Console**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
 - **System Backend**: 8180
 - **PostgreSQL**: 15432 (infra)
@@ -212,38 +212,38 @@ pkg/utils/                  → 共享工具 (JWT、加密)
 
 **数据流**: API Handler → Service → Repository → Database
 
-### 前端架构 (Portal + 微服务模式)
+### 前端架构 (Console + 微服务模式)
 
-**统一门户 + 独立模块前端**:
+**控制台 + 独立模块前端**:
 
-平台使用 **基于门户的架构** 提供统一入口:
+平台使用 **基于控制台的架构** 提供统一入口:
 
 ```
-portal/frontend/           → 统一门户入口 (端口 5170 dev / 8000 prod)
+console/frontend/           → 控制台入口 (端口 5170 dev / 8000 prod)
 ├── src/
 │   ├── views/
-│   │   ├── Portal.vue    → 主门户页面,包含模块卡片
+│   │   ├── Portal.vue    → 控制台首页,包含模块卡片
 │   │   └── Login.vue     → 集中登录
 │   ├── api/auth.js       → 通过 System 后端认证
-│   └── router/           → Portal 路由
+│   └── router/           → Console 路由
 │
-│   Portal 通过 iframe 嵌入模块前端:
+│   Console 通过 iframe 嵌入模块前端:
 │   - 左侧边栏: 所有模块的统一导航
 │   - 主区域: iframe 动态加载模块前端
 
 system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
-├── 可独立运行或嵌入 portal
+├── 可独立运行或嵌入 console
 ├── 功能: 用户、日志、引擎、API 文档
 其他模块类似 system。
 ```
 
 **两种访问模式**:
 
-1. **统一门户模式** (推荐给用户):
+1. **控制台模式** (推荐给用户):
 
    - 单一入口: http://localhost:5170 (dev) 或 http://localhost:8000 (prod)
    - 集成所有模块的导航
-   - 模块前端加载在 portal 的 iframe 中
+   - 模块前端加载在 console 的 iframe 中
    - 一次登录访问所有模块
 2. **独立模块模式** (用于独立部署):
 
@@ -254,10 +254,10 @@ system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
 
 **前端关键原则**:
 
-- Portal 提供统一的用户体验和一致的导航
+- Console 提供统一的用户体验和一致的导航
 - 模块前端保持独立,可单独部署
 - 所有前端共享 JWT 认证模式 (token 存储在 localStorage)
-- Portal 和模块可独立认证
+- Console 和模块可独立认证
 - 生产环境中,所有请求通过 Gateway (8000) 路由
 
 ### 认证流程

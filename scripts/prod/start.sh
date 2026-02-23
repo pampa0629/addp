@@ -1,6 +1,6 @@
 #!/bin/bash
 # ADDP 生产环境启动脚本
-# 用途：按正确顺序启动所有 ADDP 服务（基础设施 + 后端 + 前端 + Portal）
+# 用途：按正确顺序启动所有 ADDP 服务（基础设施 + 后端 + 前端 + Console）
 
 set -e
 
@@ -107,8 +107,8 @@ for service_port in "${services[@]}"; do
   fi
 done
 
-# 第五步：启动前端服务和 Portal
-echo -e "${YELLOW}[5/5] 启动前端服务和 Portal 统一门户...${NC}"
+# 第五步：启动前端服务和 Console
+echo -e "${YELLOW}[5/5] 启动前端服务和 Console 控制台...${NC}"
 docker compose -f docker-compose.yml up -d \
   system-frontend \
   manager-frontend \
@@ -116,17 +116,17 @@ docker compose -f docker-compose.yml up -d \
   transfer-frontend \
   orchestrator-frontend \
   develop-frontend \
-  portal \
+  console \
   nginx
 
 echo -e "${YELLOW}等待前端服务启动...${NC}"
 sleep 5
 
-# 检查 Portal 和 Nginx 是否启动
-if docker ps | grep -q "portal"; then
-  echo -e "${GREEN}✓ Portal 统一门户已启动${NC}"
+# 检查 Console 和 Nginx 是否启动
+if docker ps | grep -q "console"; then
+  echo -e "${GREEN}✓ Console 工作台已启动${NC}"
 else
-  echo -e "${YELLOW}⚠️  Portal 启动失败或未找到镜像${NC}"
+  echo -e "${YELLOW}⚠️  Console 启动失败或未找到镜像${NC}"
   all_healthy=false
 fi
 
@@ -170,7 +170,7 @@ echo -e "  Gateway API:            http://localhost:8000"
 
 echo ""
 echo -e "${YELLOW}前端访问地址:${NC}"
-echo -e "  ${GREEN}✨ Portal 统一门户 (推荐):  http://localhost:80${NC}"
+echo -e "  ${GREEN}✨ Console 控制台 (推荐):  http://localhost:80${NC}"
 echo -e ""
 echo -e "  独立模块访问:"
 echo -e "  - System Frontend:      http://localhost:8090"

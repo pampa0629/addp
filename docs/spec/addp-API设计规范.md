@@ -20,7 +20,7 @@
 
 ### 1.2 适用场景
 
-- ✅ 所有面向前端的 HTTP API（Portal、各模块前端）
+- ✅ 所有面向前端的 HTTP API（Console、各模块前端）
 - ✅ 模块间的 HTTP API 调用
 - ✅ 对外开放的 API（如数据服务 API）
 - ⚠️  内部 gRPC/消息队列等非 HTTP 通信可参考但不强制

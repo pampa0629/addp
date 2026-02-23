@@ -119,7 +119,7 @@ bash scripts/dev/stop.sh
   - Gateway (8000)
   ↓
 [Step 8] 启动前端服务
-  - Portal (5170), System (5173), Manager (5174), etc.
+  - Console (5170), System (5173), Manager (5174), etc.
 ```
 
 ### 特性
@@ -281,7 +281,7 @@ bash scripts/build/build-images.sh
 bash scripts/local/start.sh
 
 # 访问服务
-# - Portal (推荐): http://localhost:80
+# - Console (推荐): http://localhost:80
 # - Gateway:        http://localhost:8000
 # - System Backend: http://localhost:8180
 
@@ -328,7 +328,7 @@ bash scripts/prod/start.sh
 
 # 访问地址
 # - ✨ 推荐: http://localhost （Nginx 统一入口）
-# - Portal: http://localhost:5170
+# - Console: http://localhost:5170
 # - Gateway: http://localhost:8000
 
 # 健康检查
@@ -360,7 +360,7 @@ bash scripts/prod/stop.sh --remove
   - 最多等待 90 秒
   ↓
 [5/5] 前端服务
-  - Portal, 各模块前端, Nginx
+  - Console, 各模块前端, Nginx
 ```
 
 ### Docker Swarm 高可用

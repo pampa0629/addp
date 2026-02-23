@@ -7,6 +7,7 @@ import (
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // getTenantID 从 context 获取租户 ID
@@ -31,6 +32,7 @@ func getUserID(c *gin.Context) int64 {
 
 // SetupRouter 设置路由
 func SetupRouter(
+	db *gorm.DB,
 	domainSvc *service.DomainService,
 	glossarySvc *service.GlossaryService,
 	elementSvc *service.ElementService,
@@ -65,6 +67,7 @@ func SetupRouter(
 	metricHandler := NewMetricHandler(metricSvc)
 	documentHandler := NewDocumentHandler(documentSvc)
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
+	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	api := router.Group("/api/standard")
 	if redisClient != nil {
@@ -74,6 +77,9 @@ func SetupRouter(
 	}
 
 	{
+		// 资产发现接口（供 Asset 模块调用）
+		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
 		domains := api.Group("/domains")
 		{
 			domains.GET("", domainHandler.ListDomains)

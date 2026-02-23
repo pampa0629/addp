@@ -1,5 +1,5 @@
 <template>
-  <!-- 在 Portal 中：只显示内容，不显示导航 -->
+  <!-- 在 Console 中：只显示内容，不显示导航 -->
   <div v-if="isInIframe" class="content-only">
     <router-view />
   </div>

@@ -260,7 +260,7 @@ curl -X POST -H "Authorization: Bearer <token>" \
 ```
 
 ### 5. 测试前端界面
-1. 登录 Portal: http://localhost:5170
+1. 登录 Console: http://localhost:5170
 2. 进入 Develop 模块 → Notebook
 3. 首次访问应显示初始化提示
 4. 点击"初始化" → 等待 30 秒

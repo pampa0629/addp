@@ -68,7 +68,7 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：支持两种运行模式（Portal 嵌入 + 独立访问）
+// 路由守卫：支持两种运行模式（Console 嵌入 + 独立访问）
 import { createAuthGuard } from '@common-ui'
 
 // 路径规范化函数：处理 /develop/ 前缀

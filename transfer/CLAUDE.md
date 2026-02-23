@@ -936,7 +936,7 @@ bash scripts/dev/restart.sh -transfer
 # 2. 查看启动日志（确认编译成功）
 tail -f logs/transfer-backend.log
 
-# 3. 测试 API（使用 Portal 登录获取 token）
+# 3. 测试 API（使用 Console 登录获取 token）
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8083/api/tasks
 ```

@@ -1,30 +1,48 @@
 <template>
   <div class="login-container">
-    <el-card class="login-card">
+    <el-card class="login-box">
       <template #header>
-        <div class="login-header">
-          <el-icon :size="32"><Platform /></el-icon>
-          <h2>全域数据平台</h2>
+        <div class="card-header">
+          <h2>数据资产门户</h2>
+          <p class="subtitle">Portal</p>
         </div>
       </template>
-      <el-form :model="form" @submit.prevent="handleLogin">
-        <el-form-item label="用户名">
-          <el-input v-model="form.username" placeholder="请输入用户名" size="large">
-            <template #prefix>
-              <el-icon><User /></el-icon>
-            </template>
-          </el-input>
+
+      <el-form
+        ref="formRef"
+        :model="loginForm"
+        :rules="rules"
+        @submit.prevent="handleLogin"
+      >
+        <el-form-item prop="username">
+          <el-input
+            v-model="loginForm.username"
+            placeholder="请输入用户名"
+            :prefix-icon="User"
+            size="large"
+          />
         </el-form-item>
-        <el-form-item label="密码">
-          <el-input v-model="form.password" type="password" placeholder="请输入密码" size="large">
-            <template #prefix>
-              <el-icon><Lock /></el-icon>
-            </template>
-          </el-input>
+
+        <el-form-item prop="password">
+          <el-input
+            v-model="loginForm.password"
+            type="password"
+            placeholder="请输入密码"
+            :prefix-icon="Lock"
+            size="large"
+            show-password
+          />
         </el-form-item>
+
         <el-form-item>
-          <el-button type="primary" native-type="submit" :loading="loading" size="large" style="width: 100%">
-            登录
+          <el-button
+            native-type="submit"
+            type="primary"
+            size="large"
+            style="width: 100%"
+            :loading="loading"
+          >
+            {{ loading ? '登录中...' : '登录' }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -33,53 +51,45 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '../store/auth'
+import { reactive, ref } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { User, Lock } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '../store/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
+const formRef = ref(null)
 
-const form = ref({
+const loginForm = reactive({
   username: '',
   password: ''
 })
 
+const rules = {
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+
 const loading = ref(false)
 
 const handleLogin = async () => {
-  if (!form.value.username || !form.value.password) {
-    ElMessage.warning('请输入用户名和密码')
-    return
-  }
-
-  loading.value = true
-  try {
-    await authStore.login(form.value.username, form.value.password)
-    ElMessage.success('登录成功')
-    router.push('/')
-  } catch (error) {
-    console.error('登录失败:', error)
-
-    // 详细的错误消息处理
-    let errorMessage = '登录失败'
-
-    if (error.response) {
-      // 服务器返回错误
-      errorMessage = error.response.data?.error || `请求失败 (${error.response.status})`
-    } else if (error.request) {
-      // 请求已发送但没有收到响应
-      errorMessage = '网络连接失败，请检查服务器是否启动'
-    } else {
-      // 其他错误
-      errorMessage = error.message || '未知错误'
+  if (!formRef.value) return
+  await formRef.value.validate(async valid => {
+    if (!valid) return
+    loading.value = true
+    try {
+      await authStore.login(loginForm.username, loginForm.password)
+      ElMessage.success('登录成功')
+      const redirect = route.query.redirect || '/portal/home'
+      router.push(redirect)
+    } catch (error) {
+      ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+    } finally {
+      loading.value = false
     }
-
-    ElMessage.error(errorMessage)
-  } finally {
-    loading.value = false
-  }
+  })
 }
 </script>
 
@@ -88,26 +98,28 @@ const handleLogin = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 100vh;
-  background: var(--addp-primary-gradient);
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--el-color-primary) 0%, var(--el-color-primary-dark-2) 100%);
 }
 
-.login-card {
-  width: 450px;
+.login-box {
+  width: 400px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-.login-header {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.login-header h2 {
+.card-header {
   text-align: center;
+}
+
+.card-header h2 {
   margin: 0;
-  background: var(--addp-primary-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 24px;
+  color: var(--el-text-color-primary);
+}
+
+.card-header .subtitle {
+  margin: 8px 0 0 0;
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
 }
 </style>

@@ -41,7 +41,7 @@ import ExplorerTree from '@/components/explorer/ExplorerTree.vue'
 import ExplorerSearch from '@/components/explorer/ExplorerSearch.vue'
 import PreviewPanel from '@/components/explorer/PreviewPanel.vue'
 import Splitter from '@/components/explorer/Splitter.vue'
-import { useResizable } from '@/composables/useResizable'
+import { useResizable } from '@common-ui'
 import { useExplorerStore } from '@/stores/explorer'
 
 // 树形面板宽度
