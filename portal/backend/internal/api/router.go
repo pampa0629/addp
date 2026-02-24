@@ -3,6 +3,7 @@ package api
 import (
 	"time"
 
+	commonClient "github.com/addp/common/client"
 	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/portal/internal/config"
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,11 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok", "module": "portal"})
 	})
 
+	// 初始化 asset client（portal BFF 通过内部 API Key 调用 asset 服务）
+	assetClient := commonClient.NewAssetClientWithInternalKey(cfg.AssetURL, cfg.InternalAPIKey)
+	// 初始化 service client
+	serviceClient := commonClient.NewServiceClientWithInternalKey(cfg.ServiceURL, cfg.InternalAPIKey)
+
 	// Portal BFF 路由（需要认证）
 	api := router.Group("/api/portal")
 	if redisClient != nil {
@@ -38,40 +44,37 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 	}
 
 	// ============================================================
-	// 门户首页（Phase 3 实现）
+	// 门户首页（Phase 3）
 	// ============================================================
-	api.GET("/home", placeholderHandler("portal home data"))
+	api.GET("/home", handleHome(assetClient))
 
 	// ============================================================
-	// 资产发现（Phase 3 实现）
+	// 资产发现（Phase 3）
 	// ============================================================
-	api.GET("/search", placeholderHandler("portal search"))
-	api.GET("/catalogs", placeholderHandler("portal categories"))
-	api.GET("/catalogs/:id/assets", placeholderHandler("portal category assets"))
-	api.GET("/assets", placeholderHandler("portal asset list"))
-	api.GET("/assets/:id", placeholderHandler("portal asset detail"))
+	api.GET("/search", handleSearch(assetClient))
+	api.GET("/catalogs", handleCatalogs(assetClient))
+	api.GET("/catalogs/:id/assets", handleCatalogAssets(assetClient))
+	api.GET("/assets", handleAssets(assetClient))
+	api.GET("/assets/:id", handleAssetDetail(assetClient))
 
 	// ============================================================
-	// 资产申请（Phase 4 实现）
+	// 资产申请（Phase 4）
 	// ============================================================
-	api.POST("/assets/:id/apply", placeholderHandler("portal apply asset"))
-	api.GET("/my/applications", placeholderHandler("portal my applications"))
+	api.POST("/assets/:id/apply",       handleApply(assetClient))
+	api.GET("/assets/:id/apply-status", handleApplyStatus(assetClient))
+	api.GET("/my/applications",         handleMyApplications(assetClient))
+	api.GET("/assets/:id/endpoints",    handleAssetEndpoints(assetClient, serviceClient))
 
 	// ============================================================
-	// 我的授权（Phase 5 实现）
+	// 资产评价（Phase 6）
 	// ============================================================
-	api.GET("/my/authorizations", placeholderHandler("portal my authorizations"))
-
-	// ============================================================
-	// 资产评价（Phase 6 实现）
-	// ============================================================
-	api.POST("/assets/:id/ratings", placeholderHandler("portal create rating"))
-	api.PUT("/ratings/:id", placeholderHandler("portal update rating"))
+	api.GET("/assets/:id/ratings",  handleGetRatings(assetClient))
+	api.POST("/assets/:id/ratings", handleSubmitRating(assetClient))
 
 	return router
 }
 
-// placeholderHandler 骨架占位处理器
+// placeholderHandler 骨架占位处理器（已无使用，保留备用）
 func placeholderHandler(action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(501, gin.H{

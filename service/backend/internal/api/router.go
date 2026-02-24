@@ -25,6 +25,7 @@ func SetupRouter(
 	ogcTilesHandler *OGCTilesHandler,
 	engineHandler *EngineHandler,
 	dataSourceHandler *DataSourceHandler,
+	serviceEndpointHandler *ServiceEndpointHandler,
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
@@ -100,6 +101,9 @@ func SetupRouter(
 
 		// 资产发现接口（供 Asset 模块调用）
 		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
+		// 服务端点查询接口（供 Portal 等模块按 source_reference 查询 endpoint）
+		api.GET("/endpoints", serviceEndpointHandler.GetEndpoints)
 
 		// 查询服务管理 API
 		queryAPI := api.Group("/query")

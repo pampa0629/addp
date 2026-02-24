@@ -2,9 +2,9 @@
   <el-container class="layout">
     <!-- 顶部导航 -->
     <el-header class="header">
-      <div class="header-left">
+      <div class="header-left" style="cursor:pointer" @click="$router.push('/portal/home')">
         <el-icon class="logo-icon"><DataBoard /></el-icon>
-        <span class="title">数据资产门户</span>
+        <span class="title">资产门户</span>
       </div>
 
       <div class="header-center">
@@ -21,12 +21,9 @@
       <div class="header-right">
         <el-button text @click="$router.push('/portal/my/applications')">
           <el-icon><Tickets /></el-icon>
-          我的申请
+          我的申请与授权
         </el-button>
-        <el-button text @click="$router.push('/portal/my/authorizations')">
-          <el-icon><Key /></el-icon>
-          我的授权
-        </el-button>
+        <ThemeSwitcher style="margin-right: 8px;" />
         <el-dropdown @command="handleCommand">
           <span class="user-dropdown">
             <el-icon><User /></el-icon>
@@ -56,8 +53,9 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
+import { ThemeSwitcher } from '@common-ui'
 import {
-  DataBoard, Search, Tickets, Key,
+  DataBoard, Search, Tickets,
   User, ArrowDown, SwitchButton
 } from '@element-plus/icons-vue'
 

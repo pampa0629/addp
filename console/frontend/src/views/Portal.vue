@@ -2,11 +2,34 @@
   <el-container class="console-container">
     <el-header class="header">
       <div class="header-left">
-        <el-icon :size="28" style="margin-right: 12px">
-          <Platform />
-        </el-icon>
-        <h1>全域数据平台</h1>
+        <!-- Logo 区域：点击回全局首页 -->
+        <div class="logo-area" @click="handleLogoClick">
+          <el-icon :size="28" style="margin-right: 12px">
+            <Platform />
+          </el-icon>
+          <h1>全域数据平台</h1>
+        </div>
+
+        <!-- 顶部群组图标 Tab 栏 -->
+        <nav class="group-tabs">
+          <el-tooltip
+            v-for="group in MODULE_GROUPS"
+            :key="group.key"
+            :content="group.label"
+            placement="bottom"
+            :show-after="200"
+          >
+            <button
+              class="group-tab"
+              :class="{ 'is-active': activeGroup === group.key }"
+              @click="handleGroupClick(group)"
+            >
+              <el-icon :size="20"><component :is="group.icon" /></el-icon>
+            </button>
+          </el-tooltip>
+        </nav>
       </div>
+
       <div class="header-right">
         <!-- 主题切换器 -->
         <ThemeSwitcher style="margin-right: 16px;" />
@@ -30,7 +53,8 @@
     </el-header>
 
     <el-container class="content-container">
-      <el-aside :width="sidebarWidth" :class="['sidebar', { collapsed: isCollapsed }]">
+      <!-- 侧边栏：仅在选中群组时显示 -->
+      <el-aside v-if="showSidebar" :width="sidebarWidth" :class="['sidebar', { collapsed: isCollapsed }]">
         <div class="collapse-toggle">
           <el-button
             circle
@@ -46,432 +70,365 @@
           class="el-menu-vertical"
           :collapse="isCollapsed"
         >
-          <el-menu-item index="/">
-            <el-icon><HomeFilled /></el-icon>
-            <span>控制台首页</span>
-          </el-menu-item>
+          <!-- 数据准备群组 -->
+          <template v-if="activeGroupModules.includes('transfer')">
+            <el-sub-menu index="transfer">
+              <template #title>
+                <el-icon><Upload /></el-icon>
+                <span>数据传输</span>
+              </template>
+              <el-menu-item index="/transfer/tasks">
+                <el-icon><List /></el-icon>
+                <span>传输任务</span>
+              </el-menu-item>
+              <el-menu-item index="/transfer/executions">
+                <el-icon><Timer /></el-icon>
+                <span>执行记录</span>
+              </el-menu-item>
+              <el-menu-item index="/transfer/local-engines">
+                <el-icon><Connection /></el-icon>
+                <span>本地资源</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="transfer">
-            <template #title>
-              <el-icon><Upload /></el-icon>
-              <span>数据传输</span>
-            </template>
-            <el-menu-item index="/transfer/tasks">
-              <el-icon><List /></el-icon>
-              <span>传输任务</span>
-            </el-menu-item>
-            <el-menu-item index="/transfer/executions">
-              <el-icon><Timer /></el-icon>
-              <span>执行记录</span>
-            </el-menu-item>
-            <el-menu-item index="/transfer/local-engines">
-              <el-icon><Connection /></el-icon>
-              <span>本地资源</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('meta')">
+            <el-sub-menu index="meta">
+              <template #title>
+                <el-icon><Box /></el-icon>
+                <span>元数据</span>
+              </template>
+              <el-menu-item index="/meta/scan">
+                <el-icon><Search /></el-icon>
+                <span>元数据扫描</span>
+              </el-menu-item>
+              <el-menu-item index="/meta/tasks">
+                <el-icon><Monitor /></el-icon>
+                <span>任务监控</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="meta">
-            <template #title>
-              <el-icon><Box /></el-icon>
-              <span>元数据</span>
-            </template>
-            <el-menu-item index="/meta/scan">
-              <el-icon><Search /></el-icon>
-              <span>元数据扫描</span>
-            </el-menu-item>
-            <el-menu-item index="/meta/tasks">
-              <el-icon><Monitor /></el-icon>
-              <span>任务监控</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('manager')">
+            <el-sub-menu index="manager">
+              <template #title>
+                <el-icon><DataAnalysis /></el-icon>
+                <span>数据管理</span>
+              </template>
+              <el-menu-item index="/manager/data-explorer">
+                <el-icon><Search /></el-icon>
+                <span>数据探查</span>
+              </el-menu-item>
+              <el-menu-item index="/manager/data-retrieval">
+                <el-icon><Document /></el-icon>
+                <span>数据检索</span>
+              </el-menu-item>
+              <el-menu-item index="/manager/vectorization-tasks">
+                <el-icon><List /></el-icon>
+                <span>向量化任务</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="manager">
-            <template #title>
-              <el-icon><DataAnalysis /></el-icon>
-              <span>数据管理</span>
-            </template>
-            <el-menu-item index="/manager/data-explorer">
-              <el-icon><Search /></el-icon>
-              <span>数据探查</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/data-retrieval">
-              <el-icon><Document /></el-icon>
-              <span>数据检索</span>
-            </el-menu-item>
-            <el-menu-item index="/manager/vectorization-tasks">
-              <el-icon><List /></el-icon>
-              <span>向量化任务</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <!-- 数据治理群组 -->
+          <template v-if="activeGroupModules.includes('standard')">
+            <el-sub-menu index="standard">
+              <template #title>
+                <el-icon><Reading /></el-icon>
+                <span>数据标准</span>
+              </template>
+              <el-menu-item index="/standard/domains">
+                <el-icon><Share /></el-icon>
+                <span>业务域管理</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/glossaries">
+                <el-icon><Document /></el-icon>
+                <span>业务术语</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/elements">
+                <el-icon><DataBoard /></el-icon>
+                <span>数据元管理</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/code-sets">
+                <el-icon><List /></el-icon>
+                <span>码值集管理</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/units">
+                <el-icon><Odometer /></el-icon>
+                <span>计量单位</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/classifications">
+                <el-icon><Share /></el-icon>
+                <span>分类与分级</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/dimension-hierarchies">
+                <el-icon><SortDown /></el-icon>
+                <span>维度层级</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/metrics">
+                <el-icon><TrendCharts /></el-icon>
+                <span>指标管理</span>
+              </el-menu-item>
+              <el-menu-item index="/standard/documents">
+                <el-icon><FolderOpened /></el-icon>
+                <span>标准文档</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="standard">
-            <template #title>
-              <el-icon><Reading /></el-icon>
-              <span>数据标准</span>
-            </template>
-            <el-menu-item index="/standard/domains">
-              <el-icon><Share /></el-icon>
-              <span>业务域管理</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/glossaries">
-              <el-icon><Document /></el-icon>
-              <span>业务术语</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/elements">
-              <el-icon><DataBoard /></el-icon>
-              <span>数据元管理</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/code-sets">
-              <el-icon><List /></el-icon>
-              <span>码值集管理</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/units">
-              <el-icon><Odometer /></el-icon>
-              <span>计量单位</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/classifications">
-              <el-icon><Share /></el-icon>
-              <span>分类与分级</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/dimension-hierarchies">
-              <el-icon><SortDown /></el-icon>
-              <span>维度层级</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/metrics">
-              <el-icon><TrendCharts /></el-icon>
-              <span>指标管理</span>
-            </el-menu-item>
-            <el-menu-item index="/standard/documents">
-              <el-icon><FolderOpened /></el-icon>
-              <span>标准文档</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('modeling')">
+            <el-sub-menu index="modeling">
+              <template #title>
+                <el-icon><Grid /></el-icon>
+                <span>数据建模</span>
+              </template>
+              <el-menu-item index="/modeling/dw-layers">
+                <el-icon><Grid /></el-icon>
+                <span>数仓分层</span>
+              </el-menu-item>
+              <el-menu-item index="/modeling/entities">
+                <el-icon><DataBoard /></el-icon>
+                <span>业务实体</span>
+              </el-menu-item>
+              <el-menu-item index="/modeling/er-diagram">
+                <el-icon><Share /></el-icon>
+                <span>实体关系图</span>
+              </el-menu-item>
+              <el-menu-item index="/modeling/logical-tables">
+                <el-icon><Connection /></el-icon>
+                <span>逻辑表设计</span>
+              </el-menu-item>
+              <el-menu-item index="/modeling/star-schema">
+                <el-icon><Grid /></el-icon>
+                <span>星型建模视图</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="modeling">
-            <template #title>
-              <el-icon><Grid /></el-icon>
-              <span>数据建模</span>
-            </template>
-            <el-menu-item index="/modeling/dw-layers">
-              <el-icon><Grid /></el-icon>
-              <span>数仓分层</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/entities">
-              <el-icon><DataBoard /></el-icon>
-              <span>业务实体</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/er-diagram">
-              <el-icon><Share /></el-icon>
-              <span>实体关系图</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/logical-tables">
-              <el-icon><Connection /></el-icon>
-              <span>逻辑表设计</span>
-            </el-menu-item>
-            <el-menu-item index="/modeling/star-schema">
-              <el-icon><Grid /></el-icon>
-              <span>星型建模视图</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('quality')">
+            <el-sub-menu index="quality">
+              <template #title>
+                <el-icon><CircleCheck /></el-icon>
+                <span>数据质量</span>
+              </template>
+              <el-menu-item index="/quality/rule-applications">
+                <el-icon><Setting /></el-icon>
+                <span>规则应用配置</span>
+              </el-menu-item>
+              <el-menu-item index="/quality/check-tasks">
+                <el-icon><List /></el-icon>
+                <span>检查任务</span>
+              </el-menu-item>
+              <el-menu-item index="/quality/executions">
+                <el-icon><Timer /></el-icon>
+                <span>执行记录</span>
+              </el-menu-item>
+              <el-menu-item index="/quality/issues">
+                <el-icon><Warning /></el-icon>
+                <span>问题工单</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="develop">
-            <template #title>
-              <el-icon><Edit /></el-icon>
-              <span>数据开发</span>
-            </template>
-            <el-menu-item index="/develop/sql">
-              <el-icon><Monitor /></el-icon>
-              <span>查询工作台</span>
-            </el-menu-item>
-            <el-menu-item index="/develop/notebook">
-              <el-icon><Notebook /></el-icon>
-              <span>Notebook 开发</span>
-            </el-menu-item>
-            <el-menu-item index="/develop/workflow">
-              <el-icon><Connection /></el-icon>
-              <span>工作流编辑器</span>
-            </el-menu-item>
-            <el-menu-item index="/develop/tasks">
-              <el-icon><List /></el-icon>
-              <span>任务管理</span>
-            </el-menu-item>
-            <el-menu-item index="/develop/executions">
-              <el-icon><Timer /></el-icon>
-              <span>执行监控</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <!-- 开发与监控群组 -->
+          <template v-if="activeGroupModules.includes('develop')">
+            <el-sub-menu index="develop">
+              <template #title>
+                <el-icon><Edit /></el-icon>
+                <span>数据开发</span>
+              </template>
+              <el-menu-item index="/develop/sql">
+                <el-icon><Monitor /></el-icon>
+                <span>查询工作台</span>
+              </el-menu-item>
+              <el-menu-item index="/develop/notebook">
+                <el-icon><Notebook /></el-icon>
+                <span>Notebook 开发</span>
+              </el-menu-item>
+              <el-menu-item index="/develop/workflow">
+                <el-icon><Connection /></el-icon>
+                <span>工作流编辑器</span>
+              </el-menu-item>
+              <el-menu-item index="/develop/tasks">
+                <el-icon><List /></el-icon>
+                <span>任务管理</span>
+              </el-menu-item>
+              <el-menu-item index="/develop/executions">
+                <el-icon><Timer /></el-icon>
+                <span>执行监控</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="quality">
-            <template #title>
-              <el-icon><CircleCheck /></el-icon>
-              <span>数据质量</span>
-            </template>
-            <el-menu-item index="/quality/rule-applications">
-              <el-icon><Setting /></el-icon>
-              <span>规则应用配置</span>
-            </el-menu-item>
-            <el-menu-item index="/quality/check-tasks">
-              <el-icon><List /></el-icon>
-              <span>检查任务</span>
-            </el-menu-item>
-            <el-menu-item index="/quality/executions">
-              <el-icon><Timer /></el-icon>
-              <span>执行记录</span>
-            </el-menu-item>
-            <el-menu-item index="/quality/issues">
-              <el-icon><Warning /></el-icon>
-              <span>问题工单</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('service')">
+            <el-sub-menu index="service">
+              <template #title>
+                <el-icon><Link /></el-icon>
+                <span>数据服务</span>
+              </template>
+              <el-menu-item index="/service/query-services">
+                <el-icon><Upload /></el-icon>
+                <span>查询服务</span>
+              </el-menu-item>
+              <el-menu-item index="/service/tile">
+                <el-icon><Grid /></el-icon>
+                <span>瓦片服务</span>
+              </el-menu-item>
+              <el-menu-item index="/service/services">
+                <el-icon><Connection /></el-icon>
+                <span>服务注册</span>
+              </el-menu-item>
+              <el-menu-item index="/service/catalog">
+                <el-icon><FolderOpened /></el-icon>
+                <span>服务目录</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="service">
-            <template #title>
-              <el-icon><Link /></el-icon>
-              <span>数据服务</span>
-            </template>
-            <el-menu-item index="/service/query-services">
-              <el-icon><Upload /></el-icon>
-              <span>查询服务</span>
-            </el-menu-item>
-            <el-menu-item index="/service/tile">
-              <el-icon><Grid /></el-icon>
-              <span>瓦片服务</span>
-            </el-menu-item>
-            <el-menu-item index="/service/services">
-              <el-icon><Connection /></el-icon>
-              <span>服务注册</span>
-            </el-menu-item>
-            <el-menu-item index="/service/catalog">
-              <el-icon><FolderOpened /></el-icon>
-              <span>服务目录</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('orchestrator')">
+            <el-sub-menu index="orchestrator">
+              <template #title>
+                <el-icon><Operation /></el-icon>
+                <span>任务编排</span>
+              </template>
+              <el-menu-item index="/orchestrator/orchestrations">
+                <el-icon><List /></el-icon>
+                <span>编排任务</span>
+              </el-menu-item>
+              <el-menu-item index="/orchestrator/executions">
+                <el-icon><Timer /></el-icon>
+                <span>执行记录</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="orchestrator">
-            <template #title>
-              <el-icon><Operation /></el-icon>
-              <span>任务编排</span>
-            </template>
-            <el-menu-item index="/orchestrator/orchestrations">
-              <el-icon><List /></el-icon>
-              <span>编排任务</span>
-            </el-menu-item>
-            <el-menu-item index="/orchestrator/executions">
-              <el-icon><Timer /></el-icon>
-              <span>执行记录</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <template v-if="activeGroupModules.includes('monitor')">
+            <el-sub-menu index="monitor">
+              <template #title>
+                <el-icon><DataLine /></el-icon>
+                <span>执行监控</span>
+              </template>
+              <el-menu-item index="/monitor/dashboard">
+                <el-icon><Monitor /></el-icon>
+                <span>监控仪表盘</span>
+              </el-menu-item>
+              <el-menu-item index="/monitor/executions">
+                <el-icon><List /></el-icon>
+                <span>执行记录</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="monitor">
-            <template #title>
-              <el-icon><DataLine /></el-icon>
-              <span>执行监控</span>
-            </template>
-            <el-menu-item index="/monitor/dashboard">
-              <el-icon><Monitor /></el-icon>
-              <span>监控仪表盘</span>
-            </el-menu-item>
-            <el-menu-item index="/monitor/executions">
-              <el-icon><List /></el-icon>
-              <span>执行记录</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <!-- 资产管理群组 -->
+          <template v-if="activeGroupModules.includes('asset')">
+            <el-sub-menu index="asset">
+              <template #title>
+                <el-icon><Folder /></el-icon>
+                <span>资产管理</span>
+              </template>
+              <el-menu-item index="/asset/type-definitions">
+                <el-icon><Grid /></el-icon>
+                <span>资产类型</span>
+              </el-menu-item>
+              <el-menu-item index="/asset/categories">
+                <el-icon><Files /></el-icon>
+                <span>目录管理</span>
+              </el-menu-item>
+              <el-menu-item index="/asset/assets">
+                <el-icon><List /></el-icon>
+                <span>资产工作台</span>
+              </el-menu-item>
+              <el-menu-item index="/asset/applications">
+                <el-icon><Tickets /></el-icon>
+                <span>审批管理</span>
+              </el-menu-item>
+              <el-menu-item index="/asset/dashboard">
+                <el-icon><DataAnalysis /></el-icon>
+                <span>运营看板</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
 
-          <el-sub-menu index="asset">
-            <template #title>
-              <el-icon><Folder /></el-icon>
-              <span>资产管理</span>
-            </template>
-            <el-menu-item index="/asset/type-definitions">
-              <el-icon><Grid /></el-icon>
-              <span>资产类型</span>
-            </el-menu-item>
-            <el-menu-item index="/asset/categories">
-              <el-icon><Files /></el-icon>
-              <span>目录管理</span>
-            </el-menu-item>
-            <el-menu-item index="/asset/assets">
-              <el-icon><List /></el-icon>
-              <span>资产工作台</span>
-            </el-menu-item>
-            <el-menu-item index="/asset/applications">
-              <el-icon><Tickets /></el-icon>
-              <span>申请管理</span>
-            </el-menu-item>
-            <el-menu-item index="/asset/authorizations">
-              <el-icon><Key /></el-icon>
-              <span>授权管理</span>
-            </el-menu-item>
-          </el-sub-menu>
-
-          <el-sub-menu index="system">
-            <template #title>
-              <el-icon><Setting /></el-icon>
-              <span>系统管理</span>
-            </template>
-            <el-menu-item index="/system/users">
-              <el-icon><User /></el-icon>
-              <span>用户管理</span>
-            </el-menu-item>
-            <el-menu-item index="/system/engines">
-              <el-icon><Connection /></el-icon>
-              <span>引擎管理</span>
-            </el-menu-item>
-            <el-menu-item index="/system/applications">
-              <el-icon><Key /></el-icon>
-              <span>应用管理</span>
-            </el-menu-item>
-            <el-menu-item index="/system/logs">
-              <el-icon><Document /></el-icon>
-              <span>日志审计</span>
-            </el-menu-item>
-            <el-menu-item index="/system/cleanup">
-              <el-icon><Delete /></el-icon>
-              <span>垃圾清理</span>
-            </el-menu-item>
-            <el-menu-item index="/system/docs">
-              <el-icon><Monitor /></el-icon>
-              <span>API 文档</span>
-            </el-menu-item>
-          </el-sub-menu>
+          <!-- 系统管理群组 -->
+          <template v-if="activeGroupModules.includes('system')">
+            <el-sub-menu index="system">
+              <template #title>
+                <el-icon><Setting /></el-icon>
+                <span>系统管理</span>
+              </template>
+              <el-menu-item index="/system/users">
+                <el-icon><User /></el-icon>
+                <span>用户管理</span>
+              </el-menu-item>
+              <el-menu-item index="/system/engines">
+                <el-icon><Connection /></el-icon>
+                <span>引擎管理</span>
+              </el-menu-item>
+              <el-menu-item index="/system/applications">
+                <el-icon><Key /></el-icon>
+                <span>应用管理</span>
+              </el-menu-item>
+              <el-menu-item index="/system/logs">
+                <el-icon><Document /></el-icon>
+                <span>日志审计</span>
+              </el-menu-item>
+              <el-menu-item index="/system/cleanup">
+                <el-icon><Delete /></el-icon>
+                <span>垃圾清理</span>
+              </el-menu-item>
+              <el-menu-item index="/system/docs">
+                <el-icon><Monitor /></el-icon>
+                <span>API 文档</span>
+              </el-menu-item>
+            </el-sub-menu>
+          </template>
         </el-menu>
       </el-aside>
 
       <el-main class="main-content">
+        <!-- 首页视图 -->
         <div v-if="currentModule === 'home'" class="home-view">
-          <!-- 第一排: 系统管理、数据传输、数据管理 -->
-          <el-row :gutter="20">
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('system')">
-                <div class="card-content">
-                  <el-icon :size="48" color="var(--el-color-primary)"><Setting /></el-icon>
-                  <h2>系统管理</h2>
-                  <p>用户管理、日志查询、引擎配置</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('transfer')">
-                <div class="card-content">
-                  <el-icon :size="48" color="var(--el-color-danger)"><Upload /></el-icon>
-                  <h2>数据传输</h2>
-                  <p>数据导入、数据导出、任务调度</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('manager')">
-                <div class="card-content">
-                  <el-icon :size="48" color="var(--el-color-success)"><DataAnalysis /></el-icon>
-                  <h2>数据管理</h2>
-                  <p>数据探查、目录组织、数据预览</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <!-- 第二排: 数据开发、数据服务、任务编排 -->
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('develop')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#9370DB"><Edit /></el-icon>
-                  <h2>数据开发</h2>
-                  <p>查询工作台、工作流编辑器、Notebook 开发</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('service')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#1890FF"><Link /></el-icon>
-                  <h2>数据服务</h2>
-                  <p>外部服务注册、OGC 服务、数据查询服务</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('orchestrator')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#FF7875"><Operation /></el-icon>
-                  <h2>任务编排</h2>
-                  <p>工作流编排、任务调度、执行管理</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <!-- 第三排: 元数据管理、执行监控、数据标准 -->
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('meta')">
-                <div class="card-content">
-                  <el-icon :size="48" color="var(--el-color-warning)"><Box /></el-icon>
-                  <h2>元数据管理</h2>
-                  <p>元数据解析、数据血缘、数据目录</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('monitor')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#13C2C2"><DataLine /></el-icon>
-                  <h2>执行监控</h2>
-                  <p>任务执行监控、统计分析、健康检查</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('standard')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#7B4EA6"><Reading /></el-icon>
-                  <h2>数据标准</h2>
-                  <p>业务域、业务术语、数据元、码值集</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <!-- 第四排: 数据建模、数据质量 -->
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('modeling')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#9370DB"><Grid /></el-icon>
-                  <h2>数据建模</h2>
-                  <p>数仓分层、业务实体、逻辑表设计、实体关系图</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('quality')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#52C41A"><CircleCheck /></el-icon>
-                  <h2>数据质量</h2>
-                  <p>规则应用、质量检查、执行记录、问题工单</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
-          <!-- 第五排: 数据资产管理、数据门户 -->
-          <el-row :gutter="20" style="margin-top: 20px;">
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="navigateToModule('asset')">
-                <div class="card-content">
-                  <el-icon :size="48" color="#1677FF"><Folder /></el-icon>
-                  <h2>数据资产管理</h2>
-                  <p>资产类型、分类管理、申请与授权</p>
-                </div>
-              </el-card>
-            </el-col>
-            <el-col :span="8">
-              <el-card shadow="hover" class="module-card" @click="openPortal()">
-                <div class="card-content">
-                  <el-icon :size="48" color="#0ACF97"><DataBoard /></el-icon>
-                  <h2>数据门户</h2>
-                  <p>数据消费者门户，搜索与申请数据资产</p>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
+          <!-- 全局首页欢迎语 -->
+          <div v-if="!activeGroup" class="home-welcome">
+            <h2>欢迎使用全域数据平台</h2>
+            <p>请从顶部选择功能区域，或直接点击模块卡片进入</p>
+          </div>
+
+          <div class="cards-grid">
+            <!-- 数据门户卡片：全局首页或资产管理群组时显示 -->
+            <el-card
+              v-if="!activeGroup || activeGroup === 'asset'"
+              shadow="hover"
+              class="module-card"
+              @click="openPortal()"
+            >
+              <div class="card-content">
+                <el-icon :size="48" style="color: var(--addp-module-portal)"><DataBoard /></el-icon>
+                <h2>数据门户</h2>
+                <p>数据消费者门户，搜索与申请数据资产</p>
+              </div>
+            </el-card>
+
+            <!-- 其余模块卡片（按当前群组过滤） -->
+            <el-card
+              v-for="card in homeCards"
+              :key="card.module"
+              shadow="hover"
+              class="module-card"
+              @click="navigateToModule(card.module)"
+            >
+              <div class="card-content">
+                <el-icon :size="48" :style="{ color: `var(${card.cssVar})` }">
+                  <component :is="card.icon" />
+                </el-icon>
+                <h2>{{ card.label }}</h2>
+                <p>{{ card.desc }}</p>
+              </div>
+            </el-card>
+          </div>
         </div>
+
+        <!-- iframe 区域 -->
         <div v-else class="iframe-wrapper">
           <div class="iframe-container">
             <iframe
@@ -486,7 +443,6 @@
             <div v-else class="loading-container">
               <el-icon class="is-loading" :size="32"><Loading /></el-icon>
               <p>等待选择模块...</p>
-              <p class="debug-info">currentModule: {{ currentModule }}</p>
             </div>
           </div>
         </div>
@@ -500,7 +456,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
-import { Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection, Grid, FolderOpened, DataLine, Reading, Share, DataBoard, List, Odometer, TrendCharts, SortDown, Document, CircleCheck, Folder, Files, Tickets } from '@element-plus/icons-vue'
+import {
+  Fold, Expand, Operation, Edit, Key, Notebook, Delete, Connection,
+  Grid, FolderOpened, DataLine, Reading, Share, DataBoard, List,
+  Odometer, TrendCharts, SortDown, Document, CircleCheck, Folder,
+  Files, Tickets, Upload, Box, DataAnalysis, Setting, Link, Warning,
+  Coin, Tools, Shop
+} from '@element-plus/icons-vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 
 const router = useRouter()
@@ -511,6 +473,51 @@ const activeMenu = ref('/')
 const currentModule = ref('home')
 const iframeUrl = ref('')
 const isCollapsed = ref(false)
+const activeGroup = ref(null)  // null = 全局首页
+
+// 群组导航配置
+const MODULE_GROUPS = [
+  { key: 'data-prepare', label: '数据准备',   icon: Coin,    modules: ['transfer', 'meta', 'manager'] },
+  { key: 'data-govern',  label: '数据治理',   icon: Reading,  modules: ['standard', 'modeling', 'quality'] },
+  { key: 'dev-monitor',  label: '开发与监控', icon: Tools,   modules: ['develop', 'service', 'orchestrator', 'monitor'] },
+  { key: 'asset',        label: '资产管理',   icon: Folder,   modules: ['asset'] },
+  { key: 'portal',       label: '资产门户',   icon: Shop,     modules: [], isPortal: true },
+  { key: 'system',       label: '系统管理',   icon: Setting,  modules: ['system'] },
+]
+
+// 首页模块卡片配置（颜色全部使用 CSS 变量）
+const ALL_HOME_CARDS = [
+  { module: 'transfer',     label: '数据传输',   icon: Upload,       cssVar: '--addp-module-transfer',     desc: '数据导入、数据导出、任务调度' },
+  { module: 'meta',         label: '元数据管理', icon: Box,          cssVar: '--addp-module-meta',          desc: '元数据解析、数据血缘、数据目录' },
+  { module: 'manager',      label: '数据管理',   icon: DataAnalysis, cssVar: '--addp-module-manager',       desc: '数据探查、目录组织、数据预览' },
+  { module: 'standard',     label: '数据标准',   icon: Reading,      cssVar: '--addp-module-standard',      desc: '业务域、业务术语、数据元、码值集' },
+  { module: 'modeling',     label: '数据建模',   icon: Grid,         cssVar: '--addp-module-modeling',      desc: '数仓分层、业务实体、逻辑表设计' },
+  { module: 'quality',      label: '数据质量',   icon: CircleCheck,  cssVar: '--addp-module-quality',       desc: '规则应用、质量检查、执行记录' },
+  { module: 'develop',      label: '数据开发',   icon: Edit,         cssVar: '--addp-module-develop',       desc: '查询工作台、工作流编辑器、Notebook' },
+  { module: 'service',      label: '数据服务',   icon: Link,         cssVar: '--addp-module-service',       desc: '外部服务注册、OGC 服务、查询服务' },
+  { module: 'orchestrator', label: '任务编排',   icon: Operation,    cssVar: '--addp-module-orchestrator',  desc: '工作流编排、任务调度、执行管理' },
+  { module: 'monitor',      label: '执行监控',   icon: DataLine,     cssVar: '--addp-module-monitor',       desc: '任务执行监控、统计分析、健康检查' },
+  { module: 'asset',        label: '资产管理',   icon: Folder,       cssVar: '--addp-module-asset',         desc: '资产类型、分类管理、申请与授权' },
+  { module: 'system',       label: '系统管理',   icon: Setting,      cssVar: '--addp-module-system',        desc: '用户管理、日志查询、引擎配置' },
+]
+
+// 计算属性
+const currentGroupConfig = computed(() =>
+  MODULE_GROUPS.find(g => g.key === activeGroup.value) || null
+)
+
+const showSidebar = computed(() =>
+  !!activeGroup.value && !!currentGroupConfig.value && !currentGroupConfig.value.isPortal
+)
+
+const activeGroupModules = computed(() =>
+  currentGroupConfig.value?.modules || []
+)
+
+const homeCards = computed(() => {
+  if (!activeGroup.value) return ALL_HOME_CARDS
+  return ALL_HOME_CARDS.filter(c => activeGroupModules.value.includes(c.module))
+})
 
 // 生产环境使用 Nginx 路由的相对路径
 // 开发环境使用当前主机名 + 端口（避免硬编码 localhost 导致跨机器访问空白）
@@ -533,20 +540,39 @@ const moduleUrls = {
 }
 
 onMounted(async () => {
-  // 方案三改进：主动验证 token 有效性（即使已有缓存的 user 信息）
+  // 主动验证 token 有效性（即使已有缓存的 user 信息）
   if (authStore.isAuthenticated) {
     try {
       await authStore.fetchUser()
       console.log('[Console] Token validated successfully')
     } catch (error) {
       console.error('[Console] Token validation failed, logging out:', error)
-      // Token 已过期或无效，清理状态并跳转登录
       authStore.logout()
       ElMessage.warning('登录已过期，请重新登录')
       router.push('/login')
     }
   }
 })
+
+// 点击顶部群组 Tab
+const handleGroupClick = (group) => {
+  if (group.isPortal) {
+    openPortal()
+    return
+  }
+  activeGroup.value = group.key
+  currentModule.value = 'home'
+  iframeUrl.value = ''
+  activeMenu.value = '/'
+}
+
+// 点击 Logo 回全局首页
+const handleLogoClick = () => {
+  activeGroup.value = null
+  currentModule.value = 'home'
+  iframeUrl.value = ''
+  activeMenu.value = '/'
+}
 
 const handleMenuSelect = (index) => {
   console.log('[Console] Menu selected:', index)
@@ -574,12 +600,9 @@ const handleMenuSelect = (index) => {
   currentModule.value = module
 
   if (moduleUrls[module]) {
-    // 构建完整的 URL，并附加认证token作为URL参数
     const token = authStore.token
     let url = ''
 
-    // Manager 模块的路由映射
-    // Manager 路由使用 /manager/ 作为 base，路径结构：/manager/, /manager/directories 等
     const managerPageMap = {
       'data-explorer': 'data-explorer',
       'data-retrieval': 'data-retrieval',
@@ -587,15 +610,12 @@ const handleMenuSelect = (index) => {
       '': 'data-explorer'
     }
 
-    // Meta 模块的路由映射
-    // Meta 路由使用 /meta/ 作为 base，当前默认指向 /meta/scan
     const metaPageMap = {
-      'scan': 'scan',  // 对应 /meta/scan (元数据扫描)
+      'scan': 'scan',
       'tasks': 'tasks',
       '': 'scan'
     }
 
-    // Transfer 模块的路由映射
     const transferPageMap = {
       'tasks': 'tasks',
       'executions': 'executions',
@@ -603,14 +623,12 @@ const handleMenuSelect = (index) => {
       '': 'tasks'
     }
 
-    // Orchestrator 模块的路由映射
     const orchestratorPageMap = {
       'orchestrations': 'orchestrations',
       'executions': 'executions',
       '': 'orchestrations'
     }
 
-    // Develop 模块的路由映射
     const developPageMap = {
       'sql': 'sql',
       'notebook': 'notebook',
@@ -621,50 +639,23 @@ const handleMenuSelect = (index) => {
     }
 
     if (module === 'manager') {
-      // Manager 模块的路由: /data-explorer 等 (不需要 /manager 前缀)
       const actualPage = managerPageMap[page] !== undefined ? managerPageMap[page] : 'data-explorer'
       url = `${moduleUrls[module]}/${actualPage}`
     } else if (module === 'meta') {
-      // Meta 模块的路由: /scan, /lineage 等 (不需要 /meta 前缀)
       const actualPage = metaPageMap[page] !== undefined ? metaPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'transfer') {
-      // Transfer 模块的路由: /tasks, /executions 等 (不需要 /transfer 前缀)
       const actualPage = transferPageMap[page] !== undefined ? transferPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'orchestrator') {
-      // Orchestrator 模块的路由: /orchestrations, /executions 等 (不需要 /orchestrator 前缀)
       const actualPage = orchestratorPageMap[page] !== undefined ? orchestratorPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'system') {
-      // System 模块的路由: /users, /logs 等 (不需要 /system 前缀)
-      if (page) {
-        url = `${moduleUrls[module]}/${page}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = page ? `${moduleUrls[module]}/${page}` : `${moduleUrls[module]}/`
     } else if (module === 'develop') {
-      // Develop 模块的路由: /sql, /gis-workflow, /gis-tasks, /gis-executions 等 (不需要 /develop 前缀)
       const actualPage = developPageMap[page] !== undefined ? developPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'service') {
-      // Service 模块的路由: /services, /query-services, /catalog 等 (不需要 /service 前缀)
       const servicePageMap = {
         'services': 'services',
         'query-services': 'query-services',
@@ -673,27 +664,16 @@ const handleMenuSelect = (index) => {
         '': 'query-services'
       }
       const actualPage = servicePageMap[page] !== undefined ? servicePageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'monitor') {
-      // Monitor 模块的路由: /dashboard, /executions 等 (不需要 /monitor 前缀)
       const monitorPageMap = {
         'dashboard': 'dashboard',
         'executions': 'executions',
         '': 'dashboard'
       }
       const actualPage = monitorPageMap[page] !== undefined ? monitorPageMap[page] : page
-      if (actualPage) {
-        url = `${moduleUrls[module]}/${actualPage}`
-      } else {
-        url = `${moduleUrls[module]}/`
-      }
+      url = actualPage ? `${moduleUrls[module]}/${actualPage}` : `${moduleUrls[module]}/`
     } else if (module === 'standard') {
-      // Model 模块的路由: /standard/domains, /standard/glossaries, /standard/elements
-      // 前端路由包含 /standard 前缀，直接拼接
       const standardPageMap = {
         'domains': 'standard/domains',
         'glossaries': 'standard/glossaries',
@@ -709,8 +689,6 @@ const handleMenuSelect = (index) => {
       const actualPage = standardPageMap[page] !== undefined ? standardPageMap[page] : `standard/${page}`
       url = `${moduleUrls[module]}/${actualPage}`
     } else if (module === 'modeling') {
-      // Model 模块的建模路由: /modeling/dw-layers, /modeling/entities, /modeling/logical-tables, /modeling/er-diagram
-      // 前端路由包含 /modeling 前缀，直接拼接
       const modelingPageMap = {
         'dw-layers': 'modeling/dw-layers',
         'entities': 'modeling/entities',
@@ -722,7 +700,6 @@ const handleMenuSelect = (index) => {
       const actualPage = modelingPageMap[page] !== undefined ? modelingPageMap[page] : `modeling/${page}`
       url = `${moduleUrls[module]}/${actualPage}`
     } else if (module === 'quality') {
-      // Quality 模块的路由: /quality/rule-applications, /quality/check-tasks 等（包含 /quality 前缀）
       const qualityPageMap = {
         'rule-applications': 'quality/rule-applications',
         'check-tasks': 'quality/check-tasks',
@@ -733,25 +710,23 @@ const handleMenuSelect = (index) => {
       const actualPage = qualityPageMap[page] !== undefined ? qualityPageMap[page] : `quality/${page}`
       url = `${moduleUrls[module]}/${actualPage}`
     } else if (module === 'asset') {
-      // Asset 模块的路由: /asset/type-definitions, /asset/assets 等（包含 /asset 前缀）
       const assetPageMap = {
         'type-definitions': 'asset/type-definitions',
         'categories': 'asset/categories',
         'assets': 'asset/assets',
         'applications': 'asset/applications',
-        'authorizations': 'asset/authorizations',
+        'dashboard': 'asset/dashboard',
         '': 'asset/assets'
       }
       const actualPage = assetPageMap[page] !== undefined ? assetPageMap[page] : `asset/${page}`
       url = `${moduleUrls[module]}/${actualPage}`
     } else if (page) {
-      // 其他模块保持原有逻辑
       url = `${moduleUrls[module]}/${page}`
     } else {
       url = moduleUrls[module]
     }
 
-    // 如果有token，添加到URL参数中
+    // 添加认证 token
     if (token) {
       const separator = url.includes('?') ? '&' : '?'
       url = `${url}${separator}token=${encodeURIComponent(token)}`
@@ -766,30 +741,22 @@ const handleMenuSelect = (index) => {
 }
 
 const navigateToModule = (module) => {
-  if (module === 'system') {
-    handleMenuSelect('/system/users')
-  } else if (module === 'manager') {
-    handleMenuSelect('/manager/data-explorer')
-  } else if (module === 'meta') {
-    handleMenuSelect('/meta/scan')
-  } else if (module === 'transfer') {
-    handleMenuSelect('/transfer/tasks')
-  } else if (module === 'orchestrator') {
-    handleMenuSelect('/orchestrator/orchestrations')
-  } else if (module === 'develop') {
-    handleMenuSelect('/develop/sql')
-  } else if (module === 'service') {
-    handleMenuSelect('/service/query-services')
-  } else if (module === 'monitor') {
-    handleMenuSelect('/monitor/dashboard')
-  } else if (module === 'standard') {
-    handleMenuSelect('/standard/domains')
-  } else if (module === 'modeling') {
-    handleMenuSelect('/modeling/dw-layers')
-  } else if (module === 'quality') {
-    handleMenuSelect('/quality/check-tasks')
-  } else if (module === 'asset') {
-    handleMenuSelect('/asset/assets')
+  const defaultRoutes = {
+    system: '/system/users',
+    manager: '/manager/data-explorer',
+    meta: '/meta/scan',
+    transfer: '/transfer/tasks',
+    orchestrator: '/orchestrator/orchestrations',
+    develop: '/develop/sql',
+    service: '/service/query-services',
+    monitor: '/monitor/dashboard',
+    standard: '/standard/domains',
+    modeling: '/modeling/dw-layers',
+    quality: '/quality/check-tasks',
+    asset: '/asset/assets',
+  }
+  if (defaultRoutes[module]) {
+    handleMenuSelect(defaultRoutes[module])
   }
 }
 
@@ -797,7 +764,9 @@ const openPortal = () => {
   const portalUrl = isDevelopment
     ? `${protocol}//${hostname}:5185`
     : `${protocol}//${hostname}/portal`
-  window.open(portalUrl + '/portal/home', '_blank')
+  const token = authStore.token
+  const tokenParam = token ? `?token=${encodeURIComponent(token)}` : ''
+  window.open(portalUrl + '/portal/home' + tokenParam, '_blank')
 }
 
 const handleIframeLoad = () => {
@@ -836,15 +805,72 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 .header-left {
   display: flex;
   align-items: center;
+  flex: 1;
+  min-width: 0;
 }
 
-.header-left h1 {
-  font-size: 24px;
+/* Logo 区域：点击回首页 */
+.logo-area {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  margin-right: 16px;
+  flex-shrink: 0;
+}
+
+.logo-area:hover {
+  background: var(--addp-bg-secondary);
+}
+
+.logo-area h1 {
+  font-size: 20px;
   font-weight: 600;
   margin: 0;
   background: var(--addp-primary-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+
+/* 顶部群组图标 Tab 栏 */
+.group-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.group-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.group-tab {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--addp-text-secondary);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
+  flex-shrink: 0;
+}
+
+.group-tab:hover {
+  background: var(--addp-bg-secondary);
+  color: var(--addp-text-primary);
+}
+
+.group-tab.is-active {
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 
 .header-right {
@@ -913,8 +939,33 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   height: auto;
 }
 
+/* 首页 */
 .home-view {
   padding: 40px;
+  overflow-y: auto;
+}
+
+.home-welcome {
+  margin-bottom: 32px;
+}
+
+.home-welcome h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--addp-text-primary);
+  margin-bottom: 8px;
+}
+
+.home-welcome p {
+  color: var(--addp-text-tertiary);
+  font-size: 14px;
+}
+
+/* 卡片网格（替换 el-row） */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
 }
 
 .module-card {
@@ -926,16 +977,6 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 .module-card:hover {
   transform: var(--addp-card-hover-transform);
   box-shadow: var(--addp-shadow-hover);
-}
-
-.module-card-disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.module-card-disabled:hover {
-  transform: none;
-  box-shadow: none;
 }
 
 .card-content {
@@ -955,6 +996,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   margin: 0;
 }
 
+/* iframe */
 .iframe-wrapper {
   flex: 1;
   display: flex;
@@ -966,7 +1008,7 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   width: 100%;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 64px);
+  height: calc(100vh - 60px);
   background: var(--addp-bg-secondary);
 }
 
@@ -986,16 +1028,11 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
   color: var(--addp-text-tertiary);
 }
 
-.debug-info {
-  font-size: 12px;
-  color: var(--addp-text-tertiary);
-}
-
 .el-menu-vertical {
   border-right: none;
 }
 
-/* 数据建模分组标题样式 */
+/* 侧边栏菜单分组标题 */
 .sidebar :deep(.el-menu-item-group__title) {
   font-size: 14px;
   font-weight: 600;

@@ -104,7 +104,7 @@ const handleLogin = async () => {
 
 .login-box {
   width: 400px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--addp-shadow-hover);
 }
 
 .card-header {

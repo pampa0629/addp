@@ -41,19 +41,18 @@ export const applicationAPI = {
   get: (id) => client.get(`/asset/applications/${id}`),
   create: (data) => client.post('/asset/applications', data),
   approve: (id, data) => client.post(`/asset/applications/${id}/approve`, data),
-  reject: (id, data) => client.post(`/asset/applications/${id}/reject`, data)
-}
-
-// 授权管理（Phase 5）
-export const authorizationAPI = {
-  list: (params) => client.get('/asset/authorizations', { params }),
-  get: (id) => client.get(`/asset/authorizations/${id}`),
-  revoke: (id) => client.post(`/asset/authorizations/${id}/revoke`)
+  reject: (id, data) => client.post(`/asset/applications/${id}/reject`, data),
+  revokeAuth: (id) => client.post(`/asset/applications/${id}/revoke`)
 }
 
 // 评价管理（Phase 6）
 export const ratingAPI = {
   list: (params) => client.get('/asset/ratings', { params }),
   create: (data) => client.post('/asset/ratings', data),
-  update: (id, data) => client.put(`/asset/ratings/${id}`, data)
+  markHandled: (id, isHandled) => client.post(`/asset/ratings/${id}/mark-handled`, { is_handled: isHandled })
+}
+
+// 运营看板统计（Phase 6.3）
+export const statsAPI = {
+  dashboard: () => client.get('/asset/assets/stats/dashboard')
 }

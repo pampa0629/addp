@@ -595,7 +595,9 @@
       "Bash(# 检查 DB migration SQL 是否存在 find /Users/pampa/code/addp -name \"\"*.sql\"\" -newer /Users/pampa/code/addp/CLAUDE.md)",
       "Bash(# 检查 asset 模块是否有数据库迁移文件 find /Users/pampa/code/addp/asset -name \"\"*.sql\"\" # 检查 asset 的 main.go 中是否有 AutoMigrate grep -n \"\"AutoMigrate\\\\|fingerprint\\\\|source_available\\\\|discovery_path\\\\|status.*check\\\\|pending\\\\|rejected\"\" /Users/pampa/code/addp/asset/backend/cmd/server/main.go)",
       "Bash(/Users/pampa/code/addp/asset/backend/cmd/server/main.go:*)",
-      "Bash(/Users/pampa/code/addp/asset/frontend/src/views/CatalogManagement.vue:*)"
+      "Bash(/Users/pampa/code/addp/asset/frontend/src/views/CatalogManagement.vue:*)",
+      "Bash(/tmp/search_patch.py:*)",
+      "Bash(/Users/pampa/code/addp/portal/frontend/src/views/AssetDetail.vue:*)"
     ],
     "deny": [],
     "ask": [],

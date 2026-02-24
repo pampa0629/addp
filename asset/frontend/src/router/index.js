@@ -39,13 +39,13 @@ const routes = [
         path: 'asset/applications',
         name: 'ApplicationList',
         component: () => import('../views/ApplicationList.vue'),
-        meta: { requiresAuth: true, title: '申请管理' }
+        meta: { requiresAuth: true, title: '申请与授权' }
       },
       {
-        path: 'asset/authorizations',
-        name: 'AuthorizationList',
-        component: () => import('../views/AuthorizationList.vue'),
-        meta: { requiresAuth: true, title: '授权管理' }
+        path: 'asset/dashboard',
+        name: 'Dashboard',
+        component: () => import('../views/Dashboard.vue'),
+        meta: { requiresAuth: true, title: '运营看板' }
       }
     ]
   }

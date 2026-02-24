@@ -36,6 +36,9 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	// 初始化服务层
 	typeSvc := service.NewTypeService(db)
 	catalogSvc := service.NewCatalogService(db)
+	authorizationSvc := service.NewAuthorizationService(db)
+	applicationSvc := service.NewApplicationService(db, authorizationSvc)
+	ratingSvc := service.NewRatingService(db)
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/asset")
@@ -345,6 +348,28 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 			commonAPI.SuccessResponse(c, result)
 		})
 
+		// 已上架资产统计（各类型数量 + 总计，供 portal 首页使用）
+		assetGroup.GET("/stats", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			result, err := assetSvc.GetStats(tenantID)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, result)
+		})
+
+		// 运营看板统计（管理员使用）
+		assetGroup.GET("/stats/dashboard", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			result, err := assetSvc.GetDashboardStats(tenantID)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, result)
+		})
+
 		// 获取类型扩展字段定义（编目表单用）
 		assetGroup.GET("/type-fields/:type_id", func(c *gin.Context) {
 			typeID, err := strconv.ParseInt(c.Param("type_id"), 10, 64)
@@ -362,35 +387,293 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	}
 
 	// ============================================================
-	// 申请管理（Phase 4 实现）
+	// 申请管理（Phase 4）
 	// ============================================================
 	appGroup := api.Group("/applications")
 	{
-		appGroup.GET("", placeholderHandler("list applications - Phase 4"))
-		appGroup.POST("", placeholderHandler("create application - Phase 4"))
-		appGroup.GET("/:id", placeholderHandler("get application - Phase 4"))
-		appGroup.POST("/:id/approve", placeholderHandler("approve application - Phase 4"))
-		appGroup.POST("/:id/reject", placeholderHandler("reject application - Phase 4"))
+		// GET /api/asset/applications — 列表（管理员视角，支持 display_status/status/asset_id/applicant_id 过滤）
+		appGroup.GET("", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			page, pageSize := commonAPI.GetPaginationParams(c)
+			params := service.ApplicationListParams{
+				Page:          page,
+				PageSize:      pageSize,
+				Status:        c.Query("status"),
+				DisplayStatus: c.Query("display_status"),
+			}
+			if v := c.Query("asset_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.AssetID = id
+				}
+			}
+			if v := c.Query("applicant_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.ApplicantID = id
+				}
+			}
+			items, total, err := applicationSvc.List(tenantID, params)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+		})
+
+		// POST /api/asset/applications — 提交申请（由 portal BFF 代用户调用）
+		appGroup.POST("", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			var req service.CreateApplicationReq
+			if !commonAPI.BindJSON(c, &req) {
+				return
+			}
+			app, err := applicationSvc.Create(tenantID, &req)
+			if err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, app)
+		})
+
+		// GET /api/asset/applications/:id — 单条详情
+		appGroup.GET("/:id", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			app, err := applicationSvc.Get(tenantID, id)
+			if err != nil {
+				commonAPI.NotFoundError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, app)
+		})
+
+		// POST /api/asset/applications/:id/approve — 审批通过
+		appGroup.POST("/:id/approve", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			reviewerID := commonAuth.GetUserID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			var req service.ApproveApplicationReq
+			if !commonAPI.BindJSON(c, &req) {
+				return
+			}
+			if err := applicationSvc.Approve(tenantID, reviewerID, id, &req); err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, gin.H{"message": "审批通过"})
+		})
+
+		// POST /api/asset/applications/:id/reject — 审批驳回
+		appGroup.POST("/:id/reject", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			reviewerID := commonAuth.GetUserID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			var req service.RejectApplicationReq
+			if !commonAPI.BindJSON(c, &req) {
+				return
+			}
+			if err := applicationSvc.Reject(tenantID, reviewerID, id, &req); err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, gin.H{"message": "已驳回"})
+		})
+
+		// POST /api/asset/applications/:id/revoke — 通过申请ID撤销对应授权
+		appGroup.POST("/:id/revoke", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			revokedBy := commonAuth.GetUserID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			if err := applicationSvc.RevokeByApplication(tenantID, revokedBy, id); err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, gin.H{"message": "授权已撤销"})
+		})
 	}
 
 	// ============================================================
-	// 授权管理（Phase 4/5 实现）
+	// 授权管理（Phase 4）
 	// ============================================================
 	authGroup := api.Group("/authorizations")
 	{
-		authGroup.GET("", placeholderHandler("list authorizations - Phase 5"))
-		authGroup.GET("/:id", placeholderHandler("get authorization - Phase 5"))
-		authGroup.POST("/:id/revoke", placeholderHandler("revoke authorization - Phase 5"))
+		// GET /api/asset/authorizations — 列表（支持 user_id/asset_id/is_active 过滤）
+		authGroup.GET("", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			page, pageSize := commonAPI.GetPaginationParams(c)
+			params := service.AuthorizationListParams{
+				Page:     page,
+				PageSize: pageSize,
+			}
+			if v := c.Query("user_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.UserID = id
+				}
+			}
+			if v := c.Query("asset_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.AssetID = id
+				}
+			}
+			if v := c.Query("is_active"); v == "true" {
+				t := true
+				params.IsActive = &t
+			} else if v == "false" {
+				f := false
+				params.IsActive = &f
+			}
+			items, total, err := authorizationSvc.List(tenantID, params)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+		})
+
+		// GET /api/asset/authorizations/:id — 单条详情
+		authGroup.GET("/:id", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			auth, err := authorizationSvc.Get(tenantID, id)
+			if err != nil {
+				commonAPI.NotFoundError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, auth)
+		})
+
+		// POST /api/asset/authorizations/:id/revoke — 撤销授权
+		authGroup.POST("/:id/revoke", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			revokedBy := commonAuth.GetUserID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			if err := authorizationSvc.Revoke(tenantID, revokedBy, id); err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, gin.H{"message": "授权已撤销"})
+		})
 	}
 
 	// ============================================================
-	// 资产评价（Phase 6 实现）
+	// 资产评价（Phase 6）
 	// ============================================================
 	ratingGroup := api.Group("/ratings")
 	{
-		ratingGroup.GET("", placeholderHandler("list ratings - Phase 6"))
-		ratingGroup.POST("", placeholderHandler("create rating - Phase 6"))
-		ratingGroup.PUT("/:id", placeholderHandler("update rating - Phase 6"))
+		// GET /api/asset/ratings?asset_id=X&has_feedback=true&is_handled=false
+		ratingGroup.GET("", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			page, pageSize := commonAPI.GetPaginationParams(c)
+			params := service.RatingListParams{Page: page, PageSize: pageSize}
+			if v := c.Query("asset_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.AssetID = id
+				}
+			}
+			if v := c.Query("user_id"); v != "" {
+				if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+					params.UserID = id
+				}
+			}
+			if c.Query("has_feedback") == "true" {
+				params.HasFeedback = true
+			}
+			if v := c.Query("is_handled"); v == "true" {
+				t := true
+				params.IsHandled = &t
+			} else if v == "false" {
+				f := false
+				params.IsHandled = &f
+			}
+			items, total, err := ratingSvc.List(uint(tenantID), params)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SendPaginatedResponse(c, items, total, page, pageSize)
+		})
+
+		// POST /api/asset/ratings — 提交或更新评价（upsert 语义，asset_id 和 user_id 从 body 中读取）
+		ratingGroup.POST("", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			var body struct {
+				AssetID int64   `json:"asset_id" binding:"required"`
+				UserID  int64   `json:"user_id" binding:"required"`
+				Score   float32 `json:"score" binding:"required,min=1,max=5"`
+				Comment string  `json:"comment"`
+				Tags    []string `json:"tags"`
+			}
+			if !commonAPI.BindJSON(c, &body) {
+				return
+			}
+			req := &service.UpsertRatingReq{Score: body.Score, Comment: body.Comment, Tags: body.Tags}
+			rating, err := ratingSvc.Upsert(uint(tenantID), body.UserID, body.AssetID, req)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, rating)
+		})
+
+		// POST /api/asset/ratings/:id/mark-handled — 管理员标记问题反馈为已处理
+		ratingGroup.POST("/:id/mark-handled", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+			if err != nil {
+				commonAPI.BadRequestError(c, "无效的ID")
+				return
+			}
+			var body struct {
+				IsHandled bool `json:"is_handled"`
+			}
+			if !commonAPI.BindJSON(c, &body) {
+				return
+			}
+			if err := ratingSvc.MarkHandled(uint(tenantID), id, body.IsHandled); err != nil {
+				commonAPI.BadRequestError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, gin.H{"message": "已更新"})
+		})
+
+		// GET /api/asset/ratings/stats?asset_id=X — 获取资产评价统计
+		ratingGroup.GET("/stats", func(c *gin.Context) {
+			tenantID := commonAuth.GetTenantID(c)
+			assetID, err := strconv.ParseInt(c.Query("asset_id"), 10, 64)
+			if err != nil || assetID <= 0 {
+				commonAPI.BadRequestError(c, "缺少 asset_id 参数")
+				return
+			}
+			stats, err := ratingSvc.GetStats(uint(tenantID), assetID)
+			if err != nil {
+				commonAPI.InternalServerError(c, err.Error())
+				return
+			}
+			commonAPI.SuccessResponse(c, stats)
+		})
 	}
 
 	return router

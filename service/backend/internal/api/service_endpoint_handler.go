@@ -1,0 +1,97 @@
+package api
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+
+	svc "github.com/addp/service/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+// ServiceEndpointHandler 处理服务端点查询请求
+// 供其他模块通过内部 API Key 调用，根据 source_reference 返回统一端点信息
+type ServiceEndpointHandler struct {
+	querySvc      *svc.QueryServiceService
+	registeredSvc *svc.RegisteredServiceService
+	tileSvc       *svc.TileServiceService
+}
+
+func NewServiceEndpointHandler(
+	q *svc.QueryServiceService,
+	r *svc.RegisteredServiceService,
+	t *svc.TileServiceService,
+) *ServiceEndpointHandler {
+	return &ServiceEndpointHandler{querySvc: q, registeredSvc: r, tileSvc: t}
+}
+
+type serviceEndpointResp struct {
+	ServiceType string            `json:"service_type"`
+	Title       string            `json:"title"`
+	Endpoints   map[string]string `json:"endpoints"`
+}
+
+// GetEndpoints GET /api/service/endpoints?ref=query:123
+// 内部接口：根据 source_reference 返回统一服务端点信息
+func (h *ServiceEndpointHandler) GetEndpoints(c *gin.Context) {
+	ref := c.Query("ref")
+	if ref == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 ref 参数"})
+		return
+	}
+
+	parts := strings.SplitN(ref, ":", 2)
+	if len(parts) != 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ref 格式错误，应为 type:id"})
+		return
+	}
+
+	serviceType := parts[0]
+	id64, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ref 中的 ID 无效"})
+		return
+	}
+	id := uint(id64)
+
+	switch serviceType {
+	case "query":
+		dto, err := h.querySvc.GetService(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, serviceEndpointResp{
+			ServiceType: "query",
+			Title:       dto.Title,
+			Endpoints:   dto.Endpoints,
+		})
+
+	case "registered":
+		dto, err := h.registeredSvc.GetService(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, serviceEndpointResp{
+			ServiceType: "registered",
+			Title:       dto.Title,
+			Endpoints:   dto.Endpoints,
+		})
+
+	case "tile":
+		dto, err := h.tileSvc.GetService(id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, serviceEndpointResp{
+			ServiceType: "tile",
+			Title:       dto.Title,
+			Endpoints:   dto.Endpoints,
+		})
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的服务类型: " + serviceType})
+	}
+}

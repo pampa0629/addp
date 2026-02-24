@@ -45,13 +45,7 @@ const routes = [
         path: 'portal/my/applications',
         name: 'MyApplications',
         component: () => import('../views/MyApplications.vue'),
-        meta: { requiresAuth: true, title: '我的申请' }
-      },
-      {
-        path: 'portal/my/authorizations',
-        name: 'MyAuthorizations',
-        component: () => import('../views/MyAuthorizations.vue'),
-        meta: { requiresAuth: true, title: '我的授权' }
+        meta: { requiresAuth: true, title: '我的申请与授权' }
       }
     ]
   }

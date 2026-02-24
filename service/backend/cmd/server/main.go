@@ -117,9 +117,10 @@ func main() {
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
 	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
+	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, systemClient)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, serviceEndpointHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

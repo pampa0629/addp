@@ -184,14 +184,16 @@ type Authorization struct {
 func (Authorization) TableName() string { return "asset.authorizations" }
 
 // Rating 资产评价记录（已授权用户可评价）
+// 每用户每资产只能有一条评价记录（通过 uidx_rating_user_asset 唯一索引保证）
 type Rating struct {
-	ID        int64      `gorm:"primaryKey"              json:"id"`
-	TenantID  int64      `gorm:"not null;index"          json:"tenant_id"`
-	AssetID   int64      `gorm:"not null;index"          json:"asset_id"`
-	UserID    int64      `gorm:"not null;index"          json:"user_id"`
-	Score     float32    `gorm:"not null"                json:"score"`    // 1-5 分
-	Comment   string     `gorm:"size:2000"               json:"comment"`
-	Tags      JSONBArray `gorm:"type:jsonb;default:'[]'" json:"tags"`     // 反馈标签（如：数据质量问题/文档不清晰等）
+	ID        int64      `gorm:"primaryKey"                                          json:"id"`
+	TenantID  int64      `gorm:"not null;index"                                      json:"tenant_id"`
+	AssetID   int64      `gorm:"not null;uniqueIndex:uidx_rating_user_asset"         json:"asset_id"`
+	UserID    int64      `gorm:"not null;uniqueIndex:uidx_rating_user_asset"         json:"user_id"`
+	Score     float32    `gorm:"not null"                                            json:"score"`      // 1-5 分
+	Comment   string     `gorm:"size:2000"                                           json:"comment"`
+	Tags      JSONBArray `gorm:"type:jsonb;default:'[]'"                             json:"tags"`       // 反馈标签（问题反馈时填写，如：数据质量问题/文档不清晰）
+	IsHandled bool       `gorm:"default:false"                                       json:"is_handled"` // 管理员是否已处理问题反馈
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 }

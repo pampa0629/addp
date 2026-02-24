@@ -59,13 +59,14 @@
             </template>
             <el-menu-item index="/asset/applications">
               <el-icon><Tickets /></el-icon>
-              <span>申请管理</span>
-            </el-menu-item>
-            <el-menu-item index="/asset/authorizations">
-              <el-icon><Key /></el-icon>
-              <span>授权管理</span>
+              <span>申请与授权</span>
             </el-menu-item>
           </el-sub-menu>
+
+          <el-menu-item index="/asset/dashboard">
+            <el-icon><DataAnalysis /></el-icon>
+            <span>运营看板</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -82,7 +83,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../store/auth'
 import {
   User, ArrowDown, SwitchButton, Folder,
-  Grid, Files, List, Document, Tickets, Key
+  Grid, Files, List, Document, Tickets, DataAnalysis
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -100,7 +101,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/asset/categories')) return '/asset/categories'
   if (path.startsWith('/asset/assets')) return '/asset/assets'
   if (path.startsWith('/asset/applications')) return '/asset/applications'
-  if (path.startsWith('/asset/authorizations')) return '/asset/authorizations'
+  if (path.startsWith('/asset/dashboard')) return '/asset/dashboard'
   return path
 })
 
