@@ -17,20 +17,20 @@ import (
 
 // OrchestrationHandler 编排 API 处理器
 type OrchestrationHandler struct {
-	orchRepo              *repository.OrchestrationRepository
-	execRepo              *repository.ExecutionRepository
-	executor              *service.Executor
-	scheduler             *service.Scheduler
-	moduleClient          *service.ModuleClient
-	engineRegistry        *service.EngineRegistry
-	taskProviderRegistry  *service.TaskProviderRegistry
-	httpClient            *http.Client
+	orchRepo             *repository.OrchestrationRepository
+	executionService     *service.ExecutionService
+	executor             *service.Executor
+	scheduler            *service.Scheduler
+	moduleClient         *service.ModuleClient
+	engineRegistry       *service.EngineRegistry
+	taskProviderRegistry *service.TaskProviderRegistry
+	httpClient           *http.Client
 }
 
 // NewOrchestrationHandler 创建处理器
 func NewOrchestrationHandler(
 	orchRepo *repository.OrchestrationRepository,
-	execRepo *repository.ExecutionRepository,
+	executionService *service.ExecutionService,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
@@ -44,13 +44,13 @@ func NewOrchestrationHandler(
 
 	return &OrchestrationHandler{
 		orchRepo:             orchRepo,
-		execRepo:             execRepo,
+		executionService:     executionService,
 		executor:             executor,
 		scheduler:            scheduler,
 		moduleClient:         moduleClient,
 		engineRegistry:       engineRegistry,
 		taskProviderRegistry: taskProviderRegistry,
-		httpClient:     httpClient,
+		httpClient:           httpClient,
 	}
 }
 
@@ -185,13 +185,10 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	execution := &models.Execution{
-		OrchestrationID: orch.ID,
-		TenantID:        orch.TenantID,
-		Status:          "pending",
-	}
-
-	if err := h.execRepo.Create(execution); err != nil {
+	// 使用统一执行服务创建执行记录
+	ctx := c.Request.Context()
+	execution, err := h.executionService.CreateExecution(ctx, orch.ID, orch.TenantID)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -209,20 +206,24 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 		return
 	}
 
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	// TODO: 从 JWT 中提取 tenant_id
+	tenantID := uint(1)
 
-	execs, total, err := h.execRepo.List(uint(id), limit, offset)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+	ctx := c.Request.Context()
+	execs, total, err := h.executionService.ListExecutions(ctx, uint(id), tenantID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": execs,
-		"total": total,
-		"limit": limit,
-		"offset": offset,
+		"data":      execs,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -231,20 +232,21 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 	// TODO: 从 JWT 中提取 tenant_id
 	tenantID := uint(1)
 
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
-	execs, total, err := h.execRepo.ListAll(tenantID, limit, offset)
+	ctx := c.Request.Context()
+	execs, total, err := h.executionService.ListAllExecutions(ctx, tenantID, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items":  execs,
-		"total":  total,
-		"limit":  limit,
-		"offset": offset,
+		"data":      execs,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -256,7 +258,11 @@ func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 		return
 	}
 
-	exec, err := h.execRepo.GetByID(uint(id))
+	// TODO: 从 JWT 中提取 tenant_id
+	tenantID := uint(1)
+
+	ctx := c.Request.Context()
+	exec, err := h.executionService.GetExecution(ctx, uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "执行不存在"})
 		return

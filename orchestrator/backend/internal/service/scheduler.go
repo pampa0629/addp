@@ -5,22 +5,21 @@ import (
 	"fmt"
 
 	commonScheduler "github.com/addp/common/scheduler"
-	"github.com/addp/orchestrator/internal/models"
 	"github.com/addp/orchestrator/internal/repository"
 )
 
 // Scheduler 定时调度器（使用公共调度模块）
 type Scheduler struct {
-	scheduler commonScheduler.Scheduler // 公共调度器
-	orchRepo  *repository.OrchestrationRepository
-	execRepo  *repository.ExecutionRepository
-	executor  *Executor
+	scheduler        commonScheduler.Scheduler // 公共调度器
+	orchRepo         *repository.OrchestrationRepository
+	executionService *ExecutionService
+	executor         *Executor
 }
 
 // NewScheduler 创建调度器
 func NewScheduler(
 	orchRepo *repository.OrchestrationRepository,
-	execRepo *repository.ExecutionRepository,
+	executionService *ExecutionService,
 	executor *Executor,
 ) *Scheduler {
 	// 创建公共调度器
@@ -32,10 +31,10 @@ func NewScheduler(
 	}
 
 	return &Scheduler{
-		scheduler: scheduler,
-		orchRepo:  orchRepo,
-		execRepo:  execRepo,
-		executor:  executor,
+		scheduler:        scheduler,
+		orchRepo:         orchRepo,
+		executionService: executionService,
+		executor:         executor,
 	}
 }
 
@@ -92,18 +91,16 @@ func (s *Scheduler) createHandler(orchID uint) commonScheduler.TaskHandler {
 
 // triggerOrchestration 触发编排执行
 func (s *Scheduler) triggerOrchestration(orchID uint) {
+	ctx := context.Background()
 	orch, err := s.orchRepo.GetByID(orchID)
 	if err != nil || !orch.Enabled {
 		return
 	}
 
-	execution := &models.Execution{
-		OrchestrationID: orchID,
-		TenantID:        orch.TenantID,
-		Status:          "pending",
-	}
-
-	if err := s.execRepo.Create(execution); err != nil {
+	// 使用统一执行服务创建执行记录
+	execution, err := s.executionService.CreateExecution(ctx, orchID, orch.TenantID)
+	if err != nil {
+		fmt.Printf("Failed to create execution for orchestration %d: %v\n", orchID, err)
 		return
 	}
 

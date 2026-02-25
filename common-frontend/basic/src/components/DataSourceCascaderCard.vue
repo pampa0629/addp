@@ -3,7 +3,7 @@
     <template v-if="showHeader" #header>
       <div class="card-header">
         <span>{{ title }}</span>
-        <el-button v-if="showClearButton" type="text" size="small" @click="handleClear">
+        <el-button v-if="showClearButton" text size="small" @click="handleClear">
           清空
         </el-button>
       </div>

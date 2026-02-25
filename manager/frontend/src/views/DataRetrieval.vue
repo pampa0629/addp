@@ -33,7 +33,7 @@
                     <div class="history-header">
                       <span>搜索历史</span>
                       <el-button
-                        type="text"
+                        text
                         size="small"
                         :disabled="historyItems.length === 0 || historyLoading"
                         @click="handleClearHistory"
@@ -52,7 +52,7 @@
                           <span class="history-query" @click="applyHistory(item)">
                             {{ item.query }}
                           </span>
-                          <el-button type="text" size="small" @click.stop="removeHistoryItem(item)">
+                          <el-button text size="small" @click.stop="removeHistoryItem(item)">
                             删除
                           </el-button>
                         </div>

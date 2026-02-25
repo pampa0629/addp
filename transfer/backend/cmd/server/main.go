@@ -12,6 +12,7 @@ import (
 	"github.com/addp/common/logger"
 	"github.com/addp/common/utils"
 	commonRepo "github.com/addp/common/repository"
+	commonModels "github.com/addp/common/models"
 	"github.com/addp/transfer/internal/api"
 	"github.com/addp/transfer/internal/config"
 	"github.com/addp/transfer/internal/models"
@@ -95,6 +96,8 @@ func main() {
 
 	// 初始化 Repository 层
 	_ = repository.NewMappingRepository(db) // mappingRepo unused for now
+	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
+	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
 	// 创建任务队列（连接 Redis）
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
@@ -119,7 +122,8 @@ func main() {
 
 	// 初始化 Service 层（传入 taskQueue 和 redisClient）
 	taskService := service.NewTaskService(db, nil, cfg, taskQueue) // engine 传 nil（暂不执行任务）
-	executionService := service.NewExecutionService(db)
+	executionService := service.NewExecutionService(db, taskExecutionRepo) // 使用统一执行表
+	taskService.SetExecutionService(executionService) // 注入执行服务（避免循环依赖）
 	localEngineService := service.NewLocalEngineService(db, cfg, redisClient)
 	objectStorageService := service.NewObjectStorageService(localEngineService)
 
@@ -241,7 +245,8 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.Task{},
-		&models.TaskExecution{},
+		// &models.TaskExecution{}, // 【已废弃】改用统一执行表
+		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 		&models.FieldMapping{},
 		&models.LocalEngine{},
 		// &pipeline.Checkpoint{}, // TODO: 启用 pipeline 时取消注释

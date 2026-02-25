@@ -99,7 +99,7 @@
     <div v-if="selectionMode === 'multiple' && selectedItems.size > 0" class="selected-list">
       <div class="selected-list-header">
         已选择 {{ selectedItems.size }} 项
-        <el-button type="text" size="small" @click="clearSelection">清空</el-button>
+        <el-button text size="small" @click="clearSelection">清空</el-button>
       </div>
       <div class="selected-list-items">
         <el-tag

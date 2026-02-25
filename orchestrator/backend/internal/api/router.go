@@ -16,7 +16,7 @@ import (
 // SetupRouter 设置路由
 func SetupRouter(
 	orchRepo *repository.OrchestrationRepository,
-	execRepo *repository.ExecutionRepository,
+	executionService *service.ExecutionService,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
 	moduleClient *service.ModuleClient,
@@ -45,7 +45,7 @@ func SetupRouter(
 	// 创建 HTTP 客户端
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	handler := NewOrchestrationHandler(orchRepo, execRepo, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, httpClient)
+	handler := NewOrchestrationHandler(orchRepo, executionService, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, httpClient)
 
 	api := router.Group("/api/orchestrator")
 

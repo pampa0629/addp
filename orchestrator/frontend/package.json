@@ -10,18 +10,18 @@
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",
     "@antv/g6": "^4.8.24",
-    "@element-plus/icons-vue": "^2.3.2",
-    "axios": "^1.6.5",
-    "element-plus": "^2.5.6",
-    "pinia": "^2.3.1",
-    "vue": "^3.4.15",
-    "vue-router": "^4.2.5"
+    "@element-plus/icons-vue": "2.3.2",
+    "axios": "1.7.9",
+    "element-plus": "2.8.8",
+    "pinia": "2.3.0",
+    "vue": "3.5.13",
+    "vue-router": "4.5.0"
   },
   "overrides": {
-    "vue": "^3.4.15"
+    "vue": "3.5.13"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.3",
-    "vite": "^5.0.12"
+    "@vitejs/plugin-vue": "5.2.1",
+    "vite": "6.0.5"
   }
 }

@@ -1,23 +1,23 @@
 package main
 
 import (
-    "context"
-    "fmt"
-    "log"
-    "os"
-    "os/signal"
-    "path/filepath"
-    "syscall"
-    "time"
+	"context"
+	"fmt"
+	"log"
+	"log/slog"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
 	commonRepo "github.com/addp/common/repository"
-    "github.com/addp/transfer/internal/config"
-    "github.com/addp/transfer/internal/logging"
-    "github.com/addp/transfer/internal/repository"
-    "github.com/addp/transfer/internal/service"
+	"github.com/addp/transfer/internal/config"
+	"github.com/addp/transfer/internal/repository"
+	"github.com/addp/transfer/internal/service"
 	_ "github.com/addp/transfer/internal/transform"
 	"github.com/addp/transfer/internal/worker"
 	_ "github.com/addp/transfer/plugins" // ✅ 新增：触发 plugins 包的 init() 函数（注册 PostProcessor）
@@ -86,14 +86,13 @@ func main() {
 	readers, writers := loader.ListEnabledPlugins()
 	log.Printf("✅ 已动态加载插件 - Readers: %v, Writers: %v", readers, writers)
 
-    // 创建 logger 和 engine config
-    // Wrap a stdout text handler with DB appender so logs are persisted per execution
-    execRepo := repository.NewExecutionRepository(db)
-    logger := logging.NewStdoutTextDBLogger(execRepo)
-    engineConfig := pipeline.DefaultEngineConfig()
+	// 创建 logger 和 engine config
+	// TODO: 重构 DBLogHandler 以使用 ExecutionService
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	engineConfig := pipeline.DefaultEngineConfig()
 
-    stateManager := pipeline.NewStateManager(db)
-    engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
+	stateManager := pipeline.NewStateManager(db)
+	engine := pipeline.NewExecutionEngine(registry, stateManager, logger, engineConfig)
 
 	// 创建任务队列
 	redisAddr := fmt.Sprintf("%s:%s", cfg.RedisHost, cfg.RedisPort)
@@ -102,9 +101,12 @@ func main() {
 
 	// 创建 Repository 层
 	taskRepo := repository.NewTaskRepository(db)
-	executionRepo := repository.NewExecutionRepository(db)
 	mappingRepo := repository.NewMappingRepository(db)
 	localEngineRepo := repository.NewLocalEngineRepository(db)
+
+	// 创建统一执行服务
+	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db)
+	executionService := service.NewExecutionService(db, taskExecutionRepo)
 
 	// 创建 SystemClient（用于执行引擎）
 	var systemClient *commonClient.SystemClient
@@ -139,7 +141,7 @@ func main() {
 	executionEngineService := service.NewExecutionEngineService(
 		engine,
 		taskRepo,
-		executionRepo,
+		executionService,
 		mappingRepo,
 		localEngineRepo,
 		systemClient,
@@ -153,7 +155,6 @@ func main() {
 
 	// 2. 创建 TaskService (负责任务 CRUD，传入 executionEngineService)
 	taskService := service.NewTaskService(db, executionEngineService, cfg, taskQueue)
-	executionService := service.NewExecutionService(db)
 
 	// 创建任务处理器
 	taskHandler := worker.NewTaskHandler(taskService, executionService)
@@ -183,7 +184,8 @@ func main() {
 	taskHandler.RegisterHandlers(mux)
 
 	// 创建定时调度器
-	scheduler := worker.NewScheduler(taskRepo, executionRepo, taskQueue)
+	scheduler := worker.NewScheduler(taskRepo, taskQueue)
+	scheduler.SetExecutionService(executionService)
 	if err := scheduler.Start(context.Background()); err != nil {
 		log.Fatalf("定时调度器启动失败: %v", err)
 	}

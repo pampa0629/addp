@@ -25,7 +25,7 @@ type ExecutionEngineService struct {
 	registry          *pipeline.ConnectorRegistry
 	stateManager      *pipeline.StateManager
 	taskRepo          *repository.TaskRepository
-	execRepo          *repository.ExecutionRepository
+	executionService  *ExecutionService // 使用统一执行表服务
 	mappingRepo       *repository.MappingRepository
 	localEngineRepo   *repository.LocalEngineRepository
 	systemClient      *commonClient.SystemClient
@@ -38,7 +38,7 @@ type ExecutionEngineService struct {
 func NewExecutionEngineService(
 	engine *pipeline.ExecutionEngine,
 	taskRepo *repository.TaskRepository,
-	execRepo *repository.ExecutionRepository,
+	executionService *ExecutionService, // 改为使用 ExecutionService
 	mappingRepo *repository.MappingRepository,
 	localEngineRepo *repository.LocalEngineRepository,
 	systemClient *commonClient.SystemClient,
@@ -51,15 +51,15 @@ func NewExecutionEngineService(
 	// 暂时使用普通引擎的组件创建并行引擎
 
 	service := &ExecutionEngineService{
-		engine:          engine,
-		taskRepo:        taskRepo,
-		execRepo:        execRepo,
-		mappingRepo:     mappingRepo,
-		localEngineRepo: localEngineRepo,
-		systemClient:    systemClient,
-		metaClient:      metaClient,
-		cfg:             cfg,
-		logger:          logger.With("component", "execution_engine_service"),
+		engine:           engine,
+		taskRepo:         taskRepo,
+		executionService: executionService,
+		mappingRepo:      mappingRepo,
+		localEngineRepo:  localEngineRepo,
+		systemClient:     systemClient,
+		metaClient:       metaClient,
+		cfg:              cfg,
+		logger:           logger.With("component", "execution_engine_service"),
 	}
 
 	return service
@@ -97,12 +97,6 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 		return fmt.Errorf("failed to get task: %w", err)
 	}
 
-	// 获取执行记录
-	execution, err := s.execRepo.GetByID(executionID)
-	if err != nil {
-		return fmt.Errorf("failed to get execution: %w", err)
-	}
-
 	// 获取字段映射
 	mappings, err := s.mappingRepo.GetByTaskID(taskID)
 	if err != nil {
@@ -110,14 +104,14 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	}
 
 	// 构建执行任务
-	execTask, err := s.buildExecutionTask(task, execution, mappings)
+	execTask, err := s.buildExecutionTask(task, executionID, mappings)
 	if err != nil {
 		s.updateExecutionError(task, executionID, err)
 		return err
 	}
 
 	// 更新执行状态为运行中
-	if err := s.execRepo.UpdateStatus(executionID, models.ExecutionStatusRunning); err != nil {
+	if err := s.executionService.UpdateStatus(ctx, executionID, models.ExecutionStatusRunning); err != nil {
 		s.logger.Warn("failed to update execution status", "error", err)
 	}
 
@@ -173,7 +167,7 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 	}
 
 	// 完成执行
-	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusSuccess, ""); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusSuccess, ""); err != nil {
 		s.logger.Warn("failed to finish execution", "error", err)
 	}
 
@@ -201,7 +195,7 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 // buildExecutionTask 构建执行任务
 func (s *ExecutionEngineService) buildExecutionTask(
 	task *models.Task,
-	execution *models.TaskExecution,
+	executionID uint,
 	mappings []models.FieldMapping,
 ) (*pipeline.ExecutionTask, error) {
 	// 解析配置
@@ -314,7 +308,7 @@ func (s *ExecutionEngineService) buildExecutionTask(
 	// 构建执行任务
 	return &pipeline.ExecutionTask{
 		TaskID:      task.ID,
-		ExecutionID: execution.ID,
+		ExecutionID: executionID,
 		SourceConfig: pipeline.ConnectorConfig{
 			Type:      sourceType,
 			Config:    sourceConfig,
@@ -429,8 +423,9 @@ func (s *ExecutionEngineService) updateExecutionError(task *models.Task, executi
 		return
 	}
 
+	ctx := context.Background()
 	// 更新execution记录为failed（关键操作，失败时记录ERROR）
-	if err := s.execRepo.FinishExecution(executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
+	if err := s.executionService.FinishExecution(ctx, executionID, models.ExecutionStatusFailed, execErr.Error()); err != nil {
 		s.logger.Error("CRITICAL: failed to mark execution as failed - status inconsistency may occur",
 			"error", err,
 			"execution_id", executionID,
@@ -460,9 +455,15 @@ func (s *ExecutionEngineService) updateExecutionError(task *models.Task, executi
 
 // updateExecutionMetricsWithLogs 更新执行指标和日志
 func (s *ExecutionEngineService) updateExecutionMetricsWithLogs(executionID uint, logs string, metrics *pipeline.Metrics) {
-	metricsMap := map[string]interface{}{
-		"logs": logs,
+	ctx := context.Background()
+	metricsMap := map[string]interface{}{}
+
+	// 日志存储到 error_details.logs
+	if logs != "" {
+		errorDetails := commonModels.JSONMap{"logs": logs}
+		metricsMap["error_details"] = errorDetails
 	}
+
 	if metrics != nil {
 		metricsMap["records_read"] = metrics.RecordsRead
 		metricsMap["records_written"] = metrics.RecordsWritten
@@ -470,7 +471,7 @@ func (s *ExecutionEngineService) updateExecutionMetricsWithLogs(executionID uint
 		metricsMap["bytes_written"] = metrics.BytesWritten
 	}
 
-	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
+	if err := s.executionService.UpdateMetrics(ctx, executionID, metricsMap); err != nil {
 		s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
 	}
 }
@@ -482,6 +483,7 @@ func (s *ExecutionEngineService) updateExecutionMetrics(executionID uint, metric
 		return
 	}
 
+	ctx := context.Background()
 	metricsMap := map[string]interface{}{
 		"records_read":    metrics.RecordsRead,
 		"records_written": metrics.RecordsWritten,
@@ -489,7 +491,7 @@ func (s *ExecutionEngineService) updateExecutionMetrics(executionID uint, metric
 		"bytes_written":   metrics.BytesWritten,
 	}
 
-	if err := s.execRepo.UpdateMetrics(executionID, metricsMap); err != nil {
+	if err := s.executionService.UpdateMetrics(ctx, executionID, metricsMap); err != nil {
 		s.logger.Error("failed to update execution metrics", "error", err, "execution_id", executionID)
 	}
 }
@@ -1214,9 +1216,10 @@ func getGeometryColumnNames(geomCols map[string]postprocessor.GeometryColumnMeta
 
 // logToExecution 将日志记录到执行记录中（前端可见）
 func (s *ExecutionEngineService) logToExecution(executionID uint, message string) {
+	ctx := context.Background()
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 	logLine := fmt.Sprintf("%s [INFO] %s", timestamp, message)
-	if err := s.execRepo.AppendLog(executionID, logLine); err != nil {
+	if err := s.executionService.AppendLog(ctx, executionID, logLine); err != nil {
 		s.logger.Warn("failed to append log to execution", "error", err, "execution_id", executionID)
 	}
 }

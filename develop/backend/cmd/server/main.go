@@ -10,6 +10,7 @@ import (
 
 	"github.com/addp/common/dbbridge"
 	"github.com/addp/common/utils"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/develop/backend/internal/api"
 	"github.com/addp/develop/backend/internal/config"
 	"github.com/addp/develop/backend/internal/repository"
@@ -44,8 +45,9 @@ func main() {
 
 	// ========== Repository 层 ==========
 	devItemRepo := repository.NewDevItemRepository(db)
-	devExecutionRepo := repository.NewDevExecutionRepository(db)
-	log.Printf("✅ Repository 层初始化完成")
+	// devExecutionRepo := repository.NewDevExecutionRepository(db) // 【已废弃】改用统一执行表
+	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
+	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
 
 	// ========== 创建 System Client ==========
 	systemClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
@@ -95,9 +97,9 @@ func main() {
 	devItemService := service.NewDevItemService(devItemRepo)
 	log.Printf("✅ DevItemService 初始化完成")
 
-	// 5. DevExecutor 统一执行器
-	devExecutor := service.NewDevExecutor(devItemRepo, devExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
-	log.Printf("✅ DevExecutor 初始化完成")
+	// 5. DevExecutor 统一执行器（使用统一执行表）
+	devExecutor := service.NewDevExecutor(devItemRepo, taskExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
+	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
 	// 5. 算子发现服务（动态发现工作流引擎）
 	operatorDiscovery := service.NewOperatorDiscoveryService(
