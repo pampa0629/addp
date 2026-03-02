@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -23,7 +24,7 @@ func (r *ClassificationRepository) List(tenantID int64) ([]models.Classification
 func (r *ClassificationRepository) GetByID(id, tenantID int64) (*models.Classification, error) {
 	var c models.Classification
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&c).Error
-	return &c, err
+	return &c, commonrepo.WrapDBError(err)
 }
 
 func (r *ClassificationRepository) Create(c *models.Classification) error {

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *DomainRepository) Create(domain *models.Domain) error {
 func (r *DomainRepository) GetByID(id, tenantID int64) (*models.Domain, error) {
 	var domain models.Domain
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&domain).Error
-	return &domain, err
+	return &domain, commonrepo.WrapDBError(err)
 }
 
 func (r *DomainRepository) List(tenantID int64) ([]models.Domain, error) {

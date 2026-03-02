@@ -597,7 +597,12 @@
       "Bash(/Users/pampa/code/addp/asset/backend/cmd/server/main.go:*)",
       "Bash(/Users/pampa/code/addp/asset/frontend/src/views/CatalogManagement.vue:*)",
       "Bash(/tmp/search_patch.py:*)",
-      "Bash(/Users/pampa/code/addp/portal/frontend/src/views/AssetDetail.vue:*)"
+      "Bash(/Users/pampa/code/addp/portal/frontend/src/views/AssetDetail.vue:*)",
+      "Bash(git push origin main)",
+      "Bash(git stash pop)",
+      "Bash(git stash drop)",
+      "Bash(do echo \"=== common/$dir ===\" grep -r \"^import\" /Users/pampa/code/addp/common/$dir --include=\"*.go\")",
+      "Bash(do echo \"=== $mod ===\" grep \"addp/common\\\\|module \" /Users/pampa/code/addp/$mod/backend/go.mod)"
     ],
     "deny": [],
     "ask": [],

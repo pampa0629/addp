@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -29,7 +30,7 @@ func (r *DimensionHierarchyRepository) GetByID(id, tenantID int64) (*models.Dime
 			return db.Order("sort_order ASC, level_num ASC")
 		}).
 		First(&h).Error
-	return &h, err
+	return &h, commonrepo.WrapDBError(err)
 }
 
 func (r *DimensionHierarchyRepository) Create(h *models.DimensionHierarchy) error {
@@ -72,7 +73,7 @@ func (r *DimensionHierarchyRepository) CreateLevel(level *models.DimensionHierar
 func (r *DimensionHierarchyRepository) GetLevelByID(levelID, hierarchyID int64) (*models.DimensionHierarchyLevel, error) {
 	var level models.DimensionHierarchyLevel
 	err := r.db.Where("id = ? AND hierarchy_id = ?", levelID, hierarchyID).First(&level).Error
-	return &level, err
+	return &level, commonrepo.WrapDBError(err)
 }
 
 func (r *DimensionHierarchyRepository) UpdateLevel(level *models.DimensionHierarchyLevel) error {

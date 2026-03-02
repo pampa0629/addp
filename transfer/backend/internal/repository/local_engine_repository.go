@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func (r *LocalEngineRepository) List(tenantID uint, engineType string) ([]models
 func (r *LocalEngineRepository) GetByID(id, tenantID uint) (*models.LocalEngine, error) {
 	var engine models.LocalEngine
 	if err := r.db.First(&engine, "id = ? AND tenant_id = ?", id, tenantID).Error; err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }

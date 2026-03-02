@@ -49,7 +49,7 @@ func (r *TaskExecutionRepository) GetByID(ctx context.Context, id int64, tenantI
 	}
 
 	err := query.First(&exec).Error
-	return &exec, err
+	return &exec, WrapDBError(err)
 }
 
 // GetByExecutionID 根据 UUID 查询
@@ -58,7 +58,7 @@ func (r *TaskExecutionRepository) GetByExecutionID(ctx context.Context, executio
 	err := r.db.WithContext(ctx).
 		Where("execution_id = ? AND tenant_id = ?", executionID, tenantID).
 		First(&exec).Error
-	return &exec, err
+	return &exec, WrapDBError(err)
 }
 
 // List 分页查询（支持多种过滤条件）

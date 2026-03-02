@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *DWLayerRepository) Create(layer *models.DWLayer) error {
 func (r *DWLayerRepository) GetByID(id, tenantID int64) (*models.DWLayer, error) {
 	var layer models.DWLayer
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&layer).Error
-	return &layer, err
+	return &layer, commonrepo.WrapDBError(err)
 }
 
 func (r *DWLayerRepository) List(tenantID int64) ([]models.DWLayer, error) {

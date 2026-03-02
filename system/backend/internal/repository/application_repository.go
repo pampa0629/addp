@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
@@ -24,7 +25,7 @@ func (r *ApplicationRepository) FindByID(id uint) (*models.Application, error) {
 	err := r.db.Preload("APIKeys", "status = ?", "active").
 		First(&app, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &app, nil
 }
@@ -62,7 +63,7 @@ func (r *ApplicationRepository) FindAPIKeyByHash(keyHash string) (*models.APIKey
 		Where("key_hash = ? AND status = ?", keyHash, "active").
 		First(&apiKey).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &apiKey, nil
 }
@@ -100,13 +101,13 @@ func (r *ApplicationRepository) FindAPIKeyWithApp(keyHash string) (*models.APIKe
 	err := r.db.Where("key_hash = ? AND status = ?", keyHash, "active").
 		First(&apiKey).Error
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, commonrepo.WrapDBError(err)
 	}
 
 	var app models.Application
 	err = r.db.First(&app, apiKey.ApplicationID).Error
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, commonrepo.WrapDBError(err)
 	}
 
 	return &apiKey, &app, nil

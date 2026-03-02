@@ -1,8 +1,11 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 
+	commonapi "github.com/addp/common/api"
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/models"
 	"gorm.io/gorm"
 )
@@ -35,7 +38,7 @@ func (r *QuickViewRepository) GetByTable(tenantID, engineID uint, schema, table 
 		First(&qv).Error
 
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 
 	return &qv, nil
@@ -46,7 +49,7 @@ func (r *QuickViewRepository) GetByID(id uint) (*models.QuickView, error) {
 	var qv models.QuickView
 	err := r.db.First(&qv, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &qv, nil
 }
@@ -261,7 +264,7 @@ func (r *QuickViewRepository) GetFingerprint(tenantID, engineID uint, schema, ta
 		First(&qv).Error
 
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", fmt.Errorf("quick view not found")
 		}
 		return "", err
@@ -285,7 +288,7 @@ func (r *QuickViewRepository) UpdatePreferredMode(
 	}
 
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return commonapi.ErrNotFound
 	}
 
 	return nil
@@ -331,7 +334,7 @@ func (r *QuickViewRepository) GetPreparationResult(
 		First(&qv).Error
 
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 
 	if qv.PreparationStatus == nil {
@@ -352,7 +355,7 @@ func (r *QuickViewRepository) IsPreparationCompleted(
 		First(&qv).Error
 
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
 		return false, err
@@ -374,7 +377,7 @@ func (r *QuickViewRepository) GetPreparationStatus(
 		First(&qv).Error
 
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("quick view not found")
 		}
 		return nil, err

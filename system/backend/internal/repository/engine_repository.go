@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
@@ -24,7 +25,7 @@ func (r *EngineRepository) GetByID(id uint) (*models.Engine, error) {
 	var engine models.Engine
 	err := r.db.First(&engine, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }
@@ -88,7 +89,7 @@ func (r *EngineRepository) FindByUniqueIdentifier(ctx context.Context, identifie
 	var engine models.Engine
 	err := r.db.WithContext(ctx).Unscoped().Where("unique_identifier = ?", identifier).First(&engine).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }
@@ -98,7 +99,7 @@ func (r *EngineRepository) FindByEngineTypeAndBuiltin(ctx context.Context, engin
 	var engine models.Engine
 	err := r.db.WithContext(ctx).Where("engine_type = ? AND is_builtin = ?", engineType, true).First(&engine).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }
@@ -116,7 +117,7 @@ func (r *EngineRepository) GetByEngineTypeAndTenant(engineType string, tenantID 
 	}
 
 	if err := query.First(&engine).Error; err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 
 	return &engine, nil
@@ -163,7 +164,7 @@ func (r *EngineRepository) FindByNameAndTenant(name string, tenantID uint) (*mod
 	var engine models.Engine
 	err := r.db.Where("name = ? AND tenant_id = ?", name, tenantID).First(&engine).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }
@@ -180,7 +181,7 @@ func (r *EngineRepository) FindByConnection(tenantID uint, host string, port int
 		First(&engine).Error
 
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &engine, nil
 }

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
 )
@@ -25,7 +26,7 @@ func (r *RegisteredServiceRepository) GetByID(id uint) (*models.RegisteredServic
 	var service models.RegisteredService
 	err := r.db.Preload("Layers").Where("id = ?", id).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -35,7 +36,7 @@ func (r *RegisteredServiceRepository) GetByName(serviceName string) (*models.Reg
 	var service models.RegisteredService
 	err := r.db.Preload("Layers").Where("service_name = ?", serviceName).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -47,7 +48,7 @@ func (r *RegisteredServiceRepository) GetByNameAndTenant(serviceName string, ten
 		Where("service_name = ? AND tenant_id = ?", serviceName, tenantID).
 		First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -215,7 +216,7 @@ func (r *RegisteredServiceRepository) GetLayerByID(id uint) (*models.RegisteredS
 	var layer models.RegisteredServiceLayer
 	err := r.db.Where("id = ?", id).First(&layer).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &layer, nil
 }

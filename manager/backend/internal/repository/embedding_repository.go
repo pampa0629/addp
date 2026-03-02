@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -30,7 +31,7 @@ func (r *EmbeddingRepository) UpsertEmbedding(ctx context.Context, embedding *mo
 		Where("fingerprint = ? AND modality = ?", embedding.Fingerprint, embedding.Modality).
 		First(&existing).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 不存在，创建新记录（使用原生 SQL 以支持 vector 类型）
 		vectorStr := vectorToString(embedding.Embedding)
 		log.Printf("[DEBUG] 开始插入向量: fingerprint=%s, modality=%s, vector_length=%d",
@@ -141,7 +142,7 @@ func (r *EmbeddingRepository) GetByFingerprint(ctx context.Context, fingerprint 
 		Where("fingerprint = ? AND modality = ?", fingerprint, modality).
 		First(&emb).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil // 未找到记录，返回 nil
 	}
 	return &emb, err
@@ -155,7 +156,7 @@ func (r *EmbeddingRepository) GetEmbedding(ctx context.Context, engineID uint, b
 			engineID, bucket, path, name, modality).
 		First(&emb).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &emb, err
@@ -263,7 +264,7 @@ func (r *EmbeddingRepository) GetEmbeddingStatus(ctx context.Context, engineID u
 
 	if err == nil {
 		status.LastVectorizedAt = &lastEmb.CreatedAt
-	} else if err != gorm.ErrRecordNotFound {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
@@ -309,7 +310,7 @@ func (r *EmbeddingRepository) GetTask(ctx context.Context, taskID string) (*mode
 		Where("task_id = ?", taskID).
 		First(&task).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &task, err

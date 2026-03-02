@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *ElementRepository) Create(element *models.Element) error {
 func (r *ElementRepository) GetByID(id, tenantID int64) (*models.Element, error) {
 	var element models.Element
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&element).Error
-	return &element, err
+	return &element, commonrepo.WrapDBError(err)
 }
 
 type ListElementOptions struct {

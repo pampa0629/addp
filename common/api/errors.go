@@ -3,8 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-
-	"gorm.io/gorm"
 )
 
 // 通用错误定义
@@ -17,21 +15,13 @@ var (
 	ErrInternalServerError = errors.New("服务器内部错误")
 )
 
-// MapErrorToHTTPStatus 映射错误到 HTTP 状态码
+// MapErrorToHTTPStatus 映射错误到 HTTP 状态码。
+// gorm 错误应在 repository 层通过 WrapDBError 转换为业务错误后再到达此处。
 func MapErrorToHTTPStatus(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
 
-	// GORM 错误
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return http.StatusNotFound
-	}
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return http.StatusConflict
-	}
-
-	// 通用错误
 	switch {
 	case errors.Is(err, ErrBadRequest):
 		return http.StatusBadRequest

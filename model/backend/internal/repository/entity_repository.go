@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *EntityRepository) Create(entity *models.Entity) error {
 func (r *EntityRepository) GetByID(id, tenantID int64) (*models.Entity, error) {
 	var entity models.Entity
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&entity).Error
-	return &entity, err
+	return &entity, commonrepo.WrapDBError(err)
 }
 
 type ListEntityOptions struct {
@@ -103,7 +104,7 @@ func (r *EntityRepository) CreateAttribute(attr *models.EntityAttribute) error {
 func (r *EntityRepository) GetAttributeByID(attrID, entityID int64) (*models.EntityAttribute, error) {
 	var attr models.EntityAttribute
 	err := r.db.Where("id = ? AND entity_id = ?", attrID, entityID).First(&attr).Error
-	return &attr, err
+	return &attr, commonrepo.WrapDBError(err)
 }
 
 // UpdateAttribute 更新实体属性
@@ -120,7 +121,7 @@ func (r *EntityRepository) DeleteAttribute(attrID, entityID int64) error {
 func (r *EntityRepository) GetByCode(tenantID int64, code string) (*models.Entity, error) {
 	var entity models.Entity
 	err := r.db.Where("tenant_id = ? AND code = ?", tenantID, code).First(&entity).Error
-	return &entity, err
+	return &entity, commonrepo.WrapDBError(err)
 }
 
 // ListByTenantID 列出租户的所有实体

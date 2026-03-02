@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
 )
@@ -31,7 +32,7 @@ func (r *TileServiceRepository) GetServiceByID(id uint) (*models.TileService, er
 	var service models.TileService
 	err := r.db.Preload("Layers").Where("id = ?", id).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -41,7 +42,7 @@ func (r *TileServiceRepository) GetServiceByName(serviceName string) (*models.Ti
 	var service models.TileService
 	err := r.db.Preload("Layers").Where("service_name = ?", serviceName).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -53,7 +54,7 @@ func (r *TileServiceRepository) GetServiceByNameAndTenant(serviceName string, te
 		Where("service_name = ? AND tenant_id = ?", serviceName, tenantID).
 		First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -141,7 +142,7 @@ func (r *TileServiceRepository) GetLayerByID(id uint) (*models.TileServiceLayer,
 	var layer models.TileServiceLayer
 	err := r.db.Where("id = ?", id).First(&layer).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &layer, nil
 }
@@ -151,7 +152,7 @@ func (r *TileServiceRepository) GetLayerByServiceAndName(serviceID uint, layerNa
 	var layer models.TileServiceLayer
 	err := r.db.Where("service_id = ? AND layer_name = ?", serviceID, layerName).First(&layer).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &layer, nil
 }

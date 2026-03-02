@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
@@ -21,7 +22,7 @@ func (r *TenantRepository) GetByID(id uint) (*models.Tenant, error) {
 	var tenant models.Tenant
 	err := r.db.First(&tenant, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &tenant, nil
 }
@@ -30,7 +31,7 @@ func (r *TenantRepository) GetByName(name string) (*models.Tenant, error) {
 	var tenant models.Tenant
 	err := r.db.Where("name = ?", name).First(&tenant).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &tenant, nil
 }

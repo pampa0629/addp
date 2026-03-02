@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -22,7 +23,7 @@ func (r *CodeSetRepository) Create(codeSet *models.CodeSet) error {
 func (r *CodeSetRepository) GetByID(id int64) (*models.CodeSet, error) {
 	var codeSet models.CodeSet
 	if err := r.db.First(&codeSet, id).Error; err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &codeSet, nil
 }
@@ -94,7 +95,7 @@ func (r *CodeSetRepository) CreateItem(item *models.CodeItem) error {
 func (r *CodeSetRepository) GetItemByID(id int64) (*models.CodeItem, error) {
 	var item models.CodeItem
 	if err := r.db.First(&item, id).Error; err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &item, nil
 }

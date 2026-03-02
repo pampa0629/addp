@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -22,7 +23,7 @@ func (r *EntityRelationRepository) Create(relation *models.EntityRelation) error
 func (r *EntityRelationRepository) GetByID(id, tenantID int64) (*models.EntityRelation, error) {
 	var relation models.EntityRelation
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&relation).Error
-	return &relation, err
+	return &relation, commonrepo.WrapDBError(err)
 }
 
 // GetByEntityID 获取某个实体的所有关系（作为源或目标）

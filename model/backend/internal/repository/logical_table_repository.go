@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/model/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *LogicalTableRepository) Create(table *models.LogicalTable) error {
 func (r *LogicalTableRepository) GetByID(id, tenantID int64) (*models.LogicalTable, error) {
 	var table models.LogicalTable
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&table).Error
-	return &table, err
+	return &table, commonrepo.WrapDBError(err)
 }
 
 type ListLogicalTableOptions struct {
@@ -113,7 +114,7 @@ func (r *LogicalTableRepository) CreateField(field *models.LogicalField) error {
 func (r *LogicalTableRepository) GetFieldByID(fieldID, tableID int64) (*models.LogicalField, error) {
 	var field models.LogicalField
 	err := r.db.Where("id = ? AND table_id = ?", fieldID, tableID).First(&field).Error
-	return &field, err
+	return &field, commonrepo.WrapDBError(err)
 }
 
 // UpdateField 更新字段

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/gorm"
 )
@@ -125,7 +126,7 @@ func (r *LogRepository) GetByID(id uint) (*models.AuditLog, error) {
 	var log models.AuditLog
 	err := r.db.First(&log, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &log, nil
 }

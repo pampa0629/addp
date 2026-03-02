@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/service/internal/models"
 	"gorm.io/gorm"
 )
@@ -23,7 +24,7 @@ func (r *QueryServiceRepository) GetByID(id uint) (*models.QueryService, error) 
 	var service models.QueryService
 	err := r.db.Where("id = ?", id).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -33,7 +34,7 @@ func (r *QueryServiceRepository) GetByName(serviceName string) (*models.QuerySer
 	var service models.QueryService
 	err := r.db.Where("service_name = ?", serviceName).First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }
@@ -45,7 +46,7 @@ func (r *QueryServiceRepository) GetByNameAndTenant(serviceName string, tenantID
 		Where("service_name = ? AND tenant_id = ?", serviceName, tenantID).
 		First(&service).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &service, nil
 }

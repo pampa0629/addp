@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -54,7 +55,7 @@ func (r *DocumentRepository) List(tenantID int64, opts ListDocumentOptions) ([]m
 func (r *DocumentRepository) GetByID(id, tenantID int64) (*models.Document, error) {
 	var doc models.Document
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&doc).Error
-	return &doc, err
+	return &doc, commonrepo.WrapDBError(err)
 }
 
 func (r *DocumentRepository) Create(doc *models.Document) error {

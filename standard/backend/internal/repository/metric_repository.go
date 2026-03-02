@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -23,7 +24,7 @@ func (r *MetricCategoryRepository) List(tenantID int64) ([]models.MetricCategory
 func (r *MetricCategoryRepository) GetByID(id, tenantID int64) (*models.MetricCategory, error) {
 	var c models.MetricCategory
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&c).Error
-	return &c, err
+	return &c, commonrepo.WrapDBError(err)
 }
 
 func (r *MetricCategoryRepository) Create(c *models.MetricCategory) error {
@@ -93,7 +94,7 @@ func (r *MetricRepository) List(tenantID int64, opts ListMetricOptions) ([]model
 func (r *MetricRepository) GetByID(id, tenantID int64) (*models.Metric, error) {
 	var m models.Metric
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&m).Error
-	return &m, err
+	return &m, commonrepo.WrapDBError(err)
 }
 
 func (r *MetricRepository) Create(m *models.Metric) error {

@@ -2,8 +2,10 @@ package repository
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/system/internal/models"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
@@ -46,7 +48,7 @@ func (r *ModuleRegistryRepository) Register(req *models.ModuleRegistrationReques
 	var existing models.ModuleRegistry
 	err := r.db.Where("module_name = ?", req.ModuleName).First(&existing).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 创建新记录
 		return r.db.Create(&module).Error
 	} else if err != nil {
@@ -79,7 +81,7 @@ func (r *ModuleRegistryRepository) GetModule(moduleName string) (*models.ModuleR
 	var module models.ModuleRegistry
 	err := r.db.Where("module_name = ?", moduleName).First(&module).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &module, nil
 }

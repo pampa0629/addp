@@ -1,6 +1,9 @@
 package repository
 
 import (
+	"errors"
+
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/transfer/internal/models"
 	"github.com/addp/transfer/pkg/pipeline"
 	"gorm.io/gorm"
@@ -26,7 +29,7 @@ func (r *TaskRepository) GetByID(id uint) (*models.Task, error) {
 	var task models.Task
 	err := r.db.First(&task, id).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &task, nil
 }
@@ -113,7 +116,7 @@ func (r *TaskRepository) GetRunningTasks(tenantID uint) ([]models.Task, error) {
 func (r *TaskRepository) GetTaskWithLastExecution(taskID uint) (*models.Task, *models.TaskExecution, error) {
 	var task models.Task
 	if err := r.db.First(&task, taskID).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, commonrepo.WrapDBError(err)
 	}
 
 	var lastExecution models.TaskExecution
@@ -121,7 +124,7 @@ func (r *TaskRepository) GetTaskWithLastExecution(taskID uint) (*models.Task, *m
 		Order("start_time DESC").
 		First(&lastExecution).Error
 
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &task, nil, nil
 	}
 	if err != nil {
@@ -318,7 +321,7 @@ func (r *CheckpointRepository) GetLatest(taskID, executionID uint) (*pipeline.Ch
 		Order("created_at DESC").
 		First(&checkpoint).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &checkpoint, nil
 }
@@ -330,7 +333,7 @@ func (r *CheckpointRepository) GetByPartition(taskID, executionID uint, partitio
 		Order("created_at DESC").
 		First(&checkpoint).Error
 	if err != nil {
-		return nil, err
+		return nil, commonrepo.WrapDBError(err)
 	}
 	return &checkpoint, nil
 }

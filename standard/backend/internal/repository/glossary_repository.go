@@ -1,6 +1,7 @@
 package repository
 
 import (
+	commonrepo "github.com/addp/common/repository"
 	"github.com/addp/standard/internal/models"
 	"gorm.io/gorm"
 )
@@ -20,7 +21,7 @@ func (r *GlossaryRepository) Create(glossary *models.Glossary) error {
 func (r *GlossaryRepository) GetByID(id, tenantID int64) (*models.Glossary, error) {
 	var glossary models.Glossary
 	err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&glossary).Error
-	return &glossary, err
+	return &glossary, commonrepo.WrapDBError(err)
 }
 
 type ListGlossaryOptions struct {
