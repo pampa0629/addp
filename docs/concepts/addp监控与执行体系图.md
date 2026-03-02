@@ -1,0 +1,231 @@
+# ADDP 监控与执行体系图
+
+本文档展示 ADDP 平台的统一执行监控架构和跨模块任务追踪机制。
+
+---
+
+## 目录
+
+1. [监控体系概述](#监控体系概述)
+2. [统一执行监控架构](#统一执行监控架构)
+3. [任务执行状态流转](#任务执行状态流转)
+4. [跨模块监控集成](#跨模块监控集成)
+
+---
+
+## 监控体系概述
+
+ADDP 采用**统一执行监控架构**,通过 `common.task_executions` 表统一记录所有模块的任务执行,Monitor 模块提供集中监控和分析。
+
+**核心特点**:
+- **统一记录表**: `common.task_executions` 表记录所有模块任务
+- **模块标识**: 通过 `module` 字段区分不同模块的任务
+- **任务类型**: 通过 `task_type` 字段区分任务类型
+- **集中监控**: Monitor 模块统一查询、分析、可视化
+
+---
+
+## 统一执行监控架构
+
+```mermaid
+graph TB
+    subgraph "任务执行模块"
+        Meta[Meta 模块<br/>元数据扫描任务]
+        Transfer[Transfer 模块<br/>导入/导出/同步任务]
+        Orchestrator[Orchestrator 模块<br/>编排任务]
+        Develop[Develop 模块<br/>查询/工作流/Notebook任务]
+        Manager[Manager 模块<br/>MVT瓦片生成任务]
+    end
+
+    subgraph "统一记录层 (common.task_executions)"
+        TaskExec[(common.task_executions 表)]
+
+        Meta --> |写入执行记录| TaskExec
+        Transfer --> |写入执行记录| TaskExec
+        Orchestrator --> |写入执行记录| TaskExec
+        Develop --> |写入执行记录| TaskExec
+        Manager --> |写入执行记录| TaskExec
+    end
+
+    subgraph "监控层 (Monitor 模块)"
+        Monitor[Monitor 模块]
+
+        Monitor --> |查询| TaskExec
+        Monitor --> Dashboard[监控看板<br/>实时状态/统计]
+        Monitor --> Analysis[执行分析<br/>成功率/耗时分析]
+        Monitor --> Alert[告警通知<br/>失败告警]
+        Monitor --> Log[日志追踪<br/>错误日志查看]
+    end
+
+    classDef module fill:#e1f5ff,stroke:#01579b
+    classDef storage fill:#fff9c4,stroke:#f57f17
+    classDef monitor fill:#e8f5e9,stroke:#1b5e20
+
+    class Meta,Transfer,Orchestrator,Develop,Manager module
+    class TaskExec storage
+    class Monitor,Dashboard,Analysis,Alert,Log monitor
+```
+
+### task_executions 表结构
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | bigint | 执行记录 ID |
+| `tenant_id` | int | 租户 ID (租户隔离) |
+| `module` | string | 模块名称 (meta/transfer/orchestrator/develop/manager) |
+| `task_type` | string | 任务类型 (scan/import/export/sync/orchestration/query/workflow) |
+| `task_id` | string | 任务 ID (对应模块内的任务定义 ID) |
+| `status` | string | 执行状态 (pending/running/success/failed/cancelled) |
+| `started_at` | timestamp | 开始时间 |
+| `finished_at` | timestamp | 结束时间 |
+| `duration` | int | 执行时长 (秒) |
+| `result` | jsonb | 执行结果 (成功时的输出数据) |
+| `error` | jsonb | 错误信息 (失败时的错误详情) |
+| `metadata` | jsonb | 扩展元数据 (任务参数、执行上下文等) |
+
+---
+
+## 任务执行状态流转
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: 创建任务
+    pending --> running: 开始执行
+    running --> success: 执行成功
+    running --> failed: 执行失败
+    running --> cancelled: 手动取消
+
+    success --> [*]
+    failed --> pending: 重试
+    failed --> [*]
+    cancelled --> [*]
+
+    note right of pending
+        任务已创建,等待执行
+        started_at = null
+    end note
+
+    note right of running
+        任务正在执行
+        started_at = 当前时间
+        finished_at = null
+    end note
+
+    note right of success
+        任务执行成功
+        finished_at = 完成时间
+        result = 输出数据
+    end note
+
+    note right of failed
+        任务执行失败
+        finished_at = 失败时间
+        error = 错误信息
+    end note
+
+    note right of cancelled
+        任务被手动取消
+        finished_at = 取消时间
+    end note
+```
+
+### 状态说明
+
+| 状态 | 说明 | started_at | finished_at | result/error |
+|------|------|-----------|------------|-------------|
+| `pending` | 任务已创建,等待执行 | null | null | null |
+| `running` | 任务正在执行 | 开始时间 | null | null |
+| `success` | 任务执行成功 | 开始时间 | 完成时间 | result |
+| `failed` | 任务执行失败 | 开始时间 | 失败时间 | error |
+| `cancelled` | 任务被手动取消 | 开始时间(可选) | 取消时间 | null |
+
+---
+
+## 跨模块监控集成
+
+Monitor 模块统一监控所有模块的任务执行:
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant Monitor as Monitor 前端
+    participant MonitorBE as Monitor Backend
+    participant DB as PostgreSQL<br/>(common.task_executions)
+
+    User->>Monitor: 1. 访问监控看板
+    Monitor->>MonitorBE: 2. GET /api/monitor/dashboard
+    MonitorBE->>DB: 3. SELECT * FROM task_executions<br/>WHERE tenant_id = ?<br/>ORDER BY started_at DESC
+    DB-->>MonitorBE: 4. 返回执行记录列表
+    MonitorBE->>MonitorBE: 5. 按模块分组统计<br/>(成功率/失败率/平均耗时)
+    MonitorBE-->>Monitor: 6. 返回统计数据
+    Monitor-->>User: 7. 展示监控看板
+
+    User->>Monitor: 8. 点击某个失败任务
+    Monitor->>MonitorBE: 9. GET /api/monitor/executions/:id
+    MonitorBE->>DB: 10. SELECT * FROM task_executions<br/>WHERE id = ?
+    DB-->>MonitorBE: 11. 返回执行详情
+    MonitorBE-->>Monitor: 12. 返回详情 (含错误日志)
+    Monitor-->>User: 13. 展示错误详情和日志
+```
+
+### 监控功能
+
+**1. 实时监控看板**:
+- 当前运行任务数量
+- 最近 24 小时任务执行统计
+- 按模块分组的成功率/失败率
+- 按任务类型分组的平均耗时
+
+**2. 历史执行记录**:
+- 按模块、任务类型、状态筛选
+- 按时间范围筛选
+- 分页查询
+
+**3. 执行详情**:
+- 任务参数
+- 执行时长
+- 执行结果或错误信息
+- 关联日志
+
+**4. 统计分析**:
+- 成功率趋势图
+- 执行耗时分布图
+- 失败原因分析
+- 热点任务 Top 10
+
+**5. 告警通知** (可选):
+- 任务失败告警
+- 执行超时告警
+- 成功率下降告警
+
+---
+
+## 各模块任务类型
+
+| 模块 | task_type | 说明 | 示例 |
+|------|-----------|------|------|
+| **Meta** | `scan` | 元数据扫描任务 | 扫描 PostgreSQL 数据库 |
+| | `deep_scan` | 深度扫描任务 | 深度扫描并统计数据分布 |
+| **Transfer** | `import` | 数据导入任务 | 从 CSV 导入到 PostgreSQL |
+| | `export` | 数据导出任务 | 从 PostgreSQL 导出到 S3 |
+| | `sync` | 数据同步任务 | PostgreSQL → MySQL 同步 |
+| **Orchestrator** | `orchestration` | 编排任务执行 | 执行数据处理流水线 |
+| **Develop** | `query` | 查询执行任务 | SQL 查询执行 |
+| | `workflow` | 工作流执行任务 | 执行空间分析工作流 |
+| | `notebook` | Notebook 执行任务 | 执行 Jupyter Notebook |
+| **Manager** | `mvt_generation` | MVT 瓦片生成任务 | 为 PostGIS 表生成瓦片 |
+| | `preview` | 数据预览任务 | 预览 Shapefile 数据 |
+
+---
+
+## 相关文档
+
+- [返回核心概念关系图](../addp核心概念关系图.md)
+- [ADDP 任务编排体系图](addp任务编排体系图.md)
+- [Monitor 模块实施报告](../Monitor模块实施报告.md)
+
+---
+
+**文档版本**: v1.0
+**创建日期**: 2026-02-16
+**作者**: ADDP 开发团队

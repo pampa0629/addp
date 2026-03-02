@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import Layout from '../components/Layout.vue'
 import { useAuthStore } from '../store/auth'
 
 const normalizeRedirect = fullPath => {
@@ -23,62 +24,65 @@ const routes = [
   },
   {
     path: '/',
+    component: Layout,
     redirect: '/tasks',
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/tasks',
-    name: 'TaskList',
-    component: () => import('@/views/TaskList.vue'),
-    meta: { requiresAuth: true, title: '任务列表-数据传输' }
-  },
-  {
-    path: '/tasks/create',
-    name: 'TaskCreate',
-    component: () => import('@/views/TaskWizard/TaskWizard.vue'),
-    meta: { requiresAuth: true, title: '创建任务-数据传输' }
-  },
-  {
-    path: '/tasks/create-simple',
-    name: 'TaskCreateSimple',
-    component: () => import('@/views/TaskForm.vue'),
-    meta: { requiresAuth: true, title: '快速创建-数据传输' }
-  },
-  {
-    path: '/tasks/:id/edit',
-    name: 'TaskEdit',
-    component: () => import('@/views/TaskWizard/TaskWizard.vue'),
-    meta: { requiresAuth: true, title: '编辑任务-数据传输' }
-  },
-  {
-    path: '/tasks/:id/detail',
-    name: 'TaskDetail',
-    component: () => import('@/views/TaskDetail.vue'),
-    meta: { requiresAuth: true, title: '任务详情-数据传输' }
-  },
-  {
-    path: '/executions',
-    name: 'ExecutionList',
-    component: () => import('@/views/ExecutionList.vue'),
-    meta: { requiresAuth: true, title: '执行记录-数据传输' }
-  },
-  {
-    path: '/executions/:id',
-    name: 'ExecutionDetail',
-    component: () => import('@/views/ExecutionDetail.vue'),
-    meta: { requiresAuth: true, title: '执行详情-数据传输' }
-  },
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: () => import('@/views/Dashboard.vue'),
-    meta: { requiresAuth: true, title: '监控面板-数据传输' }
-  },
-  {
-    path: '/local-engines',
-    name: 'LocalEngines',
-    component: () => import('@/views/LocalEngines.vue'),
-    meta: { requiresAuth: true, title: '本地存储引擎-数据传输' }
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: 'tasks',
+        name: 'TaskList',
+        component: () => import('@/views/TaskList.vue'),
+        meta: { requiresAuth: true, title: '任务列表-数据传输' }
+      },
+      {
+        path: 'tasks/create',
+        name: 'TaskCreate',
+        component: () => import('@/views/TaskWizard/TaskWizard.vue'),
+        meta: { requiresAuth: true, title: '创建任务-数据传输' }
+      },
+      {
+        path: 'tasks/create-simple',
+        name: 'TaskCreateSimple',
+        component: () => import('@/views/TaskForm.vue'),
+        meta: { requiresAuth: true, title: '快速创建-数据传输' }
+      },
+      {
+        path: 'tasks/:id/edit',
+        name: 'TaskEdit',
+        component: () => import('@/views/TaskWizard/TaskWizard.vue'),
+        meta: { requiresAuth: true, title: '编辑任务-数据传输' }
+      },
+      {
+        path: 'tasks/:id/detail',
+        name: 'TaskDetail',
+        component: () => import('@/views/TaskDetail.vue'),
+        meta: { requiresAuth: true, title: '任务详情-数据传输' }
+      },
+      {
+        path: 'executions',
+        name: 'ExecutionList',
+        component: () => import('@/views/ExecutionList.vue'),
+        meta: { requiresAuth: true, title: '执行记录-数据传输' }
+      },
+      {
+        path: 'executions/:id',
+        name: 'ExecutionDetail',
+        component: () => import('@/views/ExecutionDetail.vue'),
+        meta: { requiresAuth: true, title: '执行详情-数据传输' }
+      },
+      {
+        path: 'dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/Dashboard.vue'),
+        meta: { requiresAuth: true, title: '监控面板-数据传输' }
+      },
+      {
+        path: 'local-engines',
+        name: 'LocalEngines',
+        component: () => import('@/views/LocalEngines.vue'),
+        meta: { requiresAuth: true, title: '本地存储引擎-数据传输' }
+      }
+    ]
   }
 ]
 
@@ -93,7 +97,7 @@ import { createAuthGuard } from '@common-ui'
 router.beforeEach(createAuthGuard(useAuthStore, {
   moduleName: 'Transfer',
   loginRouteName: 'Login',
-  normalizeRedirect  // 传入自定义规范化函数
+  normalizeRedirect
 }))
 
 const DEFAULT_TITLE = '数据传输-ADDP'

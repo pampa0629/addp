@@ -1,6 +1,6 @@
 # Manager 数据管理模块
 
-> 全域数据平台的数据源接入和文件管理服务
+> 全域数据平台的数据管理和预览服务
 
 ## 📖 文档说明
 
@@ -9,7 +9,7 @@
 
 ## 🎯 核心功能
 
-- **存储引擎管理**: 8 种引擎支持（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
+- **数据探查**: 浏览 8 种存储引擎中的数据（PostgreSQL、MySQL、Doris、ClickHouse、MongoDB、Apache Spark、MinIO、S3）
 - **数据预览**: 插件化架构，支持多种格式（CSV、JSON、Parquet、Shapefile、图片等）
 - **空间数据可视化**: MVT 矢量瓦片服务 + 三层缓存（PostgreSQL + Redis + 实时生成）
 - **数据检索**: 基于 Meilisearch + 向量数据库的混合检索（全文检索 + 语义检索）
@@ -53,11 +53,11 @@ CSV、JSON、Parquet、Excel、Shapefile、GeoJSON、图片、PDF、文本
 ## 📡 主要 API 端点
 
 ```
-数据预览:   GET  /api/v1/preview
-MVT 瓦片:   GET  /api/v1/mvt/{z}/{x}/{y}
-存储引擎:   GET/POST/PUT/DELETE /api/v1/engines
-元数据查询: GET  /api/v1/metadata/nodes
-数据检索:   GET  /api/v1/search
+数据预览:     GET  /api/v1/preview
+MVT 瓦片:     GET  /api/v1/mvt/{z}/{x}/{y}
+引擎数据访问: GET  /api/v1/engines（只读，引擎管理在 System 模块）
+元数据查询:   GET  /api/v1/metadata/nodes
+数据检索:     GET  /api/v1/search
 ```
 
 完整 API 文档和请求示例请查看 [CLAUDE.md#API端点](./CLAUDE.md)

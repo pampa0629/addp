@@ -1,6 +1,4 @@
-// 从 common-frontend 导入统一的格式化工具
-export { formatBytes, formatDate, safeStringify } from '@addp/common-frontend/basic'
-import { describeCron } from '@addp/common-frontend/basic'
+import { describeCron } from '@common-ui'
 
 // Transfer 模块特定的格式化函数
 export const formatDuration = (ms) => {

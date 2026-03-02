@@ -776,8 +776,10 @@ func (s *QuickViewService) GenerateMixed(
 		GenerationSec:    result.GenerationSec,
 	}
 
-	if err := s.putMetadata(ctx, cfg.Fingerprint, metadata); err != nil {
-		logger.L().Warn("Failed to save metadata to MinIO", "error", err)
+	if err := s.putMetadata(ctx, cfg.TenantID, cfg.Fingerprint, metadata); err != nil {
+		logger.L().Warn("Failed to save metadata to MinIO",
+			"tenant_id", cfg.TenantID,
+			"error", err)
 	}
 
 	// 更新进度：生成完成
@@ -915,8 +917,9 @@ func (s *QuickViewService) processTile(
 	default:
 	}
 
-	// 1. 检查瓦片是否已存在于 MinIO
-	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", cfg.Fingerprint, coord.Z, coord.X, coord.Y)
+	// 1. 检查瓦片是否已存在于 MinIO（租户隔离）
+	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
+		cfg.TenantID, cfg.Fingerprint, coord.Z, coord.X, coord.Y)
 	_, err := s.minioClient.StatObject(ctx, s.bucket, objectPath, minio.StatObjectOptions{})
 	if err == nil {
 		// 瓦片已存在，跳过生成（用 -1 标记）
@@ -970,8 +973,8 @@ func (s *QuickViewService) processTile(
 		}
 	}
 
-	// 5. 存储到 MinIO
-	err = s.putTile(ctx, cfg.Fingerprint, coord.Z, coord.X, coord.Y, gzData)
+	// 5. 存储到 MinIO（租户隔离）
+	err = s.putTile(ctx, cfg.TenantID, cfg.Fingerprint, coord.Z, coord.X, coord.Y, gzData)
 	if err != nil {
 		return &tileResult{
 			coord: coord,
@@ -987,19 +990,22 @@ func (s *QuickViewService) processTile(
 	}
 }
 
-// putTile 存储瓦片到 MinIO
+// putTile 存储瓦片到 MinIO（租户隔离）
 func (s *QuickViewService) putTile(
 	ctx context.Context,
+	tenantID uint,
 	fingerprint string,
 	z, x, y int,
 	data []byte,
 ) error {
-	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
+		tenantID, fingerprint, z, x, y)
 
 	_, err := s.minioClient.PutObject(ctx, s.bucket, objectPath, bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{
 			ContentType: "application/octet-stream",
 			UserMetadata: map[string]string{
+				"tenant_id":  fmt.Sprintf("%d", tenantID),
 				"z":          fmt.Sprintf("%d", z),
 				"x":          fmt.Sprintf("%d", x),
 				"y":          fmt.Sprintf("%d", y),
@@ -1015,13 +1021,14 @@ func (s *QuickViewService) putTile(
 	return nil
 }
 
-// putMetadata 保存元数据到 MinIO
+// putMetadata 保存元数据到 MinIO（租户隔离）
 func (s *QuickViewService) putMetadata(
 	ctx context.Context,
+	tenantID uint,
 	fingerprint string,
 	metadata *QuickViewMetadata,
 ) error {
-	objectPath := fmt.Sprintf("mvt-tiles/%s/metadata.json", fingerprint)
+	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/metadata.json", tenantID, fingerprint)
 
 	data, err := json.Marshal(metadata)
 	if err != nil {
@@ -1032,6 +1039,9 @@ func (s *QuickViewService) putMetadata(
 		bytes.NewReader(data), int64(len(data)),
 		minio.PutObjectOptions{
 			ContentType: "application/json",
+			UserMetadata: map[string]string{
+				"tenant_id": fmt.Sprintf("%d", tenantID),
+			},
 		})
 
 	if err != nil {
@@ -1041,13 +1051,15 @@ func (s *QuickViewService) putMetadata(
 	return nil
 }
 
-// GetTile 从 MinIO 获取瓦片
+// GetTile 从 MinIO 获取瓦片（租户隔离）
 func (s *QuickViewService) GetTile(
 	ctx context.Context,
+	tenantID uint,
 	fingerprint string,
 	z, x, y int,
 ) ([]byte, error) {
-	objectPath := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	objectPath := fmt.Sprintf("tenant_%d/mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz",
+		tenantID, fingerprint, z, x, y)
 
 	obj, err := s.minioClient.GetObject(ctx, s.bucket, objectPath, minio.GetObjectOptions{})
 	if err != nil {
@@ -1063,12 +1075,12 @@ func (s *QuickViewService) GetTile(
 	return data, nil
 }
 
-// DeleteTiles 删除指定 fingerprint 的所有瓦片和元数据
-func (s *QuickViewService) DeleteTiles(ctx context.Context, fingerprint string) error {
-	// 删除瓦片目录：mvt-tiles/{fingerprint}/tiles/
-	// 删除元数据文件：mvt-tiles/{fingerprint}/metadata.json
+// DeleteTiles 删除指定 fingerprint 的所有瓦片和元数据（租户隔离）
+func (s *QuickViewService) DeleteTiles(ctx context.Context, tenantID uint, fingerprint string) error {
+	// 删除瓦片目录：tenant_{tenant_id}/mvt-tiles/{fingerprint}/tiles/
+	// 删除元数据文件：tenant_{tenant_id}/mvt-tiles/{fingerprint}/metadata.json
 
-	prefix := fmt.Sprintf("mvt-tiles/%s/", fingerprint)
+	prefix := fmt.Sprintf("tenant_%d/mvt-tiles/%s/", tenantID, fingerprint)
 
 	// 列出所有对象
 	objectsCh := s.minioClient.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
@@ -1080,12 +1092,16 @@ func (s *QuickViewService) DeleteTiles(ctx context.Context, fingerprint string) 
 	deletedCount := 0
 	for object := range objectsCh {
 		if object.Err != nil {
-			logger.L().Error("Error listing object for deletion", "error", object.Err, "prefix", prefix)
+			logger.L().Error("Error listing object for deletion",
+				"tenant_id", tenantID,
+				"error", object.Err, "prefix", prefix)
 			continue
 		}
 
 		if err := s.minioClient.RemoveObject(ctx, s.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			logger.L().Error("Failed to delete object", "error", err, "key", object.Key)
+			logger.L().Error("Failed to delete object",
+				"tenant_id", tenantID,
+				"error", err, "key", object.Key)
 			continue
 		}
 
@@ -1093,6 +1109,7 @@ func (s *QuickViewService) DeleteTiles(ctx context.Context, fingerprint string) 
 	}
 
 	logger.L().Info("Deleted tiles from MinIO",
+		"tenant_id", tenantID,
 		"fingerprint", fingerprint,
 		"deleted_count", deletedCount)
 

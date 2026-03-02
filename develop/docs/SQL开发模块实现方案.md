@@ -585,7 +585,7 @@ POST /api/develop/scripts/batch-execute
 3. **集成**:
    - [ ] 添加到 docker-compose.yml(端口 8084)
    - [ ] Gateway 配置路由规则(/api/develop/*)
-   - [ ] Portal 添加数据开发入口
+   - [ ] Console 添加数据开发入口
 
 **关键文件**:
 - `develop/frontend/src/views/SQLEditor.vue`

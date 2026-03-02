@@ -250,7 +250,7 @@ watch(
 
 .current-prefix {
   font-size: 13px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .directory-cell {
@@ -260,7 +260,7 @@ watch(
 }
 
 .directory-icon {
-  color: #e6a23c;
+  color: var(--el-color-warning);
 }
 
 .directory-name {

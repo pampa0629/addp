@@ -127,7 +127,7 @@
           <el-button @click="copyEndpoint(service.endpoints.rest_api)">复制</el-button>
           <el-button @click="testEndpoint(service.endpoints.rest_api)">测试</el-button>
         </div>
-        <div style="margin-top: 12px; font-size: 13px; color: #606266">
+        <div style="margin-top: 12px; font-size: 13px; color: var(--addp-text-secondary)">
           <strong>支持的查询参数：</strong>
           <ul style="margin: 8px 0; padding-left: 20px">
             <li><code>page</code> 和 <code>page_size</code>：分页参数</li>
@@ -149,7 +149,7 @@
           <el-button @click="copyEndpoint(service.endpoints.ogc_features)">复制</el-button>
           <el-button @click="testEndpoint(service.endpoints.ogc_features)">测试</el-button>
         </div>
-        <div style="margin-top: 8px; font-size: 13px; color: #909399">
+        <div style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
           Collections: <code>{{ service.endpoints.ogc_features_collections }}</code>
         </div>
       </div>
@@ -170,7 +170,7 @@
           >
             {{ isProtocolEnabled('rest_api') ? '已启用' : '未启用' }}
           </el-tag>
-          <span v-if="isProtocolEnabled('rest_api')" style="margin-left: 12px; color: #606266">
+          <span v-if="isProtocolEnabled('rest_api')" style="margin-left: 12px; color: var(--addp-text-secondary)">
             支持格式: {{ getProtocolFormats('rest_api').join(', ') }}
           </span>
         </el-descriptions-item>
@@ -181,7 +181,7 @@
           >
             {{ isProtocolEnabled('ogc_features') ? '已启用' : '未启用' }}
           </el-tag>
-          <span v-if="isProtocolEnabled('ogc_features')" style="margin-left: 12px; color: #606266">
+          <span v-if="isProtocolEnabled('ogc_features')" style="margin-left: 12px; color: var(--addp-text-secondary)">
             版本: {{ getProtocolVersion('ogc_features') }}
           </span>
         </el-descriptions-item>

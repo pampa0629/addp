@@ -16,12 +16,17 @@ show_usage() {
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -monitor      只启动 Monitor 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
+  echo "  -standard     只启动 Standard 模块 (依赖: System)"
+  echo "  -model        只启动 Model 模块 (依赖: System + Standard)"
+  echo "  -quality      只启动 Quality 模块 (依赖: System + Standard)
+  -asset        只启动 Asset 模块 (依赖: System)
+  -portal       只启动 Portal 模块 (依赖: System + Asset)"
   echo "  -python-workflow    只启动 Python Workflow Engine"
   echo "  -math-workflow      只启动 Math Workflow Engine"
   echo "  -spark-workflow 只启动 Spark 工作流引擎"
   echo "  -jupyter      只启动 Jupyter Engine"
   echo "  -gateway      启动 Gateway (依赖: 所有后端模块)"
-  echo "  -portal       启动 Portal (依赖: 所有模块)"
+  echo "  -console      启动 Console (依赖: 所有模块)"
   echo ""
   echo "说明:"
   echo "  - 指定模块时,会自动启动其依赖的模块"
@@ -131,7 +136,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-portal)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -163,8 +168,18 @@ START_SERVICE_FRONTEND=false
 START_MONITOR_BACKEND=false
 START_MONITOR_FRONTEND=false
 START_COPILOT_BACKEND=false
+START_STANDARD_BACKEND=false
+START_STANDARD_FRONTEND=false
+START_MODEL_BACKEND=false
+START_MODEL_FRONTEND=false
+START_QUALITY_BACKEND=false
+START_QUALITY_FRONTEND=false
+START_ASSET_BACKEND=false
+START_ASSET_FRONTEND=false
+START_PORTAL_BACKEND=false
+START_PORTAL_FRONTEND=false
 START_GATEWAY=false
-START_PORTAL=false
+START_CONSOLE=false
 START_PYTHON_WORKFLOW=false
 START_MATH_WORKFLOW=false
 START_SPARK_WORKFLOW=false
@@ -193,8 +208,18 @@ if [ "$START_ALL" = true ]; then
   START_MONITOR_BACKEND=true
   START_MONITOR_FRONTEND=true
   START_COPILOT_BACKEND=true
+  START_STANDARD_BACKEND=true
+  START_STANDARD_FRONTEND=true
+  START_MODEL_BACKEND=true
+  START_MODEL_FRONTEND=true
+  START_QUALITY_BACKEND=true
+  START_QUALITY_FRONTEND=true
+  START_ASSET_BACKEND=true
+  START_ASSET_FRONTEND=true
+  START_PORTAL_BACKEND=true
+  START_PORTAL_FRONTEND=true
   START_GATEWAY=true
-  START_PORTAL=true
+  START_CONSOLE=true
   START_PYTHON_WORKFLOW=true
   START_MATH_WORKFLOW=true
   START_SPARK_WORKFLOW=true
@@ -264,6 +289,37 @@ else
       START_JUPYTER=true
       START_COPILOT_BACKEND=true
       ;;
+    standard)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      ;;
+    model)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      START_MODEL_BACKEND=true
+      START_MODEL_FRONTEND=true
+      ;;
+    quality)
+      START_SYSTEM_BACKEND=true
+      START_STANDARD_BACKEND=true
+      START_QUALITY_BACKEND=true
+      START_QUALITY_FRONTEND=true
+      ;;
+    asset)
+      START_SYSTEM_BACKEND=true
+      START_ASSET_BACKEND=true
+      START_ASSET_FRONTEND=true
+      ;;
+    portal)
+      START_SYSTEM_BACKEND=true
+      START_ASSET_BACKEND=true
+      START_PORTAL_BACKEND=true
+      START_PORTAL_FRONTEND=true
+      ;;
     python-workflow)
       START_PYTHON_WORKFLOW=true
       ;;
@@ -289,12 +345,14 @@ else
       START_SERVICE_BACKEND=true
       START_MONITOR_BACKEND=true
       START_COPILOT_BACKEND=true
+      START_STANDARD_BACKEND=true
+      START_MODEL_BACKEND=true
       START_PYTHON_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
       START_GATEWAY=true
       ;;
-    portal)
+    console)
       START_SYSTEM_BACKEND=true
       START_SYSTEM_FRONTEND=true
       START_MANAGER_BACKEND=true
@@ -315,8 +373,14 @@ else
       START_MONITOR_BACKEND=true
       START_MONITOR_FRONTEND=true
       START_COPILOT_BACKEND=true
+      START_STANDARD_BACKEND=true
+      START_STANDARD_FRONTEND=true
+      START_MODEL_BACKEND=true
+      START_MODEL_FRONTEND=true
+      START_QUALITY_BACKEND=true
+      START_QUALITY_FRONTEND=true
       START_GATEWAY=true
-      START_PORTAL=true
+      START_CONSOLE=true
       START_PYTHON_WORKFLOW=true
       START_SPARK_WORKFLOW=true
       START_JUPYTER=true
@@ -529,7 +593,7 @@ echo "🚀 启动 ADDP 开发环境"
 echo ""
 
 # 端口配置
-PORTAL_FE_PORT=${PORTAL_FE_PORT:-5170}
+CONSOLE_FE_PORT=${CONSOLE_FE_PORT:-5170}
 SYSTEM_FE_PORT=${SYSTEM_FE_PORT:-5173}
 MANAGER_FE_PORT=${MANAGER_FE_PORT:-5174}
 META_FE_PORT=${META_FE_PORT:-5175}
@@ -538,6 +602,11 @@ ORCHESTRATOR_FE_PORT=${ORCHESTRATOR_FE_PORT:-5177}
 DEVELOP_FE_PORT=${DEVELOP_FE_PORT:-5178}
 SERVICE_FE_PORT=${SERVICE_FE_PORT:-5180}
 MONITOR_FE_PORT=${MONITOR_FE_PORT:-5179}
+STANDARD_FE_PORT=${STANDARD_FE_PORT:-5181}
+MODEL_FE_PORT=${MODEL_FE_PORT:-5182}
+QUALITY_FE_PORT=${QUALITY_FE_PORT:-5183}
+ASSET_FE_PORT=${ASSET_FE_PORT:-5184}
+PORTAL_FE_PORT=${PORTAL_FE_PORT:-5185}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -626,7 +695,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
 
   # ============================================================
@@ -672,6 +741,31 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_STANDARD_BACKEND" = true ]; then
+    build_service "standard" "standard/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_MODEL_BACKEND" = true ]; then
+    build_service "model" "model/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_QUALITY_BACKEND" = true ]; then
+    build_service "quality" "quality/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_ASSET_BACKEND" = true ]; then
+    build_service "asset" "asset/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
+  if [ "$START_PORTAL_BACKEND" = true ]; then
+    build_service "portal" "portal/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_MANAGER_WORKER" = true ]; then
     build_worker "manager" "manager/backend" &
@@ -701,7 +795,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -778,6 +872,61 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
       echo $MONITOR_PID > .dev-pids/monitor.pid
     else
       MONITOR_PID=$(cat .dev-pids/monitor.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Standard Backend（带检查）
+  if [ "$START_STANDARD_BACKEND" = true ]; then
+    if check_service_running "standard" "8110"; then
+      .dev-bins/addp-standard > logs/standard-backend.log 2> logs/standard-backend-stderr.log &
+      STANDARD_PID=$!
+      echo $STANDARD_PID > .dev-pids/standard.pid
+    else
+      STANDARD_PID=$(cat .dev-pids/standard.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Model Backend（带检查）
+  if [ "$START_MODEL_BACKEND" = true ]; then
+    if check_service_running "model" "8181"; then
+      .dev-bins/addp-model > logs/model-backend.log 2> logs/model-backend-stderr.log &
+      MODEL_PID=$!
+      echo $MODEL_PID > .dev-pids/model.pid
+    else
+      MODEL_PID=$(cat .dev-pids/model.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Quality Backend（带检查）
+  if [ "$START_QUALITY_BACKEND" = true ]; then
+    if check_service_running "quality" "8182"; then
+      .dev-bins/addp-quality > logs/quality-backend.log 2> logs/quality-backend-stderr.log &
+      QUALITY_PID=$!
+      echo $QUALITY_PID > .dev-pids/quality.pid
+    else
+      QUALITY_PID=$(cat .dev-pids/quality.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Asset Backend（带检查）
+  if [ "$START_ASSET_BACKEND" = true ]; then
+    if check_service_running "asset" "8183"; then
+      .dev-bins/addp-asset > logs/asset-backend.log 2> logs/asset-backend-stderr.log &
+      ASSET_PID=$!
+      echo $ASSET_PID > .dev-pids/asset.pid
+    else
+      ASSET_PID=$(cat .dev-pids/asset.pid 2>/dev/null)
+    fi
+  fi
+
+  # 启动 Portal Backend（带检查）
+  if [ "$START_PORTAL_BACKEND" = true ]; then
+    if check_service_running "portal" "8184"; then
+      .dev-bins/addp-portal > logs/portal-backend.log 2> logs/portal-backend-stderr.log &
+      PORTAL_PID=$!
+      echo $PORTAL_PID > .dev-pids/portal.pid
+    else
+      PORTAL_PID=$(cat .dev-pids/portal.pid 2>/dev/null)
     fi
   fi
 
@@ -1687,15 +1836,15 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ]; then
+if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
   # 使用普通数组而非关联数组（兼容 Bash 3.2）
   FRONTEND_CONFIGS=()
 
-  if [ "$START_PORTAL" = true ]; then
-    FRONTEND_CONFIGS+=("portal:${PORTAL_FE_PORT}:portal/frontend")
+  if [ "$START_CONSOLE" = true ]; then
+    FRONTEND_CONFIGS+=("console:${CONSOLE_FE_PORT}:console/frontend")
   fi
 
   if [ "$START_SYSTEM_FRONTEND" = true ]; then
@@ -1728,6 +1877,26 @@ if [ "$START_PORTAL" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STAR
 
   if [ "$START_MONITOR_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("monitor:${MONITOR_FE_PORT}:monitor/frontend")
+  fi
+
+  if [ "$START_STANDARD_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("standard:${STANDARD_FE_PORT}:standard/frontend")
+  fi
+
+  if [ "$START_MODEL_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("model:${MODEL_FE_PORT}:model/frontend")
+  fi
+
+  if [ "$START_QUALITY_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("quality:${QUALITY_FE_PORT}:quality/frontend")
+  fi
+
+  if [ "$START_ASSET_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("asset:${ASSET_FE_PORT}:asset/frontend")
+  fi
+
+  if [ "$START_PORTAL_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("portal:${PORTAL_FE_PORT}:portal/frontend")
   fi
 
   echo "并发启动所有前端..."
@@ -1801,7 +1970,7 @@ while IFS=: read -r name pid; do
 done < "$FRONTEND_PID_FILE"
 
 # 为了兼容性，设置这些变量（从临时文件读取）
-PORTAL_PID=$(grep "^portal:" "$FRONTEND_PID_FILE" | cut -d: -f2)
+CONSOLE_PID=$(grep "^console:" "$FRONTEND_PID_FILE" | cut -d: -f2)
 SYSTEM_FE_PID=$(grep "^system:" "$FRONTEND_PID_FILE" | cut -d: -f2)
 MANAGER_FE_PID=$(grep "^manager:" "$FRONTEND_PID_FILE" | cut -d: -f2)
 META_FE_PID=$(grep "^meta:" "$FRONTEND_PID_FILE" | cut -d: -f2)
@@ -1818,7 +1987,7 @@ echo -e "${GREEN}✓ ADDP 开发环境启动完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "服务地址:"
-echo "  Portal FE:    http://localhost:${PORTAL_FE_PORT}"
+echo "  Console FE:    http://localhost:${CONSOLE_FE_PORT}"
 echo "  Gateway:  http://localhost:8000"
 echo "  System:   http://localhost:${SYSTEM_BACKEND_PORT:-8180}"
 echo "  Manager:  http://localhost:8081"
@@ -1828,6 +1997,12 @@ echo "  Orchestrator: http://localhost:8084"
 echo "  Develop:  http://localhost:8085"
 echo "  Service:  http://localhost:8086"
 echo "  Copilot:  http://localhost:8087"
+echo "  Monitor:  http://localhost:8100"
+echo "  Standard: http://localhost:8110"
+echo "  Model:    http://localhost:8181"
+echo "  Quality:  http://localhost:8182"
+  echo "  Asset:    http://localhost:8183"
+  echo "  Portal:   http://localhost:8184"
 echo "  Jupyter Engine:      http://localhost:8097 (API) / http://localhost:8088 (Lab UI)"
 echo "  Spark 工作流引擎: http://localhost:8098"
 echo "  Python Workflow Engine:    http://localhost:8099"
@@ -1838,6 +2013,12 @@ echo "  Transfer FE:  http://localhost:${TRANSFER_FE_PORT}"
 echo "  Orchestrator FE: http://localhost:${ORCHESTRATOR_FE_PORT}"
 echo "  Develop FE:   http://localhost:${DEVELOP_FE_PORT}"
 echo "  Service FE:   http://localhost:${SERVICE_FE_PORT}"
+echo "  Monitor FE:   http://localhost:${MONITOR_FE_PORT}"
+echo "  Standard FE:  http://localhost:${STANDARD_FE_PORT}"
+echo "  Model FE:     http://localhost:${MODEL_FE_PORT}"
+echo "  Quality FE:   http://localhost:${QUALITY_FE_PORT}"
+  echo "  Asset FE:     http://localhost:${ASSET_FE_PORT}"
+  echo "  Portal FE:    http://localhost:${PORTAL_FE_PORT}"
 echo ""
 echo "后端服务 PID:"
 echo "  System Backend:       $SYSTEM_PID"
@@ -1851,6 +2032,10 @@ echo "  Python Workflow Engine:     $PYTHON_WORKFLOW_PID"
 echo "  Spark 工作流引擎:  $SPARK_WORKFLOW_PID"
 echo "  Jupyter Engine:       $JUPYTER_PID"
 echo "  Copilot Backend:      $COPILOT_PID"
+echo "  Monitor Backend:      $MONITOR_PID"
+echo "  Standard Backend:     $STANDARD_PID"
+echo "  Model Backend:        $MODEL_PID"
+echo "  Quality Backend:      $QUALITY_PID"
 echo "  Gateway:              $GATEWAY_PID"
 echo ""
 echo "Workers PID:"
@@ -1867,6 +2052,10 @@ echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
+echo "  Monitor:  logs/monitor-backend.log"
+echo "  Standard: logs/standard-backend.log"
+echo "  Model:    logs/model-backend.log"
+echo "  Quality:  logs/quality-backend.log"
 echo "  Python Workflow Engine: logs/python-workflow-engine.log"
 echo "  Math Workflow Engine: logs/math-workflow-engine.log"
 echo "  Spark 工作流引擎: logs/spark-workflow-engine.log"

@@ -37,7 +37,7 @@ func NewJupyterVenvService(cfg *config.Config) (*JupyterVenvService, error) {
 		projectRoot = filepath.Join(cwd, "../..")
 	}
 
-	tenantsDataPath := filepath.Join(projectRoot, "data/jupyter/tenants")
+	tenantsDataPath := filepath.Join(projectRoot, "engines/jupyter/tenants")
 	initScriptPath := filepath.Join(projectRoot, "engines/jupyter/init_tenant_venv.sh")
 
 	// Jupyter Server URL (开发环境固定为 localhost:8088)

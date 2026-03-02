@@ -53,7 +53,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../store/auth'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -117,7 +117,7 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--addp-primary-gradient);
 }
 
 .login-card {

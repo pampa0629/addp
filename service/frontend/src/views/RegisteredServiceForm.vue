@@ -377,7 +377,7 @@ export default {
 
 .page-header h2 {
   margin: 0;
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .btn-back {
@@ -397,7 +397,7 @@ export default {
 .loading {
   text-align: center;
   padding: 40px;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 
 .form-container {

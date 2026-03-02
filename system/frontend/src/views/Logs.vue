@@ -479,24 +479,24 @@ onMounted(() => {
 }
 
 .error-box {
-  color: #f56c6c;
+  color: var(--el-color-danger);
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
   background: var(--addp-bg-secondary) !important;
   padding: 10px;
   border-radius: 4px;
-  border: 1px solid #f56c6c;
+  border: 1px solid var(--el-color-danger);
 }
 
 /* ✅ 慢请求高亮样式 */
 .slow {
-  color: #F56C6C;
+  color: var(--el-color-danger);
   font-weight: bold;
 }
 
 .warning {
-  color: #E6A23C;
+  color: var(--el-color-warning);
   font-weight: 600;
 }
 </style>

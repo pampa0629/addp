@@ -308,7 +308,7 @@ registration_data = {
 ### 在 Develop 模块中使用
 
 1. **启动引擎**（自动注册）
-2. **登录 ADDP Portal**: http://localhost:5170
+2. **登录 ADDP Console**: http://localhost:5170
 3. **进入 Develop 模块** → GIS 工作流编辑器
 4. **查看算子面板**，应该能看到：
    - 数学运算分类：add、subtract、multiply、divide

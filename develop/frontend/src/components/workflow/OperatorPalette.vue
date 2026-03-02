@@ -301,7 +301,7 @@ onMounted(() => {
 
 .operator-item:hover {
   background: var(--addp-bg-secondary);
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   transform: translateX(4px);
 }
 
@@ -329,7 +329,7 @@ onMounted(() => {
 }
 
 .info-icon:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .operator-description {
@@ -376,7 +376,7 @@ onMounted(() => {
 }
 
 .operator-help .params-section strong {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 /* 自定义滚动条 */
@@ -395,6 +395,6 @@ onMounted(() => {
 }
 
 .operator-categories::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+  background: var(--addp-text-tertiary);
 }
 </style>

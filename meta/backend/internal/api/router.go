@@ -11,9 +11,10 @@ import (
 	"github.com/addp/meta/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
-func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
+func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
@@ -26,6 +27,7 @@ func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanS
 
 	// 创建Handler
 	handler := NewHandler(engineService, scanService, taskService)
+	assetDiscHandler := newAssetDiscoverableHandler(db)
 
 	// 健康检查
 	router.GET("/health", func(c *gin.Context) {
@@ -47,6 +49,9 @@ func SetupRouter(cfg *config.Config, engineService *service.EngineService, scanS
 	}
 	api.Use(auth.TenantIsolationMiddleware()) // 租户隔离
 	{
+		// 资产发现接口（供 Asset 模块调用）
+		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
 		// 资源相关
 		api.GET("/engines", handler.GetEngines)
 

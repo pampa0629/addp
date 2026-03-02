@@ -101,7 +101,7 @@
               <el-tag :type="preprocessStatusTag(row.preprocess_status)" size="small">
                 {{ formatPreprocessStatus(row.preprocess_status) }}
               </el-tag>
-              <div style="margin-top: 4px; color: #909399">
+              <div style="margin-top: 4px; color: var(--addp-text-tertiary)">
                 {{ row.preprocess_success_count }}/{{ row.preprocess_task_count }} 成功
               </div>
             </div>

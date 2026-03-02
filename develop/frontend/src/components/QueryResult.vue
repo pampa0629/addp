@@ -164,7 +164,7 @@ const exportCSV = () => {
   gap: 16px;
   padding: 12px 16px;
   background: var(--addp-bg-secondary);
-  border-bottom: 1px solid #dcdfe6;
+  border-bottom: 1px solid var(--addp-border-color);
 }
 
 .info-item {
@@ -183,12 +183,12 @@ const exportCSV = () => {
 }
 
 .number-value {
-  color: #409eff;
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 
 .boolean-value {
-  color: #67c23a;
+  color: var(--el-color-success);
   font-weight: 500;
 }
 

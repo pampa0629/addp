@@ -36,7 +36,7 @@
         </el-descriptions-item>
         <el-descriptions-item v-if="service.endpoints?.proxy" label="代理端点" :span="2">
           <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="flex: 1; color: #409EFF; font-weight: 500;">{{ service.endpoints.proxy }}</span>
+            <span style="flex: 1; color: var(--el-color-primary); font-weight: 500;">{{ service.endpoints.proxy }}</span>
             <el-button type="primary" size="small" @click="handleCopyURL(service.endpoints.proxy)">
               复制
             </el-button>

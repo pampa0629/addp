@@ -494,7 +494,7 @@ docker restart addp-infra-jupyter-engine
 
 # 2. 检查 System 模块的 engines 表
 psql -h localhost -p 15432 -U postgres -d addp -c \
-  "SELECT id, name, engine_type, is_builtin FROM system.engines WHERE unique_identifier='api.jupyter';"
+  "SELECT id, name, engine_type, is_builtin FROM system.engines WHERE unique_identifier='jupyter';"
 
 # 预期：返回 1 条记录
 ```

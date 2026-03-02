@@ -7,6 +7,20 @@ import (
 	"strings"
 )
 
+// GenerateAssetFingerprint 生成资产的唯一指纹，用于去重和快速识别
+//
+// 输入: tenantID + sourceModule + sourceReference
+// 公式: SHA256(fmt.Sprintf("%d:%s:%s", tenantID, sourceModule, sourceReference))
+//
+// 示例:
+//   fingerprint := GenerateAssetFingerprint(42, "meta", "1:public.buildings")
+//   fingerprint := GenerateAssetFingerprint(42, "service", "123")
+func GenerateAssetFingerprint(tenantID int64, sourceModule, sourceReference string) string {
+	data := fmt.Sprintf("%d:%s:%s", tenantID, sourceModule, sourceReference)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
+}
+
 // GenerateItemFingerprint 生成meta_item的唯一指纹
 //
 // 这是ADDP平台唯一的指纹计算函数，所有存储类型统一使用此函数。

@@ -120,7 +120,7 @@ spark.default.parallelism=8 # 并行度
 
 ### 3.1 通过 System 前端注册
 
-1. 登录 ADDP Portal → System 模块 → 资源管理
+1. 登录 ADDP Console → System 模块 → 资源管理
 2. 点击"新建资源"
 3. 填写信息：
    - **资源名称**（英文标识）: `spark_default`
@@ -176,7 +176,7 @@ curl -X POST http://localhost:8180/api/engines \
 
 ### 4.1 访问 Develop 模块
 
-1. 登录 ADDP Portal → Develop 模块
+1. 登录 ADDP Console → Develop 模块
 2. 进入"SQL 工作台"页面
 3. 在数据源下拉框中选择 `Apache Spark 分析引擎`
 

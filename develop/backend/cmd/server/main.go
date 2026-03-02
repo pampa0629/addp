@@ -135,7 +135,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devItemService, systemClient)
+	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devItemService, systemClient)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 模块注册（注册到 System service_registry）==========

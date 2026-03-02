@@ -787,7 +787,7 @@ bash scripts/dev/restart.sh -meta
 # 2. 查看启动日志（确认编译成功）
 tail -f logs/meta-backend.log
 
-# 3. 测试 API（使用 Portal 登录获取 token）
+# 3. 测试 API（使用 Console 登录获取 token）
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8082/api/v1/metadata/nodes?engine_id=1
 ```

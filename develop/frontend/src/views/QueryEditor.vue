@@ -407,6 +407,6 @@ onMounted(async () => {
 }
 
 .divider:hover {
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 </style>

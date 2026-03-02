@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Layout from '../views/Layout.vue'
+import Layout from '../components/Layout.vue'
 import Login from '../views/Login.vue'
-import { useAuthStore } from '../stores/auth'
+import { useAuthStore } from '../store/auth'
 
 const routes = [
   {
@@ -68,7 +68,7 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：支持两种运行模式（Portal 嵌入 + 独立访问）
+// 路由守卫：支持两种运行模式（Console 嵌入 + 独立访问）
 import { createAuthGuard } from '@common-ui'
 
 // 路径规范化函数：处理 /develop/ 前缀

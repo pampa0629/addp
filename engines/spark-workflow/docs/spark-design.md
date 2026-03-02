@@ -344,7 +344,7 @@ ST_GeomFromGeoJSON(json) -- 从 GeoJSON 创建
 
 ### Phase 2: 在 ADDP System 中注册（0.5 天）
 
-1. **登录 ADDP Portal**
+1. **登录 ADDP Console**
    - 访问 System 模块 → 资源管理
 
 2. **创建新引擎**

@@ -67,7 +67,7 @@
     <div class="stats-cards">
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-icon" style="background: #409eff;">
+          <div class="stat-icon" style="background: var(--el-color-primary);">
             <el-icon :size="24"><DataLine /></el-icon>
           </div>
           <div class="stat-info">
@@ -78,7 +78,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-icon" style="background: #67c23a;">
+          <div class="stat-icon" style="background: var(--el-color-success);">
             <el-icon :size="24"><SuccessFilled /></el-icon>
           </div>
           <div class="stat-info">
@@ -89,7 +89,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-icon" style="background: #e6a23c;">
+          <div class="stat-icon" style="background: var(--el-color-warning);">
             <el-icon :size="24"><Timer /></el-icon>
           </div>
           <div class="stat-info">
@@ -100,7 +100,7 @@
       </el-card>
       <el-card class="stat-card">
         <div class="stat-content">
-          <div class="stat-icon" style="background: #f56c6c;">
+          <div class="stat-icon" style="background: var(--el-color-danger);">
             <el-icon :size="24"><Loading /></el-icon>
           </div>
           <div class="stat-info">

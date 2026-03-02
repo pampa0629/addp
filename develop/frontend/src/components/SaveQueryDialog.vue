@@ -69,7 +69,7 @@
           controls-position="right"
           style="width: 200px"
         />
-        <span style="margin-left: 10px; color: #909399">秒</span>
+        <span style="margin-left: 10px; color: var(--addp-text-tertiary)">秒</span>
       </el-form-item>
 
       <el-divider content-position="left">调度设置</el-divider>

@@ -1,15 +1,20 @@
 package api
 
 import (
+	"strconv"
+
 	commonClient "github.com/addp/common/client"
+	commonAuth "github.com/addp/common/middleware/auth"
 	"github.com/addp/common/middleware/audit"
 	authMiddleware "github.com/addp/common/middleware/auth"
 	"github.com/addp/service/internal/config"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func SetupRouter(
 	cfg *config.Config,
+	db *gorm.DB,
 	dataServiceHandler *DataServiceHandler,
 	queryServiceHandler *QueryServiceHandler,
 	ogcFeaturesHandler *OGCFeaturesHandler,
@@ -20,6 +25,7 @@ func SetupRouter(
 	ogcTilesHandler *OGCTilesHandler,
 	engineHandler *EngineHandler,
 	dataSourceHandler *DataSourceHandler,
+	serviceEndpointHandler *ServiceEndpointHandler,
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
@@ -61,13 +67,43 @@ func SetupRouter(
 
 	// API 路由组（需要认证）
 	api := router.Group("/api/service")
+	assetDiscHandler := newAssetDiscoverableHandler(db)
 	{
-		// 认证中间件（通过 System 服务验证 token）
-		api.Use(authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL))
+		// 内部服务调用支持（X-Internal-API-Key 跳过 JWT 认证）
+		api.Use(func(c *gin.Context) {
+			if apiKey := c.GetHeader("X-Internal-API-Key"); apiKey != "" {
+				tenantID := uint(0)
+				if tenantIDStr := c.GetHeader("X-Tenant-ID"); tenantIDStr != "" {
+					if tid, err := strconv.ParseUint(tenantIDStr, 10, 32); err == nil {
+						tenantID = uint(tid)
+					}
+				}
+				c.Set(commonAuth.ContextUserIDKey, uint(1))
+				c.Set(commonAuth.ContextUsernameKey, "internal-api-call")
+				c.Set(commonAuth.ContextTenantIDKey, tenantID)
+				c.Next()
+				return
+			}
+			c.Next()
+		})
+		// JWT 认证（内部 API Key 已通过时仍需阻止未认证请求）
+		api.Use(func(c *gin.Context) {
+			if c.GetHeader("X-Internal-API-Key") != "" {
+				c.Next()
+				return
+			}
+			authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL)(c)
+		})
 		// 审计日志中间件（记录到 System 模块）
 		if systemClient != nil {
 			api.Use(audit.AuditMiddleware("service", systemClient))
 		}
+
+		// 资产发现接口（供 Asset 模块调用）
+		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
+
+		// 服务端点查询接口（供 Portal 等模块按 source_reference 查询 endpoint）
+		api.GET("/endpoints", serviceEndpointHandler.GetEndpoints)
 
 		// 查询服务管理 API
 		queryAPI := api.Group("/query")

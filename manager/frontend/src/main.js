@@ -17,19 +17,14 @@ import {
 } from '@element-plus/icons-vue'
 import App from './App.vue'
 import { loadRuntimePlugins } from '@/plugins/previews/manifestLoader'
-import TablePreview from '@/components/previews/TablePreview.vue'
-import ObjectStoragePreview from '@/components/previews/ObjectStoragePreview.vue'
-import ImagePreview from '@/components/previews/ImagePreview.vue'
-import GeoJsonPreview from '@/components/previews/GeoJsonPreview.vue'
-import ShapefilePreview from '@/components/previews/ShapefilePreview.vue'
-import JsonPreview from '@/components/previews/JsonPreview.vue'
-import PdfPreview from '@/components/previews/PdfPreview.vue'
-import DocxPreview from '@/components/previews/DocxPreview.vue'
-import PptxPreview from '@/components/previews/PptxPreview.vue'
-import TextPreview from '@/components/previews/TextPreview.vue'
-import MarkdownPreview from '@/components/previews/MarkdownPreview.vue'
-import VideoPreview from '@/components/previews/VideoPreview.vue'
-import ExcelPreview from '@/components/previews/ExcelPreview.vue'
+import { ImagePreview } from '@common-ui'
+import {
+  ObjectStoragePreview, JsonPreview, PdfPreview,
+  DocxPreview, PptxPreview, TextPreview, MarkdownPreview, VideoPreview, ExcelPreview
+} from '@common-ui/previews'
+import {
+  TablePreview, GeoJsonPreview, ShapefilePreview
+} from '@common-ui-map'
 // 导入主题管理
 import { useTheme } from '@common-ui'
 
@@ -55,7 +50,7 @@ app.use(ElementPlus, { locale: zhCn })
 
 // 初始化主题系统
 const { init: initTheme } = useTheme({
-  listenToPortal: true,
+  listenToConsole: true,
   storageKey: 'theme-mode'
 })
 

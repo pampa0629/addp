@@ -19,7 +19,7 @@ ADDP平台现已支持多空间引擎架构。Develop模块通过新的API可以
       "id": 1,
       "name": "python_workflow_engine",
       "display_name": "Python Workflow 空间计算引擎",
-      "resource_type": "api.python-workflow",
+      "resource_type": "python_workflow",
       "capabilities": {
         "compute": [{
           "type": "spatial",
@@ -227,7 +227,7 @@ onMounted(async () => {
 
 ### 已支持的引擎
 
-1. **Python Workflow Engine** (`api.python-workflow`)
+1. **Python Workflow Engine** (`python_workflow`)
    - 类型: 内存计算引擎
    - 支持格式: GeoJSON, WKT, Shapely
    - 特性: DAG工作流, 内存高效, 批处理
@@ -241,8 +241,8 @@ onMounted(async () => {
    ```python
    # 新引擎启动时自动注册
    registration_data = {
-       "unique_identifier": "api.spark_workflow",
-       "resource_type": "api.spark_workflow",
+       "unique_identifier": "spark_workflow",
+       "resource_type": "spark_workflow",
        "capabilities": {
            "compute": [{
                "type": "spatial",

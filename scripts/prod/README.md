@@ -14,7 +14,7 @@
 
 ## start.sh
 
-**用途**: 按正确顺序启动完整的 ADDP 生产环境（基础设施 + 后端 + 前端 + Portal）
+**用途**: 按正确顺序启动完整的 ADDP 生产环境（基础设施 + 后端 + 前端 + Console）
 
 ### 使用方法
 
@@ -62,7 +62,7 @@ cd /path/to/addp
    
 [5/5] 前端服务
    ↓
-   - Portal Frontend (5170)
+   - Console Frontend (5170)
    - System Frontend (8090)
    - Manager Frontend (8091)
    - Meta Frontend (8092)
@@ -83,7 +83,7 @@ cd /path/to/addp
 启动成功后，可通过以下地址访问：
 
 - **✨ 推荐访问**: http://localhost （Nginx 统一入口）
-- **Portal 独立访问**: http://localhost:5170
+- **Console 独立访问**: http://localhost:5170
 - **API Gateway**: http://localhost:8000
 - **各模块独立访问**:
   - System: http://localhost:8090
@@ -137,7 +137,7 @@ cd /opt/addp
 ### 停止顺序
 
 ```
-1. 停止前端服务（Portal, System, Manager, etc.）
+1. 停止前端服务（Console, System, Manager, etc.）
 2. 停止业务后端（Gateway, Manager, Meta, Transfer, etc.）
 3. 停止基础设施（PostgreSQL, Redis, MinIO, Meilisearch）
 ```
@@ -222,7 +222,7 @@ ADDP 服务健康检查
   ✓ Gateway (8000)
 
 前端服务:
-  ✓ Portal Frontend (5170)
+  ✓ Console Frontend (5170)
   ✓ Nginx Gateway (80)
 
 所有服务运行正常！

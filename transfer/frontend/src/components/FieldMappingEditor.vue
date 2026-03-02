@@ -6,7 +6,7 @@
       </template>
       <div>
         <p>系统已自动进行同名匹配。您可以手动调整映射关系或设置默认值。</p>
-        <p v-if="autoCreateMode" style="color: #67C23A; margin-top: 5px;">
+        <p v-if="autoCreateMode" style="color: var(--el-color-success); margin-top: 5px;">
           <el-icon><Check /></el-icon>
           目标为对象存储，将自动创建目标字段（所有源字段都会导出到文件）
         </p>

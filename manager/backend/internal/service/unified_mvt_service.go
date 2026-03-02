@@ -66,9 +66,15 @@ func (s *UnifiedMVTService) GetTile(
 	fmt.Printf("⚡⚡⚡ UnifiedMVTService.GetTile() 被调用！z=%d, x=%d, y=%d\n", z, x, y)
 	startTime := time.Now()
 
+	// ✅ 租户验证（必须传递 tenant_id）
+	if tenantID == nil {
+		return nil, fmt.Errorf("tenant_id is required for MVT tile access")
+	}
+
 	// 1. 计算 fingerprint（对前端透明）
 	fingerprint := s.calculateFingerprint(resourceID, schema, table)
 	logger.L().Info("📍 统一MVT服务收到请求",
+		"tenant_id", *tenantID,
 		"engine_id", resourceID,
 		"schema", schema,
 		"table", table,
@@ -139,13 +145,14 @@ func (s *UnifiedMVTService) GetTile(
 		}
 	}
 
-	// 3. 尝试从三层缓存获取（内存 LRU → Redis → MinIO）
+	// 3. 尝试从三层缓存获取（内存 LRU → Redis → MinIO，租户隔离）
 	// MinIO 中包含快显预生成和实时缓存的瓦片，两者存储在同一位置
-	logger.L().Info("🔎 尝试从缓存获取瓦片...")
-	tileData, err := s.spatialPreviewService.GetTile(ctx, fingerprint, z, x, y)
+	logger.L().Info("🔎 尝试从缓存获取瓦片...", "tenant_id", *tenantID)
+	tileData, err := s.spatialPreviewService.GetTile(ctx, *tenantID, fingerprint, z, x, y)
 	if err == nil && len(tileData) > 0 {
 		duration := time.Since(startTime)
 		logger.L().Info("✅ 从缓存返回瓦片",
+			"tenant_id", *tenantID,
 			"size", len(tileData),
 			"duration", duration)
 		return &TileResponse{
@@ -169,8 +176,8 @@ func (s *UnifiedMVTService) GetTile(
 		"table", table,
 		"z", z, "x", x, "y", y)
 
-	// ✅ 构建 singleflight key (确保相同瓦片的并发请求使用同一 key)
-	sfKey := fmt.Sprintf("%d:%s:%s:%d:%d:%d", resourceID, schema, table, z, x, y)
+	// ✅ 构建 singleflight key (确保相同瓦片的并发请求使用同一 key，租户隔离)
+	sfKey := fmt.Sprintf("%d:%d:%s:%s:%d:%d:%d", *tenantID, resourceID, schema, table, z, x, y)
 
 	// ✅ singleflight.Do: 多个并发请求同一瓦片时,只生成一次
 	v, err, shared := s.sf.Do(sfKey, func() (interface{}, error) {
@@ -238,8 +245,8 @@ func (s *UnifiedMVTService) GetTile(
 	}
 
 	if shouldCache && len(tileData) > 0 {
-		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存）
-		go s.persistToMinIO(context.Background(), fingerprint, z, x, y, tileData,
+		// 异步持久化到 MinIO（包括回填 Redis 和内存缓存，租户隔离）
+		go s.persistToMinIO(context.Background(), *tenantID, fingerprint, z, x, y, tileData,
 			resourceID, schema, table, tenantID, durationMs, tileSizeKB)
 	}
 
@@ -258,22 +265,25 @@ func (s *UnifiedMVTService) calculateFingerprint(engineID uint, schema, table st
 	return commonModels.GenerateItemFingerprint(engineID, fullName)
 }
 
-// persistToMinIO 持久化瓦片到 MinIO（异步执行，不阻塞响应）
+// persistToMinIO 持久化瓦片到 MinIO（异步执行，不阻塞响应，租户隔离）
 func (s *UnifiedMVTService) persistToMinIO(
 	ctx context.Context,
+	tenantID uint, // ✅ 改为必传参数
 	fingerprint string,
 	z, x, y int,
 	tileData []byte,
 	resourceID uint,
 	schema, table string,
-	tenantID *uint,
+	tenantIDPtr *uint, // ✅ 保留原参数（用于更新 QuickView）
 	durationMs, tileSizeKB float64,
 ) {
 	// 1. Gzip 压缩瓦片数据
 	var buf bytes.Buffer
 	gzipWriter := gzip.NewWriter(&buf)
 	if _, err := gzipWriter.Write(tileData); err != nil {
-		logger.L().Warn("Gzip 压缩瓦片数据失败", "error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+		logger.L().Warn("Gzip 压缩瓦片数据失败",
+			"tenant_id", tenantID,
+			"error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
 		return
 	}
 	if err := gzipWriter.Close(); err != nil {
@@ -288,8 +298,8 @@ func (s *UnifiedMVTService) persistToMinIO(
 		return
 	}
 
-	// 3. 构建 MinIO 对象名
-	objectName := fmt.Sprintf("mvt-tiles/%s/tiles/z%d/%d_%d.mvt.gz", fingerprint, z, x, y)
+	// 3. 构建 MinIO 对象名（租户隔离）
+	objectName := s.spatialPreviewService.buildMinIOPath(tenantID, fingerprint, z, x, y)
 
 	// 4. 上传到 MinIO
 	_, err := s.spatialPreviewService.minioClient.PutObject(
@@ -304,25 +314,28 @@ func (s *UnifiedMVTService) persistToMinIO(
 		},
 	)
 	if err != nil {
-		logger.L().Warn("上传瓦片到 MinIO 失败", "error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
+		logger.L().Warn("上传瓦片到 MinIO 失败",
+			"tenant_id", tenantID,
+			"error", err, "fingerprint", fingerprint, "z", z, "x", x, "y", y)
 		return
 	}
 
 	logger.L().Info("瓦片已持久化到 MinIO",
+		"tenant_id", tenantID,
 		"fingerprint", fingerprint,
 		"z", z, "x", x, "y", y,
 		"compressed_size", len(compressed),
 		"object_name", objectName)
 
-	// 5. 回填上层缓存（Redis + 内存 LRU）
-	cacheKey := s.spatialPreviewService.buildCacheKey(fingerprint, z, x, y)
+	// 5. 回填上层缓存（Redis + 内存 LRU，租户隔离）
+	cacheKey := s.spatialPreviewService.buildCacheKey(tenantID, fingerprint, z, x, y)
 	s.spatialPreviewService.backfillCache(ctx, cacheKey, compressed)
 
 	// 6. 更新快显统计（如果有QuickViewService且表有快显记录）
-	if s.quickViewService != nil && tenantID != nil {
+	if s.quickViewService != nil && tenantIDPtr != nil {
 		err := s.quickViewService.IncrementCachedTiles(
 			ctx,
-			*tenantID,
+			*tenantIDPtr,
 			resourceID,
 			schema,
 			table,

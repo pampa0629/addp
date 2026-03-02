@@ -1,5 +1,5 @@
 /* ADDP 平台统一主题系统 - CSS 变量定义 */
-/* 本文件由 Portal 的 theme.css 复制并重命名变量（--app-* → --addp-*） */
+/* 本文件由 Console 的 theme.css 复制并重命名变量（--app-* → --addp-*） */
 
 /* 注意: Element Plus 深色模式 CSS 需要在各模块的 main.js 中导入 */
 /* import 'element-plus/theme-chalk/dark/css-vars.css' */
@@ -39,6 +39,12 @@
   --addp-module-service: #1890FF;
   --addp-module-orchestrator: #FF7875;
   --addp-module-meta: #E6A23C;
+  --addp-module-standard: #7C3AED;
+  --addp-module-modeling: #9333EA;
+  --addp-module-quality: #16A34A;
+  --addp-module-asset: #2563EB;
+  --addp-module-monitor: #0891B2;
+  --addp-module-portal: #059669;
 }
 
 /* ==================== 深色模式变量 ==================== */
@@ -76,6 +82,12 @@ html.dark {
   --addp-module-service: #1890FF;
   --addp-module-orchestrator: #FF7875;
   --addp-module-meta: #E6A23C;
+  --addp-module-standard: #A78BFA;
+  --addp-module-modeling: #C084FC;
+  --addp-module-quality: #4ADE80;
+  --addp-module-asset: #60A5FA;
+  --addp-module-monitor: #22D3EE;
+  --addp-module-portal: #34D399;
 }
 
 /* ==================== 蓝色模式变量 ==================== */
@@ -113,6 +125,12 @@ html.blue {
   --addp-module-service: #38bdf8;
   --addp-module-orchestrator: #fb7185;
   --addp-module-meta: #fbbf24;
+  --addp-module-standard: #A5B4FC;
+  --addp-module-modeling: #C4B5FD;
+  --addp-module-quality: #6EE7B7;
+  --addp-module-asset: #93C5FD;
+  --addp-module-monitor: #67E8F9;
+  --addp-module-portal: #6EE7B7;
 
   /* ==================== Element Plus 变量覆盖（蓝色主题） ==================== */
   /* 覆盖 Element Plus 的 CSS 变量，使其与蓝色主题一致 */

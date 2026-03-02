@@ -261,7 +261,7 @@ function getStatusColor(status) {
 }
 
 .module-icon {
-  color: #409eff;
+  color: var(--el-color-primary);
   flex-shrink: 0;
 }
 
@@ -286,7 +286,7 @@ function getStatusColor(status) {
 
 .task-node:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   transform: translateX(2px);
 }
 

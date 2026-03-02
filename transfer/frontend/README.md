@@ -58,13 +58,13 @@ docker run -d -p 8093:80 addp-transfer-frontend
 
 访问 http://localhost:8093/transfer/
 
-## 集成到 Portal
+## 集成到 Console
 
-Transfer 前端可以独立部署，也可以集成到 Portal 中通过 iframe 加载。
+Transfer 前端可以独立部署，也可以集成到 Console 中通过 iframe 加载。
 
-### Portal 集成配置
+### Console 集成配置
 
-在 Portal 的导航配置中添加：
+在 Console 的导航配置中添加：
 
 ```javascript
 {

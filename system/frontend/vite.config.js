@@ -14,7 +14,8 @@ export default defineConfig({
       // 当 common-frontend 导入 element-plus 相关库时，使用当前项目的依赖
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus')
-    }
+    },
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   optimizeDeps: {
     exclude: [],

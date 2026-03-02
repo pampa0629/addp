@@ -73,7 +73,7 @@ check_images() {
         "${REGISTRY}/addp-spark-workflow-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-jupyter-engine:${IMAGE_TAG}"
         "${REGISTRY}/addp-gateway:${IMAGE_TAG}"
-        "${REGISTRY}/addp-portal:${IMAGE_TAG}"
+        "${REGISTRY}/addp-console:${IMAGE_TAG}"
         "${REGISTRY}/addp-nginx:${IMAGE_TAG}"
     )
 
@@ -209,7 +209,7 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 echo -e "${GREEN}Access URLs:${NC}"
-echo -e "  ${CYAN}Portal (Recommended):${NC} http://localhost:80"
+echo -e "  ${CYAN}Console (Recommended):${NC} http://localhost:80"
 echo -e "  ${CYAN}Gateway:${NC}              http://localhost:8000"
 echo -e "  ${CYAN}System Backend:${NC}       http://localhost:8180"
 echo ""

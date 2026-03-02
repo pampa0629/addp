@@ -1,3 +1,7 @@
+// 注意：预览组件（MarkdownPreview、DocxPreview 等）包含重型依赖（marked、mammoth、jszip 等），
+// 已移至 ./previews 单独入口，避免不需要预览的模块引入这些依赖。
+// 如需预览组件，请从 '@common-ui/previews' 导入。
+
 // Basic UI Components (no map dependencies)
 export { default as StorageEngineForm } from './components/StorageEngineForm.vue'
 export { default as EngineForm } from './components/EngineForm.vue'
@@ -43,7 +47,6 @@ export {
 export {
   createAuthGuard,
   createAuthInterceptor,
-  createAuthStoreConfig,
   createRefreshInterceptor,
   createAuthAPI,
   createAPIClient,
@@ -52,6 +55,9 @@ export {
 
 // Composables - Tree Management
 export { useTreeCache, useTreeLoader } from './composables'
+
+// Composables - Resizable
+export { useResizable } from './composables/useResizable'
 
 // Composables - Theme Management
 export { useTheme } from './composables/useTheme'

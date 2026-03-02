@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/logger"
 	"github.com/addp/manager/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -114,6 +115,20 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 		fmt.Printf("DEBUG: tenant_id does NOT exist in context\n")
 	}
 
+	// ✅ 新增：租户验证（必须传递 tenant_id）
+	if tenantID == nil {
+		logger.L().Error("❌ 租户 ID 缺失",
+			"path", c.Request.URL.Path,
+			"engine_id", engineID,
+			"schema", schema,
+			"table", table)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":  "tenant_id is required for MVT tile access",
+			"detail": "请确保已登录并携带有效的 JWT token",
+		})
+		return
+	}
+
 	// 4. 调用统一服务获取瓦片
 	response, err := h.service.GetTile(
 		c.Request.Context(),
@@ -128,7 +143,8 @@ func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	)
 	if err != nil {
 		fmt.Printf("ERROR: GetTile failed: %v\n", err)
-		fmt.Printf("ERROR: Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n", engineID, schema, table, z, x, y)
+		fmt.Printf("ERROR: TenantID=%d, Resource=%d, Schema=%s, Table=%s, Z=%d, X=%d, Y=%d\n",
+			*tenantID, engineID, schema, table, z, x, y)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

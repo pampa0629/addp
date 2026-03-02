@@ -1,5 +1,5 @@
 <template>
-  <!-- Portal iframe 中仅渲染内容区域 -->
+  <!-- Console iframe 中仅渲染内容区域 -->
   <div v-if="isInIframe" class="content-only">
     <router-view />
   </div>
@@ -140,7 +140,7 @@ const handleLogout = () => {
 }
 
 .header-icon {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 
 .header-right {

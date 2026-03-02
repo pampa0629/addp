@@ -39,7 +39,7 @@ import {
   useVectorTileLoader,
   fromLonLat,
   createGaodeBaseLayer
-} from '@common-map'
+} from '@common-ui-map'
 
 const props = defineProps({
   engineId: { type: [Number, String], required: true },
@@ -352,14 +352,14 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 
 .loading-content {
   text-align: center;
-  color: #666;
+  color: var(--addp-text-secondary);
 }
 
 .loading-spinner {
   width: 40px;
   height: 40px;
   border: 4px solid #f3f3f3;
-  border-top: 4px solid #409eff;
+  border-top: 4px solid var(--el-color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 12px;
@@ -382,7 +382,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
   transform: translateX(-50%);
   background: #fef0f0;
   border: 1px solid #fde2e2;
-  color: #f56c6c;
+  color: var(--el-color-danger);
   padding: 12px 16px;
   border-radius: 8px;
   display: flex;
@@ -404,7 +404,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 }
 
 .retry-btn {
-  background: #f56c6c;
+  background: var(--el-color-danger);
   color: white;
   border: none;
   padding: 6px 12px;
@@ -479,14 +479,14 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 .ol-popup-closer:after {
   content: "✕";
   font-size: 16px;
-  color: #666;
+  color: var(--addp-text-secondary);
   display: block;
   text-align: center;
   line-height: 20px;
 }
 
 .ol-popup-closer:hover:after {
-  color: #333;
+  color: var(--addp-text-primary);
 }
 
 .ol-popup-content {
@@ -535,7 +535,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 .ol-popup-content :deep(.primary-value) {
   font-size: 20px;
   font-weight: 700;
-  color: #333;
+  color: var(--addp-text-primary);
   margin-bottom: 4px;
   line-height: 1.3;
 }
@@ -564,7 +564,7 @@ watch(() => [props.engineId, props.schema, props.table, props.geom], async () =>
 
 .ol-popup-content :deep(.attr-key) {
   font-weight: 600;
-  color: #666;
+  color: var(--addp-text-secondary);
   margin-right: 4px;
 }
 

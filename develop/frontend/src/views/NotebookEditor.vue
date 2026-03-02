@@ -873,12 +873,12 @@ onMounted(async () => {
 }
 
 .notebook-item:hover {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   box-shadow: 0 2px 4px rgba(64, 158, 255, 0.1);
 }
 
 .notebook-item.active {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   background: var(--addp-bg-secondary);
 }
 

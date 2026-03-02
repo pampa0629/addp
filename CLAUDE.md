@@ -13,18 +13,19 @@
 
 | 场景                 | 必读文档                      | 触发关键词                        |
 | -------------------- | ----------------------------- | --------------------------------- |
-| 开发原则与编码规范   | docs/addp开发原则.md          | 原则、规范、DRY、向后兼容         |
-| API设计、前后端不一致 | docs/addp-API设计规范.md      | API、接口、RESTful、响应格式、HTTP状态码 |
-| 环境配置、密钥      | docs/addp配置介绍.md          | 配置、环境变量、.env              |
-| 端口               | docs/addp端口分配.md          | 端口                              |
-| Go/前端依赖版本      | docs/addp技术栈规约.md            | 依赖、版本、升级、库              |
-| 共享模块使用         | docs/addp共享模块介绍.md          | common、共享代码、复用            |
-| 创建新模块           | docs/addp新模块开发指南.md        | 新模块、脚手架、模板              |
-| 新增存储引擎/数据库   | docs/addp新增存储引擎指南.md      | 新数据库、存储引擎 |
-| 新增数据类型/数据格式  | docs/addp数据类型扩展指南.md     | 新数据类型、新数据格式 |
+| 开发原则与编码规范   | docs/spec/addp开发原则.md          | 原则、规范、DRY、向后兼容         |
+| API设计、前后端不一致 | docs/spec/addp-API设计规范.md      | API、接口、RESTful、响应格式、HTTP状态码 |
+| 环境配置、密钥      | docs/spec/addp配置介绍.md          | 配置、环境变量、.env              |
+| 端口               | docs/spec/addp端口分配.md          | 端口                              |
+| Go/前端依赖版本      | docs/spec/addp技术栈规约.md            | 依赖、版本、升级、库              |
+| 共享模块使用         | docs/concepts/addp共享模块介绍.md          | common、共享代码、复用            |
+| 创建新模块           | docs/spec/addp新模块开发指南.md        | 新模块、脚手架、模板              |
+| 新增存储引擎/数据库   | docs/spec/addp数据引擎扩展指南.md      | 新数据库、存储引擎 |
+| 新增数据类型/数据格式  | docs/spec/addp数据格式扩展指南.md     | 新数据类型、新数据格式 |
 | 故障和问题修复        | docs/addp常见故障排查.md        | 出错、修复、问题                  |
-| 厘清基本概念        | docs/addp核心概念说明.md        | 概念、术语、混淆、辨析                  |
-| Gateway 路由         | gateway/gateway架构说明.md       | 路由、转发、API网关               |
+| 理解核心概念关系     | docs/addp核心概念关系图.md        | 概念关系、架构、全局视图                  |
+| 理解模块架构        | docs/addp模块架构图.md        | 模块划分、服务架构、系统结构                  |
+| Gateway 路由         | gateway/docs/gateway架构说明.md       | 路由、转发、API网关               |
 | System 模块详情      | system/CLAUDE.md              | 认证、用户、租户、日志            |
 | Manager 模块详情     | manager/CLAUDE.md             | 数据预览、MVT、对象存储、插件     |
 | Meta 模块详情        | meta/CLAUDE.md                | 元数据扫描、定时调度、向量化      |
@@ -32,7 +33,9 @@
 | Orchestrator 模块详情| orchestrator/CLAUDE.md        | 工作流编排、DAG、任务调度         |
 | Develop 模块详情     | develop/CLAUDE.md             | SQL 执行、工作流、算子        |
 | Service 模块详情     | service/CLAUDE.md             | 数据服务、OGC 标准、API 发布      |
-| Monitor 模块详情     | docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
+| Monitor 模块详情     | monitor/docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
+| Model 模块详情       | model/CLAUDE.md               | 数据建模、逻辑表、星型建模、指标血缘 |
+| Standard 模块详情    | standard/CLAUDE.md            | 数据标准、数据元、指标、术语、码值 |
 
 
 **重要**:
@@ -50,9 +53,7 @@
 若已有的数据无法升级，则直接删除。
 
 ### 2. 保持整洁
-临时脚本和文档保存到 /tmp/,保持项目树整洁。
-你觉得需要保留的文档，在征求用户的同意后，保存到 ./docs 或 对应模块的docs目录下。
-claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下。
+临时性的脚本和文档保存到 操作系统的临时目录下,保持项目树整洁。
 
 ### 3. 无需请求权限
 在自动编辑模式下,自由执行脚本,无需每次询问用户。
@@ -74,7 +75,10 @@ claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下�
 不允许存在没有充分理由的重复代码。
 优先将重复代码提取到 common/ 或 common-frontend/ 模块。
 
-详细说明: docs/addp开发原则.md
+### 9. 基于文档规范（docs/spec/concepts）的开发
+当遇到代码和文档规范不一致时，需要先和用户核实情况，讨论清楚后，先修订文档规范，然后基于文档规范来开发。
+
+详细说明: docs/spec/addp开发原则.md
 
 ## 仓库结构
 
@@ -84,7 +88,7 @@ claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下�
 - **common-frontend/** - 前端共享库:Vue 3 组件、工具和类型定义,供前端复用
   - **basic/** - 基础 UI 组件,无地图依赖(StorageEngineForm、ImagePreview、formatters)
   - **map/** - 地图相关组件,需要 OpenLayers 和高德地图(GeoJsonPreview、ShapefilePreview、TablePreview)
-- **portal/** - 统一门户入口,基于 iframe 的模块集成 
+- **console/** - 控制台入口,基于 iframe 的模块集成 
 - **system/** - 核心系统模块:用户认证、日志、引擎管理 -  (PostgreSQL system schema)
 - **gateway/** - API 网关:处理外部请求并路由到内部服务 -  (反向代理)
 - **manager/** - 数据管理:按目录展示数据、数据预览 
@@ -100,7 +104,7 @@ claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下�
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
-关于 Common 模块和 common-frontend 模块的详细介绍,需要时请阅读: docs/共享模块介绍.md
+关于 Common 模块和 common-frontend 模块的详细介绍,需要时请阅读: docs/concepts/addp共享模块介绍.md
 
 ## 快速启动
 
@@ -109,7 +113,7 @@ claude code在计划模式下的计划文档，保存到 ./docs/plan 目录下�
 1. **启动基础设施**: `bash scripts/infra/up.sh`
 2. **启动开发环境**: `bash scripts/dev/start.sh`（并行启动优化，25-39 秒）
 3. **访问应用**:
-   - Portal 统一入口: http://localhost:5170
+   - Console 控制台: http://localhost:5170
    - API Gateway: http://localhost:8000
    - System Backend: http://localhost:8180
 
@@ -129,13 +133,13 @@ bash scripts/dev/start.sh -system
 
 **核心端口**(高频使用):
 
-- **Portal**: 5170 (dev) / 80 (prod via Nginx)
+- **Console**: 5170 (dev) / 80 (prod via Nginx)
 - **Gateway**: 8000
 - **System Backend**: 8180
 - **PostgreSQL**: 15432 (infra)
 - **Redis**: 16379(infra)
 - **MinIO**: 19000-19001 (infra) / 9002-9003 (business)
-完整端口列表: docs/addp端口分配.md
+完整端口列表: docs/spec/addp端口分配.md
 
 ## 技术栈
 
@@ -154,7 +158,7 @@ bash scripts/dev/start.sh -system
 为确保所有模块的依赖版本一致性,ADDP 平台使用统一的 Go 依赖版本。
 前端模块需确保 Vue 单一实例，各模块 package.json 需添加 `overrides` 强制统一 Vue 版本，common-frontend 不得有 node_modules。
 
-需要详细技术栈信息时,请参考 [docs/addp技术栈规约.md](docs/addp技术栈规约.md) 文档。
+需要详细技术栈信息时,请参考 [docs/spec/addp技术栈规约.md](docs/spec/addp技术栈规约.md) 文档。
 
 ### 基础设施
 
@@ -208,38 +212,38 @@ pkg/utils/                  → 共享工具 (JWT、加密)
 
 **数据流**: API Handler → Service → Repository → Database
 
-### 前端架构 (Portal + 微服务模式)
+### 前端架构 (Console + 微服务模式)
 
-**统一门户 + 独立模块前端**:
+**控制台 + 独立模块前端**:
 
-平台使用 **基于门户的架构** 提供统一入口:
+平台使用 **基于控制台的架构** 提供统一入口:
 
 ```
-portal/frontend/           → 统一门户入口 (端口 5170 dev / 8000 prod)
+console/frontend/           → 控制台入口 (端口 5170 dev / 8000 prod)
 ├── src/
 │   ├── views/
-│   │   ├── Portal.vue    → 主门户页面,包含模块卡片
+│   │   ├── Portal.vue    → 控制台首页,包含模块卡片
 │   │   └── Login.vue     → 集中登录
 │   ├── api/auth.js       → 通过 System 后端认证
-│   └── router/           → Portal 路由
+│   └── router/           → Console 路由
 │
-│   Portal 通过 iframe 嵌入模块前端:
+│   Console 通过 iframe 嵌入模块前端:
 │   - 左侧边栏: 所有模块的统一导航
 │   - 主区域: iframe 动态加载模块前端
 
 system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
-├── 可独立运行或嵌入 portal
+├── 可独立运行或嵌入 console
 ├── 功能: 用户、日志、引擎、API 文档
 其他模块类似 system。
 ```
 
 **两种访问模式**:
 
-1. **统一门户模式** (推荐给用户):
+1. **控制台模式** (推荐给用户):
 
    - 单一入口: http://localhost:5170 (dev) 或 http://localhost:8000 (prod)
    - 集成所有模块的导航
-   - 模块前端加载在 portal 的 iframe 中
+   - 模块前端加载在 console 的 iframe 中
    - 一次登录访问所有模块
 2. **独立模块模式** (用于独立部署):
 
@@ -250,10 +254,10 @@ system/frontend/           → System 模块 (端口 5173 dev / 8090 prod)
 
 **前端关键原则**:
 
-- Portal 提供统一的用户体验和一致的导航
+- Console 提供统一的用户体验和一致的导航
 - 模块前端保持独立,可单独部署
 - 所有前端共享 JWT 认证模式 (token 存储在 localStorage)
-- Portal 和模块可独立认证
+- Console 和模块可独立认证
 - 生产环境中,所有请求通过 Gateway (8000) 路由
 
 ### 认证流程
@@ -269,14 +273,21 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 ### 配置中心模式
 
-需要详细内容时,请阅读 docs/addp配置介绍.md
-需要了解端口分配时，请阅读 docs/addp端口分配.md
+需要详细内容时,请阅读 docs/spec/addp配置介绍.md
+需要了解端口分配时，请阅读 docs/spec/addp端口分配.md
 
 ### 新模块开发
 
-开发新模块时,请阅读: docs/addp新模块开发指南.md
+开发新模块时,请阅读: docs/spec/addp新模块开发指南.md
 
 ## 重要文件位置
+
+### 目录组织
+addp整体相关的文档，放到 ./docs 下，各模块相关的文档，放到对应模块的docs目录下。
+docs目录下，又分为：concepts目录，存放和概念相关的文档；spec目录，存放和规范要求相关的文档；tables目录，存放和表结构相关文档。
+Plan模式下生成的计划文档，保存到 ./docs/plan 目录下。
+你觉得需要保留的文档，在征求用户的同意后，保存到以上对应的目录下；在未得到同意前，不得新增各类文档和脚本。
+
 
 ### 配置文件
 
@@ -312,7 +323,7 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 
 **相关文档**：
 - **架构说明**：[docs/数据库插件系统.md](docs/数据库插件系统.md) - 了解插件系统的整体架构和设计
-- **新增指南**：[docs/addp数据引擎扩展指南.md](docs/addp数据引擎扩展指南.md) - 如何添加新的数据库/存储引擎类型
+- **新增指南**：[docs/spec/addp数据引擎扩展指南.md](docs/spec/addp数据引擎扩展指南.md) - 如何添加新的数据库/存储引擎类型
 
 ## 故障排查
 
@@ -330,4 +341,4 @@ ADDP 平台采用插件化架构支持多种数据库类型，当前支持 **8 �
 
 **每次讨论后更新plan时，务必根据讨论结果，全面检查和修订plan文档，而不是仅仅补充讨论结果**
 
-**UML相关的设计，采用在md文档中增加mermaid代码库的方式**
+**UML相关的设计，采用在md文档中增加mermaid代码块的方式**

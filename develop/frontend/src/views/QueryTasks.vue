@@ -81,7 +81,7 @@
               v-if="row.schedule && row.schedule !== ''"
               :schedule="row.schedule"
             />
-            <span v-else style="color: #909399">手动触发</span>
+            <span v-else style="color: var(--addp-text-tertiary)">手动触发</span>
           </template>
         </el-table-column>
 
@@ -109,7 +109,7 @@
                 {{ formatTime(row.last_executed_at) }}
               </div>
             </div>
-            <span v-else style="color: #909399">未执行</span>
+            <span v-else style="color: var(--addp-text-tertiary)">未执行</span>
           </template>
         </el-table-column>
 

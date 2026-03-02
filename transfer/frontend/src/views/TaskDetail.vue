@@ -126,7 +126,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskAPI, executionAPI } from '@/api/tasks'
 import { systemEnginesAPI } from '@/api/systemEngines'
-import { formatDate, formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
+import { formatDate } from '@common-ui'
+import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType, getLastExecutionLabel, getExecutionTagType, getExecutionLabel } from '@/utils/formatters'
 
 const route = useRoute()
 const router = useRouter()

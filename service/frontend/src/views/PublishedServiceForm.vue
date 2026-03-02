@@ -44,7 +44,7 @@
               几何列：{{ selectedTable.geometryColumn }}
               (SRID: {{ selectedTable.srid }})
             </div>
-            <div v-else style="margin-top: 8px; font-size: 13px; color: #909399">
+            <div v-else style="margin-top: 8px; font-size: 13px; color: var(--addp-text-tertiary)">
               无几何列
             </div>
           </template>
@@ -621,7 +621,7 @@ onMounted(() => {
 }
 
 .selected-card {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
   box-shadow: 0 2px 12px 0 rgba(64, 158, 255, 0.3);
 }
 

@@ -19,7 +19,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 BASE_VENV_PATH="${SCRIPT_DIR}/venv"
 
 # 租户数据目录
-TENANTS_DATA_PATH="${PROJECT_ROOT}/data/jupyter/tenants"
+TENANTS_DATA_PATH="${SCRIPT_DIR}/tenants"
 TENANT_DIR="${TENANTS_DATA_PATH}/tenant_${TENANT_ID}"
 TENANT_VENV_PATH="${TENANT_DIR}/venv"
 

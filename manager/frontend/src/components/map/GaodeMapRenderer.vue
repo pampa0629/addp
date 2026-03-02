@@ -104,7 +104,7 @@ defineExpose({
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background-color: #409eff;
+  background-color: var(--el-color-primary);
   border: 2px solid #ffffff;
   box-shadow: 0 0 6px rgba(64, 158, 255, 0.4);
 }

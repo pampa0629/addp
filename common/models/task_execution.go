@@ -75,6 +75,7 @@ const (
 	ModuleTransfer     = "transfer"
 	ModuleDevelop      = "develop"
 	ModuleOrchestrator = "orchestrator"
+	ModuleQuality      = "quality"
 )
 
 // 触发类型常量

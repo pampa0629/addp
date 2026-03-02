@@ -120,7 +120,7 @@ const handleLogin = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--addp-primary-gradient);
 }
 
 .login-box {
@@ -134,13 +134,13 @@ const handleLogin = async () => {
 
 .card-header h2 {
   margin: 0;
-  color: #303133;
+  color: var(--addp-text-primary);
   font-size: 24px;
 }
 
 .card-header .subtitle {
   margin: 5px 0 0 0;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 14px;
 }
 </style>

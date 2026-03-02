@@ -96,13 +96,13 @@ func main() {
 	}
 	logger.L().Info("MinIO 客户端已初始化", "endpoint", cfg.MinioEndpoint)
 
-	// MinIO Bucket 名称（与 Manager 保持一致）
-	minioBucket := "manager"
+	// MinIO Bucket 名称（Service 模块专用）
+	minioBucket := "service"
 
 	// 初始化瓦片相关服务
 	staticTileService := serviceInternal.NewStaticTileService(minioClient, minioBucket)
 	dynamicTileService := serviceInternal.NewDynamicTileService(systemClient)
-	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket)
+	tileCacheService := serviceInternal.NewTileCacheService(minioClient, minioBucket, "tiles")
 
 	queryService := data.NewQueryService(systemClient, metaClient)
 
@@ -117,9 +117,10 @@ func main() {
 	dataServiceHandler := api.NewDataServiceHandler(queryService)
 	engineHandler := api.NewEngineHandler(systemClient)
 	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
+	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, systemClient)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, serviceEndpointHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

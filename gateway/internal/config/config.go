@@ -16,6 +16,11 @@ type Config struct {
 	DevelopServiceURL  string
 	ServiceServiceURL  string
 	CopilotServiceURL  string
+	StandardServiceURL string
+	ModelServiceURL    string
+	QualityServiceURL  string
+	AssetServiceURL    string
+	PortalServiceURL   string
 
 	// Database
 	DBHost     string
@@ -55,6 +60,11 @@ func Load() *Config {
 		DevelopServiceURL:  getEnv("DEVELOP_SERVICE_URL", "http://localhost:8084"),
 		ServiceServiceURL:  getEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
 		CopilotServiceURL:  getEnv("COPILOT_SERVICE_URL", "http://localhost:8087"),
+		StandardServiceURL: getEnv("STANDARD_SERVICE_URL", "http://localhost:8110"),
+		ModelServiceURL:    getEnv("MODEL_SERVICE_URL", "http://localhost:8181"),
+		QualityServiceURL:  getEnv("QUALITY_SERVICE_URL", "http://localhost:8182"),
+		AssetServiceURL:    getEnv("ASSET_SERVICE_URL", "http://localhost:8183"),
+		PortalServiceURL:   getEnv("PORTAL_SERVICE_URL", "http://localhost:8184"),
 
 		// Database (defaults to system PostgreSQL)
 		DBHost:     getEnv("POSTGRES_HOST", "localhost"),

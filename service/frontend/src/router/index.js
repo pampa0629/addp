@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import Layout from '../components/Layout.vue'
+import { useAuthStore } from '../store/auth'
 
 const normalizeRedirect = fullPath => {
   if (!fullPath) {
@@ -20,151 +21,154 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/query-services'
-  },
+    component: Layout,
+    redirect: '/query-services',
+    meta: { requiresAuth: true },
+    children: [
+      // === 查询服务路由 ===
+      {
+        path: 'query-services',
+        name: 'QueryServiceList',
+        component: () => import('../views/QueryServiceList.vue'),
+        meta: { requiresAuth: true, title: '查询服务' }
+      },
+      {
+        path: 'query-services/create',
+        name: 'QueryServiceCreate',
+        component: () => import('../views/QueryServiceForm.vue'),
+        meta: { requiresAuth: true, title: '创建查询服务' }
+      },
+      {
+        path: 'query-services/:id/edit',
+        name: 'QueryServiceEdit',
+        component: () => import('../views/QueryServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑查询服务' }
+      },
+      {
+        path: 'query-services/:id',
+        name: 'QueryServiceDetail',
+        component: () => import('../views/QueryServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '查询服务详情' }
+      },
 
-  // === 查询服务路由 ===
-  {
-    path: '/query-services',
-    name: 'QueryServiceList',
-    component: () => import('../views/QueryServiceList.vue'),
-    meta: { requiresAuth: true, title: '查询服务' }
-  },
-  {
-    path: '/query-services/create',
-    name: 'QueryServiceCreate',
-    component: () => import('../views/QueryServiceForm.vue'),
-    meta: { requiresAuth: true, title: '创建查询服务' }
-  },
-  {
-    path: '/query-services/:id/edit',
-    name: 'QueryServiceEdit',
-    component: () => import('../views/QueryServiceForm.vue'),
-    meta: { requiresAuth: true, title: '编辑查询服务' }
-  },
-  {
-    path: '/query-services/:id',
-    name: 'QueryServiceDetail',
-    component: () => import('../views/QueryServiceDetail.vue'),
-    meta: { requiresAuth: true, title: '查询服务详情' }
-  },
+      // === 注册服务路由（新架构） ===
+      {
+        path: 'registered-services',
+        name: 'RegisteredServiceList',
+        component: () => import('../views/RegisteredServiceList.vue'),
+        meta: { requiresAuth: true, title: '注册服务' }
+      },
+      {
+        path: 'registered-services/create',
+        name: 'RegisteredServiceCreate',
+        component: () => import('../views/RegisteredServiceForm.vue'),
+        meta: { requiresAuth: true, title: '注册外部服务' }
+      },
+      {
+        path: 'registered-services/:id/edit',
+        name: 'RegisteredServiceEdit',
+        component: () => import('../views/RegisteredServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑注册服务' }
+      },
+      {
+        path: 'registered-services/:id',
+        name: 'RegisteredServiceDetail',
+        component: () => import('../views/RegisteredServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '注册服务详情' }
+      },
 
-  // === 注册服务路由（新架构） ===
-  {
-    path: '/registered-services',
-    name: 'RegisteredServiceList',
-    component: () => import('../views/RegisteredServiceList.vue'),
-    meta: { requiresAuth: true, title: '注册服务' }
-  },
-  {
-    path: '/registered-services/create',
-    name: 'RegisteredServiceCreate',
-    component: () => import('../views/RegisteredServiceForm.vue'),
-    meta: { requiresAuth: true, title: '注册外部服务' }
-  },
-  {
-    path: '/registered-services/:id/edit',
-    name: 'RegisteredServiceEdit',
-    component: () => import('../views/RegisteredServiceForm.vue'),
-    meta: { requiresAuth: true, title: '编辑注册服务' }
-  },
-  {
-    path: '/registered-services/:id',
-    name: 'RegisteredServiceDetail',
-    component: () => import('../views/RegisteredServiceDetail.vue'),
-    meta: { requiresAuth: true, title: '注册服务详情' }
-  },
+      // === 服务发布路由（原"空间服务"） ===
+      {
+        path: 'published-services',
+        name: 'PublishedServiceList',
+        component: () => import('../views/PublishedServiceList.vue'),
+        meta: { requiresAuth: true, title: '服务发布' }
+      },
+      {
+        path: 'published-services/create',
+        name: 'PublishedServiceCreate',
+        component: () => import('../views/PublishedServiceForm.vue'),
+        meta: { requiresAuth: true, title: '创建服务' }
+      },
+      {
+        path: 'published-services/:id/edit',
+        name: 'PublishedServiceEdit',
+        component: () => import('../views/PublishedServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑服务' }
+      },
+      {
+        path: 'published-services/:id',
+        name: 'PublishedServiceDetail',
+        component: () => import('../views/PublishedServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '服务详情' }
+      },
+      {
+        path: 'published-services/:id/test',
+        name: 'PublishedServiceTest',
+        component: () => import('../views/PublishedServiceTest.vue'),
+        meta: { requiresAuth: true, title: '服务测试' }
+      },
 
-  // === 服务发布路由（原"空间服务"） ===
-  {
-    path: '/published-services',
-    name: 'PublishedServiceList',
-    component: () => import('../views/PublishedServiceList.vue'),
-    meta: { requiresAuth: true, title: '服务发布' }
-  },
-  {
-    path: '/published-services/create',
-    name: 'PublishedServiceCreate',
-    component: () => import('../views/PublishedServiceForm.vue'),
-    meta: { requiresAuth: true, title: '创建服务' }
-  },
-  {
-    path: '/published-services/:id/edit',
-    name: 'PublishedServiceEdit',
-    component: () => import('../views/PublishedServiceForm.vue'),
-    meta: { requiresAuth: true, title: '编辑服务' }
-  },
-  {
-    path: '/published-services/:id',
-    name: 'PublishedServiceDetail',
-    component: () => import('../views/PublishedServiceDetail.vue'),
-    meta: { requiresAuth: true, title: '服务详情' }
-  },
-  {
-    path: '/published-services/:id/test',
-    name: 'PublishedServiceTest',
-    component: () => import('../views/PublishedServiceTest.vue'),
-    meta: { requiresAuth: true, title: '服务测试' }
-  },
+      // === 服务注册路由（保持不变） ===
+      {
+        path: 'services',
+        name: 'ServiceManagement',
+        component: () => import('../views/ServiceManagement.vue'),
+        meta: { requiresAuth: true, title: '服务注册' }
+      },
+      {
+        path: 'services/create',
+        name: 'ServiceCreate',
+        component: () => import('../views/ServiceForm.vue'),
+        meta: { requiresAuth: true, title: '创建服务' }
+      },
+      {
+        path: 'services/:id/edit',
+        name: 'ServiceEdit',
+        component: () => import('../views/ServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑服务' }
+      },
+      {
+        path: 'services/:id',
+        name: 'ServiceDetail',
+        component: () => import('../views/ServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '服务详情' }
+      },
 
-  // === 服务注册路由（保持不变） ===
-  {
-    path: '/services',
-    name: 'ServiceManagement',
-    component: () => import('../views/ServiceManagement.vue'),
-    meta: { requiresAuth: true, title: '服务注册' }
-  },
-  {
-    path: '/services/create',
-    name: 'ServiceCreate',
-    component: () => import('../views/ServiceForm.vue'),
-    meta: { requiresAuth: true, title: '创建服务' }
-  },
-  {
-    path: '/services/:id/edit',
-    name: 'ServiceEdit',
-    component: () => import('../views/ServiceForm.vue'),
-    meta: { requiresAuth: true, title: '编辑服务' }
-  },
-  {
-    path: '/services/:id',
-    name: 'ServiceDetail',
-    component: () => import('../views/ServiceDetail.vue'),
-    meta: { requiresAuth: true, title: '服务详情' }
-  },
+      // === 服务目录路由（保持不变） ===
+      {
+        path: 'catalog',
+        name: 'ServiceCatalog',
+        component: () => import('../views/ServiceCatalog.vue'),
+        meta: { requiresAuth: true, title: '服务目录' }
+      },
 
-  // === 服务目录路由（保持不变） ===
-  {
-    path: '/catalog',
-    name: 'ServiceCatalog',
-    component: () => import('../views/ServiceCatalog.vue'),
-    meta: { requiresAuth: true, title: '服务目录' }
-  },
-
-  // === 瓦片服务路由 ===
-  {
-    path: '/tile',
-    name: 'TileServiceList',
-    component: () => import('../views/TileServiceList.vue'),
-    meta: { requiresAuth: true, title: '瓦片服务' }
-  },
-  {
-    path: '/tile/create',
-    name: 'TileServiceCreate',
-    component: () => import('../views/TileServiceForm.vue'),
-    meta: { requiresAuth: true, title: '创建瓦片服务' }
-  },
-  {
-    path: '/tile/:id/edit',
-    name: 'TileServiceEdit',
-    component: () => import('../views/TileServiceForm.vue'),
-    meta: { requiresAuth: true, title: '编辑瓦片服务' }
-  },
-  {
-    path: '/tile/:id',
-    name: 'TileServiceDetail',
-    component: () => import('../views/TileServiceDetail.vue'),
-    meta: { requiresAuth: true, title: '瓦片服务详情' }
+      // === 瓦片服务路由 ===
+      {
+        path: 'tile',
+        name: 'TileServiceList',
+        component: () => import('../views/TileServiceList.vue'),
+        meta: { requiresAuth: true, title: '瓦片服务' }
+      },
+      {
+        path: 'tile/create',
+        name: 'TileServiceCreate',
+        component: () => import('../views/TileServiceForm.vue'),
+        meta: { requiresAuth: true, title: '创建瓦片服务' }
+      },
+      {
+        path: 'tile/:id/edit',
+        name: 'TileServiceEdit',
+        component: () => import('../views/TileServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑瓦片服务' }
+      },
+      {
+        path: 'tile/:id',
+        name: 'TileServiceDetail',
+        component: () => import('../views/TileServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '瓦片服务详情' }
+      }
+    ]
   }
 ]
 

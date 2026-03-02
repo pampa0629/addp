@@ -23,21 +23,21 @@
           <el-col :span="5">
             <el-statistic title="执行中" :value="stats.last_running_tasks || 0">
               <template #prefix>
-                <el-icon color="#409EFF"><Loading /></el-icon>
+                <el-icon color="var(--el-color-primary)"><Loading /></el-icon>
               </template>
             </el-statistic>
           </el-col>
           <el-col :span="5">
             <el-statistic title="成功" :value="stats.last_success_tasks || 0">
               <template #prefix>
-                <el-icon color="#67C23A"><SuccessFilled /></el-icon>
+                <el-icon color="var(--el-color-success)"><SuccessFilled /></el-icon>
               </template>
             </el-statistic>
           </el-col>
           <el-col :span="5">
             <el-statistic title="失败" :value="stats.last_failed_tasks || 0">
               <template #prefix>
-                <el-icon color="#F56C6C"><CircleCloseFilled /></el-icon>
+                <el-icon color="var(--el-color-danger)"><CircleCloseFilled /></el-icon>
               </template>
             </el-statistic>
           </el-col>
@@ -138,7 +138,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { taskAPI } from '@/api/tasks'
-import { formatDate, formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
+import { formatDate } from '@common-ui'
+import { formatSchedule, getTaskStatusLabel, getTaskStatusTagType } from '@/utils/formatters'
 
 const router = useRouter()
 

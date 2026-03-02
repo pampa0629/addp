@@ -186,9 +186,9 @@ CREATE TABLE develop.dev_executions (
 - SQL 编辑器: http://localhost:5178/sql
 - SQL 任务: http://localhost:5178/sql-tasks
 
-### Portal 嵌入访问
-- SQL 编辑器: http://localhost:5170 (通过门户导航访问)
-- SQL 任务: http://localhost:5170 (通过门户导航访问)
+### Console 嵌入访问
+- SQL 编辑器: http://localhost:5170 (通过控制台导航访问)
+- SQL 任务: http://localhost:5170 (通过控制台导航访问)
 
 ### 生产环境 (通过 Gateway)
 - SQL 编辑器: http://localhost:8000/develop/ → SQL 编辑器

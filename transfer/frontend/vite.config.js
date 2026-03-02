@@ -31,12 +31,11 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@addp/common-frontend/basic': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@addp/common-frontend': resolve(__dirname, '../../common-frontend'),
       // 当 common-frontend 导入 element-plus 相关库时，使用当前项目的依赖
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus')
-    }
+    },
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/transfer/'  // 开发模式用 /，生产模式用 /transfer/
 })

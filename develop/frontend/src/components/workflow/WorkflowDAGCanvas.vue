@@ -168,7 +168,7 @@ function initGraph() {
               y: nodeHeight / 2 + 16,
               textAlign: 'center',
               textBaseline: 'top',
-              fill: '#666',
+              fill: '#666',  // TODO: 使用动态颜色 getCssVar('--addp-text-secondary') - 阶段4修复
               fontSize: 10
             },
             name: `port-label-${port.name}`

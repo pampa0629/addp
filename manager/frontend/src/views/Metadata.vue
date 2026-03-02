@@ -352,7 +352,7 @@
           </el-table-column>
           <el-table-column prop="is_primary_key" label="主键" width="80">
             <template #default="{ row }">
-              <el-icon v-if="row.is_primary_key" color="#67C23A"><Key /></el-icon>
+              <el-icon v-if="row.is_primary_key" color="var(--el-color-success)"><Key /></el-icon>
             </template>
           </el-table-column>
           <el-table-column prop="default_value" label="默认值" min-width="150">

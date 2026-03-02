@@ -510,19 +510,19 @@ onMounted(() => {
 }
 
 .text-secondary {
-  color: #909399;
+  color: var(--addp-text-tertiary);
   font-size: 13px;
 }
 
 .form-tip {
   font-size: 12px;
-  color: #909399;
+  color: var(--addp-text-tertiary);
   margin-top: 4px;
 }
 
 .api-key-display {
   padding: 16px;
-  background: #f5f7fa;
+  background: var(--addp-bg-secondary);
   border-radius: 4px;
 }
 
