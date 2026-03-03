@@ -1,22 +1,22 @@
 <template>
   <div class="table-preview">
-    <!-- 地图预览 -->
-    <template v-if="hasGeometry && showMap">
-      <div class="map-controls">
-        <div class="toggle-wrapper">
-          <span>地图预览</span>
-          <el-switch v-model="showMap" size="small" />
-        </div>
-        <el-select v-model="baseMapType" size="small" class="base-map-select">
-          <el-option
-            v-for="item in baseMapOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
+    <!-- 地图预览控制栏（有几何字段时始终显示，switch 在 v-if 块外部避免销毁时报错） -->
+    <div v-if="hasGeometry" class="map-controls">
+      <div class="toggle-wrapper">
+        <span>地图预览</span>
+        <el-switch v-model="showMap" size="small" />
       </div>
+      <el-select v-if="showMap" v-model="baseMapType" size="small" class="base-map-select">
+        <el-option
+          v-for="item in baseMapOptions"
+          :key="item.value"
+          :label="item.label"
+          :value="item.value"
+        />
+      </el-select>
+    </div>
 
+    <template v-if="hasGeometry && showMap">
       <MapContainer
         ref="mapRef"
         :features="geoFeatures"

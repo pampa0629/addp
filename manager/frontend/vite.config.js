@@ -10,7 +10,7 @@ export default defineConfig({
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
       '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
     },
-    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios']
+    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader']
   },
   optimizeDeps: {
     include: [
@@ -29,7 +29,8 @@ export default defineConfig({
       'ol/style/Circle',
       'ol/Overlay',
       'ol/interaction',
-      'ol/control'
+      'ol/control',
+      '@amap/amap-jsapi-loader'
     ]
   },
   server: {
