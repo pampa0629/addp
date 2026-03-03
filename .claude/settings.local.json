@@ -602,7 +602,10 @@
       "Bash(git stash pop)",
       "Bash(git stash drop)",
       "Bash(do echo \"=== common/$dir ===\" grep -r \"^import\" /Users/pampa/code/addp/common/$dir --include=\"*.go\")",
-      "Bash(do echo \"=== $mod ===\" grep \"addp/common\\\\|module \" /Users/pampa/code/addp/$mod/backend/go.mod)"
+      "Bash(do echo \"=== $mod ===\" grep \"addp/common\\\\|module \" /Users/pampa/code/addp/$mod/backend/go.mod)",
+      "Bash(git branch -d fix/hardcoded-colors-components fix/hardcoded-colors-batch fix/hardcoded-colors-canvas)",
+      "Bash(git push origin --delete fix/hardcoded-colors-canvas)",
+      "Bash(NODE_PATH=/opt/homebrew/lib/node_modules node /tmp/generate_pr_docx.js)"
     ],
     "deny": [],
     "ask": [],
