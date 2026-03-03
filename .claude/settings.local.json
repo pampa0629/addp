@@ -605,7 +605,9 @@
       "Bash(do echo \"=== $mod ===\" grep \"addp/common\\\\|module \" /Users/pampa/code/addp/$mod/backend/go.mod)",
       "Bash(git branch -d fix/hardcoded-colors-components fix/hardcoded-colors-batch fix/hardcoded-colors-canvas)",
       "Bash(git push origin --delete fix/hardcoded-colors-canvas)",
-      "Bash(NODE_PATH=/opt/homebrew/lib/node_modules node /tmp/generate_pr_docx.js)"
+      "Bash(NODE_PATH=/opt/homebrew/lib/node_modules node /tmp/generate_pr_docx.js)",
+      "Bash(go mod verify)",
+      "Bash(git stash drop stash@{0})"
     ],
     "deny": [],
     "ask": [],
