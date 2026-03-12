@@ -133,4 +133,3 @@ manager/backend/manager-backend
 manager/backend/server
 *.go.bak
 .claude/settings.local.json
-.claude/settings.local.json

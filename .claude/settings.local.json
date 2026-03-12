@@ -628,7 +628,13 @@
       "Bash(git -C /Users/pampa/code/addp status .claude/settings.local.json)",
       "Bash(/tmp/test_path_traversal.go:*)",
       "Bash(npm list:*)",
-      "Bash(claude --version)"
+      "Bash(claude --version)",
+      "Bash(/Users/pampa/code/addp/orchestrator/backend/migrations/001_add_basetask_fields.sql:*)",
+      "Bash(nc -z -w1 localhost 15432)",
+      "Bash(nc -z -w1 localhost 16379)",
+      "Bash(nc -z -w1 localhost 19000)",
+      "Bash(nc -z -w1 localhost 17700)",
+      "Bash(go vet ./...)"
     ],
     "deny": [],
     "ask": [],
