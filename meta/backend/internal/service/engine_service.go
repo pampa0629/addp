@@ -42,7 +42,7 @@ type EngineService struct {
 type ScanTaskServiceInterface interface {
 	CreateOrUpdateTaskFromScanConfig(resource *commonModels.Engine) error
 	DeleteTaskByResourceID(engineID uint) error
-	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*models.ScanTaskRun, error)
+	CreateManualRun(ctx context.Context, tenantID, userID uint, token string, req *models.ScanRequest) (*commonModels.TaskExecution, error)
 }
 
 func NewEngineService(db *gorm.DB, systemURL, internalKey string, redisClient *redis.Client) *EngineService {

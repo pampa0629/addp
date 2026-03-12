@@ -54,11 +54,11 @@ func (s *TaskService) SetExecutionService(executionService *ExecutionService) {
 }
 
 // CreateTask 创建任务
-func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequest, tenantID, userID uint) (*models.Task, error) {
+func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequest, tenantID, userID uint) (*models.TransferTask, error) {
 	s.logger.Info("creating task", "name", req.Name, "tenant_id", tenantID)
 
 	// 构建任务对象
-	task := &models.Task{
+	task := &models.TransferTask{
 		Name:        req.Name,
 		Description: req.Description,
 		Config:      req.Config,
@@ -130,7 +130,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req *models.CreateTaskRequ
 }
 
 // GetTask 获取任务
-func (s *TaskService) GetTask(ctx context.Context, id, tenantID uint) (*models.Task, error) {
+func (s *TaskService) GetTask(ctx context.Context, id, tenantID uint) (*models.TransferTask, error) {
 	task, err := s.taskRepo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -145,7 +145,7 @@ func (s *TaskService) GetTask(ctx context.Context, id, tenantID uint) (*models.T
 }
 
 // UpdateTask 更新任务
-func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *models.UpdateTaskRequest) (*models.Task, error) {
+func (s *TaskService) UpdateTask(ctx context.Context, id, tenantID uint, req *models.UpdateTaskRequest) (*models.TransferTask, error) {
 	task, err := s.GetTask(ctx, id, tenantID)
 	if err != nil {
 		return nil, err
@@ -240,7 +240,7 @@ func (s *TaskService) DeleteTask(ctx context.Context, id, tenantID uint) error {
 }
 
 // ListTasks 列出任务
-func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.ListTasksRequest) ([]models.Task, int64, error) {
+func (s *TaskService) ListTasks(ctx context.Context, tenantID uint, req *models.ListTasksRequest) ([]models.TransferTask, int64, error) {
 	if req.Page == 0 {
 		req.Page = 1
 	}

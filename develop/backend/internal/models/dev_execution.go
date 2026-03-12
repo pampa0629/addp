@@ -3,50 +3,9 @@ package models
 import (
 	"database/sql/driver"
 	"encoding/json"
-	"time"
+
+	commonModels "github.com/addp/common/models"
 )
-
-// DevExecution 统一执行记录表
-type DevExecution struct {
-	ID          uint   `gorm:"primaryKey" json:"id"`
-	DevItemID   *uint  `gorm:"index:idx_dev_executions_item" json:"dev_item_id,omitempty"`
-	TenantID    uint   `gorm:"not null;index:idx_dev_executions_tenant_status" json:"tenant_id"`
-	ExecutionID string `gorm:"size:255;uniqueIndex:idx_dev_executions_execution_id;not null" json:"execution_id"` // UUID 全局唯一标识
-
-	// 执行信息
-	DevType     string `gorm:"size:50;not null" json:"dev_type"`                                    // 'query' | 'workflow' | 'script' | 'notebook'
-	TriggerType string `gorm:"size:50;index:idx_dev_executions_trigger_type" json:"trigger_type"` // 'manual' | 'schedule' | 'orchestrator' | 'api'
-	TriggeredBy *uint  `json:"triggered_by,omitempty"`
-
-	// 状态跟踪
-	Status      string `gorm:"size:50;not null;index:idx_dev_executions_tenant_status" json:"status"` // 'pending' | 'running' | 'success' | 'failed' | 'timeout' | 'cancelled'
-	Progress    int    `gorm:"default:0" json:"progress"`                                              // 0-100
-	CurrentStep string `gorm:"size:255" json:"current_step,omitempty"`
-
-	// 执行结果
-	Result       ExecutionResult `gorm:"type:jsonb" json:"result,omitempty"`
-	Inputs       ExecutionResult `gorm:"type:jsonb" json:"inputs,omitempty"`     // 输入参数
-	ErrorMessage string          `gorm:"type:text" json:"error_message,omitempty"`
-	ExecutionTimeMs *int64       `json:"execution_time_ms,omitempty"` // 执行时间（毫秒）
-
-	// 资源使用
-	EngineID         *uint  `json:"engine_id,omitempty"`
-	RowsAffected     *int64 `json:"rows_affected,omitempty"`
-	ResultSizeBytes  *int64 `json:"result_size_bytes,omitempty"`
-
-	// 关联对象（不存储在数据库，用于Preload）
-	DevItem *DevItem `gorm:"foreignKey:DevItemID;references:ID" json:"-"`
-
-	// 时间戳
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	CreatedAt   time.Time  `gorm:"index:idx_dev_executions_created_at,sort:desc" json:"created_at"`
-}
-
-// TableName 指定表名
-func (DevExecution) TableName() string {
-	return "develop.dev_executions"
-}
 
 // ExecutionResult 执行结果（支持任意 JSON 结构）
 type ExecutionResult map[string]interface{}
@@ -105,18 +64,18 @@ type ListExecutionsRequest struct {
 	EndDate     string `form:"end_date"`   // YYYY-MM-DD
 }
 
-// ExecutionWithItem 执行记录和开发项关联
-type ExecutionWithItem struct {
-	DevExecution
-	DevItem *DevItem `json:"dev_item,omitempty"`
+// ExecutionWithDevItem 执行记录和开发任务关联
+type ExecutionWithDevItem struct {
+	*commonModels.TaskExecution
+	DevItem *DevTask `json:"dev_item,omitempty"`
 }
 
 // ListExecutionsResponse 执行列表响应
 type ListExecutionsResponse struct {
-	Executions []ExecutionWithItem `json:"executions"`
-	Total      int64               `json:"total"`
-	Page       int                 `json:"page"`
-	PageSize   int                 `json:"page_size"`
+	Executions []ExecutionWithDevItem `json:"executions"`
+	Total      int64                  `json:"total"`
+	Page       int                    `json:"page"`
+	PageSize   int                    `json:"page_size"`
 }
 
 // ExecutionStatistics 执行统计

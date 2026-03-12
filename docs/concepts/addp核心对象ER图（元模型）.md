@@ -13,9 +13,9 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 | 中文     | 英文标识符  | 说明                                                           | 体现在哪些业务对象上                              |
 | -------- | ----------- | -------------------------------------------------------------- | ------------------------------------------------- |
-| 调度配置 | Schedule    | 定时触发能力（Cron/daily/weekly），定义"何时执行"              | Task 及所有派生任务均可具备                       |
+| 调度配置 | Schedule    | 定时触发能力（Cron 表达式），定义"何时执行"                    | Task 及所有派生任务均可具备                       |
 | 执行记录 | Execution   | 单次运行的状态/进度/耗时/错误，记录"执行了什么、结果如何"      | 所有 Task 派生对象执行后均写入 common.task_executions |
-| 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / DevItem                     |
+| 数据指纹 | Fingerprint | 内容摘要（MD5/SHA），用于去重、变更检测、血缘追踪              | DataNode / DataItem / QuickView / Embedding       |
 | 向量嵌入 | Embedding   | 多模态内容的高维向量表示（pgvector），支持语义检索             | DataItem（文件/对象/表）                          |
 | 审计日志 | AuditLog    | 所有操作的不可变轨迹（操作人/时间/HTTP方法/路径/状态码）       | 全局，由 System 集中记录                          |
 
@@ -62,26 +62,44 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 
 **核心思想**：ADDP 中多种业务对象在本质上都是"任务"——定义了"做什么"，可以被执行、被调度、产生执行记录，也可以被 Orchestrator 编排。
 
-| 中文       | 英文标识符    | 所在 Schema   | 说明                                                  |
-| ---------- | ------------- | ------------- | ----------------------------------------------------- |
-| 任务（抽象）| Task          | —             | 抽象概念，以下均为派生                                |
-| 扫描任务   | ScanTask      | metadata      | 对某个 Engine 的元数据扫描任务定义                    |
-| 传输任务   | TransferTask  | transfer      | 数据导入/导出/同步任务定义，含字段映射                |
-| 开发项     | DevItem       | develop       | 可执行的开发工件（SQL/工作流/Notebook），本质也是任务 |
-| 编排工作流 | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
+| 中文         | 英文标识符    | 所在 Schema   | 说明                                                  |
+| ------------ | ------------- | ------------- | ----------------------------------------------------- |
+| 任务（抽象） | Task          | —             | 抽象概念，以下均为派生                                |
+| 扫描任务     | ScanTask      | metadata      | 对某个 Engine 的元数据扫描任务定义                    |
+| 传输任务     | TransferTask  | transfer      | 数据导入/导出/同步任务定义，含字段映射                |
+| 开发任务     | DevTask       | develop       | 可执行的开发工件（SQL/工作流/Notebook），本质也是任务 |
+| 编排工作流   | Orchestration | orchestrator  | 跨模块任务的 DAG 编排定义，**本身也是一种任务**       |
+| MVT生成任务  | MvtTask       | manager       | 对空间表生成矢量瓦片的任务定义，执行后更新 QuickView  |
+| 向量化任务   | EmbeddingTask | manager       | 对对象存储文件进行多模态向量化的任务定义              |
 
 **任务的共同能力**：
 - **Schedule**：所有 Task 均可配置定时调度（Cron 表达式）
 - **Execution**：所有 Task 执行后写入 `common.task_executions` 统一记录
-- **可被 Orchestration 编排**：ScanTask / TransferTask / DevItem 均可作为 Orchestration 的步骤（Step）
+- **可被 Orchestration 编排**：ScanTask / TransferTask / DevTask / MvtTask / EmbeddingTask 均可作为 Orchestration 的步骤（Step）
 - **Orchestration 的递归性**：Orchestration 执行完也产生 Execution，未来可被更高层编排引用
 
 **任务类型（task_type in common.task_executions）**：
-- Meta: `scan` / `deep_scan`
+- Meta: `scan`
 - Transfer: `import` / `export` / `sync`
 - Develop: `query` / `workflow` / `notebook`
 - Orchestrator: `orchestration`
-- Manager: `mvt_generation`（Manager 也可执行任务）
+- Manager: `mvt_generation` / `embedding`
+
+---
+
+### Manager 模块核心对象（schema: manager）
+
+| 中文         | 英文标识符    | 说明                                                              |
+| ------------ | ------------- | ----------------------------------------------------------------- |
+| MVT生成任务  | MvtTask       | Task 派生，对空间表生成矢量瓦片，执行时更新关联的 QuickView       |
+| 向量化任务   | EmbeddingTask | Task 派生，对对象存储文件进行多模态向量化，写入 Embedding         |
+| 快速预览状态 | QuickView     | 空间表的 MVT 缓存状态记录（非任务，是状态对象），描述瓦片是否就绪 |
+| 向量记录     | Embedding     | 单个文件的高维向量及元信息，fingerprint 用于去重和变更检测        |
+
+**关于 QuickView**：
+- 是"瓦片缓存状态记录"，不是任务——描述一张空间表的 MVT 缓存是否就绪
+- 可以存在无对应 MvtTask 的 QuickView（用户 ad-hoc 点击"生成"按钮触发）
+- `preparation_status` JSONB 存储物化视图/空间索引/ANALYZE 等准备阶段检查结果
 
 ---
 
@@ -111,15 +129,15 @@ Mermaid 图的字段与 PG 表字段保持一致，便于发现并修正字段�
 | 中文       | 英文标识符    | 说明                                                              |
 | ---------- | ------------- | ----------------------------------------------------------------- |
 | 编排工作流 | Orchestration | Task 派生，跨模块任务的 DAG 定义，本身执行后也产生 Execution      |
-| 步骤       | Step          | Orchestration 的子对象，调用某个模块暴露的任务接口（内嵌 JSONB） |
+| 步骤       | Step          | Orchestration 的子对象，两种模式：任务引用（provider/task_type/task_id）或引擎调用（engine_identifier），内嵌 JSONB |
 
 ---
 
 ### Develop 模块核心对象（schema: develop）
 
-| 中文   | 英文标识符 | 说明                                                                  |
-| ------ | ---------- | --------------------------------------------------------------------- |
-| 开发项 | DevItem    | Task 派生，可执行的开发工件（query/workflow/notebook），选择计算类 Engine 执行 |
+| 中文     | 英文标识符 | 说明                                                                  |
+| -------- | ---------- | --------------------------------------------------------------------- |
+| 开发任务 | DevTask    | Task 派生，可执行的开发工件（query/workflow/notebook），选择计算类 Engine 执行 |
 
 ---
 
@@ -232,13 +250,12 @@ erDiagram
         string display_name
         string description
         string base_url
-        string task_list_endpoint
-        string task_detail_endpoint
-        string task_execute_endpoint
-        string task_status_endpoint
-        json capabilities
-        string create_task_url
-        string edit_task_url
+        string task_list_endpoint "GET /api/tasks"
+        string task_detail_endpoint "GET /api/tasks/{task_type}/{id}"
+        string task_execute_endpoint "POST /api/tasks/{task_type}/{id}/execute"
+        string task_status_endpoint "GET /api/executions/{execution_id}"
+        string task_cancel_endpoint "POST /api/executions/{execution_id}/cancel"
+        json capabilities "声明支持的 task_types 及前端路由(JSONB)"
         bool is_enabled
         timestamp created_at
         timestamp updated_at
@@ -285,7 +302,7 @@ erDiagram
 
 ### 2.2 Task 抽象体系图
 
-> Task 是抽象概念（无实体表），所有派生任务共享：Schedule 能力、产生 Execution、可被 Orchestration 编排。
+> Task 是抽象概念（无实体表），所有派生任务共享：BaseTask 公共字段、Schedule 能力、产生 Execution、可被 Orchestration 编排。
 
 ```mermaid
 erDiagram
@@ -294,13 +311,18 @@ erDiagram
         uint tenant_id FK
         uint engine_id FK "存储类 Engine"
         string name
-        string schedule "Cron 表达式（与 TransferTask/DevItem 统一）"
-        bool enabled
-        json parameters
+        string description "任务描述（可选）"
+        string schedule "Cron 表达式（空=不调度）"
+        bool enabled "是否启用定时调度，默认 false"
+        json parameters "扫描目标配置：节点/深度/类型等"
         timestamp last_run_at
         timestamp next_run_at
+        string last_execution_id "最近执行 UUID（软引用）"
+        string last_execution_status "最近执行状态（冗余）"
+        uint created_by FK
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     TransferTask {
@@ -308,13 +330,20 @@ erDiagram
         uint tenant_id FK
         string name
         string description
+        string task_type "import | export | sync"
         json config "Reader-Transform-Writer 管道配置(JSONB)"
         string schedule "Cron 表达式"
         int batch_size
         bool enabled
-        bool auto_scan_metadata
+        bool auto_scan_metadata "完成后自动触发扫描"
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     FieldMapping {
@@ -323,26 +352,34 @@ erDiagram
         string source_field
         string target_field
         string default_value
+        string field_type
         string format
         bool nullable
+        timestamp created_at
     }
 
-    DevItem {
+    DevTask {
         uint id PK
         uint tenant_id FK
         uint engine_id FK "具备对应能力的 Engine"
         string name
         string display_name
         string dev_type "query | workflow | notebook"
-        json content "工作流节点/SQL内容等"
-        json execution_config
+        json content "SQL语句/工作流节点定义/Notebook内容"
+        json execution_config "引擎ID和执行参数"
         string schedule "Cron 表达式"
-        int timeout
-        string status
+        bool enabled "是否启用定时调度"
+        int timeout "超时时间（秒）"
+        string tags "text[]，标签"
+        string status "active | inactive | archived（发布状态）"
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
         string last_execution_status
-        timestamp last_executed_at
+        uint created_by FK
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     Orchestration {
@@ -353,53 +390,226 @@ erDiagram
         json steps "Step 内嵌数组(JSONB)"
         bool enabled
         string schedule "Cron 表达式"
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    MvtTask {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK "空间数据所在引擎"
+        string name
+        string description
+        string schema_name "目标 schema"
+        string table_name "目标表名"
+        int min_zoom "最小缩放级别"
+        int max_zoom "最大缩放级别，默认 18"
+        json optimization_config "简化精度优化配置"
+        string schedule "Cron 表达式"
+        bool enabled
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    EmbeddingTask {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK "对象存储引擎"
+        string name
+        string description
+        string bucket "存储桶"
+        string prefix "路径前缀（空=整个 bucket）"
+        bool recursive "是否递归子目录"
+        string model "向量模型名称"
+        string file_types "text[]，指定文件类型（空=全部）"
+        string modality "text | image | audio | video | document | auto"
+        string schedule "Cron 表达式"
+        bool enabled
+        timestamp last_run_at
+        timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
+    }
+
+    TaskExecution {
+        bigint id PK "bigint，应对高频写入"
+        string execution_id UK "UUID，全局唯一，跨模块追踪"
+        uint tenant_id FK
+        string module "meta|transfer|develop|orchestrator|manager"
+        string task_type "scan|import|export|sync|query|workflow|notebook|orchestration|mvt_generation|embedding"
+        string source_task_id "对应模块任务 ID（字符串，无 DB FK）"
+        string source_task_name "任务名称（冗余，便于展示）"
+        string status "pending|running|success|failed|timeout|cancelled"
+        int progress "0-100"
+        string current_step "当前步骤描述（可选）"
+        string trigger_type "manual | schedule | api | orchestrator"
+        uint triggered_by FK "触发用户 ID（可选）"
+        string parent_execution_id "父 Orchestration 的 execution_id（无 DB FK）"
+        timestamp started_at
+        timestamp completed_at
+        bigint execution_time_ms "执行时长（毫秒）"
+        json error_details "错误详情（JSONB，仅失败时有值）"
+        json metadata "模块特有扩展数据（JSONB，成功失败均有价值）"
         timestamp created_at
         timestamp updated_at
     }
 
-    Execution {
-        bigint id PK
-        string execution_id "UUID，全局唯一标识，用于跨模块追踪"
-        uint tenant_id FK
-        string module "meta|transfer|develop|orchestrator|manager"
-        string execution_type "scan|import|export|sync|query|workflow|notebook|orchestration|mvt_generation"
-        string source_task_id "对应模块内任务的 ID（字符串，无 DB FK）"
-        string status "pending|running|success|failed|cancelled"
-        timestamp started_at
-        timestamp finished_at
-        int duration "秒"
-        json result
-        json error
-        json metadata "任务参数、执行上下文"
-    }
-
     TransferTask ||--o{ FieldMapping : "含字段映射"
-    ScanTask ||--o{ Execution : "产生"
-    TransferTask ||--o{ Execution : "产生"
-    DevItem ||--o{ Execution : "产生"
-    Orchestration ||--o{ Execution : "产生"
+    ScanTask ||--o{ TaskExecution : "产生"
+    TransferTask ||--o{ TaskExecution : "产生"
+    DevTask ||--o{ TaskExecution : "产生"
+    Orchestration ||--o{ TaskExecution : "产生"
+    MvtTask ||--o{ TaskExecution : "产生"
+    EmbeddingTask ||--o{ TaskExecution : "产生"
     Orchestration }o--o{ ScanTask : "编排步骤"
     Orchestration }o--o{ TransferTask : "编排步骤"
-    Orchestration }o--o{ DevItem : "编排步骤"
+    Orchestration }o--o{ DevTask : "编排步骤"
+    Orchestration }o--o{ MvtTask : "编排步骤"
+    Orchestration }o--o{ EmbeddingTask : "编排步骤"
+    TaskExecution ||--o{ TaskExecution : "parent_execution_id 子步骤追踪父编排"
 ```
 
 **说明**：
-- `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 通过 `engine_identifier`（如 `meta.scanner.default`）动态调用对应模块的任务 API，不存实际 FK
-- `Orchestration` 执行后本身也产生 `Execution`（task_type='orchestration'），**未来可被更高层 Orchestration 编排**（当前未实现）
-- `DevItem.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`notebook` 类选择 NotebookCompute 引擎（如 Jupyter）
+- `Orchestration.steps` 是内嵌 JSONB 数组，每个 Step 支持两种模式：
+  - **任务引用模式**（`provider` 非空）：通过 TaskProvider API 调用已配置好的任务（`provider/task_type/task_id`）
+  - **引擎调用模式**（`engine_identifier` 非空）：动态通过计算引擎类型执行，无需预先定义任务
+- `Orchestration` 执行后本身也产生 `TaskExecution`（task_type='orchestration'），**未来可被更高层 Orchestration 编排**（当前未实现）
+- `DevTask.engine_id` 指向"具备对应能力的引擎"：`query` 类选择同时具备 RelationalStorage+SQLCompute 的引擎（如 PostgreSQL）；`workflow` 类选择 WorkflowCompute 引擎（如 Python Workflow）；`notebook` 类选择 NotebookCompute 引擎（如 Jupyter）
+- `TaskExecution.error_details`：仅在失败时填充，存储错误类型、错误栈等诊断信息；`metadata`：每次执行均可写入，存储各模块特有的过程数据和结果统计
 
 **⚠️ 发现的问题**：
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| T-1 | `TransferTask` 的 `schedule` 字段是字符串（Cron 表达式），而 `ScanTask` 用了 `schedule_type` + `cron_expression` 两字段，两者不一致 | 已修正 | ScanTask 已统一改为单字段 `schedule`，四类任务调度字段现已一致 |
-| T-2 | `Orchestration.steps` 内嵌 JSONB，步骤中引用的任务类型（ScanTask/TransferTask/DevItem）无法做数据库级约束 | 应用层维护 | 合理，跨模块调用只能在应用层验证 |
-| T-3 | `Execution` 的 `source_task_id` 是字符串而非 FK，无法联表查询到对应任务的详情 | 设计如此 | 需要应用层按 module+execution_type 路由到对应表查询 |
+| T-1 | `TransferTask` 的 `schedule` 字段是字符串（Cron 表达式），而 `ScanTask` 用了 `schedule_type` + `cron_expression` 两字段，两者不一致 | ✅ 已修正 | ScanTask 已统一改为单字段 `schedule`，六类任务调度字段现已一致 |
+| T-2 | `Orchestration.steps` 内嵌 JSONB，步骤中引用的任务类型无法做数据库级约束 | 应用层维护 | 合理，跨模块调用只能在应用层验证 |
+| T-3 | `TaskExecution.source_task_id` 是字符串而非 FK，无法联表查询到对应任务的详情 | 设计如此 | 需要应用层按 module+task_type 路由到对应表查询 |
 | T-4 | `Orchestration` 本身也是 Task，但当前无法作为另一个 Orchestration 的 Step 被引用 | 未实现 | 元模型上预留，实现时按需支持 |
 
 ---
 
-### 2.3 Service 模块对象图
+### 2.3 Manager 模块对象图
+
+```mermaid
+erDiagram
+    MvtTask {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK "空间数据所在引擎"
+        string name
+        string schema_name
+        string table_name
+        int min_zoom
+        int max_zoom "默认 18"
+        json optimization_config
+        string schedule
+        bool enabled
+        timestamp last_run_at
+        string last_execution_id
+        string last_execution_status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    EmbeddingTask {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK "对象存储引擎"
+        string name
+        string bucket
+        string prefix
+        bool recursive
+        string model
+        string file_types "text[]"
+        string modality "text|image|audio|video|document|auto"
+        string schedule
+        bool enabled
+        timestamp last_run_at
+        string last_execution_id
+        string last_execution_status
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    QuickView {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK
+        string schema_name
+        string table_name
+        string status "none|generating|ready|failed|cancelled"
+        string preferred_mode "geojson | mvt（用户偏好）"
+        string error_message
+        int min_zoom
+        int max_zoom
+        int actual_max_zoom "实际生成到第几层"
+        int total_tiles
+        int cached_tiles
+        string fingerprint "SHA256，用于 MinIO 路径和变更检测"
+        json extent "[minLng, minLat, maxLng, maxLat]"
+        int extent_srid
+        json optimization_config "生成时使用的优化配置"
+        json preparation_status "物化视图/空间索引/ANALYZE 检查结果"
+        timestamp started_at
+        timestamp completed_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    Embedding {
+        uint id PK
+        uint tenant_id FK
+        uint engine_id FK
+        string bucket
+        string path "目录路径（不含 bucket 和文件名）"
+        string name "文件名"
+        string fingerprint UK "SHA256，内容指纹（去重/变更检测）"
+        vector embedding "vector(1024)，高维向量"
+        string modality "text|image|audio|video|document"
+        string model
+        bigint file_size
+        string content_type "MIME 类型"
+        timestamp data_updated_at "对象最后修改时间（来自 MinIO）"
+        json metadata "额外元数据"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    MvtTask ||--o| QuickView : "执行时按 engine+schema+table 更新（无 DB FK）"
+    EmbeddingTask ||--o{ Embedding : "执行时写入或更新向量"
+```
+
+**说明**：
+- `QuickView` 是状态对象，不是任务——描述一张空间表的 MVT 缓存是否就绪
+- `MvtTask` 与 `QuickView` 通过 `engine_id + schema_name + table_name` 关联，无 DB FK（一张表可以没有 MvtTask 也有 QuickView，如 ad-hoc 生成）
+- MvtTask 执行流程：准备阶段（检查物化视图/空间索引/ANALYZE，更新 QuickView.preparation_status）→ 生成阶段（逐 zoom 层写 MinIO，更新 QuickView.cached_tiles）→ 完成阶段（更新 QuickView.status=ready，回写 MvtTask.last_execution_id）
+
+**⚠️ 发现的问题**：
+
+| # | 问题描述 | 当前状态 | 影响 |
+|---|----------|----------|------|
+| MG-1 | `MvtTask` 与 `QuickView` 通过 engine+schema+table 三字段软关联，无 DB FK | 设计如此 | 同一张空间表可能对应多个 MvtTask（不同 zoom 配置），QuickView 按最新执行覆盖更新 |
+| MG-2 | `Embedding.fingerprint` 是唯一键，依赖 SHA256 内容指纹去重；文件内容不变则不重复向量化 | 设计如此 | 合理，基于内容的去重机制 |
+
+---
+
+### 2.4 Service 模块对象图
 
 ```mermaid
 erDiagram
@@ -513,7 +723,7 @@ erDiagram
 
 ---
 
-### 2.4 Meta 模块对象图
+### 2.5 Meta 模块对象图
 
 ```mermaid
 erDiagram
@@ -555,13 +765,18 @@ erDiagram
         uint tenant_id FK
         uint engine_id FK "存储类 Engine"
         string name
-        string schedule "Cron 表达式（与 TransferTask/DevItem/Orchestration 统一）"
+        string description
+        string schedule "Cron 表达式（与各任务统一）"
         bool enabled
         json parameters
         timestamp last_run_at
         timestamp next_run_at
+        string last_execution_id
+        string last_execution_status
+        uint created_by FK
         timestamp created_at
         timestamp updated_at
+        timestamp deleted_at
     }
 
     DataNode ||--o{ DataNode : "父子节点(self-ref)"
@@ -578,12 +793,12 @@ erDiagram
 
 | # | 问题描述 | 当前状态 | 影响 |
 |---|----------|----------|------|
-| M-1 | `ScanTask` 的调度字段（`schedule_type + cron_expression`）与 `TransferTask`、`DevItem` 的单字段 `schedule` 不一致 | ✅ 已修正 | ScanTask 已统一改为单字段 `schedule`，见 T-1 |
+| M-1 | `ScanTask` 的调度字段（`schedule_type + cron_expression`）与 `TransferTask`、`DevTask` 的单字段 `schedule` 不一致 | ✅ 已修正 | ScanTask 已统一改为单字段 `schedule`，六类任务调度字段现已一致 |
 | M-2 | `DataItem.attributes` JSONB 存放字段列表，无法做字段级查询和索引 | 设计如此 | 字段元数据检索依赖全文索引（Meilisearch）|
 
 ---
 
-### 2.5 Standard 模块对象图
+### 2.6 Standard 模块对象图
 
 ```mermaid
 erDiagram
@@ -757,7 +972,7 @@ erDiagram
 
 ---
 
-### 2.6 Model 模块对象图
+### 2.7 Model 模块对象图
 
 ```mermaid
 erDiagram
@@ -897,7 +1112,7 @@ erDiagram
 
 ---
 
-### 2.7 跨模块关系图
+### 2.8 跨模块关系图
 
 > 忽略字段细节，聚焦模块间的关键业务关联。实线 = 同 schema DB FK；虚线 = 跨 schema 软引用（无 DB FK，应用层维护）。
 
@@ -926,15 +1141,22 @@ graph LR
     end
 
     subgraph DEV["Develop"]
-        DevItem
+        DevTask
     end
 
     subgraph ORC["Orchestrator"]
         Orchestration
     end
 
+    subgraph MGR["Manager"]
+        MvtTask
+        EmbeddingTask
+        QuickView
+        Embedding
+    end
+
     subgraph MON["Monitor (公共)"]
-        Execution
+        TaskExecution
     end
 
     subgraph SVC["Service"]
@@ -972,9 +1194,11 @@ graph LR
     Engine --> DataNode
     Engine --> ScanTask
     Engine --> TransferTask
-    Engine --> DevItem
+    Engine --> DevTask
     Engine --> QueryService
     Engine --> TileService
+    Engine --> MvtTask
+    Engine --> EmbeddingTask
 
     %% Meta 内部
     DataNode --> DataItem
@@ -983,16 +1207,24 @@ graph LR
     %% Transfer 内部
     TransferTask --> FieldMapping
 
+    %% Manager 内部
+    MvtTask -.->|"执行时更新\n(engine+schema+table)"| QuickView
+    EmbeddingTask --> Embedding
+
     %% Orchestration 编排（步骤存 JSONB，软引用）
     Orchestration -.->|"编排步骤(JSONB)"| ScanTask
     Orchestration -.->|"编排步骤(JSONB)"| TransferTask
-    Orchestration -.->|"编排步骤(JSONB)"| DevItem
+    Orchestration -.->|"编排步骤(JSONB)"| DevTask
+    Orchestration -.->|"编排步骤(JSONB)"| MvtTask
+    Orchestration -.->|"编排步骤(JSONB)"| EmbeddingTask
 
     %% 统一执行记录
-    ScanTask --> Execution
-    TransferTask --> Execution
-    DevItem --> Execution
-    Orchestration --> Execution
+    ScanTask --> TaskExecution
+    TransferTask --> TaskExecution
+    DevTask --> TaskExecution
+    Orchestration --> TaskExecution
+    MvtTask --> TaskExecution
+    EmbeddingTask --> TaskExecution
 
     %% Service 图层
     TileService --> TileServiceLayer
@@ -1028,18 +1260,19 @@ graph LR
 
 ---
 
-### 2.8 全局元模型总图（概览）
+### 2.9 全局元模型总图（概览）
 
 > 模块级视图，只展示模块之间的依赖方向，不列对象细节。
 
 ```mermaid
 graph TD
-    SYS["System\nTenant / User / Engine / Module"]
+    SYS["System\nTenant / User / Engine / Module / TaskProvider"]
     META["Meta\nDataNode / DataItem / ScanTask"]
     TRF["Transfer\nTransferTask / FieldMapping"]
-    DEV["Develop\nDevItem"]
+    DEV["Develop\nDevTask"]
     ORC["Orchestrator\nOrchestration"]
-    MON["Monitor (公共)\nExecution"]
+    MGR["Manager\nMvtTask / EmbeddingTask / QuickView / Embedding"]
+    MON["Monitor (公共)\nTaskExecution"]
     SVC["Service\nQueryService / TileService / RegisteredService"]
     STD["Standard\nDomain / Element / Metric / CodeSet / Unit"]
     MOD["Model\nLogicalTable / LogicalField / Entity / FactMetricMapping"]
@@ -1048,17 +1281,20 @@ graph TD
     SYS -->|"提供 Engine"| TRF
     SYS -->|"提供 Engine"| DEV
     SYS -->|"提供 Engine"| SVC
+    SYS -->|"提供 Engine"| MGR
     SYS -->|"Module 注册"| ORC
 
     META -->|"DataItem 可选关联"| SVC
     ORC -->|"编排步骤(JSONB调用)"| META
     ORC -->|"编排步骤(JSONB调用)"| TRF
     ORC -->|"编排步骤(JSONB调用)"| DEV
+    ORC -->|"编排步骤(JSONB调用)"| MGR
 
     META --> MON
     TRF --> MON
     DEV --> MON
     ORC --> MON
+    MGR --> MON
 
     STD -.->|"Element/Metric 软引用"| MOD
     STD -.->|"Domain 软引用"| MOD
@@ -1073,12 +1309,14 @@ graph TD
 | S-1  | System   | TaskProvider 与 Module 通过 module_name 字符串关联，无 DB FK，考虑合并两表 | 中  | 待讨论     |
 | S-2  | System   | Module 无 tenant_id，模块是全局的                                     | —      | 已确认合理 |
 | S-3  | System   | Engine.created_by 无 DB FK（跨 schema 引用 User）                     | —      | 已确认合理 |
-| T-1  | Task     | ScanTask 调度字段与其他任务不一致（schedule_type+cron_expression vs 单字段 schedule） | 中 | ✅ 已修正（ScanTask 已统一为单字段 schedule） |
+| T-1  | Task     | ScanTask 调度字段与其他任务不一致（schedule_type+cron_expression vs 单字段 schedule） | 中 | ✅ 已修正（所有六类任务均统一为单字段 schedule） |
 | T-2  | Task     | Orchestration.steps 内嵌 JSONB，任务引用无 DB 约束                    | —      | 已确认合理 |
-| T-3  | Task     | Execution.source_task_id 为字符串，无法联表查询任务详情                      | 低     | 待讨论     |
+| T-3  | Task     | TaskExecution.source_task_id 为字符串，无法联表查询任务详情            | 低     | 待讨论     |
 | T-4  | Task     | Orchestration 不能作为另一 Orchestration 的 Step（递归编排）          | 低     | 元模型预留，待实现 |
-| M-1 | `ScanTask` 的调度字段（`schedule_type + cron_expression`）与 `TransferTask`、`DevItem` 的单字段 `schedule` 不一致 | 已修正 | 见 T-1，ScanTask 已统一改为单字段 `schedule` |
+| M-1  | Meta     | ScanTask 的调度字段（schedule_type + cron_expression）与其他任务单字段 schedule 不一致 | 中 | ✅ 已修正，见 T-1 |
 | M-2  | Meta     | DataItem.attributes JSONB 存字段列表，无字段级查询能力                | —      | 已确认合理（依赖 Meilisearch）|
+| MG-1 | Manager  | MvtTask 与 QuickView 通过 engine+schema+table 三字段软关联，无 DB FK  | —      | 已确认合理 |
+| MG-2 | Manager  | Embedding.fingerprint 是唯一键，依赖 SHA256 去重；文件内容不变则不重复向量化 | — | 已确认合理 |
 | SV-1 | Service  | TileServiceLayer.engine_id 藏在 layer_config JSONB 中，无 DB FK       | 中     | 待讨论     |
 | SV-2 | Service  | 三类服务无统一父表，服务目录需 UNION 查询                             | 低     | 待讨论     |
 | SV-3 | Service  | RegisteredService.auth_config 加密存储，敏感信息与业务信息混存        | —      | 已确认合理 |

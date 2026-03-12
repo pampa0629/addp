@@ -7,6 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/addp/common v0.0.0
 	github.com/gin-gonic/gin v1.11.0
+	github.com/google/uuid v1.6.0
 	github.com/hibiken/asynq v0.25.1
 	github.com/meilisearch/meilisearch-go v0.26.0
 	github.com/minio/minio-go/v7 v7.0.97
@@ -46,7 +47,6 @@ require (
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

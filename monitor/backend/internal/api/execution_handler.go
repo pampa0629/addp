@@ -39,7 +39,7 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	req := &service.ListExecutionsRequest{
 		TenantID:      tenantID,
 		Module:        c.Query("module"),
-		ExecutionType: c.Query("execution_type"),
+		TaskType:      c.Query("task_type"),
 		Status:        c.Query("status"),
 		TriggerType:   c.Query("trigger_type"),
 		Page:          page,

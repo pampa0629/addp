@@ -244,7 +244,7 @@ func connectDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 	// Initialize database with auto-migration
 	db, err := commonRepo.InitDatabase(dbConfig,
-		&models.Task{},
+		&models.TransferTask{},
 		// &models.TaskExecution{}, // 【已废弃】改用统一执行表
 		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 		&models.FieldMapping{},

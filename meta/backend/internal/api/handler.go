@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	commonAuth "github.com/addp/common/middleware/auth"
 	metaErrors "github.com/addp/meta/internal/errors"
@@ -208,7 +207,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": run})
 }
 
-// GetScanRun 获取运行进度
+// GetScanRun 获取执行详情（按 execution UUID）
 func (h *Handler) GetScanRun(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -216,31 +215,48 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 	}
 
 	tenantID := commonAuth.GetTenantID(c)
-	runIDStr := c.Param("run_id")
-	runID, err := strconv.ParseUint(runIDStr, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid run_id"})
+	executionID := c.Param("run_id")
+	if executionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing execution_id"})
 		return
 	}
 
-	run, err := h.taskService.GetRun(uint(runID))
+	exec, err := h.taskService.GetExecution(c.Request.Context(), executionID, int(tenantID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "execution not found"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if run.TenantID != tenantID {
-		c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+
+	c.JSON(http.StatusOK, gin.H{"data": exec})
+}
+
+// CancelScanRun 取消执行
+func (h *Handler) CancelScanRun(c *gin.Context) {
+	if h.taskService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	tenantID := commonAuth.GetTenantID(c)
+	executionID := c.Param("run_id")
+	if executionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing execution_id"})
+		return
+	}
+
+	if err := h.taskService.CancelExecution(c.Request.Context(), executionID, int(tenantID)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "execution cancelled"})
 }
 
-// ListScanRuns 列出运行任务
+// ListScanRuns 列出执行记录（从 common.task_executions 查询）
 func (h *Handler) ListScanRuns(c *gin.Context) {
 	if h.taskService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "task service not available"})
@@ -248,52 +264,20 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 	}
 
 	tenantID := commonAuth.GetTenantID(c)
+	var err error
 
-	var (
-		taskID     *uint
-		resourceID *uint
-		err        error
-	)
-
+	var taskID *int
 	if taskIDStr := c.Query("task_id"); taskIDStr != "" {
-		val, parseErr := strconv.ParseUint(taskIDStr, 10, 32)
+		val, parseErr := strconv.Atoi(taskIDStr)
 		if parseErr != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task_id"})
 			return
 		}
-		taskID = new(uint)
-		*taskID = uint(val)
+		taskID = &val
 	}
 
-	if engineIDStr := c.Query("engine_id"); engineIDStr != "" {
-		val, parseErr := strconv.ParseUint(engineIDStr, 10, 32)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid engine_id"})
-			return
-		}
-		resourceID = new(uint)
-		*resourceID = uint(val)
-	}
-
-	status := c.Query("status")
-	storageType := c.Query("storage_type")
-	triggerType := c.Query("trigger_type")
-
-	pageSize := 20
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if pageSize, err = strconv.Atoi(pageSizeStr); err != nil || pageSize <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page_size"})
-			return
-		}
-	}
-
-	limit := pageSize
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if limit, err = strconv.Atoi(limitStr); err != nil || limit <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
-			return
-		}
-	}
+	status := strings.TrimSpace(c.Query("status"))
+	triggerType := strings.TrimSpace(c.Query("trigger_type"))
 
 	page := 1
 	if pageStr := c.Query("page"); pageStr != "" {
@@ -303,62 +287,30 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 		}
 	}
 
-	offset := (page - 1) * limit
-	if offsetStr := c.Query("offset"); offsetStr != "" {
-		if offset, err = strconv.Atoi(offsetStr); err != nil || offset < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid offset"})
+	pageSize := 20
+	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
+		if pageSize, err = strconv.Atoi(pageSizeStr); err != nil || pageSize <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid page_size"})
 			return
 		}
 	}
 
-	var startedAfter *time.Time
-	if from := strings.TrimSpace(c.Query("started_after")); from != "" {
-		if parsed, parseErr := time.ParseInLocation("2006-01-02 15:04:05", from, time.Local); parseErr == nil {
-			startedAfter = &parsed
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid started_after"})
-			return
-		}
-	}
-
-	var startedBefore *time.Time
-	if to := strings.TrimSpace(c.Query("started_before")); to != "" {
-		if parsed, parseErr := time.ParseInLocation("2006-01-02 15:04:05", to, time.Local); parseErr == nil {
-			startedBefore = &parsed
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid started_before"})
-			return
-		}
-	}
-
-	options := &service.ListRunsOptions{
-		TaskID:        taskID,
-		EngineID:    resourceID,
-		Status:        strings.TrimSpace(status),
-		TriggerType:   strings.TrimSpace(triggerType),
-		StorageType:   strings.TrimSpace(storageType),
-		StartedAfter:  startedAfter,
-		StartedBefore: startedBefore,
-		Limit:         limit,
-		Offset:        offset,
-	}
-
-	runs, total, err := h.taskService.ListRuns(tenantID, options)
+	executions, total, err := h.taskService.ListExecutions(c.Request.Context(), int(tenantID), taskID, status, triggerType, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	totalPages := int64(0)
-	if limit > 0 {
-		totalPages = (total + int64(limit) - 1) / int64(limit)
+	if pageSize > 0 {
+		totalPages = (total + int64(pageSize) - 1) / int64(pageSize)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        runs,
+		"data":        executions,
 		"total":       total,
 		"page":        page,
-		"page_size":   limit,
+		"page_size":   pageSize,
 		"total_pages": totalPages,
 	})
 }

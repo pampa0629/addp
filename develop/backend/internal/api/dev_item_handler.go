@@ -11,13 +11,13 @@ import (
 
 // DevItemHandler 开发项API处理器
 type DevItemHandler struct {
-	devItemService *service.DevItemService
+	devTaskService *service.DevTaskService
 }
 
 // NewDevItemHandler 创建开发项处理器
-func NewDevItemHandler(devItemService *service.DevItemService) *DevItemHandler {
+func NewDevItemHandler(devTaskService *service.DevTaskService) *DevItemHandler {
 	return &DevItemHandler{
-		devItemService: devItemService,
+		devTaskService: devTaskService,
 	}
 }
 
@@ -26,11 +26,11 @@ func NewDevItemHandler(devItemService *service.DevItemService) *DevItemHandler {
 // @Tags DevItem
 // @Accept json
 // @Produce json
-// @Param body body models.CreateDevItemRequest true "创建请求"
+// @Param body body models.CreateDevTaskRequest true "创建请求"
 // @Success 200 {object} models.DevItem
 // @Router /api/develop/items [post]
 func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
-	var req models.CreateDevItemRequest
+	var req models.CreateDevTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -39,7 +39,7 @@ func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	item, err := h.devItemService.CreateDevItem(&req, tenantID, userID)
+	item, err := h.devTaskService.CreateDevItem(&req, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -54,7 +54,7 @@ func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "开发项ID"
-// @Param body body models.UpdateDevItemRequest true "更新请求"
+// @Param body body models.UpdateDevTaskRequest true "更新请求"
 // @Success 200 {object} models.DevItem
 // @Router /api/develop/items/{id} [put]
 func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
@@ -64,7 +64,7 @@ func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 		return
 	}
 
-	var req models.UpdateDevItemRequest
+	var req models.UpdateDevTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -73,7 +73,7 @@ func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
 
-	item, err := h.devItemService.UpdateDevItem(uint(id), &req, tenantID, userID)
+	item, err := h.devTaskService.UpdateDevItem(uint(id), &req, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -98,7 +98,7 @@ func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	item, err := h.devItemService.GetDevItem(uint(id), tenantID)
+	item, err := h.devTaskService.GetDevItem(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -118,10 +118,10 @@ func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 // @Param engine_id query int false "资源ID过滤"
 // @Param tag query string false "标签过滤"
 // @Param keyword query string false "关键词搜索"
-// @Success 200 {object} models.ListDevItemsResponse
+// @Success 200 {object} models.ListDevTasksResponse
 // @Router /api/develop/items [get]
 func (h *DevItemHandler) ListDevItems(c *gin.Context) {
-	var req models.ListDevItemsRequest
+	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -129,7 +129,7 @@ func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	items, total, err := h.devItemService.ListDevItems(&req, tenantID)
+	items, total, err := h.devTaskService.ListDevItems(&req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -143,7 +143,7 @@ func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	c.JSON(http.StatusOK, models.ListDevItemsResponse{
+	c.JSON(http.StatusOK, models.ListDevTasksResponse{
 		Items:    items,
 		Total:    total,
 		Page:     req.Page,
@@ -166,7 +166,7 @@ func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.devItemService.DeleteDevItem(uint(id), tenantID); err != nil {
+	if err := h.devTaskService.DeleteDevItem(uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -207,7 +207,7 @@ func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 func (h *DevItemHandler) GetDevItemStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
-	stats, err := h.devItemService.CountByType(tenantID)
+	stats, err := h.devTaskService.CountByType(tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

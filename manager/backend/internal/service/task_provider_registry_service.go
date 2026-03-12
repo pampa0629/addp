@@ -36,9 +36,8 @@ type TaskProviderRegistration struct {
 	TaskDetailEndpoint  string  `json:"task_detail_endpoint"`
 	TaskExecuteEndpoint string  `json:"task_execute_endpoint"`
 	TaskStatusEndpoint  string  `json:"task_status_endpoint"`
+	TaskCancelEndpoint  string  `json:"task_cancel_endpoint,omitempty"`
 	Capabilities        *string `json:"capabilities,omitempty"` // JSON 字符串
-	CreateTaskURL       string  `json:"create_task_url,omitempty"`
-	EditTaskURL         string  `json:"edit_task_url,omitempty"`
 	IsEnabled           bool    `json:"is_enabled"`
 }
 
@@ -46,20 +45,24 @@ type TaskProviderRegistration struct {
 func (s *TaskProviderRegistryService) Register() error {
 	// 构造能力描述
 	capabilities := map[string]interface{}{
-		"task_types": []map[string]string{
+		"task_types": []map[string]interface{}{
 			{
-				"type":         "tile_cache",
-				"display_name": "瓦片缓存",
-				"description":  "生成 MVT 矢量瓦片缓存",
+				"type":         "mvt_generation",
+				"display_name": "MVT 瓦片生成",
+				"description":  "对空间表生成矢量瓦片并缓存到 MinIO",
+				"create_url":   "/manager/mvt-tasks/create",
+				"edit_url":     "/manager/mvt-tasks/:id/edit",
 			},
 			{
-				"type":         "data_preview",
-				"display_name": "数据预览",
-				"description":  "表数据、GeoJSON、Shapefile 预览",
+				"type":         "embedding",
+				"display_name": "向量化",
+				"description":  "对对象存储文件进行多模态向量化",
+				"create_url":   "/manager/embedding-tasks/create",
+				"edit_url":     "/manager/embedding-tasks/:id/edit",
 			},
 		},
-		"supported_sources": []string{"postgresql", "geojson", "shapefile"},
-		"features":          []string{"async", "zoom_range", "bbox_filter", "mvt"},
+		"supports_cancel":   true,
+		"supports_schedule": false,
 	}
 
 	// 序列化为 JSON 字符串
@@ -73,21 +76,18 @@ func (s *TaskProviderRegistryService) Register() error {
 	registration := TaskProviderRegistration{
 		ModuleName:  "manager",
 		DisplayName: "数据管理",
-		Description: "数据浏览、预览、MVT 瓦片缓存任务",
+		Description: "MVT 瓦片生成任务和对象存储向量化任务",
 
-		// API 端点配置
+		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,
-		TaskListEndpoint:    "/api/manager/quick-view/tasks",   // 快显任务列表
-		TaskDetailEndpoint:  "/api/manager/quick-view/:id",    // 快显任务详情
-		TaskExecuteEndpoint: "/api/manager/quick-view",        // 创建快显任务
-		TaskStatusEndpoint:  "/api/manager/quick-view/status", // 快显任务状态
+		TaskListEndpoint:    "/api/manager/tasks",
+		TaskDetailEndpoint:  "/api/manager/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/manager/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/manager/executions/{execution_id}",
+		TaskCancelEndpoint:  "/api/manager/executions/{execution_id}/cancel",
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,
-
-		// 前端集成 URL（可选）
-		CreateTaskURL: "http://localhost:5174/#/quick-view/new",
-		EditTaskURL:   "http://localhost:5174/#/quick-view/:id",
 
 		IsEnabled: true,
 	}

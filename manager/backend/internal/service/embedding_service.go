@@ -14,9 +14,11 @@ import (
 	"github.com/addp/common/embedding"
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/manager/internal/config"
 	"github.com/addp/manager/internal/models"
 	"github.com/addp/manager/internal/repository"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"gorm.io/datatypes"
@@ -29,17 +31,19 @@ import (
 // 3. 数据更新检测（文件修改后重新向量化）
 // 4. 向量化状态查询
 type EmbeddingService struct {
-	vectorRepo      *repository.EmbeddingRepository
-	systemClient    *commonClient.SystemClient
+	vectorRepo    *repository.EmbeddingRepository
+	systemClient  *commonClient.SystemClient
 	embeddingClient embedding.MultiModalEmbedder
-	cfg             *config.Config
-	log             *slog.Logger
+	taskExecRepo  *commonRepo.TaskExecutionRepository
+	cfg           *config.Config
+	log           *slog.Logger
 }
 
 // NewEmbeddingService 创建向量化服务
 func NewEmbeddingService(
 	vectorRepo *repository.EmbeddingRepository,
 	systemClient *commonClient.SystemClient,
+	taskExecRepo *commonRepo.TaskExecutionRepository,
 	cfg *config.Config,
 	log *slog.Logger,
 ) (*EmbeddingService, error) {
@@ -65,6 +69,7 @@ func NewEmbeddingService(
 		vectorRepo:      vectorRepo,
 		systemClient:    systemClient,
 		embeddingClient: embeddingClient,
+		taskExecRepo:    taskExecRepo,
 		cfg:             cfg,
 		log:             log,
 	}, nil
@@ -213,34 +218,36 @@ type EmbedDirectoryResult struct {
 }
 
 // EmbedDirectory 批量向量化目录
+// tenantID 用于写入 common.task_executions；executionID 为空时自动生成（ad-hoc 调用）
 func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirectoryRequest) (*EmbedDirectoryResult, error) {
 	startTime := time.Now()
 
-	// 创建任务ID
-	taskID := fmt.Sprintf("embedding-%d-directory-%d", req.EngineID, time.Now().Unix())
-
-	// 创建任务记录
-	task := &models.EmbeddingTask{
-		TaskID:    taskID,
-		TaskType:  "directory",
-		EngineID:  req.EngineID,
-		Bucket:    req.Bucket,
-		Prefix:    req.Prefix,
-		Recursive: req.Recursive,
-		Status:    "running",
-		StartedAt: &startTime,
-		TenantID:  req.TenantID,
+	// 写入 common.task_executions (status=running)
+	executionID := uuid.New().String()
+	var tenantIDInt int
+	if req.TenantID != nil {
+		tenantIDInt = int(*req.TenantID)
 	}
-	if err := s.vectorRepo.CreateTask(ctx, task); err != nil {
-		s.log.Warn("Failed to create task record", "error", err)
-		// 不因为任务记录创建失败而中断向量化流程
+	exec := &commonModels.TaskExecution{
+		ExecutionID:  executionID,
+		TenantID:     tenantIDInt,
+		Module:       commonModels.ModuleManager,
+		TaskType:     "embedding",
+		Status:       commonModels.ExecutionStatusRunning,
+		TriggerType:  commonModels.TriggerTypeManual,
+		StartedAt:    &startTime,
+	}
+	if s.taskExecRepo != nil {
+		if err := s.taskExecRepo.Create(ctx, exec); err != nil {
+			s.log.Warn("Failed to create task execution record", "error", err)
+		}
 	}
 
 	// 1. 列出目录下的所有对象
 	objects, err := s.listObjects(ctx, req.EngineID, req.Bucket, req.Prefix, req.Recursive)
 	if err != nil {
-		// 更新任务为失败
-		s.updateTaskFailed(ctx, taskID, startTime, fmt.Sprintf("failed to list objects: %v", err))
+		s.finishExecution(ctx, executionID, tenantIDInt, commonModels.ExecutionStatusFailed, startTime,
+			commonModels.JSONMap{"message": err.Error()}, nil)
 		return nil, fmt.Errorf("failed to list objects: %w", err)
 	}
 
@@ -271,11 +278,11 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 			dir, name := commonModels.SplitObjectPath(objectKey)
 
 			objReq := EmbedObjectRequest{
-				EngineID:  req.EngineID,
-				Bucket:    req.Bucket,
-				Path:      dir,
-				Name:      name,
-				TenantID:  req.TenantID,
+				EngineID: req.EngineID,
+				Bucket:   req.Bucket,
+				Path:     dir,
+				Name:     name,
+				TenantID: req.TenantID,
 			}
 
 			objResult, err := s.EmbedObject(ctx, objReq)
@@ -296,10 +303,21 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 
 	wg.Wait()
 
-	// 更新任务记录
-	completedAt := time.Now()
-	duration := completedAt.Sub(startTime).Milliseconds()
-	s.updateTaskCompleted(ctx, taskID, result.Total, result.Vectorized, result.Skipped, result.Failed, result.Errors, completedAt, duration)
+	// 完成执行记录
+	status := commonModels.ExecutionStatusSuccess
+	if result.Failed > 0 && result.Vectorized == 0 {
+		status = commonModels.ExecutionStatusFailed
+	}
+	metadata := commonModels.JSONMap{
+		"total":      result.Total,
+		"vectorized": result.Vectorized,
+		"skipped":    result.Skipped,
+		"failed":     result.Failed,
+	}
+	if len(result.Errors) > 0 {
+		metadata["error_samples"] = result.Errors
+	}
+	s.finishExecution(ctx, executionID, tenantIDInt, status, startTime, nil, metadata)
 
 	s.log.Info("Directory vectorization completed",
 		"bucket", req.Bucket,
@@ -313,20 +331,26 @@ func (s *EmbeddingService) EmbedDirectory(ctx context.Context, req EmbedDirector
 	return result, nil
 }
 
-// updateTaskCompleted 更新任务为完成状态
-func (s *EmbeddingService) updateTaskCompleted(ctx context.Context, taskID string, total, vectorized, skipped, failed int, errors []string, completedAt time.Time, duration int64) {
-	if err := s.vectorRepo.UpdateTaskResult(ctx, taskID, "completed", total, vectorized, skipped, failed, errors, completedAt, duration); err != nil {
-		s.log.Warn("Failed to update task result", "task_id", taskID, "error", err)
+// finishExecution 更新 common.task_executions 执行完成状态
+func (s *EmbeddingService) finishExecution(ctx context.Context, executionID string, tenantID int, status string, startTime time.Time, errDetails, metadata commonModels.JSONMap) {
+	if s.taskExecRepo == nil {
+		return
 	}
-}
-
-// updateTaskFailed 更新任务为失败状态
-func (s *EmbeddingService) updateTaskFailed(ctx context.Context, taskID string, startTime time.Time, errorMsg string) {
 	completedAt := time.Now()
-	duration := completedAt.Sub(startTime).Milliseconds()
-	errors := []string{errorMsg}
-	if err := s.vectorRepo.UpdateTaskResult(ctx, taskID, "failed", 0, 0, 0, 0, errors, completedAt, duration); err != nil {
-		s.log.Warn("Failed to update task as failed", "task_id", taskID, "error", err)
+	durationMs := completedAt.Sub(startTime).Milliseconds()
+	fields := map[string]interface{}{
+		"status":           status,
+		"completed_at":     completedAt,
+		"execution_time_ms": durationMs,
+	}
+	if errDetails != nil {
+		fields["error_details"] = errDetails
+	}
+	if metadata != nil {
+		fields["metadata"] = metadata
+	}
+	if err := s.taskExecRepo.UpdateFields(ctx, executionID, tenantID, fields); err != nil {
+		s.log.Warn("Failed to update task execution", "execution_id", executionID, "error", err)
 	}
 }
 
@@ -370,16 +394,6 @@ func (s *EmbeddingService) DeleteEmbeddings(ctx context.Context, engineID uint, 
 	}
 
 	return s.vectorRepo.DeleteEmbeddingsByFingerprints(ctx, fingerprints)
-}
-
-// ListEmbeddingTasks 查询任务列表
-func (s *EmbeddingService) ListEmbeddingTasks(ctx context.Context, engineID *uint, tenantID *uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
-	return s.vectorRepo.ListTasks(ctx, engineID, tenantID, page, pageSize)
-}
-
-// GetEmbeddingTask 查询单个任务
-func (s *EmbeddingService) GetEmbeddingTask(ctx context.Context, taskID string) (*models.EmbeddingTask, error) {
-	return s.vectorRepo.GetTask(ctx, taskID)
 }
 
 // ===== 内部辅助方法 =====

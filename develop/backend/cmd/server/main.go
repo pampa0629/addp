@@ -44,7 +44,7 @@ func main() {
 	log.Printf("✅ Database initialized successfully")
 
 	// ========== Repository 层 ==========
-	devItemRepo := repository.NewDevItemRepository(db)
+	devTaskRepo := repository.NewDevTaskRepository(db)
 	// devExecutionRepo := repository.NewDevExecutionRepository(db) // 【已废弃】改用统一执行表
 	taskExecutionRepo := commonRepo.NewTaskExecutionRepository(db) // 统一执行记录仓库
 	log.Printf("✅ Repository 层初始化完成（使用统一执行表）")
@@ -94,11 +94,11 @@ func main() {
 	}
 
 	// 4. DevItem业务逻辑服务
-	devItemService := service.NewDevItemService(devItemRepo)
-	log.Printf("✅ DevItemService 初始化完成")
+	devTaskService := service.NewDevTaskService(devTaskRepo)
+	log.Printf("✅ DevTaskService 初始化完成")
 
 	// 5. DevExecutor 统一执行器（使用统一执行表）
-	devExecutor := service.NewDevExecutor(devItemRepo, taskExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
+	devExecutor := service.NewDevExecutor(devTaskRepo, taskExecutionRepo, workflowEngine, sqlEngine, jupyterService, notebookExecutionService)
 	log.Printf("✅ DevExecutor 初始化完成（使用统一执行表）")
 
 	// 5. 算子发现服务（动态发现工作流引擎）
@@ -111,12 +111,12 @@ func main() {
 	log.Printf("✅ OperatorDiscoveryService 初始化完成")
 
 	// ========== Handler 层 ==========
-	devItemHandler := api.NewDevItemHandler(devItemService)
+	devItemHandler := api.NewDevItemHandler(devTaskService)
 	devExecutionHandler := api.NewDevExecutionHandler(devExecutor)
 	operatorHandler := api.NewOperatorHandler(operatorDiscovery)
 	engineHandler := api.NewEngineHandler(systemClient)
-	queryHandler := api.NewQueryHandler(sqlEngine, devItemService)
-	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devItemService)
+	queryHandler := api.NewQueryHandler(sqlEngine, devTaskService)
+	notebookHandler := api.NewNotebookHandler(jupyterService, notebookExecutionService, devTaskService)
 
 	// Jupyter 实例管理 Handler (Docker 方案,已废弃)
 	var jupyterInstanceHandler *api.JupyterInstanceHandler
@@ -135,7 +135,7 @@ func main() {
 	log.Printf("✅ Handler 层初始化完成")
 
 	// ========== 设置路由 ==========
-	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devItemService, systemClient)
+	router := api.SetupRouter(cfg, db, devItemHandler, devExecutionHandler, operatorHandler, engineHandler, queryHandler, notebookHandler, jupyterInstanceHandler, jupyterVenvHandler, devTaskService, systemClient)
 	log.Printf("✅ 路由设置完成")
 
 	// ========== 模块注册（注册到 System service_registry）==========

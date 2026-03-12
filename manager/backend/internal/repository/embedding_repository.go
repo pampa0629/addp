@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -288,44 +287,28 @@ func vectorToString(v []float32) string {
 	return result
 }
 
-// ===== 任务记录相关方法 =====
+// ===== 任务定义相关方法 =====
 
-// CreateTask 创建任务记录
-func (r *EmbeddingRepository) CreateTask(ctx context.Context, task *models.EmbeddingTask) error {
+// CreateEmbeddingTask 创建向量化任务定义
+func (r *EmbeddingRepository) CreateEmbeddingTask(ctx context.Context, task *models.EmbeddingTask) error {
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
-// UpdateTask 更新任务记录
-func (r *EmbeddingRepository) UpdateTask(ctx context.Context, taskID string, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).
-		Model(&models.EmbeddingTask{}).
-		Where("task_id = ?", taskID).
-		Updates(updates).Error
-}
-
-// GetTask 根据任务ID查询任务
-func (r *EmbeddingRepository) GetTask(ctx context.Context, taskID string) (*models.EmbeddingTask, error) {
+// GetEmbeddingTask 根据 ID 查询任务定义
+func (r *EmbeddingRepository) GetEmbeddingTask(ctx context.Context, id uint, tenantID uint) (*models.EmbeddingTask, error) {
 	var task models.EmbeddingTask
 	err := r.db.WithContext(ctx).
-		Where("task_id = ?", taskID).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
 		First(&task).Error
-
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
 	return &task, err
 }
 
-// ListTasks 分页查询任务列表
-func (r *EmbeddingRepository) ListTasks(ctx context.Context, engineID *uint, tenantID *uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
-	query := r.db.WithContext(ctx).Model(&models.EmbeddingTask{})
-
-	if engineID != nil {
-		query = query.Where("engine_id = ?", *engineID)
-	}
-	if tenantID != nil {
-		query = query.Where("tenant_id = ?", *tenantID)
-	}
+// ListEmbeddingTasks 分页查询任务定义列表
+func (r *EmbeddingRepository) ListEmbeddingTasks(ctx context.Context, tenantID uint, page, pageSize int) ([]*models.EmbeddingTask, int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.EmbeddingTask{}).Where("tenant_id = ?", tenantID)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -338,28 +321,29 @@ func (r *EmbeddingRepository) ListTasks(ctx context.Context, engineID *uint, ten
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
 		Find(&tasks).Error
-
 	return tasks, total, err
 }
 
-// UpdateTaskResult 更新任务执行结果
-func (r *EmbeddingRepository) UpdateTaskResult(ctx context.Context, taskID string, status string, total, vectorized, skipped, failed int, errors []string, completedAt time.Time, duration int64) error {
-	errorsJSON, err := json.Marshal(errors)
-	if err != nil {
-		return fmt.Errorf("failed to marshal errors: %w", err)
-	}
+// UpdateEmbeddingTask 更新任务定义
+func (r *EmbeddingRepository) UpdateEmbeddingTask(ctx context.Context, task *models.EmbeddingTask) error {
+	return r.db.WithContext(ctx).Save(task).Error
+}
 
+// DeleteEmbeddingTask 软删除任务定义
+func (r *EmbeddingRepository) DeleteEmbeddingTask(ctx context.Context, id uint, tenantID uint) error {
+	return r.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Delete(&models.EmbeddingTask{}).Error
+}
+
+// UpdateEmbeddingTaskLastExecution 回写最近执行信息
+func (r *EmbeddingRepository) UpdateEmbeddingTaskLastExecution(ctx context.Context, id uint, executionID, status string, runAt time.Time) error {
 	return r.db.WithContext(ctx).
 		Model(&models.EmbeddingTask{}).
-		Where("task_id = ?", taskID).
+		Where("id = ?", id).
 		Updates(map[string]interface{}{
-			"status":       status,
-			"total":        total,
-			"vectorized":   vectorized,
-			"skipped":      skipped,
-			"failed":       failed,
-			"errors":       errorsJSON,
-			"completed_at": completedAt,
-			"duration":     duration,
+			"last_execution_id":     executionID,
+			"last_execution_status": status,
+			"last_run_at":           runAt,
 		}).Error
 }

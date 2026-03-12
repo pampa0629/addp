@@ -75,7 +75,7 @@ func (s *Scheduler) Stop() {
 }
 
 // loadScheduledTasks 加载所有定时任务
-func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, error) {
+func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.TransferTask, error) {
 	// 查询所有启用定时调度的任务
 	filters := map[string]interface{}{
 		"enabled":      true, // 已启用的任务
@@ -91,7 +91,7 @@ func (s *Scheduler) loadScheduledTasks(ctx context.Context) ([]models.Task, erro
 }
 
 // registerTask 注册单个定时任务
-func (s *Scheduler) registerTask(ctx context.Context, task models.Task) error {
+func (s *Scheduler) registerTask(ctx context.Context, task models.TransferTask) error {
 	handler := s.createHandler(task)
 	if err := s.scheduler.Schedule(ctx, fmt.Sprintf("%d", task.ID), task.Schedule, handler); err != nil {
 		return fmt.Errorf("无效的 Cron 表达式: %w", err)
@@ -102,7 +102,7 @@ func (s *Scheduler) registerTask(ctx context.Context, task models.Task) error {
 }
 
 // createHandler 创建任务处理器
-func (s *Scheduler) createHandler(task models.Task) commonScheduler.TaskHandler {
+func (s *Scheduler) createHandler(task models.TransferTask) commonScheduler.TaskHandler {
 	return func(ctx context.Context, taskID string) error {
 		s.executeScheduledTask(ctx, task)
 		return nil
@@ -110,7 +110,7 @@ func (s *Scheduler) createHandler(task models.Task) commonScheduler.TaskHandler 
 }
 
 // executeScheduledTask 执行定时任务
-func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) {
+func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.TransferTask) {
 	log.Printf("⏰ 触发定时任务 - TaskID: %d, Name: %s", task.ID, task.Name)
 
 	// 创建执行记录（使用统一执行服务）
@@ -148,7 +148,7 @@ func (s *Scheduler) executeScheduledTask(ctx context.Context, task models.Task) 
 }
 
 // AddTask 添加新的定时任务
-func (s *Scheduler) AddTask(ctx context.Context, task models.Task) error {
+func (s *Scheduler) AddTask(ctx context.Context, task models.TransferTask) error {
 	if task.Schedule == "" {
 		return fmt.Errorf("任务没有定时调度配置")
 	}

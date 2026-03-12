@@ -11,18 +11,15 @@ type TaskProvider struct {
 	Description string `json:"description"`  // 描述
 
 	// API 配置
-	BaseURL             string `json:"base_url"`              // 服务基础 URL
-	TaskListEndpoint    string `json:"task_list_endpoint"`    // 任务列表端点
-	TaskDetailEndpoint  string `json:"task_detail_endpoint"`  // 任务详情端点
-	TaskExecuteEndpoint string `json:"task_execute_endpoint"` // 任务执行端点
-	TaskStatusEndpoint  string `json:"task_status_endpoint"`  // 任务状态端点
+	BaseURL             string `json:"base_url"`               // 服务基础 URL
+	TaskListEndpoint    string `json:"task_list_endpoint"`     // 任务列表端点
+	TaskDetailEndpoint  string `json:"task_detail_endpoint"`   // 任务详情端点
+	TaskExecuteEndpoint string `json:"task_execute_endpoint"`  // 任务执行端点
+	TaskStatusEndpoint  string `json:"task_status_endpoint"`   // 任务状态端点
+	TaskCancelEndpoint  string `json:"task_cancel_endpoint,omitempty"` // 任务取消端点
 
-	// 能力描述
-	Capabilities *string `json:"capabilities,omitempty"` // JSON 格式的能力描述
-
-	// 前端集成(可选)
-	CreateTaskURL string `json:"create_task_url,omitempty"` // 创建任务的前端 URL
-	EditTaskURL   string `json:"edit_task_url,omitempty"`   // 编辑任务的前端 URL
+	// 能力描述（JSON 格式，含 task_types、create_task_url 等）
+	Capabilities *string `json:"capabilities,omitempty"`
 
 	// 状态
 	IsEnabled bool `json:"is_enabled"` // 是否启用

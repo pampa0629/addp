@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 // Embedding 向量嵌入模型（多模态）
@@ -44,29 +45,38 @@ type EmbeddingStatus struct {
 	LastVectorizedAt *time.Time `json:"last_vectorized_at"` // 最后向量化时间
 }
 
-// EmbeddingTask 向量化任务执行记录
-// 用于记录批量向量化任务的执行历史和详细结果
+// EmbeddingTask 向量化任务定义（任务定义型）
+// 定义一个可反复执行的对象存储向量化任务，执行记录写入 common.task_executions
 type EmbeddingTask struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	TaskID      string         `gorm:"size:255;not null;uniqueIndex" json:"task_id"`     // 任务ID（embedding-{engineID}-{type}-{timestamp}）
-	TaskType    string         `gorm:"size:20;not null;index" json:"task_type"`          // 任务类型：object（单文件）、directory（目录批量）
-	EngineID    uint           `gorm:"not null;index:idx_engine_tenant" json:"engine_id"` // 引擎ID
-	Bucket      string         `gorm:"size:255;not null" json:"bucket"`                  // 存储桶
-	ObjectKey   string         `gorm:"type:text" json:"object_key,omitempty"`            // 对象路径（单文件任务）
-	Prefix      string         `gorm:"type:text" json:"prefix,omitempty"`                // 目录前缀（目录任务）
-	Recursive   bool           `json:"recursive"`                                        // 是否递归（目录任务）
-	Status      string         `gorm:"size:20;not null;index" json:"status"`             // 任务状态：pending、running、completed、failed
-	StartedAt   *time.Time     `json:"started_at,omitempty"`                             // 开始时间
-	CompletedAt *time.Time     `json:"completed_at,omitempty"`                           // 完成时间
-	Duration    int64          `json:"duration,omitempty"`                               // 执行时长（毫秒）
-	Total       int            `json:"total"`                                            // 总文件数
-	Vectorized  int            `json:"vectorized"`                                       // 成功向量化数
-	Skipped     int            `json:"skipped"`                                          // 跳过数
-	Failed      int            `json:"failed"`                                           // 失败数
-	Errors      datatypes.JSON `json:"errors,omitempty"`                                 // 错误详情（JSON数组）
-	TenantID    *uint          `gorm:"index:idx_engine_tenant" json:"tenant_id"`         // 租户ID
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	ID       uint `gorm:"primaryKey" json:"id"`
+	TenantID uint `gorm:"not null;index" json:"tenant_id"`
+
+	// 任务基本信息
+	Name        string `gorm:"size:255;not null" json:"name"`
+	Description string `gorm:"type:text" json:"description,omitempty"`
+	Enabled     bool   `gorm:"default:true" json:"enabled"`
+
+	// 最近一次执行信息（回写）
+	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string    `gorm:"size:50" json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+
+	CreatedBy *uint `json:"created_by,omitempty"`
+
+	// EmbeddingTask 特有字段
+	EngineID  uint   `gorm:"not null;index" json:"engine_id"`
+	Bucket    string `gorm:"size:255;not null" json:"bucket"`
+	Prefix    string `gorm:"type:text" json:"prefix,omitempty"`
+	Recursive bool   `gorm:"default:true" json:"recursive"`
+
+	// 向量化配置
+	Modality  string `gorm:"size:20" json:"modality,omitempty"`   // 限定模态类型，空表示自动检测
+	FileTypes string `gorm:"size:255" json:"file_types,omitempty"` // 文件扩展名过滤（逗号分隔，如 "jpg,png,pdf"）
+
+	// 时间戳
+	CreatedAt time.Time      `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
 // TableName 指定表名（在 manager schema 中）

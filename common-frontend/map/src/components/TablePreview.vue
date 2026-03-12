@@ -70,6 +70,24 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useMapConfig } from '../composables/useMapConfig'
 import { useResizable } from '../composables/useResizable'
 import MapContainer from './map/MapContainer.vue'
+import WKT from 'ol/format/WKT'
+import GeoJSON from 'ol/format/GeoJSON'
+
+const wktFormat = new WKT()
+const geojsonFormat = new GeoJSON()
+
+const WKT_TYPE_RE = /^(POINT|LINESTRING|POLYGON|MULTIPOINT|MULTILINESTRING|MULTIPOLYGON|GEOMETRYCOLLECTION)/i
+
+const parseGeometry = (geometryStr) => {
+  if (typeof geometryStr !== 'string') return geometryStr
+  // 去除 EWKT 的 SRID 前缀，如 "SRID=4326;MULTIPOLYGON(...)"
+  const wktStr = geometryStr.replace(/^SRID=\d+;/i, '').trim()
+  if (WKT_TYPE_RE.test(wktStr)) {
+    const olGeom = wktFormat.readGeometry(wktStr)
+    return geojsonFormat.writeGeometryObject(olGeom)
+  }
+  return JSON.parse(geometryStr)
+}
 
 const props = defineProps({
   data: {
@@ -165,14 +183,13 @@ const geoFeatures = computed(() => {
       const geometryStr = row[column]
       if (!geometryStr) return null
       try {
-        const geometry = typeof geometryStr === 'string' ? JSON.parse(geometryStr) : geometryStr
         return {
           type: 'Feature',
-          geometry,
+          geometry: parseGeometry(geometryStr),
           properties: row
         }
       } catch (error) {
-        console.warn('解析 GeoJSON 失败', error)
+        console.warn('解析几何数据失败', error)
         return null
       }
     })

@@ -9,21 +9,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// DevItem 统一开发项定义（SQL查询、工作流、脚本等）
-type DevItem struct {
+// DevTask 统一开发任务定义（SQL查询、工作流、脚本等）
+type DevTask struct {
 	ID          uint           `gorm:"primaryKey" json:"id"`
-	TenantID    uint           `gorm:"not null;index:idx_dev_items_tenant_type" json:"tenant_id"`
+	TenantID    uint           `gorm:"not null;index:idx_dev_tasks_tenant_type" json:"tenant_id"`
 	Name        string         `gorm:"size:255;not null" json:"name"`
 	DisplayName string         `gorm:"size:255" json:"display_name,omitempty"`
-	DevType     string         `gorm:"size:50;not null;index:idx_dev_items_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'notebook'
+	DevType     string         `gorm:"size:50;not null;index:idx_dev_tasks_tenant_type" json:"dev_type"` // 'query' | 'workflow' | 'notebook'
 
 	// 内容存储（根据类型解析）
-	Content DevItemContent `gorm:"type:jsonb;not null" json:"content"`
+	Content DevTaskContent `gorm:"type:jsonb;not null" json:"content"`
 
 	// 执行配置（JSONB 字段，统一的执行配置）
-	ExecutionConfig DevItemContent `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
+	ExecutionConfig DevTaskContent `gorm:"type:jsonb;column:execution_config" json:"execution_config,omitempty"`
 
 	Schedule string `gorm:"size:100" json:"schedule,omitempty"` // Cron 表达式
+	Enabled  bool   `gorm:"default:false" json:"enabled"`       // 调度开关
 	Timeout  int    `gorm:"default:300" json:"timeout"`         // 超时时间（秒）
 
 	// 元数据
@@ -38,19 +39,20 @@ type DevItem struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 
 	// 状态
-	Status              string     `gorm:"size:50;default:'active';index:idx_dev_items_status" json:"status"` // 'active' | 'inactive' | 'archived'
-	LastExecutionID     *uint      `json:"last_execution_id,omitempty"`
+	Status              string     `gorm:"size:50;default:'active';index:idx_dev_tasks_status" json:"status"` // 'active' | 'inactive' | 'archived'
+	LastExecutionID     *string    `gorm:"size:36" json:"last_execution_id,omitempty"` // UUID，软引用 common.task_executions.execution_id
 	LastExecutionStatus string     `gorm:"size:50" json:"last_execution_status,omitempty"`
-	LastExecutedAt      *time.Time `json:"last_executed_at,omitempty"`
+	LastRunAt           *time.Time `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
 }
 
 // TableName 指定表名
-func (DevItem) TableName() string {
-	return "develop.dev_items"
+func (DevTask) TableName() string {
+	return "develop.dev_tasks"
 }
 
 // GetQueryType 从 content 中获取查询类型
-func (d *DevItem) GetQueryType() string {
+func (d *DevTask) GetQueryType() string {
 	if d.Content != nil {
 		if qt, ok := d.Content["query_type"].(string); ok {
 			return qt
@@ -60,7 +62,7 @@ func (d *DevItem) GetQueryType() string {
 }
 
 // GetEngineID 从 execution_config 中获取引擎 ID
-func (d *DevItem) GetEngineID() *uint {
+func (d *DevTask) GetEngineID() *uint {
 	if d.ExecutionConfig != nil {
 		if engineID, ok := d.ExecutionConfig["engine_id"].(float64); ok {
 			id := uint(engineID)
@@ -75,15 +77,15 @@ func (d *DevItem) GetEngineID() *uint {
 }
 
 // IsScheduledActive 判断是否启用调度
-func (d *DevItem) IsScheduledActive() bool {
+func (d *DevTask) IsScheduledActive() bool {
 	return d.Schedule != "" && d.Schedule != "0"
 }
 
-// DevItemContent 开发项内容（支持任意 JSON 结构）
-type DevItemContent map[string]interface{}
+// DevTaskContent 开发任务内容（支持任意 JSON 结构）
+type DevTaskContent map[string]interface{}
 
 // Value 实现 driver.Valuer 接口
-func (c DevItemContent) Value() (driver.Value, error) {
+func (c DevTaskContent) Value() (driver.Value, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -91,7 +93,7 @@ func (c DevItemContent) Value() (driver.Value, error) {
 }
 
 // Scan 实现 sql.Scanner 接口
-func (c *DevItemContent) Scan(value interface{}) error {
+func (c *DevTaskContent) Scan(value interface{}) error {
 	if value == nil {
 		*c = nil
 		return nil
@@ -103,8 +105,8 @@ func (c *DevItemContent) Scan(value interface{}) error {
 	return json.Unmarshal(bytes, c)
 }
 
-// CreateDevItemRequest 创建开发项请求
-type CreateDevItemRequest struct {
+// CreateDevTaskRequest 创建开发任务请求
+type CreateDevTaskRequest struct {
 	Name            string                 `json:"name" binding:"required"`
 	DisplayName     string                 `json:"display_name"`
 	DevType         string                 `json:"dev_type" binding:"required,oneof=query workflow script notebook"`
@@ -116,8 +118,8 @@ type CreateDevItemRequest struct {
 	Tags            []string               `json:"tags"`
 }
 
-// UpdateDevItemRequest 更新开发项请求
-type UpdateDevItemRequest struct {
+// UpdateDevTaskRequest 更新开发任务请求
+type UpdateDevTaskRequest struct {
 	Name            string                 `json:"name"`
 	DisplayName     string                 `json:"display_name"`
 	Content         map[string]interface{} `json:"content"`
@@ -129,8 +131,8 @@ type UpdateDevItemRequest struct {
 	Status          string                 `json:"status" binding:"omitempty,oneof=active inactive archived"`
 }
 
-// ListDevItemsRequest 查询开发项列表请求
-type ListDevItemsRequest struct {
+// ListDevTasksRequest 查询开发任务列表请求
+type ListDevTasksRequest struct {
 	Page     int    `form:"page" binding:"min=1"`
 	PageSize int    `form:"page_size" binding:"min=1,max=100"`
 	DevType  string `form:"dev_type" binding:"omitempty,oneof=query workflow script notebook"`
@@ -139,9 +141,9 @@ type ListDevItemsRequest struct {
 	Keyword  string `form:"keyword"` // 搜索名称或描述
 }
 
-// ListDevItemsResponse 开发项列表响应
-type ListDevItemsResponse struct {
-	Items    []DevItem `json:"items"`
+// ListDevTasksResponse 开发任务列表响应
+type ListDevTasksResponse struct {
+	Items    []DevTask `json:"items"`
 	Total    int64     `json:"total"`
 	Page     int       `json:"page"`
 	PageSize int       `json:"page_size"`

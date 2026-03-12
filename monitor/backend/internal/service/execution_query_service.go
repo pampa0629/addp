@@ -22,16 +22,16 @@ func NewExecutionQueryService(repo *repository.TaskExecutionRepository) *Executi
 
 // ListExecutionsRequest 查询请求
 type ListExecutionsRequest struct {
-	TenantID      int
-	Module        string
-	ExecutionType string
-	Status        string
-	TriggerType   string
-	SourceTaskID  *int
-	StartDate     *time.Time
-	EndDate       *time.Time
-	Page          int
-	PageSize      int
+	TenantID     int
+	Module       string
+	TaskType     string
+	Status       string
+	TriggerType  string
+	SourceTaskID *int
+	StartDate    *time.Time
+	EndDate      *time.Time
+	Page         int
+	PageSize     int
 }
 
 // ListExecutionsResponse 查询响应
@@ -47,7 +47,7 @@ func (s *ExecutionQueryService) ListExecutions(ctx context.Context, req *ListExe
 	filter := repository.TaskExecutionFilter{
 		TenantID:      req.TenantID,
 		Module:        req.Module,
-		ExecutionType: req.ExecutionType,
+		TaskType:      req.TaskType,
 		Status:        req.Status,
 		TriggerType:   req.TriggerType,
 		SourceTaskID:  req.SourceTaskID,

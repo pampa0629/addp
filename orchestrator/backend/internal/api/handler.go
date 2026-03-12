@@ -21,7 +21,6 @@ type OrchestrationHandler struct {
 	executionService     *service.ExecutionService
 	executor             *service.Executor
 	scheduler            *service.Scheduler
-	moduleClient         *service.ModuleClient
 	engineRegistry       *service.EngineRegistry
 	taskProviderRegistry *service.TaskProviderRegistry
 	httpClient           *http.Client
@@ -33,7 +32,6 @@ func NewOrchestrationHandler(
 	executionService *service.ExecutionService,
 	executor *service.Executor,
 	scheduler *service.Scheduler,
-	moduleClient *service.ModuleClient,
 	engineRegistry *service.EngineRegistry,
 	taskProviderRegistry *service.TaskProviderRegistry,
 	httpClient *http.Client,
@@ -47,7 +45,6 @@ func NewOrchestrationHandler(
 		executionService:     executionService,
 		executor:             executor,
 		scheduler:            scheduler,
-		moduleClient:         moduleClient,
 		engineRegistry:       engineRegistry,
 		taskProviderRegistry: taskProviderRegistry,
 		httpClient:           httpClient,
@@ -193,7 +190,7 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	h.executor.ExecuteAsync(execution.ID)
+	h.executor.ExecuteAsync(uint(execution.ID))
 
 	c.JSON(http.StatusAccepted, gin.H{"execution_id": execution.ID})
 }

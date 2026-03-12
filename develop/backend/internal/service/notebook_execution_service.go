@@ -77,7 +77,7 @@ type NotebookExecutionResult struct {
 // ExecuteNotebook 执行 Notebook（来自 dev_items）
 func (s *NotebookExecutionService) ExecuteNotebook(
 	ctx context.Context,
-	devItem *models.DevItem,
+	devItem *models.DevTask,
 	executionID string,
 	userID uint,
 ) (*NotebookExecutionResult, string, error) {

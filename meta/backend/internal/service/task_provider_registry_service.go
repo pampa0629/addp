@@ -28,23 +28,22 @@ func NewTaskProviderRegistryService(systemURL, internalAPIKey, metaURL string) *
 
 // TaskProviderRegistration 任务提供者注册请求
 type TaskProviderRegistration struct {
-	ModuleName          string                 `json:"module_name"`
-	DisplayName         string                 `json:"display_name"`
-	Description         string                 `json:"description"`
-	BaseURL             string                 `json:"base_url"`
-	TaskListEndpoint    string                 `json:"task_list_endpoint"`
-	TaskDetailEndpoint  string                 `json:"task_detail_endpoint"`
-	TaskExecuteEndpoint string                 `json:"task_execute_endpoint"`
-	TaskStatusEndpoint  string                 `json:"task_status_endpoint"`
+	ModuleName          string  `json:"module_name"`
+	DisplayName         string  `json:"display_name"`
+	Description         string  `json:"description"`
+	BaseURL             string  `json:"base_url"`
+	TaskListEndpoint    string  `json:"task_list_endpoint"`
+	TaskDetailEndpoint  string  `json:"task_detail_endpoint"`
+	TaskExecuteEndpoint string  `json:"task_execute_endpoint"`
+	TaskStatusEndpoint  string  `json:"task_status_endpoint"`
+	TaskCancelEndpoint  string  `json:"task_cancel_endpoint,omitempty"`
 	Capabilities        *string `json:"capabilities,omitempty"`
-	CreateTaskURL       string                 `json:"create_task_url,omitempty"`
-	EditTaskURL         string                 `json:"edit_task_url,omitempty"`
-	IsEnabled           bool                   `json:"is_enabled"`
+	IsEnabled           bool    `json:"is_enabled"`
 }
 
 // Register 注册 Meta 模块为任务提供者
 func (s *TaskProviderRegistryService) Register() error {
-	// 构造能力描述
+	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
 		"task_types": []map[string]string{
 			{
@@ -65,6 +64,8 @@ func (s *TaskProviderRegistryService) Register() error {
 		},
 		"supported_sources": []string{"postgresql", "mysql", "doris", "minio", "s3", "oss"},
 		"features":          []string{"async", "cron", "spatial_metadata", "vector_index"},
+		"create_task_url":   "http://localhost:5175/#/scan/new",
+		"edit_task_url":     "http://localhost:5175/#/scan/:id",
 	}
 
 	// 序列化为 JSON 字符串
@@ -82,17 +83,14 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.metaURL,
-		TaskListEndpoint:    "/api/meta/scan/tasks",          // 扫描任务列表
-		TaskDetailEndpoint:  "/api/meta/scan/tasks/:id",      // 扫描任务详情
-		TaskExecuteEndpoint: "/api/meta/scan/engine",         // 执行扫描任务
-		TaskStatusEndpoint:  "/api/meta/scan/tasks/:id/status", // 扫描任务状态
+		TaskListEndpoint:    "/api/meta/scan/tasks",              // 扫描任务列表
+		TaskDetailEndpoint:  "/api/meta/scan/tasks/:task_id",     // 扫描任务详情
+		TaskExecuteEndpoint: "/api/meta/scan/tasks/:task_id/trigger", // 执行扫描任务
+		TaskStatusEndpoint:  "/api/meta/scan/runs/:run_id",       // 查询执行状态（UUID）
+		TaskCancelEndpoint:  "/api/meta/scan/runs/:run_id/cancel", // 取消执行
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,
-
-		// 前端集成 URL（可选）
-		CreateTaskURL: "http://localhost:5175/#/scan/new",
-		EditTaskURL:   "http://localhost:5175/#/scan/:id",
 
 		IsEnabled: true,
 	}

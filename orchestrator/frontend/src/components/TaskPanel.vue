@@ -118,13 +118,11 @@ async function loadEngineTasks(engine) {
       label: task.display_name || task.name || `任务 ${task.id}`,
       type: 'task',
       metadata: {
-        uniqueIdentifier: identifier,
-        taskId: task.id,
-        taskType: task.type || null,
-        status: task.status || null,
+        provider: identifier,        // TaskProvider module_name，如 "manager"
+        taskType: task.task_type || task.type || null,  // 任务类型，如 "mvt_generation"
+        taskId: task.id,             // 任务定义 ID
+        status: task.last_execution_status || task.status || null,
         enabled: task.enabled,
-        endpoint: task.endpoint || buildEndpointFallback(identifier, task),
-        method: 'POST',
         parameters: task.parameters || {}
       }
     }))
@@ -157,17 +155,7 @@ async function loadEngineTasks(engine) {
   }
 }
 
-// 回退的 endpoint 构建逻辑（兼容旧格式）
-function buildEndpointFallback(uniqueIdentifier, task) {
-  if (uniqueIdentifier.startsWith('transfer.')) {
-    return `/api/tasks/${task.id}/execute`
-  } else if (uniqueIdentifier.startsWith('meta.')) {
-    return `/api/scan/tasks/${task.id}/run`
-  } else if (uniqueIdentifier.startsWith('manager.')) {
-    return `/api/quick-view/${task.id}/execute`
-  }
-  return ''
-}
+
 
 // 刷新所有任务
 async function refreshAll() {
@@ -180,13 +168,11 @@ function startDrag(data, event) {
   if (data.type !== 'task' || !data.metadata) return
 
   const nodeData = {
-    uniqueIdentifier: data.metadata.uniqueIdentifier,
-    module: data.metadata.uniqueIdentifier.split('.')[0],
+    // 任务引用模式字段
+    provider: data.metadata.provider,
+    taskType: data.metadata.taskType,
     taskId: data.metadata.taskId,
     name: data.label,
-    type: data.metadata.taskType,
-    endpoint: data.metadata.endpoint,
-    method: data.metadata.method,
     parameters: data.metadata.parameters
   }
 

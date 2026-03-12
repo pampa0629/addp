@@ -627,16 +627,28 @@ echo ""
 echo -e "${YELLOW}Step 1/7: 启动基础设施（PostgreSQL, Redis, MinIO, Meilisearch）${NC}"
 echo ""
 
-# 检查基础设施是否已运行
+# 检查基础设施是否已运行 - 通过端口检查，不依赖 Docker CLI
+# （docker inspect / docker compose ps 在某些 Docker Desktop 环境下会挂起）
 INFRA_RUNNING=false
-if docker compose -f docker-compose.infra.yml ps --status running postgres redis minio meilisearch 2>/dev/null | grep -q "Up"; then
-  # 检查所有4个服务是否都在运行
-  RUNNING_COUNT=$(docker compose -f docker-compose.infra.yml ps --status running postgres redis minio meilisearch 2>/dev/null | grep -c "Up" || echo "0")
-  if [ "$RUNNING_COUNT" -eq 4 ]; then
-    INFRA_RUNNING=true
-    echo -e "${GREEN}✓ 基础设施已在运行,跳过启动${NC}"
-    echo -e "${YELLOW}  (如需重启基础设施,请运行: bash scripts/infra/down.sh && bash scripts/infra/up.sh)${NC}"
+RUNNING_COUNT=0
+for svc_port in \
+  "PostgreSQL:${POSTGRES_PORT:-15432}" \
+  "Redis:${REDIS_PORT:-16379}" \
+  "MinIO:${MINIO_API_PORT:-19000}" \
+  "Meilisearch:${MEILISEARCH_PORT:-17700}"; do
+  svc="${svc_port%%:*}"
+  port="${svc_port##*:}"
+  if nc -z -w1 localhost "$port" 2>/dev/null; then
+    echo -e "  ${GREEN}✓ $svc${NC}"
+    RUNNING_COUNT=$((RUNNING_COUNT + 1))
+  else
+    echo -e "  ${YELLOW}○ $svc 未就绪${NC}"
   fi
+done
+if [ "$RUNNING_COUNT" -eq 4 ]; then
+  INFRA_RUNNING=true
+  echo -e "${GREEN}✓ 基础设施已在运行,跳过启动${NC}"
+  echo -e "${YELLOW}  (如需重启基础设施,请运行: bash scripts/infra/down.sh && bash scripts/infra/up.sh)${NC}"
 fi
 
 # 如果基础设施未完全运行,则启动

@@ -104,5 +104,5 @@ func (s *Scheduler) triggerOrchestration(orchID uint) {
 		return
 	}
 
-	s.executor.ExecuteAsync(execution.ID)
+	s.executor.ExecuteAsync(uint(execution.ID))
 }

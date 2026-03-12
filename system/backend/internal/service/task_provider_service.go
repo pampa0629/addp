@@ -37,9 +37,8 @@ func (s *TaskProviderService) RegisterOrUpdate(provider *models.TaskProvider) (*
 		"task_detail_endpoint":   provider.TaskDetailEndpoint,
 		"task_execute_endpoint":  provider.TaskExecuteEndpoint,
 		"task_status_endpoint":   provider.TaskStatusEndpoint,
+		"task_cancel_endpoint":   provider.TaskCancelEndpoint,
 		"capabilities":           provider.Capabilities,
-		"create_task_url":        provider.CreateTaskURL,
-		"edit_task_url":          provider.EditTaskURL,
 	}
 
 	if err := s.db.Model(&existing).Updates(updates).Error; err != nil {

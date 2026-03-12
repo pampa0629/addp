@@ -14,10 +14,12 @@ import (
 	"github.com/addp/common/format"
 	"github.com/addp/common/logger"
 	commonModels "github.com/addp/common/models"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/meta/internal/config"
 	metaErrors "github.com/addp/meta/internal/errors"
 	"github.com/addp/meta/internal/models"
 	"github.com/addp/meta/internal/search"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -39,6 +41,7 @@ type ScanService struct {
 	scanEventPublisher       *events.ScanEventPublisher    // 扫描事件发布器
 	metadataExtractor        *MetadataExtractor            // 元数据提取器
 	dedupService             *ScanDedupService             // 扫描去重服务（可选）
+	taskExecutionRepo        *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 }
 
 // ScanProgressReporter 用于在长时间扫描任务中更新进度
@@ -69,6 +72,7 @@ func NewScanService(db *gorm.DB, engineService *EngineService) *ScanService {
 		metadataExtractor: metadataExtractor,
 		indexerService:    indexerService,
 		spatialService:    spatialService,
+		taskExecutionRepo: commonRepo.NewTaskExecutionRepository(db),
 	}
 
 	// 创建 DatabaseScanService（使用独立服务，无循环依赖）
@@ -422,12 +426,13 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		return nil, err
 	}
 
-	var directRun *models.ScanTaskRun
+	var directExecID string
 	if reporter == nil {
-		directRun, err = s.createImmediateRunRecord(resource, tenantID, schemaNames, objectPaths, startTime)
-		if err != nil {
-			return nil, err
+		execID, createErr := s.createImmediateExecution(resource, tenantID, schemaNames, objectPaths, startTime)
+		if createErr != nil {
+			return nil, createErr
 		}
+		directExecID = execID
 	}
 
 	// 标准化 scanDepth 参数
@@ -487,8 +492,8 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		if reporter != nil {
 			reporter.Message(fmt.Sprintf("扫描失败: %v", err))
 		}
-		if directRun != nil {
-			s.failImmediateRun(directRun, err)
+		if directExecID != "" {
+			s.failImmediateExecution(directExecID, int(tenantID), err, startTime)
 		}
 		return nil, err
 	}
@@ -509,27 +514,14 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 		reporter.Message("扫描完成")
 	}
 
-	// 完成运行记录
-	if directRun != nil {
-		resultSummary := models.JSONMap{
+	if directExecID != "" {
+		resultMeta := commonModels.JSONMap{
 			"schemas_scanned": schemas,
 			"tables_scanned":  tables,
 			"fields_scanned":  fields,
 		}
-		s.completeImmediateRun(directRun, resultSummary, completedAt)
-	} else {
-		// 创建扫描运行记录
-		run, err := s.createImmediateRunRecord(resource, tenantID, schemaNames, objectPaths, startTime)
-		if err != nil {
-			s.log.Warn("创建扫描运行记录失败", "engine_id", resource.ID, "error", err)
-		} else {
-			resultSummary := models.JSONMap{
-				"schemas_scanned": schemas,
-				"tables_scanned":  tables,
-				"fields_scanned":  fields,
-			}
-			s.completeImmediateRun(run, resultSummary, completedAt)
-		}
+		s.completeImmediateExecution(directExecID, int(tenantID), resultMeta, startTime, completedAt)
+		s.publishScanCompletedEvent(resource.ID, tenantID, models.JSONMap(resultMeta))
 	}
 
 	return &models.ScanResponse{
@@ -543,96 +535,58 @@ func (s *ScanService) scanResourceInternal(engineID, tenantID uint, schemaNames,
 	}, nil
 }
 
-func (s *ScanService) createImmediateRunRecord(resource *commonModels.Engine, tenantID uint, schemaNames, objectPaths []string, startTime time.Time) (*models.ScanTaskRun, error) {
+func (s *ScanService) createImmediateExecution(resource *commonModels.Engine, tenantID uint, schemaNames, objectPaths []string, startTime time.Time) (string, error) {
 	if resource == nil {
-		return nil, fmt.Errorf("resource is required to create immediate run")
+		return "", fmt.Errorf("resource is required to create immediate execution")
 	}
 
-	params := models.JSONMap{}
-	if len(schemaNames) > 0 {
-		params["schema_names"] = schemaNames
-	}
-	if len(objectPaths) > 0 {
-		params["object_paths"] = objectPaths
-	}
-	if len(params) == 0 {
-		params = nil
-	}
-
-	run := &models.ScanTaskRun{
-		TenantID:        tenantID,
-		EngineID:      resource.ID,
-		StorageType:     normalizeStorageType(resource.EngineType),
-		TriggerType:     triggerTypeManual,
-		Status:          runStatusRunning,
-		Parameters:      params,
-		ProgressMessage: "任务开始执行",
-		StartedAt:       &startTime,
-		CreatedAt:       time.Now(),
-		UpdatedAt:       time.Now(),
+	execID := uuid.New().String()
+	engineIDInt := int(resource.ID)
+	exec := &commonModels.TaskExecution{
+		TenantID:    int(tenantID),
+		ExecutionID: execID,
+		Module:      commonModels.ModuleMeta,
+		TaskType:    "scan",
+		Status:      commonModels.ExecutionStatusRunning,
+		TriggerType: commonModels.TriggerTypeAPI,
+		ExecutionConfig: commonModels.JSONMap{
+			"engine_id":    engineIDInt,
+			"schema_names": schemaNames,
+			"object_paths": objectPaths,
+		},
+		StartedAt: &startTime,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
-	if err := s.db.Create(run).Error; err != nil {
-		return nil, fmt.Errorf("failed to create immediate run record: %w", err)
+	if err := s.taskExecutionRepo.Create(context.Background(), exec); err != nil {
+		return "", fmt.Errorf("failed to create immediate execution record: %w", err)
 	}
-
-	setRunName(s.db, run, run.StorageType, triggerTypeManual, s.log)
-	return run, nil
+	return execID, nil
 }
 
-func (s *ScanService) failImmediateRun(run *models.ScanTaskRun, scanErr error) {
-	if run == nil {
-		return
-	}
-
-	// 计算执行耗时
+func (s *ScanService) failImmediateExecution(execID string, tenantID int, scanErr error, startTime time.Time) {
 	completedAt := time.Now()
-	var durationMs int64
-	if run.StartedAt != nil {
-		durationMs = completedAt.Sub(*run.StartedAt).Milliseconds()
-	}
-
-	update := map[string]interface{}{
-		"status":           runStatusFailed,
-		"error_message":    scanErr.Error(),
-		"progress_message": fmt.Sprintf("执行失败: %v", scanErr),
-		"duration_ms":      durationMs,
-		"completed_at":     completedAt,
-		"updated_at":       time.Now(),
-	}
-	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
-		s.log.Error("更新即时运行失败状态出错", "run_id", run.ID, "error", err)
-	}
+	durationMs := completedAt.Sub(startTime).Milliseconds()
+	_ = s.taskExecutionRepo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
+		"status":            commonModels.ExecutionStatusFailed,
+		"error_details":     commonModels.JSONMap{"message": scanErr.Error()},
+		"execution_time_ms": durationMs,
+		"completed_at":      completedAt,
+		"updated_at":        time.Now(),
+	})
 }
 
-func (s *ScanService) completeImmediateRun(run *models.ScanTaskRun, summary models.JSONMap, completedAt time.Time) {
-	if run == nil {
-		return
-	}
-
-	// 计算执行耗时
-	var durationMs int64
-	if run.StartedAt != nil {
-		durationMs = completedAt.Sub(*run.StartedAt).Milliseconds()
-	}
-
-	update := map[string]interface{}{
-		"status":           runStatusSuccess,
-		"result_summary":   summary,
-		"duration_ms":      durationMs,
-		"progress_message": "执行完成",
-		"progress_percent": 100.0,
-		"completed_at":     completedAt,
-		"updated_at":       time.Now(),
-	}
-
-	if err := s.db.Model(&models.ScanTaskRun{}).Where("id = ?", run.ID).Updates(update).Error; err != nil {
-		s.log.Error("更新即时运行成功状态出错", "run_id", run.ID, "error", err)
-		return
-	}
-
-	// 发布扫描完成事件（异步，不阻塞主流程）
-	s.publishScanCompletedEvent(run.EngineID, run.TenantID, summary)
+func (s *ScanService) completeImmediateExecution(execID string, tenantID int, meta commonModels.JSONMap, startTime, completedAt time.Time) {
+	durationMs := completedAt.Sub(startTime).Milliseconds()
+	_ = s.taskExecutionRepo.UpdateFields(context.Background(), execID, tenantID, map[string]interface{}{
+		"status":            commonModels.ExecutionStatusSuccess,
+		"metadata":          meta,
+		"execution_time_ms": durationMs,
+		"progress":          100,
+		"completed_at":      completedAt,
+		"updated_at":        time.Now(),
+	})
 }
 
 // scanResource 扫描单个资源的所有未扫描Schema

@@ -66,6 +66,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 		api.POST("/scan/run/manual", handler.CreateManualScanRun)
 		api.GET("/scan/runs", handler.ListScanRuns)
 		api.GET("/scan/runs/:run_id", handler.GetScanRun)
+		api.POST("/scan/runs/:run_id/cancel", handler.CancelScanRun)
 		api.GET("/scan/tasks", handler.ListScanTasks)
 		api.POST("/scan/tasks", handler.CreateScanTask)
 		api.PUT("/scan/tasks/:task_id", handler.UpdateScanTask)

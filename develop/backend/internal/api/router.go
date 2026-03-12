@@ -65,7 +65,7 @@ func SetupRouter(
 	notebookHandler *NotebookHandler,
 	jupyterInstanceHandler *JupyterInstanceHandler, // Jupyter 实例管理 (Docker 方案,已废弃)
 	jupyterVenvHandler *JupyterVenvHandler,         // Jupyter 虚拟环境管理 (新方案)
-	devItemService interface{},                     // 添加 devItemService 参数
+	devTaskService interface{},                     // 添加 devTaskService 参数
 	systemClient *commonClient.SystemClient,        // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
@@ -123,7 +123,7 @@ func SetupRouter(
 		api.GET("/assets/discoverable", assetDiscHandler.listDiscoverableAssets)
 
 		// ========== 任务列表 API（供 Orchestrator 使用）==========
-		taskListHandler := NewTaskListHandler(devItemService.(*service.DevItemService))
+		taskListHandler := NewTaskListHandler(devTaskService.(*service.DevTaskService))
 		api.GET("/tasks/list", taskListHandler.ListTasks)
 
 		// ========== 开发项管理 ==========

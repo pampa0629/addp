@@ -30,8 +30,9 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	db, err := commonRepo.InitDatabase(dbConfig,
 		&models.SearchHistory{},
 		&models.Embedding{},     // 向量嵌入表
-		&models.EmbeddingTask{}, // 向量化任务表
-		&models.QuickView{},     // MVT预缓存任务表
+		&models.EmbeddingTask{}, // 向量化任务定义表
+		&models.MvtTask{},       // MVT 瓦片生成任务定义表
+		&models.QuickView{},     // MVT预缓存状态表
 	)
 	if err != nil {
 		return nil, err

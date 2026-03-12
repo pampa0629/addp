@@ -15,19 +15,19 @@ import (
 type NotebookHandler struct {
 	jupyterService           *service.JupyterService
 	notebookExecutionService *service.NotebookExecutionService
-	devItemService           *service.DevItemService
+	devTaskService           *service.DevTaskService
 }
 
 // NewNotebookHandler 创建 Notebook 处理器
 func NewNotebookHandler(
 	jupyterService *service.JupyterService,
 	notebookExecutionService *service.NotebookExecutionService,
-	devItemService *service.DevItemService,
+	devTaskService *service.DevTaskService,
 ) *NotebookHandler {
 	return &NotebookHandler{
 		jupyterService:           jupyterService,
 		notebookExecutionService: notebookExecutionService,
-		devItemService:           devItemService,
+		devTaskService:           devTaskService,
 	}
 }
 
@@ -286,7 +286,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	}
 
 	// 创建 dev_item
-	content := models.DevItemContent{
+	content := models.DevTaskContent{
 		"notebook_path": notebookPath, // 相对路径（仅文件名）
 		"kernel":        kernel,
 		"parameters":    parameters,
@@ -294,7 +294,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		"description":   description,
 	}
 
-	createReq := &models.CreateDevItemRequest{
+	createReq := &models.CreateDevTaskRequest{
 		Name:        name,
 		DisplayName: name,
 		DevType:     "notebook",
@@ -303,7 +303,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 		Timeout:     600, // 默认 10 分钟
 	}
 
-	devItem, err := h.devItemService.CreateDevItem(createReq, tenantID.(uint), userID.(uint))
+	devItem, err := h.devTaskService.CreateDevItem(createReq, tenantID.(uint), userID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建 dev_item 失败: %v", err)})
 		return
@@ -336,7 +336,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 	}
 
 	// 查询 dev_item
-	devItem, err := h.devItemService.GetDevItem(uri.ID, tenantID.(uint))
+	devItem, err := h.devTaskService.GetDevItem(uri.ID, tenantID.(uint))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
 		return
@@ -378,14 +378,14 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 // @Produce json
 // @Param page query int false "页码" default(1)
 // @Param page_size query int false "每页数量" default(20)
-// @Success 200 {object} models.ListDevItemsResponse
+// @Success 200 {object} models.ListDevTasksResponse
 // @Router /api/develop/notebooks [get]
 func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	// 获取用户信息
 	tenantID, _ := c.Get("tenant_id")
 
 	// 解析查询参数
-	var req models.ListDevItemsRequest
+	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -403,13 +403,13 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	}
 
 	// 查询列表
-	items, total, err := h.devItemService.ListDevItems(&req, tenantID.(uint))
+	items, total, err := h.devTaskService.ListDevItems(&req, tenantID.(uint))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("查询失败: %v", err)})
 		return
 	}
 
-	c.JSON(http.StatusOK, models.ListDevItemsResponse{
+	c.JSON(http.StatusOK, models.ListDevTasksResponse{
 		Items:    items,
 		Total:    total,
 		Page:     req.Page,
@@ -437,7 +437,7 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	}
 
 	// 查询 dev_item
-	devItem, err := h.devItemService.GetDevItem(uri.ID, tenantID.(uint))
+	devItem, err := h.devTaskService.GetDevItem(uri.ID, tenantID.(uint))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Notebook 不存在"})
 		return
@@ -449,7 +449,7 @@ func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	}
 
 	// 删除 dev_item（软删除）
-	if err := h.devItemService.DeleteDevItem(uri.ID, tenantID.(uint)); err != nil {
+	if err := h.devTaskService.DeleteDevItem(uri.ID, tenantID.(uint)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("删除失败: %v", err)})
 		return
 	}

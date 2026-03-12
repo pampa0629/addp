@@ -29,7 +29,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Accept json
 // @Produce json
 // @Param request body models.CreateTaskRequest true "任务创建请求"
-// @Success 201 {object} models.Task "任务创建成功"
+// @Success 201 {object} models.TransferTask "任务创建成功"
 // @Failure 400 {object} map[string]string "请求参数错误"
 // @Failure 401 {object} map[string]string "未授权"
 // @Failure 500 {object} map[string]string "服务器内部错误"
@@ -61,7 +61,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path int true "任务ID"
-// @Success 200 {object} models.Task "获取成功"
+// @Success 200 {object} models.TransferTask "获取成功"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 404 {object} map[string]string "任务不存在"
 // @Failure 500 {object} map[string]string "服务器错误"
@@ -134,7 +134,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID"
 // @Param request body models.UpdateTaskRequest true "任务更新请求"
-// @Success 200 {object} models.Task "更新成功"
+// @Success 200 {object} models.TransferTask "更新成功"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
 // @Router /api/tasks/{id} [put]

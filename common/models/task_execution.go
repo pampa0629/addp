@@ -5,7 +5,7 @@ import (
 )
 
 // TaskExecution 统一执行记录
-// 用于 Transfer、Develop、Orchestrator 三个模块的执行记录
+// 用于 Transfer、Develop、Orchestrator、Manager 等模块的执行记录
 type TaskExecution struct {
 	ID       int64 `gorm:"primaryKey" json:"id"`
 	TenantID int   `gorm:"not null;index:idx_task_executions_tenant_status" json:"tenant_id"`
@@ -14,12 +14,15 @@ type TaskExecution struct {
 	ExecutionID string `gorm:"size:255;uniqueIndex;not null" json:"execution_id"` // UUID 全局唯一
 
 	// 模块标识
-	Module        string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`          // 'transfer'/'develop'/'orchestrator'
-	ExecutionType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"execution_type"` // 'import'/'export'/'sql'/'workflow'/'orchestration'
+	Module   string `gorm:"size:50;not null;index:idx_task_executions_module_type" json:"module"`    // 'transfer'/'develop'/'orchestrator'/'manager'
+	TaskType string `gorm:"size:100;not null;index:idx_task_executions_module_type" json:"task_type"` // 'import'/'export'/'sync'/'query'/'workflow'/'notebook'/'orchestration'/'mvt_generation'/'embedding'
 
 	// 关联原始任务
-	SourceTaskID   *int    `json:"source_task_id,omitempty"`                        // 关联各模块的任务ID
+	SourceTaskID   *int    `json:"source_task_id,omitempty"`              // 关联各模块的任务ID
 	SourceTaskName *string `gorm:"size:255" json:"source_task_name,omitempty"` // 任务名称（冗余，便于查询）
+
+	// 父执行（Orchestrator 子步骤追踪父编排）
+	ParentExecutionID *string `gorm:"size:36" json:"parent_execution_id,omitempty"`
 
 	// 执行状态
 	Status      string  `gorm:"size:50;not null;index:idx_task_executions_tenant_status" json:"status"` // 'pending'/'running'/'success'/'failed'/'timeout'/'cancelled'
@@ -30,10 +33,10 @@ type TaskExecution struct {
 	TriggerType string `gorm:"size:50;not null;index:idx_task_executions_trigger_type" json:"trigger_type"` // 'manual'/'schedule'/'api'/'orchestrator'
 	TriggeredBy *int   `json:"triggered_by,omitempty"`                                                      // 触发用户ID
 
-	// JSONB 灵活字段
+	// JSONB 字段
 	ExecutionConfig JSONMap `gorm:"type:jsonb" json:"execution_config,omitempty"` // 执行配置
-	Result          JSONMap `gorm:"type:jsonb" json:"result,omitempty"`           // 执行结果
-	ErrorDetails    JSONMap `gorm:"type:jsonb" json:"error_details,omitempty"`    // 错误详情
+	ErrorDetails    JSONMap `gorm:"type:jsonb" json:"error_details,omitempty"`    // 错误详情（仅失败时有值）
+	Metadata        JSONMap `gorm:"type:jsonb" json:"metadata,omitempty"`         // 模块特有扩展数据（结果、断点、步骤结果等）
 
 	// 性能指标
 	ExecutionTimeMs *int64 `json:"execution_time_ms,omitempty"` // 执行时长（毫秒）
@@ -42,11 +45,6 @@ type TaskExecution struct {
 	RecordsWritten  *int64 `json:"records_written,omitempty"`   // Transfer 写入记录数
 	BytesRead       *int64 `json:"bytes_read,omitempty"`        // Transfer 读取字节数
 	BytesWritten    *int64 `json:"bytes_written,omitempty"`     // Transfer 写入字节数
-
-	// 模块特有字段（避免强行统一导致信息丢失）
-	CheckpointOffset *int64  `json:"checkpoint_offset,omitempty"`               // Transfer 断点续传偏移
-	CheckpointState  JSONMap `gorm:"type:jsonb" json:"checkpoint_state,omitempty"` // Transfer 断点状态
-	StepResults      JSONMap `gorm:"type:jsonb" json:"step_results,omitempty"`     // Orchestrator 步骤结果
 
 	// 时间戳
 	StartedAt   *time.Time `json:"started_at,omitempty"`
@@ -72,10 +70,12 @@ const (
 
 // 模块常量
 const (
+	ModuleMeta         = "meta"
 	ModuleTransfer     = "transfer"
 	ModuleDevelop      = "develop"
 	ModuleOrchestrator = "orchestrator"
 	ModuleQuality      = "quality"
+	ModuleManager      = "manager"
 )
 
 // 触发类型常量

@@ -13,6 +13,7 @@ import (
 	commonClient "github.com/addp/common/client"
 	commonConfig "github.com/addp/common/config"
 	"github.com/addp/common/logger"
+	commonRepo "github.com/addp/common/repository"
 	"github.com/addp/common/utils"
 	"github.com/addp/manager/internal/api"
 	"github.com/addp/manager/internal/config"
@@ -71,6 +72,8 @@ func main() {
 	searchHistoryRepo := repository.NewSearchHistoryRepository(db)
 	metadataRepo := repository.NewMetadataRepository(db, cfg.EncryptionKey)
 	embeddingRepo := repository.NewEmbeddingRepository(db)
+	mvtTaskRepo := repository.NewMvtTaskRepository(db)
+	taskExecRepo := commonRepo.NewTaskExecutionRepository(db)
 	log.Println("🔍 [DEBUG] Repositories 初始化完成")
 
 	log.Printf("🔍 [DEBUG] cfg.EnableMetaIntegration=%v, cfg.InternalAPIKey=%s, cfg.MetaServiceURL=%s",
@@ -186,7 +189,7 @@ func main() {
 	quickViewService := service.NewQuickViewService(db, taskQueue, systemClient, metaClient, minioClient, minioBucket, redisClient, cfg)
 
 	// 初始化向量化服务（Manager 模块的按需向量化）
-	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, cfg, logger.L())
+	embeddingService, err := service.NewEmbeddingService(embeddingRepo, systemClient, taskExecRepo, cfg, logger.L())
 	if err != nil {
 		logger.L().Warn("向量化服务初始化失败（功能将不可用）", "error", err)
 		embeddingService = nil // 设置为 nil，允许服务继续启动
@@ -194,11 +197,18 @@ func main() {
 		logger.L().Info("向量化服务已初始化（支持单对象、目录、Bucket 三级向量化）")
 	}
 
+	// 初始化任务定义服务
+	embeddingTaskSvc := service.NewEmbeddingTaskService(embeddingRepo, embeddingService, taskExecRepo)
+	mvtTaskSvc := service.NewMvtTaskService(mvtTaskRepo, quickViewService, taskExecRepo)
+
+	// 初始化 TaskProvider Handler
+	taskProviderHandler := api.NewTaskProviderHandler(embeddingTaskSvc, mvtTaskSvc, taskExecRepo)
+
 	// 设置 UnifiedMVTService 的 QuickViewService（延迟注入避免循环依赖）
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService)
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler)
 
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

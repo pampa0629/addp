@@ -115,7 +115,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Tags Execution
 // @Produce json
 // @Param id path string true "执行ID（UUID）"
-// @Success 200 {object} models.DevExecution
+// @Success 200 {object} models.ExecutionWithDevItem
 // @Router /api/develop/executions/{id} [get]
 func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("id")

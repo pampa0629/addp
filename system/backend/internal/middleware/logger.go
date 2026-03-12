@@ -17,7 +17,7 @@ import (
 func LoggerMiddleware(logService *service.LogService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 过滤内部 API (不记录)
-		if strings.HasPrefix(c.Request.URL.Path, "/internal/") {
+		if strings.Contains(c.Request.URL.Path, "/internal/") {
 			c.Next()
 			return
 		}

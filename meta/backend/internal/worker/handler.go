@@ -29,17 +29,17 @@ func (h *TaskHandler) HandleScanTask(ctx context.Context, t *asynq.Task) error {
 		return fmt.Errorf("无法解析任务载荷: %w", err)
 	}
 
-	log.Printf("🔄 开始执行扫描任务 - RunID: %d, TaskID: %d, TenantID: %d",
-		payload.RunID, payload.TaskID, payload.TenantID)
+	log.Printf("🔄 开始执行扫描任务 - ExecutionID: %s, TaskID: %d, TenantID: %d",
+		payload.ExecutionID, payload.TaskID, payload.TenantID)
 
 	// 执行扫描任务
-	err := h.scanTaskService.ExecuteScanRun(ctx, payload.RunID)
+	err := h.scanTaskService.ExecuteScanRun(ctx, payload.ExecutionID)
 	if err != nil {
-		log.Printf("❌ 扫描任务执行失败 - RunID: %d, Error: %v", payload.RunID, err)
+		log.Printf("❌ 扫描任务执行失败 - ExecutionID: %s, Error: %v", payload.ExecutionID, err)
 		return fmt.Errorf("扫描任务执行失败: %w", err)
 	}
 
-	log.Printf("✅ 扫描任务执行成功 - RunID: %d", payload.RunID)
+	log.Printf("✅ 扫描任务执行成功 - ExecutionID: %s", payload.ExecutionID)
 	return nil
 }
 

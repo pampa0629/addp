@@ -28,23 +28,22 @@ func NewTaskProviderRegistryService(systemURL, internalAPIKey, transferURL strin
 
 // TaskProviderRegistration 任务提供者注册请求
 type TaskProviderRegistration struct {
-	ModuleName          string                 `json:"module_name"`
-	DisplayName         string                 `json:"display_name"`
-	Description         string                 `json:"description"`
-	BaseURL             string                 `json:"base_url"`
-	TaskListEndpoint    string                 `json:"task_list_endpoint"`
-	TaskDetailEndpoint  string                 `json:"task_detail_endpoint"`
-	TaskExecuteEndpoint string                 `json:"task_execute_endpoint"`
-	TaskStatusEndpoint  string                 `json:"task_status_endpoint"`
+	ModuleName          string  `json:"module_name"`
+	DisplayName         string  `json:"display_name"`
+	Description         string  `json:"description"`
+	BaseURL             string  `json:"base_url"`
+	TaskListEndpoint    string  `json:"task_list_endpoint"`
+	TaskDetailEndpoint  string  `json:"task_detail_endpoint"`
+	TaskExecuteEndpoint string  `json:"task_execute_endpoint"`
+	TaskStatusEndpoint  string  `json:"task_status_endpoint"`
+	TaskCancelEndpoint  string  `json:"task_cancel_endpoint,omitempty"`
 	Capabilities        *string `json:"capabilities,omitempty"`
-	CreateTaskURL       string                 `json:"create_task_url,omitempty"`
-	EditTaskURL         string                 `json:"edit_task_url,omitempty"`
-	IsEnabled           bool                   `json:"is_enabled"`
+	IsEnabled           bool    `json:"is_enabled"`
 }
 
 // Register 注册 Transfer 模块为任务提供者
 func (s *TaskProviderRegistryService) Register() error {
-	// 构造能力描述
+	// 构造能力描述（含前端集成 URL）
 	capabilities := map[string]interface{}{
 		"task_types": []map[string]string{
 			{
@@ -66,6 +65,8 @@ func (s *TaskProviderRegistryService) Register() error {
 		"execution_modes":   []string{"batch", "stream", "micro-batch"},
 		"supported_sources": []string{"postgresql", "mysql", "doris", "minio", "s3", "csv", "json", "parquet"},
 		"features":          []string{"async", "checkpoint", "retry", "field_mapping", "scheduled"},
+		"create_task_url":   "http://localhost:5176/#/tasks/new",
+		"edit_task_url":     "http://localhost:5176/#/tasks/:id",
 	}
 
 	// 序列化为 JSON 字符串
@@ -88,12 +89,8 @@ func (s *TaskProviderRegistryService) Register() error {
 		TaskExecuteEndpoint: "/api/transfer/tasks/:id/start", // 启动传输任务
 		TaskStatusEndpoint:  "/api/transfer/executions/:id",  // 传输执行状态
 
-		// 能力描述（JSON 字符串）
+		// 能力描述（JSON 字符串，含前端集成 URL）
 		Capabilities: &capabilitiesStr,
-
-		// 前端集成 URL（可选）
-		CreateTaskURL: "http://localhost:5176/#/tasks/new",
-		EditTaskURL:   "http://localhost:5176/#/tasks/:id",
 
 		IsEnabled: true,
 	}

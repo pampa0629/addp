@@ -266,4 +266,5 @@ fi
 echo ""
 
 # 3. 启动服务
-exec "${SCRIPT_DIR}/start.sh"
+# restart 时跳过 go mod tidy（模块依赖在重启间不会改变，避免网络调用拖慢速度）
+exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh"

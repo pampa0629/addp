@@ -38,9 +38,8 @@ func InitDatabase(cfg *config.Config) (*gorm.DB, error) {
 	// AutoMigrate - 确保表结构最新
 	// 所有表由 GORM AutoMigrate 管理（符合统一的数据库表创建策略）
 	if err := db.AutoMigrate(
-		&models.DevItem{},      // 开发项（查询、工作流、Notebook 等）
-		// &models.DevExecution{}, // 【已废弃】旧的执行记录表，已迁移到统一表
-		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
+		&models.DevTask{},                     // 开发项（查询、工作流、Notebook 等）
+		&commonModels.TaskExecution{},          // 统一执行记录表（common.task_executions）
 	); err != nil {
 		return nil, fmt.Errorf("failed to auto migrate: %w", err)
 	}

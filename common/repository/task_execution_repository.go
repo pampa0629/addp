@@ -72,8 +72,8 @@ func (r *TaskExecutionRepository) List(ctx context.Context, filter TaskExecution
 	if filter.Module != "" {
 		query = query.Where("module = ?", filter.Module)
 	}
-	if filter.ExecutionType != "" {
-		query = query.Where("execution_type = ?", filter.ExecutionType)
+	if filter.TaskType != "" {
+		query = query.Where("task_type = ?", filter.TaskType)
 	}
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
@@ -244,16 +244,16 @@ func (r *TaskExecutionRepository) UpdateStatus(ctx context.Context, executionID 
 
 // TaskExecutionFilter 查询过滤器
 type TaskExecutionFilter struct {
-	TenantID      int
-	Module        string
-	ExecutionType string
-	Status        string
-	TriggerType   string
-	SourceTaskID  *int
-	StartDate     *time.Time
-	EndDate       *time.Time
-	Page          int
-	PageSize      int
+	TenantID     int
+	Module       string
+	TaskType     string
+	Status       string
+	TriggerType  string
+	SourceTaskID *int
+	StartDate    *time.Time
+	EndDate      *time.Time
+	Page         int
+	PageSize     int
 }
 
 // ExecutionStatistics 执行统计

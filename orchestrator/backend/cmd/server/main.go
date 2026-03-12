@@ -40,7 +40,6 @@ func main() {
 	// 自动迁移
 	if err := db.AutoMigrate(
 		&models.Orchestration{},
-		// &models.Execution{}, // 【已废弃】改用统一执行表
 		&commonModels.TaskExecution{}, // 统一执行记录表（common.task_executions）
 	); err != nil {
 		log.Fatalf("数据库迁移失败: %v", err)
@@ -80,15 +79,8 @@ func main() {
 	// 初始化 TaskClient（通用任务客户端）
 	taskClient := service.NewTaskClient(30 * time.Second)
 
-	// 初始化 ModuleClient（向后兼容旧的硬编码模式）
-	moduleClient := service.NewModuleClient(map[string]string{
-		"transfer": cfg.TransferServiceURL,
-		"meta":     cfg.MetaServiceURL,
-		"manager":  cfg.ManagerServiceURL,
-	})
-
-	// 初始化 Executor（支持新旧两种模式，使用统一执行服务）
-	executor := service.NewExecutor(executionService, orchRepo, engineRegistry, taskClient, moduleClient)
+	// 初始化 Executor（支持引擎调用和任务引用两种模式）
+	executor := service.NewExecutor(executionService, orchRepo, engineRegistry, taskClient, taskProviderRegistry, cfg.InternalAPIKey)
 
 	// 初始化 Scheduler（使用统一执行服务）
 	scheduler := service.NewScheduler(orchRepo, executionService, executor)
@@ -109,7 +101,7 @@ func main() {
 	}
 
 	// 设置路由（传递 engineRegistry、taskProviderRegistry、systemURL、redisClient 和 systemClient）
-	router := api.SetupRouter(orchRepo, executionService, executor, scheduler, moduleClient, engineRegistry, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
+	router := api.SetupRouter(orchRepo, executionService, executor, scheduler, engineRegistry, taskProviderRegistry, cfg.SystemServiceURL, redisClient, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonModels "github.com/addp/common/models"
+	"gorm.io/gorm"
 )
 
 // LocalTime 本地时间类型，序列化为不带时区的本地时间字符串
@@ -76,27 +77,34 @@ const (
 // Use commonModels.JSONMap instead
 type JSONMap = commonModels.JSONMap
 
-// Task 传输任务
-type Task struct {
-	ID               uint       `gorm:"primaryKey" json:"id"`
-	Name             string     `gorm:"type:varchar(255);not null" json:"name"`
-	Description      string     `gorm:"type:text" json:"description"`
-	Config           JSONMap    `gorm:"type:jsonb;not null" json:"config"` // 任务配置（包含 source 和 target）
-	Schedule         string     `gorm:"type:varchar(100)" json:"schedule"` // Cron 表达式
-	BatchSize        int        `gorm:"default:1000" json:"batch_size"`    // 批大小
-	Enabled          bool       `gorm:"default:false;index" json:"enabled"` // 任务启用状态（用于定时任务）
-	AutoScanMetadata bool       `gorm:"default:true" json:"auto_scan_metadata"` // 任务完成后自动扫描元数据
-	Status           TaskStatus `gorm:"type:varchar(20);default:'idle';index" json:"status"`
-	Progress         float64    `gorm:"type:numeric(5,2);default:0" json:"progress"` // 0-100
-	CreatedBy        *uint      `json:"created_by,omitempty"`
-	TenantID         uint       `gorm:"not null;index" json:"tenant_id"`
-	CreatedAt        time.Time  `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedAt        time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+// TransferTask 传输任务定义
+type TransferTask struct {
+	ID               uint           `gorm:"primaryKey" json:"id"`
+	TenantID         uint           `gorm:"not null;index" json:"tenant_id"`
+	Name             string         `gorm:"type:varchar(255);not null" json:"name"`
+	Description      string         `gorm:"type:text" json:"description"`
+	TaskType         string         `gorm:"type:varchar(20);not null;default:'import';index" json:"task_type"` // import | export | sync
+	Config           JSONMap        `gorm:"type:jsonb;not null" json:"config"`                                 // Reader-Transform-Writer 管道配置
+	Schedule         string         `gorm:"type:varchar(100)" json:"schedule"`                                 // Cron 表达式
+	BatchSize        int            `gorm:"default:1000" json:"batch_size"`
+	Enabled          bool           `gorm:"default:false;index" json:"enabled"`
+	AutoScanMetadata bool           `gorm:"default:true" json:"auto_scan_metadata"`
+	Status           TaskStatus     `gorm:"type:varchar(20);default:'idle';index" json:"status"`
+	Progress         float64        `gorm:"type:numeric(5,2);default:0" json:"progress"`
+	CreatedBy        *uint          `json:"created_by,omitempty"`
+	// BaseTask 基类字段
+	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
+	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
+	CreatedAt           time.Time      `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt           time.Time      `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
-// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
-func (Task) TableName() string {
-	return "tasks"
+// TableName 指定表名（带 schema 前缀）
+func (TransferTask) TableName() string {
+	return "transfer.transfer_tasks"
 }
 
 // ExecutionStatus 执行状态
@@ -109,28 +117,23 @@ const (
 	ExecutionStatusFailed  ExecutionStatus = "failed"  // 失败
 )
 
-// TaskExecution 任务执行记录
+// TaskExecution Transfer 执行记录 DTO（仅用于 API 响应，数据来自 common.task_executions）
 type TaskExecution struct {
-	ID               uint            `gorm:"primaryKey" json:"id"`
-	TaskID           uint            `gorm:"not null;index:idx_executions_task" json:"task_id"`
-	Status           ExecutionStatus `gorm:"type:varchar(20);not null;index:idx_executions_status" json:"status"`
-	StartTime        LocalTime       `gorm:"not null;index:idx_executions_start_time;type:timestamp" json:"start_time"`
-	EndTime          *LocalTime      `gorm:"type:timestamp" json:"end_time,omitempty"`
-	RecordsRead      int64           `gorm:"default:0" json:"records_read"`
-	RecordsWritten   int64           `gorm:"default:0" json:"records_written"`
-	BytesRead        int64           `gorm:"default:0" json:"bytes_read"`
-	BytesWritten     int64           `gorm:"default:0" json:"bytes_written"`
-	ErrorMsg         string          `gorm:"type:text" json:"error_msg,omitempty"`
-	Logs             string          `gorm:"type:text" json:"logs,omitempty"`
-	CheckpointOffset int64           `gorm:"default:0" json:"checkpoint_offset"`
-	CheckpointState  JSONMap         `gorm:"type:jsonb" json:"checkpoint_state,omitempty"`
-	TriggerType      string          `gorm:"type:varchar(50)" json:"trigger_type"` // manual, schedule, api
+	ID               uint            `json:"id"`
+	TaskID           uint            `json:"task_id"`
+	Status           ExecutionStatus `json:"status"`
+	StartTime        LocalTime       `json:"start_time"`
+	EndTime          *LocalTime      `json:"end_time,omitempty"`
+	RecordsRead      int64           `json:"records_read"`
+	RecordsWritten   int64           `json:"records_written"`
+	BytesRead        int64           `json:"bytes_read"`
+	BytesWritten     int64           `json:"bytes_written"`
+	ErrorMsg         string          `json:"error_msg,omitempty"`
+	Logs             string          `json:"logs,omitempty"`
+	CheckpointOffset int64           `json:"checkpoint_offset"`
+	CheckpointState  JSONMap         `json:"checkpoint_state,omitempty"`
+	TriggerType      string          `json:"trigger_type"`
 	TriggerBy        *uint           `json:"trigger_by,omitempty"`
-}
-
-// TableName 指定表名（不包含 schema，因为已通过 search_path 设置）
-func (TaskExecution) TableName() string {
-	return "task_executions"
 }
 
 // Duration 返回执行时长
@@ -147,10 +150,10 @@ type FieldMapping struct {
 	TaskID       uint      `gorm:"not null;index" json:"task_id"`
 	SourceField  string    `gorm:"type:varchar(255);not null" json:"source_field"`
 	TargetField  string    `gorm:"type:varchar(255);not null" json:"target_field"`
-	DefaultValue string    `gorm:"type:text" json:"default_value,omitempty"`     // 默认值
-	FieldType    string    `gorm:"type:varchar(50)" json:"field_type,omitempty"` // 字段类型
-	Format       string    `gorm:"type:varchar(100)" json:"format,omitempty"`    // 格式（日期等）
-	Nullable     bool      `gorm:"default:true" json:"nullable"`                 // 是否可为空
+	DefaultValue string    `gorm:"type:text" json:"default_value,omitempty"`
+	FieldType    string    `gorm:"type:varchar(50)" json:"field_type,omitempty"`
+	Format       string    `gorm:"type:varchar(100)" json:"format,omitempty"`
+	Nullable     bool      `gorm:"default:true" json:"nullable"`
 	CreatedAt    time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
@@ -163,10 +166,11 @@ func (FieldMapping) TableName() string {
 type CreateTaskRequest struct {
 	Name             string                 `json:"name" binding:"required"`
 	Description      string                 `json:"description"`
-	Config           map[string]interface{} `json:"config" binding:"required"` // 包含 source 和 target 配置
+	TaskType         string                 `json:"task_type"`                     // import | export | sync
+	Config           map[string]interface{} `json:"config" binding:"required"`     // 包含 source 和 target 配置
 	Schedule         string                 `json:"schedule"`
 	BatchSize        int                    `json:"batch_size"`
-	AutoScanMetadata *bool                  `json:"auto_scan_metadata"` // 任务完成后自动扫描元数据（默认 true）
+	AutoScanMetadata *bool                  `json:"auto_scan_metadata"`
 	Mappings         []FieldMapping         `json:"mappings"`
 }
 
@@ -174,6 +178,7 @@ type CreateTaskRequest struct {
 type UpdateTaskRequest struct {
 	Name             *string                `json:"name"`
 	Description      *string                `json:"description"`
+	TaskType         *string                `json:"task_type"`
 	Config           map[string]interface{} `json:"config"`
 	Schedule         *string                `json:"schedule"`
 	BatchSize        *int                   `json:"batch_size"`
@@ -184,6 +189,7 @@ type UpdateTaskRequest struct {
 // ListTasksRequest 查询任务列表请求
 type ListTasksRequest struct {
 	Status   *TaskStatus `form:"status"`
+	TaskType string      `form:"task_type"`
 	Page     int         `form:"page" binding:"min=1"`
 	PageSize int         `form:"page_size" binding:"min=1,max=100"`
 }
@@ -193,8 +199,8 @@ type TaskStatistics struct {
 	TotalTasks       int64 `json:"total_tasks"`
 	PendingTasks     int64 `json:"pending_tasks"`
 	RunningTasks     int64 `json:"running_tasks"`
-	SuccessTasks     int64 `json:"success_tasks"` // 复用字段名，表示已完成任务数
-	FailedTasks      int64 `json:"failed_tasks"`  // 复用字段名，表示已停止任务数
+	SuccessTasks     int64 `json:"success_tasks"`
+	FailedTasks      int64 `json:"failed_tasks"`
 	NotExecutedTasks int64 `json:"not_executed_tasks"`
 	LastRunningTasks int64 `json:"last_running_tasks"`
 	LastSuccessTasks int64 `json:"last_success_tasks"`

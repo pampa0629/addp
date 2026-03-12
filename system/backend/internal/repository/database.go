@@ -243,6 +243,51 @@ func MigrateExistingEnginesDisplayName(db *gorm.DB) error {
 	return nil
 }
 
+// MigrateTaskProviders 迁移 task_providers 表：将 create_task_url/edit_task_url 合入 capabilities，添加 task_cancel_endpoint
+func MigrateTaskProviders(db *gorm.DB) error {
+	// 1. 检查 create_task_url 列是否存在（幂等）
+	var colCount int64
+	db.Raw(`
+		SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = 'system' AND table_name = 'task_providers'
+		AND column_name = 'create_task_url'
+	`).Scan(&colCount)
+
+	if colCount == 0 {
+		// 列已删除，无需迁移
+		return nil
+	}
+
+	// 2. 将 create_task_url/edit_task_url 合并进 capabilities JSONB
+	if err := db.Exec(`
+		UPDATE system.task_providers
+		SET capabilities = jsonb_set(
+			jsonb_set(
+				COALESCE(capabilities::jsonb, '{}'),
+				'{create_task_url}',
+				to_jsonb(create_task_url)
+			),
+			'{edit_task_url}',
+			to_jsonb(edit_task_url)
+		)
+		WHERE create_task_url IS NOT NULL AND create_task_url != ''
+	`).Error; err != nil {
+		return fmt.Errorf("task_providers capabilities 迁移失败: %w", err)
+	}
+
+	// 3. 删除旧列
+	if err := db.Exec(`
+		ALTER TABLE system.task_providers
+		DROP COLUMN IF EXISTS create_task_url,
+		DROP COLUMN IF EXISTS edit_task_url
+	`).Error; err != nil {
+		return fmt.Errorf("task_providers 旧列删除失败: %w", err)
+	}
+
+	log.Println("✅ task_providers 迁移完成（create_task_url/edit_task_url 已合入 capabilities）")
+	return nil
+}
+
 // CreateModuleRegistryIndexes 创建模块注册表的索引
 func CreateModuleRegistryIndexes(db *gorm.DB) error {
 	// 为 status 字段创建索引(加速模块状态查询)

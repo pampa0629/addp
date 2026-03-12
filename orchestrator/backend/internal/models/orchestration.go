@@ -10,16 +10,21 @@ import (
 
 // Orchestration 编排定义
 type Orchestration struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	TenantID    uint           `gorm:"index;not null" json:"tenant_id"`
-	Name        string         `gorm:"size:128;not null" json:"name"`
-	Description string         `gorm:"size:512" json:"description"`
-	Steps       Steps          `gorm:"type:jsonb;not null" json:"steps"`
-	Enabled     bool           `gorm:"default:false" json:"enabled"`
-	Schedule    string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	ID                  uint           `gorm:"primaryKey" json:"id"`
+	TenantID            uint           `gorm:"index;not null" json:"tenant_id"`
+	Name                string         `gorm:"size:128;not null" json:"name"`
+	Description         string         `gorm:"size:512" json:"description"`
+	Steps               Steps          `gorm:"type:jsonb;not null" json:"steps"`
+	Enabled             bool           `gorm:"default:false" json:"enabled"`
+	Schedule            string         `gorm:"size:128;column:schedule" json:"schedule,omitempty"`
+	LastRunAt           *time.Time     `json:"last_run_at,omitempty"`
+	NextRunAt           *time.Time     `json:"next_run_at,omitempty"`
+	LastExecutionID     *string        `gorm:"size:36" json:"last_execution_id,omitempty"`
+	LastExecutionStatus *string        `gorm:"size:20" json:"last_execution_status,omitempty"`
+	CreatedBy           *uint          `json:"created_by,omitempty"`
+	CreatedAt           time.Time      `json:"created_at"`
+	UpdatedAt           time.Time      `json:"updated_at"`
+	DeletedAt           gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 func (Orchestration) TableName() string {
@@ -43,40 +48,20 @@ func (s *Steps) Scan(value interface{}) error {
 
 // Step 单个步骤
 type Step struct {
-	ID         string                 `json:"id"`         // 唯一ID
-	Name       string                 `json:"name"`       // 步骤名称
+	ID   string `json:"id"`   // 唯一ID
+	Name string `json:"name"` // 步骤名称
 
-	// 新架构：使用 EngineIdentifier 动态查找引擎
+	// 模式一：引擎调用（工作流引擎，如 Spark、Python）
 	EngineIdentifier string `json:"engine_identifier,omitempty"` // "meta.scanner.default"
 
-	// 旧架构：硬编码模块名（向后兼容）
-	Module     string                 `json:"module"`     // "transfer"/"meta"/"manager"（已废弃）
-	Action     string                 `json:"action"`     // "execute"/"scan"/"cache"（已废弃）
-	Endpoint   string                 `json:"endpoint"`   // "/api/tasks/:id/execute"（已废弃）
-	Method     string                 `json:"method"`     // "POST"/"GET"（已废弃）
+	// 模式二：任务引用（引用已有的 TaskProvider 任务定义）
+	Provider string `json:"provider,omitempty"`  // "meta" | "transfer" | "develop" | "manager"
+	TaskType string `json:"task_type,omitempty"` // "scan" | "import" | "mvt_generation" 等
+	TaskID   uint   `json:"task_id,omitempty"`   // 具体任务定义 ID
 
 	Parameters map[string]interface{} `json:"parameters"` // 请求参数
 	DependsOn  []string               `json:"depends_on"` // 依赖步骤 ID 列表
 	Timeout    int                    `json:"timeout"`    // 超时秒数
-}
-
-// Execution 执行实例
-type Execution struct {
-	ID              uint           `gorm:"primaryKey" json:"id"`
-	OrchestrationID uint           `gorm:"index;not null" json:"orchestration_id"`
-	TenantID        uint           `gorm:"index;not null" json:"tenant_id"`
-	Status          string         `gorm:"size:32;not null" json:"status"` // "running"/"completed"/"failed"
-	CurrentStep     string         `gorm:"size:64" json:"current_step"`
-	StepResults     StepResults    `gorm:"type:jsonb" json:"step_results"`
-	ErrorMessage    string         `gorm:"type:text" json:"error_message,omitempty"`
-	StartedAt       *time.Time     `json:"started_at,omitempty"`
-	CompletedAt     *time.Time     `json:"completed_at,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	Orchestration   *Orchestration `gorm:"foreignKey:OrchestrationID" json:"orchestration,omitempty"`
-}
-
-func (Execution) TableName() string {
-	return "orchestrator.executions"
 }
 
 // StepResults 步骤结果

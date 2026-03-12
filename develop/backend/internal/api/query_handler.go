@@ -13,14 +13,14 @@ import (
 // QueryHandler 查询开发 API 处理器
 type QueryHandler struct {
 	sqlEngine      *service.SQLEngineService
-	devItemService *service.DevItemService
+	devTaskService *service.DevTaskService
 }
 
 // NewQueryHandler 创建 查询处理器
-func NewQueryHandler(sqlEngine *service.SQLEngineService, devItemService *service.DevItemService) *QueryHandler {
+func NewQueryHandler(sqlEngine *service.SQLEngineService, devTaskService *service.DevTaskService) *QueryHandler {
 	return &QueryHandler{
 		sqlEngine:      sqlEngine,
-		devItemService: devItemService,
+		devTaskService: devTaskService,
 	}
 }
 
@@ -187,7 +187,7 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 		queryType = "sql"
 	}
 
-	createReq := &models.CreateDevItemRequest{
+	createReq := &models.CreateDevTaskRequest{
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
 		DevType:     "query",
@@ -210,7 +210,7 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 	}
 
 	// 创建开发项
-	item, err := h.devItemService.CreateDevItem(createReq, tenantID, userID)
+	item, err := h.devTaskService.CreateDevItem(createReq, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "保存 查询任务失败",
@@ -249,7 +249,7 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
 	// 构建更新请求
-	updateReq := &models.UpdateDevItemRequest{
+	updateReq := &models.UpdateDevTaskRequest{
 		Name:        req.Name,
 		DisplayName: req.DisplayName,
 		Content: map[string]interface{}{
@@ -266,7 +266,7 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 	}
 
 	// 更新开发项
-	item, err := h.devItemService.UpdateDevItem(uint(id), updateReq, tenantID, userID)
+	item, err := h.devTaskService.UpdateDevItem(uint(id), updateReq, tenantID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "更新 查询任务失败",
@@ -295,7 +295,7 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	item, err := h.devItemService.GetDevItem(uint(id), tenantID)
+	item, err := h.devTaskService.GetDevItem(uint(id), tenantID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -318,10 +318,10 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 // @Param page_size query int false "每页数量"
 // @Param status query string false "状态过滤"
 // @Param keyword query string false "关键词搜索"
-// @Success 200 {object} models.ListDevItemsResponse
+// @Success 200 {object} models.ListDevTasksResponse
 // @Router /api/develop/sql/tasks [get]
 func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
-	var req models.ListDevItemsRequest
+	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -332,7 +332,7 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	items, total, err := h.devItemService.ListDevItems(&req, tenantID)
+	items, total, err := h.devTaskService.ListDevItems(&req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -346,7 +346,7 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 		req.PageSize = 20
 	}
 
-	c.JSON(http.StatusOK, models.ListDevItemsResponse{
+	c.JSON(http.StatusOK, models.ListDevTasksResponse{
 		Items:    items,
 		Total:    total,
 		Page:     req.Page,
@@ -370,7 +370,7 @@ func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
 
 	tenantID := c.GetUint("tenant_id")
 
-	if err := h.devItemService.DeleteDevItem(uint(id), tenantID); err != nil {
+	if err := h.devTaskService.DeleteDevItem(uint(id), tenantID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

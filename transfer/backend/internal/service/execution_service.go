@@ -57,11 +57,15 @@ func (s *ExecutionService) convertToTransferExecution(exec *commonModels.TaskExe
 	if exec.BytesWritten != nil {
 		transferExec.BytesWritten = *exec.BytesWritten
 	}
-	if exec.CheckpointOffset != nil {
-		transferExec.CheckpointOffset = *exec.CheckpointOffset
-	}
-	if exec.CheckpointState != nil {
-		transferExec.CheckpointState = exec.CheckpointState
+	// checkpoint 数据存在 metadata JSONB 中
+	if exec.Metadata != nil {
+		if offset, ok := exec.Metadata["checkpoint_offset"].(float64); ok {
+			v := int64(offset)
+			transferExec.CheckpointOffset = v
+		}
+		if state, ok := exec.Metadata["checkpoint_state"].(map[string]interface{}); ok {
+			transferExec.CheckpointState = state
+		}
 	}
 
 	// 转换时间字段
@@ -284,7 +288,7 @@ func (s *ExecutionService) CreateExecution(ctx context.Context, taskID uint, tri
 		TenantID:       int(task.TenantID),
 		ExecutionID:    uuid.New().String(),
 		Module:         commonModels.ModuleTransfer,
-		ExecutionType:  "transfer", // Transfer 模块的执行类型统一为 transfer
+		TaskType:       "transfer", // Transfer 模块的执行类型统一为 transfer
 		SourceTaskID:   &taskIDInt,
 		SourceTaskName: &task.Name,
 		Status:         commonModels.ExecutionStatusPending,
@@ -321,10 +325,9 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 			unifiedUpdates["bytes_read"] = value
 		case "bytes_written":
 			unifiedUpdates["bytes_written"] = value
-		case "checkpoint_offset":
-			unifiedUpdates["checkpoint_offset"] = value
-		case "checkpoint_state":
-			unifiedUpdates["checkpoint_state"] = value
+		case "checkpoint_offset", "checkpoint_state":
+			// checkpoint 数据存入 metadata JSONB，需先获取当前值再合并
+			// 此处仅标记需要更新 metadata，统一在循环后处理
 		case "error_msg":
 			// 错误信息存入 error_details
 			unifiedUpdates["error_details"] = commonModels.JSONMap{
@@ -339,6 +342,19 @@ func (s *ExecutionService) UpdateExecution(ctx context.Context, id uint, updates
 	execution, err := s.taskExecutionRepo.GetByID(ctx, int64(id), 0) // tenant_id 传 0 不过滤
 	if err != nil {
 		return err
+	}
+
+	// 处理 checkpoint 数据：合并入现有 metadata
+	if _, hasOffset := updates["checkpoint_offset"]; hasOffset {
+		metadata := execution.Metadata
+		if metadata == nil {
+			metadata = commonModels.JSONMap{}
+		}
+		metadata["checkpoint_offset"] = updates["checkpoint_offset"]
+		if state, hasState := updates["checkpoint_state"]; hasState {
+			metadata["checkpoint_state"] = state
+		}
+		unifiedUpdates["metadata"] = metadata
 	}
 
 	return s.taskExecutionRepo.UpdateFields(ctx, execution.ExecutionID, execution.TenantID, unifiedUpdates)

@@ -36,9 +36,8 @@ type TaskProviderRegistration struct {
 	TaskDetailEndpoint  string                 `json:"task_detail_endpoint"`
 	TaskExecuteEndpoint string                 `json:"task_execute_endpoint"`
 	TaskStatusEndpoint  string                 `json:"task_status_endpoint"`
+	TaskCancelEndpoint  string                 `json:"task_cancel_endpoint,omitempty"`
 	Capabilities        map[string]interface{} `json:"capabilities,omitempty"`
-	CreateTaskURL       string                 `json:"create_task_url,omitempty"`
-	EditTaskURL         string                 `json:"edit_task_url,omitempty"`
 	IsEnabled           bool                   `json:"is_enabled"`
 }
 
@@ -69,11 +68,9 @@ func (s *EngineRegistryService) RegisterEngine() error {
 					"display_name": "工作流任务",
 				},
 			},
+			"create_task_url": "http://localhost:5177/#/workflow/new",
+			"edit_task_url":   "http://localhost:5177/#/workflow/:id",
 		},
-
-		// 前端集成 URL（可选）
-		CreateTaskURL: "http://localhost:5177/#/workflow/new",
-		EditTaskURL:   "http://localhost:5177/#/workflow/:id",
 
 		IsEnabled: true,
 	}

@@ -26,6 +26,7 @@ func SetupRouter(
 	cacheManager *service.CacheManager,
 	redisClient *redis.Client,
 	embeddingService *service.EmbeddingService,
+	taskProviderHandler *TaskProviderHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -64,17 +65,53 @@ func SetupRouter(
 		api.Use(audit.AuditMiddleware("manager", systemClient))
 	}
 	{
-		// 向量化 API
+		// 向量化 API（ad-hoc 即时执行）
 		embeddingHandler := NewEmbeddingHandler(embeddingService, taskTracker)
-		taskHandler := NewEmbeddingTaskHandler(embeddingService)
 
-		api.POST("/embedding", embeddingHandler.CreateEmbedding) // 创建向量化任务
+		api.POST("/embedding", embeddingHandler.CreateEmbedding) // 创建即时向量化任务
 
-		// 向量化任务 API（RESTful 风格）
+		// 向量化任务实时状态查询（内存中）
 		embeddingTasksGroup := api.Group("/embedding/tasks")
 		{
-			embeddingTasksGroup.GET("", taskHandler.ListTasks)                            // 查询任务列表
 			embeddingTasksGroup.GET("/:task_id", embeddingHandler.GetEmbeddingTaskStatus) // 查询任务状态（内存）
+		}
+
+		// ===== 标准 TaskProvider API =====
+		// GET    /api/manager/tasks                       → 任务列表
+		// GET    /api/manager/tasks/:task_type/:id        → 任务详情
+		// POST   /api/manager/tasks/:task_type/:id/execute → 触发执行
+		// GET    /api/manager/executions/:execution_id    → 执行状态
+		// POST   /api/manager/executions/:execution_id/cancel → 取消
+		api.GET("/tasks", taskProviderHandler.ListTasks)
+		api.GET("/tasks/:task_type/:id", taskProviderHandler.TaskDetail)
+		api.POST("/tasks/:task_type/:id/execute", taskProviderHandler.TaskExecute)
+		api.GET("/executions/:execution_id", taskProviderHandler.ExecutionStatus)
+		api.POST("/executions/:execution_id/cancel", taskProviderHandler.ExecutionCancel)
+
+		// MvtTask CRUD
+		mvtTasksGroup := api.Group("/mvt-tasks")
+		{
+			mvtTasksGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=mvt_generation
+			mvtTasksGroup.POST("", taskProviderHandler.CreateMvtTask)
+			mvtTasksGroup.GET("/:id", func(c *gin.Context) {
+				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "mvt_generation"})
+				taskProviderHandler.TaskDetail(c)
+			})
+			mvtTasksGroup.PUT("/:id", taskProviderHandler.UpdateMvtTask)
+			mvtTasksGroup.DELETE("/:id", taskProviderHandler.DeleteMvtTask)
+		}
+
+		// EmbeddingTask CRUD
+		embeddingTaskDefGroup := api.Group("/embedding-tasks")
+		{
+			embeddingTaskDefGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=embedding
+			embeddingTaskDefGroup.POST("", taskProviderHandler.CreateEmbeddingTask)
+			embeddingTaskDefGroup.GET("/:id", func(c *gin.Context) {
+				c.Params = append(c.Params, gin.Param{Key: "task_type", Value: "embedding"})
+				taskProviderHandler.TaskDetail(c)
+			})
+			embeddingTaskDefGroup.PUT("/:id", taskProviderHandler.UpdateEmbeddingTask)
+			embeddingTaskDefGroup.DELETE("/:id", taskProviderHandler.DeleteEmbeddingTask)
 		}
 
 		configGroup := api.Group("/config")

@@ -41,65 +41,31 @@ func NewTaskQueue(redisAddr, redisPassword string) *TaskQueue {
 
 // ScanTaskPayload 扫描任务载荷
 type ScanTaskPayload struct {
-	RunID    uint `json:"run_id"`
-	TaskID   uint `json:"task_id"`
-	TenantID uint `json:"tenant_id"`
+	ExecutionID string `json:"execution_id"` // common.task_executions UUID
+	TaskID      uint   `json:"task_id"`
+	TenantID    uint   `json:"tenant_id"`
 }
 
 // EnqueueScanTask 将扫描任务加入队列
-func (q *TaskQueue) EnqueueScanTask(ctx context.Context, runID, taskID, tenantID uint) error {
-	// 默认队列为 "meta:default"
-	return q.EnqueueScanTaskWithOptions(ctx, runID, taskID, tenantID,
-		asynq.Queue("meta:default"),
-	)
-}
-
-// EnqueueScanTaskWithOptions 将扫描任务加入队列（支持 Asynq 选项）
-func (q *TaskQueue) EnqueueScanTaskWithOptions(ctx context.Context, runID, taskID, tenantID uint, opts ...asynq.Option) error {
+func (q *TaskQueue) EnqueueScanTask(ctx context.Context, executionID string, taskID, tenantID uint) error {
 	payload, err := json.Marshal(ScanTaskPayload{
-		RunID:    runID,
-		TaskID:   taskID,
-		TenantID: tenantID,
+		ExecutionID: executionID,
+		TaskID:      taskID,
+		TenantID:    tenantID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	task := asynq.NewTask(TypeScanTask, payload, opts...)
+	task := asynq.NewTask(TypeScanTask, payload, asynq.Queue("meta:default"))
 
 	info, err := q.client.EnqueueContext(ctx, task)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	log.Printf("✅ Scan task enqueued: id=%s queue=%s", info.ID, info.Queue)
+	log.Printf("✅ Scan task enqueued: id=%s queue=%s executionID=%s", info.ID, info.Queue, executionID)
 	return nil
-}
-
-// EnqueueScheduledScanTask 调度延迟执行的扫描任务
-func (q *TaskQueue) EnqueueScheduledScanTask(ctx context.Context, runID, taskID, tenantID uint, executeAt time.Time) error {
-	return q.EnqueueScanTaskWithOptions(ctx, runID, taskID, tenantID,
-		asynq.Queue("meta:default"),
-		asynq.ProcessAt(executeAt),
-	)
-}
-
-// EnqueueScanTaskWithPriority 根据优先级将扫描任务加入队列
-func (q *TaskQueue) EnqueueScanTaskWithPriority(ctx context.Context, runID, taskID, tenantID uint, priority string) error {
-	// 根据优先级选择队列
-	queueName := "meta:default"
-	switch priority {
-	case "critical":
-		queueName = "meta:critical"
-	case "low":
-		queueName = "meta:low"
-	default:
-		queueName = "meta:default"
-	}
-
-	return q.EnqueueScanTaskWithOptions(ctx, runID, taskID, tenantID,
-		asynq.Queue(queueName),
-	)
 }
 
 // GetQueueStats 获取队列统计信息

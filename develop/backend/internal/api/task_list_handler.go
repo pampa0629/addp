@@ -11,13 +11,13 @@ import (
 
 // TaskListHandler 任务列表 API（供 Orchestrator 使用）
 type TaskListHandler struct {
-	devItemService *service.DevItemService
+	devTaskService *service.DevTaskService
 }
 
 // NewTaskListHandler 创建任务列表处理器
-func NewTaskListHandler(devItemService *service.DevItemService) *TaskListHandler {
+func NewTaskListHandler(devTaskService *service.DevTaskService) *TaskListHandler {
 	return &TaskListHandler{
-		devItemService: devItemService,
+		devTaskService: devTaskService,
 	}
 }
 
@@ -31,7 +31,7 @@ func (h *TaskListHandler) ListTasks(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
 	// 构建查询请求（查询所有类型，后续过滤）
-	req := &models.ListDevItemsRequest{
+	req := &models.ListDevTasksRequest{
 		Page:     page,
 		PageSize: pageSize,
 		Status:   "active", // 仅返回活跃任务
@@ -39,14 +39,14 @@ func (h *TaskListHandler) ListTasks(c *gin.Context) {
 	}
 
 	// 查询所有活跃的 DevItem
-	allItems, _, err := h.devItemService.ListDevItems(req, tenantID)
+	allItems, _, err := h.devTaskService.ListDevItems(req, tenantID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 过滤：只保留 sql 和 workflow，排除 script
-	filteredItems := []models.DevItem{}
+	filteredItems := []models.DevTask{}
 	for _, item := range allItems {
 		if item.DevType == "sql" || item.DevType == "workflow" {
 			filteredItems = append(filteredItems, item)

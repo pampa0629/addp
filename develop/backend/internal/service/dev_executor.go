@@ -18,7 +18,7 @@ import (
 // 负责异步执行任务，管理执行状态，记录执行结果
 // 【已重构】使用统一执行表 common.task_executions
 type DevExecutor struct {
-	devItemRepo              *repository.DevItemRepository
+	devTaskRepo              *repository.DevTaskRepository
 	taskExecutionRepo        *commonRepo.TaskExecutionRepository // 统一执行记录仓库
 	workflowEngine           *WorkflowEngineService
 	sqlEngine                *SQLEngineService
@@ -28,7 +28,7 @@ type DevExecutor struct {
 
 // NewDevExecutor 创建开发项执行器
 func NewDevExecutor(
-	devItemRepo *repository.DevItemRepository,
+	devTaskRepo *repository.DevTaskRepository,
 	taskExecutionRepo *commonRepo.TaskExecutionRepository, // 使用统一执行记录仓库
 	workflowEngine *WorkflowEngineService,
 	sqlEngine *SQLEngineService,
@@ -36,7 +36,7 @@ func NewDevExecutor(
 	notebookExecutionService *NotebookExecutionService,
 ) *DevExecutor {
 	return &DevExecutor{
-		devItemRepo:              devItemRepo,
+		devTaskRepo:              devTaskRepo,
 		taskExecutionRepo:        taskExecutionRepo,
 		workflowEngine:           workflowEngine,
 		sqlEngine:                sqlEngine,
@@ -54,7 +54,7 @@ func (e *DevExecutor) ExecuteDevItem(
 	triggerType string,
 ) (string, error) {
 	// 获取开发项
-	devItem, err := e.devItemRepo.FindByID(devItemID, tenantID)
+	devItem, err := e.devTaskRepo.FindByID(devItemID, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("开发项不存在")
 	}
@@ -87,7 +87,7 @@ func (e *DevExecutor) ExecuteDevItem(
 		TenantID:       int(tenantID),
 		ExecutionID:    executionID,
 		Module:         commonModels.ModuleDevelop,
-		ExecutionType:  devItem.DevType, // "query"/"workflow"/"notebook"
+		TaskType:       devItem.DevType, // "query"/"workflow"/"notebook"
 		SourceTaskID:   &devItemIDInt,
 		SourceTaskName: &devItem.Name,
 		Status:         commonModels.ExecutionStatusPending,
@@ -157,7 +157,7 @@ func (e *DevExecutor) ExecuteContent(
 		TenantID:      int(tenantID),
 		ExecutionID:   executionID,
 		Module:        commonModels.ModuleDevelop,
-		ExecutionType: devType,
+		TaskType:      devType,
 		Status:        commonModels.ExecutionStatusPending,
 		Progress:      0,
 		TriggerType:   commonModels.TriggerTypeManual,
@@ -180,7 +180,7 @@ func (e *DevExecutor) ExecuteContent(
 	log.Printf("🚀 [DevExecutor] 执行临时内容 execution_id=%s type=%s", executionID, devType)
 
 	// 构造临时 DevItem
-	tempItem := &models.DevItem{
+	tempItem := &models.DevTask{
 		DevType: devType,
 		Content: content,
 		Timeout: timeout,
@@ -188,7 +188,7 @@ func (e *DevExecutor) ExecuteContent(
 
 	// 如果提供了 resourceID，设置到 execution_config
 	if resourceID != nil {
-		tempItem.ExecutionConfig = models.DevItemContent{
+		tempItem.ExecutionConfig = models.DevTaskContent{
 			"engine_id": *resourceID,
 		}
 	}
@@ -200,7 +200,7 @@ func (e *DevExecutor) ExecuteContent(
 }
 
 // executeAsync 异步执行任务（核心执行逻辑）
-func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *models.DevItem, tenantID int) {
+func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *models.DevTask, tenantID int) {
 	log.Printf("🟢 [DevExecutor] executeAsync 开始: execution_id=%s", executionID)
 	ctx := context.Background()
 	startTime := time.Now()
@@ -251,27 +251,28 @@ func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *
 
 	execution.Status = status
 	execution.Progress = 100
-	execution.Result = result
 	execution.ExecutionTimeMs = &executionTime
 	execution.CompletedAt = &completedAt
 	execution.RowsAffected = rowsAffected
 	execution.CurrentStep = nil // 清空当前步骤
 
+	// 将 result 和 size 存入 metadata JSONB
+	metadata := execution.Metadata
+	if metadata == nil {
+		metadata = commonModels.JSONMap{}
+	}
+	if result != nil {
+		metadata["result"] = result
+		// 计算结果大小
+		if resultBytes, err := json.Marshal(result); err == nil {
+			metadata["result_size_bytes"] = int64(len(resultBytes))
+		}
+	}
+	execution.Metadata = metadata
+
 	if errorMessage != "" {
 		execution.ErrorDetails = commonModels.JSONMap{
 			"message": errorMessage,
-		}
-	}
-
-	// 计算结果大小
-	if result != nil {
-		if resultBytes, err := json.Marshal(result); err == nil {
-			resultSize := int64(len(resultBytes))
-			// 注意：统一表没有 result_size_bytes 字段，可以存到 result 中
-			if execution.Result == nil {
-				execution.Result = commonModels.JSONMap{}
-			}
-			execution.Result["_size_bytes"] = resultSize
 		}
 	}
 
@@ -286,10 +287,10 @@ func (e *DevExecutor) executeAsync(recordID int64, executionID string, devItem *
 
 	// 更新开发项的最后执行信息
 	if execution.SourceTaskID != nil {
-		_ = e.devItemRepo.UpdateLastExecution(
+		_ = e.devTaskRepo.UpdateLastExecution(
 			uint(*execution.SourceTaskID),
 			uint(execution.TenantID),
-			uint(execution.ID),
+			execution.ExecutionID, // UUID 字符串，软引用 common.task_executions
 			status,
 			completedAt,
 		)
@@ -312,7 +313,7 @@ func (e *DevExecutor) updateExecutionStatus(ctx context.Context, executionID str
 }
 
 // executeWorkflow 执行工作流（支持 JSONB 配置）
-func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevItem, executionID string, tenantID int) (commonModels.JSONMap, string) {
+func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
 	log.Printf("🔵 [DevExecutor] executeWorkflow 开始: execution_id=%s", executionID)
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行工作流")
 
@@ -377,7 +378,7 @@ func (e *DevExecutor) executeWorkflow(ctx context.Context, devItem *models.DevIt
 }
 
 // executeQuery 执行查询（根据query_type路由）
-func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
 	// 使用兼容方法获取查询类型
 	queryType := devItem.GetQueryType()
 
@@ -399,7 +400,7 @@ func (e *DevExecutor) executeQuery(ctx context.Context, devItem *models.DevItem,
 }
 
 // executeSQL 执行SQL
-func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
+func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string, *int64) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "执行SQL")
 
 	// 使用兼容方法获取引擎ID
@@ -457,13 +458,13 @@ func (e *DevExecutor) executeSQL(ctx context.Context, devItem *models.DevItem, e
 }
 
 // executeScript 执行脚本（未实现）
-func (e *DevExecutor) executeScript(ctx context.Context, devItem *models.DevItem, executionID string, tenantID int) (commonModels.JSONMap, string) {
+func (e *DevExecutor) executeScript(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 30, "脚本执行")
 	return nil, "脚本执行功能尚未实现"
 }
 
 // executeNotebook 执行 Jupyter Notebook
-func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevItem, executionID string, tenantID int) (commonModels.JSONMap, string) {
+func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevTask, executionID string, tenantID int) (commonModels.JSONMap, string) {
 	_ = e.updateExecutionStatus(ctx, executionID, tenantID, commonModels.ExecutionStatusRunning, 20, "准备执行 Notebook")
 
 	// 如果没有 NotebookExecutionService，降级到简单模式
@@ -566,22 +567,19 @@ func (e *DevExecutor) executeNotebook(ctx context.Context, devItem *models.DevIt
 }
 
 // GetExecution 获取执行详情
-func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.ExecutionWithItem, error) {
+func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.ExecutionWithDevItem, error) {
 	execution, err := e.taskExecutionRepo.GetByExecutionID(context.Background(), executionID, int(tenantID))
 	if err != nil {
 		return nil, fmt.Errorf("执行记录不存在")
 	}
 
-	// 转换为 DevExecution 格式（兼容旧接口）
-	devExec := e.convertToDevExecution(execution)
-
-	result := &models.ExecutionWithItem{
-		DevExecution: *devExec,
+	result := &models.ExecutionWithDevItem{
+		TaskExecution: execution,
 	}
 
 	// 加载关联的开发项
 	if execution.SourceTaskID != nil {
-		devItem, err := e.devItemRepo.FindByID(uint(*execution.SourceTaskID), tenantID)
+		devItem, err := e.devTaskRepo.FindByID(uint(*execution.SourceTaskID), tenantID)
 		if err == nil {
 			result.DevItem = devItem
 		}
@@ -591,7 +589,7 @@ func (e *DevExecutor) GetExecution(executionID string, tenantID uint) (*models.E
 }
 
 // ListExecutions 查询执行列表
-func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID uint) ([]models.ExecutionWithItem, int64, error) {
+func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID uint) ([]models.ExecutionWithDevItem, int64, error) {
 	// 设置默认分页
 	if req.Page <= 0 {
 		req.Page = 1
@@ -602,13 +600,13 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 
 	// 构建过滤器
 	filter := commonRepo.TaskExecutionFilter{
-		TenantID:      int(tenantID),
-		Module:        commonModels.ModuleDevelop,
-		ExecutionType: req.DevType,
-		Status:        req.Status,
-		TriggerType:   req.TriggerType,
-		Page:          req.Page,
-		PageSize:      req.PageSize,
+		TenantID:    int(tenantID),
+		Module:      commonModels.ModuleDevelop,
+		TaskType:    req.DevType,
+		Status:      req.Status,
+		TriggerType: req.TriggerType,
+		Page:        req.Page,
+		PageSize:    req.PageSize,
 	}
 
 	if req.DevItemID != nil {
@@ -633,17 +631,16 @@ func (e *DevExecutor) ListExecutions(req *models.ListExecutionsRequest, tenantID
 		return nil, 0, fmt.Errorf("failed to list executions: %w", err)
 	}
 
-	// 转换为兼容格式
-	result := make([]models.ExecutionWithItem, len(executions))
+	// 直接映射，加载关联开发项
+	result := make([]models.ExecutionWithDevItem, len(executions))
 	for i, exec := range executions {
-		devExec := e.convertToDevExecution(exec)
-		result[i] = models.ExecutionWithItem{
-			DevExecution: *devExec,
+		result[i] = models.ExecutionWithDevItem{
+			TaskExecution: exec,
 		}
 
 		// 加载关联的开发项
 		if exec.SourceTaskID != nil {
-			devItem, err := e.devItemRepo.FindByID(uint(*exec.SourceTaskID), tenantID)
+			devItem, err := e.devTaskRepo.FindByID(uint(*exec.SourceTaskID), tenantID)
 			if err == nil {
 				result[i].DevItem = devItem
 			}
@@ -737,7 +734,7 @@ func (e *DevExecutor) ExecuteWithParams(
 	userID uint,
 ) (string, error) {
 	// 1. 获取 DevItem 模板
-	devItem, err := e.devItemRepo.FindByID(itemID, tenantID)
+	devItem, err := e.devTaskRepo.FindByID(itemID, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("开发项不存在")
 	}
@@ -783,7 +780,7 @@ func (e *DevExecutor) ExecuteWithParams(
 	}
 
 	// 5. 创建临时 DevItem
-	tempItem := &models.DevItem{
+	tempItem := &models.DevTask{
 		ID:              devItem.ID,
 		DevType:         devItem.DevType,
 		Content:         resolvedContentMap,
@@ -811,7 +808,7 @@ func (e *DevExecutor) ExecuteWithParams(
 		TenantID:       int(tenantID),
 		ExecutionID:    executionID,
 		Module:         commonModels.ModuleDevelop,
-		ExecutionType:  devItem.DevType,
+		TaskType:       devItem.DevType,
 		SourceTaskID:   &itemIDInt,
 		SourceTaskName: &devItem.Name,
 		Status:         commonModels.ExecutionStatusPending,
@@ -838,75 +835,6 @@ func (e *DevExecutor) ExecuteWithParams(
 	go e.executeAsync(execution.ID, executionID, tempItem, int(tenantID))
 
 	return executionID, nil
-}
-
-// convertToDevExecution 将统一执行记录转换为 DevExecution 格式（兼容）
-func (e *DevExecutor) convertToDevExecution(exec *commonModels.TaskExecution) *models.DevExecution {
-	var devItemID *uint
-	if exec.SourceTaskID != nil {
-		id := uint(*exec.SourceTaskID)
-		devItemID = &id
-	}
-
-	var triggeredBy *uint
-	if exec.TriggeredBy != nil {
-		id := uint(*exec.TriggeredBy)
-		triggeredBy = &id
-	}
-
-	var engineID *uint
-	if eid, ok := exec.ExecutionConfig.GetInt("engine_id"); ok {
-		id := uint(eid)
-		engineID = &id
-	}
-
-	// 提取 inputs
-	var inputs models.ExecutionResult
-	if inputsData, ok := exec.ExecutionConfig["inputs"].(map[string]interface{}); ok {
-		inputs = inputsData
-	}
-
-	// 计算 result_size_bytes
-	var resultSizeBytes *int64
-	if exec.Result != nil {
-		if size, ok := exec.Result["_size_bytes"].(float64); ok {
-			s := int64(size)
-			resultSizeBytes = &s
-		}
-	}
-
-	devExec := &models.DevExecution{
-		ID:               uint(exec.ID),
-		DevItemID:        devItemID,
-		TenantID:         uint(exec.TenantID),
-		ExecutionID:      exec.ExecutionID,
-		DevType:          exec.ExecutionType,
-		TriggerType:      exec.TriggerType,
-		TriggeredBy:      triggeredBy,
-		Status:           exec.Status,
-		Progress:         exec.Progress,
-		EngineID:         engineID,
-		Inputs:           inputs,
-		Result:           models.ExecutionResult(exec.Result),
-		ExecutionTimeMs:  exec.ExecutionTimeMs,
-		RowsAffected:     exec.RowsAffected,
-		ResultSizeBytes:  resultSizeBytes,
-		StartedAt:        exec.StartedAt,
-		CompletedAt:      exec.CompletedAt,
-		CreatedAt:        exec.CreatedAt,
-	}
-
-	if exec.ErrorDetails != nil {
-		if msg, ok := exec.ErrorDetails.GetString("message"); ok {
-			devExec.ErrorMessage = msg
-		}
-	}
-
-	if exec.CurrentStep != nil {
-		devExec.CurrentStep = *exec.CurrentStep
-	}
-
-	return devExec
 }
 
 // ==================== 辅助函数 ====================

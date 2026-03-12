@@ -72,26 +72,14 @@ type ObjectNode struct {
 
 // ScanTaskUpsertRequest 创建或更新扫描任务的请求
 type ScanTaskUpsertRequest struct {
-	Name           string   `json:"name" binding:"required"`
-	Description    string   `json:"description"`
-	EngineID       uint     `json:"engine_id" binding:"required"`
-	SchemaNames    []string `json:"schema_names"`
-	ObjectPaths    []string `json:"object_paths"`
-	ScanDepth      string   `json:"scan_depth"`
-	ScheduleType   string   `json:"schedule_type" binding:"required"` // manual/daily/weekly/monthly/cron
-	ScheduleTime   string   `json:"schedule_time"`                    // HH:MM
-	ScheduleValue  []int    `json:"schedule_value"`                   // weekly: weekday(0-6), monthly: day(1-31)
-	Schedule       string   `json:"schedule"`                         // schedule_type=cron 时必填
-	Enabled        bool     `json:"enabled"`
-}
-
-// ScanTaskRunView 任务运行记录（包含任务与资源额外信息）
-type ScanTaskRunView struct {
-	ScanTaskRun
-	TaskName     string `json:"task_name"`
-	TaskPlanName string `json:"task_plan_name,omitempty"`
-	ResourceName string `json:"resource_name,omitempty"`
-	ResourceType string `json:"resource_type,omitempty"`
+	Name        string   `json:"name" binding:"required"`
+	Description string   `json:"description"`
+	EngineID    uint     `json:"engine_id" binding:"required"`
+	SchemaNames []string `json:"schema_names"`
+	ObjectPaths []string `json:"object_paths"`
+	ScanDepth   string   `json:"scan_depth"`
+	Schedule    string   `json:"schedule"` // Cron 表达式，空字符串表示手动执行
+	Enabled     bool     `json:"enabled"`
 }
 
 // MetadataTreeResponse 元数据树响应（用于 Manager 查询）

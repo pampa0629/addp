@@ -8,30 +8,30 @@ import (
 	"gorm.io/gorm"
 )
 
-// DevItemRepository 开发项数据访问层
-type DevItemRepository struct {
+// DevTaskRepository 开发项数据访问层
+type DevTaskRepository struct {
 	db *gorm.DB
 }
 
-// NewDevItemRepository 创建开发项Repository
-func NewDevItemRepository(db *gorm.DB) *DevItemRepository {
-	return &DevItemRepository{db: db}
+// NewDevTaskRepository 创建开发项Repository
+func NewDevTaskRepository(db *gorm.DB) *DevTaskRepository {
+	return &DevTaskRepository{db: db}
 }
 
 // Create 创建开发项
-func (r *DevItemRepository) Create(item *models.DevItem) error {
+func (r *DevTaskRepository) Create(item *models.DevTask) error {
 	return r.db.Create(item).Error
 }
 
 // Update 更新开发项
-func (r *DevItemRepository) Update(item *models.DevItem) error {
+func (r *DevTaskRepository) Update(item *models.DevTask) error {
 	item.UpdatedAt = time.Now()
 	return r.db.Save(item).Error
 }
 
 // FindByID 根据ID获取开发项
-func (r *DevItemRepository) FindByID(id uint, tenantID uint) (*models.DevItem, error) {
-	var item models.DevItem
+func (r *DevTaskRepository) FindByID(id uint, tenantID uint) (*models.DevTask, error) {
+	var item models.DevTask
 	if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&item).Error; err != nil {
 		return nil, err
 	}
@@ -39,8 +39,8 @@ func (r *DevItemRepository) FindByID(id uint, tenantID uint) (*models.DevItem, e
 }
 
 // FindByName 根据名称获取开发项
-func (r *DevItemRepository) FindByName(name string, tenantID uint) (*models.DevItem, error) {
-	var item models.DevItem
+func (r *DevTaskRepository) FindByName(name string, tenantID uint) (*models.DevTask, error) {
+	var item models.DevTask
 	if err := r.db.Where("name = ? AND tenant_id = ?", name, tenantID).First(&item).Error; err != nil {
 		return nil, err
 	}
@@ -48,11 +48,11 @@ func (r *DevItemRepository) FindByName(name string, tenantID uint) (*models.DevI
 }
 
 // List 查询开发项列表（支持分页和过滤）
-func (r *DevItemRepository) List(req *models.ListDevItemsRequest, tenantID uint) ([]models.DevItem, int64, error) {
-	var items []models.DevItem
+func (r *DevTaskRepository) List(req *models.ListDevTasksRequest, tenantID uint) ([]models.DevTask, int64, error) {
+	var items []models.DevTask
 	var total int64
 
-	query := r.db.Model(&models.DevItem{}).Where("tenant_id = ?", tenantID)
+	query := r.db.Model(&models.DevTask{}).Where("tenant_id = ?", tenantID)
 
 	// 类型过滤
 	if req.DevType != "" {
@@ -93,25 +93,25 @@ func (r *DevItemRepository) List(req *models.ListDevItemsRequest, tenantID uint)
 }
 
 // Delete 删除开发项（软删除）
-func (r *DevItemRepository) Delete(id uint, tenantID uint) error {
+func (r *DevTaskRepository) Delete(id uint, tenantID uint) error {
 	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).
-		Delete(&models.DevItem{}).Error
+		Delete(&models.DevTask{}).Error
 }
 
 // UpdateLastExecution 更新最后执行信息
-func (r *DevItemRepository) UpdateLastExecution(id uint, tenantID uint, executionID uint, status string, executedAt time.Time) error {
-	return r.db.Model(&models.DevItem{}).
+func (r *DevTaskRepository) UpdateLastExecution(id uint, tenantID uint, executionID string, status string, executedAt time.Time) error {
+	return r.db.Model(&models.DevTask{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Updates(map[string]interface{}{
 			"last_execution_id":     executionID,
 			"last_execution_status": status,
-			"last_executed_at":      executedAt,
+			"last_run_at":      executedAt,
 		}).Error
 }
 
 // FindScheduledItems 查找所有启用了调度的开发项
-func (r *DevItemRepository) FindScheduledItems(tenantID uint) ([]models.DevItem, error) {
-	var items []models.DevItem
+func (r *DevTaskRepository) FindScheduledItems(tenantID uint) ([]models.DevTask, error) {
+	var items []models.DevTask
 	// 修改为使用 schedule 字段判断（替代已删除的 is_scheduled 字段）
 	if err := r.db.Where("tenant_id = ? AND schedule IS NOT NULL AND schedule != '' AND schedule != '0' AND status = ?",
 		tenantID, "active").
@@ -122,16 +122,16 @@ func (r *DevItemRepository) FindScheduledItems(tenantID uint) ([]models.DevItem,
 }
 
 // UpdateStatus 更新开发项状态
-func (r *DevItemRepository) UpdateStatus(id uint, tenantID uint, status string) error {
-	return r.db.Model(&models.DevItem{}).
+func (r *DevTaskRepository) UpdateStatus(id uint, tenantID uint, status string) error {
+	return r.db.Model(&models.DevTask{}).
 		Where("id = ? AND tenant_id = ?", id, tenantID).
 		Update("status", status).Error
 }
 
 // ExistsByName 检查名称是否已存在
-func (r *DevItemRepository) ExistsByName(name string, tenantID uint, excludeID *uint) (bool, error) {
+func (r *DevTaskRepository) ExistsByName(name string, tenantID uint, excludeID *uint) (bool, error) {
 	var count int64
-	query := r.db.Model(&models.DevItem{}).Where("name = ? AND tenant_id = ?", name, tenantID)
+	query := r.db.Model(&models.DevTask{}).Where("name = ? AND tenant_id = ?", name, tenantID)
 
 	if excludeID != nil {
 		query = query.Where("id != ?", *excludeID)
@@ -145,14 +145,14 @@ func (r *DevItemRepository) ExistsByName(name string, tenantID uint, excludeID *
 }
 
 // CountByType 统计各类型的开发项数量
-func (r *DevItemRepository) CountByType(tenantID uint) (map[string]int64, error) {
+func (r *DevTaskRepository) CountByType(tenantID uint) (map[string]int64, error) {
 	type Result struct {
 		DevType string
 		Count   int64
 	}
 
 	var results []Result
-	if err := r.db.Model(&models.DevItem{}).
+	if err := r.db.Model(&models.DevTask{}).
 		Select("dev_type, COUNT(*) as count").
 		Where("tenant_id = ? AND deleted_at IS NULL", tenantID).
 		Group("dev_type").
@@ -169,12 +169,12 @@ func (r *DevItemRepository) CountByType(tenantID uint) (map[string]int64, error)
 }
 
 // BatchUpdateStatus 批量更新状态
-func (r *DevItemRepository) BatchUpdateStatus(ids []uint, tenantID uint, status string) error {
+func (r *DevTaskRepository) BatchUpdateStatus(ids []uint, tenantID uint, status string) error {
 	if len(ids) == 0 {
 		return fmt.Errorf("ids cannot be empty")
 	}
 
-	return r.db.Model(&models.DevItem{}).
+	return r.db.Model(&models.DevTask{}).
 		Where("id IN ? AND tenant_id = ?", ids, tenantID).
 		Update("status", status).Error
 }

@@ -16,13 +16,10 @@ type TaskProvider struct {
 	TaskDetailEndpoint  string `gorm:"column:task_detail_endpoint;size:255" json:"task_detail_endpoint"`
 	TaskExecuteEndpoint string `gorm:"column:task_execute_endpoint;size:255" json:"task_execute_endpoint"`
 	TaskStatusEndpoint  string `gorm:"column:task_status_endpoint;size:255" json:"task_status_endpoint"`
+	TaskCancelEndpoint  string `gorm:"column:task_cancel_endpoint;size:255" json:"task_cancel_endpoint,omitempty"`
 
-	// 能力描述
+	// 能力描述（JSON 格式，含 task_types、create_task_url、edit_task_url 等）
 	Capabilities *string `gorm:"column:capabilities;type:json" json:"capabilities,omitempty"`
-
-	// 前端集成（可选）
-	CreateTaskURL string `gorm:"column:create_task_url;size:255" json:"create_task_url,omitempty"`
-	EditTaskURL   string `gorm:"column:edit_task_url;size:255" json:"edit_task_url,omitempty"`
 
 	// 状态
 	IsEnabled bool `gorm:"column:is_enabled;default:true" json:"is_enabled"`

@@ -155,9 +155,8 @@ func (s *CleanupService) runCleanup(ctx context.Context) {
 		s.log.Info("清理 meta_node 完成", "deleted_count", nodesDeleted)
 	}
 
-	// 清理历史扫描记录（激进策略）
+	// scan_task_runs 表已废弃（由 common.task_executions 统一管理），清理逻辑跳过
 	var scansDeleted int64
-	scansDeleted = s.cleanupScanTaskRuns()
 
 	s.log.Info("清理任务完成",
 		"duration", time.Since(startTime),
@@ -165,56 +164,6 @@ func (s *CleanupService) runCleanup(ctx context.Context) {
 		"nodes_deleted", nodesDeleted,
 		"scans_deleted", scansDeleted,
 		"total_deleted", itemsDeleted+nodesDeleted+scansDeleted)
-}
-
-// cleanupScanTaskRuns 清理历史扫描记录（激进策略）
-func (s *CleanupService) cleanupScanTaskRuns() int64 {
-	now := time.Now()
-	var totalDeleted int64
-
-	// 1. 清理 30 天前的成功记录
-	result := s.db.Where("status = ? AND completed_at < ?",
-		"success", now.Add(-30*24*time.Hour)).
-		Delete(&models.ScanTaskRun{})
-
-	if result.Error != nil {
-		s.log.Error("清理成功扫描记录失败", "error", result.Error)
-	} else {
-		totalDeleted += result.RowsAffected
-		if result.RowsAffected > 0 {
-			s.log.Info("清理成功扫描记录", "deleted", result.RowsAffected, "before", now.Add(-30*24*time.Hour).Format("2006-01-02"))
-		}
-	}
-
-	// 2. 清理 90 天前的失败记录
-	result = s.db.Where("status = ? AND completed_at < ?",
-		"failed", now.Add(-90*24*time.Hour)).
-		Delete(&models.ScanTaskRun{})
-
-	if result.Error != nil {
-		s.log.Error("清理失败扫描记录失败", "error", result.Error)
-	} else {
-		totalDeleted += result.RowsAffected
-		if result.RowsAffected > 0 {
-			s.log.Info("清理失败扫描记录", "deleted", result.RowsAffected, "before", now.Add(-90*24*time.Hour).Format("2006-01-02"))
-		}
-	}
-
-	// 3. 清理 7 天前的取消记录
-	result = s.db.Where("status = ? AND completed_at < ?",
-		"canceled", now.Add(-7*24*time.Hour)).
-		Delete(&models.ScanTaskRun{})
-
-	if result.Error != nil {
-		s.log.Error("清理取消扫描记录失败", "error", result.Error)
-	} else {
-		totalDeleted += result.RowsAffected
-		if result.RowsAffected > 0 {
-			s.log.Info("清理取消扫描记录", "deleted", result.RowsAffected, "before", now.Add(-7*24*time.Hour).Format("2006-01-02"))
-		}
-	}
-
-	return totalDeleted
 }
 
 // ManualCleanup 手动触发清理

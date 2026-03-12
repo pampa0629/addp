@@ -194,7 +194,7 @@ func (s *ExecutionEngineService) ExecuteTask(ctx context.Context, taskID, execut
 
 // buildExecutionTask 构建执行任务
 func (s *ExecutionEngineService) buildExecutionTask(
-	task *models.Task,
+	task *models.TransferTask,
 	executionID uint,
 	mappings []models.FieldMapping,
 ) (*pipeline.ExecutionTask, error) {
@@ -418,7 +418,7 @@ func (s *ExecutionEngineService) inferConnectorType(config map[string]interface{
 }
 
 // updateExecutionError 更新执行错误
-func (s *ExecutionEngineService) updateExecutionError(task *models.Task, executionID uint, execErr error) {
+func (s *ExecutionEngineService) updateExecutionError(task *models.TransferTask, executionID uint, execErr error) {
 	if execErr == nil {
 		return
 	}
@@ -516,7 +516,7 @@ func (s *ExecutionEngineService) GetResourceConfig(ctx context.Context, engineID
 
 // resolveConnectorConfig 解析连接器配置（从 config 中读取 engine_id）
 func (s *ExecutionEngineService) resolveConnectorConfig(
-	task *models.Task,
+	task *models.TransferTask,
 	configKey string, // "source" 或 "target"
 ) (map[string]interface{}, error) {
 	// 从 task.config 中读取 source/target 配置
@@ -861,7 +861,7 @@ func ensureGeometryMappings(fieldMappings *[]pipeline.FieldMapping, geometryFiel
 }
 
 // triggerMetadataScan 触发元数据扫描
-func (s *ExecutionEngineService) triggerMetadataScan(task *models.Task) {
+func (s *ExecutionEngineService) triggerMetadataScan(task *models.TransferTask) {
 	// 如果 metaClient 未初始化，跳过
 	if s.metaClient == nil {
 		s.logger.Warn("meta client not available, skipping metadata scan", "task_id", task.ID)
@@ -925,7 +925,7 @@ func (s *ExecutionEngineService) triggerMetadataScan(task *models.Task) {
 // 在数据传输完成后，根据目标引擎类型执行相应的优化任务（主键、索引、统计）
 func (s *ExecutionEngineService) executePostProcessing(
 	ctx context.Context,
-	task *models.Task,
+	task *models.TransferTask,
 	execTask *pipeline.ExecutionTask,
 	executionID uint,
 ) error {
@@ -1045,7 +1045,7 @@ func (s *ExecutionEngineService) getEngineType(taskConfig map[string]interface{}
 
 // buildPostProcessorConfig 构建后处理器配置
 func (s *ExecutionEngineService) buildPostProcessorConfig(
-	task *models.Task,
+	task *models.TransferTask,
 	execTask *pipeline.ExecutionTask,
 	engineType string,
 	schema *pipeline.Schema, // ✅ 新增参数：最终 Schema（包含检测到的主键）

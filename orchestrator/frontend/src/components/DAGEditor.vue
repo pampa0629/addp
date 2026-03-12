@@ -44,25 +44,32 @@
           <el-input v-model="currentNode.name" placeholder="例如: 数据传输"></el-input>
         </el-form-item>
 
-        <el-form-item label="模块">
-          <el-input v-model="currentNode.module" disabled></el-input>
+        <!-- 执行模式标签 -->
+        <el-form-item label="执行模式">
+          <el-tag v-if="currentNode.provider" type="success">任务引用</el-tag>
+          <el-tag v-else-if="currentNode.engineIdentifier" type="primary">引擎调用</el-tag>
+          <el-tag v-else type="info">未配置</el-tag>
         </el-form-item>
 
-        <el-form-item label="动作">
-          <el-input v-model="currentNode.action" placeholder="例如: execute, scan, cache"></el-input>
-        </el-form-item>
+        <!-- 任务引用模式：显示提供者、任务类型、任务ID -->
+        <template v-if="currentNode.provider">
+          <el-form-item label="提供者">
+            <el-input v-model="currentNode.provider" disabled></el-input>
+          </el-form-item>
+          <el-form-item label="任务类型">
+            <el-input v-model="currentNode.taskType" disabled></el-input>
+          </el-form-item>
+          <el-form-item label="任务 ID">
+            <el-input :model-value="String(currentNode.taskId || '')" disabled></el-input>
+          </el-form-item>
+        </template>
 
-        <el-form-item label="API 端点">
-          <el-input v-model="currentNode.endpoint" placeholder="例如: /api/tasks/:id/execute"></el-input>
-        </el-form-item>
-
-        <el-form-item label="HTTP 方法">
-          <el-select v-model="currentNode.method">
-            <el-option label="POST" value="POST"></el-option>
-            <el-option label="GET" value="GET"></el-option>
-            <el-option label="PUT" value="PUT"></el-option>
-          </el-select>
-        </el-form-item>
+        <!-- 引擎调用模式：显示 engine_identifier -->
+        <template v-else-if="currentNode.engineIdentifier !== undefined">
+          <el-form-item label="引擎标识符">
+            <el-input v-model="currentNode.engineIdentifier" placeholder="例如: meta.scanner.default"></el-input>
+          </el-form-item>
+        </template>
 
         <el-form-item label="超时(秒)">
           <el-input-number v-model="currentNode.timeout" :min="0" :max="3600"></el-input-number>
@@ -130,14 +137,10 @@ function hashColor(str) {
   return `hsl(${h}, ${s}%, ${l}%)`
 }
 
-// 根据 unique_identifier 生成节点颜色
-function generateColor(uniqueIdentifier) {
-  if (!uniqueIdentifier) return '#5B8FF9'
+// 根据 provider 或 engineIdentifier 生成节点颜色
+function generateColor(identifier) {
+  if (!identifier) return '#5B8FF9'
 
-  // 从 unique_identifier 提取模块名（如 "meta.scanner.default" → "meta"）
-  const moduleName = uniqueIdentifier.split('.')[0]
-
-  // 为常见模块使用预定义颜色
   const predefinedColors = {
     'meta': '#5AD8A6',
     'transfer': '#5B8FF9',
@@ -146,13 +149,13 @@ function generateColor(uniqueIdentifier) {
     'orchestrator': '#9270CA'
   }
 
-  // 如果是预定义模块，使用预定义颜色
+  // 从 identifier 提取模块名（如 "meta.scanner.default" → "meta"）
+  const moduleName = identifier.split('.')[0]
   if (predefinedColors[moduleName]) {
     return predefinedColors[moduleName]
   }
 
-  // 否则，使用 hash 生成一致的颜色
-  return hashColor(uniqueIdentifier)
+  return hashColor(identifier)
 }
 
 function initGraph() {
@@ -194,13 +197,12 @@ function initGraph() {
     },
     defaultNode: {
       type: 'rect',
-      size: [120, 50],  // 调整节点大小：宽120px，高50px
-      // 添加锚点配置
+      size: [120, 50],
       anchorPoints: [
-        [0.5, 0],    // 上
-        [1, 0.5],    // 右
-        [0.5, 1],    // 下
-        [0, 0.5]     // 左
+        [0.5, 0],
+        [1, 0.5],
+        [0.5, 1],
+        [0, 0.5]
       ],
       style: {
         fill: '#5B8FF9',
@@ -211,23 +213,22 @@ function initGraph() {
       labelCfg: {
         style: {
           fill: '#fff',
-          fontSize: 13  // 调整字体大小
+          fontSize: 13
         }
       },
-      // 显示锚点
       linkPoints: {
         top: true,
         right: true,
         bottom: true,
         left: true,
-        size: 10,  // 增大锚点尺寸，更容易点击
+        size: 10,
         lineWidth: 2,
         fill: '#fff',
         stroke: '#1890FF'
       }
     },
     defaultEdge: {
-      type: 'polyline',  // 折线,自动避障
+      type: 'polyline',
       style: {
         stroke: '#A3B1BF',
         lineWidth: 2,
@@ -237,13 +238,6 @@ function initGraph() {
         }
       }
     }
-    // 移除自动布局配置，改为手动放置节点
-    // layout: {
-    //   type: 'dagre',
-    //   rankdir: 'LR',
-    //   nodesep: 50,
-    //   ranksep: 100
-    // }
   })
 
   // 节点双击事件（配置节点）
@@ -318,44 +312,40 @@ function handleDrop(event) {
 
     // 获取画布坐标
     const point = graph.value.getPointByClient(event.clientX, event.clientY)
-    console.log('原始画布坐标:', point)
 
-    // 确保坐标在可见范围内（修复负坐标问题）
+    // 确保坐标在可见范围内
     const width = container.value.offsetWidth || 1200
     const height = container.value.offsetHeight || 600
 
-    // 如果坐标超出合理范围，使用随机位置在画布中心附近
     let x = point.x
     let y = point.y
 
     if (x < 0 || x > width || y < 0 || y > height) {
       x = width / 2 + Math.random() * 200 - 100
       y = height / 2 + Math.random() * 200 - 100
-      console.log('坐标超出范围，使用中心位置:', { x, y })
     }
 
-    // 使用 unique_identifier 生成颜色（而非硬编码 module）
-    const uniqueIdentifier = nodeData.uniqueIdentifier || nodeData.module || 'unknown'
-    const color = generateColor(uniqueIdentifier)
-
-    const id = `${uniqueIdentifier}-${Date.now()}`
+    // 根据 provider 或 engineIdentifier 确定颜色
+    const colorKey = nodeData.provider || nodeData.engineIdentifier || 'unknown'
+    const color = generateColor(colorKey)
+    const id = `${colorKey}-${Date.now()}`
 
     const nodeModel = {
       id,
       label: nodeData.name,
-      uniqueIdentifier,  // 新增：存储 unique_identifier
-      module: nodeData.module,  // 保留向后兼容
-      taskId: nodeData.taskId,
       name: nodeData.name,
-      action: 'execute',
-      endpoint: nodeData.endpoint || '',
-      method: nodeData.method || 'POST',
+      // 任务引用模式字段
+      provider: nodeData.provider || null,
+      taskType: nodeData.taskType || null,
+      taskId: nodeData.taskId || null,
+      // 引擎调用模式字段
+      engineIdentifier: nodeData.engineIdentifier || null,
       parameters: nodeData.parameters || {},
       timeout: 300,
       x,
       y,
       style: {
-        fill: color,  // 使用动态生成的颜色
+        fill: color,
         stroke: '#1890FF',
         lineWidth: 2
       }
@@ -363,13 +353,10 @@ function handleDrop(event) {
 
     console.log('添加节点模型:', nodeModel)
 
-    // 添加节点
     const node = graph.value.addItem('node', nodeModel)
     console.log('节点已添加，node ID:', node.getID())
 
-    // 重绘画布
     graph.value.paint()
-    console.log('画布已重绘')
 
     ElMessage.success(`已添加任务: ${nodeData.name}`)
     emitSteps()
@@ -377,61 +364,6 @@ function handleDrop(event) {
     console.error('拖放失败:', error)
     ElMessage.error('添加节点失败: ' + error.message)
   }
-}
-
-function addNode(resource) {
-  if (!graph.value) {
-    ElMessage.error('画布未初始化')
-    return
-  }
-
-  const uniqueIdentifier = resource.module_name || resource.engine_type || 'unknown'
-  const id = `${uniqueIdentifier}-${Date.now()}`
-  const color = generateColor(uniqueIdentifier)
-
-  // 获取画布中心位置
-  const width = container.value.offsetWidth || 1200
-  const height = container.value.offsetHeight || 600
-  const centerX = width / 2 + Math.random() * 100 - 50
-  const centerY = height / 2 + Math.random() * 100 - 50
-
-  const nodeModel = {
-    id,
-    label: resource.name,
-    uniqueIdentifier,  // 新增：存储 unique_identifier
-    module: resource.module_name || resource.engine_type?.split('.')[0] || 'unknown',  // 兼容旧字段
-    name: '',
-    action: '',
-    endpoint: '',
-    method: 'POST',
-    parameters: {},
-    timeout: 300,
-    style: {
-      fill: color,
-      stroke: '#1890FF',
-      lineWidth: 2
-    },
-    x: centerX,
-    y: centerY
-  }
-
-  // 添加节点到图中
-  const node = graph.value.addItem('node', nodeModel)
-
-  // 确保节点可见
-  graph.value.paint()
-  graph.value.setItemState(node, 'selected', true)
-
-  ElMessage.success(`已添加 ${resource.name} 节点,点击节点可配置`)
-
-  // 延迟打开配置抽屉,确保节点已经渲染
-  setTimeout(() => {
-    currentNode.value = { ...nodeModel }
-    parametersStr.value = '{}'
-    drawerVisible.value = true
-  }, 100)
-
-  emitSteps()
 }
 
 function handleNodeClick(evt) {
@@ -447,7 +379,7 @@ function saveNodeConfig() {
     currentNode.value.parameters = params
 
     graph.value.updateItem(currentNode.value.id, {
-      label: currentNode.value.name || currentNode.value.module.toUpperCase(),
+      label: currentNode.value.name || currentNode.value.provider || currentNode.value.engineIdentifier,
       ...currentNode.value
     })
 
@@ -489,21 +421,28 @@ function emitSteps() {
 }
 
 function convertToSteps(graphData) {
-  const steps = []
   const nodeMap = new Map()
 
   graphData.nodes.forEach(node => {
-    nodeMap.set(node.id, {
+    const step = {
       id: node.id,
-      name: node.label || node.module,
-      module: node.module,
-      action: node.action || '',
-      endpoint: node.endpoint || '',
-      method: node.method || 'POST',
+      name: node.label || node.provider || node.engineIdentifier || node.id,
       parameters: node.parameters || {},
       depends_on: [],
       timeout: node.timeout || 300
-    })
+    }
+
+    if (node.provider) {
+      // 模式二：任务引用
+      step.provider = node.provider
+      step.task_type = node.taskType
+      step.task_id = node.taskId
+    } else if (node.engineIdentifier) {
+      // 模式一：引擎调用
+      step.engine_identifier = node.engineIdentifier
+    }
+
+    nodeMap.set(node.id, step)
   })
 
   graphData.edges.forEach(edge => {
@@ -523,22 +462,24 @@ function loadSteps(steps) {
   const edges = []
 
   steps.forEach((step) => {
-    // 使用 uniqueIdentifier 或回退到 module 生成颜色
-    const uniqueIdentifier = step.uniqueIdentifier || step.module || 'unknown'
-    const color = generateColor(uniqueIdentifier)
+    // 根据模式选择颜色
+    const colorKey = step.provider || step.engine_identifier || 'unknown'
+    const color = generateColor(colorKey)
 
     nodes.push({
       id: step.id,
       label: step.name,
-      uniqueIdentifier: step.uniqueIdentifier,  // 新增字段
-      module: step.module,
-      action: step.action,
-      endpoint: step.endpoint,
-      method: step.method,
+      name: step.name,
+      // 任务引用模式
+      provider: step.provider || null,
+      taskType: step.task_type || null,
+      taskId: step.task_id || null,
+      // 引擎调用模式
+      engineIdentifier: step.engine_identifier || null,
       parameters: step.parameters,
       timeout: step.timeout,
       style: {
-        fill: color  // 使用动态生成的颜色
+        fill: color
       }
     })
 
@@ -558,11 +499,9 @@ function toggleAddEdgeMode() {
   isAddEdgeMode.value = !isAddEdgeMode.value
 
   if (isAddEdgeMode.value) {
-    // 切换到连线模式
     graph.value.setMode('addEdge')
     ElMessage.info('已进入连线模式，依次点击两个节点建立连线')
   } else {
-    // 切换回默认模式
     graph.value.setMode('default')
     ElMessage.info('已退出连线模式')
   }
@@ -573,7 +512,7 @@ defineExpose({
     const data = graph.value.save()
     return convertToSteps(data)
   },
-  loadSteps  // 暴露 loadSteps 方法供父组件调用
+  loadSteps
 })
 </script>
 

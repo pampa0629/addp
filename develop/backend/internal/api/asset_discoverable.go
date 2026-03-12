@@ -24,7 +24,7 @@ func newAssetDiscoverableHandler(db *gorm.DB) *assetDiscoverableHandler {
 func (h *assetDiscoverableHandler) listDiscoverableAssets(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
-	var items []developModels.DevItem
+	var items []developModels.DevTask
 	if err := h.db.Where("tenant_id = ? AND status = 'active'", tenantID).
 		Find(&items).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
