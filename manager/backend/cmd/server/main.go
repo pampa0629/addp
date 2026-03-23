@@ -208,7 +208,20 @@ func main() {
 	unifiedMVTService.SetQuickViewService(quickViewService)
 	logger.L().Info("Quick View 服务已初始化（自动缓存 + 批量生成）")
 
-	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler)
+	// 初始化数据导入服务（Shapefile → business-postgres）
+	transferClient := commonClient.NewTransferClient(cfg.TransferServiceURL, cfg.InternalAPIKey)
+	importService := service.NewImportService(
+		minioClient,
+		minioBucket,
+		cfg.MinioEndpoint,
+		cfg.MinioAccessKey,
+		cfg.MinioSecretKey,
+		transferClient,
+	)
+	importHandler := api.NewImportHandler(importService)
+	logger.L().Info("数据导入服务已初始化", "transfer_url", cfg.TransferServiceURL)
+
+	router := api.SetupRouter(cfg, metadataService, searchService, searchHistoryService, unifiedMVTService, quickViewService, metadataRepo, systemClient, metaClient, cacheManager, redisClient, embeddingService, taskProviderHandler, importHandler)
 
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

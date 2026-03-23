@@ -634,7 +634,9 @@
       "Bash(nc -z -w1 localhost 16379)",
       "Bash(nc -z -w1 localhost 19000)",
       "Bash(nc -z -w1 localhost 17700)",
-      "Bash(go vet ./...)"
+      "Bash(go vet ./...)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzM0MDM5NTAsImlhdCI6MTc3MzM5MzE1MH0.y84SabMYXPXsOvuhWuVyV-DXQDM-tA9hvGsD0oCwkFo\")",
+      "Bash(__NEW_LINE_f5b7608d0808b316__ curl:*)"
     ],
     "deny": [],
     "ask": [],

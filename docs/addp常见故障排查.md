@@ -4,6 +4,43 @@
 
 ---
 
+## 脚本/启动问题
+
+### 1. restart.sh 误报端口被浏览器占用（端口检查假阳性）
+
+#### 问题现象
+
+运行 `./scripts/dev/restart.sh -system`（或其他模块）时，报错：
+```
+✗ 端口 8180 已被非 ADDP 进程占用 (PID: 1785)
+  进程: /Applications/Google Chrome.app/...
+✗ 无法启动 system
+```
+但实际上用 `lsof -i :8180` 查询端口为空闲状态。
+
+#### 根本原因
+
+`scripts/dev/start.sh` 中的端口检查原先使用：
+```bash
+lsof -ti :$port
+```
+该命令会匹配所有 TCP 连接（含 ESTABLISHED、TIME_WAIT 等状态），不仅仅是监听中的进程。Chrome 等浏览器建立 HTTPS 连接时，操作系统随机分配临时出站端口（ephemeral port），偶尔会恰好用到 8180，导致误报。
+
+#### 修复方案
+
+改用 `-sTCP:LISTEN` 标志，只检查真正在监听（LISTEN 状态）该端口的进程：
+```bash
+# 修复前（错误）
+lsof -ti :$port
+
+# 修复后（正确）
+lsof -ti :$port -sTCP:LISTEN
+```
+
+已在 `scripts/dev/start.sh` 的 `check_service_running()` 函数中修复（约第 422 行）。
+
+---
+
 ## 前端问题
 
 ### 1. Manager 数据预览显示"暂无数据"（双重 .data 访问问题）

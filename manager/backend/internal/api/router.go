@@ -27,6 +27,7 @@ func SetupRouter(
 	redisClient *redis.Client,
 	embeddingService *service.EmbeddingService,
 	taskProviderHandler *TaskProviderHandler,
+	importHandler *ImportHandler,
 ) *gin.Engine {
 	router := gin.Default()
 
@@ -119,6 +120,9 @@ func SetupRouter(
 			configHandler := NewConfigHandler(cfg)
 			configGroup.GET("/map", configHandler.GetMapConfig)
 		}
+
+		// 数据导入 API
+		api.POST("/import", importHandler.ImportData)
 
 		// 数据探查 API（Manager 核心功能，直接挂在 /api/manager 下）
 		engineConnector := service.NewEngineConnector(systemClient)

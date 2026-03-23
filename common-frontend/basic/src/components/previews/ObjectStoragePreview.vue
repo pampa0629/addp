@@ -141,7 +141,7 @@ const objectData = computed(() => props.data?.object || {})
 
 const isDirectory = computed(() => {
   const type = (objectData.value.node_type || '').toLowerCase()
-  return type === 'directory' || type === 'prefix' || type === 'bucket'
+  return type === 'directory' || type === 'prefix' || type === 'bucket' || type === 'schema' || type === 'database'
 })
 
 const objectCount = computed(() => {

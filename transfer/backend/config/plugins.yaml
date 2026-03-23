@@ -69,6 +69,12 @@ plugins:
       enabled: true
       description: "SpatiaLite 并行 Reader（千万级数据优化）"
 
+    # S3/MinIO Shapefile Reader（从对象存储下载后读取）
+    - name: s3_shapefile
+      type: s3_shapefile
+      enabled: true
+      description: "从 S3/MinIO 下载 Shapefile 并读取"
+
     # ============================================================
     # 表格数据格式 Readers
     # ============================================================

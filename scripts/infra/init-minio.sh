@@ -102,6 +102,19 @@ else
 fi
 
 echo ""
+
+# 设置 manager 桶 temp/ 前缀的 Lifecycle Policy（7天后自动过期删除）
+echo -e "${YELLOW}▶ 配置 manager 桶 Lifecycle Policy（临时文件 7 天后自动清理）...${NC}"
+if docker compose -f docker-compose.infra.yml exec -T minio mc ilm rule add \
+  --prefix "temp/" \
+  --expire-days 7 \
+  "local/manager" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}✓ manager:temp/ 的 7 天过期策略设置成功${NC}"
+else
+  echo -e "  ${YELLOW}⚠️  manager Lifecycle 策略设置失败（可能已存在）${NC}"
+fi
+
+echo ""
 echo -e "${GREEN}✓ MinIO Buckets 初始化完成${NC}"
 echo ""
 echo -e "${YELLOW}========================================${NC}"
@@ -112,7 +125,7 @@ echo "  控制台:   http://localhost:$(($MINIO_ENDPOINT + 1))"
 echo ""
 echo "  已创建的 Buckets:"
 echo "  - system        (私有)  : 用户头像、系统配置"
-echo "  - manager       (公开读): 预览缓存、MVT 瓦片"
+echo "  - manager       (公开读): 预览缓存、MVT 瓦片、导入临时文件（temp/ 7天后自动过期）"
 echo "  - meta          (私有)  : 元数据文件"
 echo "  - transfer      (私有)  : 传输临时文件"
 echo "  - orchestrator  (私有)  : 编排文件"

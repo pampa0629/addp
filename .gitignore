@@ -133,3 +133,30 @@ manager/backend/manager-backend
 manager/backend/server
 *.go.bak
 .claude/settings.local.json
+data/hunan /data.meta
+data/hunan /farmland.dbf
+data/hunan /farmland.prj
+data/hunan /farmland.shp
+data/hunan /farmland.shx
+data/hunan /farmland.zip
+data/hunan /railway.cpg
+data/hunan /railway.dbf
+data/hunan /railway.prj
+data/hunan /railway.shp
+data/hunan /railway.shx
+data/hunan /railway.zip
+data/hunan /terrain.tif
+data/hunan /terrain.tif.aux.xml
+data/jiaxing/城区范围.cpg
+data/jiaxing/城区范围.dbf
+data/jiaxing/城区范围.prj
+data/jiaxing/城区范围.qmd
+data/jiaxing/城区范围.shp
+data/jiaxing/城区范围.shx
+data/jiaxing/规划用地.cpg
+data/jiaxing/规划用地.dbf
+data/jiaxing/规划用地.prj
+data/jiaxing/规划用地.qmd
+data/jiaxing/规划用地.shp
+data/jiaxing/规划用地.shx
+data/yanshi.udbx

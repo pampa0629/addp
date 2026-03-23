@@ -14,6 +14,7 @@ func init() {
 
 	// 空间数据格式
 	MustRegisterConnector("shapefile", readers.NewShapefileReader, writers.NewShapefileWriter)
+	MustRegisterConnector("s3_shapefile", readers.NewS3ShapefileReader, nil)
 	MustRegisterConnector("geopackage", readers.NewGeoPackageReader, writers.NewGeoPackageWriter)
 	MustRegisterConnector("geojson", readers.NewGeoJSONReader, writers.NewGeoJSONWriter)
 	// SpatiaLite（仅 Reader）：输出几何为 WKB

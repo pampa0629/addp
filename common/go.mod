@@ -6,6 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.42.0
+	github.com/aws/aws-sdk-go v1.45.0
 	github.com/beltran/gohive v1.8.1
 	github.com/gin-gonic/gin v1.11.0
 	github.com/go-sql-driver/mysql v1.9.3
@@ -63,6 +64,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect

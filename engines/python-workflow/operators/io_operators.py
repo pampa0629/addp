@@ -126,22 +126,6 @@ def load(
 
         return gdf
 
-    elif source_type == 'file':
-        # 从对象存储加载文件
-        if not connection_info:
-            raise ValueError("source_type=file 时必须提供 connection_info")
-
-        # TODO: 实现从 MinIO/S3 下载文件逻辑
-        # local_file = download_from_minio(connection_info, path)
-
-        # 临时实现：假设文件已在本地
-        if format in ['geojson', 'shapefile']:
-            gdf = gpd.read_file(path)
-        else:
-            raise ValueError(f"Unsupported format: {format}")
-
-        return gdf
-
     elif source_type == 'geojson':
         # 直接解析 GeoJSON 对象
         if not geojson:
@@ -233,25 +217,6 @@ def save(
 
         return input_df
 
-    elif target_type == 'file':
-        # TODO: 实现保存到对象存储逻辑
-        if not path or not format:
-            raise ValueError("target_type=file 时必须提供 path 和 format")
-
-        # 临时实现：保存到本地文件
-        if format == 'geojson':
-            if not isinstance(input_df, gpd.GeoDataFrame):
-                raise ValueError("保存为 GeoJSON 需要空间数据（GeoDataFrame）")
-            input_df.to_file(path, driver='GeoJSON')
-        elif format == 'shapefile':
-            if not isinstance(input_df, gpd.GeoDataFrame):
-                raise ValueError("保存为 Shapefile 需要空间数据（GeoDataFrame）")
-            input_df.to_file(path, driver='ESRI Shapefile')
-        else:
-            raise ValueError(f"Unsupported format: {format}")
-
-        return input_df
-
     else:
         raise ValueError(f"Unsupported target_type: {target_type}")
 
@@ -263,9 +228,9 @@ LOAD_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据加载",
-    brief_description="从数据库表、文件或GeoJSON对象加载空间数据,支持多种数据源",
+    brief_description="从数据库表或GeoJSON对象加载空间数据,支持多种数据源",
 
-    overview="通用数据加载算子,支持从数据库表(PostgreSQL/MySQL/Doris)、文件(Shapefile/GeoJSON)或内存GeoJSON对象加载空间数据。根据 source_type 参数自动选择加载方式。",
+    overview="通用数据加载算子,支持从数据库表(PostgreSQL/MySQL/Doris)或内存GeoJSON对象加载空间数据。根据 source_type 参数自动选择加载方式。如需导入外部文件（如 Shapefile），请先通过 Manager 模块的导入数据功能将文件导入到数据库表，再通过本算子以 source_type=table 方式读取。",
 
     params=[
         OperatorParam(
@@ -274,8 +239,8 @@ LOAD_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="数据来源类型",
-            notes="可选值: table(数据库表), file(文件), geojson(GeoJSON对象)",
-            enum=["table", "file", "geojson"],
+            notes="可选值: table(数据库表), geojson(GeoJSON对象)",
+            enum=["table", "geojson"],
             default="table"
         ),
         # 特殊参数：数据源级联选择器（仅在 source_type=table 时显示）
@@ -303,9 +268,9 @@ LOAD_METADATA = OperatorMetadata(
             data_type="integer",
             required=False,
             description="存储引擎ID",
-            notes="source_type=table 或 file 时必填。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的数据库连接信息），算子执行时直接使用 connection_info，无需调用 System API。",
+            notes="source_type=table 时必填。注意：此参数由 Develop Backend 自动转换为 connection_info（包含解密后的数据库连接信息），算子执行时直接使用 connection_info，无需调用 System API。",
             depends_on="source_type",
-            show_when={"source_type": ["table", "file"]}
+            show_when={"source_type": "table"}
         ),
         OperatorParam(
             name="schema",
@@ -327,26 +292,6 @@ LOAD_METADATA = OperatorMetadata(
             notes="仅 source_type=table 时必填",
             depends_on="source_type",
             show_when={"source_type": "table"}
-        ),
-        OperatorParam(
-            name="path",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件路径",
-            notes="仅 source_type=file 时必填,支持绝对路径或相对路径",
-            depends_on="source_type",
-            show_when={"source_type": "file"}
-        ),
-        OperatorParam(
-            name="format",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件格式",
-            notes="仅 source_type=file 时有效,可选值: geojson, shapefile",
-            depends_on="source_type",
-            show_when={"source_type": "file"}
         ),
         OperatorParam(
             name="geojson",
@@ -373,16 +318,15 @@ LOAD_METADATA = OperatorMetadata(
 
     use_cases=[
         "从业务数据库加载河流数据: source_type=table, engine_id=1, table=rivers",
-        "从文件加载行政区划: source_type=file, path=/data/admin.shp, format=shapefile",
         "从内存GeoJSON加载临时数据: source_type=geojson, geojson={...}",
-        "工作流起始节点: 作为数据输入的第一步"
+        "工作流起始节点: 作为数据输入的第一步",
+        "加载通过 Manager 导入的 Shapefile: source_type=table, engine_id=5, schema=public, table=railway"
     ],
 
     notes=[
         "支持自动检测几何列,无需手动指定 geom_column (推荐)",
         "如果表中有多个几何列或自动检测失败,可通过 geom_column 参数指定",
-        "文件路径支持 MinIO 路径(minio://bucket/path)和本地路径",
-        "Shapefile 会自动处理编码问题,默认尝试 utf-8 和 gb2312",
+        "如需从外部文件（Shapefile/GeoJSON）加载数据，请先通过 Manager 模块的导入数据功能将文件导入到数据库表，再通过本算子以 source_type=table 方式读取",
         "加载后的 GeoDataFrame 会保留所有属性字段",
         "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],
@@ -406,9 +350,9 @@ SAVE_METADATA = OperatorMetadata(
     type=OperatorType.GENERAL,
     category=OperatorCategory.DATA_IO,
     description="数据保存",
-    brief_description="将数据保存到数据库表或文件,支持普通表和空间表",
+    brief_description="将数据保存到数据库表,支持普通表和空间表",
 
-    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)或文件(Shapefile/GeoJSON)。根据 target_type 参数自动选择保存方式。",
+    overview="通用数据保存算子,支持将 DataFrame 或 GeoDataFrame 保存到数据库表(PostgreSQL/MySQL/Doris)。根据 target_type 参数自动选择保存方式。",
 
     params=[
         OperatorParam(
@@ -424,9 +368,9 @@ SAVE_METADATA = OperatorMetadata(
             data_type="string",
             required=True,
             description="保存目标类型",
-            enum=["table", "file"],
+            enum=["table"],
             default="table",
-            notes="可选值: table(数据库表), file(文件)"
+            notes="当前仅支持 table(数据库表)"
         ),
         OperatorParam(
             name="保存目标",
@@ -484,35 +428,11 @@ SAVE_METADATA = OperatorMetadata(
             notes="可选值: replace(替换表), append(追加数据), fail(抛出错误)。**重要**：只能使用这三个值之一，不能使用 overwrite 等其他值！",
             depends_on="target_type",
             show_when={"target_type": "table"}
-        ),
-        OperatorParam(
-            name="path",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件保存路径",
-            notes="支持绝对路径或相对路径,例如: /output/result.geojson",
-            depends_on="target_type",
-            show_when={"target_type": "file"}
-        ),
-        OperatorParam(
-            name="format",
-            type="param",
-            data_type="string",
-            required=False,
-            description="文件格式",
-            enum=["geojson", "shapefile"],
-            default="geojson",
-            notes="可选值: geojson, shapefile",
-            depends_on="target_type",
-            show_when={"target_type": "file"}
         )
     ],
 
     use_cases=[
         "保存分析结果到数据库: target_type=table, engine_id=1, table=result, mode=replace",
-        "导出到GeoJSON文件: target_type=file, path=/output/result.geojson, format=geojson",
-        "导出到Shapefile: target_type=file, path=/output/result.shp, format=shapefile",
         "工作流结束节点: 作为数据输出的最后一步"
     ],
 
@@ -520,8 +440,6 @@ SAVE_METADATA = OperatorMetadata(
         "自动识别输入数据类型（DataFrame 或 GeoDataFrame）",
         "保存空间数据到 PostgreSQL 时使用 PostGIS，自动创建几何索引",
         "保存普通数据使用标准 SQL 表",
-        "保存到Shapefile时字段名会被截断为10个字符",
-        "GeoJSON 格式保留所有字段名和数据精度",
         "mode=append 时要求表结构与数据结构一致",
         "engine_id 由 Develop Backend 自动转换为 connection_info，工作流引擎无需依赖 System API"
     ],

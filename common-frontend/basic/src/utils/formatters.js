@@ -86,6 +86,14 @@ export function getObjectNodeTypeLabel(type) {
       return 'Bucket'
     case 'object':
       return '对象'
+    case 'schema':
+      return 'Schema'
+    case 'database':
+      return '数据库'
+    case 'table':
+      return '数据表'
+    case 'view':
+      return '视图'
     default:
       return type || '-'
   }

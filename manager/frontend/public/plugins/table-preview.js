@@ -28,11 +28,6 @@
         return true
       }
 
-      // 处理数据库 schema/database 节点（PostgreSQL、MySQL等）
-      if (mode === 'node' && ['schema', 'database'].includes(nodeType)) {
-        return true
-      }
-
       return false
     },
     priority: 100

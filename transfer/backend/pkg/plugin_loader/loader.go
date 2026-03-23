@@ -94,6 +94,7 @@ func (l *PluginLoader) initBuiltinPlugins() {
 	l.readerRegistry["spatialite"] = readers.NewSpatiaLiteReader
 	l.readerRegistry["sqlite"] = readers.NewSpatiaLiteReader
 	l.readerRegistry["spatialite_parallel"] = readers.NewSpatiaLiteParallelReader
+	l.readerRegistry["s3_shapefile"] = readers.NewS3ShapefileReader
 
 	// ============================================================
 	// 表格数据格式 Readers

@@ -418,9 +418,11 @@ check_service_running() {
     fi
 
     # 检查端口占用（如果提供了端口参数）
+    # 注意：必须加 -sTCP:LISTEN，只检查真正监听该端口的进程
+    # 不加此标志会匹配所有 TCP 连接（包括浏览器等作为客户端的临时出站连接），导致误报
     if [ -n "$port" ]; then
-        if lsof -ti :$port > /dev/null 2>&1; then
-            local occupying_pid=$(lsof -ti :$port)
+        if lsof -ti :$port -sTCP:LISTEN > /dev/null 2>&1; then
+            local occupying_pid=$(lsof -ti :$port -sTCP:LISTEN)
             local proc_cmd=$(ps -p $occupying_pid -o command= 2>/dev/null || echo "")
 
             # 检查是否是 ADDP 相关进程

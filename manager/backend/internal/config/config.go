@@ -46,11 +46,14 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
-	// MinIO 配置（用于 MVT 瓦片存储）
+	// MinIO 配置（用于 MVT 瓦片存储和数据导入中转）
 	MinioEndpoint  string
 	MinioAccessKey string
 	MinioSecretKey string
 	MinioUseSSL    bool
+
+	// Transfer 服务配置（用于数据导入任务创建）
+	TransferServiceURL string
 
 	// MVT 预缓存配置
 	PreCache PreCacheConfig
@@ -160,6 +163,9 @@ func Load() *Config {
 	cfg.MinioAccessKey = commonConfig.GetEnv("MINIO_SYSTEM_ACCESS_KEY", commonConfig.GetEnv("MINIO_ROOT_USER", commonConfig.GetEnv("MINIO_ACCESS_KEY", "minioadmin")))
 	cfg.MinioSecretKey = commonConfig.GetEnv("MINIO_SYSTEM_SECRET_KEY", commonConfig.GetEnv("MINIO_ROOT_PASSWORD", commonConfig.GetEnv("MINIO_SECRET_KEY", "minioadmin")))
 	cfg.MinioUseSSL = commonConfig.GetEnvBool("MINIO_USE_SSL", false)
+
+	// Transfer 服务配置
+	cfg.TransferServiceURL = commonConfig.GetEnv("TRANSFER_SERVICE_URL", "http://localhost:8083")
 
 	// MVT 预缓存配置
 	concurrency := commonConfig.GetEnvInt("PRE_CACHE_CONCURRENCY", 10)

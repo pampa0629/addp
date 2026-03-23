@@ -45,6 +45,17 @@
           </div>
         </div>
         <div class="panel-actions">
+          <!-- 导入数据按钮（仅 PostgreSQL schema 节点） -->
+          <el-button
+            v-if="showImportButton"
+            size="small"
+            type="warning"
+            @click="importDialogVisible = true"
+          >
+            <el-icon><Upload /></el-icon>
+            导入数据
+          </el-button>
+
           <!-- 向量化按钮 -->
           <el-button
             v-if="showVectorizeButton"
@@ -122,16 +133,27 @@
         @navigate="handleNavigate"
       />
     </div>
+
+    <!-- 导入数据对话框 -->
+    <ImportDialog
+      v-model="importDialogVisible"
+      :engine-id="selectedNode?.engineId"
+      :engine-name="selectedNode?.engineName || ''"
+      :schema-name="selectedNode?.schema || ''"
+      @success="handleImportSuccess"
+    />
   </el-card>
 </template>
 
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
 import { ElMessage, ElNotification } from 'element-plus'
-import { MagicStick, Download, Location, Collection } from '@element-plus/icons-vue'
+import { MagicStick, Download, Location, Collection, Upload } from '@element-plus/icons-vue'
 import { getPreviewComponent } from '@/plugins/previews'
 import { parseLocator } from '@addp/common-frontend'
 import client from '@/api/client'
+import ImportDialog from '@/components/explorer/ImportDialog.vue'
+import { useExplorerStore } from '@/stores/explorer'
 
 const props = defineProps({
   selectedNode: {
@@ -605,7 +627,30 @@ const downloadInfo = computed(() => {
   return { available: false, reason: '未找到可下载的数据源' }
 })
 
+const store = useExplorerStore()
 const downloading = ref(false)
+const importDialogVisible = ref(false)
+
+// 导入按钮：仅在 PostgreSQL schema 节点显示
+const showImportButton = computed(() => {
+  if (!props.selectedNode) return false
+  const nodeType = (props.selectedNode.type || '').toLowerCase()
+  const engineType = (props.selectedNode.engineType || '').toLowerCase()
+  return nodeType === 'schema' && engineType === 'postgresql'
+})
+
+const handleImportSuccess = async () => {
+  importDialogVisible.value = false
+  // 刷新当前 schema 节点，让目录树同步更新
+  if (props.selectedNode?.locator) {
+    try {
+      await store.refreshNode(props.selectedNode.locator)
+      ElMessage.success('数据导入成功，已刷新目录')
+    } catch (error) {
+      console.error('刷新节点失败:', error)
+    }
+  }
+}
 
 const showDownloadControl = computed(() => {
   if (!props.previewData || !props.selectedNode) return false

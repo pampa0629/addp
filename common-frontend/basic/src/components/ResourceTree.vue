@@ -181,7 +181,8 @@ import {
   Box,
   MagicStick,
   OfficeBuilding,
-  Shop
+  Shop,
+  Upload
 } from '@element-plus/icons-vue'
 import { getAllNodeKeys, traverseTree, findNodePath } from '../types/tree'
 
@@ -199,7 +200,8 @@ const actionIconMap = {
   Coin,
   Box,
   OfficeBuilding,
-  Shop
+  Shop,
+  Upload
 }
 
 const props = defineProps({

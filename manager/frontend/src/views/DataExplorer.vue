@@ -61,11 +61,14 @@ const selectedNodeLegacy = computed(() => {
   if (!store.selectedNode) return null
 
   const loc = parseLocator(store.selectedLocator)
+  const engine = store.engines.find(e => e.id === loc.engineId)
 
   return {
     id: store.selectedLocator,
     locator: store.selectedLocator,
     engineId: loc.engineId,
+    engineType: store.selectedNode.engineType || engine?.engine_type || '',
+    engineName: engine?.name || `引擎 ${loc.engineId}`,
     schema: loc.path[0] || '',
     table: loc.path[1] || '',
     path: loc.path.join('/'),
