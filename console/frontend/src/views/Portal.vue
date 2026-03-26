@@ -350,6 +350,13 @@
           </template>
 
           <!-- 系统管理群组 -->
+          <template v-if="activeGroupModules.includes('agent')">
+            <el-menu-item index="/agent">
+              <el-icon><ChatDotRound /></el-icon>
+              <span>智能体</span>
+            </el-menu-item>
+          </template>
+
           <template v-if="activeGroupModules.includes('system')">
             <el-sub-menu index="system">
               <template #title>
@@ -461,7 +468,7 @@ import {
   Grid, FolderOpened, DataLine, Reading, Share, DataBoard, List,
   Odometer, TrendCharts, SortDown, Document, CircleCheck, Folder,
   Files, Tickets, Upload, Box, DataAnalysis, Setting, Link, Warning,
-  Coin, Tools, Shop
+  Coin, Tools, Shop, ChatDotRound
 } from '@element-plus/icons-vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
 
@@ -482,6 +489,7 @@ const MODULE_GROUPS = [
   { key: 'dev-monitor',  label: '开发与监控', icon: Tools,   modules: ['develop', 'service', 'orchestrator', 'monitor'] },
   { key: 'asset',        label: '资产管理',   icon: Folder,   modules: ['asset'] },
   { key: 'portal',       label: '资产门户',   icon: Shop,     modules: [], isPortal: true },
+  { key: 'agent', label: '智能体',    icon: ChatDotRound, modules: ['agent'] },
   { key: 'system',       label: '系统管理',   icon: Setting,  modules: ['system'] },
 ]
 
@@ -499,6 +507,7 @@ const ALL_HOME_CARDS = [
   { module: 'monitor',      label: '执行监控',   icon: DataLine,     cssVar: '--addp-module-monitor',       desc: '任务执行监控、统计分析、健康检查' },
   { module: 'asset',        label: '资产管理',   icon: Folder,       cssVar: '--addp-module-asset',         desc: '资产类型、分类管理、申请与授权' },
   { module: 'system',       label: '系统管理',   icon: Setting,      cssVar: '--addp-module-system',        desc: '用户管理、日志查询、引擎配置' },
+  { module: 'agent',        label: '智能体',     icon: ChatDotRound, cssVar: '--addp-module-agent',         desc: '自然语言对话、数据管理、智能分析' },
 ]
 
 // 计算属性
@@ -536,7 +545,8 @@ const moduleUrls = {
   standard: isDevelopment ? `${protocol}//${hostname}:5181` : `${protocol}//${hostname}/standard`,
   modeling: isDevelopment ? `${protocol}//${hostname}:5182` : `${protocol}//${hostname}/model`,
   quality: isDevelopment ? `${protocol}//${hostname}:5183` : `${protocol}//${hostname}/quality`,
-  asset: isDevelopment ? `${protocol}//${hostname}:5184` : `${protocol}//${hostname}/asset`
+  asset: isDevelopment ? `${protocol}//${hostname}:5184` : `${protocol}//${hostname}/asset`,
+  agent: isDevelopment ? `${protocol}//${hostname}:5186` : `${protocol}//${hostname}/agent`,
 }
 
 onMounted(async () => {
@@ -754,6 +764,7 @@ const navigateToModule = (module) => {
     modeling: '/modeling/dw-layers',
     quality: '/quality/check-tasks',
     asset: '/asset/assets',
+    agent: '/agent',
   }
   if (defaultRoutes[module]) {
     handleMenuSelect(defaultRoutes[module])

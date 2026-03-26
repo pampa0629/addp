@@ -5,7 +5,7 @@
 """
 
 import geopandas as gpd
-from typing import Dict, List, Union, Any
+from typing import Dict, List, Any
 from .base import (
     OperatorMetadata, OperatorParam, OperatorType, OperatorCategory, register_operator, OutputPort
 )
@@ -79,30 +79,6 @@ def split_by_area(input_gdf: gpd.GeoDataFrame, threshold: float) -> Dict[str, gp
         "large": large,
         "small": small
     }
-
-
-def dissolve(input_gdf: gpd.GeoDataFrame, by: Union[str, List[str]] = None) -> gpd.GeoDataFrame:
-    """
-    融合（dissolve）几何，按字段分组
-
-    Args:
-        input_gdf: 输入 GeoDataFrame
-        by: 分组字段（可选）
-
-    Returns:
-        GeoDataFrame 融合结果
-    """
-    if by is None:
-        # 全部融合为一个几何
-        result = gpd.GeoDataFrame(
-            {'geometry': [input_gdf['geometry'].unary_union]},
-            crs=input_gdf.crs
-        )
-    else:
-        # 按字段分组融合
-        result = input_gdf.dissolve(by=by, as_index=False)
-
-    return result
 
 
 def batch_buffer(input_gdf: gpd.GeoDataFrame, distances: List[float], resolution: int = 16) -> List[gpd.GeoDataFrame]:
@@ -300,58 +276,6 @@ SPLIT_BY_AREA_METADATA = OperatorMetadata(
 )
 
 
-DISSOLVE_METADATA = OperatorMetadata(
-    name="dissolve",
-    type=OperatorType.SPATIAL,
-    category=OperatorCategory.DATA_OPERATION,
-    description="融合几何",
-    brief_description="按属性字段分组并融合几何,常用于边界合并和统计汇总",
-
-    overview="按指定的属性字段对几何对象进行分组,并将同组的几何对象融合为一个。可用于行政区划合并、地类汇总等场景。",
-
-    params=[
-        OperatorParam(
-            name="input_gdf",
-            type="input",
-            data_type="GeoDataFrame",
-            required=True,
-            description="输入的地理数据"
-        ),
-        OperatorParam(
-            name="by",
-            type="param",
-            data_type="string",
-            required=True,
-            description="分组字段名或字段名列表",
-            notes="单个字段用字符串,多个字段用列表,如 'province' 或 ['province', 'city']"
-        )
-    ],
-
-    use_cases=[
-        "省级边界合并: 将市级行政区按省份字段融合为省级边界",
-        "土地利用汇总: 将地块按地类字段融合为地类统计面",
-        "流域边界生成: 将子流域按流域代码融合为完整流域",
-        "人口统计区聚合: 将人口普查小区按街道融合"
-    ],
-
-    notes=[
-        "融合后每组只保留一条记录,数值字段会被求和,其他字段取第一个值",
-        "如需自定义聚合函数,建议先分组再用其他方法处理",
-        "分组字段必须存在于输入数据中,否则报错",
-        "大数据集融合可能较慢,建议先过滤不需要的数据"
-    ],
-
-    workflow_example={
-        'id': 'dissolve_by_province',
-        'operator': 'dissolve',
-        'params': {
-            'input_gdf': {'$ref': 'load_cities'},
-            'by': 'province'
-        },
-        'depends_on': ['load_cities']
-    }
-)
-
 
 BATCH_BUFFER_METADATA = OperatorMetadata(
     name="batch_buffer",
@@ -470,7 +394,6 @@ OPERATORS = dict([
     register_operator(CLIP_METADATA, clip),
     register_operator(VORONOI_METADATA, voronoi),
     register_operator(SPLIT_BY_AREA_METADATA, split_by_area),
-    register_operator(DISSOLVE_METADATA, dissolve),
     register_operator(BATCH_BUFFER_METADATA, batch_buffer),
     register_operator(BATCH_CENTROID_METADATA, batch_centroid),
 ])

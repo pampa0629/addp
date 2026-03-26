@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
-from agents.sql_agent import sql_agent
+from services.sql_service import sql_service
 # TODO: Copilot 暂时不需要保存对话历史，注释掉以避免数据库依赖
 # from services.memory_service import memory_service
 from services.metadata_matcher import metadata_matcher
@@ -63,7 +63,7 @@ async def generate_sql(request: SQLGenerationRequest):
         #     memory = await memory_service.get_memory(request.conversation_id)
 
         # 3. 调用 SQL Agent 生成（不使用 memory）
-        result = await sql_agent.generate(
+        result = await sql_service.generate(
             query=request.query,
             datasources=match_result.candidates,
             memory=None,  # 不使用对话历史

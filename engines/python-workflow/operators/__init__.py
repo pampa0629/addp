@@ -13,13 +13,13 @@ from .base import OperatorMetadata, OperatorParam, OperatorCategory, OperatorTyp
 from .io_operators import load, save
 from .geometric_operators import (
     buffer, intersection, union, centroid, difference,
-    simplify, convex_hull, envelope
+    simplify, convex_hull, envelope, dissolve
 )
 from .spatial_relations import contains, intersects, distance_to
 from .properties_operators import get_area, get_length, get_bounds
 from .format_operators import load_from_wkt, export_to_wkt
 from .data_operations import (
-    clip, voronoi, split_by_area, dissolve,
+    clip, voronoi, split_by_area,
     batch_buffer, batch_centroid
 )
 

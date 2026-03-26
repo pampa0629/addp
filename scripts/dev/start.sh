@@ -16,6 +16,7 @@ show_usage() {
   echo "  -service      只启动 Service 模块 (依赖: System)"
   echo "  -monitor      只启动 Monitor 模块 (依赖: System)"
   echo "  -copilot      只启动 Copilot 模块 (依赖: System + Meta + Develop)"
+  echo "  -agent        只启动 Agent 模块 (依赖: System)"
   echo "  -standard     只启动 Standard 模块 (依赖: System)"
   echo "  -model        只启动 Model 模块 (依赖: System + Standard)"
   echo "  -quality      只启动 Quality 模块 (依赖: System + Standard)
@@ -89,33 +90,31 @@ source "${SCRIPT_DIR}/../utils/colors.sh"
 # 智能选择 Python 版本：优先 Python 3.11（兼容所有依赖）
 # 避免 Python 3.13（NumPy/pydantic 等包兼容性问题）
 select_python() {
-  # 1. 优先：python3.11 命令（最明确）
+  # 1. 优先：python3.12（最广泛兼容 pydantic-core 等依赖）
+  if command -v python3.12 &> /dev/null; then
+    echo "python3.12"
+    return
+  fi
+
+  # 2. 其次：python3.11
   if command -v python3.11 &> /dev/null; then
     echo "python3.11"
     return
   fi
 
-  # 2. 检查系统 python3 版本
+  # 3. 检查系统 python3 版本（仅接受 3.11/3.12/3.13）
   if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
     case $PYTHON_VERSION in
-      3.11*)
-        echo "python3"
-        return
-        ;;
-      3.12*)
+      3.11*|3.12*|3.13*)
         echo "python3"
         return
         ;;
     esac
-  fi
-
-  # 3. 降级：使用任何可用的 python3（可能是 3.13，会有警告）
-  if command -v python3 &> /dev/null; then
-    echo -e "${YELLOW}⚠️  警告：使用 Python $PYTHON_VERSION，部分依赖可能编译失败${NC}" >&2
-    echo -e "${YELLOW}   推荐安装 Python 3.11: brew install python@3.11${NC}" >&2
-    echo "python3"
-    return
+    # 3.14+ 不兼容 pydantic-core
+    echo -e "${YELLOW}⚠️  警告：Python $PYTHON_VERSION 不兼容部分依赖（pydantic-core 等）${NC}" >&2
+    echo -e "${YELLOW}   推荐安装 Python 3.12: brew install python@3.12${NC}" >&2
+    exit 1
   fi
 
   # 4. 失败：未找到 Python
@@ -136,7 +135,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -168,6 +167,8 @@ START_SERVICE_FRONTEND=false
 START_MONITOR_BACKEND=false
 START_MONITOR_FRONTEND=false
 START_COPILOT_BACKEND=false
+START_AGENT_BACKEND=false
+START_AGENT_FRONTEND=false
 START_STANDARD_BACKEND=false
 START_STANDARD_FRONTEND=false
 START_MODEL_BACKEND=false
@@ -208,7 +209,8 @@ if [ "$START_ALL" = true ]; then
   START_MONITOR_BACKEND=true
   START_MONITOR_FRONTEND=true
   START_COPILOT_BACKEND=true
-  START_STANDARD_BACKEND=true
+  START_AGENT_BACKEND=true
+  START_AGENT_FRONTEND=true
   START_STANDARD_FRONTEND=true
   START_MODEL_BACKEND=true
   START_MODEL_FRONTEND=true
@@ -288,6 +290,12 @@ else
       START_PYTHON_WORKFLOW=true
       START_JUPYTER=true
       START_COPILOT_BACKEND=true
+      ;;
+    agent)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_AGENT_BACKEND=true
+      START_AGENT_FRONTEND=true
       ;;
     standard)
       START_SYSTEM_BACKEND=true
@@ -609,6 +617,7 @@ MODEL_FE_PORT=${MODEL_FE_PORT:-5182}
 QUALITY_FE_PORT=${QUALITY_FE_PORT:-5183}
 ASSET_FE_PORT=${ASSET_FE_PORT:-5184}
 PORTAL_FE_PORT=${PORTAL_FE_PORT:-5185}
+AGENT_FE_PORT=${AGENT_FE_PORT:-5186}
 
 # 0. 检查 Go 模块依赖
 echo -e "${YELLOW}Step 0: 检查 Go 模块依赖${NC}"
@@ -1764,6 +1773,91 @@ else
   echo ""
 fi
 
+# ============================================================
+# Step 5b: Start Agent Backend (Python/FastAPI service)
+# ============================================================
+if [ "$START_AGENT_BACKEND" = true ]; then
+  echo -e "${YELLOW}Step 5b: 启动 Agent Backend...${NC}"
+
+  NEED_INSTALL=false
+  if [ ! -d "agent/backend/venv" ]; then
+    echo "首次启动 Agent，创建 Python 虚拟环境..."
+    cd agent/backend
+    SELECTED_PYTHON=$(select_python)
+    PYTHON_VER=$($SELECTED_PYTHON --version)
+    echo "  使用 $PYTHON_VER"
+    $SELECTED_PYTHON -m venv venv
+    NEED_INSTALL=true
+  else
+    if ! ./agent/backend/venv/bin/python -c "import fastapi" &> /dev/null; then
+      echo "检测到虚拟环境缺少依赖，重新安装..."
+      cd agent/backend
+      NEED_INSTALL=true
+    else
+      echo "虚拟环境已存在且依赖完整，跳过安装"
+    fi
+  fi
+
+  if [ "$NEED_INSTALL" = true ]; then
+    echo "使用 pip 安装 Agent 依赖（首次安装可能需要 1-2 分钟）..."
+    PIP_CMD="./venv/bin/pip install"
+    if [ -n "$PIP_INDEX_URL" ]; then
+      echo "  使用镜像源: $PIP_INDEX_URL"
+      PIP_CMD="$PIP_CMD -i $PIP_INDEX_URL"
+      if [ -n "$PIP_TRUSTED_HOST" ]; then
+        PIP_CMD="$PIP_CMD --trusted-host $PIP_TRUSTED_HOST"
+      fi
+    fi
+    $PIP_CMD --upgrade pip
+    $PIP_CMD -r requirements.txt
+    if [ $? -eq 0 ]; then
+      echo -e "${GREEN}✓ Agent Python 依赖安装完成${NC}"
+    else
+      echo -e "${RED}✗ Agent 依赖安装失败，请检查错误信息${NC}"
+      cd ../..
+      exit 1
+    fi
+    cd ../..
+  fi
+
+  if check_service_running "agent-backend" "8190"; then
+    echo "启动 Agent Backend..."
+    cd agent/backend
+    export PORT=8190
+    ./venv/bin/python main.py > ../../logs/agent-backend.log 2> ../../logs/agent-backend-stderr.log &
+    AGENT_PID=$!
+    echo $AGENT_PID > ../../.dev-pids/agent-backend.pid
+    cd ../..
+
+    echo -e "${GREEN}✓ Agent Backend 已启动 (PID: $AGENT_PID)${NC}"
+
+    echo -n "等待 Agent Backend 就绪..."
+    WAIT_COUNT=0
+    MAX_WAIT=60
+    until curl -f http://localhost:8190/health > /dev/null 2>&1; do
+      echo -n "."
+      sleep 1
+      WAIT_COUNT=$((WAIT_COUNT + 1))
+      if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+        echo -e " ${RED}✗${NC}"
+        echo -e "${RED}✗ Agent Backend 启动超时（60秒）${NC}"
+        echo -e "${YELLOW}查看日志: tail -f logs/agent-backend.log${NC}"
+        echo -e "${YELLOW}或检查错误: tail -f logs/agent-backend-stderr.log${NC}"
+        exit 1
+      fi
+    done
+    echo -e " ${GREEN}✓${NC}"
+    echo -e "${GREEN}✓ Agent Backend 就绪 (http://localhost:8190)${NC}"
+  else
+    AGENT_PID=$(cat .dev-pids/agent-backend.pid 2>/dev/null)
+    echo -e "${GREEN}✓ Agent Backend 已在运行 (PID: $AGENT_PID)${NC}"
+  fi
+  echo ""
+else
+  echo -e "${YELLOW}Step 5b: 跳过 Agent Backend${NC}"
+  echo ""
+fi
+
 # 6. 启动 Gateway
 if [ "$START_GATEWAY" = true ]; then
   echo -e "${YELLOW}Step 6/7: 启动 Gateway${NC}"
@@ -1850,7 +1944,7 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ]; then
+if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
@@ -1911,6 +2005,10 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
 
   if [ "$START_PORTAL_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("portal:${PORTAL_FE_PORT}:portal/frontend")
+  fi
+
+  if [ "$START_AGENT_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("agent:${AGENT_FE_PORT}:agent/frontend")
   fi
 
   echo "并发启动所有前端..."
@@ -2066,6 +2164,7 @@ echo "  Orchestrator: logs/orchestrator-backend.log"
 echo "  Develop:  logs/develop-backend.log"
 echo "  Service:  logs/service-backend.log"
 echo "  Copilot:  logs/copilot-backend.log"
+echo "  Agent:    logs/agent-backend.log"
 echo "  Monitor:  logs/monitor-backend.log"
 echo "  Standard: logs/standard-backend.log"
 echo "  Model:    logs/model-backend.log"

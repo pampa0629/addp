@@ -6,9 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **全域数据平台 (All Domain Data Platform)** 是企业级数据平台的核心能力模块，提供基础系统功能：
 - 多租户账号管理（超级管理员、租户管理员、普通用户）
-- 日志管理（审计日志存储和查询）
-- 引擎管理（标准库连接、扩展引擎连接等）
-- API 文档中心（ADDP 平台所有模块的 REST API 接口文档）
+- 日志管理（审计日志存储和查询、统计分析、导出）
+- 引擎管理（标准库连接、扩展引擎连接等，含 Schema/表枚举）
+- 应用管理（外部应用注册、API Key 管理）
+- 垃圾数据清理管理（跨模块扫描和执行清理）
+- 模块注册与发现（供 Gateway 动态路由）
+- 任务提供者注册（供 Orchestrator 查询调用）
 - 数据存储在 PostgreSQL 数据库（system schema）
 
 技术栈：
@@ -52,66 +55,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 常用命令
 
-### 后端开发
+> **注意**: 开发状态下，不得通过 `go run` 直接运行，改用重启脚本验证修改结果。
 
 ```bash
-# 进入后端目录
-cd backend
+# 重启 system 服务（修改后端代码后）
+./scripts/dev/restart.sh -system
 
-# 下载依赖
-go mod download
+# 重启所有服务（修改 common 代码后）
+./scripts/dev/restart.sh -all
 
-# 开发模式运行
-go run cmd/server/main.go
-
-# 编译（输出到统一 dist）
-GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) \
-  go build -ldflags "-s -w" \
-  -o ../../dist/release/backend/system/${GOOS}-${GOARCH}/system cmd/server/main.go
-
-# 运行测试
-go test ./...
-```
-
-### 前端开发
-
-```bash
-# 进入前端目录
-cd frontend
-
-# 安装依赖
-npm install
-
-# 开发模式运行（默认端口 5173）
-npm run dev
-
-# 构建生产版本
-npm run build
-
-# 预览生产版本
-npm run preview
-```
-
-### Docker 部署
-
-```bash
-# 构建镜像
-make docker-build
-# 或
-docker-compose build
-
-# 启动服务
-make docker-up
-# 或
-docker-compose up -d
-
-# 停止服务
-make docker-down
-# 或
-docker-compose down
-
-# 查看日志
-docker-compose logs -f
+# 前端仅修改时无需重启后端，热更新自动生效
 ```
 
 ## 项目结构
@@ -124,11 +77,30 @@ backend/
 │   └── main.go
 ├── internal/            # 内部包（不对外暴露）
 │   ├── api/            # HTTP 处理层
-│   │   ├── router.go   # 路由配置
-│   │   └── *_handler.go # 各模块的 HTTP 处理器
+│   │   ├── router.go                  # 路由配置
+│   │   ├── auth_handler.go            # 认证：登录/注册/刷新
+│   │   ├── user_handler.go            # 用户管理
+│   │   ├── tenant_handler.go          # 租户管理
+│   │   ├── log_handler.go             # 日志管理
+│   │   ├── engine_handler.go          # 引擎管理
+│   │   ├── application_handler.go     # 应用与 API Key 管理
+│   │   ├── cleanup_handler.go         # 垃圾数据清理
+│   │   ├── module_registry_handler.go # 模块注册与发现
+│   │   ├── task_provider_handler.go   # 任务提供者注册
+│   │   ├── registry_handler.go        # 能力注册（计算引擎能力）
+│   │   ├── config_handler.go          # 共享配置（内部 API）
+│   │   └── internal_handler.go        # API Key 验证（内部 API）
 │   ├── config/         # 配置管理
 │   ├── middleware/     # 中间件（认证、日志等）
 │   ├── models/         # 数据模型和请求/响应结构
+│   │   ├── user.go
+│   │   ├── tenant.go
+│   │   ├── log.go
+│   │   ├── engine.go
+│   │   ├── application.go     # 应用 + APIKey 模型
+│   │   ├── cleanup.go         # 清理任务模型
+│   │   ├── module_registry.go # 模块注册表模型
+│   │   └── task_provider.go   # 任务提供者模型
 │   ├── repository/     # 数据访问层
 │   └── service/        # 业务逻辑层
 └── pkg/                # 可对外暴露的工具包
@@ -141,82 +113,50 @@ backend/
 - **Repository Layer**: 数据库操作、CRUD 接口
 - **Model Layer**: 定义数据结构、数据库表映射
 
-**代码质量改进（v0.0.20）**:
-
-System 模块已完成大规模重构（2026-01），显著提升代码质量、可维护性和安全性：
-
-1. **消除代码重复**
-   - 提取 `common/api/handler_helpers.go` - 消除 Handler 层 10+ 处 ID 解析、15+ 处用户获取重复
-   - 提取 `common/service/auth_service.go` - 消除 Service 层 20+ 处权限检查重复
-   - **Handler 层减少**: 912 → 789 行 (-13.5%)
-
-2. **Repository 接口化**
-   - 创建 `internal/repository/interfaces.go`
-   - 支持依赖注入和 mock 测试
-   - Repository 返回值标准化（添加 total 分页信息）
-
-3. **安全增强**
-   - ✅ CORS 白名单配置（移除不安全的 "*"）
-   - ✅ Rate Limiting 中间件（登录接口 15 分钟内最多 5 次尝试）
-   - ✅ 加密服务 (`common/service/crypto_service.go`) 统一处理敏感字段
-
-4. **测试覆盖**
-   - AuthService 单元测试：22 个测试用例全部通过
-   - API Helpers 单元测试：30+ 个测试用例全部通过
-   - common/api 覆盖率：27.1%
-   - common/service 覆盖率：30.3%
-
-参考：详细改进计划见 `~/.claude/plans/iridescent-yawning-newell.md`
-
 ### 前端架构（Vue 3）
 
 ```
 frontend/src/
 ├── api/              # API 请求封装
-│   ├── client.js    # Axios 实例配置（拦截器、认证）
-│   └── *.js         # 各模块的 API 调用
+│   ├── client.js         # Axios 实例配置（拦截器、认证）
+│   ├── auth.js           # 认证 API
+│   ├── users.js          # 用户管理 API
+│   ├── tenant.js         # 租户管理 API
+│   ├── engines.js        # 引擎管理 API
+│   ├── logs.js           # 日志管理 API
+│   ├── applications.js   # 应用管理 API
+│   ├── cleanup.js        # 清理管理 API
+│   └── manager.js        # 外部 Manager 模块 API（预览等）
 ├── components/       # 可复用组件
-│   ├── users/       # 用户管理子组件（新）
+│   ├── Layout.vue        # 通用布局
+│   ├── users/            # 用户管理子组件
 │   │   ├── UserList.vue
 │   │   ├── UserFormDialog.vue
 │   │   └── PasswordDialog.vue
-│   └── engines/     # 引擎管理子组件（新）
+│   └── engines/          # 引擎管理子组件
 │       ├── EngineList.vue
 │       └── EngineFilterBar.vue
-├── composables/     # Vue Composables（新）
+├── composables/      # Vue Composables
 │   ├── usePagination.js           # 分页逻辑复用
 │   ├── useFormDialog.js           # 对话框状态管理
 │   ├── useUserManagement.js       # 用户管理业务逻辑
 │   └── useEngineManagement.js     # 引擎管理业务逻辑
-├── store/           # Pinia 状态管理
-│   └── auth.js      # 认证状态
-├── views/           # 页面组件
-│   ├── Login.vue    # 登录页
-│   ├── Dashboard.vue # 首页
-│   ├── Users.vue    # 用户管理（重构：531 → 223 行，-58%）
-│   ├── Logs.vue     # 日志管理
-│   └── Engines.vue  # 引擎管理（重构：1052 → 131 行，-87.5%）
-└── router/          # 路由配置
+├── store/            # Pinia 状态管理
+│   └── auth.js           # 认证状态
+├── views/            # 页面组件
+│   ├── Login.vue          # 登录页
+│   ├── Home.vue           # 首页（导航入口）
+│   ├── Dashboard.vue      # 仪表盘
+│   ├── SystemLayout.vue   # 系统布局框架
+│   ├── Users.vue          # 用户管理
+│   ├── Tenants.vue        # 租户管理
+│   ├── Logs.vue           # 日志管理
+│   ├── Engines.vue        # 引擎管理
+│   ├── Applications.vue   # 应用与 API Key 管理
+│   ├── CleanupManager.vue # 垃圾数据清理管理
+│   └── Developer.vue      # 开发者工具页面
+└── router/           # 路由配置
 ```
-
-**代码质量改进（v0.0.20）**:
-
-前端代码已完成组件化重构（2026-01），显著提升可维护性：
-
-1. **组件拆分**
-   - Users.vue：531 → 223 行（-58%）- 拆分为 UserList, UserFormDialog, PasswordDialog
-   - Engines.vue：1052 → 131 行（-87.5%）- 拆分为 EngineList, EngineFilterBar
-   - **总减少**: 1583 → 354 行（-77.6%）
-
-2. **Composables 提取**
-   - `usePagination.js` - 消除 5+ 处分页重复
-   - `useFormDialog.js` - 消除 6+ 处对话框状态重复
-   - `useUserManagement.js` - 用户 CRUD 业务逻辑（3 个 composables）
-   - `useEngineManagement.js` - 引擎 CRUD 业务逻辑（2 个 composables）
-
-3. **代码复用**
-   - 移除重复的 formatDate 实现（5+ 处）
-   - 改用 `@common-ui/utils/formatters`
 
 ## 数据库文档
 
@@ -234,6 +174,19 @@ frontend/src/
 
 - [数据库架构](docs/数据库架构.md) - 表关系、数据流向、设计决策
 
+### 数据库表概览
+
+| 表名 | Schema | 说明 |
+|------|--------|------|
+| users | system | 用户表，含认证和权限管理 |
+| tenants | system | 租户表，多租户隔离 |
+| audit_logs | system | 审计日志表 |
+| engines | system | 引擎配置表，含加密连接信息 |
+| applications | system | 外部应用表 |
+| api_keys | system | 应用 API Key 表（存储 SHA256 hash） |
+| module_registry | (public) | 模块注册表，供 Gateway 动态路由 |
+| task_providers | (public) | 任务提供者表，供 Orchestrator 调用 |
+
 ### 单表文档
 
 详细的表结构和 API 说明文档:
@@ -249,11 +202,12 @@ frontend/src/
 
 ### 认证流程
 
-1. 用户通过 `/api/auth/login` 登录，提交用户名和密码
+1. 用户通过 `POST /api/system/login` 登录，提交用户名和密码
 2. 后端验证凭证，生成 JWT Token（使用 HS256 算法）
 3. 前端存储 Token 到 localStorage
 4. 后续请求通过 `Authorization: Bearer <token>` 头部携带 Token
 5. 后端中间件 `AuthMiddleware` 验证 Token 并提取用户信息
+6. Token 过期后可通过 `POST /api/system/refresh` 刷新
 
 ### 数据库设计
 
@@ -278,6 +232,24 @@ frontend/src/
 - `connection_info` 为 JSONB 类型，灵活存储不同类型的连接配置
 - 敏感字段 (password, access_key 等) 使用 **AES-256-GCM** 加密存储
 
+**system.applications 表**:
+- 外部应用注册信息，用于管理第三方应用的 API Key
+- 字段: `id`, `name`, `description`, `tenant_id`, `allowed_services`, `rate_limit_per_minute`, `status`
+- 软删除支持（`deleted_at`）
+
+**system.api_keys 表**:
+- API Key 存储（仅存 SHA256 hash，明文仅在创建时返回一次）
+- 字段: `id`, `application_id`, `key_prefix`, `key_hash`, `name`, `last_used_at`, `expires_at`, `status`
+- Key 格式：`addp_live_` 前缀 + 随机字符串
+
+**module_registry 表**（public schema）:
+- 模块注册表，供 Gateway 动态路由查询
+- 字段: `id`, `module_name`, `module_url`, `route_prefix`, `health_check_url`, `status`, `last_heartbeat`, `metadata`
+
+**task_providers 表**（public schema）:
+- 任务提供者注册，供 Orchestrator 查询和调用
+- 字段: `id`, `module_name`, `display_name`, `base_url`, 各端点 URL, `capabilities`, `is_enabled`
+
 ### 日志中间件
 
 `LoggerMiddleware` 自动记录所有非 GET 请求的审计日志，包括：
@@ -286,14 +258,20 @@ frontend/src/
 - 客户端 IP 地址
 - 请求时间
 
+### 安全机制
+
+**登录限流**: 15 分钟内最多 5 次尝试（基于 Redis 的 Rate Limit 中间件）
+
+**CORS 白名单**: 仅允许 `cfg.AllowedOrigins` 中的 origin，拒绝其他跨域请求
+
 ## 开发注意事项
 
 1. **添加新的 API 端点**:
    - 在 `internal/models/` 定义请求/响应结构
    - 在 `internal/repository/` 添加数据访问方法
-   - 在 `internal/service/` 实现业务逻辑
+   - 在`internal/service/` 实现业务逻辑
    - 在 `internal/api/` 创建 HTTP 处理器
-   - 在 `internal/api/router.go` 注册路由
+   - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/system/`）
 
 2. **数据库迁移**:
    - 修改 `internal/models/` 中的模型结构
@@ -302,18 +280,13 @@ frontend/src/
 
 3. **前端添加新页面**:
    - 在 `src/views/` 创建 Vue 组件
-   - 在 `src/api/` 添加 API 调用函数
-   - 在 `src/router/index.js` 注册路由
-   - 根据需要在各页面的侧边栏添加导航链接
+   - 在 `src/api/` 添加 API 调用函数（注意 URL 前缀为 `/api/system/`）
+   - 在 `src/router/` 注册路由
 
-4. **环境配置**:
-   - 复制 `backend/.env.example` 为 `.env`
-   - 修改 JWT_SECRET 为随机字符串（生产环境必须修改）
-
-5. **端口配置**:
+4. **端口配置**:
    - 后端默认: 8180
    - 前端开发: 5173
-   - 前端生产（Nginx）: 80
+   - 前端生产（Nginx）: 8090
 
 ## 安全机制
 
@@ -333,6 +306,10 @@ frontend/src/
    - 自动加密: 创建/更新引擎时自动加密敏感字段
    - 自动解密: 查询引擎时自动解密返回
 
+3. **API Key 安全** (system.api_keys)
+   - 存储：仅存 SHA256 hash，明文仅在创建时返回一次
+   - 验证：`GET /api/internal/api-keys/validate` 供 Gateway 调用
+
 ### 访问控制
 
 **权限矩阵**:
@@ -347,37 +324,102 @@ frontend/src/
 | 修改自己密码 | ✅ | ✅ | ✅ |
 | 查看引擎列表 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
 | 查看日志 | ✅ (所有) | ✅ (本租户) | ✅ (本租户) |
+| 管理应用/API Key | ✅ | ✅ (本租户) | ❌ |
+| 垃圾数据清理 | ❌ | ✅ (本租户) | ❌ |
 
 ## API 端点
 
-### 认证
-- `POST /api/auth/login` - 用户登录
-- `POST /api/auth/register` - 用户注册 (仅限首次初始化)
+> 所有对外 API 均以 `/api/system` 为前缀。内部服务间 API 以 `/api/internal` 为前缀（需 `X-Internal-API-Key` 认证）。
 
-### 租户管理（仅超级管理员）
-- `POST /api/tenants` - 创建租户（同时创建租户管理员）
-- `GET /api/tenants` - 获取租户列表
-- `GET /api/tenants/:id` - 获取指定租户
-- `PUT /api/tenants/:id` - 更新租户
-- `DELETE /api/tenants/:id` - 删除租户
+### 认证（无需认证）
+- `POST /api/system/login` - 用户登录
+- `POST /api/system/register` - 用户注册（仅限初始化）
+- `POST /api/system/refresh` - Token 刷新
 
 ### 用户管理（需认证）
-- `GET /api/users/me` - 获取当前用户信息
-- `POST /api/users` - 创建用户（租户管理员创建本租户用户）
-- `GET /api/users` - 获取用户列表（自动过滤：租户管理员仅看本租户）
-- `GET /api/users/:id` - 获取指定用户（需权限）
-- `PUT /api/users/:id` - 更新用户（需权限）
-- `DELETE /api/users/:id` - 删除用户（需权限，SuperAdmin不可删除）
+- `GET /api/system/users/me` - 获取当前用户信息
+- `POST /api/system/users` - 创建用户（租户管理员创建本租户用户）
+- `GET /api/system/users` - 获取用户列表（租户管理员仅看本租户）
+- `GET /api/system/users/:id` - 获取指定用户
+- `PUT /api/system/users/:id` - 更新用户
+- `PUT /api/system/users/:id/change-password` - 修改密码
+- `DELETE /api/system/users/:id` - 删除用户（SuperAdmin 不可删除）
+
+### 租户管理（仅超级管理员）
+- `POST /api/system/tenants` - 创建租户（同时创建租户管理员）
+- `GET /api/system/tenants` - 获取租户列表
+- `GET /api/system/tenants/:id` - 获取指定租户
+- `PUT /api/system/tenants/:id` - 更新租户
+- `DELETE /api/system/tenants/:id` - 删除租户
 
 ### 日志管理（需认证）
-- `GET /api/logs` - 获取日志列表（自动过滤：仅返回本租户日志，支持 user_id 过滤）
-- `GET /api/logs/:id` - 获取指定日志
+- `GET /api/system/logs` - 获取日志列表（自动过滤本租户，支持 user_id 过滤）
+- `GET /api/system/logs/stats` - 获取日志统计数据
+- `GET /api/system/logs/trends` - 获取日志时间趋势
+- `GET /api/system/logs/export` - 导出日志
+- `GET /api/system/logs/:id` - 获取指定日志
 
 ### 引擎管理（需认证）
-- `POST /api/engines` - 创建引擎（自动关联当前用户租户）
-- `GET /api/engines` - 获取引擎列表（自动过滤：仅返回本租户引擎，支持 engine_type 过滤）
-- `GET /api/engines/:id` - 获取指定引擎
-- `PUT /api/engines/:id` - 更新引擎（敏感字段自动重新加密）
-- `DELETE /api/engines/:id` - 删除引擎
-- `POST /api/engines/:id/test` - 测试引擎连接
-- `POST /api/engines/test-connection` - 创建前测试连接
+- `POST /api/system/engines` - 创建引擎（自动关联当前用户租户）
+- `GET /api/system/engines` - 获取引擎列表（自动过滤本租户，支持 engine_type 过滤）
+- `GET /api/system/engines/:id` - 获取指定引擎
+- `PUT /api/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
+- `DELETE /api/system/engines/:id` - 删除引擎
+- `POST /api/system/engines/:id/test` - 测试已有引擎连接
+- `POST /api/system/engines/test-connection` - 创建前测试连接
+- `GET /api/system/engines/:id/schemas` - 列出数据库 schemas
+- `GET /api/system/engines/:id/tables` - 列出数据库表
+
+### 应用管理（需认证）
+- `POST /api/system/applications` - 创建应用
+- `GET /api/system/applications` - 获取应用列表
+- `GET /api/system/applications/:id` - 获取指定应用
+- `PUT /api/system/applications/:id` - 更新应用
+- `DELETE /api/system/applications/:id` - 删除应用
+- `POST /api/system/applications/:id/keys` - 为应用生成 API Key
+- `GET /api/system/applications/:id/keys` - 列出应用的 API Key
+- `DELETE /api/system/applications/:id/keys/:key_id` - 撤销 API Key
+
+### 垃圾数据清理（仅租户管理员）
+- `POST /api/system/admin/cleanup/scan` - 创建扫描任务
+- `GET /api/system/admin/cleanup/tasks/:task_id` - 获取任务状态
+- `POST /api/system/admin/cleanup/execute` - 创建执行清理任务
+- `GET /api/system/admin/cleanup/history` - 获取任务历史
+
+### 内部 API（`/api/internal`，X-Internal-API-Key 认证）
+
+**配置**:
+- `GET /api/internal/config` - 获取共享配置
+
+**引擎**:
+- `GET /api/internal/engines` - 列出所有引擎（内部使用）
+- `GET /api/internal/engines/:id` - 获取引擎详情（内部使用）
+- `POST /api/internal/engines` - 创建引擎（内部使用）
+- `POST /api/internal/engines/register` - 引擎自注册
+- `PUT /api/internal/engines/:id/connection-status` - 更新连接状态
+- `POST /api/internal/engines/:id/check-connection` - 触发异步连接检测
+
+**能力注册**:
+- `POST /api/internal/registry/capabilities` - 注册计算能力
+- `GET /api/internal/registry/capabilities` - 列出所有能力
+- `GET /api/internal/registry/capabilities/:identifier` - 按标识符查询能力
+- `GET /api/internal/registry/compute-engines` - 列出计算引擎
+
+**任务提供者**:
+- `POST /api/internal/task-providers/register` - 模块注册为任务提供者
+- `GET /api/internal/task-providers` - 列出所有任务提供者
+- `GET /api/internal/task-providers/:module_name` - 获取指定模块信息
+
+**审计日志**:
+- `POST /api/internal/audit-logs` - 其他模块写入审计日志
+
+**API Key 验证**:
+- `GET /api/internal/api-keys/validate` - 验证 API Key（Gateway 调用）
+- `GET /api/internal/api-keys/bulk` - 批量获取 API Key 信息
+
+**模块注册与发现**:
+- `POST /api/internal/modules/register` - 模块注册
+- `POST /api/internal/modules/heartbeat` - 心跳更新
+- `GET /api/internal/modules` - 列出所有已注册模块
+- `GET /api/internal/modules/:name` - 获取指定模块信息
+- `DELETE /api/internal/modules/:name` - 注销模块

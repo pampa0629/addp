@@ -36,6 +36,7 @@
 | Monitor 模块详情     | monitor/docs/Monitor模块实施报告.md   | 执行监控、统计分析、任务记录      |
 | Model 模块详情       | model/CLAUDE.md               | 数据建模、逻辑表、星型建模、指标血缘 |
 | Standard 模块详情    | standard/CLAUDE.md            | 数据标准、数据元、指标、术语、码值 |
+| Agent 模块详情       | agent/CLAUDE.md               | AI 对话助手、自然语言交互、LangGraph |
 
 
 **重要**:
@@ -104,6 +105,7 @@ AI可以提交代码到github上，但未经用户允许，不得创建分支提
 - **engines/python_workflow/** - 基于Python的工作流计算引擎,提供空间和非空间算子
 - **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,提供空间和非空间算子
 - **engines/jupyter/** - 基于jupyter的notebook开发后台服务
+- **agent/** - AI 对话助手:基于 LangGraph + FastAPI 的自然语言交互服务，用户通过对话完成数据操作
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 
@@ -271,7 +273,7 @@ JWT 认证模式: 用户登录 → 后端验证 → 返回 JWT → 前端存储 
 
 **租户管理员**: `admin` / `123456` (管理默认租户的用户、引擎、数据)
 **超级管理员**: `SuperAdmin` / `20251001#SuperAdmin` (系统级管理、租户管理)
-
+`POST /api/system/login` - 用户登录
 详细说明和启用方法: system/CLAUDE.md
 
 ### 配置中心模式

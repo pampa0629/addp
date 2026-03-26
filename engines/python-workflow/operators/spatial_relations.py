@@ -12,38 +12,40 @@ from .base import (
 
 # ==================== 算子实现 ====================
 
-def contains(gdf_a: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def contains(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     包含关系判断（返回 A 中包含 B 的记录）
 
     Args:
-        gdf_a: GeoDataFrame A
-        gdf_b: GeoDataFrame B
+        input_gdf: 输入图层 A（主图层）
+        gdf_b: 输入图层 B（参考图层）
 
     Returns:
         GeoDataFrame A 中包含 B 的记录
     """
-    result = gdf_a.copy()
-    result['contains'] = result['geometry'].apply(
-        lambda geom: any(geom.contains(g) for g in gdf_b['geometry'])
+    result = input_gdf.copy()
+    geom_col = result.geometry.name
+    result['contains'] = result.geometry.apply(
+        lambda geom: any(geom.contains(g) for g in gdf_b.geometry)
     )
     return result[result['contains']]
 
 
-def intersects(gdf_a: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def intersects(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     相交关系判断（返回 A 中与 B 相交的记录）
 
     Args:
-        gdf_a: GeoDataFrame A
-        gdf_b: GeoDataFrame B
+        input_gdf: 输入图层 A（主图层）
+        gdf_b: 输入图层 B（参考图层）
 
     Returns:
         GeoDataFrame A 中与 B 相交的记录
     """
-    result = gdf_a.copy()
-    result['intersects'] = result['geometry'].apply(
-        lambda geom: any(geom.intersects(g) for g in gdf_b['geometry'])
+    result = input_gdf.copy()
+    geom_col = result.geometry.name
+    result['intersects'] = result.geometry.apply(
+        lambda geom: any(geom.intersects(g) for g in gdf_b.geometry)
     )
     return result[result['intersects']]
 

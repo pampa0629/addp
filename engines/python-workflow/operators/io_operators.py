@@ -186,12 +186,26 @@ def save(
 
             # 判断是空间数据还是普通数据
             # 检查是否为 GeoDataFrame 且已设置几何列（通过 _geometry_column_name 属性）
-            if isinstance(input_df, gpd.GeoDataFrame) and input_df._geometry_column_name is not None:
+            # 同时检查 geometry 列是否真实存在且非空
+            has_geometry = (
+                isinstance(input_df, gpd.GeoDataFrame) and
+                input_df._geometry_column_name is not None and
+                input_df._geometry_column_name in input_df.columns and
+                not input_df[input_df._geometry_column_name].isna().all()
+            )
+
+            if has_geometry:
                 # 使用 to_postgis 保存空间数据（支持任意几何列名）
                 input_df.to_postgis(table, engine_db, schema=schema, if_exists=if_exists, index=False)
             else:
-                # 使用 to_sql 保存普通数据
-                input_df.to_sql(table, engine_db, schema=schema, if_exists=if_exists, index=False)
+                # 使用 to_sql 保存普通数据（包括无 geometry 的 GeoDataFrame）
+                # 如果是 GeoDataFrame 但无有效 geometry，转为 DataFrame
+                if isinstance(input_df, gpd.GeoDataFrame):
+                    import pandas as pd
+                    df_to_save = pd.DataFrame(input_df.drop(columns=[input_df._geometry_column_name], errors='ignore'))
+                    df_to_save.to_sql(table, engine_db, schema=schema, if_exists=if_exists, index=False)
+                else:
+                    input_df.to_sql(table, engine_db, schema=schema, if_exists=if_exists, index=False)
 
         elif engine_type in ['mysql', 'MySQL', 'doris', 'Doris']:
             if password:

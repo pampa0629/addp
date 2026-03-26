@@ -763,6 +763,121 @@ BIN_FIELD_METADATA = OperatorMetadata(
 )
 
 
+# ========== 10. aggregate ==========
+def aggregate(input_gdf: gpd.GeoDataFrame, fields: List[str], agg_func: str = 'sum', group_by: List[str] = None):
+    """
+    聚合统计
+
+    Args:
+        input_gdf: 输入 GeoDataFrame
+        fields: 要聚合的字段列表
+        agg_func: 聚合函数（'sum', 'mean', 'count', 'min', 'max'）
+        group_by: 分组字段列表（可选，不指定则对全表聚合）
+
+    Returns:
+        聚合结果 DataFrame（无 geometry 列）
+    """
+    import pandas as pd
+
+    func_map = {
+        'sum': 'sum',
+        'mean': 'mean',
+        'count': 'count',
+        'min': 'min',
+        'max': 'max',
+    }
+
+    if agg_func not in func_map:
+        raise ValueError(f"不支持的聚合函数: {agg_func}，支持: {list(func_map.keys())}")
+
+    # 只保留非几何列进行聚合
+    df = pd.DataFrame(input_gdf.drop(columns=['geometry'], errors='ignore'))
+
+    if group_by:
+        result_df = df.groupby(group_by)[fields].agg(func_map[agg_func]).reset_index()
+    else:
+        # 全表聚合，返回单行结果
+        result_dict = {}
+        for field in fields:
+            result_dict[field] = df[field].agg(func_map[agg_func])
+        result_df = pd.DataFrame([result_dict])
+
+    # 返回 GeoDataFrame（无 geometry 列，设置 geometry=None 避免自动创建）
+    return gpd.GeoDataFrame(result_df, geometry=None)
+
+
+AGGREGATE_METADATA = OperatorMetadata(
+    name="aggregate",
+    type=OperatorType.NON_SPATIAL,
+    category=OperatorCategory.ATTRIBUTE_CALCULATION,
+    description="聚合统计",
+    brief_description="对数值字段进行汇总统计（求和/均值/计数等），常用于面积汇总、数量统计等分析结果输出",
+
+    overview="对 GeoDataFrame 的指定字段进行聚合计算，支持全表聚合或按字段分组聚合。"
+             "常用于将多条计算结果（如各地块面积）汇总为单一统计值（如总面积）。"
+             "输出不含 geometry 列的统计结果表。",
+
+    params=[
+        OperatorParam(
+            name="input_gdf",
+            type="input",
+            data_type="GeoDataFrame",
+            required=True,
+            description="输入的地理数据"
+        ),
+        OperatorParam(
+            name="fields",
+            type="param",
+            data_type="list[str]",
+            required=True,
+            description="要聚合的字段列表",
+            notes="示例: ['area'] 或 ['area', 'length']"
+        ),
+        OperatorParam(
+            name="agg_func",
+            type="param",
+            data_type="str",
+            required=False,
+            description="聚合函数",
+            notes="支持: 'sum'（默认）, 'mean', 'count', 'min', 'max'"
+        ),
+        OperatorParam(
+            name="group_by",
+            type="param",
+            data_type="list[str]",
+            required=False,
+            description="分组字段列表（不指定则全表聚合）",
+            notes="示例: ['land_type'] 按土地类型分组统计面积"
+        )
+    ],
+
+    use_cases=[
+        "汇总总面积: fields=['area'], agg_func='sum' 将多个相交地块面积加总",
+        "按类型统计: fields=['area'], agg_func='sum', group_by=['land_type'] 按土地类型分组统计",
+        "统计数量: fields=['id'], agg_func='count' 统计地块数量",
+        "计算平均面积: fields=['area'], agg_func='mean' 计算平均地块面积"
+    ],
+
+    notes=[
+        "不指定 group_by 时，对全表聚合，输出单行结果",
+        "输出结果不包含 geometry 列（纯属性统计表）",
+        "字段名区分大小写，确保与 get_area 等算子输出的字段名一致",
+        "常用于工作流最后一步，将多条结果汇总为单一统计值后保存"
+    ],
+
+    workflow_example={
+        'id': 'sum_area',
+        'operator': 'aggregate',
+        'params': {
+            'input_gdf': {'$ref': 'calc_area'},
+            'fields': ['area'],
+            'agg_func': 'sum'
+        },
+        'depends_on': ['calc_area']
+    }
+)
+
+
 # ========== 注册所有算子 ==========
 OPERATORS = dict([
     register_operator(ADD_FIELD_METADATA, add_field),
@@ -774,4 +889,5 @@ OPERATORS = dict([
     register_operator(NORMALIZE_FIELD_METADATA, normalize_field),
     register_operator(ENCODE_CATEGORICAL_METADATA, encode_categorical),
     register_operator(BIN_FIELD_METADATA, bin_field),
+    register_operator(AGGREGATE_METADATA, aggregate),
 ])

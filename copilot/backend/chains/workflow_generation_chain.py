@@ -212,6 +212,16 @@ class WorkflowGenerationChain:
             lines.append(f"**描述**: {op.get('description', '')}")
             lines.append(f"**分类**: {op.get('category', '未分类')}")
 
+            # 从 detailed_description 中提取详细信息
+            detailed = op.get("detailed_description", {})
+
+            # 算子级别的注意事项（重要！包含如"必须先 dissolve"等关键提示）
+            op_notes = detailed.get("notes", [])
+            if op_notes:
+                lines.append("\n**⚠️ 注意事项**:")
+                for note in op_notes:
+                    lines.append(f"  - {note}")
+
             # 参数定义
             if op.get("parameters"):
                 lines.append("\n**参数**:")
@@ -236,17 +246,17 @@ class WorkflowGenerationChain:
 
                     lines.append(param_line)
 
-            # ⭐ 重点：workflow_example
-            if op.get("workflow_example"):
+            # ⭐ 重点：workflow_example（从 detailed_description 中取）
+            workflow_example = detailed.get("workflow_example")
+            if workflow_example:
                 lines.append("\n**⭐ 工作流示例（重要参考）**:")
                 lines.append("```json")
 
-                # 如果是字典，转换为 JSON 字符串
                 import json
-                if isinstance(op["workflow_example"], dict):
-                    example_json = json.dumps(op["workflow_example"], ensure_ascii=False, indent=2)
+                if isinstance(workflow_example, dict):
+                    example_json = json.dumps(workflow_example, ensure_ascii=False, indent=2)
                 else:
-                    example_json = op["workflow_example"]
+                    example_json = workflow_example
 
                 lines.append(example_json)
                 lines.append("```")

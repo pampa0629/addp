@@ -1,12 +1,12 @@
 """
-数据源理解 Agent（简化版）
+数据源理解（Pipeline 阶段）
 
-使用 LLM 提取 + 手动 API 调用的方式，而不是复杂的 ReAct Agent
+使用 LLM 提取 + 手动 API 调用的方式，理解用户查询中所指的数据源
 """
 import json
 from typing import Optional
 
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
@@ -35,9 +35,9 @@ class EngineMatch(BaseModel):
     reason: str = Field(description="匹配理由")
 
 
-class DataSourceAgent:
+class DataSourceStage:
     """
-    数据源理解 Agent（简化版）
+    数据源理解阶段
 
     流程：
     1. LLM 分析用户查询，提取关键信息
@@ -55,23 +55,12 @@ class DataSourceAgent:
         object_storage_tool: ObjectStorageTool,
         metadata_search_tool: MetadataSearchTool
     ):
-        """
-        初始化数据源理解 Agent
-
-        Args:
-            llm: LangChain LLM 实例
-            engine_tool: 引擎列表工具
-            schema_table_tool: Schema/Table 工具
-            object_storage_tool: 对象存储工具
-            metadata_search_tool: 元数据搜索工具
-        """
         self.llm = llm
         self.engine_tool = engine_tool
         self.schema_table_tool = schema_table_tool
         self.object_storage_tool = object_storage_tool
         self.metadata_search_tool = metadata_search_tool
 
-        # 输出解析器
         self.query_parser = PydanticOutputParser(pydantic_object=QueryAnalysis)
         self.match_parser = PydanticOutputParser(pydantic_object=EngineMatch)
 
@@ -86,16 +75,16 @@ class DataSourceAgent:
         Returns:
             DataSourceContext: 数据源上下文
         """
-        print(f"\n[DataSourceAgent] ===== 开始数据源理解 =====")
+        print(f"\n[DataSourceStage] ===== 开始数据源理解 =====")
         print(f"  用户查询: {query}")
         print(f"  租户 ID: {tenant_id}")
 
         try:
             # 步骤 1: LLM 分析用户查询
-            print(f"\n[DataSourceAgent] 步骤 1: 分析用户查询...")
+            print(f"\n[DataSourceStage] 步骤 1: 分析用户查询...")
             analysis = await self._analyze_query(query)
 
-            print(f"[DataSourceAgent] 分析结果:")
+            print(f"[DataSourceStage] 分析结果:")
             print(f"  引擎关键词: {analysis.engine_keywords}")
             print(f"  引擎类型推测: {analysis.engine_type_hint}")
             print(f"  表名: {analysis.table_name}")
@@ -103,21 +92,21 @@ class DataSourceAgent:
             print(f"  分析置信度: {analysis.confidence:.2f}")
 
             # 步骤 2: 获取租户所有引擎
-            print(f"\n[DataSourceAgent] 步骤 2: 获取租户引擎列表...")
+            print(f"\n[DataSourceStage] 步骤 2: 获取租户引擎列表...")
             engines = await self.engine_tool._arun(tenant_id=tenant_id)
-            print(f"[DataSourceAgent] 获取到 {len(engines)} 个引擎:")
+            print(f"[DataSourceStage] 获取到 {len(engines)} 个引擎:")
             for eng in engines:
                 print(f"  - ID:{eng['id']}, 名称:{eng['name']}, 类型:{eng['type']}")
 
             if not engines:
-                print(f"[DataSourceAgent] ⚠️ 租户没有任何引擎，返回默认值")
+                print(f"[DataSourceStage] ⚠️ 租户没有任何引擎，返回默认值")
                 return self._create_default_context()
 
             # 步骤 3: LLM 智能匹配引擎
-            print(f"\n[DataSourceAgent] 步骤 3: 智能匹配引擎...")
+            print(f"\n[DataSourceStage] 步骤 3: 智能匹配引擎...")
             matched_engine = await self._match_engine(query, analysis, engines)
 
-            print(f"[DataSourceAgent] 匹配结果:")
+            print(f"[DataSourceStage] 匹配结果:")
             print(f"  引擎 ID: {matched_engine.engine_id}")
             print(f"  引擎名称: {matched_engine.engine_name}")
             print(f"  引擎类型: {matched_engine.engine_type}")
@@ -125,10 +114,8 @@ class DataSourceAgent:
             print(f"  匹配理由: {matched_engine.reason}")
 
             # 步骤 4: 验证数据源是否存在
-            print(f"\n[DataSourceAgent] 步骤 4: 验证数据源...")
-            location, verified = await self._verify_data_source(
-                matched_engine, analysis
-            )
+            print(f"\n[DataSourceStage] 步骤 4: 验证数据源...")
+            location, verified = await self._verify_data_source(matched_engine, analysis)
 
             # 步骤 5: 构造返回结果
             confidence = matched_engine.match_score * (0.9 if verified else 0.7)
@@ -142,7 +129,7 @@ class DataSourceAgent:
                 alternatives=[]
             )
 
-            print(f"\n[DataSourceAgent] ===== 数据源理解完成 =====")
+            print(f"\n[DataSourceStage] ===== 数据源理解完成 =====")
             print(f"  引擎: {result.engine_name} ({result.engine_type})")
             print(f"  位置: {location}")
             print(f"  置信度: {result.confidence:.2f}")
@@ -152,21 +139,12 @@ class DataSourceAgent:
             return result
 
         except Exception as e:
-            print(f"[DataSourceAgent] ❌ 数据源理解失败: {type(e).__name__}: {e}")
+            print(f"[DataSourceStage] ❌ 数据源理解失败: {type(e).__name__}: {e}")
             import traceback
             traceback.print_exc()
             return self._create_default_context()
 
     async def _analyze_query(self, query: str) -> QueryAnalysis:
-        """
-        使用 LLM 分析用户查询，提取关键信息
-
-        Args:
-            query: 用户查询
-
-        Returns:
-            QueryAnalysis: 分析结果
-        """
         prompt = f"""你是一个数据源分析专家。分析用户的查询，提取数据源相关信息。
 
 用户查询: {query}
@@ -195,11 +173,8 @@ class DataSourceAgent:
         messages = [SystemMessage(content=prompt)]
         response = await self.llm.ainvoke(messages)
 
-        # 提取 JSON
         content = response.content if hasattr(response, 'content') else str(response)
         content = content.strip()
-
-        # 去除可能的 markdown 标记
         if content.startswith("```json"):
             content = content[7:]
         if content.startswith("```"):
@@ -210,23 +185,7 @@ class DataSourceAgent:
 
         return self.query_parser.parse(content)
 
-    async def _match_engine(
-        self,
-        query: str,
-        analysis: QueryAnalysis,
-        engines: list
-    ) -> EngineMatch:
-        """
-        使用 LLM 智能匹配最合适的引擎
-
-        Args:
-            query: 用户查询
-            analysis: 查询分析结果
-            engines: 引擎列表
-
-        Returns:
-            EngineMatch: 匹配结果
-        """
+    async def _match_engine(self, query: str, analysis: QueryAnalysis, engines: list) -> EngineMatch:
         engines_json = json.dumps(engines, ensure_ascii=False, indent=2)
 
         prompt = f"""你是一个数据源匹配专家。根据用户查询和引擎列表，选择最匹配的引擎。
@@ -263,8 +222,6 @@ class DataSourceAgent:
 
         content = response.content if hasattr(response, 'content') else str(response)
         content = content.strip()
-
-        # 去除 markdown 标记
         if content.startswith("```json"):
             content = content[7:]
         if content.startswith("```"):
@@ -280,19 +237,8 @@ class DataSourceAgent:
         matched_engine: EngineMatch,
         analysis: QueryAnalysis
     ) -> tuple[DataSourceLocation, bool]:
-        """
-        验证数据源是否真实存在
-
-        Args:
-            matched_engine: 匹配的引擎
-            analysis: 查询分析结果
-
-        Returns:
-            (DataSourceLocation, verified): 数据源位置和验证状态
-        """
         engine_type = matched_engine.engine_type
 
-        # 关系数据库：验证表是否存在
         if engine_type in ["postgresql", "mysql", "doris", "clickhouse"]:
             schema = analysis.schema_name or "public"
             table = analysis.table_name
@@ -305,48 +251,37 @@ class DataSourceAgent:
                     )
                     tables = result.get("tables", [])
                     table_names = [t.get("name") for t in tables]
-
                     verified = table in table_names
-                    print(f"[DataSourceAgent] 表验证: {table} in {schema} -> {'存在' if verified else '不存在'}")
-
+                    print(f"[DataSourceStage] 表验证: {table} in {schema} -> {'存在' if verified else '不存在'}")
                     return DataSourceLocation(schema=schema, table=table), verified
-
                 except Exception as e:
-                    print(f"[DataSourceAgent] ⚠️ 表验证失败: {e}")
+                    print(f"[DataSourceStage] ⚠️ 表验证失败: {e}")
                     return DataSourceLocation(schema=schema, table=table), False
             else:
                 return DataSourceLocation(schema=schema), False
 
-        # 对象存储：验证 bucket 是否存在
         elif engine_type in ["minio", "s3", "oss"]:
             bucket = analysis.bucket_name
             path = analysis.file_path
 
             if bucket:
                 try:
-                    result = await self.object_storage_tool._arun(
-                        engine_id=matched_engine.engine_id
-                    )
+                    result = await self.object_storage_tool._arun(engine_id=matched_engine.engine_id)
                     buckets = result.get("buckets", [])
                     bucket_names = [b.get("name") for b in buckets]
-
                     verified = bucket in bucket_names
-                    print(f"[DataSourceAgent] Bucket 验证: {bucket} -> {'存在' if verified else '不存在'}")
-
+                    print(f"[DataSourceStage] Bucket 验证: {bucket} -> {'存在' if verified else '不存在'}")
                     return DataSourceLocation(bucket=bucket, path=path), verified
-
                 except Exception as e:
-                    print(f"[DataSourceAgent] ⚠️ Bucket 验证失败: {e}")
+                    print(f"[DataSourceStage] ⚠️ Bucket 验证失败: {e}")
                     return DataSourceLocation(bucket=bucket, path=path), False
             else:
                 return DataSourceLocation(), False
 
-        # 其他类型：不验证，直接返回
         else:
             return DataSourceLocation(), False
 
     def _create_default_context(self) -> DataSourceContext:
-        """创建默认的数据源上下文（失败时使用）"""
         return DataSourceContext(
             engine_id=0,
             engine_name="unknown",
@@ -357,19 +292,11 @@ class DataSourceAgent:
         )
 
 
-# 便捷函数：创建 DataSourceAgent 实例
-def create_data_source_agent(
+def create_data_source_stage(
     llm,
     engine_tool: EngineTool,
     schema_table_tool: SchemaTableTool,
     object_storage_tool: ObjectStorageTool,
     metadata_search_tool: MetadataSearchTool
-) -> DataSourceAgent:
-    """创建数据源理解 Agent 实例"""
-    return DataSourceAgent(
-        llm,
-        engine_tool,
-        schema_table_tool,
-        object_storage_tool,
-        metadata_search_tool
-    )
+) -> DataSourceStage:
+    return DataSourceStage(llm, engine_tool, schema_table_tool, object_storage_tool, metadata_search_tool)

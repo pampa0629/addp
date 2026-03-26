@@ -306,7 +306,51 @@ class OperatorMetadata:
     notes: List[str]         # 使用说明（可选）
 ```
 
-### 3.2 算子实现规范
+### 3.2 算子参数命名约定
+
+所有算子的参数命名必须遵循以下约定，确保工作流配置能够正确映射：
+
+#### 输入参数命名规则
+
+| 输入位置 | 空间数据（GeoDataFrame） | 非空间数据（DataFrame） |
+|---------|------------------------|----------------------|
+| 第一个输入 | `input_gdf` | `input_df` |
+| 第二个输入 | `gdf_b` | `df_b` |
+| 列表输入 | `gdf_list` | `df_list` |
+
+**禁止**使用 `gdf_a`、`df_a` 等非 `input_` 前缀的主输入参数名。
+
+示例：
+
+```python
+# ✅ 正确
+def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    ...
+
+# ❌ 错误（工作流配置无法正确映射）
+def intersection(gdf_a: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    ...
+```
+
+#### 几何列访问规则
+
+**禁止**通过硬编码列名字符串访问几何列，必须使用 GeoDataFrame 的 `geometry` 属性或 `geometry.name`，以兼容任意几何列名（`geom`、`geometry`、`shape` 等）：
+
+```python
+# ✅ 正确：通过 active geometry 属性访问，兼容任意列名
+result = input_gdf.copy()
+geom_col = result.geometry.name        # 获取实际列名（可能是 'geom'、'geometry' 等）
+result[geom_col] = result.geometry.buffer(distance)
+
+# ❌ 错误：硬编码列名，若数据库几何列名为 'geom' 则报 KeyError
+result['geometry'] = result['geometry'].buffer(distance)
+```
+
+> **背景**：PostGIS 数据库中几何列名通常为 `geom`，而非 `geometry`。GeoDataFrame 的 `.geometry` 属性始终指向 active geometry 列，与实际列名无关。
+
+---
+
+### 3.3 算子实现规范
 
 以 Math Workflow 的 `add` 算子为例：
 

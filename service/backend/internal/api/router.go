@@ -38,7 +38,22 @@ func SetupRouter(
 	})
 
 	// 查询服务端点（支持公开访问，handler内部会检查权限）
-	router.GET("/api/query/:serviceName", queryServiceHandler.QueryData)
+	// 可选认证：有 token 就解析注入 tenant_id，没有就跳过（公开服务仍可访问）
+	optionalAuth := func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			if tokenParam := c.Query("token"); tokenParam != "" {
+				authHeader = "Bearer " + tokenParam
+				c.Request.Header.Set("Authorization", authHeader)
+			}
+		}
+		if authHeader != "" {
+			authMiddleware.SystemAuthMiddleware(cfg.SystemServiceURL)(c)
+			return
+		}
+		c.Next()
+	}
+	router.GET("/api/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
 
 	// OGC API Features 端点（支持公开访问，handler内部会检查权限）
 	router.GET("/ogc/features/:serviceName", ogcFeaturesHandler.GetLandingPage)

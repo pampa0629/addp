@@ -384,7 +384,14 @@ class GeoPandasWorkflowEngine:
         else:
             raise ValueError(f"Task '{task_id}' has multiple ports. Please specify 'port' parameter. Available: {list(port_outputs.keys())}")
 
-        return gdf.to_json()
+        # 检查是否有有效的 geometry 列
+        if isinstance(gdf, gpd.GeoDataFrame) and hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
+            return gdf.to_json()
+        else:
+            # 无 geometry 列，返回普通 JSON
+            import pandas as pd
+            df = pd.DataFrame(gdf)
+            return df.to_json(orient='records')
 
     def get_all_results_geojson(self) -> Dict[str, str]:
         """
@@ -408,10 +415,20 @@ class GeoPandasWorkflowEngine:
             # 如果只有一个端口，使用该端口
             if len(gdf_ports) == 1:
                 gdf = list(gdf_ports.values())[0]
-                results[task_id] = gdf.to_json()
+                # 检查是否有有效的 geometry 列
+                if hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
+                    results[task_id] = gdf.to_json()
+                else:
+                    import pandas as pd
+                    results[task_id] = pd.DataFrame(gdf).to_json(orient='records')
             # 如果有 default 端口，使用 default
             elif "default" in gdf_ports:
-                results[task_id] = gdf_ports["default"].to_json()
+                gdf = gdf_ports["default"]
+                if hasattr(gdf, '_geometry_column_name') and gdf._geometry_column_name in gdf.columns:
+                    results[task_id] = gdf.to_json()
+                else:
+                    import pandas as pd
+                    results[task_id] = pd.DataFrame(gdf).to_json(orient='records')
             # 否则跳过这个任务（没有明确的输出）
 
         return results

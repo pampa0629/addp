@@ -3,7 +3,7 @@ set -e
 
 # 使用说明
 show_usage() {
-  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-copilot] [-spark-workflow] [-jupyter]"
+  echo "用法: $0 [-all] [-system] [-manager] [-meta] [-transfer] [-orchestrator] [-develop] [-service] [-monitor] [-gateway] [-model] [-quality] [-asset] [-portal] [-python-workflow] [-math-workflow] [-copilot] [-agent] [-spark-workflow] [-jupyter]"
   echo ""
   echo "选项:"
   echo "  无参数        只重启服务,自动检测 common 模块变化并增量编译受影响的模块"
@@ -25,6 +25,7 @@ show_usage() {
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
+  echo "  -agent       重启 Agent Backend (Python 服务)"
   echo "  -spark-workflow 重启 Spark 工作流 Engine (Python 服务)"
   echo "  -jupyter     重启 Jupyter Engine (Python 服务)"
   echo ""
@@ -66,7 +67,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-copilot|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-copilot|-agent|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;
@@ -88,6 +89,7 @@ has_go_module_params() {
         if [[ "$module" != "python-workflow" &&
               "$module" != "math-workflow" &&
               "$module" != "copilot" &&
+              "$module" != "agent" &&
               "$module" != "spark-workflow" &&
               "$module" != "jupyter" ]]; then
             return 0  # 有 Go 模块参数
@@ -177,6 +179,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     elif [ "$module" = "copilot" ]; then
       # Copilot 是 Python 服务，不需要编译，只需清理虚拟环境
       echo "  标记 Copilot Backend 需要重启（无需编译）"
+    elif [ "$module" = "agent" ]; then
+      # Agent 是 Python 服务，不需要编译
+      echo "  标记 Agent Backend 需要重启（无需编译）"
     elif [ "$module" = "python-workflow" ]; then
       # Python Workflow Engine 是 Python 服务，不需要编译
       echo "  标记 Python Workflow Engine 需要重启（无需编译）"
@@ -203,6 +208,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     if [ "$module" = "gateway" ]; then
       rm -f .dev-bins/addp-gateway 2>/dev/null || true
     elif [ "$module" = "copilot" ]; then
+      # Python 服务无二进制文件
+      :
+    elif [ "$module" = "agent" ]; then
       # Python 服务无二进制文件
       :
     elif [ "$module" = "python-workflow" ]; then
@@ -232,6 +240,9 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
     if [ "$module" = "gateway" ]; then
       (cd gateway && go clean -cache 2>/dev/null) || true
     elif [ "$module" = "copilot" ]; then
+      # Python 服务无需清理 Go 缓存
+      :
+    elif [ "$module" = "agent" ]; then
       # Python 服务无需清理 Go 缓存
       :
     elif [ "$module" = "python-workflow" ]; then

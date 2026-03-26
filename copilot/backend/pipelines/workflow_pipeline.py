@@ -5,7 +5,7 @@
 """
 from typing import Dict, Optional, Any
 
-from agents.data_source_agent import DataSourceAgent
+from pipelines.data_source_stage import DataSourceStage
 from chains.operator_selection_chain import OperatorSelectionChain
 from chains.workflow_generation_chain import WorkflowGenerationChain
 from chains.workflow_validation_chain import WorkflowValidationChain
@@ -29,7 +29,7 @@ class WorkflowPipeline:
     工作流生成主流水线
 
     协调 5 个阶段：
-    1. 数据源理解（DataSourceAgent）
+    1. 数据源理解（DataSourceStage）
     2. 算子筛选（OperatorSelectionChain）
     3. 工作流生成（WorkflowGenerationChain）
     4. 工作流验证 + 自动修复（WorkflowValidationChain + AutoFixer）
@@ -61,7 +61,7 @@ class WorkflowPipeline:
 
         # 阶段 1: 数据源理解 Agent
         if self.enable_data_source_understanding:
-            self.data_source_agent = DataSourceAgent(
+            self.data_source_agent = DataSourceStage(
                 llm=self.llm,
                 engine_tool=self.engine_tool,
                 schema_table_tool=self.schema_table_tool,

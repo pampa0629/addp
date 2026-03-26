@@ -1,0 +1,443 @@
+<template>
+  <div class="chat-layout">
+    <!-- 左侧会话列表 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <el-button type="primary" size="small" @click="createSession" :icon="Plus">新对话</el-button>
+      </div>
+      <div class="session-list">
+        <div
+          v-for="session in sessions"
+          :key="session.id"
+          class="session-item"
+          :class="{ active: currentSessionId === session.id }"
+          @click="switchSession(session.id)"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          <span class="session-title">{{ session.title }}</span>
+          <el-button
+            class="delete-btn"
+            type="danger"
+            link
+            size="small"
+            :icon="Delete"
+            @click.stop="deleteSession(session.id)"
+          />
+        </div>
+        <el-empty v-if="sessions.length === 0" description="暂无对话" :image-size="60" />
+      </div>
+    </aside>
+
+    <!-- 主聊天区域 -->
+    <main class="chat-main">
+      <div class="messages-area" ref="messagesAreaRef">
+        <div v-if="messages.length === 0" class="empty-hint">
+          <el-icon size="48" color="var(--el-text-color-secondary)"><ChatDotRound /></el-icon>
+          <p>你好！我是 ADDP AI 助手，可以帮你完成数据管理、分析、发布等操作。</p>
+          <div class="quick-actions">
+            <el-tag
+              v-for="hint in quickHints"
+              :key="hint"
+              class="quick-tag"
+              @click="sendQuickMessage(hint)"
+            >{{ hint }}</el-tag>
+          </div>
+        </div>
+
+        <div v-for="msg in messages" :key="msg.id" class="message-row" :class="msg.role">
+          <div class="message-bubble">
+            <div v-if="msg.role === 'assistant'" class="message-content markdown" v-html="renderMarkdown(msg.content)" />
+            <div v-else class="message-content">{{ msg.content }}</div>
+          </div>
+        </div>
+
+        <!-- 流式输出中的 AI 回复 -->
+        <div v-if="isLoading" class="message-row assistant">
+          <div class="message-bubble">
+            <div class="message-content markdown" v-html="renderMarkdown(streamContent || '...')" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区域 -->
+      <div class="input-area">
+        <el-input
+          v-model="inputText"
+          type="textarea"
+          :rows="3"
+          placeholder="输入消息，Ctrl+Enter 发送..."
+          resize="none"
+          @keydown.ctrl.enter="handleSend"
+        />
+        <el-button
+          type="primary"
+          :loading="isLoading"
+          @click="handleSend"
+          :icon="Position"
+        >
+          发送
+        </el-button>
+      </div>
+    </main>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { Plus, Delete, ChatDotRound, Position } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { marked } from 'marked'
+import { useAuthStore } from '../store/auth'
+import { sessionAPI } from '../api/index'
+
+const authStore = useAuthStore()
+
+const sessions = ref([])
+const currentSessionId = ref(null)
+const messages = ref([])
+const inputText = ref('')
+const isLoading = ref(false)
+const streamContent = ref('')
+const messagesAreaRef = ref(null)
+
+const quickHints = [
+  '查看我的数据目录',
+  '有哪些数据源可以使用？',
+  '如何导入一个 Shapefile？',
+  '帮我执行一个 SQL 查询',
+]
+
+function renderMarkdown(content) {
+  return marked.parse(content || '')
+}
+
+async function loadSessions() {
+  try {
+    const { data } = await sessionAPI.list()
+    sessions.value = data || []
+  } catch (e) {
+    console.error('加载会话列表失败', e)
+  }
+}
+
+async function createSession() {
+  try {
+    const { data } = await sessionAPI.create({ title: null })
+    sessions.value.unshift(data)
+    await switchSession(data.id)
+  } catch (e) {
+    ElMessage.error('创建会话失败')
+  }
+}
+
+async function switchSession(sessionId) {
+  currentSessionId.value = sessionId
+  messages.value = []
+  try {
+    const { data } = await sessionAPI.getMessages(sessionId)
+    messages.value = data || []
+    scrollToBottom()
+  } catch (e) {
+    console.error('加载消息历史失败', e)
+  }
+}
+
+async function deleteSession(sessionId) {
+  try {
+    await sessionAPI.delete(sessionId)
+    sessions.value = sessions.value.filter(s => s.id !== sessionId)
+    if (currentSessionId.value === sessionId) {
+      currentSessionId.value = null
+      messages.value = []
+    }
+  } catch (e) {
+    ElMessage.error('删除失败')
+  }
+}
+
+async function sendQuickMessage(text) {
+  inputText.value = text
+  await handleSend()
+}
+
+async function handleSend() {
+  const content = inputText.value.trim()
+  if (!content || isLoading.value) return
+
+  // 确保有会话
+  if (!currentSessionId.value) {
+    await createSession()
+  }
+
+  // 添加用户消息到界面
+  const userMsg = { id: Date.now(), role: 'user', content }
+  messages.value.push(userMsg)
+  inputText.value = ''
+  isLoading.value = true
+  streamContent.value = ''
+
+  await nextTick()
+  scrollToBottom()
+
+  try {
+    const response = await fetch('/api/agent/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authStore.token}`,
+      },
+      body: JSON.stringify({
+        session_id: currentSessionId.value,
+        message: content,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    // 读取流式响应 (Vercel AI SDK 格式)
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let fullContent = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const text = decoder.decode(value)
+      const lines = text.split('\n').filter(l => l.startsWith('0:'))
+      for (const line of lines) {
+        try {
+          const chunk = JSON.parse(line.slice(2))
+          fullContent += chunk
+          streamContent.value = fullContent
+          scrollToBottom()
+        } catch (e) {
+          // 忽略解析错误
+        }
+      }
+    }
+
+    // 流结束，添加完整 AI 消息
+    messages.value.push({
+      id: Date.now() + 1,
+      role: 'assistant',
+      content: fullContent,
+      result_type: 'text',
+    })
+    streamContent.value = ''
+
+    // 更新会话标题
+    const session = sessions.value.find(s => s.id === currentSessionId.value)
+    if (session && !session.title) {
+      session.title = content.slice(0, 30)
+    }
+  } catch (e) {
+    ElMessage.error('发送失败: ' + e.message)
+    messages.value.push({
+      id: Date.now() + 1,
+      role: 'assistant',
+      content: '抱歉，发生了错误，请重试。',
+      result_type: 'error',
+    })
+  } finally {
+    isLoading.value = false
+    scrollToBottom()
+  }
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    const el = messagesAreaRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+onMounted(async () => {
+  await loadSessions()
+  if (sessions.value.length > 0) {
+    await switchSession(sessions.value[0].id)
+  }
+})
+</script>
+
+<style scoped>
+.chat-layout {
+  display: flex;
+  height: 100vh;
+  background: var(--addp-bg-secondary);
+}
+
+.sidebar {
+  width: 240px;
+  background: var(--addp-bg-primary);
+  border-right: 1px solid var(--el-border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.sidebar-header .el-button {
+  width: 100%;
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.session-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.session-item.active {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.session-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.delete-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.session-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.messages-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.empty-hint {
+  text-align: center;
+  margin: auto;
+  color: var(--el-text-color-secondary);
+}
+
+.empty-hint p {
+  margin: 16px 0;
+  font-size: 15px;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.quick-tag {
+  cursor: pointer;
+}
+
+.message-row {
+  display: flex;
+}
+
+.message-row.user {
+  justify-content: flex-end;
+}
+
+.message-row.assistant {
+  justify-content: flex-start;
+}
+
+.message-bubble {
+  max-width: 72%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.message-row.user .message-bubble {
+  background: var(--el-color-primary);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.message-row.assistant .message-bubble {
+  background: var(--addp-bg-primary);
+  border: 1px solid var(--el-border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.message-content.markdown :deep(p) {
+  margin: 0 0 8px;
+}
+
+.message-content.markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-content.markdown :deep(code) {
+  background: var(--el-fill-color);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+.message-content.markdown :deep(pre) {
+  background: var(--el-fill-color-darker);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.input-area {
+  padding: 16px 20px;
+  background: var(--addp-bg-primary);
+  border-top: 1px solid var(--el-border-color);
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.input-area .el-textarea {
+  flex: 1;
+}
+
+.input-area .el-button {
+  align-self: flex-end;
+  height: 64px;
+}
+</style>

@@ -10,16 +10,18 @@ type OutputPortMetadata struct {
 
 // OperatorMetadata 算子元数据
 type OperatorMetadata struct {
-	ID          string               `json:"id"`           // 算子唯一标识 (如 "scan_deep")
-	Name        string               `json:"name"`         // 算子名称 (同ID)
-	DisplayName string               `json:"display_name"` // 中文显示名 (如 "深度扫描")
-	Type        string               `json:"type"`         // 算子类型 (scan/transfer/spatial等)
-	Category    string               `json:"category"`     // 分类 (元数据管理/数据传输/空间计算)
-	Description string               `json:"description"`  // 功能描述
-	Parameters  []ParameterMetadata  `json:"parameters"`   // 参数定义
-	Inputs      []string             `json:"inputs"`       // 输入类型列表
-	OutputPorts []OutputPortMetadata `json:"output_ports"` // 输出端口定义 (替代 Outputs)
-	Module      string               `json:"module"`       // 所属模块 (meta/transfer/manager/python_workflow)
+	ID                  string                 `json:"id"`                            // 算子唯一标识 (如 "scan_deep")
+	Name                string                 `json:"name"`                          // 算子名称 (同ID)
+	DisplayName         string                 `json:"display_name"`                  // 中文显示名 (如 "深度扫描")
+	Type                string                 `json:"type"`                          // 算子类型 (scan/transfer/spatial等)
+	Category            string                 `json:"category"`                      // 分类 (元数据管理/数据传输/空间计算)
+	Description         string                 `json:"description"`                   // 功能描述
+	BriefDescription    string                 `json:"brief_description,omitempty"`   // 简要描述（用于 AI 算子选择）
+	DetailedDescription map[string]interface{} `json:"detailed_description,omitempty"` // 详细描述（含 notes、workflow_example 等，用于 AI 工作流生成）
+	Parameters          []ParameterMetadata    `json:"parameters"`                    // 参数定义
+	Inputs              []string               `json:"inputs"`                        // 输入类型列表
+	OutputPorts         []OutputPortMetadata   `json:"output_ports"`                  // 输出端口定义 (替代 Outputs)
+	Module              string                 `json:"module"`                        // 所属模块 (meta/transfer/manager/python_workflow)
 }
 
 // ParameterMetadata 参数元数据

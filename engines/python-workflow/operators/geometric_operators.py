@@ -27,22 +27,23 @@ def buffer(input_gdf: gpd.GeoDataFrame, distance: float, resolution: int = 16) -
         GeoDataFrame 缓冲区结果
     """
     result = input_gdf.copy()
-    result['geometry'] = result['geometry'].buffer(distance, resolution=resolution)
+    geom_col = result.geometry.name
+    result[geom_col] = result.geometry.buffer(distance, resolution=resolution)
     return result
 
 
-def intersection(gdf_a: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def intersection(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     几何相交（叠加分析）
 
     Args:
-        gdf_a: GeoDataFrame A
-        gdf_b: GeoDataFrame B
+        input_gdf: 输入图层 A（主图层）
+        gdf_b: 输入图层 B（叠加图层）
 
     Returns:
         GeoDataFrame 交集结果
     """
-    return gpd.overlay(gdf_a, gdf_b, how='intersection')
+    return gpd.overlay(input_gdf, gdf_b, how='intersection')
 
 
 def union(gdf_list: List[gpd.GeoDataFrame]) -> gpd.GeoDataFrame:
@@ -76,22 +77,23 @@ def centroid(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         GeoDataFrame 质心点结果
     """
     result = input_gdf.copy()
-    result['geometry'] = result['geometry'].centroid
+    geom_col = result.geometry.name
+    result[geom_col] = result.geometry.centroid
     return result
 
 
-def difference(gdf_a: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def difference(input_gdf: gpd.GeoDataFrame, gdf_b: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
     几何差集（A - B）
 
     Args:
-        gdf_a: GeoDataFrame A
-        gdf_b: GeoDataFrame B
+        input_gdf: 被减图层（图层 A）
+        gdf_b: 减去的图层（图层 B）
 
     Returns:
         GeoDataFrame 差集结果
     """
-    return gpd.overlay(gdf_a, gdf_b, how='difference')
+    return gpd.overlay(input_gdf, gdf_b, how='difference')
 
 
 def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: bool = True) -> gpd.GeoDataFrame:
@@ -107,7 +109,8 @@ def simplify(input_gdf: gpd.GeoDataFrame, tolerance: float, preserve_topology: b
         GeoDataFrame 简化结果
     """
     result = input_gdf.copy()
-    result['geometry'] = result['geometry'].simplify(tolerance, preserve_topology=preserve_topology)
+    geom_col = result.geometry.name
+    result[geom_col] = result.geometry.simplify(tolerance, preserve_topology=preserve_topology)
     return result
 
 
@@ -122,7 +125,8 @@ def convex_hull(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         GeoDataFrame 凸包结果
     """
     result = input_gdf.copy()
-    result['geometry'] = result['geometry'].convex_hull
+    geom_col = result.geometry.name
+    result[geom_col] = result.geometry.convex_hull
     return result
 
 
@@ -137,7 +141,29 @@ def envelope(input_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         GeoDataFrame 外接矩形结果
     """
     result = input_gdf.copy()
-    result['geometry'] = result['geometry'].envelope
+    geom_col = result.geometry.name
+    result[geom_col] = result.geometry.envelope
+    return result
+
+
+def dissolve(input_gdf: gpd.GeoDataFrame, by: str = None) -> gpd.GeoDataFrame:
+    """
+    融合几何（按字段分组融合或全局融合）
+
+    Args:
+        input_gdf: 输入 GeoDataFrame
+        by: 分组字段名，None 表示全局融合为单个几何
+
+    Returns:
+        GeoDataFrame 融合结果
+    """
+    if by is None:
+        # 全局融合：所有要素合并为一个几何
+        from shapely.ops import unary_union
+        merged_geom = unary_union(input_gdf.geometry)
+        result = gpd.GeoDataFrame(geometry=[merged_geom], crs=input_gdf.crs)
+    else:
+        result = input_gdf.dissolve(by=by).reset_index()
     return result
 
 
@@ -189,7 +215,8 @@ BUFFER_METADATA = OperatorMetadata(
         "地理坐标系(EPSG:4326)需先用 to_crs 转投影坐标系再缓冲",
         "大数据集建议先用空间过滤减少要素数量再缓冲",
         "负值缓冲仅对面几何有效,点和线无效",
-        "缓冲结果可能产生自相交,建议后续用 simplify 简化"
+        "缓冲结果可能产生自相交,建议后续用 simplify 简化",
+        "重要：多要素(如铁路、道路多条线段)缓冲后各自独立，相邻缓冲区可能重叠。如需后续用 intersection 统计面积，必须先用 dissolve 融合缓冲区，否则重叠区域将被重复计算，导致面积结果偏大"
     ],
 
     workflow_example={
@@ -509,6 +536,58 @@ CONVEX_HULL_METADATA = OperatorMetadata(
 )
 
 
+DISSOLVE_METADATA = OperatorMetadata(
+    name="dissolve",
+    type=OperatorType.SPATIAL,
+    category=OperatorCategory.GEOMETRIC,
+    description="融合几何",
+    brief_description="将多个几何对象融合为一个（或按字段分组融合），消除重叠，常用于缓冲区合并后的去重",
+
+    overview="将图层内的所有几何对象融合为单一几何（全局融合），或按指定字段分组融合。是缓冲区分析中消除重叠的关键步骤，确保后续面积统计不重复计算。",
+
+    params=[
+        OperatorParam(
+            name="input_gdf",
+            type="input",
+            data_type="GeoDataFrame",
+            required=True,
+            description="输入的地理数据"
+        ),
+        OperatorParam(
+            name="by",
+            type="param",
+            data_type="string",
+            required=False,
+            description="分组字段名，不填则全局融合为单个几何",
+            notes="全局融合时所有要素合并为一个几何，消除重叠区域"
+        )
+    ],
+
+    use_cases=[
+        "缓冲区合并: 铁路/道路多段缓冲后融合，避免重叠重复计算",
+        "行政区合并: 将多个区县融合为市级边界",
+        "土地利用汇总: 将同类型地块融合为整体",
+        "影响范围合并: 多个设施缓冲区融合为统一服务范围"
+    ],
+
+    notes=[
+        "全局融合后只剩一条记录，属性字段全部丢失（仅保留几何）",
+        "按字段融合时，其他属性列默认取第一条记录的值",
+        "融合会消除重叠区域，是面积统计去重的标准做法",
+        "缓冲区分析必须在 buffer 后、intersection 前执行 dissolve，否则面积会重复计算"
+    ],
+
+    workflow_example={
+        'id': 'dissolve_buffer',
+        'operator': 'dissolve',
+        'params': {
+            'input_gdf': {'$ref': 'buffer_railway'}
+        },
+        'depends_on': ['buffer_railway']
+    }
+)
+
+
 ENVELOPE_METADATA = OperatorMetadata(
     name="envelope",
     type=OperatorType.SPATIAL,
@@ -564,4 +643,5 @@ OPERATORS = dict([
     register_operator(SIMPLIFY_METADATA, simplify),
     register_operator(CONVEX_HULL_METADATA, convex_hull),
     register_operator(ENVELOPE_METADATA, envelope),
+    register_operator(DISSOLVE_METADATA, dissolve),
 ])
