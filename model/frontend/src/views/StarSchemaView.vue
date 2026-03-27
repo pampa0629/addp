@@ -320,7 +320,7 @@ const loadFactTables = async () => {
   loadingTables.value = true
   try {
     const res = await logicalTableAPI.list({ table_type: 'fact', page_size: 200 })
-    factTables.value = res.data.data || res.data || []
+    factTables.value = res.data || []
   } finally {
     loadingTables.value = false
   }
@@ -329,7 +329,7 @@ const loadFactTables = async () => {
 const loadAllDimensionTables = async () => {
   try {
     const res = await logicalTableAPI.list({ table_type: 'dimension', page_size: 200 })
-    allDimensionTables.value = res.data.data || res.data || []
+    allDimensionTables.value = res.data || []
   } catch {}
 }
 
@@ -348,9 +348,9 @@ const selectTable = async (t) => {
       logicalTableAPI.listDimensionRelations(t.id),
       logicalTableAPI.listMetrics(t.id),
     ])
-    tableFields.value = fieldsRes.data.data || fieldsRes.data || []
-    dimensionRelations.value = relationsRes.data.data || relationsRes.data || []
-    factMetrics.value = metricsRes.data.data || metricsRes.data || []
+    tableFields.value = fieldsRes || []
+    dimensionRelations.value = relationsRes || []
+    factMetrics.value = metricsRes || []
   } finally {
     loadingRelated.value = false
     loadingMetrics.value = false
@@ -372,7 +372,7 @@ const onDimTableChange = async (dimTableId) => {
   if (!dimTableId) return
   try {
     const res = await logicalTableAPI.getFields(dimTableId)
-    dimTableFields.value = res.data.data || res.data || []
+    dimTableFields.value = res || []
   } catch {}
 }
 
@@ -392,7 +392,7 @@ const handleAddDimRelation = async () => {
       addDimDialogVisible.value = false
       // 刷新关联列表
       const res = await logicalTableAPI.listDimensionRelations(selectedTable.value.id)
-      dimensionRelations.value = res.data.data || res.data || []
+      dimensionRelations.value = res || []
     } catch (e) {
       ElMessage.error(e?.response?.data?.error || '添加失败')
     } finally {

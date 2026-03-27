@@ -200,7 +200,7 @@ const getDomainName = (id) => {
 
 const loadDomains = async () => {
   const res = await domainAPI.list()
-  domainList.value = flattenDomains(res.data || [])
+  domainList.value = flattenDomains(res || [])
 }
 
 const loadGlossaries = async () => {

@@ -26,7 +26,7 @@ func (h *DimensionHierarchyHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": list})
+	c.JSON(http.StatusOK, list)
 }
 
 // Get GET /api/standard/dimension-hierarchies/:id
@@ -42,7 +42,7 @@ func (h *DimensionHierarchyHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "dimension hierarchy not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 // Create POST /api/standard/dimension-hierarchies
@@ -59,7 +59,7 @@ func (h *DimensionHierarchyHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": item})
+	c.JSON(http.StatusCreated, item)
 }
 
 // Update PUT /api/standard/dimension-hierarchies/:id
@@ -81,7 +81,7 @@ func (h *DimensionHierarchyHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 // Delete DELETE /api/standard/dimension-hierarchies/:id
@@ -96,7 +96,7 @@ func (h *DimensionHierarchyHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // --- 层级管理 ---
@@ -113,7 +113,7 @@ func (h *DimensionHierarchyHandler) ListLevels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": levels})
+	c.JSON(http.StatusOK, levels)
 }
 
 // CreateLevel POST /api/standard/dimension-hierarchies/:id/levels
@@ -133,7 +133,7 @@ func (h *DimensionHierarchyHandler) CreateLevel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": level})
+	c.JSON(http.StatusCreated, level)
 }
 
 // UpdateLevel PUT /api/standard/dimension-hierarchies/:id/levels/:lid
@@ -158,7 +158,7 @@ func (h *DimensionHierarchyHandler) UpdateLevel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": level})
+	c.JSON(http.StatusOK, level)
 }
 
 // DeleteLevel DELETE /api/standard/dimension-hierarchies/:id/levels/:lid
@@ -177,5 +177,5 @@ func (h *DimensionHierarchyHandler) DeleteLevel(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }

@@ -189,7 +189,7 @@ const loadGlossary = async () => {
   loading.value = true
   try {
     const res = await glossaryAPI.get(route.params.id)
-    glossary.value = res.data || {}
+    glossary.value = res || {}
     if (!glossary.value.alias) glossary.value.alias = []
     if (!glossary.value.tags) glossary.value.tags = []
   } catch (e) {
@@ -203,7 +203,7 @@ const loadGlossary = async () => {
 const loadMappedElements = async () => {
   try {
     const res = await glossaryAPI.getElements(route.params.id)
-    mappedElements.value = res.data || []
+    mappedElements.value = res || []
   } catch (e) {
     console.error('加载关联数据元失败:', e)
   }
@@ -212,7 +212,7 @@ const loadMappedElements = async () => {
 const loadDomains = async () => {
   try {
     const res = await domainAPI.list()
-    domains.value = flattenDomains(res.data || [])
+    domains.value = flattenDomains(res || [])
   } catch (e) {
     console.error('加载业务域失败:', e)
   }

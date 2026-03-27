@@ -104,7 +104,7 @@ class WorkflowPipeline:
         self,
         query: str,
         tenant_id: int = 1,
-        engine_type: str = "python"  # 工作流引擎类型：python, spark, math
+        engine_type: str = "python_workflow"  # 工作流引擎类型：python_workflow, spark_workflow, math_workflow
     ) -> Dict[str, Any]:
         """
         执行完整的工作流生成流程
@@ -112,7 +112,7 @@ class WorkflowPipeline:
         Args:
             query: 用户查询
             tenant_id: 租户 ID
-            engine_type: 工作流引擎类型（python/spark/math），用于筛选算子
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于筛选算子
 
         Returns:
             生成结果字典，包含：

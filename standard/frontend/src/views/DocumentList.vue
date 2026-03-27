@@ -203,7 +203,7 @@ const uploadRef = ref(null)
 const form = ref({ name: '', doc_type: 'reference', source_org: '', version: '', description: '' })
 
 const docTypeLabel = (t) => ({ national: '国家标准', industry: '行业标准', internal: '企业内部', reference: '参考资料' }[t] || t)
-const docTypeTagType = (t) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: '' }[t] || '')
+const docTypeTagType = (t) => ({ national: 'danger', industry: 'warning', internal: 'primary', reference: 'info' }[t] || 'info')
 const formatTime = (t) => t ? new Date(t).toLocaleDateString('zh-CN') : '-'
 const formatFileSize = (bytes) => {
   if (!bytes) return '0 B'
@@ -247,7 +247,7 @@ const createDocument = async () => {
   saving.value = true
   try {
     const res = await documentAPI.create(form.value)
-    const docId = res.data?.id
+    const docId = res?.id
     if (selectedFile && docId) {
       const fd = new FormData()
       fd.append('file', selectedFile)
@@ -268,7 +268,7 @@ const openDetail = async (row) => {
   showDetail.value = true
   try {
     const res = await documentAPI.getMappings(row.id)
-    mappings.value = res.data || { elements: [], glossaries: [], metrics: [] }
+    mappings.value = res || { elements: [], glossaries: [], metrics: [] }
   } catch (e) {
     mappings.value = { elements: [], glossaries: [], metrics: [] }
   }
@@ -290,9 +290,9 @@ const uploadToExisting = async (doc, file) => {
     await documentAPI.uploadFile(doc.id, fd)
     ElMessage.success('文件上传成功')
     const res = await documentAPI.get(doc.id)
-    currentDoc.value = res.data
+    currentDoc.value = res
     const idx = documents.value.findIndex(d => d.id === doc.id)
-    if (idx !== -1) documents.value[idx] = res.data
+    if (idx !== -1) documents.value[idx] = res
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '上传失败')
   }

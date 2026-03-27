@@ -124,8 +124,8 @@ export default {
 
   getScanRuns(engineId, params = {}) {
     return client.get('/meta/scan/runs', { params }).then(res => {
-      const data = res?.data ?? res
-      const items = Array.isArray(data) ? data : data.items || []
+      const data = res ?? {}
+      const items = Array.isArray(data.items) ? data.items : (Array.isArray(data) ? data : [])
       const total = data.total || items.length || 0
       if (!engineId) {
         return { items, total }
@@ -137,7 +137,7 @@ export default {
 
   getScanTasks(engineId) {
     return client.get('/meta/scan/tasks').then(res => {
-      const tasks = res?.data ?? []
+      const tasks = Array.isArray(res) ? res : []
       if (!engineId) {
         return tasks
       }
@@ -151,7 +151,6 @@ export default {
         ...payload,
         engine_id: engineId
       })
-      .then(res => res?.data ?? res)
   },
 
   updateScanTask(engineId, taskId, payload) {
@@ -160,6 +159,5 @@ export default {
         ...payload,
         engine_id: engineId
       })
-      .then(res => res?.data ?? res)
   }
 }

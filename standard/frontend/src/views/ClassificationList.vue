@@ -156,7 +156,7 @@ const loadClassifications = async () => {
   loadingClassifications.value = true
   try {
     const res = await classificationAPI.list()
-    classifications.value = res.data || []
+    classifications.value = res || []
   } finally {
     loadingClassifications.value = false
   }
@@ -166,7 +166,7 @@ const loadGradingLevels = async () => {
   loadingGrading.value = true
   try {
     const res = await gradingLevelAPI.list()
-    gradingLevels.value = res.data || []
+    gradingLevels.value = res || []
   } finally {
     loadingGrading.value = false
   }

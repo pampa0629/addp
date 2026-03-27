@@ -378,7 +378,7 @@ const engines = ref([])
 // Service API 基础 URL（用于 DataSourceCascader）
 // 通过 Service 后端统一访问数据源信息
 const metaApiBaseUrl = computed(() => {
-  return '/api/service'
+  return '/api/v1/service'
 })
 
 // 空间元数据

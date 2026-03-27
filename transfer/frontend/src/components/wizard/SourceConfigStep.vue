@@ -5,10 +5,10 @@
       <el-form label-width="120px">
         <el-form-item label="数据源类型">
           <el-radio-group v-model="connectorType" @change="handleTypeChange">
-            <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
-            <el-radio-button label="mysql">MySQL</el-radio-button>
-            <el-radio-button label="spatialite">SpatiaLite/SQLite</el-radio-button>
-            <el-radio-button label="s3">S3/MinIO</el-radio-button>
+            <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
+            <el-radio-button value="mysql">MySQL</el-radio-button>
+            <el-radio-button value="spatialite">SpatiaLite/SQLite</el-radio-button>
+            <el-radio-button value="s3">S3/MinIO</el-radio-button>
           </el-radio-group>
         </el-form-item>
 

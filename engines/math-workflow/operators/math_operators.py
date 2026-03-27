@@ -48,7 +48,7 @@ ADD_METADATA = OperatorMetadata(
     category="数学运算",
     description="两数相加",
     brief_description="计算两个数的和",
-    module="math",
+    module="math_workflow",
     parameters=[
         ParameterMetadata(
             name="a",
@@ -91,7 +91,7 @@ SUBTRACT_METADATA = OperatorMetadata(
     category="数学运算",
     description="两数相减",
     brief_description="计算两个数的差",
-    module="math",
+    module="math_workflow",
     parameters=[
         ParameterMetadata(
             name="a",
@@ -125,7 +125,7 @@ MULTIPLY_METADATA = OperatorMetadata(
     category="数学运算",
     description="两数相乘",
     brief_description="计算两个数的积",
-    module="math",
+    module="math_workflow",
     parameters=[
         ParameterMetadata(
             name="a",
@@ -159,7 +159,7 @@ DIVIDE_METADATA = OperatorMetadata(
     category="数学运算",
     description="两数相除",
     brief_description="计算两个数的商",
-    module="math",
+    module="math_workflow",
     parameters=[
         ParameterMetadata(
             name="a",
@@ -198,7 +198,7 @@ AVERAGE_METADATA = OperatorMetadata(
     category="统计分析",
     description="计算数组的平均值",
     brief_description="计算一组数的平均值",
-    module="math",
+    module="math_workflow",
     parameters=[
         ParameterMetadata(
             name="values",

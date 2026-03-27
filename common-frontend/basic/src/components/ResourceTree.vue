@@ -472,68 +472,25 @@ watch(
   }
 )
 
-// 更新树状态
-const updateTreeState = () => {
+// 只恢复展开状态，不触发选中/滚动（供 expandedKeys 变化时调用，避免跳动）
+const updateExpandState = () => {
   const tree = treeRef.value
-  if (!tree) {
-    console.warn('[ResourceTree] updateTreeState: treeRef is null')
-    return
-  }
-
-  console.log('[ResourceTree] updateTreeState called:', {
-    expandedKeys: computedExpandedKeys.value,
-    currentNodeKey: props.currentNodeKey,
-    hasStore: !!tree.store
-  })
-
-  // 使用 toggleExpand 方法强制展开节点
-  if (tree.store && computedExpandedKeys.value?.length > 0) {
-    console.log('[ResourceTree] 开始强制展开节点...')
-    let expandedCount = 0
-    let notFoundCount = 0
-
-    for (const key of computedExpandedKeys.value) {
-      const node = tree.store.getNode(key)
-      if (node) {
-        // 检查节点是否已展开
-        if (!node.expanded) {
-          node.expanded = true
-          expandedCount++
-        }
-      } else {
-        // 节点未找到可能是因为还没加载（懒加载场景），只记录 debug 信息
-        notFoundCount++
-        if (import.meta.env.DEV) {
-          console.debug('[ResourceTree] 节点未加载或不存在:', key)
-        }
-      }
+  if (!tree?.store) return
+  for (const key of computedExpandedKeys.value) {
+    const node = tree.store.getNode(key)
+    if (node && !node.expanded) {
+      node.expanded = true
     }
-
-    console.log(`[ResourceTree] 已展开 ${expandedCount} 个节点${notFoundCount > 0 ? `, ${notFoundCount} 个节点未加载` : ''}`)
   }
+}
 
-  // 设置当前选中的节点
-  if (typeof tree.setCurrentKey === 'function') {
-    if (props.currentNodeKey) {
-      tree.setCurrentKey(props.currentNodeKey)
-      console.log('[ResourceTree] setCurrentKey 已调用:', props.currentNodeKey)
-
-      // 滚动到当前节点
-      nextTick(() => {
-        const currentNode = tree.store.getNode(props.currentNodeKey)
-        if (currentNode && currentNode.isCurrent) {
-          // 找到对应的 DOM 元素并滚动到可见区域
-          const treeElement = tree.$el
-          if (treeElement) {
-            const currentNodeElement = treeElement.querySelector('.is-current')
-            if (currentNodeElement) {
-              currentNodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              console.log('[ResourceTree] 已滚动到当前节点')
-            }
-          }
-        }
-      })
-    }
+// 全量同步：展开状态 + 选中节点（仅在挂载和数据加载后调用）
+const updateTreeState = () => {
+  updateExpandState()
+  const tree = treeRef.value
+  if (!tree) return
+  if (typeof tree.setCurrentKey === 'function' && props.currentNodeKey) {
+    tree.setCurrentKey(props.currentNodeKey)
   }
 }
 
@@ -543,16 +500,7 @@ onMounted(() => {
   }
 })
 
-watch(
-  () => props.expandedKeys,
-  () => {
-    if (hasTreeData.value) {
-      nextTick(updateTreeState)
-    }
-  },
-  { deep: true }
-)
-
+// treeData 变化（数据加载）时全量同步，恢复展开 + 选中状态
 watch(
   () => props.treeData,
   () => {
@@ -563,15 +511,28 @@ watch(
   { deep: true }
 )
 
+// expandedKeys 变化时只更新展开状态，不触发 setCurrentKey / scrollIntoView，避免跳动
+watch(
+  () => props.expandedKeys,
+  () => {
+    if (hasTreeData.value) {
+      nextTick(updateExpandState)
+    }
+  },
+  { deep: true }
+)
+
+// 选中节点变化时单独处理：更新高亮，滚动到可见区域
 watch(
   () => props.currentNodeKey,
-  () => {
+  (key) => {
     nextTick(() => {
       const tree = treeRef.value
-      if (tree && typeof tree.setCurrentKey === 'function') {
-        if (props.currentNodeKey) {
-          tree.setCurrentKey(props.currentNodeKey)
-        }
+      if (!tree || typeof tree.setCurrentKey !== 'function' || !key) return
+      tree.setCurrentKey(key)
+      const el = tree.$el?.querySelector('.is-current')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }
     })
   }

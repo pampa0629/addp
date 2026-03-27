@@ -138,7 +138,7 @@ async function loadTree() {
   loading.value = true
   try {
     const res = await catalogAPI.tree()
-    treeData.value = res.data || []
+    treeData.value = res || []
   } catch (e) {
     ElMessage.error('加载目录失败')
   } finally {

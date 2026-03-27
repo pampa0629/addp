@@ -58,7 +58,7 @@ const fetchTasks = async () => {
   loading.value = true
   try {
     const res = await checkTaskAPI.list()
-    tasks.value = res.data || []
+    tasks.value = res || []
   } finally {
     loading.value = false
   }

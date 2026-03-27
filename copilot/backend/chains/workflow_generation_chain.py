@@ -74,7 +74,7 @@ class WorkflowGenerationChain:
         query: str,
         data_source: Optional[DataSourceContext],
         selected_operators: List[str],
-        engine_type: str = "python"  # 工作流引擎类型
+        engine_type: str = "python_workflow"  # 工作流引擎类型
     ) -> Workflow:
         """
         生成工作流
@@ -83,7 +83,7 @@ class WorkflowGenerationChain:
             query: 用户查询
             data_source: 数据源上下文（可选，如果数据源理解失败可为 None）
             selected_operators: 选定的算子名称列表
-            engine_type: 工作流引擎类型（python/spark/math），用于获取正确的算子详情
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于获取正确的算子详情
 
         Returns:
             Workflow: 生成的工作流
@@ -160,13 +160,13 @@ class WorkflowGenerationChain:
             print(f"[WorkflowGenerationChain] ❌ 生成工作流失败: {type(e).__name__}: {e}")
             raise
 
-    async def _fetch_operator_details(self, operator_names: List[str], engine_type: str = "python") -> List[Dict]:
+    async def _fetch_operator_details(self, operator_names: List[str], engine_type: str = "python_workflow") -> List[Dict]:
         """
         批量获取算子详情
 
         Args:
             operator_names: 算子名称列表
-            engine_type: 工作流引擎类型（python/spark/math）
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow）
 
         Returns:
             算子详情列表

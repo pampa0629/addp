@@ -34,9 +34,9 @@
 
             <el-form-item label="执行模式">
               <el-radio-group v-model="taskForm.mode">
-                <el-radio-button label="batch">批处理</el-radio-button>
-                <el-radio-button label="stream">流式</el-radio-button>
-                <el-radio-button label="micro-batch">微批</el-radio-button>
+                <el-radio-button value="batch">批处理</el-radio-button>
+                <el-radio-button value="stream">流式</el-radio-button>
+                <el-radio-button value="micro-batch">微批</el-radio-button>
               </el-radio-group>
               <div class="hint">
                 <p>• 批处理：适合定期大批量数据传输（推荐）</p>
@@ -68,10 +68,10 @@
             <el-form label-width="120px">
             <el-form-item label="数据源类型">
               <el-radio-group v-model="sourceConnectorType" @change="handleSourceTypeChange">
-                <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
-                <el-radio-button label="mysql">MySQL</el-radio-button>
-                <el-radio-button label="spatialite">SpatiaLite/SQLite</el-radio-button>
-                <el-radio-button label="s3">S3/MinIO</el-radio-button>
+                <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
+                <el-radio-button value="mysql">MySQL</el-radio-button>
+                <el-radio-button value="spatialite">SpatiaLite/SQLite</el-radio-button>
+                <el-radio-button value="s3">S3/MinIO</el-radio-button>
               </el-radio-group>
             </el-form-item>
 
@@ -178,8 +178,8 @@
               <el-form label-width="120px">
                 <el-form-item label="查询方式">
                   <el-radio-group v-model="sourceConfig.queryType">
-                    <el-radio-button label="table">选择表</el-radio-button>
-                    <el-radio-button label="sql">自定义 SQL</el-radio-button>
+                    <el-radio-button value="table">选择表</el-radio-button>
+                    <el-radio-button value="sql">自定义 SQL</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
 
@@ -238,8 +238,8 @@
               <el-form label-width="120px">
                 <el-form-item label="查询方式">
                   <el-radio-group v-model="sourceConfig.queryType">
-                    <el-radio-button label="table">选择表</el-radio-button>
-                    <el-radio-button label="sql">自定义 SQL</el-radio-button>
+                    <el-radio-button value="table">选择表</el-radio-button>
+                    <el-radio-button value="sql">自定义 SQL</el-radio-button>
                   </el-radio-group>
                 </el-form-item>
 
@@ -344,9 +344,9 @@
             <el-form label-width="120px">
             <el-form-item label="目标类型">
               <el-radio-group v-model="targetConnectorType" @change="handleTargetTypeChange">
-                <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
-                <el-radio-button label="mysql">MySQL</el-radio-button>
-                <el-radio-button label="s3">对象存储（MinIO/S3）</el-radio-button>
+                <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
+                <el-radio-button value="mysql">MySQL</el-radio-button>
+                <el-radio-button value="s3">对象存储（MinIO/S3）</el-radio-button>
               </el-radio-group>
               <div class="hint" style="margin-top: 10px">
                 <p>• 数据库：直接写入到数据库表</p>
@@ -476,9 +476,9 @@
 
                 <el-form-item label="写入模式">
                   <el-radio-group v-model="targetConfig.mode">
-                    <el-radio-button label="insert">插入（INSERT）</el-radio-button>
-                    <el-radio-button label="upsert">更新插入（UPSERT）</el-radio-button>
-                    <el-radio-button label="replace">替换（REPLACE）</el-radio-button>
+                    <el-radio-button value="insert">插入（INSERT）</el-radio-button>
+                    <el-radio-button value="upsert">更新插入（UPSERT）</el-radio-button>
+                    <el-radio-button value="replace">替换（REPLACE）</el-radio-button>
                   </el-radio-group>
                   <div class="hint">
                     <p>• 插入：遇到冲突则报错</p>
@@ -512,13 +512,13 @@
               <el-form label-width="140px">
                 <el-form-item label="输出格式">
                   <el-radio-group v-model="selectedTargetFormat">
-                    <el-radio-button label="csv">CSV</el-radio-button>
-                    <el-radio-button label="csv-wkt" :disabled="!hasSpatialSource">CSV（WKT）</el-radio-button>
-                    <el-radio-button label="json">JSON</el-radio-button>
-                    <el-radio-button label="jsonl">JSONL</el-radio-button>
-                    <el-radio-button label="parquet">Parquet</el-radio-button>
-                    <el-radio-button label="geojson" :disabled="!hasSpatialSource">GeoJSON</el-radio-button>
-                    <el-radio-button label="shapefile" :disabled="!hasSpatialSource">Shapefile</el-radio-button>
+                    <el-radio-button value="csv">CSV</el-radio-button>
+                    <el-radio-button value="csv-wkt" :disabled="!hasSpatialSource">CSV（WKT）</el-radio-button>
+                    <el-radio-button value="json">JSON</el-radio-button>
+                    <el-radio-button value="jsonl">JSONL</el-radio-button>
+                    <el-radio-button value="parquet">Parquet</el-radio-button>
+                    <el-radio-button value="geojson" :disabled="!hasSpatialSource">GeoJSON</el-radio-button>
+                    <el-radio-button value="shapefile" :disabled="!hasSpatialSource">Shapefile</el-radio-button>
                   </el-radio-group>
                   <div class="hint">
                     CSV/JSON 适用于常规表格；CSV（WKT）、GeoJSON 与 Shapefile 可导出空间数据。若当前源表没有空间字段，空间格式会自动禁用。
@@ -2000,7 +2000,7 @@ const handleLoadSourceTables = async () => {
         return
       }
       const token = localStorage.getItem('token')
-      const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
+      const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/tables`, {
         params: { engine_id: selectedSourceOption.value?.resource?.id },
         headers: { Authorization: `Bearer ${token}` }
       })
@@ -2048,7 +2048,7 @@ const handleLoadTargetTables = async () => {
   loadingTargetTables.value = true
   try {
     const token = localStorage.getItem('token')
-    const response = await axios.get(`http://localhost:8082/api/meta/metadata/tables`, {
+    const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/tables`, {
       params: { engine_id: selectedTargetOption.value?.resource?.id },
       headers: { Authorization: `Bearer ${token}` }
     })
@@ -2119,7 +2119,7 @@ const handleFetchFields = async (type) => {
     if (useSystem) {
       // 系统资源: 从 Meta 模块获取字段
       const token = localStorage.getItem('token')
-      const response = await axios.get(`http://localhost:8082/api/meta/metadata/fields`, {
+      const response = await axios.get(`http://localhost:8082/api/v1/meta/metadata/fields`, {
         params: {
           engine_id: resourceId,
           table_name: tableName,

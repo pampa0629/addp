@@ -74,10 +74,10 @@
       <!-- 日志控制栏 -->
       <div class="log-controls">
         <el-radio-group v-model="logLevel" size="small">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="info">INFO</el-radio-button>
-          <el-radio-button label="post-process">后处理</el-radio-button>
-          <el-radio-button label="error">ERROR</el-radio-button>
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="info">INFO</el-radio-button>
+          <el-radio-button value="post-process">后处理</el-radio-button>
+          <el-radio-button value="error">ERROR</el-radio-button>
         </el-radio-group>
 
         <div class="log-actions">

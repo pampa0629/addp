@@ -130,7 +130,7 @@ class OperatorSelectionChain:
         self,
         query: str,
         data_source_info: Optional[str] = None,
-        engine_type: str = "python"  # 工作流引擎类型
+        engine_type: str = "python_workflow"  # 工作流引擎类型
     ) -> List[str]:
         """
         选择相关算子
@@ -138,7 +138,7 @@ class OperatorSelectionChain:
         Args:
             query: 用户查询
             data_source_info: 数据源信息（可选）
-            engine_type: 工作流引擎类型（python/spark/math），只获取该引擎的算子
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），只获取该引擎的算子
 
         Returns:
             选中的算子名称列表

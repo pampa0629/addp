@@ -327,15 +327,8 @@ const hasValidWorkflow = computed(() => {
 
 // 当前引擎的模块名称（用于加载对应的算子列表）
 const currentEngineModule = computed(() => {
-  if (!selectedEngine.value) return 'python' // 默认 Python
-
-  const engineType = selectedEngine.value.engine_type || ''
-  if (engineType.toLowerCase().includes('spark')) {
-    return 'spark'
-  } else if (engineType.toLowerCase().includes('math')) {
-    return 'math'
-  }
-  return 'python'
+  if (!selectedEngine.value) return 'python_workflow' // 默认 Python
+  return selectedEngine.value.engine_type || 'python_workflow'
 })
 
 // 工作流更新处理
@@ -350,19 +343,10 @@ const handleNodeClick = async (node) => {
     console.log('节点被点击:', node)
 
     // 确定当前工作流引擎的模块名称
-    let moduleName = 'python'  // 默认使用 Python 引擎
-    if (selectedEngine.value) {
-      const engineType = selectedEngine.value.engine_type || ''
-      if (engineType.toLowerCase().includes('spark')) {
-        moduleName = 'spark'
-      } else if (engineType.toLowerCase().includes('math')) {
-        moduleName = 'math'
-      }
-      // Python 工作流引擎保持 'python'
-    }
+    const moduleName = selectedEngine.value?.engine_type || 'python_workflow'
 
     // 从对应引擎的模块获取算子列表，然后查找匹配的算子
-    const moduleResponse = await fetch(`/api/develop/operators/modules/${moduleName}`)
+    const moduleResponse = await fetch(`/api/v1/develop/operators/modules/${moduleName}`)
     const moduleData = await moduleResponse.json()
 
     const operator = moduleData.operators?.find(op => op.name === node.operator)
@@ -811,15 +795,13 @@ const generateWorkflow = async () => {
   try {
     // 从选中的引擎获取 engine_type
     const engineType = selectedEngine.value?.engine_type || selectedEngine.value?.resource_type || 'python_workflow'
-    // 去掉 _workflow 后缀（python_workflow → python）
-    const simpleEngineType = engineType.replace('_workflow', '')
 
     const result = await generateWorkflowFromNL({
       query: aiQuery.value,
       tenant_id: 1, // TODO: 从 store 获取
       user_id: 1,
       workflow_engine_id: workflowEngineId.value,  // 传递给 Copilot 用于算子筛选
-      engine_type: simpleEngineType  // 传递引擎类型（python/spark/math）
+      engine_type: engineType  // 传递引擎类型（python_workflow/spark_workflow/math_workflow）
     })
 
     // 直接加载到画布

@@ -32,7 +32,7 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"data": relation})
+	c.JSON(http.StatusCreated, relation)
 }
 
 // ListRelations GET /api/model/entity-relations?entity_id=123
@@ -59,7 +59,7 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": relations})
+	c.JSON(http.StatusOK, relations)
 }
 
 // GetRelation GET /api/model/entity-relations/:id
@@ -77,7 +77,7 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": relation})
+	c.JSON(http.StatusOK, relation)
 }
 
 // UpdateRelation PUT /api/model/entity-relations/:id
@@ -101,7 +101,7 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": relation})
+	c.JSON(http.StatusOK, relation)
 }
 
 // DeleteRelation DELETE /api/model/entity-relations/:id

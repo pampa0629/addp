@@ -42,7 +42,19 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": docs, "total": total})
+	page := opts.Page
+	pageSize := opts.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	c.JSON(http.StatusOK, gin.H{"data": docs, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
 func (h *DocumentHandler) GetDocument(c *gin.Context) {
@@ -57,7 +69,7 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "document not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": doc})
+	c.JSON(http.StatusOK, doc)
 }
 
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
@@ -73,7 +85,7 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": doc})
+	c.JSON(http.StatusCreated, doc)
 }
 
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
@@ -94,7 +106,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": doc})
+	c.JSON(http.StatusOK, doc)
 }
 
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
@@ -108,7 +120,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // UploadFile 上传文档文件（multipart/form-data, field: "file"）
@@ -187,7 +199,7 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": mappings})
+	c.JSON(http.StatusOK, mappings)
 }
 
 func (h *DocumentHandler) SetMappings(c *gin.Context) {
@@ -221,7 +233,7 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": docs})
+	c.JSON(http.StatusOK, docs)
 }
 
 func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
@@ -235,7 +247,7 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": docs})
+	c.JSON(http.StatusOK, docs)
 }
 
 func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
@@ -249,7 +261,7 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": docs})
+	c.JSON(http.StatusOK, docs)
 }
 
 // ===== 创建文档并关联到标准项 =====
@@ -270,7 +282,7 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": doc})
+	c.JSON(http.StatusCreated, doc)
 }
 
 func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
@@ -289,7 +301,7 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": doc})
+	c.JSON(http.StatusCreated, doc)
 }
 
 func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
@@ -308,7 +320,7 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": doc})
+	c.JSON(http.StatusCreated, doc)
 }
 
 // ===== 关联已有文档到标准项 =====

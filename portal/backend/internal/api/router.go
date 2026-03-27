@@ -36,7 +36,7 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 	serviceClient := commonClient.NewServiceClientWithInternalKey(cfg.ServiceURL, cfg.InternalAPIKey)
 
 	// Portal BFF 路由（需要认证）
-	api := router.Group("/api/portal")
+	api := router.Group("/api/v1/portal")
 	if redisClient != nil {
 		api.Use(commonAuth.CachedSystemAuthMiddleware(cfg.SystemURL, redisClient, 5*time.Minute))
 	} else {

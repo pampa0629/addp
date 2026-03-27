@@ -28,7 +28,7 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": cats})
+	c.JSON(http.StatusOK, cats)
 }
 
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
@@ -44,7 +44,7 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": cat})
+	c.JSON(http.StatusCreated, cat)
 }
 
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
@@ -65,7 +65,7 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": cat})
+	c.JSON(http.StatusOK, cat)
 }
 
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
@@ -79,7 +79,7 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // --- 指标定义 ---
@@ -111,7 +111,19 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": metrics, "total": total})
+	page := opts.Page
+	pageSize := opts.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	c.JSON(http.StatusOK, gin.H{"data": metrics, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
 func (h *MetricHandler) GetMetric(c *gin.Context) {
@@ -127,14 +139,19 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 		return
 	}
 
-	// 附带关联信息
+	// 附带关联信息，合并到同一个响应对象
 	elements, _ := h.svc.GetElementMappings(id)
 	deps, _ := h.svc.GetDependencies(id)
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":          metric,
-		"element_ids":   extractElementIDs(elements),
-		"dependency_ids": extractDependencyIDs(deps),
+	type MetricDetailResponse struct {
+		*models.Metric
+		ElementIDs    []int64 `json:"element_ids"`
+		DependencyIDs []int64 `json:"dependency_ids"`
+	}
+	c.JSON(http.StatusOK, MetricDetailResponse{
+		Metric:        metric,
+		ElementIDs:    extractElementIDs(elements),
+		DependencyIDs: extractDependencyIDs(deps),
 	})
 }
 
@@ -151,7 +168,7 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": metric})
+	c.JSON(http.StatusCreated, metric)
 }
 
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
@@ -172,7 +189,7 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": metric})
+	c.JSON(http.StatusOK, metric)
 }
 
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
@@ -186,7 +203,7 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 func (h *MetricHandler) ApproveMetric(c *gin.Context) {
@@ -201,7 +218,7 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
 }
 
 func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
@@ -216,7 +233,7 @@ func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deprecated"})
+	c.JSON(http.StatusOK, gin.H{"message": "已废弃"})
 }
 
 // 辅助函数

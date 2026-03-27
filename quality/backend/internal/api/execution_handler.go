@@ -34,9 +34,16 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 		return
 	}
 
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":  items,
-		"total": total,
+		"data":        items,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
 	})
 }
 
@@ -52,5 +59,5 @@ func (h *ExecutionHandler) Get(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }

@@ -25,7 +25,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": tree})
+	c.JSON(http.StatusOK, tree)
 }
 
 // CreateDomain POST /api/model/domains
@@ -44,7 +44,7 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": domain})
+	c.JSON(http.StatusCreated, domain)
 }
 
 // GetDomain GET /api/model/domains/:id
@@ -61,7 +61,7 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "domain not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": domain})
+	c.JSON(http.StatusOK, domain)
 }
 
 // UpdateDomain PUT /api/model/domains/:id
@@ -86,7 +86,7 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": domain})
+	c.JSON(http.StatusOK, domain)
 }
 
 // DeleteDomain DELETE /api/model/domains/:id
@@ -102,5 +102,5 @@ func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }

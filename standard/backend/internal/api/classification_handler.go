@@ -27,7 +27,7 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": list})
+	c.JSON(http.StatusOK, list)
 }
 
 func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
@@ -43,7 +43,7 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": item})
+	c.JSON(http.StatusCreated, item)
 }
 
 func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
@@ -64,7 +64,7 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
@@ -78,7 +78,7 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // --- 数据分级 ---
@@ -90,7 +90,7 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": levels})
+	c.JSON(http.StatusOK, levels)
 }
 
 func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {

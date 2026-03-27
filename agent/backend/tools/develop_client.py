@@ -11,7 +11,7 @@ class DevelopClient(ADDPBaseClient):
 
     async def execute_sql(self, sql: str, engine_id: int) -> Dict[str, Any]:
         """执行 SQL 查询"""
-        return await self.post("/api/develop/execute", data={
+        return await self.post("/api/develop/execute", json={
             "query": sql,
             "engine_id": engine_id,
         })
@@ -23,11 +23,14 @@ class DevelopClient(ADDPBaseClient):
         data: Dict[str, Any] = {
             "dev_type": "workflow",
             "trigger_type": "api",
-            "content": workflow,
+            "content": {
+                "workflow_definition": workflow,
+                "inputs": {},
+            },
         }
         if engine_id is not None:
             data["engine_id"] = engine_id
-        return await self.post("/api/develop/executions", data=data)
+        return await self.post("/api/develop/executions", json=data)
 
     async def get_execution(self, execution_id: str) -> Dict[str, Any]:
         """获取执行详情（含状态和结果）"""

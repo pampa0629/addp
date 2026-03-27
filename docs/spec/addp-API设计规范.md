@@ -371,29 +371,18 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 
 ### 5.1 版本策略
 
-**支持 URL 路径版本，但当前阶段灵活使用：**
+**统一使用 `/api/v1/` 路径前缀：**
 
 ```
-/api/users       # 当前使用（v0.x 快速迭代期）
-/api/v1/users    # 项目稳定后使用（v1.0+）
-/api/v2/users    # 未来版本
+/api/v1/users        # 当前使用
+/api/v1/engines      # 当前使用
+/api/v2/users        # 未来破坏性变更时升级
 ```
 
 **版本控制的优点：**
-- 直观明确
+- 直观明确，便于 client 生成和 AI agent 调用
 - 支持同时运行多个版本
 - 便于网关路由和灰度发布
-
-**当前阶段（v0.x）策略：**
-- ✅ **暂不强制 `/v1` 前缀** - 保持 `/api/` 简洁路径
-- ✅ **灵活快速迭代** - 避免版本前缀增加的复杂度
-- ✅ **预留版本化能力** - 路由设计上支持未来添加版本前缀
-
-**为什么当前不强制版本前缀？**
-1. **快速迭代期** - 项目处于 v0.0.20，频繁破坏性变更
-2. **降低开发成本** - 前后端代码更简洁
-3. **保持灵活性** - 无需为每个变更考虑版本兼容
-4. **向前演进** - 项目稳定到 v1.0 时再统一添加
 
 ### 5.2 版本演进规则
 
@@ -401,22 +390,36 @@ RESTful是指导原则，不是教条。优秀的API设计应该在RESTful原则
 - **新增字段、新增接口** → 不需要升级版本（保持向后兼容）
 - **废弃接口**：标记为 `@deprecated`，在下一大版本移除
 
-### 5.3 未来版本化路线图
+### 5.3 迁移操作
 
-**阶段 1（当前）- v0.x 快速迭代期：**
-- 使用 `/api/` 路径
-- 不考虑向后兼容
-- 可自由破坏性变更
+**Go 端（Gin）**：修改各模块 `router.go` 中的 Group 路径，一行改动：
 
-**阶段 2 - v1.0 稳定发布：**
-- 统一迁移到 `/api/v1/`
-- 开始遵守向后兼容原则
-- 破坏性变更通过 v2 版本
+```go
+// 修改前
+v1 := r.Group("/api/system")
+// 修改后
+v1 := r.Group("/api/v1/system")
+```
 
-**迁移策略：**
-1. 在路由设计上预留版本化能力（使用 Group 嵌套）
-2. v1.0 发布前统一添加 `/v1` 前缀
-3. 可选：保留旧路径一段时间以平滑过渡
+**Python 端（FastAPI）**：修改 `include_router` 的 prefix，一行改动：
+
+```python
+# 修改前
+app.include_router(router, prefix="/api/agent")
+# 修改后
+app.include_router(router, prefix="/api/v1/agent")
+```
+
+**Gateway**：路由转发规则同步更新：
+
+```go
+// 修改前
+protected.Any("/api/:module/*path", ...)
+// 修改后
+protected.Any("/api/v1/:module/*path", ...)
+```
+
+**前端**：全局搜索替换 `/api/system`、`/api/manager` 等路径，统一加 `/v1`。
 
 ---
 
@@ -618,11 +621,31 @@ Authorization: Bearer <expired_token>
 
 ## 九、文档规范
 
-### 9.1 OpenAPI/Swagger 文档
+**统一使用 Swagger/OpenAPI 自动生成 API 文档，废弃手写的 api-manifest.json。**
 
-**推荐使用 `swaggo/swag` 自动生成 API 文档**
+### 9.1 Go 端（swaggo/swag）
 
-**示例：**
+**安装依赖**：
+
+```bash
+go get -u github.com/swaggo/swag/cmd/swag
+go get -u github.com/swaggo/gin-swagger
+go get -u github.com/swaggo/files
+```
+
+**main.go 注册 Swagger 路由**：
+
+```go
+import (
+    _ "your-module/docs"  // swag 生成的 docs 包
+    ginSwagger "github.com/swaggo/gin-swagger"
+    swaggerFiles "github.com/swaggo/files"
+)
+
+r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+```
+
+**handler 注释示例**：
 
 ```go
 // @Summary 用户登录
@@ -631,32 +654,58 @@ Authorization: Bearer <expired_token>
 // @Accept json
 // @Produce json
 // @Param request body LoginRequest true "登录信息"
-// @Success 200 {object} Response{data=LoginResponse} "登录成功"
-// @Failure 400 {object} Response "用户名或密码错误"
-// @Failure 401 {object} Response "未授权"
-// @Router /api/v1/auth/login [post]
+// @Success 200 {object} LoginResponse "登录成功"
+// @Failure 401 {object} ErrorResponse "用户名或密码错误"
+// @Router /api/v1/system/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
     // ...
 }
 ```
 
-### 9.2 接口文档要求
+**生成文档**：
 
-每个接口应包含：
-1. **接口描述** - 功能说明
-2. **请求参数** - 路径参数、Query 参数、Body 参数
-3. **响应示例** - 成功和失败的响应
-4. **认证要求** - 是否需要 JWT、权限要求
-5. **错误码说明** - 可能的错误码和含义
+```bash
+swag init -g cmd/server/main.go -o docs
+```
 
-### 9.3 Swagger UI
+### 9.2 Python 端（FastAPI 原生）
 
-各模块应提供 Swagger UI 访问入口：
+FastAPI 天然生成 OpenAPI，无需额外工具。在路由函数添加描述：
+
+```python
+@router.post("/chat", summary="发送消息", tags=["对话"])
+async def chat(request: ChatRequest):
+    """
+    向 AI agent 发送消息，返回流式响应。
+    session_id 可通过 GET /api/v1/agent/sessions 获取。
+    """
+    ...
+```
+
+访问入口：`http://localhost:8090/docs`（Swagger UI）或 `/openapi.json`
+
+### 9.3 Swagger UI 访问入口
+
+各模块 Swagger UI 地址：
 
 ```
 http://localhost:8180/swagger/index.html   # System 模块
 http://localhost:8081/swagger/index.html   # Manager 模块
+http://localhost:8082/swagger/index.html   # Meta 模块
+http://localhost:8083/swagger/index.html   # Develop 模块
+http://localhost:8090/docs                 # Agent 模块（FastAPI）
+http://localhost:8091/docs                 # Copilot 模块（FastAPI）
 ```
+
+### 9.4 接口文档要求
+
+每个接口应包含：
+1. **Summary** - 一句话功能说明
+2. **Description** - 详细说明，包括参数来源提示（便于 AI agent 理解）
+3. **Tags** - 分组标签，对应功能模块
+4. **请求参数** - 路径参数、Query 参数、Body 参数的类型和说明
+5. **响应示例** - 成功和失败的响应结构
+6. **认证要求** - 是否需要 JWT（`@Security BearerAuth`）
 
 ---
 
@@ -664,9 +713,9 @@ http://localhost:8081/swagger/index.html   # Manager 模块
 
 ### 10.1 新接口开发
 
-所有新开发的接口**应当**遵循本规范：
+所有新开发的接口**必须**遵循本规范：
 
-1. 当前阶段使用 `/api/` 路径（v0.x 快速迭代期）
+1. 使用 `/api/v1/` 路径前缀（无论产品版本号为何）
 2. 采用灵活响应策略（简单场景直接返回，复杂场景适度包装）
 3. 遵循 RESTful 设计（可读性优先，合理使用动词）
 4. 使用 snake_case 命名
@@ -676,17 +725,18 @@ http://localhost:8081/swagger/index.html   # Manager 模块
 
 ### 10.2 现有接口迁移
 
-**迁移策略：**
+**迁移策略（已完成）**：
 
-**当前阶段（v0.x）**：
-- 优先参考 System 模块的实现
-- 逐步统一响应格式（灵活响应策略）
-- 不强制迁移路径（保持 `/api/`）
+所有模块的 API 路径已于 2026-03 统一迁移至 `/api/v1/` 前缀，迁移覆盖：
+- Go 各模块 `router.go`：`router.Group("/api/{module}")` → `router.Group("/api/v1/{module}")`
+- Python 模块（Agent、Copilot）：`prefix="/api/{module}"` → `prefix="/api/v1/{module}"`
+- Gateway 路由：`router.Group("/api")` → `router.Group("/api/v1")`
+- 各模块前端 API 调用路径
+- `common/client/system.go` 内部调用路径
 
-**未来 v1.0 发布时**：
-- 统一添加 `/api/v1/` 前缀
-- 所有模块遵循一致的响应格式
-- 开始遵守向后兼容原则
+**兼容性说明**：
+- ADDP 当前处于积极开发阶段，**不做向后兼容**，旧路径 `/api/` 已废弃
+- 产品版本号（v0.x）与 API 版本前缀（v1）无关，v1 表示接口契约稳定，不随产品迭代频繁变更
 
 **优先级：**
 - 高频接口优先统一格式（如用户、引擎、日志）
@@ -869,7 +919,287 @@ Body: {"user_ids": [1, 2, 3]}
 
 ---
 
-## 十二、参考资料
+## 十一、amis 集成规范
+
+[百度 amis](https://aisuda.bce.baidu.com/amis/zh-CN/docs/start/getting-started) 是 ADDP 前端组件化的核心框架。amis 对 API 响应格式有特定要求，需要在前端适配层处理，**后端不做任何改动**。
+
+### 11.1 amis 期望的响应格式
+
+```json
+{
+  "status": 0,
+  "msg": "",
+  "data": { ... }
+}
+```
+
+- `status: 0` 表示成功，非 0 表示失败
+- `msg` 为错误消息
+- `data` 为实际数据
+
+### 11.2 统一适配器
+
+在 `common-frontend/basic/src/utils/amis-adaptor.js` 中提供统一适配器，**所有使用 amis 的模块必须使用此适配器**，不得各自实现：
+
+```javascript
+/**
+ * ADDP API 响应 → amis 格式适配器
+ * ADDP 使用灵活响应（直接返回数据 + HTTP 状态码），amis 需要 {status, msg, data} 格式
+ */
+export function toAmisResponse(data, httpStatus = 200) {
+  if (httpStatus >= 400) {
+    return {
+      status: 1,
+      msg: data?.error || '请求失败',
+    }
+  }
+  return {
+    status: 0,
+    msg: '',
+    data: data,
+  }
+}
+
+/**
+ * amis CRUD 列表适配器（处理分页响应）
+ * ADDP 分页格式: { data: [], total, page, page_size, total_pages }
+ * amis 期望格式: { items: [], total }
+ */
+export function toAmisListResponse(data, httpStatus = 200) {
+  if (httpStatus >= 400) {
+    return { status: 1, msg: data?.error || '请求失败' }
+  }
+  // 处理分页响应
+  if (data?.data && data?.total !== undefined) {
+    return {
+      status: 0,
+      msg: '',
+      data: {
+        items: data.data,
+        total: data.total,
+      },
+    }
+  }
+  // 处理数组响应
+  if (Array.isArray(data)) {
+    return {
+      status: 0,
+      msg: '',
+      data: { items: data, total: data.length },
+    }
+  }
+  return { status: 0, msg: '', data }
+}
+```
+
+### 11.3 分页参数映射
+
+amis 默认发送 `page` 和 `perPage`，ADDP 使用 `page` 和 `page_size`，在 amis 组件配置中映射：
+
+```json
+{
+  "type": "crud",
+  "api": {
+    "url": "/api/v1/system/users",
+    "data": {
+      "page": "${page}",
+      "page_size": "${perPage}"
+    },
+    "adaptor": "return window.addpAmisAdaptor.toAmisListResponse(payload.data, payload.status)"
+  }
+}
+```
+
+### 11.4 axios 拦截器集成
+
+在各模块前端的 axios 实例中统一处理，避免每个 amis 组件单独配置 adaptor：
+
+```javascript
+import { toAmisResponse } from '@addp/basic/utils/amis-adaptor'
+
+// amis 专用 axios 实例
+export const amisAxios = axios.create({ baseURL: '/api/v1' })
+
+amisAxios.interceptors.response.use(
+  (response) => toAmisResponse(response.data, response.status),
+  (error) => toAmisResponse(error.response?.data, error.response?.status || 500)
+)
+```
+
+---
+
+## 十二、AI Agent 友好性规范
+
+AI agent 调用 API 时需要理解接口语义、判断错误是否可重试、知道参数从哪里获取。以下规范让 API 对 agent 更友好。
+
+### 12.1 Swagger 注释中的 x-ai-hint
+
+在 Go handler 注释中添加 `x-ai-hint` 扩展字段，描述 API 用途和参数来源：
+
+```go
+// @Summary 执行开发项
+// @Description 执行指定的工作流或 SQL 开发项
+// @Tags 开发项
+// @x-ai-hint 执行用户创建的工作流或 SQL。item_id 可通过 GET /api/v1/develop/items 获取；engine_id 可通过 GET /api/v1/system/engines 获取
+// @Router /api/v1/develop/items/{id}/execute [post]
+func (h *ItemHandler) Execute(c *gin.Context) { ... }
+```
+
+在 Python FastAPI 中通过 `openapi_extra` 传入：
+
+```python
+@router.post(
+    "/chat",
+    summary="发送消息",
+    openapi_extra={
+        "x-ai-hint": "向 AI agent 发送消息。session_id 可通过 GET /api/v1/agent/sessions 获取，不传则自动创建新会话"
+    }
+)
+async def chat(request: ChatRequest): ...
+```
+
+### 12.2 错误响应增加 error_type
+
+对于 agent 需要判断是否重试的场景，错误响应可附加 `error_type` 字段（可选）：
+
+```json
+// 瞬时错误，可重试
+{
+  "error": "数据库连接超时",
+  "error_type": "transient",
+  "retry_after": 5
+}
+
+// 永久错误，不应重试
+{
+  "error": "引擎不存在",
+  "error_type": "permanent"
+}
+
+// 用户输入错误，需要修正后重试
+{
+  "error": "SQL 语法错误：第 3 行",
+  "error_type": "user_error"
+}
+```
+
+| error_type | 含义 | agent 行为 |
+|------------|------|-----------|
+| `transient` | 瞬时错误（超时、连接失败） | 等待 retry_after 秒后重试 |
+| `permanent` | 永久错误（资源不存在） | 不重试，报告给用户 |
+| `user_error` | 用户输入错误 | 修正输入后重试 |
+
+**注意**：`error_type` 是可选字段，不强制要求所有接口都实现。优先在 agent 频繁调用的接口上添加。
+
+### 12.3 agent 调用其他模块的认证
+
+agent 调用其他模块（develop、meta、manager 等）时，统一使用内部 API Key 认证：
+
+```python
+headers = {
+    "X-Internal-API-Key": settings.INTERNAL_API_KEY
+}
+```
+
+不得使用用户 JWT token 代理调用，避免权限混淆。
+
+---
+
+## 十三、Python Client 规范
+
+`agent/backend/tools/` 目录下的各模块 client 必须继承统一基类，保持一致的接口风格。
+
+### 13.1 基类定义
+
+基类位于 `agent/backend/tools/base_client.py`：
+
+```python
+import httpx
+from typing import Any, Optional
+
+class AddpBaseClient:
+    """ADDP 模块 HTTP Client 基类"""
+
+    def __init__(
+        self,
+        base_url: str,
+        internal_api_key: Optional[str] = None,
+        user_token: Optional[str] = None,
+        timeout: float = 30.0,
+    ):
+        headers = {"Content-Type": "application/json"}
+        if internal_api_key:
+            headers["X-Internal-API-Key"] = internal_api_key
+        elif user_token:
+            headers["Authorization"] = f"Bearer {user_token}"
+
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=headers,
+            timeout=timeout,
+        )
+
+    async def get(self, path: str, **kwargs) -> Any:
+        resp = await self._client.get(path, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def post(self, path: str, **kwargs) -> Any:
+        resp = await self._client.post(path, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def put(self, path: str, **kwargs) -> Any:
+        resp = await self._client.put(path, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def delete(self, path: str, **kwargs) -> Any:
+        resp = await self._client.delete(path, **kwargs)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def close(self):
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+```
+
+### 13.2 子类示例
+
+```python
+from .base_client import AddpBaseClient
+
+class DevelopClient(AddpBaseClient):
+    """Develop 模块 Client"""
+
+    def __init__(self, base_url: str, internal_api_key: str):
+        super().__init__(base_url, internal_api_key=internal_api_key)
+
+    async def list_items(self, item_type: str = None) -> list:
+        params = {}
+        if item_type:
+            params["type"] = item_type
+        return await self.get("/api/v1/develop/items", params=params)
+
+    async def execute_item(self, item_id: int, params: dict = None) -> dict:
+        return await self.post(f"/api/v1/develop/items/{item_id}/execute", json=params or {})
+```
+
+### 13.3 规范要求
+
+- 所有 client 必须继承 `AddpBaseClient`
+- 方法名使用 snake_case，与 API 路径语义对应
+- 不在 client 中处理业务逻辑，只做 HTTP 调用和基本的参数组装
+- 使用 `httpx.HTTPStatusError` 处理 HTTP 错误，不吞掉异常
+
+---
+
+## 十四、参考资料
 
 - [Google API Design Guide](https://cloud.google.com/apis/design)
 - [Microsoft REST API Guidelines](https://github.com/microsoft/api-guidelines)
@@ -882,15 +1212,13 @@ Body: {"user_ids": [1, 2, 3]}
 
 ### A. HTTP 方法对照
 
-| 操作     | 方法   | 路径                | 响应码 |
-|----------|--------|---------------------|--------|
-| 列表查询 | GET    | /api/users          | 200    |
-| 创建     | POST   | /api/users          | 201    |
-| 查询详情 | GET    | /api/users/:id      | 200    |
-| 更新     | PUT    | /api/users/:id      | 200    |
-| 删除     | DELETE | /api/users/:id      | 200    |
-
-注：当前阶段使用 `/api/` 路径，v1.0 后迁移到 `/api/v1/`
+| 操作     | 方法   | 路径                   | 响应码 |
+|----------|--------|------------------------|--------|
+| 列表查询 | GET    | /api/v1/users          | 200    |
+| 创建     | POST   | /api/v1/users          | 201    |
+| 查询详情 | GET    | /api/v1/users/:id      | 200    |
+| 更新     | PUT    | /api/v1/users/:id      | 200    |
+| 删除     | DELETE | /api/v1/users/:id      | 200    |
 
 ### B. 响应格式对照
 

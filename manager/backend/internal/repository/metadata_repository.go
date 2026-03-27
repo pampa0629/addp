@@ -81,6 +81,9 @@ func (r *MetadataRepository) GetObjectMetadataItem(engineID uint, bucketName, ob
 	if err != nil {
 		return nil, fmt.Errorf("failed to get item metadata from Meta API: %w", err)
 	}
+	if item == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
 
 	lite := convertMetaItemToLite(*item)
 	return &lite, nil
@@ -102,6 +105,9 @@ func (r *MetadataRepository) GetObjectMetadataNode(engineID uint, bucketName, re
 	node, err := metaClient.GetNodeByPath(engineID, nodePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node metadata from Meta API: %w", err)
+	}
+	if node == nil {
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	lite := convertMetaNodeToLite(*node)

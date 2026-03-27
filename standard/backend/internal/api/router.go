@@ -69,7 +69,7 @@ func SetupRouter(
 	dimHierarchyHandler := NewDimensionHierarchyHandler(dimHierarchySvc)
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 
-	api := router.Group("/api/standard")
+	api := router.Group("/api/v1/standard")
 	if redisClient != nil {
 		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
 	} else {

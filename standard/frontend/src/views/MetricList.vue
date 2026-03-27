@@ -248,7 +248,7 @@ const loadMetrics = async () => {
 
 const loadCategories = async () => {
   const res = await metricCategoryAPI.list()
-  categories.value = res.data || []
+  categories.value = res || []
 }
 
 const loadAtomicMetrics = async () => {

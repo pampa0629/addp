@@ -156,7 +156,7 @@ const itemRules = {
 
 const loadCodeSet = async () => {
   const res = await codeSetAPI.get(codeSetId)
-  codeSet.value = res.data || {}
+  codeSet.value = res || {}
   Object.assign(form, {
     name: codeSet.value.name,
     type: codeSet.value.type || 'custom',
@@ -168,7 +168,7 @@ const loadItems = async () => {
   itemLoading.value = true
   try {
     const res = await codeSetAPI.getItems(codeSetId)
-    items.value = res.data || []
+    items.value = res || []
   } finally {
     itemLoading.value = false
   }

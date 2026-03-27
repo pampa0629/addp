@@ -98,7 +98,7 @@ const loadDomains = async () => {
   loading.value = true
   try {
     const res = await domainAPI.list()
-    domainTree.value = res.data || []
+    domainTree.value = res || []
   } catch (e) {
     ElMessage.error('加载业务域失败')
   } finally {

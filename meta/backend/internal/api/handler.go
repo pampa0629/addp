@@ -61,7 +61,7 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 // GetResources 获取资源列表及统计
@@ -75,7 +75,7 @@ func (h *Handler) GetEngines(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": engines})
+	c.JSON(http.StatusOK, engines)
 }
 
 // GetSchemas 获取资源的Schema列表
@@ -96,7 +96,7 @@ func (h *Handler) GetSchemas(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": schemas})
+	c.JSON(http.StatusOK, schemas)
 }
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
@@ -128,7 +128,7 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": schemas})
+	c.JSON(http.StatusOK, schemas)
 }
 
 // ListObjectStorageNodes 分级列出对象存储节点
@@ -159,7 +159,7 @@ func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": nodes})
+	c.JSON(http.StatusOK, nodes)
 }
 
 // AutoScan 自动扫描所有未扫描的资源
@@ -173,7 +173,7 @@ func (h *Handler) AutoScan(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": result})
+	c.JSON(http.StatusOK, result)
 }
 
 // CreateManualScanRun 创建异步扫描运行
@@ -204,7 +204,7 @@ func (h *Handler) CreateManualScanRun(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	c.JSON(http.StatusCreated, run)
 }
 
 // GetScanRun 获取执行详情（按 execution UUID）
@@ -231,7 +231,7 @@ func (h *Handler) GetScanRun(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": exec})
+	c.JSON(http.StatusOK, exec)
 }
 
 // CancelScanRun 取消执行
@@ -307,7 +307,7 @@ func (h *Handler) ListScanRuns(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"data":        executions,
+		"items":       executions,
 		"total":       total,
 		"page":        page,
 		"page_size":   pageSize,
@@ -337,7 +337,7 @@ func (h *Handler) CreateScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": task})
+	c.JSON(http.StatusCreated, task)
 }
 
 // UpdateScanTask 更新任务
@@ -369,7 +369,7 @@ func (h *Handler) UpdateScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": task})
+	c.JSON(http.StatusOK, task)
 }
 
 // DeleteScanTask 删除任务
@@ -419,7 +419,7 @@ func (h *Handler) TriggerScanTask(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": run})
+	c.JSON(http.StatusOK, run)
 }
 
 // ListScanTasks 列出台账
@@ -437,7 +437,7 @@ func (h *Handler) ListScanTasks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": tasks})
+	c.JSON(http.StatusOK, tasks)
 }
 
 // ScanEngine 扫描指定引擎
@@ -509,10 +509,7 @@ func (h *Handler) ExtractObjectMetadata(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data":    metadata,
-		"message": "元数据提取成功",
-	})
+	c.JSON(http.StatusOK, metadata)
 }
 
 func extractBearerToken(c *gin.Context) (string, bool) {
@@ -600,7 +597,7 @@ func (h *Handler) GetTables(c *gin.Context) {
 		tableList[i] = info
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": tableList})
+	c.JSON(http.StatusOK, tableList)
 }
 
 // GetTableFields 获取表的字段列表（用于Transfer模块字段映射）
@@ -634,7 +631,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"data": fields})
+		c.JSON(http.StatusOK, fields)
 		return
 	}
 
@@ -644,7 +641,7 @@ func (h *Handler) GetTableFields(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": names})
+	c.JSON(http.StatusOK, names)
 }
 
 // ClearResourceCache 清除资源缓存
@@ -708,7 +705,7 @@ func (h *Handler) GetMetadataTree(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": tree})
+	c.JSON(http.StatusOK, tree)
 }
 
 // GetMetaNodeByID 获取单个节点详情
@@ -729,7 +726,7 @@ func (h *Handler) GetMetaNodeByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": node})
+	c.JSON(http.StatusOK, node)
 }
 
 // GetNodeChildren 获取节点的子节点
@@ -750,7 +747,7 @@ func (h *Handler) GetNodeChildren(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": nodes})
+	c.JSON(http.StatusOK, nodes)
 }
 
 // GetNodeItems 获取节点下的项目
@@ -771,7 +768,7 @@ func (h *Handler) GetNodeItems(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, items)
 }
 
 // QueryNodeByPath 按路径查询节点
@@ -798,7 +795,7 @@ func (h *Handler) QueryNodeByPath(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": node})
+	c.JSON(http.StatusOK, node)
 }
 
 // QueryItemByPath 按路径查询项目（对象存储）
@@ -827,7 +824,7 @@ func (h *Handler) QueryItemByPath(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 // GetTableSpatialMetadata 获取表的空间元数据（MVT专用）
@@ -863,5 +860,5 @@ func (h *Handler) GetTableSpatialMetadata(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": spatialMeta})
+	c.JSON(http.StatusOK, spatialMeta)
 }

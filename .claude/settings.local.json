@@ -670,7 +670,12 @@
       "Bash(/Users/pampa/code/addp/agent/backend/venv/bin/python -c \"import yaml; print\\(yaml.__version__\\)\")",
       "WebSearch",
       "WebFetch(domain:docs.anthropic.com)",
-      "Bash(do echo:*)"
+      "Bash(do echo:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzQ1MjQ0MzcsImlhdCI6MTc3NDUxMzYzN30.0cUW2X7sRXGblsa_TWvDfZXsh7TUj_ShggwVRhfL4is\" curl -s \"http://localhost:8085/api/develop/workflow-engines\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzQ1MjY5OTIsImlhdCI6MTc3NDUxNjE5Mn0.d0MAA_7m97oC8UrXbXSwXj7-PYmuuvEgJpt3YcimClg\" SESSION_ID=27 __NEW_LINE_8f03fe7b2e37e85a__ curl -s -X POST \"http://localhost:8000/api/agent/sessions/$SESSION_ID/messages\" -H \"Authorization: Bearer $TOKEN\" -H \"Content-Type: application/json\" -d '{\"\"\"\"content\"\"\"\":\"\"\"\"计算铁路两边宽度50米所占用的耕地面积\"\"\"\"}')",
+      "Bash(sed -i '' 's|/api/internal/|/api/v1/internal/|g' common/client/system.go)",
+      "Bash(sed -i '' 's|/api/system/|/api/v1/system/|g' common/client/system.go)",
+      "Bash(xxd)"
     ],
     "deny": [],
     "ask": [],

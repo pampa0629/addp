@@ -107,7 +107,7 @@ async function fetchCatalogs() {
   catalogLoading.value = true
   try {
     const resp = await catalogAPI.list()
-    catalogTree.value = resp.data || []
+    catalogTree.value = resp || []
   } catch (err) {
     console.error('获取目录失败:', err)
   } finally {

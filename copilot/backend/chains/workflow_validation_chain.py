@@ -33,13 +33,13 @@ class WorkflowValidationChain:
         """
         self.operator_detail_tool = operator_detail_tool
 
-    async def validate(self, workflow: Workflow, engine_type: str = "python") -> ValidationResult:
+    async def validate(self, workflow: Workflow, engine_type: str = "python_workflow") -> ValidationResult:
         """
         执行完整的工作流验证
 
         Args:
             workflow: 待验证的工作流
-            engine_type: 工作流引擎类型（python/spark/math），用于获取正确的算子定义
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），用于获取正确的算子定义
 
         Returns:
             ValidationResult: 验证结果（包含错误、警告、建议）
@@ -274,7 +274,7 @@ class WorkflowValidationChain:
         # 如果排序的节点数量少于总节点数，说明有环
         return sorted_count < len(graph)
 
-    async def _validate_parameters(self, workflow: Workflow, engine_type: str = "python") -> tuple[List[str], List[str]]:
+    async def _validate_parameters(self, workflow: Workflow, engine_type: str = "python_workflow") -> tuple[List[str], List[str]]:
         """
         第 4 层：参数验证
 
@@ -286,7 +286,7 @@ class WorkflowValidationChain:
 
         Args:
             workflow: 待验证的工作流
-            engine_type: 工作流引擎类型（python/spark/math）
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow）
 
         Returns:
             (错误列表, 警告列表)

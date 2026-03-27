@@ -4,7 +4,7 @@ ADDP Agent LangChain Tools
 token 通过工厂函数的 closure 注入，不暴露给 LLM。
 """
 import json
-from typing import List
+from typing import List, Optional
 from langchain_core.tools import tool
 from .manager_client import ManagerClient
 from .meta_client import MetaClient
@@ -30,6 +30,15 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
     develop = DevelopClient(token)
     copilot = CopilotClient(token)
     system = SystemClient(token)
+
+    @tool
+    async def list_workflow_engines() -> str:
+        """列出平台中所有支持工作流执行的引擎（python_workflow、spark_workflow 等）。
+        调用 generate_workflow 前，先调用此工具了解可用的工作流引擎，
+        根据任务规模和数据特征决定使用哪个引擎。
+        返回每个引擎的 id、name、engine_type 和连接状态。"""
+        result = await system.get_workflow_engines()
+        return _to_str(result)
 
     @tool
     async def list_engines() -> str:
@@ -107,61 +116,59 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         result = await meta.list_metadata(page=page, size=size)
         return _to_str(result)
 
+    async def _get_python_workflow_engine():
+        """内部辅助：获取在线的 python_workflow 引擎实例"""
+        engines = await system.get_workflow_engines()
+        online = [e for e in engines if e.get("connection_status") == "online" and e.get("is_active")]
+        return next(
+            (e for e in online if e["engine_type"] == "python_workflow"),
+            next((e for e in engines if e["engine_type"] == "python_workflow"), None)
+        )
+
     @tool
     async def generate_workflow(description: str) -> str:
         """将自然语言描述转换为 GIS 工作流 DAG。
         适用于空间分析任务：缓冲区分析、叠加分析、面积统计、空间关系计算等需要 GIS 算子的场景。
         参数:
           description: 用自然语言描述的空间分析任务
-        返回包含 status、workflow 和 engine_id 字段的 JSON：
-          status=success 时 workflow 字段为工作流 DAG，engine_id 为选定的执行引擎 ID，
-            将整个返回结果传给 run_workflow 执行；
+        返回包含 status 和 workflow 字段的 JSON：
+          status=success 时，将 workflow 字段的值（JSON 字符串）传给 run_workflow 执行；
           status=need_clarification 时需告知用户补充信息；
           status=error/validation_failed 时说明生成失败原因。"""
-        # 自动从 system 查询并选择合适的工作流引擎
-        engine = await system.select_workflow_engine(description)
+        engine = await _get_python_workflow_engine()
         if not engine:
-            return _to_str({"status": "error", "message": "未找到可用的工作流引擎，请联系管理员检查引擎配置"})
-
-        workflow_engine_id = engine["id"]
-        engine_type = engine["engine_type"].replace("_workflow", "")  # python_workflow → python
+            return _to_str({"status": "error", "message": "未找到可用的 Python 工作流引擎，请联系管理员检查引擎配置"})
 
         result = await copilot.generate_workflow(
             query=description,
             tenant_id=tenant_id,
             user_id=user_id,
-            engine_type=engine_type,
-            workflow_engine_id=workflow_engine_id,
+            engine_type=engine["engine_type"],
+            workflow_engine_id=engine["id"],
         )
-
-        # 把 engine_id 注入返回结果，供 run_workflow 使用
-        if isinstance(result, dict):
-            result["engine_id"] = workflow_engine_id
-            result["engine_name"] = engine["name"]
 
         return _to_str(result)
 
     @tool
-    async def run_workflow(generate_workflow_result: str) -> str:
+    async def run_workflow(workflow_json: str) -> str:
         """提交工作流到执行引擎运行，并等待结果（最多 120 秒）。
         参数:
-          generate_workflow_result: generate_workflow 工具返回的完整 JSON 字符串
-            （包含 workflow 和 engine_id 字段，直接传入 generate_workflow 的完整输出即可）
+          workflow_json: generate_workflow 返回结果中 workflow 字段的 JSON 字符串
+            （注意：是 workflow 字段的值，不是整个返回结果）
         返回执行结果，包含 status（success/failed/timeout）和 result 字段。"""
         try:
-            result = json.loads(generate_workflow_result) if isinstance(generate_workflow_result, str) else generate_workflow_result
+            workflow = json.loads(workflow_json) if isinstance(workflow_json, str) else workflow_json
         except Exception:
-            return _to_str({"error": "参数解析失败，请传入 generate_workflow 返回的完整 JSON 字符串"})
+            return _to_str({"error": "workflow_json 解析失败，请传入 generate_workflow 返回结果中 workflow 字段的 JSON 字符串"})
 
-        workflow = result.get("workflow")
-        engine_id = result.get("engine_id")
+        if not workflow or not isinstance(workflow, dict):
+            return _to_str({"error": "workflow_json 无效，请先调用 generate_workflow 生成工作流"})
 
-        if not workflow:
-            return _to_str({"error": "缺少 workflow 字段，请先调用 generate_workflow 生成工作流"})
-        if not engine_id:
-            return _to_str({"error": "缺少 engine_id 字段，请使用 generate_workflow 返回的完整结果"})
+        engine = await _get_python_workflow_engine()
+        if not engine:
+            return _to_str({"error": "未找到可用的 Python 工作流引擎"})
 
-        start = await develop.run_workflow_content(workflow, engine_id=engine_id)
+        start = await develop.run_workflow_content(workflow, engine_id=engine["id"])
         execution_id = start.get("execution_id")
         if not execution_id:
             return _to_str({"error": "工作流提交失败", "details": start})
@@ -169,7 +176,19 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         execution_result = await develop.wait_for_execution(execution_id)
         return _to_str(execution_result)
 
+    @tool
+    async def execute_sql(sql: str, engine_id: int) -> str:
+        """在指定存储引擎上执行 SQL 查询，返回结果表格。
+        适用于：查看工作流写入数据库的计算结果、验证数据、统计分析等。
+        参数:
+          sql: SQL 查询语句（SELECT）
+          engine_id: 数据存储引擎 ID（PostgreSQL/MySQL 等），从 list_engines 获取
+        返回包含 columns（列名）和 rows（数据行）的 JSON。"""
+        result = await develop.execute_sql(sql=sql, engine_id=engine_id)
+        return _to_str(result)
+
     return [
+        list_workflow_engines,
         list_engines,
         list_objects,
         list_tables,
@@ -178,4 +197,5 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         list_metadata,
         generate_workflow,
         run_workflow,
+        execute_sql,
     ]

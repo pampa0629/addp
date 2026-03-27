@@ -371,7 +371,7 @@ const navigateToEntity = (id) => {
 
 const loadEntity = async () => {
   const res = await entityAPI.get(entityId)
-  entity.value = res.data || {}
+  entity.value = res || {}
   Object.assign(form, {
     name: entity.value.name,
     domain_id: entity.value.domain_id,
@@ -383,7 +383,7 @@ const loadAttributes = async () => {
   attrLoading.value = true
   try {
     const res = await entityAPI.getAttributes(entityId)
-    attributes.value = res.data || []
+    attributes.value = res || []
   } finally {
     attrLoading.value = false
   }
@@ -393,7 +393,7 @@ const loadRelations = async () => {
   relationLoading.value = true
   try {
     const res = await entityRelationAPI.getByEntityId(entityId)
-    relations.value = res.data || []
+    relations.value = res || []
     await refreshLocalDiagram()
   } finally {
     relationLoading.value = false

@@ -58,7 +58,7 @@ func SetupRouter(
 	})
 
 	// API 路由组
-	api := router.Group("/api/transfer")
+	api := router.Group("/api/v1/transfer")
 
 	// 公开接口（无需认证）
 	public := api.Group("")

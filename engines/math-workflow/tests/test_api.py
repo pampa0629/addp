@@ -78,7 +78,7 @@ class TestOperatorsEndpoint:
         assert add_operator['name'] == 'add'
         assert add_operator['display_name'] == '加法'
         assert add_operator['category'] == '数学运算'
-        assert add_operator['module'] == 'math-workflow'
+        assert add_operator['module'] == 'math_workflow'
         assert len(add_operator['parameters']) == 2
         assert len(add_operator['output_ports']) == 1
 

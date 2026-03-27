@@ -176,7 +176,7 @@ const loadDocs = async () => {
   loading.value = true
   try {
     const res = await api[props.entityType].list(props.entityId)
-    docs.value = res.data || []
+    docs.value = res || []
   } catch (e) {
     console.error('加载关联文档失败:', e)
   } finally {
@@ -230,7 +230,7 @@ const submitUpload = async () => {
   try {
     // 1. 创建文档元数据并关联到当前标准项
     const res = await api[props.entityType].create(props.entityId, uploadForm.value)
-    const doc = res.data
+    const doc = res
     // 2. 如果选择了文件则上传
     if (selectedFile.value) {
       const formData = new FormData()
@@ -260,7 +260,7 @@ const searchDocs = async (keyword) => {
   docSearchLoading.value = true
   try {
     const res = await documentAPI.list({ keyword, page_size: 50 })
-    searchedDocs.value = res.data || []
+    searchedDocs.value = res.data || []  // 分页格式，保留 .data
   } catch (e) {
     searchedDocs.value = []
   } finally {

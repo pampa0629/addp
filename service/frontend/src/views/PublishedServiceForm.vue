@@ -187,28 +187,28 @@
           <el-form-item label="启用协议" v-if="!isEdit">
             <el-checkbox-group v-model="enabledProtocols">
               <div style="display: flex; flex-direction: column; gap: 12px">
-                <el-checkbox label="wfs">
+                <el-checkbox value="wfs">
                   <strong>WFS 2.0</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     矢量要素查询服务，支持 QGIS、ArcGIS
                   </span>
                 </el-checkbox>
 
-                <el-checkbox label="wmts">
+                <el-checkbox value="wmts">
                   <strong>WMTS 1.0</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     矢量瓦片地图服务，高性能地图展示
                   </span>
                 </el-checkbox>
 
-                <el-checkbox label="ogc_api">
+                <el-checkbox value="ogc_api">
                   <strong>OGC API Features</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     现代化 RESTful 空间 API
                   </span>
                 </el-checkbox>
 
-                <el-checkbox label="rest_query" checked disabled>
+                <el-checkbox value="rest_query" checked disabled>
                   <strong>REST Query API</strong>
                   <span style="color: var(--addp-text-tertiary); margin-left: 8px">
                     （默认启用）简化 REST 查询 API

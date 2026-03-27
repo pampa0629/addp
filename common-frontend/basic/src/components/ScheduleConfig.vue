@@ -59,10 +59,10 @@
       <el-form :model="customForm" label-width="100px">
         <el-form-item label="调度类型">
           <el-radio-group v-model="customForm.mode" :disabled="disabled">
-            <el-radio label="daily">每天</el-radio>
-            <el-radio label="weekly">每周</el-radio>
-            <el-radio label="monthly">每月</el-radio>
-            <el-radio v-if="allowCustomCron" label="cron">自定义Cron</el-radio>
+            <el-radio value="daily">每天</el-radio>
+            <el-radio value="weekly">每周</el-radio>
+            <el-radio value="monthly">每月</el-radio>
+            <el-radio v-if="allowCustomCron" value="cron">自定义Cron</el-radio>
           </el-radio-group>
         </el-form-item>
 

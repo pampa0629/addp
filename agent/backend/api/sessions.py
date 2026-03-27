@@ -9,7 +9,7 @@ from typing import Optional, List
 from database import get_db
 from models.session import Session
 
-router = APIRouter(prefix="/api/agent/sessions", tags=["sessions"])
+router = APIRouter(prefix="/api/v1/agent/sessions", tags=["sessions"])
 
 
 class SessionCreate(BaseModel):
@@ -36,21 +36,18 @@ async def list_sessions(request: Request, db: AsyncSession = Depends(get_db)):
         .order_by(Session.updated_at.desc())
     )
     sessions = result.scalars().all()
-    return {
-        "code": 200,
-        "data": [
-            {
-                "id": s.id,
-                "title": s.title or "新对话",
-                "created_at": s.created_at.isoformat(),
-                "updated_at": s.updated_at.isoformat(),
-            }
-            for s in sessions
-        ],
-    }
+    return [
+        {
+            "id": s.id,
+            "title": s.title or "新对话",
+            "created_at": s.created_at.isoformat(),
+            "updated_at": s.updated_at.isoformat(),
+        }
+        for s in sessions
+    ]
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_session(request: Request, body: SessionCreate, db: AsyncSession = Depends(get_db)):
     """创建新会话"""
     session = Session(
@@ -62,12 +59,9 @@ async def create_session(request: Request, body: SessionCreate, db: AsyncSession
     await db.commit()
     await db.refresh(session)
     return {
-        "code": 200,
-        "data": {
-            "id": session.id,
-            "title": session.title or "新对话",
-            "created_at": session.created_at.isoformat(),
-        },
+        "id": session.id,
+        "title": session.title or "新对话",
+        "created_at": session.created_at.isoformat(),
     }
 
 
@@ -84,13 +78,10 @@ async def get_session(session_id: int, request: Request, db: AsyncSession = Depe
     if not session:
         raise HTTPException(status_code=404, detail="会话不存在")
     return {
-        "code": 200,
-        "data": {
-            "id": session.id,
-            "title": session.title or "新对话",
-            "created_at": session.created_at.isoformat(),
-            "updated_at": session.updated_at.isoformat(),
-        },
+        "id": session.id,
+        "title": session.title or "新对话",
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat(),
     }
 
 
@@ -108,4 +99,4 @@ async def delete_session(session_id: int, request: Request, db: AsyncSession = D
         raise HTTPException(status_code=404, detail="会话不存在")
     await db.delete(session)
     await db.commit()
-    return {"code": 200, "message": "删除成功"}
+    return {"message": "删除成功"}

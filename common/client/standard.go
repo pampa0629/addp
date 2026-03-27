@@ -50,7 +50,7 @@ type ElementResponse struct {
 
 // ValidateElement 验证数据元是否存在（用于跨模块引用验证）
 func (c *StandardClient) ValidateElement(elementID int64, tenantID int64) error {
-	url := fmt.Sprintf("%s/api/standard/elements/%d", c.baseURL, elementID)
+	url := fmt.Sprintf("%s/api/v1/standard/elements/%d", c.baseURL, elementID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -89,7 +89,7 @@ func (c *StandardClient) ValidateElement(elementID int64, tenantID int64) error 
 
 // GetElement 获取数据元详情
 func (c *StandardClient) GetElement(elementID int64, tenantID int64) (*ElementResponse, error) {
-	url := fmt.Sprintf("%s/api/standard/elements/%d", c.baseURL, elementID)
+	url := fmt.Sprintf("%s/api/v1/standard/elements/%d", c.baseURL, elementID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -120,7 +120,7 @@ func (c *StandardClient) GetElement(elementID int64, tenantID int64) (*ElementRe
 
 // GetElementQualityRules 获取数据元的质量规则定义
 func (c *StandardClient) GetElementQualityRules(elementID int64, tenantID int64) (map[string]interface{}, error) {
-	url := fmt.Sprintf("%s/api/standard/elements/%d/quality-rules", c.baseURL, elementID)
+	url := fmt.Sprintf("%s/api/v1/standard/elements/%d/quality-rules", c.baseURL, elementID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

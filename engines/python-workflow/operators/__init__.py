@@ -143,7 +143,7 @@ def list_operators():
             "type": meta.get('type', 'general'),  # 从元数据读取类型，默认为 general
             "category": meta['category'],
             "description": meta['description'],
-            "module": "python",
+            "module": "python_workflow",
             "parameters": parameters,
             "inputs": ["geodataframe"],
             "output_ports": output_ports

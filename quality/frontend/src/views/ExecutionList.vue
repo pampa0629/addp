@@ -47,7 +47,7 @@ const fetchList = async () => {
   loading.value = true
   try {
     const res = await executionAPI.list()
-    list.value = res.data || []
+    list.value = res.data || []  // 分页格式，保留 .data
   } finally {
     loading.value = false
   }

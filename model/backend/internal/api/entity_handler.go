@@ -47,7 +47,20 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": entities, "total": total})
+	totalPages := 0
+	if opts.PageSize > 0 {
+		totalPages = int(total) / opts.PageSize
+		if int(total)%opts.PageSize != 0 {
+			totalPages++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":        entities,
+		"total":       total,
+		"page":        opts.Page,
+		"page_size":   opts.PageSize,
+		"total_pages": totalPages,
+	})
 }
 
 // CreateEntity POST /api/model/entities
@@ -66,7 +79,7 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": entity})
+	c.JSON(http.StatusCreated, entity)
 }
 
 // GetEntity GET /api/model/entities/:id
@@ -83,7 +96,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "entity not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": entity})
+	c.JSON(http.StatusOK, entity)
 }
 
 // UpdateEntity PUT /api/model/entities/:id
@@ -108,7 +121,7 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": entity})
+	c.JSON(http.StatusOK, entity)
 }
 
 // DeleteEntity DELETE /api/model/entities/:id
@@ -159,7 +172,7 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": attrs})
+	c.JSON(http.StatusOK, attrs)
 }
 
 // CreateAttribute POST /api/model/entities/:id/attributes
@@ -182,7 +195,7 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": attr})
+	c.JSON(http.StatusCreated, attr)
 }
 
 // UpdateAttribute PUT /api/model/entities/:id/attributes/:aid
@@ -210,7 +223,7 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": attr})
+	c.JSON(http.StatusOK, attr)
 }
 
 // DeleteAttribute DELETE /api/model/entities/:id/attributes/:aid
@@ -251,7 +264,7 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": result})
+	c.JSON(http.StatusOK, result)
 }
 
 // ExportMermaid GET /api/model/entities/export-mermaid

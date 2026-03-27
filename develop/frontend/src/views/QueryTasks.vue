@@ -30,9 +30,9 @@
       <el-space>
         <span>状态:</span>
         <el-radio-group v-model="filterStatus" @change="loadTasks">
-          <el-radio-button label="">全部</el-radio-button>
-          <el-radio-button label="active">活跃</el-radio-button>
-          <el-radio-button label="inactive">停用</el-radio-button>
+          <el-radio-button value="">全部</el-radio-button>
+          <el-radio-button value="active">活跃</el-radio-button>
+          <el-radio-button value="inactive">停用</el-radio-button>
         </el-radio-group>
 
         <el-divider direction="vertical" />

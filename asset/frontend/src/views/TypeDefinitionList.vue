@@ -82,7 +82,7 @@ async function loadTypes() {
   loading.value = true
   try {
     const res = await typeDefinitionAPI.list()
-    types.value = res.data || []
+    types.value = res || []
   } catch (e) {
     ElMessage.error('加载资产类型失败')
   } finally {

@@ -27,8 +27,8 @@
         <!-- 性能模式选择 -->
         <el-form-item label="性能模式">
           <el-radio-group v-model="performanceMode" @change="handlePerformanceModeChange">
-            <el-radio-button label="standard">标准模式</el-radio-button>
-            <el-radio-button label="high-performance">高性能模式</el-radio-button>
+            <el-radio-button value="standard">标准模式</el-radio-button>
+            <el-radio-button value="high-performance">高性能模式</el-radio-button>
           </el-radio-group>
           <div class="hint">
             <span v-if="performanceMode === 'standard'">适合小于 100 万条记录的数据导入</span>

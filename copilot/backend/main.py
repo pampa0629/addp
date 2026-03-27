@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     registry = await register_module_on_startup(
         module_name="copilot",
         module_url=f"http://localhost:{settings.port}",
-        route_prefix="/api/copilot",
+        route_prefix="/api/v1/copilot",
         health_check_url=f"http://localhost:{settings.port}/health"
     )
 
@@ -61,8 +61,8 @@ app.add_middleware(
 
 # 注册路由
 from api import workflow_router, sql_router  # noqa: E402
-app.include_router(workflow_router, prefix="/api/copilot", tags=["Workflow Agent"])
-app.include_router(sql_router, prefix="/api/copilot", tags=["SQL Agent"])
+app.include_router(workflow_router, prefix="/api/v1/copilot", tags=["Workflow Agent"])
+app.include_router(sql_router, prefix="/api/v1/copilot", tags=["SQL Agent"])
 
 
 @app.get("/health")

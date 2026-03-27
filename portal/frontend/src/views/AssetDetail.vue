@@ -209,10 +209,10 @@
         </el-form-item>
         <el-form-item label="问题反馈">
           <el-checkbox-group v-model="ratingForm.tags">
-            <el-checkbox label="数据质量问题" />
-            <el-checkbox label="文档不清晰" />
-            <el-checkbox label="访问异常" />
-            <el-checkbox label="其他问题" />
+            <el-checkbox value="数据质量问题" />
+            <el-checkbox value="文档不清晰" />
+            <el-checkbox value="访问异常" />
+            <el-checkbox value="其他问题" />
           </el-checkbox-group>
         </el-form-item>
       </el-form>

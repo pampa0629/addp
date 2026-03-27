@@ -81,7 +81,7 @@ class TestOperatorMetadata:
         assert metadata.name == 'add'
         assert metadata.display_name == '加法'
         assert metadata.category == '数学运算'
-        assert metadata.module == 'math-workflow'
+        assert metadata.module == 'math_workflow'
         assert len(metadata.parameters) == 2
         assert len(metadata.output_ports) == 1
 

@@ -59,7 +59,7 @@ const fetchList = async () => {
     const params = {}
     if (filter.value.status) params.status = filter.value.status
     const res = await issueAPI.list(params)
-    list.value = res.data || []
+    list.value = res || []
   } finally {
     loading.value = false
   }

@@ -7,9 +7,9 @@
       <!-- 目标类型 -->
       <el-form-item label="目标类型">
         <el-radio-group v-model="targetType" @change="handleTargetTypeChange">
-          <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
-          <el-radio-button label="mysql">MySQL</el-radio-button>
-          <el-radio-button label="s3">对象存储</el-radio-button>
+          <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
+          <el-radio-button value="mysql">MySQL</el-radio-button>
+          <el-radio-button value="s3">对象存储</el-radio-button>
         </el-radio-group>
       </el-form-item>
 

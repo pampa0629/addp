@@ -55,8 +55,8 @@ async def _register_module():
         "Content-Type": "application/json",
     }
     service_url = f"http://localhost:{settings.AGENT_BACKEND_PORT}"
-    register_url = f"{settings.SYSTEM_URL}/api/internal/modules/register"
-    heartbeat_url = f"{settings.SYSTEM_URL}/api/internal/modules/heartbeat"
+    register_url = f"{settings.SYSTEM_URL}/api/v1/internal/modules/register"
+    heartbeat_url = f"{settings.SYSTEM_URL}/api/v1/internal/modules/heartbeat"
 
     async with httpx.AsyncClient(timeout=5.0) as client:
         # 注册，最多重试 3 次

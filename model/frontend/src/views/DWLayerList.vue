@@ -123,7 +123,7 @@ const loadLayers = async () => {
   loading.value = true
   try {
     const res = await dwLayerAPI.list()
-    layers.value = res.data || []
+    layers.value = res || []
   } finally {
     loading.value = false
   }

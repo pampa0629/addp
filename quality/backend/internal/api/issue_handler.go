@@ -26,7 +26,7 @@ func (h *IssueHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, items)
 }
 
 func (h *IssueHandler) Get(c *gin.Context) {
@@ -41,7 +41,7 @@ func (h *IssueHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *IssueHandler) UpdateStatus(c *gin.Context) {

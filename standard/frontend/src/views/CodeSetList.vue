@@ -157,7 +157,7 @@ const handleCreate = async () => {
     const res = await codeSetAPI.create(createForm)
     ElMessage.success('创建成功')
     createDialogVisible.value = false
-    router.push(`/standard/code-sets/${res.data.id}`)
+    router.push(`/standard/code-sets/${res.id}`)
   } catch (err) {
     ElMessage.error(err.response?.data?.error || '创建失败')
   } finally {

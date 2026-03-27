@@ -27,7 +27,7 @@ func (h *UnitHandler) ListCategories(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": cats})
+	c.JSON(http.StatusOK, cats)
 }
 
 func (h *UnitHandler) CreateCategory(c *gin.Context) {
@@ -42,7 +42,7 @@ func (h *UnitHandler) CreateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": cat})
+	c.JSON(http.StatusCreated, cat)
 }
 
 func (h *UnitHandler) UpdateCategory(c *gin.Context) {
@@ -62,7 +62,7 @@ func (h *UnitHandler) UpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": cat})
+	c.JSON(http.StatusOK, cat)
 }
 
 func (h *UnitHandler) DeleteCategory(c *gin.Context) {
@@ -76,7 +76,7 @@ func (h *UnitHandler) DeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // --- 计量单位 ---
@@ -94,7 +94,7 @@ func (h *UnitHandler) ListUnits(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": units})
+	c.JSON(http.StatusOK, units)
 }
 
 func (h *UnitHandler) GetUnit(c *gin.Context) {
@@ -109,7 +109,7 @@ func (h *UnitHandler) GetUnit(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "unit not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": unit})
+	c.JSON(http.StatusOK, unit)
 }
 
 func (h *UnitHandler) CreateUnit(c *gin.Context) {
@@ -124,7 +124,7 @@ func (h *UnitHandler) CreateUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": unit})
+	c.JSON(http.StatusCreated, unit)
 }
 
 func (h *UnitHandler) UpdateUnit(c *gin.Context) {
@@ -144,7 +144,7 @@ func (h *UnitHandler) UpdateUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": unit})
+	c.JSON(http.StatusOK, unit)
 }
 
 func (h *UnitHandler) DeleteUnit(c *gin.Context) {
@@ -158,6 +158,6 @@ func (h *UnitHandler) DeleteUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 

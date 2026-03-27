@@ -139,7 +139,19 @@ else
 fi
 echo ""
 
-# 1. 停止服务
+# 1. 先强制杀死 Python 服务（避免端口残留导致 stop.sh 误判为非 ADDP 进程）
+echo "🐍 强制终止 Python 服务..."
+pkill -9 -f "engines/python-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/math-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/spark-workflow/api_server.py" 2>/dev/null || true
+pkill -9 -f "engines/jupyter/api_server.py" 2>/dev/null || true
+pkill -9 -f "jupyter.*lab" 2>/dev/null || true
+pkill -9 -f "copilot/backend/main.py" 2>/dev/null || true
+pkill -9 -f "agent/backend/main.py" 2>/dev/null || true
+pkill -9 -f "uvicorn" 2>/dev/null || true
+echo ""
+
+# 2. 停止服务
 if "${SCRIPT_DIR}/stop.sh"; then
   echo ""
   echo "✅ 已停止现有服务"
@@ -148,7 +160,7 @@ else
   echo "⚠️ 停止脚本返回非零状态,继续执行启动流程"
 fi
 
-# 2. 强制重新编译(如果需要)
+# 3. 强制重新编译(如果需要)
 if [ "$FORCE_BUILD_ALL" = true ]; then
   echo ""
   echo "🔨 强制重新编译所有模块..."
@@ -276,6 +288,6 @@ fi
 
 echo ""
 
-# 3. 启动服务
+# 4. 启动服务
 # restart 时跳过 go mod tidy（模块依赖在重启间不会改变，避免网络调用拖慢速度）
 exec env SKIP_MODTIDY=1 "${SCRIPT_DIR}/start.sh"

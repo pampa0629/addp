@@ -40,11 +40,11 @@ systemClient.interceptors.response.use(
 export default {
   // 获取引擎列表
   getEngines(params) {
-    return systemClient.get('/api/system/engines', { params })
+    return systemClient.get('/api/v1/system/engines', { params })
   },
 
   // 获取单个引擎
   getEngine(id) {
-    return systemClient.get(`/api/system/engines/${id}`)
+    return systemClient.get(`/api/v1/system/engines/${id}`)
   }
 }

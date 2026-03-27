@@ -93,7 +93,7 @@ func SetupRouter(
 	})
 
 	// 公开 API 路由组（无需认证）- 用于算子发现等公开信息
-	publicAPI := router.Group("/api/develop")
+	publicAPI := router.Group("/api/v1/develop")
 	{
 		// ========== 算子发现（公开）==========
 		operators := publicAPI.Group("/operators")
@@ -108,7 +108,7 @@ func SetupRouter(
 	}
 
 	// API 路由组（需要认证）
-	api := router.Group("/api/develop")
+	api := router.Group("/api/v1/develop")
 	// 添加内部 API 认证中间件（支持 X-Internal-API-Key）
 	api.Use(internalAPIKeyMiddleware(cfg.InternalAPIKey))
 	// 使用包装后的认证中间件（支持跳过已通过内部认证的请求）

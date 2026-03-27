@@ -39,7 +39,7 @@ func SetupRouter(
 	healthHandler := NewHealthHandler(healthService)
 
 	// API 路由组
-	api := router.Group("/api/monitor")
+	api := router.Group("/api/v1/monitor")
 
 	// 使用 Redis 缓存中间件 (TTL: 5分钟)
 	if redisClient != nil {

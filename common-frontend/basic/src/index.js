@@ -27,6 +27,7 @@ export { default as ScheduleDisplay } from './components/ScheduleDisplay.vue'
 export { formatBytes, formatDate, safeStringify } from './utils/formatters'
 export * from './utils/schedule'
 export * from './utils/index'
+export { toAmisResponse, toAmisListResponse, createAmisInterceptor } from './utils/amis-adaptor'
 
 // Types
 export * from './types/index'

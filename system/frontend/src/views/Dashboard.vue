@@ -49,8 +49,8 @@
             <div class="card-header">
               <span>日志趋势</span>
               <el-radio-group v-model="trendType" size="small" @change="loadTrends">
-                <el-radio-button label="daily">30天趋势</el-radio-button>
-                <el-radio-button label="hourly">24小时趋势</el-radio-button>
+                <el-radio-button value="daily">30天趋势</el-radio-button>
+                <el-radio-button value="hourly">24小时趋势</el-radio-button>
               </el-radio-group>
             </div>
           </template>

@@ -49,7 +49,20 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": tables, "total": total})
+	totalPages := 0
+	if opts.PageSize > 0 {
+		totalPages = int(total) / opts.PageSize
+		if int(total)%opts.PageSize != 0 {
+			totalPages++
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"data":        tables,
+		"total":       total,
+		"page":        opts.Page,
+		"page_size":   opts.PageSize,
+		"total_pages": totalPages,
+	})
 }
 
 // CreateLogicalTable POST /api/model/logical-tables
@@ -68,7 +81,7 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": table})
+	c.JSON(http.StatusCreated, table)
 }
 
 // GetLogicalTable GET /api/model/logical-tables/:id
@@ -85,7 +98,7 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "table not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": table})
+	c.JSON(http.StatusOK, table)
 }
 
 // UpdateLogicalTable PUT /api/model/logical-tables/:id
@@ -110,7 +123,7 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": table})
+	c.JSON(http.StatusOK, table)
 }
 
 // DeleteLogicalTable DELETE /api/model/logical-tables/:id
@@ -143,7 +156,7 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": fields})
+	c.JSON(http.StatusOK, fields)
 }
 
 // CreateField POST /api/model/logical-tables/:id/fields
@@ -166,7 +179,7 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": field})
+	c.JSON(http.StatusCreated, field)
 }
 
 // UpdateField PUT /api/model/logical-tables/:id/fields/:fid
@@ -194,7 +207,7 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": field})
+	c.JSON(http.StatusOK, field)
 }
 
 // DeleteField DELETE /api/model/logical-tables/:id/fields/:fid

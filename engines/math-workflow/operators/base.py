@@ -40,7 +40,7 @@ class OperatorMetadata(BaseModel):
     category: str = Field(..., description="分类名称")
     description: str = Field(..., description="功能描述")
     brief_description: Optional[str] = Field(None, description="简短描述")
-    module: str = Field("math-workflow", description="所属模块")
+    module: str = Field("math_workflow", description="所属模块")
     parameters: List[ParameterMetadata] = Field(..., description="参数定义列表")
     output_ports: List[OutputPortMetadata] = Field(..., description="输出端口定义")
     use_cases: Optional[List[str]] = Field(None, description="使用场景")

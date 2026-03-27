@@ -170,7 +170,7 @@ const handleCreate = async () => {
     const res = await entityAPI.create(createForm)
     ElMessage.success('创建成功')
     createDialogVisible.value = false
-    router.push(`/modeling/entities/${res.data.id}`)
+    router.push(`/modeling/entities/${res.id}`)
   } catch (err) {
     ElMessage.error(err.response?.data?.error || '创建失败')
   } finally {

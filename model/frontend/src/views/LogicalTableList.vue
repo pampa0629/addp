@@ -198,7 +198,7 @@ const handleCreate = async () => {
     const res = await logicalTableAPI.create(createForm)
     ElMessage.success('创建成功')
     createDialogVisible.value = false
-    router.push(`/modeling/logical-tables/${res.data.id}`)
+    router.push(`/modeling/logical-tables/${res.id}`)
   } catch (err) {
     ElMessage.error(err.response?.data?.error || '创建失败')
   } finally {

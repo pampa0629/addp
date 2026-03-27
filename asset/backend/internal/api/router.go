@@ -41,7 +41,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 	ratingSvc := service.NewRatingService(db)
 
 	// API 路由组（需要认证）
-	api := router.Group("/api/asset")
+	api := router.Group("/api/v1/asset")
 	if redisClient != nil {
 		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
 	} else {
@@ -60,7 +60,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"data": types})
+			commonAPI.SuccessResponse(c, types)
 		})
 
 		typeGroup.GET("/:id", func(c *gin.Context) {
@@ -100,7 +100,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"data": cats})
+			commonAPI.SuccessResponse(c, cats)
 		})
 
 		catalogGroup.GET("/tree", func(c *gin.Context) {
@@ -110,7 +110,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"data": tree})
+			commonAPI.SuccessResponse(c, tree)
 		})
 
 		catalogGroup.GET("/:id", func(c *gin.Context) {
@@ -172,7 +172,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.NoContentResponse(c)
+			commonAPI.SuccessResponse(c, gin.H{"message": "删除成功"})
 		})
 	}
 
@@ -259,7 +259,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.NoContentResponse(c)
+			commonAPI.SuccessResponse(c, gin.H{"message": "删除成功"})
 		})
 
 		// 上架（draft/offline → published）
@@ -382,7 +382,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, gin.H{"data": schemas})
+			commonAPI.SuccessResponse(c, schemas)
 		})
 	}
 
@@ -431,7 +431,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.BadRequestError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, app)
+			commonAPI.CreatedResponse(c, app)
 		})
 
 		// GET /api/asset/applications/:id — 单条详情
@@ -635,7 +635,7 @@ func SetupRouter(db *gorm.DB, systemURL string, redisClient *redis.Client, asset
 				commonAPI.InternalServerError(c, err.Error())
 				return
 			}
-			commonAPI.SuccessResponse(c, rating)
+			commonAPI.CreatedResponse(c, rating)
 		})
 
 		// POST /api/asset/ratings/:id/mark-handled — 管理员标记问题反馈为已处理

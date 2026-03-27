@@ -15,7 +15,7 @@ from models.message import Message
 from agents.main_agent import stream_agent_response, MSG_TYPE_PROGRESS, MSG_TYPE_RESULT
 from utils.summary import maybe_update_summary
 
-router = APIRouter(prefix="/api/agent", tags=["chat"])
+router = APIRouter(prefix="/api/v1/agent", tags=["chat"])
 
 # 每次请求加载的历史轮数上限（10 轮 = 20 条消息）
 _HISTORY_LIMIT = 20
@@ -133,17 +133,14 @@ async def get_messages(session_id: int, request: Request, db: AsyncSession = Dep
     )
     messages = msg_result.scalars().all()
 
-    return {
-        "code": 200,
-        "data": [
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "result_type": m.result_type,
-                "result_data": m.result_data,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in messages
-        ],
-    }
+    return [
+        {
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "result_type": m.result_type,
+            "result_data": m.result_data,
+            "created_at": m.created_at.isoformat(),
+        }
+        for m in messages
+    ]

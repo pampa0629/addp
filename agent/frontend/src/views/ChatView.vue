@@ -113,8 +113,8 @@ function renderMarkdown(content) {
 
 async function loadSessions() {
   try {
-    const { data } = await sessionAPI.list()
-    sessions.value = data || []
+    const list = await sessionAPI.list()
+    sessions.value = list || []
   } catch (e) {
     console.error('加载会话列表失败', e)
   }
@@ -122,9 +122,9 @@ async function loadSessions() {
 
 async function createSession() {
   try {
-    const { data } = await sessionAPI.create({ title: null })
-    sessions.value.unshift(data)
-    await switchSession(data.id)
+    const session = await sessionAPI.create({ title: null })
+    sessions.value.unshift(session)
+    await switchSession(session.id)
   } catch (e) {
     ElMessage.error('创建会话失败')
   }
@@ -134,8 +134,8 @@ async function switchSession(sessionId) {
   currentSessionId.value = sessionId
   messages.value = []
   try {
-    const { data } = await sessionAPI.getMessages(sessionId)
-    messages.value = data || []
+    const list = await sessionAPI.getMessages(sessionId)
+    messages.value = list || []
     scrollToBottom()
   } catch (e) {
     console.error('加载消息历史失败', e)
@@ -180,7 +180,7 @@ async function handleSend() {
   scrollToBottom()
 
   try {
-    const response = await fetch('/api/agent/chat', {
+    const response = await fetch('/api/v1/agent/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

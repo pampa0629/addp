@@ -70,7 +70,7 @@ def register_engine():
                 headers["X-Internal-API-Key"] = INTERNAL_API_KEY
 
             response = requests.post(
-                f"{SYSTEM_API_URL}/api/internal/engines/register",
+                f"{SYSTEM_API_URL}/api/v1/internal/engines/register",
                 json=engine_data,
                 headers=headers,
                 timeout=10

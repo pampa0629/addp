@@ -51,7 +51,7 @@ class SystemClient:
         Returns:
             是否注册成功
         """
-        url = f"{self.base_url}/api/internal/modules/register"
+        url = f"{self.base_url}/api/v1/internal/modules/register"
 
         payload = {
             "module_name": module_name,
@@ -87,7 +87,7 @@ class SystemClient:
         Returns:
             是否成功
         """
-        url = f"{self.base_url}/api/internal/modules/heartbeat"
+        url = f"{self.base_url}/api/v1/internal/modules/heartbeat"
 
         payload = {"module_name": module_name}
 

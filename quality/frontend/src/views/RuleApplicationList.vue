@@ -162,7 +162,7 @@ const fetchList = async () => {
     if (filter.value.schema_name) params.schema_name = filter.value.schema_name
     if (filter.value.table_name) params.table_name = filter.value.table_name
     const res = await ruleApplicationAPI.list(params)
-    list.value = res.data || []
+    list.value = res || []
   } finally {
     loading.value = false
   }

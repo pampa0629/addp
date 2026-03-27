@@ -39,7 +39,7 @@ func NewSystemClient(baseURL, internalKey string) *SystemClient {
 // ValidateAPIKey 验证 API Key
 // keyHash: API Key 的 SHA256 hash（hex 编码）
 func (c *SystemClient) ValidateAPIKey(keyHash string) (*APIKeyValidationResponse, error) {
-	url := fmt.Sprintf("%s/internal/api-keys/validate?key_hash=%s", c.baseURL, keyHash)
+	url := fmt.Sprintf("%s/api/v1/internal/api-keys/validate?key_hash=%s", c.baseURL, keyHash)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -71,7 +71,7 @@ func (c *SystemClient) ValidateAPIKey(keyHash string) (*APIKeyValidationResponse
 // BulkGetAPIKeys 批量获取所有有效的 API Keys（用于预加载缓存）
 // TODO: Phase 2 实现
 func (c *SystemClient) BulkGetAPIKeys() ([]APIKeyValidationResponse, error) {
-	url := fmt.Sprintf("%s/internal/api-keys/bulk", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/internal/api-keys/bulk", c.baseURL)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

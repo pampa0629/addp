@@ -195,7 +195,7 @@ async function openUsageDialog(app) {
   endpointsLoading.value = true
   try {
     const data = await assetAPI.getEndpoints(app.asset_id)
-    currentEndpoints.value = data?.data || data
+    currentEndpoints.value = data
   } catch (err) {
     // 非数据服务类型可能返回 403/404，忽略并显示通用说明
     currentEndpoints.value = { endpoints: {} }
@@ -217,7 +217,7 @@ async function fetchApplications() {
   loading.value = true
   try {
     const data = await myApplicationAPI.list()
-    applications.value = data.data || data || []
+    applications.value = data || []
   } catch (err) {
     console.error('获取申请列表失败:', err)
     applications.value = []

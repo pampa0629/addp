@@ -104,7 +104,7 @@ async function loadList() {
   loading.value = true
   try {
     const res = await dimensionHierarchyAPI.list()
-    list.value = res.data || []
+    list.value = res || []
   } catch {
     ElMessage.error('加载失败')
   } finally {
@@ -125,7 +125,7 @@ async function handleCreate() {
   try {
     const res = await dimensionHierarchyAPI.create({ ...createForm })
     createVisible.value = false
-    router.push(`/standard/dimension-hierarchies/${res.data.id}`)
+    router.push(`/standard/dimension-hierarchies/${res.id}`)
   } catch (e) {
     ElMessage.error(e.response?.data?.error || '创建失败')
   } finally {

@@ -7,10 +7,10 @@
       <!-- 数据源类型 -->
       <el-form-item label="数据源类型">
         <el-radio-group v-model="sourceType" @change="handleSourceTypeChange">
-          <el-radio-button label="postgresql">PostgreSQL</el-radio-button>
-          <el-radio-button label="mysql">MySQL</el-radio-button>
-          <el-radio-button label="spatialite">SpatiaLite</el-radio-button>
-          <el-radio-button label="s3">S3/MinIO</el-radio-button>
+          <el-radio-button value="postgresql">PostgreSQL</el-radio-button>
+          <el-radio-button value="mysql">MySQL</el-radio-button>
+          <el-radio-button value="spatialite">SpatiaLite</el-radio-button>
+          <el-radio-button value="s3">S3/MinIO</el-radio-button>
         </el-radio-group>
       </el-form-item>
 
@@ -54,8 +54,8 @@
       <!-- 查询模式（仅 postgresql/mysql/spatialite） -->
       <el-form-item v-if="supportsQueryMode && formData.engineValue" label="查询方式">
         <el-radio-group v-model="queryMode" @change="handleQueryModeChange">
-          <el-radio-button label="table">选择表</el-radio-button>
-          <el-radio-button label="sql">自定义 SQL</el-radio-button>
+          <el-radio-button value="table">选择表</el-radio-button>
+          <el-radio-button value="sql">自定义 SQL</el-radio-button>
         </el-radio-group>
       </el-form-item>
 

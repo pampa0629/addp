@@ -12,7 +12,7 @@ METADATA_TEMPLATE_EXAMPLE = {
     "id": "st_buffer",                    # 算子唯一标识符 (与operators.py中的函数名一致)
     "name": "st_buffer",                  # 算子名称
     "display_name": "缓冲区分析",         # 中文显示名 (UI列表展示)
-    "module": "spark",                    # 所属模块
+    "module": "spark_workflow",                    # 所属模块
     "category": "空间分析",               # 算子分类 (数据I/O, 空间分析, 数据转换, 聚合分析, Apache Spark, 窗口函数)
 
     # ========== 第一级描述 (必填) ==========
@@ -146,7 +146,7 @@ MULTI_OUTPUT_TEMPLATE_EXAMPLE = {
     "id": "split_by_area",
     "name": "split_by_area",
     "display_name": "按面积分割",
-    "module": "spark",
+    "module": "spark_workflow",
     "category": "空间分析",
     "description": "根据面积阈值将要素分割为大小两组",
     "brief_description": "根据面积阈值将几何要素分割为大面积和小面积两组,用于分层处理和制图综合",

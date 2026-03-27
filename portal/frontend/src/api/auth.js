@@ -2,7 +2,7 @@ import axios from 'axios'
 import { createAuthAPI } from '@common-ui'
 
 const systemClient = axios.create({
-  baseURL: '/api/system',
+  baseURL: '/api/v1/system',
   timeout: 10000
 })
 

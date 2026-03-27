@@ -323,7 +323,7 @@ const loadElement = async () => {
   loading.value = true
   try {
     const res = await elementAPI.get(route.params.id)
-    element.value = res.data || {}
+    element.value = res || {}
     if (!element.value.quality_rules) {
       element.value.quality_rules = { rules: [] }
     }
@@ -351,7 +351,7 @@ const loadCodeSets = async () => {
 const loadRelatedGlossaries = async () => {
   try {
     const res = await glossaryAPI.list({ element_id: route.params.id })
-    relatedGlossaries.value = res.data || []
+    relatedGlossaries.value = res || []
   } catch (e) {
     console.error('加载关联术语失败:', e)
   }
@@ -360,7 +360,7 @@ const loadRelatedGlossaries = async () => {
 const loadUnits = async () => {
   try {
     const res = await unitAPI.list({ page_size: 500 })
-    units.value = res.data || []
+    units.value = res || []
   } catch (e) {
     console.error('加载单位失败:', e)
   }
@@ -369,7 +369,7 @@ const loadUnits = async () => {
 const loadGradingLevels = async () => {
   try {
     const res = await gradingLevelAPI.list()
-    gradingLevels.value = res.data || []
+    gradingLevels.value = res || []
   } catch (e) {
     console.error('加载分级失败:', e)
   }
@@ -378,7 +378,7 @@ const loadGradingLevels = async () => {
 const loadClassifications = async () => {
   try {
     const res = await classificationAPI.list()
-    classifications.value = res.data || []
+    classifications.value = res || []
   } catch (e) {
     console.error('加载分类失败:', e)
   }
@@ -392,7 +392,7 @@ const loadCodeItems = async (codeSetId) => {
   codeItemsLoading.value = true
   try {
     const res = await codeSetAPI.getItems(codeSetId)
-    codeItems.value = res.data || []
+    codeItems.value = res || []
   } catch (e) {
     console.error('加载码值项失败:', e)
     codeItems.value = []

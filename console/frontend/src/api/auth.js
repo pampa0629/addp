@@ -5,7 +5,7 @@ import { createAuthAPI } from '@common-ui'
 // 开发模式: 通过 vite proxy 转发到 Gateway
 // 生产模式: 通过主 Nginx 转发到 Gateway
 const systemClient = axios.create({
-  baseURL: '/api/system',  // 使用相对路径，让 proxy 生效
+  baseURL: '/api/v1/system',  // 使用相对路径，让 proxy 生效
   timeout: 10000
 })
 

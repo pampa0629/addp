@@ -53,7 +53,7 @@ func SetupRouter(
 	taskTracker := service.NewTaskTracker()
 
 	// API 路由组
-	api := router.Group("/api/manager")
+	api := router.Group("/api/v1/manager")
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {
 		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))
@@ -90,7 +90,7 @@ func SetupRouter(
 		api.POST("/executions/:execution_id/cancel", taskProviderHandler.ExecutionCancel)
 
 		// MvtTask CRUD
-		mvtTasksGroup := api.Group("/mvt-tasks")
+		mvtTasksGroup := api.Group("/mvt_tasks")
 		{
 			mvtTasksGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=mvt_generation
 			mvtTasksGroup.POST("", taskProviderHandler.CreateMvtTask)
@@ -103,7 +103,7 @@ func SetupRouter(
 		}
 
 		// EmbeddingTask CRUD
-		embeddingTaskDefGroup := api.Group("/embedding-tasks")
+		embeddingTaskDefGroup := api.Group("/embedding_tasks")
 		{
 			embeddingTaskDefGroup.GET("", taskProviderHandler.ListTasks) // ?task_type=embedding
 			embeddingTaskDefGroup.POST("", taskProviderHandler.CreateEmbeddingTask)

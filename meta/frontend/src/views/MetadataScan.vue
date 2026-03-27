@@ -507,9 +507,8 @@ const loadEngines = async () => {
   loadingResources.value = true
   try {
     const res = await metaApi.getResources()
-    // createAPIClient 提取了 axios 的 response.data（后端响应体 {"data": [...]}）
-    // 需要再提取业务数据的 .data 字段才能得到数组
-    engines.value = res.data || []
+    // createAPIClient 提取了 axios 的 response.data，后端直接返回数组
+    engines.value = Array.isArray(res) ? res : []
     if (!selectedResource.value && engines.value.length) {
       selectedResource.value = engines.value[0]
       await nextTick()
@@ -639,7 +638,7 @@ const loadSchemas = async () => {
         if (isObjectStorage) {
           // 对象存储：获取节点列表（buckets）
           const nodesRes = await metaApi.listObjectStorageNodes(selectedResource.value.id)
-          const nodes = nodesRes.data || []
+          const nodes = Array.isArray(nodesRes) ? nodesRes : []
           // 转换为 schema 格式以兼容现有UI
           availableSchemas = nodes.map(node => ({
             name: node.name,
@@ -649,7 +648,7 @@ const loadSchemas = async () => {
         } else {
           // 关系型数据库：获取Schema列表
           const availableRes = await metaApi.listAvailableSchemas(selectedResource.value.id)
-          availableSchemas = availableRes.data || []
+          availableSchemas = Array.isArray(availableRes) ? availableRes : []
         }
       } catch (error) {
         // 捕获连接错误，但不阻止后续加载
@@ -665,7 +664,7 @@ const loadSchemas = async () => {
   try {
     // 再获取已扫描的schema状态信息
     const scannedRes = await metaApi.getSchemas(selectedResource.value.id)
-    const scannedSchemas = scannedRes.data || []
+    const scannedSchemas = Array.isArray(scannedRes) ? scannedRes : []
 
     if (connectionError && scannedSchemas.length === 0) {
       // 如果连接失败且没有已扫描的schema，显示空列表
@@ -829,7 +828,7 @@ const handleAutoScan = async () => {
     clearInterval(progressInterval)
     scanProgress.value = 100
 
-    scanResult.value = res.data
+    scanResult.value = res
     ElMessage.success('自动扫描完成')
 
     // 刷新引擎列表
@@ -888,7 +887,7 @@ const handleBatchScan = async () => {
     clearInterval(progressInterval)
     scanProgress.value = 100
 
-    scanResult.value = res.data
+    scanResult.value = res
     ElMessage.success('批量扫描完成')
 
     // 刷新Schema列表

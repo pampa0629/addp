@@ -211,7 +211,7 @@ const storageTypeOptions = computed(() => {
 const loadEngines = async () => {
   try {
     const res = await metaApi.getResources()
-    engines.value = res.data || []
+    engines.value = Array.isArray(res) ? res : []
   } catch (error) {
     ElMessage.error('加载资源列表失败: ' + (error.response?.data?.error || error.message))
   }

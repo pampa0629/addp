@@ -55,7 +55,7 @@ func SetupRouter(
 	executionHandler := NewExecutionHandler(db)
 	issueHandler := NewIssueHandler(issueSvc)
 
-	api := router.Group("/api/quality")
+	api := router.Group("/api/v1/quality")
 	if redisClient != nil {
 		api.Use(commonAuth.CachedSystemAuthMiddleware(systemURL, redisClient, 5*time.Minute))
 	} else {

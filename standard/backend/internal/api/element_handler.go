@@ -47,7 +47,19 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": elements, "total": total})
+	page := opts.Page
+	pageSize := opts.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	c.JSON(http.StatusOK, gin.H{"data": elements, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
 // CreateElement POST /api/model/elements
@@ -66,7 +78,7 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": element})
+	c.JSON(http.StatusCreated, element)
 }
 
 // GetElement GET /api/model/elements/:id
@@ -83,7 +95,7 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "element not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": element})
+	c.JSON(http.StatusOK, element)
 }
 
 // UpdateElement PUT /api/model/elements/:id
@@ -108,7 +120,7 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": element})
+	c.JSON(http.StatusOK, element)
 }
 
 // DeleteElement DELETE /api/model/elements/:id
@@ -124,7 +136,7 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // ApproveElement POST /api/model/elements/:id/approve
@@ -142,7 +154,7 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
 }
 
 // GetElementQualityRules GET /api/model/elements/:id/quality-rules
@@ -159,5 +171,5 @@ func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "element not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": rules})
+	c.JSON(http.StatusOK, rules)
 }

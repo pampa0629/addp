@@ -17,11 +17,11 @@
     <el-form :inline="true" class="filter-form">
       <el-form-item label="快速时间">
         <el-radio-group v-model="quickTimeRange" @change="handleQuickTimeChange">
-          <el-radio-button label="">全部</el-radio-button>
-          <el-radio-button label="today">今天</el-radio-button>
-          <el-radio-button label="yesterday">昨天</el-radio-button>
-          <el-radio-button label="week">最近7天</el-radio-button>
-          <el-radio-button label="month">最近30天</el-radio-button>
+          <el-radio-button value="">全部</el-radio-button>
+          <el-radio-button value="today">今天</el-radio-button>
+          <el-radio-button value="yesterday">昨天</el-radio-button>
+          <el-radio-button value="week">最近7天</el-radio-button>
+          <el-radio-button value="month">最近30天</el-radio-button>
         </el-radio-group>
       </el-form-item>
 

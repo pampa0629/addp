@@ -148,28 +148,20 @@ const handleRefresh = async () => {
 const handleNodeClick = async (node) => {
   const locator = node.locator || node.id
 
-  console.log('[ExplorerTree] 节点点击:', {
-    label: node.label,
-    type: node.type,
-    locator: locator,
-    hasChildren: !!node.children,
-    childrenCount: node.children?.length || 0
-  })
-
   // 选择节点
   store.selectNode(locator)
-
-  // 触发父组件的 node-select 事件（用于加载预览）
   emit('node-select', { node, locator })
 
-  // 如果是引擎节点，点击时展开并加载内容
-  if (node.type === 'engine' && node.engineId) {
-    console.log('[ExplorerTree] 引擎节点点击')
-    // 展开节点
-    store.expandNode(locator)
+  // 关键：@node-collapse / @node-expand 在 element-plus 中先于 @node-click 触发，
+  // 因此这里读到的是"点击后"的 store 状态，而不是点击前的状态。
+  // 只有当节点当前未展开 && 需要首次加载数据时，才主动介入（强制展开 + 加载）。
+  // 对于已加载的节点，expand-on-click-node 和 handleNodeExpand/Collapse 已经处理好了。
+  const isCurrentlyExpanded = store.expandedLocators.has(locator)
 
-    // 如果未加载过，懒加载内容
-    if (!node.loaded) {
+  // 引擎节点：仅首次展开（未加载）时强制展开并加载数据
+  if (node.type === 'engine' && node.engineId) {
+    if (!isCurrentlyExpanded && !node.loaded) {
+      store.expandNode(locator)
       try {
         await store.loadTree(node.engineId)
       } catch (error) {
@@ -180,57 +172,17 @@ const handleNodeClick = async (node) => {
     return
   }
 
-  // 如果是容器类型节点（directory/bucket/prefix/schema/database），点击时切换展开状态
+  // 容器节点（directory/bucket/prefix/schema/database）：
+  // 仅在需要首次加载子节点时介入，避免与 el-tree 的 expand-on-click-node 冲突
   const isDirLike = ['directory', 'bucket', 'prefix', 'schema', 'database'].includes(node.type)
-  console.log('[ExplorerTree] 容器类型检查:', { isDirLike, nodeType: node.type })
-
   if (isDirLike) {
-    // 检查节点是否需要加载子节点
     const needsLoading = (!node.children || node.children.length === 0 || !node.loaded) && node.hasChildren
-    const isExpanded = store.expandedLocators.has(locator)
-
-    console.log('[ExplorerTree] 节点状态:', {
-      isExpanded,
-      needsLoading,
-      hasChildren: node.hasChildren,
-      childrenCount: node.children?.length || 0,
-      loaded: node.loaded
-    })
-
-    // 如果节点已展开但还没有加载子节点，先加载子节点
-    if (isExpanded && needsLoading) {
-      console.log('[ExplorerTree] 节点已展开但未加载子节点，触发加载:', node.label)
+    if (!isCurrentlyExpanded && needsLoading) {
+      // 首次展开：el-tree 因暂无子节点可能不会自动展开，需要强制 store 记录展开状态
+      store.expandNode(locator)
       try {
         const loc = parseLocator(locator)
         if (loc && loc.engineId) {
-          // 强制刷新，绕过缓存，确保从后端加载数据
-          await store.loadNodeChildren(locator, 1, true)
-        }
-      } catch (error) {
-        console.error('加载子节点失败:', error)
-        ElMessage.error('加载子节点失败: ' + error.message)
-      }
-      return
-    }
-
-    // 如果节点已展开且已加载子节点，折叠它
-    if (isExpanded) {
-      console.log('[ExplorerTree] 折叠节点:', node.label)
-      store.collapseNode(locator)
-      return
-    }
-
-    // 节点未展开，展开它
-    console.log('[ExplorerTree] 展开节点:', node.label)
-    store.expandNode(locator)
-
-    // 如果需要加载子节点，触发加载
-    if (needsLoading) {
-      try {
-        const loc = parseLocator(locator)
-        if (loc && loc.engineId) {
-          console.log('[ExplorerTree] 点击加载子节点:', node.label)
-          // 强制刷新，绕过缓存，确保从后端加载数据
           await store.loadNodeChildren(locator, 1, true)
         }
       } catch (error) {

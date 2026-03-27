@@ -27,7 +27,7 @@ func (h *RuleApplicationHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, items)
 }
 
 func (h *RuleApplicationHandler) Get(c *gin.Context) {
@@ -42,7 +42,7 @@ func (h *RuleApplicationHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *RuleApplicationHandler) Create(c *gin.Context) {
@@ -58,7 +58,7 @@ func (h *RuleApplicationHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": item})
+	c.JSON(http.StatusCreated, item)
 }
 
 func (h *RuleApplicationHandler) Update(c *gin.Context) {
@@ -78,7 +78,7 @@ func (h *RuleApplicationHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *RuleApplicationHandler) Delete(c *gin.Context) {
@@ -92,5 +92,5 @@ func (h *RuleApplicationHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }

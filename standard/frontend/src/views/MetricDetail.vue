@@ -149,7 +149,7 @@ const loadMetric = async () => {
   loading.value = true
   try {
     const res = await metricAPI.get(route.params.id)
-    metric.value = res.data || {}
+    metric.value = res || {}
     if (!metric.value.tags) metric.value.tags = []
   } catch (e) {
     ElMessage.error('加载失败')
@@ -162,7 +162,7 @@ const loadMetric = async () => {
 const loadCategories = async () => {
   try {
     const res = await metricCategoryAPI.list()
-    categories.value = res.data || []
+    categories.value = res || []
   } catch (e) {
     console.error('加载目录失败:', e)
   }
@@ -171,7 +171,7 @@ const loadCategories = async () => {
 const loadAtomicMetrics = async () => {
   try {
     const res = await metricAPI.list({ type: 'atomic', page_size: 500 })
-    atomicMetrics.value = (res.data || []).filter(m => m.id !== Number(route.params.id))
+    atomicMetrics.value = (res.data || []).filter(m => m.id !== Number(route.params.id))  // 分页格式，保留 .data
   } catch (e) {
     console.error('加载原子指标失败:', e)
   }

@@ -76,7 +76,7 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/transfer/tasks", bytes.NewReader(body))
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/api/v1/transfer/tasks", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -125,7 +125,7 @@ func (c *TransferClient) CreateTask(req *CreateTransferTaskRequest) (*TransferTa
 
 // TriggerTask 触发任务执行
 func (c *TransferClient) TriggerTask(taskID, tenantID uint) (*TriggerTaskResponse, error) {
-	url := fmt.Sprintf("%s/api/transfer/tasks/%d/start", c.baseURL, taskID)
+	url := fmt.Sprintf("%s/api/v1/transfer/tasks/%d/start", c.baseURL, taskID)
 
 	httpReq, err := http.NewRequest("POST", url, nil)
 	if err != nil {

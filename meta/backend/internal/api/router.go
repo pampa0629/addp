@@ -35,7 +35,7 @@ func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineS
 	})
 
 	// API路由组（需要认证）
-	api := router.Group("/api/meta")
+	api := router.Group("/api/v1/meta")
 	// 使用 Redis 缓存中间件 (TTL: 5分钟, 减少 System 调用 90%)
 	if redisClient != nil {
 		api.Use(auth.CachedSystemAuthMiddleware(cfg.SystemServiceURL, redisClient, 5*time.Minute))

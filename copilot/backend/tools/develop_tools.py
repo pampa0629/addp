@@ -230,12 +230,12 @@ class OperatorDiscoveryTool(BaseTool):
     _cache_time: Optional[float] = None
     _cache_ttl: int = 300  # 5 分钟
 
-    async def _arun(self, engine_type: str = "python") -> List[Dict]:
+    async def _arun(self, engine_type: str = "python_workflow") -> List[Dict]:
         """
         异步执行，获取指定引擎类型的算子
 
         Args:
-            engine_type: 工作流引擎类型（python/spark/math），默认 python
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），默认 python_workflow
         """
         # 构建缓存键（按引擎类型缓存）
         cache_key = f"{engine_type}"
@@ -315,13 +315,13 @@ class OperatorDetailTool(BaseTool):
 使用方式：输入算子名称（字符串），返回算子详情（JSON）
 """
 
-    async def _arun(self, operator_name: str, engine_type: str = "python") -> Optional[Dict]:
+    async def _arun(self, operator_name: str, engine_type: str = "python_workflow") -> Optional[Dict]:
         """
         异步执行，获取指定引擎的算子详情
 
         Args:
             operator_name: 算子名称
-            engine_type: 工作流引擎类型（python/spark/math），默认 python
+            engine_type: 工作流引擎类型（python_workflow/spark_workflow/math_workflow），默认 python_workflow
         """
         print(f"[OperatorDetailTool] 获取算子 '{operator_name}' 的详细信息（引擎: {engine_type}）")
 

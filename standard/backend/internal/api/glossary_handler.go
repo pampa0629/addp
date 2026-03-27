@@ -30,7 +30,7 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
-			c.JSON(http.StatusOK, gin.H{"data": glossaries, "total": int64(len(glossaries))})
+			c.JSON(http.StatusOK, glossaries)
 			return
 		}
 	}
@@ -60,7 +60,19 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": glossaries, "total": total})
+	page := opts.Page
+	pageSize := opts.PageSize
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	c.JSON(http.StatusOK, gin.H{"data": glossaries, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
 // CreateGlossary POST /api/model/glossaries
@@ -79,7 +91,7 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": glossary})
+	c.JSON(http.StatusCreated, glossary)
 }
 
 // GetGlossary GET /api/model/glossaries/:id
@@ -96,7 +108,7 @@ func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "glossary not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": glossary})
+	c.JSON(http.StatusOK, glossary)
 }
 
 // UpdateGlossary PUT /api/model/glossaries/:id
@@ -121,7 +133,7 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": glossary})
+	c.JSON(http.StatusOK, glossary)
 }
 
 // DeleteGlossary DELETE /api/model/glossaries/:id
@@ -137,7 +149,7 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 // ApproveGlossary POST /api/model/glossaries/:id/approve
@@ -155,7 +167,7 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "approved"})
+	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
 }
 
 // DeprecateGlossary POST /api/model/glossaries/:id/deprecate
@@ -173,7 +185,7 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deprecated"})
+	c.JSON(http.StatusOK, gin.H{"message": "已废弃"})
 }
 
 // GetElementMappings GET /glossaries/:id/elements
@@ -190,7 +202,7 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": elements})
+	c.JSON(http.StatusOK, elements)
 }
 
 // SetElementMappings PUT /glossaries/:id/elements
@@ -214,5 +226,5 @@ func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "ok"})
+	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }

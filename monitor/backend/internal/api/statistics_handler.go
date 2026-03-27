@@ -71,7 +71,5 @@ func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"trend_data": trendData,
-	})
+	c.JSON(http.StatusOK, trendData)
 }

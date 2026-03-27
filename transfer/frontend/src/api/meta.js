@@ -6,8 +6,8 @@ import axios from 'axios'
 
 // Meta 模块的基础URL（开发环境）
 const META_BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:8082/api/meta'
-  : '/api/meta'
+  ? 'http://localhost:8000/api/v1/meta'
+  : '/api/v1/meta'
 
 // 创建带认证的请求函数
 const metaRequest = (method, url, options = {}) => {

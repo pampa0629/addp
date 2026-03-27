@@ -29,7 +29,7 @@ type UserInfo struct {
 // On success it stores the resolved user information in the Gin context using the constants defined above.
 func SystemAuthMiddleware(systemURL string) gin.HandlerFunc {
 	baseURL := strings.TrimSuffix(systemURL, "/")
-	meEndpoint := baseURL + "/api/system/users/me"
+	meEndpoint := baseURL + "/api/v1/system/users/me"
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}

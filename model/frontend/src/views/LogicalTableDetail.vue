@@ -481,7 +481,7 @@ const fieldRoleLabel = (role) => {
 
 const loadTable = async () => {
   const res = await logicalTableAPI.get(tableId)
-  table.value = res.data.data || res.data || {}
+  table.value = res || {}
   Object.assign(form, {
     name: table.value.name,
     domain_id: table.value.domain_id,
@@ -506,7 +506,7 @@ const loadFields = async () => {
   fieldLoading.value = true
   try {
     const res = await logicalTableAPI.getFields(tableId)
-    fields.value = res.data.data || res.data || []
+    fields.value = res || []
   } finally {
     fieldLoading.value = false
   }
@@ -517,7 +517,7 @@ const loadMetrics = async () => {
   metricLoading.value = true
   try {
     const res = await logicalTableAPI.listMetrics(tableId)
-    metrics.value = res.data.data || res.data || []
+    metrics.value = res || []
   } finally {
     metricLoading.value = false
   }
@@ -550,7 +550,7 @@ const handleSave = async () => {
 const handlePreviewDDL = async () => {
   try {
     const res = await logicalTableAPI.previewDDL(tableId)
-    ddlContent.value = res.data?.ddl || res.ddl || ''
+    ddlContent.value = res.ddl || ''
     ddlDialogVisible.value = true
   } catch (err) {
     ElMessage.error(err.response?.data?.error || 'DDL 预览失败')

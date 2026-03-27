@@ -142,7 +142,7 @@ const sortedLevels = computed(() => [...levels.value].sort((a, b) => a.level_num
 async function loadHierarchy() {
   try {
     const res = await dimensionHierarchyAPI.get(hierarchyId)
-    const data = res.data
+    const data = res
     hierarchy.value = data
     form.name = data.name
     form.description = data.description
@@ -193,10 +193,10 @@ async function handleSaveLevel() {
     if (editingLevel.value) {
       const res = await dimensionHierarchyAPI.updateLevel(hierarchyId, editingLevel.value.id, { ...levelForm })
       const idx = levels.value.findIndex(l => l.id === editingLevel.value.id)
-      if (idx >= 0) levels.value[idx] = res.data
+      if (idx >= 0) levels.value[idx] = res
     } else {
       const res = await dimensionHierarchyAPI.createLevel(hierarchyId, { ...levelForm })
-      levels.value.push(res.data)
+      levels.value.push(res)
     }
     levelVisible.value = false
     ElMessage.success('已保存')

@@ -32,10 +32,16 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 		return
 	}
 
+	totalPages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":  codeSets,
-		"total": total,
-		"page":  page,
+		"data":        codeSets,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
 	})
 }
 
@@ -55,7 +61,7 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": codeSet})
+	c.JSON(http.StatusCreated, codeSet)
 }
 
 // GetCodeSet 获取码值集详情
@@ -69,7 +75,7 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": codeSet})
+	c.JSON(http.StatusOK, codeSet)
 }
 
 // UpdateCodeSet 更新码值集
@@ -83,12 +89,13 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 		return
 	}
 
-	if err := h.codeSetService.UpdateCodeSet(id, tenantID, &req); err != nil {
+	codeSet, err := h.codeSetService.UpdateCodeSet(id, tenantID, &req)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	c.JSON(http.StatusOK, codeSet)
 }
 
 // DeleteCodeSet 删除码值集
@@ -115,7 +122,7 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, items)
 }
 
 // CreateCodeItem 创建码值项
@@ -135,7 +142,7 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusCreated, item)
 }
 
 // UpdateCodeItem 更新码值项
@@ -150,12 +157,13 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 		return
 	}
 
-	if err := h.codeSetService.UpdateCodeItem(codeSetID, itemID, tenantID, &req); err != nil {
+	item, err := h.codeSetService.UpdateCodeItem(codeSetID, itemID, tenantID, &req)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
+	c.JSON(http.StatusOK, item)
 }
 
 // DeleteCodeItem 删除码值项

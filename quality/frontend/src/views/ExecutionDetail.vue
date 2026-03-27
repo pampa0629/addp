@@ -71,7 +71,7 @@ onMounted(async () => {
   loading.value = true
   try {
     const res = await executionAPI.get(route.params.id)
-    execution.value = res.data
+    execution.value = res
   } finally {
     loading.value = false
   }

@@ -279,8 +279,8 @@
       <template v-if="immediateScanEnabled">
         <el-form-item label="立即扫描深度" style="margin-left: 30px;">
           <el-radio-group v-model="formState.scan_config.immediate_depth">
-            <el-radio label="basic">基础扫描（推荐）</el-radio>
-            <el-radio label="deep">深度扫描</el-radio>
+            <el-radio value="basic">基础扫描（推荐）</el-radio>
+            <el-radio value="deep">深度扫描</el-radio>
           </el-radio-group>
           <div class="field-hint">
             基础扫描仅获取结构信息（表名、字段类型），速度快（秒级）<br/>
@@ -301,8 +301,8 @@
       <template v-if="scheduledScanEnabled">
         <el-form-item label="扫描频率" style="margin-left: 30px;">
           <el-radio-group v-model="formState.scan_config.schedule_type">
-            <el-radio label="daily">每天</el-radio>
-            <el-radio label="weekly">每周</el-radio>
+            <el-radio value="daily">每天</el-radio>
+            <el-radio value="weekly">每周</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -322,13 +322,13 @@
           style="margin-left: 30px;"
         >
           <el-checkbox-group v-model="formState.scan_config.schedule_value">
-            <el-checkbox :label="1">周一</el-checkbox>
-            <el-checkbox :label="2">周二</el-checkbox>
-            <el-checkbox :label="3">周三</el-checkbox>
-            <el-checkbox :label="4">周四</el-checkbox>
-            <el-checkbox :label="5">周五</el-checkbox>
-            <el-checkbox :label="6">周六</el-checkbox>
-            <el-checkbox :label="0">周日</el-checkbox>
+            <el-checkbox :value="1">周一</el-checkbox>
+            <el-checkbox :value="2">周二</el-checkbox>
+            <el-checkbox :value="3">周三</el-checkbox>
+            <el-checkbox :value="4">周四</el-checkbox>
+            <el-checkbox :value="5">周五</el-checkbox>
+            <el-checkbox :value="6">周六</el-checkbox>
+            <el-checkbox :value="0">周日</el-checkbox>
           </el-checkbox-group>
         </el-form-item>
 

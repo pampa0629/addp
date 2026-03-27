@@ -145,7 +145,7 @@ const categoryTree = computed(() => categories.value)
 
 const loadCategories = async () => {
   const res = await measurementCategoryAPI.list()
-  categories.value = res.data || []
+  categories.value = res || []
 }
 
 const loadUnits = async (categoryID) => {
@@ -153,7 +153,7 @@ const loadUnits = async (categoryID) => {
   try {
     const params = categoryID ? { category_id: categoryID } : {}
     const res = await unitAPI.list(params)
-    units.value = res.data || []
+    units.value = res || []
   } finally {
     loadingUnits.value = false
   }

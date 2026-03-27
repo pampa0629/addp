@@ -103,7 +103,7 @@ detect_common_affected_modules() {
         return
     fi
 
-    # Go 后端模块列表（8 个模块）
+    # Go 后端模块列表（所有模块）
     # 注意: gateway 模块的二进制名称不同，需要特殊处理
     local go_modules=(
         "system"
@@ -113,6 +113,12 @@ detect_common_affected_modules() {
         "orchestrator"
         "develop"
         "service"
+        "monitor"
+        "standard"
+        "model"
+        "quality"
+        "asset"
+        "portal"
         "gateway"
     )
 

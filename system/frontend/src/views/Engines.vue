@@ -15,11 +15,11 @@
       <div class="filter-bar">
         <span class="filter-label">过滤:</span>
         <el-checkbox-group v-model="selectedCategories" @change="handleFilterChange">
-          <el-checkbox label="storage">存储</el-checkbox>
-          <el-checkbox label="compute">计算</el-checkbox>
-          <el-checkbox label="standard">标准引擎</el-checkbox>
-          <el-checkbox label="extension">扩展引擎</el-checkbox>
-          <el-checkbox label="builtin">内置</el-checkbox>
+          <el-checkbox value="storage">存储</el-checkbox>
+          <el-checkbox value="compute">计算</el-checkbox>
+          <el-checkbox value="standard">标准引擎</el-checkbox>
+          <el-checkbox value="extension">扩展引擎</el-checkbox>
+          <el-checkbox value="builtin">内置</el-checkbox>
         </el-checkbox-group>
       </div>
 

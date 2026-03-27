@@ -41,7 +41,7 @@ class WorkflowGenerationRequest(BaseModel):
     conversation_id: Optional[int] = None
     tenant_id: int = 1
     user_id: int = 1
-    engine_type: str = "python"  # 工作流引擎类型：python, spark, math（默认 python）
+    engine_type: str = "python_workflow"  # 工作流引擎类型：python_workflow, spark_workflow, math_workflow（默认 python_workflow）
     workflow_engine_id: Optional[int] = None  # 工作流引擎 ID（由前端传递，对应 system.engines 表中的 ID）
 
 

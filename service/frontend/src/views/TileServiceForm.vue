@@ -271,7 +271,7 @@ export default {
       // Service API 基础 URL（用于 DataSourceCascader）
       // 开发环境：通过 Vite proxy 代理到 Gateway (localhost:8000)
       // 生产环境：直接访问 Gateway
-      return '/api/service'
+      return '/api/v1/service'
     }
   },
   methods: {

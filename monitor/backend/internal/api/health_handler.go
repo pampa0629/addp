@@ -27,9 +27,7 @@ func (h *HealthHandler) GetModules(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"modules": modules,
-	})
+	c.JSON(http.StatusOK, modules)
 }
 
 // CheckModuleHealth 检查单个模块健康状态
@@ -75,7 +73,5 @@ func (h *HealthHandler) CheckAllModules(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"modules": statuses,
-	})
+	c.JSON(http.StatusOK, statuses)
 }

@@ -31,7 +31,7 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": mappings})
+	c.JSON(http.StatusOK, mappings)
 }
 
 // AddMetric POST /api/model/logical-tables/:id/metrics
@@ -56,7 +56,7 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": mapping})
+	c.JSON(http.StatusCreated, mapping)
 }
 
 // RemoveMetric DELETE /api/model/logical-tables/:id/metrics/:mid

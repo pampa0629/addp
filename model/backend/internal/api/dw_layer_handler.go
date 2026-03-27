@@ -26,7 +26,7 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": layers})
+	c.JSON(http.StatusOK, layers)
 }
 
 // CreateDWLayer POST /api/model/dw-layers
@@ -43,7 +43,7 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": layer})
+	c.JSON(http.StatusCreated, layer)
 }
 
 // GetDWLayer GET /api/model/dw-layers/:id
@@ -60,7 +60,7 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "layer not found"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": layer})
+	c.JSON(http.StatusOK, layer)
 }
 
 // UpdateDWLayer PUT /api/model/dw-layers/:id
@@ -83,7 +83,7 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": layer})
+	c.JSON(http.StatusOK, layer)
 }
 
 // DeleteDWLayer DELETE /api/model/dw-layers/:id

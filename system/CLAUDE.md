@@ -202,12 +202,12 @@ frontend/src/
 
 ### 认证流程
 
-1. 用户通过 `POST /api/system/login` 登录，提交用户名和密码
+1. 用户通过 `POST /api/v1/system/login` 登录，提交用户名和密码
 2. 后端验证凭证，生成 JWT Token（使用 HS256 算法）
 3. 前端存储 Token 到 localStorage
 4. 后续请求通过 `Authorization: Bearer <token>` 头部携带 Token
 5. 后端中间件 `AuthMiddleware` 验证 Token 并提取用户信息
-6. Token 过期后可通过 `POST /api/system/refresh` 刷新
+6. Token 过期后可通过 `POST /api/v1/system/refresh` 刷新
 
 ### 数据库设计
 
@@ -271,7 +271,7 @@ frontend/src/
    - 在 `internal/repository/` 添加数据访问方法
    - 在`internal/service/` 实现业务逻辑
    - 在 `internal/api/` 创建 HTTP 处理器
-   - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/system/`）
+   - 在 `internal/api/router.go` 注册路由（注意路由前缀为 `/api/v1/system/`）
 
 2. **数据库迁移**:
    - 修改 `internal/models/` 中的模型结构
@@ -280,7 +280,7 @@ frontend/src/
 
 3. **前端添加新页面**:
    - 在 `src/views/` 创建 Vue 组件
-   - 在 `src/api/` 添加 API 调用函数（注意 URL 前缀为 `/api/system/`）
+   - 在 `src/api/` 添加 API 调用函数（注意 URL 前缀为 `/api/v1/system/`）
    - 在 `src/router/` 注册路由
 
 4. **端口配置**:
@@ -308,7 +308,7 @@ frontend/src/
 
 3. **API Key 安全** (system.api_keys)
    - 存储：仅存 SHA256 hash，明文仅在创建时返回一次
-   - 验证：`GET /api/internal/api-keys/validate` 供 Gateway 调用
+   - 验证：`GET /api/v1/internal/api-keys/validate` 供 Gateway 调用
 
 ### 访问控制
 
@@ -329,97 +329,97 @@ frontend/src/
 
 ## API 端点
 
-> 所有对外 API 均以 `/api/system` 为前缀。内部服务间 API 以 `/api/internal` 为前缀（需 `X-Internal-API-Key` 认证）。
+> 所有对外 API 均以 `/api/v1/system` 为前缀。内部服务间 API 以 `/api/v1/internal` 为前缀（需 `X-Internal-API-Key` 认证）。
 
 ### 认证（无需认证）
-- `POST /api/system/login` - 用户登录
-- `POST /api/system/register` - 用户注册（仅限初始化）
-- `POST /api/system/refresh` - Token 刷新
+- `POST /api/v1/system/login` - 用户登录
+- `POST /api/v1/system/register` - 用户注册（仅限初始化）
+- `POST /api/v1/system/refresh` - Token 刷新
 
 ### 用户管理（需认证）
-- `GET /api/system/users/me` - 获取当前用户信息
-- `POST /api/system/users` - 创建用户（租户管理员创建本租户用户）
-- `GET /api/system/users` - 获取用户列表（租户管理员仅看本租户）
-- `GET /api/system/users/:id` - 获取指定用户
-- `PUT /api/system/users/:id` - 更新用户
-- `PUT /api/system/users/:id/change-password` - 修改密码
-- `DELETE /api/system/users/:id` - 删除用户（SuperAdmin 不可删除）
+- `GET /api/v1/system/users/me` - 获取当前用户信息
+- `POST /api/v1/system/users` - 创建用户（租户管理员创建本租户用户）
+- `GET /api/v1/system/users` - 获取用户列表（租户管理员仅看本租户）
+- `GET /api/v1/system/users/:id` - 获取指定用户
+- `PUT /api/v1/system/users/:id` - 更新用户
+- `PUT /api/v1/system/users/:id/change-password` - 修改密码
+- `DELETE /api/v1/system/users/:id` - 删除用户（SuperAdmin 不可删除）
 
 ### 租户管理（仅超级管理员）
-- `POST /api/system/tenants` - 创建租户（同时创建租户管理员）
-- `GET /api/system/tenants` - 获取租户列表
-- `GET /api/system/tenants/:id` - 获取指定租户
-- `PUT /api/system/tenants/:id` - 更新租户
-- `DELETE /api/system/tenants/:id` - 删除租户
+- `POST /api/v1/system/tenants` - 创建租户（同时创建租户管理员）
+- `GET /api/v1/system/tenants` - 获取租户列表
+- `GET /api/v1/system/tenants/:id` - 获取指定租户
+- `PUT /api/v1/system/tenants/:id` - 更新租户
+- `DELETE /api/v1/system/tenants/:id` - 删除租户
 
 ### 日志管理（需认证）
-- `GET /api/system/logs` - 获取日志列表（自动过滤本租户，支持 user_id 过滤）
-- `GET /api/system/logs/stats` - 获取日志统计数据
-- `GET /api/system/logs/trends` - 获取日志时间趋势
-- `GET /api/system/logs/export` - 导出日志
-- `GET /api/system/logs/:id` - 获取指定日志
+- `GET /api/v1/system/logs` - 获取日志列表（自动过滤本租户，支持 user_id 过滤）
+- `GET /api/v1/system/logs/stats` - 获取日志统计数据
+- `GET /api/v1/system/logs/trends` - 获取日志时间趋势
+- `GET /api/v1/system/logs/export` - 导出日志
+- `GET /api/v1/system/logs/:id` - 获取指定日志
 
 ### 引擎管理（需认证）
-- `POST /api/system/engines` - 创建引擎（自动关联当前用户租户）
-- `GET /api/system/engines` - 获取引擎列表（自动过滤本租户，支持 engine_type 过滤）
-- `GET /api/system/engines/:id` - 获取指定引擎
-- `PUT /api/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
-- `DELETE /api/system/engines/:id` - 删除引擎
-- `POST /api/system/engines/:id/test` - 测试已有引擎连接
-- `POST /api/system/engines/test-connection` - 创建前测试连接
-- `GET /api/system/engines/:id/schemas` - 列出数据库 schemas
-- `GET /api/system/engines/:id/tables` - 列出数据库表
+- `POST /api/v1/system/engines` - 创建引擎（自动关联当前用户租户）
+- `GET /api/v1/system/engines` - 获取引擎列表（自动过滤本租户，支持 engine_type 过滤）
+- `GET /api/v1/system/engines/:id` - 获取指定引擎
+- `PUT /api/v1/system/engines/:id` - 更新引擎（敏感字段自动重新加密）
+- `DELETE /api/v1/system/engines/:id` - 删除引擎
+- `POST /api/v1/system/engines/:id/test` - 测试已有引擎连接
+- `POST /api/v1/system/engines/test-connection` - 创建前测试连接
+- `GET /api/v1/system/engines/:id/schemas` - 列出数据库 schemas
+- `GET /api/v1/system/engines/:id/tables` - 列出数据库表
 
 ### 应用管理（需认证）
-- `POST /api/system/applications` - 创建应用
-- `GET /api/system/applications` - 获取应用列表
-- `GET /api/system/applications/:id` - 获取指定应用
-- `PUT /api/system/applications/:id` - 更新应用
-- `DELETE /api/system/applications/:id` - 删除应用
-- `POST /api/system/applications/:id/keys` - 为应用生成 API Key
-- `GET /api/system/applications/:id/keys` - 列出应用的 API Key
-- `DELETE /api/system/applications/:id/keys/:key_id` - 撤销 API Key
+- `POST /api/v1/system/applications` - 创建应用
+- `GET /api/v1/system/applications` - 获取应用列表
+- `GET /api/v1/system/applications/:id` - 获取指定应用
+- `PUT /api/v1/system/applications/:id` - 更新应用
+- `DELETE /api/v1/system/applications/:id` - 删除应用
+- `POST /api/v1/system/applications/:id/keys` - 为应用生成 API Key
+- `GET /api/v1/system/applications/:id/keys` - 列出应用的 API Key
+- `DELETE /api/v1/system/applications/:id/keys/:key_id` - 撤销 API Key
 
 ### 垃圾数据清理（仅租户管理员）
-- `POST /api/system/admin/cleanup/scan` - 创建扫描任务
-- `GET /api/system/admin/cleanup/tasks/:task_id` - 获取任务状态
-- `POST /api/system/admin/cleanup/execute` - 创建执行清理任务
-- `GET /api/system/admin/cleanup/history` - 获取任务历史
+- `POST /api/v1/system/admin/cleanup/scan` - 创建扫描任务
+- `GET /api/v1/system/admin/cleanup/tasks/:task_id` - 获取任务状态
+- `POST /api/v1/system/admin/cleanup/execute` - 创建执行清理任务
+- `GET /api/v1/system/admin/cleanup/history` - 获取任务历史
 
 ### 内部 API（`/api/internal`，X-Internal-API-Key 认证）
 
 **配置**:
-- `GET /api/internal/config` - 获取共享配置
+- `GET /api/v1/internal/config` - 获取共享配置
 
 **引擎**:
-- `GET /api/internal/engines` - 列出所有引擎（内部使用）
-- `GET /api/internal/engines/:id` - 获取引擎详情（内部使用）
-- `POST /api/internal/engines` - 创建引擎（内部使用）
-- `POST /api/internal/engines/register` - 引擎自注册
-- `PUT /api/internal/engines/:id/connection-status` - 更新连接状态
-- `POST /api/internal/engines/:id/check-connection` - 触发异步连接检测
+- `GET /api/v1/internal/engines` - 列出所有引擎（内部使用）
+- `GET /api/v1/internal/engines/:id` - 获取引擎详情（内部使用）
+- `POST /api/v1/internal/engines` - 创建引擎（内部使用）
+- `POST /api/v1/internal/engines/register` - 引擎自注册
+- `PUT /api/v1/internal/engines/:id/connection-status` - 更新连接状态
+- `POST /api/v1/internal/engines/:id/check-connection` - 触发异步连接检测
 
 **能力注册**:
-- `POST /api/internal/registry/capabilities` - 注册计算能力
-- `GET /api/internal/registry/capabilities` - 列出所有能力
-- `GET /api/internal/registry/capabilities/:identifier` - 按标识符查询能力
-- `GET /api/internal/registry/compute-engines` - 列出计算引擎
+- `POST /api/v1/internal/registry/capabilities` - 注册计算能力
+- `GET /api/v1/internal/registry/capabilities` - 列出所有能力
+- `GET /api/v1/internal/registry/capabilities/:identifier` - 按标识符查询能力
+- `GET /api/v1/internal/registry/compute-engines` - 列出计算引擎
 
 **任务提供者**:
-- `POST /api/internal/task-providers/register` - 模块注册为任务提供者
-- `GET /api/internal/task-providers` - 列出所有任务提供者
-- `GET /api/internal/task-providers/:module_name` - 获取指定模块信息
+- `POST /api/v1/internal/task-providers/register` - 模块注册为任务提供者
+- `GET /api/v1/internal/task-providers` - 列出所有任务提供者
+- `GET /api/v1/internal/task-providers/:module_name` - 获取指定模块信息
 
 **审计日志**:
-- `POST /api/internal/audit-logs` - 其他模块写入审计日志
+- `POST /api/v1/internal/audit-logs` - 其他模块写入审计日志
 
 **API Key 验证**:
-- `GET /api/internal/api-keys/validate` - 验证 API Key（Gateway 调用）
-- `GET /api/internal/api-keys/bulk` - 批量获取 API Key 信息
+- `GET /api/v1/internal/api-keys/validate` - 验证 API Key（Gateway 调用）
+- `GET /api/v1/internal/api-keys/bulk` - 批量获取 API Key 信息
 
 **模块注册与发现**:
-- `POST /api/internal/modules/register` - 模块注册
-- `POST /api/internal/modules/heartbeat` - 心跳更新
-- `GET /api/internal/modules` - 列出所有已注册模块
-- `GET /api/internal/modules/:name` - 获取指定模块信息
-- `DELETE /api/internal/modules/:name` - 注销模块
+- `POST /api/v1/internal/modules/register` - 模块注册
+- `POST /api/v1/internal/modules/heartbeat` - 心跳更新
+- `GET /api/v1/internal/modules` - 列出所有已注册模块
+- `GET /api/v1/internal/modules/:name` - 获取指定模块信息
+- `DELETE /api/v1/internal/modules/:name` - 注销模块

@@ -70,19 +70,19 @@ func (s *CodeSetService) ListCodeSets(tenantID int64, keyword, codeSetType strin
 }
 
 // UpdateCodeSet 更新码值集
-func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCodeSetRequest) error {
+func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCodeSetRequest) (*models.CodeSet, error) {
 	codeSet, err := s.repo.GetByID(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if codeSet.TenantID != tenantID {
-		return errors.New("无权访问该码值集")
+		return nil, errors.New("无权访问该码值集")
 	}
 
 	// 校验 type
 	if req.Type != "" && req.Type != "system" && req.Type != "custom" {
-		return errors.New("type 必须是 system 或 custom")
+		return nil, errors.New("type 必须是 system 或 custom")
 	}
 
 	codeSet.Name = req.Name
@@ -91,7 +91,10 @@ func (s *CodeSetService) UpdateCodeSet(id, tenantID int64, req *models.UpdateCod
 	}
 	codeSet.Description = req.Description
 
-	return s.repo.Update(codeSet)
+	if err := s.repo.Update(codeSet); err != nil {
+		return nil, err
+	}
+	return codeSet, nil
 }
 
 // DeleteCodeSet 删除码值集
@@ -164,23 +167,23 @@ func (s *CodeSetService) CreateCodeItem(codeSetID, tenantID int64, req *models.C
 }
 
 // UpdateCodeItem 更新码值项
-func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) error {
+func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *models.UpdateCodeItemRequest) (*models.CodeItem, error) {
 	// 验证码值集是否属于当前租户
 	codeSet, err := s.repo.GetByID(codeSetID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if codeSet.TenantID != tenantID {
-		return errors.New("无权访问该码值集")
+		return nil, errors.New("无权访问该码值集")
 	}
 
 	item, err := s.repo.GetItemByID(itemID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if item.CodeSetID != codeSetID {
-		return errors.New("码值项不属于该码值集")
+		return nil, errors.New("码值项不属于该码值集")
 	}
 
 	item.Value = req.Value
@@ -188,7 +191,10 @@ func (s *CodeSetService) UpdateCodeItem(codeSetID, itemID, tenantID int64, req *
 	item.SortOrder = req.SortOrder
 	item.IsActive = req.IsActive
 
-	return s.repo.UpdateItem(item)
+	if err := s.repo.UpdateItem(item); err != nil {
+		return nil, err
+	}
+	return item, nil
 }
 
 // DeleteCodeItem 删除码值项

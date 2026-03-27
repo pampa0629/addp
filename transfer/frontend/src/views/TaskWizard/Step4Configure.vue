@@ -29,8 +29,8 @@
       <!-- 调度计划 -->
       <el-form-item label="调度计划">
         <el-radio-group v-model="scheduleMode">
-          <el-radio label="once">立即执行一次</el-radio>
-          <el-radio label="cron">定时调度</el-radio>
+          <el-radio value="once">立即执行一次</el-radio>
+          <el-radio value="cron">定时调度</el-radio>
         </el-radio-group>
       </el-form-item>
 

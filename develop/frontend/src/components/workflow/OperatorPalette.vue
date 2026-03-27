@@ -92,7 +92,7 @@ import * as operatorApi from '@/api/operator'
 const props = defineProps({
   engineType: {
     type: String,
-    default: null, // 引擎模块名称: 'python', 'spark', 'math', 或 null (全部)
+    default: null, // 引擎模块名称: 'python_workflow', 'spark_workflow', 'math_workflow', 或 null (全部)
   }
 })
 

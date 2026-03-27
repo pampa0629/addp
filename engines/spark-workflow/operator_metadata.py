@@ -40,7 +40,7 @@ def get_operator_metadata() -> List[Dict[str, Any]]:
             "id": op_name,
             "name": op_name,
             "display_name": op_meta.get('description', op_name),
-            "module": "spark",
+            "module": "spark_workflow",
             "category": op_meta.get('category', '未分类'),
             "description": op_meta.get('description', ''),
             "brief_description": op_meta.get('brief_description', ''),

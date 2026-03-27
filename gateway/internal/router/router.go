@@ -125,7 +125,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 
 	// ============ 公开路由（无需鉴权）============
 	// 注意：这些路由必须在通配符路由之前定义，避免冲突
-	public := router.Group("/api")
+	public := router.Group("/api/v1")
 	{
 		// System 模块的认证接口（登录、注册）
 		if moduleDiscovery != nil {
@@ -314,7 +314,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	}
 
 	// ============ 受保护的路由（需要 API Key 鉴权）============
-	api := router.Group("/api")
+	api := router.Group("/api/v1")
 	api.Use(apiKeyAuthMiddleware.Handler())      // API Key 验证
 	api.Use(rateLimiterMiddleware.Handler())     // 限流
 	api.Use(accessLoggerMiddleware.Handler())    // 访问日志

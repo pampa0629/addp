@@ -81,7 +81,7 @@ func SetupRouter(
 	router.GET("/ogc/tiles/:serviceName/tiles/:layer/:tileMatrixSetId/:tileMatrix/:tileRow/:tileCol", ogcTilesHandler.GetTile)
 
 	// API 路由组（需要认证）
-	api := router.Group("/api/service")
+	api := router.Group("/api/v1/service")
 	assetDiscHandler := newAssetDiscoverableHandler(db)
 	{
 		// 内部服务调用支持（X-Internal-API-Key 跳过 JWT 认证）

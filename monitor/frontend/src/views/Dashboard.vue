@@ -153,7 +153,7 @@ async function loadModulesHealth() {
   loadingModules.value = true
   try {
     const data = await checkAllModules()
-    modules.value = data.modules || []
+    modules.value = data || []
   } catch (error) {
     ElMessage.error('加载模块健康状态失败')
     console.error(error)
@@ -173,7 +173,7 @@ async function loadTrendData() {
   loadingTrend.value = true
   try {
     const data = await getTrendData({ days: trendDays.value })
-    trendData.value = data.trend_data || []
+    trendData.value = data || []
     await nextTick()
     renderTrendChart()
   } catch (error) {

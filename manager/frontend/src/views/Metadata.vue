@@ -48,9 +48,9 @@
               <h3>数据库表</h3>
               <div class="filter-group">
                 <el-radio-group v-model="tableFilter" @change="loadTables">
-                  <el-radio-button label="all">全部 ({{ scanResult?.total_items || 0 }})</el-radio-button>
-                  <el-radio-button label="managed">已纳管 ({{ scanResult?.managed_items || 0 }})</el-radio-button>
-                  <el-radio-button label="unmanaged">未纳管 ({{ scanResult?.unmanaged_items || 0 }})</el-radio-button>
+                  <el-radio-button value="all">全部 ({{ scanResult?.total_items || 0 }})</el-radio-button>
+                  <el-radio-button value="managed">已纳管 ({{ scanResult?.managed_items || 0 }})</el-radio-button>
+                  <el-radio-button value="unmanaged">未纳管 ({{ scanResult?.unmanaged_items || 0 }})</el-radio-button>
                 </el-radio-group>
               </div>
             </div>

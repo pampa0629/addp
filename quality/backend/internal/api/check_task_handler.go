@@ -25,7 +25,7 @@ func (h *CheckTaskHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": items})
+	c.JSON(http.StatusOK, items)
 }
 
 func (h *CheckTaskHandler) Get(c *gin.Context) {
@@ -40,7 +40,7 @@ func (h *CheckTaskHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *CheckTaskHandler) Create(c *gin.Context) {
@@ -56,7 +56,7 @@ func (h *CheckTaskHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": item})
+	c.JSON(http.StatusCreated, item)
 }
 
 func (h *CheckTaskHandler) Update(c *gin.Context) {
@@ -76,7 +76,7 @@ func (h *CheckTaskHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": item})
+	c.JSON(http.StatusOK, item)
 }
 
 func (h *CheckTaskHandler) Delete(c *gin.Context) {
@@ -90,7 +90,7 @@ func (h *CheckTaskHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
 func (h *CheckTaskHandler) Run(c *gin.Context) {

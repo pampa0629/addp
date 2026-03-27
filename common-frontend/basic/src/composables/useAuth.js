@@ -559,7 +559,7 @@ export function createAuthAPI(client, options = {}) {
 export function createAPIClient(getAuthStore, options = {}) {
   const {
     moduleName,
-    baseURL = '/api',
+    baseURL = '/api/v1',
     timeout = 30000,
     extractData = true,
     enableRefresh = true,

@@ -82,7 +82,7 @@ func handleCatalogs(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 			commonAPI.InternalServerError(c, "获取目录失败: "+err.Error())
 			return
 		}
-		commonAPI.SuccessResponse(c, gin.H{"data": catalogs})
+		commonAPI.SuccessResponse(c, catalogs)
 	}
 }
 
@@ -197,7 +197,7 @@ func handleApply(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 			commonAPI.BadRequestError(c, err.Error())
 			return
 		}
-		commonAPI.SuccessResponse(c, app)
+		commonAPI.CreatedResponse(c, app)
 	}
 }
 
@@ -213,7 +213,7 @@ func handleMyApplications(assetClient *commonClient.AssetClient) gin.HandlerFunc
 			commonAPI.InternalServerError(c, "获取申请列表失败: "+err.Error())
 			return
 		}
-		commonAPI.SuccessResponse(c, gin.H{"data": apps})
+		commonAPI.SuccessResponse(c, apps)
 	}
 }
 

@@ -94,7 +94,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	})
 
 	// API 路由组
-	api := router.Group("/api/system")
+	api := router.Group("/api/v1/system")
 	{
 		// 认证路由（不需要认证）
 		authHandler := NewAuthHandler(userService, cfg)
@@ -185,7 +185,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	}
 
 	// 内部 API（用于服务间调用，使用 X-Internal-API-Key 认证）
-	internal := router.Group("/api/internal")
+	internal := router.Group("/api/v1/internal")
 	internal.Use(middleware.InternalAPIMiddleware(cfg))
 	{
 		configHandler := NewConfigHandler(cfg)

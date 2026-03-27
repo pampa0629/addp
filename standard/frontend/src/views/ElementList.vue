@@ -216,13 +216,13 @@ const getDomainName = (id) => {
 
 const loadDomains = async () => {
   const res = await domainAPI.list()
-  domainList.value = flattenDomains(res.data || [])
+  domainList.value = flattenDomains(res || [])
 }
 
 const loadUnits = async () => {
   try {
     const res = await unitAPI.list({ page_size: 500 })
-    units.value = res.data || []
+    units.value = res || []
   } catch (e) {
     console.error('加载单位失败:', e)
   }

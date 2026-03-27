@@ -3,7 +3,7 @@ import { createAuthAPI } from '@common-ui'
 
 // 创建指向 System 后端的独立客户端（用于认证）
 const systemClient = axios.create({
-  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api/system' : '/api/system',
+  baseURL: import.meta.env.DEV ? 'http://localhost:8180/api/v1/system' : '/api/v1/system',
   timeout: 10000
 })
 

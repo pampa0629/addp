@@ -283,8 +283,8 @@
         </el-form-item>
         <el-form-item label="图层类型">
           <el-radio-group v-model="layerForm.layer_type">
-            <el-radio label="dynamic">动态图层</el-radio>
-            <el-radio label="static">静态图层</el-radio>
+            <el-radio value="dynamic">动态图层</el-radio>
+            <el-radio value="static">静态图层</el-radio>
           </el-radio-group>
         </el-form-item>
 
@@ -412,7 +412,7 @@ const serviceId = computed(() => route.params.id)
 // 开发环境：通过 Vite proxy 代理到 Gateway (localhost:8000)
 // 生产环境：直接访问 Gateway
 const metaApiBaseUrl = computed(() => {
-  return '/api/service'
+  return '/api/v1/service'
 })
 
 // 计算服务端点

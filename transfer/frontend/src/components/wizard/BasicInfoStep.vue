@@ -12,9 +12,9 @@
 
       <el-form-item label="执行模式">
         <el-radio-group v-model="form.mode">
-          <el-radio-button label="batch">批处理</el-radio-button>
-          <el-radio-button label="stream">流式</el-radio-button>
-          <el-radio-button label="micro-batch">微批</el-radio-button>
+          <el-radio-button value="batch">批处理</el-radio-button>
+          <el-radio-button value="stream">流式</el-radio-button>
+          <el-radio-button value="micro-batch">微批</el-radio-button>
         </el-radio-group>
         <div class="hint">
           <p>• 批处理:适合定期大批量数据传输(推荐)</p>

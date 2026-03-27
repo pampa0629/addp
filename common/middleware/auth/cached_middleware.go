@@ -38,7 +38,7 @@ import (
 //   router.Use(auth.CachedSystemAuthMiddleware("http://localhost:8180", redisClient, 5*time.Minute))
 func CachedSystemAuthMiddleware(systemURL string, redisClient *redis.Client, cacheTTL time.Duration) gin.HandlerFunc {
 	baseURL := strings.TrimSuffix(systemURL, "/")
-	meEndpoint := baseURL + "/api/system/users/me"
+	meEndpoint := baseURL + "/api/v1/system/users/me"
 	httpClient := &http.Client{
 		Timeout: 10 * time.Second,
 	}

@@ -216,11 +216,16 @@ func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 		return
 	}
 
+	totalPages := int(total) / pageSize
+	if int(total)%pageSize != 0 {
+		totalPages++
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":      execs,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
+		"data":        execs,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages,
 	})
 }
 
@@ -239,11 +244,16 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 		return
 	}
 
+	totalPages2 := int(total) / pageSize
+	if int(total)%pageSize != 0 {
+		totalPages2++
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"data":      execs,
-		"total":     total,
-		"page":      page,
-		"page_size": pageSize,
+		"data":        execs,
+		"total":       total,
+		"page":        page,
+		"page_size":   pageSize,
+		"total_pages": totalPages2,
 	})
 }
 

@@ -118,7 +118,7 @@ func SetupRouter(
 	tableRelationHandler := NewTableRelationHandler(tableRelationSvc)
 
 	// API 路由组
-	api := router.Group("/api/model")
+	api := router.Group("/api/v1/model")
 
 	// 使用 Redis 缓存中间件 (TTL: 5分钟)
 	if redisClient != nil {
@@ -191,28 +191,28 @@ func SetupRouter(
 
 		// 代理到 Standard 模块的路由
 		// 业务域
-		api.Any("/domains", proxyToStandard(standardURL, "/api/standard/domains"))
-		api.Any("/domains/*path", proxyToStandard(standardURL, "/api/standard/domains"))
+		api.Any("/domains", proxyToStandard(standardURL, "/api/v1/standard/domains"))
+		api.Any("/domains/*path", proxyToStandard(standardURL, "/api/v1/standard/domains"))
 
 		// 业务术语
-		api.Any("/glossaries", proxyToStandard(standardURL, "/api/standard/glossaries"))
-		api.Any("/glossaries/*path", proxyToStandard(standardURL, "/api/standard/glossaries"))
+		api.Any("/glossaries", proxyToStandard(standardURL, "/api/v1/standard/glossaries"))
+		api.Any("/glossaries/*path", proxyToStandard(standardURL, "/api/v1/standard/glossaries"))
 
 		// 数据元
-		api.Any("/elements", proxyToStandard(standardURL, "/api/standard/elements"))
-		api.Any("/elements/*path", proxyToStandard(standardURL, "/api/standard/elements"))
+		api.Any("/elements", proxyToStandard(standardURL, "/api/v1/standard/elements"))
+		api.Any("/elements/*path", proxyToStandard(standardURL, "/api/v1/standard/elements"))
 
 		// 码值集
-		api.Any("/code-sets", proxyToStandard(standardURL, "/api/standard/code-sets"))
-		api.Any("/code-sets/*path", proxyToStandard(standardURL, "/api/standard/code-sets"))
+		api.Any("/code-sets", proxyToStandard(standardURL, "/api/v1/standard/code-sets"))
+		api.Any("/code-sets/*path", proxyToStandard(standardURL, "/api/v1/standard/code-sets"))
 
 		// 维度层级（代理到 Standard 模块）
-		api.Any("/dimension-hierarchies", proxyToStandard(standardURL, "/api/standard/dimension-hierarchies"))
-		api.Any("/dimension-hierarchies/*path", proxyToStandard(standardURL, "/api/standard/dimension-hierarchies"))
+		api.Any("/dimension-hierarchies", proxyToStandard(standardURL, "/api/v1/standard/dimension-hierarchies"))
+		api.Any("/dimension-hierarchies/*path", proxyToStandard(standardURL, "/api/v1/standard/dimension-hierarchies"))
 
 		// 指标（代理到 Standard 模块，用于搜索关联指标）
-		api.Any("/standard-metrics", proxyToStandard(standardURL, "/api/standard/metrics"))
-		api.Any("/standard-metrics/*path", proxyToStandard(standardURL, "/api/standard/metrics"))
+		api.Any("/standard-metrics", proxyToStandard(standardURL, "/api/v1/standard/metrics"))
+		api.Any("/standard-metrics/*path", proxyToStandard(standardURL, "/api/v1/standard/metrics"))
 	}
 
 	// 健康检查（无认证）

@@ -152,7 +152,7 @@ async function fetchStats() {
   loading.value = true
   try {
     const data = await statsAPI.dashboard()
-    stats.value = data?.data || data
+    stats.value = data
   } catch (err) {
     ElMessage.error('获取统计数据失败')
   } finally {

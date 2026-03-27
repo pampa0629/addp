@@ -211,6 +211,7 @@ if [ "$START_ALL" = true ]; then
   START_COPILOT_BACKEND=true
   START_AGENT_BACKEND=true
   START_AGENT_FRONTEND=true
+  START_STANDARD_BACKEND=true
   START_STANDARD_FRONTEND=true
   START_MODEL_BACKEND=true
   START_MODEL_FRONTEND=true
@@ -718,7 +719,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
 
   # ============================================================
@@ -818,7 +819,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -990,7 +991,7 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
 
   HEALTH_CHECK_PIDS=()

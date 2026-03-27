@@ -30,7 +30,7 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"data": relations})
+	c.JSON(http.StatusOK, relations)
 }
 
 // AddDimensionRelation POST /api/model/logical-tables/:id/dimension-relations
@@ -51,7 +51,7 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"data": rel})
+	c.JSON(http.StatusCreated, rel)
 }
 
 // RemoveDimensionRelation DELETE /api/model/logical-tables/:id/dimension-relations/:rid

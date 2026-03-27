@@ -158,7 +158,7 @@ const loadTasks = async () => {
       params.engine_id = filterEngineId.value
     }
 
-    const response = await client.get('/manager/embedding/tasks', { params })
+    const response = await client.get('/manager/embedding_tasks', { params })
     // response 已经是后端返回的完整 JSON 对象（因为 extractData = true）
     tasks.value = response.data || []
     total.value = response.total || 0

@@ -184,7 +184,7 @@ type CatalogNode struct {
 
 // GetAssets 获取资产列表（支持分页和过滤）
 func (c *AssetClient) GetAssets(tenantID int64, opts AssetQueryOptions) (*AssetListResponse, error) {
-	url := fmt.Sprintf("%s/api/asset/assets", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/assets", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -234,7 +234,7 @@ func (c *AssetClient) GetAssets(tenantID int64, opts AssetQueryOptions) (*AssetL
 
 // GetAssetDetail 获取资产详情
 func (c *AssetClient) GetAssetDetail(assetID int64, tenantID int64) (*AssetDetail, error) {
-	url := fmt.Sprintf("%s/api/asset/assets/%d", c.baseURL, assetID)
+	url := fmt.Sprintf("%s/api/v1/asset/assets/%d", c.baseURL, assetID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -266,7 +266,7 @@ func (c *AssetClient) GetAssetDetail(assetID int64, tenantID int64) (*AssetDetai
 
 // GetCatalogs 获取目录树
 func (c *AssetClient) GetCatalogs(tenantID int64) ([]CatalogNode, error) {
-	url := fmt.Sprintf("%s/api/asset/catalogs/tree", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/catalogs/tree", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -298,7 +298,7 @@ func (c *AssetClient) GetCatalogs(tenantID int64) ([]CatalogNode, error) {
 // CreateApplication 提交资产申请（由 portal 用户触发）
 // Phase 4 实现完整内部逻辑
 func (c *AssetClient) CreateApplication(tenantID int64, applyReq CreateApplicationRequest) (*ApplicationRequest, error) {
-	url := fmt.Sprintf("%s/api/asset/applications", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/applications", c.baseURL)
 
 	body, err := json.Marshal(applyReq)
 	if err != nil {
@@ -341,7 +341,7 @@ type ApplicationListResponse struct {
 // GetApplications 获取申请列表（供 portal "我的申请"使用）
 // assetID 为 0 时不过滤资产
 func (c *AssetClient) GetApplications(tenantID int64, applicantID int64, assetID int64) ([]ApplicationRequest, error) {
-	url := fmt.Sprintf("%s/api/asset/applications", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/applications", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -382,7 +382,7 @@ func (c *AssetClient) GetApplications(tenantID int64, applicantID int64, assetID
 // 返回值："none" | "pending" | "approved"
 func (c *AssetClient) GetApplyStatus(tenantID int64, assetID int64, userID int64) (string, error) {
 	// 先检查是否有有效授权
-	authURL := fmt.Sprintf("%s/api/asset/authorizations", c.baseURL)
+	authURL := fmt.Sprintf("%s/api/v1/asset/authorizations", c.baseURL)
 	authReq, err := http.NewRequest("GET", authURL, nil)
 	if err != nil {
 		return "none", nil
@@ -456,7 +456,7 @@ type UpsertRatingRequest struct {
 
 // GetRatings 获取资产评价列表
 func (c *AssetClient) GetRatings(tenantID int64, assetID int64) ([]RatingItem, int64, error) {
-	url := fmt.Sprintf("%s/api/asset/ratings", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/ratings", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create request: %w", err)
@@ -490,7 +490,7 @@ func (c *AssetClient) GetRatings(tenantID int64, assetID int64) ([]RatingItem, i
 
 // UpsertRating 提交或更新评价（upsert 语义）
 func (c *AssetClient) UpsertRating(tenantID int64, req UpsertRatingRequest) (*RatingItem, error) {
-	url := fmt.Sprintf("%s/api/asset/ratings", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/ratings", c.baseURL)
 
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -526,7 +526,7 @@ func (c *AssetClient) UpsertRating(tenantID int64, req UpsertRatingRequest) (*Ra
 
 // GetAssetStats 获取已上架资产的统计数据（各类型数量 + 总计）
 func (c *AssetClient) GetAssetStats(tenantID int64) (*AssetStatsResponse, error) {
-	url := fmt.Sprintf("%s/api/asset/assets/stats", c.baseURL)
+	url := fmt.Sprintf("%s/api/v1/asset/assets/stats", c.baseURL)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)

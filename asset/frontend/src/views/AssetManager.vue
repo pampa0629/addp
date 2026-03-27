@@ -344,7 +344,7 @@ async function batchCategorize(categoryId) {
 async function loadCategories() {
   try {
     const res = await catalogAPI.list()
-    categories.value = res.data || []
+    categories.value = res || []
   } catch {
     categories.value = []
   }
@@ -353,7 +353,7 @@ async function loadCategories() {
 async function loadTypes() {
   try {
     const res = await typeDefinitionAPI.list()
-    typeOptions.value = res.data || []
+    typeOptions.value = res || []
   } catch {
     typeOptions.value = []
   }
