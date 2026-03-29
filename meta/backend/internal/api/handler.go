@@ -39,6 +39,12 @@ func (h *Handler) handleServiceError(c *gin.Context, err error) {
 // GetObjectMetadata 获取对象的元数据
 // GET /api/meta/metadata/object
 // Query params: engine_id, object_key
+// @Summary 获取对象元数据
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /metadata/object [get]
+// @Security BearerAuth
 func (h *Handler) GetObjectMetadata(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -66,6 +72,12 @@ func (h *Handler) GetObjectMetadata(c *gin.Context) {
 
 // GetResources 获取资源列表及统计
 // GET /api/meta/engines
+// @Summary 获取引擎列表
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /engines [get]
+// @Security BearerAuth
 func (h *Handler) GetEngines(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -80,6 +92,12 @@ func (h *Handler) GetEngines(c *gin.Context) {
 
 // GetSchemas 获取资源的Schema列表
 // GET /api/meta/schemas/:engine_id
+// @Summary 获取Schema列表
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /schemas/{engine_id} [get]
+// @Security BearerAuth
 func (h *Handler) GetSchemas(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -101,6 +119,12 @@ func (h *Handler) GetSchemas(c *gin.Context) {
 
 // ListAvailableSchemas 列出资源中可用的Schema（从数据库实时查询）
 // GET /api/meta/schemas/:engine_id/available
+// @Summary 列出可用Schema
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /schemas/{engine_id}/available [get]
+// @Security BearerAuth
 func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 
@@ -132,6 +156,12 @@ func (h *Handler) ListAvailableSchemas(c *gin.Context) {
 }
 
 // ListObjectStorageNodes 分级列出对象存储节点
+// @Summary 列出对象存储节点
+// @Tags Meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /object-storage/{engine_id}/nodes [get]
+// @Security BearerAuth
 func (h *Handler) ListObjectStorageNodes(c *gin.Context) {
 	tenantID := commonAuth.GetTenantID(c)
 

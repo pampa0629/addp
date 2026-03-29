@@ -34,7 +34,7 @@ func NewTileServiceHandler(tileServiceService *service.TileServiceService) *Tile
 // @Produce json
 // @Param body body models.CreateTileServiceRequest true "创建瓦片服务请求"
 // @Success 201 {object} models.TileServiceDTO
-// @Router /api/service/tile [post]
+// @Router /tile [post]
 func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 	// 1. 解析请求体
 	var req models.CreateTileServiceRequest
@@ -87,7 +87,7 @@ func (h *TileServiceHandler) CreateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID"
 // @Success 200 {object} models.TileServiceDTO
-// @Router /api/service/tile/{id} [get]
+// @Router /tile/{id} [get]
 func (h *TileServiceHandler) GetTileService(c *gin.Context) {
 	// 1. 解析路径参数
 	idStr := c.Param("id")
@@ -114,7 +114,7 @@ func (h *TileServiceHandler) GetTileService(c *gin.Context) {
 // @Produce json
 // @Param serviceName path string true "服务名称"
 // @Success 200 {object} models.TileServiceDTO
-// @Router /api/service/tile/by-name/{serviceName} [get]
+// @Router /tile/by-name/{serviceName} [get]
 func (h *TileServiceHandler) GetTileServiceByName(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceName := c.Param("serviceName")
@@ -144,7 +144,7 @@ func (h *TileServiceHandler) GetTileServiceByName(c *gin.Context) {
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "限制数量" default(20)
 // @Success 200 {object} map[string]interface{}
-// @Router /api/service/tile [get]
+// @Router /tile [get]
 func (h *TileServiceHandler) ListTileServices(c *gin.Context) {
 	// 1. 解析查询参数
 	offsetStr := c.DefaultQuery("offset", "0")
@@ -191,7 +191,7 @@ func (h *TileServiceHandler) ListTileServices(c *gin.Context) {
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "限制数量" default(20)
 // @Success 200 {object} map[string]interface{}
-// @Router /api/service/tile/search [get]
+// @Router /tile/search [get]
 func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 	// 1. 解析查询参数
 	keyword := c.Query("keyword")
@@ -245,7 +245,7 @@ func (h *TileServiceHandler) SearchTileServices(c *gin.Context) {
 // @Param id path int true "服务 ID"
 // @Param body body models.UpdateTileServiceRequest true "更新瓦片服务请求"
 // @Success 200 {object} models.TileServiceDTO
-// @Router /api/service/tile/{id} [put]
+// @Router /tile/{id} [put]
 func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 	// 1. 解析路径参数
 	idStr := c.Param("id")
@@ -279,7 +279,7 @@ func (h *TileServiceHandler) UpdateTileService(c *gin.Context) {
 // @Produce json
 // @Param id path int true "服务 ID"
 // @Success 204
-// @Router /api/service/tile/{id} [delete]
+// @Router /tile/{id} [delete]
 func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 	// 1. 解析路径参数
 	idStr := c.Param("id")
@@ -311,7 +311,7 @@ func (h *TileServiceHandler) DeleteTileService(c *gin.Context) {
 // @Param serviceId path int true "服务 ID"
 // @Param body body models.CreateTileLayerRequest true "创建图层请求"
 // @Success 201 {object} models.TileServiceLayerDTO
-// @Router /api/service/tile/{serviceId}/layers [post]
+// @Router /tile/{serviceId}/layers [post]
 func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceIDStr := c.Param("serviceId")
@@ -346,7 +346,7 @@ func (h *TileServiceHandler) AddLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID"
 // @Param layerId path int true "图层 ID"
 // @Success 200 {object} models.TileServiceLayerDTO
-// @Router /api/service/tile/{serviceId}/layers/{layerId} [get]
+// @Router /tile/{serviceId}/layers/{layerId} [get]
 func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
@@ -373,7 +373,7 @@ func (h *TileServiceHandler) GetLayer(c *gin.Context) {
 // @Produce json
 // @Param serviceId path int true "服务 ID"
 // @Success 200 {object} []models.TileServiceLayerDTO
-// @Router /api/service/tile/{serviceId}/layers [get]
+// @Router /tile/{serviceId}/layers [get]
 func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 	// 1. 解析路径参数
 	serviceIDStr := c.Param("serviceId")
@@ -403,7 +403,7 @@ func (h *TileServiceHandler) ListLayers(c *gin.Context) {
 // @Param layerId path int true "图层 ID"
 // @Param body body models.UpdateTileLayerRequest true "更新图层请求"
 // @Success 200 {object} models.TileServiceLayerDTO
-// @Router /api/service/tile/{serviceId}/layers/{layerId} [put]
+// @Router /tile/{serviceId}/layers/{layerId} [put]
 func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")
@@ -438,7 +438,7 @@ func (h *TileServiceHandler) UpdateLayer(c *gin.Context) {
 // @Param serviceId path int true "服务 ID"
 // @Param layerId path int true "图层 ID"
 // @Success 204
-// @Router /api/service/tile/{serviceId}/layers/{layerId} [delete]
+// @Router /tile/{serviceId}/layers/{layerId} [delete]
 func (h *TileServiceHandler) DeleteLayer(c *gin.Context) {
 	// 1. 解析路径参数
 	layerIDStr := c.Param("layerId")

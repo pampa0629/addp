@@ -383,18 +383,19 @@
                 <el-icon><Delete /></el-icon>
                 <span>垃圾清理</span>
               </el-menu-item>
-              <el-menu-item index="/system/docs">
-                <el-icon><Monitor /></el-icon>
-                <span>API 文档</span>
-              </el-menu-item>
             </el-sub-menu>
           </template>
         </el-menu>
       </el-aside>
 
       <el-main class="main-content">
+        <!-- API 文档视图 -->
+        <div v-if="currentModule === 'api-docs'" class="api-docs-view">
+          <ApiDocs />
+        </div>
+
         <!-- 首页视图 -->
-        <div v-if="currentModule === 'home'" class="home-view">
+        <div v-else-if="currentModule === 'home'" class="home-view">
           <!-- 全局首页欢迎语 -->
           <div v-if="!activeGroup" class="home-welcome">
             <h2>欢迎使用全域数据平台</h2>
@@ -468,9 +469,10 @@ import {
   Grid, FolderOpened, DataLine, Reading, Share, DataBoard, List,
   Odometer, TrendCharts, SortDown, Document, CircleCheck, Folder,
   Files, Tickets, Upload, Box, DataAnalysis, Setting, Link, Warning,
-  Coin, Tools, Shop, ChatDotRound
+  Coin, Tools, Shop, ChatDotRound, Memo
 } from '@element-plus/icons-vue'
 import ThemeSwitcher from '../components/ThemeSwitcher.vue'
+import ApiDocs from './ApiDocs.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -489,7 +491,8 @@ const MODULE_GROUPS = [
   { key: 'dev-monitor',  label: '开发与监控', icon: Tools,   modules: ['develop', 'service', 'orchestrator', 'monitor'] },
   { key: 'asset',        label: '资产管理',   icon: Folder,   modules: ['asset'] },
   { key: 'portal',       label: '资产门户',   icon: Shop,     modules: [], isPortal: true },
-  { key: 'agent', label: '智能体',    icon: ChatDotRound, modules: ['agent'] },
+  { key: 'agent',        label: '智能体',     icon: ChatDotRound, modules: ['agent'] },
+  { key: 'api-docs',     label: 'API 文档',   icon: Memo,     modules: [], isApiDocs: true },
   { key: 'system',       label: '系统管理',   icon: Setting,  modules: ['system'] },
 ]
 
@@ -516,7 +519,7 @@ const currentGroupConfig = computed(() =>
 )
 
 const showSidebar = computed(() =>
-  !!activeGroup.value && !!currentGroupConfig.value && !currentGroupConfig.value.isPortal
+  !!activeGroup.value && !!currentGroupConfig.value && !currentGroupConfig.value.isPortal && !currentGroupConfig.value.isApiDocs
 )
 
 const activeGroupModules = computed(() =>
@@ -568,6 +571,13 @@ onMounted(async () => {
 const handleGroupClick = (group) => {
   if (group.isPortal) {
     openPortal()
+    return
+  }
+  if (group.isApiDocs) {
+    activeGroup.value = group.key
+    currentModule.value = 'api-docs'
+    iframeUrl.value = ''
+    activeMenu.value = '/'
     return
   }
   activeGroup.value = group.key
@@ -1054,5 +1064,12 @@ const sidebarWidth = computed(() => (isCollapsed.value ? '72px' : '240px'))
 .sidebar.collapsed :deep(.el-menu-item-group__title) {
   padding-left: 0;
   text-align: center;
+}
+
+/* API 文档视图 */
+.api-docs-view {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 </style>

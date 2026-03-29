@@ -16,8 +16,13 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
-    # System 服务配置
+    # ADDP 服务配置
+    GATEWAY_URL: str = "http://localhost:8000"
     SYSTEM_URL: str = "http://localhost:8180"
+    MANAGER_URL: str = "http://localhost:8181"
+    META_URL: str = "http://localhost:8182"
+    DEVELOP_URL: str = "http://localhost:8184"
+    COPILOT_URL: str = "http://localhost:8189"
     INTERNAL_API_KEY: str = ""
     ENABLE_SERVICE_INTEGRATION: bool = True
 

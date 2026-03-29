@@ -21,6 +21,12 @@ func NewDocumentHandler(svc *service.DocumentService) *DocumentHandler {
 	return &DocumentHandler{svc: svc}
 }
 
+// @Summary ListDocuments
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdocuments [get]
+// @Security BearerAuth
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	tenantID := getTenantID(c)
 	opts := repository.ListDocumentOptions{
@@ -57,6 +63,12 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": docs, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
+// @Summary GetDocument
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getdocument [get]
+// @Security BearerAuth
 func (h *DocumentHandler) GetDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -72,6 +84,12 @@ func (h *DocumentHandler) GetDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
+// @Summary CreateDocument
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createdocument [get]
+// @Security BearerAuth
 func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	var req models.CreateDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -88,6 +106,12 @@ func (h *DocumentHandler) CreateDocument(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
+// @Summary UpdateDocument
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatedocument [get]
+// @Security BearerAuth
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -109,6 +133,12 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
+// @Summary DeleteDocument
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletedocument [get]
+// @Security BearerAuth
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -124,6 +154,12 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 }
 
 // UploadFile 上传文档文件（multipart/form-data, field: "file"）
+// @Summary UploadFile
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /uploadfile [get]
+// @Security BearerAuth
 func (h *DocumentHandler) UploadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -164,6 +200,12 @@ func (h *DocumentHandler) UploadFile(c *gin.Context) {
 }
 
 // DownloadFile 下载文档文件（通过后端代理流式传输）
+// @Summary DownloadFile
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /downloadfile [get]
+// @Security BearerAuth
 func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -188,6 +230,12 @@ func (h *DocumentHandler) DownloadFile(c *gin.Context) {
 	io.Copy(c.Writer, reader)
 }
 
+// @Summary GetMappings
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getmappings [get]
+// @Security BearerAuth
 func (h *DocumentHandler) GetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -202,6 +250,12 @@ func (h *DocumentHandler) GetMappings(c *gin.Context) {
 	c.JSON(http.StatusOK, mappings)
 }
 
+// @Summary SetMappings
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /setmappings [get]
+// @Security BearerAuth
 func (h *DocumentHandler) SetMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -222,6 +276,12 @@ func (h *DocumentHandler) SetMappings(c *gin.Context) {
 
 // ===== 反向查询：从标准项维度列出关联文档 =====
 
+// @Summary ListDocsByElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdocsbyelement [get]
+// @Security BearerAuth
 func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -236,6 +296,12 @@ func (h *DocumentHandler) ListDocsByElement(c *gin.Context) {
 	c.JSON(http.StatusOK, docs)
 }
 
+// @Summary ListDocsByGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdocsbyglossary [get]
+// @Security BearerAuth
 func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -250,6 +316,12 @@ func (h *DocumentHandler) ListDocsByGlossary(c *gin.Context) {
 	c.JSON(http.StatusOK, docs)
 }
 
+// @Summary ListDocsByMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdocsbymetric [get]
+// @Security BearerAuth
 func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -266,6 +338,12 @@ func (h *DocumentHandler) ListDocsByMetric(c *gin.Context) {
 
 // ===== 创建文档并关联到标准项 =====
 
+// @Summary CreateAndLinkElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createandlinkelement [get]
+// @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -285,6 +363,12 @@ func (h *DocumentHandler) CreateAndLinkElement(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
+// @Summary CreateAndLinkGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createandlinkglossary [get]
+// @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -304,6 +388,12 @@ func (h *DocumentHandler) CreateAndLinkGlossary(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
+// @Summary CreateAndLinkMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createandlinkmetric [get]
+// @Security BearerAuth
 func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -325,6 +415,12 @@ func (h *DocumentHandler) CreateAndLinkMetric(c *gin.Context) {
 
 // ===== 关联已有文档到标准项 =====
 
+// @Summary LinkDocToElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /linkdoctoelement [get]
+// @Security BearerAuth
 func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -345,6 +441,12 @@ func (h *DocumentHandler) LinkDocToElement(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "关联成功"})
 }
 
+// @Summary LinkDocToGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /linkdoctoglossary [get]
+// @Security BearerAuth
 func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -365,6 +467,12 @@ func (h *DocumentHandler) LinkDocToGlossary(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "关联成功"})
 }
 
+// @Summary LinkDocToMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /linkdoctometric [get]
+// @Security BearerAuth
 func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -387,6 +495,12 @@ func (h *DocumentHandler) LinkDocToMetric(c *gin.Context) {
 
 // ===== 解除关联 =====
 
+// @Summary UnlinkDocFromElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /unlinkdocfromelement [get]
+// @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -405,6 +519,12 @@ func (h *DocumentHandler) UnlinkDocFromElement(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已解除关联"})
 }
 
+// @Summary UnlinkDocFromGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /unlinkdocfromglossary [get]
+// @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -423,6 +543,12 @@ func (h *DocumentHandler) UnlinkDocFromGlossary(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已解除关联"})
 }
 
+// @Summary UnlinkDocFromMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /unlinkdocfrommetric [get]
+// @Security BearerAuth
 func (h *DocumentHandler) UnlinkDocFromMetric(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

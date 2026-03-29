@@ -1,0 +1,275 @@
+basePath: /api/v1/portal
+host: localhost:8184
+info:
+  contact: {}
+  description: 全域数据平台 - 资产门户 API
+  title: ADDP Portal API
+  version: "1.0"
+paths:
+  /assets:
+    get:
+      parameters:
+      - description: 搜索关键词
+        in: query
+        name: keyword
+        type: string
+      - description: 类型ID
+        in: query
+        name: type_id
+        type: integer
+      - description: 目录ID
+        in: query
+        name: catalog_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产列表
+      tags:
+      - Portal
+  /assets/{id}:
+    get:
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产详情
+      tags:
+      - Portal
+  /assets/{id}/apply:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 申请信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 申请使用资产
+      tags:
+      - Portal
+  /assets/{id}/apply-status:
+    get:
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产申请状态
+      tags:
+      - Portal
+  /assets/{id}/endpoints:
+    get:
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产服务端点
+      tags:
+      - Portal
+  /assets/{id}/ratings:
+    get:
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取资产评价列表
+      tags:
+      - Portal
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资产ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 评价信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 提交资产评价
+      tags:
+      - Portal
+  /catalogs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取目录树
+      tags:
+      - Portal
+  /catalogs/{id}/assets:
+    get:
+      parameters:
+      - description: 目录ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取目录下的资产列表
+      tags:
+      - Portal
+  /home:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取门户首页数据
+      tags:
+      - Portal
+  /my/applications:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取我的申请列表
+      tags:
+      - Portal
+  /search:
+    get:
+      parameters:
+      - description: 搜索关键词
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 搜索资产
+      tags:
+      - Portal
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

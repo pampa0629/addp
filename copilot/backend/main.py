@@ -4,6 +4,7 @@ ADDP Copilot - FastAPI 应用入口
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from config import settings
 
@@ -27,7 +28,7 @@ async def lifespan(app: FastAPI):
     registry = await register_module_on_startup(
         module_name="copilot",
         module_url=f"http://localhost:{settings.port}",
-        route_prefix="/api/v1/copilot",
+        route_prefix="/copilot",
         health_check_url=f"http://localhost:{settings.port}/health"
     )
 
@@ -50,6 +51,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+_API_PREFIX = "/api/v1/copilot"
+
 # CORS 配置
 app.add_middleware(
     CORSMiddleware,
@@ -61,8 +64,36 @@ app.add_middleware(
 
 # 注册路由
 from api import workflow_router, sql_router  # noqa: E402
-app.include_router(workflow_router, prefix="/api/v1/copilot", tags=["Workflow Agent"])
-app.include_router(sql_router, prefix="/api/v1/copilot", tags=["SQL Agent"])
+app.include_router(workflow_router, prefix=_API_PREFIX, tags=["Workflow Agent"])
+app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL Agent"])
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # 剥离路径前缀，与 Go 模块 BasePath 风格一致
+    new_paths = {}
+    for path, item in schema.get("paths", {}).items():
+        short = path[len(_API_PREFIX):] if path.startswith(_API_PREFIX) else path
+        new_paths[short or "/"] = item
+    schema["paths"] = new_paths
+    schema["servers"] = [{"url": _API_PREFIX}]
+    # 清理 info 字段，只保留 title 和 version
+    schema["info"] = {
+        "title": schema["info"]["title"],
+        "version": schema["info"]["version"]
+    }
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 
 @app.get("/health")

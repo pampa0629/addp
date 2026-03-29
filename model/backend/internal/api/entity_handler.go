@@ -19,6 +19,12 @@ func NewEntityHandler(svc *service.EntityService) *EntityHandler {
 }
 
 // ListEntities GET /api/model/entities
+// @Summary ListEntities
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listentities [get]
+// @Security BearerAuth
 func (h *EntityHandler) ListEntities(c *gin.Context) {
 	tenantID := getTenantID(c)
 
@@ -64,6 +70,12 @@ func (h *EntityHandler) ListEntities(c *gin.Context) {
 }
 
 // CreateEntity POST /api/model/entities
+// @Summary CreateEntity
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createentity [get]
+// @Security BearerAuth
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	var req models.CreateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -83,6 +95,12 @@ func (h *EntityHandler) CreateEntity(c *gin.Context) {
 }
 
 // GetEntity GET /api/model/entities/:id
+// @Summary GetEntity
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getentity [get]
+// @Security BearerAuth
 func (h *EntityHandler) GetEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -100,6 +118,12 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 }
 
 // UpdateEntity PUT /api/model/entities/:id
+// @Summary UpdateEntity
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateentity [get]
+// @Security BearerAuth
 func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -125,6 +149,12 @@ func (h *EntityHandler) UpdateEntity(c *gin.Context) {
 }
 
 // DeleteEntity DELETE /api/model/entities/:id
+// @Summary DeleteEntity
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteentity [get]
+// @Security BearerAuth
 func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -141,6 +171,12 @@ func (h *EntityHandler) DeleteEntity(c *gin.Context) {
 }
 
 // ApproveEntity POST /api/model/entities/:id/approve
+// @Summary ApproveEntity
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /approveentity [get]
+// @Security BearerAuth
 func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -159,6 +195,12 @@ func (h *EntityHandler) ApproveEntity(c *gin.Context) {
 }
 
 // GetAttributes GET /api/model/entities/:id/attributes
+// @Summary GetAttributes
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getattributes [get]
+// @Security BearerAuth
 func (h *EntityHandler) GetAttributes(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -176,6 +218,12 @@ func (h *EntityHandler) GetAttributes(c *gin.Context) {
 }
 
 // CreateAttribute POST /api/model/entities/:id/attributes
+// @Summary CreateAttribute
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createattribute [get]
+// @Security BearerAuth
 func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -199,6 +247,12 @@ func (h *EntityHandler) CreateAttribute(c *gin.Context) {
 }
 
 // UpdateAttribute PUT /api/model/entities/:id/attributes/:aid
+// @Summary UpdateAttribute
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateattribute [get]
+// @Security BearerAuth
 func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -227,6 +281,12 @@ func (h *EntityHandler) UpdateAttribute(c *gin.Context) {
 }
 
 // DeleteAttribute DELETE /api/model/entities/:id/attributes/:aid
+// @Summary DeleteAttribute
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteattribute [get]
+// @Security BearerAuth
 func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -248,6 +308,12 @@ func (h *EntityHandler) DeleteAttribute(c *gin.Context) {
 }
 
 // ImportMermaid POST /api/model/entities/import-mermaid
+// @Summary ImportMermaid
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /importmermaid [get]
+// @Security BearerAuth
 func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 	var req models.MermaidImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -268,6 +334,12 @@ func (h *EntityHandler) ImportMermaid(c *gin.Context) {
 }
 
 // ExportMermaid GET /api/model/entities/export-mermaid
+// @Summary ExportMermaid
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /exportmermaid [get]
+// @Security BearerAuth
 func (h *EntityHandler) ExportMermaid(c *gin.Context) {
 	tenantID := getTenantID(c)
 

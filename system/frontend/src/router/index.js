@@ -44,28 +44,10 @@ const routes = [
         meta: { requiresAuth: true, title: '应用管理-addp' }
       },
       {
-        path: 'docs',
-        name: 'ApiDocs',
-        component: () => import('../views/Developer.vue'),
-        meta: { requiresAuth: true, title: 'API文档-addp' }
-      },
-      {
         path: 'cleanup',
         name: 'CleanupManager',
         component: () => import('../views/CleanupManager.vue'),
         meta: { requiresAuth: true, title: '垃圾清理-addp' }
-      },
-      {
-        path: 'dev',
-        redirect: '/docs'
-      },
-      {
-        path: 'developer',
-        redirect: '/docs'
-      },
-      {
-        path: 'api-docs',
-        redirect: '/docs'
       }
     ]
   }

@@ -52,6 +52,12 @@ func NewOrchestrationHandler(
 }
 
 // Create 创建编排
+// @Summary 创建编排
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations [post]
+// @Security BearerAuth
 func (h *OrchestrationHandler) Create(c *gin.Context) {
 	var req models.Orchestration
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,6 +85,12 @@ func (h *OrchestrationHandler) Create(c *gin.Context) {
 }
 
 // List 列出编排
+// @Summary 获取编排列表
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) List(c *gin.Context) {
 	// TODO: 从 JWT 中提取 tenant_id
 	tenantID := uint(1)
@@ -93,6 +105,12 @@ func (h *OrchestrationHandler) List(c *gin.Context) {
 }
 
 // Get 获取编排详情
+// @Summary 获取编排详情
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations/{id} [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) Get(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -110,6 +128,12 @@ func (h *OrchestrationHandler) Get(c *gin.Context) {
 }
 
 // Update 更新编排
+// @Summary 更新编排
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations/{id} [put]
+// @Security BearerAuth
 func (h *OrchestrationHandler) Update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -151,6 +175,12 @@ func (h *OrchestrationHandler) Update(c *gin.Context) {
 }
 
 // Delete 删除编排
+// @Summary 删除编排
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations/{id} [delete]
+// @Security BearerAuth
 func (h *OrchestrationHandler) Delete(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -169,6 +199,12 @@ func (h *OrchestrationHandler) Delete(c *gin.Context) {
 }
 
 // Execute 手动触发编排执行
+// @Summary 执行编排
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /orchestrations/{id}/execute [post]
+// @Security BearerAuth
 func (h *OrchestrationHandler) Execute(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -196,6 +232,12 @@ func (h *OrchestrationHandler) Execute(c *gin.Context) {
 }
 
 // ListExecutions 列出编排的执行记录
+// @Summary 获取执行列表
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /executions [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) ListExecutions(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -258,6 +300,12 @@ func (h *OrchestrationHandler) ListAllExecutions(c *gin.Context) {
 }
 
 // GetExecution 获取执行详情
+// @Summary 获取执行详情
+// @Tags Orchestrator
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /executions/{id} [get]
+// @Security BearerAuth
 func (h *OrchestrationHandler) GetExecution(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {

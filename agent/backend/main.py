@@ -4,6 +4,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from starlette.middleware.base import BaseHTTPMiddleware
 from utils.logging_setup import setup_logging
 from config import settings
@@ -15,6 +16,8 @@ from api.chat import router as chat_router
 # 最先初始化日志（在其他模块 import 之前）
 setup_logging()
 logger = logging.getLogger(__name__)
+
+_API_PREFIX = "/api/v1/agent"
 
 app = FastAPI(
     title="ADDP Agent Service",
@@ -35,8 +38,36 @@ app.add_middleware(
 app.add_middleware(BaseHTTPMiddleware, dispatch=auth_middleware)
 
 # 注册路由
-app.include_router(sessions_router)
-app.include_router(chat_router)
+app.include_router(sessions_router, prefix=_API_PREFIX)
+app.include_router(chat_router, prefix=_API_PREFIX)
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # 剥离路径前缀，与 Go 模块 BasePath 风格一致
+    new_paths = {}
+    for path, item in schema.get("paths", {}).items():
+        short = path[len(_API_PREFIX):] if path.startswith(_API_PREFIX) else path
+        new_paths[short or "/"] = item
+    schema["paths"] = new_paths
+    schema["servers"] = [{"url": _API_PREFIX}]
+    # 清理 info 字段，只保留 title 和 version
+    schema["info"] = {
+        "title": schema["info"]["title"],
+        "version": schema["info"]["version"]
+    }
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi
 
 
 @app.get("/health")

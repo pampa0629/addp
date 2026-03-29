@@ -1,0 +1,1538 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "title": "ADDP Service API",
+        "contact": {},
+        "version": "1.0"
+    },
+    "host": "localhost:8086",
+    "basePath": "/api/v1/service",
+    "paths": {
+        "/data/aggregate": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataService"
+                ],
+                "summary": "聚合查询",
+                "parameters": [
+                    {
+                        "description": "聚合请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.AggregationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.AggregationResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/data/query": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataService"
+                ],
+                "summary": "查询数据表",
+                "parameters": [
+                    {
+                        "description": "查询请求",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.DataQueryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.DataQueryResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/data/structure": {
+            "get": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "DataService"
+                ],
+                "summary": "获取表结构",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "引擎ID",
+                        "name": "engine_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Schema名称",
+                        "name": "schema",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "表名",
+                        "name": "table",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_service_internal_models.ColumnInfo"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/engines": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Engines"
+                ],
+                "summary": "获取可用于数据服务的 PostgreSQL 引擎列表",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "OGC Tiles API Landing Page",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}/conformance": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "OGC API Conformance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}/tileMatrixSets": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "获取 Tile Matrix Sets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "获取单个 Tile Matrix Set",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片矩阵集 ID",
+                        "name": "tileMatrixSetId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}/tiles": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "获取 Tilesets",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}": {
+            "get": {
+                "produces": [
+                    "application/vnd.mapbox-vector-tile"
+                ],
+                "tags": [
+                    "OGC Tiles"
+                ],
+                "summary": "获取单个瓦片",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "图层名称",
+                        "name": "layer",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片矩阵集 ID",
+                        "name": "tileMatrixSetId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片矩阵（缩放级别）",
+                        "name": "tileMatrix",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片行",
+                        "name": "tileRow",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片列",
+                        "name": "tileCol",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/tile": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "列出瓦片服务",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "限制数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "创建瓦片服务",
+                "parameters": [
+                    {
+                        "description": "创建瓦片服务请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateTileServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/tile/by-name/{serviceName}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "根据名称获取瓦片服务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/tile/search": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "搜索瓦片服务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "搜索关键词",
+                        "name": "keyword",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "偏移量",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "限制数量",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/tile/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "获取瓦片服务详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "更新瓦片服务",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新瓦片服务请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateTileServiceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceDTO"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "删除瓦片服务",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/tile/{serviceId}/layers": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "列出图层",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "添加图层",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "创建图层请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            }
+        },
+        "/tile/{serviceId}/layers/{layerId}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "获取图层详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "更新图层",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "更新图层请求",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.UpdateTileLayerRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "TileService"
+                ],
+                "summary": "删除图层",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "服务 ID",
+                        "name": "serviceId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "图层 ID",
+                        "name": "layerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format}": {
+            "get": {
+                "produces": [
+                    "application/vnd.mapbox-vector-tile",
+                    "image/png",
+                    "image/jpeg"
+                ],
+                "tags": [
+                    "Tiles"
+                ],
+                "summary": "获取 XYZ 瓦片",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "图层名称",
+                        "name": "layerName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "缩放级别",
+                        "name": "z",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "瓦片 X 坐标",
+                        "name": "x",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "瓦片 Y 坐标",
+                        "name": "y",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "瓦片格式 (mvt, png, jpg)",
+                        "name": "format",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/wmts/{serviceName}": {
+            "get": {
+                "produces": [
+                    "text/xml"
+                ],
+                "tags": [
+                    "WMTS"
+                ],
+                "summary": "获取 WMTS Capabilities",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "服务名称",
+                        "name": "serviceName",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "请求类型 (GetCapabilities)",
+                        "name": "request",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.Capabilities"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "encoding_xml.Name": {
+            "type": "object",
+            "properties": {
+                "local": {
+                    "type": "string"
+                },
+                "space": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.AggregateColumn": {
+            "type": "object",
+            "required": [
+                "column",
+                "function"
+            ],
+            "properties": {
+                "alias": {
+                    "description": "别名",
+                    "type": "string"
+                },
+                "column": {
+                    "description": "列名",
+                    "type": "string"
+                },
+                "function": {
+                    "description": "聚合函数",
+                    "type": "string",
+                    "enum": [
+                        "count",
+                        "sum",
+                        "avg",
+                        "min",
+                        "max"
+                    ]
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.AggregationRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "schema",
+                "table"
+            ],
+            "properties": {
+                "aggregates": {
+                    "description": "聚合列",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.AggregateColumn"
+                    }
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "filter": {
+                    "description": "WHERE 条件",
+                    "type": "string"
+                },
+                "group_by": {
+                    "description": "分组字段",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "having": {
+                    "description": "HAVING 条件",
+                    "type": "string"
+                },
+                "limit": {
+                    "description": "限制结果数",
+                    "type": "integer"
+                },
+                "order_by": {
+                    "description": "排序",
+                    "type": "string"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "table": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.AggregationResponse": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ColumnInfo"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {}
+                    }
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.ColumnInfo": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CreateTileLayerRequest": {
+            "type": "object",
+            "required": [
+                "layer_config",
+                "layer_name",
+                "layer_type",
+                "title"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "layer_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "layer_name": {
+                    "type": "string"
+                },
+                "layer_type": {
+                    "description": "\"dynamic\" or \"static\"",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.CreateTileServiceRequest": {
+            "type": "object",
+            "required": [
+                "first_layer",
+                "service_name",
+                "title"
+            ],
+            "properties": {
+                "default_srid": {
+                    "description": "默认 3857",
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "first_layer": {
+                    "description": "第一个图层（必需）",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest"
+                        }
+                    ]
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "protocols": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "public_access": {
+                    "type": "boolean"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.DataQueryRequest": {
+            "type": "object",
+            "required": [
+                "engine_id",
+                "schema",
+                "table"
+            ],
+            "properties": {
+                "columns": {
+                    "description": "指定列，为空表示全部列",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "engine_id": {
+                    "type": "integer"
+                },
+                "filter": {
+                    "description": "WHERE 条件（需要防 SQL 注入）",
+                    "type": "string"
+                },
+                "geometry": {
+                    "description": "是否包含几何字段",
+                    "type": "boolean"
+                },
+                "geometry_type": {
+                    "description": "几何输出格式: 'geojson', 'wkt', 'wkb'",
+                    "type": "string"
+                },
+                "order_by": {
+                    "description": "排序字段",
+                    "type": "string"
+                },
+                "page": {
+                    "description": "页码（从 1 开始）",
+                    "type": "integer"
+                },
+                "page_size": {
+                    "description": "每页大小",
+                    "type": "integer"
+                },
+                "schema": {
+                    "type": "string"
+                },
+                "table": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.DataQueryResponse": {
+            "type": "object",
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.ColumnInfo"
+                    }
+                },
+                "has_more": {
+                    "type": "boolean"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "page_size": {
+                    "type": "integer"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {}
+                    }
+                },
+                "total_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.TileServiceDTO": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "created_by": {
+                    "type": "integer"
+                },
+                "default_srid": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "endpoints": {
+                    "description": "服务端点 URL",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "extent": {},
+                "id": {
+                    "type": "integer"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "layers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO"
+                    }
+                },
+                "protocols": {},
+                "public_access": {
+                    "type": "boolean"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.TileServiceLayerDTO": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "layer_config": {},
+                "layer_name": {
+                    "type": "string"
+                },
+                "layer_type": {
+                    "type": "string"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.UpdateTileLayerRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "display_order": {
+                    "type": "integer"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "layer_config": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_addp_service_internal_models.UpdateTileServiceRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "protocols": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "public_access": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Capabilities": {
+            "type": "object",
+            "properties": {
+                "contents": {
+                    "$ref": "#/definitions/internal_api.Contents"
+                },
+                "operationsMetadata": {
+                    "$ref": "#/definitions/internal_api.OperationsMetadata"
+                },
+                "ows": {
+                    "type": "string"
+                },
+                "serviceIdentification": {
+                    "$ref": "#/definitions/internal_api.ServiceIdentification"
+                },
+                "serviceProvider": {
+                    "$ref": "#/definitions/internal_api.ServiceProvider"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "xlink": {
+                    "type": "string"
+                },
+                "xmlname": {
+                    "$ref": "#/definitions/encoding_xml.Name"
+                },
+                "xmlns": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Contents": {
+            "type": "object",
+            "properties": {
+                "layers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.Layer"
+                    }
+                },
+                "tileMatrixSets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.TileMatrixSet"
+                    }
+                }
+            }
+        },
+        "internal_api.DCP": {
+            "type": "object",
+            "properties": {
+                "http": {
+                    "$ref": "#/definitions/internal_api.HTTP"
+                }
+            }
+        },
+        "internal_api.Get": {
+            "type": "object",
+            "properties": {
+                "href": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.HTTP": {
+            "type": "object",
+            "properties": {
+                "get": {
+                    "$ref": "#/definitions/internal_api.Get"
+                }
+            }
+        },
+        "internal_api.Layer": {
+            "type": "object",
+            "properties": {
+                "abstract": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "identifier": {
+                    "type": "string"
+                },
+                "resourceURL": {
+                    "$ref": "#/definitions/internal_api.ResourceURL"
+                },
+                "style": {
+                    "$ref": "#/definitions/internal_api.Style"
+                },
+                "tileMatrixSetLink": {
+                    "$ref": "#/definitions/internal_api.TileMatrixSetLink"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "wgs84BoundingBox": {
+                    "$ref": "#/definitions/internal_api.WGS84BoundingBox"
+                }
+            }
+        },
+        "internal_api.Operation": {
+            "type": "object",
+            "properties": {
+                "dcp": {
+                    "$ref": "#/definitions/internal_api.DCP"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.OperationsMetadata": {
+            "type": "object",
+            "properties": {
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.Operation"
+                    }
+                }
+            }
+        },
+        "internal_api.ResourceURL": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "resourceType": {
+                    "type": "string"
+                },
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ServiceIdentification": {
+            "type": "object",
+            "properties": {
+                "abstract": {
+                    "type": "string"
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "serviceType": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.ServiceProvider": {
+            "type": "object",
+            "properties": {
+                "providerName": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.Style": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                },
+                "isDefault": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.TileMatrix": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                },
+                "matrixHeight": {
+                    "type": "integer"
+                },
+                "matrixWidth": {
+                    "type": "integer"
+                },
+                "scaleDenominator": {
+                    "type": "number"
+                },
+                "tileHeight": {
+                    "type": "integer"
+                },
+                "tileWidth": {
+                    "type": "integer"
+                },
+                "topLeftCorner": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.TileMatrixSet": {
+            "type": "object",
+            "properties": {
+                "identifier": {
+                    "type": "string"
+                },
+                "supportedCRS": {
+                    "type": "string"
+                },
+                "tileMatrices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api.TileMatrix"
+                    }
+                }
+            }
+        },
+        "internal_api.TileMatrixSetLink": {
+            "type": "object",
+            "properties": {
+                "tileMatrixSet": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.WGS84BoundingBox": {
+            "type": "object",
+            "properties": {
+                "lowerCorner": {
+                    "type": "string"
+                },
+                "upperCorner": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

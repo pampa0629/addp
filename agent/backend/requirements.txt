@@ -10,3 +10,6 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.17
 langchain==0.3.7
 langchain-openai==0.2.9
+
+# ADDP Common 模块
+-e ../../common-python

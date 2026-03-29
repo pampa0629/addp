@@ -18,6 +18,12 @@ func NewTableRelationHandler(svc *service.TableRelationService) *TableRelationHa
 }
 
 // ListDimensionRelations GET /api/model/logical-tables/:id/dimension-relations
+// @Summary ListDimensionRelations
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdimensionrelations [get]
+// @Security BearerAuth
 func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -34,6 +40,12 @@ func (h *TableRelationHandler) ListDimensionRelations(c *gin.Context) {
 }
 
 // AddDimensionRelation POST /api/model/logical-tables/:id/dimension-relations
+// @Summary AddDimensionRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /adddimensionrelation [get]
+// @Security BearerAuth
 func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -55,6 +67,12 @@ func (h *TableRelationHandler) AddDimensionRelation(c *gin.Context) {
 }
 
 // RemoveDimensionRelation DELETE /api/model/logical-tables/:id/dimension-relations/:rid
+// @Summary RemoveDimensionRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /removedimensionrelation [get]
+// @Security BearerAuth
 func (h *TableRelationHandler) RemoveDimensionRelation(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

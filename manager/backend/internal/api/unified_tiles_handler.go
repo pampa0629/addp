@@ -30,6 +30,12 @@ func NewUnifiedTilesHandler(service *service.UnifiedMVTService) *UnifiedTilesHan
 //   - geom: 几何列名（默认 "geom"）
 //   - srid: 空间参考系（默认 4326）
 //   - cols: 返回列，逗号分隔（最多 8 列）
+// @Summary GetTile
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /gettile [get]
+// @Security BearerAuth
 func (h *UnifiedTilesHandler) GetTile(c *gin.Context) {
 	fmt.Printf("🔵 UnifiedTilesHandler.GetTile 被调用: %s\n", c.Request.URL.Path)
 

@@ -1,0 +1,1023 @@
+basePath: /api/v1/service
+definitions:
+  encoding_xml.Name:
+    properties:
+      local:
+        type: string
+      space:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.AggregateColumn:
+    properties:
+      alias:
+        description: 别名
+        type: string
+      column:
+        description: 列名
+        type: string
+      function:
+        description: 聚合函数
+        enum:
+        - count
+        - sum
+        - avg
+        - min
+        - max
+        type: string
+    required:
+    - column
+    - function
+    type: object
+  github_com_addp_service_internal_models.AggregationRequest:
+    properties:
+      aggregates:
+        description: 聚合列
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.AggregateColumn'
+        type: array
+      engine_id:
+        type: integer
+      filter:
+        description: WHERE 条件
+        type: string
+      group_by:
+        description: 分组字段
+        items:
+          type: string
+        type: array
+      having:
+        description: HAVING 条件
+        type: string
+      limit:
+        description: 限制结果数
+        type: integer
+      order_by:
+        description: 排序
+        type: string
+      schema:
+        type: string
+      table:
+        type: string
+    required:
+    - engine_id
+    - schema
+    - table
+    type: object
+  github_com_addp_service_internal_models.AggregationResponse:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ColumnInfo'
+        type: array
+      count:
+        type: integer
+      rows:
+        items:
+          items: {}
+          type: array
+        type: array
+    type: object
+  github_com_addp_service_internal_models.ColumnInfo:
+    properties:
+      name:
+        type: string
+      nullable:
+        type: boolean
+      type:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.CreateTileLayerRequest:
+    properties:
+      description:
+        type: string
+      layer_config:
+        additionalProperties: true
+        type: object
+      layer_name:
+        type: string
+      layer_type:
+        description: '"dynamic" or "static"'
+        type: string
+      title:
+        type: string
+    required:
+    - layer_config
+    - layer_name
+    - layer_type
+    - title
+    type: object
+  github_com_addp_service_internal_models.CreateTileServiceRequest:
+    properties:
+      default_srid:
+        description: 默认 3857
+        type: integer
+      description:
+        type: string
+      first_layer:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest'
+        description: 第一个图层（必需）
+      keywords:
+        items:
+          type: string
+        type: array
+      protocols:
+        additionalProperties: true
+        type: object
+      public_access:
+        type: boolean
+      service_name:
+        type: string
+      title:
+        type: string
+    required:
+    - first_layer
+    - service_name
+    - title
+    type: object
+  github_com_addp_service_internal_models.DataQueryRequest:
+    properties:
+      columns:
+        description: 指定列，为空表示全部列
+        items:
+          type: string
+        type: array
+      engine_id:
+        type: integer
+      filter:
+        description: WHERE 条件（需要防 SQL 注入）
+        type: string
+      geometry:
+        description: 是否包含几何字段
+        type: boolean
+      geometry_type:
+        description: '几何输出格式: ''geojson'', ''wkt'', ''wkb'''
+        type: string
+      order_by:
+        description: 排序字段
+        type: string
+      page:
+        description: 页码（从 1 开始）
+        type: integer
+      page_size:
+        description: 每页大小
+        type: integer
+      schema:
+        type: string
+      table:
+        type: string
+    required:
+    - engine_id
+    - schema
+    - table
+    type: object
+  github_com_addp_service_internal_models.DataQueryResponse:
+    properties:
+      columns:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.ColumnInfo'
+        type: array
+      has_more:
+        type: boolean
+      page:
+        type: integer
+      page_size:
+        type: integer
+      rows:
+        items:
+          items: {}
+          type: array
+        type: array
+      total_count:
+        type: integer
+    type: object
+  github_com_addp_service_internal_models.TileServiceDTO:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      default_srid:
+        type: integer
+      description:
+        type: string
+      endpoints:
+        additionalProperties:
+          type: string
+        description: 服务端点 URL
+        type: object
+      error_message:
+        type: string
+      extent: {}
+      id:
+        type: integer
+      keywords:
+        items:
+          type: string
+        type: array
+      layers:
+        items:
+          $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+        type: array
+      protocols: {}
+      public_access:
+        type: boolean
+      service_name:
+        type: string
+      status:
+        type: string
+      tenant_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.TileServiceLayerDTO:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      display_order:
+        type: integer
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      layer_config: {}
+      layer_name:
+        type: string
+      layer_type:
+        type: string
+      service_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.UpdateTileLayerRequest:
+    properties:
+      description:
+        type: string
+      display_order:
+        type: integer
+      enabled:
+        type: boolean
+      layer_config:
+        additionalProperties: true
+        type: object
+      title:
+        type: string
+    type: object
+  github_com_addp_service_internal_models.UpdateTileServiceRequest:
+    properties:
+      description:
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      protocols:
+        additionalProperties: true
+        type: object
+      public_access:
+        type: boolean
+      status:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_api.Capabilities:
+    properties:
+      contents:
+        $ref: '#/definitions/internal_api.Contents'
+      operationsMetadata:
+        $ref: '#/definitions/internal_api.OperationsMetadata'
+      ows:
+        type: string
+      serviceIdentification:
+        $ref: '#/definitions/internal_api.ServiceIdentification'
+      serviceProvider:
+        $ref: '#/definitions/internal_api.ServiceProvider'
+      version:
+        type: string
+      xlink:
+        type: string
+      xmlname:
+        $ref: '#/definitions/encoding_xml.Name'
+      xmlns:
+        type: string
+    type: object
+  internal_api.Contents:
+    properties:
+      layers:
+        items:
+          $ref: '#/definitions/internal_api.Layer'
+        type: array
+      tileMatrixSets:
+        items:
+          $ref: '#/definitions/internal_api.TileMatrixSet'
+        type: array
+    type: object
+  internal_api.DCP:
+    properties:
+      http:
+        $ref: '#/definitions/internal_api.HTTP'
+    type: object
+  internal_api.Get:
+    properties:
+      href:
+        type: string
+    type: object
+  internal_api.HTTP:
+    properties:
+      get:
+        $ref: '#/definitions/internal_api.Get'
+    type: object
+  internal_api.Layer:
+    properties:
+      abstract:
+        type: string
+      format:
+        type: string
+      identifier:
+        type: string
+      resourceURL:
+        $ref: '#/definitions/internal_api.ResourceURL'
+      style:
+        $ref: '#/definitions/internal_api.Style'
+      tileMatrixSetLink:
+        $ref: '#/definitions/internal_api.TileMatrixSetLink'
+      title:
+        type: string
+      wgs84BoundingBox:
+        $ref: '#/definitions/internal_api.WGS84BoundingBox'
+    type: object
+  internal_api.Operation:
+    properties:
+      dcp:
+        $ref: '#/definitions/internal_api.DCP'
+      name:
+        type: string
+    type: object
+  internal_api.OperationsMetadata:
+    properties:
+      operations:
+        items:
+          $ref: '#/definitions/internal_api.Operation'
+        type: array
+    type: object
+  internal_api.ResourceURL:
+    properties:
+      format:
+        type: string
+      resourceType:
+        type: string
+      template:
+        type: string
+    type: object
+  internal_api.ServiceIdentification:
+    properties:
+      abstract:
+        type: string
+      keywords:
+        items:
+          type: string
+        type: array
+      serviceType:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_api.ServiceProvider:
+    properties:
+      providerName:
+        type: string
+    type: object
+  internal_api.Style:
+    properties:
+      identifier:
+        type: string
+      isDefault:
+        type: boolean
+    type: object
+  internal_api.TileMatrix:
+    properties:
+      identifier:
+        type: string
+      matrixHeight:
+        type: integer
+      matrixWidth:
+        type: integer
+      scaleDenominator:
+        type: number
+      tileHeight:
+        type: integer
+      tileWidth:
+        type: integer
+      topLeftCorner:
+        type: string
+    type: object
+  internal_api.TileMatrixSet:
+    properties:
+      identifier:
+        type: string
+      supportedCRS:
+        type: string
+      tileMatrices:
+        items:
+          $ref: '#/definitions/internal_api.TileMatrix'
+        type: array
+    type: object
+  internal_api.TileMatrixSetLink:
+    properties:
+      tileMatrixSet:
+        type: string
+    type: object
+  internal_api.WGS84BoundingBox:
+    properties:
+      lowerCorner:
+        type: string
+      upperCorner:
+        type: string
+    type: object
+host: localhost:8086
+info:
+  contact: {}
+  title: ADDP Service API
+  version: "1.0"
+paths:
+  /data/aggregate:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 聚合请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.AggregationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.AggregationResponse'
+      summary: 聚合查询
+      tags:
+      - DataService
+  /data/query:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 查询请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.DataQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.DataQueryResponse'
+      summary: 查询数据表
+      tags:
+      - DataService
+  /data/structure:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 引擎ID
+        in: query
+        name: engine_id
+        required: true
+        type: integer
+      - description: Schema名称
+        in: query
+        name: schema
+        required: true
+        type: string
+      - description: 表名
+        in: query
+        name: table
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_service_internal_models.ColumnInfo'
+            type: array
+      summary: 获取表结构
+      tags:
+      - DataService
+  /engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      summary: 获取可用于数据服务的 PostgreSQL 引擎列表
+      tags:
+      - Engines
+  /ogc/tiles/{serviceName}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: OGC Tiles API Landing Page
+      tags:
+      - OGC Tiles
+  /ogc/tiles/{serviceName}/conformance:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: OGC API Conformance
+      tags:
+      - OGC Tiles
+  /ogc/tiles/{serviceName}/tileMatrixSets:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取 Tile Matrix Sets
+      tags:
+      - OGC Tiles
+  /ogc/tiles/{serviceName}/tileMatrixSets/{tileMatrixSetId}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 瓦片矩阵集 ID
+        in: path
+        name: tileMatrixSetId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取单个 Tile Matrix Set
+      tags:
+      - OGC Tiles
+  /ogc/tiles/{serviceName}/tiles:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取 Tilesets
+      tags:
+      - OGC Tiles
+  /ogc/tiles/{serviceName}/tiles/{layer}/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 图层名称
+        in: path
+        name: layer
+        required: true
+        type: string
+      - description: 瓦片矩阵集 ID
+        in: path
+        name: tileMatrixSetId
+        required: true
+        type: string
+      - description: 瓦片矩阵（缩放级别）
+        in: path
+        name: tileMatrix
+        required: true
+        type: string
+      - description: 瓦片行
+        in: path
+        name: tileRow
+        required: true
+        type: string
+      - description: 瓦片列
+        in: path
+        name: tileCol
+        required: true
+        type: string
+      produces:
+      - application/vnd.mapbox-vector-tile
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 获取单个瓦片
+      tags:
+      - OGC Tiles
+  /tile:
+    get:
+      parameters:
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: 限制数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 列出瓦片服务
+      tags:
+      - TileService
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建瓦片服务请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CreateTileServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 创建瓦片服务
+      tags:
+      - TileService
+  /tile/{id}:
+    delete:
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: 删除瓦片服务
+      tags:
+      - TileService
+    get:
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 获取瓦片服务详情
+      tags:
+      - TileService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新瓦片服务请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateTileServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 更新瓦片服务
+      tags:
+      - TileService
+  /tile/{serviceId}/layers:
+    get:
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: serviceId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+            type: array
+      summary: 列出图层
+      tags:
+      - TileService
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: serviceId
+        required: true
+        type: integer
+      - description: 创建图层请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.CreateTileLayerRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+      summary: 添加图层
+      tags:
+      - TileService
+  /tile/{serviceId}/layers/{layerId}:
+    delete:
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: serviceId
+        required: true
+        type: integer
+      - description: 图层 ID
+        in: path
+        name: layerId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: 删除图层
+      tags:
+      - TileService
+    get:
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: serviceId
+        required: true
+        type: integer
+      - description: 图层 ID
+        in: path
+        name: layerId
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+      summary: 获取图层详情
+      tags:
+      - TileService
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 服务 ID
+        in: path
+        name: serviceId
+        required: true
+        type: integer
+      - description: 图层 ID
+        in: path
+        name: layerId
+        required: true
+        type: integer
+      - description: 更新图层请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_service_internal_models.UpdateTileLayerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceLayerDTO'
+      summary: 更新图层
+      tags:
+      - TileService
+  /tile/by-name/{serviceName}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_service_internal_models.TileServiceDTO'
+      summary: 根据名称获取瓦片服务
+      tags:
+      - TileService
+  /tile/search:
+    get:
+      parameters:
+      - description: 搜索关键词
+        in: query
+        name: keyword
+        required: true
+        type: string
+      - default: 0
+        description: 偏移量
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: 限制数量
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 搜索瓦片服务
+      tags:
+      - TileService
+  /tiles/{serviceName}/{layerName}/{z}/{x}/{y}.{format}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 图层名称
+        in: path
+        name: layerName
+        required: true
+        type: string
+      - description: 缩放级别
+        in: path
+        name: z
+        required: true
+        type: integer
+      - description: 瓦片 X 坐标
+        in: path
+        name: x
+        required: true
+        type: integer
+      - description: 瓦片 Y 坐标
+        in: path
+        name: "y"
+        required: true
+        type: integer
+      - description: 瓦片格式 (mvt, png, jpg)
+        in: path
+        name: format
+        required: true
+        type: string
+      produces:
+      - application/vnd.mapbox-vector-tile
+      - image/png
+      - image/jpeg
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 获取 XYZ 瓦片
+      tags:
+      - Tiles
+  /wmts/{serviceName}:
+    get:
+      parameters:
+      - description: 服务名称
+        in: path
+        name: serviceName
+        required: true
+        type: string
+      - description: 请求类型 (GetCapabilities)
+        in: query
+        name: request
+        type: string
+      produces:
+      - text/xml
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.Capabilities'
+      summary: 获取 WMTS Capabilities
+      tags:
+      - WMTS
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

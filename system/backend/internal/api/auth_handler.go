@@ -22,6 +22,17 @@ func NewAuthHandler(userService *service.UserService, cfg *config.Config) *AuthH
 	}
 }
 
+// Login godoc
+// @Summary      用户登录
+// @Description  使用用户名和密码登录，返回 JWT token
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request body models.LoginRequest true "登录信息"
+// @Success      200 {object} models.LoginResponse
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Router       /login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -51,6 +62,17 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+// Register godoc
+// @Summary      用户注册
+// @Description  注册新用户（需开启公开注册）
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Param        request body models.UserCreateRequest true "注册信息"
+// @Success      201 {object} models.User
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      403 {object} models.ErrorResponse
+// @Router       /register [post]
 func (h *AuthHandler) Register(c *gin.Context) {
 	if !h.cfg.AllowPublicRegistration {
 		c.JSON(http.StatusForbidden, gin.H{"error": "注册功能已关闭"})
@@ -72,6 +94,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, user)
 }
 
+// Refresh godoc
+// @Summary      刷新 Token
+// @Description  使用即将过期的 token 获取新的 token
+// @Tags         认证
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} models.LoginResponse
+// @Failure      401 {object} models.ErrorResponse
+// @Router       /refresh [post]
 // Refresh 刷新 JWT Token
 // 接受即将过期或已过期的 token，返回新的 token
 func (h *AuthHandler) Refresh(c *gin.Context) {

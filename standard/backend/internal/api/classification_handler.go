@@ -20,6 +20,12 @@ func NewClassificationHandler(svc *service.ClassificationService) *Classificatio
 
 // --- 数据分类 ---
 
+// @Summary ListClassifications
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listclassifications [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 	tenantID := getTenantID(c)
 	list, err := h.svc.ListClassifications(tenantID)
@@ -30,6 +36,12 @@ func (h *ClassificationHandler) ListClassifications(c *gin.Context) {
 	c.JSON(http.StatusOK, list)
 }
 
+// @Summary CreateClassification
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createclassification [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 	var req models.CreateClassificationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,6 +58,12 @@ func (h *ClassificationHandler) CreateClassification(c *gin.Context) {
 	c.JSON(http.StatusCreated, item)
 }
 
+// @Summary UpdateClassification
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateclassification [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -67,6 +85,12 @@ func (h *ClassificationHandler) UpdateClassification(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
+// @Summary DeleteClassification
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteclassification [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -83,6 +107,12 @@ func (h *ClassificationHandler) DeleteClassification(c *gin.Context) {
 
 // --- 数据分级 ---
 
+// @Summary ListGradingLevels
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listgradinglevels [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 	tenantID := getTenantID(c)
 	levels, err := h.svc.ListGradingLevels(tenantID)
@@ -93,6 +123,12 @@ func (h *ClassificationHandler) ListGradingLevels(c *gin.Context) {
 	c.JSON(http.StatusOK, levels)
 }
 
+// @Summary UpdateGradingLevel
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updategradinglevel [get]
+// @Security BearerAuth
 func (h *ClassificationHandler) UpdateGradingLevel(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

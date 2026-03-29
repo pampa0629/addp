@@ -1,13 +1,9 @@
 from typing import Any, Dict, Optional
-import httpx
-from .base_client import AddpBaseClient
+from addp_common.client.base import BaseClient
 
 
-class CopilotClient(AddpBaseClient):
+class CopilotClient(BaseClient):
     """Copilot 模块 API 客户端 - 工作流生成"""
-
-    def __init__(self, token: str, base_url: str = "http://localhost:8087"):
-        super().__init__(base_url, user_token=token, timeout=120.0)
 
     async def generate_workflow(
         self,
@@ -26,4 +22,4 @@ class CopilotClient(AddpBaseClient):
         }
         if workflow_engine_id is not None:
             data["workflow_engine_id"] = workflow_engine_id
-        return await self.post("/api/v1/copilot/workflow/generate", json=data)
+        return await self.post("/copilot/workflow/generate", json=data)

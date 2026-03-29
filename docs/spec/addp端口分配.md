@@ -79,7 +79,7 @@ make ports-validate
 | Transfer Frontend     | 5176     | 8093        | 独立访问                   |
 | Orchestrator Backend  | 8084     | 8084        | 工作流编排                 |
 | Orchestrator Frontend | 5177     | 8094        | 独立访问                   |
-| Develop Backend       | 8085     | 8085        | 开发工具                   |
+| Develop Backend       | 8185     | 8185        | 开发工具                   |
 | Develop Frontend      | 5178     | 8095        | 独立访问                   |
 | Service Backend       | 8086     | 8086        | 数据服务、OGC 标准服务     |
 | Service Frontend      | 5180     | 8096        | 独立访问                   |
@@ -117,7 +117,7 @@ make ports-validate
   - 8082: Meta
   - 8083: Transfer
   - 8084: Orchestrator
-  - 8085: Develop
+  - 8185: Develop
   - 8086: Service
   - 8087: Copilot
 - **特殊模块**：

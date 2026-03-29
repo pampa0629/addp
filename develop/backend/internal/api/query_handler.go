@@ -66,7 +66,7 @@ type SaveQueryTaskRequest struct {
 // @Produce json
 // @Param id path int true "资源ID"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/test/{id} [get]
+// @Router /test/{id} [get]
 func (h *QueryHandler) TestConnection(c *gin.Context) {
 	idStr := c.Param("id")
 	engineID, err := strconv.ParseUint(idStr, 10, 32)
@@ -96,7 +96,7 @@ func (h *QueryHandler) TestConnection(c *gin.Context) {
 // @Produce json
 // @Param body body ExecuteQueryRequest true "查询请求"
 // @Success 200 {object} ExecuteQueryResponse
-// @Router /api/develop/execute [post]
+// @Router /execute [post]
 func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 	var req ExecuteQueryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -168,8 +168,8 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body SaveQueryTaskRequest true "保存请求"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/sql/tasks [post]
+// @Success 200 {object} models.DevTask
+// @Router /sql/tasks [post]
 func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 	var req SaveQueryTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -229,8 +229,8 @@ func (h *QueryHandler) SaveQueryTask(c *gin.Context) {
 // @Produce json
 // @Param id path int true "任务ID"
 // @Param body body SaveQueryTaskRequest true "更新请求"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/sql/tasks/{id} [put]
+// @Success 200 {object} models.DevTask
+// @Router /sql/tasks/{id} [put]
 func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -283,8 +283,8 @@ func (h *QueryHandler) UpdateQueryTask(c *gin.Context) {
 // @Tags Query
 // @Produce json
 // @Param id path int true "任务ID"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/sql/tasks/{id} [get]
+// @Success 200 {object} models.DevTask
+// @Router /sql/tasks/{id} [get]
 func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)
@@ -319,7 +319,7 @@ func (h *QueryHandler) GetQueryTask(c *gin.Context) {
 // @Param status query string false "状态过滤"
 // @Param keyword query string false "关键词搜索"
 // @Success 200 {object} models.ListDevTasksResponse
-// @Router /api/develop/sql/tasks [get]
+// @Router /sql/tasks [get]
 func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -359,7 +359,7 @@ func (h *QueryHandler) ListQueryTasks(c *gin.Context) {
 // @Tags Query
 // @Param id path int true "任务ID"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/sql/tasks/{id} [delete]
+// @Router /sql/tasks/{id} [delete]
 func (h *QueryHandler) DeleteQueryTask(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.ParseUint(idStr, 10, 32)

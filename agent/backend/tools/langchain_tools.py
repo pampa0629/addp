@@ -6,11 +6,10 @@ token 通过工厂函数的 closure 注入，不暴露给 LLM。
 import json
 from typing import List, Optional
 from langchain_core.tools import tool
-from .manager_client import ManagerClient
-from .meta_client import MetaClient
-from .develop_client import DevelopClient
+from addp_common.client import MetaClient, ManagerClient, DevelopClient
 from .copilot_client import CopilotClient
 from .system_client import SystemClient
+from config import settings
 
 
 def _to_str(result) -> str:
@@ -25,11 +24,11 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
     工厂函数：注入认证 token 和用户上下文，返回 LangChain Tool 列表。
     生成的 tools 通过 closure 持有 token，LLM 调用时无需传入认证信息。
     """
-    manager = ManagerClient(token)
-    meta = MetaClient(token)
-    develop = DevelopClient(token)
-    copilot = CopilotClient(token)
-    system = SystemClient(token)
+    manager = ManagerClient(base_url=settings.MANAGER_URL, user_token=token)
+    meta = MetaClient(base_url=settings.META_URL, user_token=token)
+    develop = DevelopClient(base_url=settings.DEVELOP_URL, user_token=token)
+    copilot = CopilotClient(base_url=settings.COPILOT_URL, user_token=token)
+    system = SystemClient(base_url=settings.SYSTEM_URL, user_token=token)
 
     @tool
     async def list_workflow_engines() -> str:

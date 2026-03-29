@@ -9,6 +9,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// @title           ADDP Portal API
+// @version         1.0
+// @host      localhost:8184
+// @BasePath  /api/v1/portal
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	cfg := config.LoadConfig()
 

@@ -1,0 +1,118 @@
+basePath: /api/v1/monitor
+host: localhost:8100
+info:
+  contact: {}
+  title: ADDP Monitor API
+  version: "1.0"
+paths:
+  /checkallmodules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: CheckAllModules
+      tags:
+      - Monitor
+  /checkmodulehealth:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: CheckModuleHealth
+      tags:
+      - Monitor
+  /getexecution:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: GetExecution
+      tags:
+      - Monitor
+  /getmodules:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: GetModules
+      tags:
+      - Monitor
+  /getstatistics:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: GetStatistics
+      tags:
+      - Monitor
+  /gettrenddata:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: GetTrendData
+      tags:
+      - Monitor
+  /listexecutions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: ListExecutions
+      tags:
+      - Monitor
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

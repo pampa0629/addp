@@ -12,6 +12,9 @@ import (
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/develop/backend/docs"
 )
 
 // internalAPIKeyMiddleware 处理内部 API 认证（X-Internal-API-Key）
@@ -69,6 +72,9 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient,        // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 全局中间件
 	router.Use(commonCors.CORS())

@@ -25,6 +25,12 @@ func NewSearchHandler(searchService *service.HybridSearchService, historyService
 }
 
 // Search 执行混合检索（全文检索 + 向量语义检索）
+// @Summary Search
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /search [get]
+// @Security BearerAuth
 func (h *SearchHandler) Search(c *gin.Context) {
 	if h.searchService == nil || !h.searchService.Enabled() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
@@ -74,6 +80,12 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": result})
 }
 
+// @Summary ListHistory
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listhistory [get]
+// @Security BearerAuth
 func (h *SearchHandler) ListHistory(c *gin.Context) {
 	if h.historyService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})
@@ -115,6 +127,12 @@ func (h *SearchHandler) ListHistory(c *gin.Context) {
 	})
 }
 
+// @Summary DeleteHistoryItem
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletehistoryitem [get]
+// @Security BearerAuth
 func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	if h.historyService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})
@@ -143,6 +161,12 @@ func (h *SearchHandler) DeleteHistoryItem(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// @Summary ClearHistory
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /clearhistory [get]
+// @Security BearerAuth
 func (h *SearchHandler) ClearHistory(c *gin.Context) {
 	if h.historyService == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "search history is not available"})

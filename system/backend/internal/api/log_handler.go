@@ -21,6 +21,21 @@ func NewLogHandler(logService *service.LogService) *LogHandler {
 	return &LogHandler{logService: logService}
 }
 
+// List godoc
+// @Summary      获取日志列表
+// @Description  分页获取审计日志（支持多条件过滤）
+// @Tags         日志管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "页码" default(1)
+// @Param        page_size query int false "每页数量" default(10)
+// @Param        start_time query string false "开始时间"
+// @Param        end_time query string false "结束时间"
+// @Param        http_method query string false "HTTP方法"
+// @Success      200 {object} object{data=[]models.AuditLog,total=int,page=int,page_size=int}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /logs [get]
 func (h *LogHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 

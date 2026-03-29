@@ -18,6 +18,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// @title           ADDP Orchestrator API
+// @version         1.0
+// @host      localhost:8084
+// @BasePath  /api/v1/orchestrator
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载配置
 	cfg := config.LoadConfig()

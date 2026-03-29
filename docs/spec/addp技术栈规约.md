@@ -65,6 +65,12 @@
 - **环境变量**: `github.com/joho/godotenv@v1.5.1`
 - **Cron 调度**: `github.com/robfig/cron/v3@v3.0.1`
 
+#### API 文档
+
+- **Swagger**: `github.com/swaggo/swag@v1.16.4`
+- **Gin Swagger**: `github.com/swaggo/gin-swagger@v1.6.0`
+- **Swagger Files**: `github.com/swaggo/files@v1.0.1`
+
 #### 模块特定依赖
 
 - **CORS 中间件** (Meta): `github.com/gin-contrib/cors@v1.5.0`

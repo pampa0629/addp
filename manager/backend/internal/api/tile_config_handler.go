@@ -51,6 +51,12 @@ type TileConfigResponse struct {
 // - max_zoom: 根据记录数智能计算的最大 zoom 层级
 // - extent: 数据的地理范围（用于调试）
 // - srid: 数据的坐标系
+// @Summary GetTileConfig
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /gettileconfig [get]
+// @Security BearerAuth
 func (h *TileConfigHandler) GetTileConfig(c *gin.Context) {
 	// 1. 解析参数
 	engineIDStr := c.Param("id")

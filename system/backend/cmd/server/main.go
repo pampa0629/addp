@@ -21,6 +21,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// @title           ADDP System API
+// @version         1.0
+
+// @host      localhost:8180
+// @BasePath  /api/v1/system
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()

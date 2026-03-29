@@ -19,6 +19,12 @@ func NewElementHandler(svc *service.ElementService) *ElementHandler {
 }
 
 // ListElements GET /api/model/elements
+// @Summary ListElements
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listelements [get]
+// @Security BearerAuth
 func (h *ElementHandler) ListElements(c *gin.Context) {
 	tenantID := getTenantID(c)
 
@@ -63,6 +69,12 @@ func (h *ElementHandler) ListElements(c *gin.Context) {
 }
 
 // CreateElement POST /api/model/elements
+// @Summary CreateElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createelement [get]
+// @Security BearerAuth
 func (h *ElementHandler) CreateElement(c *gin.Context) {
 	var req models.CreateElementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -82,6 +94,12 @@ func (h *ElementHandler) CreateElement(c *gin.Context) {
 }
 
 // GetElement GET /api/model/elements/:id
+// @Summary GetElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getelement [get]
+// @Security BearerAuth
 func (h *ElementHandler) GetElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -99,6 +117,12 @@ func (h *ElementHandler) GetElement(c *gin.Context) {
 }
 
 // UpdateElement PUT /api/model/elements/:id
+// @Summary UpdateElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateelement [get]
+// @Security BearerAuth
 func (h *ElementHandler) UpdateElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -124,6 +148,12 @@ func (h *ElementHandler) UpdateElement(c *gin.Context) {
 }
 
 // DeleteElement DELETE /api/model/elements/:id
+// @Summary DeleteElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteelement [get]
+// @Security BearerAuth
 func (h *ElementHandler) DeleteElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -140,6 +170,12 @@ func (h *ElementHandler) DeleteElement(c *gin.Context) {
 }
 
 // ApproveElement POST /api/model/elements/:id/approve
+// @Summary ApproveElement
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /approveelement [get]
+// @Security BearerAuth
 func (h *ElementHandler) ApproveElement(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -158,6 +194,12 @@ func (h *ElementHandler) ApproveElement(c *gin.Context) {
 }
 
 // GetElementQualityRules GET /api/model/elements/:id/quality-rules
+// @Summary GetElementQualityRules
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getelementqualityrules [get]
+// @Security BearerAuth
 func (h *ElementHandler) GetElementQualityRules(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

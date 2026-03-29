@@ -12,12 +12,18 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/meta/docs"
 )
 
 func SetupRouter(cfg *config.Config, db *gorm.DB, engineService *service.EngineService, scanService *service.ScanService, taskService *service.ScanTaskService, redisClient *redis.Client, systemClient *commonClient.SystemClient) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(requestLogger())
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 

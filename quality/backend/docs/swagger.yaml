@@ -1,0 +1,388 @@
+basePath: /api/v1/quality
+host: localhost:8182
+info:
+  contact: {}
+  description: 全域数据平台 - 数据质量管理 API
+  title: ADDP Quality API
+  version: "1.0"
+paths:
+  /check-tasks:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取检查任务列表
+      tags:
+      - CheckTask
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建检查任务
+      tags:
+      - CheckTask
+  /check-tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除检查任务
+      tags:
+      - CheckTask
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取检查任务详情
+      tags:
+      - CheckTask
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新检查任务
+      tags:
+      - CheckTask
+  /check-tasks/{id}/run:
+    post:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 执行检查任务
+      tags:
+      - CheckTask
+  /executions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行记录列表
+      tags:
+      - Execution
+  /executions/{id}:
+    get:
+      parameters:
+      - description: 执行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取执行记录详情
+      tags:
+      - Execution
+  /issues:
+    get:
+      parameters:
+      - description: 状态
+        in: query
+        name: status
+        type: string
+      - description: 引擎ID
+        in: query
+        name: engine_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取问题工单列表
+      tags:
+      - Issue
+  /issues/{id}:
+    get:
+      parameters:
+      - description: 工单ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取问题工单详情
+      tags:
+      - Issue
+  /issues/{id}/status:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 工单ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 状态信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新问题工单状态
+      tags:
+      - Issue
+  /rule-applications:
+    get:
+      parameters:
+      - description: 引擎ID
+        in: query
+        name: engine_id
+        type: integer
+      - description: Schema名称
+        in: query
+        name: schema_name
+        type: string
+      - description: 表名
+        in: query
+        name: table_name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - BearerAuth: []
+      summary: 获取规则应用列表
+      tags:
+      - RuleApplication
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则应用信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建规则应用
+      tags:
+      - RuleApplication
+  /rule-applications/{id}:
+    delete:
+      parameters:
+      - description: 规则应用ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除规则应用
+      tags:
+      - RuleApplication
+    get:
+      parameters:
+      - description: 规则应用ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取规则应用详情
+      tags:
+      - RuleApplication
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 规则应用ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新信息
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新规则应用
+      tags:
+      - RuleApplication
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

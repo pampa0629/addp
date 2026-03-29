@@ -16,6 +16,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// @title           ADDP Monitor API
+// @version         1.0
+// @host      localhost:8100
+// @BasePath  /api/v1/monitor
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载配置
 	cfg, err := config.LoadConfig()

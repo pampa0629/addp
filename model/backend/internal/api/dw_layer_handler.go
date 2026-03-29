@@ -18,6 +18,12 @@ func NewDWLayerHandler(svc *service.DWLayerService) *DWLayerHandler {
 }
 
 // ListDWLayers GET /api/model/dw-layers
+// @Summary ListDWLayers
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdwlayers [get]
+// @Security BearerAuth
 func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 	tenantID := getTenantID(c)
 
@@ -30,6 +36,12 @@ func (h *DWLayerHandler) ListDWLayers(c *gin.Context) {
 }
 
 // CreateDWLayer POST /api/model/dw-layers
+// @Summary CreateDWLayer
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createdwlayer [get]
+// @Security BearerAuth
 func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 	var req models.CreateDWLayerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,6 +59,12 @@ func (h *DWLayerHandler) CreateDWLayer(c *gin.Context) {
 }
 
 // GetDWLayer GET /api/model/dw-layers/:id
+// @Summary GetDWLayer
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getdwlayer [get]
+// @Security BearerAuth
 func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -64,6 +82,12 @@ func (h *DWLayerHandler) GetDWLayer(c *gin.Context) {
 }
 
 // UpdateDWLayer PUT /api/model/dw-layers/:id
+// @Summary UpdateDWLayer
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatedwlayer [get]
+// @Security BearerAuth
 func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -87,6 +111,12 @@ func (h *DWLayerHandler) UpdateDWLayer(c *gin.Context) {
 }
 
 // DeleteDWLayer DELETE /api/model/dw-layers/:id
+// @Summary DeleteDWLayer
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletedwlayer [get]
+// @Security BearerAuth
 func (h *DWLayerHandler) DeleteDWLayer(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

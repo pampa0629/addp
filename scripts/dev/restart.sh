@@ -185,6 +185,16 @@ elif [ ${#FORCE_BUILD_MODULES[@]} -gt 0 ]; then
   for module in "${FORCE_BUILD_MODULES[@]}"; do
     echo "  处理 $module 模块..."
 
+    # 生成 Swagger 文档（如果 swag 可用）
+    if [ "$module" = "system" ]; then
+      if command -v swag &>/dev/null || [ -f ~/go/bin/swag ]; then
+        SWAG_BIN="${HOME}/go/bin/swag"
+        command -v swag &>/dev/null && SWAG_BIN="swag"
+        echo "  生成 System Swagger 文档..."
+        (cd system/backend && ${SWAG_BIN} init -g cmd/server/main.go -o docs --parseDependency --parseInternal -q 2>/dev/null) || echo "  ⚠️ Swagger 文档生成失败，跳过"
+      fi
+    fi
+
     # Touch 指定模块的源文件
     if [ "$module" = "gateway" ]; then
       find gateway -type f -name "*.go" -exec touch {} \; 2>/dev/null || true

@@ -25,7 +25,7 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 // @Tags Engines
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/engines [get]
+// @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
@@ -49,7 +49,7 @@ func (h *EngineHandler) ListEngines(c *gin.Context) {
 // @Produce json
 // @Param id path int true "引擎ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/engines/:id/schemas [get]
+// @Router /engines/:id/schemas [get]
 func (h *EngineHandler) ListSchemas(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -81,7 +81,7 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 // @Param id path int true "引擎ID"
 // @Param schema query string false "Schema名称"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/engines/:id/tables [get]
+// @Router /engines/:id/tables [get]
 func (h *EngineHandler) ListTables(c *gin.Context) {
 	engineIDStr := c.Param("id")
 	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
@@ -116,7 +116,7 @@ func (h *EngineHandler) ListTables(c *gin.Context) {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine
-// @Router /api/develop/workflow-engines [get]
+// @Router /workflow-engines [get]
 func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
@@ -138,7 +138,7 @@ func (h *EngineHandler) ListWorkflowEngines(c *gin.Context) {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} models.Engine
-// @Router /api/develop/spark-runtimes [get]
+// @Router /spark-runtimes [get]
 func (h *EngineHandler) ListSparkRuntimes(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

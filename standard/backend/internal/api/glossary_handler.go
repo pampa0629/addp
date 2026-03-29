@@ -19,6 +19,12 @@ func NewGlossaryHandler(svc *service.GlossaryService) *GlossaryHandler {
 }
 
 // ListGlossaries GET /api/model/glossaries
+// @Summary ListGlossaries
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listglossaries [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 	tenantID := getTenantID(c)
 
@@ -76,6 +82,12 @@ func (h *GlossaryHandler) ListGlossaries(c *gin.Context) {
 }
 
 // CreateGlossary POST /api/model/glossaries
+// @Summary CreateGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 	var req models.CreateGlossaryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -95,6 +107,12 @@ func (h *GlossaryHandler) CreateGlossary(c *gin.Context) {
 }
 
 // GetGlossary GET /api/model/glossaries/:id
+// @Summary GetGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -112,6 +130,12 @@ func (h *GlossaryHandler) GetGlossary(c *gin.Context) {
 }
 
 // UpdateGlossary PUT /api/model/glossaries/:id
+// @Summary UpdateGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -137,6 +161,12 @@ func (h *GlossaryHandler) UpdateGlossary(c *gin.Context) {
 }
 
 // DeleteGlossary DELETE /api/model/glossaries/:id
+// @Summary DeleteGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -153,6 +183,12 @@ func (h *GlossaryHandler) DeleteGlossary(c *gin.Context) {
 }
 
 // ApproveGlossary POST /api/model/glossaries/:id/approve
+// @Summary ApproveGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /approveglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -171,6 +207,12 @@ func (h *GlossaryHandler) ApproveGlossary(c *gin.Context) {
 }
 
 // DeprecateGlossary POST /api/model/glossaries/:id/deprecate
+// @Summary DeprecateGlossary
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deprecateglossary [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -189,6 +231,12 @@ func (h *GlossaryHandler) DeprecateGlossary(c *gin.Context) {
 }
 
 // GetElementMappings GET /glossaries/:id/elements
+// @Summary GetElementMappings
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getelementmappings [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -206,6 +254,12 @@ func (h *GlossaryHandler) GetElementMappings(c *gin.Context) {
 }
 
 // SetElementMappings PUT /glossaries/:id/elements
+// @Summary SetElementMappings
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /setelementmappings [get]
+// @Security BearerAuth
 func (h *GlossaryHandler) SetElementMappings(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

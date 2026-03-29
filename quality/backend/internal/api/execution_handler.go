@@ -16,6 +16,12 @@ func NewExecutionHandler(db *gorm.DB) *ExecutionHandler {
 	return &ExecutionHandler{db: db}
 }
 
+// @Summary 获取执行记录列表
+// @Tags Execution
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /executions [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) List(c *gin.Context) {
 	tenantID := getTenantID(c)
 	page := 1
@@ -47,6 +53,13 @@ func (h *ExecutionHandler) List(c *gin.Context) {
 	})
 }
 
+// @Summary 获取执行记录详情
+// @Tags Execution
+// @Produce json
+// @Param id path string true "执行ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /executions/{id} [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) Get(c *gin.Context) {
 	tenantID := getTenantID(c)
 	executionID := c.Param("id")

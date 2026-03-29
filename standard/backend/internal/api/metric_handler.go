@@ -21,6 +21,12 @@ func NewMetricHandler(svc *service.MetricService) *MetricHandler {
 
 // --- 指标目录 ---
 
+// @Summary ListCategories
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listcategories [get]
+// @Security BearerAuth
 func (h *MetricHandler) ListCategories(c *gin.Context) {
 	tenantID := getTenantID(c)
 	cats, err := h.svc.ListCategories(tenantID)
@@ -31,6 +37,12 @@ func (h *MetricHandler) ListCategories(c *gin.Context) {
 	c.JSON(http.StatusOK, cats)
 }
 
+// @Summary CreateCategory
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createcategory [get]
+// @Security BearerAuth
 func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	var req models.CreateMetricCategoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -47,6 +59,12 @@ func (h *MetricHandler) CreateCategory(c *gin.Context) {
 	c.JSON(http.StatusCreated, cat)
 }
 
+// @Summary UpdateCategory
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatecategory [get]
+// @Security BearerAuth
 func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -68,6 +86,12 @@ func (h *MetricHandler) UpdateCategory(c *gin.Context) {
 	c.JSON(http.StatusOK, cat)
 }
 
+// @Summary DeleteCategory
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletecategory [get]
+// @Security BearerAuth
 func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -84,6 +108,12 @@ func (h *MetricHandler) DeleteCategory(c *gin.Context) {
 
 // --- 指标定义 ---
 
+// @Summary ListMetrics
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listmetrics [get]
+// @Security BearerAuth
 func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	tenantID := getTenantID(c)
 	opts := repository.ListMetricOptions{
@@ -126,6 +156,12 @@ func (h *MetricHandler) ListMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": metrics, "total": total, "page": page, "page_size": pageSize, "total_pages": totalPages})
 }
 
+// @Summary GetMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getmetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) GetMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -155,6 +191,12 @@ func (h *MetricHandler) GetMetric(c *gin.Context) {
 	})
 }
 
+// @Summary CreateMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createmetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	var req models.CreateMetricRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -171,6 +213,12 @@ func (h *MetricHandler) CreateMetric(c *gin.Context) {
 	c.JSON(http.StatusCreated, metric)
 }
 
+// @Summary UpdateMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatemetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -192,6 +240,12 @@ func (h *MetricHandler) UpdateMetric(c *gin.Context) {
 	c.JSON(http.StatusOK, metric)
 }
 
+// @Summary DeleteMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletemetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -206,6 +260,12 @@ func (h *MetricHandler) DeleteMetric(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
+// @Summary ApproveMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /approvemetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -221,6 +281,12 @@ func (h *MetricHandler) ApproveMetric(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "审批成功"})
 }
 
+// @Summary DeprecateMetric
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deprecatemetric [get]
+// @Security BearerAuth
 func (h *MetricHandler) DeprecateMetric(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

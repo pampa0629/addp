@@ -24,7 +24,7 @@ func NewEngineHandler(systemClient *commonClient.SystemClient) *EngineHandler {
 // @Tags Engines
 // @Produce json
 // @Success 200 {array} map[string]interface{}
-// @Router /api/service/engines [get]
+// @Router /engines [get]
 func (h *EngineHandler) ListEngines(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

@@ -26,6 +26,17 @@ func NewEngineHandler(engineService *service.EngineService) *EngineHandler {
 	}
 }
 
+// Create godoc
+// @Summary      创建引擎
+// @Description  创建新的存储引擎连接
+// @Tags         引擎管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.EngineCreateRequest true "引擎信息"
+// @Success      201 {object} models.Engine
+// @Failure      400 {object} models.ErrorResponse
+// @Router       /engines [post]
 func (h *EngineHandler) Create(c *gin.Context) {
 	var req models.EngineCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -43,6 +54,19 @@ func (h *EngineHandler) Create(c *gin.Context) {
 	commonapi.RespondCreated(c, engine)
 }
 
+// List godoc
+// @Summary      获取引擎列表
+// @Description  分页获取引擎列表（支持按类型过滤）
+// @Tags         引擎管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "页码" default(1)
+// @Param        page_size query int false "每页数量" default(10)
+// @Param        engine_type query string false "引擎类型"
+// @Success      200 {object} object{data=[]models.Engine,total=int,page=int,page_size=int}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /engines [get]
 func (h *EngineHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	engineType := c.Query("engine_type")
@@ -310,7 +334,7 @@ func (h *EngineHandler) GetByIDInternal(c *gin.Context) {
 // @Produce json
 // @Param id path int true "资源ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/engines/:id/schemas [get]
+// @Router /engines/:id/schemas [get]
 func (h *EngineHandler) ListSchemas(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {
@@ -346,7 +370,7 @@ func (h *EngineHandler) ListSchemas(c *gin.Context) {
 // @Param id path int true "资源ID"
 // @Param schema query string false "Schema名称(默认public)"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/engines/:id/tables [get]
+// @Router /engines/:id/tables [get]
 func (h *EngineHandler) ListTables(c *gin.Context) {
 	id, err := commonapi.BindIDParam(c, "id")
 	if err != nil {

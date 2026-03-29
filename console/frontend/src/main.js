@@ -13,7 +13,7 @@ import {
   Platform, User, Lock, Setting, ArrowDown, SwitchButton,
   Fold, Expand, HomeFilled, Upload, List, Timer, Connection,
   DataAnalysis, Search, Document, Box, Monitor, Operation,
-  Edit, Link, Key, Loading, Sunny, Moon, Warning
+  Edit, Link, Key, Loading, Sunny, Moon, Warning, Memo
 } from '@element-plus/icons-vue'
 import App from './App.vue'
 import { useThemeStore } from './store/theme'
@@ -25,7 +25,7 @@ const icons = {
   Platform, User, Lock, Setting, ArrowDown, SwitchButton,
   Fold, Expand, HomeFilled, Upload, List, Timer, Connection,
   DataAnalysis, Search, Document, Box, Monitor, Operation,
-  Edit, Link, Key, Loading, Sunny, Moon, Warning
+  Edit, Link, Key, Loading, Sunny, Moon, Warning, Memo
 }
 for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)

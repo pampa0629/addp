@@ -1441,7 +1441,7 @@ if check_service_running "spark-workflow-engine" "8098"; then
   # 设置环境变量（注意端口改为 8098）
   export PORT=8098
   export SYSTEM_SERVICE_URL=http://localhost:8180
-  export DEVELOP_SERVICE_URL=http://localhost:8085
+  export DEVELOP_SERVICE_URL=http://localhost:8185
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python（无需 activate）
@@ -1735,7 +1735,7 @@ if check_service_running "copilot-backend" "8087"; then
   export PORT=8087
   export SYSTEM_SERVICE_URL=http://localhost:8180
   export META_SERVICE_URL=http://localhost:8082
-  export DEVELOP_SERVICE_URL=http://localhost:8085
+  export DEVELOP_SERVICE_URL=http://localhost:8185
   export DATABASE_URL=postgresql://addp:addp_password@localhost:15432/addp
 
   # 直接使用虚拟环境的 Python

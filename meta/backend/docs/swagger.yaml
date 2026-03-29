@@ -1,0 +1,88 @@
+basePath: /api/v1/meta
+host: localhost:8082
+info:
+  contact: {}
+  title: ADDP Meta API
+  version: "1.0"
+paths:
+  /engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取引擎列表
+      tags:
+      - Meta
+  /metadata/object:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取对象元数据
+      tags:
+      - Meta
+  /object-storage/{engine_id}/nodes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出对象存储节点
+      tags:
+      - Meta
+  /schemas/{engine_id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取Schema列表
+      tags:
+      - Meta
+  /schemas/{engine_id}/available:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 列出可用Schema
+      tags:
+      - Meta
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

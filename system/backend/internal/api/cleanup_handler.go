@@ -43,7 +43,7 @@ type CreateScanTaskResponse struct {
 // @Failure 400 {string} string "错误信息"
 // @Failure 401 {string} string "错误信息"
 // @Failure 500 {string} string "错误信息"
-// @Router /api/system/admin/cleanup/scan [post]
+// @Router /admin/cleanup/scan [post]
 func (h *CleanupHandler) CreateScanTask(c *gin.Context) {
 	// 获取当前用户信息
 	userID, exists := c.Get("user_id")
@@ -103,7 +103,7 @@ type GetTaskStatusResponse struct {
 // @Failure 401 {string} string "错误信息"
 // @Failure 404 {string} string "错误信息"
 // @Failure 500 {string} string "错误信息"
-// @Router /api/system/admin/cleanup/tasks/{task_id} [get]
+// @Router /admin/cleanup/tasks/{task_id} [get]
 func (h *CleanupHandler) GetTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
 	if taskID == "" {
@@ -168,7 +168,7 @@ type CreateExecuteTaskResponse struct {
 // @Failure 400 {string} string "错误信息"
 // @Failure 401 {string} string "错误信息"
 // @Failure 500 {string} string "错误信息"
-// @Router /api/system/admin/cleanup/execute [post]
+// @Router /admin/cleanup/execute [post]
 func (h *CleanupHandler) CreateExecuteTask(c *gin.Context) {
 	// 获取当前用户信息
 	userID, exists := c.Get("user_id")
@@ -222,7 +222,7 @@ type GetTaskHistoryResponse struct {
 // @Failure 400 {string} string "错误信息"
 // @Failure 401 {string} string "错误信息"
 // @Failure 500 {string} string "错误信息"
-// @Router /api/system/admin/cleanup/history [get]
+// @Router /admin/cleanup/history [get]
 func (h *CleanupHandler) GetTaskHistory(c *gin.Context) {
 	// 获取租户信息
 	tenantID, exists := c.Get("tenant_id")

@@ -36,6 +36,12 @@ func NewExplorerHandler(
 
 // GetTree 获取引擎的资源树
 // GET /api/explorer/tree/:engine_id?expand_depth=2
+// @Summary GetTree
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /gettree [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) GetTree(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -79,6 +85,12 @@ func (h *ExplorerHandler) GetTree(c *gin.Context) {
 
 // RefreshNode 刷新指定节点
 // POST /api/explorer/tree/:engine_id/refresh?locator=addp://engine/1/path/public?type=schema
+// @Summary RefreshNode
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /refreshnode [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -115,6 +127,12 @@ func (h *ExplorerHandler) RefreshNode(c *gin.Context) {
 
 // Preview 数据预览
 // GET /api/explorer/preview?locator=addp://engine/1/path/public/users?type=table&page=1&page_size=20
+// @Summary Preview
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /preview [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) Preview(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -172,6 +190,12 @@ func (h *ExplorerHandler) Preview(c *gin.Context) {
 
 // ListEngines 获取可用引擎列表
 // GET /api/explorer/engines
+// @Summary ListEngines
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listengines [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -194,6 +218,12 @@ func (h *ExplorerHandler) ListEngines(c *gin.Context) {
 
 // GetNodeChildren 获取节点的子节点（增量加载）
 // GET /api/manager/tree/:engine_id/node?locator=addp://engine/1/path/bucket1?type=bucket&expand_depth=1
+// @Summary GetNodeChildren
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getnodechildren [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -247,6 +277,12 @@ func (h *ExplorerHandler) GetNodeChildren(c *gin.Context) {
 
 // SearchNodes 搜索资源树节点
 // GET /api/manager/tree/:engine_id/search?q=data&node_types=table,schema&limit=50
+// @Summary SearchNodes
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /searchnodes [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 
@@ -307,6 +343,12 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 
 // VideoStream 视频流式传输（支持 Range 请求）
 // GET /api/explorer/video-stream?engine_id=1&object_key=bucket/path/to/video.mp4
+// @Summary VideoStream
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /videostream [get]
+// @Security BearerAuth
 func (h *ExplorerHandler) VideoStream(c *gin.Context) {
 	tenantID := tenantIDFromContext(c)
 

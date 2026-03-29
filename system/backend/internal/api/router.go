@@ -11,7 +11,11 @@ import (
 	"github.com/addp/system/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
+
+	_ "github.com/addp/system/docs"
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
@@ -92,6 +96,9 @@ func SetupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// API 路由组
 	api := router.Group("/api/v1/system")

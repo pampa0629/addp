@@ -12,6 +12,9 @@ import (
 	"github.com/addp/transfer/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/transfer/docs"
 )
 
 // extractAuthToken 从请求中提取认证 token
@@ -43,6 +46,9 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 全局中间件
 	router.Use(commonCors.CORS())

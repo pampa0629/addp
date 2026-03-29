@@ -18,6 +18,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// @title           ADDP Standard API
+// @version         1.0
+// @host      localhost:8110
+// @BasePath  /api/v1/standard
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {

@@ -1,0 +1,556 @@
+basePath: /api/v1/transfer
+definitions:
+  api.PaginatedResponse:
+    properties:
+      data: {}
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.CreateTaskRequest:
+    properties:
+      auto_scan_metadata:
+        type: boolean
+      batch_size:
+        type: integer
+      config:
+        additionalProperties: true
+        description: 包含 source 和 target 配置
+        type: object
+      description:
+        type: string
+      mappings:
+        items:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.FieldMapping'
+        type: array
+      name:
+        type: string
+      schedule:
+        type: string
+      task_type:
+        description: import | export | sync
+        type: string
+    required:
+    - config
+    - name
+    type: object
+  github_com_addp_transfer_internal_models.ExecutionStatus:
+    enum:
+    - pending
+    - running
+    - success
+    - failed
+    type: string
+    x-enum-comments:
+      ExecutionStatusFailed: 失败
+      ExecutionStatusPending: 待执行
+      ExecutionStatusRunning: 运行中
+      ExecutionStatusSuccess: 成功
+    x-enum-descriptions:
+    - 待执行
+    - 运行中
+    - 成功
+    - 失败
+    x-enum-varnames:
+    - ExecutionStatusPending
+    - ExecutionStatusRunning
+    - ExecutionStatusSuccess
+    - ExecutionStatusFailed
+  github_com_addp_transfer_internal_models.FieldMapping:
+    properties:
+      created_at:
+        type: string
+      default_value:
+        type: string
+      field_type:
+        type: string
+      format:
+        type: string
+      id:
+        type: integer
+      nullable:
+        type: boolean
+      source_field:
+        type: string
+      target_field:
+        type: string
+      task_id:
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.JSONMap:
+    additionalProperties: true
+    type: object
+  github_com_addp_transfer_internal_models.LocalTime:
+    properties:
+      time.Time:
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TaskExecution:
+    properties:
+      bytes_read:
+        type: integer
+      bytes_written:
+        type: integer
+      checkpoint_offset:
+        type: integer
+      checkpoint_state:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
+      end_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      error_msg:
+        type: string
+      id:
+        type: integer
+      logs:
+        type: string
+      records_read:
+        type: integer
+      records_written:
+        type: integer
+      start_time:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.LocalTime'
+      status:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.ExecutionStatus'
+      task_id:
+        type: integer
+      trigger_by:
+        type: integer
+      trigger_type:
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.TaskStatistics:
+    properties:
+      failed_tasks:
+        type: integer
+      last_failed_tasks:
+        type: integer
+      last_running_tasks:
+        type: integer
+      last_success_tasks:
+        type: integer
+      not_executed_tasks:
+        type: integer
+      pending_tasks:
+        type: integer
+      running_tasks:
+        type: integer
+      success_tasks:
+        type: integer
+      total_bytes:
+        type: integer
+      total_executions:
+        type: integer
+      total_records:
+        type: integer
+      total_tasks:
+        type: integer
+    type: object
+  github_com_addp_transfer_internal_models.TaskStatus:
+    enum:
+    - idle
+    - running
+    type: string
+    x-enum-comments:
+      TaskStatusIdle: 空闲（未执行或执行完成）
+      TaskStatusRunning: 执行中
+    x-enum-descriptions:
+    - 空闲（未执行或执行完成）
+    - 执行中
+    x-enum-varnames:
+    - TaskStatusIdle
+    - TaskStatusRunning
+  github_com_addp_transfer_internal_models.TransferTask:
+    properties:
+      auto_scan_metadata:
+        type: boolean
+      batch_size:
+        type: integer
+      config:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_transfer_internal_models.JSONMap'
+        description: Reader-Transform-Writer 管道配置
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      last_execution_id:
+        description: BaseTask 基类字段
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      progress:
+        type: number
+      schedule:
+        description: Cron 表达式
+        type: string
+      status:
+        $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskStatus'
+      task_type:
+        description: import | export | sync
+        type: string
+      tenant_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_transfer_internal_models.UpdateTaskRequest:
+    properties:
+      auto_scan_metadata:
+        type: boolean
+      batch_size:
+        type: integer
+      config:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      enabled:
+        type: boolean
+      name:
+        type: string
+      schedule:
+        type: string
+      task_type:
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+host: localhost:8083
+info:
+  contact: {}
+  title: ADDP Transfer API
+  version: "1.0"
+paths:
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: 分页获取任务列表，支持按类型、状态过滤
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页大小
+        in: query
+        name: page_size
+        type: integer
+      - description: '任务类型: import, export, sync'
+        in: query
+        name: type
+        type: string
+      - description: '任务状态: pending, running, completed, failed'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            allOf:
+            - $ref: '#/definitions/api.PaginatedResponse'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
+                  type: array
+              type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务列表
+      tags:
+      - 任务管理
+    post:
+      consumes:
+      - application/json
+      description: 创建一个新的数据导入/导出/同步任务
+      parameters:
+      - description: 任务创建请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: 任务创建成功
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
+        "400":
+          description: 请求参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: 未授权
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器内部错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 创建数据传输任务
+      tags:
+      - 任务管理
+  /tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除指定的任务及相关执行记录
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 删除成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除任务
+      tags:
+      - 任务管理
+    get:
+      consumes:
+      - application/json
+      description: 根据任务ID获取任务的详细信息
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 获取成功
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: 任务不存在
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务详情
+      tags:
+      - 任务管理
+    put:
+      consumes:
+      - application/json
+      description: 更新任务的配置信息
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 任务更新请求
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_transfer_internal_models.UpdateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 更新成功
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TransferTask'
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 更新任务
+      tags:
+      - 任务管理
+  /tasks/{id}/start:
+    post:
+      consumes:
+      - application/json
+      description: 启动任务执行，创建新的执行记录
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 启动成功，返回执行记录
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskExecution'
+        "400":
+          description: 参数错误或任务已在运行
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 启动任务
+      tags:
+      - 任务管理
+  /tasks/{id}/stop:
+    post:
+      consumes:
+      - application/json
+      description: 停止正在执行的任务
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 停止成功
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 参数错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 停止任务
+      tags:
+      - 任务管理
+  /tasks/statistics:
+    get:
+      consumes:
+      - application/json
+      description: 获取当前租户的任务统计数据（各状态任务数量等）
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 统计信息
+          schema:
+            $ref: '#/definitions/github_com_addp_transfer_internal_models.TaskStatistics'
+        "500":
+          description: 服务器错误
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 获取任务统计信息
+      tags:
+      - 任务管理
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

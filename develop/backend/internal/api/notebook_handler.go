@@ -48,7 +48,7 @@ type GetJupyterURLResponse struct {
 // @Produce json
 // @Param body body GetJupyterURLRequest true "请求"
 // @Success 200 {object} GetJupyterURLResponse
-// @Router /api/develop/notebooks/jupyter-url [post]
+// @Router /notebooks/jupyter-url [post]
 func (h *NotebookHandler) GetJupyterURL(c *gin.Context) {
 	var req GetJupyterURLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -91,7 +91,7 @@ type ExecuteNotebookResponse struct {
 // @Produce json
 // @Param body body ExecuteNotebookRequest true "执行请求"
 // @Success 200 {object} ExecuteNotebookResponse
-// @Router /api/develop/notebooks/execute [post]
+// @Router /notebooks/execute [post]
 func (h *NotebookHandler) ExecuteNotebook(c *gin.Context) {
 	var req ExecuteNotebookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -149,7 +149,7 @@ type ListKernelsResponse struct {
 // @Tags Notebook
 // @Produce json
 // @Success 200 {object} ListKernelsResponse
-// @Router /api/develop/notebooks/kernels [get]
+// @Router /notebooks/kernels [get]
 func (h *NotebookHandler) ListKernels(c *gin.Context) {
 	kernels, err := h.jupyterService.ListKernels(c.Request.Context())
 	if err != nil {
@@ -170,7 +170,7 @@ func (h *NotebookHandler) ListKernels(c *gin.Context) {
 // @Tags Notebook
 // @Produce json
 // @Success 200 {object} map[string]string
-// @Router /api/develop/notebooks/health [get]
+// @Router /notebooks/health [get]
 func (h *NotebookHandler) HealthCheck(c *gin.Context) {
 	err := h.jupyterService.HealthCheck(c.Request.Context())
 	if err != nil {
@@ -207,8 +207,8 @@ type UploadNotebookRequest struct {
 // @Param description formData string false "描述"
 // @Param data_sources formData string false "数据源 IDs (JSON 数组)"
 // @Param parameters formData string false "参数 (JSON 对象)"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/notebooks/upload [post]
+// @Success 200 {object} models.DevTask
+// @Router /notebooks/upload [post]
 func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 	// 获取用户信息
 	tenantID, _ := c.Get("tenant_id")
@@ -321,7 +321,7 @@ func (h *NotebookHandler) UploadNotebook(c *gin.Context) {
 // @Produce application/json
 // @Param id path int true "DevItem ID"
 // @Success 200 {file} binary
-// @Router /api/develop/notebooks/:id/download [get]
+// @Router /notebooks/:id/download [get]
 func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 	// 获取用户信息
 	tenantID, _ := c.Get("tenant_id")
@@ -379,7 +379,7 @@ func (h *NotebookHandler) DownloadNotebook(c *gin.Context) {
 // @Param page query int false "页码" default(1)
 // @Param page_size query int false "每页数量" default(20)
 // @Success 200 {object} models.ListDevTasksResponse
-// @Router /api/develop/notebooks [get]
+// @Router /notebooks [get]
 func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 	// 获取用户信息
 	tenantID, _ := c.Get("tenant_id")
@@ -422,7 +422,7 @@ func (h *NotebookHandler) ListNotebooks(c *gin.Context) {
 // @Tags Notebook
 // @Param id path int true "DevItem ID"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/notebooks/:id [delete]
+// @Router /notebooks/:id [delete]
 func (h *NotebookHandler) DeleteNotebook(c *gin.Context) {
 	// 获取用户信息
 	tenantID, _ := c.Get("tenant_id")

@@ -21,6 +21,14 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+// @title           ADDP Service API
+// @version         1.0
+// @host      localhost:8086
+// @BasePath  /api/v1/service
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()

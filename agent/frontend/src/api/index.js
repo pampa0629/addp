@@ -5,7 +5,7 @@ export { authAPI } from './auth'
 
 const agentClient = createAPIClient(() => useAuthStore(), {
   moduleName: 'Agent',
-  baseURL: '/api',
+  baseURL: '/api/v1',
 })
 
 export const sessionAPI = {

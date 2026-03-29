@@ -21,6 +21,12 @@ func NewStatisticsHandler(statisticsService *service.StatisticsService) *Statist
 }
 
 // GetStatistics 获取统计数据
+// @Summary GetStatistics
+// @Tags Monitor
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getstatistics [get]
+// @Security BearerAuth
 func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")
@@ -49,6 +55,12 @@ func (h *StatisticsHandler) GetStatistics(c *gin.Context) {
 }
 
 // GetTrendData 获取趋势数据
+// @Summary GetTrendData
+// @Tags Monitor
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /gettrenddata [get]
+// @Security BearerAuth
 func (h *StatisticsHandler) GetTrendData(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")

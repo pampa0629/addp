@@ -21,6 +21,12 @@ func NewExecutionHandler(queryService *service.ExecutionQueryService) *Execution
 }
 
 // ListExecutions 分页查询执行记录
+// @Summary ListExecutions
+// @Tags Monitor
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listexecutions [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 	// 从 context 获取 tenant_id（由认证中间件注入）
 	tenantIDRaw, exists := c.Get("tenant_id")
@@ -57,6 +63,12 @@ func (h *ExecutionHandler) ListExecutions(c *gin.Context) {
 }
 
 // GetExecution 获取单条执行记录
+// @Summary GetExecution
+// @Tags Monitor
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getexecution [get]
+// @Security BearerAuth
 func (h *ExecutionHandler) GetExecution(c *gin.Context) {
 	// 从 context 获取 tenant_id
 	tenantIDRaw, exists := c.Get("tenant_id")

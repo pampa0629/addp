@@ -19,6 +19,14 @@ import (
 	commonConfig "github.com/addp/common/config"
 )
 
+// @title           ADDP Develop API
+// @version         1.0
+// @host      localhost:8085
+// @BasePath  /api/v1/develop
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载 .env 文件
 	commonConfig.LoadEnv() // 从项目根目录加载 .env

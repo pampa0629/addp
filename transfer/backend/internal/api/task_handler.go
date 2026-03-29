@@ -33,7 +33,7 @@ func NewTaskHandler(taskService *service.TaskService) *TaskHandler {
 // @Failure 400 {object} map[string]string "请求参数错误"
 // @Failure 401 {object} map[string]string "未授权"
 // @Failure 500 {object} map[string]string "服务器内部错误"
-// @Router /api/tasks [post]
+// @Router /tasks [post]
 // @Security BearerAuth
 func (h *TaskHandler) CreateTask(c *gin.Context) {
 	var req models.CreateTaskRequest
@@ -65,7 +65,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 404 {object} map[string]string "任务不存在"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/{id} [get]
+// @Router /tasks/{id} [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -94,9 +94,9 @@ func (h *TaskHandler) GetTask(c *gin.Context) {
 // @Param page_size query int false "每页大小" default(20)
 // @Param type query string false "任务类型: import, export, sync"
 // @Param status query string false "任务状态: pending, running, completed, failed"
-// @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.Task} "获取成功"
+// @Success 200 {object} commonAPI.PaginatedResponse{data=[]models.TransferTask} "获取成功"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks [get]
+// @Router /tasks [get]
 // @Security BearerAuth
 func (h *TaskHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
@@ -137,7 +137,7 @@ func (h *TaskHandler) ListTasks(c *gin.Context) {
 // @Success 200 {object} models.TransferTask "更新成功"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/{id} [put]
+// @Router /tasks/{id} [put]
 // @Security BearerAuth
 func (h *TaskHandler) UpdateTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -172,7 +172,7 @@ func (h *TaskHandler) UpdateTask(c *gin.Context) {
 // @Success 200 {object} map[string]string "删除成功"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/{id} [delete]
+// @Router /tasks/{id} [delete]
 // @Security BearerAuth
 func (h *TaskHandler) DeleteTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -200,7 +200,7 @@ func (h *TaskHandler) DeleteTask(c *gin.Context) {
 // @Success 200 {object} models.TaskExecution "启动成功，返回执行记录"
 // @Failure 400 {object} map[string]string "参数错误或任务已在运行"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/{id}/start [post]
+// @Router /tasks/{id}/start [post]
 // @Security BearerAuth
 func (h *TaskHandler) StartTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -230,7 +230,7 @@ func (h *TaskHandler) StartTask(c *gin.Context) {
 // @Success 200 {object} map[string]string "停止成功"
 // @Failure 400 {object} map[string]string "参数错误"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/{id}/stop [post]
+// @Router /tasks/{id}/stop [post]
 // @Security BearerAuth
 func (h *TaskHandler) StopTask(c *gin.Context) {
 	id, ok := commonAPI.ParseUintParam(c, "id")
@@ -292,7 +292,7 @@ func (h *TaskHandler) ResumeTask(c *gin.Context) {
 // @Produce json
 // @Success 200 {object} models.TaskStatistics "统计信息"
 // @Failure 500 {object} map[string]string "服务器错误"
-// @Router /api/tasks/statistics [get]
+// @Router /tasks/statistics [get]
 // @Security BearerAuth
 func (h *TaskHandler) GetTaskStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")

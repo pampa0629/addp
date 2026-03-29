@@ -23,6 +23,12 @@ func NewMetadataHandler(metadataService *service.MetadataService) *MetadataHandl
 }
 
 // ListScanTasks 列出指定资源下的扫描任务
+// @Summary ListScanTasks
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listscantasks [get]
+// @Security BearerAuth
 func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
@@ -44,6 +50,12 @@ func (h *MetadataHandler) ListScanTasks(c *gin.Context) {
 }
 
 // CreateScanTask 创建新的扫描任务
+// @Summary CreateScanTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createscantask [get]
+// @Security BearerAuth
 func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
@@ -71,6 +83,12 @@ func (h *MetadataHandler) CreateScanTask(c *gin.Context) {
 }
 
 // UpdateScanTask 更新扫描任务
+// @Summary UpdateScanTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatescantask [get]
+// @Security BearerAuth
 func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
@@ -103,6 +121,12 @@ func (h *MetadataHandler) UpdateScanTask(c *gin.Context) {
 }
 
 // DeleteScanTask 删除扫描任务
+// @Summary DeleteScanTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletescantask [get]
+// @Security BearerAuth
 func (h *MetadataHandler) DeleteScanTask(c *gin.Context) {
 	_, ok := parseUintParam(c, "id")
 	if !ok {
@@ -128,6 +152,12 @@ func (h *MetadataHandler) DeleteScanTask(c *gin.Context) {
 }
 
 // TriggerScanTask 立即触发扫描任务
+// @Summary TriggerScanTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /triggerscantask [get]
+// @Security BearerAuth
 func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 	_, ok := parseUintParam(c, "id")
 	if !ok {
@@ -154,6 +184,12 @@ func (h *MetadataHandler) TriggerScanTask(c *gin.Context) {
 }
 
 // ListScanRuns 列出资源的扫描运行记录
+// @Summary ListScanRuns
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listscanruns [get]
+// @Security BearerAuth
 func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
@@ -215,6 +251,12 @@ func (h *MetadataHandler) ListScanRuns(c *gin.Context) {
 }
 
 // GetScanRun 获取单个运行详情
+// @Summary GetScanRun
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getscanrun [get]
+// @Security BearerAuth
 func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {
@@ -241,6 +283,12 @@ func (h *MetadataHandler) GetScanRun(c *gin.Context) {
 }
 
 // CreateManualScanRun 发起一次即时扫描
+// @Summary CreateManualScanRun
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createmanualscanrun [get]
+// @Security BearerAuth
 func (h *MetadataHandler) CreateManualScanRun(c *gin.Context) {
 	engineID, ok := parseUintParam(c, "id")
 	if !ok {

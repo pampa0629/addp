@@ -28,6 +28,12 @@ func NewGeoJSONHandler(systemClient *commonClient.SystemClient) *GeoJSONHandler 
 
 // GetGeoJSON 获取表的 GeoJSON 数据（轻量级，支持分页）
 // GET /api/engines/:id/spatial/:schema/:table/geojson
+// @Summary GetGeoJSON
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getgeojson [get]
+// @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -146,6 +152,12 @@ func (h *GeoJSONHandler) GetGeoJSON(c *gin.Context) {
 
 // GetGeoJSONMetadata 获取 GeoJSON 元数据（范围、记录数等）
 // GET /api/engines/:id/spatial/:schema/:table/geojson/metadata
+// @Summary GetGeoJSONMetadata
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getgeojsonmetadata [get]
+// @Security BearerAuth
 func (h *GeoJSONHandler) GetGeoJSONMetadata(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)

@@ -26,7 +26,7 @@ func NewDataServiceHandler(queryService *data.QueryService) *DataServiceHandler 
 // @Produce json
 // @Param request body models.DataQueryRequest true "查询请求"
 // @Success 200 {object} models.DataQueryResponse
-// @Router /api/service/data/query [post]
+// @Router /data/query [post]
 func (h *DataServiceHandler) Query(c *gin.Context) {
 	var req models.DataQueryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,7 +50,7 @@ func (h *DataServiceHandler) Query(c *gin.Context) {
 // @Produce json
 // @Param request body models.AggregationRequest true "聚合请求"
 // @Success 200 {object} models.AggregationResponse
-// @Router /api/service/data/aggregate [post]
+// @Router /data/aggregate [post]
 func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 	var req models.AggregationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -76,7 +76,7 @@ func (h *DataServiceHandler) Aggregate(c *gin.Context) {
 // @Param schema query string true "Schema名称"
 // @Param table query string true "表名"
 // @Success 200 {object} []models.ColumnInfo
-// @Router /api/service/data/structure [get]
+// @Router /data/structure [get]
 func (h *DataServiceHandler) GetTableStructure(c *gin.Context) {
 	engineID := c.Query("engine_id")
 	schema := c.Query("schema")

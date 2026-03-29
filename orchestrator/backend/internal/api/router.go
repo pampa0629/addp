@@ -11,6 +11,9 @@ import (
 	"github.com/addp/orchestrator/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/orchestrator/docs"
 )
 
 // SetupRouter 设置路由
@@ -26,6 +29,9 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient, // 用于审计日志
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {

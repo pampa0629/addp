@@ -16,6 +16,12 @@ func NewConfigHandler(cfg *config.Config) *ConfigHandler {
 }
 
 // GetMapConfig 返回地图服务相关配置
+// @Summary GetMapConfig
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getmapconfig [get]
+// @Security BearerAuth
 func (h *ConfigHandler) GetMapConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"amap_key":              h.cfg.AMapKey,

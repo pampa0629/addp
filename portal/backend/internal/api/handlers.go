@@ -13,6 +13,12 @@ import (
 // 门户首页
 // ============================================================
 
+// @Summary 获取门户首页数据
+// @Tags Portal
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /home [get]
+// @Security BearerAuth
 // handleHome GET /api/portal/home
 // 返回最新上架资产（前 6 条）+ 各类型统计数
 func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -72,6 +78,12 @@ func handleHome(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 目录浏览
 // ============================================================
 
+// @Summary 获取目录树
+// @Tags Portal
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Router /catalogs [get]
+// @Security BearerAuth
 // handleCatalogs GET /api/portal/catalogs
 // 返回目录树（只含有 published 资产的节点）
 func handleCatalogs(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -86,6 +98,13 @@ func handleCatalogs(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
+// @Summary 获取目录下的资产列表
+// @Tags Portal
+// @Produce json
+// @Param id path int true "目录ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /catalogs/{id}/assets [get]
+// @Security BearerAuth
 // handleCatalogAssets GET /api/portal/catalogs/:id/assets
 func handleCatalogAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -115,6 +134,15 @@ func handleCatalogAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc 
 // 资产列表与搜索
 // ============================================================
 
+// @Summary 获取资产列表
+// @Tags Portal
+// @Produce json
+// @Param keyword query string false "搜索关键词"
+// @Param type_id query int false "类型ID"
+// @Param catalog_id query int false "目录ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets [get]
+// @Security BearerAuth
 // handleAssets GET /api/portal/assets
 // 同时承担搜索功能（带 keyword 时走 Meilisearch）
 func handleAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -148,6 +176,13 @@ func handleAssets(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
+// @Summary 搜索资产
+// @Tags Portal
+// @Produce json
+// @Param keyword query string false "搜索关键词"
+// @Success 200 {object} map[string]interface{}
+// @Router /search [get]
+// @Security BearerAuth
 // handleSearch GET /api/portal/search — 语义别名，与 handleAssets 行为相同
 func handleSearch(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return handleAssets(assetClient)
@@ -161,6 +196,15 @@ func handleSearch(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 // 资产申请（Phase 4）
 // ============================================================
 
+// @Summary 申请使用资产
+// @Tags Portal
+// @Accept json
+// @Produce json
+// @Param id path int true "资产ID"
+// @Param body body map[string]interface{} true "申请信息"
+// @Success 201 {object} map[string]interface{}
+// @Router /assets/{id}/apply [post]
+// @Security BearerAuth
 // handleApply POST /api/portal/assets/:id/apply
 // 消费者提交资产使用申请
 func handleApply(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -201,6 +245,12 @@ func handleApply(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
+// @Summary 获取我的申请列表
+// @Tags Portal
+// @Produce json
+// @Success 200 {array} map[string]interface{}
+// @Router /my/applications [get]
+// @Security BearerAuth
 // handleMyApplications GET /api/portal/my/applications
 // 返回当前登录用户的申请列表
 func handleMyApplications(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -217,6 +267,13 @@ func handleMyApplications(assetClient *commonClient.AssetClient) gin.HandlerFunc
 	}
 }
 
+// @Summary 获取资产申请状态
+// @Tags Portal
+// @Produce json
+// @Param id path int true "资产ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets/{id}/apply-status [get]
+// @Security BearerAuth
 // handleApplyStatus GET /api/portal/assets/:id/apply-status
 // 返回当前用户对该资产的申请/授权状态：none | pending | approved
 func handleApplyStatus(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -238,6 +295,13 @@ func handleApplyStatus(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 		commonAPI.SuccessResponse(c, gin.H{"status": status})
 	}
 }
+// @Summary 获取资产详情
+// @Tags Portal
+// @Produce json
+// @Param id path int true "资产ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets/{id} [get]
+// @Security BearerAuth
 // 仅返回 published 状态的资产，否则 404
 func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -262,6 +326,13 @@ func handleAssetDetail(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
+// @Summary 获取资产服务端点
+// @Tags Portal
+// @Produce json
+// @Param id path int true "资产ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets/{id}/endpoints [get]
+// @Security BearerAuth
 // handleAssetEndpoints GET /api/portal/assets/:id/endpoints
 // 已授权用户获取数据服务资产的服务端点信息
 func handleAssetEndpoints(assetClient *commonClient.AssetClient, serviceClient *commonClient.ServiceClient) gin.HandlerFunc {
@@ -308,6 +379,13 @@ func handleAssetEndpoints(assetClient *commonClient.AssetClient, serviceClient *
 // 资产评价（Phase 6）
 // ============================================================
 
+// @Summary 获取资产评价列表
+// @Tags Portal
+// @Produce json
+// @Param id path int true "资产ID"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets/{id}/ratings [get]
+// @Security BearerAuth
 // handleGetRatings GET /api/portal/assets/:id/ratings
 // 返回评价列表 + 当前用户的评价 + 平均分统计
 func handleGetRatings(assetClient *commonClient.AssetClient) gin.HandlerFunc {
@@ -352,6 +430,15 @@ func handleGetRatings(assetClient *commonClient.AssetClient) gin.HandlerFunc {
 	}
 }
 
+// @Summary 提交资产评价
+// @Tags Portal
+// @Accept json
+// @Produce json
+// @Param id path int true "资产ID"
+// @Param body body map[string]interface{} true "评价信息"
+// @Success 200 {object} map[string]interface{}
+// @Router /assets/{id}/ratings [post]
+// @Security BearerAuth
 // handleSubmitRating POST /api/portal/assets/:id/ratings
 // 提交或修改评价（upsert 语义，每用户每资产只能有一条）
 func handleSubmitRating(assetClient *commonClient.AssetClient) gin.HandlerFunc {

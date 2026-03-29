@@ -9,7 +9,7 @@ from typing import Optional, List
 from database import get_db
 from models.session import Session
 
-router = APIRouter(prefix="/api/v1/agent/sessions", tags=["sessions"])
+router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 class SessionCreate(BaseModel):

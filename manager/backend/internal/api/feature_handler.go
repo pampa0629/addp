@@ -29,6 +29,12 @@ func NewFeatureHandler(systemClient *commonClient.SystemClient, metadataRepo *re
 
 // GetFeatureCentroid 获取要素的几何中心点（用于表格行定位到地图）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/centroid?schema=xxx&table=xxx&geom=geom
+// @Summary GetFeatureCentroid
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getfeaturecentroid [get]
+// @Security BearerAuth
 func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 	// 1. 解析路径参数
 	engineIDStr := c.Param("id")
@@ -129,6 +135,12 @@ func (h *FeatureHandler) GetFeatureCentroid(c *gin.Context) {
 
 // GetFeatureGeometry 获取要素的完整几何（用于地图高亮显示）
 // GET /api/manager/engines/:id/spatial/features/:feature_id/geometry?schema=xxx&table=xxx&geom=geom
+// @Summary GetFeatureGeometry
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getfeaturegeometry [get]
+// @Security BearerAuth
 func (h *FeatureHandler) GetFeatureGeometry(c *gin.Context) {
 	// 1. 解析路径参数
 	engineIDStr := c.Param("id")

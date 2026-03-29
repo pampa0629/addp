@@ -15,6 +15,17 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
 
+// Create godoc
+// @Summary      创建用户
+// @Description  创建新用户（租户管理员权限）
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body models.UserCreateRequest true "用户信息"
+// @Success      200 {object} models.User
+// @Failure      400 {object} models.ErrorResponse
+// @Router       /users [post]
 func (h *UserHandler) Create(c *gin.Context) {
 	var req models.UserCreateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -27,6 +38,18 @@ func (h *UserHandler) Create(c *gin.Context) {
 	commonapi.RespondOrError(c, user, err)
 }
 
+// List godoc
+// @Summary      获取用户列表
+// @Description  分页获取用户列表（自动过滤租户）
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        page query int false "页码" default(1)
+// @Param        page_size query int false "每页数量" default(10)
+// @Success      200 {object} object{data=[]models.User,total=int,page=int,page_size=int}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /users [get]
 func (h *UserHandler) List(c *gin.Context) {
 	page, pageSize := commonapi.ParsePagination(c)
 	userID, _ := commonapi.GetCurrentUserID(c)
@@ -82,6 +105,16 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	commonapi.RespondSuccess(c, gin.H{"message": "删除成功"})
 }
 
+// Me godoc
+// @Summary      获取当前用户信息
+// @Description  获取当前登录用户的详细信息
+// @Tags         用户管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200 {object} models.User
+// @Failure      401 {object} models.ErrorResponse
+// @Router       /users/me [get]
 func (h *UserHandler) Me(c *gin.Context) {
 	userID, _ := commonapi.GetCurrentUserID(c)
 	user, err := h.userService.GetByID(userID, userID)

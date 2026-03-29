@@ -16,6 +16,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// @title           ADDP Quality API
+// @version         1.0
+// @host      localhost:8182
+// @BasePath  /api/v1/quality
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {

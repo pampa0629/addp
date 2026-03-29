@@ -18,6 +18,12 @@ func NewCodeSetHandler(codeSetService *service.CodeSetService) *CodeSetHandler {
 }
 
 // ListCodeSets 获取码值集列表
+// @Summary ListCodeSets
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listcodesets [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 
@@ -46,6 +52,12 @@ func (h *CodeSetHandler) ListCodeSets(c *gin.Context) {
 }
 
 // CreateCodeSet 创建码值集
+// @Summary CreateCodeSet
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createcodeset [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 
@@ -65,6 +77,12 @@ func (h *CodeSetHandler) CreateCodeSet(c *gin.Context) {
 }
 
 // GetCodeSet 获取码值集详情
+// @Summary GetCodeSet
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getcodeset [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -79,6 +97,12 @@ func (h *CodeSetHandler) GetCodeSet(c *gin.Context) {
 }
 
 // UpdateCodeSet 更新码值集
+// @Summary UpdateCodeSet
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatecodeset [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -99,6 +123,12 @@ func (h *CodeSetHandler) UpdateCodeSet(c *gin.Context) {
 }
 
 // DeleteCodeSet 删除码值集
+// @Summary DeleteCodeSet
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletecodeset [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -112,6 +142,12 @@ func (h *CodeSetHandler) DeleteCodeSet(c *gin.Context) {
 }
 
 // GetCodeItems 获取码值项列表
+// @Summary GetCodeItems
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getcodeitems [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -126,6 +162,12 @@ func (h *CodeSetHandler) GetCodeItems(c *gin.Context) {
 }
 
 // CreateCodeItem 创建码值项
+// @Summary CreateCodeItem
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createcodeitem [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -146,6 +188,12 @@ func (h *CodeSetHandler) CreateCodeItem(c *gin.Context) {
 }
 
 // UpdateCodeItem 更新码值项
+// @Summary UpdateCodeItem
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatecodeitem [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -167,6 +215,12 @@ func (h *CodeSetHandler) UpdateCodeItem(c *gin.Context) {
 }
 
 // DeleteCodeItem 删除码值项
+// @Summary DeleteCodeItem
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletecodeitem [get]
+// @Security BearerAuth
 func (h *CodeSetHandler) DeleteCodeItem(c *gin.Context) {
 	tenantID := c.GetInt64("tenant_id")
 	codeSetID, _ := strconv.ParseInt(c.Param("id"), 10, 64)

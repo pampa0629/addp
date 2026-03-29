@@ -9,6 +9,9 @@ import (
 	"github.com/addp/model/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/model/docs"
 )
 
 // proxyToStandard 创建一个代理处理器，将请求转发到 Standard 模块
@@ -94,6 +97,9 @@ func SetupRouter(
 	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// CORS 中间件
 	router.Use(func(c *gin.Context) {

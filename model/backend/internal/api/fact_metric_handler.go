@@ -18,6 +18,12 @@ func NewFactMetricHandler(svc *service.FactMetricService) *FactMetricHandler {
 }
 
 // ListMetrics GET /api/model/logical-tables/:id/metrics
+// @Summary ListMetrics
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listmetrics [get]
+// @Security BearerAuth
 func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -35,6 +41,12 @@ func (h *FactMetricHandler) ListMetrics(c *gin.Context) {
 }
 
 // AddMetric POST /api/model/logical-tables/:id/metrics
+// @Summary AddMetric
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /addmetric [get]
+// @Security BearerAuth
 func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -60,6 +72,12 @@ func (h *FactMetricHandler) AddMetric(c *gin.Context) {
 }
 
 // RemoveMetric DELETE /api/model/logical-tables/:id/metrics/:mid
+// @Summary RemoveMetric
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /removemetric [get]
+// @Security BearerAuth
 func (h *FactMetricHandler) RemoveMetric(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

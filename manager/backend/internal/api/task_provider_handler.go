@@ -50,6 +50,12 @@ type TaskListItem struct {
 
 // ListTasks GET /api/manager/tasks
 // 查询参数：?task_type=mvt_generation|embedding
+// @Summary ListTasks
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listtasks [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	taskType := c.Query("task_type")
@@ -138,6 +144,12 @@ func (h *TaskProviderHandler) ListTasks(c *gin.Context) {
 }
 
 // TaskDetail GET /api/manager/tasks/:task_type/:id
+// @Summary TaskDetail
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /taskdetail [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) TaskDetail(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	taskType := c.Param("task_type")
@@ -183,6 +195,12 @@ type TaskExecuteRequest struct {
 }
 
 // TaskExecute POST /api/manager/tasks/:task_type/:id/execute
+// @Summary TaskExecute
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /taskexecute [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	taskType := c.Param("task_type")
@@ -232,6 +250,12 @@ func (h *TaskProviderHandler) TaskExecute(c *gin.Context) {
 }
 
 // ExecutionStatus GET /api/manager/executions/:execution_id
+// @Summary ExecutionStatus
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /executionstatus [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	executionID := c.Param("execution_id")
@@ -250,6 +274,12 @@ func (h *TaskProviderHandler) ExecutionStatus(c *gin.Context) {
 }
 
 // ExecutionCancel POST /api/manager/executions/:execution_id/cancel
+// @Summary ExecutionCancel
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /executioncancel [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	executionID := c.Param("execution_id")
@@ -268,6 +298,12 @@ func (h *TaskProviderHandler) ExecutionCancel(c *gin.Context) {
 // ===== EmbeddingTask CRUD =====
 
 // CreateEmbeddingTask POST /api/manager/embedding-tasks
+// @Summary CreateEmbeddingTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createembeddingtask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
@@ -288,6 +324,12 @@ func (h *TaskProviderHandler) CreateEmbeddingTask(c *gin.Context) {
 }
 
 // UpdateEmbeddingTask PUT /api/manager/embedding-tasks/:id
+// @Summary UpdateEmbeddingTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updateembeddingtask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -321,6 +363,12 @@ func (h *TaskProviderHandler) UpdateEmbeddingTask(c *gin.Context) {
 }
 
 // DeleteEmbeddingTask DELETE /api/manager/embedding-tasks/:id
+// @Summary DeleteEmbeddingTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleteembeddingtask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -339,6 +387,12 @@ func (h *TaskProviderHandler) DeleteEmbeddingTask(c *gin.Context) {
 // ===== MvtTask CRUD =====
 
 // CreateMvtTask POST /api/manager/mvt-tasks
+// @Summary CreateMvtTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createmvttask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	userID := c.GetUint("user_id")
@@ -359,6 +413,12 @@ func (h *TaskProviderHandler) CreateMvtTask(c *gin.Context) {
 }
 
 // UpdateMvtTask PUT /api/manager/mvt-tasks/:id
+// @Summary UpdateMvtTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatemvttask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
@@ -392,6 +452,12 @@ func (h *TaskProviderHandler) UpdateMvtTask(c *gin.Context) {
 }
 
 // DeleteMvtTask DELETE /api/manager/mvt-tasks/:id
+// @Summary DeleteMvtTask
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletemvttask [get]
+// @Security BearerAuth
 func (h *TaskProviderHandler) DeleteMvtTask(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)

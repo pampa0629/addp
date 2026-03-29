@@ -29,7 +29,7 @@ func NewDevExecutionHandler(devExecutor *service.DevExecutor) *DevExecutionHandl
 // @Param id path int true "开发项ID"
 // @Param body body map[string]interface{} false "执行参数（可选）"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/items/{id}/execute [post]
+// @Router /items/{id}/execute [post]
 func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -77,7 +77,7 @@ func (h *DevExecutionHandler) ExecuteDevItem(c *gin.Context) {
 // @Produce json
 // @Param body body models.CreateExecutionRequest true "执行请求"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/executions [post]
+// @Router /executions [post]
 func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 	var req models.CreateExecutionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -116,7 +116,7 @@ func (h *DevExecutionHandler) ExecuteContent(c *gin.Context) {
 // @Produce json
 // @Param id path string true "执行ID（UUID）"
 // @Success 200 {object} models.ExecutionWithDevItem
-// @Router /api/develop/executions/{id} [get]
+// @Router /executions/{id} [get]
 func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 	executionID := c.Param("id")
 	tenantID := c.GetUint("tenant_id")
@@ -143,7 +143,7 @@ func (h *DevExecutionHandler) GetExecution(c *gin.Context) {
 // @Param start_date query string false "开始日期 YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD"
 // @Success 200 {object} models.ListExecutionsResponse
-// @Router /api/develop/executions [get]
+// @Router /executions [get]
 func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 	var req models.ListExecutionsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -180,7 +180,7 @@ func (h *DevExecutionHandler) ListExecutions(c *gin.Context) {
 // @Tags Execution
 // @Param id path string true "执行ID（UUID）"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/executions/{id}/cancel [post]
+// @Router /executions/{id}/cancel [post]
 func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
 	executionID := c.Param("id")
 	tenantID := c.GetUint("tenant_id")
@@ -198,7 +198,7 @@ func (h *DevExecutionHandler) CancelExecution(c *gin.Context) {
 // @Tags Execution
 // @Param id path string true "执行ID（UUID）"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/executions/{id}/retry [post]
+// @Router /executions/{id}/retry [post]
 func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 	executionID := c.Param("id")
 	tenantID := c.GetUint("tenant_id")
@@ -224,7 +224,7 @@ func (h *DevExecutionHandler) RetryExecution(c *gin.Context) {
 // @Param start_date query string false "开始日期 YYYY-MM-DD"
 // @Param end_date query string false "结束日期 YYYY-MM-DD"
 // @Success 200 {object} models.ExecutionStatistics
-// @Router /api/develop/executions/statistics [get]
+// @Router /executions/statistics [get]
 func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
@@ -256,7 +256,7 @@ func (h *DevExecutionHandler) GetExecutionStatistics(c *gin.Context) {
 // @Produce json
 // @Param id path string true "执行ID（UUID）"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/executions/{id}/logs [get]
+// @Router /executions/{id}/logs [get]
 func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 	executionID := c.Param("id")
 
@@ -275,7 +275,7 @@ func (h *DevExecutionHandler) GetExecutionLogs(c *gin.Context) {
 // @Param id path int true "开发项ID"
 // @Param body body map[string]interface{} true "执行参数"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/items/{id}/execute-with-params [post]
+// @Router /items/{id}/execute-with-params [post]
 func (h *DevExecutionHandler) ExecuteWithParams(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {

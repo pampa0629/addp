@@ -18,6 +18,12 @@ func NewEntityRelationHandler(svc *service.EntityRelationService) *EntityRelatio
 }
 
 // CreateRelation POST /api/model/entity-relations
+// @Summary CreateRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createrelation [get]
+// @Security BearerAuth
 func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 	var req models.CreateEntityRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -36,6 +42,12 @@ func (h *EntityRelationHandler) CreateRelation(c *gin.Context) {
 }
 
 // ListRelations GET /api/model/entity-relations?entity_id=123
+// @Summary ListRelations
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listrelations [get]
+// @Security BearerAuth
 func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 	tenantID := getTenantID(c)
 	entityIDStr := c.Query("entity_id")
@@ -63,6 +75,12 @@ func (h *EntityRelationHandler) ListRelations(c *gin.Context) {
 }
 
 // GetRelation GET /api/model/entity-relations/:id
+// @Summary GetRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getrelation [get]
+// @Security BearerAuth
 func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -81,6 +99,12 @@ func (h *EntityRelationHandler) GetRelation(c *gin.Context) {
 }
 
 // UpdateRelation PUT /api/model/entity-relations/:id
+// @Summary UpdateRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updaterelation [get]
+// @Security BearerAuth
 func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -105,6 +129,12 @@ func (h *EntityRelationHandler) UpdateRelation(c *gin.Context) {
 }
 
 // DeleteRelation DELETE /api/model/entity-relations/:id
+// @Summary DeleteRelation
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deleterelation [get]
+// @Security BearerAuth
 func (h *EntityRelationHandler) DeleteRelation(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

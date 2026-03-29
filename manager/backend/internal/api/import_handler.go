@@ -31,6 +31,12 @@ func NewImportHandler(importService *service.ImportService) *ImportHandler {
 //   - target_schema: 目标 schema（默认 public）
 //   - target_table: 目标表名（可选，默认使用文件名）
 //   - encoding: DBF 编码（可选，默认 UTF-8）
+// @Summary ImportData
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /importdata [get]
+// @Security BearerAuth
 func (h *ImportHandler) ImportData(c *gin.Context) {
 	log := logger.L()
 

@@ -25,25 +25,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// @title Transfer API
-// @version 1.0
-// @description ADDP Transfer模块API文档 - 数据传输服务
-// @description 提供数据导入、导出、同步等功能
-
-// @contact.name ADDP API Support
-// @contact.url https://github.com/addp/addp
-// @contact.email support@addp.io
-
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
-
-// @host localhost:8083
-// @BasePath /
-
+// @title           ADDP Transfer API
+// @version         1.0
+// @host      localhost:8083
+// @BasePath  /api/v1/transfer
 // @securityDefinitions.apikey BearerAuth
 // @in header
 // @name Authorization
-// @description JWT Token认证，格式为: Bearer {token}
 
 func main() {
 	// 设置本地时区为 Asia/Shanghai (CST)

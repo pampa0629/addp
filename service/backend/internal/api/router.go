@@ -10,6 +10,9 @@ import (
 	"github.com/addp/service/internal/config"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/service/docs"
 )
 
 func SetupRouter(
@@ -29,6 +32,9 @@ func SetupRouter(
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 注意：CORS 由 Gateway 统一处理，此处无需设置 CORS 中间件
 

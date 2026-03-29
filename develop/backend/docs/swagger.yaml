@@ -1,0 +1,1479 @@
+basePath: /api/v1/develop
+definitions:
+  github_com_addp_develop_backend_internal_models.CreateDevTaskRequest:
+    properties:
+      content:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      dev_type:
+        enum:
+        - query
+        - workflow
+        - script
+        - notebook
+        type: string
+      display_name:
+        type: string
+      execution_config:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      schedule:
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      timeout:
+        type: integer
+    required:
+    - content
+    - dev_type
+    - name
+    type: object
+  github_com_addp_develop_backend_internal_models.CreateExecutionRequest:
+    properties:
+      content:
+        additionalProperties: true
+        description: 执行内容（对于临时执行）
+        type: object
+      dev_item_id:
+        type: integer
+      dev_type:
+        enum:
+        - query
+        - workflow
+        - script
+        - notebook
+        type: string
+      engine_id:
+        type: integer
+      trigger_type:
+        enum:
+        - manual
+        - schedule
+        - orchestrator
+        - api
+        type: string
+    required:
+    - dev_type
+    - trigger_type
+    type: object
+  github_com_addp_develop_backend_internal_models.DevTask:
+    properties:
+      content:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+        description: 内容存储（根据类型解析）
+      created_at:
+        description: 审计字段
+        type: string
+      created_by:
+        type: integer
+      deleted_at:
+        $ref: '#/definitions/gorm.DeletedAt'
+      description:
+        description: 元数据
+        type: string
+      dev_type:
+        description: '''query'' | ''workflow'' | ''notebook'''
+        type: string
+      display_name:
+        type: string
+      enabled:
+        description: 调度开关
+        type: boolean
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTaskContent'
+        description: 执行配置（JSONB 字段，统一的执行配置）
+      id:
+        type: integer
+      last_execution_id:
+        description: UUID，软引用 common.task_executions.execution_id
+        type: string
+      last_execution_status:
+        type: string
+      last_run_at:
+        type: string
+      name:
+        type: string
+      next_run_at:
+        type: string
+      schedule:
+        description: Cron 表达式
+        type: string
+      status:
+        description: 状态
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      tenant_id:
+        type: integer
+      timeout:
+        description: 超时时间（秒）
+        type: integer
+      updated_at:
+        type: string
+      updated_by:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.DevTaskContent:
+    additionalProperties: true
+    type: object
+  github_com_addp_develop_backend_internal_models.ExecutionStatistics:
+    properties:
+      avg_execution_time_ms:
+        type: number
+      failed_count:
+        type: integer
+      running_count:
+        type: integer
+      success_count:
+        type: integer
+      success_rate:
+        type: number
+      total_executions:
+        type: integer
+      total_rows_affected:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.ExecutionWithDevItem:
+    properties:
+      bytes_read:
+        description: Transfer 读取字节数
+        type: integer
+      bytes_written:
+        description: Transfer 写入字节数
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      current_step:
+        description: 当前步骤（Orchestrator/Workflow）
+        type: string
+      dev_item:
+        $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      error_details:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 错误详情（仅失败时有值）
+      execution_config:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: JSONB 字段
+      execution_id:
+        description: 执行标识
+        type: string
+      execution_time_ms:
+        description: 性能指标
+        type: integer
+      id:
+        type: integer
+      metadata:
+        allOf:
+        - $ref: '#/definitions/models.JSONMap'
+        description: 模块特有扩展数据（结果、断点、步骤结果等）
+      module:
+        description: 模块标识
+        type: string
+      parent_execution_id:
+        description: 父执行（Orchestrator 子步骤追踪父编排）
+        type: string
+      progress:
+        description: 0-100
+        type: integer
+      records_read:
+        description: Transfer 读取记录数
+        type: integer
+      records_written:
+        description: Transfer 写入记录数
+        type: integer
+      rows_affected:
+        description: SQL 影响行数
+        type: integer
+      source_task_id:
+        description: 关联原始任务
+        type: integer
+      source_task_name:
+        description: 任务名称（冗余，便于查询）
+        type: string
+      started_at:
+        description: 时间戳
+        type: string
+      status:
+        description: 执行状态
+        type: string
+      task_type:
+        description: '''import''/''export''/''sync''/''query''/''workflow''/''notebook''/''orchestration''/''mvt_generation''/''embedding'''
+        type: string
+      tenant_id:
+        type: integer
+      trigger_type:
+        description: 触发信息
+        type: string
+      triggered_by:
+        description: 触发用户ID
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  github_com_addp_develop_backend_internal_models.ListDevTasksResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.ListExecutionsResponse:
+    properties:
+      executions:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem'
+        type: array
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest:
+    properties:
+      content:
+        additionalProperties: true
+        type: object
+      description:
+        type: string
+      display_name:
+        type: string
+      execution_config:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      schedule:
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        - archived
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      timeout:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_service.JupyterInstance:
+    properties:
+      container_id:
+        type: string
+      container_name:
+        type: string
+      created_at:
+        type: string
+      jupyter_port:
+        type: integer
+      jupyter_url:
+        description: Jupyter Lab 访问 URL
+        type: string
+      started_at:
+        type: string
+      status:
+        description: running, stopped, starting
+        type: string
+      tenant_id:
+        type: integer
+    type: object
+  github_com_addp_develop_backend_internal_service.KernelInfo:
+    properties:
+      display_name:
+        type: string
+      language:
+        type: string
+      name:
+        type: string
+    type: object
+  gorm.DeletedAt:
+    properties:
+      time:
+        type: string
+      valid:
+        description: Valid is true if Time is not NULL
+        type: boolean
+    type: object
+  internal_api.ExecuteNotebookRequest:
+    properties:
+      input_path:
+        type: string
+      output_path:
+        type: string
+      parameters:
+        additionalProperties: true
+        type: object
+      timeout:
+        description: 超时时间（秒）
+        type: integer
+    required:
+    - input_path
+    - output_path
+    type: object
+  internal_api.ExecuteNotebookResponse:
+    properties:
+      error_message:
+        type: string
+      execution_time_seconds:
+        type: number
+      message:
+        type: string
+      output_count:
+        type: integer
+      output_path:
+        type: string
+      outputs:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      status:
+        type: string
+    type: object
+  internal_api.ExecuteQueryRequest:
+    properties:
+      engine_id:
+        type: integer
+      query:
+        type: string
+      timeout:
+        description: 超时时间（秒）
+        type: integer
+    required:
+    - engine_id
+    - query
+    type: object
+  internal_api.ExecuteQueryResponse:
+    properties:
+      columns:
+        items:
+          type: string
+        type: array
+      execution_time_ms:
+        type: integer
+      rows:
+        items:
+          additionalProperties: true
+          type: object
+        type: array
+      rows_affected:
+        type: integer
+      rows_count:
+        type: integer
+    type: object
+  internal_api.GetJupyterURLRequest:
+    properties:
+      notebook_path:
+        description: Notebook 文件路径
+        type: string
+    type: object
+  internal_api.GetJupyterURLResponse:
+    properties:
+      jupyter_url:
+        description: Jupyter Lab URL
+        type: string
+    type: object
+  internal_api.ListKernelsResponse:
+    properties:
+      kernels:
+        items:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_service.KernelInfo'
+        type: array
+    type: object
+  internal_api.SaveQueryTaskRequest:
+    properties:
+      description:
+        type: string
+      display_name:
+        type: string
+      engine_id:
+        type: integer
+      is_scheduled:
+        description: 是否启用调度
+        type: boolean
+      name:
+        type: string
+      query:
+        type: string
+      query_type:
+        description: sql, mql, dsl (从前端传递或自动推断)
+        type: string
+      schedule:
+        description: Cron 表达式
+        type: string
+      tags:
+        items:
+          type: string
+        type: array
+      timeout:
+        description: 超时时间（秒）
+        type: integer
+    required:
+    - engine_id
+    - name
+    - query
+    type: object
+  models.ConnectionInfo:
+    additionalProperties: true
+    type: object
+  models.Engine:
+    properties:
+      capabilities:
+        description: 能力声明（JSONB）
+        type: string
+      check_message:
+        description: 检测结果消息（错误信息等）
+        type: string
+      connection_info:
+        $ref: '#/definitions/models.ConnectionInfo'
+      connection_status:
+        description: 连接状态缓存（优化扫描性能）
+        type: string
+      created_at:
+        description: 时间戳字段
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      engine_category:
+        description: 引擎分类：standard（标准引擎）或 extension（扩展引擎）
+        type: string
+      engine_type:
+        description: 引擎类型（postgresql, mysql, python_workflow等）
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      is_builtin:
+        description: 扩展引擎字段
+        type: boolean
+      last_check_at:
+        description: 上次检测时间
+        type: string
+      name:
+        description: 显示名称（原 display_name）
+        type: string
+      scan_config:
+        allOf:
+        - $ref: '#/definitions/models.ScanConfig'
+        description: 元数据扫描配置（可选）
+      tenant_id:
+        description: 租户ID，SuperAdmin创建的引擎为null
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  models.JSONMap:
+    additionalProperties: true
+    type: object
+  models.MVTPreprocessConfig:
+    properties:
+      concurrency:
+        description: 并发生成数 (1-20, 默认 10)
+        type: integer
+      max_zoom:
+        description: 最大缩放级别 (0-18, 默认 18)
+        type: integer
+      stop_threshold_kb:
+        description: 自适应停止阈值：平均瓦片大小（KB）< 该值则停止（默认 50.0）
+        type: number
+      stop_threshold_sec:
+        description: 自适应停止阈值：平均生成时间（秒）< 该值则停止（默认 3.0）
+        type: number
+    type: object
+  models.PreprocessingConfig:
+    properties:
+      auto_trigger:
+        description: 扫描完成后自动触发预处理
+        type: boolean
+      enabled:
+        description: 是否启用预处理
+        type: boolean
+      mvt_config:
+        allOf:
+        - $ref: '#/definitions/models.MVTPreprocessConfig'
+        description: MVT 瓦片预处理配置
+      types:
+        description: 预处理类型列表 ["mvt_tiles", "vector_embedding"]
+        items:
+          type: string
+        type: array
+    type: object
+  models.ScanConfig:
+    properties:
+      cron_expression:
+        description: Cron 表达式（schedule_type=cron 时使用）
+        type: string
+      enabled:
+        description: 是否启用扫描（总开关，兼容旧版）
+        type: boolean
+      immediate_depth:
+        description: 立即扫描深度：basic（基础）或 deep（深度）
+        type: string
+      immediate_scan:
+        description: 注册后立即扫描
+        type: boolean
+      preprocessing:
+        allOf:
+        - $ref: '#/definitions/models.PreprocessingConfig'
+        description: 预处理配置（可选）
+      scan_depth:
+        description: 兼容旧版字段：shallow, deep
+        type: string
+      schedule_time:
+        description: 执行时间 HH:mm（daily/weekly/monthly 时使用）
+        type: string
+      schedule_type:
+        description: daily, weekly, monthly, cron（仅当scheduled_scan=true时有效）
+        type: string
+      schedule_value:
+        description: 周几（0-6）或月几（1-31）
+        items:
+          type: integer
+        type: array
+      scheduled_scan:
+        description: 启用定时扫描（深度固定为 deep）
+        type: boolean
+    type: object
+host: localhost:8085
+info:
+  contact: {}
+  title: ADDP Develop API
+  version: "1.0"
+paths:
+  /engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取可用于 SQL 查询的数据源列表
+      tags:
+      - Engines
+  /engines/:id/schemas:
+    get:
+      parameters:
+      - description: 引擎ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取数据库 schema 列表
+      tags:
+      - Engines
+  /engines/:id/tables:
+    get:
+      parameters:
+      - description: 引擎ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Schema名称
+        in: query
+        name: schema
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取数据库表列表
+      tags:
+      - Engines
+  /execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 查询请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ExecuteQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ExecuteQueryResponse'
+      summary: 执行 查询语句
+      tags:
+      - Query
+  /executions:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 开发项ID过滤
+        in: query
+        name: dev_item_id
+        type: integer
+      - description: 类型过滤
+        in: query
+        name: dev_type
+        type: string
+      - description: 状态过滤
+        in: query
+        name: status
+        type: string
+      - description: 触发类型过滤
+        in: query
+        name: trigger_type
+        type: string
+      - description: 开始日期 YYYY-MM-DD
+        in: query
+        name: start_date
+        type: string
+      - description: 结束日期 YYYY-MM-DD
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListExecutionsResponse'
+      summary: 查询执行列表
+      tags:
+      - Execution
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 执行请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行临时内容
+      tags:
+      - Execution
+  /executions/{id}:
+    get:
+      parameters:
+      - description: 执行ID（UUID）
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionWithDevItem'
+      summary: 获取执行详情
+      tags:
+      - Execution
+  /executions/{id}/cancel:
+    post:
+      parameters:
+      - description: 执行ID（UUID）
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 取消执行
+      tags:
+      - Execution
+  /executions/{id}/logs:
+    get:
+      parameters:
+      - description: 执行ID（UUID）
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取执行日志
+      tags:
+      - Execution
+  /executions/{id}/retry:
+    post:
+      parameters:
+      - description: 执行ID（UUID）
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 重试执行
+      tags:
+      - Execution
+  /executions/statistics:
+    get:
+      parameters:
+      - description: 开发项ID
+        in: query
+        name: dev_item_id
+        type: integer
+      - description: 开始日期 YYYY-MM-DD
+        in: query
+        name: start_date
+        type: string
+      - description: 结束日期 YYYY-MM-DD
+        in: query
+        name: end_date
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ExecutionStatistics'
+      summary: 获取执行统计
+      tags:
+      - Execution
+  /items:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 类型过滤
+        in: query
+        name: dev_type
+        type: string
+      - description: 状态过滤
+        in: query
+        name: status
+        type: string
+      - description: 资源ID过滤
+        in: query
+        name: engine_id
+        type: integer
+      - description: 标签过滤
+        in: query
+        name: tag
+        type: string
+      - description: 关键词搜索
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+      summary: 查询开发项列表
+      tags:
+      - DevItem
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 创建请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.CreateDevTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 创建开发项
+      tags:
+      - DevItem
+  /items/{id}:
+    delete:
+      parameters:
+      - description: 开发项ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 删除开发项
+      tags:
+      - DevItem
+    get:
+      parameters:
+      - description: 开发项ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 获取开发项详情
+      tags:
+      - DevItem
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开发项ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_addp_develop_backend_internal_models.UpdateDevTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 更新开发项
+      tags:
+      - DevItem
+  /items/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开发项ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行参数
+        in: body
+        name: body
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 执行开发项
+      tags:
+      - DevItem
+  /items/{id}/execute-with-params:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 开发项ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 执行参数
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 参数化执行开发项
+      tags:
+      - Execution
+  /items/statistics:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              format: int64
+              type: integer
+            type: object
+      summary: 获取开发项统计
+      tags:
+      - DevItem
+  /jupyter/instance/start:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
+      summary: 启动 Jupyter 实例
+      tags:
+      - Jupyter Instance
+  /jupyter/instance/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
+      summary: 获取 Jupyter 实例状态
+      tags:
+      - Jupyter Instance
+  /jupyter/instance/stop:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 停止 Jupyter 实例
+      tags:
+      - Jupyter Instance
+  /jupyter/instances:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_addp_develop_backend_internal_service.JupyterInstance'
+            type: array
+      summary: 列出所有 Jupyter 实例
+      tags:
+      - Jupyter Instance
+  /notebooks:
+    get:
+      parameters:
+      - default: 1
+        description: 页码
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+      summary: 列出 Notebooks
+      tags:
+      - Notebook
+  /notebooks/:id:
+    delete:
+      parameters:
+      - description: DevItem ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 删除 Notebook
+      tags:
+      - Notebook
+  /notebooks/:id/download:
+    get:
+      parameters:
+      - description: DevItem ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      summary: 下载 Notebook
+      tags:
+      - Notebook
+  /notebooks/execute:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 执行请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.ExecuteNotebookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ExecuteNotebookResponse'
+      summary: 执行 Notebook
+      tags:
+      - Notebook
+  /notebooks/health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 检查 Jupyter Engine 健康状态
+      tags:
+      - Notebook
+  /notebooks/jupyter-url:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.GetJupyterURLRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.GetJupyterURLResponse'
+      summary: 获取 Jupyter Lab 访问 URL
+      tags:
+      - Notebook
+  /notebooks/kernels:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ListKernelsResponse'
+      summary: 列出可用的 Kernel
+      tags:
+      - Notebook
+  /notebooks/upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Notebook 文件 (.ipynb)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Notebook 名称
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: 描述
+        in: formData
+        name: description
+        type: string
+      - description: 数据源 IDs (JSON 数组)
+        in: formData
+        name: data_sources
+        type: string
+      - description: 参数 (JSON 对象)
+        in: formData
+        name: parameters
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 上传 Notebook
+      tags:
+      - Notebook
+  /operators:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取所有模块的算子列表
+      tags:
+      - Operator
+  /operators/{name}:
+    get:
+      parameters:
+      - description: 算子名称
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取算子详情
+      tags:
+      - Operator
+  /operators/cache/info:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取缓存信息
+      tags:
+      - Operator
+  /operators/engine-types/{engineType}:
+    get:
+      parameters:
+      - description: 工作流引擎类型（动态从 system 获取）
+        in: path
+        name: engineType
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 根据引擎类型获取算子列表
+      tags:
+      - Operator
+  /operators/modules/{module}:
+    get:
+      parameters:
+      - description: 模块名称（任务提供者或工作流引擎）
+        in: path
+        name: module
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取指定模块的算子列表
+      tags:
+      - Operator
+  /operators/refresh:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 刷新算子缓存
+      tags:
+      - Operator
+  /spark-runtimes:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Engine'
+            type: array
+      summary: 获取所有 Apache Spark 运行时列表
+      tags:
+      - Engines
+  /sql/tasks:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 状态过滤
+        in: query
+        name: status
+        type: string
+      - description: 关键词搜索
+        in: query
+        name: keyword
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.ListDevTasksResponse'
+      summary: 获取 查询任务列表
+      tags:
+      - Query
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 保存请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.SaveQueryTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 保存 SQL 为任务
+      tags:
+      - Query
+  /sql/tasks/{id}:
+    delete:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 删除 查询任务
+      tags:
+      - Query
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 获取 查询任务详情
+      tags:
+      - Query
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 更新请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.SaveQueryTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_addp_develop_backend_internal_models.DevTask'
+      summary: 更新 查询任务
+      tags:
+      - Query
+  /test/{id}:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: 资源ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 测试数据源连接
+      tags:
+      - Query
+  /workflow-engines:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Engine'
+            type: array
+      summary: 获取支持 workflow 的计算引擎列表
+      tags:
+      - Engines
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

@@ -16,6 +16,14 @@ import (
 	"gorm.io/gorm"
 )
 
+// @title           ADDP Model API
+// @version         1.0
+// @host      localhost:8181
+// @BasePath  /api/v1/model
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载配置
 	cfg, err := config.LoadConfig()

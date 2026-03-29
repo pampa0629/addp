@@ -7,7 +7,10 @@ import (
 	"github.com/addp/standard/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"gorm.io/gorm"
+	_ "github.com/addp/standard/docs"
 )
 
 // getTenantID 从 context 获取租户 ID
@@ -46,6 +49,9 @@ func SetupRouter(
 	redisClient *redis.Client,
 ) *gin.Engine {
 	router := gin.Default()
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	router.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")

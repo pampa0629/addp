@@ -28,8 +28,9 @@ class Settings(BaseSettings):
 
     # 外部服务 URL
     system_service_url: str = "http://localhost:8180"
-    meta_service_url: str = "http://localhost:8082"
-    develop_service_url: str = "http://localhost:8084"
+    manager_service_url: str = "http://localhost:8181"
+    meta_service_url: str = "http://localhost:8182"
+    develop_service_url: str = "http://localhost:8185"
 
     # LLM 默认配置
     default_llm_provider: str = "dashscope"

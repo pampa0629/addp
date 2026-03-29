@@ -38,6 +38,14 @@ import (
 	_ "github.com/addp/common/format/document" // MongoDB/NoSQL collection parser
 )
 
+// @title           ADDP Manager API
+// @version         1.0
+// @host      localhost:8081
+// @BasePath  /api/v1/manager
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+
 func main() {
 	// 加载根目录统一的环境变量
 	commonConfig.LoadEnv()

@@ -44,6 +44,12 @@ type UpdatePreferredModeRequest struct {
 
 // TriggerQuickView 触发快显缓存生成
 // POST /api/engines/:id/spatial/:schema/:table/quick-view
+// @Summary TriggerQuickView
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /triggerquickview [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -110,6 +116,12 @@ func (h *QuickViewHandler) TriggerQuickView(c *gin.Context) {
 
 // GetQuickViewStatus 获取快显状态（包含实时进度）
 // GET /api/engines/:id/spatial/:schema/:table/quick-view/status
+// @Summary GetQuickViewStatus
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getquickviewstatus [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -178,6 +190,12 @@ func (h *QuickViewHandler) GetQuickViewStatus(c *gin.Context) {
 
 // ClearQuickView 清除快显缓存
 // DELETE /api/engines/:id/spatial/:schema/:table/quick-view
+// @Summary ClearQuickView
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /clearquickview [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -211,6 +229,12 @@ func (h *QuickViewHandler) ClearQuickView(c *gin.Context) {
 
 // CancelQuickView 取消快显生成任务
 // POST /api/engines/:id/spatial/:schema/:table/pre-cache/cancel
+// @Summary CancelQuickView
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /cancelquickview [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -244,6 +268,12 @@ func (h *QuickViewHandler) CancelQuickView(c *gin.Context) {
 
 // ResumeQuickView 恢复快显生成任务
 // POST /api/engines/:id/spatial/:schema/:table/pre-cache/resume
+// @Summary ResumeQuickView
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /resumequickview [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -277,6 +307,12 @@ func (h *QuickViewHandler) ResumeQuickView(c *gin.Context) {
 
 // ListQuickViewTasks 列出所有快显任务
 // GET /api/quick-view/tasks
+// @Summary ListQuickViewTasks
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listquickviewtasks [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 	// 1. 解析查询参数
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -325,6 +361,12 @@ func (h *QuickViewHandler) ListQuickViewTasks(c *gin.Context) {
 
 // GetStatistics 获取快显统计信息
 // GET /api/quick-view/statistics
+// @Summary GetStatistics
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getstatistics [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 	// 1. 获取租户ID
 	tenantID := uint(1) // TODO: 从JWT或context中获取
@@ -347,6 +389,12 @@ func (h *QuickViewHandler) GetStatistics(c *gin.Context) {
 
 // UpdatePreferredMode 更新用户偏好的显示模式
 // PATCH /api/manager/engines/:id/spatial/:schema/:table/pre-cache/mode
+// @Summary UpdatePreferredMode
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatepreferredmode [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -406,6 +454,12 @@ func (h *QuickViewHandler) UpdatePreferredMode(c *gin.Context) {
 
 // CheckPreparation 检查准备状态（诊断，如果通过则创建快显表记录）
 // GET /api/manager/engines/:id/spatial/:schema/:table/pre-cache/check
+// @Summary CheckPreparation
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /checkpreparation [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)
@@ -450,6 +504,12 @@ func (h *QuickViewHandler) CheckPreparation(c *gin.Context) {
 
 // PrepareForCreateMVT 启动准备工作任务
 // POST /api/manager/engines/:id/spatial/:schema/:table/pre-cache/prepare
+// @Summary PrepareForCreateMVT
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /prepareforcreatemvt [get]
+// @Security BearerAuth
 func (h *QuickViewHandler) PrepareForCreateMVT(c *gin.Context) {
 	// 1. 解析路径参数
 	engineID, err := strconv.ParseUint(c.Param("id"), 10, 32)

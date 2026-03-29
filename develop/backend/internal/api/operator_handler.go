@@ -24,7 +24,7 @@ func NewOperatorHandler(operatorDiscovery *service.OperatorDiscoveryService) *Op
 // @Tags Operator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators [get]
+// @Router /operators [get]
 func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
 	operators, err := h.operatorDiscovery.DiscoverAllOperators(c.Request.Context())
 	if err != nil {
@@ -45,7 +45,7 @@ func (h *OperatorHandler) ListAllOperators(c *gin.Context) {
 // @Produce json
 // @Param module path string true "模块名称（任务提供者或工作流引擎）"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators/modules/{module} [get]
+// @Router /operators/modules/{module} [get]
 func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 	module := c.Param("module")
 
@@ -69,7 +69,7 @@ func (h *OperatorHandler) ListOperatorsByModule(c *gin.Context) {
 // @Produce json
 // @Param engineType path string true "工作流引擎类型（动态从 system 获取）"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators/engine-types/{engineType} [get]
+// @Router /operators/engine-types/{engineType} [get]
 func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
 	engineType := c.Param("engineType")
 
@@ -93,7 +93,7 @@ func (h *OperatorHandler) ListOperatorsByEngineType(c *gin.Context) {
 // @Produce json
 // @Param name path string true "算子名称"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators/{name} [get]
+// @Router /operators/{name} [get]
 func (h *OperatorHandler) GetOperatorDetail(c *gin.Context) {
 	name := c.Param("name")
 
@@ -114,7 +114,7 @@ func (h *OperatorHandler) GetOperatorDetail(c *gin.Context) {
 // @Tags Operator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators/refresh [post]
+// @Router /operators/refresh [post]
 func (h *OperatorHandler) RefreshCache(c *gin.Context) {
 	if err := h.operatorDiscovery.RefreshCache(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -132,7 +132,7 @@ func (h *OperatorHandler) RefreshCache(c *gin.Context) {
 // @Tags Operator
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/develop/operators/cache/info [get]
+// @Router /operators/cache/info [get]
 func (h *OperatorHandler) GetCacheInfo(c *gin.Context) {
 	info := h.operatorDiscovery.GetCacheInfo()
 

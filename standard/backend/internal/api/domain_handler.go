@@ -18,6 +18,12 @@ func NewDomainHandler(svc *service.DomainService) *DomainHandler {
 }
 
 // ListDomains GET /api/model/domains
+// @Summary ListDomains
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listdomains [get]
+// @Security BearerAuth
 func (h *DomainHandler) ListDomains(c *gin.Context) {
 	tenantID := getTenantID(c)
 	tree, err := h.svc.ListDomainsAsTree(tenantID)
@@ -29,6 +35,12 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 }
 
 // CreateDomain POST /api/model/domains
+// @Summary CreateDomain
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createdomain [get]
+// @Security BearerAuth
 func (h *DomainHandler) CreateDomain(c *gin.Context) {
 	var req models.CreateDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -48,6 +60,12 @@ func (h *DomainHandler) CreateDomain(c *gin.Context) {
 }
 
 // GetDomain GET /api/model/domains/:id
+// @Summary GetDomain
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getdomain [get]
+// @Security BearerAuth
 func (h *DomainHandler) GetDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -65,6 +83,12 @@ func (h *DomainHandler) GetDomain(c *gin.Context) {
 }
 
 // UpdateDomain PUT /api/model/domains/:id
+// @Summary UpdateDomain
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatedomain [get]
+// @Security BearerAuth
 func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -90,6 +114,12 @@ func (h *DomainHandler) UpdateDomain(c *gin.Context) {
 }
 
 // DeleteDomain DELETE /api/model/domains/:id
+// @Summary DeleteDomain
+// @Tags Standard
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletedomain [get]
+// @Security BearerAuth
 func (h *DomainHandler) DeleteDomain(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

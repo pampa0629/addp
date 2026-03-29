@@ -8,6 +8,9 @@ import (
 	"github.com/addp/portal/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	_ "github.com/addp/portal/docs"
 )
 
 func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
@@ -29,6 +32,9 @@ func SetupRouter(cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "module": "portal"})
 	})
+
+	// Swagger 文档
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// 初始化 asset client（portal BFF 通过内部 API Key 调用 asset 服务）
 	assetClient := commonClient.NewAssetClientWithInternalKey(cfg.AssetURL, cfg.InternalAPIKey)

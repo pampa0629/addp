@@ -27,8 +27,8 @@ func NewDevItemHandler(devTaskService *service.DevTaskService) *DevItemHandler {
 // @Accept json
 // @Produce json
 // @Param body body models.CreateDevTaskRequest true "创建请求"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/items [post]
+// @Success 200 {object} models.DevTask
+// @Router /items [post]
 func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 	var req models.CreateDevTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -55,8 +55,8 @@ func (h *DevItemHandler) CreateDevItem(c *gin.Context) {
 // @Produce json
 // @Param id path int true "开发项ID"
 // @Param body body models.UpdateDevTaskRequest true "更新请求"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/items/{id} [put]
+// @Success 200 {object} models.DevTask
+// @Router /items/{id} [put]
 func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -87,8 +87,8 @@ func (h *DevItemHandler) UpdateDevItem(c *gin.Context) {
 // @Tags DevItem
 // @Produce json
 // @Param id path int true "开发项ID"
-// @Success 200 {object} models.DevItem
-// @Router /api/develop/items/{id} [get]
+// @Success 200 {object} models.DevTask
+// @Router /items/{id} [get]
 func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -119,7 +119,7 @@ func (h *DevItemHandler) GetDevItem(c *gin.Context) {
 // @Param tag query string false "标签过滤"
 // @Param keyword query string false "关键词搜索"
 // @Success 200 {object} models.ListDevTasksResponse
-// @Router /api/develop/items [get]
+// @Router /items [get]
 func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 	var req models.ListDevTasksRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -156,7 +156,7 @@ func (h *DevItemHandler) ListDevItems(c *gin.Context) {
 // @Tags DevItem
 // @Param id path int true "开发项ID"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/items/{id} [delete]
+// @Router /items/{id} [delete]
 func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -182,7 +182,7 @@ func (h *DevItemHandler) DeleteDevItem(c *gin.Context) {
 // @Param id path int true "开发项ID"
 // @Param body body map[string]interface{} false "执行参数"
 // @Success 200 {object} map[string]string
-// @Router /api/develop/items/{id}/execute [post]
+// @Router /items/{id}/execute [post]
 func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
 	if err != nil {
@@ -203,7 +203,7 @@ func (h *DevItemHandler) ExecuteDevItem(c *gin.Context) {
 // @Tags DevItem
 // @Produce json
 // @Success 200 {object} map[string]int64
-// @Router /api/develop/items/statistics [get]
+// @Router /items/statistics [get]
 func (h *DevItemHandler) GetDevItemStatistics(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 

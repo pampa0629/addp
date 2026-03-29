@@ -3,20 +3,15 @@ Meta API 相关的 LangChain Tools
 
 封装与 Meta 模块的元数据搜索交互
 """
-import httpx
 from typing import List, Dict, Optional
 from langchain.tools import BaseTool
 
+from addp_common.client import ManagerClient
 from config import settings
 
 
 class MetadataSearchTool(BaseTool):
-    """
-    元数据搜索 Tool
-
-    封装现有的 MetadataMatcherService，调用 Meta API 进行元数据搜索
-    用于数据源模糊匹配、表名自动补全等场景
-    """
+    """元数据搜索 Tool"""
     name: str = "search_metadata"
     description: str = """
 搜索元数据信息，用于模糊匹配数据源。
@@ -31,42 +26,16 @@ class MetadataSearchTool(BaseTool):
         tenant_id: int = 1,
         limit: int = 10
     ) -> List[Dict]:
-        """
-        异步执行元数据搜索
-
-        Args:
-            query: 搜索关键词
-            metadata_type: 元数据类型过滤（table、file 等）
-            tenant_id: 租户 ID
-            limit: 返回结果数量限制
-
-        Returns:
-            匹配的元数据列表
-        """
+        """异步执行元数据搜索"""
         print(f"[MetadataSearchTool] 搜索元数据: query='{query}', type={metadata_type}, tenant_id={tenant_id}")
 
-        headers = {}
-        if settings.internal_api_key:
-            headers["X-Internal-API-Key"] = settings.internal_api_key
-
         try:
-            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-                params = {
-                    "query": query,
-                    "limit": limit
-                }
-                if metadata_type:
-                    params["type"] = metadata_type
-
-                response = await client.get(
-                    f"{settings.meta_service_url}/api/meta/search",
-                    params=params,
-                    headers=headers
-                )
-                response.raise_for_status()
-                data = response.json()
-
-                results = data.get("results", [])
+            async with ManagerClient(
+                base_url=settings.manager_service_url,
+                internal_api_key=settings.internal_api_key
+            ) as client:
+                result = await client.search(q=query, page=1, page_size=limit)
+                results = result.get("results", [])
                 print(f"[MetadataSearchTool] ✅ 找到 {len(results)} 个匹配结果")
 
                 # 简化返回结果
@@ -84,10 +53,6 @@ class MetadataSearchTool(BaseTool):
                     }
                     for r in results
                 ]
-
-        except httpx.HTTPError as e:
-            print(f"[MetadataSearchTool] ❌ HTTP 请求失败: {e}")
-            return []
         except Exception as e:
             print(f"[MetadataSearchTool] ❌ 元数据搜索失败: {type(e).__name__}: {e}")
             return []

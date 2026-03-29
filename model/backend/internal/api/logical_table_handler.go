@@ -19,6 +19,12 @@ func NewLogicalTableHandler(svc *service.LogicalTableService) *LogicalTableHandl
 }
 
 // ListLogicalTables GET /api/model/logical-tables
+// @Summary ListLogicalTables
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /listlogicaltables [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 	tenantID := getTenantID(c)
 
@@ -66,6 +72,12 @@ func (h *LogicalTableHandler) ListLogicalTables(c *gin.Context) {
 }
 
 // CreateLogicalTable POST /api/model/logical-tables
+// @Summary CreateLogicalTable
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createlogicaltable [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 	var req models.CreateLogicalTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -85,6 +97,12 @@ func (h *LogicalTableHandler) CreateLogicalTable(c *gin.Context) {
 }
 
 // GetLogicalTable GET /api/model/logical-tables/:id
+// @Summary GetLogicalTable
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getlogicaltable [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -102,6 +120,12 @@ func (h *LogicalTableHandler) GetLogicalTable(c *gin.Context) {
 }
 
 // UpdateLogicalTable PUT /api/model/logical-tables/:id
+// @Summary UpdateLogicalTable
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatelogicaltable [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -127,6 +151,12 @@ func (h *LogicalTableHandler) UpdateLogicalTable(c *gin.Context) {
 }
 
 // DeleteLogicalTable DELETE /api/model/logical-tables/:id
+// @Summary DeleteLogicalTable
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletelogicaltable [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -143,6 +173,12 @@ func (h *LogicalTableHandler) DeleteLogicalTable(c *gin.Context) {
 }
 
 // GetFields GET /api/model/logical-tables/:id/fields
+// @Summary GetFields
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getfields [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -160,6 +196,12 @@ func (h *LogicalTableHandler) GetFields(c *gin.Context) {
 }
 
 // CreateField POST /api/model/logical-tables/:id/fields
+// @Summary CreateField
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createfield [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -183,6 +225,12 @@ func (h *LogicalTableHandler) CreateField(c *gin.Context) {
 }
 
 // UpdateField PUT /api/model/logical-tables/:id/fields/:fid
+// @Summary UpdateField
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /updatefield [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -211,6 +259,12 @@ func (h *LogicalTableHandler) UpdateField(c *gin.Context) {
 }
 
 // DeleteField DELETE /api/model/logical-tables/:id/fields/:fid
+// @Summary DeleteField
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /deletefield [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -232,6 +286,12 @@ func (h *LogicalTableHandler) DeleteField(c *gin.Context) {
 }
 
 // PreviewDDL POST /api/model/logical-tables/:id/preview-ddl
+// @Summary PreviewDDL
+// @Tags Model
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /previewddl [get]
+// @Security BearerAuth
 func (h *LogicalTableHandler) PreviewDDL(c *gin.Context) {
 	tableID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {

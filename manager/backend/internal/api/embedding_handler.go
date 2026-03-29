@@ -38,6 +38,12 @@ type CreateEmbeddingRequest struct {
 
 // CreateEmbedding POST /api/embedding
 // 创建向量化任务（统一入口）
+// @Summary CreateEmbedding
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /createembedding [get]
+// @Security BearerAuth
 func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 	tenantID := c.GetUint("tenant_id")
 
@@ -141,6 +147,12 @@ func (h *EmbeddingHandler) CreateEmbedding(c *gin.Context) {
 
 // GetEmbeddingTaskStatus GET /api/embedding/tasks/:task_id
 // 查询向量化任务状态（仅查内存中的实时状态）
+// @Summary GetEmbeddingTaskStatus
+// @Tags Manager
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /getembeddingtaskstatus [get]
+// @Security BearerAuth
 func (h *EmbeddingHandler) GetEmbeddingTaskStatus(c *gin.Context) {
 	taskID := c.Param("task_id")
 

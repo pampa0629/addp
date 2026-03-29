@@ -24,7 +24,7 @@ func NewJupyterInstanceHandler(instanceService *service.JupyterInstanceService) 
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} service.JupyterInstance
-// @Router /api/develop/jupyter/instance/start [post]
+// @Router /jupyter/instance/start [post]
 func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
 
@@ -45,7 +45,7 @@ func (h *JupyterInstanceHandler) StartInstance(c *gin.Context) {
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} map[string]string
-// @Router /api/develop/jupyter/instance/stop [post]
+// @Router /jupyter/instance/stop [post]
 func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
 
@@ -67,7 +67,7 @@ func (h *JupyterInstanceHandler) StopInstance(c *gin.Context) {
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {object} service.JupyterInstance
-// @Router /api/develop/jupyter/instance/status [get]
+// @Router /jupyter/instance/status [get]
 func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 	tenantID, _ := c.Get("tenant_id")
 
@@ -96,7 +96,7 @@ func (h *JupyterInstanceHandler) GetInstanceStatus(c *gin.Context) {
 // @Tags Jupyter Instance
 // @Produce json
 // @Success 200 {array} service.JupyterInstance
-// @Router /api/develop/jupyter/instances [get]
+// @Router /jupyter/instances [get]
 func (h *JupyterInstanceHandler) ListInstances(c *gin.Context) {
 	instances, err := h.instanceService.ListInstances(c.Request.Context())
 	if err != nil {
