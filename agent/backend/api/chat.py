@@ -13,6 +13,7 @@ from database import get_db, AsyncSessionLocal
 from models.session import Session
 from models.message import Message
 from agents.main_agent import stream_agent_response, MSG_TYPE_PROGRESS, MSG_TYPE_RESULT
+from graph.factory import MSG_TYPE_DAG
 from utils.summary import maybe_update_summary
 
 router = APIRouter(prefix="", tags=["chat"])
@@ -77,30 +78,37 @@ async def chat(request: Request, body: ChatRequest, db: AsyncSession = Depends(g
 
     async def generate():
         full_response = ""
+        dag_data = None
         try:
             async for msg_type, content in stream_agent_response(
                 messages, user_id, tenant_id, token, session_summary=session_summary
             ):
                 if not content:
                     continue
-                # 所有内容都流式发给前端（包括工具调用进度提示）
-                yield f'0:{json.dumps(content, ensure_ascii=False)}\n'
+                # DAG 事件用特殊前缀发送
+                if msg_type == MSG_TYPE_DAG:
+                    yield f'dag:{content}\n'
+                    dag_data = content
+                else:
+                    # 其他内容正常发送
+                    yield f'0:{json.dumps(content, ensure_ascii=False)}\n'
                 # 只有最终结果才累积，用于存 DB
                 if msg_type == MSG_TYPE_RESULT:
                     full_response += content
         finally:
-            # 只存最终回复，不存工具调用中间过程
-            if full_response:
+            # 存储消息（包含 DAG 数据）
+            if full_response or dag_data:
                 async with AsyncSessionLocal() as save_db:
                     async with save_db.begin():
                         ai_msg = Message(
                             session_id=session_id,
                             role="assistant",
-                            content=full_response,
-                            result_type="text",
+                            content=full_response or "已生成工作流",
+                            result_type="dag" if dag_data else "text",
+                            result_data=json.loads(dag_data) if dag_data else None,
                         )
                         save_db.add(ai_msg)
-                # 后台触发摘要更新（fire-and-forget，不阻塞当前请求）
+                # 后台触发摘要更新
                 asyncio.create_task(maybe_update_summary(session_id))
 
     return StreamingResponse(

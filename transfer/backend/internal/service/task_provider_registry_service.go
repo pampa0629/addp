@@ -84,10 +84,10 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.transferURL,
-		TaskListEndpoint:    "/api/transfer/tasks",           // 传输任务列表
-		TaskDetailEndpoint:  "/api/transfer/tasks/:id",       // 传输任务详情
-		TaskExecuteEndpoint: "/api/transfer/tasks/:id/start", // 启动传输任务
-		TaskStatusEndpoint:  "/api/transfer/executions/:id",  // 传输执行状态
+		TaskListEndpoint:    "/api/v1/transfer/tasks",           // 传输任务列表
+		TaskDetailEndpoint:  "/api/v1/transfer/tasks/:id",       // 传输任务详情
+		TaskExecuteEndpoint: "/api/v1/transfer/tasks/:id/start", // 启动传输任务
+		TaskStatusEndpoint:  "/api/v1/transfer/executions/:id",  // 传输执行状态
 
 		// 能力描述（JSON 字符串，含前端集成 URL）
 		Capabilities: &capabilitiesStr,

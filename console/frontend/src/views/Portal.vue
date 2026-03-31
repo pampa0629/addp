@@ -510,7 +510,7 @@ const ALL_HOME_CARDS = [
   { module: 'monitor',      label: '执行监控',   icon: DataLine,     cssVar: '--addp-module-monitor',       desc: '任务执行监控、统计分析、健康检查' },
   { module: 'asset',        label: '资产管理',   icon: Folder,       cssVar: '--addp-module-asset',         desc: '资产类型、分类管理、申请与授权' },
   { module: 'system',       label: '系统管理',   icon: Setting,      cssVar: '--addp-module-system',        desc: '用户管理、日志查询、引擎配置' },
-  { module: 'agent',        label: '智能体',     icon: ChatDotRound, cssVar: '--addp-module-agent',         desc: '自然语言对话、数据管理、智能分析' },
+  { module: 'agent',        label: '智能体',         icon: ChatDotRound, cssVar: '--addp-module-agent',         desc: '自然语言对话、数据管理、智能分析' },
 ]
 
 // 计算属性

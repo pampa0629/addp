@@ -48,6 +48,9 @@
           <div class="message-bubble">
             <div v-if="msg.role === 'assistant'" class="message-content markdown" v-html="renderMarkdown(msg.content)" />
             <div v-else class="message-content">{{ msg.content }}</div>
+            <div v-if="msg.dagData" class="dag-container">
+              <DAGViewer :dag-data="msg.dagData" :height="400" />
+            </div>
           </div>
         </div>
 
@@ -55,6 +58,9 @@
         <div v-if="isLoading" class="message-row assistant">
           <div class="message-bubble">
             <div class="message-content markdown" v-html="renderMarkdown(streamContent || '...')" />
+            <div v-if="streamDagData" class="dag-container">
+              <DAGViewer :dag-data="streamDagData" :height="400" />
+            </div>
           </div>
         </div>
       </div>
@@ -89,6 +95,7 @@ import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { useAuthStore } from '../store/auth'
 import { sessionAPI } from '../api/index'
+import { DAGViewer } from '@addp/common-frontend/dag'
 
 const authStore = useAuthStore()
 
@@ -98,6 +105,7 @@ const messages = ref([])
 const inputText = ref('')
 const isLoading = ref(false)
 const streamContent = ref('')
+const streamDagData = ref(null)
 const messagesAreaRef = ref(null)
 
 const quickHints = [
@@ -135,7 +143,10 @@ async function switchSession(sessionId) {
   messages.value = []
   try {
     const list = await sessionAPI.getMessages(sessionId)
-    messages.value = list || []
+    messages.value = (list || []).map(m => ({
+      ...m,
+      dagData: m.result_type === 'dag' ? m.result_data : null
+    }))
     scrollToBottom()
   } catch (e) {
     console.error('加载消息历史失败', e)
@@ -175,6 +186,7 @@ async function handleSend() {
   inputText.value = ''
   isLoading.value = true
   streamContent.value = ''
+  streamDagData.value = null
 
   await nextTick()
   scrollToBottom()
@@ -196,23 +208,32 @@ async function handleSend() {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    // 读取流式响应 (Vercel AI SDK 格式)
+    // 读取流式响应
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let fullContent = ''
+    let dagData = null
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
 
       const text = decoder.decode(value)
-      const lines = text.split('\n').filter(l => l.startsWith('0:'))
+      const lines = text.split('\n').filter(l => l.trim())
       for (const line of lines) {
         try {
-          const chunk = JSON.parse(line.slice(2))
-          fullContent += chunk
-          streamContent.value = fullContent
-          scrollToBottom()
+          if (line.startsWith('dag:')) {
+            // DAG 事件
+            dagData = JSON.parse(line.slice(4))
+            streamDagData.value = dagData
+            scrollToBottom()
+          } else if (line.startsWith('0:')) {
+            // 文本事件
+            const chunk = JSON.parse(line.slice(2))
+            fullContent += chunk
+            streamContent.value = fullContent
+            scrollToBottom()
+          }
         } catch (e) {
           // 忽略解析错误
         }
@@ -223,10 +244,12 @@ async function handleSend() {
     messages.value.push({
       id: Date.now() + 1,
       role: 'assistant',
-      content: fullContent,
-      result_type: 'text',
+      content: fullContent || '已生成工作流',
+      result_type: dagData ? 'dag' : 'text',
+      dagData: dagData,
     })
     streamContent.value = ''
+    streamDagData.value = null
 
     // 更新会话标题
     const session = sessions.value.find(s => s.id === currentSessionId.value)
@@ -421,6 +444,14 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
+}
+
+.dag-container {
+  margin-top: 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--addp-bg-secondary);
 }
 
 .input-area {

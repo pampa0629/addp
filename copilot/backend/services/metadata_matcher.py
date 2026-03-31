@@ -19,8 +19,8 @@ class MetadataMatcherService:
     """元数据匹配服务"""
 
     def __init__(self):
-        self.meta_api_url = settings.meta_service_url
-        self.system_api_url = settings.system_service_url
+        self.meta_api_url = settings.get_meta_url()
+        self.system_api_url = settings.get_system_url()
         # 禁用系统代理，直接访问本地服务
         self.client = httpx.AsyncClient(timeout=30.0, trust_env=False)
         self.score_threshold = settings.copilot_score_threshold  # 0.15

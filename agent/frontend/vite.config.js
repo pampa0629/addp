@@ -11,10 +11,14 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src'),
       '@element-plus/icons-vue': resolve(__dirname, 'node_modules/@element-plus/icons-vue'),
       'element-plus': resolve(__dirname, 'node_modules/element-plus')
     },
-    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios']
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+  },
+  optimizeDeps: {
+    include: ['@antv/g6']
   },
   server: {
     port: 5186,

@@ -22,4 +22,4 @@ class CopilotClient(BaseClient):
         }
         if workflow_engine_id is not None:
             data["workflow_engine_id"] = workflow_engine_id
-        return await self.post("/copilot/workflow/generate", json=data)
+        return await self.post("/api/v1/copilot/workflow/generate", json=data)

@@ -68,6 +68,25 @@ if [ -f ".env.local" ]; then
     set +a
 fi
 
+# 自动生成服务 URL（基于 SERVICE_HOST + XXX_BACKEND_PORT）
+generate_service_urls() {
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent)
+    for svc in "${services[@]}"; do
+        local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
+        local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
+        local port_val="${!port_var}"
+        if [ -n "$port_val" ]; then
+            export ${url_var}="http://${SERVICE_HOST}:${port_val}"
+        fi
+    done
+
+    # 特殊服务
+    [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
+    export GEOPANDAS_ENGINE_URL="http://${SERVICE_HOST}:${PYTHON_WORKFLOW_PORT}"
+}
+
+generate_service_urls
+
 # 导出 Python pip 配置（pip 会自动识别这些环境变量）
 if [ -n "$PIP_INDEX_URL" ]; then
     export PIP_INDEX_URL
@@ -824,7 +843,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Manager Backend（带检查）
   if [ "$START_MANAGER_BACKEND" = true ]; then
-    if check_service_running "manager" "8081"; then
+    if check_service_running "manager" "$MANAGER_BACKEND_PORT"; then
       .dev-bins/addp-manager > logs/manager-backend.log 2> logs/manager-backend-stderr.log &
       MANAGER_PID=$!
       echo $MANAGER_PID > .dev-pids/manager.pid
@@ -835,7 +854,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Meta Backend（带检查）
   if [ "$START_META_BACKEND" = true ]; then
-    if check_service_running "meta" "8082"; then
+    if check_service_running "meta" "$META_BACKEND_PORT"; then
       .dev-bins/addp-meta > logs/meta-backend.log 2> logs/meta-backend-stderr.log &
       META_PID=$!
       echo $META_PID > .dev-pids/meta.pid
@@ -846,7 +865,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Transfer Backend（带检查）
   if [ "$START_TRANSFER_BACKEND" = true ]; then
-    if check_service_running "transfer" "8083"; then
+    if check_service_running "transfer" "$TRANSFER_BACKEND_PORT"; then
       .dev-bins/addp-transfer > logs/transfer-backend.log 2> logs/transfer-backend-stderr.log &
       TRANSFER_PID=$!
       echo $TRANSFER_PID > .dev-pids/transfer.pid
@@ -857,7 +876,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Orchestrator Backend（带检查）
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
-    if check_service_running "orchestrator" "8084"; then
+    if check_service_running "orchestrator" "$ORCHESTRATOR_BACKEND_PORT"; then
       .dev-bins/addp-orchestrator > logs/orchestrator-backend.log 2> logs/orchestrator-backend-stderr.log &
       ORCHESTRATOR_PID=$!
       echo $ORCHESTRATOR_PID > .dev-pids/orchestrator.pid
@@ -868,7 +887,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Develop Backend（带检查）
   if [ "$START_DEVELOP_BACKEND" = true ]; then
-    if check_service_running "develop" "8085"; then
+    if check_service_running "develop" "$DEVELOP_BACKEND_PORT"; then
       .dev-bins/addp-develop > logs/develop-backend.log 2> logs/develop-backend-stderr.log &
       DEVELOP_PID=$!
       echo $DEVELOP_PID > .dev-pids/develop.pid
@@ -879,7 +898,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Service Backend（带检查）
   if [ "$START_SERVICE_BACKEND" = true ]; then
-    if check_service_running "service" "8086"; then
+    if check_service_running "service" "$SERVICE_BACKEND_PORT"; then
       .dev-bins/addp-service > logs/service-backend.log 2> logs/service-backend-stderr.log &
       SERVICE_PID=$!
       echo $SERVICE_PID > .dev-pids/service.pid
@@ -890,7 +909,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Monitor Backend（带检查）
   if [ "$START_MONITOR_BACKEND" = true ]; then
-    if check_service_running "monitor" "8100"; then
+    if check_service_running "monitor" "$MONITOR_BACKEND_PORT"; then
       .dev-bins/addp-monitor > logs/monitor-backend.log 2> logs/monitor-backend-stderr.log &
       MONITOR_PID=$!
       echo $MONITOR_PID > .dev-pids/monitor.pid
@@ -901,7 +920,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Standard Backend（带检查）
   if [ "$START_STANDARD_BACKEND" = true ]; then
-    if check_service_running "standard" "8110"; then
+    if check_service_running "standard" "$STANDARD_BACKEND_PORT"; then
       .dev-bins/addp-standard > logs/standard-backend.log 2> logs/standard-backend-stderr.log &
       STANDARD_PID=$!
       echo $STANDARD_PID > .dev-pids/standard.pid
@@ -912,7 +931,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Model Backend（带检查）
   if [ "$START_MODEL_BACKEND" = true ]; then
-    if check_service_running "model" "8181"; then
+    if check_service_running "model" "$MODEL_BACKEND_PORT"; then
       .dev-bins/addp-model > logs/model-backend.log 2> logs/model-backend-stderr.log &
       MODEL_PID=$!
       echo $MODEL_PID > .dev-pids/model.pid
@@ -923,7 +942,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Quality Backend（带检查）
   if [ "$START_QUALITY_BACKEND" = true ]; then
-    if check_service_running "quality" "8182"; then
+    if check_service_running "quality" "$QUALITY_BACKEND_PORT"; then
       .dev-bins/addp-quality > logs/quality-backend.log 2> logs/quality-backend-stderr.log &
       QUALITY_PID=$!
       echo $QUALITY_PID > .dev-pids/quality.pid
@@ -934,7 +953,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Asset Backend（带检查）
   if [ "$START_ASSET_BACKEND" = true ]; then
-    if check_service_running "asset" "8183"; then
+    if check_service_running "asset" "$ASSET_BACKEND_PORT"; then
       .dev-bins/addp-asset > logs/asset-backend.log 2> logs/asset-backend-stderr.log &
       ASSET_PID=$!
       echo $ASSET_PID > .dev-pids/asset.pid
@@ -945,7 +964,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
 
   # 启动 Portal Backend（带检查）
   if [ "$START_PORTAL_BACKEND" = true ]; then
-    if check_service_running "portal" "8184"; then
+    if check_service_running "portal" "$PORTAL_BACKEND_PORT"; then
       .dev-bins/addp-portal > logs/portal-backend.log 2> logs/portal-backend-stderr.log &
       PORTAL_PID=$!
       echo $PORTAL_PID > .dev-pids/portal.pid
@@ -1000,7 +1019,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_MANAGER_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8081/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${MANAGER_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1017,7 +1036,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_META_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8082/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${META_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1034,7 +1053,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_TRANSFER_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8083/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${TRANSFER_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1051,7 +1070,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_ORCHESTRATOR_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8084/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${ORCHESTRATOR_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1068,7 +1087,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_DEVELOP_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8085/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${DEVELOP_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1085,7 +1104,7 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   if [ "$START_SERVICE_BACKEND" = true ]; then
     (
       WAIT_COUNT=0
-      until curl -f http://localhost:8086/health > /dev/null 2>&1; do
+      until curl -f http://localhost:${SERVICE_BACKEND_PORT}/health > /dev/null 2>&1; do
         sleep 1
         WAIT_COUNT=$((WAIT_COUNT + 1))
         if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
@@ -1106,12 +1125,12 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
   echo ""
   echo -e "${GREEN}✓ 所有 Backends + Workers 全部就绪${NC}"
 fi
-echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:8081)"
-echo "  Meta Backend:       PID $META_PID (http://localhost:8082)"
-echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:8083)"
-echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:8084)"
-echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:8084)"
-echo "  Service Backend:    PID $SERVICE_PID (http://localhost:8086)"
+echo "  Manager Backend:    PID $MANAGER_PID (http://localhost:${MANAGER_BACKEND_PORT})"
+echo "  Meta Backend:       PID $META_PID (http://localhost:${META_BACKEND_PORT})"
+echo "  Transfer Backend:   PID $TRANSFER_PID (http://localhost:${TRANSFER_BACKEND_PORT})"
+echo "  Orchestrator Backend: PID $ORCHESTRATOR_PID (http://localhost:${ORCHESTRATOR_BACKEND_PORT})"
+echo "  Develop Backend:    PID $DEVELOP_PID (http://localhost:${DEVELOP_BACKEND_PORT})"
+echo "  Service Backend:    PID $SERVICE_PID (http://localhost:${SERVICE_BACKEND_PORT})"
 echo "  Manager Worker:     PID $MANAGER_WORKER_PID"
 echo "  Meta Worker:        PID $META_WORKER_PID"
 echo "  Transfer Worker:    PID $TRANSFER_WORKER_PID"
@@ -1194,13 +1213,13 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Python Workflow Engine
-if check_service_running "python-workflow-engine" "8099"; then
+if check_service_running "python-workflow-engine" "$PYTHON_WORKFLOW_PORT"; then
   echo "启动 Python Workflow Engine..."
   cd engines/python-workflow
 
-  # 设置环境变量（注意端口改为 8099）
-  export PORT=8099
-  export SYSTEM_SERVICE_URL=http://localhost:8180
+  # 设置环境变量
+  export PORT=$PYTHON_WORKFLOW_PORT
+  # SYSTEM_SERVICE_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export POSTGRES_HOST=localhost
   export POSTGRES_PORT=15432
@@ -1221,7 +1240,7 @@ if check_service_running "python-workflow-engine" "8099"; then
   echo -n "等待 Python Workflow Engine 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:8099/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${PYTHON_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1234,7 +1253,7 @@ if check_service_running "python-workflow-engine" "8099"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Python Workflow Engine 就绪 (http://localhost:8099)${NC}"
+  echo -e "${GREEN}✓ Python Workflow Engine 就绪 (http://localhost:${PYTHON_WORKFLOW_PORT})${NC}"
 else
   PYTHON_WORKFLOW_PID=$(cat .dev-pids/python-workflow-engine.pid 2>/dev/null)
   echo -e "${GREEN}✓ Python Workflow Engine 已在运行 (PID: $PYTHON_WORKFLOW_PID)${NC}"
@@ -1302,13 +1321,13 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Math Workflow Engine
-if check_service_running "math-workflow-engine" "8089"; then
+if check_service_running "math-workflow-engine" "$MATH_WORKFLOW_PORT"; then
   echo "启动 Math Workflow Engine..."
   cd engines/math-workflow
 
   # 设置环境变量
-  export PORT=8089
-  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:8180"}
+  export PORT=$MATH_WORKFLOW_PORT
+  export SYSTEM_SERVICE_URL=${SYSTEM_SERVICE_URL:-"http://localhost:${SYSTEM_BACKEND_PORT}"}
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python
@@ -1323,7 +1342,7 @@ if check_service_running "math-workflow-engine" "8089"; then
   echo -n "  等待服务就绪"
   MAX_WAIT=60
   WAIT_COUNT=0
-  while ! curl -s http://localhost:8089/health > /dev/null 2>&1; do
+  while ! curl -s http://localhost:${MATH_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     sleep 1
     echo -n "."
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1336,7 +1355,7 @@ if check_service_running "math-workflow-engine" "8089"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Math Workflow Engine 就绪 (http://localhost:8089)${NC}"
+  echo -e "${GREEN}✓ Math Workflow Engine 就绪 (http://localhost:${MATH_WORKFLOW_PORT})${NC}"
 else
   MATH_WORKFLOW_PID=$(cat .dev-pids/math-workflow-engine.pid 2>/dev/null)
   echo -e "${GREEN}✓ Math Workflow Engine 已在运行 (PID: $MATH_WORKFLOW_PID)${NC}"
@@ -1434,14 +1453,13 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Spark 工作流引擎
-if check_service_running "spark-workflow-engine" "8098"; then
+if check_service_running "spark-workflow-engine" "$SPARK_WORKFLOW_PORT"; then
   echo "启动 Spark 工作流引擎..."
   cd engines/spark-workflow
 
-  # 设置环境变量（注意端口改为 8098）
-  export PORT=8098
-  export SYSTEM_SERVICE_URL=http://localhost:8180
-  export DEVELOP_SERVICE_URL=http://localhost:8185
+  # 设置环境变量
+  export PORT=$SPARK_WORKFLOW_PORT
+  # SERVICE_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
 
   # 直接使用虚拟环境的 Python（无需 activate）
@@ -1456,7 +1474,7 @@ if check_service_running "spark-workflow-engine" "8098"; then
   echo -n "等待 Spark 工作流引擎 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:8098/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${SPARK_WORKFLOW_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1469,7 +1487,7 @@ if check_service_running "spark-workflow-engine" "8098"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-  echo -e "${GREEN}✓ Spark 工作流引擎 就绪 (http://localhost:8098)${NC}"
+  echo -e "${GREEN}✓ Spark 工作流引擎 就绪 (http://localhost:${SPARK_WORKFLOW_PORT})${NC}"
 else
   SPARK_WORKFLOW_PID=$(cat .dev-pids/spark-workflow-engine.pid 2>/dev/null)
   echo -e "${GREEN}✓ Spark 工作流引擎 已在运行 (PID: $SPARK_WORKFLOW_PID)${NC}"
@@ -1567,14 +1585,14 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Jupyter Engine
-if check_service_running "jupyter-engine" "8088"; then
+if check_service_running "jupyter-engine" "$JUPYTER_LAB_PORT"; then
   echo "启动 Jupyter Engine（双服务模式：Jupyter Lab + API Server）..."
   cd engines/jupyter
 
   # 设置环境变量
-  export API_PORT=8097
-  export JUPYTER_PORT=8088
-  export SYSTEM_SERVICE_URL=http://localhost:8180
+  export API_PORT=$JUPYTER_API_PORT
+  export JUPYTER_PORT=$JUPYTER_LAB_PORT
+  # SYSTEM_SERVICE_URL 已由 generate_service_urls() 自动生成
   export INTERNAL_API_KEY=${INTERNAL_API_KEY:-""}
   export TENANT_ID=${DEFAULT_TENANT_ID:-1}  # Jupyter Notebook 数据源自动注入需要此环境变量
 
@@ -1593,14 +1611,14 @@ if check_service_running "jupyter-engine" "8088"; then
   cd ../..
 
   echo -e "${GREEN}✓ Jupyter Engine 已启动:${NC}"
-  echo -e "  - API Server (PID: $API_SERVER_PID, Port: 8097)"
-  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID, Port: 8088)"
+  echo -e "  - API Server (PID: $API_SERVER_PID, Port: $JUPYTER_API_PORT)"
+  echo -e "  - Jupyter Lab (PID: $JUPYTER_LAB_PID, Port: $JUPYTER_LAB_PORT)"
 
   # 等待 API Server 健康检查通过
   echo -n "等待 API Server 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:8097/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${JUPYTER_API_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1618,7 +1636,7 @@ if check_service_running "jupyter-engine" "8088"; then
   echo -n "等待 Jupyter Lab 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:8088/lab > /dev/null 2>&1; do
+  until curl -f http://localhost:${JUPYTER_LAB_PORT}/lab > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1634,16 +1652,16 @@ if check_service_running "jupyter-engine" "8088"; then
   fi
 
   echo -e "${GREEN}✓ Jupyter Engine 就绪:${NC}"
-  echo -e "  - API Server: http://localhost:8097"
-  echo -e "  - Jupyter Lab: http://localhost:8088/lab"
+  echo -e "  - API Server: http://localhost:${JUPYTER_API_PORT}"
+  echo -e "  - Jupyter Lab: http://localhost:${JUPYTER_LAB_PORT}/lab"
 
   # 向 System 模块注册引擎
   echo -n "注册 Jupyter Engine 到 System 模块..."
   cd engines/jupyter
   if [ -f "register.py" ]; then
-    export SYSTEM_API_URL=http://localhost:8180
-    export JUPYTER_ENGINE_URL=http://localhost:8097
-    export JUPYTER_LAB_URL=http://localhost:8088/lab
+    export SYSTEM_API_URL=http://localhost:${SYSTEM_BACKEND_PORT}
+    export JUPYTER_ENGINE_URL=http://localhost:${JUPYTER_API_PORT}
+    export JUPYTER_LAB_URL=http://localhost:${JUPYTER_LAB_PORT}/lab
     export INTERNAL_API_KEY=${INTERNAL_API_KEY}
     ./venv/bin/python register.py > /dev/null 2>&1
     if [ $? -eq 0 ]; then
@@ -1727,16 +1745,14 @@ if [ "$NEED_INSTALL" = true ]; then
 fi
 
 # 启动 Copilot Backend
-if check_service_running "copilot-backend" "8087"; then
+if check_service_running "copilot-backend" "$COPILOT_BACKEND_PORT"; then
   echo "启动 Copilot Backend..."
   cd copilot/backend
 
   # 设置环境变量
-  export PORT=8087
-  export SYSTEM_SERVICE_URL=http://localhost:8180
-  export META_SERVICE_URL=http://localhost:8082
-  export DEVELOP_SERVICE_URL=http://localhost:8185
-  export DATABASE_URL=postgresql://addp:addp_password@localhost:15432/addp
+  export PORT=$COPILOT_BACKEND_PORT
+  # SERVICE_URL 已由 generate_service_urls() 自动生成
+  export DATABASE_URL=postgresql://addp:addp_password@localhost:${POSTGRES_PORT}/addp
 
   # 直接使用虚拟环境的 Python
   ./venv/bin/python main.py > ../../logs/copilot-backend.log 2> ../../logs/copilot-backend-stderr.log &
@@ -1750,7 +1766,7 @@ if check_service_running "copilot-backend" "8087"; then
   echo -n "等待 Copilot Backend 就绪..."
   WAIT_COUNT=0
   MAX_WAIT=60
-  until curl -f http://localhost:8087/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${COPILOT_BACKEND_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1763,7 +1779,7 @@ if check_service_running "copilot-backend" "8087"; then
     fi
   done
   echo -e " ${GREEN}✓${NC}"
-    echo -e "${GREEN}✓ Copilot Backend 就绪 (http://localhost:8087)${NC}"
+    echo -e "${GREEN}✓ Copilot Backend 就绪 (http://localhost:${COPILOT_BACKEND_PORT})${NC}"
 else
   COPILOT_PID=$(cat .dev-pids/copilot-backend.pid 2>/dev/null)
   echo -e "${GREEN}✓ Copilot Backend 已在运行 (PID: $COPILOT_PID)${NC}"
@@ -1821,10 +1837,10 @@ if [ "$START_AGENT_BACKEND" = true ]; then
     cd ../..
   fi
 
-  if check_service_running "agent-backend" "8190"; then
+  if check_service_running "agent-backend" "$AGENT_BACKEND_PORT"; then
     echo "启动 Agent Backend..."
     cd agent/backend
-    export PORT=8190
+    export PORT=$AGENT_BACKEND_PORT
     ./venv/bin/python main.py > ../../logs/agent-backend.log 2> ../../logs/agent-backend-stderr.log &
     AGENT_PID=$!
     echo $AGENT_PID > ../../.dev-pids/agent-backend.pid
@@ -1835,7 +1851,7 @@ if [ "$START_AGENT_BACKEND" = true ]; then
     echo -n "等待 Agent Backend 就绪..."
     WAIT_COUNT=0
     MAX_WAIT=60
-    until curl -f http://localhost:8190/health > /dev/null 2>&1; do
+    until curl -f http://localhost:${AGENT_BACKEND_PORT}/health > /dev/null 2>&1; do
       echo -n "."
       sleep 1
       WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -1848,7 +1864,7 @@ if [ "$START_AGENT_BACKEND" = true ]; then
       fi
     done
     echo -e " ${GREEN}✓${NC}"
-    echo -e "${GREEN}✓ Agent Backend 就绪 (http://localhost:8190)${NC}"
+    echo -e "${GREEN}✓ Agent Backend 就绪 (http://localhost:${AGENT_BACKEND_PORT})${NC}"
   else
     AGENT_PID=$(cat .dev-pids/agent-backend.pid 2>/dev/null)
     echo -e "${GREEN}✓ Agent Backend 已在运行 (PID: $AGENT_PID)${NC}"
@@ -1863,10 +1879,10 @@ fi
 if [ "$START_GATEWAY" = true ]; then
   echo -e "${YELLOW}Step 6/7: 启动 Gateway${NC}"
 
-  if check_service_running "gateway" "8000"; then
+  if check_service_running "gateway" "$GATEWAY_PORT"; then
   build_gateway
   # 重置 PORT 环境变量为 Gateway 的端口
-  export PORT=8000
+  export PORT=$GATEWAY_PORT
   .dev-bins/addp-gateway > logs/gateway.log 2> logs/gateway-stderr.log &
   GATEWAY_PID=$!
   echo $GATEWAY_PID > .dev-pids/gateway.pid
@@ -1874,7 +1890,7 @@ if [ "$START_GATEWAY" = true ]; then
   # 等待 Gateway 就绪
   echo "等待 Gateway 就绪..."
   WAIT_COUNT=0
-  until curl -f http://localhost:8000/health > /dev/null 2>&1; do
+  until curl -f http://localhost:${GATEWAY_PORT}/health > /dev/null 2>&1; do
     echo -n "."
     sleep 1
     WAIT_COUNT=$((WAIT_COUNT + 1))
@@ -2101,24 +2117,24 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "服务地址:"
 echo "  Console FE:    http://localhost:${CONSOLE_FE_PORT}"
-echo "  Gateway:  http://localhost:8000"
-echo "  System:   http://localhost:${SYSTEM_BACKEND_PORT:-8180}"
-echo "  Manager:  http://localhost:8081"
-echo "  Meta:     http://localhost:8082"
-echo "  Transfer: http://localhost:8083"
-echo "  Orchestrator: http://localhost:8084"
-echo "  Develop:  http://localhost:8085"
-echo "  Service:  http://localhost:8086"
-echo "  Copilot:  http://localhost:8087"
-echo "  Monitor:  http://localhost:8100"
-echo "  Standard: http://localhost:8110"
-echo "  Model:    http://localhost:8181"
-echo "  Quality:  http://localhost:8182"
-  echo "  Asset:    http://localhost:8183"
-  echo "  Portal:   http://localhost:8184"
-echo "  Jupyter Engine:      http://localhost:8097 (API) / http://localhost:8088 (Lab UI)"
-echo "  Spark 工作流引擎: http://localhost:8098"
-echo "  Python Workflow Engine:    http://localhost:8099"
+echo "  Gateway:  http://localhost:${GATEWAY_PORT}"
+echo "  System:   http://localhost:${SYSTEM_BACKEND_PORT}"
+echo "  Manager:  http://localhost:${MANAGER_BACKEND_PORT}"
+echo "  Meta:     http://localhost:${META_BACKEND_PORT}"
+echo "  Transfer: http://localhost:${TRANSFER_BACKEND_PORT}"
+echo "  Orchestrator: http://localhost:${ORCHESTRATOR_BACKEND_PORT}"
+echo "  Develop:  http://localhost:${DEVELOP_BACKEND_PORT}"
+echo "  Service:  http://localhost:${SERVICE_BACKEND_PORT}"
+echo "  Copilot:  http://localhost:${COPILOT_BACKEND_PORT}"
+echo "  Monitor:  http://localhost:${MONITOR_BACKEND_PORT}"
+echo "  Standard: http://localhost:${STANDARD_BACKEND_PORT}"
+echo "  Model:    http://localhost:${MODEL_BACKEND_PORT}"
+echo "  Quality:  http://localhost:${QUALITY_BACKEND_PORT}"
+  echo "  Asset:    http://localhost:${ASSET_BACKEND_PORT}"
+  echo "  Portal:   http://localhost:${PORTAL_BACKEND_PORT}"
+echo "  Jupyter Engine:      http://localhost:${JUPYTER_API_PORT} (API) / http://localhost:${JUPYTER_LAB_PORT} (Lab UI)"
+echo "  Spark 工作流引擎: http://localhost:${SPARK_WORKFLOW_PORT}"
+echo "  Python Workflow Engine:    http://localhost:${PYTHON_WORKFLOW_PORT}"
 echo "  System FE:    http://localhost:${SYSTEM_FE_PORT}"
 echo "  Manager FE:   http://localhost:${MANAGER_FE_PORT}"
 echo "  Meta FE:      http://localhost:${META_FE_PORT}"

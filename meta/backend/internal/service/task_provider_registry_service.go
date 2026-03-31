@@ -83,11 +83,11 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置
 		BaseURL:             s.metaURL,
-		TaskListEndpoint:    "/api/meta/scan/tasks",              // 扫描任务列表
-		TaskDetailEndpoint:  "/api/meta/scan/tasks/:task_id",     // 扫描任务详情
-		TaskExecuteEndpoint: "/api/meta/scan/tasks/:task_id/trigger", // 执行扫描任务
-		TaskStatusEndpoint:  "/api/meta/scan/runs/:run_id",       // 查询执行状态（UUID）
-		TaskCancelEndpoint:  "/api/meta/scan/runs/:run_id/cancel", // 取消执行
+		TaskListEndpoint:    "/api/v1/meta/scan/tasks",              // 扫描任务列表
+		TaskDetailEndpoint:  "/api/v1/meta/scan/tasks/:task_id",     // 扫描任务详情
+		TaskExecuteEndpoint: "/api/v1/meta/scan/tasks/:task_id/trigger", // 执行扫描任务
+		TaskStatusEndpoint:  "/api/v1/meta/scan/runs/:run_id",       // 查询执行状态（UUID）
+		TaskCancelEndpoint:  "/api/v1/meta/scan/runs/:run_id/cancel", // 取消执行
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

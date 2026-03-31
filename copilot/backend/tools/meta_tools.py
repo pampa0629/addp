@@ -31,7 +31,7 @@ class MetadataSearchTool(BaseTool):
 
         try:
             async with ManagerClient(
-                base_url=settings.manager_service_url,
+                base_url=settings.get_manager_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 result = await client.search(q=query, page=1, page_size=limit)

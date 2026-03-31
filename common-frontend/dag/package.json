@@ -1,0 +1,12 @@
+{
+  "name": "@addp/common-frontend-dag",
+  "version": "0.1.0",
+  "description": "ADDP DAG 编辑器共享组件",
+  "type": "module",
+  "main": "src/index.js",
+  "peerDependencies": {
+    "@antv/g6": "^4.8.24",
+    "element-plus": "^2.4.0",
+    "vue": "^3.3.0"
+  }
+}

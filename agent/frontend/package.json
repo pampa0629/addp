@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@ai-sdk/vue": "^1.1.18",
+    "@antv/g6": "^4.8.24",
     "@element-plus/icons-vue": "2.3.2",
     "ai": "^4.1.45",
     "axios": "1.7.9",

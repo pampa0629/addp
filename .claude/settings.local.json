@@ -688,7 +688,15 @@
       "Bash(/tmp/regenerate_swagger.sh)",
       "Bash(agent/backend/venv/bin/pip install:*)",
       "Bash(agent/backend/venv/bin/python -c \"from addp_common.client.base import BaseClient; print\\(''OK''\\)\")",
-      "Bash(agent/backend/venv/bin/python -c \"from addp_common.client import DevelopClient; print\\(''DevelopClient OK''\\); c = DevelopClient.__mro__; print\\([x.__name__ for x in c]\\)\")"
+      "Bash(agent/backend/venv/bin/python -c \"from addp_common.client import DevelopClient; print\\(''DevelopClient OK''\\); c = DevelopClient.__mro__; print\\([x.__name__ for x in c]\\)\")",
+      "Bash(find /Users/pampa/code/addp/develop -type f \\\\\\(-name *DAG* -o -name *Workflow* -o -name *dag* -o -name *workflow* \\\\\\))",
+      "Bash(npm why:*)",
+      "Bash(npm pack:*)",
+      "Bash(tar -tzf amis-6.13.0.tgz)",
+      "Bash(tar -xzf amis-6.13.0.tgz 'package/sdk/')",
+      "Bash(find /Users/pampa/code/addp -type f \\\\\\(-name docker-compose*.yml -o -name .env* \\\\\\))",
+      "Bash(find /Users/pampa/code/addp/agent_amis/frontend/src -type f \\\\\\(-name *.js -o -name *.json -o -name *.vue \\\\\\))",
+      "Bash(find /Users/pampa/code/addp -type f \\\\\\(-name gateway.go -o -name routes.go -o -name main.go \\\\\\) -path */gateway/*)"
     ],
     "deny": [],
     "ask": [],

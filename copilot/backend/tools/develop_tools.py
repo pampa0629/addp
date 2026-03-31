@@ -29,7 +29,7 @@ class EngineTool(BaseTool):
 
         try:
             async with DevelopClient(
-                base_url=settings.develop_service_url,
+                base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 engines = await client.list_engines()
@@ -69,7 +69,7 @@ class SchemaTableTool(BaseTool):
 
         try:
             async with DevelopClient(
-                base_url=settings.develop_service_url,
+                base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 result = {"schemas": [], "tables": []}
@@ -110,7 +110,7 @@ class ObjectStorageTool(BaseTool):
 
         try:
             async with SystemClient(
-                base_url=settings.system_service_url,
+                base_url=settings.get_system_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 result = {"buckets": [], "objects": []}
@@ -165,7 +165,7 @@ class OperatorDiscoveryTool(BaseTool):
 
         try:
             async with DevelopClient(
-                base_url=settings.develop_service_url,
+                base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 operators = await client.list_operators(engine_type)
@@ -214,7 +214,7 @@ class OperatorDetailTool(BaseTool):
 
         try:
             async with DevelopClient(
-                base_url=settings.develop_service_url,
+                base_url=settings.get_develop_url(),
                 internal_api_key=settings.internal_api_key
             ) as client:
                 operator = await client.get_operator(operator_name, engine_type)

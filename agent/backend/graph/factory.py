@@ -22,6 +22,7 @@ logger = logging.getLogger("agent.factory")
 
 MSG_TYPE_PROGRESS = "tool_progress"
 MSG_TYPE_RESULT = "result"
+MSG_TYPE_DAG = "dag"
 
 # ToolMessage 截断上限（与 main_agent 保持一致）
 _TOOL_RESULT_MAX_LEN = 3000
@@ -126,6 +127,18 @@ class AgentFactory:
                         tool_result = str(raw)
                         preview = tool_result[:200] + ("..." if len(tool_result) > 200 else "")
                         logger.info("[FACTORY:%s] 工具结果（前200字符）: %s", skill_name, preview)
+
+                        # 检测 generate_workflow 成功，发送 DAG 可视化事件
+                        if tool_name == "generate_workflow":
+                            try:
+                                import json
+                                result_obj = json.loads(tool_result)
+                                if result_obj.get("status") in ("success", "validation_failed") and result_obj.get("workflow"):
+                                    workflow_data = result_obj["workflow"]
+                                    yield (MSG_TYPE_DAG, json.dumps(workflow_data, ensure_ascii=False))
+                                    logger.info("[FACTORY:%s] 已发送 DAG 可视化数据，任务数: %d", skill_name, len(workflow_data.get("tasks", [])))
+                            except Exception as e:
+                                logger.warning("[FACTORY:%s] DAG 解析失败: %s", skill_name, e)
                     except Exception as e:
                         tool_result = f"工具执行失败: {e}"
                         logger.error("[FACTORY:%s] 工具 %s 执行失败: %s", skill_name, tool_name, e)

@@ -80,11 +80,11 @@ func (s *TaskProviderRegistryService) Register() error {
 
 		// API 端点配置（相对于 base_url，支持 {task_type}/{id} 占位符）
 		BaseURL:             s.managerURL,
-		TaskListEndpoint:    "/api/manager/tasks",
-		TaskDetailEndpoint:  "/api/manager/tasks/{task_type}/{id}",
-		TaskExecuteEndpoint: "/api/manager/tasks/{task_type}/{id}/execute",
-		TaskStatusEndpoint:  "/api/manager/executions/{execution_id}",
-		TaskCancelEndpoint:  "/api/manager/executions/{execution_id}/cancel",
+		TaskListEndpoint:    "/api/v1/manager/tasks",
+		TaskDetailEndpoint:  "/api/v1/manager/tasks/{task_type}/{id}",
+		TaskExecuteEndpoint: "/api/v1/manager/tasks/{task_type}/{id}/execute",
+		TaskStatusEndpoint:  "/api/v1/manager/executions/{execution_id}",
+		TaskCancelEndpoint:  "/api/v1/manager/executions/{execution_id}/cancel",
 
 		// 能力描述（JSON 字符串）
 		Capabilities: &capabilitiesStr,

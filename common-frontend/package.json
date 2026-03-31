@@ -6,7 +6,8 @@
   "main": "basic/src/index.js",
   "files": [
     "basic/src",
-    "map/src"
+    "map/src",
+    "dag/src"
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -24,11 +24,11 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
     工厂函数：注入认证 token 和用户上下文，返回 LangChain Tool 列表。
     生成的 tools 通过 closure 持有 token，LLM 调用时无需传入认证信息。
     """
-    manager = ManagerClient(base_url=settings.MANAGER_URL, user_token=token)
-    meta = MetaClient(base_url=settings.META_URL, user_token=token)
-    develop = DevelopClient(base_url=settings.DEVELOP_URL, user_token=token)
-    copilot = CopilotClient(base_url=settings.COPILOT_URL, user_token=token)
-    system = SystemClient(base_url=settings.SYSTEM_URL, user_token=token)
+    manager = ManagerClient(base_url=settings.get_manager_url(), user_token=token)
+    meta = MetaClient(base_url=settings.get_meta_url(), user_token=token)
+    develop = DevelopClient(base_url=settings.get_develop_url(), user_token=token)
+    copilot = CopilotClient(base_url=settings.get_copilot_url(), user_token=token)
+    system = SystemClient(base_url=settings.get_system_url(), user_token=token)
 
     @tool
     async def list_workflow_engines() -> str:

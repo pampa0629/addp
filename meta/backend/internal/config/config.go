@@ -49,11 +49,7 @@ type Config struct {
 }
 
 func resolveMeilisearchURL() string {
-	url := commonConfig.GetEnv("MEILISEARCH_URL", "")
-	if url == "" {
-		url = commonConfig.GetEnv("MEILISEARCH_URL_LOCAL", "")
-	}
-	return url
+	return commonConfig.GetEnv("MEILISEARCH_URL", "")
 }
 
 func LoadConfig() *Config {

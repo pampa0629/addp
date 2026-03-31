@@ -51,7 +51,7 @@ func LoadConfig() (*Config, error) {
 		MetaURL:     commonConfig.GetEnv("META_SERVICE_URL", "http://localhost:8082"),
 		ServiceURL:  commonConfig.GetEnv("SERVICE_SERVICE_URL", "http://localhost:8086"),
 		StandardURL: commonConfig.GetEnv("STANDARD_SERVICE_URL", "http://localhost:8110"),
-		DevelopURL:  commonConfig.GetEnv("DEVELOP_SERVICE_URL", "http://localhost:8085"),
+		DevelopURL:  commonConfig.GetEnv("DEVELOP_SERVICE_URL", "http://localhost:8185"),
 
 		MeilisearchURL:        os.Getenv("MEILISEARCH_URL"),
 		MeilisearchMasterKey:  os.Getenv("MEILISEARCH_MASTER_KEY"),

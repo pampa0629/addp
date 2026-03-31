@@ -55,6 +55,35 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${ROOT_DIR}"
 
+# 加载 .env 配置
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+if [ -f ".env.local" ]; then
+    set -a
+    source .env.local
+    set +a
+fi
+
+# 自动生成服务 URL（与 start.sh 保持一致）
+generate_service_urls() {
+    local services=(system manager meta transfer orchestrator develop service copilot monitor standard model quality asset portal agent)
+    for svc in "${services[@]}"; do
+        local port_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_BACKEND_PORT"
+        local url_var="$(echo ${svc} | tr '[:lower:]' '[:upper:]')_SERVICE_URL"
+        local port_val="${!port_var}"
+        if [ -n "$port_val" ]; then
+            export ${url_var}="http://${SERVICE_HOST}:${port_val}"
+        fi
+    done
+    [ -n "$MEILISEARCH_PORT" ] && export MEILISEARCH_URL="http://${SERVICE_HOST}:${MEILISEARCH_PORT}"
+    export GEOPANDAS_ENGINE_URL="http://${SERVICE_HOST}:8099"
+}
+
+generate_service_urls
+
 # 解析参数
 FORCE_BUILD_ALL=false
 FORCE_BUILD_MODULES=()
