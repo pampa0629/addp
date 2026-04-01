@@ -24,6 +24,7 @@ class SystemClient:
         self.timeout = timeout
         self.client = httpx.Client(
             timeout=timeout,
+            transport=httpx.HTTPTransport(),
             headers={
                 'Content-Type': 'application/json',
                 'X-Internal-API-Key': internal_api_key

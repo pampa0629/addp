@@ -131,39 +131,8 @@ func main() {
 	}()
 
 	// 模块注册 + 心跳
-	go func() {
-		time.Sleep(2 * time.Second)
-
-		serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-		registrationReq := &commonClient.ModuleRegistrationRequest{
-			ModuleName:     "asset",
-			ModuleURL:      serviceURL,
-			RoutePrefix:    "/asset",
-			HealthCheckURL: serviceURL + "/health",
-			Metadata: map[string]interface{}{
-				"module": "asset",
-			},
-		}
-
-		maxRetries := 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := systemClient.RegisterModule(registrationReq); err != nil {
-				log.Printf("⚠️  Asset 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-				time.Sleep(time.Duration(attempt*5) * time.Second)
-				continue
-			}
-			log.Printf("✅ Asset 模块注册成功: %s", serviceURL)
-			break
-		}
-
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := systemClient.SendHeartbeat("asset"); err != nil {
-				log.Printf("⚠️  Asset 心跳失败: %v", err)
-			}
-		}
-	}()
+	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	systemClient.RegisterAndHeartbeat("asset", serviceURL, "/asset")
 
 	select {}
 }

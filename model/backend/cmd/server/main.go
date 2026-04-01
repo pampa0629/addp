@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/model/internal/api"
@@ -110,43 +109,8 @@ func main() {
 	}()
 
 	// 启动模块注册和心跳
-	go func() {
-		// 等待服务器启动
-		time.Sleep(2 * time.Second)
-
-		// 注册模块到 System
-		serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-		registrationReq := &commonClient.ModuleRegistrationRequest{
-			ModuleName:     "model",
-			ModuleURL:      serviceURL,
-			RoutePrefix:    "/model",
-			HealthCheckURL: serviceURL + "/health",
-			Metadata: map[string]interface{}{
-				"module": "model",
-			},
-		}
-
-		maxRetries := 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := systemClient.RegisterModule(registrationReq); err != nil {
-				log.Printf("⚠️  Model 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-				time.Sleep(time.Duration(attempt*5) * time.Second)
-				continue
-			}
-			log.Printf("✅ Model 模块注册成功: %s", serviceURL)
-			break
-		}
-
-		// 启动心跳循环
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			if err := systemClient.SendHeartbeat("model"); err != nil {
-				log.Printf("⚠️  Model 心跳失败: %v", err)
-			}
-		}
-	}()
+	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	systemClient.RegisterAndHeartbeat("model", serviceURL, "/model")
 
 	// 阻塞主 goroutine
 	select {}

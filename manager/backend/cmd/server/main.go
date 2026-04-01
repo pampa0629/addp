@@ -233,54 +233,11 @@ func main() {
 
 	// ========== 服务注册（注册到 System service_registry）==========
 	if cfg.EnableIntegration && cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		go func() {
-			// 等待3秒确保服务完全启动
-			time.Sleep(3 * time.Second)
-
-			// 构建服务URL
-			serviceHost := utils.GetServiceHost()
-			port := utils.GetModulePort("manager")
-			serviceURL := utils.BuildServiceURL(serviceHost, port)
-
-			// 创建 System 客户端用于模块注册
-			registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-
-			// 注册模块
-			registrationReq := &commonClient.ModuleRegistrationRequest{
-				ModuleName:     "manager",
-				ModuleURL:      serviceURL,
-				RoutePrefix:    "/manager",
-				HealthCheckURL: serviceURL + "/health",
-				Metadata: map[string]interface{}{
-					"module": "manager",
-				},
-			}
-
-			maxRetries := 3
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := registryClient.RegisterModule(registrationReq); err != nil {
-					logger.L().Warn("Manager 模块注册失败",
-						"attempt", fmt.Sprintf("%d/%d", attempt, maxRetries),
-						"error", err)
-					time.Sleep(time.Duration(attempt*5) * time.Second)
-					continue
-				}
-				logger.L().Info("Manager 模块注册成功", "url", serviceURL)
-				break
-			}
-
-			// 启动心跳
-			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-
-			for range ticker.C {
-				if err := registryClient.SendHeartbeat("manager"); err != nil {
-					logger.L().Error("Manager 心跳失败", "error", err)
-				} else {
-					logger.L().Debug("Manager 心跳成功")
-				}
-			}
-		}()
+		serviceHost := utils.GetServiceHost()
+		port := utils.GetModulePort("manager")
+		serviceURL := utils.BuildServiceURL(serviceHost, port)
+		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		registryClient.RegisterAndHeartbeat("manager", serviceURL, "/manager")
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

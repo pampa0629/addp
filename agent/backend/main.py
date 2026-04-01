@@ -76,7 +76,7 @@ async def health():
 
 
 async def _register_module():
-    """向 System 模块注册，并保持心跳"""
+    """向 System 模块注册，并保持心跳；注册失败会在心跳阶段自动重试"""
     if not settings.INTERNAL_API_KEY:
         logger.warning("INTERNAL_API_KEY 未配置，跳过模块注册")
         return
@@ -88,34 +88,65 @@ async def _register_module():
     service_url = f"http://localhost:{settings.AGENT_BACKEND_PORT}"
     register_url = f"{settings.get_system_url()}/api/v1/internal/modules/register"
     heartbeat_url = f"{settings.get_system_url()}/api/v1/internal/modules/heartbeat"
+    register_payload = {
+        "module_name": "agent",
+        "module_url": service_url,
+        "route_prefix": "/agent",
+        "health_check_url": f"{service_url}/health",
+        "metadata": {"module": "agent", "language": "python"},
+    }
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        # 注册，最多重试 3 次
-        for attempt in range(1, 4):
-            try:
-                resp = await client.post(register_url, headers=headers, json={
-                    "module_name": "agent",
-                    "module_url": service_url,
-                    "route_prefix": "/agent",
-                    "health_check_url": f"{service_url}/health",
-                    "metadata": {"module": "agent", "language": "python"},
-                })
+    # 禁用系统代理，避免 httpx 自动拾取 macOS 网络代理导致内部请求失败
+    _no_proxy_transport = httpx.AsyncHTTPTransport()
+
+    async def _try_register() -> bool:
+        """尝试注册一次，成功返回 True"""
+        try:
+            async with httpx.AsyncClient(timeout=5.0, transport=_no_proxy_transport) as client:
+                resp = await client.post(register_url, headers=headers, json=register_payload)
                 if resp.status_code < 300:
                     logger.info("✅ Agent 模块注册成功: %s", service_url)
-                    break
-                logger.warning("⚠️  Agent 模块注册失败 (尝试 %d/3): %s", attempt, resp.text)
-            except Exception as e:
-                logger.warning("⚠️  Agent 模块注册失败 (尝试 %d/3): %s", attempt, e)
-            await asyncio.sleep(attempt * 5)
+                    return True
+                logger.warning("⚠️  Agent 模块注册失败: %s", resp.text)
+        except Exception as e:
+            logger.warning("⚠️  Agent 模块注册失败: %s", e)
+        return False
 
-    # 心跳循环
+    # 初始注册，最多重试 3 次
+    registered = False
+    for attempt in range(1, 4):
+        if await _try_register():
+            registered = True
+            break
+        logger.warning("  (尝试 %d/3)", attempt)
+        await asyncio.sleep(attempt * 5)
+
+    # 心跳循环：连续失败时自动重新注册
+    consecutive_failures = 0
     while True:
         await asyncio.sleep(10)
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(heartbeat_url, headers=headers, json={"module_name": "agent"})
+            async with httpx.AsyncClient(timeout=5.0, transport=_no_proxy_transport) as client:
+                resp = await client.post(heartbeat_url, headers=headers, json={"module_name": "agent"})
+                if resp.status_code < 300:
+                    consecutive_failures = 0
+                    if not registered:
+                        logger.info("✅ Agent 心跳恢复正常")
+                        registered = True
+                else:
+                    consecutive_failures += 1
         except Exception as e:
+            consecutive_failures += 1
             logger.debug("Agent 心跳失败: %s", e)
+
+        # 连续失败 3 次，尝试重新注册
+        if consecutive_failures >= 3:
+            logger.warning("⚠️  心跳连续失败 %d 次，尝试重新注册...", consecutive_failures)
+            if await _try_register():
+                registered = True
+                consecutive_failures = 0
+            else:
+                await asyncio.sleep(20)
 
 
 @app.on_event("startup")

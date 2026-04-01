@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -805,6 +806,69 @@ func (c *SystemClient) SendHeartbeat(moduleName string) error {
 	}
 
 	return nil
+}
+
+// RegisterAndHeartbeat 启动后台 goroutine 完成模块注册+心跳+失败自动重连。
+// 初始注册最多重试 3 次；心跳每 10s 一次，连续失败 3 次自动重新注册。
+func (c *SystemClient) RegisterAndHeartbeat(moduleName, moduleURL, routePrefix string) {
+	go func() {
+		time.Sleep(2 * time.Second)
+
+		req := &ModuleRegistrationRequest{
+			ModuleName:     moduleName,
+			ModuleURL:      moduleURL,
+			RoutePrefix:    routePrefix,
+			HealthCheckURL: moduleURL + "/health",
+			Metadata:       map[string]interface{}{"module": moduleName},
+		}
+
+		tryRegister := func() bool {
+			if err := c.RegisterModule(req); err != nil {
+				log.Printf("⚠️  %s 模块注册失败: %v", moduleName, err)
+				return false
+			}
+			log.Printf("✅ %s 模块注册成功: %s", moduleName, moduleURL)
+			return true
+		}
+
+		// 初始注册，最多重试 3 次
+		registered := false
+		for attempt := 1; attempt <= 3; attempt++ {
+			if tryRegister() {
+				registered = true
+				break
+			}
+			time.Sleep(time.Duration(attempt*5) * time.Second)
+		}
+
+		// 心跳循环
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+
+		consecutiveFailures := 0
+		for range ticker.C {
+			if err := c.SendHeartbeat(moduleName); err != nil {
+				consecutiveFailures++
+				log.Printf("⚠️  %s 心跳失败: %v", moduleName, err)
+			} else {
+				if !registered {
+					log.Printf("✅ %s 心跳恢复正常", moduleName)
+					registered = true
+				}
+				consecutiveFailures = 0
+			}
+
+			if consecutiveFailures >= 3 {
+				log.Printf("⚠️  %s 心跳连续失败 %d 次，尝试重新注册...", moduleName, consecutiveFailures)
+				if tryRegister() {
+					registered = true
+					consecutiveFailures = 0
+				} else {
+					time.Sleep(20 * time.Second)
+				}
+			}
+		}
+	}()
 }
 
 // GetModules 获取模块列表

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	"github.com/addp/quality/internal/api"
@@ -90,39 +89,8 @@ func main() {
 		}
 	}()
 
-	go func() {
-		time.Sleep(2 * time.Second)
-
-		serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
-		registrationReq := &commonClient.ModuleRegistrationRequest{
-			ModuleName:     "quality",
-			ModuleURL:      serviceURL,
-			RoutePrefix:    "/quality",
-			HealthCheckURL: serviceURL + "/health",
-			Metadata: map[string]interface{}{
-				"module": "quality",
-			},
-		}
-
-		maxRetries := 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := systemClient.RegisterModule(registrationReq); err != nil {
-				log.Printf("⚠️  Quality 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-				time.Sleep(time.Duration(attempt*5) * time.Second)
-				continue
-			}
-			log.Printf("✅ Quality 模块注册成功: %s", serviceURL)
-			break
-		}
-
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := systemClient.SendHeartbeat("quality"); err != nil {
-				log.Printf("⚠️  Quality 心跳失败: %v", err)
-			}
-		}
-	}()
+	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.Port)
+	systemClient.RegisterAndHeartbeat("quality", serviceURL, "/quality")
 
 	select {}
 }

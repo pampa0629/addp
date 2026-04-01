@@ -148,50 +148,11 @@ func main() {
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {
-		go func() {
-			// 等待3秒确保服务完全启动
-			time.Sleep(3 * time.Second)
-
-			// 构建服务URL
-			serviceHost := utils.GetServiceHost()
-			port := utils.GetModulePort("develop")
-			serviceURL := utils.BuildServiceURL(serviceHost, port)
-
-			// 创建 System 客户端用于模块注册
-			registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
-
-			// 注册服务
-			registrationReq := &commonClient.ModuleRegistrationRequest{
-				ModuleName:    "develop",
-				ModuleURL:     serviceURL,
-				RoutePrefix:    "/develop",
-				HealthCheckURL: serviceURL + "/health",
-				Metadata: map[string]interface{}{
-					"module": "develop",
-				},
-			}
-
-			maxRetries := 3
-			for attempt := 1; attempt <= maxRetries; attempt++ {
-				if err := registryClient.RegisterModule(registrationReq); err != nil {
-					log.Printf("⚠️  Develop 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-					time.Sleep(time.Duration(attempt*5) * time.Second)
-					continue
-				}
-				log.Printf("✅ Develop 模块注册成功: %s", serviceURL)
-				break
-			}
-
-			// 启动心跳
-			ticker := time.NewTicker(10 * time.Second)
-			defer ticker.Stop()
-
-			for range ticker.C {
-				if err := registryClient.SendHeartbeat("develop"); err != nil {
-					log.Printf("❌ Develop 心跳失败: %v", err)
-				}
-			}
-		}()
+		serviceHost := utils.GetServiceHost()
+		port := utils.GetModulePort("develop")
+		serviceURL := utils.BuildServiceURL(serviceHost, port)
+		registryClient := commonClient.NewSystemClientWithInternalKey(cfg.SystemServiceURL, cfg.InternalAPIKey)
+		registryClient.RegisterAndHeartbeat("develop", serviceURL, "/develop")
 	}
 
 	// ========== 任务提供者注册（启动时自动注册到 System task_providers）==========

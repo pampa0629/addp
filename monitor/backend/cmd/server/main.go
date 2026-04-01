@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"time"
 
 	commonClient "github.com/addp/common/client"
 	commonModels "github.com/addp/common/models"
@@ -84,45 +83,8 @@ func main() {
 	}()
 
 	// 启动模块注册和心跳
-	go func() {
-		// 等待服务器启动
-		time.Sleep(2 * time.Second)
-
-		// 注册模块到 System
-		serviceURL := fmt.Sprintf("http://localhost:%s", cfg.ServerPort)
-		registrationReq := &commonClient.ModuleRegistrationRequest{
-			ModuleName:     "monitor",
-			ModuleURL:      serviceURL,
-			RoutePrefix:    "/monitor",
-			HealthCheckURL: serviceURL + "/health",
-			Metadata: map[string]interface{}{
-				"module": "monitor",
-			},
-		}
-
-		maxRetries := 3
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := systemClient.RegisterModule(registrationReq); err != nil {
-				log.Printf("⚠️  Monitor 模块注册失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
-				time.Sleep(time.Duration(attempt*5) * time.Second)
-				continue
-			}
-			log.Printf("✅ Monitor 模块注册成功: %s", serviceURL)
-			break
-		}
-
-		// 启动心跳循环
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			if err := systemClient.SendHeartbeat("monitor"); err != nil {
-				log.Printf("⚠️  Monitor 心跳失败: %v", err)
-			} else {
-				log.Printf("✅ Monitor 心跳成功")
-			}
-		}
-	}()
+	serviceURL := fmt.Sprintf("http://localhost:%s", cfg.ServerPort)
+	systemClient.RegisterAndHeartbeat("monitor", serviceURL, "/monitor")
 
 	// 阻塞主 goroutine
 	select {}
