@@ -17,6 +17,8 @@
 - PostgreSQL: `5433`
 - MinIO API: `9002`
 - MinIO Console: `9003`
+- Neo4j Browser: `7474`
+- Neo4j Bolt: `7687`
 
 来源：`business/docker-compose.yml`，可通过 `business/.env` 覆盖。脚本固定使用这些端口，不会自动改动；若被其他进程占用，启动脚本会给出警告并继续尝试（可能失败）。
 
@@ -24,6 +26,8 @@
 BUSINESS_POSTGRES_PORT=5433
 BUSINESS_MINIO_API_PORT=9002
 BUSINESS_MINIO_CONSOLE_PORT=9003
+NEO4J_HTTP_PORT=7474
+NEO4J_BOLT_PORT=7687
 ```
 
 ## Reserved Policy（保留规则）

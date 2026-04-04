@@ -390,16 +390,16 @@ func (c *SystemClient) ListScannableResources(tenantID uint) ([]models.Engine, e
 	return c.ListEnginesByCapability(tenantID, []string{"relational_db", "object_storage", "generic"})
 }
 
-// ListSQLQueryEngines 快捷方法：获取所有支持 SQL 查询的引擎（开发模块使用）
-// 改用 dev_modes 过滤，不再依赖 compute.type
+// ListSQLQueryEngines 快捷方法：获取所有支持查询开发的引擎（开发模块使用）
+// 包含关系型数据库（relational_db）、NoSQL 数据库（nosql_db）、图数据库（graph_db）
 func (c *SystemClient) ListSQLQueryEngines(tenantID uint) ([]models.Engine, error) {
-	// 1. 获取所有关系型数据库引擎
-	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db"})
+	// 获取所有支持查询的存储引擎类型（含 NoSQL 和图数据库）
+	allEngines, err := c.ListEnginesByCapability(tenantID, []string{"relational_db", "nosql_db", "graph_db"})
 	if err != nil {
 		return nil, err
 	}
 
-	// 2. 过滤出支持 "query" 开发模式的引擎
+	// 过滤出支持 "query" 开发模式的引擎
 	queryEngines := commonutils.FilterEnginesByDevMode(allEngines, "query")
 
 	return queryEngines, nil

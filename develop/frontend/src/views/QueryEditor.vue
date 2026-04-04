@@ -95,18 +95,33 @@
             <el-icon><List /></el-icon>
             执行结果
           </span>
-          <el-button
-            v-if="executionResult"
-            text
-            size="small"
-            @click="clearResult"
-          >
-            <el-icon><Close /></el-icon>
-            清空
-          </el-button>
+          <div style="display:flex;align-items:center;gap:8px">
+            <!-- 图形/表格切换（仅当查询结果含图数据时显示） -->
+            <el-radio-group
+              v-if="hasGraphData"
+              v-model="resultViewMode"
+              size="small"
+            >
+              <el-radio-button value="table">表格</el-radio-button>
+              <el-radio-button value="graph">图形</el-radio-button>
+            </el-radio-group>
+            <el-button
+              v-if="executionResult"
+              text
+              size="small"
+              @click="clearResult"
+            >
+              <el-icon><Close /></el-icon>
+              清空
+            </el-button>
+          </div>
         </div>
         <div class="result-content">
-          <QueryResult :result="executionResult" />
+          <GraphResultView
+            v-if="resultViewMode === 'graph' && hasGraphData"
+            :graph-data="executionResult.graph_data"
+          />
+          <QueryResult v-else :result="executionResult" />
         </div>
       </div>
     </div>
@@ -122,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElLoading } from 'element-plus'
 import {
@@ -138,23 +153,41 @@ import { format } from 'sql-formatter'
 import MonacoEditor from '../components/MonacoEditor.vue'
 import QueryResult from '../components/QueryResult.vue'
 import SaveQueryDialog from '../components/SaveQueryDialog.vue'
-import { executeQuery as executeAPI, testConnection, saveQueryTask } from '../api/query.js'
+import { GraphResultView } from '@addp/common-frontend/graph'
+import { executeQuery as executeAPI, testConnection, saveQueryTask, getSampleQuery } from '../api/query.js'
 import { getDevItem } from '../api/devItem.js'
 import client from '../api/client.js'
 
 const route = useRoute()
+
+// 引擎类型 → 编辑器语言
+const ENGINE_LANGUAGE_MAP = {
+  postgresql: 'sql',
+  mysql: 'sql',
+  doris: 'sql',
+  clickhouse: 'sql',
+  spark: 'sql',
+  mongodb: 'json',
+  neo4j: 'cypher'
+}
 
 // 状态
 const currentTaskId = ref(null)
 const currentTaskName = ref('')
 const selectedEngineId = ref(null)
 const engines = ref([])
-const queryContent = ref('SELECT * FROM users LIMIT 10;')
+const queryContent = ref('')
 const executionResult = ref(null)
 const executing = ref(false)
 const testingConnection = ref(false)
 const editorRef = ref(null)
 const showSaveDialog = ref(false)
+const resultViewMode = ref('table') // 'table' | 'graph'
+
+// 是否有图形数据（用于显示图形/表格切换）
+const hasGraphData = computed(
+  () => executionResult.value?.graph_data?.nodes?.length > 0
+)
 
 // 加载数据源列表
 const loadEngines = async () => {
@@ -168,13 +201,13 @@ const loadEngines = async () => {
       return
     }
 
-    engines.value = response.filter(r =>
-      ['postgresql', 'mysql', 'doris', 'spark'].includes(r.engine_type.toLowerCase())
-    )
+    // 后端已按 dev_modes=query 过滤，直接使用全部结果
+    engines.value = response
 
     // 默认选择第一个
     if (engines.value.length > 0 && !selectedEngineId.value) {
       selectedEngineId.value = engines.value[0].id
+      applyEngineLanguage(engines.value[0])
     }
   } catch (error) {
     console.error('Develop: 加载数据源失败:', error)
@@ -230,7 +263,15 @@ const executeQuery = async () => {
       rows: response.rows || [],
       rows_count: response.rows_count,
       rows_affected: response.rows_affected,
-      execution_time_ms: response.execution_time_ms
+      execution_time_ms: response.execution_time_ms,
+      graph_data: response.graph_data || null
+    }
+
+    // 有图数据时自动切换到图形视图
+    if (response.graph_data?.nodes?.length > 0) {
+      resultViewMode.value = 'graph'
+    } else {
+      resultViewMode.value = 'table'
     }
 
     ElMessage.success('执行成功')
@@ -267,11 +308,36 @@ const formatSQL = () => {
 // 清空结果
 const clearResult = () => {
   executionResult.value = null
+  resultViewMode.value = 'table'
 }
 
 // 数据源切换
 const onEngineChange = () => {
   executionResult.value = null
+  const engine = engines.value.find(e => e.id === selectedEngineId.value)
+  if (engine) {
+    applyEngineLanguage(engine)
+  }
+}
+
+// 根据引擎类型切换编辑器语言，并自动拉取样例查询填充编辑器
+const applyEngineLanguage = async (engine) => {
+  const type = engine.engine_type?.toLowerCase() || ''
+  const lang = ENGINE_LANGUAGE_MAP[type] || 'sql'
+  editorRef.value?.setLanguage(lang)
+
+  try {
+    const { query, language } = await getSampleQuery(engine.id)
+    queryContent.value = query
+    editorRef.value?.setLanguage(language)
+  } catch {
+    // 降级：使用静态模板（网络失败或引擎未连接时）
+    const fallbackMap = {
+      mongodb: '{"find": "collection_name", "filter": {}, "limit": 10}',
+      neo4j: 'MATCH (n)\nRETURN n\nLIMIT 10',
+    }
+    queryContent.value = fallbackMap[type] ?? 'SELECT 1'
+  }
 }
 
 // 保存任务

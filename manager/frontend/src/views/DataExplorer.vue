@@ -299,6 +299,8 @@ watch(() => route.query, async (query) => {
   display: grid;
   gap: 0;
   overflow: hidden;
+  grid-template-rows: 1fr;
+  min-height: 0;
   background: var(--addp-bg-secondary) !important;
 }
 

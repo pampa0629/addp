@@ -170,8 +170,9 @@ func SetupRouter(
 		api.GET("/spark-runtimes", engineHandler.ListSparkRuntimes)     // 获取 Spark 运行时列表
 
 		// ========== 查询开发 ==========
-		api.GET("/test/:id", queryHandler.TestConnection) // 测试数据源连接
-		api.POST("/execute", queryHandler.ExecuteQuery)     // 执行查询
+		api.GET("/test/:id", queryHandler.TestConnection)           // 测试数据源连接
+		api.GET("/engines/:id/sample-query", queryHandler.GetSampleQuery) // 获取样例查询
+		api.POST("/execute", queryHandler.ExecuteQuery)              // 执行查询
 
 		// 查询任务管理
 		queryTasks := api.Group("/query/tasks")

@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@addp/common-frontend": "file:../../common-frontend",
-    "@antv/g6": "^4.8.24",
     "@element-plus/icons-vue": "2.3.2",
     "axios": "1.7.9",
     "element-plus": "2.8.8",

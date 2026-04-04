@@ -43,10 +43,13 @@
         <el-table-column
           v-for="col in displayColumns"
           :key="col"
-          :prop="col"
           :label="col"
           show-overflow-tooltip
-        />
+        >
+          <template #default="{ row }">
+            {{ formatCellValue(row[col]) }}
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 

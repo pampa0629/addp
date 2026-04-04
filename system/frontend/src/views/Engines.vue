@@ -533,8 +533,12 @@ const engineTypeMap = {
   'postgresql': 'PostgreSQL',
   'mysql': 'MySQL',
   'doris': 'Apache Doris',
+  'clickhouse': 'ClickHouse',
+  'mongodb': 'MongoDB',
   'minio': 'MinIO',
+  'neo4j': 'Neo4j',
   'spark': 'Apache Spark',
+  'spatialite': 'SpatiaLite/SQLite',
   'database': '数据库',
   'compute_engine': '计算引擎'
 }
@@ -716,22 +720,12 @@ const testBeforeCreate = async () => {
 
   testing.value = true
   try {
-    // 如果是编辑模式，使用已保存资源的ID进行测试（会使用数据库中的真实密钥）
-    if (isEdit.value && editId.value) {
-      const response = await enginesAPI.testExistingConnection(editId.value)
-      if (response.success) {
-        ElMessage.success('连接测试成功！')
-      } else {
-        ElMessage.error(`连接测试失败: ${response.error || response.message}`)
-      }
+    // 始终使用当前表单数据测试（编辑模式初始化时已从 API 获取解密后的连接信息）
+    const response = await enginesAPI.testConnection(form.value)
+    if (response.success) {
+      ElMessage.success('连接测试成功！')
     } else {
-      // 新增模式，使用表单数据测试
-      const response = await enginesAPI.testConnection(form.value)
-      if (response.success) {
-        ElMessage.success('连接测试成功！')
-      } else {
-        ElMessage.error(`连接测试失败: ${response.error || response.message}`)
-      }
+      ElMessage.error(`连接测试失败: ${response.error || response.message}`)
     }
   } catch (error) {
     ElMessage.error(`连接测试失败: ${error.response?.data?.error || error.message}`)

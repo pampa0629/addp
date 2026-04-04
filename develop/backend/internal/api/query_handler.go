@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/addp/common/dbbridge"
+	"github.com/addp/common/engine/plugin"
 	"github.com/addp/develop/backend/internal/models"
 	"github.com/addp/develop/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -43,6 +45,7 @@ type ExecuteQueryResponse struct {
 	RowsCount       int                      `json:"rows_count"`
 	RowsAffected    int64                    `json:"rows_affected"`
 	ExecutionTimeMs int64                    `json:"execution_time_ms"`
+	GraphData       *plugin.GraphData        `json:"graph_data,omitempty"` // 图数据（仅图数据库引擎）
 }
 
 // SaveQueryTaskRequest 保存 查询任务请求
@@ -57,6 +60,28 @@ type SaveQueryTaskRequest struct {
 	Schedule    string   `json:"schedule"`     // Cron 表达式
 	IsScheduled bool     `json:"is_scheduled"` // 是否启用调度
 	Timeout     int      `json:"timeout"`      // 超时时间（秒）
+}
+
+// GetSampleQuery 获取引擎的可执行样例查询（切换引擎时自动填充编辑器）
+// GET /engines/:id/sample-query
+func (h *QueryHandler) GetSampleQuery(c *gin.Context) {
+	idStr := c.Param("id")
+	engineID, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的引擎ID"})
+		return
+	}
+
+	query, language, err := h.sqlEngine.GenerateSampleQuery(c.Request.Context(), uint(engineID))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"query":    query,
+		"language": language,
+	})
 }
 
 // TestConnection 测试数据源连接
@@ -111,22 +136,24 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 		return
 	}
 
-	// 判断是查询还是 DML
-	sqlLower := strings.ToLower(sql)
-	isQuery := strings.HasPrefix(sqlLower, "select") ||
-		strings.HasPrefix(sqlLower, "show") ||
-		strings.HasPrefix(sqlLower, "desc") ||
-		strings.HasPrefix(sqlLower, "explain")
-
 	// 设置默认超时
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = 30 // 默认 30 秒
 	}
 
-	// 执行 SQL
-	if isQuery {
-		// 查询语句
+	// 获取引擎信息，判断是否为 NoSQL 原生查询引擎（MongoDB/Neo4j）
+	resource, err := h.sqlEngine.GetEngine(req.EngineID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "获取引擎配置失败",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// NoSQL 引擎：所有操作统一走 ExecuteSQL（内部路由到原生驱动），不做 SELECT/DML 区分
+	if dbbridge.SupportsDirectQuery(resource.EngineType) {
 		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.EngineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -135,7 +162,32 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			})
 			return
 		}
+		c.JSON(http.StatusOK, ExecuteQueryResponse{
+			Columns:      result.Columns,
+			Rows:         result.Rows,
+			RowsCount:    len(result.Rows),
+			RowsAffected: result.RowsAffected,
+			GraphData:    result.GraphData,
+		})
+		return
+	}
 
+	// SQL 引擎：区分查询（SELECT/SHOW/DESC/EXPLAIN）和 DML（INSERT/UPDATE/DELETE）
+	sqlLower := strings.ToLower(sql)
+	isQuery := strings.HasPrefix(sqlLower, "select") ||
+		strings.HasPrefix(sqlLower, "show") ||
+		strings.HasPrefix(sqlLower, "desc") ||
+		strings.HasPrefix(sqlLower, "explain")
+
+	if isQuery {
+		result, err := h.sqlEngine.ExecuteSQL(c.Request.Context(), req.EngineID, sql, timeout)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":   "查询执行失败",
+				"details": err.Error(),
+			})
+			return
+		}
 		c.JSON(http.StatusOK, ExecuteQueryResponse{
 			Columns:      result.Columns,
 			Rows:         result.Rows,
@@ -143,7 +195,6 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			RowsAffected: result.RowsAffected,
 		})
 	} else {
-		// DML 语句 (INSERT/UPDATE/DELETE)
 		rowsAffected, err := h.sqlEngine.ExecuteDML(c.Request.Context(), req.EngineID, sql, timeout)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -152,7 +203,6 @@ func (h *QueryHandler) ExecuteQuery(c *gin.Context) {
 			})
 			return
 		}
-
 		c.JSON(http.StatusOK, ExecuteQueryResponse{
 			Columns:      []string{},
 			Rows:         []map[string]interface{}{},

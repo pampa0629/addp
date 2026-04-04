@@ -11,7 +11,9 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src')
+      '@addp/common-frontend/dag': resolve(__dirname, '../../common-frontend/dag/src'),
+      '@addp/common-frontend/graph': resolve(__dirname, '../../common-frontend/graph/src'),
+      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6')
     },
     dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
   },

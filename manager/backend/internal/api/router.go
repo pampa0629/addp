@@ -142,6 +142,7 @@ func SetupRouter(
 		api.GET("/tree/:engine_id/node", explorerHandler.GetNodeChildren)    // 增量加载子节点
 		api.GET("/tree/:engine_id/search", explorerHandler.SearchNodes)      // 搜索节点
 		api.POST("/tree/:engine_id/refresh", explorerHandler.RefreshNode)
+		api.GET("/graph-schema/:engine_id", explorerHandler.GetGraphSchema)  // 图数据库 Schema（节点标签 + 关系类型）
 		api.GET("/preview", explorerHandler.Preview)
 		api.GET("/video-stream", explorerHandler.VideoStream)
 

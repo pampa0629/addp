@@ -341,6 +341,34 @@ func (h *ExplorerHandler) SearchNodes(c *gin.Context) {
 	})
 }
 
+// GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
+// GET /api/manager/graph-schema/:engine_id?database=neo4j
+func (h *ExplorerHandler) GetGraphSchema(c *gin.Context) {
+	tenantID := tenantIDFromContext(c)
+
+	engineIDStr := c.Param("engine_id")
+	engineID, err := strconv.ParseUint(engineIDStr, 10, 32)
+	if err != nil {
+		commonAPI.BadRequestError(c, "Invalid engine_id")
+		return
+	}
+
+	database := c.Query("database")
+
+	schema, err := h.explorerService.GetGraphSchema(c.Request.Context(), tenantID, uint(engineID), database)
+	if err != nil {
+		if err == service.ErrEngineAccessDenied {
+			commonAPI.ForbiddenError(c, "Access denied to this engine")
+			return
+		}
+		logger.L().Error("获取图 Schema 失败", "engine_id", engineID, "error", err)
+		commonAPI.InternalServerError(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, schema)
+}
+
 // VideoStream 视频流式传输（支持 Range 请求）
 // GET /api/explorer/video-stream?engine_id=1&object_key=bucket/path/to/video.mp4
 // @Summary VideoStream

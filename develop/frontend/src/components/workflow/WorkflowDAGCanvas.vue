@@ -39,11 +39,10 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref, watch } from 'vue'
-import G6 from '@antv/g6'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, DocumentDelete, Connection } from '@element-plus/icons-vue'
-import { useLoopDetection, useDAGSelection, useDAGEdgeMode, registerMultiPortNode } from '@addp/common-frontend/dag'
+import { useDAGCore, useLoopDetection, useDAGSelection, useDAGEdgeMode, registerMultiPortNode } from '@addp/common-frontend/dag'
 
 const props = defineProps({
   initialWorkflow: {
@@ -55,51 +54,56 @@ const props = defineProps({
 const emit = defineEmits(['update:workflow', 'node-click'])
 
 const container = ref(null)
-const graph = ref(null)
 const nodeCounter = ref(0)
 const edgeSourceNode = ref(null)
 const edgeSourcePort = ref(null)
 
-// useDAGCore 不适合这里：develop 用 document.getElementById 初始化（已有的稳定行为），
-// 且需要手动控制 ResizeObserver 和延迟初始化
-let resizeObserver = null
+const ARROW_PATH = 'M 0,0 L 12,5 L 12,-5 Z'
+
+const { graph, initGraph } = useDAGCore(container, {
+  modes: {
+    default: ['drag-canvas', 'drag-node', 'click-select'],
+    addEdge: ['drag-canvas']
+  },
+  defaultNode: {
+    type: 'workflow-node',
+    size: [140, 60]
+  },
+  defaultEdge: {
+    type: 'polyline',
+    style: {
+      stroke: '#A3B1BF',
+      lineWidth: 2,
+      radius: 10,
+      endArrow: { path: ARROW_PATH, fill: '#A3B1BF', d: 0 }
+    },
+    labelCfg: { autoRotate: true }
+  }
+})
 
 const { hasLoop } = useLoopDetection(graph)
-// useDAGSelection 的 initSelectionListener 需要在 graph 初始化后调用，这里手动使用 selectedItem
 const { selectedItem, initSelectionListener, deleteSelected, clearGraph } = useDAGSelection(graph)
-const { isAddEdgeMode, toggleAddEdgeMode, exitAddEdgeMode } = useDAGEdgeMode(graph)
+const { isAddEdgeMode, toggleAddEdgeMode } = useDAGEdgeMode(graph)
 
 onMounted(() => {
   setTimeout(() => {
+    registerMultiPortNode()
     initGraph()
     initSelectionListener()
+    graph.value.on('node:dblclick', handleNodeDoubleClick)
+    graph.value.on('node:click', handleNodeClickForEdge)
+    graph.value.on('node:mouseenter', (e) => {
+      const shape = e.shape
+      if (shape && shape.cfg && shape.cfg.portType && shape.cfg.portName !== 'input') {
+        console.log(`输出端口: ${shape.cfg.portName} - ${shape.cfg.portDescription || ''}`)
+      }
+    })
+    graph.value.on('afterremoveitem', () => emitWorkflow())
+    graph.value.on('afterupdateitem', () => emitWorkflow())
     if (props.initialWorkflow?.tasks?.length > 0) {
       loadWorkflow(props.initialWorkflow)
     }
-    setupResizeObserver()
   }, 200)
-})
-
-function setupResizeObserver() {
-  resizeObserver = new ResizeObserver(() => {
-    if (graph.value && container.value) {
-      const w = container.value.offsetWidth
-      const h = container.value.offsetHeight
-      if (w > 0 && h > 0) {
-        graph.value.changeSize(w, h)
-      }
-    }
-  })
-  if (container.value) {
-    resizeObserver.observe(container.value)
-  }
-}
-
-// watch 不能放在 onMounted 外，因为 onUnmounted 也无法从 useDAGCore 触发
-onUnmounted(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-  }
 })
 
 watch(() => props.initialWorkflow, (newWorkflow) => {
@@ -107,73 +111,6 @@ watch(() => props.initialWorkflow, (newWorkflow) => {
     loadWorkflow(newWorkflow)
   }
 }, { deep: true })
-
-function initGraph() {
-  const containerElement = document.getElementById('workflow-dag-container')
-  if (!containerElement) {
-    console.error('容器未找到')
-    return
-  }
-
-  const width = containerElement.offsetWidth || 1200
-  const height = containerElement.offsetHeight || 600
-
-  // 注册多端口节点
-  registerMultiPortNode()
-
-  graph.value = new G6.Graph({
-    container: containerElement,
-    width,
-    height,
-    modes: {
-      default: ['drag-canvas', 'drag-node', 'click-select'],
-      addEdge: ['drag-canvas']
-    },
-    nodeStateStyles: {
-      selected: { stroke: '#f00', lineWidth: 3 }
-    },
-    edgeStateStyles: {
-      selected: { stroke: '#f00', lineWidth: 3 },
-      hover: { stroke: '#1890ff', lineWidth: 3 }
-    },
-    defaultNode: {
-      type: 'workflow-node',
-      size: [140, 60]
-    },
-    defaultEdge: {
-      type: 'polyline',
-      style: {
-        stroke: '#A3B1BF',
-        lineWidth: 2,
-        radius: 10,
-        endArrow: {
-          path: G6.Arrow.triangle(10, 12, 0),
-          fill: '#A3B1BF',
-          d: 0
-        }
-      },
-      labelCfg: { autoRotate: true }
-    }
-  })
-
-  // 双击事件
-  graph.value.on('node:dblclick', handleNodeDoubleClick)
-
-  // 端口点击连线逻辑
-  graph.value.on('node:click', handleNodeClickForEdge)
-
-  // 端口悬停提示
-  graph.value.on('node:mouseenter', (e) => {
-    const shape = e.shape
-    if (shape && shape.cfg && shape.cfg.portType && shape.cfg.portName !== 'input') {
-      console.log(`输出端口: ${shape.cfg.portName} - ${shape.cfg.portDescription || ''}`)
-    }
-  })
-
-  // 删除/更新后同步
-  graph.value.on('afterremoveitem', () => emitWorkflow())
-  graph.value.on('afterupdateitem', () => emitWorkflow())
-}
 
 function handleNodeClickForEdge(e) {
   if (!isAddEdgeMode.value) return
@@ -249,7 +186,7 @@ function handleNodeClickForEdge(e) {
           stroke: '#A3B1BF',
           lineWidth: 2,
           radius: 10,
-          endArrow: { path: G6.Arrow.triangle(10, 12, 0), fill: '#A3B1BF', d: 0 }
+          endArrow: { path: ARROW_PATH, fill: '#A3B1BF', d: 0 }
         }
       })
 
@@ -386,7 +323,7 @@ function loadWorkflow(workflow) {
             stroke: '#A3B1BF',
             lineWidth: 2,
             radius: 10,
-            endArrow: { path: G6.Arrow.triangle(10, 12, 0), fill: '#A3B1BF', d: 0 }
+            endArrow: { path: ARROW_PATH, fill: '#A3B1BF', d: 0 }
           }
         })
       })

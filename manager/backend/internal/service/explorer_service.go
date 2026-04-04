@@ -504,6 +504,157 @@ func (s *ExplorerService) getMetaNodes(ctx context.Context, engineID uint, expan
 	return allNodes, nil
 }
 
+// GraphSchemaResponse 图数据库 Schema 响应
+type GraphSchemaResponse struct {
+	NodeLabels    []NodeLabelSchema    `json:"nodes"`
+	Relationships []RelationshipSchema `json:"relationships"`
+}
+
+// NodeLabelSchema 节点标签描述
+type NodeLabelSchema struct {
+	Label      string   `json:"label"`
+	Count      int64    `json:"count"`
+	Properties []string `json:"properties"`
+}
+
+// RelationshipSchema 关系类型描述
+type RelationshipSchema struct {
+	Type       string   `json:"type"`
+	Count      int64    `json:"count"`
+	FromLabels []string `json:"from_labels"`
+	ToLabels   []string `json:"to_labels"`
+}
+
+// GetGraphSchema 获取图数据库的 Schema 结构（节点标签 + 关系类型）
+// 数据来自 Meta 模块的扫描结果，不重新连接数据库
+func (s *ExplorerService) GetGraphSchema(ctx context.Context, tenantID *uint, engineID uint, database string) (*GraphSchemaResponse, error) {
+	if s.metaClient == nil {
+		return nil, fmt.Errorf("meta client not available")
+	}
+
+	// 权限校验
+	if s.systemClient != nil {
+		engine, err := s.systemClient.GetEngine(engineID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get engine: %w", err)
+		}
+		if tenantID != nil && engine.TenantID != nil && *engine.TenantID != *tenantID {
+			return nil, ErrEngineAccessDenied
+		}
+	}
+
+	s.metaClient.SetTenantID(tenantID)
+
+	// 获取元数据树（包含节点和 items）
+	tree, err := s.metaClient.GetMetadataTree(engineID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata tree: %w", err)
+	}
+
+	// 找到目标数据库节点
+	var dbNodeID uint
+	for _, node := range tree.TopNodes {
+		if strings.EqualFold(node.Name, database) || database == "" {
+			dbNodeID = node.ID
+			break
+		}
+	}
+	// 如果 TopNodes 没找到，再从 ChildNodes 里找
+	if dbNodeID == 0 {
+		for _, node := range tree.ChildNodes {
+			if strings.EqualFold(node.Name, database) {
+				dbNodeID = node.ID
+				break
+			}
+		}
+	}
+	// 如果仍未找到（但 database 为空），使用第一个节点
+	if dbNodeID == 0 && database == "" && len(tree.TopNodes) > 0 {
+		dbNodeID = tree.TopNodes[0].ID
+	}
+	if dbNodeID == 0 {
+		return nil, fmt.Errorf("database node not found: %s", database)
+	}
+
+	// 从 Items 中过滤出对应数据库的 collection 和 relationship_type
+	resp := &GraphSchemaResponse{
+		NodeLabels:    []NodeLabelSchema{},
+		Relationships: []RelationshipSchema{},
+	}
+
+	for _, item := range tree.Items {
+		if item.NodeID != dbNodeID {
+			continue
+		}
+		switch item.ItemType {
+		case "collection":
+			label := NodeLabelSchema{
+				Label:      item.Name,
+				Properties: extractStringSliceFromAttrs(item.Attributes, "fields"),
+			}
+			if item.RowCount != nil {
+				label.Count = *item.RowCount
+			} else if v, ok := item.Attributes["document_count"]; ok {
+				label.Count = toInt64(v)
+			}
+			resp.NodeLabels = append(resp.NodeLabels, label)
+		case "relationship_type":
+			rel := RelationshipSchema{
+				Type:       item.Name,
+				FromLabels: extractStringSliceFromAttrs(item.Attributes, "from_labels"),
+				ToLabels:   extractStringSliceFromAttrs(item.Attributes, "to_labels"),
+			}
+			if item.RowCount != nil {
+				rel.Count = *item.RowCount
+			} else if v, ok := item.Attributes["count"]; ok {
+				rel.Count = toInt64(v)
+			}
+			resp.Relationships = append(resp.Relationships, rel)
+		}
+	}
+
+	return resp, nil
+}
+
+// extractStringSliceFromAttrs 从 attributes map 中提取字符串切片
+func extractStringSliceFromAttrs(attrs map[string]interface{}, key string) []string {
+	if attrs == nil {
+		return []string{}
+	}
+	raw, ok := attrs[key]
+	if !ok || raw == nil {
+		return []string{}
+	}
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return []string{}
+}
+
+// toInt64 将 interface{} 转为 int64
+func toInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int32:
+		return int64(n)
+	}
+	return 0
+}
+
 // buildEngineRootNode 构建引擎根节点（降级方案）
 func (s *ExplorerService) buildEngineRootNode(engine *commonModels.Engine) *resource.TreeNode {
 	locator := fmt.Sprintf("addp://engine/%d/path/?type=database", engine.ID)

@@ -76,18 +76,27 @@ func ClickHouseStyleDSN(user, password, host string, port int, database string, 
 }
 
 // MongoDBStyleDSN 构建 MongoDB 风格的 DSN 字符串
-// 格式：mongodb://user:password@host:port/?authSource=database
-// 使用 authSource 参数而不是路径数据库，避免绑定到特定数据库
-func MongoDBStyleDSN(user, password, host string, port int, database string) string {
-	authSource := ""
-	if database != "" {
-		authSource = fmt.Sprintf("?authSource=%s", database)
+// 格式：mongodb://user:password@host:port/database?authSource=authSource
+// authSource 是用户凭据所在的数据库（root 用户通常是 admin），与操作用的 database 是两个不同的概念
+func MongoDBStyleDSN(user, password, host string, port int, database, authSource string) string {
+	if user == "" {
+		return fmt.Sprintf("mongodb://%s:%d/", host, port)
 	}
 
-	if user != "" && password != "" {
-		return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s", user, password, host, port, authSource)
-	} else if user != "" {
-		return fmt.Sprintf("mongodb://%s@%s:%d/%s", user, host, port, authSource)
+	// authSource 默认 admin（MongoDB root 用户的认证库）
+	if authSource == "" {
+		authSource = "admin"
 	}
-	return fmt.Sprintf("mongodb://%s:%d/", host, port)
+
+	dbPath := ""
+	if database != "" {
+		dbPath = database
+	}
+
+	query := fmt.Sprintf("?authSource=%s", authSource)
+
+	if password != "" {
+		return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s%s", user, password, host, port, dbPath, query)
+	}
+	return fmt.Sprintf("mongodb://%s@%s:%d/%s%s", user, host, port, dbPath, query)
 }

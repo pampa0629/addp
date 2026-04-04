@@ -159,6 +159,74 @@ html.blue {
   --el-mask-color-extra-light: rgba(0, 0, 0, 0.3);
 }
 
+/* ==================== 紫色模式变量 ==================== */
+html.purple {
+  /* 品牌色渐变（紫色渐变） */
+  --addp-primary-gradient: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+
+  /* 背景色系统 */
+  --addp-bg-primary: #1a1025;
+  --addp-bg-secondary: #110b1a;
+  --addp-bg-sidebar: #1a1025;
+  --addp-bg-header: #1a1025;
+
+  /* 文本色系统 */
+  --addp-text-primary: #ede9fe;
+  --addp-text-secondary: #ddd6fe;
+  --addp-text-tertiary: #c4b5fd;
+
+  /* 边框色 */
+  --addp-border-color: #4c1d95;
+  --addp-border-color-light: #5b21b6;
+
+  /* 阴影 */
+  --addp-shadow-card: 0 2px 12px rgba(124, 58, 237, 0.2);
+  --addp-shadow-hover: 0 12px 24px rgba(124, 58, 237, 0.3);
+
+  /* 模块卡片悬浮变换 */
+  --addp-card-hover-transform: translateY(-5px);
+
+  /* 模块颜色（紫色主题下的配色） */
+  --addp-module-system: #a78bfa;
+  --addp-module-transfer: #f87171;
+  --addp-module-manager: #34d399;
+  --addp-module-develop: #c084fc;
+  --addp-module-service: #818cf8;
+  --addp-module-orchestrator: #fb7185;
+  --addp-module-meta: #fbbf24;
+  --addp-module-standard: #c4b5fd;
+  --addp-module-modeling: #e879f9;
+  --addp-module-quality: #6ee7b7;
+  --addp-module-asset: #a5b4fc;
+  --addp-module-monitor: #67e8f9;
+  --addp-module-portal: #6ee7b7;
+
+  /* ==================== Element Plus 变量覆盖（紫色主题） ==================== */
+  --el-bg-color: #1a1025;
+  --el-bg-color-page: #110b1a;
+  --el-bg-color-overlay: #1a1025;
+  --el-text-color-primary: #ede9fe;
+  --el-text-color-regular: #ddd6fe;
+  --el-text-color-secondary: #c4b5fd;
+  --el-text-color-placeholder: #7c3aed;
+  --el-text-color-disabled: #6d28d9;
+  --el-border-color: #4c1d95;
+  --el-border-color-light: #5b21b6;
+  --el-border-color-lighter: #5b21b6;
+  --el-border-color-extra-light: #4c1d95;
+  --el-border-color-dark: #3b0764;
+  --el-border-color-darker: #2e1065;
+  --el-fill-color: #4c1d95;
+  --el-fill-color-light: #5b21b6;
+  --el-fill-color-lighter: #6d28d9;
+  --el-fill-color-extra-light: #7c3aed;
+  --el-fill-color-dark: #3b0764;
+  --el-fill-color-darker: #2e1065;
+  --el-fill-color-blank: transparent;
+  --el-mask-color: rgba(0, 0, 0, 0.8);
+  --el-mask-color-extra-light: rgba(0, 0, 0, 0.3);
+}
+
 /* ==================== 主题切换过渡动画 ==================== */
 *,
 *::before,
@@ -194,9 +262,10 @@ video {
 }
 
 /* ==================== 暗黑模式下的 Element Plus 组件覆盖 ==================== */
-/* 深色主题和蓝色主题共享这些样式 */
+/* 深色主题、蓝色主题和紫色主题共享这些样式 */
 html.dark,
-html.blue {
+html.blue,
+html.purple {
   /* 覆盖 Element Plus 组件的默认背景色 */
   .el-empty {
     background-color: transparent !important;

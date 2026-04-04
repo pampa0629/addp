@@ -391,8 +391,8 @@ func parsePath(fullName string, nodeType string) []string {
 		// PostgreSQL: schema 只有一级路径
 		// MongoDB: database 只有一级路径
 		return []string{fullName}
-	case "table", "collection":
-		// 关系型数据库表/MongoDB 集合: schema.table 或 database.collection
+	case "table", "collection", "node_label", "relationship_type":
+		// 关系型数据库表/MongoDB 集合/Neo4j 节点标签/关系类型: schema.table 或 database.name
 		// 使用点号分隔
 		return strings.Split(fullName, ".")
 	case "bucket", "prefix", "directory", "object":
@@ -407,14 +407,16 @@ func parsePath(fullName string, nodeType string) []string {
 // convertNodeType 将 MetaNode 的 NodeType 转换为 ResourceType
 func convertNodeType(metaNodeType string) ResourceType {
 	mapping := map[string]ResourceType{
-		"database":   TypeDatabase,
-		"schema":     TypeSchema,
-		"bucket":     TypeBucket,
-		"prefix":     TypeDirectory,
-		"directory":  TypeDirectory,
-		"table":      TypeTable,
-		"collection": TypeCollection,
-		"object":     TypeObject,
+		"database":          TypeDatabase,
+		"schema":            TypeSchema,
+		"bucket":            TypeBucket,
+		"prefix":            TypeDirectory,
+		"directory":         TypeDirectory,
+		"table":             TypeTable,
+		"collection":        TypeCollection,
+		"node_label":        TypeCollection,
+		"relationship_type": TypeCollection,
+		"object":            TypeObject,
 	}
 	if t, ok := mapping[metaNodeType]; ok {
 		return t

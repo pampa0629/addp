@@ -187,6 +187,11 @@ defineExpose({
   getSelection: () => {
     const selection = editor?.getSelection()
     return editor?.getModel()?.getValueInRange(selection) || ''
+  },
+  setLanguage: (lang) => {
+    if (editor) {
+      monaco.editor.setModelLanguage(editor.getModel(), lang)
+    }
   }
 })
 </script>

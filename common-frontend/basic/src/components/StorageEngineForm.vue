@@ -133,7 +133,7 @@
         <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
       </el-form-item>
       <el-form-item label="数据库名" prop="connection_info.database">
-        <el-input v-model="formState.connection_info.database" placeholder="admin" />
+        <el-input v-model="formState.connection_info.database" placeholder="business" />
       </el-form-item>
       <el-form-item label="用户名（可选）">
         <el-input v-model="formState.connection_info.user" placeholder="留空表示无需认证" />
@@ -146,11 +146,14 @@
           show-password
         />
       </el-form-item>
+      <el-form-item label="认证库（可选）">
+        <el-input v-model="formState.connection_info.auth_source" placeholder="admin" />
+      </el-form-item>
       <div v-if="hasStoredPassword" class="field-hint">
         已存储密码，如无需修改请保持占位符不变。
       </div>
       <div v-else class="field-hint">
-        MongoDB 默认端口: 27017。如果启用了认证，请填写用户名和密码。
+        MongoDB 默认端口: 27017。启用认证时请填写用户名和密码；认证库（auth_source）是存储用户凭据的数据库，root 用户默认为 admin。
       </div>
     </template>
 
@@ -179,6 +182,36 @@
       <el-form-item label="使用 SSL">
         <el-switch v-model="formState.connection_info.use_ssl" />
       </el-form-item>
+    </template>
+
+    <!-- Neo4j -->
+    <template v-else-if="formState.engine_type === 'neo4j'">
+      <el-form-item label="主机地址" prop="connection_info.host">
+        <el-input v-model="formState.connection_info.host" placeholder="localhost" />
+      </el-form-item>
+      <el-form-item label="端口" prop="connection_info.port">
+        <el-input-number v-model="formState.connection_info.port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item label="用户名" prop="connection_info.user">
+        <el-input v-model="formState.connection_info.user" placeholder="neo4j" />
+      </el-form-item>
+      <el-form-item label="密码" prop="connection_info.password">
+        <el-input
+          v-model="formState.connection_info.password"
+          type="password"
+          placeholder="数据库密码"
+          show-password
+        />
+      </el-form-item>
+      <div v-if="hasStoredPassword" class="field-hint">
+        已存储密码，如无需修改请保持占位符不变。
+      </div>
+      <el-form-item label="数据库名（可选）">
+        <el-input v-model="formState.connection_info.database" placeholder="neo4j（留空使用默认）" />
+      </el-form-item>
+      <div class="field-hint">
+        Neo4j 图数据库，Bolt 协议连接。默认端口: 7687。Community Edition 仅有一个 "neo4j" 数据库。
+      </div>
     </template>
 
     <!-- SpatiaLite / SQLite (file-based) -->
@@ -372,6 +405,7 @@ const props = defineProps({
       { label: 'ClickHouse', value: 'clickhouse' },
       { label: 'MongoDB', value: 'mongodb' },
       { label: 'MinIO', value: 'minio' },
+      { label: 'Neo4j', value: 'neo4j' },
       { label: 'Apache Spark', value: 'spark' },
       { label: 'SpatiaLite/SQLite', value: 'spatialite' }
     ])
@@ -441,9 +475,18 @@ const scanConfigExpanded = ref(false)   // 扫描配置折叠状态（默认折�
     form.connection_info = {
       host: original.host ?? 'localhost',
       port: original.port ?? 27017,
-      database: original.database ?? 'admin',
+      database: original.database ?? '',
       user: original.user ?? '',
-      password: original.password ?? ''
+      password: original.password ?? '',
+      auth_source: original.auth_source ?? ''
+    }
+  } else if (form.engine_type === 'neo4j') {
+    form.connection_info = {
+      host: original.host ?? 'localhost',
+      port: original.port ?? 7687,
+      user: original.user ?? 'neo4j',
+      password: original.password ?? '',
+      database: original.database ?? 'neo4j'
     }
   } else if (form.engine_type === 'minio' || form.engine_type === 's3') {
     form.connection_info = {
@@ -698,6 +741,17 @@ const computedRules = computed(() => {
       engine_type: rules.engine_type,
       name: rules.name,
       'connection_info.full_name': rules['connection_info.full_name']
+    }
+  }
+
+  if (formState.engine_type === 'neo4j') {
+    return {
+      engine_type: rules.engine_type,
+      name: rules.name,
+      'connection_info.host': rules['connection_info.host'],
+      'connection_info.port': rules['connection_info.port'],
+      'connection_info.user': rules['connection_info.user'],
+      'connection_info.password': rules['connection_info.password']
     }
   }
 

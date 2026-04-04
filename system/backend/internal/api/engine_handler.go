@@ -192,13 +192,6 @@ func (h *EngineHandler) TestConnectionBeforeCreate(c *gin.Context) {
 		return
 	}
 
-	// DEBUG: 打印接收到的连接信息
-	if password, ok := req.ConnectionInfo["password"].(string); ok {
-		fmt.Printf("[DEBUG] TestConnection received password: '%s', length: %d\n", password, len(password))
-	} else {
-		fmt.Printf("[DEBUG] TestConnection password field type: %T, value: %v\n", req.ConnectionInfo["password"], req.ConnectionInfo["password"])
-	}
-
 	// 构建临时资源对象用于测试
 	engine := &models.Engine{
 		EngineType:     req.EngineType,

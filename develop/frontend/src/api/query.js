@@ -1,6 +1,15 @@
 import client from './client'
 
 /**
+ * 获取引擎的样例查询（切换引擎时自动填充编辑器）
+ * @param {number} engineId - 引擎ID
+ * @returns {{ query: string, language: string }}
+ */
+export const getSampleQuery = (engineId) => {
+  return client.get(`/develop/engines/${engineId}/sample-query`)
+}
+
+/**
  * 执行 SQL
  * @param {number} engineId - 数据源ID
  * @param {string} sql - SQL语句

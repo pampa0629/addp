@@ -7,6 +7,7 @@
 # - doris-fe: Apache Doris Frontend（OLAP 分析引擎）
 # - clickhouse: ClickHouse（高性能列式存储 OLAP）
 # - mongodb: MongoDB（文档型 NoSQL 数据库）
+# - neo4j: Neo4j Community Edition（图数据库，知识图谱）
 # - spark-master/workers: Apache Spark 分布式计算引擎
 #
 # 使用方法:
@@ -153,6 +154,33 @@ services:
     restart: unless-stopped
     command: --wiredTigerCacheSizeGB 1
 
+  # Neo4j Community Edition (图数据库，支持知识图谱)
+  neo4j:
+    image: neo4j:5-community
+    container_name: business-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/neo4j_password}
+      # JVM 内存调优，将基础占用控制在 ~400MB
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_INITIAL:-256m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_MAX:-512m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-128m}
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*"
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"   # Browser UI
+      - "${NEO4J_BOLT_PORT:-7687}:7687"   # Bolt 协议（Go driver 使用）
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - business-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
   # Apache Spark Master + Thrift Server
   spark-master:
     image: apache/spark:3.5.0-scala2.12-java11-python3-ubuntu
@@ -261,6 +289,10 @@ volumes:
   mongodb_data:
     driver: local
   mongodb_config:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
     driver: local
 
 networks:

@@ -32,6 +32,7 @@ graph TB
 
         BizPG[(business-postgres<br/>业务数据库<br/>:5433)]
         BizMinIO[(business-minio<br/>业务对象存储<br/>:9002-9003)]
+        BizNeo4j[(business-neo4j<br/>图数据库<br/>:7474/:7687)]
         BizOther[(business-other<br/>业务xx引擎<br/>:9002-9003)]
     end
 
@@ -46,6 +47,7 @@ graph TB
 
     Modules -.通过引擎访问.-> BizPG
     Modules -.通过引擎访问.-> BizMinIO
+    Modules -.通过引擎访问.-> BizNeo4j
     Modules -.通过引擎访问.-> BizOther
 
     classDef infra fill:#fce4ec,stroke:#880e4f
@@ -53,7 +55,7 @@ graph TB
     classDef module fill:#e1f5ff,stroke:#01579b
 
     class InfraTitle,PostgreSQL,Redis,MinIO,Meilisearch infra
-    class BizTitle,BizPG,BizMinIO,BizOther biz
+    class BizTitle,BizPG,BizMinIO,BizNeo4j,BizOther biz
     class Modules module
 ```
 
@@ -102,6 +104,13 @@ graph TB
 
 **business-minio** (端口 9002-9003):
 - 用户上传的业务文件 (Shapefile、GeoJSON、图片、视频)
+- 由用户手动注册为引擎
+- ADDP 通过引擎插件访问
+
+**business-neo4j** (端口 7474/7687):
+- 图结构业务数据（知识图谱、关系网络）
+- Neo4j Community Edition，支持 Cypher 查询语言
+- Browser UI：http://localhost:7474，Bolt 协议：bolt://localhost:7687
 - 由用户手动注册为引擎
 - ADDP 通过引擎插件访问
 

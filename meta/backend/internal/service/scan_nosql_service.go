@@ -190,6 +190,11 @@ func (s *NoSQLScanService) ScanDatabase(
 	// 5. 软删除不存在的集合
 	s.softDeleteMissingCollections(tenantID, resource.ID, dbNode.ID, scannedCollections)
 
+	// 6. 如果是图数据库（GraphDBPlugin），额外扫描关系类型
+	if graphPlugin, ok := nosqlPlugin.(plugin.GraphDBPlugin); ok {
+		s.scanRelationshipTypes(ctx, graphPlugin, connInfo, resource, tenantID, dbNode, databaseName)
+	}
+
 	// 6. 完成扫描
 	var totalSize int64
 	for _, item := range getCollectionItems(s.db, tenantID, resource.ID, dbNode.ID) {
@@ -329,4 +334,51 @@ func getCollectionItems(db *gorm.DB, tenantID, engineID, dbNodeID uint) []models
 	db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
 		tenantID, engineID, dbNodeID, "collection").Find(&items)
 	return items
+}
+
+// scanRelationshipTypes 扫描图数据库的关系类型并持久化为 MetaItem（item_type="relationship_type"）
+func (s *NoSQLScanService) scanRelationshipTypes(
+	ctx context.Context,
+	graphPlugin plugin.GraphDBPlugin,
+	connInfo plugin.ConnectionInfo,
+	resource *commonModels.Engine,
+	tenantID uint,
+	dbNode *models.MetaNode,
+	databaseName string,
+) {
+	relTypes, err := graphPlugin.ListRelationshipTypes(ctx, connInfo, databaseName)
+	if err != nil {
+		s.log.Warn("扫描关系类型失败", "database", databaseName, "error", err)
+		return
+	}
+
+	s.log.Info("扫描到的关系类型", "database", databaseName, "count", len(relTypes))
+
+	scannedRelTypes := make(map[string]bool)
+	for _, rel := range relTypes {
+		scannedRelTypes[rel.Name] = true
+
+		attrs := models.JSONMap{
+			"count":       rel.Count,
+			"from_labels": rel.FromLabels,
+			"to_labels":   rel.ToLabels,
+		}
+
+		fullName := fmt.Sprintf("%s.%s", databaseName, rel.Name)
+		count := rel.Count
+		_, err := s.repo.UpsertItem(tenantID, resource.ID, dbNode, "relationship_type", rel.Name, fullName, attrs, &count, nil, nil)
+		if err != nil {
+			s.log.Warn("保存关系类型元数据失败", "database", databaseName, "rel_type", rel.Name, "error", err)
+		}
+	}
+
+	// 软删除不再存在的关系类型
+	var existingRels []models.MetaItem
+	s.db.Where("tenant_id = ? AND engine_id = ? AND node_id = ? AND item_type = ? AND deleted_at IS NULL",
+		tenantID, resource.ID, dbNode.ID, "relationship_type").Find(&existingRels)
+	for _, item := range existingRels {
+		if !scannedRelTypes[item.Name] {
+			s.db.Delete(&item)
+		}
+	}
 }

@@ -7,7 +7,8 @@
   "files": [
     "basic/src",
     "map/src",
-    "dag/src"
+    "dag/src",
+    "graph/src"
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

@@ -34,7 +34,14 @@ type EnginePlugin interface {
 	// 可选值: "standard" (标准引擎，如 PostgreSQL/MySQL), "extension" (扩展引擎，如工作流引擎)
 	EngineCategory() string
 
-	// TestConnection 测试引擎连接是否有效
+	// TestConnection 测试引擎连接是否真正可用。
+	//
+	// 实现要求：
+	//   - 必须使用 connInfo 中的凭据建立连接并执行一个需要认证的操作（如 SELECT 1、listDatabases、ListBuckets 等）
+	//   - 仅检查网络连通性（如 Ping、VerifyConnectivity）是不够的，无法验证账号密码是否正确
+	//   - 关系型数据库：至少执行一次 SELECT 查询（如 SELECT 1 或 SELECT version()）
+	//   - NoSQL 数据库：至少执行一次需要权限的命令（如 ListDatabases、SHOW DATABASES）
+	//   - 对象存储：至少执行一次需要认证的 API 调用（如 ListBuckets）
 	TestConnection(ctx context.Context, connInfo ConnectionInfo) error
 
 	// BuildConnectionString 根据连接信息构建连接字符串
@@ -205,6 +212,7 @@ type ObjectStoragePlugin interface {
 // 负责连接管理和基础元数据查询
 // Schema 推断由对应的 Parser 完成（如 DocCollectionParser）
 type NoSQLPlugin interface {
+
 	StoragePlugin
 
 	// ListDatabases 列出所有 Database
@@ -313,4 +321,117 @@ type ObjectInfo struct {
 	LastModified time.Time // 最后修改时间
 	ContentType  string    // MIME 类型
 	ETag         string    // ETag（可选）
+}
+
+// ============ 统一查询结果 ============
+
+// QueryResult 通用查询结果（SQL/MQL/Cypher 统一格式）
+// 供 QueryablePlugin 和 dbbridge.ExecuteQuery 使用
+type QueryResult struct {
+	Columns []string                 // 有序列名列表
+	Rows    []map[string]interface{} // 每行：列名 → 值
+}
+
+// ============ 原生查询引擎接口 ============
+
+// QueryablePlugin 支持原生查询执行的引擎接口（可选实现）
+//
+// 实现者：MongoDB（MQL）、Neo4j（Cypher）等 NoSQL 引擎
+// 非实现者：PostgreSQL/MySQL/Doris/ClickHouse（这类引擎由 dbbridge 通过 GORM 连接池统一执行）
+//
+// dbbridge.ExecuteQuery 会先检查引擎是否实现此接口，是则委托，否则走 GORM/Spark 路径。
+type QueryablePlugin interface {
+	// ExecuteQuery 执行引擎原生查询语言并返回列式结果
+	//
+	// MongoDB：query 为 JSON 命令字符串，如 {"find":"users","filter":{},"limit":10}
+	// Neo4j：query 为 Cypher 字符串，如 MATCH (n:Person) RETURN n.name, n.age LIMIT 10
+	ExecuteQuery(ctx context.Context, connInfo ConnectionInfo, query string) (*QueryResult, error)
+
+	// GenerateSampleQuery 基于引擎实际数据生成一个可执行的样例查询
+	//
+	// 返回值：
+	//   - query：可直接执行的查询语句（如有真实集合/Label，优先使用；否则返回通用模板）
+	//   - language：编辑器语言标识（"json" / "cypher" 等）
+	// 实现要求：此方法不应向调用方暴露错误，出错时返回 fallback 模板。
+	GenerateSampleQuery(ctx context.Context, connInfo ConnectionInfo) (query string, language string)
+}
+
+// ============ 图数据库插件 ============
+
+// NodeLabelInfo 图数据库节点标签信息
+type NodeLabelInfo struct {
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
+}
+
+// RelationshipTypeInfo 图数据库关系类型信息
+type RelationshipTypeInfo struct {
+	Name       string   `json:"name"`
+	Count      int64    `json:"count"`
+	FromLabels []string `json:"from_labels"`
+	ToLabels   []string `json:"to_labels"`
+}
+
+// GraphSchema 图数据库 Schema 信息（节点标签 + 关系类型）
+type GraphSchema struct {
+	NodeLabels    []NodeLabelInfo       `json:"node_labels"`
+	Relationships []RelationshipTypeInfo `json:"relationships"`
+}
+
+// GraphNode 图节点（用于图可视化）
+type GraphNode struct {
+	ElementId  string                 `json:"element_id"`
+	Labels     []string               `json:"labels"`
+	Properties map[string]interface{} `json:"properties"`
+}
+
+// GraphRelationship 图关系（用于图可视化）
+type GraphRelationship struct {
+	ElementId   string                 `json:"element_id"`
+	Type        string                 `json:"type"`
+	StartNodeId string                 `json:"start_node_id"`
+	EndNodeId   string                 `json:"end_node_id"`
+	Properties  map[string]interface{} `json:"properties"`
+}
+
+// GraphData 图数据（节点 + 关系，用于前端图可视化渲染）
+type GraphData struct {
+	Nodes         []GraphNode         `json:"nodes"`
+	Relationships []GraphRelationship `json:"relationships"`
+}
+
+// GraphQueryResult 图查询结果（同时包含表格数据和图数据）
+type GraphQueryResult struct {
+	QueryResult           // 嵌入表格结果（向后兼容）
+	GraphData   *GraphData `json:"graph_data,omitempty"`
+}
+
+// GraphDBPlugin 图数据库插件接口
+// 用于支持属性图数据库（Neo4j 及未来的 Amazon Neptune、ArangoDB 等）
+// 在 NoSQLPlugin 之上增加图结构查询能力（关系类型、图 Schema）
+type GraphDBPlugin interface {
+	StoragePlugin
+
+	// ListNodeLabels 列出图数据库中所有节点标签及统计信息
+	// 等价于 NoSQL 中的 ListCollections，但返回图数据库特有的 NodeLabelInfo 类型
+	ListNodeLabels(ctx context.Context, connInfo ConnectionInfo, database string) ([]NodeLabelInfo, error)
+
+	// ListRelationshipTypes 列出图数据库中所有关系类型及连接统计
+	// 图数据库特有：返回每种关系类型的起始/终止节点标签及数量
+	ListRelationshipTypes(ctx context.Context, connInfo ConnectionInfo, database string) ([]RelationshipTypeInfo, error)
+
+	// GetGraphSchema 获取图数据库完整 Schema（节点标签 + 关系类型 + 连接关系）
+	// 供图可视化和元数据展示使用
+	GetGraphSchema(ctx context.Context, connInfo ConnectionInfo, database string) (*GraphSchema, error)
+}
+
+// GraphQueryPlugin 图查询插件接口
+// 在 QueryablePlugin 之上增加图结构化结果返回能力
+// 实现此接口的引擎在查询时会同时返回表格数据和图节点/关系数据
+type GraphQueryPlugin interface {
+	QueryablePlugin
+
+	// ExecuteGraphQuery 执行图查询并返回包含图数据的结果
+	// 除标准表格结果外，还会提取结果中的节点和关系对象供图可视化渲染
+	ExecuteGraphQuery(ctx context.Context, connInfo ConnectionInfo, query string) (*GraphQueryResult, error)
 }

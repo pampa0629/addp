@@ -8,9 +8,11 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, './src'),
       '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
-      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src')
+      '@common-ui-map': resolve(__dirname, '../../common-frontend/map/src'),
+      '@addp/common-frontend/graph': resolve(__dirname, '../../common-frontend/graph/src'),
+      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6')
     },
-    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader']
+    dedupe: ['ol', 'vue', 'element-plus', '@element-plus/icons-vue', 'marked', 'dompurify', 'jszip', 'mammoth', 'axios', '@amap/amap-jsapi-loader', '@antv/g6']
   },
   optimizeDeps: {
     include: [
@@ -47,6 +49,9 @@ export default defineConfig({
         target: 'http://localhost:8000', // 统一通过 Gateway 访问
         changeOrigin: true
       }
+    },
+    fs: {
+      allow: ['..']
     }
   },
   base: process.env.NODE_ENV === 'development' ? '/' : '/manager/'  // 开发模式用 /，生产模式用 /manager/
