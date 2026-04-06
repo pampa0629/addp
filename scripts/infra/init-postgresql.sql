@@ -83,6 +83,7 @@ COMMENT ON SCHEMA copilot IS 'Copilot 模块：AI对话、会话管理、上下�
 COMMENT ON SCHEMA model IS 'Model 模块：数据标准、数据建模、指标管理';
 COMMENT ON SCHEMA common IS 'Common 模块：跨模块共享的数据表（统一执行记录表等）';
 COMMENT ON SCHEMA asset IS 'Asset 模块：数据资产编目、申请与授权管理';
+COMMENT ON SCHEMA graph IS 'Graph 模块：知识图谱本体建模、图谱管理、图谱探索';
 
 COMMENT ON FUNCTION update_updated_at_column() IS '触发器函数：自动更新 updated_at 时间戳';
 

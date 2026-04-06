@@ -175,3 +175,59 @@ func (c *MinIOClient) DownloadSingleFile(ctx context.Context, bucket, key, local
 
 	return c.downloadFile(ctx, bucket, key, localPath)
 }
+
+// UploadFile 上传文件到 MinIO
+// bucket: 桶名
+// key: 对象键（存储路径）
+// reader: 文件内容
+// contentType: MIME 类型（如 "text/plain"）
+func (c *MinIOClient) UploadFile(ctx context.Context, bucket, key string, reader io.Reader, contentType string) error {
+	// 先确保 bucket 存在
+	_, err := c.client.HeadBucketWithContext(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		// bucket 不存在则创建
+		if _, createErr := c.client.CreateBucketWithContext(ctx, &s3.CreateBucketInput{
+			Bucket: aws.String(bucket),
+		}); createErr != nil {
+			return fmt.Errorf("failed to create bucket %s: %w", bucket, createErr)
+		}
+	}
+
+	// 读取内容以获取大小（S3 API 需要 ContentLength）
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		return fmt.Errorf("failed to read content: %w", err)
+	}
+
+	_, err = c.client.PutObjectWithContext(ctx, &s3.PutObjectInput{
+		Bucket:        aws.String(bucket),
+		Key:           aws.String(key),
+		Body:          strings.NewReader(string(content)),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(int64(len(content))),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload object: %w", err)
+	}
+	return nil
+}
+
+// GetTextContent 读取对象内容为字符串（适用于文本文件）
+func (c *MinIOClient) GetTextContent(ctx context.Context, bucket, key string) (string, error) {
+	result, err := c.client.GetObjectWithContext(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get object %s/%s: %w", bucket, key, err)
+	}
+	defer result.Body.Close()
+
+	content, err := io.ReadAll(result.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read object content: %w", err)
+	}
+	return string(content), nil
+}

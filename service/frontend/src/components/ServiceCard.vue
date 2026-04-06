@@ -58,8 +58,8 @@ const props = defineProps({
   },
   source: {
     type: String,
-    default: 'external', // 'external', 'query', 'registered', 'tile'
-    validator: (value) => ['external', 'query', 'registered', 'tile'].includes(value)
+    default: 'external', // 'external', 'query', 'registered', 'tile', 'graph'
+    validator: (value) => ['external', 'query', 'registered', 'tile', 'graph'].includes(value)
   }
 })
 
@@ -71,7 +71,8 @@ const getSourceTypeColor = (source) => {
     'query': 'primary',       // 查询服务 - 蓝色
     'registered': 'success',  // 注册服务 - 绿色
     'tile': 'warning',        // 瓦片服务 - 橙色
-    'external': 'info'        // 外部服务(旧) - 灰色
+    'external': 'info',       // 外部服务(旧) - 灰色
+    'graph': 'danger'         // 图查询服务 - 红色
   }
   return colors[source] || 'info'
 }
@@ -81,7 +82,8 @@ const formatSourceType = (source) => {
     'query': '查询服务',
     'registered': '注册服务',
     'tile': '瓦片服务',
-    'external': '服务注册'
+    'external': '服务注册',
+    'graph': '图查询服务'
   }
   return types[source] || source
 }
@@ -105,6 +107,9 @@ const getServiceTypes = (service) => {
   } else if (props.source === 'registered') {
     // 注册服务：返回单一service_type
     return [service.service_type || 'unknown']
+  } else if (props.source === 'graph') {
+    // 图查询服务：返回config_type
+    return [service.config_type || 'unknown']
   } else {
     // 外部服务（旧）：返回单一service_type
     return [service.service_type || 'unknown']
@@ -122,6 +127,8 @@ const getServiceTypeColor = (type) => {
     rest: 'danger',
     xyz: 'warning',
     tms: 'warning',
+    label: 'success',
+    cypher: 'warning',
     unknown: ''
   }
   return colors[type] || 'info'
@@ -138,6 +145,8 @@ const formatServiceType = (type) => {
     rest: 'REST',
     xyz: 'XYZ Tiles',
     tms: 'TMS',
+    label: '标签模式',
+    cypher: 'Cypher 模式',
     unknown: '未知'
   }
   return types[type] || type.toUpperCase()
@@ -198,6 +207,9 @@ const getServiceUrl = (service) => {
   } else if (props.source === 'registered') {
     // 注册服务：返回端点URL
     return service.endpoint_url || '未配置'
+  } else if (props.source === 'graph') {
+    // 图查询服务：返回执行端点
+    return service.endpoints?.execute || `/api/graph/${service.service_name}`
   } else {
     // 外部服务（旧）：直接返回URL
     return service.url || '未配置'
@@ -305,7 +317,7 @@ const formatDate = (dateStr) => {
   justify-content: space-between;
   align-items: center;
   padding-top: 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--addp-border-color-light);
   font-size: 12px;
   color: var(--addp-text-tertiary);
 }

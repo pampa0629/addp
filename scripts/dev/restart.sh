@@ -21,7 +21,8 @@ show_usage() {
   echo "  -model       强制重新编译 Model 模块"
   echo "  -quality     强制重新编译 Quality 模块
   -asset       强制重新编译 Asset 模块
-  -portal      强制重新编译 Portal 模块"
+  -portal      强制重新编译 Portal 模块
+  -graph       强制重新编译 Graph 模块"
   echo "  -python-workflow   重启 Python Workflow Engine (Python 服务)"
   echo "  -math-workflow     重启 Math Workflow Engine (Python 服务)"
   echo "  -copilot     重启 Copilot Backend (Python 服务)"
@@ -96,7 +97,7 @@ for arg in "$@"; do
     -all)
       FORCE_BUILD_ALL=true
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-copilot|-agent|-spark-workflow|-jupyter)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-gateway|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-copilot|-agent|-spark-workflow|-jupyter)
       module="${arg#-}"  # 移除前导的 -
       FORCE_BUILD_MODULES+=("$module")
       ;;

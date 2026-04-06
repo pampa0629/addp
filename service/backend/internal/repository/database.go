@@ -46,6 +46,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.QueryService{},
 		&models.RegisteredService{},
 		&models.RegisteredServiceLayer{},
+		// 图查询服务
+		&models.GraphQueryService{},
 	}
 
 	for _, model := range migrateModels {

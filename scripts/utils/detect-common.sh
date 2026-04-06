@@ -119,6 +119,7 @@ detect_common_affected_modules() {
         "quality"
         "asset"
         "portal"
+        "graph"
         "gateway"
     )
 

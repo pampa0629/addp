@@ -142,6 +142,13 @@ const modules = [
     healthUrl: isDev ? '/module-health/copilot' : null,
   },
   {
+    name: 'graph',
+    label: 'Graph - 知识图谱',
+    port: ':8186',
+    swaggerUrl: isDev ? viewer('/swagger-spec/graph') : viewer('/graph/swagger/doc.json'),
+    healthUrl: isDev ? '/module-health/graph' : null,
+  },
+  {
     name: 'develop',
     label: 'Develop - 数据开发',
     port: ':8085',

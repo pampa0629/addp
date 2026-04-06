@@ -167,6 +167,32 @@ const routes = [
         name: 'TileServiceDetail',
         component: () => import('../views/TileServiceDetail.vue'),
         meta: { requiresAuth: true, title: '瓦片服务详情' }
+      },
+
+      // === 图查询服务路由 ===
+      {
+        path: 'graph-services',
+        name: 'GraphQueryServiceList',
+        component: () => import('../views/GraphQueryServiceList.vue'),
+        meta: { requiresAuth: true, title: '图查询服务' }
+      },
+      {
+        path: 'graph-services/create',
+        name: 'GraphQueryServiceCreate',
+        component: () => import('../views/GraphQueryServiceForm.vue'),
+        meta: { requiresAuth: true, title: '创建图查询服务' }
+      },
+      {
+        path: 'graph-services/:id/edit',
+        name: 'GraphQueryServiceEdit',
+        component: () => import('../views/GraphQueryServiceForm.vue'),
+        meta: { requiresAuth: true, title: '编辑图查询服务' }
+      },
+      {
+        path: 'graph-services/:id',
+        name: 'GraphQueryServiceDetail',
+        component: () => import('../views/GraphQueryServiceDetail.vue'),
+        meta: { requiresAuth: true, title: '图查询服务详情' }
       }
     ]
   }

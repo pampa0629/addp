@@ -76,6 +76,7 @@ const (
 	ModuleOrchestrator = "orchestrator"
 	ModuleQuality      = "quality"
 	ModuleManager      = "manager"
+	ModuleGraph        = "graph"
 )
 
 // 触发类型常量
@@ -84,6 +85,20 @@ const (
 	TriggerTypeSchedule     = "schedule"
 	TriggerTypeAPI          = "api"
 	TriggerTypeOrchestrator = "orchestrator"
+)
+
+// TaskType 常量（各模块使用）
+const (
+	// Develop 模块
+	TaskTypeQuery    = "query"
+	TaskTypeWorkflow = "workflow"
+	TaskTypeNotebook = "notebook"
+	// Transfer 模块
+	TaskTypeImport = "import"
+	TaskTypeExport = "export"
+	TaskTypeSync   = "sync"
+	// Graph 模块
+	TaskTypeKGBuild = "kg_build"
 )
 
 // CalculateDuration 计算执行时长

@@ -37,6 +37,11 @@
 | Model 模块详情       | model/CLAUDE.md               | 数据建模、逻辑表、星型建模、指标血缘 |
 | Standard 模块详情    | standard/CLAUDE.md            | 数据标准、数据元、指标、术语、码值 |
 | Agent 模块详情       | agent/CLAUDE.md               | AI 对话助手、自然语言交互、LangGraph |
+| Graph 模块详情       | graph/CLAUDE.md               | 知识图谱、本体建模、图谱构建、图可视化 |
+
+增加前端页面，阅读：common-front/docs/addp前端风格设计规范.md，关键是不能硬编码颜色，而是要采用addp定义的主题风格CSS；
+各个模块增加了前端页面，都需要集成到console模块中；
+增加后端服务API，阅读： docs/spec/addp-API设计规范.md，关键是了解并遵从返回data的规定，以及符合swagger的要求；
 
 
 **重要**:
@@ -106,6 +111,7 @@ AI可以提交代码到github上，但未经用户允许，不得创建分支提
 - **engines/spark_workflow/** - 基于Spark的分布式工作流计算引擎,提供空间和非空间算子
 - **engines/jupyter/** - 基于jupyter的notebook开发后台服务
 - **agent/** - AI 对话助手:基于 LangGraph + FastAPI 的自然语言交互服务，用户通过对话完成数据操作
+- **graph/** - 知识图谱模块:本体建模、图谱构建、图谱探索、图算法分析、知识服务 API (PostgreSQL graph schema + Neo4j)
 
 所有服务遵循相同的架构模式,使用共享基础设施(PostgreSQL、Redis、MinIO、Meilisearch)。通过 `common` 模块(后端)和 `common-frontend` 模块(前端)共享通用代码,避免重复。
 

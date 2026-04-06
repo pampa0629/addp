@@ -49,6 +49,11 @@ func GetModulePort(moduleName string) string {
 		"develop":      "8085",
 		"service":      "8086",
 		"copilot":      "8087",
+		"monitor":      "8100",
+		"standard":     "8110",
+		"model":        "8181",
+		"agent":        "8190",
+		"graph":        "8186",
 		"gateway":      "8000",
 	}
 

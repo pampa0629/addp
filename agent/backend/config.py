@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     META_BACKEND_PORT: int = 8082
     DEVELOP_BACKEND_PORT: int = 8185
     COPILOT_BACKEND_PORT: int = 8087
+    GRAPH_BACKEND_PORT: int = 8186
 
     # 服务 URL（优先使用环境变量，否则自动构建）
     GATEWAY_URL: Optional[str] = None
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     META_SERVICE_URL: Optional[str] = None
     DEVELOP_SERVICE_URL: Optional[str] = None
     COPILOT_SERVICE_URL: Optional[str] = None
+    GRAPH_SERVICE_URL: Optional[str] = None
 
     def get_gateway_url(self) -> str:
         return self.GATEWAY_URL or f"http://{self.SERVICE_HOST}:{self.GATEWAY_PORT}"
@@ -50,6 +52,9 @@ class Settings(BaseSettings):
 
     def get_copilot_url(self) -> str:
         return self.COPILOT_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.COPILOT_BACKEND_PORT}"
+
+    def get_graph_url(self) -> str:
+        return self.GRAPH_SERVICE_URL or f"http://{self.SERVICE_HOST}:{self.GRAPH_BACKEND_PORT}"
 
     INTERNAL_API_KEY: str = ""
     ENABLE_SERVICE_INTEGRATION: bool = True

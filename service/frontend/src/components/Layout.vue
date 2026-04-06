@@ -60,6 +60,11 @@
             <el-icon><Grid /></el-icon>
             <span>瓦片服务</span>
           </el-menu-item>
+
+          <el-menu-item index="/graph-services">
+            <el-icon><Share /></el-icon>
+            <span>图查询服务</span>
+          </el-menu-item>
         </el-menu>
       </el-aside>
 
@@ -101,6 +106,7 @@ const activeMenu = computed(() => {
   if (path.startsWith('/registered-services')) return '/registered-services'
   if (path.startsWith('/published-services')) return '/published-services'
   if (path.startsWith('/tile')) return '/tile'
+  if (path.startsWith('/graph-services')) return '/graph-services'
   if (path.startsWith('/services')) return '/registered-services' // legacy routes
   return path
 })

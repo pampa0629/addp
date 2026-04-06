@@ -1,0 +1,28 @@
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { resolve } from 'path'
+
+export default defineConfig({
+  plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+      '@common-ui': resolve(__dirname, '../../common-frontend/basic/src'),
+      '@addp/common-frontend/graph': resolve(__dirname, '../../common-frontend/graph/src'),
+      '@antv/g6': resolve(__dirname, 'node_modules/@antv/g6')
+    },
+    dedupe: ['vue', 'element-plus', '@element-plus/icons-vue', 'axios', '@antv/g6']
+  },
+  server: {
+    port: 5187,
+    strictPort: true,
+    host: '0.0.0.0',
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
+  },
+  base: process.env.NODE_ENV === 'development' ? '/' : '/graph/'
+})

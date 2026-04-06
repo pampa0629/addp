@@ -64,8 +64,10 @@ app.add_middleware(
 
 # 注册路由
 from api import workflow_router, sql_router  # noqa: E402
+from api.kg_extract_api import router as kg_extract_router  # noqa: E402
 app.include_router(workflow_router, prefix=_API_PREFIX, tags=["Workflow Agent"])
 app.include_router(sql_router, prefix=_API_PREFIX, tags=["SQL Agent"])
+app.include_router(kg_extract_router, prefix=_API_PREFIX, tags=["KG Build"])
 
 
 def custom_openapi():

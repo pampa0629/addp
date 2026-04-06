@@ -1,0 +1,118 @@
+import client from './client'
+
+export const ontologyAPI = {
+  list() {
+    return client.get('/graph/ontologies')
+  },
+  get(id) {
+    return client.get(`/graph/ontologies/${id}`)
+  },
+  create(data) {
+    return client.post('/graph/ontologies', data)
+  },
+  update(id, data) {
+    return client.put(`/graph/ontologies/${id}`, data)
+  },
+  delete(id) {
+    return client.delete(`/graph/ontologies/${id}`)
+  },
+
+  // 实体类型
+  listEntityTypes(ontologyId) {
+    return client.get(`/graph/ontologies/${ontologyId}/entity-types`)
+  },
+  createEntityType(ontologyId, data) {
+    return client.post(`/graph/ontologies/${ontologyId}/entity-types`, data)
+  },
+  updateEntityType(ontologyId, id, data) {
+    return client.put(`/graph/ontologies/${ontologyId}/entity-types/${id}`, data)
+  },
+  deleteEntityType(ontologyId, id) {
+    return client.delete(`/graph/ontologies/${ontologyId}/entity-types/${id}`)
+  },
+
+  // 关系类型
+  listRelationTypes(ontologyId) {
+    return client.get(`/graph/ontologies/${ontologyId}/relation-types`)
+  },
+  createRelationType(ontologyId, data) {
+    return client.post(`/graph/ontologies/${ontologyId}/relation-types`, data)
+  },
+  updateRelationType(ontologyId, id, data) {
+    return client.put(`/graph/ontologies/${ontologyId}/relation-types/${id}`, data)
+  },
+  deleteRelationType(ontologyId, id) {
+    return client.delete(`/graph/ontologies/${ontologyId}/relation-types/${id}`)
+  },
+
+  // 版本
+  listVersions(ontologyId) {
+    return client.get(`/graph/ontologies/${ontologyId}/versions`)
+  },
+  createVersion(ontologyId, data) {
+    return client.post(`/graph/ontologies/${ontologyId}/versions`, data)
+  },
+
+  // 约束同步
+  syncEntityTypeConstraints(ontologyId, entityTypeId, graphId) {
+    return client.post(`/graph/ontologies/${ontologyId}/entity-types/${entityTypeId}/sync-constraints`, { graph_id: graphId })
+  },
+
+  // F4: 从 Model 模块导入本体
+  getImportPreviewFromModel() {
+    return client.get('/graph/ontologies/import-preview/from-model')
+  },
+  importFromModel(ontologyId, data) {
+    return client.post(`/graph/ontologies/${ontologyId}/import-from-model`, data)
+  },
+
+  // F5b: 从 Neo4j 引擎推导本体（不依赖知识图谱）
+  listNeo4jEngines() {
+    return client.get('/graph/ontologies/neo4j-engines')
+  },
+  inferSchemaFromEngine(engineId, ontologyId) {
+    const params = `engine_id=${engineId}${ontologyId ? `&ontology_id=${ontologyId}` : ''}`
+    return client.get(`/graph/ontologies/infer-schema/from-engine?${params}`)
+  },
+  applyInferredSchemaFromEngine(ontologyId, data) {
+    return client.post(`/graph/ontologies/${ontologyId}/infer-schema/from-engine/apply`, data)
+  }
+}
+
+export const knowledgeGraphAPI = {
+  list() {
+    return client.get('/graph/graphs')
+  },
+  get(id) {
+    return client.get(`/graph/graphs/${id}`)
+  },
+  create(data) {
+    return client.post('/graph/graphs', data)
+  },
+  update(id, data) {
+    return client.put(`/graph/graphs/${id}`, data)
+  },
+  delete(id) {
+    return client.delete(`/graph/graphs/${id}`)
+  }
+}
+
+export const engineAPI = {
+  // 获取 Neo4j 引擎列表
+  getNeo4jEngines() {
+    return client.get('/system/engines').then(res => {
+      const engines = Array.isArray(res) ? res : (res?.engines || res?.data || [])
+      return engines.filter(e =>
+        e.engine_type?.toLowerCase() === 'neo4j' ||
+        e.type?.toLowerCase() === 'neo4j'
+      )
+    })
+  },
+  // 获取指定引擎的数据库列表（Neo4j database 对应 meta schemas）
+  getDatabases(engineId) {
+    return client.get(`/meta/engines/${engineId}/schemas`).then(res => {
+      const schemas = Array.isArray(res) ? res : (res?.schemas || res?.data || [])
+      return schemas.map(s => (typeof s === 'string' ? s : s.name || s.schema_name || s))
+    })
+  }
+}

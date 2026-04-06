@@ -21,7 +21,8 @@ show_usage() {
   echo "  -model        只启动 Model 模块 (依赖: System + Standard)"
   echo "  -quality      只启动 Quality 模块 (依赖: System + Standard)
   -asset        只启动 Asset 模块 (依赖: System)
-  -portal       只启动 Portal 模块 (依赖: System + Asset)"
+  -portal       只启动 Portal 模块 (依赖: System + Asset)
+  -graph        只启动 Graph 模块 (依赖: System)"
   echo "  -python-workflow    只启动 Python Workflow Engine"
   echo "  -math-workflow      只启动 Math Workflow Engine"
   echo "  -spark-workflow 只启动 Spark 工作流引擎"
@@ -154,7 +155,7 @@ for arg in "$@"; do
     -h|--help)
       show_usage
       ;;
-    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
+    -system|-manager|-meta|-transfer|-orchestrator|-develop|-service|-monitor|-copilot|-agent|-standard|-model|-quality|-asset|-portal|-graph|-python-workflow|-math-workflow|-spark-workflow|-jupyter|-gateway|-console)
       SELECTED_MODULE="${arg#-}"
       START_ALL=false
       ;;
@@ -198,6 +199,8 @@ START_ASSET_BACKEND=false
 START_ASSET_FRONTEND=false
 START_PORTAL_BACKEND=false
 START_PORTAL_FRONTEND=false
+START_GRAPH_BACKEND=false
+START_GRAPH_FRONTEND=false
 START_GATEWAY=false
 START_CONSOLE=false
 START_PYTHON_WORKFLOW=false
@@ -240,6 +243,8 @@ if [ "$START_ALL" = true ]; then
   START_ASSET_FRONTEND=true
   START_PORTAL_BACKEND=true
   START_PORTAL_FRONTEND=true
+  START_GRAPH_BACKEND=true
+  START_GRAPH_FRONTEND=true
   START_GATEWAY=true
   START_CONSOLE=true
   START_PYTHON_WORKFLOW=true
@@ -347,6 +352,12 @@ else
       START_ASSET_BACKEND=true
       START_PORTAL_BACKEND=true
       START_PORTAL_FRONTEND=true
+      ;;
+    graph)
+      START_SYSTEM_BACKEND=true
+      START_SYSTEM_FRONTEND=true
+      START_GRAPH_BACKEND=true
+      START_GRAPH_FRONTEND=true
       ;;
     python-workflow)
       START_PYTHON_WORKFLOW=true
@@ -738,7 +749,7 @@ fi
 
 # 3. 并行启动所有后端服务 + Workers (System 已就绪)
 # 跳过检查：如果没有任何后端模块需要启动
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
   echo -e "${YELLOW}Step 3/5: 并行启动所有后端服务 + Workers${NC}"
 
   # ============================================================
@@ -809,6 +820,11 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     BUILD_PIDS+=($!)
   fi
 
+  if [ "$START_GRAPH_BACKEND" = true ]; then
+    build_service "graph" "graph/backend" &
+    BUILD_PIDS+=($!)
+  fi
+
   # 并行编译 Workers(仅编译需要启动的)
   if [ "$START_MANAGER_WORKER" = true ]; then
     build_worker "manager" "manager/backend" &
@@ -838,7 +854,7 @@ fi
 # ============================================================
 # Phase 2: 并行启动所有 Backend 服务
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_QUALITY_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
   echo "  [2/3] 并行启动 Backends..."
 
   # 启动 Manager Backend（带检查）
@@ -973,6 +989,17 @@ if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ 
     fi
   fi
 
+  # 启动 Graph Backend（带检查）
+  if [ "$START_GRAPH_BACKEND" = true ]; then
+    if check_service_running "graph" "8186"; then
+      .dev-bins/addp-graph > logs/graph-backend.log 2> logs/graph-backend-stderr.log &
+      GRAPH_PID=$!
+      echo $GRAPH_PID > .dev-pids/graph.pid
+    else
+      GRAPH_PID=$(cat .dev-pids/graph.pid 2>/dev/null)
+    fi
+  fi
+
   # 并行启动 Workers
   if [ "$START_MANAGER_WORKER" = true ]; then
     if check_service_running "manager-worker" ""; then
@@ -1010,7 +1037,7 @@ fi
 # ============================================================
 # Phase 3: 并行等待所有 Backends 健康检查
 # ============================================================
-if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ]; then
+if [ "$START_MANAGER_BACKEND" = true ] || [ "$START_META_BACKEND" = true ] || [ "$START_TRANSFER_BACKEND" = true ] || [ "$START_ORCHESTRATOR_BACKEND" = true ] || [ "$START_DEVELOP_BACKEND" = true ] || [ "$START_SERVICE_BACKEND" = true ] || [ "$START_STANDARD_BACKEND" = true ] || [ "$START_MONITOR_BACKEND" = true ] || [ "$START_MODEL_BACKEND" = true ] || [ "$START_ASSET_BACKEND" = true ] || [ "$START_PORTAL_BACKEND" = true ] || [ "$START_GRAPH_BACKEND" = true ]; then
   echo "  [3/3] 并行健康检查..."
 
   HEALTH_CHECK_PIDS=()
@@ -1961,7 +1988,7 @@ ensure_node_modules() {
 # 并发启动所有前端服务（Bash 3.2 兼容）
 # ============================================================
 # 检查是否有任何前端需要启动
-if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ]; then
+if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$START_MANAGER_FRONTEND" = true ] || [ "$START_META_FRONTEND" = true ] || [ "$START_TRANSFER_FRONTEND" = true ] || [ "$START_ORCHESTRATOR_FRONTEND" = true ] || [ "$START_DEVELOP_FRONTEND" = true ] || [ "$START_SERVICE_FRONTEND" = true ] || [ "$START_MONITOR_FRONTEND" = true ] || [ "$START_STANDARD_FRONTEND" = true ] || [ "$START_MODEL_FRONTEND" = true ] || [ "$START_QUALITY_FRONTEND" = true ] || [ "$START_ASSET_FRONTEND" = true ] || [ "$START_PORTAL_FRONTEND" = true ] || [ "$START_AGENT_FRONTEND" = true ] || [ "$START_GRAPH_FRONTEND" = true ]; then
   echo -e "${YELLOW}Step 8/8: 并发启动前端服务${NC}"
 
   # 动态构建前端配置（格式：名称:端口:目录）
@@ -2026,6 +2053,10 @@ if [ "$START_CONSOLE" = true ] || [ "$START_SYSTEM_FRONTEND" = true ] || [ "$STA
 
   if [ "$START_AGENT_FRONTEND" = true ]; then
     FRONTEND_CONFIGS+=("agent:${AGENT_FE_PORT}:agent/frontend")
+  fi
+
+  if [ "$START_GRAPH_FRONTEND" = true ]; then
+    FRONTEND_CONFIGS+=("graph:5187:graph/frontend")
   fi
 
   echo "并发启动所有前端..."

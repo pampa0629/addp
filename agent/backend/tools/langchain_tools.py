@@ -6,7 +6,7 @@ token 通过工厂函数的 closure 注入，不暴露给 LLM。
 import json
 from typing import List, Optional
 from langchain_core.tools import tool
-from addp_common.client import MetaClient, ManagerClient, DevelopClient
+from addp_common.client import MetaClient, ManagerClient, DevelopClient, GraphClient
 from .copilot_client import CopilotClient
 from .system_client import SystemClient
 from config import settings
@@ -29,6 +29,7 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
     develop = DevelopClient(base_url=settings.get_develop_url(), user_token=token)
     copilot = CopilotClient(base_url=settings.get_copilot_url(), user_token=token)
     system = SystemClient(base_url=settings.get_system_url(), user_token=token)
+    graph = GraphClient(base_url=settings.get_graph_url(), user_token=token)
 
     @tool
     async def list_workflow_engines() -> str:
@@ -186,6 +187,52 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         result = await develop.execute_sql(sql=sql, engine_id=engine_id)
         return _to_str(result)
 
+    @tool
+    async def list_knowledge_graphs() -> str:
+        """列出平台上所有可用的知识图谱，包含图谱 ID、名称、描述和关联本体信息。
+        在查询知识图谱内容前，应先调用此工具确认目标图谱 ID。"""
+        result = await graph.list_graphs()
+        return _to_str(result)
+
+    @tool
+    async def get_kg_ontology(graph_id: int) -> str:
+        """获取指定知识图谱的本体描述：实体类型（含属性定义和节点数量）和关系类型（含来源/目标约束和数量）。
+        在搜索实体前调用此工具了解图谱结构，确认实体类型名称（name 字段）。
+        参数:
+          graph_id: 图谱 ID，从 list_knowledge_graphs 获取"""
+        result = await graph.get_ontology(graph_id)
+        return _to_str(result)
+
+    @tool
+    async def search_kg_entities(graph_id: int, query: str, entity_type: str = "") -> str:
+        """在知识图谱中全文搜索实体。返回匹配的实体列表（含 id、type、type_label、properties）。
+        参数:
+          graph_id: 图谱 ID
+          query: 搜索关键词（匹配实体的任意属性值）
+          entity_type: 可选，填写本体实体类型 name（如 'Company'）可缩小搜索范围
+        搜索到实体后，用返回结果中的 id 字段查询邻居或子图。"""
+        result = await graph.search_entities(graph_id, query, entity_type)
+        return _to_str(result)
+
+    @tool
+    async def get_kg_entity_neighbors(graph_id: int, node_id: str) -> str:
+        """获取知识图谱中指定节点的所有直接邻居，包含关系类型、方向和邻居节点属性。
+        参数:
+          graph_id: 图谱 ID
+          node_id: 节点 ID（来自 search_kg_entities 返回结果中的 id 字段）"""
+        result = await graph.get_neighbors(graph_id, node_id)
+        return _to_str(result)
+
+    @tool
+    async def get_kg_subgraph(graph_id: int, node_id: str, depth: int = 2) -> str:
+        """获取以指定节点为中心的子图（N 跳范围内的所有节点和关系）。
+        参数:
+          graph_id: 图谱 ID
+          node_id: 节点 ID（来自 search_kg_entities 返回结果中的 id 字段）
+          depth: 跳数（1-3，默认 2）；数值越大返回越多，适合需要全面了解关联关系时使用"""
+        result = await graph.get_subgraph(graph_id, node_id, depth=depth)
+        return _to_str(result)
+
     return [
         list_workflow_engines,
         list_engines,
@@ -197,4 +244,9 @@ def create_agent_tools(token: str, tenant_id: int = 1, user_id: int = 1) -> List
         generate_workflow,
         run_workflow,
         execute_sql,
+        list_knowledge_graphs,
+        get_kg_ontology,
+        search_kg_entities,
+        get_kg_entity_neighbors,
+        get_kg_subgraph,
     ]

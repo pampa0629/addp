@@ -1,0 +1,158 @@
+<template>
+  <div class="node-panel" v-if="selected">
+    <div class="panel-header">
+      <span class="panel-title">
+        <el-tag v-if="selected.type === 'node'" :style="{ backgroundColor: selected.color, borderColor: selected.color }" effect="dark" size="small">
+          {{ selected.entity_type || (selected.labels && selected.labels[0]) || '节点' }}
+        </el-tag>
+        <el-tag v-else type="info" size="small">关系</el-tag>
+        <span class="panel-name">{{ displayName }}</span>
+      </span>
+      <el-button :icon="Close" text size="small" @click="$emit('close')" />
+    </div>
+
+    <el-divider style="margin: 8px 0" />
+
+    <div class="panel-body">
+      <!-- 属性列表 -->
+      <div class="section-title">属性</div>
+      <el-empty v-if="!hasProperties" description="无属性" :image-size="40" />
+      <div v-else class="props-table">
+        <div v-for="(val, key) in selected.properties" :key="key" class="prop-row">
+          <span class="prop-key">{{ key }}</span>
+          <span class="prop-val">{{ formatValue(val) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 节点操作按钮（仅节点有） -->
+    <div v-if="selected.type === 'node'" class="panel-actions">
+      <el-button size="small" type="primary" plain @click="$emit('expand', selected.id)">
+        展开邻居
+      </el-button>
+      <el-button size="small" type="warning" plain @click="$emit('set-path-node', selected.id)">
+        路径起/终点
+      </el-button>
+    </div>
+  </div>
+  <div v-else class="panel-empty">
+    <el-empty description="点击节点或关系查看详情" :image-size="60" />
+  </div>
+</template>
+
+<script setup>
+import { computed } from 'vue'
+import { Close } from '@element-plus/icons-vue'
+
+const props = defineProps({
+  selected: { type: Object, default: null }
+})
+
+defineEmits(['close', 'expand', 'set-path-node'])
+
+const displayName = computed(() => {
+  if (!props.selected) return ''
+  if (props.selected.type === 'node') {
+    return props.selected.display_name || props.selected.id
+  }
+  return props.selected.type || props.selected.relation_type || props.selected.id
+})
+
+const hasProperties = computed(() => {
+  return props.selected?.properties && Object.keys(props.selected.properties).length > 0
+})
+
+function formatValue(val) {
+  if (val === null || val === undefined) return '—'
+  if (typeof val === 'object') return JSON.stringify(val)
+  return String(val)
+}
+</script>
+
+<style scoped>
+.node-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.panel-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--addp-text-tertiary);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.panel-name {
+  font-weight: 500;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.section-title {
+  font-size: 12px;
+  color: var(--addp-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.props-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prop-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--addp-border-color-light);
+}
+
+.prop-key {
+  color: var(--addp-text-secondary);
+  min-width: 80px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.prop-val {
+  color: var(--addp-text-primary);
+  word-break: break-all;
+}
+
+.panel-actions {
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel-actions .el-button {
+  width: 100%;
+}
+</style>

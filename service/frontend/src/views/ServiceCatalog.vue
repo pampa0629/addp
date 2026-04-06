@@ -99,6 +99,19 @@
         </div>
         <el-empty v-if="!loading && getServicesByType('rest').length === 0" description="暂无 REST API 服务" />
       </el-tab-pane>
+
+      <el-tab-pane label="图查询" name="graph">
+        <div class="service-grid">
+          <ServiceCard
+            v-for="service in getServicesByType('graph')"
+            :key="getServiceKey(service)"
+            :service="service"
+            :source="service._source"
+            @click="handleServiceClick(service)"
+          />
+        </div>
+        <el-empty v-if="!loading && getServicesByType('graph').length === 0" description="暂无图查询服务" />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -111,6 +124,7 @@ import serviceAPI from '../api/service'
 import queryServiceAPI from '../api/queryService'
 import registeredServiceAPI from '../api/registeredService'
 import tileServiceAPI from '../api/tileService'
+import graphQueryServiceAPI from '../api/graphQueryService'
 import ServiceCard from '../components/ServiceCard.vue'
 import { getEnabledProtocols } from '../utils/serviceHelper'
 
@@ -121,6 +135,7 @@ const externalServices = ref([])
 const queryServices = ref([])  // 查询服务（原内部服务）
 const registeredServices = ref([])  // 注册服务
 const tileServices = ref([])  // 瓦片服务
+const graphQueryServices = ref([])  // 图查询服务
 
 // 合并所有服务
 const allServices = computed(() => {
@@ -128,7 +143,8 @@ const allServices = computed(() => {
   const query = queryServices.value.map(s => ({ ...s, _source: 'query' }))
   const registered = registeredServices.value.map(s => ({ ...s, _source: 'registered' }))
   const tile = tileServices.value.map(s => ({ ...s, _source: 'tile' }))
-  return [...external, ...query, ...registered, ...tile]
+  const graph = graphQueryServices.value.map(s => ({ ...s, _source: 'graph' }))
+  return [...external, ...query, ...registered, ...tile, ...graph]
 })
 
 // 根据服务类型获取服务（需要处理查询服务的多协议情况）
@@ -159,6 +175,9 @@ const getServicesByType = (type) => {
     } else if (s._source === 'registered') {
       // 注册服务：直接匹配 service_type
       return s.service_type === type
+    } else if (s._source === 'graph') {
+      // 图查询服务：仅在图查询标签页显示
+      return type === 'graph'
     } else {
       // 外部服务（旧的 service 注册）：直接匹配 service_type
       return s.service_type === type
@@ -177,16 +196,18 @@ const loadCatalog = async () => {
     loading.value = true
 
     // 并行加载查询服务、注册服务和瓦片服务
-    const [queryData, registeredData, tileData] = await Promise.all([
+    const [queryData, registeredData, tileData, graphData] = await Promise.all([
       loadQueryServices(),
       loadRegisteredServices(),
-      loadTileServices()
+      loadTileServices(),
+      loadGraphQueryServices()
     ])
 
     externalServices.value = []  // 旧架构的外部服务已废弃
     queryServices.value = queryData
     registeredServices.value = registeredData
     tileServices.value = tileData
+    graphQueryServices.value = graphData
   } catch (error) {
     ElMessage.error('加载服务目录失败: ' + (error.response?.data?.message || error.message))
   } finally {
@@ -198,6 +219,17 @@ const loadCatalog = async () => {
 const loadExternalServices = async () => {
   // 旧架构的外部服务已废弃,现在统一使用注册服务
   return []
+}
+
+// 加载图查询服务
+const loadGraphQueryServices = async () => {
+  try {
+    const res = await graphQueryServiceAPI.listServices({ page: 1, page_size: 1000 })
+    return res.data || []
+  } catch (error) {
+    console.error('加载图查询服务失败:', error)
+    return []
+  }
 }
 
 // 加载查询服务
@@ -243,6 +275,8 @@ const handleServiceClick = (service) => {
     router.push(`/registered-services/${service.id}`)
   } else if (service._source === 'tile') {
     router.push(`/tile/${service.id}`)
+  } else if (service._source === 'graph') {
+    router.push(`/graph-services/${service.id}`)
   }
 }
 

@@ -60,6 +60,7 @@ func main() {
 	queryServiceRepo := repository.NewQueryServiceRepository(db)
 	registeredServiceRepo := repository.NewRegisteredServiceRepository(db)
 	tileServiceRepo := repository.NewTileServiceRepository(db)
+	graphQueryServiceRepo := repository.NewGraphQueryServiceRepository(db)
 
 	logger.L().Info("Service 配置加载完成",
 		"enable_integration", cfg.EnableIntegration,
@@ -85,6 +86,10 @@ func main() {
 	// 使用 Gateway URL 作为对外服务端点的基础地址
 	queryServiceService := serviceInternal.NewQueryServiceService(queryServiceRepo, metaClient, cfg.GatewayURL)
 	queryExecutorService := serviceInternal.NewQueryExecutorService(queryServiceRepo, systemClient)
+
+	// 图查询服务
+	graphQueryServiceService := serviceInternal.NewGraphQueryServiceService(graphQueryServiceRepo, cfg.GatewayURL)
+	graphQueryExecutor := data.NewGraphQueryExecutor(graphQueryServiceRepo, systemClient)
 
 	// 注册服务使用 Gateway URL 作为代理端点的基础地址
 	// 这样用户可以通过统一的 Gateway 访问代理服务
@@ -126,9 +131,10 @@ func main() {
 	engineHandler := api.NewEngineHandler(systemClient)
 	dataSourceHandler := api.NewDataSourceHandler(systemClient, cfg.MetaServiceURL)
 	serviceEndpointHandler := api.NewServiceEndpointHandler(queryServiceService, registeredServiceService, tileServiceService)
+	graphQueryHandler := api.NewGraphQueryHandler(graphQueryServiceService, graphQueryExecutor)
 
 	// 设置路由（传递 systemClient 用于审计日志）
-	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, serviceEndpointHandler, systemClient)
+	router := api.SetupRouter(cfg, db, dataServiceHandler, queryServiceHandler, ogcFeaturesHandler, registeredServiceHandler, tileServiceHandler, tileEndpointHandler, wmtsHandler, ogcTilesHandler, engineHandler, dataSourceHandler, serviceEndpointHandler, graphQueryHandler, systemClient)
 
 	// ========== 模块注册（注册到 System service_registry）==========
 	if cfg.SystemServiceURL != "" && cfg.InternalAPIKey != "" {

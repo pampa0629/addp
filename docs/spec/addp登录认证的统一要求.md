@@ -249,16 +249,65 @@ export default router
 - 调试更容易 (清晰的模块归属)
 - 与 localStorage key 命名保持一致
 
-#### 6. 总结检查清单
+#### 6. 认证请求路由说明
+
+**为什么模块直接请求 System 后端而不通过 Gateway？**
+
+在开发模式下，`api/auth.js` 使用绝对 URL `http://localhost:8180/api/v1/system` 直接请求 System 后端，而不通过 Gateway（8000）。原因：
+
+- `GET /api/v1/system/users/me` 在 Gateway 侧属于受 API Key 保护的路由
+- 浏览器前端没有 API Key，不能通过 Gateway 的 API Key 验证层
+- 直接请求 System 后端，只需 JWT Token 即可通过 System 的 JWT 认证
+
+因此，System 后端维护了一个 **CORS 白名单**（`ALLOWED_ORIGINS`），允许各模块前端的开发端口直接发起跨域请求。
+
+**Console 的特殊处理**：Console 使用相对路径 `/api/v1/system`，经 Vite proxy → Gateway → System。因为请求从浏览器角度看是"同源"（都是 `localhost:5170`），无 CORS 问题。
+
+#### 7. 新增模块时的必做步骤
+
+**新增模块前端后，必须将其开发端口加入 System 的 CORS 白名单，否则认证请求会被浏览器拦截（CORS 错误）。**
+
+**步骤**：编辑根目录 `.env`，在 `ALLOWED_ORIGINS` 末尾追加新模块的前端开发端口：
+
+```bash
+# .env
+ALLOWED_ORIGINS=...,http://localhost:<新模块前端端口>
+```
+
+**当前已注册的端口**（参考 `docs/spec/addp端口分配.md`）：
+
+| 模块 | 前端端口 |
+|------|---------|
+| console | 5170 |
+| system | 5173 |
+| manager | 5174 |
+| meta | 5175 |
+| transfer | 5176 |
+| orchestrator | 5177 |
+| develop | 5178 |
+| monitor | 5179 |
+| service | 5180 |
+| standard | 5181 |
+| modeling | 5182 |
+| quality | 5183 |
+| asset | 5184 |
+| portal | 5185 |
+| agent | 5186 |
+| graph | 5187 |
+
+修改 `.env` 后需重启 system 服务：`./scripts/dev/restart.sh -system`
+
+#### 8. 总结检查清单
 
 创建或更新模块前端时,确保:
 
+- [ ] **`.env` 的 `ALLOWED_ORIGINS` 中已添加新模块前端的开发端口**（最容易漏掉！）
 - [ ] `api/auth.js` 使用独立的 `systemClient` (不是模块的 client)
 - [ ] `api/client.js` 使用 `createAPIClient()` 工厂函数，无 iframe 检测等特殊 baseURL 逻辑
 - [ ] 认证 Store 文件位于 `store/auth.js`（单数，不是 `stores/`）
 - [ ] `store/auth.js` 使用 `createAuthStore()` 工厂函数（不是 `createAuthStoreConfig`）
 - [ ] 所有模块都设置 `persistUser: true`
-- [ ] Router 使用 `createAuthGuard()` 工厂函数
+- [ ] Router 使用 `createAuthGuard()` 工厂函数（支持 Console iframe 的 `?token=` 传递）
 - [ ] Store 名称遵循 `{module}-auth` 约定
 - [ ] 没有手动的拦截器代码 (使用工厂函数)
 - [ ] 没有手动的 getter/action 合并 (使用 `extraGetters`/`extraActions`)

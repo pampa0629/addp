@@ -22,6 +22,7 @@ type Config struct {
 	AssetServiceURL    string
 	PortalServiceURL   string
 	AgentServiceURL    string
+	GraphServiceURL    string
 
 	// Database
 	DBHost     string
@@ -67,6 +68,7 @@ func Load() *Config {
 		AssetServiceURL:    getEnv("ASSET_SERVICE_URL", "http://localhost:8183"),
 		PortalServiceURL:   getEnv("PORTAL_SERVICE_URL", "http://localhost:8184"),
 		AgentServiceURL:    getEnv("AGENT_SERVICE_URL", "http://localhost:8190"),
+		GraphServiceURL:    getEnv("GRAPH_SERVICE_URL", "http://localhost:8186"),
 
 		// Database (defaults to system PostgreSQL)
 		DBHost:     getEnv("POSTGRES_HOST", "localhost"),

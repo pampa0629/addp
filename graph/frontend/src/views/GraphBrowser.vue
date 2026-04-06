@@ -1,0 +1,531 @@
+<template>
+  <div class="graph-browser">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="graph-name">{{ graphName }}</span>
+        <el-tag v-if="stats" size="small" type="info">
+          {{ stats.node_count }} 节点 / {{ stats.edge_count }} 关系
+        </el-tag>
+        <!-- 着色状态标签 -->
+        <el-tag v-if="analysisActive" size="small" type="warning" closable @close="handleClearScores">
+          已着色：{{ analysisAlgoName }}
+        </el-tag>
+      </div>
+      <div class="toolbar-center">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索节点..."
+          clearable
+          style="width: 280px"
+          @keyup.enter="handleSearch"
+          @clear="clearSearch"
+        >
+          <template #append>
+            <el-button :icon="Search" @click="handleSearch" :loading="searching" />
+          </template>
+        </el-input>
+      </div>
+      <div class="toolbar-right">
+        <el-select v-model="currentLayout" style="width: 110px" @change="onLayoutChange">
+          <el-option label="力导向" value="force" />
+          <el-option label="分层" value="dagre" />
+          <el-option label="环形" value="circular" />
+          <el-option label="辐射" value="radial" />
+        </el-select>
+        <el-button :icon="Refresh" @click="loadOverview" title="重置视图" />
+        <!-- 图分析切换按钮 -->
+        <el-button
+          :type="activeRightPanel === 'analysis' ? 'primary' : ''"
+          :icon="DataAnalysis"
+          title="图分析"
+          @click="toggleAnalysisPanel"
+        />
+        <el-button
+          v-if="pathMode"
+          type="warning"
+          size="small"
+          @click="cancelPathMode"
+        >
+          取消路径查找 ({{ pathNodes.length }}/2)
+        </el-button>
+      </div>
+    </div>
+
+    <!-- 主体区域 -->
+    <div class="main-area">
+      <!-- 左侧过滤面板 -->
+      <div class="filter-panel">
+        <div class="filter-section">
+          <div class="filter-title">实体类型</div>
+          <div v-if="schema.labels.length === 0" class="filter-empty">—</div>
+          <el-checkbox-group v-else v-model="visibleLabels" @change="applyFilter">
+            <div v-for="label in schema.labels" :key="label" class="filter-item">
+              <el-checkbox :label="label" :value="label">
+                <span class="label-dot" :style="{ background: getLabelColor(label) }"></span>
+                {{ label }}
+              </el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </div>
+        <el-divider />
+        <div class="filter-section">
+          <div class="filter-title">关系类型</div>
+          <div v-if="schema.rel_types.length === 0" class="filter-empty">—</div>
+          <el-checkbox-group v-else v-model="visibleRelTypes" @change="applyFilter">
+            <div v-for="rt in schema.rel_types" :key="rt" class="filter-item">
+              <el-checkbox :label="rt" :value="rt">{{ rt }}</el-checkbox>
+            </div>
+          </el-checkbox-group>
+        </div>
+      </div>
+
+      <!-- 画布区域 -->
+      <div class="canvas-area">
+        <GraphCanvas
+          ref="canvasRef"
+          :nodes="filteredNodes"
+          :edges="filteredEdges"
+          :layout="currentLayout"
+          :loading="loading"
+          @node-click="handleNodeClick"
+          @node-select="handleNodeSelect"
+          @edge-select="handleEdgeSelect"
+          @canvas-click="handleCanvasClick"
+        />
+      </div>
+
+      <!-- 右侧面板 -->
+      <div class="detail-panel">
+        <!-- Tab 切换：详情 / 分析 -->
+        <div v-if="activeRightPanel === 'detail'" style="height: 100%; overflow: hidden;">
+          <NodePanel
+            :selected="selectedItem"
+            @close="selectedItem = null"
+            @expand="handleExpand"
+            @set-path-node="handleSetPathNode"
+          />
+        </div>
+        <div v-else style="height: 100%; overflow: hidden;">
+          <AnalysisPanel
+            :graph-id="Number(graphId)"
+            :selected-node-id="selectedNode"
+            :schema-labels="schema.labels"
+            :schema-rel-types="schema.rel_types"
+            :capabilities="capabilities"
+            @apply-scores="handleApplyScores"
+            @clear-scores="handleClearScores"
+            @focus-node="handleFocusNode"
+            @load-subgraph="handleLoadSubgraph"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Search, Refresh, DataAnalysis } from '@element-plus/icons-vue'
+import { browseAPI } from '../api/browse'
+import { analysisAPI } from '../api/analysis'
+import { knowledgeGraphAPI } from '../api/ontology'
+import GraphCanvas from '../components/GraphCanvas.vue'
+import NodePanel from '../components/NodePanel.vue'
+import AnalysisPanel from '../components/AnalysisPanel.vue'
+
+const route = useRoute()
+const graphId = computed(() => route.params.id)
+
+// 图谱基本信息
+const graphName = ref('')
+const stats = ref(null)
+const schema = ref({ labels: [], rel_types: [] })
+
+// 图数据
+const allNodes = ref([])
+const allEdges = ref([])
+const nodeMap = ref({})  // id → node，用于快速查找和去重
+const edgeMap = ref({})  // id → edge
+
+// 过滤状态
+const visibleLabels = ref([])
+const visibleRelTypes = ref([])
+
+// UI 状态
+const loading = ref(false)
+const searching = ref(false)
+const searchQuery = ref('')
+const currentLayout = ref('force')
+const selectedItem = ref(null)
+const canvasRef = ref(null)
+
+// 右侧面板状态
+const activeRightPanel = ref('detail')  // 'detail' | 'analysis'
+const selectedNode = ref('')           // 当前画布选中节点ID，传给 AnalysisPanel
+
+// 图分析状态
+const analysisActive = ref(false)
+const analysisAlgoName = ref('')
+const capabilities = ref({ gds_available: false, cypher_algos: [], gds_algos: [] })
+
+// 路径查找模式
+const pathMode = ref(false)
+const pathNodes = ref([])
+
+// 过滤后的节点/边
+const filteredNodes = computed(() => {
+  if (visibleLabels.value.length === 0) return allNodes.value
+  return allNodes.value.filter(n => {
+    if (!n.labels || n.labels.length === 0) return true
+    return n.labels.some(l => visibleLabels.value.includes(l))
+  })
+})
+
+const filteredEdges = computed(() => {
+  const nodeIds = new Set(filteredNodes.value.map(n => n.id))
+  return allEdges.value.filter(e => {
+    if (visibleRelTypes.value.length > 0 && !visibleRelTypes.value.includes(e.type)) return false
+    return nodeIds.has(e.source) && nodeIds.has(e.target)
+  })
+})
+
+// label → color 映射（从已有节点数据提取）
+const labelColorMap = computed(() => {
+  const map = {}
+  allNodes.value.forEach(n => {
+    if (n.labels && n.color) {
+      n.labels.forEach(l => { if (!map[l]) map[l] = n.color })
+    }
+  })
+  return map
+})
+
+function getLabelColor(label) {
+  return labelColorMap.value[label] || '#5B8FF9'
+}
+
+// 合并新节点/边到画布（去重）
+function mergeSubgraph(result) {
+  if (!result) return
+  result.nodes?.forEach(n => {
+    if (!nodeMap.value[n.id]) {
+      nodeMap.value[n.id] = n
+      allNodes.value.push(n)
+    }
+  })
+  result.edges?.forEach(e => {
+    if (!edgeMap.value[e.id]) {
+      edgeMap.value[e.id] = e
+      allEdges.value.push(e)
+    }
+  })
+}
+
+// 初始化加载
+async function loadOverview() {
+  loading.value = true
+  allNodes.value = []
+  allEdges.value = []
+  nodeMap.value = {}
+  edgeMap.value = {}
+  try {
+    const res = await browseAPI.getOverview(graphId.value)
+    mergeSubgraph(res)
+    // 初始化过滤器为全选
+    visibleLabels.value = [...schema.value.labels]
+    visibleRelTypes.value = [...schema.value.rel_types]
+  } catch (e) {
+    ElMessage.error('加载图谱概览失败: ' + e.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadSchema() {
+  try {
+    const res = await browseAPI.getSchema(graphId.value)
+    schema.value = res || { labels: [], rel_types: [] }
+    visibleLabels.value = [...schema.value.labels]
+    visibleRelTypes.value = [...schema.value.rel_types]
+  } catch (e) {
+    // schema 加载失败不影响主流程
+  }
+}
+
+async function loadStats() {
+  try {
+    const res = await browseAPI.getStats(graphId.value)
+    stats.value = res
+  } catch (e) {
+    // 统计加载失败不影响主流程
+  }
+}
+
+async function loadGraphMeta() {
+  try {
+    const res = await knowledgeGraphAPI.get(graphId.value)
+    graphName.value = res?.name || `图谱 #${graphId.value}`
+  } catch (e) {
+    graphName.value = `图谱 #${graphId.value}`
+  }
+}
+
+async function loadCapabilities() {
+  try {
+    capabilities.value = await analysisAPI.getCapabilities(graphId.value)
+  } catch (e) {
+    // 能力探测失败不影响主流程
+  }
+}
+
+// 搜索
+async function handleSearch() {
+  if (!searchQuery.value.trim()) return
+  searching.value = true
+  try {
+    const res = await browseAPI.searchNodes(graphId.value, searchQuery.value.trim())
+    const result = res
+    mergeSubgraph(result)
+    if (!result?.nodes?.length) {
+      ElMessage.info('未找到匹配节点')
+    } else {
+      ElMessage.success(`找到 ${result.nodes.length} 个节点`)
+      // 等待 Vue 响应式更新后触发定位（afterlayout 中执行高亮+居中）
+      await nextTick()
+      const foundIds = result.nodes.map(n => n.id)
+      canvasRef.value?.focusNodes(foundIds)
+      // 单个结果自动展示详情
+      if (result.nodes.length === 1) {
+        selectedItem.value = { ...result.nodes[0], type: 'node' }
+      }
+    }
+  } catch (e) {
+    ElMessage.error('搜索失败: ' + e.message)
+  } finally {
+    searching.value = false
+  }
+}
+
+function clearSearch() {
+  searchQuery.value = ''
+  canvasRef.value?.clearHighlight()
+}
+
+// 节点点击
+function handleNodeClick(nodeId) {
+  selectedNode.value = nodeId
+  if (pathMode.value) {
+    handleSetPathNode(nodeId)
+  }
+}
+
+function handleNodeSelect(node) {
+  selectedItem.value = { ...node, type: 'node' }
+  selectedNode.value = node.id
+  // 选中节点后自动切换到详情面板（分析面板打开时不切换）
+  if (activeRightPanel.value !== 'analysis') {
+    activeRightPanel.value = 'detail'
+  }
+}
+
+function handleEdgeSelect(edge) {
+  selectedItem.value = { ...edge, type: 'edge' }
+}
+
+function handleCanvasClick() {
+  selectedItem.value = null
+}
+
+// 展开节点邻居
+async function handleExpand(nodeId) {
+  loading.value = true
+  try {
+    const res = await browseAPI.expandNode(graphId.value, nodeId)
+    mergeSubgraph(res)
+  } catch (e) {
+    ElMessage.error('展开失败: ' + e.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 路径查找
+function handleSetPathNode(nodeId) {
+  pathMode.value = true
+  if (!pathNodes.value.includes(nodeId)) {
+    pathNodes.value.push(nodeId)
+  }
+  if (pathNodes.value.length >= 2) {
+    findPath()
+  }
+}
+
+async function findPath() {
+  const [src, dst] = pathNodes.value
+  loading.value = true
+  try {
+    const res = await browseAPI.findPath(graphId.value, src, dst)
+    mergeSubgraph(res)
+    ElMessage.success('路径已展示在画布上')
+  } catch (e) {
+    ElMessage.error('路径查找失败: ' + e.message)
+  } finally {
+    loading.value = false
+    cancelPathMode()
+  }
+}
+
+function cancelPathMode() {
+  pathMode.value = false
+  pathNodes.value = []
+}
+
+function applyFilter() {
+  // filteredNodes/filteredEdges 是 computed，自动更新
+}
+
+function onLayoutChange() {
+  // currentLayout 变化后 GraphCanvas 内部 watch 会自动更新布局
+}
+
+// 分析面板相关
+function toggleAnalysisPanel() {
+  activeRightPanel.value = activeRightPanel.value === 'analysis' ? 'detail' : 'analysis'
+}
+
+function handleApplyScores(nodeScores, mode, algoName) {
+  if (!nodeScores?.length) return
+  canvasRef.value?.applyScoreColors(nodeScores, mode)
+  analysisActive.value = true
+  analysisAlgoName.value = algoName || '算法分析'
+}
+
+function handleClearScores() {
+  canvasRef.value?.resetNodeColors()
+  analysisActive.value = false
+  analysisAlgoName.value = ''
+}
+
+function handleFocusNode(nodeId) {
+  canvasRef.value?.focusNodes([nodeId])
+}
+
+function handleLoadSubgraph(subgraph) {
+  mergeSubgraph(subgraph)
+  ElMessage.success(`已加载 ${subgraph.nodes?.length || 0} 个节点到画布`)
+}
+
+onMounted(async () => {
+  await Promise.all([loadGraphMeta(), loadSchema(), loadStats()])
+  await Promise.all([loadOverview(), loadCapabilities()])
+})
+</script>
+
+<style scoped>
+.graph-browser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--addp-bg-primary);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--addp-border-color);
+  background: var(--addp-bg-primary);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.main-area {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.filter-panel {
+  width: 180px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--addp-border-color);
+  padding: 12px;
+  overflow-y: auto;
+  background: var(--addp-bg-secondary);
+}
+
+.filter-section {
+  margin-bottom: 8px;
+}
+
+.filter-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--addp-text-secondary);
+  margin-bottom: 8px;
+}
+
+.filter-empty {
+  font-size: 12px;
+  color: var(--addp-text-tertiary);
+}
+
+.filter-item {
+  margin-bottom: 4px;
+}
+
+.filter-item .el-checkbox {
+  display: flex;
+  align-items: center;
+}
+
+.label-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.canvas-area {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.detail-panel {
+  width: 240px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--addp-border-color);
+  overflow: hidden;
+  background: var(--addp-bg-primary);
+}
+</style>

@@ -102,6 +102,8 @@ make ports-validate
 | Copilot Backend       | 8087     | 8087        | AI 助手 (工作流/SQL生成)   |
 | **Agent Backend**     | **8190** | **8190**    | **Agent AI 对话助手后端**  |
 | **Agent Frontend**    | **5186** | **8116**    | **Agent 对话界面 UI**      |
+| **Graph Backend**     | **8186** | **8186**    | **知识图谱本体建模、图谱管理** |
+| **Graph Frontend**    | **5187** | **8117**    | **知识图谱 UI**            |
 | Jupyter Lab UI        | 8088     | 8088        | Jupyter 笔记本开发界面     |
 | Math Workflow Engine  | 8089     | 8089        | 数学计算工作流引擎         |
 | Jupyter API Server    | 8097     | 8097        | Jupyter 执行引擎 API       |

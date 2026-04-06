@@ -15,6 +15,7 @@ export const MODULE_GROUPS = [
   { key: 'asset',        label: '资产管理',   icon: Folder,       modules: ['asset'] },
   { key: 'portal',       label: '资产门户',   icon: Shop,         modules: [], isPortal: true },
   { key: 'agent',        label: '智能体',     icon: ChatDotRound, modules: ['agent'] },
+  { key: 'graph',        label: '知识图谱',   icon: Share,        modules: ['graph'] },
   { key: 'api-docs',     label: 'API 文档',   icon: Memo,         modules: [], isApiDocs: true },
   { key: 'system',       label: '系统管理',   icon: Setting,      modules: ['system'] },
 ]
@@ -35,6 +36,7 @@ export const ALL_HOME_CARDS = [
   { module: 'asset',        label: '资产管理',   icon: Folder,       cssVar: '--addp-module-asset',         desc: '资产类型、分类管理、申请与授权' },
   { module: 'system',       label: '系统管理',   icon: Setting,      cssVar: '--addp-module-system',        desc: '用户管理、日志查询、引擎配置' },
   { module: 'agent',        label: '智能体',     icon: ChatDotRound, cssVar: '--addp-module-agent',         desc: '自然语言对话、数据管理、智能分析' },
+  { module: 'graph',        label: '知识图谱',   icon: Share,        cssVar: '--addp-module-graph',         desc: '本体建模、知识图谱构建、图谱探索' },
 ]
 
 // ─── 模块 URL（开发用动态 hostname+port，生产用 Nginx 路由）─────────────────
@@ -61,6 +63,7 @@ export const MODULE_URLS = {
   quality:      _url(5183, 'quality'),
   asset:        _url(5184, 'asset'),
   agent:        _url(5186, 'agent'),
+  graph:        _url(5187, 'graph'),
 }
 
 export const PORTAL_URL = _dev
@@ -149,6 +152,13 @@ export const PAGE_MAPS = {
     'dashboard': 'asset/dashboard',
     '': 'asset/assets',
   },
+  graph: {
+    'ontologies':        'ontologies',
+    'graphs':            'graphs',
+    'analysis':          'analysis',
+    'knowledge-service': 'knowledge-service',
+    '':                  'ontologies',
+  },
   // system 和 agent 无需映射，page 直接透传
 }
 
@@ -168,6 +178,7 @@ export const DEFAULT_ROUTES = {
   quality:      '/quality/check-tasks',
   asset:        '/asset/assets',
   agent:        '/agent',
+  graph:        '/graph/ontologies',
 }
 
 // ─── 侧边栏菜单配置（数据驱动渲染，替代 300 行硬编码 template）──────────────
@@ -243,10 +254,11 @@ export const SIDEBAR_MENUS = {
   service: {
     label: '数据服务', icon: Link,
     items: [
-      { index: '/service/query-services', icon: Upload,       label: '查询服务' },
-      { index: '/service/tile',           icon: Grid,         label: '瓦片服务' },
-      { index: '/service/services',       icon: Connection,   label: '服务注册' },
-      { index: '/service/catalog',        icon: FolderOpened, label: '服务目录' },
+      { index: '/service/query-services',  icon: Upload,       label: '查询服务' },
+      { index: '/service/tile',            icon: Grid,         label: '瓦片服务' },
+      { index: '/service/graph-services', icon: Share,        label: '图查询服务' },
+      { index: '/service/services',        icon: Connection,   label: '服务注册' },
+      { index: '/service/catalog',         icon: FolderOpened, label: '服务目录' },
     ],
   },
   orchestrator: {
@@ -277,6 +289,15 @@ export const SIDEBAR_MENUS = {
     label: '智能体', icon: ChatDotRound,
     flat: true,
     index: '/agent',
+  },
+  graph: {
+    label: '知识图谱', icon: Share,
+    items: [
+      { index: '/graph/ontologies',        icon: Share,      label: '本体建模' },
+      { index: '/graph/graphs',            icon: Connection, label: '知识图谱' },
+      { index: '/graph/analysis',          icon: DataLine,   label: '图算法分析' },
+      { index: '/graph/knowledge-service', icon: Link,       label: '知识服务' },
+    ],
   },
   system: {
     label: '系统管理', icon: Setting,

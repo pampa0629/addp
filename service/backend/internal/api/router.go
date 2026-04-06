@@ -29,6 +29,7 @@ func SetupRouter(
 	engineHandler *EngineHandler,
 	dataSourceHandler *DataSourceHandler,
 	serviceEndpointHandler *ServiceEndpointHandler,
+	graphQueryHandler *GraphQueryHandler,
 	systemClient *commonClient.SystemClient,
 ) *gin.Engine {
 	router := gin.Default()
@@ -59,7 +60,10 @@ func SetupRouter(
 		}
 		c.Next()
 	}
-	router.GET("/api/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
+	router.GET("/api/v1/query/:serviceName", optionalAuth, queryServiceHandler.QueryData)
+
+	// 图查询服务执行端点（支持公开访问）
+	router.POST("/api/v1/gquery/:serviceName", optionalAuth, graphQueryHandler.ExecuteQuery)
 
 	// OGC API Features 端点（支持公开访问，handler内部会检查权限）
 	router.GET("/ogc/features/:serviceName", ogcFeaturesHandler.GetLandingPage)
@@ -134,6 +138,16 @@ func SetupRouter(
 			queryAPI.GET("/:id", queryServiceHandler.GetService)
 			queryAPI.PUT("/:id", queryServiceHandler.UpdateService)
 			queryAPI.DELETE("/:id", queryServiceHandler.DeleteService)
+		}
+
+		// 图查询服务管理 API
+		graphAPI := api.Group("/graph")
+		{
+			graphAPI.POST("", graphQueryHandler.CreateService)
+			graphAPI.GET("", graphQueryHandler.ListServices)
+			graphAPI.GET("/:id", graphQueryHandler.GetService)
+			graphAPI.PUT("/:id", graphQueryHandler.UpdateService)
+			graphAPI.DELETE("/:id", graphQueryHandler.DeleteService)
 		}
 
 		// 注册服务管理 API

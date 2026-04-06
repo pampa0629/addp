@@ -103,6 +103,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			"asset":    cfg.AssetServiceURL,
 			"portal":   cfg.PortalServiceURL,
 			"agent":    cfg.AgentServiceURL,
+			"graph":    cfg.GraphServiceURL,
 			}
 			response["module_discovery"] = "disabled"
 		}
@@ -124,6 +125,7 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 	assetProxy := proxy.NewServiceProxy(cfg.AssetServiceURL)
 	portalProxy := proxy.NewServiceProxy(cfg.PortalServiceURL)
 	agentProxy := proxy.NewServiceProxy(cfg.AgentServiceURL)
+	graphProxy := proxy.NewServiceProxy(cfg.GraphServiceURL)
 
 	// ============ 公开路由（无需鉴权）============
 	// 注意：这些路由必须在通配符路由之前定义，避免冲突
@@ -154,12 +156,24 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 					serviceProxy.Handle(c) // fallback
 				}
 			})
+
+			// 图查询服务执行端点（公开，认证由 Service 模块内部判断）
+			public.POST("/gquery/:serviceName", func(c *gin.Context) {
+				if p, err := moduleDiscovery.GetProxy("service"); err == nil {
+					p.Handle(c)
+				} else {
+					serviceProxy.Handle(c) // fallback
+				}
+			})
 		} else {
 			public.POST("/system/login", systemProxy.Handle)
 			public.POST("/system/register", systemProxy.Handle)
 
 			// 查询服务数据访问端点（公开，认证由 Service 模块内部判断）
 			public.GET("/query/:serviceName", serviceProxy.Handle)
+
+			// 图查询服务执行端点（公开，认证由 Service 模块内部判断）
+			public.POST("/gquery/:serviceName", serviceProxy.Handle)
 		}
 	}
 
@@ -358,6 +372,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						assetProxy.Handle(c)
 					case "portal":
 						portalProxy.Handle(c)
+					case "graph":
+						graphProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -401,6 +417,8 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 						assetProxy.Handle(c)
 					case "portal":
 						portalProxy.Handle(c)
+					case "graph":
+						graphProxy.Handle(c)
 					default:
 						c.JSON(503, gin.H{
 							"error": fmt.Sprintf("模块 %s 不可用", moduleName),
@@ -479,6 +497,10 @@ func SetupRouter(cfg *config.Config) *gin.Engine {
 			// Agent 模块
 			api.Any("/agent", agentProxy.Handle)
 			api.Any("/agent/*path", agentProxy.Handle)
+
+			// Graph 模块
+			api.Any("/graph", graphProxy.Handle)
+			api.Any("/graph/*path", graphProxy.Handle)
 
 			// 内部 API（跨模块调用）
 			internalGroup := api.Group("/internal")
