@@ -24,28 +24,32 @@ type ConstraintDefinition struct {
 
 // CreateEntityTypeRequest 创建实体类型请求
 type CreateEntityTypeRequest struct {
-	Name        string                 `json:"name" binding:"required"`
-	Label       string                 `json:"label"`
-	Description string                 `json:"description"`
-	Color       string                 `json:"color"`
-	Icon        string                 `json:"icon"`
-	ParentID    *uint                  `json:"parent_id"`
-	Properties  []PropertyDefinition   `json:"properties"`
-	Constraints []ConstraintDefinition `json:"constraints"`
-	SortOrder   int                    `json:"sort_order"`
+	Name               string                 `json:"name" binding:"required"`
+	Label              string                 `json:"label"`
+	Description        string                 `json:"description"`
+	Color              string                 `json:"color"`
+	Icon               string                 `json:"icon"`
+	ParentID           *uint                  `json:"parent_id"`
+	Properties         []PropertyDefinition   `json:"properties"`
+	Constraints        []ConstraintDefinition `json:"constraints"`
+	IsSpatialLayer     bool                   `json:"is_spatial_layer"`
+	SpatialLayerConfig *SpatialLayerConfig    `json:"spatial_layer_config,omitempty"`
+	SortOrder          int                    `json:"sort_order"`
 }
 
 // UpdateEntityTypeRequest 更新实体类型请求
 type UpdateEntityTypeRequest struct {
-	Name        string                 `json:"name"`
-	Label       string                 `json:"label"`
-	Description string                 `json:"description"`
-	Color       string                 `json:"color"`
-	Icon        string                 `json:"icon"`
-	ParentID    *uint                  `json:"parent_id"`
-	Properties  []PropertyDefinition   `json:"properties"`
-	Constraints []ConstraintDefinition `json:"constraints"`
-	SortOrder   int                    `json:"sort_order"`
+	Name               string                 `json:"name"`
+	Label              string                 `json:"label"`
+	Description        string                 `json:"description"`
+	Color              string                 `json:"color"`
+	Icon               string                 `json:"icon"`
+	ParentID           *uint                  `json:"parent_id"`
+	Properties         []PropertyDefinition   `json:"properties"`
+	Constraints        []ConstraintDefinition `json:"constraints"`
+	IsSpatialLayer     bool                   `json:"is_spatial_layer"`
+	SpatialLayerConfig *SpatialLayerConfig    `json:"spatial_layer_config,omitempty"`
+	SortOrder          int                    `json:"sort_order"`
 }
 
 // CreateRelationTypeRequest 创建关系类型请求
@@ -80,7 +84,7 @@ type UpdateRelationTypeRequest struct {
 type PropertyDefinition struct {
 	Name        string      `json:"name"`
 	Label       string      `json:"label"`
-	DataType    string      `json:"data_type"` // string, integer, float, boolean, date, datetime
+	DataType    string      `json:"data_type"` // string, integer, float, boolean, date, datetime, wkt
 	Required    bool        `json:"required"`
 	Unique      bool        `json:"unique"`
 	DefaultVal  interface{} `json:"default_val,omitempty"`
@@ -118,6 +122,11 @@ type OntologyDetail struct {
 
 // SyncConstraintsRequest 同步约束到 Neo4j 的请求
 type SyncConstraintsRequest struct {
+	GraphID uint `json:"graph_id" binding:"required"`
+}
+
+// SyncSpatialLayersRequest 同步空间图层到 Neo4j 的请求
+type SyncSpatialLayersRequest struct {
 	GraphID uint `json:"graph_id" binding:"required"`
 }
 

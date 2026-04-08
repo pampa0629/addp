@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	cypherAlgos = []string{"degree_centrality", "khop_neighbors", "multi_path"}
-	gdsAlgos    = []string{"pagerank", "louvain", "wcc", "betweenness"}
+	cypherAlgos  = []string{"degree_centrality", "khop_neighbors", "multi_path"}
+	gdsAlgos     = []string{"pagerank", "louvain", "wcc", "betweenness"}
+	spatialAlgos = []string{"nearby_nodes", "within_area"}
 
 	algoNames = map[string]string{
 		"degree_centrality": "度中心性",
@@ -26,6 +27,8 @@ var (
 		"louvain":           "Louvain 社区发现",
 		"wcc":               "弱连通分量",
 		"betweenness":       "介数中心性",
+		"nearby_nodes":      "邻近节点",
+		"within_area":       "区域内节点",
 	}
 )
 
@@ -40,6 +43,11 @@ type AnalysisService struct {
 	gdsAvail    bool
 	gdsVersion  string
 	gdsCacheMu  sync.RWMutex
+
+	// Spatial 能力缓存（实例级）
+	spatialChecked bool
+	spatialAvail   bool
+	spatialCacheMu sync.RWMutex
 }
 
 func NewAnalysisService(
@@ -93,7 +101,7 @@ func (s *AnalysisService) checkGDS(ctx context.Context, engine *commonmodels.Eng
 		return s.gdsAvail, s.gdsVersion
 	}
 
-	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL gds.version() YIELD version RETURN version")
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, "RETURN gds.version() AS version")
 	s.gdsChecked = true
 	if err != nil || len(result.Rows) == 0 {
 		s.gdsAvail = false
@@ -105,23 +113,213 @@ func (s *AnalysisService) checkGDS(ctx context.Context, engine *commonmodels.Eng
 	return true, s.gdsVersion
 }
 
+// checkSpatial 检测 Neo4j Spatial 插件可用性（实例级缓存）
+func (s *AnalysisService) checkSpatial(ctx context.Context, engine *commonmodels.Engine) bool {
+	s.spatialCacheMu.RLock()
+	if s.spatialChecked {
+		avail := s.spatialAvail
+		s.spatialCacheMu.RUnlock()
+		return avail
+	}
+	s.spatialCacheMu.RUnlock()
+
+	s.spatialCacheMu.Lock()
+	defer s.spatialCacheMu.Unlock()
+	if s.spatialChecked {
+		return s.spatialAvail
+	}
+
+	// 直接调用 spatial.procedures()：安装了插件才会成功，否则报错
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine,
+		"CALL spatial.procedures() YIELD signature RETURN count(signature) AS cnt")
+	s.spatialChecked = true
+	if err != nil {
+		s.spatialAvail = false
+		return false
+	}
+	if len(result.Rows) == 0 {
+		s.spatialAvail = false
+		return false
+	}
+	cnt := toInt64(result.Rows[0]["cnt"])
+	s.spatialAvail = cnt > 0
+	return s.spatialAvail
+}
+
+// getAllEffectiveSpatialTypes 从本体中获取所有有效空间实体类型（含继承）
+// 返回 map[entityTypeName] -> SpatialLayerConfig（LayerName 已设为该实体类型的名称）
+func getAllEffectiveSpatialTypes(ontology *models.Ontology) map[string]*models.SpatialLayerConfig {
+	if ontology == nil {
+		return map[string]*models.SpatialLayerConfig{}
+	}
+	// 构建 ID -> EntityType 索引
+	etByID := make(map[uint]*models.EntityType)
+	for i := range ontology.EntityTypes {
+		etByID[ontology.EntityTypes[i].ID] = &ontology.EntityTypes[i]
+	}
+	result := make(map[string]*models.SpatialLayerConfig)
+	for _, et := range ontology.EntityTypes {
+		cfg := resolveInheritedSpatialCfg(&et, etByID, 0)
+		if cfg != nil {
+			// 每个实体类型使用自身的名称作为 Neo4j 空间图层名
+			c := *cfg
+			c.LayerName = et.Name
+			result[et.Name] = &c
+		}
+	}
+	return result
+}
+
+// resolveInheritedSpatialCfg 递归向上查找空间图层配置（直接定义或继承自父类型）
+func resolveInheritedSpatialCfg(et *models.EntityType, etByID map[uint]*models.EntityType, depth int) *models.SpatialLayerConfig {
+	if depth > 8 {
+		return nil // 防止循环
+	}
+	if et.IsSpatialLayer {
+		return et.ParsedSpatialLayerConfig()
+	}
+	if et.ParentID != nil {
+		if parent, ok := etByID[*et.ParentID]; ok {
+			return resolveInheritedSpatialCfg(parent, etByID, depth+1)
+		}
+	}
+	return nil
+}
+
 // CheckCapabilities 探测算法能力
 func (s *AnalysisService) CheckCapabilities(ctx context.Context, graphID, tenantID uint) (*models.AlgorithmCapabilities, error) {
-	_, engine, err := s.getGraphAndEngine(graphID, tenantID)
+	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	gdsAvail, gdsVer := s.checkGDS(ctx, engine)
+	spatialAvail := s.checkSpatial(ctx, engine)
 	caps := &models.AlgorithmCapabilities{
-		GDSAvailable: gdsAvail,
-		GDSVersion:   gdsVer,
-		CypherAlgos:  cypherAlgos,
-		GDSAlgos:     []string{},
+		GDSAvailable:     gdsAvail,
+		GDSVersion:       gdsVer,
+		SpatialAvailable: spatialAvail,
+		SpatialLayers:    []models.SpatialLayerInfo{},
+		PendingLayers:    []string{},
+		CypherAlgos:      cypherAlgos,
+		GDSAlgos:         []string{},
+		SpatialAlgos:     []string{},
 	}
 	if gdsAvail {
 		caps.GDSAlgos = gdsAlgos
 	}
+	if spatialAvail {
+		caps.SpatialAlgos = spatialAlgos
+
+		// 从本体中获取所有有效空间类型（含继承）
+		ontology, _ := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+		allSpatialTypes := getAllEffectiveSpatialTypes(ontology)
+
+		// 查询 Neo4j 中已有的空间图层
+		existingLayerNames := make(map[string]bool)
+		layersResult, err := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+		if err == nil && layersResult != nil {
+			for _, row := range layersResult.Rows {
+				name, ok := row["name"].(string)
+				if !ok || name == "" {
+					continue
+				}
+				existingLayerNames[name] = true
+				info := models.SpatialLayerInfo{Name: name}
+				if cfg, ok := allSpatialTypes[name]; ok {
+					info.Config = cfg
+				}
+				caps.SpatialLayers = append(caps.SpatialLayers, info)
+			}
+		}
+
+		// 计算 pending_layers：本体中定义了空间类型但 Neo4j 中尚无图层
+		for name := range allSpatialTypes {
+			if !existingLayerNames[name] {
+				caps.PendingLayers = append(caps.PendingLayers, name)
+			}
+		}
+	}
 	return caps, nil
+}
+
+// SyncAllSpatialLayers 将本体中所有有效空间类型（含继承）的图层同步到 Neo4j，并注册已有节点
+// 幂等操作：图层已存在则跳过创建；节点注册用 MERGE 语义（spatial.addNode 本身幂等）
+func (s *AnalysisService) SyncAllSpatialLayers(ctx context.Context, graphID, tenantID uint) ([]string, error) {
+	kg, engine, err := s.getGraphAndEngine(graphID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	ontology, err := s.ontologyRepo.GetDetail(kg.OntologyID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("ontology not found: %w", err)
+	}
+
+	allSpatialTypes := getAllEffectiveSpatialTypes(ontology)
+	if len(allSpatialTypes) == 0 {
+		return []string{}, nil
+	}
+
+	// 查询已有图层
+	existingLayers := make(map[string]bool)
+	layersResult, _ := dbbridge.ExecuteGraphQuery(ctx, engine, "CALL spatial.layers() YIELD name")
+	if layersResult != nil {
+		for _, row := range layersResult.Rows {
+			if name, ok := row["name"].(string); ok && name != "" {
+				existingLayers[name] = true
+			}
+		}
+	}
+
+	var synced []string
+	for entityTypeName, cfg := range allSpatialTypes {
+		layerName := cfg.LayerName // == entityTypeName
+
+		// 1. 创建图层（若不存在）
+		if !existingLayers[layerName] {
+			var createCypher string
+			switch cfg.GeometryType {
+			case "wkt":
+				createCypher = fmt.Sprintf(
+					"CALL spatial.addWKTLayer('%s', '%s')",
+					escapeCypher(layerName), escapeCypher(cfg.GeomField),
+				)
+			default: // "point" 或未指定
+				createCypher = fmt.Sprintf(
+					"CALL spatial.addPointLayerXY('%s', '%s', '%s')",
+					escapeCypher(layerName), escapeCypher(cfg.LonField), escapeCypher(cfg.LatField),
+				)
+			}
+			if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, createCypher); err != nil {
+				return synced, fmt.Errorf("创建空间图层 %q 失败: %w", layerName, err)
+			}
+		}
+
+		// 2. 将已有节点注册到空间图层
+		var addNodesCypher string
+		switch cfg.GeometryType {
+		case "wkt":
+			addNodesCypher = fmt.Sprintf(
+				"MATCH (n:`%s`) WHERE n.`%s` IS NOT NULL "+
+					"CALL spatial.addNode('%s', n) YIELD node RETURN count(node) AS cnt",
+				escapeCypher(entityTypeName), escapeCypher(cfg.GeomField),
+				escapeCypher(layerName),
+			)
+		default:
+			addNodesCypher = fmt.Sprintf(
+				"MATCH (n:`%s`) WHERE n.`%s` IS NOT NULL AND n.`%s` IS NOT NULL "+
+					"CALL spatial.addNode('%s', n) YIELD node RETURN count(node) AS cnt",
+				escapeCypher(entityTypeName), escapeCypher(cfg.LonField), escapeCypher(cfg.LatField),
+				escapeCypher(layerName),
+			)
+		}
+		if _, err := dbbridge.ExecuteGraphQuery(ctx, engine, addNodesCypher); err != nil {
+			return synced, fmt.Errorf("注册节点到空间图层 %q 失败: %w", layerName, err)
+		}
+
+		synced = append(synced, layerName)
+	}
+	return synced, nil
 }
 
 // RunAlgorithm 执行指定算法
@@ -150,6 +348,21 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 		}
 	}
 
+	// 检查 Spatial 算法是否可用
+	isSpatial := false
+	for _, a := range spatialAlgos {
+		if a == req.Algorithm {
+			isSpatial = true
+			break
+		}
+	}
+	if isSpatial {
+		avail := s.checkSpatial(ctx, engine)
+		if !avail {
+			return nil, fmt.Errorf("SPATIAL_UNAVAILABLE")
+		}
+	}
+
 	switch req.Algorithm {
 	case "degree_centrality":
 		return s.runDegreeCentrality(ctx, engine, req)
@@ -165,6 +378,10 @@ func (s *AnalysisService) RunAlgorithm(ctx context.Context, graphID, tenantID ui
 		return s.runGDSAlgo(ctx, engine, graphID, tenantID, "wcc", req)
 	case "betweenness":
 		return s.runGDSAlgo(ctx, engine, graphID, tenantID, "betweenness", req)
+	case "nearby_nodes":
+		return s.runNearbyNodes(ctx, graphID, tenantID, engine, req)
+	case "within_area":
+		return s.runWithinArea(ctx, graphID, tenantID, engine, req)
 	default:
 		return nil, fmt.Errorf("UNKNOWN_ALGO:%s", req.Algorithm)
 	}
@@ -467,6 +684,111 @@ LIMIT %d`, projName, req.Limit)
 	}, nil
 }
 
+// runNearbyNodes 邻近节点查询（Spatial 插件：spatial.withinDistance）
+// params: lon(float), lat(float), radius_km(float, 默认10), layer(string, 必须指定)
+func (s *AnalysisService) runNearbyNodes(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+	start := time.Now()
+
+	lon := floatParam(req.Params, "lon", 0)
+	lat := floatParam(req.Params, "lat", 0)
+	radiusKm := floatParam(req.Params, "radius_km", 10)
+	layer := stringParam(req.Params, "layer", "")
+
+	if layer == "" {
+		return nil, fmt.Errorf("params.layer is required for nearby_nodes, please select a spatial layer")
+	}
+
+	cypher := fmt.Sprintf(`
+CALL spatial.withinDistance('%s', {lon:%s, lat:%s}, %s) YIELD node AS n, distance
+RETURN elementId(n) AS node_id,
+       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,
+       labels(n)[0] AS entity_type,
+       distance AS score
+ORDER BY distance ASC
+LIMIT %d`,
+		escapeCypher(layer),
+		fmt.Sprintf("%g", lon), fmt.Sprintf("%g", lat), fmt.Sprintf("%g", radiusKm),
+		req.Limit,
+	)
+
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	if err != nil {
+		return nil, fmt.Errorf("nearby nodes query failed: %w", err)
+	}
+
+	scores := rowsToNodeScores(result.Rows)
+	return &models.AlgorithmResult{
+		Algorithm:     "nearby_nodes",
+		AlgorithmName: "邻近节点",
+		NodeScores:    scores,
+		Metadata: map[string]interface{}{
+			"elapsed_ms": time.Since(start).Milliseconds(),
+			"node_count": len(scores),
+			"lon":        lon,
+			"lat":        lat,
+			"radius_km":  radiusKm,
+			"layer":      layer,
+			"score_unit": "km",
+		},
+	}, nil
+}
+
+// runWithinArea 区域内节点查询（Spatial 插件：spatial.withinGeometry）
+// 取面图层中指定区域节点的 WKT 几何，查询点图层中落在该范围内的所有节点
+// params: area_layer(string), area_node_id(string), area_geom_field(string), point_layer(string)
+func (s *AnalysisService) runWithinArea(ctx context.Context, graphID, tenantID uint, engine *commonmodels.Engine, req *models.AlgorithmRunRequest) (*models.AlgorithmResult, error) {
+	start := time.Now()
+
+	areaLayer := stringParam(req.Params, "area_layer", "")
+	areaNodeID := stringParam(req.Params, "area_node_id", "")
+	areaGeomField := stringParam(req.Params, "area_geom_field", "wkt")
+	pointLayer := stringParam(req.Params, "point_layer", "")
+
+	if areaLayer == "" {
+		return nil, fmt.Errorf("params.area_layer is required")
+	}
+	if areaNodeID == "" {
+		return nil, fmt.Errorf("params.area_node_id is required")
+	}
+	if pointLayer == "" {
+		return nil, fmt.Errorf("params.point_layer is required")
+	}
+
+	cypher := fmt.Sprintf(
+		"MATCH (area) WHERE elementId(area) = '%s'\n"+
+			"WITH area.`%s` AS areaGeom\n"+
+			"WHERE areaGeom IS NOT NULL\n"+
+			"CALL spatial.intersects('%s', areaGeom) YIELD node AS n\n"+
+			"RETURN elementId(n) AS node_id,\n"+
+			"       coalesce(n.name, n.title, n.label, elementId(n)) AS display_name,\n"+
+			"       labels(n)[0] AS entity_type,\n"+
+			"       0.0 AS score\n"+
+			"LIMIT %d",
+		escapeCypher(areaNodeID),
+		escapeCypher(areaGeomField),
+		escapeCypher(pointLayer),
+		req.Limit,
+	)
+
+	result, err := dbbridge.ExecuteGraphQuery(ctx, engine, cypher)
+	if err != nil {
+		return nil, fmt.Errorf("within area query failed: %w", err)
+	}
+
+	scores := rowsToNodeScores(result.Rows)
+	return &models.AlgorithmResult{
+		Algorithm:     "within_area",
+		AlgorithmName: "区域内节点",
+		NodeScores:    scores,
+		Metadata: map[string]interface{}{
+			"elapsed_ms":  time.Since(start).Milliseconds(),
+			"node_count":  len(scores),
+			"area_layer":  areaLayer,
+			"point_layer": pointLayer,
+		},
+	}, nil
+}
+
 // ============ 内部辅助 ============
 
 func rowsToNodeScores(rows []map[string]interface{}) []models.NodeScore {
@@ -529,4 +851,41 @@ func buildColorMapsFromOntology(ontologyRepo *repository.OntologyRepository, ont
 		}
 	}
 	return
+}
+
+// floatParam 从 params map 中安全读取 float64，不存在或类型不符时返回 defaultVal
+func floatParam(params map[string]interface{}, key string, defaultVal float64) float64 {
+	if params == nil {
+		return defaultVal
+	}
+	v, ok := params[key]
+	if !ok || v == nil {
+		return defaultVal
+	}
+	switch n := v.(type) {
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	}
+	return defaultVal
+}
+
+// stringParam 从 params map 中安全读取 string，不存在时返回 defaultVal
+func stringParam(params map[string]interface{}, key string, defaultVal string) string {
+	if params == nil {
+		return defaultVal
+	}
+	v, ok := params[key]
+	if !ok || v == nil {
+		return defaultVal
+	}
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	return defaultVal
 }

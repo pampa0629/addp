@@ -58,6 +58,11 @@ export const ontologyAPI = {
     return client.post(`/graph/ontologies/${ontologyId}/entity-types/${entityTypeId}/sync-constraints`, { graph_id: graphId })
   },
 
+  // 空间图层同步
+  syncEntityTypeSpatialLayer(ontologyId, entityTypeId, graphId) {
+    return client.put(`/graph/ontologies/${ontologyId}/entity-types/${entityTypeId}/sync-spatial-layer`, { graph_id: graphId })
+  },
+
   // F4: 从 Model 模块导入本体
   getImportPreviewFromModel() {
     return client.get('/graph/ontologies/import-preview/from-model')

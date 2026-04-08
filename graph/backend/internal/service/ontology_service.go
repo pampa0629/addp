@@ -103,18 +103,27 @@ func (s *OntologyService) CreateEntityType(ontologyID, tenantID uint, req *model
 		color = "#5B8FF9"
 	}
 
+	var spatialConfig datatypes.JSON
+	if req.IsSpatialLayer && req.SpatialLayerConfig != nil {
+		spatialConfig, _ = json.Marshal(req.SpatialLayerConfig)
+	} else {
+		spatialConfig = datatypes.JSON("{}")
+	}
+
 	et := &models.EntityType{
-		OntologyID:  ontologyID,
-		TenantID:    tenantID,
-		Name:        req.Name,
-		Label:       req.Label,
-		Description: req.Description,
-		Color:       color,
-		Icon:        req.Icon,
-		ParentID:    req.ParentID,
-		Properties:  datatypes.JSON(props),
-		Constraints: datatypes.JSON(constraints),
-		SortOrder:   req.SortOrder,
+		OntologyID:         ontologyID,
+		TenantID:           tenantID,
+		Name:               req.Name,
+		Label:              req.Label,
+		Description:        req.Description,
+		Color:              color,
+		Icon:               req.Icon,
+		ParentID:           req.ParentID,
+		Properties:         datatypes.JSON(props),
+		Constraints:        datatypes.JSON(constraints),
+		IsSpatialLayer:     req.IsSpatialLayer,
+		SpatialLayerConfig: spatialConfig,
+		SortOrder:          req.SortOrder,
 	}
 	if err := s.entityTypeRepo.Create(et); err != nil {
 		return nil, fmt.Errorf("failed to create entity type: %w", err)
@@ -151,6 +160,13 @@ func (s *OntologyService) UpdateEntityType(id, ontologyID, tenantID uint, req *m
 		constraints, _ := json.Marshal(req.Constraints)
 		et.Constraints = datatypes.JSON(constraints)
 	}
+	et.IsSpatialLayer = req.IsSpatialLayer
+	if req.IsSpatialLayer && req.SpatialLayerConfig != nil {
+		spatialConfig, _ := json.Marshal(req.SpatialLayerConfig)
+		et.SpatialLayerConfig = datatypes.JSON(spatialConfig)
+	} else if !req.IsSpatialLayer {
+		et.SpatialLayerConfig = datatypes.JSON("{}")
+	}
 	et.SortOrder = req.SortOrder
 	return et, s.entityTypeRepo.Update(et)
 }
@@ -161,6 +177,67 @@ func (s *OntologyService) DeleteEntityType(id, ontologyID, tenantID uint) error 
 
 func (s *OntologyService) GetEntityType(id, ontologyID, tenantID uint) (*models.EntityType, error) {
 	return s.entityTypeRepo.GetByID(id, ontologyID, tenantID)
+}
+
+// GetSpatialEntityTypes 返回本体中所有直接定义 is_spatial_layer=true 的 EntityType
+func (s *OntologyService) GetSpatialEntityTypes(ontologyID, tenantID uint) ([]models.EntityType, error) {
+	all, err := s.entityTypeRepo.ListByOntology(ontologyID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	var result []models.EntityType
+	for _, et := range all {
+		if et.IsSpatialLayer {
+			result = append(result, et)
+		}
+	}
+	return result, nil
+}
+
+// BuildSpatialLayerLookup 构建 label名 → SpatialLayerConfig 的查找表（含继承关系）
+// 遍历本体内所有 EntityType，对每个类型沿 ParentID 上溯直到找到 is_spatial_layer=true 的祖先
+// 返回：map[labelName]*SpatialLayerConfig（仅含有空间祖先的 label）
+func (s *OntologyService) BuildSpatialLayerLookup(ontologyID, tenantID uint) (map[string]*models.SpatialLayerConfig, error) {
+	all, err := s.entityTypeRepo.ListByOntology(ontologyID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 构建 id→EntityType 索引
+	byID := make(map[uint]*models.EntityType, len(all))
+	for i := range all {
+		byID[all[i].ID] = &all[i]
+	}
+
+	result := make(map[string]*models.SpatialLayerConfig)
+	for _, et := range all {
+		cfg := findSpatialAncestorConfig(&et, byID, 0)
+		if cfg != nil {
+			// 每个实体类型使用自身名称作为 Neo4j 空间图层名，而不是祖先的名称
+			cfgCopy := *cfg
+			cfgCopy.LayerName = et.Name
+			result[et.Name] = &cfgCopy
+		}
+	}
+	return result, nil
+}
+
+// findSpatialAncestorConfig 沿 ParentID 链查找最近的空间图层祖先（最多 10 层防循环）
+func findSpatialAncestorConfig(et *models.EntityType, byID map[uint]*models.EntityType, depth int) *models.SpatialLayerConfig {
+	if depth > 10 {
+		return nil
+	}
+	if et.IsSpatialLayer {
+		return et.ParsedSpatialLayerConfig()
+	}
+	if et.ParentID == nil {
+		return nil
+	}
+	parent, ok := byID[*et.ParentID]
+	if !ok {
+		return nil
+	}
+	return findSpatialAncestorConfig(parent, byID, depth+1)
 }
 
 // --- RelationType CRUD ---

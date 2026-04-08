@@ -28,6 +28,7 @@
           <div class="task-actions" @click.stop>
             <el-button v-if="task.status === 'pending' || task.status === 'failed'" size="small" type="primary" @click="handleRun(task)">运行</el-button>
             <el-button v-if="task.status === 'running'" size="small" type="warning" @click="handleCancel(task)">取消</el-button>
+            <el-button v-if="task.status === 'completed' || task.status === 'cancelled'" size="small" type="primary" plain @click="handleRerun(task)">重新运行</el-button>
             <el-button size="small" @click="goReview(task)">
               审核
               <el-badge v-if="pendingCounts[task.id]" :value="pendingCounts[task.id]" class="review-badge" />
@@ -154,6 +155,17 @@ async function handleCancel(task) {
     await loadTasks()
   } catch (e) {
     ElMessage.error('取消失败')
+  }
+}
+
+async function handleRerun(task) {
+  try {
+    await ElMessageBox.confirm('重新运行将清空本次待审核队列并从头重新处理所有材料，确认？', '确认重新运行', { type: 'warning' })
+    await buildAPI.rerunTask(props.graphId, task.id)
+    ElMessage.success('任务已重新启动')
+    await loadTasks()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.error || '启动失败')
   }
 }
 

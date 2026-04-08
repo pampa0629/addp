@@ -6,5 +6,8 @@ export const analysisAPI = {
   },
   runAlgorithm(graphId, params) {
     return client.post(`/graph/graphs/${graphId}/analysis/run`, params)
+  },
+  syncSpatialLayers(graphId) {
+    return client.post(`/graph/graphs/${graphId}/analysis/sync-spatial`)
   }
 }

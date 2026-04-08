@@ -37,7 +37,13 @@ func (r *BuildRepository) UpdateTask(task *models.BuildTask) error {
 }
 
 func (r *BuildRepository) DeleteTask(id, tenantID uint) error {
-	// 级联删除由 ON DELETE CASCADE 处理（materials + review_items）
+	// 先删子表（review_items、materials），再删任务本身
+	if err := r.db.Where("task_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.ReviewItem{}).Error; err != nil {
+		return err
+	}
+	if err := r.db.Where("task_id = ? AND tenant_id = ?", id, tenantID).Delete(&models.BuildMaterial{}).Error; err != nil {
+		return err
+	}
 	return r.db.Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&models.BuildTask{}).Error
 }
 
@@ -132,4 +138,23 @@ func (r *BuildRepository) CountPendingReview(graphID, tenantID uint) (int64, err
 		Where("graph_id = ? AND tenant_id = ? AND status = ?", graphID, tenantID, models.ReviewStatusPending).
 		Count(&count).Error
 	return count, err
+}
+
+// ResetMaterials 将任务下所有材料重置为待处理状态
+func (r *BuildRepository) ResetMaterials(taskID, tenantID uint) error {
+	return r.db.Model(&models.BuildMaterial{}).
+		Where("task_id = ? AND tenant_id = ?", taskID, tenantID).
+		Updates(map[string]interface{}{
+			"status":           models.BuildStatusPending,
+			"processed_chunks": 0,
+			"total_chunks":     0,
+			"error_message":    "",
+			"processed_at":     nil,
+		}).Error
+}
+
+// DeletePendingReviewItems 删除任务下所有 pending 状态的审核项（重跑时清空待审核队列）
+func (r *BuildRepository) DeletePendingReviewItems(taskID, tenantID uint) error {
+	return r.db.Where("task_id = ? AND tenant_id = ? AND status = ?", taskID, tenantID, models.ReviewStatusPending).
+		Delete(&models.ReviewItem{}).Error
 }

@@ -27,7 +27,7 @@ type BuildTask struct {
 	CompletedAt         *time.Time     `json:"completed_at"`
 
 	Graph     *KnowledgeGraph  `gorm:"foreignKey:GraphID" json:"graph,omitempty"`
-	Materials []BuildMaterial  `gorm:"foreignKey:TaskID" json:"materials,omitempty"`
+	Materials []BuildMaterial  `gorm:"foreignKey:TaskID;constraint:OnDelete:CASCADE" json:"materials,omitempty"`
 }
 
 // BuildMaterial 构建材料（一个构建任务关联的原始文件）

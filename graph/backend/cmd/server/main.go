@@ -79,7 +79,7 @@ func main() {
 	neo4jSvc := service.NewNeo4jService(graphRepo, ontologyRepo, systemClient)
 	knowledgeSvc := service.NewKnowledgeService(neo4jSvc, ontologyRepo, graphRepo)
 	schemaInferenceSvc := service.NewSchemaInferenceService(graphRepo, ontologyRepo, neo4jSvc, ontologySvc, systemClient)
-	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, graphRepo, taskExecutionRepo, neo4jSvc, minioClient, cfg.CopilotServiceURL)
+	buildSvc := service.NewBuildService(buildRepo, ontologyRepo, ontologySvc, graphRepo, taskExecutionRepo, neo4jSvc, minioClient, cfg.CopilotServiceURL)
 	analysisSvc := service.NewAnalysisService(graphRepo, ontologyRepo, systemClient)
 
 	// 初始化 Model 导入服务（如果配置了 MODEL_SERVICE_URL）

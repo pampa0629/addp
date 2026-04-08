@@ -60,7 +60,7 @@ func (h *ServiceHandler) checkAccess(c *gin.Context, graphIDStr string) (graphID
 // @Param type path string true "本体实体类型名称"
 // @Param page query int false "页码（默认 1）"
 // @Param page_size query int false "每页大小（默认 20）"
-// @Router /api/v1/graph/kg/{graphId}/entities/{type} [get]
+// @Router /kg/{graphId}/entities/{type} [get]
 func (h *ServiceHandler) ListEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -94,7 +94,7 @@ func (h *ServiceHandler) ListEntities(c *gin.Context) {
 
 // @Summary 获取实体详情
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/entities/{type}/{nodeId} [get]
+// @Router /kg/{graphId}/entities/{type}/{nodeId} [get]
 func (h *ServiceHandler) GetEntity(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -111,7 +111,7 @@ func (h *ServiceHandler) GetEntity(c *gin.Context) {
 
 // @Summary 获取节点邻居
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/nodes/{nodeId}/neighbors [get]
+// @Router /kg/{graphId}/nodes/{nodeId}/neighbors [get]
 func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -130,7 +130,7 @@ func (h *ServiceHandler) GetNeighbors(c *gin.Context) {
 
 // @Summary 路径查找
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/paths [post]
+// @Router /kg/{graphId}/paths [post]
 func (h *ServiceHandler) FindPaths(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -151,7 +151,7 @@ func (h *ServiceHandler) FindPaths(c *gin.Context) {
 
 // @Summary 获取实体中心子图
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/subgraph [post]
+// @Router /kg/{graphId}/subgraph [post]
 func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -172,7 +172,7 @@ func (h *ServiceHandler) GetSubgraph(c *gin.Context) {
 
 // @Summary 全文搜索实体
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/search [get]
+// @Router /kg/{graphId}/search [get]
 func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -211,7 +211,7 @@ func (h *ServiceHandler) SearchEntities(c *gin.Context) {
 
 // @Summary 获取图谱本体描述
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/ontology [get]
+// @Router /kg/{graphId}/ontology [get]
 func (h *ServiceHandler) GetOntology(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {
@@ -227,7 +227,7 @@ func (h *ServiceHandler) GetOntology(c *gin.Context) {
 
 // @Summary 图谱统计信息
 // @Tags 知识服务
-// @Router /api/v1/graph/kg/{graphId}/stats [get]
+// @Router /kg/{graphId}/stats [get]
 func (h *ServiceHandler) GetStats(c *gin.Context) {
 	graphID, tenantID, ok := h.checkAccess(c, c.Param("graphId"))
 	if !ok {

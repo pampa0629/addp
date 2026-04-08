@@ -700,7 +700,10 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoyLCJ1c2VybmFtZSI6ImFkbWluIiwidGVuYW50X2lkIjoxLCJleHAiOjE3NzQ5Nzg4MDAsImlhdCI6MTc3NDk2ODAwMH0.Omt873cGPHl7y0kyDq0MRxaA-PMoghv0TlMIMbJdfYo\")",
       "Read(//Users/pampa/.claude/plans/**)",
       "Bash(wait)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(open /Users/pampa/code/addp/docs/skills/ui-ux-pro-max-skill/preview/monitor-dashboard-demo.html)",
+      "Bash(TaskStop b6jiwimr9:*)"
     ],
     "deny": [],
     "ask": [],

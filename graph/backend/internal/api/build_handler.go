@@ -166,6 +166,20 @@ func (h *BuildHandler) CancelTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "任务已取消"})
 }
 
+// RerunTask POST /graphs/:id/build/tasks/:tid/rerun
+func (h *BuildHandler) RerunTask(c *gin.Context) {
+	graphID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	tid, _ := strconv.ParseUint(c.Param("tid"), 10, 64)
+	tenantID := commonMiddleware.GetTenantID(c)
+	userID := commonMiddleware.GetUserID(c)
+
+	if err := h.buildSvc.RerunTask(c.Request.Context(), uint(tid), uint(graphID), uint(tenantID), uint(userID)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "任务已重新启动"})
+}
+
 // ——— 材料管理 ———
 
 // ListMaterials GET /graphs/:id/build/tasks/:tid/materials

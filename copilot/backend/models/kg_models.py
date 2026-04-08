@@ -9,7 +9,7 @@ class PropertyInfo(BaseModel):
     """属性定义（来自本体模型）"""
     name: str = Field(description="属性名（英文标识符）")
     label: str = Field(description="显示名称")
-    data_type: str = Field(description="数据类型: string/integer/float/boolean/date/datetime")
+    data_type: str = Field(description="数据类型: string/integer/float/boolean/date/datetime/wkt")
     unique: bool = Field(default=False, description="是否为唯一标识属性（驱动 Neo4j MERGE 的唯一键）")
     required: bool = Field(default=False, description="是否必填")
     description: str = Field(default="", description="属性说明")

@@ -164,13 +164,17 @@ services:
       NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_INITIAL:-256m}
       NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_MAX:-512m}
       NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-128m}
-      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*"
+      NEO4J_dbms_security_procedures_unrestricted: "gds.*,apoc.*,spatial.*"
+      # APOC: jar 已内置于镜像 labs 目录，无需联网
+      # GDS:  jar 预下载到 ./neo4j/plugins/，直接挂载到 plugins 目录，无需联网
+      NEO4J_PLUGINS: '["apoc"]'
     ports:
       - "${NEO4J_HTTP_PORT:-7474}:7474"   # Browser UI
       - "${NEO4J_BOLT_PORT:-7687}:7687"   # Bolt 协议（Go driver 使用）
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
+      - ./neo4j/plugins:/plugins
     networks:
       - business-network
     healthcheck:

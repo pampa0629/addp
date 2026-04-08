@@ -243,7 +243,7 @@ if [ "$ENABLE_PG" = true ]; then
     if docker ps --filter "name=business-postgres" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ PostgreSQL 已运行，跳过启动${NC}"
     else
-        docker-compose up -d postgres
+        docker compose up -d postgres
         echo -e "${GREEN}✓ PostgreSQL 已启动${NC}"
     fi
 fi
@@ -253,7 +253,7 @@ if [ "$ENABLE_MINIO" = true ]; then
     if docker ps --filter "name=business-minio" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ MinIO 已运行，跳过启动${NC}"
     else
-        docker-compose up -d minio
+        docker compose up -d minio
         echo -e "${GREEN}✓ MinIO 已启动${NC}"
     fi
 fi
@@ -263,7 +263,7 @@ if [ "$ENABLE_CLICKHOUSE" = true ]; then
     if docker ps --filter "name=business-clickhouse" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ ClickHouse 已运行，跳过启动${NC}"
     else
-        docker-compose up -d clickhouse
+        docker compose up -d clickhouse
         echo -e "${GREEN}✓ ClickHouse 已启动${NC}"
     fi
 fi
@@ -273,7 +273,7 @@ if [ "$ENABLE_MONGODB" = true ]; then
     if docker ps --filter "name=business-mongodb" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ MongoDB 已运行，跳过启动${NC}"
     else
-        docker-compose up -d mongodb
+        docker compose up -d mongodb
         echo -e "${GREEN}✓ MongoDB 已启动${NC}"
     fi
 fi
@@ -283,7 +283,7 @@ if [ "$ENABLE_DORIS" = true ]; then
     if docker ps --filter "name=business-doris-fe" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ Doris 已运行，跳过启动${NC}"
     else
-        docker-compose up -d doris-fe
+        docker compose up -d doris-fe
         echo -e "${GREEN}✓ Doris 已启动${NC}"
     fi
 fi
@@ -293,24 +293,71 @@ if [ "$ENABLE_SPARK" = true ]; then
     if docker ps --filter "name=business-spark-master" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ Spark Master 已运行，跳过启动${NC}"
     else
-        docker-compose up -d spark-master
+        docker compose up -d spark-master
         echo -e "${GREEN}✓ Spark Master 已启动${NC}"
     fi
 
     if docker ps --filter "name=business-spark-worker-1" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ Spark Worker 1 已运行，跳过启动${NC}"
     else
-        docker-compose up -d spark-worker-1
+        docker compose up -d spark-worker-1
         echo -e "${GREEN}✓ Spark Worker 1 已启动${NC}"
     fi
 fi
 
 # Neo4j
 if [ "$ENABLE_NEO4J" = true ]; then
+    # 确保插件目录存在
+    mkdir -p "${PROJECT_ROOT}/neo4j/plugins"
+
+    # 自动下载 Neo4j 插件（GDS + Spatial）
+    # 插件版本需与 docker-compose.yml 中的 neo4j 镜像版本匹配
+    NEO4J_VERSION="5.26.0"
+    GDS_VERSION="2.13.9"
+    GDS_JAR="neo4j-graph-data-science-${GDS_VERSION}.jar"
+    SPATIAL_JAR="neo4j-spatial-${NEO4J_VERSION}-server-plugin.jar"
+    PLUGINS_DIR="${PROJECT_ROOT}/neo4j/plugins"
+
+    download_plugin() {
+        local jar_name="$1"
+        local url="$2"
+        local dest="${PLUGINS_DIR}/${jar_name}"
+        if [ -f "$dest" ]; then
+            echo -e "${GREEN}✓ ${jar_name} 已存在，跳过下载${NC}"
+            return 0
+        fi
+        echo -e "${YELLOW}⬇️  下载 ${jar_name}...${NC}"
+        python3 -c "
+import urllib.request, sys
+url = '${url}'
+dest = '${dest}'
+try:
+    urllib.request.urlretrieve(url, dest)
+    import os
+    size = os.path.getsize(dest)
+    print(f'  已下载: {size:,} bytes')
+except Exception as e:
+    print(f'  下载失败: {e}', file=sys.stderr)
+    sys.exit(1)
+"
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓ ${jar_name} 下载完成${NC}"
+        else
+            echo -e "${RED}✗ ${jar_name} 下载失败，请手动下载到 ${PLUGINS_DIR}/${NC}"
+        fi
+    }
+
+    echo -e "${YELLOW}🔍 检查 Neo4j 插件...${NC}"
+    download_plugin "$GDS_JAR" \
+        "https://github.com/neo4j/graph-data-science/releases/download/${GDS_VERSION}/neo4j-graph-data-science-${GDS_VERSION}.jar"
+    download_plugin "$SPATIAL_JAR" \
+        "https://github.com/neo4j-contrib/spatial/releases/download/${NEO4J_VERSION}/neo4j-spatial-${NEO4J_VERSION}-server-plugin.jar"
+    echo ""
+
     if docker ps --filter "name=business-neo4j" --format '{{.Status}}' | grep -q "Up"; then
         echo -e "${GREEN}✓ Neo4j 已运行，跳过启动${NC}"
     else
-        docker-compose up -d neo4j
+        docker compose up -d neo4j
         echo -e "${GREEN}✓ Neo4j 已启动${NC}"
     fi
 fi

@@ -27,10 +27,18 @@ type SubgraphResult struct {
 	Edges []GraphEdgeDTO `json:"edges"`
 }
 
+// RelTypeConnection 关系类型的端点标签信息
+type RelTypeConnection struct {
+	RelType     string `json:"rel_type"`    // 关系类型名称
+	SourceLabel string `json:"source_label"` // 起点节点标签
+	TargetLabel string `json:"target_label"` // 终点节点标签
+}
+
 // GraphSchema 图谱 Schema（标签 + 关系类型）
 type BrowseSchema struct {
-	Labels   []string `json:"labels"`    // 所有节点标签
-	RelTypes []string `json:"rel_types"` // 所有关系类型
+	Labels      []string            `json:"labels"`       // 所有节点标签
+	RelTypes    []string            `json:"rel_types"`    // 所有关系类型
+	Connections []RelTypeConnection `json:"connections"`  // 关系类型的端点连通信息
 }
 
 // GraphStats 图谱统计信息

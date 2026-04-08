@@ -9,106 +9,6 @@
     "host": "localhost:8186",
     "basePath": "/api/v1/graph",
     "paths": {
-        "/api/v1/graph/kg/{graphId}/entities/{type}": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "按类型列出实体（分页）",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "图谱 ID",
-                        "name": "graphId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "本体实体类型名称",
-                        "name": "type",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "页码（默认 1）",
-                        "name": "page",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "每页大小（默认 20）",
-                        "name": "page_size",
-                        "in": "query"
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/entities/{type}/{nodeId}": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "获取实体详情",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/nodes/{nodeId}/neighbors": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "获取节点邻居",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/ontology": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "获取图谱本体描述",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/paths": {
-            "post": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "路径查找",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/search": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "全文搜索实体",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/stats": {
-            "get": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "图谱统计信息",
-                "responses": {}
-            }
-        },
-        "/api/v1/graph/kg/{graphId}/subgraph": {
-            "post": {
-                "tags": [
-                    "知识服务"
-                ],
-                "summary": "获取实体中心子图",
-                "responses": {}
-            }
-        },
         "/graphs": {
             "get": {
                 "security": [
@@ -853,6 +753,106 @@
                         }
                     }
                 }
+            }
+        },
+        "/kg/{graphId}/entities/{type}": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "按类型列出实体（分页）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "图谱 ID",
+                        "name": "graphId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "本体实体类型名称",
+                        "name": "type",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码（默认 1）",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页大小（默认 20）",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/entities/{type}/{nodeId}": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "获取实体详情",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/nodes/{nodeId}/neighbors": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "获取节点邻居",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/ontology": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "获取图谱本体描述",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/paths": {
+            "post": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "路径查找",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/search": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "全文搜索实体",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/stats": {
+            "get": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "图谱统计信息",
+                "responses": {}
+            }
+        },
+        "/kg/{graphId}/subgraph": {
+            "post": {
+                "tags": [
+                    "知识服务"
+                ],
+                "summary": "获取实体中心子图",
+                "responses": {}
             }
         },
         "/ontologies": {

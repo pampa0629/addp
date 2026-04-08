@@ -56,6 +56,7 @@ func SetupRouter(
 				ontology.PUT("/entity-types/:eid", ontologyHandler.UpdateEntityType)
 				ontology.DELETE("/entity-types/:eid", ontologyHandler.DeleteEntityType)
 				ontology.POST("/entity-types/:eid/sync-constraints", ontologyHandler.SyncEntityTypeConstraints)
+				ontology.PUT("/entity-types/:eid/sync-spatial-layer", ontologyHandler.SyncEntityTypeSpatialLayer)
 
 				// 关系类型（:rid 为关系类型ID）
 				ontology.GET("/relation-types", ontologyHandler.ListRelationTypes)
@@ -104,6 +105,7 @@ func SetupRouter(
 							task.DELETE("", buildHandler.DeleteTask)
 							task.POST("/run", buildHandler.RunTask)
 							task.POST("/cancel", buildHandler.CancelTask)
+							task.POST("/rerun", buildHandler.RerunTask)
 							task.GET("/materials", buildHandler.ListMaterials)
 							task.POST("/materials", buildHandler.UploadMaterial)
 							task.DELETE("/materials/:mid", buildHandler.DeleteMaterial)
@@ -116,6 +118,7 @@ func SetupRouter(
 				{
 					analysis.GET("/capabilities", analysisHandler.GetCapabilities)
 					analysis.POST("/run", analysisHandler.RunAlgorithm)
+					analysis.POST("/sync-spatial", analysisHandler.SyncSpatialLayers)
 				}
 
 				// 审核队列 API

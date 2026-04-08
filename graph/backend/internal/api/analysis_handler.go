@@ -44,7 +44,34 @@ func (h *AnalysisHandler) GetCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, caps)
 }
 
-// RunAlgorithm godoc
+// SyncSpatialLayers godoc
+// @Summary      同步空间图层
+// @Description  将本体中所有有效空间类型（含从父类型继承）的图层同步到 Neo4j，并注册已有节点（幂等）
+// @Tags         图算法分析
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id path int true "知识图谱 ID"
+// @Success      200 {object} map[string]interface{}
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /graphs/{id}/analysis/sync-spatial [post]
+func (h *AnalysisHandler) SyncSpatialLayers(c *gin.Context) {
+	graphID := parseUintParam(c, "id")
+	tenantID := getTenantID(c)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
+	defer cancel()
+
+	synced, err := h.analysisSvc.SyncAllSpatialLayers(ctx, graphID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"synced_layers": synced,
+		"count":         len(synced),
+		"message":       "空间图层同步成功",
+	})
+}
 // @Summary      执行图算法
 // @Description  执行指定图算法（度中心性/K跳/最短路径/PageRank/Louvain/WCC/介数中心性）
 // @Tags         图算法分析

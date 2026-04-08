@@ -669,73 +669,6 @@ info:
   title: ADDP Graph API
   version: "1.0"
 paths:
-  /api/v1/graph/kg/{graphId}/entities/{type}:
-    get:
-      parameters:
-      - description: 图谱 ID
-        in: path
-        name: graphId
-        required: true
-        type: integer
-      - description: 本体实体类型名称
-        in: path
-        name: type
-        required: true
-        type: string
-      - description: 页码（默认 1）
-        in: query
-        name: page
-        type: integer
-      - description: 每页大小（默认 20）
-        in: query
-        name: page_size
-        type: integer
-      responses: {}
-      summary: 按类型列出实体（分页）
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/entities/{type}/{nodeId}:
-    get:
-      responses: {}
-      summary: 获取实体详情
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/nodes/{nodeId}/neighbors:
-    get:
-      responses: {}
-      summary: 获取节点邻居
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/ontology:
-    get:
-      responses: {}
-      summary: 获取图谱本体描述
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/paths:
-    post:
-      responses: {}
-      summary: 路径查找
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/search:
-    get:
-      responses: {}
-      summary: 全文搜索实体
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/stats:
-    get:
-      responses: {}
-      summary: 图谱统计信息
-      tags:
-      - 知识服务
-  /api/v1/graph/kg/{graphId}/subgraph:
-    post:
-      responses: {}
-      summary: 获取实体中心子图
-      tags:
-      - 知识服务
   /graphs:
     get:
       description: 获取当前租户的所有知识图谱实例
@@ -1208,6 +1141,73 @@ paths:
       summary: 图谱统计
       tags:
       - 图谱浏览
+  /kg/{graphId}/entities/{type}:
+    get:
+      parameters:
+      - description: 图谱 ID
+        in: path
+        name: graphId
+        required: true
+        type: integer
+      - description: 本体实体类型名称
+        in: path
+        name: type
+        required: true
+        type: string
+      - description: 页码（默认 1）
+        in: query
+        name: page
+        type: integer
+      - description: 每页大小（默认 20）
+        in: query
+        name: page_size
+        type: integer
+      responses: {}
+      summary: 按类型列出实体（分页）
+      tags:
+      - 知识服务
+  /kg/{graphId}/entities/{type}/{nodeId}:
+    get:
+      responses: {}
+      summary: 获取实体详情
+      tags:
+      - 知识服务
+  /kg/{graphId}/nodes/{nodeId}/neighbors:
+    get:
+      responses: {}
+      summary: 获取节点邻居
+      tags:
+      - 知识服务
+  /kg/{graphId}/ontology:
+    get:
+      responses: {}
+      summary: 获取图谱本体描述
+      tags:
+      - 知识服务
+  /kg/{graphId}/paths:
+    post:
+      responses: {}
+      summary: 路径查找
+      tags:
+      - 知识服务
+  /kg/{graphId}/search:
+    get:
+      responses: {}
+      summary: 全文搜索实体
+      tags:
+      - 知识服务
+  /kg/{graphId}/stats:
+    get:
+      responses: {}
+      summary: 图谱统计信息
+      tags:
+      - 知识服务
+  /kg/{graphId}/subgraph:
+    post:
+      responses: {}
+      summary: 获取实体中心子图
+      tags:
+      - 知识服务
   /ontologies:
     get:
       description: 获取当前租户的所有本体模型

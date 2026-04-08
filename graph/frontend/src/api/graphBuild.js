@@ -20,6 +20,9 @@ export const buildAPI = {
   cancelTask(graphId, taskId) {
     return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/cancel`)
   },
+  rerunTask(graphId, taskId) {
+    return client.post(`/graph/graphs/${graphId}/build/tasks/${taskId}/rerun`)
+  },
 
   // ——— 材料管理 ———
   listMaterials(graphId, taskId) {

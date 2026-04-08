@@ -160,3 +160,6 @@ data/jiaxing/规划用地.qmd
 data/jiaxing/规划用地.shp
 data/jiaxing/规划用地.shx
 data/yanshi.udbx
+
+# Neo4j 插件 JAR（体积大，运行时自动下载）
+business/neo4j/plugins/*.jar

@@ -39,9 +39,8 @@
 | Agent 模块详情       | agent/CLAUDE.md               | AI 对话助手、自然语言交互、LangGraph |
 | Graph 模块详情       | graph/CLAUDE.md               | 知识图谱、本体建模、图谱构建、图可视化 |
 
-增加前端页面，阅读：common-front/docs/addp前端风格设计规范.md，关键是不能硬编码颜色，而是要采用addp定义的主题风格CSS；
-各个模块增加了前端页面，都需要集成到console模块中；
-增加后端服务API，阅读： docs/spec/addp-API设计规范.md，关键是了解并遵从返回data的规定，以及符合swagger的要求；
+增加前端页面时，阅读：common-front/docs/addp前端风格设计规范.md，关键是不能硬编码颜色，而是要采用addp定义的主题风格CSS；并且要集成到console模块中；
+增加后端的API时，阅读：docs/spec/addp-API设计规范.md，关键是了解并遵从返回data的规定，以及符合swagger的要求；
 
 
 **重要**:
@@ -88,6 +87,10 @@
 
 ### 10. git提交规则
 AI可以提交代码到github上，但未经用户允许，不得创建分支提交。
+
+### 11. 避免硬编码
+不要根据单一数据来进行硬编码，例如不得默认空间字段就是 geom，而是应该通过函数/接口等来获取。
+
 
 ## 仓库结构
 
@@ -196,14 +199,17 @@ ADDP 采用 **系统与业务数据分离** 架构设计:
 - `business-postgres`: 存储用户通过 ADDP 管理的实际业务数据 (用户上传的 PostgreSQL 数据等)
 - `business-minio`: 存储用户上传的业务文件 (Shapefile、GeoJSON、图片、视频等)
 
-### 基于模块的资源隔离
+### 资源隔离
 
-ADDP 采用 **模块化资源隔离** 策略,确保模块资源独立管理:
-**PostgreSQL Schema 隔离**: 按模块名隔离
-**MinIO Bucket 隔离**: 按模块名隔离
-**Redis Key 命名规范**: {module}:{middleware}:{function}:{id}
-**Asynq Queue 命名规范**: {module}:{priority}
-**Meilisearch Index 命名规范**: {module}:{entity_type}
+ADDP 同时采用 **模块隔离** 和 **租户隔离** 两个维度管理资源:
+
+| 中间件 | 模块隔离 | 租户隔离 |
+|---|---|---|
+| PostgreSQL | Schema 按模块名隔离 | 业务表含 `tenant_id`,查询强制过滤 |
+| MinIO | Bucket 按模块名隔离 | 对象路径前缀为 `{tenant_id}/` |
+| Redis | Key: `{module}:{middleware}:{function}:{id}` | Key 含租户维度: `{module}:{tenant_id}:{function}:{id}` |
+| Asynq | Queue: `{module}:{priority}` | — |
+| Meilisearch | Index: `{module}:{entity_type}` | 搜索请求自动附加 `tenant_id` 过滤 |
 
 ## 关键架构模式
 

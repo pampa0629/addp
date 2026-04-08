@@ -29,6 +29,7 @@ const (
 type BuildService struct {
 	buildRepo         *repository.BuildRepository
 	ontologyRepo      *repository.OntologyRepository
+	ontologySvc       *OntologyService
 	graphRepo         *repository.KnowledgeGraphRepository
 	taskExecutionRepo *commonRepo.TaskExecutionRepository
 	neo4jSvc          *Neo4jService
@@ -44,6 +45,7 @@ type BuildService struct {
 func NewBuildService(
 	buildRepo *repository.BuildRepository,
 	ontologyRepo *repository.OntologyRepository,
+	ontologySvc *OntologyService,
 	graphRepo *repository.KnowledgeGraphRepository,
 	taskExecutionRepo *commonRepo.TaskExecutionRepository,
 	neo4jSvc *Neo4jService,
@@ -53,6 +55,7 @@ func NewBuildService(
 	return &BuildService{
 		buildRepo:         buildRepo,
 		ontologyRepo:      ontologyRepo,
+		ontologySvc:       ontologySvc,
 		graphRepo:         graphRepo,
 		taskExecutionRepo: taskExecutionRepo,
 		neo4jSvc:          neo4jSvc,
@@ -222,6 +225,37 @@ func (s *BuildService) CancelTask(taskID, graphID, tenantID uint) error {
 	return nil
 }
 
+// RerunTask 重置任务状态并重新执行（对 completed/failed/cancelled 任务适用）
+func (s *BuildService) RerunTask(ctx context.Context, taskID, graphID, tenantID, userID uint) error {
+	task, err := s.buildRepo.GetTask(taskID, tenantID)
+	if err != nil {
+		return fmt.Errorf("任务不存在: %w", err)
+	}
+	if task.Status == models.BuildStatusRunning {
+		return fmt.Errorf("任务正在运行中，无法重新运行")
+	}
+
+	// 重置材料进度
+	if err := s.buildRepo.ResetMaterials(taskID, tenantID); err != nil {
+		return fmt.Errorf("重置材料状态失败: %w", err)
+	}
+	// 清空 pending 审核项（已 approved/rejected/modified 的保留）
+	_ = s.buildRepo.DeletePendingReviewItems(taskID, tenantID)
+
+	// 重置任务自身状态
+	task.Status = models.BuildStatusPending
+	task.ErrorMessage = ""
+	task.ExecutionID = ""
+	task.StartedAt = nil
+	task.CompletedAt = nil
+	task.Stats = []byte("{}")
+	if err := s.buildRepo.UpdateTask(task); err != nil {
+		return fmt.Errorf("重置任务状态失败: %w", err)
+	}
+
+	return s.RunTask(ctx, taskID, graphID, tenantID, userID)
+}
+
 // ============ 核心执行逻辑 ============
 
 func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, materials []models.BuildMaterial, tenantID int, executionID string) {
@@ -241,6 +275,13 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		return
 	}
 	ontologySchema := buildOntologySchema(ontology)
+	ancestorChains := buildAncestorChains(ontology)
+
+	// 构建空间图层查找表（label名 → SpatialLayerConfig，含继承关系，LayerName 为子类型自身名称）
+	spatialLayerLookup, _ := s.ontologySvc.BuildSpatialLayerLookup(kg.OntologyID, uint(tenantID))
+
+	// 构建前自动同步空间图层（幂等，含继承类型）
+	s.syncSpatialLayersBeforeBuild(ctx, task.GraphID, uint(tenantID), spatialLayerLookup)
 
 	total := len(materials)
 	for i, mat := range materials {
@@ -253,7 +294,7 @@ func (s *BuildService) executeTask(ctx context.Context, task *models.BuildTask, 
 		mat.Status = "processing"
 		_ = s.buildRepo.UpdateMaterial(&mat)
 
-		written, queued, err := s.processMaterial(ctx, task, &mat, ontologySchema, uint(tenantID))
+		written, queued, err := s.processMaterial(ctx, task, &mat, ontologySchema, spatialLayerLookup, ancestorChains, uint(tenantID))
 		if err != nil {
 			mat.Status = models.BuildStatusFailed
 			mat.ErrorMessage = err.Error()
@@ -327,9 +368,16 @@ func (s *BuildService) failTask(ctx context.Context, task *models.BuildTask, ten
 	}
 }
 
+// syncSpatialLayersBeforeBuild 在构建前自动同步所有空间图层（幂等，含继承类型）
+func (s *BuildService) syncSpatialLayersBeforeBuild(ctx context.Context, graphID, tenantID uint, spatialLayerLookup map[string]*models.SpatialLayerConfig) {
+	for _, cfg := range spatialLayerLookup {
+		_ = s.neo4jSvc.SyncSpatialLayerByConfig(ctx, graphID, tenantID, cfg)
+	}
+}
+
 // processMaterial 处理单份材料（分块 + 调 Copilot + 写入/审核）
 // 返回：autoWritten, pendingReview, error
-func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, tenantID uint) (int, int, error) {
+func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTask, mat *models.BuildMaterial, ontology *ontologySchemaDTO, spatialLayerLookup map[string]*models.SpatialLayerConfig, ancestorChains map[string][]string, tenantID uint) (int, int, error) {
 	// 从 MinIO 读取文件内容
 	text, err := s.minioClient.GetTextContent(ctx, minioBucket, mat.FilePath)
 	if err != nil {
@@ -366,7 +414,7 @@ func (s *BuildService) processMaterial(ctx context.Context, task *models.BuildTa
 			return autoWritten, pendingReview, err
 		}
 
-		aw, pv := s.processChunkResult(ctx, task, mat, result, ontology, seenEntities, tenantID)
+		aw, pv := s.processChunkResult(ctx, task, mat, result, ontology, spatialLayerLookup, ancestorChains, seenEntities, tenantID)
 		autoWritten += aw
 		pendingReview += pv
 
@@ -384,6 +432,8 @@ func (s *BuildService) processChunkResult(
 	mat *models.BuildMaterial,
 	result *copilotExtractResponse,
 	ontology *ontologySchemaDTO,
+	spatialLayerLookup map[string]*models.SpatialLayerConfig,
+	ancestorChains map[string][]string,
 	seenEntities map[string]string,
 	tenantID uint,
 ) (autoWritten, pendingReview int) {
@@ -395,20 +445,33 @@ func (s *BuildService) processChunkResult(
 		key := entity.Type + "::" + fmt.Sprint(uniqueVal)
 
 		if entity.Confidence >= task.ConfidenceThreshold {
-			if _, seen := seenEntities[key]; seen {
-				continue // 材料内已处理，跳过
+			// 不跳过已见实体：后续 chunk 可能携带更完整的属性（如空间坐标），
+			// 始终调用 MergeEntity 实现"渐进叠加"语义，配合 buildSetClause 的
+			// nil/空值过滤，确保属性只增不减。
+			labels := ancestorChains[entity.Type]
+			if len(labels) == 0 {
+				labels = []string{entity.Type}
 			}
 			neo4jID, err := s.neo4jSvc.MergeEntity(ctx, task.GraphID, tenantID,
-				entity.Type, uniqueField, uniqueVal, entity.Properties)
+				labels, uniqueField, uniqueVal, entity.Properties)
 			if err == nil {
 				seenEntities[key] = neo4jID
 				autoWritten++
+				// 注册到空间图层（若该 label 或其祖先有空间图层配置）
+				if neo4jID != "" && spatialLayerLookup != nil {
+					for _, lbl := range labels {
+						if cfg, ok := spatialLayerLookup[lbl]; ok {
+							_ = s.neo4jSvc.AddNodeToSpatialLayer(ctx, task.GraphID, tenantID, neo4jID, cfg.LayerName)
+							break
+						}
+					}
+				}
 			}
 		} else {
 			if _, seen := seenEntities[key]; seen {
 				continue
 			}
-			content := buildEntityReviewContent(entity, uniqueField, uniqueVal)
+			content := buildEntityReviewContent(entity, uniqueField, uniqueVal, ancestorChains[entity.Type])
 			item := &models.ReviewItem{
 				TaskID:     task.ID,
 				MaterialID: mat.ID,
@@ -603,6 +666,15 @@ func (s *BuildService) writeReviewItemToNeo4j(ctx context.Context, item *models.
 func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, item *models.ReviewItem, content map[string]interface{}) (string, error) {
 	if item.ItemType == models.ReviewItemEntity {
 		entityType, _ := content["type"].(string)
+		var labels []string
+		if raw, ok := content["ancestor_labels"].([]interface{}); ok {
+			for _, v := range raw {
+				labels = append(labels, fmt.Sprint(v))
+			}
+		}
+		if len(labels) == 0 {
+			labels = []string{entityType}
+		}
 		uniqueField, _ := content["unique_key_field"].(string)
 		uniqueValue := content["unique_key_value"]
 		properties, _ := content["properties"].(map[string]interface{})
@@ -610,7 +682,7 @@ func (s *BuildService) writeReviewItemToNeo4jWithContent(ctx context.Context, it
 			properties = make(map[string]interface{})
 		}
 		return s.neo4jSvc.MergeEntity(ctx, item.GraphID, item.TenantID,
-			entityType, uniqueField, uniqueValue, properties)
+			labels, uniqueField, uniqueValue, properties)
 	}
 
 	// relation
@@ -705,10 +777,11 @@ type ontologySchemaDTO struct {
 }
 
 type entityTypeDTO struct {
-	Name        string          `json:"name"`
-	Label       string          `json:"label"`
-	Description string          `json:"description"`
-	Properties  []propertyDTO   `json:"properties"`
+	Name        string        `json:"name"`
+	Label       string        `json:"label"`
+	ParentName  string        `json:"parent_name,omitempty"`
+	Description string        `json:"description"`
+	Properties  []propertyDTO `json:"properties"`
 }
 
 type relationTypeDTO struct {
@@ -730,19 +803,37 @@ type propertyDTO struct {
 func buildOntologySchema(ontology *models.Ontology) *ontologySchemaDTO {
 	// 构建 entityType ID → Name 映射（用于解析关系类型的来源/目标）
 	idToName := make(map[uint]string, len(ontology.EntityTypes))
+	byID := make(map[uint]*models.EntityType, len(ontology.EntityTypes))
+	for i := range ontology.EntityTypes {
+		idToName[ontology.EntityTypes[i].ID] = ontology.EntityTypes[i].Name
+		byID[ontology.EntityTypes[i].ID] = &ontology.EntityTypes[i]
+	}
+
+	// 找出有子类的类型（抽象父类），只向 LLM 发送叶子类型
+	hasChildren := make(map[uint]bool)
 	for _, et := range ontology.EntityTypes {
-		idToName[et.ID] = et.Name
+		if et.ParentID != nil {
+			hasChildren[*et.ParentID] = true
+		}
 	}
 
 	dto := &ontologySchemaDTO{}
 	for _, et := range ontology.EntityTypes {
+		// 跳过抽象父类（有子类的类型）
+		if hasChildren[et.ID] {
+			continue
+		}
 		etDTO := entityTypeDTO{
 			Name:        et.Name,
 			Label:       et.Label,
 			Description: et.Description,
 		}
-		props, _ := et.ParsedProperties()
-		for _, p := range props {
+		if et.ParentID != nil {
+			etDTO.ParentName = idToName[*et.ParentID]
+		}
+		// 合并祖先属性（祖先属性先加，子类同名属性覆盖）
+		allProps := collectInheritedProperties(&et, byID)
+		for _, p := range allProps {
 			etDTO.Properties = append(etDTO.Properties, propertyDTO{
 				Name:     p.Name,
 				Label:    p.Label,
@@ -768,6 +859,65 @@ func buildOntologySchema(ontology *models.Ontology) *ontologySchemaDTO {
 		dto.RelationTypes = append(dto.RelationTypes, rtDTO)
 	}
 	return dto
+}
+
+// collectInheritedProperties 收集实体类型的完整属性（含祖先属性，子类同名属性优先）
+func collectInheritedProperties(et *models.EntityType, byID map[uint]*models.EntityType) []models.PropertyDefinition {
+	// 收集祖先链（从根到当前）
+	chain := []*models.EntityType{}
+	cur := et
+	for cur != nil {
+		chain = append([]*models.EntityType{cur}, chain...)
+		if cur.ParentID == nil {
+			break
+		}
+		parent, ok := byID[*cur.ParentID]
+		if !ok {
+			break
+		}
+		cur = parent
+	}
+	// 从根到叶合并属性，后者覆盖前者（同名属性子类优先）
+	seen := make(map[string]bool)
+	var result []models.PropertyDefinition
+	for _, node := range chain {
+		props, _ := node.ParsedProperties()
+		for _, p := range props {
+			if !seen[p.Name] {
+				seen[p.Name] = true
+				result = append(result, p)
+			}
+		}
+	}
+	return result
+}
+
+// buildAncestorChains 为本体中每个实体类型构建完整祖先 label 链
+// 返回 map[entityTypeName][]string，例如：
+//
+//	"City"    → ["City", "AOI"]
+//	"Company" → ["Company", "POI"]
+//	"AOI"     → ["AOI"]
+func buildAncestorChains(ontology *models.Ontology) map[string][]string {
+	byID := make(map[uint]*models.EntityType, len(ontology.EntityTypes))
+	for i := range ontology.EntityTypes {
+		byID[ontology.EntityTypes[i].ID] = &ontology.EntityTypes[i]
+	}
+	result := make(map[string][]string, len(ontology.EntityTypes))
+	for _, et := range ontology.EntityTypes {
+		chain := []string{et.Name}
+		cur := &et
+		for cur.ParentID != nil {
+			parent, ok := byID[*cur.ParentID]
+			if !ok {
+				break
+			}
+			chain = append(chain, parent.Name)
+			cur = parent
+		}
+		result[et.Name] = chain
+	}
+	return result
 }
 
 // ============ 文本分块（语义感知） ============
@@ -865,12 +1015,13 @@ func getPropertyValue(props map[string]interface{}, field string) interface{} {
 	return ""
 }
 
-func buildEntityReviewContent(entity extractedEntity, uniqueField string, uniqueValue interface{}) map[string]interface{} {
+func buildEntityReviewContent(entity extractedEntity, uniqueField string, uniqueValue interface{}, ancestorLabels []string) map[string]interface{} {
 	return map[string]interface{}{
 		"type":             entity.Type,
 		"unique_key_field": uniqueField,
 		"unique_key_value": uniqueValue,
 		"properties":       entity.Properties,
+		"ancestor_labels":  ancestorLabels,
 	}
 }
 

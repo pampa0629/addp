@@ -26,6 +26,20 @@
           <el-table-column prop="name" label="标识符" width="150" />
           <el-table-column prop="label" label="显示名" width="150" />
           <el-table-column prop="description" label="描述" show-overflow-tooltip />
+          <el-table-column label="空间图层" width="120">
+            <template #default="{ row }">
+              <template v-if="row.is_spatial_layer">
+                <el-tag type="success" size="small">
+                  空间·{{ row.spatial_layer_config?.geometry_type === 'wkt' ? '线面' : '点' }}
+                </el-tag>
+              </template>
+              <template v-else-if="getSpatialAncestor(row)">
+                <el-tooltip :content="`继承 ${getSpatialAncestor(row)} 空间图层`" placement="top">
+                  <el-icon style="color:var(--el-color-success);cursor:default"><Location /></el-icon>
+                </el-tooltip>
+              </template>
+            </template>
+          </el-table-column>
           <el-table-column label="颜色" width="80">
             <template #default="{ row }">
               <span class="color-dot" :style="{ background: row.color }"></span>
@@ -103,9 +117,57 @@
         <el-form-item label="描述">
           <el-input v-model="entityForm.description" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item label="父类型">
+          <el-select v-model="entityForm.parent_id" placeholder="无（顶级类型）" clearable style="width:100%">
+            <el-option
+              v-for="et in entityTypes.filter(e => e.id !== editingEntity?.id)"
+              :key="et.id"
+              :label="`${et.label || et.name}（${et.name}）`"
+              :value="et.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="entityForm.color" />
         </el-form-item>
+        <el-form-item label="空间图层">
+          <el-switch v-model="entityForm.is_spatial_layer" @change="onSpatialLayerToggle" />
+          <span v-if="entityForm.is_spatial_layer" style="margin-left:12px;font-size:12px;color:var(--el-text-color-secondary)">
+            请继续选择几何类型
+          </span>
+        </el-form-item>
+        <template v-if="entityForm.is_spatial_layer">
+          <el-form-item label="几何类型">
+            <el-radio-group v-model="entityForm.spatial_layer_config.geometry_type" @change="onGeometryTypeChange">
+              <el-radio value="point">点（lon + lat）</el-radio>
+              <el-radio value="wkt">线/面（WKT）</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="entityForm.spatial_layer_config.geometry_type" label="图层配置">
+            <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="width:80px;flex-shrink:0;font-size:13px">图层名称</span>
+                <el-input v-model="entityForm.spatial_layer_config.layer_name" size="small" style="flex:1" />
+              </div>
+              <template v-if="entityForm.spatial_layer_config.geometry_type === 'point'">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:80px;flex-shrink:0;font-size:13px">经度字段</span>
+                  <el-input v-model="entityForm.spatial_layer_config.lon_field" size="small" style="flex:1" placeholder="默认: lon" />
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:80px;flex-shrink:0;font-size:13px">纬度字段</span>
+                  <el-input v-model="entityForm.spatial_layer_config.lat_field" size="small" style="flex:1" placeholder="默认: lat" />
+                </div>
+              </template>
+              <template v-if="entityForm.spatial_layer_config.geometry_type === 'wkt'">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="width:80px;flex-shrink:0;font-size:13px">几何字段</span>
+                  <el-input v-model="entityForm.spatial_layer_config.geom_field" size="small" style="flex:1" placeholder="默认: wkt" />
+                </div>
+              </template>
+            </div>
+          </el-form-item>
+        </template>
         <el-form-item label="属性定义">
           <div class="prop-table">
             <el-table :data="entityForm.properties" border size="small" style="width:100%">
@@ -122,7 +184,7 @@
               <el-table-column label="数据类型" min-width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.data_type" size="small">
-                    <el-option v-for="t in dataTypes" :key="t" :label="t" :value="t" />
+                    <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
@@ -148,34 +210,7 @@
       </el-form>
       <template #footer>
         <el-button @click="entityDialogVisible = false">取消</el-button>
-        <el-button
-          v-if="editingEntity"
-          :loading="syncing"
-          @click="showSyncDialog = true"
-        >同步约束到 Neo4j</el-button>
         <el-button type="primary" :loading="saving" @click="submitEntityType">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 同步约束对话框 -->
-    <el-dialog v-model="showSyncDialog" title="同步约束到 Neo4j" width="400px" append-to-body>
-      <el-form label-width="100px">
-        <el-form-item label="选择图谱">
-          <el-select v-model="syncGraphId" placeholder="选择要同步的知识图谱" style="width:100%">
-            <el-option v-for="g in linkedGraphs" :key="g.id" :label="g.name" :value="g.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-text type="info" size="small">
-            将为属性中"唯一"勾选的字段在 Neo4j 创建 UNIQUE 约束（IF NOT EXISTS，幂等操作）
-          </el-text>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showSyncDialog = false">取消</el-button>
-        <el-button type="primary" :loading="syncing" :disabled="!syncGraphId" @click="syncConstraints">
-          执行同步
-        </el-button>
       </template>
     </el-dialog>
 
@@ -220,7 +255,7 @@
               <el-table-column label="数据类型" min-width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.data_type" size="small">
-                    <el-option v-for="t in dataTypes" :key="t" :label="t" :value="t" />
+                    <el-option v-for="t in dataTypes" :key="t.value" :label="t.label" :value="t.value" />
                   </el-select>
                 </template>
               </el-table-column>
@@ -283,11 +318,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
-import { ontologyAPI, knowledgeGraphAPI } from '../api/ontology'
+import { ArrowLeft, Plus, Location } from '@element-plus/icons-vue'
+import { ontologyAPI } from '../api/ontology'
 import { OntologyView } from '@addp/common-frontend/graph'
 import ImportFromModelDialog from '../components/ImportFromModelDialog.vue'
 import InferFromEngineDialog from '../components/InferFromEngineDialog.vue'
@@ -305,7 +340,11 @@ const saving = ref(false)
 const entityDialogVisible = ref(false)
 const editingEntity = ref(null)
 const entityFormRef = ref(null)
-const entityForm = ref({ name: '', label: '', description: '', color: '#5B8FF9', properties: [] })
+const entityForm = ref({
+  name: '', label: '', description: '', color: '#5B8FF9', properties: [],
+  is_spatial_layer: false,
+  spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
+})
 const entityRules = { name: [{ required: true, message: '请输入标识符', trigger: 'blur' }] }
 
 // relation form
@@ -315,7 +354,15 @@ const relationFormRef = ref(null)
 const relationForm = ref({ name: '', label: '', description: '', source_type_id: null, target_type_id: null, directed: true, properties: [] })
 const relationRules = { name: [{ required: true, message: '请输入标识符', trigger: 'blur' }] }
 
-const dataTypes = ['string', 'integer', 'float', 'boolean', 'date', 'datetime']
+const dataTypes = [
+  { value: 'string', label: 'string' },
+  { value: 'integer', label: 'integer' },
+  { value: 'float', label: 'float' },
+  { value: 'boolean', label: 'boolean' },
+  { value: 'date', label: 'date' },
+  { value: 'datetime', label: 'datetime' },
+  { value: 'geometry', label: 'geometry (WKT WGS-84)' },
+]
 
 const addEntityProp = () => {
   entityForm.value.properties.push({ name: '', label: '', data_type: 'string', required: false, unique: false })
@@ -331,36 +378,6 @@ const versionFormRef = ref(null)
 const versionForm = ref({ version: '', description: '' })
 const versionRules = { version: [{ required: true, message: '请输入版本号', trigger: 'blur' }] }
 
-// sync constraints
-const showSyncDialog = ref(false)
-const syncGraphId = ref(null)
-const syncing = ref(false)
-const linkedGraphs = ref([])
-
-const loadLinkedGraphs = async () => {
-  try {
-    const res = await knowledgeGraphAPI.list()
-    const all = Array.isArray(res) ? res : (res?.data?.data || res?.data || [])
-    linkedGraphs.value = all.filter(g => g.ontology_id === Number(ontologyId))
-  } catch (e) {
-    // 非关键，忽略错误
-  }
-}
-
-const syncConstraints = async () => {
-  if (!syncGraphId.value || !editingEntity.value) return
-  syncing.value = true
-  try {
-    await ontologyAPI.syncEntityTypeConstraints(ontologyId, editingEntity.value.id, syncGraphId.value)
-    ElMessage.success('约束同步成功')
-    showSyncDialog.value = false
-  } catch (e) {
-    ElMessage.error(e.response?.data?.error || '同步失败')
-  } finally {
-    syncing.value = false
-  }
-}
-
 const loadOntology = async () => {
   const res = await ontologyAPI.get(ontologyId)
   ontology.value = res
@@ -371,7 +388,7 @@ const loadVersions = async () => {
   const res = await ontologyAPI.listVersions(ontologyId)
   versions.value = res || []
 }
-onMounted(() => { loadOntology(); loadVersions(); loadLinkedGraphs() })
+onMounted(() => { loadOntology(); loadVersions() })
 
 // F4: 从 Model 导入
 const importFromModelRef = ref(null)
@@ -386,24 +403,91 @@ const openInferFromEngine = () => { inferFromEngineRef.value?.open() }
 const showEntityForm = (row) => {
   editingEntity.value = row
   if (row) {
+    const slc = row.spatial_layer_config || {}
     entityForm.value = {
       name: row.name, label: row.label || '', description: row.description || '',
       color: row.color || '#5B8FF9',
-      properties: Array.isArray(row.properties) ? row.properties.map(p => ({ ...p })) : []
+      parent_id: row.parent_id || null,
+      properties: Array.isArray(row.properties) ? row.properties.map(p => ({ ...p })) : [],
+      is_spatial_layer: !!row.is_spatial_layer,
+      spatial_layer_config: {
+        geometry_type: slc.geometry_type || '',
+        layer_name: slc.layer_name || row.name,
+        lon_field: slc.lon_field || 'lon',
+        lat_field: slc.lat_field || 'lat',
+        geom_field: slc.geom_field || 'wkt',
+      }
     }
   } else {
-    entityForm.value = { name: '', label: '', description: '', color: '#5B8FF9', properties: [] }
+    entityForm.value = {
+      name: '', label: '', description: '', color: '#5B8FF9',
+      parent_id: null,
+      properties: [],
+      is_spatial_layer: false,
+      spatial_layer_config: { geometry_type: '', layer_name: '', lon_field: 'lon', lat_field: 'lat', geom_field: 'wkt' }
+    }
   }
   entityDialogVisible.value = true
+}
+
+// 空间图层开关切换
+const onSpatialLayerToggle = (val) => {
+  if (!val) {
+    entityForm.value.spatial_layer_config.geometry_type = ''
+  }
+}
+
+// 几何类型切换时，移除旧预填属性，追加新预填属性
+const onGeometryTypeChange = (newType) => {
+  const props = entityForm.value.properties
+  // 移除旧预填字段（lon/lat/wkt）
+  const spatialFields = ['lon', 'lat', 'wkt']
+  entityForm.value.properties = props.filter(p => !spatialFields.includes(p.name))
+  // 追加新预填字段
+  if (newType === 'point') {
+    if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.lon_field || p.name === 'lon')) {
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lon_field || 'lon', label: '经度', data_type: 'float', required: false, unique: false })
+    }
+    if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.lat_field || p.name === 'lat')) {
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.lat_field || 'lat', label: '纬度', data_type: 'float', required: false, unique: false })
+    }
+  } else if (newType === 'wkt') {
+    if (!entityForm.value.properties.find(p => p.name === entityForm.value.spatial_layer_config.geom_field || p.name === 'wkt')) {
+      entityForm.value.properties.push({ name: entityForm.value.spatial_layer_config.geom_field || 'wkt', label: '几何(WKT)', data_type: 'geometry', required: false, unique: false })
+    }
+  }
+  // 更新图层名称默认值
+  if (!entityForm.value.spatial_layer_config.layer_name) {
+    entityForm.value.spatial_layer_config.layer_name = entityForm.value.name
+  }
+}
+
+// 获取实体类型的空间祖先名称（用于显示继承提示）
+const getSpatialAncestor = (row) => {
+  if (row.is_spatial_layer) return null
+  if (!row.parent_id) return null
+  let current = entityTypes.value.find(et => et.id === row.parent_id)
+  let depth = 0
+  while (current && depth < 10) {
+    if (current.is_spatial_layer) return current.label || current.name
+    if (!current.parent_id) break
+    current = entityTypes.value.find(et => et.id === current.parent_id)
+    depth++
+  }
+  return null
 }
 const submitEntityType = async () => {
   await entityFormRef.value.validate()
   saving.value = true
   try {
+    const payload = { ...entityForm.value }
+    if (!payload.is_spatial_layer) {
+      payload.spatial_layer_config = null
+    }
     if (editingEntity.value) {
-      await ontologyAPI.updateEntityType(ontologyId, editingEntity.value.id, entityForm.value)
+      await ontologyAPI.updateEntityType(ontologyId, editingEntity.value.id, payload)
     } else {
-      await ontologyAPI.createEntityType(ontologyId, entityForm.value)
+      await ontologyAPI.createEntityType(ontologyId, payload)
     }
     ElMessage.success('保存成功')
     entityDialogVisible.value = false

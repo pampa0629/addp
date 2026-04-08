@@ -648,7 +648,7 @@ func (p *Neo4jPlugin) ExecuteQuery(ctx context.Context, connInfo plugin.Connecti
 // isCypherWriteQuery 判断 Cypher 是否包含写操作关键字
 func isCypherWriteQuery(cypher string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(cypher))
-	for _, kw := range []string{"CREATE ", "MERGE ", "DELETE ", "SET ", "REMOVE ", "DROP "} {
+	for _, kw := range []string{"CREATE ", "MERGE ", "DELETE ", "SET ", "REMOVE ", "DROP ", "CALL "} {
 		if strings.Contains(upper, kw) {
 			return true
 		}

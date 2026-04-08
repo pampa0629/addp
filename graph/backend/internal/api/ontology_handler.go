@@ -383,6 +383,58 @@ func (h *OntologyHandler) SyncEntityTypeConstraints(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "constraints synced"})
 }
 
+// SyncEntityTypeSpatialLayer godoc
+// @Summary      同步空间图层
+// @Description  将实体类型的空间图层同步到指定的 Neo4j 图谱实例（仅 is_spatial_layer=true 的类型可操作）
+// @Tags         本体管理
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id      path int                              true "本体 ID"
+// @Param        eid     path int                              true "实体类型 ID"
+// @Param        request body models.SyncSpatialLayersRequest true "同步请求"
+// @Success      200 {object} map[string]interface{}
+// @Failure      400 {object} models.ErrorResponse
+// @Failure      404 {object} models.ErrorResponse
+// @Failure      500 {object} models.ErrorResponse
+// @Router       /ontologies/{id}/entity-types/{eid}/sync-spatial-layer [put]
+func (h *OntologyHandler) SyncEntityTypeSpatialLayer(c *gin.Context) {
+	ontologyID := parseUintParam(c, "id")
+	eid := parseUintParam(c, "eid")
+	tenantID := getTenantID(c)
+
+	var req models.SyncSpatialLayersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	et, err := h.svc.GetEntityType(eid, ontologyID, tenantID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "entity type not found"})
+		return
+	}
+	if !et.IsSpatialLayer {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "此实体类型未标记为空间图层类型，请先在编辑中开启空间图层"})
+		return
+	}
+
+	if err := h.neo4jSvc.SyncSpatialLayer(c.Request.Context(), req.GraphID, tenantID, *et); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	cfg := et.ParsedSpatialLayerConfig()
+	c.JSON(http.StatusOK, gin.H{
+		"layer_name":    cfg.LayerName,
+		"geometry_type": cfg.GeometryType,
+		"lon_field":     cfg.LonField,
+		"lat_field":     cfg.LatField,
+		"geom_field":    cfg.GeomField,
+		"message":       "空间图层同步成功",
+	})
+}
+
 // --- Import from Model handlers ---
 
 // ImportPreviewFromModel GET /ontologies/import-preview/from-model
